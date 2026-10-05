@@ -44,6 +44,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/charmbracelet/x/cellbuf v0.0.15
 	github.com/cilium/ebpf v0.21.0
+	github.com/coder/websocket v1.8.14
 	github.com/containerd/console v1.0.5
 	github.com/containerd/containerd/api v1.10.0
 	github.com/containerd/containerd/v2 v2.2.5
@@ -101,6 +102,7 @@ require (
 	github.com/invopop/jsonschema v0.14.0
 	github.com/jackpal/gateway v1.1.1
 	github.com/jedevc/go-libsecret v0.0.0-20250327192457-f925a032ae4f
+	github.com/jinzhu/inflection v1.0.0
 	github.com/joho/godotenv v1.5.1
 	github.com/juju/ansiterm v1.0.0
 	github.com/klauspost/compress v1.19.1
@@ -154,6 +156,7 @@ require (
 	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab
 	github.com/urfave/cli v1.22.17
 	github.com/vektah/gqlparser/v2 v2.5.32
+	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
 	github.com/vito/dang v1.0.1
 	github.com/vito/dang/v2 v2.1.4
@@ -174,6 +177,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.43.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0
 	go.opentelemetry.io/otel/log v0.19.0
 	go.opentelemetry.io/otel/metric v1.43.0
@@ -353,7 +357,6 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/vbatts/tar-split v0.12.2 // indirect
-	github.com/vishvananda/netlink v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
@@ -361,7 +364,6 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.17.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.43.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect

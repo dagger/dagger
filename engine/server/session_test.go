@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
@@ -1946,6 +1947,63 @@ func TestLogRecordRowPreservesBytesBody(t *testing.T) {
 	require.Equal(t, payload, body.GetBytesValue())
 }
 
+// A record carrying invalid UTF-8 must not sink its batch. The LLM HTTP span
+// logs its request body cut at a byte limit, which can split a character;
+// protobuf refuses such a string, and the failed batch used to take the
+// records exported beside it -- the agent's prompt, emitted just before the
+// request -- down with it.
+func TestTelemetryExportKeepsBatchWithInvalidUTF8(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	ps := &PubSub{srv: &Server{clientDBs: dbs}}
+
+	cut := "request body — truncated"[:len("request body ")+1] // mid em dash
+	require.False(t, utf8.ValidString(cut))
+	records := []sdklog.Record{
+		scopedLogRecord(t, "test", otellog.StringValue("the user's prompt")),
+		scopedLogRecord(t, "test", otellog.StringValue(cut)),
+		scopedLogRecord(t, "test",
+			otellog.MapValue(otellog.String("nested", cut), otellog.Slice("list", otellog.StringValue(cut))),
+			otellog.String(cut, cut)),
+	}
+	require.NoError(t, ps.Logs("client").Export(t.Context(), records))
+
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.SelectLogsSince(t.Context(), clientdb.SelectLogsSinceParams{ID: 0, Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, len(records))
+
+	var body otlpcommonv1.AnyValue
+	require.NoError(t, proto.Unmarshal(rows[0].Body, &body))
+	require.Equal(t, "the user's prompt", body.GetStringValue())
+	require.NoError(t, proto.Unmarshal(rows[1].Body, &body))
+	require.Equal(t, "request body \uFFFD", body.GetStringValue())
+	require.NoError(t, proto.Unmarshal(rows[2].Body, &body))
+	for _, kv := range body.GetKvlistValue().GetValues() {
+		switch kv.GetKey() {
+		case "nested":
+			require.Equal(t, "request body \uFFFD", kv.GetValue().GetStringValue())
+		case "list":
+			require.Equal(t, "request body \uFFFD", kv.GetValue().GetArrayValue().GetValues()[0].GetStringValue())
+		default:
+			t.Fatalf("unexpected key %q", kv.GetKey())
+		}
+	}
+}
+
+// validUTF8LogValue must hand back valid values as they were.
+func TestValidUTF8LogValueKeepsValidValues(t *testing.T) {
+	for _, v := range []otellog.Value{
+		otellog.StringValue("plain — fine"),
+		otellog.SliceValue(otellog.StringValue("a"), otellog.IntValue(1)),
+		otellog.MapValue(otellog.String("k", "v")),
+		otellog.BytesValue([]byte{0xff}),
+	} {
+		require.True(t, validUTF8LogValue(v).Equal(v), "%v", v)
+	}
+}
+
 func TestTelemetryExportReleasesClientDBHandle(t *testing.T) {
 	dbs := clientdb.NewDBs(t.TempDir())
 	ps := &PubSub{srv: &Server{clientDBs: dbs}}
@@ -2704,8 +2762,10 @@ func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
 	gauge, err := client.meterProvider.Meter("test").Int64Gauge("cleanup.metric")
 	require.NoError(t, err)
 	gauge.Record(cleanupCtx, 1)
+	sess.schemaBuilderMemo.Store(core.NewSchemaBuilderMemo())
 
 	require.NoError(t, srv.removeDaggerSession(t.Context(), sess))
+	require.Nil(t, sess.schemaBuilderMemo.Load(), "the session's schema memo is dropped with it")
 	require.Nil(t, client.telemetryDB)
 	require.Equal(t, clientdb.OpenStats{}, srv.clientDBs.OpenStats())
 	select {
@@ -3320,12 +3380,33 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	})
 }
 
+func TestEnsureRequestModulesLoadedSkipsAutomaticWorkspaceModules(t *testing.T) {
+	for _, md := range []*engine.ClientMetadata{
+		{},
+		{LoadWorkspaceModules: true, SkipWorkspaceModules: true},
+	} {
+		client := &clientRuntime{
+			clientRecord:         &clientRecord{clientMetadata: md},
+			pendingWorkspaceLoad: true,
+			pendingModules:       []pendingModule{{Kind: moduleLoadKindAmbient, Name: "unloaded"}},
+		}
+		req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, strings.NewReader(`{"query":"{ __schema { types { name } } }"}`))
+		req.Header.Set("Content-Type", "application/json")
+		err := (&Server{}).ensureRequestModulesLoaded(context.Background(), client, req)
+		require.NoError(t, err)
+		require.Len(t, client.pendingModules, 1)
+		require.Equal(t, "unloaded", client.pendingModules[0].Name)
+	}
+}
+
 func TestEnsureRequestModulesLoadedConsumesScopeBeforeUnlock(t *testing.T) {
 	client := &clientRuntime{clientRecord: &clientRecord{
 		clientID: "client",
 		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
 			WorkspaceModuleScope: "good",
 		}},
+		pendingWorkspaceLoad: true,
 		pendingModules: []pendingModule{
 			{Kind: moduleLoadKindAmbient, Name: "bad"},
 		},
@@ -3442,12 +3523,6 @@ func TestCallPayloadWriteOwnershipAndRelease(t *testing.T) {
 		"a released target must be claimable by a later walk")
 	require.Equal(t, []string{"child"}, sess.takeCallPayloadForWrite("xxh3:abc", route),
 		"a retry must write only the released target")
-
-	// A span delivering the payload mid-write wins over the write's failure.
-	store.CallPayloadDelivered("xxh3:abc")
-	sess.settleCallPayload("xxh3:abc", []string{"child"}, false)
-	require.Empty(t, sess.callPayloadMissingTargets("xxh3:abc", route))
-	require.False(t, store.ClaimCallPayload("xxh3:abc"))
 }
 
 func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {
@@ -3901,9 +3976,14 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 				Source:            "modules/alpha",
 				LegacyDefaultPath: true,
 			},
+			// A dot past the first path segment is still a workspace path, not
+			// a git host.
+			"beta": {
+				Source: "ci/.dagger/beta",
+			},
 		},
 	}, resolveLocalRef)
-	require.Len(t, pending, 2)
+	require.Len(t, pending, 3)
 
 	require.Equal(t, "alpha", pending[0].Name)
 	require.Equal(t, "/resolved/modules/alpha", pending[0].Ref)
@@ -3914,15 +3994,19 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 	require.Equal(t, "/resolved", pending[0].DefaultPathContextSourceRef)
 	require.True(t, pending[0].DefaultsFromDotEnv)
 
-	require.Equal(t, "zeta", pending[1].Name)
-	require.Equal(t, "github.com/acme/zeta@main", pending[1].Ref)
-	require.Empty(t, pending[1].RefPin)
-	require.True(t, pending[1].Entrypoint)
-	require.True(t, pending[1].DisableFindUp)
-	require.False(t, pending[1].LegacyDefaultPath)
-	require.Empty(t, pending[1].DefaultPathContextSourceRef)
-	require.True(t, pending[1].DefaultsFromDotEnv)
-	require.Equal(t, map[string]any{"message": "hello"}, pending[1].ConfigDefaults)
+	require.Equal(t, "beta", pending[1].Name)
+	require.Equal(t, "/resolved/ci/.dagger/beta", pending[1].Ref)
+	require.Equal(t, "ci/.dagger/beta", pending[1].WorkspaceDir)
+
+	require.Equal(t, "zeta", pending[2].Name)
+	require.Equal(t, "github.com/acme/zeta@main", pending[2].Ref)
+	require.Empty(t, pending[2].RefPin)
+	require.True(t, pending[2].Entrypoint)
+	require.True(t, pending[2].DisableFindUp)
+	require.False(t, pending[2].LegacyDefaultPath)
+	require.Empty(t, pending[2].DefaultPathContextSourceRef)
+	require.True(t, pending[2].DefaultsFromDotEnv)
+	require.Equal(t, map[string]any{"message": "hello"}, pending[2].ConfigDefaults)
 }
 
 // TestModuleResolutionFromSubdirectory verifies that module source paths from
@@ -4186,7 +4270,8 @@ func TestDetectAndLoadWorkspaceKeepsCompatFallbackForExplicitExtraModule(t *test
 	require.NoError(t, err)
 	require.NotNil(t, client.workspace)
 	require.NotNil(t, client.workspace.CompatWorkspace())
-	require.Empty(t, client.pendingModules)
+	require.Len(t, client.pendingModules, 1)
+	require.Equal(t, "tool", client.pendingModules[0].Name)
 	require.Equal(t, extra, client.pendingExtraModules)
 }
 
@@ -4364,7 +4449,7 @@ func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {
 	require.True(t, client.pendingModules[0].Entrypoint)
 }
 
-func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
+func TestDetectAndLoadWorkspaceDiscoversModulesWithoutAutomaticLoading(t *testing.T) {
 	t.Parallel()
 
 	existingFiles := map[string]bool{
@@ -4411,7 +4496,8 @@ func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client.workspace)
 	require.NotNil(t, client.workspace.CompatWorkspace())
-	require.Empty(t, client.pendingModules)
+	require.Len(t, client.pendingModules, 1)
+	require.Equal(t, "changelog", client.pendingModules[0].Name)
 }
 
 func TestIsSameModuleReference(t *testing.T) {

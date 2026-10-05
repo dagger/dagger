@@ -533,9 +533,9 @@ func (DangSuite) TestSelfCallReturningOwnType(_ context.Context, t *testctx.T) {
 
 // TestLoadErrorReport locks in where a Dang load failure lands. Dang renders
 // inference and evaluation failures as full reports — multi-line, colored
-// source excerpts — and the runtime used to return them as the span error,
-// which is copied verbatim into tool results and the TUI's error line. The
-// report belongs in the function call's stderr; the error carries the diagnostic.
+// source excerpts. Those reports belong in the function call's stderr, not the
+// span error, which is copied verbatim into tool results and the TUI's error
+// line; the error carries the diagnostic.
 func (DangSuite) TestLoadErrorReport(ctx context.Context, t *testctx.T) {
 	writeModule := func(t *testctx.T, source string) string {
 		t.Helper()

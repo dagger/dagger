@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -127,16 +128,16 @@ func mcpContentResult(blocks []*LLMContentBlock) (*mcp.CallToolResult, error) {
 		case LLMContentText:
 			result.Content = append(result.Content, mcp.NewTextContent(block.Text))
 		case LLMContentImage:
-			result.Content = append(result.Content, mcp.NewImageContent(block.Data, block.MIMEType))
+			result.Content = append(result.Content, mcp.NewImageContent(base64.StdEncoding.EncodeToString(block.Data), block.MIMEType))
 		case LLMContentAudio:
-			result.Content = append(result.Content, mcp.NewAudioContent(block.Data, block.MIMEType))
+			result.Content = append(result.Content, mcp.NewAudioContent(base64.StdEncoding.EncodeToString(block.Data), block.MIMEType))
 		case LLMContentDocument:
 			// An embedded resource requires a URI even though the bytes are
 			// inline. Use an opaque local identifier, never an external URL.
 			result.Content = append(result.Content, mcp.NewEmbeddedResource(mcp.BlobResourceContents{
 				URI:      fmt.Sprintf("urn:dagger:tool-result:%d", len(result.Content)),
 				MIMEType: block.MIMEType,
-				Blob:     block.Data,
+				Blob:     base64.StdEncoding.EncodeToString(block.Data),
 			}))
 		case LLMContentToolResult:
 			result.IsError = result.IsError || block.Errored
@@ -227,17 +228,35 @@ func (s mcpServer) run(ctx context.Context) error {
 	}
 }
 
-func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
+// MCP serves the conversation's tools over stdio. self is the conversation
+// itself: tool-argument addresses resolve in its scope (LLM.artifacts).
+func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server, self dagql.ObjectResult[*LLM]) error {
 	// Under the object-tools scheme the LLM only acts through explicitly
 	// bound objects. `dagger mcp` exposes the workspace: when nothing was
 	// bound, bind each workspace module's main object so its methods are the
 	// served MCP tools.
+	scopeBase := self
 	if len(llm.mcp.boundTools) == 0 {
+		wsBefore, err := llm.mcp.WorkspaceID()
+		if err != nil {
+			return err
+		}
 		bound, err := llm.mcp.bindWorkspaceModuleTools(ctx)
 		if err != nil {
 			return fmt.Errorf("bind workspace module tools: %w", err)
 		}
 		llm.mcp = bound
+		// Record the bindings on the conversation, as step() records a
+		// rebinding, so its scope has the tools and a real recipe.
+		if sels := stateDeltaSelectors(bound, wsBefore, nil); len(sels) > 0 {
+			canonical := dag.Canonical()
+			for i := range sels {
+				sels[i].View = canonical.View
+			}
+			if err := canonical.Select(ctx, self, &scopeBase, sels...); err != nil {
+				return fmt.Errorf("record workspace module tools: %w", err)
+			}
+		}
 	}
 
 	// Get engine client
@@ -260,11 +279,13 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 		return err
 	}
 
+	standalone := llm.mcp.Standalone()
+	standalone.scopeBase = scopeBase
 	s := mcpServer{
 		mcpserver.NewMCPServer("Dagger", "0.0.1",
 			mcpserver.WithInstructions(instructions)),
 		dag,
-		llm.mcp.Standalone(),
+		standalone,
 		rwc,
 	}
 

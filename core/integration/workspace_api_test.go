@@ -321,8 +321,9 @@ func (WorkspaceAPISuite) TestWorkspaceSearch(ctx context.Context, t *testctx.T) 
 	t.Run("limit caps results without hanging", func(ctx context.Context, t *testctx.T) {
 		// Regression test: when matches far exceed the limit, the client-side
 		// search must stop the subprocess instead of deadlocking. The match
-		// output past the limit needs to exceed the OS pipe buffer (64KB) for
-		// the old code to wedge, hence the large file.
+		// output past the limit exceeds the OS pipe buffer (64KB), so a search
+		// that doesn't stop the subprocess at the limit would block, hence the
+		// large file.
 		ctr := base.WithNewFile("many.txt", strings.Repeat("hello, again and again\n", 50000))
 		out, err := ctr.With(daggerCall("searcher", "--pattern=hello", "--limit=5", "file-paths")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1140,7 +1141,7 @@ func (WorkspaceAPISuite) TestWorkspaceExportToStaysOnCurrentClient(ctx context.C
 	copyTestdataFixture(ctx, t, moduleDir, "modules", "go", "workspace-export-sandbox")
 	runGit(ctx, t, workdir, "add", ".")
 	runGit(ctx, t, workdir, "commit", "-m", "initial")
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "-m", "./sandbox", "try-export-to")
+	out, err := hostDaggerOutput(ctx, t, workdir, "--silent", "call", "-m", "./sandbox", "try-export-to")
 	require.NoError(t, err, string(out))
 	require.Equal(t, "refused", strings.TrimSpace(string(out)))
 	_, err = os.Stat(filepath.Join(workdir, "sneaky.txt"))

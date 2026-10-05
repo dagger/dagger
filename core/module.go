@@ -36,12 +36,21 @@ type Module struct {
 	SDKConfig *SDKConfig `field:"true" name:"sdk" doc:"The SDK config used by this module."`
 
 	// Deps contains the module's dependency DAG. Its SchemaBuilder may retain a
-	// query root and lazy schema, but never runtime authority; execution still
-	// requires the held ClientScope carried by the calling context.
+	// query root, but never a built schema or runtime authority: its schema
+	// comes from the current client's memo, and execution still requires the
+	// held ClientScope carried by the calling context.
 	Deps *SchemaBuilder
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime dagql.Nullable[dagql.ObjectResult[*Container]]
+
+	// Definition is the cached result of ModuleSource._moduleDefinition when
+	// the module's type definitions came from its container runtime, or of
+	// ModuleSource._moduleTypesDefinition when they came from its SDK's
+	// ModuleTypes: the definition-only module. Keeping the reference puts
+	// the definition row inside this module's closure, so a bundle that
+	// carries the module carries the definition too.
+	Definition dagql.Nullable[dagql.ObjectResult[*Module]]
 
 	// The following are populated while initializing the module
 
@@ -179,14 +188,6 @@ func argRequired(arg *FunctionArg) bool {
 	return true
 }
 
-// agentBaseArgName is the conventional name for an @agent middleware's base
-// argument, used only as a fallback when the actual LLM! argument can't be
-// resolved. The base is identified by *type* — a single required LLM! arg — not
-// by name, so authors may call it `base`, `llm`, etc. (hack/designs/workspace-agents.md §3). The
-// compose fold (AgentMiddlewareGroup.Compose) fills that argument with the running
-// accumulator explicitly.
-const agentBaseArgName = "base"
-
 // isCoreLLMArg reports whether an argument is of the core LLM type. Like
 // IsWorkspace, the SourceModuleName guard keeps it to the core LLM (functions
 // can't currently accept types from other modules, but be explicit anyway).
@@ -244,7 +245,7 @@ func validateGeneratorFunction(obj *ObjectTypeDef, fn *Function) error {
 	return nil
 }
 
-// validateAgentFunction enforces the @agent middleware contract (hack/designs/workspace-agents.md
+// validateAgentFunction enforces the @expertise contract (hack/designs/workspace-agents.md
 // §3): the function must return LLM! and must declare exactly one required
 // argument, an LLM! (the base the compose fold supplies, whatever it is
 // named). A non-LLM! return, a missing base, or any other required argument is
@@ -319,17 +320,6 @@ func (mod *Module) GetSource() *ModuleSource {
 		return nil
 	}
 	return mod.Source.Value.Self()
-}
-
-// The "context source" is the module used as the execution context for the module.
-// Usually it's simply the module source itself. But when using blueprints or
-// toolchains, it will point to the downstream module applying the toolchain,
-// not the toolchain itself.
-func (mod *Module) GetContextSource() *ModuleSource {
-	if !mod.ContextSource.Valid {
-		return nil
-	}
-	return mod.ContextSource.Value.Self()
 }
 
 func ImplementationScopedModule(
@@ -893,6 +883,18 @@ func (mod *Module) AttachDependencyResults(
 		mod.Runtime = dagql.NonNull(typed)
 		owned = append(owned, typed)
 	}
+	if mod.Definition.Valid && mod.Definition.Value.Self() != nil {
+		attached, err := attach(mod.Definition.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach module definition: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, fmt.Errorf("attach module definition: unexpected result %T", attached)
+		}
+		mod.Definition = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
 	for i, def := range mod.ObjectDefs {
 		if def.Self() == nil {
 			continue
@@ -1011,6 +1013,7 @@ type persistedModulePayload struct {
 	SourceResultID                uint64                          `json:"sourceResultID,omitempty"`
 	ContextSourceResultID         uint64                          `json:"contextSourceResultID,omitempty"`
 	RuntimeResultID               uint64                          `json:"runtimeResultID,omitempty"`
+	DefinitionResultID            uint64                          `json:"definitionResultID,omitempty"`
 	DepModuleResultIDs            []uint64                        `json:"depModuleResultIDs,omitempty"`
 	IncludeSelfInDeps             bool                            `json:"includeSelfInDeps,omitempty"`
 	NameField                     string                          `json:"nameField,omitempty"`
@@ -1050,6 +1053,13 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, enc *dagql.Persist
 			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.RuntimeResultID = runtimeID
+	}
+	if mod.Definition.Valid && mod.Definition.Value.Self() != nil {
+		definitionID, err := encodePersistedObjectRef(enc, mod.Definition.Value, "module definition")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		persisted.DefinitionResultID = definitionID
 	}
 
 	persisted.IncludeSelfInDeps = mod.IncludeSelfInDeps
@@ -1131,6 +1141,10 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 	if err != nil {
 		return nil, err
 	}
+	definitionRes, err := loadPersistedObjectResultByResultID[*Module](ctx, dec, persisted.DefinitionResultID, "module definition")
+	if err != nil {
+		return nil, err
+	}
 
 	query, err := persistedDecodeQuery(dec)
 	if err != nil {
@@ -1206,17 +1220,27 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 	if runtimeRes.Self() != nil {
 		mod.Runtime = dagql.NonNull(runtimeRes)
 	}
+	if definitionRes.Self() != nil {
+		mod.Definition = dagql.NonNull(definitionRes)
+	}
 
 	return mod, nil
 }
 
 func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error) {
-	_ = ctx
-	_ = dag
 	typeDefs := make(dagql.ObjectResultArray[*TypeDef], 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs)+len(mod.EnumDefs))
 	typeDefs = append(typeDefs, mod.ObjectDefs...)
 	typeDefs = append(typeDefs, mod.InterfaceDefs...)
 	typeDefs = append(typeDefs, mod.EnumDefs...)
+	for _, def := range mod.ObjectDefs {
+		batch, err := CollectionBatchType(ctx, dag, def.Self().AsObject.Value)
+		if err != nil {
+			return nil, err
+		}
+		if batch.Valid {
+			typeDefs = append(typeDefs, batch.Value)
+		}
+	}
 	return typeDefs, nil
 }
 
@@ -1353,7 +1377,8 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 			return err
 		}
 	}
-	return nil
+	_, err = obj.CollectionMembers()
+	return err
 }
 
 func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, field *FieldTypeDef, state *moduleValidationState) error {
@@ -1385,6 +1410,12 @@ func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, 
 func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDef, fn *Function, state *moduleValidationState) error {
 	if gqlFieldName(fn.Name) == "id" {
 		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
+	}
+	if fn.IsCheck && fn.CheckReturnType.Self() == nil && fn.ReturnType.Self().Kind != TypeDefKindVoid &&
+		mod.Source.Valid && AfterVersion("v1.0.0-0").Contains(call.View(mod.Source.Value.Self().EngineVersion)) {
+		if obj.SourceModuleName == "" || fn.ReturnType.Self().ToType().Name() != "Check" {
+			return fmt.Errorf("check %s.%s must return Void", obj.Name, fn.Name)
+		}
 	}
 	if fn.IsUp {
 		if err := validateUpFunction(obj, fn); err != nil {
@@ -1576,14 +1607,26 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 		if err != nil {
 			return updated, err
 		}
-		if !sameAttachedResult(returnType, fn.Self().ReturnType) {
+		returnTypes := []dagql.ObjectResult[*TypeDef]{returnType}
+		if fn.Self().IsCheck && fn.Self().CheckReturnType.Self() == nil {
+			checkType, err := SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+				Field: "withObject", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("Check")}},
+			})
+			if err != nil {
+				return updated, err
+			}
+			returnTypes = append(returnTypes, checkType)
+		}
+		for _, returnType := range returnTypes {
+			if sameAttachedResult(returnType, updated.Self().ReturnType) {
+				continue
+			}
 			returnTypeID, err := ResultIDInput(returnType)
 			if err != nil {
 				return updated, fmt.Errorf("namespace function return type id: %w", err)
 			}
 			if err := dag.Select(ctx, updated, &updated, dagql.Selector{
-				Field: "__withReturnType",
-				Args:  []dagql.NamedInput{{Name: "returnType", Value: returnTypeID}},
+				Field: "__withReturnType", Args: []dagql.NamedInput{{Name: "returnType", Value: returnTypeID}},
 			}); err != nil {
 				return updated, fmt.Errorf("namespace function return type: %w", err)
 			}

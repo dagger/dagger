@@ -61,7 +61,8 @@ func TestPartDelegationMountRoles(t *testing.T) {
 					root.Envelope.ObjectJSON, err = json.Marshal(payload)
 					require.NoError(t, err)
 				}
-				imported, err := b.ImportValues(bctx, exported.Bundle)
+				importedReply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+				imported := importedReply.Imported()
 				require.NoError(t, err)
 				loaded, err := b.LoadResultByResultID(bctx, "", bsrv, imported[0].ResultID)
 				require.NoError(t, err)
@@ -100,7 +101,8 @@ func TestPartDelegationMountRoles(t *testing.T) {
 					for _, value := range forwarded.Bundle.Values {
 						require.Empty(t, value.Record.SnapshotLinks)
 					}
-					mapped, err := c.ImportValues(cctx, forwarded.Bundle)
+					mappedReply, err := c.MergeValues(cctx, dagql.CloudCacheID, forwarded.Bundle)
+					mapped := mappedReply.Imported()
 					require.NoError(t, err)
 					final, err := c.LoadResultByResultID(cctx, "", csrv, mapped[0].ResultID)
 					require.NoError(t, err)

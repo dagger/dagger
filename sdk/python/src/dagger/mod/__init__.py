@@ -13,6 +13,10 @@ _default_mod = Module()
 
 agent = _default_mod.agent
 check = _default_mod.check
+collection = _default_mod.collection
+delta = _default_mod.delta
+get = _default_mod.get
+keys = _default_mod.keys
 enum_type = _default_mod.enum_type
 function = _default_mod.function
 field = _default_mod.field
@@ -37,11 +41,15 @@ __all__ = [
     "Name",
     "agent",
     "check",
+    "collection",
+    "delta",
     "enum_type",
     "field",
     "function",
     "generate",
+    "get",
     "interface",
+    "keys",
     "object_type",
     "up",
 ]

@@ -28,7 +28,7 @@ func TestNotificationToggle(t *testing.T) {
 				fe.tui.Step()
 			}
 			focused := fe.tui.Focused()
-			require.Contains(t, navKeyHelp(fe.keys(NewOutput(io.Discard))), "ctrl+h toggle hud")
+			require.Contains(t, navKeyHelp(fe.keys(NewOutput(io.Discard))), "ctrl+h hide hud")
 
 			setSection := func(title, body string) {
 				fe.SetSidebarContent(SidebarSection{
@@ -47,12 +47,15 @@ func TestNotificationToggle(t *testing.T) {
 
 			// Remember the preference even before the first bubble arrives.
 			toggle()
+			require.Contains(t, navKeyHelp(fe.keys(NewOutput(io.Discard))), "ctrl+h show hud",
+				"the key says what pressing it does, and so which state the HUD is in")
 			setSection("Changes", "original change")
 			setSection("References", "original reference")
 			require.NotContains(t, screen(), "original change")
 			require.NotContains(t, screen(), "original reference")
 
 			frame := toggle()
+			require.Contains(t, navKeyHelp(fe.keys(NewOutput(io.Discard))), "ctrl+h hide hud")
 			require.Contains(t, frame, "original change")
 			require.Contains(t, frame, "original reference")
 			frame = toggle()
@@ -95,7 +98,7 @@ func TestKeymapBubble(t *testing.T) {
 			}
 			screen := func() string { return stripANSICodes(strings.Join(fe.tui.Step(), "\n")) }
 			frame := screen()
-			require.Contains(t, frame, "ctrl+? toggle keymap · ctrl+h toggle hud")
+			require.Contains(t, frame, "ctrl+? show keymap · ctrl+h hide hud")
 			require.NotContains(t, frame, wantKey, "the full keymap waits for ctrl+?")
 			focused := fe.tui.Focused()
 
@@ -110,7 +113,9 @@ func TestKeymapBubble(t *testing.T) {
 				fe.tui.Inject(tuist.ParseKey(keyStr))
 				frame = screen()
 				require.Contains(t, frame, wantKey, "%s shows the keymap", keyStr)
-				require.Contains(t, frame, "ctrl+?  toggle keymap", "the bubble names its own key")
+				require.Contains(t, frame, "ctrl+?  hide keymap", "the bubble names its own key")
+				// (The bubble covers the right-aligned hint, so read it directly.)
+				require.Equal(t, "ctrl+? hide keymap · ctrl+h hide hud", stripANSICodes(fe.keymapHint()), "the hint follows the state")
 				keymapAt := strings.Index(frame, "Keymap")
 				changesAt := strings.Index(frame, "Changes")
 				require.True(t, keymapAt >= 0 && keymapAt < changesAt, "keymap is pinned above other bubbles:\n%s", frame)
@@ -121,15 +126,19 @@ func TestKeymapBubble(t *testing.T) {
 				frame = screen()
 				require.NotContains(t, frame, wantKey, "%s dismisses the keymap", keyStr)
 				require.Contains(t, frame, "Changes", "dismissing the keymap leaves the rest of the HUD")
+				require.Equal(t, "ctrl+? show keymap · ctrl+h hide hud", stripANSICodes(fe.keymapHint()))
 			}
 
 			// Asking for the keymap reveals a hidden HUD.
 			fe.tui.Inject(tuist.ParseKey("ctrl+h"))
-			require.NotContains(t, screen(), "Changes")
+			frame = screen()
+			require.NotContains(t, frame, "Changes")
+			require.Contains(t, frame, "ctrl+? show keymap · ctrl+h show hud", "with the HUD hidden, the hint is on screen")
 			fe.tui.Inject(tuist.ParseKey("ctrl+?"))
 			frame = screen()
 			require.Contains(t, frame, wantKey)
 			require.Contains(t, frame, "Changes")
+			require.Equal(t, "ctrl+? hide keymap · ctrl+h hide hud", stripANSICodes(fe.keymapHint()))
 		})
 	}
 }

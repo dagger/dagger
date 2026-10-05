@@ -51,12 +51,6 @@ func WithNestedClientServer(
 		return nil, err
 	}
 
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, fmt.Errorf("listen: %w", err)
-	}
-	defer l.Close()
-
 	transport, err := query.RegisterNestedClientTransport(ctx, nestedClientMetadata, parentClientID)
 	if err != nil {
 		return nil, fmt.Errorf("register nested client transport: %w", err)
@@ -70,7 +64,37 @@ func WithNestedClientServer(
 			query.ServeHTTPToNestedClient(resp, req, transport, nestedClientMetadata, parentClientID, inertAttachables, moduleContext, fnCall)
 		}),
 	}
+	// Give the invocation its own connection pool rather than sharing the
+	// process-wide http.DefaultTransport, so serveNestedClient can drain it.
+	return serveNestedClient(ctx, httpSrv, http.DefaultTransport.(*http.Transport).Clone(), fn)
+}
+
+// serveNestedClient serves httpSrv on a loopback listener, calls fn with a
+// GraphQL client that talks to it over httpTransport, then drains that
+// transport and shuts the server down.
+func serveNestedClient(
+	ctx context.Context,
+	httpSrv *http.Server,
+	httpTransport *http.Transport,
+	fn func(ctx context.Context, gqlClient graphql.Client) ([]byte, error),
+) ([]byte, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("listen: %w", err)
+	}
+	defer l.Close()
+
 	defer func() {
+		// A request that arrives while the pool's connection is busy starts a
+		// second dial. If the busy request finishes first, the waiting one
+		// reuses the freed connection and the new dial lands with nothing to
+		// carry. That connection sits in StateNew on the server, and
+		// http.Server.Shutdown only counts StateNew as idle after 5s, so the
+		// invocation would hang there. Closing the pool's idle connections
+		// first lets Shutdown return at once; requests still in flight are
+		// drained by Shutdown as before.
+		httpTransport.CloseIdleConnections()
+
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer shutdownCancel()
 		_ = httpSrv.Shutdown(shutdownCtx)
@@ -85,7 +109,7 @@ func WithNestedClientServer(
 		close(srvErrCh)
 	}()
 
-	gqlClient := graphql.NewClient(fmt.Sprintf("http://%s/query", l.Addr()), nil)
+	gqlClient := graphql.NewClient(fmt.Sprintf("http://%s/query", l.Addr()), &http.Client{Transport: httpTransport})
 
 	out, err := fn(ctx, gqlClient)
 	if err != nil {

@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil/resources"
 	"github.com/dagger/dagger/engine/slog"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	randid "github.com/dagger/dagger/internal/buildkit/identity"
@@ -39,9 +40,11 @@ import (
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
+	"github.com/opencontainers/cgroups"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -1445,15 +1448,32 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	trace.SpanFromContext(ctx).AddEvent("Container created")
 
 	state.cleanups.Add("runc delete container", func() error {
-		return c.Runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
+		return deleteContainer(ctx, state.id, cgroups.IsCgroup2UnifiedMode(), c.Runc.Delete, func(recoveryCtx context.Context) error {
+			return killContainerCgroup(recoveryCtx, state.id, state.spec.Linux.CgroupsPath)
+		})
 	})
 
 	cgroupPath := state.spec.Linux.CgroupsPath
-	if cgroupPath != "" && state.execMD != nil && state.execMD.CallDigest != "" {
+	// Wake the existing sampler when runc starts. The cgroup may not exist at
+	// that point; the final cleanup sample also covers short executions.
+	var readingsStarted chan struct{}
+	readWorkloads := enginetel.HasWorkloadReadings(ctx)
+	if readWorkloads {
+		readingsStarted = make(chan struct{})
+	}
+	hasCallDigest := state.execMD != nil && state.execMD.CallDigest != ""
+	if cgroupPath != "" && (hasCallDigest || readWorkloads) {
 		meter := telemetry.Meter(ctx, InstrumentationLibrary)
+		if !hasCallDigest {
+			// Preserve the ordinary path's exclusion of unassociated execs.
+			meter = noop.NewMeterProvider().Meter(InstrumentationLibrary)
+		}
+		meter = enginetel.WorkloadReadingMeter(ctx, meter, InstrumentationLibrary)
+		readingInterval := min(enginetel.WorkloadReadingInterval(ctx, cgroupSampleInterval), cgroupSampleInterval)
 
-		commonAttrs := []attribute.KeyValue{
-			attribute.String(telemetry.DagDigestAttr, string(state.execMD.CallDigest)),
+		var commonAttrs []attribute.KeyValue
+		if hasCallDigest {
+			commonAttrs = append(commonAttrs, attribute.String(telemetry.DagDigestAttr, string(state.execMD.CallDigest)))
 		}
 		spanContext := trace.SpanContextFromContext(ctx)
 		if spanContext.HasSpanID() {
@@ -1467,6 +1487,15 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			)
 		}
 
+		if readWorkloads {
+			// Keep workload export dimensions out of the SDK gauge's series identity.
+			workloadAttrs := append(slices.Clone(commonAttrs),
+				attribute.String(enginetel.ExecutionIDAttr, state.id),
+				attribute.Bool(enginetel.ExecutionInternalAttr, state.execMD != nil && state.execMD.Internal),
+				attribute.Int64(enginetel.SampleIntervalAttr, readingInterval.Milliseconds()),
+			)
+			ctx = enginetel.WithWorkloadReadingAttributes(ctx, attribute.NewSet(workloadAttrs...))
+		}
 		cgroupSampler, err := resources.NewSampler(cgroupPath, state.networkNamespace, meter, attribute.NewSet(commonAttrs...))
 		if err != nil {
 			return fmt.Errorf("create cgroup sampler: %w", err)
@@ -1483,6 +1512,23 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		cgroupSamplerPool.Go(func() {
 			ticker := time.NewTicker(cgroupSampleInterval)
 			defer ticker.Stop()
+			samplePeriodic := cgroupSampler.Sample
+			// Only the readings workload export copies move to its interval.
+			var usageTick <-chan time.Time
+			if readWorkloads {
+				usageTicker := time.NewTicker(readingInterval)
+				defer usageTicker.Stop()
+				usageTick = usageTicker.C
+				samplePeriodic = cgroupSampler.SampleOther
+			}
+			started := readingsStarted
+			var startupTimer *time.Timer
+			var startupSample <-chan time.Time
+			defer func() {
+				if startupTimer != nil {
+					startupTimer.Stop()
+				}
+			}()
 
 			for {
 				select {
@@ -1490,13 +1536,31 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 					// try a quick final sample before closing
 					finalCtx, finalCancel := context.WithTimeout(context.WithoutCancel(cgroupSamplerCtx), finalCgroupSampleTimeout)
 					defer finalCancel()
-					if err := cgroupSampler.Sample(finalCtx); err != nil {
+					if err := cgroupSampler.Sample(enginetel.WithSamplePhase(finalCtx, "final")); err != nil {
 						bklog.G(ctx).Error("failed to sample cgroup after cancel", "err", err)
 					}
 
 					return
+				case <-started:
+					started = nil
+					if err := cgroupSampler.SampleUsage(enginetel.WithSamplePhase(cgroupSamplerCtx, "startup")); err != nil {
+						bklog.G(ctx).Error("failed to sample cgroup at start", "err", err)
+					}
+					// runc announces its own process before it creates the cgroup.
+					// One delayed read reduces the uncovered startup interval.
+					startupTimer = time.NewTimer(100 * time.Millisecond)
+					startupSample = startupTimer.C
+				case <-startupSample:
+					startupSample = nil
+					if err := cgroupSampler.SampleUsage(enginetel.WithSamplePhase(cgroupSamplerCtx, "startup")); err != nil {
+						bklog.G(ctx).Error("failed to sample cgroup after start", "err", err)
+					}
+				case <-usageTick:
+					if err := cgroupSampler.SampleUsage(enginetel.WithSamplePhase(cgroupSamplerCtx, "periodic")); err != nil {
+						bklog.G(ctx).Error("failed to sample cgroup", "err", err)
+					}
 				case <-ticker.C:
-					if err := cgroupSampler.Sample(cgroupSamplerCtx); err != nil {
+					if err := samplePeriodic(enginetel.WithSamplePhase(cgroupSamplerCtx, "periodic")); err != nil {
 						bklog.G(ctx).Error("failed to sample cgroup", "err", err)
 					}
 				}
@@ -1514,6 +1578,9 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	var profStartedWall atomic.Int64
 	startedCallback := func() {
 		state.startedOnce.Do(func() {
+			if readingsStarted != nil {
+				close(readingsStarted)
+			}
 			trace.SpanFromContext(ctx).AddEvent("Container started")
 			if wcprof.Enabled(ctx) {
 				profStartedNS.Store(wcprof.NowNS())

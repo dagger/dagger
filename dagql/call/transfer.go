@@ -6,8 +6,8 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
-// FilterTransferDigests copies the recipe DAG and retains only each vertex's
-// explicitly transferable annotations. It does not consult an equality class.
+// FilterTransferDigests copies the recipe DAG for transfer, keeping each
+// vertex's non-empty extra digests. It does not consult an equality class.
 func (id *ID) FilterTransferDigests() (*ID, error) {
 	memo := map[*ID]*ID{}
 	active := map[*ID]bool{}
@@ -91,15 +91,9 @@ func (id *ID) FilterTransferDigests() (*ID, error) {
 		}
 		WithArgs(copy.args...)(copy)
 		WithImplicitInputs(copy.implicitInputs...)(copy)
-		marked := map[string]bool{}
-		for _, extra := range id.pb.ExtraDigests {
-			if extra.Label == ExtraDigestLabelRemoteCache {
-				marked[extra.Digest] = true
-			}
-		}
 		copy.pb.ExtraDigests = nil
 		for _, extra := range id.pb.ExtraDigests {
-			if marked[extra.Digest] && (extra.Label == ExtraDigestLabelRemoteCache || extra.Label == ExtraDigestLabelContent) {
+			if extra.Digest != "" {
 				copy.pb.ExtraDigests = append(copy.pb.ExtraDigests, &callpbv1.ExtraDigest{Digest: extra.Digest, Label: extra.Label})
 			}
 		}

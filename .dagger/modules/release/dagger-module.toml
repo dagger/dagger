@@ -55,7 +55,8 @@ include = ["../../../go.mod", "../../../go.sum"]
 
 [[dependencies]]
   name = "wolfi"
-  source = "dagger.io/linux/wolfi@main"
+  source = "https://github.com/dagger/wolfi@main"
+  pin = "b480244fdace9a9c23eb61f3aec164bba9575242"
 
 [codegen]
   automaticGitignore = false

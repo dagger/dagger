@@ -80,7 +80,7 @@ var scriptCmd = &cobra.Command{
 }
 
 // shellEnvironment keeps the runner's initial process environment while letting
-// asynchronous agent saves refresh $agent without running the interpreter.
+// asynchronous snapshot refreshes update $agent without running the interpreter.
 type shellEnvironment struct {
 	base expand.Environ
 
@@ -199,13 +199,9 @@ type shellCallHandler struct {
 	mode      interpreterMode
 	savedMode interpreterMode // for coming back from history
 
-	// initialPrompt is the first prompt of the current session, used to name
-	// the auto-saved session file. sessionUUID is the file UUID being updated
-	// in-place; empty until the first save (or reset on branch/resume).
-	// promptL guards them (and llmModel) because prompt turns are no longer
-	// serialized: two focused-in-turn conversations can be stepping at once.
+	// initialPrompt seeds the trace's display title. promptL guards it and
+	// llmModel because multiple conversations can be stepping at once.
 	initialPrompt string
-	sessionUUID   string
 	promptL       sync.Mutex
 
 	// generateSessionTitle is set only by `dagger agent`. Generic shell prompt
@@ -222,14 +218,6 @@ type shellCallHandler struct {
 
 	// cancel interrupts the entire shell session
 	cancel func()
-
-	// cmdParentCtx is the context active just above the per-command span
-	// created in Handle. Builtins whose telemetry should surface as siblings of
-	// the command itself -- rather than nested under the command's own span --
-	// emit history against this instead of the command ctx (e.g. .resume, whose
-	// restored conversation belongs at the top level, not buried under the
-	// ".resume" span).
-	cmdParentCtx context.Context
 }
 
 // SubmitToTarget hands a submitted message to the FOCUSED conversation's
@@ -325,8 +313,7 @@ func (h *shellCallHandler) AgentStepped(agentHandle string) {
 	s.AgentStepped(agentHandle)
 }
 
-// notePrompt records the session's first prompt, which names the auto-saved
-// session file.
+// notePrompt records the first prompt for trace title generation.
 func (h *shellCallHandler) notePrompt(line string) {
 	h.promptL.Lock()
 	defer h.promptL.Unlock()
@@ -343,19 +330,10 @@ func (h *shellCallHandler) noteModel(model string) {
 	h.llmModel = model
 }
 
-// saveIdentity returns the current auto-save name and file UUID.
-func (h *shellCallHandler) saveIdentity() (initialPrompt, sessionUUID string) {
-	h.promptL.Lock()
-	defer h.promptL.Unlock()
-	return h.initialPrompt, h.sessionUUID
-}
-
-// resetSaveIdentity forgets the current save file, so the next prompt starts a
-// fresh one (used after branching or resuming).
-func (h *shellCallHandler) resetSaveIdentity() {
+// resetPromptTitle lets a branch derive a new display title.
+func (h *shellCallHandler) resetPromptTitle() {
 	h.promptL.Lock()
 	h.initialPrompt = ""
-	h.sessionUUID = ""
 	h.promptL.Unlock()
 	if h.generateSessionTitle && h.llmSession != nil {
 		h.llmSession.resetTitle()
@@ -427,10 +405,8 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 			slog.Error("failed to update LLM for branch", "error", err)
 			return
 		}
-		// Branching creates a new session; clear the save identity so the next
-		// prompt generates a fresh save file rather than overwriting the
-		// original, and switch to prompt mode for a new prompt.
-		h.resetSaveIdentity()
+		// A branch may derive a new title from its next prompt.
+		h.resetPromptTitle()
 		h.mode = modePrompt
 	}
 }
@@ -740,8 +716,8 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 	if h.mode == modePrompt {
 		if cmd, ok := h.slashCommand(line); ok {
 			// A prompt-mode "/command" invokes the matching builtin without
-			// leaving prompt mode, so session commands (e.g. /resume, /clear,
-			// /compact) are available natively in the agent prompt.
+			// leaving prompt mode, so session commands (e.g. /clear, /compact)
+			// are available natively in the agent prompt.
 			shellLine = cmd
 			contentType = modeShell.ContentType()
 		} else {
@@ -772,11 +748,6 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 	if bag, err := baggage.Parse("repeat-telemetry=true"); err == nil {
 		ctx = baggage.ContextWithBaggage(ctx, bag)
 	}
-
-	// Remember the context above the per-command span so builtins that emit
-	// conversation telemetry (.resume) can surface it at this level rather than
-	// nested under their own command span.
-	h.cmdParentCtx = ctx
 
 	// Create a new span for this command
 	var span trace.Span
@@ -832,7 +803,7 @@ func (h *shellCallHandler) PromptMode() bool {
 // slashCommand maps a prompt-mode "/command" line to its equivalent ".command"
 // builtin invocation, returning the rewritten line and true when the leading
 // token names a real builtin. This lets agent-prompt users run session
-// commands (e.g. "/resume", "/compact") without switching to shell mode. Lines
+// commands (e.g. "/clear", "/compact") without switching to shell mode. Lines
 // that don't name a builtin -- including a bare "/" or ordinary prose that just
 // happens to start with a slash -- are left alone for the LLM.
 func (h *shellCallHandler) slashCommand(line string) (string, bool) {
@@ -901,7 +872,7 @@ func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.Compl
 		word := before[wordStart:]
 		// Slash-command completion: a leading "/" at the very start of the line
 		// offers the session builtins, shown without their "." prefix (e.g.
-		// "/resume"), mirroring how they run in prompt mode.
+		// "/compact"), mirroring how they run in prompt mode.
 		if wordStart == 0 && strings.HasPrefix(word, "/") {
 			prefix := word[1:]
 			var items []tuist.Completion
@@ -980,12 +951,22 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 }
 
 func (h *shellCallHandler) initLLM(ctx context.Context, initial *dagger.LLM) (*LLMSession, error) {
+	return h.initLLMSession(ctx, initial, false)
+}
+
+func (h *shellCallHandler) initLLMSession(ctx context.Context, initial *dagger.LLM, restoring bool) (*LLMSession, error) {
 	if s, e := h.llmMaybe(); s != nil || e != nil {
 		return s, e
 	}
 
 	// initialize without the lock held
-	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h, h.frontend, initial)
+	var s *LLMSession
+	var err error
+	if restoring {
+		s, err = newRestoringLLMSession(ctx, h.dag, h, h.frontend)
+	} else {
+		s, err = NewLLMSession(ctx, h.dag, h.llmModel, h, h.frontend, initial)
+	}
 
 	h.llmL.Lock()
 	defer h.llmL.Unlock()
@@ -997,26 +978,14 @@ func (h *shellCallHandler) initLLM(ctx context.Context, initial *dagger.LLM) (*L
 	}
 	h.llmSession = s
 	h.llmModel = s.Target().model
-	// Auto-save the session after each step (and after ctrl+s exports/resets the
-	// workspace), updating the same file in-place so a conversation maps to a
-	// single session file. Set here at init so it is available even before the
-	// first prompt (e.g. ctrl+s on a freshly loaded session).
-	s.onStep = func(a *sessionAgent) {
-		initialPrompt, sessionUUID := h.saveIdentity()
-		sessionName := initialPrompt
-		if h.generateSessionTitle {
-			if title := s.ensureTitle(a, initialPrompt); title != "" {
-				sessionName = title
-			}
+	// Title generation is presentation only; persistence belongs to the trace.
+	if h.generateSessionTitle {
+		s.onStep = func(a *sessionAgent) {
+			h.promptL.Lock()
+			initialPrompt := h.initialPrompt
+			h.promptL.Unlock()
+			s.ensureTitle(a, initialPrompt)
 		}
-		savedUUID, err := a.AutoSaveSession(ctx, sessionName, sessionUUID)
-		if err != nil {
-			slog.Warn("failed to auto-save session", "error", err)
-			return
-		}
-		h.promptL.Lock()
-		h.sessionUUID = savedUUID
-		h.promptL.Unlock()
 	}
 	return h.llmSession, h.llmErr
 }

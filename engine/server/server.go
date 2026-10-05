@@ -58,30 +58,39 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 type Server struct {
 	controlapi.UnimplementedControlServer
 	engineName string
 	// engineInstanceID names this engine process: a random ID created once at
-	// startup. It names the engine in the dagql cache's facts.
+	// startup, the service.instance.id of its telemetry.
 	engineInstanceID string
-	// cacheFacts receives the dagql cache's facts and cacheFactExport sends
-	// them; both nil when the engine emits none. The alive loop reports
-	// liveness between start and stop. cacheFactShutdownBudget bounds the
-	// facts' whole shutdown.
-	cacheFacts              *cacheFactEmitter
-	cacheFactExport         CacheFactExport
-	cacheFactAliveStop      chan struct{}
-	cacheFactAliveStopped   chan struct{}
-	cacheFactShutdownBudget time.Duration
+	workloadExport   *enginetel.WorkloadExport
+	// engineEvents reports the engine's cache events and engineEventExport
+	// sends them; both nil when the engine reports none.
+	// engineEventShutdownBudget bounds the events' whole shutdown.
+	engineEvents              *engineEventEmitter
+	engineEventExport         EngineEventExport
+	engineEventShutdownBudget time.Duration
+	// wipedCacheID is the identity of a dagql cache database this start
+	// wiped, for engine.start.
+	wipedCacheID string
 	// sessionCloudFlushTimeout overrides sessionTelemetryFlushTimeout when
 	// set, for tests.
 	sessionCloudFlushTimeout time.Duration
+	// cloudForwardTuning overrides the Cloud forwarders' limits when set, for
+	// tests.
+	cloudForwardTuning *cloudForwardTuning
+	// cloudForwarders are the sessions' active store-to-Cloud forwarders,
+	// some outliving their sessions; their stores are kept from collection.
+	cloudForwarders cloudForwarders
 	// cloudReach remembers whether this engine reaches the Cloud URLs clients
 	// hand it, so each session need not probe.
 	cloudReach cloudReachability
@@ -187,6 +196,7 @@ type Server struct {
 	releasedSessionIDs map[string]struct{}
 	daggerSessionsMu   sync.RWMutex
 	clientDBs          *clientdb.DBs
+	archives           *archive.Manager
 
 	locker *locker.Locker
 
@@ -212,9 +222,11 @@ type NewServerOpts struct {
 	// EngineInstanceID names this engine process. NewServer creates a random
 	// one when it is empty.
 	EngineInstanceID string
-	// CacheFactExport, when set, makes the dagql cache emit its bookkeeping
-	// facts as OTel log records through its logger.
-	CacheFactExport CacheFactExport
+	// EngineEvents, when set, receives the engine's cache events as OTel log
+	// records through its logger.
+	EngineEvents EngineEventExport
+	// WorkloadExport is engine-owned and independent of session Cloud export.
+	WorkloadExport *enginetel.WorkloadExport
 }
 
 const (
@@ -233,6 +245,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	srv := &Server{
 		engineName:       opts.Name,
 		engineInstanceID: cmp.Or(opts.EngineInstanceID, uuid.NewString()),
+		workloadExport:   opts.WorkloadExport,
 
 		rootDir: bkcfg.Root,
 
@@ -252,10 +265,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 		locker: locker.New(),
 	}
-	if opts.CacheFactExport != nil {
-		srv.cacheFactExport = opts.CacheFactExport
-		srv.cacheFacts = newCacheFactEmitter(opts.CacheFactExport.Logger())
-		srv.cacheFactShutdownBudget = cacheFactShutdownTimeout
+	if opts.EngineEvents != nil {
+		srv.engineEventExport = opts.EngineEvents
+		srv.engineEvents = newEngineEventEmitter(opts.EngineEvents.Logger())
+		srv.engineEventShutdownBudget = engineEventShutdownTimeout
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
@@ -282,24 +295,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup directories and paths
 	//
 
-	srv.rootDir, err = filepath.Abs(srv.rootDir)
-	if err != nil {
+	if err := srv.initRootPaths(); err != nil {
 		return nil, err
 	}
-	srv.rootDir, err = filepath.EvalSymlinks(srv.rootDir)
-	if err != nil {
-		return nil, err
-	}
-
-	srv.workerRootDir = filepath.Join(srv.rootDir, "worker")
-	srv.snapshotterRootDir = filepath.Join(srv.workerRootDir, "snapshots")
-	srv.snapshotterDBPath = filepath.Join(srv.snapshotterRootDir, "metadata.db")
-	srv.contentStoreRootDir = filepath.Join(srv.workerRootDir, "content")
-	srv.containerdMetaDBPath = filepath.Join(srv.workerRootDir, "containerdmeta.db")
-	srv.workerCacheMetaDBPath = filepath.Join(srv.workerRootDir, "metadata_v2.db")
-	srv.buildkitMountPoolDir = filepath.Join(srv.workerRootDir, "cachemounts")
-
-	srv.executorRootDir = filepath.Join(srv.workerRootDir, "executor")
 
 	// Opened before the local cache state: the snapshot manager takes the
 	// builtin store at construction, for chain imports of builtin layers.
@@ -311,7 +309,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err := srv.initLocalCacheState(ctx, *cfg, ociCfg); err != nil {
 		return nil, err
 	}
-	srv.startCacheFacts()
+	srv.startEngineEvents()
 
 	// Sweep any worker state moved aside by a cache reset — this startup's or
 	// an interrupted sweep from a previous one — in the background.
@@ -327,8 +325,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// set up client DBs, and the telemetry pub/sub which writes to it
 	//
 
-	srv.clientDBDir = filepath.Join(srv.workerRootDir, "clientdbs")
-	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
+	if err := srv.initArchives(); err != nil {
+		return nil, err
+	}
 	srv.telemetryPubSub = NewPubSub(srv)
 	srv.wcprofSpanCount = newWcprofSpanCounter()
 
@@ -526,6 +525,28 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	return srv, nil
 }
 
+func (srv *Server) initRootPaths() error {
+	var err error
+	srv.rootDir, err = filepath.Abs(srv.rootDir)
+	if err != nil {
+		return err
+	}
+	srv.rootDir, err = filepath.EvalSymlinks(srv.rootDir)
+	if err != nil {
+		return err
+	}
+
+	srv.workerRootDir = filepath.Join(srv.rootDir, "worker")
+	srv.snapshotterRootDir = filepath.Join(srv.workerRootDir, "snapshots")
+	srv.snapshotterDBPath = filepath.Join(srv.snapshotterRootDir, "metadata.db")
+	srv.contentStoreRootDir = filepath.Join(srv.workerRootDir, "content")
+	srv.containerdMetaDBPath = filepath.Join(srv.workerRootDir, "containerdmeta.db")
+	srv.workerCacheMetaDBPath = filepath.Join(srv.workerRootDir, "metadata_v2.db")
+	srv.buildkitMountPoolDir = filepath.Join(srv.workerRootDir, "cachemounts")
+	srv.executorRootDir = filepath.Join(srv.workerRootDir, "executor")
+	return nil
+}
+
 func loadSecretSalt(rootDir string) ([]byte, error) {
 	if encodedSalt, ok := os.LookupEnv(secretSaltEnvName); ok {
 		encoding := base64.StdEncoding.Strict()
@@ -586,6 +607,9 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 	var bootReset core.RemoteCacheFixturePersistence
 	for attempt := 0; attempt < 2; attempt++ {
 		resetReason, err := srv.initLocalCacheStateOnce(ctx, cfg, ociCfg)
+		if srv.engineCache != nil {
+			srv.noteWipedCacheID(srv.engineCache.WipedCacheID())
+		}
 		if resetReason == localCacheStateResetNone {
 			if err != nil {
 				return err
@@ -613,11 +637,20 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 		if closeErr := srv.closeLocalCacheStateForReset(); closeErr != nil {
 			return fmt.Errorf("close local cache state before reset: %w", closeErr)
 		}
-		if err := srv.removeLocalCacheStateOnDisk(); err != nil {
+		if err := srv.removeLocalCacheStateOnDisk(ctx); err != nil {
 			return fmt.Errorf("remove local cache state after %s: %w", resetReason, err)
 		}
 	}
 	return errors.New("local cache state reset retry exhausted")
+}
+
+// noteWipedCacheID remembers the identity of a dagql cache database this start
+// wiped, for engine.start. The first one is the cache the previous process
+// used; a reset can wipe a database the same start created in between.
+func (srv *Server) noteWipedCacheID(id string) {
+	if srv.wipedCacheID == "" {
+		srv.wipedCacheID = id
+	}
 }
 
 func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) (localCacheStateResetReason, error) {
@@ -687,8 +720,8 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		return nil
 	}
 	cacheOpts := []dagql.CacheOption{dagql.WithEngineInstanceID(srv.engineInstanceID)}
-	if srv.cacheFacts != nil {
-		cacheOpts = append(cacheOpts, dagql.WithFactSink(srv.cacheFacts))
+	if srv.engineEvents != nil {
+		cacheOpts = append(cacheOpts, dagql.WithSnapshotShareReport(srv.emitShareEvent))
 	}
 	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC, cacheOpts...)
 	if err != nil {
@@ -747,7 +780,7 @@ func (srv *Server) closeLocalCacheStateForReset() error {
 	return err
 }
 
-func (srv *Server) removeLocalCacheStateOnDisk() error {
+func (srv *Server) removeLocalCacheStateOnDisk(ctx context.Context) error {
 	trashDir, err := moveLocalCacheStateToTrash(srv.workerRootDir)
 	if err != nil {
 		return fmt.Errorf("move worker state to trash: %w", err)
@@ -758,9 +791,11 @@ func (srv *Server) removeLocalCacheStateOnDisk() error {
 		// startLocalCacheTrashSweeper).
 		slog.Info("moved invalid worker state aside for background removal", "dir", trashDir)
 	}
-	if err := dagql.RemoveCachePersistenceStore(filepath.Join(srv.rootDir, "dagql-cache.db")); err != nil {
+	wipedCacheID, err := dagql.RemoveCachePersistenceStore(ctx, filepath.Join(srv.rootDir, "dagql-cache.db"))
+	if err != nil {
 		return fmt.Errorf("remove dagql persistence state: %w", err)
 	}
+	srv.noteWipedCacheID(wipedCacheID)
 	return nil
 }
 
@@ -943,6 +978,13 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		}
 	}
 
+	// Sessions are gone, and their stores' ends final: forwarders still
+	// publishing to Cloud get one Cloud bound to finish, then stop,
+	// releasing their stores.
+	if stopErr := srv.cloudForwarders.stopAll(ctx, sessionTelemetryFlushTimeout); stopErr != nil {
+		slog.Warn("Cloud telemetry forwarders did not stop in time", "error", stopErr)
+	}
+
 	if srv.clientDBs != nil {
 		err = errors.Join(err, srv.clientDBs.Close())
 	}
@@ -962,7 +1004,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 			cleanCacheClose = true
 		}
 	}
-	srv.stopCacheFacts(ctx, cleanCacheClose)
+	srv.stopEngineEvents(ctx, cleanCacheClose)
 
 	err = errors.Join(err, srv.engineUtilOpts.Close())
 
@@ -1117,9 +1159,23 @@ func (srv *Server) Locker() *locker.Locker {
 
 func (srv *Server) gcClientDBs() {
 	for range time.NewTicker(time.Minute).C {
-		if err := srv.clientDBs.GC(srv.activeClientIDs()); err != nil {
-			slog.Error("failed to GC client DBs", "error", err)
+		srv.gcClientDBsOnce()
+	}
+}
+
+// gcClientDBsOnce collects the client stores no active session, archive or
+// Cloud forwarder keeps.
+func (srv *Server) gcClientDBsOnce() {
+	keep := srv.activeClientIDs()
+	if srv.archives != nil {
+		if _, err := srv.archives.GC(); err != nil {
+			slog.Error("failed to GC archives", "error", err)
 		}
+		maps.Copy(keep, srv.archives.KeepSet())
+	}
+	maps.Copy(keep, srv.cloudForwarders.KeepSet())
+	if err := srv.clientDBs.GC(keep); err != nil {
+		slog.Error("failed to GC client DBs", "error", err)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 	"github.com/dagger/dagger/engine/slog"
@@ -34,6 +35,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 	var snapshot persistStateSnapshot
 
 	c.egraphMu.RLock()
+	snapshot.nextResultID = c.nextSharedResultID
 	selectedResultIDs, persistedRootIDs := c.snapshotPersistedRootClosureLocked()
 
 	addEqClassID := func(eqClassIDs map[eqClassID]struct{}, eqID eqClassID) {
@@ -99,6 +101,13 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			c.egraphMu.RUnlock()
 			return persistStateSnapshot{}, err
 		}
+		cloudKey, cloud := res.cloudHoldingLocked()
+		var cloudStored bool
+		var cloudExpiresAtUnix int64
+		if cloud != nil {
+			cloudStored = !cloud.unstored
+			cloudExpiresAtUnix = cloud.expiresAtUnix
+		}
 		payload := res.loadPayloadState()
 		if payload.snapshotLinkIntent != nil {
 			payload.snapshotOwnerLinks = cloneSnapshotRefLinks(payload.snapshotLinkIntent.Links)
@@ -115,12 +124,17 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			persistedEnvelope:     payload.persistedEnvelope,
 			snapshotOwnerLinks:    payload.snapshotOwnerLinks,
 			row: persistdb.MirrorResult{
-				ID:                 int64(resultID),
-				ExpiresAtUnix:      res.expiresAtUnix,
-				CreatedAtUnixNano:  payload.createdAtUnixNano,
-				LastUsedAtUnixNano: payload.lastUsedAtUnixNano,
-				RecordType:         res.recordType,
-				Description:        res.description,
+				ID:                        int64(resultID),
+				ExpiresAtUnix:             res.expiresAtUnix,
+				Replacements:              int64(res.replacements),
+				Indexed:                   len(res.recipeKeys) > 0,
+				CloudHoldingNumber:        int64(cloudKey.Number),
+				CloudHoldingStored:        cloudStored,
+				CloudHoldingExpiresAtUnix: cloudExpiresAtUnix,
+				CreatedAtUnixNano:         payload.createdAtUnixNano,
+				LastUsedAtUnixNano:        payload.lastUsedAtUnixNano,
+				RecordType:                res.recordType,
+				Description:               res.description,
 			},
 			resultDeps: resultDeps,
 		})
@@ -374,6 +388,10 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 	if err := q.ClearMirrorState(ctx); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("clear mirror state: %w", err)
+	}
+	if err := q.UpsertMeta(ctx, persistdb.MetaKeyNextResultID, strconv.FormatUint(uint64(snapshot.nextResultID), 10)); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("save next result ID: %w", err)
 	}
 
 	for _, row := range snapshot.eqClasses {

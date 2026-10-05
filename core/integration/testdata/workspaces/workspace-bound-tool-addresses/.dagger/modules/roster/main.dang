@@ -1,0 +1,56 @@
+"""
+A stateful tool object whose collection only exists in its live state, for
+the bound-tool address tests (MCP.resolveBoundToolAddress in
+core/llm_object_tools.go). A fresh constructor has no members, so a dag://
+address into the collection only resolves against the bound object.
+"""
+type Roster {
+  """
+  Each member as "<name>=<contents>".
+  """
+  pub entries: [String!]! = []
+
+  """
+  Add a member whose directory holds a file f with the given contents.
+  """
+  withMember(name: String!, contents: String!): Roster! {
+    self.entries = entries + [name + "=" + contents]
+    self
+  }
+
+  """
+  The members added so far.
+  """
+  members: Members! {
+    Members(names: entries.map { e => e.split("=", limit: 2)[0] ?? "" }, entries: entries)
+  }
+
+  """
+  Show the contents of the file f in a directory.
+  """
+  show(dir: Directory!): String! {
+    "shown: " + dir.file("f").contents
+  }
+}
+
+type Members @collection {
+  pub names: [String!]! @keys
+  pub entries: [String!]!
+
+  member(name: String!): Member! @get {
+    let contents = entries.filter { e => e.hasPrefix(name + "=") }.map { e => e.trimPrefix(name + "=") }.join("")
+    Member(dir: directory.withNewFile("f", contents))
+  }
+}
+
+type Member {
+  pub dir: Directory!
+
+  """
+  The member's file, annotated with the workspace's README. It needs a
+  Workspace, so evaluating it tests which workspace a bound artifact runs in.
+  """
+  notes(source: Workspace!): File! {
+    directory.withNewFile("notes", dir.file("f").contents + " | " + source.file("README.md").contents).file("notes")
+  }
+}

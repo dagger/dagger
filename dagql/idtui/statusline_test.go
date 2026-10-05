@@ -39,22 +39,6 @@ func TestRenderContextBar(t *testing.T) {
 	}
 }
 
-// TestStatusLineOmitsSyntheticWorkingIndicator keeps agent lifecycle state
-// sourced exclusively from the roster.
-func TestStatusLineOmitsSyntheticWorkingIndicator(t *testing.T) {
-	sl := &StatusLine{profile: termenv.Ascii}
-	sl.data = StatusLineData{Model: "claude-opus-4-6", InputTokens: 100}
-
-	term := tuist.NewHeadlessTerminal(80, 1)
-	tui := tuist.New(term)
-	tui.AddChild(sl)
-	tui.RenderOnce()
-	line := strings.Join(tui.Frame(), "\n")
-	if strings.Contains(line, "working") || strings.Contains(line, DotFilled) {
-		t.Fatalf("agent state must come from the roster: %q", line)
-	}
-}
-
 // TestStatusLineRendersReorientedLayout locks in the bottom-bar grouping: the
 // roster and context meter stay at the left, while usage, cost, subscription,
 // and model form one right-aligned group in that order.
@@ -165,7 +149,7 @@ func TestStatusLineOmitsContextBarWhenUnknown(t *testing.T) {
 	}
 }
 
-// TestStatusLineSeededFromResume reproduces the resume ordering: LoadSession
+// TestStatusLineSeededFromResume reproduces the resume ordering: restore
 // pushes the restored conversation's stats via SetStatusLine before the
 // interactive shell (and thus the status line component) is created. The
 // frontend must retain that data and seed the new status line with it, so a

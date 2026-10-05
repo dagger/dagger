@@ -26,6 +26,7 @@ import (
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -252,6 +253,11 @@ func (c *Client) ListenHostToContainer(
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, nil, err
+	}
+	ctx, err = enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		cancel(fmt.Errorf("listen host to container error: %w", err))
+		return nil, nil, fmt.Errorf("create tunnel network recorders: %w", err)
 	}
 
 	clientCaller, err := c.GetSessionCaller(ctx)

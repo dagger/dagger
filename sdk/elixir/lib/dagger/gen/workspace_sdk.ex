@@ -39,6 +39,20 @@ defmodule Dagger.WorkspaceSDK do
   end
 
   @doc """
+  Generate the modules and clients managed by this SDK.
+  """
+  @spec generate(t()) :: Dagger.Changeset.t()
+  def generate(%__MODULE__{} = workspace_sdk) do
+    query_builder =
+      workspace_sdk.query_builder |> QB.select("generate")
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: workspace_sdk.client
+    }
+  end
+
+  @doc """
   A unique identifier for this WorkspaceSDK.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}

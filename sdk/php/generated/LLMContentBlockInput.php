@@ -22,7 +22,7 @@ class LLMContentBlockInput extends Client\AbstractInputObject
         public ?bool $errored = false,
         public ?string $signature = '',
         public ?string $mimeType = '',
-        public ?string $data = '',
+        public ?Bytes $data,
         public ?Id $file,
         public ?array $content,
     ) {

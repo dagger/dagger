@@ -6,10 +6,13 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -19,7 +22,7 @@ import (
 )
 
 // Importing a foreign trace beside the live one
-// (hack/designs/resume-from-trace.md §5.1). `dagger agent --trace` streams a
+// (hack/designs/resume-from-trace.md §5.1). `dagger agent -r` streams a
 // past session's whole trace into the LIVE frontend's own exporters, so one DB
 // holds both sessions: the old run's TUI, plus a live prompt. Everything below
 // is driven by a canned OTLP capture — no Cloud, no engine — through the same
@@ -143,36 +146,58 @@ func cannedMessageAttrs(role string) []*commonpb.KeyValue {
 	return []*commonpb.KeyValue{cannedStringAttr(telemetry.LLMRoleAttr, role)}
 }
 
-// cannedStateRecord is one agent-state record of the capture.
-type cannedStateRecord struct {
-	span  byte
-	state string
+// cannedAgent is one agent's control revision in a capture.
+type cannedAgent struct {
+	id, name, callDigest, parent, state, digest string
 	// emptyBody models the record arriving with no body at all. The engine
-	// emits an explicit empty-string body (core/agent_telemetry.go), but these
-	// records are attribute-only and design §12 flags "does an empty body
-	// survive the Cloud round trip" as unverified — so the import has to
-	// tolerate its absence rather than take the CLI down mid-restore.
+	// emits an explicit empty-string body, but these records are
+	// attribute-only and design §12 flags "does an empty body survive the
+	// Cloud round trip" as unverified — so the import has to tolerate its
+	// absence rather than take the CLI down mid-restore.
 	emptyBody bool
 }
 
-// cannedAgentStateLogs is the state-record channel of the capture:
-// attribute-only log records attributed to a loop span, exactly as the engine
-// emits them. The request carries no Resource, which is legal OTLP (the field
-// is optional) and what a payload with no resource info decodes to.
-func cannedAgentStateLogs(traceID byte, records ...cannedStateRecord) *collogspb.ExportLogsServiceRequest {
-	pbRecords := make([]*logspb.LogRecord, 0, len(records))
-	for _, record := range records {
+// cannedAgentControlLogs is the agent control channel of the source capture:
+// attribute-only log records, exactly as the engine emits them. The request
+// carries no Resource, which is legal OTLP (the field is optional) and what a
+// payload with no resource info decodes to.
+func cannedAgentControlLogs(agents ...cannedAgent) *collogspb.ExportLogsServiceRequest {
+	pbRecords := make([]*logspb.LogRecord, 0, len(agents))
+	for _, agent := range agents {
+		control := agentcontrol.Agent{
+			Key: agentcontrol.Key{
+				Namespace: agentcontrol.Namespace{
+					Session:     "session",
+					Trace:       trace.TraceID{foreignTraceIDByte}.String(),
+					Incarnation: "incarnation",
+				},
+				Handle: agent.id,
+			},
+			Revision: 1, Name: agent.name, CallDigest: agent.callDigest, Parent: agent.parent,
+			State: agent.state, Digest: agent.digest, Activity: time.Unix(foreignTurnEnd, 0),
+		}
+		rec := control.Record()
+		var attrs []*commonpb.KeyValue
+		rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+			switch kv.Value.Kind() {
+			case otellog.KindString:
+				attrs = append(attrs, cannedStringAttr(kv.Key, kv.Value.AsString()))
+			case otellog.KindInt64:
+				attrs = append(attrs, &commonpb.KeyValue{
+					Key:   kv.Key,
+					Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_IntValue{IntValue: kv.Value.AsInt64()}},
+				})
+			default:
+				panic("unexpected control attribute kind " + kv.Value.Kind().String())
+			}
+			return true
+		})
 		pbRecord := &logspb.LogRecord{
 			TimeUnixNano: uint64(time.Unix(foreignTurnEnd, 0).UnixNano()),
-			TraceId:      cannedTraceID(traceID),
-			SpanId:       cannedSpanID(record.span),
-			Attributes: []*commonpb.KeyValue{
-				cannedStringAttr(telemetryattrs.AgentStateAttr, record.state),
-				cannedStringAttr(telemetryattrs.AgentWaitingOnAttr, ""),
-				cannedStringAttr(telemetryattrs.AgentStopReasonAttr, ""),
-			},
+			TraceId:      cannedTraceID(foreignTraceIDByte),
+			Attributes:   attrs,
 		}
-		if !record.emptyBody {
+		if !agent.emptyBody {
 			pbRecord.Body = &commonpb.AnyValue{
 				Value: &commonpb.AnyValue_StringValue{StringValue: ""},
 			}
@@ -186,23 +211,49 @@ func cannedAgentStateLogs(traceID byte, records ...cannedStateRecord) *collogspb
 	}
 }
 
+// foreignAgentControlLogs is the source session's agent control channel: the
+// chief anchored on the conversation whose payloads cannedRestoreLogs carries,
+// and with a worker, a scout anchored on one whose payload never arrived.
+func foreignAgentControlLogs(withWorker bool, state string) *collogspb.ExportLogsServiceRequest {
+	agents := []cannedAgent{{
+		id: importChiefAgentID, name: "interactive", callDigest: "sha256:chief",
+		state: state, digest: cannedAnchorDigest,
+	}}
+	if withWorker {
+		agents = append(agents, cannedAgent{
+			id: importScoutAgentID, name: "scout", callDigest: "sha256:scout",
+			parent: importChiefAgentID, state: state, digest: cannedMissingDigest,
+			emptyBody: true,
+		})
+	}
+	return cannedAgentControlLogs(agents...)
+}
+
 // liveSessionTrace is the resuming CLI's OWN trace: the root it publishes
 // into, the agent it re-hydrated (which republishes its identity into the new
 // trace, §4.5), and one turn spoken since.
 func liveSessionTrace() *coltracepb.ExportTraceServiceRequest {
-	return cannedTrace(liveTraceIDByte,
-		cannedSpan{id: liveRootSpanID, name: "dagger agent --trace", start: 1000},
-		cannedSpan{
-			id: liveLoopSpanID, parent: liveRootSpanID, name: "agent: interactive",
-			start: 1010,
-			attrs: cannedAgentAttrs(importChiefAgentID, "interactive", "sha256:chief"),
-		},
+	return cannedTrace(liveTraceIDByte, append(unspokenLiveSessionSpans(),
 		cannedSpan{
 			id: liveTurnSpanID, parent: liveLoopSpanID, name: "live turn",
 			start: 1020, end: 1030,
 			attrs: cannedMessageAttrs("user"),
 		},
-	)
+	)...)
+}
+
+// unspokenLiveSessionSpans is the resuming CLI's trace the moment the restore
+// lands: the root and the re-hydrated agent, with nothing said in this session
+// yet -- what the user is looking at before their first message.
+func unspokenLiveSessionSpans() []cannedSpan {
+	return []cannedSpan{
+		{id: liveRootSpanID, name: "dagger agent -r", start: 1000},
+		{
+			id: liveLoopSpanID, parent: liveRootSpanID, name: "agent: interactive",
+			start: 1010,
+			attrs: cannedAgentAttrs(importChiefAgentID, "interactive", "sha256:chief"),
+		},
+	}
 }
 
 // foreignSessionTrace is the canned capture of the session being resumed. With
@@ -237,12 +288,19 @@ func foreignSessionTrace(withWorker bool) *coltracepb.ExportTraceServiceRequest 
 // through the importer and sealed at stream end.
 func importedTraceDB(t *testing.T, withWorker bool) *dagui.DB {
 	t.Helper()
+	return importedTraceDBBeside(t, liveSessionTrace(), withWorker)
+}
+
+// importedTraceDBBeside is importedTraceDB with the live session's own trace
+// supplied by the caller.
+func importedTraceDBBeside(t *testing.T, live *coltracepb.ExportTraceServiceRequest, withWorker bool) *dagui.DB {
+	t.Helper()
 	ctx := context.Background()
 	db := dagui.NewDB()
 
 	// The live session is already publishing by the time the fetch runs: its
 	// root is the DB's root and its primary span.
-	require.NoError(t, db.ExportSpans(ctx, telemetry.SpansFromPB(liveSessionTrace().GetResourceSpans())))
+	require.NoError(t, db.ExportSpans(ctx, telemetry.SpansFromPB(live.GetResourceSpans())))
 
 	imp := enginetel.NewTraceImporter(enginetel.TraceImportSinks{
 		Spans:   db,
@@ -250,14 +308,23 @@ func importedTraceDB(t *testing.T, withWorker bool) *dagui.DB {
 		Metrics: db.MetricExporter(),
 	})
 	require.NoError(t, imp.ImportSpans(ctx, foreignSessionTrace(withWorker)))
-	states := []cannedStateRecord{{span: foreignLoopSpanID, state: "RUNNING"}}
-	if withWorker {
-		states = append(states, cannedStateRecord{
-			span: foreignWorkerSpanID, state: "RUNNING", emptyBody: true,
-		})
-	}
-	require.NoError(t, imp.ImportLogs(ctx, cannedAgentStateLogs(foreignTraceIDByte, states...)))
+	require.NoError(t, imp.ImportLogs(ctx, foreignAgentControlLogs(withWorker, "RUNNING")))
 	require.NoError(t, imp.Seal(ctx))
+
+	// The chief was re-hydrated into the live session, which republishes its
+	// control under a new incarnation there.
+	ingestAgentControl(t, db, agentcontrol.Agent{
+		Key: agentcontrol.Key{
+			Namespace: agentcontrol.Namespace{
+				Session:     "live",
+				Trace:       trace.TraceID{liveTraceIDByte}.String(),
+				Incarnation: "live",
+			},
+			Handle: importChiefAgentID,
+		},
+		Revision: 1, Name: "interactive", CallDigest: "sha256:chief",
+		State: "IDLE", Digest: cannedAnchorDigest, Activity: time.Unix(1010, 0),
+	})
 	return db
 }
 
@@ -317,7 +384,7 @@ func TestImportSealsTheForeignTracesUnfinishedSpans(t *testing.T) {
 	// The pathology stated in terms of the roster: the source trace's last
 	// word on the worker is RUNNING, and it is not.
 	scout := importedAgent(t, db, "scout")
-	require.Equal(t, "RUNNING", scout.State, "fixture: the capture's last state record")
+	require.Equal(t, "RUNNING", scout.State, "fixture: the capture's last control record")
 	require.False(t, scout.Live(), "an agent whose session died must not report as live")
 
 	// ...while the agent this session re-hydrated is live, because its NEW
@@ -419,4 +486,35 @@ func TestFocusedAgentTranscriptIncludesTheImportedTurns(t *testing.T) {
 	require.Equal(t, map[string]bool{"imported turn": true, "live turn": true},
 		revealedNames(t, fe),
 		"the promoted transcript must span both of the agent's lives")
+}
+
+// TestRestoredTranscriptShowsBeforeTheFirstMessage is the moment right after
+// a restore lands, before the user has said anything: the live session's own
+// trace holds no message yet, so every turn on screen hangs off the IMPORTED
+// root. Gating promotion on the live root's subtree left the scrollback empty
+// until the first message gave that subtree something to surface.
+func TestRestoredTranscriptShowsBeforeTheFirstMessage(t *testing.T) {
+	live := cannedTrace(liveTraceIDByte, unspokenLiveSessionSpans()...)
+
+	t.Run("single agent", func(t *testing.T) {
+		db := importedTraceDBBeside(t, live, false)
+		handler := &focusShellHandler{target: importChiefAgentID}
+		fe := focusTestFrontend(t, db, handler)
+		fe.recalculateViewLocked()
+
+		require.Equal(t, map[string]bool{"imported turn": true}, revealedNames(t, fe),
+			"the restored transcript must render before this session says anything")
+	})
+
+	t.Run("focused agent", func(t *testing.T) {
+		db := importedTraceDBBeside(t, live, true)
+		handler := &focusShellHandler{target: importChiefAgentID}
+		fe := focusTestFrontend(t, db, handler)
+		fe.updateAgentRoster()
+		require.True(t, fe.agentRoster.Switchable(), "fixture: two agents, so the transcript scopes to focus")
+		fe.recalculateViewLocked()
+
+		require.Equal(t, map[string]bool{"imported turn": true}, revealedNames(t, fe),
+			"the focused agent's restored transcript must render before this session says anything")
+	})
 }

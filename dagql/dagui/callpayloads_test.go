@@ -21,10 +21,9 @@ import (
 
 // The chain from the live failure this side channel exists for: focusing an
 // agent needs llm.withSkills(directory: <dir>).agent(), where the withSkills
-// frame is synthesized (LLM.recipeSelectors) and its directory argument is an
-// ID literal whose own frame was never independently spanned. Only the agent
-// frame gets a span; without the log channel the other two can never reach a
-// client, and the chain is unrebuildable forever.
+// frame and its directory ID argument were never independently spanned. Only
+// the agent frame gets a span; without the log channel the other two can never
+// reach a client, and the chain is unrebuildable forever.
 func callPayloadTestChain() (root *callpbv1.Call, unspanned []*callpbv1.Call) {
 	dir := &callpbv1.Call{
 		Field: "directory",
@@ -381,10 +380,10 @@ func TestCallIDRebuildsFromLogOnlyRootAndClosure(t *testing.T) {
 	}
 }
 
-func TestLegacySpanCarriedCallPayloadStillIngests(t *testing.T) {
+func TestSpanCarriedCallPayloadIngests(t *testing.T) {
 	_, unspanned := callPayloadTestChain()
-	legacyCall := unspanned[1]
-	payload, err := legacyCall.Encode()
+	spannedCall := unspanned[1]
+	payload, err := spannedCall.Encode()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,18 +392,18 @@ func TestLegacySpanCarriedCallPayloadStillIngests(t *testing.T) {
 	db.ImportSnapshots([]SpanSnapshot{{
 		ID:          spanID(1),
 		Name:        "Query.directory",
-		CallDigest:  legacyCall.Digest,
+		CallDigest:  spannedCall.Digest,
 		CallPayload: payload,
 	}})
-	if got := db.Call(legacyCall.Digest); got == nil || got.GetField() != legacyCall.GetField() {
-		t.Fatalf("legacy span payload was not ingested: %+v", got)
+	if got := db.Call(spannedCall.Digest); got == nil || got.GetField() != spannedCall.GetField() {
+		t.Fatalf("span payload was not ingested: %+v", got)
 	}
 	id, err := db.Spans.Map[spanID(1)].CallID()
 	if err != nil {
-		t.Fatalf("legacy span payload did not rebuild: %v", err)
+		t.Fatalf("span payload did not rebuild: %v", err)
 	}
-	if id.Digest().String() != legacyCall.Digest {
-		t.Fatalf("rebuilt digest = %s, want %s", id.Digest(), legacyCall.Digest)
+	if id.Digest().String() != spannedCall.Digest {
+		t.Fatalf("rebuilt digest = %s, want %s", id.Digest(), spannedCall.Digest)
 	}
 }
 

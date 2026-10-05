@@ -219,9 +219,6 @@ func gitPushCLIOptions() []gitutil.Option {
 			"maintenance.auto": "false", "gc.auto": "0", "push.followTags": "false",
 			"push.gpgSign": "false", "push.recurseSubmodules": "no",
 		}),
-		gitutil.WithStreams(func(context.Context) (io.WriteCloser, io.WriteCloser, func()) {
-			return new(gitPushOutputLimit), new(gitPushOutputLimit), func() {}
-		}),
 	}
 }
 
@@ -236,7 +233,14 @@ func (out *gitPushOutputLimit) Write(p []byte) (int, error) {
 }
 func (*gitPushOutputLimit) Close() error { return nil }
 
+func gitPushOutputStreams(context.Context) (io.WriteCloser, io.WriteCloser, func()) {
+	return new(gitPushOutputLimit), nil, func() {}
+}
+
 func runGitPush(ctx context.Context, git *gitutil.GitCLI, url, name, sha, expected string) (*GitPushResult, error) {
+	git = git.New(
+		gitutil.WithStreams(gitPushOutputStreams),
+	)
 	args := []string{"push", "--porcelain", "--no-verify", "--no-follow-tags", "--recurse-submodules=no", "--signed=false"}
 	if expected != "" {
 		args = append(args, "--force-with-lease="+name+":"+expected)

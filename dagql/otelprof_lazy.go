@@ -2,7 +2,9 @@ package dagql
 
 import (
 	"context"
+	"strconv"
 
+	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -192,8 +194,38 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 	return MarkProfilingSpan(callbackCtx, prev), lazySpan, false
 }
 
+// lazySpanCacheState is what a lazy op span reports of its entry when the
+// attempt ends: its complete parts, its dependencies and its content digest,
+// and its replacement count. The attempt's evaluating session holds the
+// entry, so no replacement happens during it.
+type lazySpanCacheState struct {
+	parts         []string
+	deps          []uint64
+	contentDigest digest.Digest
+	replacements  uint64
+}
+
+// lazySpanCacheState reads the state a lazy op span reports for row once its
+// attempt has retired. The parts are the entry's complete parts, as a call
+// span reads them (completePartKeys): those its record reports locally
+// complete, including outputs the evaluation found absent, which no task
+// installs. The read takes the graph lock itself, so it runs before the
+// dependencies are read under it.
+func (c *Cache) lazySpanCacheState(ctx context.Context, row *sharedResult, frame *ResultCall) lazySpanCacheState {
+	state := lazySpanCacheState{parts: c.completePartKeys(ctx, row)}
+	if frame != nil {
+		state.contentDigest = frame.ContentDigest()
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	state.deps = sortedResultIDs(row.deps)
+	state.replacements = row.replacements
+	return state
+}
+
 // endOTelLazyOp ends the lazy op span begun by beginOTelLazyOp, charging err
-// as its status.
+// as its status. It names the entry the attempt evaluated and stamps the
+// cache state the attempt left it in.
 //
 // Producer-context re-point only (the resume span): if the callback failed
 // only because a prerequisite result's evaluation failed, this result's own
@@ -206,7 +238,26 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 // deferred-work vocabulary, so it keeps its error-origin-stamping role
 // (EndWithCause); the non-resume lazy op is pure profiling emission and must
 // never stamp (EndProfSpan).
-func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, partial, abandoned bool, storedPart PartKey, errPtr *error) {
+func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, partial, abandoned bool, storedPart PartKey, cacheState lazySpanCacheState, errPtr *error) {
+	if sharedID != 0 {
+		deps := make([]string, len(cacheState.deps))
+		for i, dep := range cacheState.deps {
+			deps[i] = strconv.FormatUint(dep, 10)
+		}
+		span.SetAttributes(
+			attribute.String(telemetryattrs.CacheResultIDAttr, strconv.FormatUint(uint64(sharedID), 10)),
+			attribute.StringSlice(telemetryattrs.CacheDepsAttr, deps),
+		)
+		if len(cacheState.parts) > 0 {
+			span.SetAttributes(attribute.StringSlice(telemetryattrs.CachePartsAttr, cacheState.parts))
+		}
+		if cacheState.contentDigest != "" {
+			span.SetAttributes(attribute.String(telemetryattrs.CacheOutputContentDigestAttr, cacheState.contentDigest.String()))
+		}
+		if cacheState.replacements != 0 {
+			span.SetAttributes(attribute.String(telemetryattrs.CacheReplacementsAttr, strconv.FormatUint(cacheState.replacements, 10)))
+		}
+	}
 	if storedPart != "" && *errPtr == nil {
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}

@@ -150,6 +150,9 @@ type ReadyPartReceipt struct {
 	task       *PartTaskToken
 	once       sync.Once
 	releaseErr error
+	// shared is what a snapshot-sharing report says of the receipt, read
+	// when the part settled (captureSharedParts).
+	shared []SnapshotSharedPart
 }
 
 func (r *ReadyPartReceipt) release(ctx context.Context) error {
@@ -388,7 +391,6 @@ func (c *Cache) applyPartDependenciesLocked(ctx context.Context, receiver *share
 	if receiver.deps == nil {
 		receiver.deps = map[sharedResultID]struct{}{}
 	}
-	grown := false
 	for _, dep := range deps {
 		if _, ok := receiver.deps[dep.id]; ok {
 			continue
@@ -397,12 +399,6 @@ func (c *Cache) applyPartDependenciesLocked(ctx context.Context, receiver *share
 		receiver.dependencyOwnershipRevision++
 		c.rememberDependencyEdgeLocked(receiver, dep)
 		c.incrementIncomingOwnershipLocked(ctx, dep)
-		grown = true
-	}
-	// An installed part can bring dependencies the receiver's announced set
-	// lacks; announce the grown set.
-	if grown && receiver.factDepsAnnounced {
-		c.emitDepsLocked(receiver)
 	}
 	for row, req := range requirements {
 		if !sessionResourceSetsEqual(row.requiredSessionResources, req) {
@@ -709,12 +705,14 @@ func (c *Cache) FinishReadyPart(ctx context.Context, receipt *ReadyPartReceipt) 
 		return fmt.Errorf("finish part: owning Body must use inline handoff")
 	}
 	receipt.task.openOwnerSync()
-	return c.RunLazyTask(ctx, Result[Typed]{shared: receipt.receiver}, receipt.task.key, LazyTaskSpec{Body: func(context.Context) error {
+	err := c.RunLazyTask(ctx, Result[Typed]{shared: receipt.receiver}, receipt.task.key, LazyTaskSpec{Body: func(context.Context) error {
 		if receipt.task.settled.Load() {
 			return nil
 		}
 		return fmt.Errorf("part receipt lost its owning continuation")
 	}})
+	c.captureSharedParts(receipt)
+	return err
 }
 func (c *Cache) finishReadyPartInline(ctx context.Context, receipt *ReadyPartReceipt) error {
 	if receipt == nil || PartTaskFromContext(ctx) != receipt.task {

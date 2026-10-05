@@ -951,7 +951,7 @@ dagger api call build
 dagger check
 
 # Run generators and confirm there's no drift
-dagger check --generate
+dagger check --generated=true
 ```
 
 ### In CI
@@ -1001,7 +1001,7 @@ Recommended release checklist:
 2. **Commit the lockfile.** Run `dagger generate`, review the changes, and commit `composer.json` and `composer.lock` with your module. `sdk/` and `vendor/` stay gitignored.
 3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
 
-Before publishing, run `dagger check --generate` to confirm that the committed files are up to date.
+Before publishing, run `dagger check --generated=true` to confirm that the committed files are up to date.
 
 Consumers can install your module into a workspace with:
 

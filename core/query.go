@@ -98,7 +98,7 @@ type Server interface {
 	// its patterns name ("module" or "module:item"), empty or unrecognized
 	// loads all. In a best-effort mode, modules that fail to load are skipped with a
 	// warning instead of failing the operation, and their failure messages are
-	// returned for the caller to surface (e.g. GeneratorGroup.loadFailures) —
+	// returned for the caller to surface (e.g. failed module artifacts) —
 	// for operations like generate that may be exactly what repairs the module.
 	EnsureWorkspaceModules(ctx context.Context, include []string, mode ModuleLoadMode) (loadFailures []ModuleLoadFailure, _ error)
 
@@ -115,6 +115,15 @@ type Server interface {
 
 	// The default deps of every user module (currently just core)
 	DefaultDeps(context.Context) (*SchemaBuilder, error)
+
+	// The current client's memo of schema builders by module set, shared by
+	// its handle loads (see Query.ModDepsForCall). Nil disables memoization.
+	SchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error)
+
+	// The current session's memo of module dependency schemas, shared by
+	// all of the session's clients and dropped with the session. Nil
+	// disables memoization.
+	SessionSchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error)
 
 	// The telemetry seen-key store for the current client's session.
 	TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
@@ -193,6 +202,10 @@ type Server interface {
 
 	// Flush telemetry for all clients in the current session.
 	FlushSessionTelemetry(ctx context.Context) error
+
+	// Name the current session: its trace and, for agent sessions, its engine
+	// archive. Only the session's main client may set it.
+	SetSessionTitle(ctx context.Context, title string) error
 
 	// SessionScopedContext returns a context that lives for the remainder of
 	// the current client's session: it is detached from the given context's
@@ -383,7 +396,14 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 	}); err != nil {
 		return nil, err
 	}
-	return deps, nil
+	// Share one schema server per module set: without this, every handle
+	// load (node(id:), interface loads) rebuilds a server and reinstalls
+	// every referenced module.
+	memo, err := q.SchemaBuilderMemo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("schema builder memo: %w", err)
+	}
+	return memo.Get(deps), nil
 }
 
 func (q *Query) RequireMainClient(ctx context.Context) error {

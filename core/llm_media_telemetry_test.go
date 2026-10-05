@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"strings"
 	"sync"
 	"testing"
@@ -32,13 +33,13 @@ func (*mediaLogRecorder) Enabled(context.Context, sdklog.EnabledParameters) bool
 func TestMediaTelemetryOrdering(t *testing.T) {
 	blocks := []*LLMContentBlock{
 		{Kind: LLMContentText, Text: "before"},
-		{Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U="},
+		{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")},
 		{Kind: LLMContentText, Text: "between"},
-		{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: "YXVkaW8="},
-		{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "ZG9j"},
+		{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: []byte("audio")},
+		{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: []byte("doc")},
 		{Kind: LLMContentText, Text: "after"},
 	}
-	for _, mode := range []string{"user", "live tool", "history tool"} {
+	for _, mode := range []string{"user", "live tool"} {
 		t.Run(mode, func(t *testing.T) {
 			_, ctx := recordingTestRecorder(t)
 			recorder := &mediaLogRecorder{}
@@ -53,12 +54,6 @@ func TestMediaTelemetryOrdering(t *testing.T) {
 					return result, nil
 				}}}, &LLMToolCall{Name: "media", CallID: "call"})
 				require.False(t, got.Errored)
-			case "history tool":
-				llm := &LLM{Messages: []*LLMMessage{
-					{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{{Kind: LLMContentToolCall, CallID: "call", ToolName: "media", Arguments: JSON("{}")}}},
-					{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{result}},
-				}}
-				llm.EmitHistory(ctx)
 			}
 
 			recorder.mu.Lock()
@@ -74,14 +69,15 @@ func TestMediaTelemetryOrdering(t *testing.T) {
 				}
 				bodies.WriteString(body)
 				for _, block := range blocks {
-					if block.Data != "" {
-						require.NotContains(t, body, block.Data)
+					if len(block.Data) != 0 {
+						require.NotContains(t, body, base64.StdEncoding.EncodeToString(block.Data))
 					}
 				}
 				if media, ok := dagui.ParseMediaRecord(record); ok {
 					ordered = append(ordered, media.Kind)
 					want := blocks[[]int{1, 3, 4}[mediaCount]]
-					require.Equal(t, want.Data, media.Data)
+					// The record carries media as base64 for the UI.
+					require.Equal(t, base64.StdEncoding.EncodeToString(want.Data), media.Data)
 					require.Equal(t, want.MIMEType, media.MIMEType)
 					require.True(t, record.SpanID().IsValid())
 					if mode != "user" {
@@ -113,7 +109,8 @@ func TestMediaTelemetryOrdering(t *testing.T) {
 }
 
 func TestNewMessageSpansAcrossToolResults(t *testing.T) {
-	image := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U="}
+	image := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")}
+	imageB64 := base64.StdEncoding.EncodeToString(image.Data)
 	screenshot := &LLMMessage{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{
 		{Kind: LLMContentText, Text: "Browser screenshot"}, image,
 	}}
@@ -179,12 +176,12 @@ func TestNewMessageSpansAcrossToolResults(t *testing.T) {
 				}
 				if media, ok := dagui.ParseMediaRecord(record); ok {
 					require.Equal(t, "image", media.Kind)
-					require.Equal(t, image.Data, media.Data)
+					require.Equal(t, imageB64, media.Data)
 					images++
 				}
 			}
 			require.Equal(t, tc.want, body.String())
-			require.NotContains(t, body.String(), image.Data)
+			require.NotContains(t, body.String(), imageB64)
 			require.Equal(t, tc.images, images)
 			require.Len(t, spans.Ended(), tc.prompts, "tool-result-only messages must not create empty prompt spans")
 			for _, span := range spans.Ended() {

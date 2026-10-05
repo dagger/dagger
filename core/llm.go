@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"mime"
 	"net"
@@ -25,7 +24,6 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
@@ -34,11 +32,20 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 func init() {
 	strcase.ConfigureAcronym("LLM", "LLM")
+	// Acronyms only match a whole name, so a module type definition naming
+	// these core types would otherwise normalize to "Llmcontent" /
+	// "LlmcontentBlock", miss the core type, and be namespaced as a
+	// module-local object. Modules return LLMContent from functions exposed
+	// as LLM tools. Registering names one by one is a stopgap; see
+	// dagger/dagger#13668 for the underlying acronym-handling problem.
+	strcase.ConfigureAcronym("LLMContent", "LLMContent")
+	strcase.ConfigureAcronym("LLMContentBlock", "LLMContentBlock")
 }
 
 const (
@@ -108,8 +115,9 @@ type LLM struct {
 	// explicitly disables reasoning; empty defers to the provider config.
 	reasoningEffort string
 
-	endpoint    *LLMEndpoint
-	endpointMtx *sync.Mutex
+	endpoint          *LLMEndpoint
+	endpointSessionID string
+	endpointMtx       *sync.Mutex
 
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
@@ -359,7 +367,7 @@ type LLMContentBlock struct {
 	Errored bool `field:"true" json:"errored,omitempty" doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)."`
 
 	MIMEType string             `field:"true" name:"mimeType" json:"mime_type,omitempty" doc:"The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds)."`
-	Data     string             `field:"true" json:"data,omitempty" doc:"Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds)."`
+	Data     dagql.Bytes        `field:"true" json:"data,omitempty" doc:"The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds)."`
 	Content  []*LLMContentBlock `field:"true" json:"content,omitempty" doc:"Ordered content returned by a tool, following any text (for TOOL_RESULT kind)."`
 
 	// Provider-specific opaque data. Exposed so a conversation exported via
@@ -385,6 +393,7 @@ func (b *LLMContentBlock) Clone() *LLMContentBlock {
 	}
 	cp := *b
 	cp.Arguments = slices.Clone(b.Arguments)
+	cp.Data = slices.Clone(b.Data)
 	cp.Content = cloneLLMContent(b.Content)
 	return &cp
 }
@@ -414,7 +423,7 @@ func (b *LLMContentBlock) validate(remaining *int) error {
 		return fmt.Errorf("nil content block")
 	}
 	media := b.Kind == LLMContentImage || b.Kind == LLMContentAudio || b.Kind == LLMContentDocument
-	if !media && (b.MIMEType != "" || b.Data != "") {
+	if !media && (b.MIMEType != "" || len(b.Data) != 0) {
 		return fmt.Errorf("%s cannot contain media data or MIME type", b.Kind)
 	}
 	if b.Kind != LLMContentToolResult && (len(b.Content) != 0 || b.Errored) {
@@ -452,8 +461,8 @@ func (b *LLMContentBlock) validateMedia(remaining *int) error {
 	if b.Text != "" {
 		return fmt.Errorf("%s cannot contain text", b.Kind)
 	}
-	if b.MIMEType == "" || b.Data == "" {
-		return fmt.Errorf("%s requires MIME type and base64 data", b.Kind)
+	if b.MIMEType == "" || len(b.Data) == 0 {
+		return fmt.Errorf("%s requires MIME type and data", b.Kind)
 	}
 	mt, params, err := mime.ParseMediaType(b.MIMEType)
 	if err != nil || len(params) != 0 || mt != b.MIMEType {
@@ -462,43 +471,12 @@ func (b *LLMContentBlock) validateMedia(remaining *int) error {
 	if (b.Kind == LLMContentImage && !strings.HasPrefix(mt, "image/")) || (b.Kind == LLMContentAudio && !strings.HasPrefix(mt, "audio/")) || (b.Kind == LLMContentDocument && mt != "application/pdf") {
 		return fmt.Errorf("MIME type %q does not match %s", mt, b.Kind)
 	}
-	encodedSize := len(b.Data)
-	if encodedSize > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
-		encodedSize -= strings.Count(b.Data, "\r") + strings.Count(b.Data, "\n")
-		if encodedSize > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
-			return fmt.Errorf("media exceeds %d decoded bytes", MaxLLMMediaBytes)
-		}
+	if len(b.Data) > MaxLLMMediaBytes {
+		return fmt.Errorf("media exceeds %d bytes", MaxLLMMediaBytes)
 	}
-	// NewDecoder accepts concatenated padded chunks at read boundaries,
-	// unlike DecodeString. Require padding to terminate the entire value.
-	if pad := strings.IndexByte(b.Data, '='); pad >= 0 {
-		padding := 0
-		for _, char := range b.Data[pad:] {
-			switch char {
-			case '=':
-				padding++
-				if padding > 2 {
-					return fmt.Errorf("invalid base64 media padding")
-				}
-			case '\r', '\n':
-			default:
-				return fmt.Errorf("invalid base64 media data after padding")
-			}
-		}
-	}
-	// Stream validation instead of allocating a decoded copy for every
-	// schema, recipe and provider boundary. Count actual decoded bytes:
-	// base64 permits CR/LF, so its encoded length is not an exact budget.
-	size, err := io.Copy(io.Discard, base64.NewDecoder(base64.StdEncoding.Strict(), strings.NewReader(b.Data)))
-	if err != nil {
-		return fmt.Errorf("invalid base64 media data: %w", err)
-	}
-	if size == 0 {
-		return fmt.Errorf("media must contain 1 to %d decoded bytes", MaxLLMMediaBytes)
-	}
-	*remaining -= int(size)
+	*remaining -= len(b.Data)
 	if *remaining < 0 {
-		return fmt.Errorf("message media exceeds %d decoded bytes", MaxLLMMediaBytes)
+		return fmt.Errorf("message media exceeds %d bytes", MaxLLMMediaBytes)
 	}
 	return nil
 }
@@ -546,7 +524,7 @@ type LLMContentBlockInput struct {
 	Errored   bool                                      `doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)." default:"false"`
 	Signature string                                    `doc:"Provider-specific opaque data (e.g. Anthropic thinking signature)." default:""`
 	MIMEType  string                                    `name:"mimeType" doc:"Media MIME type; required for inline data, inferred for a file." default:""`
-	Data      string                                    `doc:"Base64-encoded media bytes. Supply exactly one of data or file for media." default:""`
+	Data      dagql.Optional[dagql.Bytes]               `doc:"Media bytes. Supply exactly one of data or file for media."`
 	File      dagql.Optional[FileID]                    `doc:"A media file to resolve to inline bytes."`
 	Content   []dagql.InputObject[LLMContentBlockInput] `doc:"Ordered TEXT or media blocks returned by a tool." default:"[]"`
 }
@@ -574,7 +552,7 @@ func (in LLMContentBlockInput) ToLLMContentBlock() *LLMContentBlock {
 		Errored:   in.Errored,
 		Signature: in.Signature,
 		MIMEType:  in.MIMEType,
-		Data:      in.Data,
+		Data:      in.Data.Value,
 		Content:   content,
 	}
 }
@@ -583,7 +561,7 @@ func (in LLMContentBlockInput) ToLLMContentBlock() *LLMContentBlock {
 func (in LLMContentBlockInput) Resolve(ctx context.Context) (*LLMContentBlock, error) {
 	block := in.ToLLMContentBlock()
 	if in.File.Valid {
-		if in.Data != "" {
+		if len(in.Data.Value) != 0 {
 			return nil, fmt.Errorf("supply exactly one of file or data")
 		}
 		if in.Kind != LLMContentImage && in.Kind != LLMContentAudio && in.Kind != LLMContentDocument {
@@ -629,10 +607,12 @@ func LLMContentFromFile(ctx context.Context, id FileID, mimeType string) (*LLMCo
 	if err != nil {
 		return nil, err
 	}
-	return llmContentFromBytes(data, mimeType)
+	return LLMContentFromBytes(data, mimeType)
 }
 
-func llmContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error) {
+// LLMContentFromBytes builds a media block from raw bytes, inferring the
+// media kind (and, when mimeType is empty, the MIME type) from its contents.
+func LLMContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error) {
 	if len(data) == 0 || len(data) > MaxLLMMediaBytes {
 		return nil, fmt.Errorf("media must contain 1 to %d bytes", MaxLLMMediaBytes)
 	}
@@ -653,11 +633,73 @@ func llmContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error)
 	default:
 		return nil, fmt.Errorf("unsupported media MIME type %q; expected image, audio, or PDF", mimeType)
 	}
-	block := &LLMContentBlock{Kind: kind, MIMEType: mimeType, Data: base64.StdEncoding.EncodeToString(data)}
+	block := &LLMContentBlock{Kind: kind, MIMEType: mimeType, Data: dagql.NewBytes(data)}
 	if err := block.Validate(); err != nil {
 		return nil, err
 	}
 	return block, nil
+}
+
+// LLMContent is an ordered run of text and media blocks built outside any
+// conversation. A function exposed as an LLM tool returns it to make the
+// blocks the tool result's own content (e.g. a caption and a screenshot), in
+// the order they were added.
+type LLMContent struct {
+	Blocks []*LLMContentBlock `field:"true" json:"blocks" doc:"The ordered text and media blocks."`
+}
+
+func (*LLMContent) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMContent",
+		NonNull:   true,
+	}
+}
+
+func (*LLMContent) TypeDescription() string {
+	return "An ordered run of text and media content for a model to read, built outside any conversation."
+}
+
+func (c *LLMContent) Clone() *LLMContent {
+	if c == nil {
+		return nil
+	}
+	return &LLMContent{Blocks: cloneLLMContent(c.Blocks)}
+}
+
+// The content is self-contained data: its media is inline bytes, so the
+// persisted payload is the value itself and carries no references.
+func (c *LLMContent) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = enc
+	if c == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted LLM content: nil LLM content")
+	}
+	return encodePersistedObjectPayload(c)
+}
+
+func (*LLMContent) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dec
+	var content LLMContent
+	if err := json.Unmarshal(payload, &content); err != nil {
+		return nil, fmt.Errorf("decode persisted LLM content payload: %w", err)
+	}
+	if err := ValidateLLMContent(content.Blocks); err != nil {
+		return nil, fmt.Errorf("decode persisted LLM content payload: %w", err)
+	}
+	return &content, nil
+}
+
+// WithBlock appends a block, enforcing the per-message media budget across
+// the whole run so an oversized result fails where it is built rather than
+// when the tool result is validated.
+func (c *LLMContent) WithBlock(block *LLMContentBlock) (*LLMContent, error) {
+	cp := c.Clone()
+	cp.Blocks = append(cp.Blocks, block)
+	if err := ValidateLLMContent(cp.Blocks); err != nil {
+		return nil, err
+	}
+	return cp, nil
 }
 
 // LLMMessageOriginKind classifies who put a message on the conversation
@@ -1880,7 +1922,15 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	llm.endpointMtx.Lock()
 	defer llm.endpointMtx.Unlock()
 
-	if llm.endpoint != nil {
+	// Cached/restored conversations and their clones can be used by another
+	// session. Credentials and local tunnels belong to the session that routed
+	// them, so only reuse the memo within that execution session. In particular,
+	// never let a warm credential cache hide a cross-session endpoint reuse.
+	var sessionID string
+	if scope, ok := engine.ClientScopeFromContext(ctx); ok {
+		sessionID = scope.SessionID()
+	}
+	if llm.endpoint != nil && llm.endpointSessionID == sessionID {
 		return llm.endpoint, nil
 	}
 
@@ -1943,6 +1993,7 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	}
 
 	llm.endpoint = endpoint
+	llm.endpointSessionID = sessionID
 
 	return llm.endpoint, nil
 }
@@ -2672,7 +2723,7 @@ func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDig
 	}
 	slices.Reverse(newMessages)
 	for _, msg := range newMessages {
-		emitMessageSpan(ctx, msg, llmCallDigest, nil, nil)
+		emitMessageSpan(ctx, msg, llmCallDigest)
 	}
 }
 
@@ -2686,6 +2737,11 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 		if err := ValidateLLMContent(msg.Content); err != nil {
 			return nil, fmt.Errorf("message %d: %w", i, err)
 		}
+	}
+
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create LLM network recorders: %w", err)
 	}
 	b := backoff.NewExponentialBackOff()
 	// Sane defaults (ideally not worth extra knobs)
@@ -2761,13 +2817,17 @@ func contentBlockInputMap(block *LLMContentBlock) map[string]any {
 	for i, child := range block.Content {
 		content[i] = contentBlockInputMap(child)
 	}
-	return map[string]any{
+	m := map[string]any{
 		"kind": string(block.Kind), "text": block.Text,
 		"callId": block.CallID, "toolName": block.ToolName,
 		"arguments": string(block.Arguments), "errored": block.Errored,
 		"signature": block.Signature, "mimeType": block.MIMEType,
-		"data": block.Data, "content": content,
+		"content": content,
 	}
+	if len(block.Data) != 0 {
+		m["data"] = block.Data
+	}
+	return m
 }
 
 // contentBlockInputs decodes maps rather than constructing bare InputObjects:
@@ -2788,7 +2848,7 @@ func contentBlockInputs(blocks []*LLMContentBlock) (dagql.ArrayInput[dagql.Input
 }
 
 // responseSelectorFromBlocks builds a withResponse selector from raw content
-// blocks and token usage, for fresh responses and portable reconstruction.
+// blocks and token usage for fresh responses.
 func responseSelectorFromBlocks(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage) (dagql.Selector, error) {
 	contentInputs, err := contentBlockInputs(blocks)
 	if err != nil {
@@ -2995,18 +3055,15 @@ func (llm *LLM) allowed(ctx context.Context) error {
 	return bk.PromptAllowLLM(ctx, moduleURL)
 }
 
-// emitMessageSpan creates a telemetry span for a single LLM message. This is
-// used both during live step() execution and during history emission.
+// emitMessageSpan creates telemetry for a live LLM message.
+// Restored history comes from imported telemetry, never newly emitted spans.
 // callDigest is the DAG digest enabling TUI branching from that point.
-// resultTokens maps a tool call's ID to the estimated token size of the result
-// it produced, while replayedResults carries the authoritative result content so
-// history emission can reproduce the same result logs as the live call.
-func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]*LLMContentBlock) {
+func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
 	switch msg.Role {
 	case LLMMessageRoleUser, LLMMessageRoleSystem:
 		emitUserMessageSpan(ctx, msg, callDigest)
 	case LLMMessageRoleAssistant:
-		emitAssistantMessageSpan(ctx, msg, callDigest, resultTokens, replayedResults)
+		emitAssistantMessageSpan(ctx, msg, callDigest)
 	}
 }
 
@@ -3069,7 +3126,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	}
 }
 
-func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64, replayedResults map[string]*LLMContentBlock) {
+func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
 	// Each content block gets its own span, matching the provider streaming
 	// behavior: thinking, text (LLM response), and tool calls each appear
 	// separately. Contiguous runs of the same non-tool-call type are grouped.
@@ -3135,15 +3192,6 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 					attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 					attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 				)
-				// Mirror the live tool-call span's result-size badge: the result
-				// itself lives in a later user (tool-result) message, so history
-				// emission looks it up by call ID from the pre-scanned
-				// conversation.
-				if tokens := resultTokens[block.CallID]; tokens > 0 {
-					extraAttrs = append(extraAttrs,
-						attribute.Int64(telemetryattrs.LLMToolResultTokensAttr, tokens),
-					)
-				}
 			default:
 				name = "LLM response"
 				contentType = "text/markdown"
@@ -3181,40 +3229,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 					fmt.Fprintln(stdio.Stdout, string(block.Arguments))
 				}
 			}
-			if g.kind == LLMContentToolCall {
-				block := g.blocks[0]
-				if result, ok := replayedResults[block.CallID]; ok {
-					if result.Errored {
-						span.SetStatus(codes.Error, result.ContentText())
-					}
-					emitToolResultLogs(spanCtx, result)
-				}
-			}
 		}()
-	}
-}
-
-// EmitHistory re-emits telemetry spans for all messages in the conversation
-// history.
-// This allows the TUI to display the conversation after loading a saved session.
-func (llm *LLM) EmitHistory(ctx context.Context) {
-	// Pre-scan tool results, keyed by call ID, so the assistant tool-call span
-	// can carry the same result-size badge, status, and model-visible output as
-	// the live path even though the result is stored in a later user message.
-	resultTokens := map[string]int64{}
-	replayedResults := map[string]*LLMContentBlock{}
-	for _, msg := range llm.Messages {
-		for _, block := range msg.Content {
-			if block.Kind == LLMContentToolResult && block.CallID != "" {
-				resultTokens[block.CallID] = estimateTextTokens(len(block.ContentText()))
-				replayedResults[block.CallID] = block
-			}
-		}
-	}
-	for _, msg := range llm.Messages {
-		// We don't have per-message call digests for history emission, so pass empty.
-		// The TUI will still display the messages, just without branch support.
-		emitMessageSpan(ctx, msg, "", resultTokens, replayedResults)
 	}
 }
 
@@ -3286,226 +3301,9 @@ func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
 	return llm.mcp.workspace
 }
 
-// recipeSelectors re-emits the conversation as a flat, data-only selector chain
-// rooted at Query.llm: the model, config, MCP servers, skills, tool bindings,
-// workspace binding, and full message history, in that order.
-//
-// It emits from the LLM's *final in-memory state*, never from its recorded ID
-// spine. That is what makes the result bounded and safe to reconstruct. During
-// a session step() appends a withWorkspace selector on every workspace-mutating
-// tool call and a withTools selector on every object rebind, so the spine
-// accumulates each superseded binding; reapplying those on a later load
-// re-applies edits that are already on disk (or fails outright, once the
-// content they were derived from has moved on). Emitting from final state
-// keeps only the tip-most binding per slot and drops the rest. Tool bindings
-// need no explicit dedupe: MCP.WithTools already keeps at most one binding per
-// object type, so BoundToolBindings is per-type final state by construction.
-//
-// The workspace binding is carried *verbatim*, including any overlay
-// derivations (withChanges and friends) sitting on top of its base. Pending,
-// un-exported edits are therefore preserved across a save/resume round trip;
-// once they are exported and the caller rebinds the live workspace, the
-// overlay-free binding is what gets emitted.
-//
-// The chain carries exactly the state that survives a save/load round trip
-// (selector-expressible state); transient state such as open MCP sessions or
-// the last tool result is not carried, same as save/load.
-func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
-	// The llm(maxAPICalls:) legacy knob is deliberately not carried: it is only
-	// settable through pre-v1 views, and this field only exists in v1+.
-	root := dagql.Selector{Field: "llm"}
-	if llm.model != "" {
-		root.Args = append(root.Args, dagql.NamedInput{
-			Name:  "model",
-			Value: dagql.Opt(dagql.NewString(llm.model)),
-		})
-	}
-	if llm.provider != "" {
-		root.Args = append(root.Args, dagql.NamedInput{
-			Name:  "provider",
-			Value: dagql.Opt(dagql.NewString(llm.provider)),
-		})
-	}
-	sels := []dagql.Selector{root}
-
-	if llm.disableDefaultSystemPrompt {
-		sels = append(sels, dagql.Selector{Field: "withoutDefaultSystemPrompt"})
-	}
-
-	for _, name := range slices.Sorted(maps.Keys(llm.mcp.mcpServers)) {
-		cfg := llm.mcp.mcpServers[name]
-		svcID, err := cfg.Service.ID()
-		if err != nil {
-			return nil, fmt.Errorf("mcp server %q service ID: %w", name, err)
-		}
-		sels = append(sels, dagql.Selector{
-			Field: "withMCPServer",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.NewString(name)},
-				{Name: "service", Value: dagql.NewID[*Service](svcID)},
-			},
-		})
-	}
-
-	for _, dir := range llm.mcp.skillDirs {
-		dirID, err := dir.Directory.ID()
-		if err != nil {
-			return nil, fmt.Errorf("skill directory ID: %w", err)
-		}
-		sels = append(sels, dagql.Selector{
-			Field: "withSkills",
-			Args: []dagql.NamedInput{
-				{Name: "directory", Value: dagql.NewID[*Directory](dirID)},
-				{Name: "owner", Value: dagql.Opt(dagql.String(dir.Owner))},
-			},
-		})
-	}
-
-	bindings, err := llm.mcp.BoundToolBindings()
-	if err != nil {
-		return nil, fmt.Errorf("bound tool bindings: %w", err)
-	}
-	for _, b := range bindings {
-		sels = append(sels, dagql.Selector{
-			Field: "withTools",
-			Args: []dagql.NamedInput{
-				{Name: "object", Value: dagql.NewAnyID(b.ID)},
-				{Name: "except", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(b.Except...))},
-				{Name: "owner", Value: dagql.Opt(dagql.String(b.Owner))},
-				{Name: "version", Value: dagql.Int(b.Version)},
-			},
-		})
-	}
-
-	// Carry the current workspace binding verbatim. This is the tip-most
-	// binding — the one the last workspace-mutating tool call installed — so
-	// any overlay derivations riding on it (withChanges and friends) come
-	// along, and pending un-exported edits survive the round trip. Every
-	// superseded binding recorded on the spine is simply not emitted.
-	//
-	// A bare currentWorkspace binding is carried too. Emitting it
-	// unconditionally is what keeps a restored session bound —
-	// an unbound LLM fails LLM.workspace and silently degrades tool behavior
-	// (e.g. a workspace-returning tool reporting no diff).
-	if llm.mcp.workspace.Self() != nil {
-		wsID, err := llm.mcp.workspace.RecipeID(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("workspace recipe ID: %w", err)
-		}
-		sels = append(sels, dagql.Selector{
-			Field: "withWorkspace",
-			Args: []dagql.NamedInput{
-				{Name: "workspace", Value: dagql.NewID[*Workspace](wsID)},
-			},
-		})
-	}
-
-	messageSels, err := llm.messageRecipeSelectors()
-	if err != nil {
-		return nil, err
-	}
-	return append(sels, messageSels...), nil
-}
-
-func (llm *LLM) messageRecipeSelectors() ([]dagql.Selector, error) {
-	// Reconstruct the conversation in message order. Every message shape the engine
-	// can produce maps to a selector; anything else is an error rather than
-	// silent data loss.
-	var sels []dagql.Selector
-	for i, msg := range llm.Messages {
-		switch msg.Role {
-		case LLMMessageRoleSystem:
-			sels = append(sels, dagql.Selector{
-				Field: "withSystemPrompt",
-				Args: []dagql.NamedInput{
-					{Name: "prompt", Value: dagql.NewString(msg.TextContent())},
-					{Name: "owner", Value: dagql.Opt(dagql.String(msg.CompositionOwner))},
-				},
-			})
-		case LLMMessageRoleAssistant:
-			var usage LLMTokenUsage
-			if msg.TokenUsage != nil {
-				usage = *msg.TokenUsage
-			}
-			sel, err := responseSelectorFromBlocks(msg.Content, usage)
-			if err != nil {
-				return nil, fmt.Errorf("message %d: %w", i, err)
-			}
-			sels = append(sels, sel)
-		case LLMMessageRoleUser:
-			if err := ValidateLLMContent(msg.Content); err != nil {
-				return nil, fmt.Errorf("message %d: %w", i, err)
-			}
-			// Retain the legacy single-text selector, but keep mixed content in
-			// one message so media stays adjacent to its accompanying prompt.
-			if !msg.IsToolResult() {
-				field := "withContent"
-				inputs, err := contentBlockInputs(msg.Content)
-				if err != nil {
-					return nil, fmt.Errorf("message %d: %w", i, err)
-				}
-				args := []dagql.NamedInput{{Name: "content", Value: inputs}}
-				for _, block := range msg.Content {
-					if block.Kind != LLMContentText && block.Kind != LLMContentImage && block.Kind != LLMContentAudio && block.Kind != LLMContentDocument {
-						return nil, fmt.Errorf("message %d: cannot re-emit %s block in a user message", i, block.Kind)
-					}
-				}
-				if len(msg.Content) == 1 && msg.Content[0].Kind == LLMContentText {
-					field = "withPrompt"
-					args = []dagql.NamedInput{{Name: "prompt", Value: dagql.NewString(msg.Content[0].Text)}}
-				}
-				if msg.Origin != nil {
-					origin, err := originInput(msg.Origin)
-					if err != nil {
-						return nil, fmt.Errorf("message %d: %w", i, err)
-					}
-					args = append(args, dagql.NamedInput{Name: "origin", Value: dagql.Opt(origin)})
-				}
-				sels = append(sels, dagql.Selector{Field: field, Args: args})
-				continue
-			}
-			for _, block := range msg.Content {
-				if block.Kind != LLMContentToolResult {
-					return nil, fmt.Errorf("message %d: mixed tool results and user content", i)
-				}
-				args := []dagql.NamedInput{
-					{Name: "callId", Value: dagql.NewString(block.CallID)},
-					{Name: "content", Value: dagql.NewString(block.Text)},
-					{Name: "errored", Value: dagql.NewBoolean(block.Errored)},
-				}
-				if len(block.Content) > 0 {
-					inputs, err := contentBlockInputs(block.Content)
-					if err != nil {
-						return nil, fmt.Errorf("message %d: %w", i, err)
-					}
-					args = append(args, dagql.NamedInput{Name: "blocks", Value: inputs})
-				}
-				sels = append(sels, dagql.Selector{Field: "withToolResult", Args: args})
-			}
-		default:
-			return nil, fmt.Errorf("message %d: cannot re-emit role %q", i, msg.Role)
-		}
-	}
-
-	return sels, nil
-}
-
-// PortableRecipe materializes the conversation as a flat, self-contained
-// recipe (see recipeSelectors) rooted at Query.llm, suitable for persisting
-// and restoring in a later session. Backs LLM.portableID.
-func (llm *LLM) PortableRecipe(ctx context.Context) (res dagql.ObjectResult[*LLM], _ error) {
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return res, err
-	}
-	sels, err := llm.recipeSelectors(ctx)
-	if err != nil {
-		return res, err
-	}
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
-		return res, fmt.Errorf("re-emit session recipe: %w", err)
-	}
-	return res, nil
+// Artifacts returns the conversation's artifact scope; see MCP.Artifacts.
+func (llm *LLM) Artifacts(ctx context.Context, srv *dagql.Server, include []string) (*Artifacts, error) {
+	return llm.mcp.Artifacts(ctx, srv, include)
 }
 
 // A variable in the LLM environment

@@ -30,11 +30,11 @@ func forwardedOfferOwner(c *Cache, id uint64) (*offerOwner, error) {
 	if row == nil {
 		return nil, fmt.Errorf("missing imported row %d", id)
 	}
-	if len(row.partOffers) != 1 {
-		return nil, fmt.Errorf("row %d: got %d offers, want 1", id, len(row.partOffers))
+	if len(row.testPartOffers()) != 1 {
+		return nil, fmt.Errorf("row %d: got %d offers, want 1", id, len(row.testPartOffers()))
 	}
 	var offer *partOffer
-	for _, slot := range row.partOffers {
+	for _, slot := range row.testPartOffers() {
 		offer = slot
 	}
 	if len(offer.record.Value.Services) != 1 {
@@ -101,7 +101,7 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 	offer := exhaustionOffer(chain, "renewal-key", false)
 	offer.Value.Services = []TransferredServiceBinding{{ServiceResultID: uint64(service.cacheSharedResult().id), Hostname: "svc"}}
 	offer.Owner.DependencyIDs = []uint64{uint64(explicit.cacheSharedResult().id), uint64(service.cacheSharedResult().id)}
-	out, err := a.OfferParts(actx, receiver, []PersistedPartOffer{offer})
+	out, err := a.testOfferParts(actx, receiver, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	requireForwardedOffer(t, a, uint64(receiver.cacheSharedResult().id))
@@ -109,7 +109,8 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 	// A to B forwards the pending offer without typed decode or bytes.
 	path := filepath.Join(t.TempDir(), "b.db")
 	bctx, b := reopenTransferTestCache(t, path)
-	mapping, err := b.ImportValues(bctx, exportTestBundle(t, actx, a, receiver))
+	mappingReply, err := b.MergeValues(bctx, cloudCacheID, exportTestBundle(t, actx, a, receiver))
+	mapping := mappingReply.Imported()
 	require.NoError(t, err)
 	id := mapping[0].ResultID
 	before := requireForwardedOffer(t, b, id)
@@ -146,7 +147,8 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 
 	// B to C forwards the restored offer, still without any request.
 	cctx, c, _ := transferTestCache(t)
-	forwarded, err := c.ImportValues(cctx, exportTestBundle(t, bctx, b, Result[Typed]{shared: b.resultsByID[sharedResultID(id)]}))
+	forwardedReply, err := c.MergeValues(cctx, cloudCacheID, exportTestBundle(t, bctx, b, Result[Typed]{shared: b.resultsByID[sharedResultID(id)]}))
+	forwarded := forwardedReply.Imported()
 	require.NoError(t, err)
 	requireForwardedOffer(t, c, forwarded[0].ResultID)
 	require.Zero(t, transport.total())
@@ -169,7 +171,7 @@ func TestOfferPendingRestartAndForward(t *testing.T) {
 	}
 	b.egraphMu.RLock()
 	row := b.resultsByID[sharedResultID(id)]
-	offerCount, ownerCount := len(row.partOffers), len(b.offerOwners)
+	offerCount, ownerCount := len(row.testPartOffers()), len(b.offerOwners)
 	b.egraphMu.RUnlock()
 	require.Zero(t, offerCount, "settlement retired the installed part's offer")
 	require.Zero(t, ownerCount)

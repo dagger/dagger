@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -13,30 +14,54 @@ import (
 
 // ProxyStream proxies messages between a gRPC client stream and server stream.
 func ProxyStream[T any](ctx context.Context, clientStream grpc.ClientStream, serverStream grpc.ServerStream) error {
+	parentCtx := ctx
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(errors.New("proxy stream done"))
 	var eg errgroup.Group
-	var done bool
+	var mu sync.Mutex
+	var firstErr error
+	var stopped bool
+	finish := func(err error, interrupted, stopOnEOF bool, direction string) {
+		if err == io.EOF {
+			err = nil
+		}
+		mu.Lock()
+		// A sibling woken by our cancellation must not replace the status that
+		// caused it. Parent cancellation and independently canceled streams are
+		// still errors, including when the other direction completed normally.
+		canceledByProxy := interrupted && stopped && parentCtx.Err() == nil
+		if err != nil && !canceledByProxy && firstErr == nil {
+			firstErr = err
+		}
+		stop := err != nil || stopOnEOF
+		if stop {
+			stopped = true
+		}
+		mu.Unlock()
+		// Record the error before waking the other pump, and never call cancel
+		// under the mutex: cancellation can run parent-context cleanup callbacks.
+		if stop {
+			if err != nil {
+				cancel(fmt.Errorf("failed to proxy stream %s: %w", direction, err))
+			} else {
+				cancel(fmt.Errorf("proxy stream %s done", direction))
+			}
+		}
+	}
 	eg.Go(func() (rerr error) {
+		var interrupted bool
 		defer func() {
 			clientStream.CloseSend()
-			if rerr == io.EOF {
-				rerr = nil
-			}
-			if errors.Is(rerr, context.Canceled) && done {
-				rerr = nil
-			}
-			if rerr != nil {
-				cancel(fmt.Errorf("failed to proxy stream server->client: %w", rerr))
-			}
+			finish(rerr, interrupted, false, "server->client")
 		}()
 		for {
-			msg, err := withContext(ctx, func() (*T, error) {
+			msg, err, canceled := withContext(ctx, func() (*T, error) {
 				var msg T
 				err := serverStream.RecvMsg(&msg)
 				return &msg, err
 			})
 			if err != nil {
+				interrupted = canceled
 				return err
 			}
 			if err := clientStream.SendMsg(msg); err != nil {
@@ -45,24 +70,18 @@ func ProxyStream[T any](ctx context.Context, clientStream grpc.ClientStream, ser
 		}
 	})
 	eg.Go(func() (rerr error) {
+		var interrupted bool
 		defer func() {
-			if rerr == io.EOF {
-				rerr = nil
-			}
-			if rerr == nil {
-				done = true
-				cancel(errors.New("proxy stream client->server done"))
-			} else {
-				cancel(fmt.Errorf("failed to proxy stream client->server: %w", rerr))
-			}
+			finish(rerr, interrupted, true, "client->server")
 		}()
 		for {
-			msg, err := withContext(ctx, func() (*T, error) {
+			msg, err, canceled := withContext(ctx, func() (*T, error) {
 				var msg T
 				err := clientStream.RecvMsg(&msg)
 				return &msg, err
 			})
 			if err != nil {
+				interrupted = canceled
 				return err
 			}
 			if err := serverStream.SendMsg(msg); err != nil {
@@ -70,13 +89,17 @@ func ProxyStream[T any](ctx context.Context, clientStream grpc.ClientStream, ser
 			}
 		}
 	})
-	return eg.Wait()
+	// Pump return order may differ from termination order because cancel wakes
+	// the sibling before the initiating pump returns to errgroup.
+	_ = eg.Wait()
+	return firstErr
 }
 
 // withContext adapts a blocking function to a context-aware function. It's
 // up to the caller to ensure that the blocking function f will unblock at
 // some time, otherwise there can be a goroutine leak.
-func withContext[T any](ctx context.Context, f func() (T, error)) (T, error) {
+// The final result distinguishes interruption from an error returned by f.
+func withContext[T any](ctx context.Context, f func() (T, error)) (T, error, bool) {
 	type result struct {
 		v   T
 		err error
@@ -89,9 +112,9 @@ func withContext[T any](ctx context.Context, f func() (T, error)) (T, error) {
 	select {
 	case <-ctx.Done():
 		var zero T
-		return zero, ctx.Err()
+		return zero, ctx.Err(), true
 	case r := <-ch:
-		return r.v, r.err
+		return r.v, r.err, false
 	}
 }
 

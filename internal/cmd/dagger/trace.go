@@ -216,7 +216,7 @@ func traceWebOrg(orgName string) (string, error) {
 
 // traceRun streams a trace out of Cloud's binary OTLP endpoints
 // (internal/cloud/otlp.go) into the frontend's own exporters -- the transport
-// `dagger agent --trace` restores a session through -- and zooms the view to
+// `dagger agent -r` restores a session through -- and zooms the view to
 // any --span/--check/--test selection. With --log in a live frontend, it also
 // opens the selected span's full logs in the pager.
 //

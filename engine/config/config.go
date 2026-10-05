@@ -27,6 +27,9 @@ type Config struct {
 	// Telemetry configures the engine's own telemetry, separate from client telemetry.
 	Telemetry TelemetryConfig `json:"telemetry,omitempty"`
 
+	// RemoteCache connects the engine's cache to a remote cache service.
+	RemoteCache *RemoteCacheConfig `json:"remoteCache,omitempty"`
+
 	// GC configures the engine's garbage collector.
 	GC GCConfig `json:"gc,omitempty"`
 
@@ -39,17 +42,31 @@ type Config struct {
 }
 
 type TelemetryConfig struct {
+	// WorkloadExport enables the internal workload export, configured with
+	// standard OTLP environment settings. It does not replace Cloud/UI export
+	// or the existing engine-wide resource export.
+	WorkloadExport bool `json:"workloadExport,omitempty" jsonschema:"-"`
+
 	// ResourceMetrics enables cgroup v2 resource metrics for the engine process.
 	// It is disabled by default. Export requires OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
 	// in the engine environment. Other OTLP settings use the standard environment variables.
 	// This does not change client or execution metric collection and export.
 	ResourceMetrics bool `json:"resourceMetrics,omitempty" jsonschema:"default=false"`
 
-	// CacheFacts enables the export of the engine's cache facts to Dagger Cloud.
-	// It is disabled by default. Export requires DAGGER_CLOUD_TOKEN in the engine
+	// EngineEvents enables the export of the engine's cache events to Dagger
+	// Cloud: its cache's start, prunes, snapshot sharing and stop. It is
+	// disabled by default. Export requires DAGGER_CLOUD_TOKEN in the engine
 	// environment, the credential it is sent under. The
-	// _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT environment variable enables it too.
-	CacheFacts bool `json:"cacheFacts,omitempty" jsonschema:"default=false"`
+	// _EXPERIMENTAL_DAGGER_ENGINE_EVENTS environment variable enables it too.
+	EngineEvents bool `json:"engineEvents,omitempty" jsonschema:"default=false"`
+}
+
+type RemoteCacheConfig struct {
+	// URL is the remote cache service's URL. The engine connects to it when
+	// DAGGER_CLOUD_TOKEN holds an engine token, and then exports its cache
+	// events too. The _EXPERIMENTAL_DAGGER_REMOTE_CACHE_URL environment
+	// variable sets it too, and wins.
+	URL string `json:"url,omitempty"`
 }
 
 type LogLevel string

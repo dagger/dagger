@@ -46,7 +46,7 @@ func Close() error {
 	return err
 }
 
-// initialize an address to load directories, containers, secrets or other object types.
+// Resolve external references only.
 func Address(value string) *dagger.Address {
 	client := initClient()
 	return client.Address(value)
@@ -216,6 +216,16 @@ func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
 	return client.LLM(opts...)
 }
 
+// Start an empty run of text and media content, independent of any conversation.
+//
+// Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+//
+// Experimental: LLM support is not yet stabilized
+func LLMContent() *dagger.LLMContent {
+	client := initClient()
+	return client.LLMContent()
+}
+
 // Create a new module.
 func Module() *dagger.Module {
 	client := initClient()
@@ -260,6 +270,16 @@ func ServeModule(ctx context.Context, address string, opts ...dagger.ServeModule
 func SetSecret(name string, plaintext string) *dagger.Secret {
 	client := initClient()
 	return client.SetSecret(name, plaintext)
+}
+
+// Name the current session.
+//
+// The title renames the session wherever its telemetry is shown (the calling client's primary span, e.g. the CLI's command span) and labels its engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+//
+// Experimental: Session APIs are likely to change.
+func SetSessionTitle(ctx context.Context, title string) error {
+	client := initClient()
+	return client.SetSessionTitle(ctx, title)
 }
 
 // Creates source map metadata.

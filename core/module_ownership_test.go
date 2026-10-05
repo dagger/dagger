@@ -374,9 +374,10 @@ func TestModuleObjectRetainsEmbeddedModule(t *testing.T) {
 	}
 }
 
-// A module owns its dependency modules, so the schema memoized on the module
-// stays dispatchable after the session that first built it ends: the
-// dependency's class scopes the dependency module in the calling session.
+// A module owns its dependency modules, so its dependency schema stays
+// dispatchable after the session that first built it ends: a later session
+// builds its own from the module's Deps, and the dependency's class scopes
+// the dependency module in the calling session.
 func TestModuleDependencySchemaDispatchesAfterInstallingSessionRelease(t *testing.T) {
 	f := newModuleOwnershipTest(t)
 	producer, consumer := f.session("producer"), f.session("consumer")
@@ -393,15 +394,15 @@ func TestModuleDependencySchemaDispatchesAfterInstallingSessionRelease(t *testin
 	f.release(producer)
 	require.NoError(t, loadable(consumer, f.dag, dep), "the owner keeps its dependency alive")
 
-	memoized, err := owner.Self().Deps.Schema(consumer)
+	consumerSchema, err := owner.Self().Deps.Schema(consumer)
 	require.NoError(t, err)
-	require.Same(t, depSchema, memoized, "the schema is memoized on the module")
+	require.NotSame(t, depSchema, consumerSchema, "the module keeps no schema of its own")
 
 	var obj dagql.ObjectResult[*ModuleObject]
-	require.NoError(t, depSchema.Select(consumer, depSchema.Root(), &obj, dagql.Selector{Field: "dep"}))
+	require.NoError(t, consumerSchema.Select(consumer, consumerSchema.Root(), &obj, dagql.Selector{Field: "dep"}))
 	require.Equal(t, depID, resultID(t, obj.Self().Module))
 	var out string
-	require.NoError(t, depSchema.Select(consumer, obj, &out, dagql.Selector{
+	require.NoError(t, consumerSchema.Select(consumer, obj, &out, dagql.Selector{
 		Field: "check",
 		Args:  []dagql.NamedInput{{Name: "label", Value: dagql.String("through owner")}},
 	}))

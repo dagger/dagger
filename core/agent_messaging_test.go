@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/base64"
 	"sync"
 	"testing"
 
@@ -102,9 +101,9 @@ func twoAgentRegistry(t *testing.T) (ars *AgentRuntimes, rtA, rtB *AgentRuntime,
 
 	ars = NewAgentRuntimes()
 	var err error
-	rtA, err = ars.Create(base, agentA, AgentStateIdle, "", false)
+	rtA, err = ars.Create(base, agentA, AgentStateIdle, "", false, "")
 	require.NoError(t, err)
-	rtB, err = ars.Create(base, agentB, AgentStateIdle, "", false)
+	rtB, err = ars.Create(base, agentB, AgentStateIdle, "", false, "")
 	require.NoError(t, err)
 	return ars, rtA, rtB, ctxA, ctxB
 }
@@ -120,7 +119,7 @@ func TestAgentSendContent(t *testing.T) {
 			rt.turnOpen = state == "mid-turn"
 			rt.stepping = state == "mid-turn"
 			rt.paused = state == "paused"
-			image := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: "aGVsbG8="}
+			image := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("hello")}
 			blocks := []*LLMContentBlock{image, {Kind: LLMContentText, Text: "after"},
 				{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: image.Data},
 				{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: image.Data}}
@@ -135,7 +134,7 @@ func TestAgentSendContent(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, []string{msg.Ref, mediaOnly.Ref, legacy.Ref, empty.Ref}, rt.mailbox)
 			// Mutating caller-owned pointers and the input slice cannot alter queued data.
-			image.Data = "b3RoZXI="
+			image.Data = []byte("other")
 			blocks[1].Text = "mutated"
 			blocks[0] = nil
 			rec := rt.messages[msg.Ref]
@@ -167,10 +166,6 @@ func TestAgentSendContent(t *testing.T) {
 			llm := (&LLM{endpointMtx: &sync.Mutex{}, mcp: &MCP{}}).WithContent(restored, origin)
 			require.Len(t, llm.Messages, 1)
 			require.Equal(t, want, llm.Messages[0].Content)
-			// Snapshot/fork replay continues to use the existing media recipe shape.
-			recipe, err := llm.recipeSelectors(context.Background())
-			require.NoError(t, err)
-			require.Equal(t, sel, recipe[len(recipe)-1])
 			require.Len(t, rt.messages[mediaOnly.Ref].content, 1)
 			require.Equal(t, want[1], rt.messages[mediaOnly.Ref].content[0])
 			for ref, text := range map[string]string{legacy.Ref: "legacy", empty.Ref: ""} {
@@ -190,13 +185,13 @@ func TestAgentSendContentValidationBeforeReply(t *testing.T) {
 	ref, err := sender.enqueue("question", nil, "")
 	require.NoError(t, err)
 	sender.messages[ref].consumed = true
-	large := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: base64.StdEncoding.EncodeToString(make([]byte, MaxLLMMediaBytes/2+1))}
+	large := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: make([]byte, MaxLLMMediaBytes/2+1)}
 	for name, blocks := range map[string][]*LLMContentBlock{
 		"nil":            {nil},
 		"tool call":      {{Kind: LLMContentToolCall}},
 		"tool result":    {{Kind: LLMContentToolResult, Text: "not user content"}},
 		"thinking":       {{Kind: LLMContentThinking, Text: "private"}},
-		"invalid media":  {{Kind: LLMContentImage, MIMEType: "image/png", Data: "bad"}},
+		"invalid media":  {{Kind: LLMContentImage, MIMEType: "text/plain", Data: []byte("bad")}},
 		"aggregate size": {large, large},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -323,9 +318,9 @@ func TestEventDelivery(t *testing.T) {
 	require.True(t, ok)
 
 	ars := NewAgentRuntimes()
-	chief, err := ars.Create(base, agentA, AgentStateIdle, "", false)
+	chief, err := ars.Create(base, agentA, AgentStateIdle, "", false, "")
 	require.NoError(t, err)
-	scout, err := ars.Create(base, agentB, AgentStateIdle, "", false)
+	scout, err := ars.Create(base, agentB, AgentStateIdle, "", false, "")
 	require.NoError(t, err)
 
 	// Subscribe the chief to scout completions. Scout is inert (projects
@@ -397,7 +392,7 @@ func TestDrainWindowProjectsRunning(t *testing.T) {
 	require.True(t, ok)
 
 	ars := NewAgentRuntimes()
-	rt, err := ars.Create(base, agent, AgentStateIdle, "", false)
+	rt, err := ars.Create(base, agent, AgentStateIdle, "", false, "")
 	require.NoError(t, err)
 
 	rt.mu.Lock()

@@ -67,6 +67,19 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The conversation the agent was spawned from: the tools, workspace and message history its loop started with.
+     *
+     * Fixed by the spawn; stepping does not move it (see snapshot for the latest committed step). Its workspace is the baseline the agent's own changes are measured from.
+     *
+     * For an agent restored under a handle, this is the conversation it was restored from.
+     */
+    public function seed(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('seed');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The conversation as of the last committed step: immutable, branchable, persistable.
      *
      * The seed conversation if the agent never stepped.
@@ -165,6 +178,8 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
      * This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
      *
      * Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+     *
+     * A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
      *
      * Idempotent per subscriber; re-subscribing replaces the state set.
      */

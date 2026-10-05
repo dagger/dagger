@@ -43,6 +43,7 @@ function serializeObject(obj: DaggerObjectBase) {
   return {
     name: obj.name,
     kind: obj.kind(),
+    isCollection: obj.isCollection === true,
     isExported: isExported !== false,
     isDefaultExport: isDefaultExport === true,
     description: obj.description,
@@ -73,6 +74,7 @@ function serializeFunction(fn: DaggerFunction | DaggerInterfaceFunction) {
     isGenerator: f.isGenerator === true,
     isUp: f.isUp === true,
     isAgent: f.isAgent === true,
+    isCollectionGet: f.isCollectionGet === true,
     location: f.getLocation(),
     returnType: f.returnType ? serializeType(f.returnType) : undefined,
     arguments: Object.values(f.arguments).map(serializeArgument),
@@ -103,6 +105,8 @@ function serializeProperty(prop: DaggerObjectPropertyBase) {
     description: prop.description,
     deprecated: prop.deprecated,
     isExposed: prop.isExposed === true,
+    isCollectionKeys: prop.isCollectionKeys === true,
+    isCollectionDelta: prop.isCollectionDelta === true,
     type: prop.type ? serializeType(prop.type) : undefined,
     location: prop.getLocation(),
   }

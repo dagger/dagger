@@ -49,6 +49,22 @@ type PromptFrame struct {
 	// hint renders the right-aligned key hint on the line above the card (see
 	// SetHintSource).
 	hint func() string
+	// hidden reports whether the frame should render nothing (see
+	// SetHiddenSource).
+	hidden func() bool
+}
+
+// SetHiddenSource sets how the frame asks whether to render nothing at all,
+// e.g. while a fullscreen view owns the keyboard. It is read at render time;
+// whoever changes the answer re-renders the frame.
+func (p *PromptFrame) SetHiddenSource(hidden func() bool) {
+	p.hidden = hidden
+	p.Update()
+}
+
+// Hidden reports whether the frame currently renders nothing.
+func (p *PromptFrame) Hidden() bool {
+	return p.hidden != nil && p.hidden()
 }
 
 // SetHintSource sets the key hint drawn right-aligned in the line separating
@@ -172,7 +188,7 @@ func (p *PromptFrame) SetEnabled(enabled bool) {
 }
 
 func (p *PromptFrame) Render(ctx tuist.Context) {
-	if p.input == nil {
+	if p.input == nil || p.Hidden() {
 		return
 	}
 

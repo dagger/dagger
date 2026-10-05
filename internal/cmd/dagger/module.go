@@ -77,6 +77,7 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 
 	// Add the eager module loading flag to disable lazy load on runtime.
 	moduleFlags.BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
+	moduleFlags.Lookup("eager-runtime").Hidden = true
 
 	setFlagSetCapabilities(moduleFlags, mayCallEngine)
 	flags.AddFlagSet(moduleFlags)

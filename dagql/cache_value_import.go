@@ -1,13 +1,9 @@
 package dagql
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
-	"time"
 
-	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -27,6 +23,9 @@ func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
 		}
 		if _, exists := rows[id]; exists {
 			return nil, fmt.Errorf("duplicate ordinal %d", id)
+		}
+		if row.SenderNumber == 0 {
+			return nil, fmt.Errorf("row %d: no sender number", id)
 		}
 		if err := validateTransferRecord(row.Record, row.DependencyIDs); err != nil {
 			return nil, fmt.Errorf("row %d: %w", id, err)
@@ -194,218 +193,4 @@ type transferIdentityPlan struct {
 	recipe, self digest.Digest
 	inputs       []digest.Digest
 	provenance   []egraphInputProvenanceKind
-}
-
-//nolint:gocyclo // one step per imported record kind under one transaction; splitting hides the order of the steps
-func (c *Cache) ImportValues(ctx context.Context, input ValueBundle) ([]ImportedValue, error) {
-	op, err := c.beginCacheOperation()
-	if err != nil {
-		return nil, err
-	}
-	defer op.finish(false)
-	raw, err := json.Marshal(input)
-	if err != nil {
-		return nil, err
-	}
-	var bundle ValueBundle
-	if err := json.Unmarshal(raw, &bundle); err != nil {
-		return nil, err
-	}
-	order, err := validateValueBundle(bundle)
-	if err != nil {
-		return nil, err
-	}
-	index := map[uint64]*TransferredValue{}
-	ownerCount := uint64(0)
-	for i := range bundle.Values {
-		row := &bundle.Values[i]
-		index[uint64(row.Ordinal)] = row
-		ownerCount += uint64(len(row.Record.Envelope.PendingOffers))
-	}
-	checkRoots := func() error {
-		now := time.Now().Unix()
-		for _, root := range bundle.Roots {
-			expiry := index[uint64(root.Ordinal)].ExpiresAtUnix
-			if root.ExpiresAtUnix != 0 && root.ExpiresAtUnix <= now || expiry != 0 && expiry <= now {
-				return fmt.Errorf("expired transfer root %d", root.Ordinal)
-			}
-		}
-		return context.Cause(ctx)
-	}
-	if err := checkRoots(); err != nil {
-		return nil, err
-	}
-	for _, output := range bundle.Outputs {
-		if output.Chain == nil {
-			continue
-		}
-		row := index[uint64(output.Ordinal)]
-		row.Record.Envelope.PendingOffers = append(row.Record.Envelope.PendingOffers, PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: *output.Owner})
-		ownerCount++
-	}
-	bundle.Outputs = nil
-	if _, err := validateValueBundle(bundle); err != nil {
-		return nil, err
-	}
-	c.egraphMu.Lock()
-	if c.nextSharedResultID == 0 {
-		c.nextSharedResultID = 1
-	}
-	firstID := uint64(c.nextSharedResultID)
-	c.nextSharedResultID += sharedResultID(len(bundle.Values))
-	firstOwnerID := c.nextOfferOwnerID
-	c.nextOfferOwnerID += offerOwnerID(ownerCount)
-	c.egraphMu.Unlock()
-	relocate := func(ref *PersistedRef) error {
-		if ref.RecipeID != nil || ref.ResultID == 0 {
-			return nil
-		}
-		if index[ref.ResultID] == nil {
-			return fmt.Errorf("missing transfer reference %d", ref.ResultID)
-		}
-		ref.ResultID = firstID + ref.ResultID - 1
-		return nil
-	}
-	private := &Cache{resultsByID: map[sharedResultID]*sharedResult{}, nextOfferOwnerID: firstOwnerID}
-	for _, id := range order {
-		row := index[id]
-		rec, err := VisitEncodedReferences(row.Record, relocate)
-		if err != nil {
-			return nil, err
-		}
-		rec.Envelope.Imported = true
-		deps := make(map[sharedResultID]struct{}, len(row.DependencyIDs))
-		for _, dep := range row.DependencyIDs {
-			deps[sharedResultID(firstID+dep-1)] = struct{}{}
-		}
-		relocatedDeps := make([]uint64, 0, len(deps))
-		for dep := range deps {
-			relocatedDeps = append(relocatedDeps, uint64(dep))
-		}
-		if err := validateTransferRecord(rec, relocatedDeps); err != nil {
-			return nil, err
-		}
-		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle, createdAtUnixNano: time.Now().UnixNano()}
-		res.storeResultCall(rec.Call)
-		private.resultsByID[res.id] = res
-	}
-	if err := private.validateStoredOwnershipLocked(); err != nil {
-		return nil, err
-	}
-	for _, res := range private.resultsByID {
-		if err := walkTransferCalls(res.loadResultCall(), func(*ResultCall) error { return nil }, func(ref *ResultCallRef) error {
-			ref.shared = private.resultsByID[sharedResultID(ref.ResultID)]
-			return nil
-		}); err != nil {
-			return nil, err
-		}
-		for depID := range res.deps {
-			dep := private.resultsByID[depID]
-			private.rememberDependencyEdgeLocked(res, dep)
-			private.incrementIncomingOwnershipLocked(ctx, dep)
-		}
-	}
-	if err := private.restoreOfferOwnersLocked(ctx); err != nil {
-		return nil, err
-	}
-	plans := make([]transferIdentityPlan, 0, len(order))
-	for _, id := range order {
-		res := private.resultsByID[sharedResultID(firstID+id-1)]
-		if _, err := private.recomputeRequiredSessionResourcesLocked(res); err != nil {
-			return nil, err
-		}
-		frame := res.loadResultCall()
-		recipe, err := frame.deriveRecipeDigest(private)
-		if err != nil {
-			return nil, err
-		}
-		self, refs, err := frame.selfDigestAndInputRefs(private)
-		if err != nil {
-			return nil, err
-		}
-		plan := transferIdentityPlan{row: res, recipe: recipe, self: self}
-		plan.provenance, err = private.inputProvenanceForRefs(refs)
-		if err != nil {
-			return nil, err
-		}
-		for _, ref := range refs {
-			dig, err := ref.inputDigest(private)
-			if err != nil {
-				return nil, err
-			}
-			plan.inputs = append(plan.inputs, dig)
-		}
-		plans = append(plans, plan)
-		if c.testTransferPlanPrepared != nil {
-			if err := c.testTransferPlanPrepared(len(plans)); err != nil {
-				return nil, err
-			}
-		}
-	}
-	if c.testBeforeTransferCommit != nil {
-		c.testBeforeTransferCommit()
-	}
-	c.egraphMu.Lock()
-	notify, notifyOwner := c.beginShareNotificationsLocked()
-	if err := checkRoots(); err != nil {
-		// A failed root validation publishes nothing, so no private plan can
-		// enqueue.
-		c.discardShareNotificationsLocked(notify, notifyOwner)
-		c.egraphMu.Unlock()
-		return nil, err
-	}
-	c.initEgraphLocked()
-	if c.offerOwners == nil {
-		c.offerOwners = map[offerOwnerID]*offerOwner{}
-	}
-	for id, res := range private.resultsByID {
-		c.resultsByID[id] = res
-		res.onRelease = c.resultSnapshotLeaseCleanup(res)
-	}
-	for id, owner := range private.offerOwners {
-		c.offerOwners[id] = owner
-	}
-	// Edges and identity are installed without their per-hook facts: each row
-	// is announced below by one complete result fact.
-	for _, root := range bundle.Roots {
-		c.upsertPersistedEdgeNoFactLocked(ctx, private.resultsByID[sharedResultID(firstID+uint64(root.Ordinal)-1)], root.ExpiresAtUnix, false)
-	}
-	var identities []cachefact.Identity
-	if c.factsEnabled() {
-		identities = make([]cachefact.Identity, len(plans))
-	}
-	for i, plan := range plans {
-		identity, _ := c.applyPreparedResultIdentityLocked(ctx, plan.row, plan.row.loadResultCall(), plan.recipe, plan.self, plan.inputs, plan.provenance, plan.recipe)
-		if identities != nil {
-			identities[i] = identity
-		}
-	}
-	if c.factsEnabled() {
-		// Bundle order is dependencies first.
-		for i, plan := range plans {
-			fact := cachefact.Result{Origin: cachefact.OriginImported, Digests: identities[i].Digests, Terms: []cachefact.Term{factTerm(plan.self, plan.inputs, plan.provenance)}}
-			factResultDescription(plan.row, &fact)
-			fact.Deps = sortedResultIDs(plan.row.deps)
-			c.factRetentionLocked(plan.row.id, &fact)
-			c.announceResultLocked(plan.row, fact)
-		}
-	}
-	// After every identity application: notify each final class the imported
-	// rows now belong to, together with the interval's union and membership
-	// records. Coalescing absorbs the duplicates.
-	for _, plan := range plans {
-		c.queueSnapshotShareRowLocked(ctx, plan.row)
-	}
-	c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
-	duplicates := c.takeShareDuplicateHoldsLocked()
-	c.egraphMu.Unlock()
-	c.releaseShareDuplicateHolds(ctx, duplicates)
-	if c.testAfterTransferCommit != nil {
-		c.testAfterTransferCommit()
-	}
-	imported := make([]ImportedValue, 0, len(bundle.Roots))
-	for _, root := range bundle.Roots {
-		imported = append(imported, ImportedValue{Ordinal: root.Ordinal, ResultID: firstID + uint64(root.Ordinal) - 1})
-	}
-	return imported, nil
 }

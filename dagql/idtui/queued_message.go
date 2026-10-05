@@ -18,11 +18,24 @@ type QueuedMessageLabel struct {
 	message string
 	sent    bool
 	profile termenv.Profile
+	hidden  func() bool
 }
 
 // NewQueuedMessageLabel creates a new QueuedMessageLabel.
 func NewQueuedMessageLabel(profile termenv.Profile) *QueuedMessageLabel {
 	return &QueuedMessageLabel{profile: profile}
+}
+
+// SetHiddenSource sets how the label asks whether to render nothing, e.g.
+// while the prompt it belongs to is hidden. It is read at render time.
+func (q *QueuedMessageLabel) SetHiddenSource(hidden func() bool) {
+	q.hidden = hidden
+	q.Update()
+}
+
+// Hidden reports whether the label currently renders nothing.
+func (q *QueuedMessageLabel) Hidden() bool {
+	return q.message == "" || q.hidden != nil && q.hidden()
 }
 
 // SetMessage sets a RECALLABLE queued message to display -- one still held
@@ -54,7 +67,7 @@ func (q *QueuedMessageLabel) Message() string {
 }
 
 func (q *QueuedMessageLabel) Render(ctx tuist.Context) {
-	if q.message == "" {
+	if q.Hidden() {
 		return
 	}
 	// Collapse newlines so a multi-line interject stays a single status line,

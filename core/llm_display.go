@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"strings"
@@ -32,7 +33,8 @@ func emitContentLog(ctx context.Context, stdout io.Writer, block *LLMContentBloc
 			log.Int(telemetry.StdioStreamAttr, 1),
 			log.String(telemetryattrs.LogMediaKindAttr, strings.ToLower(string(block.Kind))),
 			log.String(telemetryattrs.LogMediaMIMETypeAttr, block.MIMEType),
-			log.String(telemetryattrs.LogMediaDataAttr, block.Data),
+			// The attribute is a base64 string: the UI decodes it (dagui).
+			log.String(telemetryattrs.LogMediaDataAttr, base64.StdEncoding.EncodeToString(block.Data)),
 		)
 		telemetry.Logger(ctx, InstrumentationLibrary).Emit(ctx, rec)
 	case LLMContentToolResult:

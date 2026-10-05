@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -30,7 +32,7 @@ const maxBodyCapture = 256 * 1024 // 256 KiB
 // transport, which logs bodies and never headers — a bearer token must not
 // reach telemetry.
 func (endpoint *LLMEndpoint) otelHTTPClient(provider string) *http.Client {
-	var base http.RoundTripper
+	base := http.DefaultTransport
 	if endpoint.dial != nil {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.DialContext = endpoint.dial
@@ -50,10 +52,10 @@ type llmOTelTransport struct {
 }
 
 func newLLMOTelTransport(base http.RoundTripper, provider string) http.RoundTripper {
-	if base == nil {
-		base = http.DefaultTransport
+	return &llmOTelTransport{
+		base:     enginetelemetry.NetworkResponseTransport(base, enginetelemetry.RecordNetworkRX),
+		provider: provider,
 	}
-	return &llmOTelTransport{base: base, provider: provider}
 }
 
 func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -99,11 +101,12 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			return nil, err
 		}
 		reqBody = fullBody
+		// Reading the request body does not confirm transmission. Leave TX
+		// accounting to eBPF rather than count bytes buffered by the transport.
 		req.Body = io.NopCloser(bytes.NewReader(fullBody))
 		req.ContentLength = int64(len(fullBody))
 		fmt.Fprintf(stdio.Stdout, ">>> %s %s\n%s\n", req.Method, req.URL.Path, captured)
 	}
-
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
 		span.RecordError(err)
@@ -254,15 +257,22 @@ func llmErrorMessage(body []byte) string {
 	}
 }
 
-// captureBody reads the full body, returning a displayable string and the raw bytes.
+// captureBody reads the full body, returning a displayable string and the raw
+// bytes. A body over maxBodyCapture is cut at a character boundary: the
+// captured string is logged, and splitting a UTF-8 sequence would make it an
+// invalid string for every consumer downstream.
 func captureBody(r io.ReadCloser) (captured string, full []byte, err error) {
 	full, err = io.ReadAll(r)
 	r.Close()
 	if err != nil {
-		return "", nil, err
+		return "", full, err
 	}
 	if len(full) <= maxBodyCapture {
 		return string(full), full, nil
 	}
-	return string(full[:maxBodyCapture]) + "\n... (truncated)", full, nil
+	cut := maxBodyCapture
+	for i := 0; i < utf8.UTFMax && cut > 0 && !utf8.RuneStart(full[cut]); i++ {
+		cut--
+	}
+	return string(full[:cut]) + "\n... (truncated)", full, nil
 }

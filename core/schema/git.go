@@ -48,7 +48,10 @@ func init() {
 
 var _ SchemaResolvers = &gitSchema{}
 
-type gitSchema struct{}
+type gitSchema struct {
+	// walkRevision overrides GitRepository.WalkRevision in tests.
+	walkRevision func(ctx context.Context, repo *core.GitRepository, base *gitutil.Ref, rev gitutil.Revision) (string, error)
+}
 
 func (s *gitSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
@@ -100,14 +103,23 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		// are scoped per client even though the repository itself is shared.
 		dagql.NodeFunc("head", s.head).
 			WithInput(dagql.PerClientInput).
-			Doc(`Returns details for HEAD.`),
-		dagql.NodeFunc("ref", s.ref).
+			Doc(`Returns details for HEAD.`).
+			Args(
+				dagql.Arg("noLock").
+					View(AfterVersion("v1.0.0-beta.15")).
+					Doc(`Ignore the workspace lockfile for this lookup.`),
+			),
+		dagql.NodeFunc("ref", s.revision).
 			WithInput(gitLockScopedInput("name")).
 			Doc(`Returns details of a ref.`).
 			Args(
 				dagql.Arg("name").Doc(
 					`Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).`,
-					`Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.`),
+					`Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.`,
+					"The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported."),
+				dagql.Arg("noLock").
+					View(AfterVersion("v1.0.0-beta.15")).
+					Doc(`Ignore the workspace lockfile for this lookup.`),
 			),
 		dagql.NodeFunc("branch", s.branch).
 			WithInput(dagql.PerClientInput).
@@ -115,6 +127,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`Returns details of a branch.`).
 			Args(
 				dagql.Arg("name").Doc(`Branch's name (e.g., "main").`),
+				dagql.Arg("noLock").
+					View(AfterVersion("v1.0.0-beta.15")).
+					Doc(`Ignore the workspace lockfile for this lookup.`),
 			),
 		dagql.NodeFunc("tag", s.tag).
 			WithInput(dagql.PerClientInput).
@@ -122,6 +137,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`Returns details of a tag.`).
 			Args(
 				dagql.Arg("name").Doc(`Tag's name (e.g., "v0.3.9").`),
+				dagql.Arg("noLock").
+					View(AfterVersion("v1.0.0-beta.15")).
+					Doc(`Ignore the workspace lockfile for this lookup.`),
 			),
 		dagql.NodeFunc("commit", s.commit).
 			View(AfterVersion("v1.0.0-0")).
@@ -145,7 +163,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Doc(
 				`Return the latest stable release tag, falling back to HEAD when no release exists.`,
-				`Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.`,
+				`Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned unless noLock is enabled.`,
 			).
 			Args(
 				dagql.Arg("version").
@@ -154,6 +172,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("tagPrefix").
 					Doc(`Restrict release tags to a monorepo subpath.`).
 					Internal(),
+				dagql.Arg("noLock").
+					View(AfterVersion("v1.0.0-beta.15")).
+					Doc(`Ignore the workspace lockfile for this lookup.`),
 			),
 
 		// The repository result is shared across sessions, but tags and
@@ -351,6 +372,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("allowEmpty").Doc("Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false."),
 				dagql.Arg("signoff").Doc("Add a Signed-off-by trailer using the commit author's name and email."),
 			),
+		dagql.NodeFunc("__withCommitRepository", s.gitRefWithCommitRepository).
+			View(AfterVersion("v1.0.0-0")).
+			IsPersistable().
+			Doc("(Internal-only) Preserve commit provenance for incremental source checkouts."),
 		dagql.NodeFunc("__withCommitDirectory", s.gitRefWithCommitDirectory).
 			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().
@@ -1033,13 +1058,21 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 // across clients, but which pin applies to a named ref (and whether a missing
 // pin should be written) is per workspace, so clients must not share those
 // lookups. A full commit SHA never consults the lock, so SHA lookups stay
-// shared: that is what workspace snapshots pin their refs by.
+// shared: that is what workspace snapshots pin their refs by. The same holds
+// for revision suffixes applied to a full SHA (e.g. <sha>~2): only the base
+// of a revision can consult the lock.
 func gitLockScopedInput(argName string) dagql.ImplicitInput {
 	return dagql.ImplicitInput{
 		Name: "cachePerClientLock:" + argName,
 		Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
-			if name, ok := args[argName].(dagql.String); ok && gitutil.IsCommitSHA(name.String()) {
-				return dagql.NewString(""), nil
+			if name, ok := args[argName].(dagql.String); ok {
+				base := name.String()
+				if rev, err := gitutil.ParseRevision(base); err == nil {
+					base = rev.Base
+				}
+				if gitutil.IsCommitSHA(base) {
+					return dagql.NewString(""), nil
+				}
 			}
 			return dagql.PerClientInput.Resolver(ctx, args)
 		},
@@ -1325,6 +1358,7 @@ func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 
 type refArgs struct {
 	Name          string
+	NoLock        bool   `name:"noLock" default:"false"`
 	Commit        string `default:"" internal:"true"`
 	LockOperation string `default:"" internal:"true"`
 	LockName      string `default:"" internal:"true"`
@@ -1541,7 +1575,56 @@ func (s *gitSchema) bundleAsFile(
 	return parent.Self().File, nil
 }
 
+// revision resolves GitRepository.ref: a ref name, optionally followed by
+// revision suffixes such as ~3 or ^2.
+//
+// The base name resolves exactly like a plain ref, workspace lock included:
+// HEAD~3 pins (or writes) the same lock entry as HEAD. The full expression
+// never gets a lock entry of its own: the walk from a pinned base is
+// deterministic, so pinning the base pins the result. The result is a
+// detached ref named by its SHA, like an expanded abbreviated SHA.
+func (s *gitSchema) revision(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args refArgs) (inst dagql.Result[*core.GitRef], _ error) {
+	if args.LockOperation != "" {
+		// internal lookup with explicit lock handling: a plain ref name
+		return s.ref(ctx, parent, args)
+	}
+	rev, err := gitutil.ParseRevision(args.Name)
+	if err != nil {
+		return inst, err
+	}
+	if !rev.HasSuffix() {
+		return s.ref(ctx, parent, args)
+	}
+	if args.Commit != "" {
+		// The caller already knows the commit the expression resolved to
+		// (e.g. a pinned module version): honor it, like a pinned ref name.
+		if !gitutil.IsCommitSHA(args.Commit) {
+			return inst, fmt.Errorf("invalid commit SHA: %q", args.Commit)
+		}
+		return s.gitRefResult(ctx, parent, &gitutil.Ref{Name: args.Commit, SHA: args.Commit})
+	}
+
+	base, err := s.ref(ctx, parent, refArgs{Name: rev.Base, NoLock: args.NoLock})
+	if err != nil {
+		return inst, fmt.Errorf("resolve %q: %w", rev.Expr, err)
+	}
+	walk := s.walkRevision
+	if walk == nil {
+		walk = func(ctx context.Context, repo *core.GitRepository, base *gitutil.Ref, rev gitutil.Revision) (string, error) {
+			return repo.WalkRevision(ctx, base, rev)
+		}
+	}
+	sha, err := walk(ctx, parent.Self(), base.Self().Ref, rev)
+	if err != nil {
+		return inst, err
+	}
+	return s.gitRefResult(ctx, parent, &gitutil.Ref{Name: sha, SHA: sha})
+}
+
 func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args refArgs) (inst dagql.Result[*core.GitRef], _ error) {
+	if args.NoLock {
+		ctx = withoutWorkspaceLookupLock(ctx)
+	}
 	repo := parent.Self()
 	if args.Commit != "" && !gitutil.IsCommitSHA(args.Commit) {
 		return inst, fmt.Errorf("invalid commit SHA: %q", args.Commit)
@@ -1724,16 +1807,21 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 			dgstInputs = append(dgstInputs, "authHeader", string(remoteRepo.AuthHeader.Self().Handle))
 		}
 	}
-	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...), call.ExtraDigestLabelRemoteCache)
+	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...))
 	if err != nil {
 		return inst, err
 	}
 	return inst, nil
 }
 
-func (s *gitSchema) head(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
+type headArgs struct {
+	NoLock bool `name:"noLock" default:"false"`
+}
+
+func (s *gitSchema) head(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args headArgs) (inst dagql.Result[*core.GitRef], _ error) {
 	return s.ref(ctx, parent, refArgs{
 		Name:          "HEAD",
+		NoLock:        args.NoLock,
 		LockOperation: workspace.LockOperationGitSHA,
 		LockName:      "HEAD",
 	})
@@ -1784,6 +1872,7 @@ func (s *gitSchema) branch(ctx context.Context, parent dagql.ObjectResult[*core.
 	}
 	return s.ref(ctx, parent, refArgs{
 		Name:          args.Name,
+		NoLock:        args.NoLock,
 		Commit:        args.Commit,
 		LockOperation: workspace.LockOperationGitSHA,
 		LockName:      lockName,
@@ -1799,6 +1888,7 @@ func (s *gitSchema) tag(ctx context.Context, parent dagql.ObjectResult[*core.Git
 	}
 	return s.ref(ctx, parent, refArgs{
 		Name:          args.Name,
+		NoLock:        args.NoLock,
 		Commit:        args.Commit,
 		LockOperation: workspace.LockOperationGitSHA,
 		LockName:      lockName,
@@ -2155,7 +2245,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		if lazy, ok := inst.Self().Lazy.(*core.DirectoryGitTreeLazy); ok {
 			lazy.ContentDigest = dgst
 		} else {
-			inst, err = inst.WithContentDigest(ctx, dgst, call.ExtraDigestLabelRemoteCache)
+			inst, err = inst.WithContentDigest(ctx, dgst)
 			if err != nil {
 				return inst, err
 			}
@@ -2236,7 +2326,7 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 			dgstInputs = append(dgstInputs, "authHeader", string(remoteRepo.AuthHeader.Self().Handle))
 		}
 	}
-	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...), call.ExtraDigestLabelRemoteCache)
+	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...))
 	if err != nil {
 		return inst, err
 	}
@@ -2848,6 +2938,7 @@ func (s *gitSchema) log(
 type latestArgs struct {
 	Version   string `default:""`
 	TagPrefix string `name:"tagPrefix" default:""`
+	NoLock    bool   `name:"noLock" default:"false"`
 }
 
 func (s *gitSchema) latest(
@@ -2855,6 +2946,9 @@ func (s *gitSchema) latest(
 	parent dagql.ObjectResult[*core.GitRepository],
 	args latestArgs,
 ) (inst dagql.Result[*core.GitRef], _ error) {
+	if args.NoLock {
+		ctx = withoutWorkspaceLookupLock(ctx)
+	}
 	repo := parent.Self()
 	remoteRepo, isRemote := repo.Backend.(*core.RemoteGitRepository)
 	if !isRemote {
@@ -2944,6 +3038,7 @@ func (s *gitSchema) latest(
 
 	return s.ref(ctx, parent, refArgs{
 		Name:          selectedRef,
+		NoLock:        args.NoLock,
 		LockOperation: workspace.LockOperationGitSHA,
 		LockName:      selectedRef,
 	})

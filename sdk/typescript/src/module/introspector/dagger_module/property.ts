@@ -8,7 +8,12 @@ import {
   isTypeDefResolved,
   resolveTypeDef,
 } from "../typescript_module/index.js"
-import { FIELD_DECORATOR, FUNCTION_DECORATOR } from "./decorator.js"
+import {
+  DELTA_DECORATOR,
+  FIELD_DECORATOR,
+  FUNCTION_DECORATOR,
+  KEYS_DECORATOR,
+} from "./decorator.js"
 import { Locatable } from "./locatable.js"
 import { DaggerObjectPropertyBase } from "./objectBase.js"
 import { References } from "./reference.js"
@@ -24,6 +29,8 @@ export class DaggerProperty
   public deprecated?: string
   public alias: string | undefined
   public isExposed: boolean
+  public isCollectionKeys: boolean
+  public isCollectionDelta: boolean
 
   private symbol: ts.Symbol
   private _typeRef?: string
@@ -43,7 +50,17 @@ export class DaggerProperty
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
     this.name = this.node.name.getText()
 
+    this.isCollectionKeys = this.ast.isNodeDecoratedWith(
+      this.node,
+      KEYS_DECORATOR,
+    )
+    this.isCollectionDelta = this.ast.isNodeDecoratedWith(
+      this.node,
+      DELTA_DECORATOR,
+    )
     this.isExposed =
+      this.isCollectionKeys ||
+      this.isCollectionDelta ||
       this.ast.isNodeDecoratedWith(this.node, FUNCTION_DECORATOR) ||
       this.ast.isNodeDecoratedWith(this.node, FIELD_DECORATOR)
 

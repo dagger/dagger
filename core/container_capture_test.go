@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
@@ -170,9 +171,29 @@ func TestCapturePersistedContainerExcludesNewDirectGroups(t *testing.T) {
 	require.False(t, locked)
 	require.False(t, ran.Load())
 	finish()
-	require.NoError(t, <-captured)
-	require.NoError(t, <-done)
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var captureErr, evalErr error
+	for captured != nil || done != nil {
+		select {
+		case captureErr = <-captured:
+			captured = nil
+		case evalErr = <-done:
+			done = nil
+		case <-waitCtx.Done():
+			t.Fatal("capture and evaluation did not finish:", waitCtx.Err())
+		}
+	}
+	require.NoError(t, evalErr)
 	require.True(t, ran.Load())
+	// Encoding excludes the body, but final revision validation can race
+	// with evaluation after the encoder releases its latch.
+	if captureErr != nil {
+		require.ErrorIs(t, captureErr, dagql.ErrPersistStateNotReady)
+	}
+	op.encode = nil
+	_, err := cache.CapturePersistedRecord(ctx, res)
+	require.NoError(t, err)
 }
 
 type captureContainerWholeOp struct {

@@ -82,30 +82,26 @@ Typical dev-engine workflow:
 ./hack/dev   # build + start dagger-engine.dev (publishes debug port 6060)
 ./hack/with-dev ./bin/dagger --profile call engine-dev container sync
 curl -s http://localhost:6060/debug/wcprof/dump > /tmp/wcprof.dump
-go run ./cmd/wcprof-analyze /tmp/wcprof.dump
 ```
 
-## Analysis (`cmd/wcprof-analyze`, `engine/wcprof/wcanalyze`)
+Dumps are NDJSON: a `DumpHeader` line (with the interned `strings` table that
+`class`/`ident`/`client` indexes point into), then one `DumpEvent` per line.
+Read them with `wcprof.ReadDump`.
 
-The analyzer reconstructs the op graph (parents, waits, nested-client
-stitching) and reports:
+## Analysis
 
-- **what-if rankings** (the headline): a discrete-event simulation re-executes
-  the recorded schedule under "class X self-time × f"
-  hypotheses (f ∈ {0, 0.5, 0.9} by default) and ranks classes by how much
-  end-to-end makespan each would actually save. This accounts for critical-
-  path shifts, dedup (singleflighted/lazy work counted once), and dependency
-  chains — unlike naive "total time per class" tables.
-- per-class self-time tables (self = duration − waits − child intervals),
-  with outcome counts and duplicate-execution detection.
-- the end-of-workload blocking chain.
-- dead air: trace gaps where no recorded op was running (= uninstrumented
-  blocking, or client-side stalls).
+This package is only the recorder; analysis tooling lives outside this repo.
+The offline what-if analyzer (`cmd/wcprof-analyze`, `engine/wcprof/wcanalyze`:
+replay-based what-if rankings, blocking chains, dead air) was moved out
+in #13588.
 
-Simulation assumptions (v1, deliberate): unlimited resources (never
-CPU-bound), recorded dependency structure is invariant under the hypothesis,
-waits on named resources (locks) are fixed delays. The simulated baseline
-makespan is reported against the actual makespan as a drift sanity check.
+For agent-driven debugging, the engine-lab dev module
+(`.dagger/modules/engine-lab`) has `wcprofEnable`, `wcprofCapture` and
+`wcprofReport` tools: capture a dump from a from-source engine, then report
+per-class self time, per-parent child breakdowns, per-client activity, op
+subtrees, or name-resolved events through jq. Its `wcprof-report` helper is
+built against this package at tool-call time, so it tracks the dump format.
+See the engine-lab skill for the workflow.
 
 ## Status / caveats
 

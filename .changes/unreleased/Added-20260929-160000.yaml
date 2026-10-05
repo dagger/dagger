@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  Review agent changes in a diff viewer: press `ctrl+g` in `dagger agent` to
+  browse the Changes panel's uncommitted edits and commits in a sidebar, with
+  each one's syntax-highlighted patch alongside. The panel's save and reload
+  keys work from the viewer too.
+time: 2026-09-29T16:00:00Z
+custom:
+  Author: vito
+  PR: "14391"

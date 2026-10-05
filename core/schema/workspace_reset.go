@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 type workspaceWithResetArgs struct {
@@ -13,9 +14,15 @@ type workspaceWithResetArgs struct {
 	Hard   bool `default:"false"`
 }
 
+// validate rejects malformed targets before withReset crosses the host
+// approval boundary. Whether the target exists is only known once it has
+// been resolved against the frozen repository.
 func (args workspaceWithResetArgs) validate() error {
-	if !core.IsFullGitSHA(args.Commit) {
-		return fmt.Errorf("withReset commit must be a full lowercase commit hash, got %q", args.Commit)
+	if args.Commit == "" {
+		return fmt.Errorf("withReset commit must not be empty")
+	}
+	if _, err := gitutil.ParseRevision(args.Commit); err != nil {
+		return fmt.Errorf("withReset commit: %w", err)
 	}
 	return nil
 }
@@ -43,10 +50,14 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return inst, err
 	}
+	sha, err := resolveWorkspaceResetTarget(ctx, srv, base, args.Commit)
+	if err != nil {
+		return inst, err
+	}
 	var dir dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, base, &dir,
 		dagql.Selector{Field: "asGit"},
-		dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.NewString(args.Commit)}}},
+		dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.NewString(sha)}}},
 		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "depth", Value: dagql.NewInt(0)}}},
 	); err != nil {
 		return inst, fmt.Errorf("commit %s is not in this workspace's repository: %w", args.Commit, err)
@@ -117,4 +128,29 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 		inst = overlaid
 	}
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, frozen.Self(), frozen.Self().SelectedEnv())
+}
+
+// resolveWorkspaceResetTarget resolves a reset target (a commit hash or
+// abbreviation, a ref name, or either followed by revision suffixes such as
+// HEAD~1) against the frozen checkout's repository, like git reset <commit>.
+//
+// Only the resolved full hash enters the recorded recipe: named targets would
+// otherwise check out that ref (e.g. switching to a branch) instead of moving
+// HEAD, and the result must not depend on how the target was spelled.
+func resolveWorkspaceResetTarget(ctx context.Context, srv *dagql.Server, checkout dagql.ObjectResult[*core.Directory], target string) (string, error) {
+	if core.IsFullGitSHA(target) {
+		return target, nil
+	}
+	var sha dagql.String
+	if err := srv.Select(ctx, checkout, &sha,
+		dagql.Selector{Field: "asGit"},
+		dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.NewString(target)}}},
+		dagql.Selector{Field: "commitSHA"},
+	); err != nil {
+		return "", fmt.Errorf("resolve %q in this workspace's repository: %w", target, err)
+	}
+	if !core.IsFullGitSHA(sha.String()) {
+		return "", fmt.Errorf("resolve %q in this workspace's repository: unexpected commit %q", target, sha)
+	}
+	return sha.String(), nil
 }

@@ -23,6 +23,30 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+     */
+    public function compose(array $expertise): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('compose');
+        $innerQueryBuilder->setArgument('expertise', $expertise);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
+     *
+     * Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
+     *
+     * A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
+     */
+    public function recompose(array $expertise): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('recompose');
+        $innerQueryBuilder->setArgument('expertise', $expertise);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The model the conversation is running against, after resolving any configured default.
      */
     public function model(): string
@@ -111,6 +135,24 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Discover every artifact this conversation can address, as one selection, without evaluating their values.
+     *
+     * Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.
+     *
+     * The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.
+     *
+     * Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.
+     */
+    public function artifacts(?array $include = null): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('artifacts');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -325,25 +367,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
-     */
-    public function portableID(): Id
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('portableID');
-        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'portableID'));
-    }
-
-    /**
-     * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-     */
-    public function emitHistory(): LLM
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('emitHistory');
-        $id = $this->queryLeaf($leafQueryBuilder, 'emitHistory');
-        return $this->client->loadObjectFromId(\Dagger\LLM::class, new \Dagger\Id((string)$id), 'LLM');
-    }
-
-    /**
      * Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
      */
     public function loop(?int $maxSteps = null, ?int $maxTokens = null): LLM
@@ -383,6 +406,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         ?string $name = null,
         ?string $handle = null,
         ?AgentState $state = null,
+        ?string $parentHandle = null,
         ?string $error = '',
     ): Agent {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('spawn');
@@ -394,6 +418,9 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         }
         if (null !== $state) {
         $leafQueryBuilder->setArgument('state', $state);
+        }
+        if (null !== $parentHandle) {
+        $leafQueryBuilder->setArgument('parentHandle', $parentHandle);
         }
         if (null !== $error) {
         $leafQueryBuilder->setArgument('error', $error);

@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"runtime/debug"
 	"sync"
+	"weak"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/errcode"
@@ -33,6 +34,11 @@ import (
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
+	// self is a weak pointer to this server, made once and shared by its
+	// classes so they can invalidate the schema cache without keeping the
+	// server alive.
+	self weak.Pointer[Server]
+
 	root           AnyObjectResult
 	telemetry      AroundFunc
 	objects        map[string]ObjectType
@@ -84,10 +90,11 @@ type Server struct {
 	// result's call graph so the cache can resolve an object class that is not
 	// installed in the current server's schema. Reconstruction normally uses
 	// the class captured on the shared result at construction time
-	// (sharedResult.objClass); this hook is the fallback when capture missed
-	// the path (e.g., persisted-envelope decode, or imports loaded by ID
-	// before any class-bearing wrap). Resolved classes are cached back onto
-	// the shared so subsequent reconstructions skip the hook. Cold recipe loads
+	// (sharedResult.objClass) while that class's server is alive; this hook
+	// is the fallback once that server is gone or when capture missed the
+	// path (e.g., persisted-envelope decode, or imports loaded by ID before
+	// any class-bearing wrap). Resolved classes are cached back onto the
+	// shared so subsequent reconstructions skip the hook. Cold recipe loads
 	// also use this hook to select the defining module's schema before dispatch.
 	resultServerForCall func(ctx context.Context, resultCall *ResultCall) (*Server, error)
 }
@@ -216,7 +223,7 @@ func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
 }
 
 func newBlankServer() *Server {
-	return &Server{
+	srv := &Server{
 		objects:        map[string]ObjectType{},
 		interfaces:     map[string]*Interface{},
 		scalars:        map[string]ScalarType{},
@@ -230,6 +237,8 @@ func newBlankServer() *Server {
 		schemaOnces:    make(map[call.View]*sync.Once),
 		schemaLock:     &sync.Mutex{},
 	}
+	srv.self = weak.Make(srv)
+	return srv
 }
 
 // Fork returns a new server that starts with a clone of the current server's
@@ -2198,6 +2207,12 @@ func EngineCache(ctx context.Context) (*Cache, error) {
 	return val.(*Cache), nil
 }
 
+// ContextWithServer returns ctx with srv as its current dagql server, as a
+// resolver called by srv sees it.
+func ContextWithServer(ctx context.Context, srv *Server) context.Context {
+	return srvToContext(ctx, srv)
+}
+
 func srvToContext(ctx context.Context, srv *Server) context.Context {
 	if CurrentDagqlServer(ctx) == srv {
 		return ctx
@@ -2456,20 +2471,25 @@ func (s *Server) toSelectable(ctx context.Context, val AnyResult) (AnyObjectResu
 		return class.New(val)
 	}
 	// Current server doesn't know the type; fall back to the class captured on
-	// the result's shared payload when it was first wrapped. This handles
-	// cross-module cases where the concrete type lives in a module not
-	// installed in this server's schema.
+	// the result's shared payload when it was first wrapped, while its server
+	// is alive. This handles cross-module cases where the concrete type lives
+	// in a module not installed in this server's schema.
 	shared := val.cacheSharedResult()
 	if shared != nil {
-		if state := shared.loadPayloadState(); state.objClass != nil && state.objClass.TypeName() == className {
-			return state.objClass.New(val)
+		if class, ok := shared.loadPayloadState().objClass.load(className); ok {
+			return class.New(val)
 		}
 	}
 	// Last resort: rebuild a dep-aware resolver from the result's call frame.
-	// Reached when class capture missed a path; once we resolve here we
-	// remember the class on the shared so subsequent hits skip this branch.
+	// Reached when the captured class's server is gone or class capture missed
+	// a path; once we resolve here we remember the class on the shared so
+	// subsequent hits skip this branch while its server is alive.
 	if shared != nil && s.resultServerForCall != nil {
-		if depResolver, err := resolverForSharedResultObject(ctx, s, shared, className); err == nil && depResolver != nil {
+		depResolver, err := resolverForSharedResultObject(ctx, s, shared, className)
+		if err != nil {
+			return nil, fmt.Errorf("toSelectable %q: resolve type from the result's call graph: %w", className, err)
+		}
+		if depResolver != nil {
 			if class, ok := depResolver.ObjectType(className); ok {
 				shared.setObjClass(class)
 				return class.New(val)

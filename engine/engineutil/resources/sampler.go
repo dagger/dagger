@@ -84,6 +84,37 @@ func (s *Sampler) Sample(ctx context.Context) error {
 	var eg errgroup.Group
 
 	eg.Go(func() error {
+		return s.SampleUsage(ctx)
+	})
+
+	eg.Go(func() error {
+		return s.SampleOther(ctx)
+	})
+
+	return eg.Wait()
+}
+
+// SampleUsage reads total CPU and current memory, the readings workload
+// export copies.
+func (s *Sampler) SampleUsage(ctx context.Context) error {
+	var eg errgroup.Group
+
+	eg.Go(func() error {
+		return s.cpuStat.sample(ctx)
+	})
+
+	eg.Go(func() error {
+		return s.memoryCurrent.sample(ctx)
+	})
+
+	return eg.Wait()
+}
+
+// SampleOther reads every sampler not read by SampleUsage.
+func (s *Sampler) SampleOther(ctx context.Context) error {
+	var eg errgroup.Group
+
+	eg.Go(func() error {
 		return s.ioStat.sample(ctx)
 	})
 
@@ -92,15 +123,7 @@ func (s *Sampler) Sample(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return s.cpuStat.sample(ctx)
-	})
-
-	eg.Go(func() error {
 		return s.cpuPressure.sample(ctx)
-	})
-
-	eg.Go(func() error {
-		return s.memoryCurrent.sample(ctx)
 	})
 
 	eg.Go(func() error {

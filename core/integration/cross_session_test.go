@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
@@ -237,10 +238,9 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 // The stored value is an engine-result handle, and the cached parent object
 // state can be reused by later sessions through default function caching, so
 // the handle must keep the referenced result retained for as long as the
-// parent result lives. Previously private-field handles were invisible to
-// dagql dependency tracking: once the referenced result's owning session
-// closed, a later session's function call loaded the dangling handle from
-// cached state and failed with "missing shared result". The referenced
+// parent result lives. dagql dependency tracking must include private-field
+// handles, so a later session's cache hit can still resolve the referenced
+// result after its owning session closes. The referenced
 // credential result here is produced and read only by never-cached functions,
 // so nothing else retains it across sessions.
 func (ModuleSuite) TestCrossSessionPrivateFieldResultRetention(ctx context.Context, t *testctx.T) {
@@ -376,8 +376,7 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 	})
 }
 
-// This covers the behavior previously checked through the private
-// _contextDirectory field. A Directory argument with +defaultPath="/" must
+// A Directory argument with +defaultPath="/" must
 // resolve from the module source context even after the client that first
 // loaded the module has closed, so the second client cannot depend on the first
 // client's in-memory module/context lookup state.
@@ -440,7 +439,7 @@ source = "../workspace-container-provider"
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
-settings.base = "workspace-container-provider:dockerfile-image"
+settings.base = "dag://workspace-container-provider/dockerfile-image"
 `), 0o644))
 
 	prime, err := hostDaggerExecRaw(ctx, t, app, "--silent", "call", "workspace-container-provider", "context-directory", "entries")
@@ -1052,6 +1051,83 @@ func (ModuleSuite) TestCrossSessionContextualDirCacheHit(ctx context.Context, t 
 	require.NotEqual(t, res1.Test.Rand, res3.Test.Rand)
 }
 
+// TestCrossSessionSecretURIRecipeReplay distinguishes replaying a secret's
+// construction from rebinding new credentials under its old content identity.
+// The latter would incorrectly make the old container output usable again.
+func (SecretSuite) TestCrossSessionSecretURIRecipeReplay(ctx context.Context, t *testctx.T) {
+	for _, customCacheKey := range []bool{false, true} {
+		name := "content identity changes"
+		if customCacheKey {
+			name = "explicit cache equivalence"
+		}
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			source, sink := connectWithTrace(ctx, t, engineconn.Config{
+				ExtraEnv: []string{"REPLAY_SECRET=before"},
+			})
+			opts := dagger.SecretOpts{}
+			if customCacheKey {
+				opts.CacheKey = identity.NewID()
+			}
+			secret := source.Secret("env://REPLAY_SECRET", opts)
+			secretID, err := secret.ID(ctx)
+			require.NoError(t, err)
+			ctr := source.Container().From(alpineImage).
+				WithSecretVariable("VALUE", secret).
+				WithExec([]string{"sh", "-c", `printf '%s' "$VALUE" | base64`})
+			before, err := ctr.Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "YmVmb3Jl\n", before)
+			id, err := ctr.ID(ctx)
+			require.NoError(t, err)
+			var binding struct {
+				LLM struct {
+					WithTools struct{ ID string }
+				}
+			}
+			require.NoError(t, source.Do(ctx, &dagger.Request{
+				Query:     `query($id: ID!) { llm { withTools(object: $id) { id } } }`,
+				Variables: map[string]any{"id": string(id)},
+			}, &dagger.Response{Data: &binding}))
+			portable, err := sink.captureLLMRecipe(ctx, t, source,
+				dagger.Ref[*dagger.LLM](source, dagger.ID(binding.LLM.WithTools.ID)))
+			require.NoError(t, err)
+			llmRecipe := new(call.ID)
+			require.NoError(t, llmRecipe.Decode(string(portable)))
+			require.Equal(t, "withTools", llmRecipe.Field())
+			var receiver *call.ID
+			for _, arg := range llmRecipe.Args() {
+				if arg.Name() == "object" {
+					receiver = arg.Value().(*call.LiteralID).Value()
+				}
+			}
+			require.NotNil(t, receiver)
+			require.False(t, receiver.IsHandle())
+			recipe, err := receiver.Encode()
+			require.NoError(t, err)
+
+			// The source stays connected so the target cannot accidentally pass
+			// by falling back to the original client's still-live attachables.
+			target, _ := connectWithTrace(ctx, t, engineconn.Config{
+				ExtraEnv: []string{"REPLAY_SECRET=after"},
+			})
+			after, err := dagger.Ref[*dagger.Container](target, dagger.ID(recipe)).Stdout(ctx)
+			require.NoError(t, err)
+			plaintext, secretErr := dagger.Ref[*dagger.Secret](target, secretID).Plaintext(ctx)
+			if customCacheKey {
+				// Explicit cache keys deliberately equate different plaintexts.
+				// The new binding supplies B, but cached computations still use A.
+				require.Equal(t, before, after)
+				require.NoError(t, secretErr)
+				require.Equal(t, "after", plaintext)
+			} else {
+				require.Equal(t, "YWZ0ZXI=\n", after)
+				// Replaying must not authorize the old A-content handle.
+				require.ErrorContains(t, secretErr, "has not bound the session resources")
+			}
+		})
+	}
+}
+
 func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 	err := fscopy.Copy(ctx, testDataPath(t, "modules", "go", "secret-uri-caching"), "/", modDir, "/")
@@ -1344,10 +1420,6 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			require.Equal(t, "2", string(outDecoded))
 		}
 	})
-}
-
-func (ModuleSuite) TestCrossSessionDedupeOfNestedExec(ctx context.Context, t *testctx.T) {
-	t.Skip("disabled until Theseus lands")
 }
 
 func (ModuleSuite) TestPrivateGitRepoArgCaching(ctx context.Context, t *testctx.T) {

@@ -41,6 +41,7 @@ type DaggerDev {
   smoke(ws: Workspace!): Void @check {
     playground(ws)
       .withWorkdir("/smoke")
+      .withExec(["git", "init"])
       .withNewFile("dagger.toml", """
         [modules.hello]
         source = ".dagger/modules/hello"
@@ -82,7 +83,7 @@ type DaggerDev {
       "build-base",
       "protobuf~35",
       "protobuf-dev~35",
-      "clang",
+      "clang-22",
       "lld",
       "libbpf-dev",
     ])

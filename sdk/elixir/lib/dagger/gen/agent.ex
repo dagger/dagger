@@ -106,6 +106,8 @@ defmodule Dagger.Agent do
 
   Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
 
+  A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
+
   Idempotent per subscriber; re-subscribing replaces the state set.
 
   > #### Experimental {: .warning}
@@ -225,6 +227,28 @@ defmodule Dagger.Agent do
          client: agent.client
        }}
     end
+  end
+
+  @doc """
+  The conversation the agent was spawned from: the tools, workspace and message history its loop started with.
+
+  Fixed by the spawn; stepping does not move it (see snapshot for the latest committed step). Its workspace is the baseline the agent's own changes are measured from.
+
+  For an agent restored under a handle, this is the conversation it was restored from.
+
+  > #### Experimental {: .warning}
+  >
+  > "Agent APIs are likely to change."
+  """
+  @spec seed(t()) :: Dagger.LLM.t()
+  def seed(%__MODULE__{} = agent) do
+    query_builder =
+      agent.query_builder |> QB.select("seed")
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: agent.client
+    }
   end
 
   @doc """

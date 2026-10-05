@@ -623,7 +623,7 @@ func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *te
 	srv := c.Container().
 		From(alpineImage).
 		WithFile("/bin/app", script).
-		WithSymlink("doesnt", "matter"). // Note this is done via a dagOp; which broke things at one point
+		WithSymlink("doesnt", "matter"). // WithSymlink runs as a dagOp, so this covers services built from dagOp-produced containers
 		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
 		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
 		WithExposedPort(1337)
@@ -954,6 +954,7 @@ func (ServiceSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		With(withRepoGoModules(c)).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
@@ -987,6 +988,7 @@ func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T)
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		With(withRepoGoModules(c)).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -56,7 +55,7 @@ func mediaHistory(t *testctx.T, c *dagger.Client, llm *dagger.LLM) []mediaMessag
 }
 
 func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	png := c.Container().From(alpineImage).
 		WithNewFile("/image.b64", mediaPNG).
 		WithExec([]string{"sh", "-c", "base64 -d /image.b64 > /image.png"}).File("/image.png")
@@ -89,15 +88,9 @@ func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
 			require.Contains(t, transcript, tc.mime)
 			require.NotContains(t, transcript, tc.data)
 
-			// Portable reconstruction must contain the resolved bytes rather than
-			// depend on the original File or its producing container.
-			id, err := llm.PortableID(ctx)
+			// Reconstruct the committed call chain, retaining file dependencies.
+			id, err := sink.captureLLMRecipe(ctx, t, c, llm)
 			require.NoError(t, err)
-			recipe := new(call.ID)
-			require.NoError(t, recipe.Decode(string(id)))
-			for cur := recipe; cur != nil; cur = cur.Receiver() {
-				require.NotEqual(t, "withContentFile", cur.Field(), "portable media must not retain the file-producing recipe")
-			}
 			reloaded := dagger.Ref[*dagger.LLM](c, id)
 			require.Equal(t, messages, mediaHistory(t, c, reloaded))
 		})
@@ -114,8 +107,8 @@ func (LLMSuite) TestMediaContentFiles(ctx context.Context, t *testctx.T) {
 }
 
 func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	pdf := base64.StdEncoding.EncodeToString([]byte(mediaPDF))
+	c, sink := connectWithTrace(ctx, t)
+	pdf := dagger.Bytes(base64.StdEncoding.EncodeToString([]byte(mediaPDF)))
 	llm := c.LLM().WithContent([]dagger.LLMContentBlockInput{
 		{Kind: dagger.LLMContentBlockKindText, Text: "Compare these:"},
 		{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
@@ -133,7 +126,7 @@ func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "Compare these:", blocks[0].Text)
 	require.Equal(t, mediaPNG, blocks[1].Data)
 	require.Equal(t, "with this document", blocks[2].Text)
-	require.Equal(t, pdf, blocks[3].Data)
+	require.Equal(t, string(pdf), blocks[3].Data)
 	require.Equal(t, mediaWAV, blocks[4].Data)
 	require.Equal(t, "audio/wav", blocks[4].MIMEType)
 
@@ -142,10 +135,10 @@ func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
 	require.Contains(t, transcript, "Compare these:")
 	require.Contains(t, transcript, "with this document")
 	require.NotContains(t, transcript, mediaPNG)
-	require.NotContains(t, transcript, pdf)
+	require.NotContains(t, transcript, string(pdf))
 	require.NotContains(t, transcript, mediaWAV)
 
-	id, err := llm.PortableID(ctx)
+	id, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	require.Equal(t, messages, mediaHistory(t, c, dagger.Ref[*dagger.LLM](c, id)))
 
@@ -161,7 +154,7 @@ func (LLMSuite) TestMediaContentBlocks(ctx context.Context, t *testctx.T) {
 }
 
 func (LLMSuite) TestMediaToolResultBlocks(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	llm := c.LLM().WithToolResult("media-call", "legacy text", false, dagger.LLMWithToolResultOpts{
 		Blocks: []dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "caption"},
@@ -180,7 +173,7 @@ func (LLMSuite) TestMediaToolResultBlocks(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "caption", result.Content[0].Text)
 	require.Equal(t, mediaPNG, result.Content[1].Data)
 
-	id, err := llm.PortableID(ctx)
+	id, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	require.Equal(t, messages, mediaHistory(t, c, dagger.Ref[*dagger.LLM](c, id)))
 
@@ -250,6 +243,133 @@ type Browser {
 	// Assert frontend output, NOT transcript: history already contained the
 	// image when emitNewMessageSpans stopped scanning at the tool result.
 	require.Contains(t, logs, caption+"[image: image/png]")
+}
+
+// llmContentBlocks reads a built content's blocks.
+func llmContentBlocks(t *testctx.T, c *dagger.Client, content *dagger.LLMContent) []mediaBlock {
+	t.Helper()
+	id, err := content.ID(t.Context())
+	require.NoError(t, err)
+	res, err := testutil.QueryWithClient[struct {
+		Node struct {
+			Blocks []mediaBlock `json:"blocks"`
+		} `json:"node"`
+	}](c, t, `query($id: ID!) { node(id: $id) { ... on LLMContent { blocks { kind text data mimeType } } } }`,
+		&testutil.QueryOptions{Variables: map[string]any{"id": id}})
+	require.NoError(t, err)
+	return res.Node.Blocks
+}
+
+func (LLMSuite) TestMediaContentBuilder(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	png := c.Container().From(alpineImage).
+		WithNewFile("/image.b64", mediaPNG).
+		WithExec([]string{"sh", "-c", "base64 -d /image.b64 > /image.png"}).File("/image.png")
+	pdf := base64.StdEncoding.EncodeToString([]byte(mediaPDF))
+
+	// Blocks keep the order they were added in. A file resolves to inline
+	// bytes with its kind and MIME type inferred; data takes its kind from the
+	// given MIME type.
+	content := c.LLMContent().
+		WithText("caption").
+		WithFile(png).
+		WithData(dagger.Bytes(pdf), "application/pdf")
+	require.Equal(t, []mediaBlock{
+		{Kind: "TEXT", Text: "caption"},
+		{Kind: "IMAGE", Data: mediaPNG, MIMEType: "image/png"},
+		{Kind: "DOCUMENT", Data: pdf, MIMEType: "application/pdf"},
+	}, llmContentBlocks(t, c, content))
+
+	// Each step is a new value: the shorter run is unchanged.
+	require.Len(t, llmContentBlocks(t, c, c.LLMContent().WithText("caption")), 1)
+	require.Empty(t, llmContentBlocks(t, c, c.LLMContent()))
+
+	for _, tc := range []struct {
+		name    string
+		content *dagger.LLMContent
+	}{
+		{"file of an unsupported type", c.LLMContent().WithFile(c.File("notes.txt", "plain text"))},
+		{"data of an unsupported type", c.LLMContent().WithData(dagger.Bytes(mediaPNG), "text/plain")},
+		{"empty data", c.LLMContent().WithData(dagger.Bytes(""), "image/png")},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			_, err := tc.content.ID(ctx)
+			require.Error(t, err)
+		})
+	}
+}
+
+// A tool returns text and media as its own result by returning LLMContent,
+// rather than appending a user message to a conversation it returns: the
+// blocks land inside the tool result, in order, directly after the tool call.
+func (LLMSuite) TestMediaToolReturnedContent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const prompt = "show the screenshots"
+	const caption = "Screenshot from the browser"
+	// All calls in one response, like the parallel calls that produced a user
+	// message between a tool call and its result under the old pattern. The
+	// third tool returns empty content, which reads as a void return.
+	conversation := c.LLM().
+		WithPrompt(prompt).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "shots", ToolName: "screenshots"},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "shot", ToolName: "screenshot"},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "none", ToolName: "nothing"},
+		}).
+		WithToolResult("shots", "", false, dagger.LLMWithToolResultOpts{
+			Blocks: []dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: caption},
+				{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
+			},
+		}).
+		WithToolResult("shot", "", false, dagger.LLMWithToolResultOpts{
+			Blocks: []dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindImage, Data: mediaPNG, MimeType: "image/png"},
+			},
+		}).
+		WithToolResult("none", "(done)", false).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}})
+	id, err := conversation.ID(ctx)
+	require.NoError(t, err)
+	// Keep nested tool-result media in the recording: the provider compares
+	// each media block's position, so the loop must nest the tool's blocks
+	// inside its result for the recording to match.
+	recorded, err := testutil.QueryWithClient[struct {
+		Node struct {
+			Messages json.RawMessage `json:"messages"`
+		} `json:"node"`
+	}](c, t, `query($id: ID!) { node(id: $id) { ... on LLM {
+		messages { role content { kind text callId toolName arguments errored data mimeType content { kind text data mimeType } } }
+	} } }`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
+	require.NoError(t, err)
+	model := "recording/" + base64.StdEncoding.EncodeToString(recorded.Node.Messages)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("dagger.toml", "[modules.browser]\nsource = \"browser\"\n").
+		WithNewFile("browser/dagger.json", `{"name":"browser","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("browser/main.dang", fmt.Sprintf(`
+type Browser {
+  screenshots: LLMContent! {
+    llmContent
+      .withText(%q)
+      .withData(data: %q, mimeType: "image/png")
+  }
+
+  screenshot: LLMContent! {
+    llmContent.withData(data: %q, mimeType: "image/png")
+  }
+
+  nothing: LLMContent! {
+    llmContent
+  }
+}
+`, caption, mediaPNG, mediaPNG)).
+		WithExec([]string{"dagger", "--progress=plain", "-vv", "script"}, dagger.ContainerWithExecOpts{
+			Stdin: fmt.Sprintf(`llm --model=%q | with-tools $(browser) | with-prompt %q | loop | last-reply`, model, prompt),
+		})
+	out, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "done", strings.TrimSpace(out), "the tool results must carry the returned blocks")
 }
 
 func (LLMSuite) TestMediaInvalidContent(ctx context.Context, t *testctx.T) {

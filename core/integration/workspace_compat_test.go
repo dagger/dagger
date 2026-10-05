@@ -36,11 +36,9 @@ func TestWorkspaceCompat(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceCompatSuite{})
 }
 
-// `dagger migrate` was removed and folded into `dagger setup` (its migrate
-// step). The compat→workspace assertions below read the on-disk
-// .dagger/migration-report.md + dagger.toml that the migrate changeset writes,
-// then exercise the migrated workspace through `dagger setup --auto-apply`
-// (migrate + recommended-module install).
+// The compat→workspace assertions below run `dagger workspace migrate
+// --auto-apply`, read the .dagger/migration-report.md and dagger.toml it
+// writes, then exercise the migrated workspace.
 
 func compatDaggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
@@ -574,8 +572,8 @@ func (WorkspaceCompatSuite) TestWorkspaceCompatMutationGuards(ctx context.Contex
 	})
 }
 
-// TestLegacyWorkspaceDirectLoadErrors should cover the new hard failures when
-// legacy workspace concepts are used through generic module loading.
+// TestLegacyWorkspaceDirectLoadErrors covers the hard failures when legacy
+// workspace concepts are used through generic module loading.
 func (WorkspaceCompatSuite) TestLegacyWorkspaceDirectLoadErrors(ctx context.Context, t *testctx.T) {
 	t.Run("direct load tells the user to use -W", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
@@ -786,9 +784,8 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 }`, legacyDangModule("toolchain", "toolchain", "Toolchain", "hello from toolchain")).
 			With(compatDaggerExec("workspace", "migrate", "--auto-apply"))
 
-		// The "N old setting(s) need review" summary now lives in the on-disk
-		// migration report (and as per-gap sections) rather than on stdout, so
-		// assert on .dagger/migration-report.md instead of the command output.
+		// Migration writes the review summary and per-gap sections to
+		// .dagger/migration-report.md.
 		output, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, output)
 
@@ -844,17 +841,16 @@ func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.C
 		"the toolchain's local source is rebased to the repo root")
 	require.Contains(t, configOut, `generate.skip = ["generate-other-files", "other-generators:*"]`)
 
-	listOut, err := ctr.With(compatDaggerExec("generate", "-l")).CombinedOutput(ctx)
+	listOut, err := ctr.With(compatDaggerExec("generate", "-l", "-f=link")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, listOut, "hello-with-generators:generate-files")
-	require.NotContains(t, listOut, "hello-with-generators:generate-other-files")
-	require.NotContains(t, listOut, "hello-with-generators:other-generators:gen-things")
+	require.Contains(t, listOut, "hello-with-generators/generate-files")
+	require.NotContains(t, listOut, "hello-with-generators/generate-other-files")
+	require.NotContains(t, listOut, "hello-with-generators/other-generators/gen-things")
 
 	runCtr := ctr.With(compatDaggerExec("generate", "hello-with-generators:generate-*", "-y", "--progress=plain"))
 	runOut, err := runCtr.CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, runOut, "hello-with-generators:generate-files")
-	require.NotContains(t, runOut, "hello-with-generators:generate-other-files")
+	require.Contains(t, runOut, "dag://hello-with-generators/generate-files")
 
 	// Generated changes still apply relative to where the command runs; only
 	// the workspace config location moved to the repo root.
@@ -952,11 +948,11 @@ func (WorkspaceCompatSuite) TestCompatUpSkipsAndPortMappingsBeforeMigration(ctx 
   ]
 }`)
 
-	listOut, err := ctr.With(compatDaggerExec("up", "-l")).CombinedOutput(ctx)
+	listOut, err := ctr.With(compatDaggerExec("up", "-l", "-f=link")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, listOut, "hello-with-services:web")
-	require.NotContains(t, listOut, "hello-with-services:redis")
-	require.NotContains(t, listOut, "hello-with-services:infra:database")
+	require.Contains(t, listOut, "hello-with-services/web")
+	require.NotContains(t, listOut, "hello-with-services/redis")
+	require.NotContains(t, listOut, "hello-with-services/infra/database")
 
 	out, err := ctr.
 		With(daggerUpVerify("", "http://localhost:3000", "nginx",
@@ -966,9 +962,9 @@ func (WorkspaceCompatSuite) TestCompatUpSkipsAndPortMappingsBeforeMigration(ctx 
 	require.Contains(t, out, "OK: compat port mapping works")
 }
 
-// TestCompatAndMigratedWorkspaceMatch should prove the core contract of the
-// new design: compat mode and migrated workspace mode expose the same runtime
-// behavior for the same legacy project.
+// TestCompatAndMigratedWorkspaceMatch proves the compat contract: compat mode
+// and migrated workspace mode expose the same runtime behavior for the same
+// legacy project.
 func (WorkspaceCompatSuite) TestCompatAndMigratedWorkspaceMatch(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := legacyWorkspaceBase(t, c, `{

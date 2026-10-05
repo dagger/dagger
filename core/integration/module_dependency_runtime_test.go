@@ -132,8 +132,8 @@ func (ModuleSuite) TestRuntimeDependencyDoesNotInheritWorkspace(ctx context.Cont
 	})
 
 	// The currentWorkspace vector is closed at the schema level: currentWorkspace
-	// is no longer exposed to module SDKs at all (#13659, covered by
-	// TestCurrentWorkspaceError), so a dependency cannot reach it to inherit one.
+	// is not exposed to module SDKs (covered by TestCurrentWorkspaceError), so a
+	// dependency cannot reach it to inherit one.
 }
 
 func (ModuleSuite) TestUseLocalMulti(ctx context.Context, t *testctx.T) {

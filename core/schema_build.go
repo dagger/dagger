@@ -20,22 +20,6 @@ type modInstall struct {
 // so this is installed outside buildSchema as well as inside module-aware schema
 // builders.
 func InstallCoreSchemaLoaders(dag *dagql.Server) {
-	serverForResultCall := func(ctx context.Context, resultCall *dagql.ResultCall) (*dagql.Server, error) {
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return nil, err
-		}
-		deps, err := query.ModDepsForCall(ctx, resultCall)
-		if err != nil {
-			return nil, err
-		}
-		resultServer, err := deps.Schema(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return resultServer, nil
-	}
-
 	// Fallback resolver for cache reconstruction and persisted-envelope decoding
 	// when the current schema does not have the referenced object type
 	// installed. Cache hits normally short-circuit via the class captured on
@@ -67,6 +51,24 @@ func InstallCoreSchemaLoaders(dag *dagql.Server) {
 		}
 		return idServer.Load(ctx, id)
 	})
+}
+
+// serverForResultCall returns a schema with every module the result call
+// graph references installed, shared through the client's schema memo.
+func serverForResultCall(ctx context.Context, resultCall *dagql.ResultCall) (*dagql.Server, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deps, err := query.ModDepsForCall(ctx, resultCall)
+	if err != nil {
+		return nil, err
+	}
+	resultServer, err := deps.Schema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return resultServer, nil
 }
 
 func buildSchema(

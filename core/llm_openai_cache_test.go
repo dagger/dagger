@@ -38,7 +38,7 @@ func TestOpenAIPromptCacheKey(t *testing.T) {
 	// Media and tool blocks in the opening prompt count too.
 	image := &LLMMessage{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{
 		{Kind: LLMContentText, Text: "review the PR"},
-		{Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U="},
+		{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")},
 	}}
 	assert.NotEqual(t, first, openAIPromptCacheKey([]*LLMMessage{system, image}))
 }

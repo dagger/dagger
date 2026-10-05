@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -27,10 +28,14 @@ func TestConsoleAgents(t *testing.T) {
 	start := time.Unix(100, 0)
 	chief, child, restored := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)
 	db.ImportSnapshots([]dagui.SpanSnapshot{
-		{ID: chief, Name: "agent: chief", Agent: true, AgentID: "chief-id", AgentName: "chief", AgentState: "STOPPED", StartTime: start},
-		{ID: child, ParentID: chief, Agent: true, AgentID: "worker-id", AgentName: "worker", AgentState: "RUNNING", StartTime: start.Add(time.Second)},
-		{ID: restored, Agent: true, AgentID: "worker-id", AgentName: "worker", AgentState: "IDLE", AgentSnapshotDigest: "xxh3:snapshot", StartTime: start.Add(2 * time.Second)},
+		{ID: chief, Name: "agent: chief", Agent: true, AgentID: "chief-id", AgentName: "chief", StartTime: start},
+		{ID: child, ParentID: chief, Agent: true, AgentID: "worker-id", AgentName: "worker", StartTime: start.Add(time.Second)},
+		{ID: restored, Agent: true, AgentID: "worker-id", AgentName: "worker", StartTime: start.Add(2 * time.Second)},
 	})
+	publishAgentControl(t, db, "chief-id", func(a *agentcontrol.Agent) {
+		a.State, a.StopReason = "STOPPED", "EXPLICIT"
+	})
+	publishAgentControl(t, db, "worker-id", func(a *agentcontrol.Agent) { a.Digest = "xxh3:snapshot" })
 	fe := NewWithDB(io.Discard, db)
 	w := httptest.NewRecorder()
 	fe.consoleAgentsHandler(w, httptest.NewRequest(http.MethodGet, "/agents", nil))
@@ -53,13 +58,14 @@ func TestConsoleAgents(t *testing.T) {
 func TestConsoleTranscript(t *testing.T) {
 	db := dagui.NewDB()
 	db.ImportSnapshots([]dagui.SpanSnapshot{
-		{ID: prettyTestSpanID(1), Agent: true, AgentID: "chief-id", AgentName: "chief", AgentState: "IDLE"},
+		{ID: prettyTestSpanID(1), Agent: true, AgentID: "chief-id", AgentName: "chief"},
 		{ID: prettyTestSpanID(2), Agent: true, AgentID: "worker-1", AgentName: "worker"},
 		{ID: prettyTestSpanID(3), Agent: true, AgentID: "worker-2", AgentName: "worker"},
 		// A display name that collides with another agent's handle must not
 		// make that handle ambiguous.
 		{ID: prettyTestSpanID(4), Agent: true, AgentID: "other", AgentName: "chief-id"},
 	})
+	publishAgentControl(t, db, "chief-id", func(*agentcontrol.Agent) {})
 	fe := NewWithDB(io.Discard, db)
 	fe.FocusedSpan = prettyTestSpanID(3)
 	longText := strings.Repeat("<source> α & ?\n", 1000) + "\x1b[31mnot a terminal\x1b[0m"
@@ -214,7 +220,10 @@ func TestConsoleRecordedCheckpoint(t *testing.T) {
 
 	// Exercise the recorded HTTP route with no engine client and a separate
 	// (empty) rendered DB. It must read only the cached extraction payloads.
-	db.ImportSnapshots([]dagui.SpanSnapshot{{ID: prettyTestSpanID(9), Agent: true, AgentID: agent.ID, AgentName: "worker", AgentState: "RUNNING", AgentSnapshotDigest: agent.SnapshotDigest}})
+	db.ImportSnapshots([]dagui.SpanSnapshot{{ID: prettyTestSpanID(9), Agent: true, AgentID: agent.ID, AgentName: "worker"}})
+	publishAgentControl(t, db, agent.ID, func(a *agentcontrol.Agent) {
+		a.State, a.Digest = "RUNNING", agent.SnapshotDigest
+	})
 	fe := NewWithDB(io.Discard, dagui.NewDB())
 	fe.traceID = "recorded"
 	inspector := &consoleTraceInspector{frontend: fe, traceID: "recorded", db: db}

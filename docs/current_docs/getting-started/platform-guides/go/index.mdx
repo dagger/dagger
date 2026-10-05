@@ -219,7 +219,7 @@ dagger shell test-runtime
 
 ### Wire it into the `go` module
 
-A setting can hold a module reference instead of a literal value, which is called [module wiring](../../../config/module-wiring.mdx). `<project>-dev:test-runtime` names the `<project>-dev` module and its `test-runtime` function. Dagger calls the function when it loads the `go` module and passes the result in as the setting's value. The reusable module gets a project-specific container, and nobody writes a custom test Check.
+A setting can hold a module reference instead of a literal value, which is called [module wiring](../../../config/module-wiring.mdx). `dag://<project>-dev/test-runtime` names the `<project>-dev` module and its `test-runtime` function. Dagger calls the function when it loads the `go` module and passes the result in as the setting's value. The reusable module gets a project-specific container, and nobody writes a custom test Check.
 
 `base` supplies its own toolchain, so a `version` the project set earlier is ignored from now on, and each run says so. Remove it:
 
@@ -251,7 +251,7 @@ source = ".dagger/modules/<project>-dev"
 is-module = true
 
 [modules.go.settings]
-base = "<project>-dev:test-runtime"
+base = "dag://<project>-dev/test-runtime"
 ```
 
 Run the Checks again:
@@ -292,20 +292,20 @@ dagger up -l
 postgres   # A Postgres database for development and tests.
 ```
 
-`dagger module init` made the dev module the workspace entrypoint, so its functions are listed without the module name. `dagger.toml` always stores the full `<project>-dev:` form.
+`dagger module init` made the dev module the workspace entrypoint, so its functions are listed without the module name. The settings command stores the full `dag://<project>-dev/test-runtime` address in `dagger.toml`.
 
 ### Make sure the runtime is wired
 
-If you wired `<project>-dev:test-runtime` into `base` in the previous section, nothing changes in `dagger.toml`. If you skipped that section, [create the dev module](#create-a-runtime-module) first, then wire it now with [module wiring](../../../config/module-wiring.mdx):
+If you wired `dag://<project>-dev/test-runtime` into `base` in the previous section, nothing changes in `dagger.toml`. If you skipped that section, [create the dev module](#create-a-runtime-module) first, then wire it now with [module wiring](../../../config/module-wiring.mdx):
 
 ```shell
-dagger module settings go base <project>-dev:test-runtime
+dagger module settings go base dag://<project>-dev/test-runtime
 ```
 
 Run the tests again:
 
 ```shell
-dagger check go:test-all
+dagger check dag://go/test-all
 ```
 
 The tests that skipped before now run, and the output gains a services section showing Postgres starting alongside them. The `go` module still owns the test logic. The project's own code is two functions that describe its runtime and its database, and `dagger.toml` connects them.

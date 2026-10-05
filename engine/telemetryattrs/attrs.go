@@ -10,15 +10,42 @@ const (
 	// after evaluation. Consumers must not assume this is a cache-hit decision.
 	DagContentPreferredDigestAttr = "dagger.io/dag.content_preferred_digest"
 
+	// ExecutionContentPreferredDigestAttr is the content-preferred digest of
+	// the call that owns an execution, recorded on exec.run (string). It is read
+	// when the execution ends. Its inputs are evaluated by then, so it matches
+	// the digest that later cache hits of the same call report, also when an
+	// input learned its content lazily.
+	ExecutionContentPreferredDigestAttr = "dagger.io/execution.content_preferred_digest"
+
 	// CloudEngineAttr reports that telemetry was produced by a Dagger Cloud
 	// Engine. It is a resource attribute on client and engine telemetry. (bool)
 	CloudEngineAttr = "dagger.io/cloud.engine"
+
+	// EngineSessionAttr is the ID of the engine session whose telemetry this
+	// is. It is a resource attribute on a session's own spans and logs, so
+	// sessions that share one trace stay apart. (string)
+	EngineSessionAttr = "dagger.io/engine.session"
+
+	// EngineCacheAttr names the engine's dagql cache: its identity, a random
+	// ID kept in the cache's database across the engine's restarts, and the
+	// generation, the number of engine starts on that identity, as
+	// "<identity>/<generation>". It is a resource attribute on a session's
+	// spans and logs, and an attribute of every engine cache event. Together
+	// with dagger.io/cache.result.id it names one entry of one cache for the
+	// cache's lifetime. (string)
+	EngineCacheAttr = "dagger.io/engine.cache"
 
 	// TelemetryOriginClientIDAttr records the immutable client identity captured
 	// from the emission context. Session-owned trace and log exporters use it to
 	// route each record to the origin client's DB and every validated ancestor
 	// DB. (string)
 	TelemetryOriginClientIDAttr = "dagger.io/telemetry.origin_client_id"
+
+	// TelemetryCloudPublishedAttr marks a span or log record in a client's
+	// telemetry store that another writer already publishes to Dagger Cloud:
+	// the stream of a scale-out engine that confirmed publishing its own
+	// session. The engine's store-to-Cloud forwarder leaves it out. (bool)
+	TelemetryCloudPublishedAttr = "dagger.io/telemetry.cloud_published"
 
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
@@ -57,6 +84,22 @@ const (
 	LogMediaKindAttr     = "dagger.io/log.media.kind"
 	LogMediaMIMETypeAttr = "dagger.io/log.media.mime_type"
 	LogMediaDataAttr     = "dagger.io/log.media.data"
+
+	// Attributed network byte metrics are exact eBPF counters from an operation's
+	// network boundary. "Internal" means the packet's remote address belongs to
+	// a configured internal network; "external" means it does not.
+	NetworkRxBytes         = "dagger.io/metrics.network.rx.bytes"
+	NetworkTxBytes         = "dagger.io/metrics.network.tx.bytes"
+	NetworkInternalRxBytes = "dagger.io/metrics.network.internal.rx.bytes"
+	NetworkInternalTxBytes = "dagger.io/metrics.network.internal.tx.bytes"
+	NetworkExternalRxBytes = "dagger.io/metrics.network.external.rx.bytes"
+	NetworkExternalTxBytes = "dagger.io/metrics.network.external.tx.bytes"
+	NetworkAvailable       = "dagger.io/metrics.network.available"
+
+	// Estimated network byte metrics are conservative protocol-level lower
+	// bounds for operations without their own kernel network boundary.
+	NetworkEstimatedRxBytes = "dagger.io/metrics.network.estimated.rx.bytes"
+	NetworkEstimatedTxBytes = "dagger.io/metrics.network.estimated.tx.bytes"
 
 	// DagPartialAttr marks a successful lazy-evaluation resume span that
 	// completed one part while the result still had deferred work. Such a
@@ -245,17 +288,13 @@ const CallPayloadDigestAttr = "dagger.io/dag.call.digest"
 //     that same frozen snapshot, so an attribute written later would never
 //     reach a client.
 //
-//   - MUTABLE state (AgentStateAttr, AgentWaitingOnAttr, AgentStopReasonAttr,
-//     AgentSnapshotDigestAttr) rides LOG RECORDS attributed to the loop span,
-//     exactly like streaming progress above and for exactly the same reason.
-//     Each transition emits a fresh record; latest record wins. State records
-//     are emitted only when the PROJECTED state changes, not on every internal
-//     fact change; snapshot records are emitted on every commit, which is why
-//     they are a record of their own rather than a field on the state record.
+//   - MUTABLE state (AgentStateAttr, AgentStopReasonAttr,
+//     AgentSnapshotDigestAttr) rides revisioned agent control LOG RECORDS
+//     (engine/agentcontrol), each a complete projection of the agent rather
+//     than a delta. The highest revision in a namespace wins.
 //
-// A record carrying AgentStateAttr or AgentSnapshotDigestAttr is agent data,
-// not log text: consumers fold it into the agent's roster entry and must not
-// render it as output.
+// A control record is agent data, not log text: consumers fold it into the
+// agent's roster entry and must not render it as output.
 const (
 	// AgentAttr marks the long-lived loop span of a started agent runtime.
 	// The span exists iff the loop actually started, runs exactly as long as
@@ -282,44 +321,30 @@ const (
 	// roster entry rather than fail. (string)
 	AgentCallDigestAttr = "dagger.io/agent.call.digest"
 
-	// AgentStateAttr carries the agent's projected lifecycle state at the
-	// moment the record was emitted: one of the AgentState enum tokens
-	// ("IDLE", "RUNNING", "WAITING_INPUT", "PAUSED", "STOPPED", "FAILED").
-	// Emitted on a log record attributed to the loop span. (string)
+	// AgentStateAttr carries the agent's projected lifecycle state: one of
+	// the AgentState enum tokens ("IDLE", "RUNNING", "WAITING_INPUT",
+	// "PAUSED", "STOPPED", "FAILED"). (string)
 	AgentStateAttr = "dagger.io/agent.state"
 
-	// AgentWaitingOnAttr carries what the agent is blocked on when its state
-	// is WAITING_INPUT — the parked question's text. Absent otherwise, and an
-	// empty value clears a previously reported one. (string)
-	AgentWaitingOnAttr = "dagger.io/agent.waiting_on"
-
 	// AgentStopReasonAttr distinguishes a stop somebody asked for from a stop
-	// the session's teardown performed: "EXPLICIT" | "SESSION". It rides the
-	// terminal state record, and is empty on every other one.
+	// the session's teardown performed: "EXPLICIT" | "SESSION". Empty unless
+	// the state is STOPPED.
 	//
 	// Without it every agent in a cleanly closed session looks dismissed:
 	// session close kills every runtime (AgentRuntimes.KillAll), so a
-	// deliberately stopped worker and a merely torn-down one publish
-	// identical STOPPED records — and a client restoring that trace must
-	// either resurrect the dismissals or restore nothing at all. A STOPPED
-	// record with no reason is a trace from an engine that predates this, and
-	// consumers are expected to refuse it rather than guess. (string)
+	// deliberately stopped worker and a merely torn-down one both project
+	// STOPPED — and a client restoring that trace must either resurrect the
+	// dismissals or restore nothing at all. (string)
 	AgentStopReasonAttr = "dagger.io/agent.stop.reason"
 
-	// AgentSnapshotDigestAttr carries the portable recipe digest of the agent's
-	// last committed conversation, emitted on every commit (each step, each
-	// drained message, and once at loop start for the seed). Latest record wins.
+	// AgentSnapshotDigestAttr carries the recipe digest of the agent's last
+	// committed LLM call, updated on every commit (each step, each drained
+	// message, and once at loop start for the seed).
 	//
 	// This is the resume anchor: a client rebuilds the conversation's ID from
-	// the call-payload log records above (or legacy dagger.io/dag.call span
-	// attributes) and re-hydrates the instance from it. It is deliberately a
-	// PORTABLE recipe: a post-evaluation result handle dies with its session,
-	// while the raw recipe retains superseded bindings whose stale operations
-	// must not be replayed in a later one.
-	//
-	// It cannot ride the state record: state records are edge-triggered on
-	// the projected state, and most commits do not change the state while
-	// every commit changes the snapshot. (string)
+	// the call-payload log records above and re-hydrates the instance from it;
+	// archive finalization verifies the anchor's recipe closure was delivered.
+	// (string)
 	AgentSnapshotDigestAttr = "dagger.io/agent.snapshot.digest"
 
 	// AgentRewindFromDigestAttr and AgentRewindToDigestAttr mark a REWIND
@@ -329,15 +354,15 @@ const (
 	// digest of the conversation being abandoned, To the recipe digest of the
 	// one adopted — the LLM state just before the edited prompt.
 	//
-	// They are recipe digests rather than portable ones, unlike
-	// AgentSnapshotDigestAttr, because their consumer is the transcript, not
-	// resume: every message span carries the recipe digest of the LLM call
-	// it belongs to (LLMCallDigestAttr), so a client walks the call payloads
-	// from From back to To and marks every message on that stretch as no
-	// longer part of the conversation. Without this the trace renders a
-	// linear transcript while the model's history has forked. A reseed that
-	// is not a rewind (compaction, a workspace rebind, a model change) emits
-	// no marker: nothing the transcript shows was abandoned. (string)
+	// Like AgentSnapshotDigestAttr they are recipe digests, but their consumer
+	// is the transcript, not resume: every message span carries the recipe
+	// digest of the LLM call it belongs to (LLMCallDigestAttr), so a client
+	// walks the call payloads from From back to To and marks every message on
+	// that stretch as no longer part of the conversation. Without this the
+	// trace renders a linear transcript while the model's history has forked.
+	// A reseed that is not a rewind (compaction, a workspace rebind, a model
+	// change) emits no marker: nothing the transcript shows was abandoned.
+	// (string)
 	AgentRewindFromDigestAttr = "dagger.io/agent.rewind.from"
 	AgentRewindToDigestAttr   = "dagger.io/agent.rewind.to"
 )
@@ -471,10 +496,11 @@ const (
 // quoted strings round-trip as strings). The value tokens below are chosen
 // so that trip is loss-free: enum tokens and digest values
 // (algorithm-prefixed) can never collide with true/false/null or a leading
-// digit; the two boolean facts are emitted as "true" only when true (absent
+// digit; the boolean facts are emitted as "true" only when true (absent
 // means false) and intentionally decode into real bools; the unknown-input
-// index is a decimal-string. The array value survives the same trip as a
-// JSON array of strings, which is exactly how consumers read it back.
+// index, result numbers and Unix times are decimal strings. The array values
+// (structural inputs, dependencies, parts) survive the same trip as JSON
+// arrays of strings, which is exactly how consumers read them back.
 //
 // Producer condition: the attributes are stamped by core.AroundFunc's completion
 // callback from a request-only evidence carrier (dagql.CacheDecision) that
@@ -583,8 +609,133 @@ const (
 
 	// CacheResultIDAttr is the decimal-string engine-local result number of
 	// the call's cache-backed result, stamped for any stamped outcome that
-	// returned one. Together with the engine instance resource attribute
-	// (service.instance.id) it names the result the engine's cache facts
-	// (dagql/cachefact) describe, so a span can be joined with them.
+	// returned one. Together with the cache identity resource attribute
+	// (EngineCacheAttr) it names one entry of one cache for the cache's
+	// lifetime.
 	CacheResultIDAttr = "dagger.io/cache.result.id"
+
+	// The entry's state in its cache, stamped beside CacheResultIDAttr when
+	// the span ends, so a consumer can follow the cache's ownership without
+	// the engine's internals. A lazy-evaluation span carries CacheResultIDAttr,
+	// CacheDepsAttr, CachePartsAttr and CacheOutputContentDigestAttr for the
+	// entry it evaluated, and no CacheOutcomeAttr.
+
+	// CacheDepsAttr lists the result numbers of the entry's dependencies, of
+	// every kind, as decimal strings (native string array). An empty list
+	// records that the entry has none.
+	CacheDepsAttr = "dagger.io/cache.deps"
+	// CacheRetainedAttr is "true" when the entry has a retention edge, the
+	// record that keeps it after its session, or when this call's publication
+	// adds one; absent otherwise. It states the edge at the span's end.
+	CacheRetainedAttr = "dagger.io/cache.retained"
+	// CacheRetentionExpiresAttr is the retention edge's expiry, in decimal
+	// Unix seconds, when retained and the edge expires.
+	CacheRetentionExpiresAttr = "dagger.io/cache.retention.expires"
+	// CacheExpiresAttr is the entry's own expiry, when it stops serving as a
+	// cache hit, in decimal Unix seconds, when it has one.
+	CacheExpiresAttr = "dagger.io/cache.expires"
+	// CachePartsAttr lists the entry's complete parts: the parts its record
+	// reports complete, including absent and metadata ones, which own no
+	// filesystem bytes. Each is its part address (native string array). On a
+	// lazy-evaluation span, it lists them as the attempt left them. The
+	// attribute is omitted when there are none.
+	CachePartsAttr = "dagger.io/cache.parts"
+	// CacheTypeAttr is the name of the entry's type, such as "Container".
+	CacheTypeAttr = "dagger.io/cache.type"
+	// CacheReplacementsAttr is the decimal-string count of the times the
+	// entry's value was replaced in place under the same result number, read
+	// with the state beside it: the parts, dependencies and expiry it names
+	// belong to that value. Absent while the count is 0.
+	CacheReplacementsAttr = "dagger.io/cache.replacements"
+
+	// CacheSessionSpansAttr is the decimal-string count of the spans of one
+	// session that carry CacheResultIDAttr, stamped on the session's
+	// WcprofSessionCompleteAttr carrier span, which marks the session's end.
+	CacheSessionSpansAttr = "dagger.io/cache.session.spans"
 )
+
+// Engine cache events (dagger.io/engine.cache).
+//
+// Outside any session, the engine reports what happens to its dagql cache as
+// OpenTelemetry log records on its own logger provider, exported to Dagger
+// Cloud under the engine's own token when the engine-events switch is on.
+// Each record's instrumentation scope is EngineEventScope, its body is the
+// JSON encoding of the event's type below (an OTLP string), and it carries
+// EngineEventAttr (the event's kind) and EngineCacheAttr (the cache's
+// identity and generation). The record's timestamp is the engine's clock when
+// the event happened; the process resource names the engine instance
+// (service.instance.id).
+const (
+	// EngineEventScope is the instrumentation scope of engine cache events.
+	EngineEventScope = "dagger.io/engine.cache"
+	// EngineEventAttr is the record attribute holding the event's kind.
+	EngineEventAttr = "dagger.io/engine.event"
+
+	// EngineEventStart: the engine opened, and possibly restored, its cache
+	// (EngineStartEvent).
+	EngineEventStart = "engine.start"
+	// EngineEventPrune: a prune run dropped retention edges
+	// (EnginePruneEvent). Runs that drop none send nothing.
+	EngineEventPrune = "engine.prune"
+	// EngineEventShare: a snapshot-sharing pass completed parts
+	// (EngineShareEvent).
+	EngineEventShare = "engine.share"
+	// EngineEventStop: the engine closed its cache (EngineStopEvent).
+	EngineEventStop = "engine.stop"
+)
+
+// EngineStartEvent is the body of an engine.start event.
+type EngineStartEvent struct {
+	EngineVersion string `json:"engineVersion"`
+	EngineName    string `json:"engineName"`
+	// Restored reports that the engine opened the cache's existing database
+	// rather than starting empty.
+	Restored bool `json:"restored"`
+	// RestoredEntries counts the entries the restore installed, not
+	// counting type definitions.
+	RestoredEntries int `json:"restoredEntries"`
+	// WipedCache is the identity of a cache database this start wiped, if
+	// any.
+	WipedCache string `json:"wipedCache,omitempty"`
+}
+
+// EnginePruneEvent is the body of an engine.prune event: every retention
+// edge one prune run dropped.
+type EnginePruneEvent struct {
+	Drops []EngineRetentionDrop `json:"drops"`
+}
+
+// EngineRetentionDrop is one retention edge a prune run dropped.
+type EngineRetentionDrop struct {
+	// ResultID is the entry's result number.
+	ResultID uint64 `json:"resultId"`
+	// DroppedAtUnixNano is the engine's clock when it dropped the edge.
+	DroppedAtUnixNano int64 `json:"droppedAtUnixNano"`
+}
+
+// EngineShareEvent is the body of an engine.share event: every part one
+// snapshot-sharing pass completed.
+type EngineShareEvent struct {
+	Parts []EngineSharedPart `json:"parts"`
+}
+
+// EngineSharedPart is one part a snapshot-sharing pass completed.
+type EngineSharedPart struct {
+	// ResultID is the entry's result number.
+	ResultID uint64 `json:"resultId"`
+	// Part is the part's address, as in dagger.io/cache.parts.
+	Part string `json:"part"`
+	// Deps are the result numbers of the entry's dependencies.
+	Deps []uint64 `json:"deps"`
+	// Replacements is the entry's replacement count (CacheReplacementsAttr),
+	// when not 0: the part and the dependencies are its current value's.
+	Replacements uint64 `json:"replacements,omitempty"`
+}
+
+// EngineStopEvent is the body of an engine.stop event.
+type EngineStopEvent struct {
+	// Clean reports that the engine saved its cache for its next start.
+	Clean bool `json:"clean"`
+	// SavedEntries counts the entries the save wrote.
+	SavedEntries int `json:"savedEntries"`
+}

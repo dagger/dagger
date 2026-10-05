@@ -33,13 +33,14 @@ func TestValueTransferForeignFormsImport(t *testing.T) {
 						envelope = dagql.PersistedResultEnvelope{Version: 5, ResultID: 1, Kind: "list", Items: []dagql.PersistedResultEnvelope{envelope}}
 						typ = &dagql.ResultCallType{Elem: typ, NonNull: true}
 					}
-					return dagql.ValueBundle{Version: 2, Roots: []dagql.TransferredRoot{{Ordinal: 1}}, Values: []dagql.TransferredValue{{Ordinal: 1, Record: dagql.PersistedRecord{ResultID: 1, Envelope: envelope, Call: &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "foreignForm", Type: typ}}}}}
+					return dagql.ValueBundle{Version: 3, Roots: []dagql.TransferredRoot{{Ordinal: 1}}, Values: []dagql.TransferredValue{{Ordinal: 1, SenderNumber: 1, Record: dagql.PersistedRecord{ResultID: 1, Envelope: envelope, Call: &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "foreignForm", Type: typ}}}}}
 				}
 				before := len(cache.DebugEGraphSnapshot().Results)
-				_, err := cache.ImportValues(ctx, makeBundle(json.RawMessage(tc.native)))
+				_, err := cache.MergeValues(ctx, dagql.CloudCacheID, makeBundle(json.RawMessage(tc.native)))
 				require.Error(t, err)
 				require.Len(t, cache.DebugEGraphSnapshot().Results, before, "invalid foreign form cannot publish")
-				values, err := cache.ImportValues(ctx, makeBundle(normalized.JSON))
+				valuesReply, err := cache.MergeValues(ctx, dagql.CloudCacheID, makeBundle(normalized.JSON))
+				values := valuesReply.Imported()
 				require.NoError(t, err)
 				require.Len(t, values, 1)
 			}

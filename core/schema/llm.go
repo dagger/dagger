@@ -32,8 +32,46 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls for this LLM").
 					View(BeforeVersion("v1.0.0-0")),
 			),
+		dagql.Func("llmContent", s.llmContent).
+			View(AfterVersion("v1.0.0-0")).
+			Experimental("LLM support is not yet stabilized").
+			Doc(`Start an empty run of text and media content, independent of any conversation.`,
+				`Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.`),
+	}.Install(srv)
+	// Like the content-block message model below, the content builder is only
+	// visible to v1+ views.
+	srv.InstallObject(dagql.NewClass[*core.LLMContent](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*core.LLMContent]{
+		dagql.Func("withText", s.llmContentWithText).
+			Doc(`Append a block of text.`).
+			Args(
+				dagql.Arg("text").Doc("The text."),
+			),
+		dagql.Func("withFile", s.llmContentWithFile).
+			Doc(`Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.`).
+			Args(
+				dagql.Arg("file").Doc("The media file. Its contents become the block's inline bytes."),
+				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.`),
+			),
+		dagql.Func("withData", s.llmContentWithData).
+			Doc(`Append image, audio, or PDF bytes as an inline media block. The media kind follows the MIME type.`,
+				`Prefer withFile for anything but small payloads: the bytes become part of the content's identity, so they travel with every reference to it.`).
+			Args(
+				dagql.Arg("data").Doc("The media bytes."),
+				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png".`),
+			),
 	}.Install(srv)
 	dagql.Fields[*core.LLM]{
+		dagql.NodeFunc("compose", s.compose).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Run expertise in list order, passing this conversation through each function. Retain existing contributions.").
+			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
+		dagql.NodeFunc("recompose", s.recompose).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.",
+				"Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.",
+				"A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.").
+			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
 		dagql.Func("__withoutComposition", func(_ context.Context, llm *core.LLM, args struct {
 			Owner string
 		}) (*core.LLM, error) {
@@ -67,6 +105,17 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("workspace", s.workspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return the workspace the LLM is bound to."),
+		// No per-call input: the scope depends only on the receiver, whose
+		// ID records its bound tools and bound workspace, and the selection
+		// is lazy, so it caches like any other field.
+		dagql.Func("artifacts", s.artifacts).
+			View(AfterVersion("v1.0.0-0")).
+			Experimental("Agent APIs are likely to change.").
+			Doc("Discover every artifact this conversation can address, as one selection, without evaluating their values.",
+				"Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.",
+				"The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.",
+				"Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.").
+			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.")),
 		dagql.Func("withModel", s.withModel).
 			Doc("Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.").
 			Args(
@@ -97,12 +146,12 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-0")).
 					Doc("The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time."),
 			),
-		dagql.Func("__mcp", func(ctx context.Context, self *core.LLM, _ struct{}) (dagql.Nullable[core.Void], error) {
+		dagql.NodeFunc("__mcp", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.Nullable[core.Void], error) {
 			currentSrv, err := core.CurrentDagqlServer(ctx)
 			if err != nil {
 				return dagql.Null[core.Void](), err
 			}
-			return dagql.Null[core.Void](), self.MCP(ctx, currentSrv)
+			return dagql.Null[core.Void](), self.Self().MCP(ctx, currentSrv, self)
 		}).
 			Doc("instantiates an mcp server"),
 		dagql.Func("withContent", s.withContent).
@@ -195,29 +244,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			return dagql.NewID[*core.LLM](id), nil
 		}).
 			Doc("Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine."),
-		dagql.NodeFunc("portableID", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.AnyID, error) {
-			recipe, err := self.Self().PortableRecipe(ctx)
-			if err != nil {
-				return dagql.AnyID{}, err
-			}
-			id, err := recipe.RecipeID(ctx)
-			if err != nil {
-				return dagql.AnyID{}, err
-			}
-			return dagql.NewAnyID(id), nil
-		}).
-			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("An ID describes the current attached result and must not be served from cache.").
-			Doc("A portable, self-contained ID for the conversation that node() can resolve in any session. " +
-				"Unlike id, which may return an engine-local runtime handle valid only within the current session, " +
-				"this returns the recipe form suitable for persisting and later restoring the conversation. " +
-				"The recipe is flattened: bindings superseded during the session (workspace overlays recorded by " +
-				"each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — " +
-				"including any pending, un-exported edits — is preserved."),
-		dagql.NodeFunc("emitHistory", s.emitHistory).
-			View(AfterVersion("v1.0.0-0")).
-			WithInput(dagql.PerCallInput).
-			Doc("Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI."),
 		dagql.NodeFunc("loop", s.loop).
 			Doc("Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.").
 			Args(
@@ -245,6 +271,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("handle").Doc(`The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.`),
 				dagql.Arg("state").Doc(`The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.`,
 					`RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.`),
+				dagql.Arg("parentHandle").Doc(`Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle. The parent must already be restored in this session and cannot be the agent itself or its descendant.`),
 				dagql.Arg("error").Doc(`The loop error to create the agent with, for state FAILED. Refused with any other state.`),
 			),
 		// agent is deliberately cached (no DoNotCache): the runtime handle
@@ -344,6 +371,16 @@ func (s *llmSchema) workspace(ctx context.Context, llm *core.LLM, args struct{})
 	return ws, nil
 }
 
+func (s *llmSchema) artifacts(ctx context.Context, llm *core.LLM, args struct {
+	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+}) (*core.Artifacts, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return llm.Artifacts(ctx, srv, workspaceIncludePatterns(args.Include))
+}
+
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
 	ep, err := llm.Endpoint(ctx)
 	if err != nil {
@@ -440,6 +477,40 @@ func resolveLLMContent(ctx context.Context, inputs []dagql.InputObject[core.LLMC
 		return nil, err
 	}
 	return blocks, nil
+}
+
+func (s *llmSchema) llmContent(ctx context.Context, _ *core.Query, _ struct{}) (*core.LLMContent, error) {
+	return &core.LLMContent{}, nil
+}
+
+func (s *llmSchema) llmContentWithText(ctx context.Context, content *core.LLMContent, args struct {
+	Text string
+}) (*core.LLMContent, error) {
+	return content.WithBlock(&core.LLMContentBlock{Kind: core.LLMContentText, Text: args.Text})
+}
+
+// llmContentWithFile resolves the file to inline bytes exactly as
+// LLM.withContentFile does, so the media kind is inferred the same way.
+func (s *llmSchema) llmContentWithFile(ctx context.Context, content *core.LLMContent, args struct {
+	File     core.FileID
+	MIMEType string `name:"mimeType" default:""`
+}) (*core.LLMContent, error) {
+	block, err := core.LLMContentFromFile(ctx, args.File, args.MIMEType)
+	if err != nil {
+		return nil, err
+	}
+	return content.WithBlock(block)
+}
+
+func (s *llmSchema) llmContentWithData(ctx context.Context, content *core.LLMContent, args struct {
+	Data     dagql.Bytes
+	MIMEType string `name:"mimeType"`
+}) (*core.LLMContent, error) {
+	block, err := core.LLMContentFromBytes(args.Data, args.MIMEType)
+	if err != nil {
+		return nil, err
+	}
+	return content.WithBlock(block)
 }
 
 func (s *llmSchema) withContent(ctx context.Context, llm *core.LLM, args struct {
@@ -702,10 +773,11 @@ func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LL
 // seed), spawn is the only verb that creates an entry, and every other verb
 // addresses one that exists.
 func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
-	Name   dagql.Optional[dagql.String]
-	Handle dagql.Optional[dagql.String]
-	State  core.AgentState `default:"IDLE"`
-	Error  string          `default:""`
+	Name         dagql.Optional[dagql.String]
+	Handle       dagql.Optional[dagql.String]
+	State        core.AgentState `default:"IDLE"`
+	Error        string          `default:""`
+	ParentHandle dagql.Optional[dagql.String]
 }) (res dagql.Result[core.AgentID], _ error) {
 	name := args.Name.Value.String()
 	if name == "" {
@@ -753,7 +825,14 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 	if err != nil {
 		return res, err
 	}
-	if _, err := agents.Create(ctx, pinned, args.State, args.Error, restored); err != nil {
+	var parentHandle string
+	if args.ParentHandle.Valid {
+		if !restored {
+			return res, fmt.Errorf("parentHandle is only valid when restoring with a handle")
+		}
+		parentHandle = args.ParentHandle.Value.String()
+	}
+	if _, err := agents.Create(ctx, pinned, args.State, args.Error, restored, parentHandle); err != nil {
 		return res, err
 	}
 	pinnedID, err := pinned.ID()
@@ -776,15 +855,6 @@ func (s *llmSchema) agent(ctx context.Context, parent dagql.ObjectResult[*core.L
 		Handle: args.Handle,
 		Name:   args.Name,
 	}, nil
-}
-
-func (s *llmSchema) emitHistory(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ID[*core.LLM], _ error) {
-	parent.Self().EmitHistory(ctx)
-	id, err := parent.ID()
-	if err != nil {
-		return res, err
-	}
-	return dagql.NewID[*core.LLM](id), nil
 }
 
 func (s *llmSchema) hasPending(ctx context.Context, llm *core.LLM, args struct{}) (bool, error) {
@@ -823,7 +893,7 @@ func (s *llmSchema) llm(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		// No model requested: resolve the configured default and re-call this
 		// field with it pinned, the way Container.from re-calls itself with
 		// the digested ref. The recorded ID then names the model the
-		// conversation actually runs against, so a saved session resumes on
+		// conversation actually runs against, so a restored one resumes on
 		// its own model rather than whatever default the resuming
 		// environment happens to configure.
 		defModel, defProvider, routeErr := parent.Self().DefaultLLMRoute(ctx, provider)
@@ -915,4 +985,40 @@ func (s *llmSchema) withoutMessageHistory(ctx context.Context, llm *core.LLM, _ 
 
 func (s *llmSchema) withoutSystemPrompts(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLM, error) {
 	return llm.WithoutSystemPrompts(), nil
+}
+
+type expertiseArgs struct {
+	Expertise []dagql.ID[*core.Expertise]
+}
+
+func (args expertiseArgs) load(ctx context.Context) ([]*core.Expertise, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	expertise := make([]*core.Expertise, len(args.Expertise))
+	for i, id := range args.Expertise {
+		entry, err := id.Load(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+		expertise[i] = entry.Self()
+	}
+	return expertise, nil
+}
+
+func (*llmSchema) compose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args expertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
+	expertise, err := args.load(ctx)
+	if err != nil {
+		return base, err
+	}
+	return core.ComposeExpertise(ctx, base, expertise)
+}
+
+func (*llmSchema) recompose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args expertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
+	expertise, err := args.load(ctx)
+	if err != nil {
+		return base, err
+	}
+	return core.RecomposeExpertise(ctx, base, expertise)
 }

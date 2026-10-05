@@ -21,6 +21,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
@@ -216,9 +217,11 @@ type DB struct {
 	// DB.Agents: an agent born inside a module call is precisely what the
 	// roster exists to surface), so unlike the surfacing memos above it
 	// keys on db.mutations alone.
-	agents     []*AgentNode
-	agentsAt   uint64
-	agentsInit bool
+	agents          []*AgentNode
+	agentsAt        uint64
+	agentsInit      bool
+	agentControl    agentcontrol.Index
+	agentControlErr error
 
 	// Rewinds are session-wide for the same reason as the roster, and their
 	// memo doubles as the superseded-message index (see DB.Rewinds).
@@ -256,7 +259,7 @@ func NewDB() *DB {
 
 		CreatorSpans: make(map[string]SpanSet),
 
-		updatedSpans: NewSpanSet(),
+		updatedSpans: NewOrderedSet(spanKeyFunc),
 		seenSpans:    make(map[SpanID]struct{}),
 
 		pendingResumeOutputs: make(map[resumeOutputKey]SpanSet),
@@ -277,7 +280,13 @@ func (db *DB) hasSeen(spanID SpanID) bool {
 }
 
 func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
-	snapshots := snapshotSpans(db.updatedSpans.Order, func(span *Span) bool {
+	// updatedSpans is kept in insertion order, since every span update lands
+	// in it; sort it by start time only here, when it's read
+	updated := slices.Clone(db.updatedSpans.Order)
+	slices.SortStableFunc(updated, func(a, b *Span) int {
+		return a.StartTime.Compare(b.StartTime)
+	})
+	snapshots := snapshotSpans(updated, func(span *Span) bool {
 		if !span.Received {
 			// don't send along any stubs; let the client-side create its own stubs
 			return false
@@ -331,11 +340,13 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 	for _, snapshot := range snapshots {
 		db.seen(snapshot.ID)
 	}
-	db.updatedSpans = NewSpanSet()
+	db.updatedSpans = NewOrderedSet(spanKeyFunc)
 	return snapshots
 }
 
 func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
+	settle := db.deferSpanOrder()
+	defer settle()
 	spans := make([]*Span, len(snapshots))
 	for i, snapshot := range snapshots {
 		span := db.findOrAllocSpan(snapshot.ID)
@@ -364,6 +375,24 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 	for _, span := range spans {
 		span.PropagateStatusToParentsAndLinks()
 	}
+}
+
+// deferSpanOrder defers keeping db.Spans sorted by start time until the
+// returned func is called, so that ingesting a batch of spans costs one sort
+// and merge rather than an O(n) insertion for each span that doesn't belong at
+// the end -- which made importing a large trace quadratic, since an import
+// doesn't deliver spans in start-time order, and a span seen before its
+// parent creates a placeholder for the parent with no start time at all.
+//
+// Every span is still in db.Spans.Order in the meantime, just not in order,
+// so nothing that needs the order may read it until the batch is settled.
+// Batches don't nest: the outermost one settles.
+func (db *DB) deferSpanOrder() (settle func()) {
+	if db.Spans.deferring {
+		return func() {}
+	}
+	db.Spans.deferSort()
+	return db.Spans.settle
 }
 
 func (db *DB) update(span *Span) {
@@ -427,6 +456,8 @@ func (db *DB) RemainingSnapshots() []SpanSnapshot {
 var _ sdktrace.SpanExporter = (*DB)(nil)
 
 func (db *DB) ExportSpans(ctx context.Context, otelSpans []sdktrace.ReadOnlySpan) error {
+	settle := db.deferSpanOrder()
+	defer settle()
 	spans := make([]*Span, len(otelSpans))
 	for i, otelSpan := range otelSpans {
 		spans[i] = db.recordOTelSpan(otelSpan)
@@ -550,6 +581,9 @@ func (db *DB) IngestLogs(logs []sdklog.Record) []sdklog.Record {
 }
 
 func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.Record {
+	// logs for spans we haven't seen yet create placeholders for them
+	settle := db.deferSpanOrder()
+	defer settle()
 	var renderable []sdklog.Record
 	if collectRenderable {
 		renderable = make([]sdklog.Record, 0, len(logs))
@@ -563,12 +597,8 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 			// streaming progress data, not log text
 			continue
 		}
-		if db.ingestAgentState(log) {
+		if db.ingestAgentControl(log) {
 			// agent lifecycle state, not log text
-			continue
-		}
-		if db.ingestAgentSnapshot(log) {
-			// agent resume anchor, not log text
 			continue
 		}
 		if db.ingestCallPayload(log) {
@@ -1110,14 +1140,14 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	}
 
 	if span.CallDigest != "" && span.CallPayload != "" {
-		// Legacy channel: older engines carry a base64 payload on the span
+		// Span channel: a spanned call carries its base64 payload on the span
 		// itself. Decode eagerly into the same store the log channel fills so
 		// nothing downstream has to know which channel carried a call.
-		var legacy callpbv1.Call
-		if err := legacy.Decode(span.CallPayload); err == nil {
-			db.addCall(span.CallDigest, &legacy)
+		var spanCall callpbv1.Call
+		if err := spanCall.Decode(span.CallPayload); err == nil {
+			db.addCall(span.CallDigest, &spanCall)
 		} else {
-			slog.Warn("failed to decode legacy call payload", "digest", span.CallDigest, "err", err)
+			slog.Warn("failed to decode span call payload", "digest", span.CallDigest, "err", err)
 		}
 	}
 

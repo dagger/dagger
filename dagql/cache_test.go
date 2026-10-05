@@ -2505,6 +2505,42 @@ func TestCacheNilResultIsCached(t *testing.T) {
 	assert.Equal(t, 1, c.Size())
 }
 
+// An expired entry that a session still owns stays in the cache when another
+// entry of its class is collected and takes the class's last terms with it:
+// the e-graph resets only when no entry is left.
+func TestCacheExpiredHeldEntrySurvivesReset(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(cacheTestContext(t.Context()), 30*time.Second)
+	defer cancel()
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, c)
+	frame := cacheTestIntCall("expired-held-survives-reset")
+
+	held, err := c.GetOrInitCall(ctx, "holder", noopTypeResolver{}, &CallRequest{ResultCall: frame, TTL: 1}, ValueFunc(cacheTestIntResult(frame, 1)))
+	assert.NilError(t, err)
+	heldID := held.cacheSharedResult().id
+	// Wait out the one-second TTL: the held entry expires.
+	time.Sleep(time.Until(time.Unix(held.cacheSharedResult().expiresAtUnix, 0)))
+
+	// Another session misses on the expired entry, computes the recipe again
+	// and ends. Its entry is collected, and the class's terms with it, since
+	// the class's only other entry has expired.
+	again, err := c.GetOrInitCall(ctx, "other", noopTypeResolver{}, &CallRequest{ResultCall: frame.clone()}, ValueFunc(cacheTestIntResult(frame, 2)))
+	assert.NilError(t, err)
+	assert.Assert(t, again.cacheSharedResult().id != heldID, "a second entry of the recipe")
+	assert.NilError(t, c.ReleaseSession(ctx, "other"))
+
+	c.egraphMu.RLock()
+	registered := c.resultsByID[heldID] == held.cacheSharedResult()
+	c.egraphMu.RUnlock()
+	assert.Assert(t, registered, "the holding session still owns the entry")
+	_, err = c.ResultCallByResultID(ctx, "holder", uint64(heldID))
+	assert.NilError(t, err)
+	assert.NilError(t, c.ReleaseSession(ctx, "holder"))
+	assert.Equal(t, 0, c.Size())
+}
+
 func TestEquivalencySetCacheHits(t *testing.T) {
 	t.Parallel()
 
@@ -3863,8 +3899,9 @@ func TestClassNewRewrapsObjectResult(t *testing.T) {
 	shared := original.cacheSharedResult()
 	originalFrame := shared.loadResultCall()
 	originalRecipe := cacheTestMustRecipeID(t, ctxA, original).Digest()
-	originalClass := shared.objClass.(Class[*cacheTestObject])
-	originalField, ok := originalClass.Field("marker", "")
+	originalClass, ok := shared.objClass.load(original.Type().Name())
+	assert.Assert(t, ok)
+	originalField, ok := originalClass.(Class[*cacheTestObject]).Field("marker", "")
 	assert.Assert(t, ok)
 	class, ok := srvB.ObjectType(original.Type().Name())
 	assert.Assert(t, ok)
@@ -3874,7 +3911,9 @@ func TestClassNewRewrapsObjectResult(t *testing.T) {
 	assert.Assert(t, shared.loadResultCall() == originalFrame)
 	assert.Equal(t, originalRecipe, cacheTestMustRecipeID(t, ctxB, rewrapped).Digest())
 	assert.Equal(t, original.HitCache(), rewrapped.HitCache())
-	sharedField, ok := shared.objClass.(Class[*cacheTestObject]).Field("marker", "")
+	sharedClass, ok := shared.objClass.load(original.Type().Name())
+	assert.Assert(t, ok)
+	sharedField, ok := sharedClass.(Class[*cacheTestObject]).Field("marker", "")
 	assert.Assert(t, ok)
 	assert.Assert(t, sharedField.Spec == originalField.Spec)
 	marker, err := rewrapped.Select(ctxB, srvB, Selector{Field: "marker"})
@@ -4233,7 +4272,7 @@ func TestExtraDigestLabelIsolation(t *testing.T) {
 	c := cacheIface
 
 	sharedBytes := digest.FromString("label-isolation-shared-bytes")
-	sharedA := call.ExtraDigest{Digest: sharedBytes, Label: call.ExtraDigestLabelRemoteCache}
+	sharedA := call.ExtraDigest{Digest: sharedBytes, Label: "label-a"}
 	sharedB := call.ExtraDigest{Digest: sharedBytes, Label: "label-b"}
 	noiseA := call.ExtraDigest{Digest: digest.FromString("label-isolation-noise-a"), Label: "noise-a"}
 	noiseB := call.ExtraDigest{Digest: digest.FromString("label-isolation-noise-b"), Label: "noise-b"}
@@ -4572,6 +4611,41 @@ func TestCacheDoNotCacheNormalizesNestedHitMetadata(t *testing.T) {
 	assert.Assert(t, !outerRes.HitCache())
 	assert.Equal(t, 9, cacheTestUnwrapInt(t, outerRes))
 	assert.Equal(t, 1, c.Size())
+}
+
+func TestCacheDoNotCachePreservesConcreteObjectType(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, c)
+	srv := cacheTestServer(t)
+	Fields[cacheTestQuery]{
+		Func("value", func(context.Context, cacheTestQuery, struct{}) (Int, error) {
+			return NewInt(17), nil
+		}),
+	}.Install(srv)
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(&ast.Type{NamedType: "Node", NonNull: true}),
+		Field: "uncached-node",
+	}
+	res, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{
+		ResultCall: frame,
+		DoNotCache: true,
+	}, func(ctx context.Context) (AnyResult, error) {
+		return NewObjectResultForCurrentCall(ctx, srv, cacheTestQuery{})
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, "Node", frame.Type.NamedType)
+	resultCall, err := res.ResultCall()
+	assert.NilError(t, err)
+	assert.Equal(t, "Query", resultCall.Type.NamedType)
+	obj, ok := res.(ObjectResult[cacheTestQuery])
+	assert.Assert(t, ok)
+	value, err := obj.Select(ctx, srv, Selector{Field: "value"})
+	assert.NilError(t, err)
+	assert.Equal(t, 17, cacheTestUnwrapInt(t, value))
 }
 
 func TestCacheDoNotCachePreservesAttachedReturnedObject(t *testing.T) {

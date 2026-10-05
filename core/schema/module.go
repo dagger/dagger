@@ -12,7 +12,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
@@ -44,6 +43,30 @@ type moduleSchema struct{}
 var _ SchemaResolvers = &moduleSchema{}
 
 var moduleDirectives = []dagql.DirectiveSpec{
+	{
+		Name:        "collection",
+		Description: dagql.FormatDescription("A dynamic collection with stored keys and an item lookup function."),
+		Locations:   []dagql.DirectiveLocation{dagql.DirectiveLocationObject},
+		ViewFilter:  AfterVersion("v1.0.0-0"),
+	},
+	{
+		Name:        "keys",
+		Description: dagql.FormatDescription("The stored keys field of a collection."),
+		Locations:   []dagql.DirectiveLocation{dagql.DirectiveLocationFieldDefinition},
+		ViewFilter:  AfterVersion("v1.0.0-0"),
+	},
+	{
+		Name:        "get",
+		Description: dagql.FormatDescription("The item lookup function of a collection."),
+		Locations:   []dagql.DirectiveLocation{dagql.DirectiveLocationFieldDefinition},
+		ViewFilter:  AfterVersion("v1.0.0-0"),
+	},
+	{
+		Name:        "delta",
+		Description: dagql.FormatDescription("Receives changes from the original collection."),
+		Locations:   []dagql.DirectiveLocation{dagql.DirectiveLocationFieldDefinition},
+		ViewFilter:  AfterVersion("v1.0.0-0"),
+	},
 	{
 		Name:        "sourceMap",
 		Description: dagql.FormatDescription(`Indicates the source information for where a given field is defined.`),
@@ -158,7 +181,7 @@ var moduleDirectives = []dagql.DirectiveSpec{
 	},
 	{
 		Name:        "agent",
-		Description: dagql.FormatDescription(`EXPERIMENTAL: Agent APIs are likely to change.`, `Indicates that this function is an agent middleware, composed by dagger agent.`),
+		Description: dagql.FormatDescription(`EXPERIMENTAL: Agent APIs are likely to change.`, `Indicates that this function is a source of expertise, composed by dagger agent.`),
 		Args:        dagql.NewInputSpecs(), // none
 		Locations: []dagql.DirectiveLocation{
 			dagql.DirectiveLocationFieldDefinition,
@@ -187,6 +210,8 @@ var moduleDirectives = []dagql.DirectiveSpec{
 }
 
 func (s *moduleSchema) Install(dag *dagql.Server) {
+	installCollectionSchema(s, dag)
+
 	for _, directive := range moduleDirectives {
 		dag.InstallDirective(directive)
 	}
@@ -328,46 +353,12 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	}.Install(dag)
 
 	dagql.Fields[*core.Module]{
+		dagql.Func("contextSource", func(_ context.Context, mod *core.Module, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.ModuleSource]], error) {
+			return mod.ContextSource, nil
+		}).View(AfterVersion("v1.0.0-0")).Doc("The source used to resolve contextual files and directories, when different from source."),
 		// sync is used by external dependencies like daggerverse
 		Syncer[*core.Module]().
 			Doc(`Forces evaluation of the module, including any loading into the engine and associated validation.`),
-
-		dagql.NodeFunc("checks", s.moduleChecks).
-			Experimental("This API is highly experimental and may be removed or replaced entirely.").
-			Doc(`Return all checks defined by the module`).
-			Args(
-				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
-				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks").
-					View(AfterVersion("v0.21.0")),
-			),
-
-		dagql.NodeFunc("check", s.moduleCheck).
-			Experimental("This API is highly experimental and may be removed or replaced entirely.").
-			Doc(`Return the check defined by the module with the given name. Must match to exactly one check.`).
-			Args(
-				dagql.Arg("name").Doc("The name of the check to retrieve"),
-			),
-
-		dagql.NodeFunc("generators", s.moduleGenerators).
-			Experimental("This API is highly experimental and may be removed or replaced entirely.").
-			Doc(`Return all generators defined by the module`).
-			Args(
-				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
-			),
-
-		dagql.NodeFunc("services", s.moduleServices).
-			Experimental("This API is highly experimental and may be removed or replaced entirely.").
-			Doc(`Return all services defined by the module`).
-			Args(
-				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
-			),
-
-		dagql.NodeFunc("generator", s.moduleGenerator).
-			Experimental("This API is highly experimental and may be removed or replaced entirely.").
-			Doc(`Return the generator defined by the module with the given name. Must match to exactly one generator.`).
-			Args(
-				dagql.Arg("name").Doc("The name of the generator to retrieve"),
-			),
 
 		dagql.Func("dependencies", s.moduleDependencies).
 			Doc(`The dependencies of the module.`),
@@ -444,13 +435,6 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
-
-		dagql.Func("generators", s.currentModuleGenerators).
-			Experimental("This API is highly experimental and may be removed or replaced entirely.").
-			Doc(`Return all generators defined by the module`).
-			Args(
-				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
-			),
 	}.Install(dag)
 
 	dagql.Fields[*core.Function]{
@@ -478,7 +462,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("withAgent", s.functionWithAgent).
 			Experimental("Agent APIs are likely to change.").
 			View(AfterVersion("v1.0.0-0")).
-			Doc(`Returns the function with a flag indicating it is an agent middleware.`),
+			Doc(`Returns the function with a flag indicating it is a source of expertise.`),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).
@@ -514,7 +498,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Function]{
 		dagql.Func("args", s.functionArgs).
 			Doc(`Arguments accepted by the function, if any.`),
-		dagql.Func("returnType", s.functionReturnType).
+		dagql.Func("returnType", s.functionReturnType).View(AllVersion).
 			Doc(`The type returned by the function.`),
 	}.Install(dag)
 
@@ -2756,129 +2740,6 @@ func (s *moduleSchema) moduleIntrospectionSchemaJSON(
 	return mod.Deps.SchemaIntrospectionJSONFileForModule(ctx)
 }
 
-func (s *moduleSchema) moduleChecks(
-	ctx context.Context,
-	mod dagql.ObjectResult[*core.Module],
-	args struct {
-		Include    dagql.Optional[dagql.ArrayInput[dagql.String]]
-		NoGenerate dagql.Optional[dagql.Boolean]
-	},
-) (*core.CheckGroup, error) {
-	var include []string
-	if args.Include.Valid {
-		for _, pattern := range args.Include.Value {
-			include = append(include, pattern.String())
-		}
-	}
-	checkGroup, err := core.NewCheckGroup(ctx, mod, args.NoGenerate.GetOr(false).Bool(), false)
-	if err != nil {
-		return nil, err
-	}
-	// Filter the finished checks, not the tree nodes: a generate-derived check
-	// has to be selectable by the up-to-date name it reports.
-	checkGroup.Checks, err = filterChecksByInclude(ctx, checkGroup.Checks, include)
-	if err != nil {
-		return nil, err
-	}
-	return checkGroup, nil
-}
-
-func (s *moduleSchema) moduleCheck(
-	ctx context.Context,
-	mod dagql.ObjectResult[*core.Module],
-	args struct {
-		Name string
-	},
-) (*core.Check, error) {
-	checkGroup, err := core.NewCheckGroup(ctx, mod, false, false)
-	if err != nil {
-		return nil, err
-	}
-	checks, err := filterChecksByInclude(ctx, checkGroup.Checks, []string{args.Name})
-	if err != nil {
-		return nil, err
-	}
-
-	switch len(checks) {
-	case 1:
-		return checks[0].Clone(), nil
-	case 0:
-		return nil, fmt.Errorf("check %q not found in module %q", args.Name, mod.Self().Name())
-	default:
-		return nil, fmt.Errorf("multiple checks found with name %q in module %q", args.Name, mod.Self().Name())
-	}
-}
-
-func (s *moduleSchema) moduleGenerators(
-	ctx context.Context,
-	mod dagql.ObjectResult[*core.Module],
-	args struct {
-		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
-	},
-) (*core.GeneratorGroup, error) {
-	var include []string
-	if args.Include.Valid {
-		for _, pattern := range args.Include.Value {
-			include = append(include, pattern.String())
-		}
-	}
-	return core.NewGeneratorGroup(ctx, mod, include)
-}
-
-func (s *moduleSchema) moduleServices(
-	ctx context.Context,
-	mod dagql.ObjectResult[*core.Module],
-	args struct {
-		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
-	},
-) (*core.UpGroup, error) {
-	var include []string
-	if args.Include.Valid {
-		for _, pattern := range args.Include.Value {
-			include = append(include, pattern.String())
-		}
-	}
-	return core.NewUpGroup(ctx, mod, include)
-}
-
-func (s *moduleSchema) currentModuleGenerators(
-	ctx context.Context,
-	mod *core.CurrentModule,
-	args struct {
-		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
-	},
-) (*core.GeneratorGroup, error) {
-	var include []string
-	if args.Include.Valid {
-		for _, pattern := range args.Include.Value {
-			include = append(include, pattern.String())
-		}
-	}
-	return core.NewGeneratorGroup(ctx, mod.Module, include)
-}
-
-func (s *moduleSchema) moduleGenerator(
-	ctx context.Context,
-	mod dagql.ObjectResult[*core.Module],
-	args struct {
-		Name string
-	},
-) (*core.Generator, error) {
-	generatorGroup, err := core.NewGeneratorGroup(ctx, mod, []string{args.Name})
-	if err != nil {
-		return nil, err
-	}
-
-	switch len(generatorGroup.Generators) {
-	case 1:
-		return generatorGroup.Generators[0].Clone(), nil
-	case 0:
-		return nil, fmt.Errorf("generator %q not found in module %q", args.Name, mod.Self().Name())
-	default:
-		return nil, fmt.Errorf("multiple generators found with name %q in module %q", args.Name, mod.Self().Name())
-	}
-}
-
 func (s *moduleSchema) moduleDependencies(
 	ctx context.Context,
 	mod *core.Module,
@@ -2965,17 +2826,28 @@ func (s *moduleSchema) currentModuleGeneratedContextDirectory(
 	mod dagql.ObjectResult[*core.CurrentModule],
 	args struct{},
 ) (inst dagql.Result[*core.Directory], err error) {
-	dag, err := core.CurrentDagqlServer(ctx)
+	generatedDiff, err := s.currentModuleGeneratedDiff(ctx, mod)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
+		return inst, err
 	}
+	return generatedDiff.Result, nil
+}
 
-	err = dag.Select(ctx, mod.Self().Module.Self().Source.Value, &inst,
-		dagql.Selector{
-			Field: "generatedContextDirectory",
-		},
-	)
-	return inst, err
+// currentModuleGeneratedDiff computes the running module's generated context
+// diff, reusing the module's already-loaded dependency DAG. The module is
+// already initialized and executing, so its dependencies must not be
+// re-resolved from config: that requires network access and, for private git
+// dependencies, credentials that the runtime caller does not necessarily hold.
+func (s *moduleSchema) currentModuleGeneratedDiff(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.CurrentModule],
+) (res dagql.ObjectResult[*core.Directory], err error) {
+	curMod := mod.Self().Module.Self()
+	curSrc := curMod.Source.Value
+	if curSrc.Self() == nil {
+		return res, errors.New("invalid unset current module source")
+	}
+	return (&moduleSourceSchema{}).generatedContextDiff(ctx, curSrc, curMod.Deps)
 }
 
 func (s *moduleSchema) currentModuleDependencies(
@@ -3019,10 +2891,7 @@ func (s *moduleSchema) currentModuleSource(
 		srcSubpath = curSrc.Self().SourceRootSubpath
 	}
 
-	var generatedDiff dagql.Result[*core.Directory]
-	err = dag.Select(ctx, curSrc, &generatedDiff,
-		dagql.Selector{Field: "generatedContextDirectory"},
-	)
+	generatedDiff, err := s.currentModuleGeneratedDiff(ctx, curMod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get generated context directory: %w", err)
 	}
@@ -3183,5 +3052,5 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if err != nil {
 		return inst, err
 	}
-	return inst.WithContentDigest(ctx, scopedDigest, call.ExtraDigestLabelRemoteCache)
+	return inst.WithContentDigest(ctx, scopedDigest)
 }

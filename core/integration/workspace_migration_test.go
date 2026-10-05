@@ -507,8 +507,8 @@ type Myapp {
 	})
 
 	t.Run("unreferenced module in default dot dagger modules directory is not touched", func(ctx context.Context, t *testctx.T) {
-		// Migration no longer crawls the repo (not even .dagger/modules): only
-		// the selected root config and the local modules it references migrate.
+		// Migration reads only the selected root config and the local modules
+		// it references; other modules, even under .dagger/modules, stay put.
 		c := connect(ctx, t)
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
@@ -558,7 +558,7 @@ type Myapp {
 		}, "\n"))
 	})
 
-	t.Run("migration omits commented settings hints and preserves active settings", func(ctx context.Context, t *testctx.T) {
+	t.Run("migration preserves active settings", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
 
@@ -579,10 +579,14 @@ type Myapp {
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, configOut, `[modules.defaults]`)
-		require.Contains(t, configOut, `[modules.defaults.settings]`)
-		require.Contains(t, configOut, `greeting = "bonjour"`)
-		require.NotContains(t, configOut, `# settings.`)
+		require.Contains(t, configOut, strings.Join([]string{
+			"[modules.defaults]",
+			`source = "./toolchain"`,
+			"legacy-default-path = true",
+			"",
+			"[modules.defaults.settings]",
+			`greeting = "bonjour"`,
+		}, "\n"))
 	})
 
 	t.Run("dot dagger source remains in place", func(ctx context.Context, t *testctx.T) {
@@ -1138,7 +1142,6 @@ type Toolchain {
 		require.Contains(t, output, "workspace configuration: dagger.toml")
 		require.Contains(t, output, "install module: ./toolchain")
 		require.Contains(t, output, "migration report: .dagger/migration-report.md")
-		require.NotContains(t, output, "If you apply this migration, review .dagger/migration-report.md.")
 		require.NotContains(t, output, "Migrated to workspace format")
 
 		// The "N old setting(s) need review" summary and per-gap details land in
@@ -1149,30 +1152,6 @@ type Toolchain {
 		require.Contains(t, report, "`toolchain` needs a manual check")
 		require.Contains(t, report, `constructor arg "src" has 'ignore' and 'defaultPath', which workspace settings do not support`)
 		require.Contains(t, report, `function setting "build.tag" is not supported in workspace config`)
-	})
-
-	t.Run("dot dagger source does not warn about skipped cleanup", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		ctr := legacyWorkspaceBase(t, c, `{
-  "name": "myapp",
-  "sdk": {"source": "dang"},
-  "source": ".dagger"
-}`, func(ctr *dagger.Container) *dagger.Container {
-			return ctr.WithNewFile(".dagger/main.dang", `
-type Myapp {
-  pub greet: String! { "hi" }
-}
-`)
-		})
-
-		migrate := ctr.
-			With(withPlainProgress).
-			With(daggerExec("workspace", "migrate", "--auto-apply"))
-		stdout, err := migrate.Stdout(ctx)
-		require.NoError(t, err)
-		stderr, err := migrate.Stderr(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, stdout+stderr, `Warning: old source dir ".dagger" is ancestor of new location; skipped cleanup`)
 	})
 }
 

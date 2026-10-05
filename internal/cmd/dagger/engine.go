@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
@@ -22,6 +23,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -102,6 +104,39 @@ func withEngine(
 	ctx context.Context,
 	params client.Params,
 	fn runClientCallback,
+) error {
+	return withEngineAction(ctx, "", params, fn)
+}
+
+// Metadata discovery can run before Cobra has parsed the full command. Give it
+// its own frontend and exporters, then restore the execution session's state.
+func withEngineMetadata(ctx context.Context, action string, params client.Params, fn runClientCallback) error {
+	oldFrontend, oldOpts := Frontend, opts
+	oldProgress, oldHasTTY := progress, hasTTY
+	oldSkip := skipSharedTelemetryExporters
+	defer func() {
+		Frontend, opts = oldFrontend, oldOpts
+		progress, hasTTY = oldProgress, oldHasTTY
+		skipSharedTelemetryExporters = oldSkip
+	}()
+
+	configureProgressOptions()
+	opts.Verbosity = dagui.HideCompletedVerbosity + verbose - quiet
+	opts.OpenWeb = false
+	opts.NoExit = false
+	opts.DotOutputFilePath = ""
+	skipSharedTelemetryExporters = true
+	if err := resolveProgressFrontend(); err != nil {
+		return err
+	}
+	return withEngineAction(ctx, action, params, fn)
+}
+
+func withEngineAction(
+	ctx context.Context,
+	action string,
+	params client.Params,
+	fn runClientCallback,
 ) (rerr error) {
 	if err := applyWorkspaceClientParams(&params); err != nil {
 		return err
@@ -126,6 +161,11 @@ func withEngine(
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
 		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
+		if action != "" {
+			var span trace.Span
+			ctx, span = Tracer().Start(ctx, action, telemetry.Encapsulate())
+			defer telemetry.EndWithCause(span, &rerr)
+		}
 
 		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 			if opts.Debug {
@@ -185,8 +225,12 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.EngineTrace = telemetry.SpanForwarder{
 		Processors: telemetry.SpanProcessors,
 	}
+	// The engine names the session (Query.setSessionTitle) with a span-name
+	// record on our primary span; apply it to the live span too, so the span
+	// we export carries the title like the frontend shows it.
+	namer := primarySpanNamer{span: trace.SpanFromContext(ctx)}
 	params.EngineLogs = telemetry.LogForwarder{
-		Processors: telemetry.LogProcessors,
+		Processors: append(slices.Clone(telemetry.LogProcessors), namer),
 	}
 	params.EngineMetrics = telemetry.MetricExporters
 	if cloud := cliCloudTelemetry; cloud.configured() {
@@ -199,7 +243,7 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 			Processors: withoutIndex(telemetry.SpanProcessors, cloud.spans),
 		}
 		params.EngineLogsWithoutCloud = telemetry.LogForwarder{
-			Processors: withoutIndex(telemetry.LogProcessors, cloud.logs),
+			Processors: append(withoutIndex(telemetry.LogProcessors, cloud.logs), namer),
 		}
 		params.EngineMetricsWithoutCloud = withoutIndex(telemetry.MetricExporters, cloud.metrics)
 	}
@@ -229,6 +273,35 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.CloudAuth = ca
 
 	return params, nil
+}
+
+// primarySpanNamer applies span-name records the engine publishes for the
+// CLI's own primary span (Query.setSessionTitle) to that live span, so the
+// span this process exports ends up with the title too. Everything else about
+// the rename -- frontend, Cloud, archive -- follows from the record itself.
+type primarySpanNamer struct {
+	span trace.Span
+}
+
+var _ sdklog.Processor = primarySpanNamer{}
+
+func (n primarySpanNamer) OnEmit(_ context.Context, rec *sdklog.Record) error {
+	if rec == nil || n.span == nil || !n.span.IsRecording() {
+		return nil
+	}
+	if rec.SpanID() != n.span.SpanContext().SpanID() || !dagui.IsSpanNameRecord(*rec) {
+		return nil
+	}
+	if name, ok := dagui.LogBodyString(*rec); ok && name != "" {
+		n.span.SetName(name)
+	}
+	return nil
+}
+
+func (primarySpanNamer) Shutdown(context.Context) error   { return nil }
+func (primarySpanNamer) ForceFlush(context.Context) error { return nil }
+func (primarySpanNamer) Enabled(context.Context, sdklog.EnabledParameters) bool {
+	return true
 }
 
 // selectedEngine returns the engine selector, or "" when nothing selects an
@@ -357,7 +430,7 @@ func applyWorkspaceClientParams(params *client.Params) error {
 
 // skipSharedTelemetryExporters, when set, makes engineTelemetryConfig leave out
 // the process-wide OTLP exporter singletons (Dagger Cloud + the OTEL_* "Detect"
-// exporters). It is toggled by withEngineSilent for internal plumbing sessions;
+// exporters). It is toggled by preparation sessions;
 // see engineTelemetryConfig for why.
 var skipSharedTelemetryExporters bool
 
@@ -370,8 +443,7 @@ var skipSharedTelemetryExporters bool
 // tore them down would leave them dead for the real command that runs next in
 // the same process, surfacing "HTTP exporter is shutdown" / "context canceled"
 // telemetry warnings (e.g. the preflight session for a dynamic SDK command).
-// Such sessions render to a discard frontend and have no reason to export to
-// Cloud, so they simply skip the shared exporters.
+// Preparation sessions use only their own frontend exporters.
 func engineTelemetryConfig(ctx context.Context) (telemetry.Config, cloudTelemetryIndexes) {
 	return engineTelemetryConfigWithCloud(ctx, enginetel.ConfiguredCloudExporters)
 }

@@ -21,6 +21,10 @@
           "$ref": "#/$defs/TelemetryConfig",
           "description": "Telemetry configures the engine's own telemetry, separate from client telemetry."
         },
+        "remoteCache": {
+          "$ref": "#/$defs/RemoteCacheConfig",
+          "description": "RemoteCache connects the engine's cache to a remote cache service."
+        },
         "gc": {
           "$ref": "#/$defs/GCConfig",
           "description": "GC configures the engine's garbage collector."
@@ -190,6 +194,16 @@
         "ca"
       ]
     },
+    "RemoteCacheConfig": {
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "URL is the remote cache service's URL. The engine connects to it when DAGGER_CLOUD_TOKEN holds an engine token, and then exports its cache events too. The _EXPERIMENTAL_DAGGER_REMOTE_CACHE_URL environment variable sets it too, and wins."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Security": {
       "properties": {
         "insecureRootCapabilities": {
@@ -207,9 +221,9 @@
           "description": "ResourceMetrics enables cgroup v2 resource metrics for the engine process. It is disabled by default. Export requires OTEL_EXPORTER_OTLP_METRICS_ENDPOINT in the engine environment. Other OTLP settings use the standard environment variables. This does not change client or execution metric collection and export.",
           "default": false
         },
-        "cacheFacts": {
+        "engineEvents": {
           "type": "boolean",
-          "description": "CacheFacts enables the export of the engine's cache facts to Dagger Cloud. It is disabled by default. Export requires DAGGER_CLOUD_TOKEN in the engine environment, the credential it is sent under. The _EXPERIMENTAL_DAGGER_CACHE_FACTS_EXPORT environment variable enables it too.",
+          "description": "EngineEvents enables the export of the engine's cache events to Dagger Cloud: its cache's start, prunes, snapshot sharing and stop. It is disabled by default. Export requires DAGGER_CLOUD_TOKEN in the engine environment, the credential it is sent under. The _EXPERIMENTAL_DAGGER_ENGINE_EVENTS environment variable enables it too.",
           "default": false
         }
       },

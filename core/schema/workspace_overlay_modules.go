@@ -12,6 +12,7 @@ import (
 	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/iancoleman/strcase"
 )
 
@@ -49,7 +50,7 @@ func (s *workspaceSchema) workspacePrimaryModules(
 	return mods, failures, err
 }
 
-// workspaceOverlayModules loads the workspace modules that the workspace's
+// workspaceOverlayModulesWithLoadFailures loads the workspace modules that the workspace's
 // pending overlay affects, resolving their source through the overlay instead
 // of the host checkout.
 //
@@ -57,7 +58,7 @@ func (s *workspaceSchema) workspacePrimaryModules(
 // workspace detection) are a snapshot of the on-disk workspace: an agent that
 // edits a module's source, or installs a module by staging a dagger.toml edit,
 // cannot see its own work when the conversation is recomposed
-// (Workspace.agents). This resolves the affected entries from
+// through artifact agent functions. This resolves the affected entries from
 // workspaceOverlayRootfs, which is host + the overlay's changeset, so the
 // self-repair loop (edit module -> reload -> new behavior) closes fully
 // in-session. The resulting module identity is keyed on the overlay directory's
@@ -66,26 +67,18 @@ func (s *workspaceSchema) workspacePrimaryModules(
 //
 // Only entries the overlay actually touches are re-resolved; everything else
 // keeps using the served module, so a clean workspace (or one whose edits are
-// unrelated to any module) behaves exactly as before.
+// unrelated to any module) behaves exactly as before. Entries outside the
+// workspace (remote refs, absolute paths) are touched by config and lock
+// edits, and resolve their lookups through the overlay's lock: bumping a
+// remote module's pin in dagger.lock and reloading picks up the new commit.
 // Frozen value workspaces have no served modules: all their entries are loaded
-// from their own tree, even without an overlay.
+// from their own tree, even without an overlay, pinned by their own lock.
 //
 // Known limitations of the live overlay path, deliberate for now:
-//   - an entry REMOVED from dagger.toml in the overlay still resolves through
-//     the served module: this only ever adds or replaces.
 //   - for live workspaces, legacy +defaultPath entries (entry.LegacyDefaultPath)
 //     are left to the served path, whose host-ref based context resolution has
 //     no overlay equivalent. Value workspaces load them here, with their own
 //     tree as the +defaultPath context (see workspaceOverlayContextSource).
-func (s *workspaceSchema) workspaceOverlayModules(
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Workspace],
-	include []string,
-) ([]overlayModule, error) {
-	loaded, _, err := s.workspaceOverlayModulesWithLoadFailures(ctx, parent, include, core.ModuleLoadStrict)
-	return loaded, err
-}
-
 func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -111,16 +104,14 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 	// A config edit can add, remove or repoint any entry, so every entry is
 	// suspect; otherwise only the entries whose source tree was edited are.
 	configTouched := ws.IsValueWorkspace() || ws.OverlayPathTouched(configFile)
+	// A lock edit can repin any entry resolved through a lookup: those outside
+	// the workspace.
+	lockTouched := overlayTouchesLock(ws)
+	lookupCtx := s.workspaceOverlayLookupContext(ctx, ws, lockTouched)
 
-	cfg, err := readWorkspaceConfig(ctx, ws)
+	cfg, err := workspaceEffectiveConfig(ctx, ws)
 	if err != nil {
 		return nil, nil, err
-	}
-	if envName, ok := selectedWorkspaceEnv(ctx, ws); ok {
-		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
-		if err != nil {
-			return nil, nil, err
-		}
 	}
 	if len(cfg.Modules) == 0 {
 		return nil, nil, nil
@@ -169,7 +160,7 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 		}
 
 		mod, relevant, err := func() (mod dagql.ObjectResult[*core.Module], _ bool, _ error) {
-			src, relevant, err := s.workspaceOverlayModuleSource(ctx, srv, parent, entry, configDir, configTouched)
+			src, relevant, err := s.workspaceOverlayModuleSource(ctx, srv, parent, entry, configDir, configTouched, lockTouched, lookupCtx)
 			if err != nil {
 				return mod, false, fmt.Errorf("module %q: %w", name, err)
 			}
@@ -184,8 +175,8 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 			if !mode.BestEffort() {
 				return nil, nil, err
 			}
-			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, mode)}
-			if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
+			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, core.ModuleLoadBestEffort)}
+			if workspace.IsLocalRef(entry.Source, "") {
 				failure.Dir = filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 			}
 			failures = append(failures, failure)
@@ -280,8 +271,9 @@ func (s *workspaceSchema) workspaceOverlayContextSource(
 // workspace resolve through the overlay rootfs (host + pending edits); entries
 // outside it — absolute paths and remote refs — have no overlay representation,
 // so they are only re-resolved when the config itself was edited (a freshly
-// installed dependency), through the same root moduleSource field the session
-// loader uses.
+// installed dependency) or the lock was (a bumped pin), through the same root
+// moduleSource field the session loader uses, under lookupCtx so the
+// workspace's own pins apply.
 func (s *workspaceSchema) workspaceOverlayModuleSource(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -289,10 +281,12 @@ func (s *workspaceSchema) workspaceOverlayModuleSource(
 	entry workspace.ModuleEntry,
 	configDir string,
 	configTouched bool,
+	lockTouched bool,
+	lookupCtx func() (context.Context, error),
 ) (src dagql.ObjectResult[*core.ModuleSource], relevant bool, _ error) {
 	ws := parent.Self()
 
-	if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
+	if workspace.IsLocalRef(entry.Source, "") {
 		resolved := workspace.ResolveModuleEntrySource(configDir, entry.Source)
 		if !filepath.IsAbs(resolved) {
 			if !configTouched && !overlayTouchesTree(ws, resolved) {
@@ -308,19 +302,82 @@ func (s *workspaceSchema) workspaceOverlayModuleSource(
 			}
 			return src, true, nil
 		}
-		if !configTouched {
+		if !configTouched && !lockTouched {
 			return src, false, nil
 		}
 		if ws.IsValueWorkspace() {
 			return src, false, fmt.Errorf("module source %q is outside the frozen workspace", resolved)
 		}
+		ctx, err := lookupCtx()
+		if err != nil {
+			return src, false, err
+		}
 		return s.rootModuleSource(ctx, srv, resolved)
 	}
 
-	if !configTouched {
+	if !configTouched && !lockTouched {
 		return src, false, nil
 	}
+	ctx, err := lookupCtx()
+	if err != nil {
+		return src, false, err
+	}
 	return s.rootModuleSource(ctx, srv, entry.Source)
+}
+
+// workspaceOverlayLookupContext returns the context for lookups made while
+// re-resolving entries outside the workspace. They consult the workspace's
+// own lock whenever it can differ from the session's on-disk one: a live
+// overlay that edited it, or a frozen workspace, which must not borrow the
+// caller's lock any more than its modules. The lock is read lazily, once, so
+// workspaces with only local entries never read it.
+func (s *workspaceSchema) workspaceOverlayLookupContext(
+	ctx context.Context,
+	ws *core.Workspace,
+	lockTouched bool,
+) func() (context.Context, error) {
+	if ws.LockFile == "" || !ws.IsValueWorkspace() && !lockTouched {
+		return func() (context.Context, error) { return ctx, nil }
+	}
+	var lockCtx context.Context
+	return func() (context.Context, error) {
+		if lockCtx == nil {
+			var err error
+			lockCtx, err = s.withWorkspaceOwnLock(ctx, ws)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return lockCtx, nil
+	}
+}
+
+// withWorkspaceOwnLock makes lookups under the returned context pin through
+// the workspace's own lock — its tree plus pending overlay — rather than the
+// session's on-disk lock (see loadWorkspaceLookupLock), as the overlay
+// builders do. The cache scope is named after the lock's contents, so an
+// unchanged lock stays a cache hit while a repinned one re-resolves.
+func (s *workspaceSchema) withWorkspaceOwnLock(ctx context.Context, ws *core.Workspace) (context.Context, error) {
+	lock, err := s.readWorkspaceLockForOverlay(ctx, ws)
+	if err != nil {
+		return nil, fmt.Errorf("workspace lock: %w", err)
+	}
+	data, err := lock.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("marshal workspace lock: %w", err)
+	}
+	ctx = withWorkspaceLookupLockOverride(ctx, lock)
+	return dagql.WithNamedPerClientCacheScope(ctx, hashutil.HashStrings("workspaceLock", string(data)).String()), nil
+}
+
+// overlayTouchesLock reports whether the overlay edited the workspace's lock,
+// or the legacy lock it falls back to (see readWorkspaceLockForOverlay).
+func overlayTouchesLock(ws *core.Workspace) bool {
+	if ws.LockFile == "" {
+		return false
+	}
+	return ws.OverlayPathTouched(ws.LockFile) ||
+		ws.OverlayPathTouched(workspace.LegacyLockFilePathForCanonical(ws.LockFile))
 }
 
 func (s *workspaceSchema) rootModuleSource(

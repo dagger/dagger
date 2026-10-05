@@ -206,7 +206,7 @@ func (c *Cache) demandDelegatedParent(ctx context.Context, pending *PartSourceLe
 	proof := pending.delegation
 	server := CurrentDagqlServer(ctx)
 	if server == nil {
-		server = proof.child.partGate.server.Load()
+		return fmt.Errorf("delegation: loading parent %d requires a dagql server in context", proof.parent.id)
 	}
 	// An empty loader session selects exactly, under our explicit parent hold.
 	parent, err := c.loadResultByResultID(ctx, "", server, uint64(proof.parent.id))

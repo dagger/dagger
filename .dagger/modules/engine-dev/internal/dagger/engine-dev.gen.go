@@ -366,6 +366,8 @@ type EngineDevTestOpts struct {
 	Update bool
 	// Enable the given ebpf progs in the engine during tests
 	EbpfProgs []string
+	// Enable privileged eBPF tests (Linux 6.15 or newer)
+	Ebpf bool
 	// Elapsed times after the test runner starts at which to dump engine goroutines
 	DumpAfter []string
 }
@@ -424,6 +426,10 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 		// `ebpfProgs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
 			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+		// `ebpf` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ebpf) {
+			q = q.Arg("ebpf", opts[i].Ebpf)
 		}
 		// `dumpAfter` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DumpAfter) {

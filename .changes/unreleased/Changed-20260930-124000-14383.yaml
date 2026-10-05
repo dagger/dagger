@@ -1,0 +1,6 @@
+kind: Changed
+body: Deduplicate keys for large artifact collection batches in linear time while preserving key order.
+time: 2026-09-30T12:40:00-07:00
+custom:
+    Author: grouville
+    PR: "14383"

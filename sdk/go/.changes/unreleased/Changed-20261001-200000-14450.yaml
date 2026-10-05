@@ -1,0 +1,13 @@
+kind: Changed
+body: |
+  Require the modules that generated Dagger module code imports.
+
+  `github.com/dagger/otel-go` and `go.opentelemetry.io/otel/sdk` are now
+  required through a build-tagged package, so generated modules pin them
+  instead of resolving the newest version over the network. This raises the
+  minimum `go.opentelemetry.io/otel` version to v1.43.0. Programs using the SDK
+  don't compile the new requirements.
+time: 2026-10-01T20:00:00.000000000+00:00
+custom:
+    Author: sipsma
+    PR: "14450"

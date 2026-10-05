@@ -20,9 +20,15 @@ import (
 )
 
 type transferTestValue struct {
-	Text    string `json:"text"`
-	Child   uint64 `json:"child,omitempty"`
-	Recipe  string `json:"recipe,omitempty"`
+	Text   string `json:"text"`
+	Child  uint64 `json:"child,omitempty"`
+	Recipe string `json:"recipe,omitempty"`
+	// PartDeps are the result numbers its snapshot part's probe declares as
+	// dependencies, which a receiver installing the part takes on.
+	PartDeps []uint64 `json:"partDeps,omitempty"`
+	// Fields is an optional body, shaped like a module's type definitions,
+	// that gives the value a realistic payload size.
+	Fields  []transferTestField `json:"fields,omitempty"`
 	rev     atomic.Uint64
 	release OnReleaseFunc
 	links   []PersistedSnapshotRefLink
@@ -30,6 +36,21 @@ type transferTestValue struct {
 	revisionHook func()
 	// unready makes the output revision read report a held persistence guard.
 	unready atomic.Bool
+}
+
+// transferTestField is one named field of a transferTestValue's body: a name,
+// a description, a type and its arguments.
+type transferTestField struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Type        string            `json:"type"`
+	Args        []transferTestArg `json:"args,omitempty"`
+}
+
+type transferTestArg struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Default string `json:"default,omitempty"`
 }
 
 func (*transferTestValue) Type() *ast.Type {
@@ -131,7 +152,7 @@ func transferTestOffer(t *testing.T, c *Cache, ctx context.Context, parent, chil
 	record := PersistedPartOffer{Address: PersistedPartAddress{Part: "snapshot"}, Value: SnapshotValue{Kind: "directory"}, Owner: PersistedOfferOwner{DependencyIDs: []uint64{uint64(child.cacheSharedResult().id)}}}
 	owner, err := c.newOfferOwnerLocked(ctx, record.Owner)
 	if err == nil {
-		err = c.attachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{record: record, owner: owner})
+		err = c.testAttachPartOfferLocked(parent.cacheSharedResult(), record.Address, &partOffer{record: record, owner: owner})
 	}
 	c.egraphMu.Unlock()
 	require.NoError(t, err)
@@ -222,7 +243,8 @@ func TestValueTransferReferences(t *testing.T) {
 	for i := range 7 {
 		persistedListTestResult(t, bctx, b, bsrv, "padding-"+string(rune('a'+i)), String("unrelated"))
 	}
-	mapping, err := b.ImportValues(bctx, bundle)
+	mappingReply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	mapping := mappingReply.Imported()
 	require.NoError(t, err)
 	require.Len(t, mapping, 1)
 	require.Greater(t, mapping[0].ResultID, uint64(7))
@@ -236,7 +258,7 @@ func TestValueTransferReferences(t *testing.T) {
 	require.NotEqual(t, value.cacheSharedResult().id, item.cacheSharedResult().id)
 	forward := exportTestBundle(t, bctx, b, imported)
 	require.Equal(t, bundle.Values[0].Record.Envelope.ScalarJSON, forward.Values[0].Record.Envelope.ScalarJSON)
-	for _, bad := range []string{"dangling", "cycle", "root", "extra", "body", "unreachable"} {
+	for _, bad := range []string{"dangling", "cycle", "root", "body", "unreachable"} {
 		t.Run(bad, func(t *testing.T) {
 			raw, err := json.Marshal(bundle)
 			require.NoError(t, err)
@@ -249,19 +271,36 @@ func TestValueTransferReferences(t *testing.T) {
 				broken.Values[0].DependencyIDs = []uint64{2}
 			case "root":
 				broken.Roots[0].Ordinal = 999
-			case "extra":
-				broken.Values[0].Record.Call.ExtraDigests = []call.ExtraDigest{{Digest: digest.FromString("unmarked"), Label: call.ExtraDigestLabelContent}}
 			case "body":
 				broken.Values[0].Record.Envelope.Items = []PersistedResultEnvelope{{}}
 			case "unreachable":
 				broken.Roots[0].Ordinal = 1
 			}
 			before := len(b.resultsByID)
-			_, err = b.ImportValues(bctx, broken)
+			_, err = b.MergeValues(bctx, cloudCacheID, broken)
 			require.Error(t, err)
 			require.Len(t, b.resultsByID, before)
 		})
 	}
+	// An extra digest on a frame merges with it, and classes the entry it
+	// arrives with.
+	t.Run("extra", func(t *testing.T) {
+		raw, err := json.Marshal(bundle)
+		require.NoError(t, err)
+		var withExtra ValueBundle
+		require.NoError(t, json.Unmarshal(raw, &withExtra))
+		extra := digest.FromString("carried")
+		withExtra.Values[0].Record.Call.ExtraDigests = []call.ExtraDigest{{Digest: extra, Label: call.ExtraDigestLabelContent}}
+		cctx, c, _ := transferTestCache(t)
+		_, err = c.MergeValues(cctx, cloudCacheID, withExtra)
+		require.NoError(t, err)
+		c.egraphMu.RLock()
+		class, known := c.egraphDigestToClass[extra.String()]
+		results := len(c.outputEqClassResults[c.eqClassRootLocked(class)])
+		c.egraphMu.RUnlock()
+		require.True(t, known)
+		require.Equal(t, 1, results)
+	})
 }
 
 func TestValueTransferImportPublication(t *testing.T) {
@@ -279,7 +318,7 @@ func TestValueTransferImportPublication(t *testing.T) {
 			}
 			return nil
 		}
-		_, err := b.ImportValues(ctx, bundle)
+		_, err := b.MergeValues(ctx, cloudCacheID, bundle)
 		require.ErrorIs(t, err, injected)
 		require.Empty(t, b.resultsByID)
 		require.Empty(t, b.persistedEdgesByResult)
@@ -298,7 +337,8 @@ func TestValueTransferImportPublication(t *testing.T) {
 			} else {
 				b.testBeforeTransferCommit = cancel
 			}
-			mapping, err := b.ImportValues(ctx, bundle)
+			mappingReply, err := b.MergeValues(ctx, cloudCacheID, bundle)
+			mapping := mappingReply.Imported()
 			if committed {
 				require.NoError(t, err)
 				require.Len(t, mapping, 1)
@@ -313,16 +353,21 @@ func TestValueTransferImportPublication(t *testing.T) {
 		ctx, b, _ := transferTestCache(t)
 		expiry := time.Now().Add(time.Hour).Unix()
 		bundle.Roots[0].ExpiresAtUnix = expiry
-		mapping, err := b.ImportValues(ctx, bundle)
+		mappingReply, err := b.MergeValues(ctx, cloudCacheID, bundle)
+		mapping := mappingReply.Imported()
 		require.NoError(t, err)
 		require.Equal(t, expiry, b.persistedEdgesByResult[sharedResultID(mapping[0].ResultID)].expiresAtUnix)
 	})
 }
 
+// A recipe ID inside a payload travels with every extra digest of every
+// vertex: the receiver's content digest as well as the call's. The export
+// copies the DAG, so the original is untouched, and the receiving cache
+// accepts the recipe as it is.
 func TestValueTransferReferencesExtras(t *testing.T) {
 	ctx, c, srv := transferTestCache(t)
-	marked, unmarked := digest.FromString("marked"), digest.FromString("private")
-	recipe := call.New().Append(String("").Type(), "source").With(call.WithContentDigest(unmarked)).Append(String("").Type(), "child").With(call.WithExtraDigest(call.ExtraDigest{Digest: marked, Label: call.ExtraDigestLabelRemoteCache}), call.WithContentDigest(marked))
+	sourceContent, childContent := digest.FromString("source-content"), digest.FromString("child-content")
+	recipe := call.New().Append(String("").Type(), "source").With(call.WithContentDigest(sourceContent)).Append(String("").Type(), "child").With(call.WithContentDigest(childContent))
 	raw, err := recipe.Encode()
 	require.NoError(t, err)
 	value := persistedListTestResult(t, ctx, c, srv, "recipe", &transferTestValue{Text: "recipe", Recipe: raw})
@@ -331,18 +376,20 @@ func TestValueTransferReferencesExtras(t *testing.T) {
 	require.NoError(t, json.Unmarshal(bundle.Values[0].Record.Envelope.ObjectJSON, &payload))
 	var copied call.ID
 	require.NoError(t, copied.Decode(payload.Recipe))
-	require.Equal(t, marked, copied.ContentDigest())
-	require.Empty(t, copied.Receiver().ExtraDigests())
-	require.NotEmpty(t, recipe.Receiver().ExtraDigests(), "original DAG is untouched")
+	require.Equal(t, childContent, copied.ContentDigest())
+	require.Equal(t, sourceContent, copied.Receiver().ContentDigest(), "the receiver's content digest travels too")
+	require.Equal(t, recipe.Receiver().ExtraDigests(), copied.Receiver().ExtraDigests())
+	require.NotSame(t, recipe.Receiver(), copied.Receiver(), "the export copies the DAG")
 	filtered, err := recipe.FilterTransferDigests()
 	require.NoError(t, err)
 	require.Equal(t, filtered.Digest(), copied.Digest())
 	bctx, b, _ := transferTestCache(t)
-	_, err = b.ImportValues(bctx, bundle)
+	_, err = b.MergeValues(bctx, cloudCacheID, bundle)
 	require.NoError(t, err)
-	bundle.Values[0].Record.Envelope.ObjectJSON = json.RawMessage(`{"text":"invalid","recipe":` + string(mustTransferJSON(t, raw)) + `}`)
-	_, err = b.ImportValues(bctx, bundle)
-	require.ErrorContains(t, err, "unmarked recipe ID extras")
+	// The original recipe, as the sender holds it, is accepted as it is.
+	bundle.Values[0].Record.Envelope.ObjectJSON = json.RawMessage(`{"text":"original","recipe":` + string(mustTransferJSON(t, raw)) + `}`)
+	_, err = b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
 }
 func mustTransferJSON(t *testing.T, v any) []byte {
 	t.Helper()
@@ -365,7 +412,8 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 	source := persistedListTestResult(t, ctx, a, srv, "encoded-source", &transferTestValue{Text: "old"})
 	bundle := exportTestBundle(t, ctx, a, source)
 	ctx, b, srv := transferTestCache(t)
-	mapping, err := b.ImportValues(ctx, bundle)
+	mappingReply, err := b.MergeValues(ctx, cloudCacheID, bundle)
+	mapping := mappingReply.Imported()
 	require.NoError(t, err)
 	id := mapping[0].ResultID
 	row := b.resultsByID[sharedResultID(id)]
@@ -409,7 +457,7 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 	require.EqualValues(t, 1, losingReleases.Load())
 	require.Zero(t, rowCleanups.Load())
 	require.NoError(t, b.ReleaseSession(ctx, "test-session"))
-	removed, err := b.removePersistedEdge(ctx, row.id)
+	_, removed, err := b.removePersistedEdge(ctx, row.id)
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.EqualValues(t, 1, rowCleanups.Load())
@@ -418,4 +466,60 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 
 func (v *transferTestValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink {
 	return cloneSnapshotRefLinks(v.links)
+}
+
+// A prefix candidate that delegates to a parent part the bundle offers gets
+// no prefix output; one that delegates to a part the bundle doesn't offer, or
+// doesn't delegate, gets one.
+func TestPrefixServedByDelegation(t *testing.T) {
+	t.Parallel()
+	rows := map[sharedResultID]*capturedTransferRow{7: {ordinal: 2}}
+	fs, err := partAddressKey(PersistedPartAddress{Part: "fs"})
+	require.NoError(t, err)
+	delegating := LazyOperationRoute{Delegation: &PartDelegation{ParentResultID: 7, Address: PersistedPartAddress{Part: "fs"}}}
+	for _, tc := range []struct {
+		name    string
+		route   LazyOperationRoute
+		offered map[string]bool
+		want    bool
+	}{
+		{"delegating, the parent part offered", delegating, map[string]bool{"2:" + fs: true}, true},
+		{"delegating, the parent part not offered", delegating, map[string]bool{}, false},
+		{"delegating, another part of the parent offered", delegating, map[string]bool{"2:other": true}, false},
+		{"delegating to a parent outside the capture", LazyOperationRoute{Delegation: &PartDelegation{ParentResultID: 9, Address: PersistedPartAddress{Part: "fs"}}}, map[string]bool{"2:" + fs: true}, false},
+		{"not delegating", LazyOperationRoute{}, map[string]bool{"2:" + fs: true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, prefixServedByDelegation(tc.route, rows, tc.offered))
+		})
+	}
+}
+
+// A selected output whose entry the captured closure doesn't hold is refused,
+// unless the selection asks to leave such outputs out: then it is left out,
+// and the rest of the bundle is exported.
+func TestExportLeavesOutOutputsOutsideTheClosureOnRequest(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	inside := persistedListTestResult(t, ctx, c, srv, "inside", &transferTestValue{Text: "pending"})
+	outside := persistedListTestResult(t, ctx, c, srv, "outside", &transferTestValue{Text: "pending"})
+	selection := ValueSelection{
+		Roots: []AnyResult{inside},
+		Outputs: []SelectedValueOutput{
+			{Result: inside, Address: PersistedPartAddress{Part: "snapshot"}},
+			{Result: outside, Address: PersistedPartAddress{Part: "snapshot"}},
+		},
+	}
+	consume := func(context.Context, *ExportedValues) error { return nil }
+	require.ErrorContains(t, c.WithExportedValues(ctx, selection, config.RefConfig{}, consume), "outside captured closure")
+
+	selection.LeaveOutOutputsOutsideClosure = true
+	var bundle ValueBundle
+	require.NoError(t, c.WithExportedValues(ctx, selection, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		bundle = values.Bundle
+		return nil
+	}))
+	require.Len(t, bundle.Values, 1)
+	require.Len(t, bundle.Outputs, 1, "only the output inside the closure")
+	require.Equal(t, bundle.Values[0].Ordinal, bundle.Outputs[0].Ordinal)
 }

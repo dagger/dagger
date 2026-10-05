@@ -323,3 +323,217 @@ logs. Focused race evidence is in `snapshot-race-20260905T084725`,
 are in `prepared-race-20260905T085744` and `assembled-race-20260905T085911`.
 `final-evidence.md` reconciles source revisions, commands, counts and limitations.
 No full TLA or Go suite was run for this implementation.
+
+## One current entry per recipe
+
+The model keeps at most one current entry per call, the entry the recipe
+index names (`Current`; the call identity stands for the recipe digest).
+The rules, and where the engine applies them (`initCompletedResult`,
+`dagql/cache_current_entry.go`):
+
+- **Adoption.** `PubIndexFresh` registers and indexes a fresh value only when
+  its call has no current entry. `PubAdoptSameCall` adopts the call's live
+  entry, one whose attachment has settled clean, and takes the handoff hold
+  in the same step, as `PubAdopt` does. While that attachment is open, no
+  publication action is enabled, so publication waits, unless the publishing
+  session has been released: then `PubIndexFresh` registers the value beside
+  the entry, not indexed (`ReleasedWhileCurrentOpen`), so the release doesn't
+  wait on another session's attachment. Adoption keeps the
+  existing session filter. When the publishing session does not cover the
+  entry's stored requirements, `PubIndexFresh` registers the value beside the
+  entry, live but not indexed. A late retention edge can raise those
+  requirements without changing the call.
+- **Expiry.** `Expire` (`AllowExpire`) marks a value expired: time with no
+  clock.
+  - `PubReplaceInPlace` installs the new value into an expired current entry
+    that nothing uses, under the same number, and counts the replacement.
+  - `PubRetire` takes an expired entry that something uses out of the index;
+    the next `PubIndexFresh` registers the new value.
+  - The guard, `UsedByOwnership`, is the engine's own check: ownership beyond
+    the retention edge, or a session record. The action property
+    `NoReplaceUnderUser` judges every replacement against the full
+    definition, `InUse`: sessions, dependent entries, handoff holds, lazy
+    attempts, decodes and evaluators. The recipe configurations run without
+    lazy evaluation (`ModelLazy` off), so its lazy-attempt clause is not
+    exercised there; `TestCachePublicationRetiresAnExpiredEntryUnderLazyEvaluation`
+    in `dagql/cache_current_entry_test.go` covers a running lazy attempt as a
+    use.
+  - A replacement whose new attachment fails also drops the entry's retention
+    edge, in `PubAttachFailDropHold`.
+- **Live merge.** `MergeLive` (`ModelMerge`) merges one unexpired root record,
+  optionally with one dependency record of another call. Each record targets
+  its call's current entry by the same rules: create, keep, replace or retire.
+  Merge waits while a target's attachment is open, and every root gets a
+  retention edge.
+- **Restart.** `Flush` and `Restart` keep each entry's expiry, whether the
+  index named it (`indexed`), and its replacement count. Boot indexes exactly
+  the entries that were indexed.
+
+Invariants:
+
+- `OneLiveEntryPerCall`: no two indexed, unfailed entries of one call.
+- `NoPersistedAttachErroredResult` also states the design's
+  `NoRetainedFailedEntry`.
+- `NoReplaceUnderUser`, an action property. The tla-check runner recognises
+  action-property violations.
+
+Every existing configuration sets `AllowExpire` and `ModelMerge` off. D1
+itself is always on, so configurations where one call can publish twice now
+adopt instead.
+
+Imported rows (`ImportIndexed`): a saved store holds at most one indexed row
+per call, and any number of unindexed ones (dependencies, rows the session
+filter kept out of the index, retired rows).
+
+- Under `AllowExpire` the row sets choose the flag.
+- Without it, each call's first row is indexed and its later rows are not.
+  That is exactly the base model's import space, with no index dimension
+  added.
+- This leaves out stores whose current entry is a later row of its call, or
+  that have none. The recipe configurations' focused rows
+  (`RequirementImportRows`, `DependentImportRows`) and `recipe_expiry_deps`,
+  which chooses the flag freely, cover those.
+
+**D1 off reproduces the base exactly.** A private variant in which the recipe
+index never names an entry (every write of `indexed` is FALSE) leaves
+adoption, the fresh-publication guard, retirement and replacement nothing to
+act on. Its state space must equal the model's before this change: that
+shows the lower counts with D1 come from D1, and that no other action is lost.
+Each run went to completion:
+
+| Configuration | Before this change | D1 off | With D1 |
+| --- | ---: | ---: | ---: |
+| `liveness` | 5,365 | 5,365 | 4,941 |
+| `lazy` | 6,398,997 | 6,398,997 | 2,601,301 |
+| `persist` | 46,871,600 | 46,871,600 | 9,337,888 |
+
+This check found an earlier version of the import rows that allowed at most
+one row per call when `AllowExpire` was off: D1 off then gave `persist`
+550,006 states.
+
+| Configuration | Question | Distinct states | Wall seconds |
+| --- | --- | ---: | ---: |
+| `recipe_adopt` | two sessions on one call, with an attachment failure | 2,579,792 | 45.1 |
+| `recipe_adopt_liveness` | the waiting publication still terminates | 30,205 | 11.8 |
+| `recipe_adopt_filter` | the session filter, across a restart (`RequirementImportRows`) | 159,209 | 9.4 |
+| `recipe_expiry` | replacement, retirement and a failed replacement, with release | 8,131,336 | 188.0 |
+| `recipe_expiry_deps` | a restored dependent, encoded or decoded (`DependentImportRows`) | 792,543 | 22.4 |
+| `recipe_expiry_restart` | a restart after a retirement whose current entry also expired | 119,236 | 5.2 |
+| `recipe_merge` | `MergeLive` racing publication, release, expiry and a failed attachment | 2,276,670 | 157.7 |
+
+`recipe_expiry_restart` is bounded to one publication before its restart,
+with `DrainOnRelease`. The variant with a call after the restart was stopped
+at its 1,000-second bound, at about 37 million states with its queue still
+growing. Publication after a restart is covered by the Go restart tests in
+`dagql/cache_current_entry_test.go`.
+
+Re-breaks mutate one rule in a private copy of the model, and each must trip
+its invariant:
+
+| Mutation | Configuration | Violated | Distinct states |
+| --- | --- | --- | ---: |
+| `PubIndexFresh` beside a live entry of its call | `recipe_adopt` | `OneLiveEntryPerCall` | 21,507 |
+| the unindexed registration indexed | `recipe_adopt_filter` | `OneLiveEntryPerCall` | 267 |
+| `PubReplaceInPlace` under any user | `recipe_expiry` | `NoReplaceUnderUser` | 60,253 |
+| `PubReplaceInPlace` with a dependent present | `recipe_expiry_deps` | `NoReplaceUnderUser` | 37,298 |
+| a failed replacement keeps its retention edge | `recipe_expiry` | `NoPersistedAttachErroredResult` | 827,309 |
+| `MergeLive` onto an open attachment | `recipe_merge` | `NoPersistedAttachErroredResult` | 5,485 |
+
+Reachability probes assert the negation of a witness, and each stopped at it:
+
+- by publication: an adoption; an unindexed registration, also after a
+  restart; a replacement; a retirement for a dependent; a failed replacement
+  collected;
+- by merge: a kept published entry, a replacement, and a retirement.
+
+The merge probes disable the publication replace and retire actions, so a
+witness can only come from merge.
+
+**The full suite on this model.** Every configuration in the tla-check
+module's `expectedOutcome` map ran one at a time on the committed
+specification, with the pinned TLC 1.7.4 and 6 workers. Wall seconds
+exclude waits between runs. Every run ended with its expected outcome,
+except `resources_restart`, which stopped at its cap:
+
+| Configuration | Expected outcome | Distinct states | Wall seconds |
+| --- | --- | ---: | ---: |
+| `snapshot_import` | clean | 475,119 | 7.0 |
+| `snapshot_export` | clean | 5,185,181 | 39.5 |
+| `release_prune` | clean | 48,956,036 | 938.4 |
+| `liveness` | clean | 4,941 | 3.4 |
+| `lazy` | clean | 2,601,301 | 76.7 |
+| `lazy_liveness` | clean | 6,977 | 3.0 |
+| `lazy_stale_cancel` | clean | 28,017 | 2.4 |
+| `lazy_import` | clean | 168,076,353 | 4,191.3 |
+| `persist` | clean | 9,337,888 | 159.2 |
+| `persist_liveness` | clean | 2,313,667 | 516.8 |
+| `flush_roundtrip` | clean | 55,370 | 2.4 |
+| `orphan_edges` | clean | 538 | 1.3 |
+| `release_claim_race` | clean | 85,670 | 3.3 |
+| `drain_orphan` | clean | 25,503 | 2.2 |
+| `rollback` | clean | 43,532,245 | 744.2 |
+| `rollback_decode` | clean | 100,445,634 | 1,936.3 |
+| `lost_cancel` | clean | 45 | 1.4 |
+| `attach_error` | clean | 6,095 | 1.8 |
+| `attach_error_adoption` | clean | 17,010,279 | 333.5 |
+| `attach_error_restart` | clean | 27,978 | 2.2 |
+| `flush_closure` | clean | 148,890 | 4.4 |
+| `release_inflight` | clean | 85,670 | 10.9 |
+| `drain_nested_call` | clean | 25,503 | 4.2 |
+| `flush_inflight` | clean | 269,558 | 6.6 |
+| `flush_drained` | clean | 74,948 | 3.1 |
+| `lazy_release` | clean | 2,806 | 1.9 |
+| `release_wait` | clean | 538 | 1.6 |
+| `orphaned_lease` | violates `SharedLeaseReleasedWhenRetired` | 192 | 1.1 |
+| `lazy_parts` | clean | 3,821,617 | 80.0 |
+| `lazy_parts_prereq` | clean | 8,251,257 | 258.9 |
+| `lazy_parts_liveness` | clean | 145,457 | 42.5 |
+| `lazy_parts_delegate` | clean | 18,537,076 | 571.7 |
+| `lazy_parts_release` | clean | 424,114 | 43.6 |
+| `container_part_restart` | clean | 34,893,206 | 1,255.2 |
+| `container_sweep_restart` | clean | 678,052 | 52.4 |
+| `container_joint_restore` | clean | 5,660,086 | 167.4 |
+| `decode_cancel` | clean | 2,087,399 | 39.5 |
+| `decode_cancel_liveness` | clean | 2,087,399 | 480.5 |
+| `resources` | clean | 27,608,598 | 520.6 |
+| `resources_latedep` | clean | 3,510,650 | 107.6 |
+| `resources_requirement_growth` | clean | 4,642,858 | 108.2 |
+| `resources_latedep_recheck` | clean | 44,941,765 | 1,190.4 |
+| `resources_latedep_cascade` | clean | 13,592,856 | 250.1 |
+| `attach_release_reader` | clean | 25,893,992 | 372.3 |
+| `recipe_adopt` | clean | 2,579,792 | 70.2 |
+| `recipe_adopt_filter` | clean | 159,209 | 6.7 |
+| `recipe_adopt_liveness` | clean | 30,205 | 7.5 |
+| `recipe_expiry` | clean | 8,131,336 | 164.4 |
+| `recipe_expiry_deps` | clean | 792,543 | 18.1 |
+| `recipe_expiry_restart` | clean | 119,236 | 5.1 |
+| `recipe_merge` | clean | 2,276,670 | 140.8 |
+| `resources_restart` | clean | stopped at 274,152,504 | 5,401.1 (cap) |
+
+- `resources_restart` stopped at its 5,400-second cap with no violation
+  found: 274,152,504 distinct states at depth 34, with 19,329,143 still
+  queued and the queue shrinking slowly. The count is above the ~110M
+  recorded for it before this change. The likely reason, not measured:
+  with session handles set, as in the `resources` configurations, the
+  session filter's unindexed registrations and the index state add states
+  that D1 does not otherwise remove.
+- `lazy_import` ran under a 10,800-second cap and finished in 4,191
+  seconds. An earlier run of it was lost to a tooling error at about 89
+  million states and is not counted.
+- `release_prune` took 938 seconds, within the 20-minute budget above; an
+  earlier run on a busier machine took 29 minutes.
+  Several import and restart configurations exceed that budget:
+  `lazy_import`, `rollback_decode`, `container_part_restart` and
+  `resources_restart`.
+
+Scope limits:
+
+- Merge bundles carry one dependency at most.
+- Incoming records are never expired: merge skips an expired root, and the
+  both-expired row of the merge table is not modeled.
+- Merge configurations bind no session-resource handle.
+- Other caches' holdings are not modelled. `UsedByOwnership` matches the
+  engine's `resultInUseLocked`, which leaves holdings out, only for entries
+  without holdings; the engine's Go tests cover entries with them.
+
+The TLC runs' outputs are not committed.

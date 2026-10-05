@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/scrub"
 	"github.com/google/go-cmp/cmp"
 )
@@ -39,7 +40,7 @@ type recordedContentBlock struct {
 	Errored   bool                   `json:"errored"`
 	Signature string                 `json:"signature"`
 	MIMEType  string                 `json:"mimeType"`
-	Data      string                 `json:"data"`
+	Data      dagql.Bytes            `json:"data"`
 	Content   []recordedContentBlock `json:"content"`
 }
 
@@ -100,7 +101,8 @@ func (*RecordedResponseProvider) IsRetryable(err error) bool {
 }
 
 type recordingMediaBlock struct {
-	Position, MIMEType, Data string
+	Position, MIMEType string
+	Data               []byte
 }
 
 // recordingMedia keeps media identity and ordering separate from the legacy
@@ -136,8 +138,8 @@ func recordingDiffMessage(msg *LLMMessage) *LLMMessage {
 			if block == nil {
 				continue
 			}
-			if block.Data != "" {
-				block.Data = "[media data omitted]"
+			if len(block.Data) != 0 {
+				block.Data = []byte("[media data omitted]")
 			}
 			redact(block.Content)
 		}
@@ -188,10 +190,8 @@ func (c *RecordedResponseProvider) SendQuery(ctx context.Context, history []*LLM
 	// tool call would run under the shared loop context and every
 	// recording-driven test would exercise a shape production never has.
 	//
-	// Note this is the *live loop* path (model `recording/…`), which is distinct
-	// from LLM.EmitHistory: that one re-emits spans for an already-recorded
-	// conversation for display only, and never runs tools. The two never both
-	// emit spans for the same tool call.
+	// This is the live loop path (model `recording/…`), not restored history.
+	// Trace restore imports the original telemetry rather than re-emitting it.
 	var callDigest string
 	if opts != nil {
 		callDigest = opts.CallDigest

@@ -117,13 +117,15 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 			return nil, err
 		}
 		report, err = srv.engineCache.Prune(ctx, prunePolicies)
+		srv.emitPruneEvent(report.DroppedEdges)
 		if err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("failed to prune dagql cache: %w", err))
 		}
 	}
 
 	if pruneMetadata {
-		_, err := srv.engineCache.PruneMetadataEstimate(ctx, maximumEstimatedBytes, targetEstimatedBytes)
+		metadataReport, err := srv.engineCache.PruneMetadataEstimate(ctx, maximumEstimatedBytes, targetEstimatedBytes)
+		srv.emitPruneEvent(metadataReport.DroppedEdges)
 		if err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("failed to prune dagql cache metadata: %w", err))
 		}
@@ -352,6 +354,7 @@ func (srv *Server) gcLocked(ctx context.Context, reason localCacheGCReason) erro
 			}
 
 			report, err := srv.engineCache.Prune(ctx, prunePolicies)
+			srv.emitPruneEvent(report.DroppedEdges)
 			if len(report.Entries) > 0 {
 				rerr = errors.Join(rerr, srv.updateRemoteCacheFixturePersistence(func(diagnostics *core.RemoteCacheFixturePersistence) {
 					diagnostics.RemovedPersistedRootCount += len(report.Entries)
@@ -387,6 +390,7 @@ func (srv *Server) gcLocked(ctx context.Context, reason localCacheGCReason) erro
 		srv.dagqlCacheMaxEstimatedBytes,
 		srv.dagqlCacheTargetEstimatedBytes,
 	)
+	srv.emitPruneEvent(report.DroppedEdges)
 	if report.RemovedPersistedRootCount > 0 {
 		rerr = errors.Join(rerr, srv.updateRemoteCacheFixturePersistence(func(diagnostics *core.RemoteCacheFixturePersistence) {
 			diagnostics.RemovedPersistedRootCount += report.RemovedPersistedRootCount

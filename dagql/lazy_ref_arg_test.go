@@ -10,7 +10,84 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/internal/points"
+	"github.com/dagger/dagger/engine"
 )
+
+// Dynamic input hooks rebuild arguments from their call frames even when the
+// hook makes no change (as with an explicitly recorded LLM tool owner).
+func TestLazyRefArgSurvivesDynamicInputs(t *testing.T) {
+	for _, warm := range []bool{false, true} {
+		for _, sameSession := range []bool{false, true} {
+			name := "cold"
+			if warm {
+				name = "warm"
+			}
+			if sameSession {
+				name += "/same-session"
+			} else {
+				name += "/new-session"
+			}
+			t.Run(name, func(t *testing.T) {
+				cache := newCache(t)
+				src := dagql.ContextWithCache(testContext(), cache)
+				srv := newExternalDagqlServerForTest(t, Query{})
+				points.Install[Query](srv)
+				const handle = dagql.SessionResourceHandle("lazy-dynamic-resource")
+				md, err := engine.ClientMetadataFromContext(src)
+				assert.NilError(t, err)
+				assert.NilError(t, cache.BindSessionResource(src, md.SessionID, md.ClientID, handle, "bound"))
+				dagql.Fields[Query]{
+					dagql.NodeFunc("protectedPoint", func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct{}) (dagql.ObjectResult[*points.Point], error) {
+						obj, err := dagql.NewObjectResultForCurrentCall(ctx, srv, &points.Point{})
+						if err != nil {
+							return obj, err
+						}
+						return obj.WithSessionResourceHandle(ctx, handle)
+					}),
+				}.Install(srv)
+				var obj dagql.ObjectResult[*points.Point]
+				assert.NilError(t, srv.Select(src, srv.Root(), &obj, dagql.Selector{Field: "protectedPoint"}))
+				objectRecipe, err := obj.RecipeID(src)
+				assert.NilError(t, err)
+
+				calls := 0
+				var seenID *call.ID
+				bind := dagql.Func("bindTool", func(_ context.Context, self *points.Point, args struct {
+					Object dagql.AnyID
+				}) (*points.Point, error) {
+					calls++
+					var err error
+					seenID, err = args.Object.ID()
+					return self, err
+				}).Args(dagql.Arg("object").LazyRef())
+				bind.Spec.GetDynamicInput = func(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, *dagql.CallRequest) error {
+					return nil
+				}
+				dagql.Fields[*points.Point]{bind}.Install(srv)
+
+				var receiver dagql.ObjectResult[*points.Point]
+				assert.NilError(t, srv.Select(src, srv.Root(), &receiver, dagql.Selector{Field: "point"}))
+				receiverRecipe, err := receiver.RecipeID(src)
+				assert.NilError(t, err)
+				recipe := receiverRecipe.Append((&points.Point{}).Type(), "bindTool",
+					call.WithArgs(call.NewArgument("object", call.NewLiteralID(objectRecipe), false)))
+				if !warm {
+					cache = newCache(t)
+				}
+				dst := testContext()
+				if !sameSession {
+					dst = engine.ContextWithClientMetadata(dst, &engine.ClientMetadata{SessionID: "unbound-destination", ClientID: "unbound-destination"})
+				}
+				dst = dagql.ContextWithCache(dst, cache)
+				_, err = srv.Load(dst, recipe)
+				assert.NilError(t, err)
+				assert.Equal(t, 1, calls)
+				assert.Assert(t, !seenID.IsHandle(), "dynamic argument rebuilding must preserve the lazy recipe")
+				assert.Equal(t, objectRecipe.Digest(), seenID.Digest())
+			})
+		}
+	}
+}
 
 type moduleToolSet struct{}
 

@@ -100,7 +100,8 @@ func cacheOutputEqClassInverseErrorLocked(c *Cache) error {
 
 // cacheOutputEqClassSurvivorErrorLocked checks that the survivor predicate
 // of every live output eq-class root agrees with the digest-posting
-// semantics at nowUnix.
+// semantics at nowUnix: a class survives while an entry posted under one of
+// its digests has an unexpired value, its own or another cache's copy.
 func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 	liveOutputRoots := make(map[eqClassID]struct{}, len(c.outputEqClassToTerms)+len(c.outputEqClassResults))
 	for outputEqID := range c.outputEqClassToTerms {
@@ -124,7 +125,7 @@ func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 			}
 			for resID := range posting.Items() {
 				res := c.resultsByID[resID]
-				if res != nil && !c.resultExpiredAtLocked(res, nowUnix) {
+				if res != nil && (!res.noValueLocked() && !c.resultExpiredAtLocked(res, nowUnix) || res.hasUnexpiredHoldingLocked(nowUnix)) {
 					oldSemanticsHasUnexpiredResult = true
 					break
 				}
@@ -659,7 +660,7 @@ func TestCacheBroadImportedPostingRemoval(t *testing.T) {
 
 	pruneCtx := withMetadataPruneContext(f.ctx)
 	for i, resultID := range f.allResultIDs {
-		removed, err := f.cache.removePersistedEdge(pruneCtx, resultID)
+		_, removed, err := f.cache.removePersistedEdge(pruneCtx, resultID)
 		assert.NilError(t, err)
 		assert.Assert(t, removed, "persisted edge for result %d was not removed", resultID)
 
@@ -729,4 +730,111 @@ func TestCachePersistedFreshPruneCleansDerivedIndexes(t *testing.T) {
 	assert.Assert(t, resultIndexedDigestsNil)
 	assert.Assert(t, broadlyIndexedResultsNil)
 	assert.Assert(t, outputEqClassResultsNil)
+}
+
+// eqClassContents is what the class tables hold, with each class named by its
+// smallest digest, so two caches compare whatever numbers their classes have.
+type eqClassContents struct {
+	// Digests maps each digest of a live class to its class.
+	Digests map[string]string
+	// Extras maps each live class to its extra digests.
+	Extras map[string][]string
+	// Outputs maps each entry to its output classes.
+	Outputs map[sharedResultID][]string
+	// Terms maps each term to its self digest, input classes and output class.
+	Terms map[egraphTermID][]string
+}
+
+// testEqClassContentsLocked reads the tables' contents over the classes a
+// term or an entry uses, the ones compaction keeps. Requires egraphMu for
+// writing.
+func testEqClassContentsLocked(c *Cache) eqClassContents {
+	name := func(id eqClassID) string {
+		root := c.findEqClassLocked(id)
+		digests := slices.Sorted(maps.Keys(c.eqClassToDigests[root]))
+		if len(digests) == 0 {
+			return fmt.Sprintf("<no digest: %d>", root)
+		}
+		return digests[0]
+	}
+	live := map[eqClassID]bool{}
+	out := eqClassContents{Digests: map[string]string{}, Extras: map[string][]string{}, Outputs: map[sharedResultID][]string{}, Terms: map[egraphTermID][]string{}}
+	for id, term := range c.egraphTerms {
+		if term == nil {
+			continue
+		}
+		row := []string{term.selfDigest.String()}
+		for _, in := range term.inputEqIDs {
+			live[c.findEqClassLocked(in)] = true
+			row = append(row, name(in))
+		}
+		live[c.findEqClassLocked(term.outputEqID)] = true
+		out.Terms[id] = append(row, name(term.outputEqID))
+	}
+	for resID, classes := range c.resultOutputEqClasses {
+		for id := range classes {
+			live[c.findEqClassLocked(id)] = true
+			out.Outputs[resID] = append(out.Outputs[resID], name(id))
+		}
+		slices.Sort(out.Outputs[resID])
+	}
+	for dig, id := range c.egraphDigestToClass {
+		if live[c.findEqClassLocked(id)] {
+			out.Digests[dig] = name(id)
+		}
+	}
+	for root := range live {
+		var extras []string
+		for extra := range c.eqClassExtraDigests[root] {
+			extras = append(extras, extra.Label+":"+extra.Digest.String())
+		}
+		if len(extras) > 0 {
+			slices.Sort(extras)
+			out.Extras[name(root)] = extras
+		}
+	}
+	return out
+}
+
+// Compaction renumbers the classes and rebuilds their tables at the live
+// size, the digest map included; what the tables hold is unchanged. Across a
+// forced compaction that frees dead classes, every table reads the same when
+// each class is named by its digests: which digests share a class, each
+// class's extra digests, each entry's output classes, and each term's self,
+// inputs and output. The digest map then holds exactly the live digests.
+func TestCompactEqClassesKeepsTheLiveContents(t *testing.T) {
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	ctxA := cacheTestSessionContext(baseCtx, "contents-a")
+	ctxB := cacheTestSessionContext(baseCtx, "contents-b")
+	parent := cacheTestPublishContentResult(t, c, ctxA, "contents-a", 1, digest.FromString("contents-a"))
+	cacheTestPublishContentResult(t, c, ctxB, "contents-b", 2, digest.FromString("contents-b"))
+	parentCall, err := parent.ResultCall()
+	assert.NilError(t, err)
+	child := cacheTestIntCall("contents-child")
+	child.Receiver = &ResultCallRef{Call: parentCall}
+	_, err = c.GetOrInitCall(ctxA, "contents-a", noopTypeResolver{}, &CallRequest{ResultCall: child}, ValueFunc(cacheTestIntResult(child, 3)))
+	assert.NilError(t, err)
+
+	c.egraphMu.Lock()
+	for i := range 8 {
+		c.ensureEqClassForDigestLocked(baseCtx, fmt.Sprintf("contents-dead-%d", i))
+	}
+	before := testEqClassContentsLocked(c)
+	changed, oldSlots, newSlots := c.compactEqClassesLocked(true)
+	after := testEqClassContentsLocked(c)
+	digests := slices.Sorted(maps.Keys(c.egraphDigestToClass))
+	indexErr := cacheDerivedIndexesErrorLocked(c)
+	c.egraphMu.Unlock()
+	assert.Assert(t, changed)
+	assert.Assert(t, oldSlots > newSlots)
+	assert.NilError(t, indexErr)
+	assert.Assert(t, len(before.Terms) > 0)
+	assert.Assert(t, len(before.Extras) > 0)
+	assert.DeepEqual(t, before, after)
+	assert.DeepEqual(t, slices.Sorted(maps.Keys(before.Digests)), digests)
+
+	assert.NilError(t, c.ReleaseSession(ctxA, "contents-a"))
+	assert.NilError(t, c.ReleaseSession(ctxB, "contents-b"))
 }

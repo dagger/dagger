@@ -147,12 +147,12 @@ dagger cloud traces list --pr 123 --json`,
 	flags.StringVar(&o.author, "author", "", "Only traces whose commit author or committer matches this text")
 	flags.StringVar(&o.command, "command", "", "Only traces whose command matches this glob, e.g. 'dagger check*'")
 	flags.StringVar(&o.provider, "provider", "", "Only traces of this CI provider, e.g. github")
-	flags.StringVar(&o.since, "since", "", "Only traces that started after this time: a duration (30m, 2d, 1w) or a date (2006-01-02, RFC 3339)")
+	flags.StringVar(&o.since, "since", "", "Only traces that started after this time: a duration (30m, 2d, 1w) or a date (2006-01-02, RFC 3339). Defaults to 1h with --sort duration")
 	flags.StringVar(&o.until, "until", "", "Only traces that started before this time: a duration or a date, as for --since")
 	flags.DurationVar(&o.minDuration, "min-duration", 0, "Only traces that ran for at least this time, e.g. 5m")
 	flags.DurationVar(&o.maxDuration, "max-duration", 0, "Only traces that ran for at most this time")
 	flags.IntVarP(&o.limit, "limit", "L", 20, "Maximum number of traces to list (at most 1000)")
-	flags.StringVar(&o.sort, "sort", "start", "Sort order: start (newest first) or duration (longest first)")
+	flags.StringVar(&o.sort, "sort", "start", "Sort order: start (newest first) or duration (longest first). Duration sorts within --since, which defaults to 1h")
 	flags.BoolVar(&cloudJSON, "json", false, "Print JSON output")
 	cmd.MarkFlagsMutuallyExclusive("local", "ci")
 	cmd.MarkFlagsMutuallyExclusive("mine", "user", "token")
@@ -201,6 +201,10 @@ func runCloudTracesList(cmd *cobra.Command, o *cloudTracesListOptions) error {
 	return writeTracesTable(cmd.OutOrStdout(), rows)
 }
 
+// defaultDurationSortWindow bounds a duration-sorted listing when the caller
+// gives no --since.
+const defaultDurationSortWindow = time.Hour
+
 // filter turns the list flags into a server-side filter.
 func (o *cloudTracesListOptions) filter(now time.Time) (cloudapi.TraceListFilter, error) {
 	f := cloudapi.TraceListFilter{
@@ -231,6 +235,13 @@ func (o *cloudTracesListOptions) filter(now time.Time) (cloudapi.TraceListFilter
 	var err error
 	if f.Since, err = parseTimeFlag("since", o.since, now); err != nil {
 		return f, err
+	}
+	// Duration order cannot be paged, so an unbounded duration listing would
+	// rank only the newest page and silently miss longer runs outside it. Bound
+	// it to a rolling window by default; an explicit --since overrides this.
+	if f.Since == nil && o.sort == "duration" {
+		since := now.Add(-defaultDurationSortWindow)
+		f.Since = &since
 	}
 	if f.Until, err = parseTimeFlag("until", o.until, now); err != nil {
 		return f, err

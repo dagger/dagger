@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +26,7 @@ func TestPartSessionlessRestoredDirectory(t *testing.T) {
 		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.Directory]{}))
 		return c, srv
 	}
-	attach := func(c *dagql.Cache, srv *dagql.Server, store *testutil.Store) dagql.AnyResult {
+	attach := func(c *dagql.Cache, srv *dagql.Server, store *testutil.Store, field string) dagql.AnyResult {
 		ref, _ := store.Build(t, nil, "payload", "directory transformation")
 		newDir := func(ref snapshots.ImmutableRef) *core.Directory {
 			d := &core.Directory{Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[snapshots.ImmutableRef, *core.Directory]), Platform: core.Platform{OS: "linux", Architecture: "amd64"}}
@@ -43,24 +44,35 @@ func TestPartSessionlessRestoredDirectory(t *testing.T) {
 		base := attach(&dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "directory", Type: dagql.NewResultCallType((&core.Directory{}).Type())}, newDir(baseRef))
 		id, err := c.PersistedResultID(base)
 		require.NoError(t, err)
-		return attach(&dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "withNewFile", Receiver: &dagql.ResultCallRef{ResultID: id}, Type: dagql.NewResultCallType((&core.Directory{}).Type())}, newDir(ref))
+		return attach(&dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: field, Receiver: &dagql.ResultCallRef{ResultID: id}, Type: dagql.NewResultCallType((&core.Directory{}).Type())}, newDir(ref))
 	}
+	// The donor is another recipe with the same content, so the merged
+	// receiver is an entry of its own: a merge lands on the recipe's current
+	// entry when the cache has one. A content digest doesn't travel with a
+	// record, so the receiving cache learns it for both entries itself, which
+	// puts them in one class.
+	content := digest.FromString("sessionless restored directory content")
 	a, asrv := open(aStore, "")
-	original := attach(a, asrv, aStore)
+	original := attach(a, asrv, aStore, "withNewFile")
 	path := filepath.Join(t.TempDir(), "cache.db")
 	b, bsrv := open(bStore, path)
-	donor := attach(b, bsrv, bStore)
+	donor := attach(b, bsrv, bStore, "withNewFileAgain")
+	require.NoError(t, b.TeachContentDigest(ctx, donor, content))
 	donorID, err := b.PersistedResultID(donor)
 	require.NoError(t, err)
 	var receiverID uint64
 	require.NoError(t, a.WithExportedValues(dagql.ContextWithCache(ctx, a), dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
-		imported, err := b.ImportValues(ctx, exported.Bundle)
+		importedReply, err := b.MergeValues(ctx, dagql.CloudCacheID, exported.Bundle)
+		imported := importedReply.Imported()
 		if err == nil {
 			receiverID = imported[0].ResultID
 		}
 		return err
 	}))
 	require.NotEqual(t, donorID, receiverID)
+	receiver, err := b.LoadResultByResultID(ctx, "test", bsrv, receiverID)
+	require.NoError(t, err)
+	require.NoError(t, b.TeachContentDigest(ctx, receiver, content))
 	require.NoError(t, b.ReleaseSession(ctx, "test"))
 	require.NoError(t, b.Close(ctx))
 	b, _ = open(bStore, path)

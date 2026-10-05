@@ -218,6 +218,8 @@ func SDKManagedPathFor(configDir, workspacePath string) (string, error) {
 }
 
 // ParseConfig parses dagger.toml bytes into a workspace config.
+// It does not reject unknown fields. Code that loads a workspace must use
+// ParseConfigAt, which does.
 func ParseConfig(data []byte) (*Config, error) {
 	var cfg Config
 	if err := toml.Unmarshal(data, &cfg); err != nil {
@@ -232,8 +234,8 @@ func ParseConfig(data []byte) (*Config, error) {
 // ApplyEnvOverlay returns a copy of cfg with the named environment overlay
 // applied on top of the base module config.
 //
-// Environments may override [modules.<name>.settings] and the as-sdk role of an
-// installed module. They may also add modules that only exist in the
+// Environments may override [modules.<name>.settings] of an installed module.
+// They may also add modules that only exist in the
 // environment by providing a source. Naming a module that is neither installed
 // in the base config nor given a source is an error.
 func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
@@ -351,6 +353,16 @@ func EnvNames(cfg *Config) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// HasEnv reports whether the named environment is defined in cfg. It is the
+// check to make before ApplyEnvOverlay when an undefined env is tolerable.
+func HasEnv(cfg *Config, envName string) bool {
+	if cfg == nil {
+		return false
+	}
+	_, ok := cfg.Env[envName]
+	return ok
 }
 
 // EnsureEnv makes sure the named environment exists.

@@ -1,0 +1,315 @@
+package archive
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
+	otlpmetricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
+	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
+)
+
+func TestClientListAll(t *testing.T) {
+	trace1 := strings.Repeat("1", 32)
+	excluded := strings.Repeat("2", 32)
+	trace3 := strings.Repeat("3", 32)
+	pages := map[string]Page{
+		"":       {Archives: []Manifest{{TraceID: trace1}}, Next: trace1},
+		trace1:   {Archives: []Manifest{{TraceID: excluded}}, Next: excluded},
+		excluded: {Archives: []Manifest{{TraceID: trace3}}},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == archivePath:
+			if got := r.URL.Query().Get("limit"); got != "1" {
+				t.Errorf("list limit = %q, want 1", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(pages[r.URL.Query().Get("after")])
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := testArchiveClient(t, server)
+
+	manifests, err := client.ListAll(context.Background(), ListOptions{Limit: 1, ExcludeTraceID: excluded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifests) != 2 {
+		t.Fatalf("listed %d manifests: %+v", len(manifests), manifests)
+	}
+	if got := []string{manifests[0].TraceID, manifests[1].TraceID}; !slices.Equal(got, []string{trace1, trace3}) {
+		t.Fatalf("listed traces = %v", got)
+	}
+}
+
+func TestClientTypedErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		want   error
+		state  State
+	}{
+		{name: "unsupported", status: http.StatusNotFound, body: "not found", want: ErrCleanMiss},
+		{name: "not found", status: http.StatusNotFound, body: `{"error":"not_found","message":"missing"}`, want: ErrCleanMiss},
+		{name: "state", status: http.StatusConflict, body: `{"error":"state","state":"active","message":"active"}`, want: ErrState, state: StateActive},
+		{name: "corrupt", status: http.StatusUnprocessableEntity, body: `{"error":"corrupt","message":"bad sidecar"}`, want: ErrCorrupt},
+		{name: "transient", status: http.StatusServiceUnavailable, body: "try again", want: ErrTransient},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.status)
+				_, _ = io.WriteString(w, test.body)
+			}))
+			defer server.Close()
+			client := testArchiveClient(t, server)
+			_, err := client.List(context.Background(), ListOptions{})
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+			if got := IsCleanMiss(err); got != errors.Is(test.want, ErrCleanMiss) {
+				t.Fatalf("IsCleanMiss = %v", got)
+			}
+			var requestErr *RequestError
+			if !errors.As(err, &requestErr) || requestErr.StatusCode != test.status || requestErr.State != test.state {
+				t.Fatalf("request error = %+v", requestErr)
+			}
+		})
+	}
+}
+
+func TestClientBootstrapVerificationAndDecoding(t *testing.T) {
+	traceID := strings.Repeat("a", 32)
+	logs := &collogspb.ExportLogsServiceRequest{ResourceLogs: []*otlplogsv1.ResourceLogs{{}}}
+	logPayload, _ := proto.Marshal(logs)
+	sealAt := time.Now().UTC().Format(time.RFC3339Nano)
+	data, _, err := BuildBootstrap(BootstrapHeader{
+		TraceID: traceID, SealAt: sealAt,
+		HighWater: HighWater{Spans: 5, Logs: 7, Metrics: 9},
+	}, []BootstrapSignal{
+		{Payload: logPayload, Records: 1},
+		{Payload: logPayload, Records: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	batches := 0
+	client, closeServer := bootstrapTestClient(t, data)
+	defer closeServer()
+	result, err := client.Bootstrap(context.Background(), traceID, func(header BootstrapHeader, batch BootstrapBatch) error {
+		if header.TraceID != traceID || header.SealAt != sealAt {
+			t.Fatalf("consumer received unvalidated header: %+v", header)
+		}
+		if len(batch.Logs.GetResourceLogs()) != 1 {
+			t.Fatalf("logs batch = %+v", batch.Logs)
+		}
+		batches++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batches != 2 {
+		t.Fatalf("bootstrap batches = %d", batches)
+	}
+	if result.Header.TraceID != traceID || result.Header.HighWater.Metrics != 9 || result.Terminal.LogRecords != 2 {
+		t.Fatalf("unexpected bootstrap result: %+v", result)
+	}
+
+	t.Run("missing terminal is transient", func(t *testing.T) {
+		client, closeServer := bootstrapTestClient(t, data[:len(data)-1])
+		defer closeServer()
+		_, err := client.Bootstrap(context.Background(), traceID, nil)
+		if !errors.Is(err, ErrTransient) {
+			t.Fatalf("error = %v, want transient", err)
+		}
+	})
+
+	t.Run("invalid header stops before signal consumption", func(t *testing.T) {
+		wrongTrace := strings.Repeat("b", 32)
+		invalid, _, err := BuildBootstrap(BootstrapHeader{
+			TraceID: wrongTrace, SealAt: sealAt,
+		}, []BootstrapSignal{{Payload: logPayload, Records: 1}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		client, closeServer := bootstrapTestClient(t, invalid)
+		defer closeServer()
+		consumed := false
+		_, err = client.Bootstrap(context.Background(), traceID, func(BootstrapHeader, BootstrapBatch) error {
+			consumed = true
+			return nil
+		})
+		if !errors.Is(err, ErrCorrupt) || consumed {
+			t.Fatalf("error=%v consumed=%v", err, consumed)
+		}
+	})
+
+	t.Run("checksum mismatch is corruption", func(t *testing.T) {
+		corrupted := append([]byte(nil), data...)
+		checksum := bytes.Index(corrupted, []byte(`"sha256":"`)) + len(`"sha256":"`)
+		if checksum < len(`"sha256":"`) {
+			t.Fatal("bootstrap terminal checksum not found")
+		}
+		if corrupted[checksum] == '0' {
+			corrupted[checksum] = '1'
+		} else {
+			corrupted[checksum] = '0'
+		}
+		client, closeServer := bootstrapTestClient(t, corrupted)
+		defer closeServer()
+		_, err := client.Bootstrap(context.Background(), traceID, nil)
+		if !errors.Is(err, ErrCorrupt) {
+			t.Fatalf("error = %v, want corruption", err)
+		}
+	})
+}
+
+func TestClientFiniteSignalStreams(t *testing.T) {
+	traceID := strings.Repeat("c", 32)
+	traces := &coltracepb.ExportTraceServiceRequest{ResourceSpans: []*otlptracev1.ResourceSpans{{}}}
+	logs := &collogspb.ExportLogsServiceRequest{ResourceLogs: []*otlplogsv1.ResourceLogs{{}}}
+	metrics := &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: []*otlpmetricsv1.ResourceMetrics{{}}}
+	tracePayload, _ := proto.Marshal(traces)
+	logPayload, _ := proto.Marshal(logs)
+	metricPayload, _ := proto.Marshal(metrics)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", enginetel.LiveContentType)
+		switch r.URL.Path {
+		case archiveResourcePath(traceID, "traces"):
+			if got := r.Header.Get(enginetel.LiveCursorHeader); got != "1" {
+				t.Errorf("trace cursor header = %q", got)
+			}
+			_ = enginetel.WriteLiveFrame(w, 3, tracePayload)
+			_ = enginetel.WriteLiveTerminal(w, 5) // a filtered tail advances the terminal scan cursor
+		case archiveResourcePath(traceID, "logs"):
+			_ = enginetel.WriteLiveFrame(w, 2, logPayload)
+			_ = enginetel.WriteLiveTerminal(w, 2)
+		case archiveResourcePath(traceID, "metrics"):
+			_ = enginetel.WriteLiveFrame(w, 1, metricPayload)
+			_ = enginetel.WriteLiveTerminal(w, 1)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := testArchiveClient(t, server)
+
+	traceCursor, err := client.Traces(context.Background(), traceID, StreamOptions{
+		Cursor: 1, HighWater: 5,
+	}, func(cursor int64, batch *coltracepb.ExportTraceServiceRequest) error {
+		if cursor != 3 || len(batch.ResourceSpans) != 1 {
+			t.Fatalf("trace batch cursor=%d batch=%+v", cursor, batch)
+		}
+		return nil
+	})
+	if err != nil || traceCursor != 5 {
+		t.Fatalf("traces cursor=%d err=%v", traceCursor, err)
+	}
+	logCursor, err := client.Logs(context.Background(), traceID, StreamOptions{
+		HighWater: 2,
+	}, func(_ int64, batch *collogspb.ExportLogsServiceRequest) error {
+		if len(batch.ResourceLogs) != 1 {
+			t.Fatalf("logs batch = %+v", batch)
+		}
+		return nil
+	})
+	if err != nil || logCursor != 2 {
+		t.Fatalf("logs cursor=%d err=%v", logCursor, err)
+	}
+	metricCursor, err := client.Metrics(context.Background(), traceID, StreamOptions{
+		HighWater: 1,
+	}, func(_ int64, batch *colmetricspb.ExportMetricsServiceRequest) error {
+		if len(batch.ResourceMetrics) != 1 {
+			t.Fatalf("metrics batch = %+v", batch)
+		}
+		return nil
+	})
+	if err != nil || metricCursor != 1 {
+		t.Fatalf("metrics cursor=%d err=%v", metricCursor, err)
+	}
+}
+
+func TestClientStreamEnforcesCursorAndTerminal(t *testing.T) {
+	traceID := strings.Repeat("d", 32)
+	payload, _ := proto.Marshal(&coltracepb.ExportTraceServiceRequest{})
+	tests := []struct {
+		name string
+		body func(io.Writer)
+		want error
+	}{
+		{name: "missing terminal", body: func(w io.Writer) { _ = enginetel.WriteLiveFrame(w, 1, payload) }, want: ErrTransient},
+		{name: "wrong terminal", body: func(w io.Writer) { _ = enginetel.WriteLiveTerminal(w, 1) }, want: ErrCorrupt},
+		{name: "non increasing cursor", body: func(w io.Writer) { _ = enginetel.WriteLiveFrame(w, 0, payload) }, want: ErrCorrupt},
+		{name: "trailing frame", body: func(w io.Writer) { _ = enginetel.WriteLiveTerminal(w, 2); _ = enginetel.WriteLiveTerminal(w, 2) }, want: ErrCorrupt},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", enginetel.LiveContentType)
+				test.body(w)
+			}))
+			defer server.Close()
+			client := testArchiveClient(t, server)
+			_, err := client.Traces(context.Background(), traceID, StreamOptions{HighWater: 2}, nil)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+		})
+	}
+
+	t.Run("consumer failure preserves acknowledged cursor", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", enginetel.LiveContentType)
+			_ = enginetel.WriteLiveFrame(w, 2, payload)
+			_ = enginetel.WriteLiveTerminal(w, 2)
+		}))
+		defer server.Close()
+		client := testArchiveClient(t, server)
+		consumeErr := errors.New("frontend barrier failed")
+		cursor, err := client.Traces(context.Background(), traceID, StreamOptions{Cursor: 1, HighWater: 2}, func(int64, *coltracepb.ExportTraceServiceRequest) error {
+			return consumeErr
+		})
+		if cursor != 1 || !errors.Is(err, consumeErr) {
+			t.Fatalf("cursor=%d err=%v", cursor, err)
+		}
+	})
+}
+
+func testArchiveClient(t *testing.T, server *httptest.Server) *Client {
+	t.Helper()
+	client, err := NewClientWithURL(server.Client(), server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return client
+}
+
+func bootstrapTestClient(t *testing.T, data []byte) (*Client, func()) {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", BootstrapContentType)
+		_, _ = w.Write(data)
+	}))
+	return testArchiveClient(t, server), server.Close
+}

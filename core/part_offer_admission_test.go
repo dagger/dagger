@@ -84,7 +84,7 @@ func TestOfferPartsNativeAdmission(t *testing.T) {
 	}
 	t.Run("accepted before start", func(t *testing.T) {
 		ctx, cache, result, manager, _, offer, provider := setup(t, false)
-		out, err := cache.OfferParts(ctx, result, []dagql.PersistedPartOffer{offer})
+		out, err := cache.OfferParts(ctx, result, []dagql.CloudPartOffer{{Offer: offer, CloudNumber: 1}})
 		require.NoError(t, err)
 		require.Equal(t, dagql.OfferAccepted, out[0].Outcome)
 		require.Zero(t, manager.bodies.Load(), "acceptance enters no body")
@@ -105,7 +105,7 @@ func TestOfferPartsNativeAdmission(t *testing.T) {
 		evaluated := make(chan error, 1)
 		go func() { evaluated <- cache.Evaluate(ctx, result) }()
 		waitWithin(t, manager.entered)
-		out, err := cache.OfferParts(ctx, result, []dagql.PersistedPartOffer{offer})
+		out, err := cache.OfferParts(ctx, result, []dagql.CloudPartOffer{{Offer: offer, CloudNumber: 1}})
 		require.NoError(t, err)
 		require.Equal(t, dagql.OfferExecutionStarted, out[0].Outcome)
 		release()

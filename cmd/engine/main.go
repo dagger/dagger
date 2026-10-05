@@ -25,6 +25,8 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/ebpf"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetry/networkmetrics"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
 	"github.com/dagger/dagger/internal/buildkit/util/appcontext"
@@ -46,6 +48,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine/ebpf/filetracer"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	"github.com/dagger/dagger/engine/ebpf/ovltracer"
 	"github.com/dagger/dagger/engine/engineutil/cacerts"
 	"github.com/dagger/dagger/engine/server"
@@ -318,13 +321,16 @@ func main() { //nolint:gocyclo
 
 	ctx, cancel := context.WithCancelCause(appcontext.Context())
 	var resourceMetrics *sdkmetric.MeterProvider
+	var networkAccounting *nettracer.Tracer
+	var closeCommandPlacement func() error
 
 	// One random ID names this engine process in all its telemetry
-	// (service.instance.id), its cache facts included, and marks the epoch
+	// (service.instance.id), its cache events included, and marks the epoch
 	// of its cumulative cgroup counters. It is created before the process
 	// telemetry so the process resource carries it.
 	engineInstanceID := uuid.NewString()
-	var factExport *cacheFactExport
+	var eventExport *engineEventExport
+	var workloadExport *enginetel.WorkloadExport
 
 	app.Action = func(c *cli.Context) error {
 		bklog.G(ctx).Info("starting dagger engine version:", engineVersion)
@@ -370,8 +376,30 @@ func main() { //nolint:gocyclo
 		if err != nil {
 			return err
 		}
+		if cfg.Telemetry.WorkloadExport {
+			workloadExport, err = enginetel.NewWorkloadExport(ctx, engineInstanceID)
+			if err != nil {
+				return err
+			}
+		}
+		remoteCache := newRemoteCacheIntegration(&cfg)
 		resourceMetrics = initResourceMetrics(ctx, cfg.Telemetry)
-		factExport = newCacheFactExport(ctx, processResource, cfg.Telemetry)
+		networkAccounting, err = nettracer.New()
+		var placementErr error
+		closeCommandPlacement, placementErr = nettracer.InitCommandPlacement()
+		if placementErr != nil {
+			bklog.G(ctx).Warnf("command cgroup placement unavailable: %s", placementErr)
+		}
+		enginetel.SetCommandNetworkHook(networkmetrics.PrepareCommandNetwork)
+		if err != nil {
+			bklog.G(ctx).Warnf("network accounting unavailable: %s", err)
+		} else if err := nettracer.EngineAccountingError(); err != nil {
+			bklog.G(ctx).Warnf(
+				"engine cgroup network accounting unavailable: %s",
+				err,
+			)
+		}
+		eventExport = newEngineEventExport(ctx, processResource, cfg.Telemetry)
 
 		bklog.G(ctx).Debug("setting up engine networking")
 		networkContext, cancelNetworking := context.WithCancelCause(context.Background())
@@ -492,11 +520,13 @@ func main() { //nolint:gocyclo
 
 		bklog.G(ctx).Debug("creating engine server")
 		srv, err := server.NewServer(ctx, &server.NewServerOpts{
-			Name:             engineName,
-			Config:           &cfg,
-			BuildkitConfig:   &bkcfg,
-			EngineInstanceID: engineInstanceID,
-			CacheFactExport:  serverCacheFactExport(factExport),
+			Name:                   engineName,
+			Config:                 &cfg,
+			BuildkitConfig:         &bkcfg,
+			EngineInstanceID:       engineInstanceID,
+			EngineEvents:           serverEngineEventExport(eventExport),
+			WorkloadExport:         workloadExport,
+			RemoteCacheIntegration: remoteCache,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
@@ -610,11 +640,32 @@ func main() { //nolint:gocyclo
 	app.After = func(*cli.Context) error {
 		fmt.Println("shutting down telemetry...")
 		defer fmt.Println("telemetry shut down complete")
-		// The server's close emitted engine.stop and queued every fact on the
-		// fact provider; flush them before the global providers close.
-		factExport.shutdownAtExit(ctx)
+		// The server's close emitted engine.stop and queued every event on the
+		// event provider; flush them before the global providers close.
+		eventExport.shutdownAtExit(ctx)
 		closeResourceMetrics(ctx, resourceMetrics)
+		if closeCommandPlacement != nil {
+			if err := closeCommandPlacement(); err != nil {
+				bklog.G(ctx).WithError(err).Warn("command cgroup cleanup incomplete")
+			}
+		}
+		if networkAccounting != nil {
+			if err := networkAccounting.Close(); err != nil {
+				bklog.G(ctx).WithError(err).Warn(
+					"network accounting shutdown incomplete",
+				)
+			}
+		}
+		// Providers finish before the engine-owned workload export drains.
+		// Their shared processor/exporter wrappers do not close it.
 		telemetry.Close()
+		if workloadExport != nil {
+			flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			if err := workloadExport.Shutdown(flushCtx); err != nil {
+				bklog.G(ctx).WithError(err).Warn("workload export shutdown incomplete")
+			}
+			cancel()
+		}
 		return nil
 	}
 

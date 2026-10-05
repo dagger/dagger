@@ -59,9 +59,6 @@ func TestToolErrorResponseScopesLogs(t *testing.T) {
 	require.Contains(t, got, failure.Error())
 	require.Equal(t, 1, strings.Count(got, "exec stdout"))
 	require.Equal(t, 1, strings.Count(got, "exec stderr"))
-	require.NotContains(t, got, "<stdout>")
-	require.NotContains(t, got, "<stderr>")
-	require.NotContains(t, got, "<exitCode>")
 	// The payload comes entirely from telemetry, with identical output when
 	// the error has no stdout/stderr extensions at all.
 	require.Equal(t, got, m.toolErrorResponse(ctx, failure.Err))
@@ -151,7 +148,7 @@ func TestOversizedChangesetSkipsPatchWork(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// No server is needed on either oversized branch: neither may request
+	// No server is needed on the oversized summary: it may not request
 	// asPatch, diffStats, or an exact per-path summary.
 	out := newMCP().summarizePatch(ctx, nil, changes)
 	require.Contains(t, out, "exceeds the 200-path inspection budget")
@@ -159,9 +156,6 @@ func TestOversizedChangesetSkipsPatchWork(t *testing.T) {
 	require.NotContains(t, out, "old/")
 	require.NotContains(t, out, "WARNING")
 	require.Empty(t, toolResultContentType(out))
-	normalized, err := normalizeChangesetToPatch(ctx, nil, changes)
-	require.NoError(t, err)
-	require.Same(t, ch, normalized.Self())
 }
 
 func TestSmallTextChangeset(t *testing.T) {

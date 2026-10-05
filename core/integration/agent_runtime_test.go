@@ -91,6 +91,9 @@ type spawnOpts struct {
 	model string
 	// name is the display label passed to spawn (optional).
 	name string
+	// parentHandle records lineage independently of notification subscriptions.
+	parentHandle string
+	handle       string
 	// toolIDs optionally binds objects' methods as tools (one llm.withTools
 	// per object, in order), for the recordings that contain tool calls.
 	toolIDs []dagger.ID
@@ -111,10 +114,24 @@ func trySpawnAgent(ctx context.Context, c *dagger.Client, opts spawnOpts) (strin
 	}
 	decls := []string{"$model: String!"}
 	inner := `spawn`
+	var spawnArgs []string
 	if opts.name != "" {
-		inner = `spawn(name: $name)`
+		spawnArgs = append(spawnArgs, "name: $name")
 		decls = append(decls, "$name: String!")
 		vars["name"] = opts.name
+	}
+	if opts.handle != "" {
+		spawnArgs = append(spawnArgs, "handle: $handle")
+		decls = append(decls, "$handle: String!")
+		vars["handle"] = opts.handle
+	}
+	if opts.parentHandle != "" {
+		spawnArgs = append(spawnArgs, "parentHandle: $parent")
+		decls = append(decls, "$parent: String!")
+		vars["parent"] = opts.parentHandle
+	}
+	if len(spawnArgs) > 0 {
+		inner += "(" + strings.Join(spawnArgs, ", ") + ")"
 	}
 	path := "spawn"
 	for i := len(opts.toolIDs) - 1; i >= 0; i-- {
@@ -357,25 +374,30 @@ func llmWithPrompt(ctx context.Context, t *testctx.T, c *dagger.Client, model, p
 	return id
 }
 
-// rehydrateAgent runs the restore chain of design §3.2 verbatim —
-// loadLLMFromID(<snapshot>) { spawn(handle:, name:, state:, error:) } — and
-// returns a handle on the restored instance. Error-returning, because half
-// the point of a restore is which calls it refuses.
+// rehydrateAgent runs the restore chain of design §3.2 —
+// node(id: <snapshot>) { ... on LLM { spawn(handle:, name:, state:, error:) } }
+// — and returns a handle on the restored instance. Error-returning, because
+// half the point of a restore is which calls it refuses.
 func rehydrateAgent(ctx context.Context, c *dagger.Client, llmID, handle, name, state, errText string) (*agentHandle, error) {
+	return rehydrateAgentWithParent(ctx, c, llmID, handle, name, state, errText, "")
+}
+
+func rehydrateAgentWithParent(ctx context.Context, c *dagger.Client, llmID, handle, name, state, errText, parent string) (*agentHandle, error) {
 	res := map[string]any{}
 	if err := c.Do(ctx,
 		&dagger.Request{
-			Query: `query($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!) {
+			Query: `query($llm: ID!, $id: String!, $name: String!, $state: AgentState!, $error: String!, $parent: String!) {
 				node(id: $llm) { ... on LLM {
-					spawn(handle: $id, name: $name, state: $state, error: $error)
+					spawn(handle: $id, name: $name, state: $state, error: $error, parentHandle: $parent)
 				} }
 			}`,
 			Variables: map[string]any{
-				"llm":   llmID,
-				"id":    handle,
-				"name":  name,
-				"state": state,
-				"error": errText,
+				"llm":    llmID,
+				"id":     handle,
+				"name":   name,
+				"state":  state,
+				"error":  errText,
+				"parent": parent,
 			},
 		},
 		&dagger.Response{Data: &res},
@@ -606,9 +628,8 @@ func (AgentRuntimeSuite) TestSendAwait(ctx context.Context, t *testctx.T) {
 	require.Equal(t, secondReply, lastReply)
 }
 
-// TestSpawnInstances locks in the instance semantics of spawn — the
-// deliberate inversion of the old value-dedupe contract: two spawns of an
-// IDENTICAL composition (same seed, same display name) are two distinct
+// TestSpawnInstances locks in the instance semantics of spawn: two spawns of
+// an IDENTICAL composition (same seed, same display name) are two distinct
 // agents, with distinct pinned IDs and independent runtimes. Both dwell in
 // the same recorded slow tool call concurrently — two RUNNING instances
 // under one display name — and each turn resolves against its own runtime.
@@ -621,9 +642,8 @@ func (AgentRuntimeSuite) TestSpawnInstances(ctx context.Context, t *testctx.T) {
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
 
 	// Two spawns of the exact same composition: same model, same tool
-	// binding, same display name. Under the old identity model these
-	// resolved to one runtime entry by content digest; spawn mints a
-	// unique runtime handle into each pinned chain, so they are two agents.
+	// binding, same display name. Spawn mints a unique runtime handle into
+	// each pinned chain, so these are two agents.
 	opts := spawnOpts{model: model, name: "twin", toolIDs: []dagger.ID{ctrID}}
 	first := spawnAgent(ctx, t, c, opts)
 	second := spawnAgent(ctx, t, c, opts)
@@ -756,6 +776,72 @@ func (AgentRuntimeSuite) TestSpawnAfterStop(ctx context.Context, t *testctx.T) {
 	require.Contains(t, transcript, prompt)
 	require.Contains(t, transcript, restartPrompt)
 	require.Equal(t, restartReply, lastReply)
+}
+
+// TestSeed covers the seed field: the conversation the loop started with,
+// fixed by the spawn. It is what a client measures an agent's own work
+// against, so it must hold still while everything else about the agent
+// moves -- a turn advances the snapshot, a reseed swaps it wholesale -- and
+// for a restored instance it must be the conversation the restore adopted,
+// never anything from before it.
+func (AgentRuntimeSuite) TestSeed(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const (
+		prompt = "prompt for the seeded agent"
+		reply  = "the seeded agent's reply"
+	)
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt(prompt).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: reply},
+		}))
+	workspaceID := func(contents string) dagger.ID {
+		return queryID(ctx, t, c, fmt.Sprintf(
+			`{ directory { withNewFile(path: "base.txt", contents: %q) { asWorkspace { id } } } }`, contents),
+			"directory.withNewFile.asWorkspace.id")
+	}
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "seeded", wsID: workspaceID("as spawned")})
+
+	const selection = `
+		seed { transcript workspace { file(path: "base.txt") { contents } } }
+		snapshot { transcript workspace { file(path: "base.txt") { contents } } }`
+	seedContents := func(out gjson.Result) string { return out.Get("seed.workspace.file.contents").String() }
+	snapshotContents := func(out gjson.Result) string { return out.Get("snapshot.workspace.file.contents").String() }
+
+	// Never stepped: the snapshot IS the seed.
+	out := h.mustRun(ctx, t, selection)
+	require.Equal(t, "as spawned", seedContents(out))
+	require.Equal(t, "as spawned", snapshotContents(out))
+	require.NotContains(t, out.Get("seed.transcript").String(), prompt)
+
+	// A turn advances the snapshot and leaves the seed where it was.
+	delivery, got, err := h.sendAndWait(ctx, t, prompt)
+	require.NoError(t, err)
+	require.Equal(t, "STARTED", delivery)
+	require.Equal(t, reply, got)
+	out = h.mustRun(ctx, t, selection)
+	require.Contains(t, out.Get("snapshot.transcript").String(), prompt)
+	require.NotContains(t, out.Get("seed.transcript").String(), prompt,
+		"the seed is the conversation as spawned, not as it stands")
+
+	// So does a reseed, even one that rebinds the workspace: the seed is
+	// where the instance started, not the base of its current conversation.
+	rebound, err := c.LLM(dagger.LLMOpts{Model: model}).
+		WithWorkspace(dagger.Ref[*dagger.Workspace](c, workspaceID("after a reseed"))).
+		ID(ctx)
+	require.NoError(t, err)
+	require.NoError(t, h.reseedAgent(ctx, t, string(rebound)))
+	out = h.mustRun(ctx, t, selection)
+	require.Equal(t, "after a reseed", snapshotContents(out))
+	require.Equal(t, "as spawned", seedContents(out))
+
+	// A restored instance's seed is the conversation the restore adopted:
+	// its earlier history belongs to the session that published it.
+	restored := "restored history " + identity.NewID()
+	r, err := rehydrateAgent(ctx, c, llmWithPrompt(ctx, t, c, emptyReplayModel, restored), identity.NewID(), "restored", "IDLE", "")
+	require.NoError(t, err)
+	require.Contains(t, r.mustRun(ctx, t, `seed { transcript }`).Get("seed.transcript").String(), restored)
 }
 
 // TestReseed covers the continuity verb: reseed swaps an instance's
@@ -1037,7 +1123,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 // TestSendContent exercises file resolution, validation before enqueue and the
 // real mailbox drain against a keyless recording, including a paused queue.
 func (AgentRuntimeSuite) TestSendContent(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 	file := c.Container().From(alpineImage).
 		WithNewFile("/image.b64", mediaPNG).
 		WithExec([]string{"sh", "-c", "base64 -d /image.b64 > /image.png"}).File("/image.png")
@@ -1081,7 +1167,7 @@ func (AgentRuntimeSuite) TestSendContent(ctx context.Context, t *testctx.T) {
 				require.Equal(t, "a picture", reply)
 				snapshot := agent.Snapshot()
 				require.Equal(t, mediaHistory(t, c, expected), mediaHistory(t, c, snapshot))
-				portable, err := snapshot.PortableID(ctx)
+				portable, err := sink.captureLLMRecipe(ctx, t, c, snapshot)
 				require.NoError(t, err)
 				require.Equal(t, mediaHistory(t, c, snapshot), mediaHistory(t, c, dagger.Ref[*dagger.LLM](c, portable)))
 			})
@@ -1649,9 +1735,9 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 
 	// Lookup on an agent with NO runtime entry: clear error — message is a
 	// pure lookup and never creates one. The handle for such an instance is
-	// the bare agent(handle:, name:) lookup, since spawn now creates the entry
-	// it mints (see TestSendRequiresRuntime for why a miss must never be a
-	// constructor).
+	// the bare agent(handle:, name:) lookup, since spawn creates the entry
+	// it mints (see TestRuntimeVerbsRequireRuntime for why a miss must never
+	// be a constructor).
 	ghost := unmintedAgent(ctx, t, c, identity.NewID(), "never-ran")
 	_, err = ghost.run(ctx, t, `message(ref: "#99") { delivery }`)
 	require.ErrorContains(t, err, "no runtime entry")
@@ -1659,8 +1745,7 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 
 // awaitAgent blocks until the trace has published exactly one agent, in the
 // given state and with an addressable call digest, and returns that roster
-// entry — identity folded from the loop span's attributes, state from its
-// log records.
+// entry — identity and state folded from its control record.
 func (sink *agentTraceSink) awaitAgent(t *testctx.T, state string) *dagui.AgentNode {
 	t.Helper()
 	var node *dagui.AgentNode
@@ -1680,58 +1765,27 @@ func (sink *agentTraceSink) awaitAgent(t *testctx.T, state string) *dagui.AgentN
 	return node
 }
 
-// awaitAgents blocks until the trace has published the given number of
-// agents, each with an addressable call digest AND a resume anchor, and
-// returns them keyed by display name. It is awaitAgent's multi-agent form:
-// what a restore reads is the anchor, so waiting on the roster alone would
-// race the record that makes the trace restorable at all.
-func (sink *agentTraceSink) awaitAgents(t *testctx.T, count int) map[string]*dagui.AgentNode {
-	t.Helper()
-	byName := map[string]*dagui.AgentNode{}
-	require.EventuallyWithT(t, func(ct *assert.CollectT) {
-		clear(byName)
-		sink.read(func(db *dagui.DB) {
-			agents := db.Agents()
-			if !assert.Len(ct, agents, count) {
-				return
-			}
-			for _, agent := range agents {
-				if !assert.NotEmpty(ct, agent.CallDigest, "agent %q has no call digest", agent.Name) ||
-					!assert.NotEmpty(ct, agent.SnapshotDigest, "agent %q has no resume anchor", agent.Name) {
-					return
-				}
-				byName[agent.Name] = agent
-			}
-		})
-	}, 60*time.Second, 100*time.Millisecond)
-	return byName
-}
-
-// awaitRestorable is awaitAgents plus the property a restore actually needs:
-// every agent's resume anchor REBUILDS from the payloads the client holds.
-// The anchor record and its payload ride different pipelines — the record is
-// a log, the payload the span attribute of the portable-recipe call that
-// derived the digest — so the record routinely lands first, and a capture
-// taken in between serves a trace whose anchor names a conversation nothing
-// can rebuild (the "never reached this client" restore failure, seen as a CI
-// flake on the worker dismissed right after its turn).
+// awaitRestorable blocks until the trace has published the given number of
+// agents, each with an addressable call digest AND a resume anchor, and every
+// anchor REBUILDS from the payloads the client holds; it returns them keyed by
+// display name. Waiting on the roster alone would race the record that makes
+// the trace restorable at all, and the anchor record and its payload ride
+// different pipelines — the record is a log, while call frames arrive through
+// spans and the payload log lane.
+//
+// Tests that capture the trace for a restore should use
+// awaitRestorableCapture instead, which captures the same received prefix it
+// verified: checking here and capturing afterwards lets a newer revision move
+// an anchor to frames still in flight (the "never reached this client"
+// restore failure, #14335).
 func (sink *agentTraceSink) awaitRestorable(t *testctx.T, count int) map[string]*dagui.AgentNode {
 	t.Helper()
-	byName := sink.awaitAgents(t, count)
-	require.EventuallyWithT(t, func(ct *assert.CollectT) {
-		sink.read(func(db *dagui.DB) {
-			for name, node := range byName {
-				_, err := db.CallIDForDigest(node.SnapshotDigest)
-				assert.NoError(ct, err, "agent %q's anchor does not rebuild yet", name)
-			}
-		})
-	}, 60*time.Second, 100*time.Millisecond)
-	return byName
+	return sink.awaitRestorableCapture(t.Context(), t, count, nil).nodes
 }
 
 // awaitAgentState blocks until the trace shows the named agent in the given
-// lifecycle state. State records ride their own exports, so the roster can be
-// complete while an agent's latest transition is still in flight.
+// lifecycle state. Control records ride their own exports, so the roster can
+// be complete while an agent's latest transition is still in flight.
 func (sink *agentTraceSink) awaitAgentState(t *testctx.T, name, state string) {
 	t.Helper()
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
@@ -1748,33 +1802,24 @@ func (sink *agentTraceSink) awaitAgentState(t *testctx.T, name, state string) {
 }
 
 // rebuild turns a roster entry back into a handle the way a frontend would:
-// find the span carrying the advertised call digest, rebuild the ID from the
-// call payloads the client has ingested — Span.CallID walks receiver
-// digests, argument literals and module frames through the DB
-// (dagql/dagui/extract.go), so it closes only if every frame's span reached
-// this client — and encode it. Returns the handle and the rebuilt chain.
+// rebuild the advertised digest from call payloads, without requiring a
+// diagnostic span. Control records can arrive before the recipe closure, so
+// wait for every dependency before encoding the ID. Returns the handle and
+// the rebuilt chain.
 func (sink *agentTraceSink) rebuild(t *testctx.T, c *dagger.Client, node *dagui.AgentNode) (*agentHandle, *call.ID) {
 	t.Helper()
 	var callID *call.ID
-	var encoded string
-	sink.read(func(db *dagui.DB) {
-		var match *dagui.Span
-		for _, span := range db.Spans.Map {
-			if span.CallDigest == node.CallDigest {
-				match = span
-				break
-			}
-		}
-		require.NotNil(t, match, "no span carries the advertised call digest")
-		require.Equal(t, "agent", match.Call().Field,
-			"the digest must name the pinned agent(handle:, name:) lookup")
-
-		var err error
-		callID, err = match.CallID()
-		require.NoError(t, err)
-		encoded, err = callID.Encode()
-		require.NoError(t, err)
-	})
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		sink.read(func(db *dagui.DB) {
+			var err error
+			callID, err = db.CallIDForDigest(node.CallDigest)
+			assert.NoError(ct, err, "agent %q's handle does not rebuild yet", node.Name)
+		})
+	}, 60*time.Second, 100*time.Millisecond)
+	require.Equal(t, "agent", callID.Field(),
+		"the digest must name the pinned agent(handle:, name:) lookup")
+	encoded, err := callID.Encode()
+	require.NoError(t, err)
 	return &agentHandle{c: c, agentID: encoded}, callID
 }
 
@@ -1785,13 +1830,11 @@ func (sink *agentTraceSink) rebuild(t *testctx.T, c *dagger.Client, node *dagui.
 // unreachable — which is the capability a Query.agents namespace would have
 // provided, and which telemetry is supposed to provide instead.
 //
-// The path is the one branch-from-message already uses: the loop span's
-// dagger.io/agent.call.digest names a dagql call; the client finds the span
-// carrying that call digest, rebuilds the ID from the call payloads it has
-// ingested (Span.CallID walks receiver digests through the DB), encodes it,
-// and loads it. The digest names spawn's internal Select of the pure
-// agent(handle:, name:) lookup — a span the UI hides as internal, but which
-// carries its call payload like any other, which is what makes this work.
+// The client rebuilds the advertised call digest directly from ingested
+// payloads, including receiver and argument dependencies. The digest names
+// spawn's pure agent(handle:, name:) lookup, not the composition that produced
+// the conversation. Diagnostic spans may arrive later or be deduplicated;
+// they are not required to address the agent.
 //
 // The identity assertions are deliberately ones a freshly derived agent
 // value could never satisfy. Re-deriving the composition yields a value with
@@ -1828,9 +1871,8 @@ func (AgentRuntimeSuite) TestRosterAddressing(ctx context.Context, t *testctx.T)
 	require.NoError(t, err)
 	require.Equal(t, "FAILED", state)
 
-	// (1) The engine published the agent, and the client folded it into a
-	// roster entry: identity from the loop span's attributes, state from
-	// its log records.
+	// (1) The engine published the agent, and the client folded its control
+	// record into a roster entry.
 	node := sink.awaitAgent(t, "FAILED")
 	require.Equal(t, "rostered", node.Name)
 
@@ -1877,14 +1919,15 @@ const hirerWorkerPrompt = "You are a worker hired by the hirer module."
 // The doubt it settles is whether the reconstruction walk still closes when
 // the chain was not assembled by the client's own session. Every frame it
 // needs is looked up by digest in the client's DB, which holds only the
-// payloads that arrived on spans it ingested (dagql/dagui/extract.go:8-43),
-// and the chain here mixes all three kinds: calls the client made, calls the
-// MODULE made from its nested session (the system prompt hire composes in,
-// and the agent(handle:, name:) lookup spawn re-execs), and a module provenance
-// frame — pulled in by binding a module object as the seed's toolset, the
-// shape a chief's own conversation has. A missing frame does not error at
-// spawn time: the roster entry silently degrades to read-only, i.e. the user
-// watches a worker they can never talk to.
+// payloads that reached it, on spans or the call-payload log channel
+// (dagql/dagui/extract.go), and the chain here mixes all three kinds: calls
+// the client made, calls the MODULE made from its nested session (the system
+// prompt hire composes in, and the agent(handle:, name:) lookup spawn
+// re-execs), and a module provenance frame — pulled in by binding a module
+// object as the seed's toolset, the shape a chief's own conversation has. A
+// missing frame does not error at spawn time: the roster entry silently
+// degrades to read-only, i.e. the user watches a worker they can never talk
+// to.
 func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *testctx.T) {
 	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
 		t.Skip("needs its own CLI session to forward telemetry to the sink")
@@ -1946,17 +1989,32 @@ func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *
 
 	// The loop really is module-internal: its span hangs under the module
 	// function's call span, the same place a staff worker's does under its
-	// chief's tool call.
-	var underModuleCall bool
-	sink.read(func(db *dagui.DB) {
-		for parent := range node.Span().Parents {
-			if pc := parent.Call(); pc != nil && pc.Field == "hire" {
-				underModuleCall = true
-				break
+	// chief's tool call. Control records can arrive before diagnostic spans
+	// and their ancestry. Re-read the roster on each attempt: DB mutations
+	// rebuild its nodes, so the node returned by awaitAgent may stay span-less.
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		sink.read(func(db *dagui.DB) {
+			var current *dagui.AgentNode
+			for _, candidate := range db.Agents() {
+				if candidate.ID == node.ID {
+					current = candidate
+					break
+				}
 			}
-		}
-	})
-	require.True(t, underModuleCall, "the loop span must descend from the module call")
+			if !assert.NotNil(ct, current, "agent must remain in the roster") ||
+				!assert.NotNil(ct, current.Span(), "agent loop span has not arrived") {
+				return
+			}
+			var underModuleCall bool
+			for parent := range current.Span().Parents {
+				if pc := parent.Call(); pc != nil && pc.Field == "hire" {
+					underModuleCall = true
+					break
+				}
+			}
+			assert.True(ct, underModuleCall, "the loop span must descend from the module call")
+		})
+	}, 60*time.Second, 100*time.Millisecond)
 
 	// The walk closes over every kind of frame the chain mixes: the calls
 	// the module issued from its own session (the system prompt it composes
@@ -1993,47 +2051,25 @@ func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *
 // its first turn immediately (empty recording), so neither covers
 // turn-1-succeeds-then-later-send.
 //
-// Suspected mechanism (observed once on a live staff-module session, not
-// yet reproduced here): AgentRuntime.start launches the loop on
-// context.WithoutCancel of the SPAWNING request, keeping that request's
-// values — dagql server, query, client metadata. When the spawner is a
-// module function call, those values belong to the function call's client,
-// which ends with the call — so every later wake of the loop (drainMailbox's
-// withPrompt Select, then Step) executes against a released client. On the
-// live session a send five minutes after the spawning call ended enqueued
-// fine (delivery evidence computed) but the loop never drained: the
-// message's response hung forever.
+// AgentRuntime.start runs the loop detached from the SPAWNING request, so
+// when the spawner is a module function call, every later wake of the loop
+// (drainMailbox's withPrompt Select, then Step) happens after that call's
+// client has ended. A send in that window must still drain and complete:
+// its response resolves with the next turn's reply (a hang fails the test
+// by response timeout instead of wedging CI).
 //
-// The ingredients here are layered to match that scenario as closely as a
-// canned-replay test can, and each was verified to really occur:
+// The test sets up these ingredients:
 //
 //   - the spawner is a DANG module function, like modules/staff: the Dang
 //     runtime is in-process and its function-call client's connections
 //     provably close the moment the call returns (a Go runtime container's
 //     nested client conn lingers to session end, masking the window);
 //   - hire awaits the opening turn INSIDE the module call, so turn 1
-//     completes while the spawning client is alive, exactly as observed
-//     live — then stores the worker handle in module state and returns;
+//     completes while the spawning client is alive, as in the staff hire
+//     shape — then stores the worker handle in module state and returns;
 //   - the second exchange is module-mediated (ask = resume + send + response,
 //     resolving the worker from module state), issued from a fresh
 //     function-call client of its own — the staff ask shape.
-//
-// STATUS: this does NOT currently reproduce the hang — the loop drains and
-// steps correctly on the released spawner's retained context, for a direct
-// client send and for the module-mediated ask alike, so the test passes and
-// stands as the regression probe for this window (a hang fails it by response
-// timeout instead of wedging CI). Live-only ingredients still unaccounted
-// for: a real provider model (credential/env round-trips through the loop's
-// client at step time, where replay needs none), the spawning call being
-// dispatched as a tool from another agent's open turn, and the minutes-long
-// idle gap before the send (time-based teardown).
-//
-// One adjacent breakage WAS found while building this (deliberately not
-// asserted here): a telemetry-rebuilt recipe ID passed as a module
-// function's Agent argument fails to load with `resolve result ID for
-// call: no attached result for xxh3:…` after the spawning call's results
-// are released — the same handle works via node(id:), so handle-passing
-// into module tools breaks where direct addressing survives.
 func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *testctx.T) {
 	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
 		t.Skip("needs its own CLI session to forward telemetry to the sink")
@@ -2142,15 +2178,12 @@ func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *te
 	require.Equal(t, "IDLE", rebuilt.state(ctx, t))
 }
 
-// TestAgentArgumentAfterSpawnerReleased pins the adjacent breakage
-// TestSendAfterSpawnerReleased's construction uncovered: a telemetry-rebuilt
-// recipe ID passed as a module function's `Agent!` ARGUMENT must address the
-// live runtime wherever the same handle works via node(id:). It used to fail
-// with `resolve result ID for call: no attached result for xxh3:…`
-// (dagql resultIDForCall) once the spawning call's results were released:
-// rebuilding argument inputs from a stored call frame insisted on an
-// already-attached result for the inline recipe instead of falling back to
-// evaluating it the way node(id:) does. Handle-passing INTO module tools is
+// TestAgentArgumentAfterSpawnerReleased pins that a telemetry-rebuilt recipe
+// ID passed as a module function's `Agent!` ARGUMENT addresses the live
+// runtime wherever the same handle works via node(id:), even once the
+// spawning call's results are released: argument inputs rebuilt from a
+// stored call frame evaluate the inline recipe the way node(id:) does when
+// no result is attached to it. Handle-passing INTO module tools is
 // the staff shape's bread and butter — a chief hands worker handles to
 // module functions all day — so direct addressing working while argument
 // passing fails is exactly the kind of asymmetry that bites live sessions.
@@ -2248,6 +2281,7 @@ func (AgentRuntimeSuite) TestAgentArgumentAfterSpawnerReleased(ctx context.Conte
 	require.Equal(t, "IDLE", rebuilt.state(ctx, t))
 }
 
+// newHostWorkspaceRoot creates a temp workspace root with an empty .git to act
 // as a boundary: detection walks up to a .git and stops there
 // (core/workspace/detect.go:62-81), so an empty one is enough to make the
 // session's currentWorkspace this directory rather than whatever the test
@@ -2288,8 +2322,7 @@ func queryID(ctx context.Context, t *testctx.T, c *dagger.Client, query, path st
 // all, so those tests establish that the mechanism CAN work, not that it works
 // for the compositions users actually drive (design §10.2).
 //
-// The three cases differ only in where the workspace comes from, and that
-// alone used to decide whether addressing survived:
+// The three cases differ only in where the workspace comes from:
 //
 //   - host directory workspace — host.directory(…).asWorkspace(), a
 //     replayable, digest-stable leaf.
@@ -2297,25 +2330,14 @@ func queryID(ctx context.Context, t *testctx.T, c *dagger.Client, query, path st
 //     carries PerCallInput/PerSessionInput (core/schema/workspace.go:35-40),
 //     i.e. deliberately mints a fresh value on every evaluation.
 //   - session workspace overlay — the same, plus an edit, to separate the
-//     sparse-overlay machinery from currentWorkspace itself. It was never the
-//     overlay: this case failed exactly like the bare one.
+//     sparse-overlay machinery from currentWorkspace itself.
 //
-// What broke was never the walk. Every frame resolves, the ID rebuilds, and
-// the handle reads back its own name and runtime handle — those are literals in
-// the recipe. But a telemetry-rebuilt ID is the RECIPE form (design §9), so
-// USING it re-executes the chain; a fresh currentWorkspace meant a fresh seed,
-// a different agent value, and — while AgentRuntimes keyed on the agent
-// value's content digest — a different registry key. The lookup missed, and a
-// miss is indistinguishable from a never-started agent, since Get never
-// creates and IDLE-with-seed-snapshot is the honest projection of one. So the
-// handle looked healthy and addressed a corpse, and the first send spawned a
-// second loop from the seed: the live agent kept running while a fresh,
-// history-less one received the user's message.
-//
-// The registry now keys on the spawn-minted InstanceID (core/agent.go), a
+// A telemetry-rebuilt ID is the RECIPE form (design §9), so USING it
+// re-executes the chain, and a fresh currentWorkspace means a fresh seed
+// value. The registry keys on the spawn-minted Handle (core/agent.go), a
 // literal on the pinned chain that survives re-execution whatever the leaves
-// do — so all three cases address the live runtime, and the assertions past
-// the rebuild are what pins that.
+// do, so all three cases address the same live runtime; the assertions past
+// the rebuild pin that.
 func (AgentRuntimeSuite) TestRosterAddressingHostWorkspace(ctx context.Context, t *testctx.T) {
 	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
 		t.Skip("needs its own CLI session to forward telemetry to the sink")
@@ -2700,8 +2722,8 @@ func (AgentRuntimeSuite) TestRuntimeVerbsRequireRuntime(ctx context.Context, t *
 // is an agent it cannot address, which would make the restored session's own
 // trace unresumable in turn (§8's chained resume).
 //
-// rehydrate therefore opens and immediately ends an identity span, and
-// publishes its state and snapshot on it. The test asserts the whole loop a
+// rehydrate therefore publishes a control record for the entry as soon as it
+// is created, before any loop starts. The test asserts the whole loop a
 // client actually walks: roster entry, addressable digest, rebuilt handle,
 // and — through that handle — the restored conversation.
 func (AgentRuntimeSuite) TestRehydratePublishesIdentity(ctx context.Context, t *testctx.T) {
@@ -2720,7 +2742,7 @@ func (AgentRuntimeSuite) TestRehydratePublishesIdentity(ctx context.Context, t *
 	require.NoError(t, err)
 
 	// The restored agent is on the roster without ever having been started:
-	// identity from the span it published, state and anchor from its records.
+	// identity, state and anchor all come from its control record.
 	node := sink.awaitAgent(t, "IDLE")
 	require.Equal(t, handle, node.ID)
 	require.Equal(t, "restored", node.Name)

@@ -923,6 +923,8 @@ func writeGitDiffPatch(ctx context.Context, root string, pathSpecs []string, out
 	cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
 	cmd.Stdout = rewriter
 	cmd.Stderr = logErr
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
 	runErr := cmd.Run()
 	if flushErr := rewriter.Flush(); flushErr != nil && runErr == nil {
 		return flushErr
@@ -1707,9 +1709,10 @@ func (ch *ChangesetPaths) withoutGitMeta() *ChangesetPaths {
 // gitMergeWorkspace is a mounted scratch copy of the merge base that git
 // branches are built in.
 type gitMergeWorkspace struct {
-	root    string // mounted snapshot root
-	dir     string // base directory selector within root
-	workDir string // absolute path of dir under root; where git runs
+	root    string       // mounted snapshot root
+	dir     string       // base directory selector within root
+	workDir string       // absolute path of dir under root; where git runs
+	mount   *mount.Mount // the snapshot's mount, when mounted from a ref
 }
 
 // applyContent applies a changeset's file-level content to the work tree:
@@ -1876,7 +1879,7 @@ func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directo
 	}
 	defer newRef.Release(context.WithoutCancel(ctx))
 
-	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
+	err = MountRef(ctx, newRef, func(root string, m *mount.Mount) error {
 		workDir, err := containerdfs.RootPath(root, baseSelector)
 		if err != nil {
 			return err
@@ -1885,6 +1888,7 @@ func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directo
 			root:    root,
 			dir:     baseSelector,
 			workDir: workDir,
+			mount:   m,
 		})
 	})
 	if err != nil {
@@ -2065,7 +2069,10 @@ func gitCmd(ctx context.Context, dir string, args ...string) *exec.Cmd {
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
-	if output, err := gitCmd(ctx, dir, args...).CombinedOutput(); err != nil {
+	cmd := gitCmd(ctx, dir, args...)
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
+	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git %v: %w: %s", args, err, output)
 	}
 	return nil
@@ -2074,6 +2081,8 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 // runGitOutput runs git and returns its stdout.
 func runGitOutput(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := gitCmd(ctx, dir, args...)
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

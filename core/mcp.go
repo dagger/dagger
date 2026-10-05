@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -131,6 +130,11 @@ type MCP struct {
 	// have nothing to be filled from and are treated as unsatisfiable (see
 	// implicitToolArgs). Unlike the per-step scratch above, it survives Clone.
 	standalone bool
+	// scopeBase is the conversation a standalone server (dagger mcp) serves,
+	// with its bindings recorded. No step sets selfLLM there, so tool-argument
+	// addresses resolve in this conversation's scope instead (see
+	// MCP.scopeLLM). Like standalone, it survives Clone.
+	scopeBase dagql.ObjectResult[*LLM]
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
@@ -287,6 +291,9 @@ func (m *MCP) LastResult() dagql.Typed {
 // baseServer provides the schema for core tools and dispatch. Bound module
 // tools retain their own defining schemas. Value workspaces use only core here;
 // their modules are loaded from their trees during explicit agent composition.
+// Live workspaces load their modules best-effort: a broken module is left out
+// of the schema (and listed by FindArtifacts as a load failure) instead of
+// failing every step.
 func (m *MCP) baseServer(ctx context.Context) (*dagql.Server, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -350,6 +357,7 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 		return nil, err
 	}
 	m.loadSkillTools(srv, allTools)
+	m.loadArtifactTools(srv, allTools)
 	m.loadBuiltins(srv, allTools)
 	return allTools.Order, nil
 }
@@ -1085,7 +1093,7 @@ func llmContentEqual(a, b *LLMContentBlock) bool {
 	return a.Kind == b.Kind && a.Text == b.Text && a.CallID == b.CallID &&
 		a.ToolName == b.ToolName && string(a.Arguments) == string(b.Arguments) &&
 		a.Errored == b.Errored && a.Signature == b.Signature &&
-		a.MIMEType == b.MIMEType && a.Data == b.Data &&
+		a.MIMEType == b.MIMEType && slices.Equal(a.Data, b.Data) &&
 		slices.EqualFunc(a.Content, b.Content, llmContentEqual)
 }
 
@@ -1153,10 +1161,17 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	normalized, err := normalizeChangesetToPatch(ctx, srv, changes)
 	if err != nil {
 		// Fall back to the raw changeset: normalization is a durability
-		// upgrade for saved sessions, not a correctness requirement for the
-		// live one.
+		// upgrade for restored conversations, not a correctness requirement
+		// for the live one.
 		slog.Warn("failed to normalize changeset to patch form", "error", err)
 		normalized = changes
+	}
+	// A successful command need not change any files. Do not retain its
+	// Changeset (or even its Before recipe) as an overlay: that would make
+	// restoring the conversation evaluate the command again. This bounded
+	// check distinguishes directory-only edits from an actual no-op.
+	if changed, err := normalized.Self().PathCountExceeds(ctx, 0); err == nil && !changed {
+		return nil
 	}
 	changesID, err := normalized.ID()
 	if err != nil {
@@ -1178,32 +1193,24 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 }
 
 // normalizeChangesetToPatch rewrites a changeset into pure patch data:
-// after = before.withPatch(patch, onConflict: LEAVE_CONFLICT_MARKERS),
+// after = before.withPatchFile(blob(patch), onConflict: LEAVE_CONFLICT_MARKERS),
 // changes = after.changes(from: before).
 //
 // A tool-built changeset's After is an operation chain (e.g.
 // File.withReplaced) rooted at live workspace reads. Reapplying those
-// operations when a saved session is loaded fails once the files have moved
+// operations when a conversation is restored fails once the files have moved
 // on (the search text is gone), or silently re-applies them when it hasn't.
 // Capturing the patch now — while the content the operations ran against is
 // known — makes the recorded overlay pure data, and its restoration a tolerant
 // application: hunks that fit apply, hunks that don't leave conflict markers
 // for the agent to resolve.
 //
-// Changesets above patchSummaryMaxPaths are left as-is: rendering and
-// re-applying a patch for thousands of files takes long enough to stall the
-// turn, and normalization is only a durability upgrade — the caller falls
-// back to the raw changeset on any failure anyway.
+// Size alone is no reason to keep the raw changeset: a large one is typically
+// a generator's output, whose raw form retains the generator's execution — dev
+// engines, codegen, toolchains — and makes restoring the conversation re-run
+// all of it. The patch travels as a blob, so its size never inflates call
+// arguments. Only a patch File.contents cannot read is kept raw.
 func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	tooLarge, err := changesetTooLarge(ctx, changes)
-	if err != nil {
-		return changes, fmt.Errorf("bound changeset paths: %w", err)
-	}
-	if tooLarge {
-		slog.Debug("changeset too large to normalize to patch form; keeping raw changeset",
-			"max", patchSummaryMaxPaths)
-		return changes, nil
-	}
 	var patch dagql.ObjectResult[*File]
 	if err := srv.Select(ctx, changes, &patch, dagql.Selector{
 		View:  srv.View,
@@ -1212,8 +1219,7 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 		return changes, fmt.Errorf("render changeset as patch: %w", err)
 	}
 	// Stat before reading: File.contents refuses files over
-	// MaxFileContentsSize only after reading up to it, and a patch that size
-	// is too big to ship back through withPatch as a string argument anyway.
+	// MaxFileContentsSize only after reading up to it.
 	var size int
 	if err := srv.Select(ctx, patch, &size, dagql.Selector{
 		View:  srv.View,
@@ -1227,15 +1233,9 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 			"max", engineutil.MaxFileContentsSize)
 		return changes, nil
 	}
-	var patchText string
-	if err := srv.Select(ctx, patch, &patchText, dagql.Selector{
-		View:  srv.View,
-		Field: "contents",
-	}); err != nil {
+	patchData, err := patch.Self().Contents(ctx, patch, nil, nil)
+	if err != nil {
 		return changes, fmt.Errorf("read changeset patch: %w", err)
-	}
-	if patchText == "" {
-		return changes, nil
 	}
 	before := changes.Self().Before
 	if before.Self() == nil {
@@ -1245,16 +1245,37 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 	if err != nil {
 		return changes, err
 	}
-	var patched dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, before, &patched, dagql.Selector{
-		View:  srv.View,
-		Field: "withPatch",
-		Args: []dagql.NamedInput{
-			{Name: "patch", Value: dagql.NewString(patchText)},
-			{Name: "onConflict", Value: PatchConflictLeaveMarkers},
-		},
-	}); err != nil {
-		return changes, fmt.Errorf("apply patch to before: %w", err)
+	// Empty patches still need normalization: they may describe directory-only
+	// changes, or a no-op whose raw After retains an expensive tool execution.
+	patched := before
+	if len(patchData) > 0 {
+		// No View: blob postdates some client views, and like
+		// checkpointOverlay's patch blob this is engine-internal plumbing.
+		var blob dagql.ObjectResult[*File]
+		if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
+			Field: "blob",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString("changeset.patch")},
+				{Name: "contents", Value: dagql.Bytes(patchData)},
+				{Name: "permissions", Value: dagql.NewInt(0o600)},
+			},
+		}); err != nil {
+			return changes, fmt.Errorf("embed changeset patch: %w", err)
+		}
+		blobID, err := blob.ID()
+		if err != nil {
+			return changes, err
+		}
+		if err := srv.Select(ctx, before, &patched, dagql.Selector{
+			View:  srv.View,
+			Field: "withPatchFile",
+			Args: []dagql.NamedInput{
+				{Name: "patch", Value: dagql.NewID[*File](blobID)},
+				{Name: "onConflict", Value: PatchConflictLeaveMarkers},
+			},
+		}); err != nil {
+			return changes, fmt.Errorf("apply patch to before: %w", err)
+		}
 	}
 	patched, err = reconcileDirsAfterPatch(ctx, srv, changes, patched)
 	if err != nil {
@@ -1318,11 +1339,16 @@ func reconcileDirsAfterPatch(ctx context.Context, srv *dagql.Server, changes dag
 	// the patch itself, and reapply tolerantly: withNewDirectory is mkdir -p,
 	// withoutDirectory ignores an already-missing path.
 	for _, dir := range paths.Added {
+		info, err := changes.Self().After.Self().Stat(ctx, changes.Self().After, srv, strings.TrimSuffix(dir, "/"), true)
+		if err != nil {
+			return patched, fmt.Errorf("stat directory %q: %w", dir, err)
+		}
 		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
 			View:  srv.View,
 			Field: "withNewDirectory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.NewString(strings.TrimSuffix(dir, "/"))},
+				{Name: "permissions", Value: dagql.NewInt(info.Permissions)},
 			},
 		}); err != nil {
 			return patched, fmt.Errorf("restore directory %q: %w", dir, err)
@@ -1721,12 +1747,11 @@ func mcpContentBlocks(result *mcp.CallToolResult) ([]*LLMContentBlock, error) {
 			return nil, fmt.Errorf("nil MCP content at index %d", i)
 		}
 		if block.Kind == LLMContentImage || block.Kind == LLMContentAudio || block.Kind == LLMContentDocument {
-			// Check the decoded budget before allocating a second, larger copy.
 			if len(mediaData) > MaxLLMMediaBytes-mediaBytes {
-				return nil, fmt.Errorf("MCP tool media exceeds %d decoded bytes", MaxLLMMediaBytes)
+				return nil, fmt.Errorf("MCP tool media exceeds %d bytes", MaxLLMMediaBytes)
 			}
 			mediaBytes += len(mediaData)
-			block.Data = base64.StdEncoding.EncodeToString(mediaData)
+			block.Data = dagql.NewBytes(mediaData)
 		}
 		blocks = append(blocks, block)
 	}

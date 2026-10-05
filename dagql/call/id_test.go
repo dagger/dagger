@@ -420,13 +420,13 @@ func TestDigestedStringRoundTrip(t *testing.T) {
 	}
 }
 
-func TestRemoteCacheExtraDigestUsesExistingLabelEncoding(t *testing.T) {
+func TestExtraDigestUsesExistingLabelEncoding(t *testing.T) {
 	base := New().Append(&ast.Type{NamedType: "String", NonNull: true}, "field")
 	dig := digest.FromString("pinned-image-and-platform")
 	marked := base.With(
 		WithContentDigest(dig),
-		WithExtraDigest(ExtraDigest{Digest: dig, Label: ExtraDigestLabelRemoteCache}),
-		WithExtraDigest(ExtraDigest{Digest: dig, Label: ExtraDigestLabelRemoteCache}),
+		WithExtraDigest(ExtraDigest{Digest: dig, Label: "pinned"}),
+		WithExtraDigest(ExtraDigest{Digest: dig, Label: "pinned"}),
 	)
 	if marked.Digest() != base.Digest() || marked.ContentDigest() != dig {
 		t.Fatal("extra label changed recipe or content identity")
@@ -444,7 +444,7 @@ func TestRemoteCacheExtraDigestUsesExistingLabelEncoding(t *testing.T) {
 	}
 	extras := decoded.ExtraDigests()
 	if len(extras) != 2 {
-		t.Fatalf("want content and remote-cache entries, got %v", extras)
+		t.Fatalf("want content and pinned entries, got %v", extras)
 	}
 	labels := map[string]bool{}
 	for _, extra := range extras {
@@ -453,7 +453,7 @@ func TestRemoteCacheExtraDigestUsesExistingLabelEncoding(t *testing.T) {
 		}
 		labels[extra.Label] = true
 	}
-	if !labels[ExtraDigestLabelContent] || !labels[ExtraDigestLabelRemoteCache] {
+	if !labels[ExtraDigestLabelContent] || !labels["pinned"] {
 		t.Fatalf("unexpected labels %v", labels)
 	}
 }

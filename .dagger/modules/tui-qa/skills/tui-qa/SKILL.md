@@ -36,10 +36,9 @@ Interactive prompt mode works too: starting with args: ["agent"] brings up the
 live `dagger agent` prompt. Drive it by `typeText`-ing a line into the editline
 and `key enter` to submit; `key esc` toggles nav/input mode. The runner uses
 experimentalPrivilegedNesting so it inherits the outer session's LLM auth (no
-credential setup needed). To resume a previously auto-saved conversation, pass
-`start(session: <file>)` — the file must keep its `<uuid>.json` name (it is
-mounted where the CLI's session loader looks) — then start with
-args: ["agent", "-r=<uuid>"].
+credential setup needed). To restore a past session's agents, start with
+args: ["agent", "-r", "<trace-id>"] against an engine that retains that
+trace's archive (or with Cloud auth, below, so the CLI can fetch it).
 
 Dagger Cloud auth is NOT inherited from the outer session: the CLI under test
 reads it from the module's `cloudCredentials` setting, configured in

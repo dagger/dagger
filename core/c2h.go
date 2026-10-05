@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/sourcegraph/conc/pool"
 )
@@ -20,6 +21,10 @@ type c2hTunnel struct {
 
 func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+	ctx, err := withTunnelNetworkRecording(ctx)
+	if err != nil {
+		return fmt.Errorf("create tunnel network recorders: %w", err)
+	}
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(errors.New("tunnel finished"))
@@ -102,4 +107,8 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 		slog.Error("tunnel finished with errors", "error", rerr)
 	}
 	return rerr
+}
+
+func withTunnelNetworkRecording(ctx context.Context) (context.Context, error) {
+	return enginetelemetry.WithNetworkRecording(ctx)
 }

@@ -41,6 +41,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
@@ -390,6 +391,21 @@ type frontendPretty struct {
 	logPager       *LogPagerView
 	logPagerFocus  *tuist.FocusHandle
 	logSearchInput *tuist.TextInput
+
+	// fullscreen diff viewer state, browsing the Diffs of the HUD section
+	// titled diffViewerTitle (see toggleDiffViewer)
+	diffViewer      *DiffViewer
+	diffViewerFocus *tuist.FocusHandle
+	diffViewerTitle string
+	// diffViewerFromInput records that the prompt had focus when the viewer
+	// opened, to return it there on close.
+	diffViewerFromInput bool
+	// hudHiddenBeforeDiffs is the HUD preference the viewer overrode, to
+	// restore on close.
+	hudHiddenBeforeDiffs bool
+	// sectionAwaitAgent is the agent focus last moved to, until a section
+	// describing it arrives (see sectionStale).
+	sectionAwaitAgent string
 
 	// logStream holds logs a caller streams in whole (OpenLogStream), for a
 	// span whose rolled-up output the per-span log buffers can't show.
@@ -1033,6 +1049,10 @@ func (fe *frontendPretty) dispatch(fn func()) {
 	}
 }
 
+// StdTerminal owns a process-lifetime stdin reader. Successive frontends must
+// share it so a completed session cannot consume the next session's input.
+var processTerminal = tuist.NewStdTerminal()
+
 func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	if addr := os.Getenv("DAGGER_TUI_CONSOLE"); addr != "" {
 		// Console mode: drive the TUI headlessly over HTTP (frontend_console.go)
@@ -1043,7 +1063,7 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		fe.consoleTerm = term
 		return fe
 	}
-	return newWithTerminal(w, db, tuist.NewStdTerminal())
+	return newWithTerminal(w, db, processTerminal)
 }
 
 // NewASCIIReporterWithDB returns a report-only pretty frontend backed by db
@@ -1126,6 +1146,19 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	fe.dispatch(func() {
 		title := section.Title
+		if section.Agent != "" {
+			// A conversation-scoped section describes the agent it names. A
+			// paint from an agent focus has left -- a refresh still in flight
+			// when the switch happened, e.g. at the end of its turn -- would
+			// otherwise land over the focused agent's, and stay there for as
+			// long as the focused agent has nothing new to paint.
+			if focused := fe.focusedAgentID(); focused != "" && section.Agent != focused {
+				return
+			}
+			if section.Agent == fe.sectionAwaitAgent {
+				fe.sectionAwaitAgent = ""
+			}
+		}
 
 		if bubble, ok := fe.notifications[title]; ok {
 			// Update existing bubble
@@ -1150,6 +1183,9 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 				fe.notificationContainer.AddChild(bubble)
 			}
 		}
+		fe.updateDiffViewer(title)
+		// Whether there are diffs to view changes the available keys.
+		fe.refreshKeymap()
 
 		fe.Update()
 	})
@@ -1217,17 +1253,35 @@ func (fe *frontendPretty) syncHUDWidth() {
 // content, so updates received while hidden are visible when they are shown
 // again.
 func (fe *frontendPretty) toggleNotifications() {
-	fe.notificationsHidden = !fe.notificationsHidden
+	fe.setNotificationsHidden(!fe.notificationsHidden)
+}
+
+// setNotificationsHidden shows or hides the HUD, and relabels the keys that
+// say which it is (see hudBinding).
+func (fe *frontendPretty) setNotificationsHidden(hidden bool) {
+	fe.notificationsHidden = hidden
 	if fe.notificationOverlay != nil {
-		fe.notificationOverlay.SetHidden(fe.notificationsHidden)
+		fe.notificationOverlay.SetHidden(hidden)
 	}
+	fe.refreshHUDKeys()
+}
+
+// refreshHUDKeys re-renders everything labelling the HUD keys after the HUD
+// or its keymap bubble is shown or hidden: the hint above the prompt, and the
+// keymap bar and bubble.
+func (fe *frontendPretty) refreshHUDKeys() {
+	if fe.promptFrame != nil {
+		fe.promptFrame.Update()
+	}
+	fe.refreshKeymap()
 }
 
 // toggleKeymap shows or dismisses the keymap bubble: every key available
 // right now, pinned at the top of the HUD. Showing it reveals a hidden HUD,
 // since asking for the keymap is asking to see it.
 func (fe *frontendPretty) toggleKeymap() {
-	if fe.keymapBubble != nil && !fe.notificationsHidden {
+	defer fe.refreshHUDKeys()
+	if fe.keymapShown() {
 		fe.notificationContainer.RemoveChild(fe.keymapBubble)
 		fe.keymapBubble = nil
 		fe.syncHUDWidth()
@@ -1281,10 +1335,31 @@ const hudToggleKey = "ctrl+h"
 // hudKeys are the keys governing the HUD, advertised by the shell's hint in
 // place of a full keymap.
 func (fe *frontendPretty) hudKeys() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(key.WithKeys(keymapToggleKeys...), key.WithHelp("ctrl+?", "toggle keymap")),
-		key.NewBinding(key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, "toggle hud")),
+	return []key.Binding{fe.keymapBinding(), fe.hudBinding()}
+}
+
+// keymapShown reports whether the keymap bubble is on screen.
+func (fe *frontendPretty) keymapShown() bool {
+	return fe.keymapBubble != nil && !fe.notificationsHidden
+}
+
+// keymapBinding is the keymap bubble's key, labelled with what pressing it
+// does now -- which also tells whether the bubble is showing.
+func (fe *frontendPretty) keymapBinding() key.Binding {
+	help := "show keymap"
+	if fe.keymapShown() {
+		help = "hide keymap"
 	}
+	return key.NewBinding(key.WithKeys(keymapToggleKeys...), key.WithHelp("ctrl+?", help))
+}
+
+// hudBinding is the HUD's key, labelled with what pressing it does now.
+func (fe *frontendPretty) hudBinding(opts ...key.BindingOpt) key.Binding {
+	help := "hide hud"
+	if fe.notificationsHidden {
+		help = "show hud"
+	}
+	return key.NewBinding(append([]key.BindingOpt{key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, help)}, opts...)...)
 }
 
 // keymapHint renders the shell's compact key hint, shown above the prompt.
@@ -1330,6 +1405,9 @@ func (fe *frontendPretty) refreshKeymap() {
 		fe.keymapBubble.Update()
 		fe.syncHUDWidth()
 	}
+	if fe.diffViewer != nil {
+		fe.diffViewer.Update() // its key hint
+	}
 }
 
 // SetStatusLine updates the compact status line with LLM token/cost/context
@@ -1338,7 +1416,7 @@ func (fe *frontendPretty) refreshKeymap() {
 func (fe *frontendPretty) SetStatusLine(data StatusLineData) {
 	fe.dispatch(func() {
 		// Remember the latest data even when the status line isn't up yet: on
-		// resume, LoadSession pushes the restored conversation's stats before the
+		// resume, the restored conversation's stats are pushed before the
 		// shell (and its status line) is created, so startShell seeds the new
 		// status line from here rather than dropping the update.
 		fe.statusLineData = data
@@ -1458,6 +1536,11 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// The keymap bar is hidden in the shell; the line above the prompt
 	// carries a hint to the keymap bubble instead.
 	fe.promptFrame.SetHintSource(fe.keymapHint)
+	// The diff viewer takes the keyboard, so the prompt and its queued
+	// message make way for it. The status line stays: the agents' activity
+	// is what moves the diffs.
+	fe.promptFrame.SetHiddenSource(fe.promptHidden)
+	fe.queuedMsgLabel.SetHiddenSource(fe.promptHidden)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.promptFrame)
@@ -1472,6 +1555,8 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 }
 
 func (fe *frontendPretty) stopShell() {
+	// The viewer browses a HUD bubble, which goes away with the shell.
+	fe.closeDiffViewer()
 	fe.cancelImagePaste()
 	fe.promptImages = nil
 	fe.historyImages = nil
@@ -1882,8 +1967,8 @@ func (fe *frontendPretty) presentPromptForm(req *promptFormRequest) {
 		WithKeyMap(frontendFormKeyMap()).
 		WithWidth(fe.window.Width).
 		WithShowHelp(false)
-	// Cap the form at half the screen so a tall field (e.g. the .resume session
-	// picker's long Select) stays scrollable instead of dominating the terminal.
+	// Cap the form at half the screen so a tall field (e.g. a long Select)
+	// stays scrollable instead of dominating the terminal.
 	// A form that already fits keeps its natural height: forcing the cap would
 	// pad compact confirmations with blank rows.
 	if h := fe.window.Height; h > 0 {
@@ -3070,12 +3155,12 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		if fe.commandView != nil {
 			fe.commandView.Update()
 		}
-		// Agent state rides the log stream (design §9), so a state change
-		// arrives here rather than on a span.
+		// Agent state rides control records on the log stream, so a state
+		// change arrives here rather than on a span.
 		fe.updateAgentRoster()
-		// So do conversation commits: a snapshot record marks a step
-		// boundary, which is the cue to refresh the focused conversation's
-		// UI surfaces.
+		// So do conversation commits: a control revision with a new
+		// snapshot digest marks a step boundary, which is the cue to refresh
+		// the focused conversation's UI surfaces.
 		fe.notifyAgentSteps()
 		fe.Update()
 	})
@@ -3242,6 +3327,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 				key.WithHelp("ctrl+c", quitMsg)),
 		}
 	}
+	if fe.diffViewerFocused() {
+		return fe.diffViewerKeys(quitMsg)
+	}
 	var focused *dagui.Span
 	if fe.testsFocused() {
 		enterHelp := "detail"
@@ -3287,7 +3375,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 	if fe.inputFocused() {
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
-			key.NewBinding(key.WithKeys(hudToggleKey), key.WithHelp(hudToggleKey, "toggle hud")),
+			fe.hudBinding(),
+			key.NewBinding(key.WithKeys(diffViewerKey), key.WithHelp(diffViewerKey, "view diff"),
+				KeyEnabled(fe.hasDiffs())),
 		}
 		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
 			bnds = append(bnds,
@@ -3296,15 +3386,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		}
 		// Roster focus is shown only once there is more than one agent to
 		// switch between. A single-agent roster remains a state display.
-		if fe.agentRoster != nil && fe.agentRoster.Switchable() {
-			bnds = append(bnds,
-				key.NewBinding(key.WithKeys("ctrl+1"), key.WithHelp("ctrl+1…9", "focus agent")),
-				key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
-					KeyEnabled(fe.lastFocusedAgent != "")),
-				key.NewBinding(key.WithKeys("alt+[", "alt+]"), key.WithHelp("alt+[/]", "prev/next agent"),
-					KeyEnabled(fe.addressableAgentCount() > 1)),
-			)
-		}
+		bnds = append(bnds, fe.promptAgentBindings()...)
 		if fe.acceptsPromptImages() {
 			bnds = append(bnds, key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste image")))
 		}
@@ -3323,15 +3405,16 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("i", "tab"),
 			key.WithHelp("i", "input mode"),
 			KeyEnabled(fe.shell != nil)),
-		key.NewBinding(key.WithKeys(hudToggleKey),
-			key.WithHelp(hudToggleKey, "toggle hud"),
-			KeyEnabled(fe.shell != nil || fe.notificationOverlay != nil)),
+		fe.hudBinding(KeyEnabled(fe.shell != nil || fe.notificationOverlay != nil)),
 		key.NewBinding(key.WithKeys("w"),
 			key.WithHelp("w", out.Hyperlink(fe.cloudURL, "web")),
 			KeyEnabled(fe.cloudURL != "")),
 		key.NewBinding(key.WithKeys("T"),
 			key.WithHelp("T", "tests"),
 			KeyEnabled(fe.hasTestsForFocus())),
+		key.NewBinding(key.WithKeys(diffViewerKey),
+			key.WithHelp(diffViewerKey, "view diff"),
+			KeyEnabled(fe.hasDiffs())),
 		key.NewBinding(key.WithKeys("←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"),
 			key.WithHelp("←↑↓→", "move")),
 		key.NewBinding(key.WithKeys("home"),
@@ -3342,6 +3425,8 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 			key.WithHelp("+/-", fmt.Sprintf("verbosity=%d", fe.Verbosity))),
 		key.NewBinding(key.WithKeys("E"),
 			key.WithHelp("E", noExitHelp)),
+		key.NewBinding(key.WithKeys("C"),
+			key.WithHelp("C", onlyRunningHelp(fe.OnlyRunning))),
 		key.NewBinding(key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", quitMsg)),
 		key.NewBinding(key.WithKeys("esc", "alt+esc"),
@@ -3407,6 +3492,22 @@ func (fe *frontendPretty) keymapHeight() int {
 		return 0
 	}
 	return 2
+}
+
+// promptAgentBindings are prompt mode's roster focus keys, shared by the diff
+// viewer, which also leaves bare digits and brackets to its own use. They are
+// shown only once there is more than one agent to switch between.
+func (fe *frontendPretty) promptAgentBindings() []key.Binding {
+	if fe.agentRoster == nil || !fe.agentRoster.Switchable() {
+		return nil
+	}
+	return []key.Binding{
+		key.NewBinding(key.WithKeys("ctrl+1"), key.WithHelp("ctrl+1…9", "focus agent")),
+		key.NewBinding(key.WithKeys(agentLastKey), key.WithHelp("alt+l", "last agent"),
+			KeyEnabled(fe.lastFocusedAgent != "")),
+		key.NewBinding(key.WithKeys("alt+[", "alt+]"), key.WithHelp("alt+[/]", "prev/next agent"),
+			KeyEnabled(fe.addressableAgentCount() > 1)),
+	}
 }
 
 func (fe *frontendPretty) escHelp() string {
@@ -3483,6 +3584,11 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	if fe.logPager != nil {
 		fe.logPager.RefreshSearch()
 		fe.renderLogPager(ctx)
+		return
+	}
+
+	if fe.diffViewer != nil {
+		fe.renderDiffViewer(ctx)
 		return
 	}
 
@@ -4259,7 +4365,7 @@ func (fe *frontendPretty) flowingMode() bool {
 // queuedMessageHeight returns the line count of the queued message label. The
 // label always renders as a single line (see QueuedMessageLabel.Render).
 func (fe *frontendPretty) queuedMessageHeight() int {
-	if fe.queuedMsgLabel == nil || fe.queuedMsgLabel.Message() == "" {
+	if fe.queuedMsgLabel == nil || fe.queuedMsgLabel.Hidden() {
 		return 0
 	}
 	return 1
@@ -4282,7 +4388,7 @@ func (fe *frontendPretty) statusLineHeight() int {
 // for chrome-height budgeting. The actual rendering is handled by tuist's
 // container (textInput is a sibling, not rendered here).
 func (fe *frontendPretty) editlineHeight() int {
-	if fe.textInput == nil {
+	if fe.textInput == nil || fe.promptFrame != nil && fe.promptFrame.Hidden() {
 		return 0
 	}
 	// Count newlines in current value + 1 for the input line itself
@@ -4560,11 +4666,10 @@ func (fe *frontendPretty) agentRosterEntries() []AgentRosterEntry {
 			name = "agent"
 		}
 		entries = append(entries, AgentRosterEntry{
-			ID:        agent.ID,
-			Name:      name,
-			State:     agent.State,
-			WaitingOn: agent.WaitingOn,
-			Focused:   agent.ID != "" && agent.ID == focused,
+			ID:      agent.ID,
+			Name:    name,
+			State:   agent.State,
+			Focused: agent.ID != "" && agent.ID == focused,
 			// An agent whose loop span carries no call digest was never
 			// addressable, and one whose handle failed to rebuild has been
 			// proven not to be. Either way the entry is watch-only, and says
@@ -4839,6 +4944,8 @@ func (fe *frontendPretty) focusAgent(entry AgentRosterEntry) (claimed, moved boo
 	// settled target in the meantime would see a focus that has not moved
 	// yet. See focusedAgentID.
 	fe.pendingFocusAgent = entry.ID
+	// Until the new agent's changes arrive, the ones on screen are stale.
+	fe.sectionAwaitAgent = entry.ID
 	fe.restoreAgentDraft(entry.ID)
 	fe.updateAgentRoster()
 
@@ -5032,6 +5139,17 @@ func (fe *frontendPretty) updateAgentRoster() {
 	if focused := fe.focusedAgentID(); focused != fe.lastRosterFocus {
 		fe.lastRosterFocus = focused
 		fe.viewDirty = true
+		// Sections describing an agent (the Changes bubble, and the diff
+		// viewer browsing it) must not show the previous agent's content
+		// while the new one's loads; see sectionStale.
+		for _, bubble := range fe.notifications {
+			if bubble.section.Agent != "" {
+				bubble.Update()
+			}
+		}
+		if fe.diffViewer != nil {
+			fe.diffViewer.Update()
+		}
 	}
 	var fingerprint strings.Builder
 	for _, entry := range fe.agentRosterEntries() {
@@ -5185,14 +5303,18 @@ func (fe *frontendPretty) promoteConversationLocked() {
 	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
 		host = primary
 	}
-	if host == nil || !fe.db.HasConversationForSpan(host) {
-		return
-	}
-	if host.LLMRole != "" {
+	if host == nil || host.LLMRole != "" {
 		// The host is itself a message: there is no setup noise above it to hide.
 		return
 	}
+	// Gate on what would actually be promoted, not on the host's own subtree:
+	// a restored session's transcript hangs off the IMPORTED root, so until
+	// this session says something the host's subtree holds no message and the
+	// restored scrollback would stay hidden behind the setup rows.
 	scope, nodes := fe.conversationToPromote()
+	if len(nodes) == 0 {
+		return
+	}
 	// Withdraw the previous scope before wiring the new one: promotion only
 	// adds, so a switch that skipped this would reveal both agents' transcripts
 	// at once (see DB.DemoteConversationNodesFrom).
@@ -5976,6 +6098,10 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		return true
 	case "alt+up":
 		return fe.recallQueuedPrompt()
+	case diffViewerKey:
+		// Reviewing the agent's work doesn't need a detour through nav mode.
+		// The draft stays in the input for when the viewer closes.
+		return fe.toggleDiffViewer()
 	case "up", "down":
 		// Let TextInput move within multiline or wrapped input. At the visual
 		// boundary it bubbles the key to PromptFrame for history navigation.
@@ -6113,6 +6239,11 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		return
 	}
 
+	if fe.diffViewer != nil {
+		fe.handleDiffViewerKey(ev, keyStr)
+		return
+	}
+
 	if fe.testsMode {
 		switch keyStr {
 		case "q", "T", "esc", "alt+esc":
@@ -6160,6 +6291,11 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		return
 	case "E":
 		fe.NoExit = !fe.NoExit
+		return
+	case "C":
+		fe.OnlyRunning = !fe.OnlyRunning
+		fe.renderVersion++
+		fe.recalculateViewLocked()
 		return
 	case "down", "j":
 		fe.goDown()
@@ -6209,6 +6345,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		return
 	case "T":
 		fe.toggleTestsMode()
+		return
+	case diffViewerKey:
+		fe.toggleDiffViewer()
 		return
 	case "w":
 		if fe.cloudURL == "" {
@@ -7024,11 +7163,38 @@ func encodedIDForCallDigest(db *dagui.DB, digest string) (string, error) {
 	return id.Encode()
 }
 
+// WaitForEventLoop is an application barrier, rather than an exporter flush. The
+// marker uses the same ordered dispatch queue as spans, logs, and metrics; when
+// it runs their DB mutations are visible to subsequent restore-plan reads.
+func (fe *frontendPretty) WaitForEventLoop(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	done := make(chan struct{})
+	fe.dispatch(func() { close(done) })
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (fe *frontendPretty) AgentControl() (agents []agentcontrol.Agent, subscriptions []agentcontrol.Subscription, err error) {
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		agents, subscriptions, err = fe.db.AgentControl()
+	})
+	<-done
+	return
+}
+
 // AgentRestorePlan projects the imported trace's agents into a restore plan
 // (AgentRestorer, design §5.1's "Reading the DB back").
 //
 // It runs on the event loop and blocks for the result, like every other DB
-// read a run-goroutine caller makes: `dagger agent --trace` calls this
+// read a run-goroutine caller makes: `dagger agent -r` calls this
 // immediately after a fetch whose exports are still being dispatched onto
 // this same goroutine, and RestorePlan walks every span in the DB.
 func (fe *frontendPretty) AgentRestorePlan() []dagui.AgentRestore {
@@ -7242,7 +7408,12 @@ func (fe *frontendPretty) quitAction(interruptErr error) {
 		fe.quitting = true
 		fe.doQuit()
 	} else {
-		slog.Warn("canceling... (press again to exit immediately)")
+		// Ctrl+D on an empty prompt is an ordinary exit, not an interrupt:
+		// tearing the session down is the expected outcome, so don't warn
+		// about it. A second press still exits immediately.
+		if !errors.Is(interruptErr, ErrShellExited) {
+			slog.Warn("canceling... (press again to exit immediately)")
+		}
 		fe.interrupted = true
 		fe.interrupt(interruptErr)
 	}
@@ -7746,6 +7917,13 @@ func progressToggleHelp(expanded bool) string {
 		return "collapse transfers"
 	}
 	return "expand transfers"
+}
+
+func onlyRunningHelp(onlyRunning bool) string {
+	if onlyRunning {
+		return "show completed"
+	}
+	return "hide completed"
 }
 
 // spanHasProgressRollup reports whether the span currently folds completed

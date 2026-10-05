@@ -36,10 +36,13 @@ defmodule Dagger.GitRepository do
   @doc """
   Returns details of a branch.
   """
-  @spec branch(t(), String.t()) :: Dagger.GitRef.t()
-  def branch(%__MODULE__{} = git_repository, name) do
+  @spec branch(t(), String.t(), [{:no_lock, boolean() | nil}]) :: Dagger.GitRef.t()
+  def branch(%__MODULE__{} = git_repository, name, optional_args \\ []) do
     query_builder =
-      git_repository.query_builder |> QB.select("branch") |> QB.put_arg("name", name)
+      git_repository.query_builder
+      |> QB.select("branch")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("noLock", optional_args[:no_lock])
 
     %Dagger.GitRef{
       query_builder: query_builder,
@@ -97,10 +100,12 @@ defmodule Dagger.GitRepository do
   @doc """
   Returns details for HEAD.
   """
-  @spec head(t()) :: Dagger.GitRef.t()
-  def head(%__MODULE__{} = git_repository) do
+  @spec head(t(), [{:no_lock, boolean() | nil}]) :: Dagger.GitRef.t()
+  def head(%__MODULE__{} = git_repository, optional_args \\ []) do
     query_builder =
-      git_repository.query_builder |> QB.select("head")
+      git_repository.query_builder
+      |> QB.select("head")
+      |> QB.maybe_put_arg("noLock", optional_args[:no_lock])
 
     %Dagger.GitRef{
       query_builder: query_builder,
@@ -122,14 +127,16 @@ defmodule Dagger.GitRepository do
   @doc """
   Return the latest stable release tag, falling back to HEAD when no release exists.
 
-  Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+  Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned unless noLock is enabled.
   """
-  @spec latest(t(), [{:version, String.t() | nil}]) :: Dagger.GitRef.t()
+  @spec latest(t(), [{:version, String.t() | nil}, {:no_lock, boolean() | nil}]) ::
+          Dagger.GitRef.t()
   def latest(%__MODULE__{} = git_repository, optional_args \\ []) do
     query_builder =
       git_repository.query_builder
       |> QB.select("latest")
       |> QB.maybe_put_arg("version", optional_args[:version])
+      |> QB.maybe_put_arg("noLock", optional_args[:no_lock])
 
     %Dagger.GitRef{
       query_builder: query_builder,
@@ -140,10 +147,13 @@ defmodule Dagger.GitRepository do
   @doc """
   Returns details of a ref.
   """
-  @spec ref(t(), String.t()) :: Dagger.GitRef.t()
-  def ref(%__MODULE__{} = git_repository, name) do
+  @spec ref(t(), String.t(), [{:no_lock, boolean() | nil}]) :: Dagger.GitRef.t()
+  def ref(%__MODULE__{} = git_repository, name, optional_args \\ []) do
     query_builder =
-      git_repository.query_builder |> QB.select("ref") |> QB.put_arg("name", name)
+      git_repository.query_builder
+      |> QB.select("ref")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("noLock", optional_args[:no_lock])
 
     %Dagger.GitRef{
       query_builder: query_builder,
@@ -154,10 +164,13 @@ defmodule Dagger.GitRepository do
   @doc """
   Returns details of a tag.
   """
-  @spec tag(t(), String.t()) :: Dagger.GitRef.t()
-  def tag(%__MODULE__{} = git_repository, name) do
+  @spec tag(t(), String.t(), [{:no_lock, boolean() | nil}]) :: Dagger.GitRef.t()
+  def tag(%__MODULE__{} = git_repository, name, optional_args \\ []) do
     query_builder =
-      git_repository.query_builder |> QB.select("tag") |> QB.put_arg("name", name)
+      git_repository.query_builder
+      |> QB.select("tag")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("noLock", optional_args[:no_lock])
 
     %Dagger.GitRef{
       query_builder: query_builder,

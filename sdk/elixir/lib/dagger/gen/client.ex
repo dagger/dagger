@@ -16,7 +16,7 @@ defmodule Dagger.Client do
   @type t() :: %__MODULE__{}
 
   @doc """
-  initialize an address to load directories, containers, secrets or other object types.
+  Resolve external references only.
   """
   @spec address(t(), String.t()) :: Dagger.Address.t()
   def address(%__MODULE__{} = client, value) do
@@ -512,6 +512,26 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Start an empty run of text and media content, independent of any conversation.
+
+  Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+
+  > #### Experimental {: .warning}
+  >
+  > "LLM support is not yet stabilized"
+  """
+  @spec llm_content(t()) :: Dagger.LLMContent.t()
+  def llm_content(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("llmContent")
+
+    %Dagger.LLMContent{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Create a new module.
   """
   @spec module(t()) :: Dagger.Module.t()
@@ -647,6 +667,26 @@ defmodule Dagger.Client do
       query_builder: query_builder,
       client: client.client
     }
+  end
+
+  @doc """
+  Name the current session.
+
+  The title renames the session wherever its telemetry is shown (the calling client's primary span, e.g. the CLI's command span) and labels its engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+
+  > #### Experimental {: .warning}
+  >
+  > "Session APIs are likely to change."
+  """
+  @spec set_session_title(t(), String.t()) :: :ok | {:error, term()}
+  def set_session_title(%__MODULE__{} = client, title) do
+    query_builder =
+      client.query_builder |> QB.select("setSessionTitle") |> QB.put_arg("title", title)
+
+    case Client.execute(client.client, query_builder) do
+      {:ok, _} -> :ok
+      error -> error
+    end
   end
 
   @doc """

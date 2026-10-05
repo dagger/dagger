@@ -39,20 +39,13 @@ type EGraphDebugSnapshot struct {
 
 // CacheDebugSnapshot is the streamed /debug/dagql/cache snapshot.
 //
-// EngineInstance names the engine instance whose cache facts describe this
-// cache, when the cache was given one. FactSeq is the sequence number of the
-// last cache fact emitted when the snapshot was taken. Every fact with a
-// sequence at most FactSeq describes a mutation the snapshot contains, and no
-// such fact describes a later mutation. The converse does not hold while work
-// is in flight: a mutation can be visible before its fact is emitted, for
-// example a publication's dependency edges before its deps fact. Compare a
-// snapshot with the facts up to FactSeq only when the cache is quiescent.
+// EngineInstance names the engine instance that owns the cache, when the
+// cache was given one: the service.instance.id of its telemetry.
 type CacheDebugSnapshot struct {
 	OfferOwners             []CacheDebugOfferOwner        `json:"offer_owners,omitempty"`
 	TraceFormatVersion      int                           `json:"trace_format_version"`
 	BootID                  string                        `json:"boot_id"`
 	EngineInstance          string                        `json:"engine_instance,omitempty"`
-	FactSeq                 uint64                        `json:"fact_seq"`
 	CapturedAtSeq           uint64                        `json:"captured_at_seq"`
 	CapturedAtTime          string                        `json:"captured_at_time"`
 	SessionResults          []CacheDebugSessionResults    `json:"session_results,omitempty"`
@@ -81,6 +74,8 @@ type EGraphDebugResult struct {
 	HasPersistedEdge           bool                       `json:"has_persisted_edge"`
 	PersistedEdgeUnpruneable   bool                       `json:"persisted_edge_unpruneable"`
 	PersistedEdgeExpiresAtUnix int64                      `json:"persisted_edge_expires_at_unix,omitempty"`
+	Replacements               uint64                     `json:"replacements,omitempty"`
+	Indexed                    bool                       `json:"indexed,omitempty"`
 	ExplicitDeps               []uint64                   `json:"explicit_dep_ids,omitempty"`
 	HeldDependencyResults      int                        `json:"held_dependency_results_count"`
 	SnapshotLinks              []PersistedSnapshotRefLink `json:"snapshot_links,omitempty"`
@@ -1047,6 +1042,8 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			HasPersistedEdge:           c.persistedEdgesByResult[res.id].resultID != 0,
 			PersistedEdgeUnpruneable:   c.persistedEdgesByResult[res.id].unpruneable,
 			PersistedEdgeExpiresAtUnix: c.persistedEdgesByResult[res.id].expiresAtUnix,
+			Replacements:               res.replacements,
+			Indexed:                    len(res.recipeKeys) > 0,
 			ExplicitDeps:               depIDs,
 			HeldDependencyResults:      len(res.deps),
 			SnapshotLinks:              links,
@@ -1263,12 +1260,6 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	if err := writeValue(c.engineInstanceID); err != nil {
 		return err
 	}
-	if err := writeField("fact_seq"); err != nil {
-		return err
-	}
-	if err := writeValue(c.factSeq); err != nil {
-		return err
-	}
 	if err := writeField("captured_at_seq"); err != nil {
 		return err
 	}
@@ -1402,6 +1393,8 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					HasPersistedEdge:           c.persistedEdgesByResult[res.id].resultID != 0,
 					PersistedEdgeUnpruneable:   c.persistedEdgesByResult[res.id].unpruneable,
 					PersistedEdgeExpiresAtUnix: c.persistedEdgesByResult[res.id].expiresAtUnix,
+					Replacements:               res.replacements,
+					Indexed:                    len(res.recipeKeys) > 0,
 					ExplicitDeps:               depIDs,
 					HeldDependencyResults:      len(res.deps),
 					SnapshotLinks:              links,

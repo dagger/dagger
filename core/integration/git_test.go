@@ -743,7 +743,7 @@ done
 }
 
 func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c, sink := connectWithTrace(ctx, t)
 
 	gitSSH := c.Container().
 		From(alpineImage).
@@ -946,7 +946,11 @@ sleep infinity
 			require.NotEmpty(t, id)
 			// A failed client-side remote probe silently falls back to copying
 			// local Git data; that must not mask missing reconstruction auth.
-			require.NotContains(t, workspaceRecipeFields(ctx, t, c, id), "__gitDir")
+			// The query's id is an engine-local handle, so read the recipe off
+			// the trace instead.
+			recipe, err := sink.captureShellRecipe(ctx, t, client, `llm | with-workspace --workspace $(current-workspace | snapshot)`)
+			require.NoError(t, err)
+			require.NotContains(t, workspaceRecipeFields(t, recipe), "__gitDir")
 			require.JSONEq(t, fmt.Sprintf(`{
 				"currentWorkspace": {
 					"snapshot": {
@@ -1700,6 +1704,93 @@ func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GitSuite) TestRefRevisionSuffixes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// root - a - b ------ merge - head   (main)
+	//         \          /
+	//          side1 - side2              (side)
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"sh", "-c", `set -e
+git init -q -b main
+echo ` + identity.NewID() + ` > f && git add f && git commit -qm root
+echo a > f && git commit -qam a
+git checkout -qb side
+echo 1 > s && git add s && git commit -qm side1
+echo 2 > s && git commit -qam side2
+git checkout -q main
+echo b > f && git commit -qam b
+git merge -q --no-ff -m merge side
+echo head > f && git commit -qam head
+`})
+
+	exprs := []string{
+		"HEAD~0", "HEAD^0", "HEAD~", "HEAD~1", "HEAD~3", "HEAD~4",
+		"HEAD^", "HEAD^^", "HEAD^^2", "HEAD~1^2~1",
+		"main~2", "side~2", "refs/heads/side^",
+	}
+	out, err := ctr.WithExec(append([]string{"git", "rev-parse"}, exprs...)).Stdout(ctx)
+	require.NoError(t, err)
+	want := strings.Fields(out)
+	require.Len(t, want, len(exprs))
+	short, err := ctr.WithExec([]string{"git", "rev-parse", "--short=7", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	short = strings.TrimSpace(short)
+	shortWant, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD~2"}).Stdout(ctx)
+	require.NoError(t, err)
+	shortWant = strings.TrimSpace(shortWant)
+
+	check := func(ctx context.Context, t *testctx.T, repo *dagger.GitRepository) {
+		for i, expr := range exprs {
+			ref := repo.Ref(expr)
+			sha, err := ref.CommitSHA(ctx)
+			require.NoError(t, err, expr)
+			require.Equal(t, want[i], sha, expr)
+			name, err := ref.Name(ctx)
+			require.NoError(t, err, expr)
+			require.Equal(t, sha, name, "%s resolves to a detached ref", expr)
+		}
+
+		// an abbreviated SHA base, expanded like ref(name: <prefix>)
+		sha, err := repo.Ref(short + "~2").CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, shortWant, sha)
+
+		// the walked commit checks out like any other
+		contents, err := repo.Ref("HEAD~1^2").Tree().File("s").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "2\n", contents)
+
+		_, err = repo.Ref("HEAD~5").CommitSHA(ctx)
+		requireErrOut(t, err, `resolve "HEAD~5": HEAD~4`)
+		requireErrOut(t, err, "is a root commit")
+
+		_, err = repo.Ref("HEAD^2").CommitSHA(ctx)
+		requireErrOut(t, err, `resolve "HEAD^2": HEAD`)
+		requireErrOut(t, err, "has 1 parent(s), cannot select parent 2")
+
+		_, err = repo.Ref("HEAD~x").CommitSHA(ctx)
+		requireErrOut(t, err, `invalid revision "HEAD~x"`)
+
+		_, err = repo.Ref("HEAD^{tree}").CommitSHA(ctx)
+		requireErrOut(t, err, "^{...} peeling is not supported")
+		requireErrOut(t, err, "supported forms are")
+	}
+
+	t.Run("local repository", func(ctx context.Context, t *testctx.T) {
+		check(ctx, t, ctr.Directory(".").AsGit())
+	})
+
+	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
+		svc, url := gitService(ctx, t, c, ctr.Directory("."))
+		check(ctx, t, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: svc}))
+	})
+}
+
 func (GitSuite) TestGitLatest(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := c.Container().
@@ -2136,6 +2227,65 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, logSHAs[1], reloadedSHA)
 	})
+}
+
+func (GitSuite) TestGitLogBoundedRemoteHistory(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		With(gitUserConfig).
+		WithWorkdir("/repos/log").
+		WithExec([]string{"sh", "-ec", `
+			git init
+			echo old > old.txt
+			git add . && git commit -m root
+			for i in $(seq 1 10); do git commit --allow-empty -m "commit$i"; done
+			git branch base HEAD~5
+			cp -a /repos/log /repos/base
+		`})
+	root, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD~10"}).Stdout(ctx)
+	require.NoError(t, err)
+	root = strings.TrimSpace(root)
+	svc := ctr.WithExposedPort(9418).
+		WithDefaultArgs([]string{"git", "daemon", "--export-all", "--base-path=/repos"}).AsService()
+	host, err := svc.Hostname(ctx)
+	require.NoError(t, err)
+	_, err = svc.Start(ctx)
+	require.NoError(t, err)
+	defer svc.Stop(ctx)
+	repo := c.Git("git://"+host+"/log", dagger.GitOpts{ExperimentalServiceHost: svc})
+
+	commits, err := repo.Head().Log(ctx, dagger.GitRefLogOpts{Limit: 3})
+	require.NoError(t, err)
+	require.Len(t, commits, 3)
+	for i, commit := range commits {
+		message, err := commit.Message(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("commit%d", 10-i), message)
+	}
+	// Filtering must deepen past the bounded log: only the root touched this
+	// path. Returning an empty list from the shallow mirror would be wrong.
+	commits, err = repo.Head().Log(ctx, dagger.GitRefLogOpts{Limit: 3, Paths: []string{"old.txt"}})
+	require.NoError(t, err)
+	require.Len(t, commits, 1)
+	sha, err := commits[0].Sha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, root, sha)
+
+	// A separate cold mirror exercises base exclusions without relying on the
+	// filtered call's full fetch. The excluded ref is five generations ahead:
+	// depth-three fetches would miss their ancestry and return extra commits.
+	baseRepo := c.Git("git://"+host+"/base", dagger.GitOpts{ExperimentalServiceHost: svc})
+	commits, err = baseRepo.Branch("base").Log(ctx, dagger.GitRefLogOpts{Limit: 3, Base: baseRepo.Head()})
+	require.NoError(t, err)
+	require.Empty(t, commits)
+
+	commits, err = baseRepo.Head().Log(ctx, dagger.GitRefLogOpts{Limit: 20, Base: baseRepo.Branch("base")})
+	require.NoError(t, err)
+	require.Len(t, commits, 5)
+	message, err := commits[4].Message(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "commit6", message)
 }
 
 func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
@@ -2618,34 +2768,16 @@ exit 1
 	wd, err := os.Getwd()
 	require.NoError(t, err)
 
-	// Create base container with all dependencies
+	// Build against the real module graph, including local replacements. A
+	// partial source copy and a synthetic go.mod drift as Git gains imports.
 	baseContainer := client.Container().
-		From("golang:1.25").
-		WithExec([]string{"apt-get", "update"}).
-		WithExec([]string{"apt-get", "install", "-y", "git"}).
-		WithExec([]string{"mkdir", "-p", "/app/git"}).
+		From(golangImage).
+		With(goCache(client)).
+		WithExec([]string{"apk", "add", "--no-cache", "git"}).
+		WithMountedDirectory("/app", client.Host().Directory(filepath.Join(wd, "../.."), dagger.HostDirectoryOpts{
+			Exclude: []string{".git"},
+		})).
 		WithWorkdir("/app").
-		// create go.mod so that below main() can test our proto handling
-		WithNewFile("/app/go.mod", `
-module testapp
-
-go 1.24
-
-require (
-    github.com/gogo/protobuf v1.3.2
-    google.golang.org/grpc v1.59.0
-)
-
-replace github.com/dagger/dagger => .
-`).
-		// Mount git implementation as the session pkg
-		WithMountedDirectory("./git/", client.Host().Directory(filepath.Join(wd, "../../engine/session/git"))).
-		WithMountedDirectory("./engine/session/prompt/", client.Host().Directory(filepath.Join(wd, "../../engine/session/prompt"))).
-		WithMountedDirectory("./internal/buildkit/util/sshutil/", client.Host().Directory(filepath.Join(wd, "../../internal/buildkit/util/sshutil"))).
-		WithMountedDirectory("./util/gitutil/", client.Host().Directory(filepath.Join(wd, "../../util/gitutil"))).
-		WithMountedDirectory("./util/hashutil/", client.Host().Directory(filepath.Join(wd, "../../util/hashutil"))).
-		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../util/netrc"))).
-		WithMountedDirectory("./util/grpcutil/", client.Host().Directory(filepath.Join(wd, "../../util/grpcutil"))).
 
 		// Create test harness that:
 		// 1. Reads request from JSON file
@@ -2660,7 +2792,7 @@ import (
     "fmt"
     "io/ioutil"
 
-    "testapp/git"
+    "github.com/dagger/dagger/engine/session/git"
 )
 
 func main() {
@@ -2688,8 +2820,7 @@ func main() {
 }
 `).
 		WithNewFile("/request.json", "{}").
-		WithWorkdir("/app").
-		WithExec([]string{"go", "mod", "tidy"})
+		WithExec([]string{"go", "build", "-mod=readonly", "-o", "/usr/local/bin/test-git-credentials", "test.go"})
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(ctx context.Context, t *testctx.T) {
@@ -2707,7 +2838,7 @@ func main() {
 
 			container = container.
 				WithNewFile("/request.json", string(requestJSON)).
-				WithExec([]string{"go", "run", "test.go"})
+				WithExec([]string{"test-git-credentials"})
 
 			// assert response
 			output, err := container.Stdout(ctx)

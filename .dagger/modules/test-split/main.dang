@@ -79,6 +79,7 @@ type TestSplit {
         "^TestLocalCache$",
         "^TestModule$",
         "^TestModuleConfig$",
+        "^TestModuleDefinitionSuite$",
         "^TestModuleLoading$",
         "^TestPHP$",
         "^TestProvision$",
@@ -189,7 +190,15 @@ type TestSplit {
   Test Modules
   """
   pub testModules: Void @check {
-    testSpecific(["TestModule"])
+    testSpecific(["^TestModule$", "^TestModuleConfig$", "^TestModuleLoading$"])
+  }
+
+  """
+  Test module definition caching with the race detector.
+  This suite starts multiple engines and runs separately from the base shard.
+  """
+  pub testModuleDefinitions: Void @check {
+    testSpecific(["^TestModuleDefinitionSuite$"], race: true)
   }
 
   """

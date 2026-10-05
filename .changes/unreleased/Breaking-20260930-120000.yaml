@@ -1,0 +1,11 @@
+kind: Breaking
+body: |
+  Loading a workspace now fails when `dagger.toml` has unknown fields.
+
+  Before, Dagger ignored them with a warning, so typos were easy to miss. The
+  error gives the file, position, and path of each unknown field. Legacy
+  `as-sdk` fields are still warnings; run `dagger ws migrate` to migrate them.
+time: 2026-09-30T12:00:00.000000000+00:00
+custom:
+    Author: shykes
+    PR: "14436"

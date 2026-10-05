@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -41,24 +40,4 @@ func firstDescriptionLine(description string) string {
 		description = description[:idx]
 	}
 	return strings.TrimSpace(description)
-}
-
-func generatedCheckComment(description string) string {
-	description = stripTrailingPunctuation(firstDescriptionLine(description))
-	if description == "" {
-		return ""
-	}
-	return fmt.Sprintf("Did you %q?", lowerFirstRune(description))
-}
-
-func stripTrailingPunctuation(s string) string {
-	return strings.TrimRight(strings.TrimSpace(s), ".:;!?")
-}
-
-func lowerFirstRune(s string) string {
-	r, size := utf8.DecodeRuneInString(s)
-	if r == utf8.RuneError && size == 0 {
-		return s
-	}
-	return string(unicode.ToLower(r)) + s[size:]
 }

@@ -1,0 +1,6 @@
+kind: Changed
+body: Collect keys for large artifact listing rows in linear time while preserving key order.
+time: 2026-09-30T12:40:00-07:00
+custom:
+    Author: grouville
+    PR: "14384"

@@ -27,11 +27,7 @@ type LazyOperationInvocation interface {
 }
 
 func (c *Cache) partDecodeContext(ctx context.Context, row *sharedResult, record PersistedRecord) *PersistDecodeContext {
-	server := CurrentDagqlServer(ctx)
-	if server == nil {
-		server = row.partGate.server.Load()
-	}
-	return NewPersistDecodeContext(server, uint64(row.id), record.Call).WithSnapshotRoles(record.SnapshotLinks)
+	return NewPersistDecodeContext(CurrentDagqlServer(ctx), uint64(row.id), record.Call).WithSnapshotRoles(record.SnapshotLinks)
 }
 func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if _, ok := UnwrapAs[HasPartHost](res); !ok {
@@ -40,7 +36,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	gate := row.partGate.gate.Load()
-	if !row.imported && !row.partGate.restoredDelegation.Load() && len(row.partOffers) == 0 && gate == nil {
+	if !row.imported && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() && gate == nil {
 		return false
 	}
 	if gate == nil {
@@ -51,7 +47,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if gate.managed {
 		return true
 	}
-	if !row.imported && !row.partGate.restoredDelegation.Load() && len(row.partOffers) == 0 {
+	if !row.imported && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() {
 		return false
 	}
 	for _, group := range gate.groups {

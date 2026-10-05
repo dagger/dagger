@@ -67,9 +67,10 @@ func evidenceTestCacheAttrs(t *testing.T, kvs []attribute.KeyValue) map[string]s
 		if !strings.HasPrefix(k, "dagger.io/cache.") {
 			continue
 		}
-		if k == telemetryattrs.CacheStructuralInputsAttr {
-			// The one non-STRING value in the contract: a native ordered
-			// string slice (checked separately via evidenceTestStructuralInputs).
+		switch k {
+		case telemetryattrs.CacheStructuralInputsAttr, telemetryattrs.CacheDepsAttr, telemetryattrs.CachePartsAttr:
+			// The contract's native string slices (checked separately via
+			// evidenceTestStructuralInputs and evidenceTestStringSlice).
 			assert.Equal(t, attribute.STRINGSLICE, kv.Value.Type(), "contract attribute %s must be STRINGSLICE-typed", k)
 			continue
 		}
@@ -89,6 +90,17 @@ func evidenceTestStructuralInputs(t *testing.T, kvs []attribute.KeyValue) ([]str
 		}
 		assert.Equal(t, attribute.STRINGSLICE, kv.Value.Type())
 		return kv.Value.AsStringSlice(), true
+	}
+	return nil, false
+}
+
+// evidenceTestStringSlice extracts a native string-slice attribute: (values,
+// present).
+func evidenceTestStringSlice(kvs []attribute.KeyValue, key string) ([]string, bool) {
+	for _, kv := range kvs {
+		if string(kv.Key) == key {
+			return kv.Value.AsStringSlice(), true
+		}
 	}
 	return nil, false
 }
@@ -136,7 +148,7 @@ func TestRecordCacheEvidenceMappingHit(t *testing.T) {
 	res, err := dagql.NewResultForCall(dagql.NewInt(1), resFrame)
 	assert.NilError(t, err)
 
-	recordCacheEvidence(span, &dagql.CacheDecision{
+	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{
 		Outcome:               dagql.CacheOutcomeHit,
 		HitRoute:              dagql.CacheHitRouteStructural,
 		MissUnknownInputIndex: -1,
@@ -154,6 +166,7 @@ func TestRecordCacheEvidenceMappingHit(t *testing.T) {
 		telemetryattrs.CacheSelfDigestAttr:          selfDig.String(),
 		telemetryattrs.CachePairingDigestAttr:       pairDig.String(),
 		telemetryattrs.CacheOutputContentDigestAttr: contentDig.String(),
+		telemetryattrs.CacheTypeAttr:                "Int",
 	})
 	inputs, present := evidenceTestStructuralInputs(t, ended)
 	assert.Assert(t, present)
@@ -166,7 +179,7 @@ func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
 	sr, span := evidenceTestRecordingSpan(t)
 
 	selfDig := digest.FromString("evidence-miss-self")
-	recordCacheEvidence(span, &dagql.CacheDecision{
+	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{
 		Outcome:                    dagql.CacheOutcomeExecuted,
 		MissIncompatibleCandidates: true,
 		MissSawExpired:             true,
@@ -197,7 +210,7 @@ func TestRecordCacheEvidenceMappingJoinedStampsNoMissFacts(t *testing.T) {
 	sr, span := evidenceTestRecordingSpan(t)
 
 	selfDig := digest.FromString("evidence-joined-self")
-	recordCacheEvidence(span, &dagql.CacheDecision{
+	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{
 		Outcome: dagql.CacheOutcomeJoined,
 		// Populated by the joiner's pre-join lookup probe; must not stamp.
 		MissIncompatibleCandidates: true,
@@ -224,7 +237,7 @@ func TestRecordCacheEvidenceMappingUncached(t *testing.T) {
 	t.Parallel()
 	sr, span := evidenceTestRecordingSpan(t)
 
-	recordCacheEvidence(span, &dagql.CacheDecision{
+	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{
 		Outcome:               dagql.CacheOutcomeUncached,
 		MissUnknownInputIndex: -1,
 	}, nil)
@@ -247,8 +260,8 @@ func TestRecordCacheEvidenceMappingUndecidedStampsNothing(t *testing.T) {
 	// Never-populated carrier (invocation errored before any decision) and nil
 	// carrier both stamp nothing — the contract marker never rides a fact-free
 	// span.
-	recordCacheEvidence(span, dagql.NewCacheDecision(), nil)
-	recordCacheEvidence(span, nil, nil)
+	recordCacheEvidence(context.Background(), span, dagql.NewCacheDecision(), nil)
+	recordCacheEvidence(context.Background(), span, nil, nil)
 
 	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.Equal(t, 0, len(got))
@@ -298,9 +311,9 @@ func TestAroundFuncCacheEvidenceLifecycle(t *testing.T) {
 		}
 	}
 	assert.Assert(t, sawDigest, "call span must retain its digest")
-	// Legacy CLIs only read the span-carried payload; without it they walk
-	// creator spans and recurse forever. Keep it alongside the log records.
-	assert.Assert(t, sawCall, "call span must carry a legacy call payload")
+	// A recording span is the carrier of its own call frame: clients render
+	// the call from it, and the engine delivers it on a protected span lane.
+	assert.Assert(t, sawCall, "call span must carry its call payload")
 	got := evidenceTestCacheAttrs(t, ended[0].Attributes())
 	assert.Equal(t, got[telemetryattrs.CacheContractAttr], telemetryattrs.CacheContractV1)
 	assert.Equal(t, got[telemetryattrs.CacheOutcomeAttr], "executed")
@@ -356,7 +369,48 @@ func TestRecordCacheEvidenceResultID(t *testing.T) {
 	assert.Assert(t, ok)
 
 	sr, span := evidenceTestRecordingSpan(t)
-	recordCacheEvidence(span, &dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissUnknownInputIndex: -1}, res)
+	recordCacheEvidence(context.Background(), span, &dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissUnknownInputIndex: -1}, res)
 	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.Equal(t, got[telemetryattrs.CacheResultIDAttr], strconv.FormatUint(number, 10))
+}
+
+// The span of a persistable call reports its result's state in the cache: its
+// dependencies, the retention its publication adds with the edge's expiry, its
+// own expiry and its type. A result with no filesystem part reports no parts.
+func TestRecordCacheEvidenceCacheState(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	t.Cleanup(func() { assert.NilError(t, cache.CloseDiscardingPersistence()) })
+	frame := evidenceTestFrame("cacheState")
+	req := &dagql.CallRequest{ResultCall: frame, CacheEvidence: dagql.NewCacheDecision(), IsPersistable: true, TTL: 600}
+	res, err := cache.GetOrInitCall(ctx, "evidence-session", evidenceTestTypeResolver{}, req, func(context.Context) (dagql.AnyResult, error) {
+		return dagql.NewResultForCall(dagql.NewInt(1), frame)
+	})
+	assert.NilError(t, err)
+	state, ok := req.CacheEvidence.ResultState(ctx, res)
+	assert.Assert(t, ok)
+	assert.Assert(t, state.Retained && state.RetentionExpiresAtUnix != 0 && state.ExpiresAtUnix != 0)
+
+	sr, span := evidenceTestRecordingSpan(t)
+	recordCacheEvidence(ctx, span, req.CacheEvidence, res)
+	kvs := evidenceTestEndedAttrs(t, sr, span)
+	got := evidenceTestCacheAttrs(t, kvs)
+	assert.Equal(t, "true", got[telemetryattrs.CacheRetainedAttr])
+	assert.Equal(t, strconv.FormatInt(state.RetentionExpiresAtUnix, 10), got[telemetryattrs.CacheRetentionExpiresAttr])
+	assert.Equal(t, strconv.FormatInt(state.ExpiresAtUnix, 10), got[telemetryattrs.CacheExpiresAttr])
+	assert.Equal(t, "Int", got[telemetryattrs.CacheTypeAttr])
+	deps, ok := evidenceTestStringSlice(kvs, telemetryattrs.CacheDepsAttr)
+	assert.Assert(t, ok, "an empty dependency list is a recorded fact")
+	assert.Equal(t, 0, len(deps))
+	_, hasParts := evidenceTestStringSlice(kvs, telemetryattrs.CachePartsAttr)
+	assert.Assert(t, !hasParts)
+
+	// The state maps attribute for attribute.
+	mapped := cacheStateAttrs(dagql.CacheResultState{Deps: []uint64{3, 12}, Parts: []string{`{"part":"fs"}`}})
+	assert.DeepEqual(t, []string{"3", "12"}, mapped[0].Value.AsStringSlice())
+	assert.Equal(t, attribute.Key(telemetryattrs.CacheDepsAttr), mapped[0].Key)
+	assert.Equal(t, 2, len(mapped), "no retention, expiry or empty parts are stamped")
+	assert.DeepEqual(t, []string{`{"part":"fs"}`}, mapped[1].Value.AsStringSlice())
 }

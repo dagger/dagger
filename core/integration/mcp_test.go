@@ -59,8 +59,7 @@ func (MCPSuite) TestWithoutModuleAndWithPrivilegedServesBuiltins(ctx context.Con
 	cli := startMCPClient(ctx, t, emptyDir, "--env-privileged")
 
 	// With no module there is no object to bind, so only the builtin tools
-	// are served. (The old Env-based core-API surface was retired with the
-	// object-tools scheme.)
+	// are served.
 	tools := listToolNames(ctx, t, cli)
 	require.Contains(t, tools, "ReadLogs")
 	require.Contains(t, tools, "LoadTrace")
@@ -138,6 +137,57 @@ func (MCPSuite) TestFailureIncludesDiagnosticLogs(ctx context.Context, t *testct
 	require.NotContains(t, text, "<exitCode>")
 }
 
+// A method returning LLMContent is served as native MCP content: text and
+// media in order, not a description of the LLMContent object.
+func (MCPSuite) TestLLMContentResult(ctx context.Context, t *testctx.T) {
+	const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+	modDir := t.TempDir()
+	for name, contents := range map[string]string{
+		"dagger.toml": "[modules.test]\nsource = \".\"\nentrypoint = true\n",
+		"dagger.json": `{"name":"test","engineVersion":"v1.0.0","sdk":"dang"}`,
+		"main.dang": `type Test {
+  screenshots: LLMContent! {
+    llmContent
+      .withText("the page")
+      .withData(data: "` + png + `", mimeType: "image/png")
+  }
+
+  screenshot: LLMContent! {
+    llmContent.withData(data: "` + png + `", mimeType: "image/png")
+  }
+}
+`,
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, name), []byte(contents), 0o644))
+	}
+	initGitRepo(ctx, t, modDir)
+	cli := startMCPClient(ctx, t, modDir)
+
+	res, err := cli.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Name: "screenshots", Arguments: map[string]any{}},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "%+v", res.Content)
+	require.Len(t, res.Content, 2)
+	text, ok := res.Content[0].(mcp.TextContent)
+	require.True(t, ok, "%T", res.Content[0])
+	require.Equal(t, "the page", text.Text)
+	image, ok := res.Content[1].(mcp.ImageContent)
+	require.True(t, ok, "%T", res.Content[1])
+	require.Equal(t, "image/png", image.MIMEType)
+	require.Equal(t, png, image.Data)
+
+	res, err = cli.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Name: "screenshot", Arguments: map[string]any{}},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "%+v", res.Content)
+	require.Len(t, res.Content, 1)
+	image, ok = res.Content[0].(mcp.ImageContent)
+	require.True(t, ok, "%T", res.Content[0])
+	require.Equal(t, png, image.Data)
+}
+
 func initMCPTestModule(ctx context.Context, t testing.TB) string {
 	t.Helper()
 
@@ -191,8 +241,7 @@ func startMCPClient(ctx context.Context, t testing.TB, workdir string, extraArgs
 }
 
 // listToolNames lists the MCP server's tools via the MCP protocol. Tools are
-// the bound module objects' methods plus builtins — there is no discovery
-// indirection (the old ListMethods/SelectMethods tools are gone).
+// the bound module objects' methods plus builtins.
 func listToolNames(ctx context.Context, t testing.TB, cli *mcpclient.Client) []string {
 	t.Helper()
 

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"weak"
 
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -70,11 +71,15 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 		}
 		return loaded, nil
 	case map[string]any:
-		res, err := dagql.NewResultForCurrentCall(ctx, &ModuleObject{
+		obj := &ModuleObject{
 			Module:  t.mod,
 			TypeDef: t.typeDef,
 			Fields:  value,
-		})
+		}
+		if err := obj.restoreCollectionBase(ctx); err != nil {
+			return nil, err
+		}
+		res, err := dagql.NewResultForCurrentCall(ctx, obj)
 		if err != nil {
 			return nil, err
 		}
@@ -109,9 +114,9 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 		if err != nil {
 			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
 		}
-		return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
+		return t.objectToSDKInput(ctx, parentCall, x.Self())
 	case *ModuleObject:
-		return moduleObjectFieldsToSDKInput(ctx, t, dagql.CurrentCall(ctx), x.Fields)
+		return t.objectToSDKInput(ctx, dagql.CurrentCall(ctx), x)
 	case dagql.IDable:
 		dag, err := CurrentDagqlServer(ctx)
 		if err != nil {
@@ -134,13 +139,21 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			if err != nil {
 				return nil, fmt.Errorf("loaded module object SDK input call frame: %w", err)
 			}
-			return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
+			return t.objectToSDKInput(ctx, parentCall, x.Self())
 		default:
 			return nil, fmt.Errorf("unexpected value type %T", x)
 		}
 	default:
 		return nil, fmt.Errorf("%T.ConvertToSDKInput cannot handle %T", t, x)
 	}
+}
+
+func (t *ModuleObjectType) objectToSDKInput(ctx context.Context, parentCall *dagql.ResultCall, obj *ModuleObject) (map[string]any, error) {
+	fields, err := obj.collectionSDKFields(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return moduleObjectFieldsToSDKInput(ctx, t, parentCall, fields)
 }
 
 func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, parentCall *dagql.ResultCall, fields map[string]any) (map[string]any, error) {
@@ -345,6 +358,25 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
 	}
 	objFields := obj.Fields
+	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled {
+		base := obj
+		if obj.CollectionBase != nil {
+			base = obj.CollectionBase.Unwrap().(*ModuleObject)
+		}
+		keys, err := base.collectionKeys(ctx)
+		if err != nil {
+			return err
+		}
+		texts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			texts = append(texts, key.text)
+		}
+		// Compare base contents, not session-local handles. Never recurse through
+		// the original collection's reference to itself.
+		if err := content.CollectKeyed(collectionBaseField, func() error { return content.CollectJSONable(texts) }); err != nil {
+			return err
+		}
+	}
 	parentCall, err := value.ResultCall()
 	if err != nil {
 		return fmt.Errorf("resolve module object result call: %w", err)
@@ -452,9 +484,14 @@ type ModuleObject struct {
 
 	TypeDef *ObjectTypeDef
 	Fields  map[string]any
+
+	CollectionBatch bool
+	// Set once when the value is attached. Ordinary copies retain this reference.
+	CollectionBase dagql.AnyResult
 }
 
 var _ dagql.HasDependencyResults = (*ModuleObject)(nil)
+var _ dagql.HasResultReference = (*ModuleObject)(nil)
 
 const (
 	persistedModuleObjectValueKindNull      = "null"
@@ -475,7 +512,8 @@ type persistedModuleObjectValue struct {
 }
 
 type persistedModuleObjectPayload struct {
-	Fields map[string]persistedModuleObjectValue `json:"fields,omitempty"`
+	Fields         map[string]persistedModuleObjectValue `json:"fields,omitempty"`
+	CollectionBase uint64                                `json:"collectionBase,omitempty"`
 }
 
 func (obj *ModuleObject) AttachDependencyResults(
@@ -486,8 +524,11 @@ func (obj *ModuleObject) AttachDependencyResults(
 	if obj == nil {
 		return nil, nil
 	}
+	owned, err := obj.attachCollectionBase(self, attach)
+	if err != nil {
+		return nil, err
+	}
 
-	owned := make([]dagql.AnyResult, 0, 1+len(obj.Fields))
 	if obj.Module.Self() != nil {
 		// The object's class resolves its fields against this module, and its
 		// provider scopes it for every call. The object must own it: the
@@ -766,11 +807,20 @@ func persistedModuleObjectValueHasCallID(val persistedModuleObjectValue) bool {
 }
 
 func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	if obj == nil || len(obj.Fields) == 0 {
+	if obj == nil {
 		return encodePersistedObjectPayload(persistedModuleObjectPayload{})
 	}
 	payload := persistedModuleObjectPayload{
 		Fields: make(map[string]persistedModuleObjectValue, len(obj.Fields)),
+	}
+	// A base that points to self is restored before the cache publishes it. Encoding
+	// it as a child reference would require recursively decoding the same value.
+	if obj.CollectionBase != nil && obj.CollectionBase.Unwrap() != obj {
+		var err error
+		payload.CollectionBase, err = encodePersistedObjectRef(enc, obj.CollectionBase, "collection base")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
 	}
 	fieldNames := slices.Collect(maps.Keys(obj.Fields))
 	slices.Sort(fieldNames)
@@ -808,11 +858,20 @@ func (obj *ModuleObject) DecodePersistedObject(ctx context.Context, dec *dagql.P
 		}
 		fields[name] = decoded
 	}
-	return &ModuleObject{
-		Module:  obj.Module,
-		TypeDef: obj.TypeDef,
-		Fields:  fields,
-	}, nil
+	decoded := &ModuleObject{
+		Module:          obj.Module,
+		TypeDef:         obj.TypeDef,
+		Fields:          fields,
+		CollectionBatch: obj.CollectionBatch,
+	}
+	if payload.CollectionBase != 0 {
+		var err error
+		decoded.CollectionBase, err = loadPersistedResultByResultID(ctx, dec, payload.CollectionBase, "collection base")
+		if err != nil {
+			return nil, err
+		}
+	}
+	return decoded, nil
 }
 
 // DecodedDependencyResults reports the module a decoded object captured from
@@ -1059,8 +1118,12 @@ func persistedModuleObjectFieldName(field reflect.StructField) (string, bool) {
 }
 
 func (obj *ModuleObject) Type() *ast.Type {
+	name := obj.TypeDef.Name
+	if obj.CollectionBatch {
+		name += "_Batch"
+	}
 	return &ast.Type{
-		NamedType: obj.TypeDef.Name,
+		NamedType: name,
 		NonNull:   true,
 	}
 }
@@ -1076,6 +1139,9 @@ func (obj *ModuleObject) TypeDefinition(view call.View) *ast.Definition {
 	}
 	if obj.TypeDef.SourceMap.Valid {
 		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.Value.Self().TypeDirective())
+	}
+	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled && !obj.CollectionBatch {
+		def.Directives = append(def.Directives, &ast.Directive{Name: "collection"})
 	}
 	return def
 }
@@ -1106,16 +1172,22 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
 	}
-	fields, err := obj.fields()
+	var fields []dagql.Field[*ModuleObject]
+	var err error
+	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled {
+		fields, err = obj.collectionFields(ctx, dag)
+	} else {
+		fields, err = obj.fields()
+		if err != nil {
+			return err
+		}
+		var funs []dagql.Field[*ModuleObject]
+		funs, err = obj.functions(ctx, dag)
+		fields = append(fields, funs...)
+	}
 	if err != nil {
 		return err
 	}
-
-	funs, err := obj.functions(ctx, dag)
-	if err != nil {
-		return err
-	}
-	fields = append(fields, funs...)
 
 	// Engine-only state transfer is deliberately absent from TypeDef.Functions:
 	// it must not become an author method, tool, or entrypoint proxy.
@@ -1129,7 +1201,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	dag.InstallObject(class, installDirectives...)
 
 	if obj.isMainObject() && opt.Entrypoint {
-		if err := obj.installEntrypointMethods(ctx, dag); err != nil {
+		if err := obj.installEntrypointMethods(ctx, dag, fields); err != nil {
 			return fmt.Errorf("failed to install entrypoint methods: %w", err)
 		}
 	}
@@ -1138,6 +1210,9 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 }
 
 func (obj *ModuleObject) isMainObject() bool {
+	if obj.CollectionBatch {
+		return false
+	}
 	if src := obj.Module.Self().GetSource(); src != nil && src.Entrypoint != nil {
 		return obj.TypeDef.Constructor.Valid
 	}
@@ -1245,7 +1320,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	return nil
 }
 
-func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagql.Server) error {
+func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagql.Server, fields []dagql.Field[*ModuleObject]) error {
 	moduleID, moduleProvider, err := NewUserMod(obj.Module).FieldModule()
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for entrypoint object %q: %w", obj.TypeDef.Name, err)
@@ -1322,19 +1397,18 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 		)
 	}
 
-	for _, fun := range obj.TypeDef.Functions {
-		modFun, err := NewModFunction(ctx, obj.Module, obj.TypeDef, fun.Self())
-		if err != nil {
-			return fmt.Errorf("failed to create function %q: %w", fun.Self().Name, err)
+	// Forward the installed public fields, including collection operations.
+	for _, field := range fields {
+		if strings.HasPrefix(field.Spec.Name, "__") {
+			continue
 		}
-		if err := modFun.mergeUserDefaultsTypeDefs(ctx); err != nil {
-			return fmt.Errorf("failed to merge user defaults for %q: %w", fun.Self().Name, err)
-		}
-
-		proxySpec, err := modFun.metadata.FieldSpec(ctx, NewUserMod(obj.Module))
-		if err != nil {
-			return fmt.Errorf("failed to get field spec for %q: %w", fun.Self().Name, err)
-		}
+		proxySpec := *field.Spec
+		proxySpec.GetDynamicInput = nil
+		proxySpec.ImplicitInputs = nil
+		proxySpec.Trivial = false
+		proxySpec.Directives = slices.DeleteFunc(slices.Clone(proxySpec.Directives), func(d *ast.Directive) bool {
+			return d.Name == trivialFieldDirectiveName
+		})
 		// Proxy specs only carry the method's own args — constructor args
 		// are stored on the Query via the `with` field.
 		proxySpec.Module = moduleID
@@ -1344,84 +1418,37 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 
 		methodName := proxySpec.Name
 		methodArgs := proxySpec.Args.Inputs(dag.View)
-		dag.Root().ObjectType().Extend(
-			proxySpec,
-			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-				// Prevent dag.Select from marking the inner constructor
-				// and method calls as internal — they are the real
-				// user-facing calls and should appear in telemetry.
-				ctx = dagql.WithNonInternalTelemetry(ctx)
-				// Desugar through the canonical server where the real
-				// constructor lives (not shadowed by proxy fields).
-				canonical := dag.Canonical()
-				// Read constructor args from the Query (set by `with`).
-				query, _ := dagql.UnwrapAs[*Query](self)
-				var ctorNamedArgs []dagql.NamedInput
-				if query != nil && query.ConstructorArgs != nil {
-					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
-				}
-				ctorNamedArgs = WithBoundWorkspaceArgs(ctx, canonical, constructorArgs, ctorNamedArgs)
-				var result dagql.AnyResult
-				if err := canonical.Select(ctx, canonical.Root(), &result,
-					dagql.Selector{
-						Field: constructorName,
-						Args:  ctorNamedArgs,
-					},
-					dagql.Selector{
-						Field: methodName,
-						Args:  orderedNamedInputs(methodArgs, args),
-					},
-				); err != nil {
-					return nil, err
-				}
-				return result, nil
-			},
-		)
-	}
-
-	for _, field := range obj.TypeDef.Fields {
-		fieldName := gqlFieldName(field.Self().Name)
-
-		proxySpec := dagql.FieldSpec{
-			Name:           fieldName,
-			Description:    field.Self().Description,
-			Type:           field.Self().TypeDef.Self().ToTyped(),
-			Module:         moduleID,
-			ModuleProvider: moduleProvider,
-			NoTelemetry:    true,
-			DoNotCache:     "Entrypoint proxy is pure routing; the inner constructor and field calls cache on their own.",
+		proxy := func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+			// Prevent dag.Select from marking the inner constructor
+			// and method calls as internal — they are the real
+			// user-facing calls and should appear in telemetry.
+			ctx = dagql.WithNonInternalTelemetry(ctx)
+			// Desugar through the canonical server where the real
+			// constructor lives (not shadowed by proxy fields).
+			canonical := dag.Canonical()
+			// Read constructor args from the Query (set by `with`).
+			query, _ := dagql.UnwrapAs[*Query](self)
+			var ctorNamedArgs []dagql.NamedInput
+			if query != nil && query.ConstructorArgs != nil {
+				ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
+			}
+			ctorNamedArgs = WithBoundWorkspaceArgs(ctx, canonical, constructorArgs, ctorNamedArgs)
+			var result dagql.AnyResult
+			if err := canonical.Select(ctx, canonical.Root(), &result,
+				dagql.Selector{
+					Field: constructorName,
+					Args:  ctorNamedArgs,
+				},
+				dagql.Selector{
+					Field: methodName,
+					Args:  orderedNamedInputs(methodArgs, args),
+				},
+			); err != nil {
+				return nil, err
+			}
+			return result, nil
 		}
-
-		proxiedFieldName := fieldName
-		dag.Root().ObjectType().Extend(
-			proxySpec,
-			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-				ctx = dagql.WithNonInternalTelemetry(ctx)
-				// Desugar through the canonical server where the real
-				// constructor lives (not shadowed by proxy fields).
-				canonical := dag.Canonical()
-				// Read constructor args from the Query (set by `with`).
-				query, _ := dagql.UnwrapAs[*Query](self)
-				var ctorNamedArgs []dagql.NamedInput
-				if query != nil && query.ConstructorArgs != nil {
-					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
-				}
-				ctorNamedArgs = WithBoundWorkspaceArgs(ctx, canonical, constructorArgs, ctorNamedArgs)
-				var result dagql.AnyResult
-				if err := canonical.Select(ctx, canonical.Root(), &result,
-					dagql.Selector{
-						Field: constructorName,
-						Args:  ctorNamedArgs,
-					},
-					dagql.Selector{
-						Field: proxiedFieldName,
-					},
-				); err != nil {
-					return nil, err
-				}
-				return result, nil
-			},
-		)
+		dag.Root().ObjectType().Extend(proxySpec, proxy)
 	}
 
 	return nil
@@ -1457,16 +1484,54 @@ func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject], err erro
 	return fields, nil
 }
 
-func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
-	objDef := obj.TypeDef
-	for _, fun := range obj.TypeDef.Functions {
-		objFun, err := objFun(ctx, obj.Module, objDef, fun.Self(), dag)
+func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]dagql.Field[*ModuleObject], error) {
+	var fields []dagql.Field[*ModuleObject]
+	installed := newInstalledServer(dag)
+	for _, fn := range obj.TypeDef.Functions {
+		fun := fn.Self()
+		authored := fun
+		if fun.CheckReturnType.Self() != nil {
+			authored = fun.Clone()
+			authored.ReturnType = fun.CheckReturnType
+		}
+		field, err := objFun(ctx, obj.Module, obj.TypeDef, authored, dag)
 		if err != nil {
 			return nil, err
 		}
-		fields = append(fields, objFun)
+		if fun.CheckReturnType.Self() == nil {
+			fields = append(fields, field)
+			continue
+		}
+		legacySpec := *field.Spec
+		legacySpec.ViewFilter = BeforeVersion("v1.0.0-0")
+		legacy := field
+		legacy.Spec = &legacySpec
+		fields = append(fields, legacy)
+
+		projectionSpec := *field.Spec
+		projectionSpec.Type = fun.ReturnType.Self().ToTyped()
+		projectionSpec.ViewFilter = AfterVersion("v1.0.0-0")
+		projectionSpec.IsPersistable = false
+		projectionSpec.TTL = 0
+		fields = append(fields, dagql.Field[*ModuleObject]{
+			Spec: &projectionSpec,
+			Func: func(ctx context.Context, receiver dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
+				workspace, _ := WorkspaceFromContext(ctx)
+				var inputs []CallInput
+				for name, value := range args {
+					inputs = append(inputs, CallInput{Name: name, Value: value})
+				}
+				sort.Slice(inputs, func(i, j int) bool { return inputs[i].Name < inputs[j].Name })
+				// Check is a core type, so any server with the core schema can
+				// wrap it.
+				return dagql.NewObjectResultForCurrentCall(ctx, installed.orCurrent(ctx), &Check{
+					Assertion: dagql.NonNull(dagql.String(fun.Description)),
+					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace, CacheTTL: field.Spec.TTL,
+				})
+			},
+		})
 	}
-	return
+	return fields, nil
 }
 
 func objField(mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
@@ -1508,6 +1573,47 @@ func objField(mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field
 			return modType.ConvertFromSDKResult(ctx, fieldVal)
 		},
 	}, nil
+}
+
+// installedServer is the server a module object type's resolvers were
+// installed into. It is held weakly: the type's class rides along with cached
+// object results (another module object's field value, a check's receiver, an
+// interface value, ...), and a strong reference would keep the whole server
+// alive long after the client that built it is gone.
+type installedServer struct {
+	srv weak.Pointer[dagql.Server]
+}
+
+func newInstalledServer(srv *dagql.Server) installedServer {
+	return installedServer{srv: weak.Make(srv)}
+}
+
+// orCurrent returns the installed server while it is alive, or else the server
+// running the current call. Use it where any server with the core schema will
+// do.
+func (s installedServer) orCurrent(ctx context.Context) *dagql.Server {
+	if srv := s.srv.Value(); srv != nil {
+		return srv
+	}
+	return dagql.CurrentDagqlServer(ctx)
+}
+
+// forObject returns the installed server while it is alive, or else a server
+// with the module that produced obj installed, built from obj's call graph
+// through the client's schema memo.
+func (s installedServer) forObject(ctx context.Context, obj dagql.AnyResult) (*dagql.Server, error) {
+	if srv := s.srv.Value(); srv != nil {
+		return srv, nil
+	}
+	resultCall, err := obj.ResultCall()
+	if err != nil {
+		return nil, fmt.Errorf("module server for %s: %w", obj.Type().Name(), err)
+	}
+	srv, err := serverForResultCall(ctx, resultCall)
+	if err != nil {
+		return nil, fmt.Errorf("module server for %s: %w", obj.Type().Name(), err)
+	}
+	return srv, nil
 }
 
 // objFun creates a dagql.Field for a function defined on a module object type.
@@ -1556,6 +1662,7 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 	spec.ModuleProvider = moduleProvider
 	spec.GetDynamicInput = modFun.DynamicInputsForCall
 	spec.ImplicitInputs = append(spec.ImplicitInputs, modFun.cacheImplicitInputs()...)
+	installed := newInstalledServer(dag)
 
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
@@ -1564,7 +1671,9 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 				ParentTyped:    obj,
 				ParentFields:   obj.Self().Fields,
 				SkipSelfSchema: false,
-				Server:         dag,
+				// Only applies ignore patterns to Directory args, which any
+				// server with the core schema can do.
+				Server: installed.orCurrent(ctx),
 			}
 			for name, val := range args {
 				opts.Inputs = append(opts.Inputs, CallInput{
@@ -1576,6 +1685,7 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 			sort.Slice(opts.Inputs, func(i, j int) bool {
 				return opts.Inputs[i].Name < opts.Inputs[j].Name
 			})
+
 			return modFun.Call(ctx, opts)
 		},
 	}, nil

@@ -39,6 +39,46 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Discover every artifact this conversation can address, as one selection, without evaluating their values.
+
+  Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.
+
+  The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.
+
+  Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.
+
+  > #### Experimental {: .warning}
+  >
+  > "Agent APIs are likely to change."
+  """
+  @spec artifacts(t(), [{:include, [String.t()]}]) :: Dagger.Artifacts.t()
+  def artifacts(%__MODULE__{} = llm, optional_args \\ []) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("artifacts")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+  """
+  @spec compose(t(), [String.t()]) :: Dagger.LLM.t()
+  def compose(%__MODULE__{} = llm, expertise) do
+    query_builder =
+      llm.query_builder |> QB.select("compose") |> QB.put_arg("expertise", expertise)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
   estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
   """
   @spec context_tokens(t()) :: {:ok, integer()} | {:error, term()}
@@ -58,27 +98,6 @@ defmodule Dagger.LLM do
       llm.query_builder |> QB.select("contextWindow")
 
     Client.execute(llm.client, query_builder)
-  end
-
-  @doc """
-  Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-  """
-  @spec emit_history(t()) :: {:ok, Dagger.LLM.t()} | {:error, term()}
-  def emit_history(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("emitHistory")
-
-    with {:ok, id} <- Client.execute(llm.client, query_builder) do
-      {:ok,
-       %Dagger.LLM{
-         query_builder:
-           QB.query()
-           |> QB.select("node")
-           |> QB.put_arg("id", id)
-           |> QB.inline_fragment("LLM"),
-         client: llm.client
-       }}
-    end
   end
 
   @doc """
@@ -181,17 +200,6 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
-  """
-  @spec portable_id(t()) :: {:ok, String.t()} | {:error, term()}
-  def portable_id(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("portableID")
-
-    Client.execute(llm.client, query_builder)
-  end
-
-  @doc """
   The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
   """
   @spec provider(t()) :: {:ok, String.t()} | {:error, term()}
@@ -211,6 +219,24 @@ defmodule Dagger.LLM do
       llm.query_builder |> QB.select("reasoningEffort")
 
     Client.execute(llm.client, query_builder)
+  end
+
+  @doc """
+  Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
+
+  Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
+
+  A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
+  """
+  @spec recompose(t(), [String.t()]) :: Dagger.LLM.t()
+  def recompose(%__MODULE__{} = llm, expertise) do
+    query_builder =
+      llm.query_builder |> QB.select("recompose") |> QB.put_arg("expertise", expertise)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
   end
 
   @doc """
@@ -253,6 +279,7 @@ defmodule Dagger.LLM do
           {:name, String.t() | nil},
           {:handle, String.t() | nil},
           {:state, Dagger.AgentState.t() | nil},
+          {:parent_handle, String.t() | nil},
           {:error, String.t() | nil}
         ]) :: {:ok, Dagger.Agent.t()} | {:error, term()}
   def spawn(%__MODULE__{} = llm, optional_args \\ []) do
@@ -262,6 +289,7 @@ defmodule Dagger.LLM do
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("handle", optional_args[:handle])
       |> QB.maybe_put_arg("state", optional_args[:state])
+      |> QB.maybe_put_arg("parentHandle", optional_args[:parent_handle])
       |> QB.maybe_put_arg("error", optional_args[:error])
 
     with {:ok, id} <- Client.execute(llm.client, query_builder) do

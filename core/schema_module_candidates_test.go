@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -26,7 +25,7 @@ func installPreferenceScope(t *testing.T, srv *dagql.Server) {
 		if err != nil {
 			return value, err
 		}
-		return value.WithContentDigest(ctx, digest.FromString("implementation:"+self.Self().Name()), call.ExtraDigestLabelRemoteCache)
+		return value.WithContentDigest(ctx, digest.FromString("implementation:"+self.Self().Name()))
 	})}.Install(srv)
 }
 func preferenceModule(t *testing.T, env *persistedFamiliesTestEnv, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, field, name string, dependencies ...dagql.ObjectResult[*Module]) dagql.ObjectResult[*Module] {
@@ -66,15 +65,17 @@ func TestModDepsForCallInstalledPreference(t *testing.T) {
 			query.Server = facade
 			var mapping []dagql.ImportedValue
 			if before {
-				mapping, err = cache.ImportValues(ctx, bundle)
+				merged, err := cache.MergeValues(ctx, dagql.CloudCacheID, bundle)
 				require.NoError(t, err)
+				mapping = merged.Imported()
 			}
 			dep := preferenceModule(t, b, ctx, cache, srv, "consumer-dep", "dependency")
 			installed := preferenceModule(t, b, ctx, cache, srv, "consumer", "probe", dep)
 			facade.served = NewSchemaBuilder(query, []Mod{NewUserMod(installed), NewUserMod(dep)})
 			if !before {
-				mapping, err = cache.ImportValues(ctx, bundle)
+				merged, err := cache.MergeValues(ctx, dagql.CloudCacheID, bundle)
 				require.NoError(t, err)
+				mapping = merged.Imported()
 			}
 			recorded := mapping[0].ResultID
 			candidates, err := query.installedSchemaModuleCandidates(ctx, cache)

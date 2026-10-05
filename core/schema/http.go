@@ -9,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
@@ -221,7 +220,7 @@ func (s *httpSchema) httpFile(ctx context.Context, _ dagql.ObjectResult[*core.Qu
 		return inst, err
 	}
 	outputDigest := hashutil.HashStrings(args.Name, fmt.Sprint(args.Permissions), bodyDigest.String(), args.LastModified, string(args.Checksum.GetOr(dagql.String(""))))
-	return inst.WithContentDigest(ctx, outputDigest, call.ExtraDigestLabelRemoteCache)
+	return inst.WithContentDigest(ctx, outputDigest)
 }
 
 func (s *httpSchema) resolveHTTPSessionContext(
@@ -292,7 +291,7 @@ func (s *httpSchema) newHTTPFileResult(
 		_ = fetched.File.OnRelease(context.WithoutCancel(ctx))
 		return inst, err
 	}
-	inst, err = inst.WithContentDigest(ctx, outputDigest, call.ExtraDigestLabelRemoteCache)
+	inst, err = inst.WithContentDigest(ctx, outputDigest)
 	if err != nil {
 		_ = fetched.File.OnRelease(context.WithoutCancel(ctx))
 		return inst, err

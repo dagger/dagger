@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"slices"
 	"strings"
 
 	"dagger/engine-dev/internal/dagger"
@@ -102,9 +103,21 @@ func (e LoadedEngine) Start(
 ) error {
 	loader := e.Loader
 
-	_, err := loader.WithExec([]string{"docker", "rm", "-fv", name}).Sync(ctx)
+	names, err := loader.WithExec([]string{"docker", "ps", "-a", "--format", "{{.Names}}"}).Stdout(ctx)
 	if err != nil {
 		return err
+	}
+	if slices.Contains(strings.Fields(names), name) {
+		// Let the engine flush its persistent cache and mark a clean shutdown.
+		// Docker's default stop timeout can kill it before that finishes.
+		_, err = loader.WithExec([]string{"docker", "stop", "--time=-1", name}).Sync(ctx)
+		if err != nil {
+			return err
+		}
+		_, err = loader.WithExec([]string{"docker", "rm", "-v", name}).Sync(ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	args := []string{

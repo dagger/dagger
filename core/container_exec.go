@@ -2221,6 +2221,9 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 			// context that does not carry this ctx's mark (see
 			// ExecutionMetadata.UserFacingSpanCtx).
 			execMD.UserFacingSpanCtx = dagql.UserFacingSpanContext(ctx)
+			// Same in-process pattern; a module runtime's parent metadata
+			// already names the function call instead.
+			SetExecutionIdentity(ctx, execMD)
 		}
 		if emu != nil {
 			metaSpec.Args = append([]string{engineutil.DaggerQemuEmulatorMountPoint}, metaSpec.Args...)

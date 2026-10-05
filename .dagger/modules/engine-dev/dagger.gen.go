@@ -562,6 +562,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpfProgs", err))
 				}
 			}
+			var ebpf bool
+			if inputArgs["ebpf"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ebpf"]), &ebpf)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpf", err))
+				}
+			}
 			var dumpAfter []string
 			if inputArgs["dumpAfter"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["dumpAfter"]), &dumpAfter)
@@ -569,7 +576,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dumpAfter", err))
 				}
 			}
-			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, dumpAfter)
+			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, ebpf, dumpAfter)
 		case "TestTelemetry":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -840,11 +847,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithObject("LoadedEngine")).
 							WithDescription("Load the engine container into a Docker engine").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("docker.go", 16, 1)).
-							WithArg("docker", dag.TypeDef().WithObject("Socket"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 19, 2)}).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 23, 2), DefaultValue: dagger.JSON("\"localhost/dagger-engine.dev:latest\"")}).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 26, 2)}).
-							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable experimental GPU support", SourceMap: dag.SourceMap("docker.go", 30, 2)})).
+							WithSourceMap(dag.SourceMap("docker.go", 17, 1)).
+							WithArg("docker", dag.TypeDef().WithObject("Socket"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 20, 2)}).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 24, 2), DefaultValue: dagger.JSON("\"localhost/dagger-engine.dev:latest\"")}).
+							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 27, 2)}).
+							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable experimental GPU support", SourceMap: dag.SourceMap("docker.go", 31, 2)})).
 					WithFunction(
 						dag.Function("NetworkCidr",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
@@ -892,24 +899,25 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable verbose output", SourceMap: dag.SourceMap("test.go", 52, 2)}).
 							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Update golden files", SourceMap: dag.SourceMap("test.go", 55, 2)}).
 							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 58, 2)}).
-							WithArg("dumpAfter", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Elapsed times after the test runner starts at which to dump engine goroutines", SourceMap: dag.SourceMap("test.go", 61, 2)})).
+							WithArg("ebpf", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable privileged eBPF tests (Linux 6.15 or newer)", SourceMap: dag.SourceMap("test.go", 61, 2)}).
+							WithArg("dumpAfter", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Elapsed times after the test runner starts at which to dump engine goroutines", SourceMap: dag.SourceMap("test.go", 64, 2)})).
 					WithFunction(
 						dag.Function("TestTelemetry",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Run telemetry tests").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("test.go", 97, 1)).
-							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 101, 2)}).
-							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 104, 2)}).
-							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 106, 2)}).
-							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 108, 2)}).
-							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 110, 2)}).
-							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 112, 2)}).
-							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 114, 2)}).
-							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 116, 2), DefaultValue: dagger.JSON("1")}).
-							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 118, 2)}).
-							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 120, 2)}).
-							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 123, 2)})).
+							WithSourceMap(dag.SourceMap("test.go", 101, 1)).
+							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 105, 2)}).
+							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 108, 2)}).
+							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 110, 2)}).
+							WithArg("failfast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 112, 2)}).
+							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 114, 2)}).
+							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 116, 2)}).
+							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 118, 2)}).
+							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 120, 2), DefaultValue: dagger.JSON("1")}).
+							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 122, 2)}).
+							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 124, 2)}).
+							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 127, 2)})).
 					WithFunction(
 						dag.Function("Tests",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
@@ -945,19 +953,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("subnetNumber", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{Description: "A configurable part of the IP subnet managed by the engine\nChange this to allow nested dagger engines", SourceMap: dag.SourceMap("main.go", 25, 2), DefaultValue: dagger.JSON("89")}).
 							WithArg("clientDockerConfig", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A docker config file with credentials to install on clients,\nto ensure they can access private registries", SourceMap: dag.SourceMap("main.go", 29, 2)}))).
 			WithObject(
-				dag.TypeDef().WithObject("LoadedEngine", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("docker.go", 77, 6)}).
+				dag.TypeDef().WithObject("LoadedEngine", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("docker.go", 78, 6)}).
 					WithFunction(
 						dag.Function("Start",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Start the loaded engine container").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("docker.go", 86, 1)).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 91, 2), DefaultValue: dagger.JSON("\"dagger-engine.dev\"")}).
-							WithArg("cloudToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 93, 2)}).
-							WithArg("cloudURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 95, 2)}).
-							WithArg("debug", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 98, 2)}).
-							WithArg("extraHosts", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 101, 2)})).
-					WithField("Image", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("docker.go", 79, 2)})), nil
+							WithSourceMap(dag.SourceMap("docker.go", 87, 1)).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 92, 2), DefaultValue: dagger.JSON("\"dagger-engine.dev\"")}).
+							WithArg("cloudToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 94, 2)}).
+							WithArg("cloudURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 96, 2)}).
+							WithArg("debug", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 99, 2)}).
+							WithArg("extraHosts", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 102, 2)})).
+					WithField("Image", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("docker.go", 80, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

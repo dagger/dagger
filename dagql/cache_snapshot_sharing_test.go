@@ -986,6 +986,36 @@ func TestSnapshotSharingTypedServiceReceiverNeedsRegistration(t *testing.T) {
 	require.True(t, found, "the skip is ShareIneligible, not a guard trip: %v", causes)
 }
 
+// A typed receiver decodes with the registered preparation's schema-only
+// server even when its donated descriptor carries no Service: the worker runs
+// for no client, and the client server that produced the receiver is never
+// borrowed.
+func TestSnapshotSharingTypedReceiverDecodesWithPreparationServer(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	manager := &shareTestManager{}
+	c.snapshotManager = manager
+	prepared := newDagqlServerForTest(t, &persistCodecRoot{})
+	require.NoError(t, c.SetPartPreparationContext(func(ctx context.Context) (context.Context, *Server, error) {
+		return ctx, prepared, nil
+	}))
+	require.NoError(t, c.EnableSnapshotSharing())
+	barrier := newSharePassBarrier(c)
+	srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+	donor := persistedListTestResult(t, ctx, c, srv, "prepared-donor", newShareTestValue("donor", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}}))
+	receiver := persistedListTestResult(t, ctx, c, srv, "prepared-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
+	c.egraphMu.Lock()
+	receiver.cacheSharedResult().imported = true
+	c.egraphMu.Unlock()
+	partTestEquivalent(t, c, receiver, donor)
+	shareTestUnite(t, ctx, c, "typed-prepared", donor, receiver)
+
+	require.Equal(t, 1, barrier.awaitPass(t))
+	require.Equal(t, int32(1), manager.pins.Load(), "the part is installed")
+	value, ok := receiver.Unwrap().(*shareTestValue)
+	require.True(t, ok)
+	require.Same(t, prepared, value.preparedServer.Load(), "the store decoded with the preparation's server, not the producing client's")
+}
+
 // A typed receiver takes one slot per pass, and the installing task's own
 // completion queues the successor that fills the next part. Nothing is lost;
 // it costs one extra pass per additional part.
@@ -1283,7 +1313,7 @@ func TestSnapshotSharingFailedFinishLastOwner(t *testing.T) {
 	}
 	// Remove the receiver's ordinary owners: the session and the saved edge.
 	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
-	_, err := c.removePersistedEdge(ctx, row.id)
+	_, _, err := c.removePersistedEdge(ctx, row.id)
 	require.NoError(t, err)
 	c.egraphMu.RLock()
 	installedRegistered := c.resultsByID[row.id] == row
@@ -1406,7 +1436,8 @@ func TestSnapshotSharingImportTriggers(t *testing.T) {
 	t.Run("live import queues the imported classes", func(t *testing.T) {
 		ctx, b, _, _ := shareTestCache(t)
 		barrier := newSharePassBarrier(b)
-		mapping, err := b.ImportValues(ctx, bundle)
+		mappingReply, err := b.MergeValues(ctx, cloudCacheID, bundle)
+		mapping := mappingReply.Imported()
 		require.NoError(t, err)
 		require.Len(t, mapping, 1)
 		require.Equal(t, 0, barrier.awaitPass(t), "the import queued a cohort; with no donor it plans nothing")
@@ -1424,7 +1455,7 @@ func TestSnapshotSharingImportTriggers(t *testing.T) {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			arm(b, cancel)
-			_, err := b.ImportValues(ctx, bundle)
+			_, err := b.MergeValues(ctx, cloudCacheID, bundle)
 			require.Error(t, err)
 			b.egraphMu.RLock()
 			pendingCount := len(b.sharePending)
@@ -1551,7 +1582,7 @@ func TestSnapshotSharingTypedSuccessorHoldsTheDonor(t *testing.T) {
 	// With the first pass parked at its start, take away every ordinary owner
 	// of the donor: its session and its saved edge. The cohort holds it alone.
 	require.NoError(t, c.ReleaseSession(ctx, "test-session"))
-	_, err := c.removePersistedEdge(ctx, donorRow.id)
+	_, _, err := c.removePersistedEdge(ctx, donorRow.id)
 	require.NoError(t, err)
 	c.egraphMu.RLock()
 	donorRegistered := c.resultsByID[donorRow.id] == donorRow

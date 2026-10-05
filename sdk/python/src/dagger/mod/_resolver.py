@@ -23,7 +23,13 @@ from dagger.mod._exceptions import (
     InvalidInputError,
     RegistrationError,
 )
-from dagger.mod._types import APIName, FieldDefinition, FunctionDefinition, PythonName
+from dagger.mod._types import (
+    COLLECTION_BASE_ATTR,
+    APIName,
+    FieldDefinition,
+    FunctionDefinition,
+    PythonName,
+)
 from dagger.mod._utils import (
     get_alt_constructor,
     get_alt_name,
@@ -120,7 +126,7 @@ class Function(Generic[P, R]):
 
     @property
     def agent(self) -> bool:
-        """Indicates whether the function is configured as an agent middleware."""
+        """Indicates whether the function is configured as a source of expertise."""
         # Check both the metadata and the attribute to support either decorator order
         return self.meta.agent or getattr(self.wrapped, AGENT_DEF_KEY, False)
 
@@ -156,7 +162,7 @@ class Function(Generic[P, R]):
         for param in self.signature.parameters.values():
             # Skip `self` parameter on instance methods.
             # It will be added manually on `get_result`.
-            if param.name == "self":
+            if param.name in ("self", COLLECTION_BASE_ATTR):
                 continue
 
             if param.kind is inspect.Parameter.POSITIONAL_ONLY:

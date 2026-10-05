@@ -101,7 +101,7 @@ func (i *consoleTraceInspector) transcript(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// PortableRecipe emits a flat data-only LLM spine. Read just that spine, not
+// Read only the committed LLM receiver spine, not
 // CallIDForDigest's full dependency closure: a missing host/tool/module dependency
 // must not prevent reading messages that are present. Unknown or missing spine
 // frames are errors, never silently omitted messages. Nothing is evaluated.

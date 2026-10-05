@@ -4,9 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"runtime"
+	"strconv"
+	"strings"
 
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/mod/modfile"
 
 	"github.com/dagger/dagger/engine/distconsts"
 
@@ -212,6 +218,10 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 }
 
 func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
+	seedMod, libVersion, err := goModuleSeed(ctx, build.source)
+	if err != nil {
+		return nil, err
+	}
 	sdkCache := dag.Container().
 		From(consts.GolangImage).
 		With(build.goPlatformEnv).
@@ -233,7 +243,15 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 			"-deps=true",
 			"-test=false",
 			".",
-		})
+		}).
+		// pre-cache what module codegen downloads for a generated module (see
+		// goModuleSeed): the pinned SDK version, everything `go mod tidy`
+		// needs, and the version info `go get` reads
+		WithDirectory("/seed", seedMod).
+		WithWorkdir("/seed").
+		WithExec([]string{"go", "get", "dagger.io/dagger@" + libVersion}).
+		WithExec([]string{"go", "mod", "tidy"}).
+		WithExec([]string{"go", "list", "-m", "all"})
 
 	sdkCtrTarball := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.GolangImage).
@@ -273,4 +291,120 @@ func unpackTar(tarball *dagger.File) *dagger.Directory {
 		WithMountedFile("/target.tar", tarball).
 		WithExec([]string{"tar", "xf", "/target.tar", "-C", "/out"}).
 		Directory("/out")
+}
+
+// goModuleSeed returns a Go module shaped like the ones module codegen
+// generates, and the dagger.io/dagger version codegen pins in them.
+//
+// The module has the Go SDK's requirements and the replace directives
+// codegen copies with them, the SDK's go.sum, and the third-party imports
+// of generated code (sdk/go/internal/codegendeps). Running codegen's
+// commands in it fills the module cache with what codegen downloads for a
+// generated module that has no dependencies of its own.
+func goModuleSeed(ctx context.Context, source *dagger.Directory) (*dagger.Directory, string, error) {
+	sdkGoMod, err := source.File("sdk/go/go.mod").Contents(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	sdkMod, err := modfile.Parse("go.mod", []byte(sdkGoMod), nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse sdk/go/go.mod: %w", err)
+	}
+	seedMod := new(modfile.File)
+	if err := seedMod.AddModuleStmt("seed"); err != nil {
+		return nil, "", err
+	}
+	if err := seedMod.AddGoStmt(sdkMod.Go.Version); err != nil {
+		return nil, "", err
+	}
+	required := map[string]bool{}
+	for _, req := range sdkMod.Require {
+		seedMod.AddNewRequire(req.Mod.Path, req.Mod.Version, req.Indirect)
+		required[req.Mod.Path] = true
+	}
+	// like codegen, keep replace directives only for required modules
+	for _, rep := range sdkMod.Replace {
+		if required[rep.New.Path] {
+			if err := seedMod.AddReplace(rep.Old.Path, rep.Old.Version, rep.New.Path, rep.New.Version); err != nil {
+				return nil, "", err
+			}
+		}
+	}
+	goMod, err := seedMod.Format()
+	if err != nil {
+		return nil, "", err
+	}
+
+	imports, err := goFileImports(ctx, source.File("sdk/go/internal/codegendeps/codegendeps.go"))
+	if err != nil {
+		return nil, "", err
+	}
+	var mainGo strings.Builder
+	mainGo.WriteString("package main\n\nimport (\n")
+	for _, imp := range imports {
+		fmt.Fprintf(&mainGo, "\t_ %q\n", imp)
+	}
+	mainGo.WriteString(")\n\nfunc main() {}\n")
+
+	libVersion, err := goSDKLibVersion(ctx, source.File("core/sdk/go_sdk.go"))
+	if err != nil {
+		return nil, "", err
+	}
+
+	return dag.Directory().
+		WithNewFile("go.mod", string(goMod)).
+		WithFile("go.sum", source.File("sdk/go/go.sum")).
+		WithNewFile("main.go", mainGo.String()), libVersion, nil
+}
+
+// goFileImports returns the import paths of a Go file.
+func goFileImports(ctx context.Context, file *dagger.File) ([]string, error) {
+	src, err := file.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	f, err := parser.ParseFile(token.NewFileSet(), "", src, parser.ImportsOnly)
+	if err != nil {
+		return nil, err
+	}
+	var imports []string
+	for _, imp := range f.Imports {
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			return nil, err
+		}
+		imports = append(imports, path)
+	}
+	return imports, nil
+}
+
+// goSDKLibVersion returns the dagger.io/dagger version the engine has module
+// codegen pin: the goSDKLibVersion constant in core/sdk/go_sdk.go.
+func goSDKLibVersion(ctx context.Context, file *dagger.File) (string, error) {
+	src, err := file.Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+	f, err := parser.ParseFile(token.NewFileSet(), "", src, 0)
+	if err != nil {
+		return "", err
+	}
+	for _, decl := range f.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			vspec := spec.(*ast.ValueSpec)
+			for i, name := range vspec.Names {
+				if name.Name != "goSDKLibVersion" || i >= len(vspec.Values) {
+					continue
+				}
+				if lit, ok := vspec.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					return strconv.Unquote(lit.Value)
+				}
+			}
+		}
+	}
+	return "", fmt.Errorf("goSDKLibVersion constant not found in core/sdk/go_sdk.go")
 }

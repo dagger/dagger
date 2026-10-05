@@ -161,7 +161,13 @@ func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.Cl
 	return nil, nil
 }
 func (ms *mockServer) DefaultDeps(context.Context) (*SchemaBuilder, error) { return nil, nil }
-func (ms *mockServer) Cache(context.Context) (*dagql.Cache, error)         { return nil, nil }
+func (ms *mockServer) SchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error) {
+	return nil, nil
+}
+func (ms *mockServer) SessionSchemaBuilderMemo(context.Context) (*SchemaBuilderMemo, error) {
+	return nil, nil
+}
+func (ms *mockServer) Cache(context.Context) (*dagql.Cache, error) { return nil, nil }
 func (ms *mockServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
 	return nil, nil
 }
@@ -201,6 +207,7 @@ func (ms *mockServer) Locker() *locker.Locker                          { return 
 func (ms *mockServer) SecretSalt() []byte                              { return nil }
 func (ms *mockServer) EngineVolumeState() EngineVolumeState            { return EngineVolumeState{} }
 func (ms *mockServer) FlushSessionTelemetry(context.Context) error     { return nil }
+func (ms *mockServer) SetSessionTitle(context.Context, string) error   { return nil }
 func (ms *mockServer) SessionScopedContext(ctx context.Context) (context.Context, error) {
 	return context.WithoutCancel(ctx), nil
 }

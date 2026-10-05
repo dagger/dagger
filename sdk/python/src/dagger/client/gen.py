@@ -65,7 +65,15 @@ class AgentState(Enum):
     """Runtime released; snapshot remains readable."""
 
     WAITING_INPUT = "WAITING_INPUT"
-    """Blocked on input from the user (derived; see waitingOn)."""
+    """Blocked on input from the user."""
+
+
+class ArtifactDimensionKind(Enum):
+    COLLECTION = "COLLECTION"
+
+    MODULE = "MODULE"
+
+    TYPE = "TYPE"
 
 
 class CacheSharingMode(Enum):
@@ -474,8 +482,8 @@ class LLMContentBlockInput(Input):
     content: "list[LLMContentBlockInput] | None" = None
     """Ordered TEXT or media blocks returned by a tool."""
 
-    data: str | None = ""
-    """Base64-encoded media bytes. Supply exactly one of data or file for media."""
+    data: Bytes | None = None
+    """Media bytes. Supply exactly one of data or file for media."""
 
     errored: bool | None = False
     """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
@@ -540,16 +548,6 @@ class PortForward(Input):
 
     protocol: NetworkProtocol | None = NetworkProtocol.TCP
     """Transport layer protocol to use for traffic."""
-
-
-@typecheck
-@dataclass(slots=True)
-class TerminalCopy(Input):
-    path: str
-    """Location of the copied directory. A relative path is relative to the container's working directory."""
-
-    source: "Directory"
-    """The directory to copy."""
 
 
 @runtime_checkable
@@ -721,9 +719,19 @@ class Address(Type):
     and other object types. Address format depends on the type, and is
     validated at type selection."""
 
-    def container(self) -> "Container":
-        """Load a container from the address."""
-        _args: list[Arg] = []
+    def container(self, *, no_lock: bool | None = False) -> "Container":
+        """Load a container from the address.
+
+        Parameters
+        ----------
+        no_lock:
+            Resolve the address's image tag live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
+        _args = [
+            Arg("noLock", no_lock, False),
+        ]
         _ctx = self._select("container", _args)
         return Container(_ctx)
 
@@ -734,13 +742,27 @@ class Address(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         no_cache: bool | None = False,
+        no_lock: bool | None = False,
     ) -> "Directory":
-        """Load a directory from the address."""
+        """Load a directory from the address.
+
+        Parameters
+        ----------
+        exclude:
+        include:
+        gitignore:
+        no_cache:
+        no_lock:
+            Resolve the address's git ref live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
         _args = [
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("noCache", no_cache, False),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -752,20 +774,44 @@ class Address(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         no_cache: bool | None = False,
+        no_lock: bool | None = False,
     ) -> "File":
-        """Load a file from the address."""
+        """Load a file from the address.
+
+        Parameters
+        ----------
+        exclude:
+        include:
+        gitignore:
+        no_cache:
+        no_lock:
+            Resolve the address's git ref live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
         _args = [
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("noCache", no_cache, False),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
 
-    def git_ref(self) -> "GitRef":
-        """Load a git ref (branch, tag or commit) from the address."""
-        _args: list[Arg] = []
+    def git_ref(self, *, no_lock: bool | None = False) -> "GitRef":
+        """Load a git ref (branch, tag or commit) from the address.
+
+        Parameters
+        ----------
+        no_lock:
+            Resolve the address's git ref live, ignoring the workspace
+            lockfile: neither read a pinned value nor record one.
+            A DAG address is unaffected: its module evaluates as usual.
+        """
+        _args = [
+            Arg("noLock", no_lock, False),
+        ]
         _ctx = self._select("gitRef", _args)
         return GitRef(_ctx)
 
@@ -1015,6 +1061,12 @@ class Agent(Type):
         state fires immediately at subscribe time, so a fast agent settling
         before the subscription lands is not missed.
 
+        A restored agent that nothing has sent to, started, or resumed yet is
+        the exception: its state was reached in the session it was restored
+        from, so subscribing to it announces nothing until it next
+        transitions. This is how a restore reinstalls recorded subscriptions
+        without waking their subscribers.
+
         Idempotent per subscriber; re-subscribing replaces the state set.
 
         .. caution::
@@ -1150,6 +1202,24 @@ class Agent(Type):
         """
         _args: list[Arg] = []
         return await self._ctx.execute_sync(self, "resume", _args)
+
+    def seed(self) -> "LLM":
+        """The conversation the agent was spawned from: the tools, workspace and
+        message history its loop started with.
+
+        Fixed by the spawn; stepping does not move it (see snapshot for the
+        latest committed step). Its workspace is the baseline the agent's own
+        changes are measured from.
+
+        For an agent restored under a handle, this is the conversation it was
+        restored from.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("seed", _args)
+        return LLM(_ctx)
 
     async def send(
         self,
@@ -1424,15 +1494,19 @@ class AgentMessage(Type):
 
 
 @typecheck
-class AgentMiddleware(Type):
-    """EXPERIMENTAL: Agent APIs are likely to change.  An agent middleware
-    contributed by a module."""
+class Artifact(Type):
+    """One workspace value with a complete path and all required dimension
+    keys. Reading metadata does not evaluate the value. Different
+    addresses remain distinct even if they return the same object."""
+
+    async def arguments(self) -> list["FunctionArg"]:
+        """The arguments accepted by the artifact field."""
+        _args: list[Arg] = []
+        _ctx = self._select("arguments", _args)
+        return await _ctx.execute_object_list(FunctionArg)
 
     async def description(self) -> str:
-        """The description of the agent
-
-        .. caution::
-            Experimental: Agent APIs are likely to change.
+        """The description of the field that supplies this artifact.
 
         Returns
         -------
@@ -1452,8 +1526,37 @@ class AgentMiddleware(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
+    async def dimension_keys(self) -> list["ArtifactDimensionKey"]:
+        """The module name, collection keys, and full path key in the artifact
+        type dimension.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dimensionKeys", _args)
+        return await _ctx.execute_object_list(ArtifactDimensionKey)
+
+    async def directives(self) -> list[str]:
+        """The directives carried by this artifact.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("directives", _args)
+        return await _ctx.execute(list[str])
+
     async def id(self) -> str:
-        """A unique identifier for this AgentMiddleware.
+        """A unique identifier for this Artifact.
 
         Note
         ----
@@ -1480,12 +1583,8 @@ class AgentMiddleware(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def name(self) -> str:
-        """Return the command name of the agent. Entrypoint targets omit the
-        module prefix.
-
-        .. caution::
-            Experimental: Agent APIs are likely to change.
+    async def load_error(self) -> str:
+        """A module load failure, or an empty string if discovery succeeded.
 
         Returns
         -------
@@ -1502,24 +1601,33 @@ class AgentMiddleware(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("name", _args)
+        _ctx = self._select("loadError", _args)
         return await _ctx.execute(str)
 
-    def original_module(self) -> "Module":
-        """The original module in which the agent has been defined
+    async def module_name(self) -> str:
+        """The installed module name.
 
-        .. caution::
-            Experimental: Agent APIs are likely to change.
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("originalModule", _args)
-        return Module(_ctx)
+        _ctx = self._select("moduleName", _args)
+        return await _ctx.execute(str)
 
     async def path(self) -> list[str]:
-        """The path of the agent within its module
-
-        .. caution::
-            Experimental: Agent APIs are likely to change.
+        """Ordered, literal fields to follow. Entrypoint targets use their
+        shorthand.
 
         Returns
         -------
@@ -1539,33 +1647,89 @@ class AgentMiddleware(Type):
         _ctx = self._select("path", _args)
         return await _ctx.execute(list[str])
 
-
-@typecheck
-class AgentMiddlewareGroup(Type):
-    """EXPERIMENTAL: Agent APIs are likely to change.  A group of agent
-    middlewares composable onto a base LLM."""
-
-    def compose(self, *, base: "LLM | None" = None) -> "LLM":
-        """Compose all selected agent middlewares onto a base LLM, in
-        alphabetical module:fn order, and return the composed LLM.
-
-        .. caution::
-            Experimental: Agent APIs are likely to change.
+    async def uri(
+        self,
+        *,
+        absolute: bool | None = False,
+        dimension_keys: bool | None = True,
+        type_assertion: bool | None = False,
+    ) -> str:
+        """The artifact's DAG address, such as dag://engine-dev/playground.
 
         Parameters
         ----------
-        base:
-            The base LLM to compose onto. Defaults to a fresh workspace-bound
-            LLM.
+        absolute:
+            Prefix the workspace's Git address and commit:
+            dag://<workspace>@<commit>:<path>. Fails if the artifact has no
+            workspace, or its workspace has no Git address.
+        dimension_keys:
+            Include the dimension keys as a query. Without them, the address
+            is a path selector.
+        type_assertion:
+            Include the artifact type in the scheme: dag+container://.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args = [
-            Arg("base", base, None),
+            Arg("absolute", absolute, False),
+            Arg("dimensionKeys", dimension_keys, True),
+            Arg("typeAssertion", type_assertion, False),
         ]
-        _ctx = self._select("compose", _args)
-        return LLM(_ctx)
+        _ctx = self._select("uri", _args)
+        return await _ctx.execute(str)
+
+    def value(self, *, arguments: JSON = "{}") -> Node:
+        """Evaluate the target in the workspace that supplied this artifact.
+
+        Parameters
+        ----------
+        arguments:
+            Field arguments as a JSON object.
+        """
+        _args = [
+            Arg("arguments", arguments, "{}"),
+        ]
+        _ctx = self._select("value", _args)
+        return _NodeClient(_ctx)
+
+
+@typecheck
+class ArtifactDimension(Type):
+    async def collection_type(self) -> str | None:
+        """The collection type, or null for a static dimension.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("collectionType", _args)
+        return await _ctx.execute(str | None)
 
     async def id(self) -> str:
-        """A unique identifier for this AgentMiddlewareGroup.
+        """A unique identifier for this ArtifactDimension.
 
         Note
         ----
@@ -1592,57 +1756,824 @@ class AgentMiddlewareGroup(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def list_(self) -> list[AgentMiddleware]:
-        """Return a list of individual agents and their details
+    async def identifier(self) -> str:
+        """Stable identifier: collection schema path, type:TypeName for an
+        artifact type, or module.
 
-        .. caution::
-            Experimental: Agent APIs are likely to change.
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("list", _args)
-        return await _ctx.execute_object_list(AgentMiddleware)
+        _ctx = self._select("identifier", _args)
+        return await _ctx.execute(str)
 
-    def recompose(self, base: "LLM") -> "LLM":
-        """Recompose the selected agent middlewares onto an existing LLM,
-        replacing their modules' owned system prompts, skills, and tool
-        bindings while preserving tool object state.
+    async def item_type(self) -> str:
+        """The collection item or artifact type name, or empty for the module
+        dimension.
 
-        Contributions belong to the installed module calling withSystemPrompt,
-        withSkills, or withTools, independently of the bound object's module
-        or middleware entrypoint. Ownership follows the installed module name,
-        not its source location. Moving a module between remote, local, or
-        forked sources preserves compatible state when its installation name
-        and intrinsic module and object identities stay the same.
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
 
-        Contributions from selected modules are removed once before running
-        the selected entrypoints. Unowned contributions and contributions from
-        other modules are retained. Nested modules own their own
-        contributions; use recompose explicitly to refresh them. Other
-        middleware effects retain compose semantics; this is not a general
-        rollback of arbitrary middleware changes.
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("itemType", _args)
+        return await _ctx.execute(str)
 
-        Existing field values win over new defaults; fields added by the new
-        revision take its defaults. Changing a binding's withTools version
-        resets that object's state to the new defaults instead. With an
-        unchanged version, visibly incompatible state (a public field that
-        changed type, or a value whose shape differs from the new default) is
-        an error. Discarded bindings or changed module or object identities
-        are errors regardless of version. Ownership checks still apply. The
-        base workspace is preserved.
+    async def key_description(self) -> str:
+        """The collection key argument description, or empty for a static
+        dimension.
 
-        .. caution::
-            Experimental: Agent APIs are likely to change.
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("keyDescription", _args)
+        return await _ctx.execute(str)
+
+    async def key_name(self) -> str:
+        """The collection key argument name, or name for a static dimension.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("keyName", _args)
+        return await _ctx.execute(str)
+
+    async def kind(self) -> ArtifactDimensionKind:
+        """How this dimension gets its keys.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(ArtifactDimensionKind)
+
+    async def name(self) -> str:
+        """Short name used to select this dimension.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def qualified_name(self) -> str:
+        """Qualified name used when the short name is ambiguous.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("qualifiedName", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class ArtifactDimensionKey(Type):
+    async def dimension(self) -> str:
+        """The dimension identifier, fixed across the workspace schema.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dimension", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this ArtifactDimensionKey.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def key(self) -> str:
+        """The dimension item's key.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("key", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class ArtifactPath(Type):
+    """A schema path and its dimensions. The path can exist even when its
+    collections have no runtime items."""
+
+    async def description(self) -> str:
+        """The description of the field at this path.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def dimensions(self) -> list[str]:
+        """The dimension identifiers required by this path.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dimensions", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> str:
+        """A unique identifier for this ArtifactPath.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def load_error(self) -> str:
+        """A module load failure for this path, or an empty string.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("loadError", _args)
+        return await _ctx.execute(str)
+
+    async def module_name(self) -> str:
+        """The installed module name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("moduleName", _args)
+        return await _ctx.execute(str)
+
+    async def uri(self) -> str:
+        """The DAG address of this path, without dimension keys.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("uri", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class ArtifactResult(Type):
+    def artifact(self) -> Artifact:
+        """The artifact that was evaluated."""
+        _args: list[Arg] = []
+        _ctx = self._select("artifact", _args)
+        return Artifact(_ctx)
+
+    async def error(self) -> "Error | None":
+        """The evaluation failure, if any."""
+        _args: list[Arg] = []
+        _ctx = self._select("error", _args)
+        return await _ctx.execute_object(Error)
+
+    async def id(self) -> str:
+        """A unique identifier for this ArtifactResult.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def value(self) -> Node | None:
+        """The evaluated value, or null when evaluation failed."""
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return await _ctx.execute_object(_NodeClient)
+
+
+@typecheck
+class Artifacts(Type):
+    """An immutable selection of workspace artifacts. Listed types,
+    dimensions, and keys use OR; chained filters use AND. Empty
+    alternatives and unknown names match nothing. Filters never change
+    addresses or dimension identifiers."""
+
+    async def as_changesets(self) -> list["Changeset"]:
+        """Convert the selection to Changesets. Fail if any artifact is not a
+        Changeset. Does not apply command filters.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asChangesets", _args)
+        return await _ctx.execute_object_list(Changeset)
+
+    async def as_checks(self) -> list["Check"]:
+        """Convert the selection to Checks. Fail if any artifact is not a Check.
+        Does not apply command filters or run the checks.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asChecks", _args)
+        return await _ctx.execute_object_list(Check)
+
+    async def as_expertise(self) -> list["Expertise"]:
+        """Convert the selection to expertise without running the functions. Fail
+        if any artifact is not a source of expertise.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asExpertise", _args)
+        return await _ctx.execute_object_list(Expertise)
+
+    async def as_generators(self) -> list["Generator"]:
+        """Convert the selection to Generators without running them. Fail if any
+        artifact is not a Generator.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asGenerators", _args)
+        return await _ctx.execute_object_list(Generator)
+
+    async def as_services(self) -> list["Service"]:
+        """Convert the selection to Services. Fail if any artifact is not a
+        Service. Does not apply command filters or start the services.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asServices", _args)
+        return await _ctx.execute_object_list(Service)
+
+    async def dimension_definitions(self) -> list[ArtifactDimension]:
+        """List dimensions on the selected schema paths, including empty
+        collections. Does not read runtime values.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dimensionDefinitions", _args)
+        return await _ctx.execute_object_list(ArtifactDimension)
+
+    async def dimension_items(self, dimension: str) -> list[Artifact]:
+        """List collection items represented in this selection for the given
+        dimension. Preserve parent keys and remove duplicate item addresses.
+        Does not evaluate item values.
+        """
+        _args = [
+            Arg("dimension", dimension),
+        ]
+        _ctx = self._select("dimensionItems", _args)
+        return await _ctx.execute_object_list(Artifact)
+
+    async def dimension_keys(self, dimension: str) -> list[str]:
+        """List keys represented in this selection for the given dimension,
+        sorted with no duplicates.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("dimension", dimension),
+        ]
+        _ctx = self._select("dimensionKeys", _args)
+        return await _ctx.execute(list[str])
+
+    async def dimensions(self) -> list[str]:
+        """List dimension identifiers represented in this selection, sorted with
+        no duplicates.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dimensions", _args)
+        return await _ctx.execute(list[str])
+
+    def filter_dimension_keys(self, dimension: str, keys: list[str]) -> Self:
+        """Keep artifacts with any listed key in this dimension."""
+        _args = [
+            Arg("dimension", dimension),
+            Arg("keys", keys),
+        ]
+        _ctx = self._select("filterDimensionKeys", _args)
+        return Artifacts(_ctx)
+
+    def filter_dimensions(self, dimensions: list[str]) -> Self:
+        """Keep artifacts selected through any listed dimension."""
+        _args = [
+            Arg("dimensions", dimensions),
+        ]
+        _ctx = self._select("filterDimensions", _args)
+        return Artifacts(_ctx)
+
+    def filter_directives(
+        self,
+        directives: list[str],
+        *,
+        exclude: bool | None = False,
+    ) -> Self:
+        """Keep artifacts with any listed directive. Does not filter by type or
+        workspace settings.
 
         Parameters
         ----------
-        base:
-            The existing conversation whose tool state should be preserved.
+        directives:
+        exclude:
+            Remove the matching artifacts instead.
         """
         _args = [
-            Arg("base", base),
+            Arg("directives", directives),
+            Arg("exclude", exclude, False),
         ]
-        _ctx = self._select("recompose", _args)
-        return LLM(_ctx)
+        _ctx = self._select("filterDirectives", _args)
+        return Artifacts(_ctx)
+
+    def filter_parent_directives(
+        self,
+        directives: list[str],
+        *,
+        exclude: bool | None = False,
+    ) -> Self:
+        """Keep artifacts whose immediate parent has any listed directive.
+        Artifacts without a parent do not match.
+
+        Parameters
+        ----------
+        directives:
+        exclude:
+            Remove the matching artifacts instead.
+        """
+        _args = [
+            Arg("directives", directives),
+            Arg("exclude", exclude, False),
+        ]
+        _ctx = self._select("filterParentDirectives", _args)
+        return Artifacts(_ctx)
+
+    def filter_parent_types(
+        self,
+        types: list[str],
+        *,
+        exclude: bool | None = False,
+    ) -> Self:
+        """Keep artifacts whose immediate parent has any listed object type.
+        Artifacts without a typed parent do not match.
+
+        Parameters
+        ----------
+        types:
+        exclude:
+            Remove the matching artifacts instead.
+        """
+        _args = [
+            Arg("types", types),
+            Arg("exclude", exclude, False),
+        ]
+        _ctx = self._select("filterParentTypes", _args)
+        return Artifacts(_ctx)
+
+    def filter_path(self, path: list[str]) -> Self:
+        """Match one complete, ordered field sequence exactly."""
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("filterPath", _args)
+        return Artifacts(_ctx)
+
+    def filter_path_pattern(self, pattern: str) -> Self:
+        """Keep paths that match a glob pattern. A literal path matches exactly.
+        Both module-qualified and entrypoint paths match.
+        """
+        _args = [
+            Arg("pattern", pattern),
+        ]
+        _ctx = self._select("filterPathPattern", _args)
+        return Artifacts(_ctx)
+
+    def filter_types(
+        self,
+        types: list[str],
+        *,
+        exclude: bool | None = False,
+    ) -> Self:
+        """Keep artifacts of any listed concrete GraphQL type.
+
+        Parameters
+        ----------
+        types:
+        exclude:
+            Remove the matching artifacts instead.
+        """
+        _args = [
+            Arg("types", types),
+            Arg("exclude", exclude, False),
+        ]
+        _ctx = self._select("filterTypes", _args)
+        return Artifacts(_ctx)
+
+    def filter_uri(self, uri: str) -> Self:
+        """Apply a DAG address as one filter: the chain of path, type, and
+        dimension-key filters it encodes.
+
+        The scheme is optional. The path may be a pattern; an empty path
+        selects all artifacts.
+
+        Parameters
+        ----------
+        uri:
+            A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]
+        """
+        _args = [
+            Arg("uri", uri),
+        ]
+        _ctx = self._select("filterUri", _args)
+        return Artifacts(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this Artifacts.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def items(self) -> list[Artifact]:
+        """Enumerate complete artifacts without evaluating their values."""
+        _args: list[Arg] = []
+        _ctx = self._select("items", _args)
+        return await _ctx.execute_object_list(Artifact)
+
+    async def modules(self) -> list["Module"]:
+        """List the modules represented in this selection without evaluating
+        artifact values.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("modules", _args)
+        return await _ctx.execute_object_list(Module)
+
+    def one(self) -> Artifact:
+        """Require exactly one artifact; fail if there are zero or multiple
+        matches. Several matches are listed, one address per line.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("one", _args)
+        return Artifact(_ctx)
+
+    async def path_definitions(
+        self,
+        *,
+        absolute: bool | None = False,
+        type_assertion: bool | None = False,
+        dimension: str | None = None,
+    ) -> list[ArtifactPath]:
+        """List selected schema paths, including empty collections. Does not read
+        runtime values. Applies type keys and collection presence; collection
+        key values require items.
+
+        Parameters
+        ----------
+        absolute:
+            Prefix each address with the workspace's Git address and commit.
+        type_assertion:
+            Include the artifact type in each address scheme.
+        dimension:
+            Project paths to the items of this collection dimension. Preserve
+            parent dimensions and remove descendant dimensions.
+        """
+        _args = [
+            Arg("absolute", absolute, False),
+            Arg("typeAssertion", type_assertion, False),
+            Arg("dimension", dimension, None),
+        ]
+        _ctx = self._select("pathDefinitions", _args)
+        return await _ctx.execute_object_list(ArtifactPath)
+
+    async def types(self) -> list["TypeDef"]:
+        """List concrete type definitions represented in this selection, sorted
+        by name with no duplicates.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("types", _args)
+        return await _ctx.execute_object_list(TypeDef)
+
+    async def uri(self) -> str:
+        """The DAG address that selects this whole selection: filterUri(uri)
+        selects the same set.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("uri", _args)
+        return await _ctx.execute(str)
+
+    async def values(
+        self,
+        *,
+        fail_fast: bool | None = False,
+        arguments: JSON | None = "{}",
+        max_concurrency: int | None = 0,
+    ) -> list[ArtifactResult]:
+        """Evaluate the selection in parallel, retaining each result and error.
+
+        Parameters
+        ----------
+        fail_fast:
+            Cancel remaining work after the first failure.
+        arguments:
+            Field arguments applied to each artifact, as a JSON object.
+        max_concurrency:
+            Evaluate at most this many artifacts at once on this engine; the
+            rest wait. Checks that scale out to cloud engines are not counted.
+            0 means no limit.
+        """
+        _args = [
+            Arg("failFast", fail_fast, False),
+            Arg("arguments", arguments, "{}"),
+            Arg("maxConcurrency", max_concurrency, 0),
+        ]
+        _ctx = self._select("values", _args)
+        return await _ctx.execute_object_list(ArtifactResult)
+
+    def with_artifacts(self, artifacts: Self) -> Self:
+        """Combine two selections, keeping each workspace address once. Different
+        addresses remain distinct even if they return the same object.
+        """
+        _args = [
+            Arg("artifacts", artifacts),
+        ]
+        _ctx = self._select("withArtifacts", _args)
+        return Artifacts(_ctx)
+
+    def without_uri(self, uri: str) -> Self:
+        """Remove artifacts selected by a DAG address."""
+        _args = [
+            Arg("uri", uri),
+        ]
+        _ctx = self._select("withoutUri", _args)
+        return Artifacts(_ctx)
+
+    def with_(self, cb: Callable[["Artifacts"], "Artifacts"]) -> "Artifacts":
+        """Call the provided callable with current Artifacts.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -1962,14 +2893,14 @@ class Changeset(Type):
 
 @typecheck
 class Check(Type):
-    async def check_type(self) -> str:
-        """The type of check: 'check' for annotated checks, 'generate' for
-        generate-as-checks, 'load' for a workspace module that could not be
-        loaded
+    """One deferred check. Reading pass, error, or sync runs it."""
+
+    async def assertion(self) -> str | None:
+        """The assertion that is false when this check fails.
 
         Returns
         -------
-        str
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -1982,51 +2913,11 @@ class Check(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("checkType", _args)
-        return await _ctx.execute(str)
-
-    async def completed(self) -> bool:
-        """Whether the check completed
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("completed", _args)
-        return await _ctx.execute(bool)
-
-    async def description(self) -> str:
-        """The description of the check
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("description", _args)
-        return await _ctx.execute(str)
+        _ctx = self._select("assertion", _args)
+        return await _ctx.execute(str | None)
 
     async def error(self) -> "Error | None":
-        """If the check failed, this is the error"""
+        """Run the check and return its failure, if any."""
         _args: list[Arg] = []
         _ctx = self._select("error", _args)
         return await _ctx.execute_object(Error)
@@ -2059,36 +2950,8 @@ class Check(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def name(self) -> str:
-        """Return the command name of the check. Entrypoint targets omit the
-        module prefix.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
-
-    def original_module(self) -> "Module":
-        """The original module in which the check has been defined"""
-        _args: list[Arg] = []
-        _ctx = self._select("originalModule", _args)
-        return Module(_ctx)
-
-    async def passed(self) -> bool:
-        """Whether the check passed
+    async def pass_(self) -> bool:
+        """Run the check and return whether it passes.
 
         Returns
         -------
@@ -2103,123 +2966,23 @@ class Check(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("passed", _args)
+        _ctx = self._select("pass", _args)
         return await _ctx.execute(bool)
 
-    async def path(self) -> list[str]:
-        """The path of the check within its module
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
+    async def report(self) -> "Directory | None":
+        """An optional report produced by the check."""
         _args: list[Arg] = []
-        _ctx = self._select("path", _args)
-        return await _ctx.execute(list[str])
+        _ctx = self._select("report", _args)
+        return await _ctx.execute_object(Directory)
 
-    async def result_emoji(self) -> str:
-        """An emoji representing the result of the check
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
+    def sync(self) -> Self:
+        """Run the check and retain its result."""
         _args: list[Arg] = []
-        _ctx = self._select("resultEmoji", _args)
-        return await _ctx.execute(str)
-
-    def run(self) -> Self:
-        """Execute the check"""
-        _args: list[Arg] = []
-        _ctx = self._select("run", _args)
+        _ctx = self._select("sync", _args)
         return Check(_ctx)
 
     def with_(self, cb: Callable[["Check"], "Check"]) -> "Check":
         """Call the provided callable with current Check.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
-
-@typecheck
-class CheckGroup(Type):
-    async def id(self) -> str:
-        """A unique identifier for this CheckGroup.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def list_(self) -> list[Check]:
-        """Return a list of individual checks and their details"""
-        _args: list[Arg] = []
-        _ctx = self._select("list", _args)
-        return await _ctx.execute_object_list(Check)
-
-    def report(self) -> "File":
-        """Generate a markdown report"""
-        _args: list[Arg] = []
-        _ctx = self._select("report", _args)
-        return File(_ctx)
-
-    def run(self, *, fail_fast: bool | None = None) -> Self:
-        """Execute all selected checks
-
-        Parameters
-        ----------
-        fail_fast:
-            If true, stop running checks as soon as any check fails.
-        """
-        _args = [
-            Arg("failFast", fail_fast, None),
-        ]
-        _ctx = self._select("run", _args)
-        return CheckGroup(_ctx)
-
-    def with_(self, cb: Callable[["CheckGroup"], "CheckGroup"]) -> "CheckGroup":
-        """Call the provided callable with current CheckGroup.
 
         This is useful for reusability and readability by not breaking the calling chain.
         """
@@ -2311,6 +3074,250 @@ class Cloud(Type):
         _args: list[Arg] = []
         _ctx = self._select("traceURL", _args)
         return await _ctx.execute(str)
+
+
+@typecheck
+class CollectionDelta(Type):
+    async def added_keys(self) -> list[str]:
+        """Current keys absent from the original collection, in current order.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("addedKeys", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> str:
+        """A unique identifier for this CollectionDelta.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def removed_keys(self) -> list[str]:
+        """Original keys absent from the current collection, in original order.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("removedKeys", _args)
+        return await _ctx.execute(list[str])
+
+
+@typecheck
+class CollectionTypeDef(Type):
+    async def batch_type(self) -> "TypeDef | None":
+        """The type of batch operations, or null when there are none."""
+        _args: list[Arg] = []
+        _ctx = self._select("batchType", _args)
+        return await _ctx.execute_object(TypeDef)
+
+    async def id(self) -> str:
+        """A unique identifier for this CollectionTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def key_type(self) -> "TypeDef":
+        """The type of collection keys."""
+        _args: list[Arg] = []
+        _ctx = self._select("keyType", _args)
+        return TypeDef(_ctx)
+
+    def value_type(self) -> "TypeDef":
+        """The object type returned by get."""
+        _args: list[Arg] = []
+        _ctx = self._select("valueType", _args)
+        return TypeDef(_ctx)
+
+
+@typecheck
+class Command(Type):
+    """A command's arguments and execution settings."""
+
+    async def args(self) -> list[str]:
+        """The command arguments.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("args", _args)
+        return await _ctx.execute(list[str])
+
+    async def env(self) -> list["EnvVariable"]:
+        """Environment variable overrides. Other variables come from the
+        container.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("env", _args)
+        return await _ctx.execute_object_list(EnvVariable)
+
+    async def id(self) -> str:
+        """A unique identifier for this Command.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def insecure_root_capabilities(self) -> bool:
+        """Whether the command has all root capabilities.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("insecureRootCapabilities", _args)
+        return await _ctx.execute(bool)
+
+    async def privileged_nesting(self) -> bool:
+        """Whether the command has access to Dagger.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("privilegedNesting", _args)
+        return await _ctx.execute(bool)
+
+    async def workdir(self) -> str | None:
+        """Working directory override. If unset, use the container's working
+        directory.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("workdir", _args)
+        return await _ctx.execute(str | None)
 
 
 @typecheck
@@ -2832,6 +3839,7 @@ class Container(Type):
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
         insecure_skip_tls_verify: bool | None = False,
+        no_lock: bool | None = False,
     ) -> Self:
         """Download a container image, and apply it to the container state. All
         previous state will be lost.
@@ -2856,6 +3864,8 @@ class Container(Type):
         insecure_skip_tls_verify:
             Allow HTTPS registry communication without verifying the server
             certificate.
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("address", address),
@@ -2863,6 +3873,7 @@ class Container(Type):
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
             Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
@@ -3167,6 +4178,20 @@ class Container(Type):
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
 
+    def shell(self, *, batch: bool | None = False) -> Command:
+        """Return the configured shell command. Defaults to ["sh"].
+
+        Parameters
+        ----------
+        batch:
+            Return the batch command instead of the interactive command.
+        """
+        _args = [
+            Arg("batch", batch, False),
+        ]
+        _ctx = self._select("shell", _args)
+        return Command(_ctx)
+
     async def stat(
         self,
         path: str,
@@ -3258,8 +4283,8 @@ class Container(Type):
         *,
         cmd: list[str] | None = None,
         disable_dagger_in_dagger: bool | None = False,
-        experimental_privileged_nesting: bool | None = False,
-        insecure_root_capabilities: bool | None = False,
+        experimental_privileged_nesting: bool | None = None,
+        insecure_root_capabilities: bool | None = None,
     ) -> Self:
         """Opens an interactive terminal for this container using its configured
         default terminal command if not overridden by args (or sh as a
@@ -3286,10 +4311,8 @@ class Container(Type):
         _args = [
             Arg("cmd", [] if cmd is None else cmd, []),
             Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
+            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, None),
         ]
         _ctx = self._select("terminal", _args)
         return Container(_ctx)
@@ -3441,6 +4464,9 @@ class Container(Type):
     ) -> Self:
         """Set the default command to invoke for the container's terminal API.
 
+        .. deprecated::
+            Use withShell.
+
         Parameters
         ----------
         args:
@@ -3458,6 +4484,11 @@ class Container(Type):
             guarantees when using this option. It should only be used when
             absolutely necessary and only with trusted commands.
         """
+        warnings.warn(
+            'Method "with_default_terminal_cmd" is deprecated: Use withShell.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("args", args),
             Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
@@ -4222,6 +5253,43 @@ class Container(Type):
         _ctx = self._select("withRootfs", _args)
         return Container(_ctx)
 
+    def with_run(
+        self,
+        command: str,
+        *,
+        shell: list[str] | None = None,
+        disable_dagger_in_dagger: bool | None = None,
+        experimental_privileged_nesting: bool | None = None,
+        insecure_root_capabilities: bool | None = None,
+    ) -> Self:
+        """Execute a script with the configured batch shell and return the
+        modified container.
+
+        Parameters
+        ----------
+        command:
+            Script to append to the shell command as one argument.
+        shell:
+            Override the batch shell arguments. Example: ["bash", "-c"].
+        disable_dagger_in_dagger:
+            Override whether the shell is denied Dagger API access. Omit to
+            use the configured shell setting.
+        experimental_privileged_nesting:
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
+        insecure_root_capabilities:
+            Override whether the shell has all root capabilities.
+        """
+        _args = [
+            Arg("command", command),
+            Arg("shell", shell, None),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, None),
+            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, None),
+        ]
+        _ctx = self._select("withRun", _args)
+        return Container(_ctx)
+
     def with_secret_variable(self, name: str, secret: "Secret") -> Self:
         """Set a new environment variable, using a secret value
 
@@ -4265,6 +5333,46 @@ class Container(Type):
             Arg("service", service),
         ]
         _ctx = self._select("withServiceBinding", _args)
+        return Container(_ctx)
+
+    def with_shell(
+        self,
+        interactive: list[str],
+        *,
+        batch: list[str] | None = None,
+        disable_dagger_in_dagger: bool | None = False,
+        experimental_privileged_nesting: bool | None = False,
+        insecure_root_capabilities: bool | None = False,
+    ) -> Self:
+        """Set the shell used by terminal() and withRun().
+
+        Parameters
+        ----------
+        interactive:
+            Command arguments for interactive use. Example: ["sh"].
+        batch:
+            Command arguments for batch use. The script is appended as one
+            argument. Defaults to interactive followed by "-c".
+        disable_dagger_in_dagger:
+            Disable Dagger API access for the executed command. By default,
+            commands can connect to the current Dagger engine.
+        experimental_privileged_nesting:
+            .. deprecated:: Commands can access Dagger by default. Use
+            "disableDaggerInDagger" to opt out.
+        insecure_root_capabilities:
+            Give the shell all root capabilities. Use only with trusted
+            commands.
+        """
+        _args = [
+            Arg("interactive", interactive),
+            Arg("batch", batch, None),
+            Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
+            Arg(
+                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
+            ),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
+        ]
+        _ctx = self._select("withShell", _args)
         return Container(_ctx)
 
     def with_symlink(
@@ -4727,28 +5835,6 @@ class CurrentModule(Type):
         _args: list[Arg] = []
         _ctx = self._select("generatedContextDirectory", _args)
         return Directory(_ctx)
-
-    def generators(
-        self,
-        *,
-        include: list[str] | None = None,
-    ) -> "GeneratorGroup":
-        """Return all generators defined by the module
-
-        .. caution::
-            Experimental: This API is highly experimental and may be removed
-            or replaced entirely.
-
-        Parameters
-        ----------
-        include:
-            Only include generators matching the specified patterns
-        """
-        _args = [
-            Arg("include", include, None),
-        ]
-        _ctx = self._select("generators", _args)
-        return GeneratorGroup(_ctx)
 
     async def id(self) -> str:
         """A unique identifier for this CurrentModule.
@@ -5571,8 +6657,8 @@ class Directory(Type):
         container: Container | None = None,
         cmd: list[str] | None = None,
         disable_dagger_in_dagger: bool | None = False,
-        experimental_privileged_nesting: bool | None = False,
-        insecure_root_capabilities: bool | None = False,
+        experimental_privileged_nesting: bool | None = None,
+        insecure_root_capabilities: bool | None = None,
     ) -> Self:
         """Opens an interactive terminal in new container with this directory
         mounted inside.
@@ -5601,10 +6687,8 @@ class Directory(Type):
             Arg("container", container, None),
             Arg("cmd", [] if cmd is None else cmd, []),
             Arg("disableDaggerInDagger", disable_dagger_in_dagger, False),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
+            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, None),
         ]
         _ctx = self._select("terminal", _args)
         return Directory(_ctx)
@@ -7146,6 +8230,108 @@ class ErrorValue(Type):
 
 
 @typecheck
+class Expertise(Type):
+    """An agent function that can modify a conversation."""
+
+    async def description(self) -> str:
+        """The agent function's description.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this Expertise.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The agent function's name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    def original_module(self) -> "Module":
+        """The module that defines the agent function."""
+        _args: list[Arg] = []
+        _ctx = self._select("originalModule", _args)
+        return Module(_ctx)
+
+    async def path(self) -> list[str]:
+        """The agent function's path within its module.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
+
+
+@typecheck
 class FieldTypeDef(Type):
     """A definition of a field on a custom object defined in a Module.  A
     field on an object has a static value, as opposed to a function on an
@@ -7781,7 +8967,8 @@ class Function(Type):
         return await _ctx.execute(str)
 
     def with_agent(self) -> Self:
-        """Returns the function with a flag indicating it is an agent middleware.
+        """Returns the function with a flag indicating it is a source of
+        expertise.
 
         .. caution::
             Experimental: Agent APIs are likely to change.
@@ -8469,51 +9656,14 @@ class GeneratedCode(Type):
 
 @typecheck
 class Generator(Type):
-    def changes(self) -> Changeset:
-        """The generated changeset from the last run"""
+    """A generation function and its staleness check. Reading changeset
+    runs the function."""
+
+    def changeset(self) -> Changeset:
+        """Run the generator and return its changes."""
         _args: list[Arg] = []
-        _ctx = self._select("changes", _args)
+        _ctx = self._select("changeset", _args)
         return Changeset(_ctx)
-
-    async def completed(self) -> bool:
-        """Whether the generator complete
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("completed", _args)
-        return await _ctx.execute(bool)
-
-    async def description(self) -> str:
-        """Return the description of the generator
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("description", _args)
-        return await _ctx.execute(str)
 
     async def id(self) -> str:
         """A unique identifier for this Generator.
@@ -8543,227 +9693,20 @@ class Generator(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def is_empty(self) -> bool:
-        """Whether changeset from the last generator run is empty or not
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
+    def stale(self) -> Check:
+        """A check that passes when this generator would produce no changes."""
         _args: list[Arg] = []
-        _ctx = self._select("isEmpty", _args)
-        return await _ctx.execute(bool)
+        _ctx = self._select("stale", _args)
+        return Check(_ctx)
 
-    async def name(self) -> str:
-        """Return the command name of the generator. Entrypoint targets omit the
-        module prefix.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
+    def sync(self) -> Self:
+        """Run the generator and retain its result."""
         _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
-
-    async def original_module(self) -> "Module | None":
-        """The module that defined the generator, or null for an engine-defined
-        generator
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("originalModule", _args)
-        return await _ctx.execute_object(Module)
-
-    async def path(self) -> list[str]:
-        """The path of the generator within its module
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("path", _args)
-        return await _ctx.execute(list[str])
-
-    def run(self) -> Self:
-        """Execute the generator"""
-        _args: list[Arg] = []
-        _ctx = self._select("run", _args)
+        _ctx = self._select("sync", _args)
         return Generator(_ctx)
 
     def with_(self, cb: Callable[["Generator"], "Generator"]) -> "Generator":
         """Call the provided callable with current Generator.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
-
-@typecheck
-class GeneratorGroup(Type):
-    def changes(
-        self,
-        *,
-        on_conflict: ChangesetsMergeConflict
-        | None = ChangesetsMergeConflict.FAIL_EARLY,
-    ) -> Changeset:
-        """The combined changes from the last run of the generators
-
-        If any conflict occurs, for instance if the same file is modified by
-        multiple generators, or if a file is both modified and deleted, an
-        error is raised and the merge of the changesets will failed.
-
-        Set 'continueOnConflicts' flag to force to merge the changes in a
-        'last write wins' strategy.
-
-        Parameters
-        ----------
-        on_conflict:
-            Strategy to apply on conflicts between generators
-        """
-        _args = [
-            Arg("onConflict", on_conflict, ChangesetsMergeConflict.FAIL_EARLY),
-        ]
-        _ctx = self._select("changes", _args)
-        return Changeset(_ctx)
-
-    async def id(self) -> str:
-        """A unique identifier for this GeneratorGroup.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def is_empty(self) -> bool:
-        """Whether the generated changeset from the last run is empty or not
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("isEmpty", _args)
-        return await _ctx.execute(bool)
-
-    async def list_(self) -> list[Generator]:
-        """Return a list of individual generators and their details"""
-        _args: list[Arg] = []
-        _ctx = self._select("list", _args)
-        return await _ctx.execute_object_list(Generator)
-
-    async def load_failures(self) -> list[str]:
-        """Load failures tolerated while collecting the generators.
-
-        Empty unless a workspace module could not be loaded during an unscoped
-        'dagger generate' (no selector), where load failures are tolerated so
-        the modules that do load still generate. Each entry is a human-
-        readable error message. An explicit selector keeps failing hard
-        instead.
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("loadFailures", _args)
-        return await _ctx.execute(list[str])
-
-    def run(self) -> Self:
-        """Execute all selected generators"""
-        _args: list[Arg] = []
-        _ctx = self._select("run", _args)
-        return GeneratorGroup(_ctx)
-
-    def workspace(
-        self,
-        *,
-        on_conflict: ChangesetsMergeConflict
-        | None = ChangesetsMergeConflict.FAIL_EARLY,
-    ) -> "Workspace":
-        """The workspace with the combined output from the last generator run
-
-        Parameters
-        ----------
-        on_conflict:
-            Strategy to apply on conflicts between generators
-        """
-        _args = [
-            Arg("onConflict", on_conflict, ChangesetsMergeConflict.FAIL_EARLY),
-        ]
-        _ctx = self._select("workspace", _args)
-        return Workspace(_ctx)
-
-    def with_(
-        self, cb: Callable[["GeneratorGroup"], "GeneratorGroup"]
-    ) -> "GeneratorGroup":
-        """Call the provided callable with current GeneratorGroup.
 
         This is useful for reusability and readability by not breaking the calling chain.
         """
@@ -9835,16 +10778,24 @@ class GitRepository(Type):
         _ctx = self._select("asWorkspace", _args)
         return Workspace(_ctx)
 
-    def branch(self, name: str) -> GitRef:
+    def branch(
+        self,
+        name: str,
+        *,
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Returns details of a branch.
 
         Parameters
         ----------
         name:
             Branch's name (e.g., "main").
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("name", name),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("branch", _args)
         return GitRef(_ctx)
@@ -9925,9 +10876,17 @@ class GitRepository(Type):
         _ctx = self._select("commit", _args)
         return GitCommit(_ctx)
 
-    def head(self) -> GitRef:
-        """Returns details for HEAD."""
-        _args: list[Arg] = []
+    def head(self, *, no_lock: bool | None = False) -> GitRef:
+        """Returns details for HEAD.
+
+        Parameters
+        ----------
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
+        """
+        _args = [
+            Arg("noLock", no_lock, False),
+        ]
         _ctx = self._select("head", _args)
         return GitRef(_ctx)
 
@@ -9959,25 +10918,39 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def latest(self, *, version: str | None = "") -> GitRef:
+    def latest(
+        self,
+        *,
+        version: str | None = "",
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Return the latest stable release tag, falling back to HEAD when no
         release exists.
 
         Release selection accepts an optional "v" prefix, incomplete versions,
-        and zero-padded numeric components. This operation is pinned.
+        and zero-padded numeric components. This operation is pinned unless
+        noLock is enabled.
 
         Parameters
         ----------
         version:
             Version query used to select the greatest matching release ref.
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("version", version, ""),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("latest", _args)
         return GitRef(_ctx)
 
-    def ref(self, name: str) -> GitRef:
+    def ref(
+        self,
+        name: str,
+        *,
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Returns details of a ref.
 
         Parameters
@@ -9991,23 +10964,41 @@ class GitRepository(Type):
             against locally available objects, so remote repositories
             (resolved via ls-remote) can only expand prefixes of already-
             fetched commits; use the full SHA or a named ref otherwise.
+            The name may be followed by git revision suffixes, applied left to
+            right: `~N` follows first parents N times and `^N` selects the Nth
+            parent (`~` and `^` mean 1, `^0` is the commit itself), e.g.
+            `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of
+            the resulting commit; remote repositories fetch the history the
+            walk needs. Other git revision syntax (`^{...}`, `@{...}`,
+            `:path`, ranges) is not supported.
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("name", name),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("ref", _args)
         return GitRef(_ctx)
 
-    def tag(self, name: str) -> GitRef:
+    def tag(
+        self,
+        name: str,
+        *,
+        no_lock: bool | None = False,
+    ) -> GitRef:
         """Returns details of a tag.
 
         Parameters
         ----------
         name:
             Tag's name (e.g., "v0.3.9").
+        no_lock:
+            Ignore the workspace lockfile for this lookup.
         """
         _args = [
             Arg("name", name),
+            Arg("noLock", no_lock, False),
         ]
         _ctx = self._select("tag", _args)
         return GitRef(_ctx)
@@ -11049,6 +12040,64 @@ class LLM(Type):
         _ctx = self._select("agent", _args)
         return Agent(_ctx)
 
+    def artifacts(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> Artifacts:
+        """Discover every artifact this conversation can address, as one
+        selection, without evaluating their values.
+
+        Tool objects bound with withTools contribute their modules' artifacts,
+        rooted at their current values: evaluating one reads the live state of
+        the bound tools, not a fresh construction. If a module's main object
+        is bound, only its tree is included; otherwise each bound object of
+        that module contributes its own tree. Addresses start with the module
+        name. These artifacts have no workspace of their own: they evaluate in
+        the LLM's bound workspace, if any, whoever evaluates them.
+
+        The workspace part is the artifacts of the workspace bound with
+        withWorkspace, as returned by Workspace.artifacts; an LLM with no
+        bound workspace has none. A workspace module with the same name as a
+        module with bound tool objects is omitted: the bound tools shadow it.
+        Unless they are only a plain construction of the module, which has no
+        state of its own: then the workspace module's artifacts are kept
+        instead.
+
+        Tool arguments that take an address resolve it here: a DAG address to
+        one object, or, for Artifacts and Artifact arguments, a selection
+        filtered like filterUri.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+
+        Parameters
+        ----------
+        include:
+            Only include artifacts matching these path patterns, as with
+            Workspace.artifacts. A path selects that path and its children.
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("artifacts", _args)
+        return Artifacts(_ctx)
+
+    def compose(self, expertise: list[Expertise]) -> Self:
+        """Run expertise in list order, passing this conversation through each
+        function. Retain existing contributions.
+
+        Parameters
+        ----------
+        expertise:
+            The expertise to run. Each reference retains its source workspace.
+        """
+        _args = [
+            Arg("expertise", expertise),
+        ]
+        _ctx = self._select("compose", _args)
+        return LLM(_ctx)
+
     async def context_tokens(self) -> int:
         """estimated number of tokens currently occupying the context window;
         unlike tokenUsage this is not cumulative over the session
@@ -11092,20 +12141,6 @@ class LLM(Type):
         _args: list[Arg] = []
         _ctx = self._select("contextWindow", _args)
         return await _ctx.execute(int | None)
-
-    async def emit_history(self) -> Self:
-        """Re-emit telemetry spans for the full message history, so a loaded
-        conversation displays in the TUI.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        return await self._ctx.execute_sync(self, "emitHistory", _args)
 
     def fork(self, label: str) -> Self:
         """Fork the conversation, so that otherwise-identical follow-ups evaluate
@@ -11247,37 +12282,6 @@ class LLM(Type):
         _ctx = self._select("model", _args)
         return await _ctx.execute(str)
 
-    async def portable_id(self) -> str:
-        """A portable, self-contained ID for the conversation that node() can
-        resolve in any session. Unlike id, which may return an engine-local
-        runtime handle valid only within the current session, this returns the
-        recipe form suitable for persisting and later restoring the
-        conversation. The recipe is flattened: bindings superseded during the
-        session (workspace overlays recorded by each mutating tool call, and
-        re-bound toolsets) are dropped, while the current workspace binding —
-        including any pending, un-exported edits — is preserved.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("portableID", _args)
-        return await _ctx.execute(str)
-
     async def provider(self) -> str:
         """The provider serving the model, e.g. "anthropic", "openai", "google",
         or "local".
@@ -11322,6 +12326,28 @@ class LLM(Type):
         _ctx = self._select("reasoningEffort", _args)
         return await _ctx.execute(str)
 
+    def recompose(self, expertise: list[Expertise]) -> Self:
+        """Run expertise in list order, replacing their modules' contributions
+        and preserving compatible tool state.
+
+        Clear each selected module's contributions once before execution.
+        Retain unowned contributions and contributions from other modules.
+        Keep this LLM's workspace.
+
+        A change to a tool binding's version resets its state. Removed
+        bindings, changed identities, and incompatible state are errors.
+
+        Parameters
+        ----------
+        expertise:
+            The expertise to run. Each reference retains its source workspace.
+        """
+        _args = [
+            Arg("expertise", expertise),
+        ]
+        _ctx = self._select("recompose", _args)
+        return LLM(_ctx)
+
     async def skills(self) -> list["LLMSkill"]:
         """The skills visible to the model, exactly as the ListSkills tool serves
         them: engine-embedded skills, skills installed with withSkills, and
@@ -11337,6 +12363,7 @@ class LLM(Type):
         name: str | None = None,
         handle: str | None = None,
         state: AgentState | None = AgentState.IDLE,
+        parent_handle: str | None = None,
         error: str | None = "",
     ) -> Agent:
         """Spawn the conversation as an agent: a startable, addressable
@@ -11382,6 +12409,11 @@ class LLM(Type):
             restored loop died with the session that published it — restore
             such an agent as IDLE, its interrupted turn's input still pending
             on the conversation.
+        parent_handle:
+            Recorded parent handle when restoring an agent. Lineage does not
+            install a notification subscription. Requires a supplied handle.
+            The parent must already be restored in this session and cannot be
+            the agent itself or its descendant.
         error:
             The loop error to create the agent with, for state FAILED. Refused
             with any other state.
@@ -11397,6 +12429,7 @@ class LLM(Type):
             Arg("name", name, None),
             Arg("handle", handle, None),
             Arg("state", state, AgentState.IDLE),
+            Arg("parentHandle", parent_handle, None),
             Arg("error", error, ""),
         ]
         return await self._ctx.execute_sync(self, "spawn", _args, Agent)
@@ -11829,6 +12862,112 @@ class LLM(Type):
 
 
 @typecheck
+class LLMContent(Type):
+    """An ordered run of text and media content for a model to read, built
+    outside any conversation."""
+
+    async def blocks(self) -> list["LLMContentBlock"]:
+        """The ordered text and media blocks."""
+        _args: list[Arg] = []
+        _ctx = self._select("blocks", _args)
+        return await _ctx.execute_object_list(LLMContentBlock)
+
+    async def id(self) -> str:
+        """A unique identifier for this LLMContent.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def with_data(self, data: Bytes, mime_type: str) -> Self:
+        """Append image, audio, or PDF bytes as an inline media block. The media
+        kind follows the MIME type.
+
+        Prefer withFile for anything but small payloads: the bytes become part
+        of the content's identity, so they travel with every reference to it.
+
+        Parameters
+        ----------
+        data:
+            The media bytes.
+        mime_type:
+            The media MIME type, e.g. "image/png".
+        """
+        _args = [
+            Arg("data", data),
+            Arg("mimeType", mime_type),
+        ]
+        _ctx = self._select("withData", _args)
+        return LLMContent(_ctx)
+
+    def with_file(
+        self,
+        file: File,
+        *,
+        mime_type: str | None = "",
+    ) -> Self:
+        """Append an image, audio, or PDF file as an inline media block. The
+        media kind follows the MIME type.
+
+        Parameters
+        ----------
+        file:
+            The media file. Its contents become the block's inline bytes.
+        mime_type:
+            The media MIME type, e.g. "image/png". Inferred from the file's
+            contents when omitted.
+        """
+        _args = [
+            Arg("file", file),
+            Arg("mimeType", mime_type, ""),
+        ]
+        _ctx = self._select("withFile", _args)
+        return LLMContent(_ctx)
+
+    def with_text(self, text: str) -> Self:
+        """Append a block of text.
+
+        Parameters
+        ----------
+        text:
+            The text.
+        """
+        _args = [
+            Arg("text", text),
+        ]
+        _ctx = self._select("withText", _args)
+        return LLMContent(_ctx)
+
+    def with_(self, cb: Callable[["LLMContent"], "LLMContent"]) -> "LLMContent":
+        """Call the provided callable with current LLMContent.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class LLMContentBlock(Type):
     """A single piece of content within an LLM message."""
 
@@ -11880,15 +13019,13 @@ class LLMContentBlock(Type):
         _ctx = self._select("content", _args)
         return await _ctx.execute_object_list(LLMContentBlock)
 
-    async def data(self) -> str:
-        """Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+    async def data(self) -> Bytes:
+        """The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        Bytes
+            Arbitrary binary data, represented as a base64-encoded string.
 
         Raises
         ------
@@ -11899,7 +13036,7 @@ class LLMContentBlock(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("data", _args)
-        return await _ctx.execute(str)
+        return await _ctx.execute(Bytes)
 
     async def errored(self) -> bool:
         """Whether the tool call resulted in an error (for TOOL_RESULT kind).
@@ -12599,51 +13736,13 @@ class ListTypeDef(Type):
 class Module(Type):
     """A Dagger module."""
 
-    def check(self, name: str) -> Check:
-        """Return the check defined by the module with the given name. Must match
-        to exactly one check.
-
-        .. caution::
-            Experimental: This API is highly experimental and may be removed
-            or replaced entirely.
-
-        Parameters
-        ----------
-        name:
-            The name of the check to retrieve
+    async def context_source(self) -> "ModuleSource | None":
+        """The source used to resolve contextual files and directories, when
+        different from source.
         """
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("check", _args)
-        return Check(_ctx)
-
-    def checks(
-        self,
-        *,
-        include: list[str] | None = None,
-        no_generate: bool | None = None,
-    ) -> CheckGroup:
-        """Return all checks defined by the module
-
-        .. caution::
-            Experimental: This API is highly experimental and may be removed
-            or replaced entirely.
-
-        Parameters
-        ----------
-        include:
-            Only include checks matching the specified patterns
-        no_generate:
-            When true, only return annotated check functions; exclude
-            generate-as-checks
-        """
-        _args = [
-            Arg("include", include, None),
-            Arg("noGenerate", no_generate, None),
-        ]
-        _ctx = self._select("checks", _args)
-        return CheckGroup(_ctx)
+        _args: list[Arg] = []
+        _ctx = self._select("contextSource", _args)
+        return await _ctx.execute_object(ModuleSource)
 
     async def dependencies(self) -> list["Module"]:
         """The dependencies of the module."""
@@ -12685,47 +13784,6 @@ class Module(Type):
         _args: list[Arg] = []
         _ctx = self._select("generatedContextDirectory", _args)
         return Directory(_ctx)
-
-    def generator(self, name: str) -> Generator:
-        """Return the generator defined by the module with the given name. Must
-        match to exactly one generator.
-
-        .. caution::
-            Experimental: This API is highly experimental and may be removed
-            or replaced entirely.
-
-        Parameters
-        ----------
-        name:
-            The name of the generator to retrieve
-        """
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("generator", _args)
-        return Generator(_ctx)
-
-    def generators(
-        self,
-        *,
-        include: list[str] | None = None,
-    ) -> GeneratorGroup:
-        """Return all generators defined by the module
-
-        .. caution::
-            Experimental: This API is highly experimental and may be removed
-            or replaced entirely.
-
-        Parameters
-        ----------
-        include:
-            Only include generators matching the specified patterns
-        """
-        _args = [
-            Arg("include", include, None),
-        ]
-        _ctx = self._select("generators", _args)
-        return GeneratorGroup(_ctx)
 
     async def id(self) -> str:
         """A unique identifier for this Module.
@@ -12853,28 +13911,6 @@ class Module(Type):
         ]
         _ctx = self._select("serve", _args)
         await _ctx.execute()
-
-    def services(
-        self,
-        *,
-        include: list[str] | None = None,
-    ) -> "UpGroup":
-        """Return all services defined by the module
-
-        .. caution::
-            Experimental: This API is highly experimental and may be removed
-            or replaced entirely.
-
-        Parameters
-        ----------
-        include:
-            Only include services matching the specified patterns
-        """
-        _args = [
-            Arg("include", include, None),
-        ]
-        _ctx = self._select("services", _args)
-        return UpGroup(_ctx)
 
     async def source(self) -> "ModuleSource | None":
         """The source for the module."""
@@ -14213,9 +15249,7 @@ class Query(Root):
     """The root of the DAG."""
 
     def address(self, value: str) -> Address:
-        """initialize an address to load directories, containers, secrets or
-        other object types.
-        """
+        """Resolve external references only."""
         _args = [
             Arg("value", value),
         ]
@@ -14701,6 +15735,22 @@ class Query(Root):
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
 
+    def llm_content(self) -> LLMContent:
+        """Start an empty run of text and media content, independent of any
+        conversation.
+
+        Add blocks with withText, withFile, and withData. A function exposed
+        as an LLM tool can return the content to give the model text and media
+        as the tool's result, e.g. a caption and a screenshot for the model to
+        look at.
+
+        .. caution::
+            Experimental: LLM support is not yet stabilized
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("llmContent", _args)
+        return LLMContent(_ctx)
+
     def module(self) -> Module:
         """Create a new module."""
         _args: list[Arg] = []
@@ -14865,6 +15915,41 @@ class Query(Root):
         ]
         _ctx = self._select("setSecret", _args)
         return Secret(_ctx)
+
+    async def set_session_title(self, title: str) -> Void | None:
+        """Name the current session.
+
+        The title renames the session wherever its telemetry is shown (the
+        calling client's primary span, e.g. the CLI's command span) and labels
+        its engine archive, as listed by dagger agent --resume. The latest
+        title wins. Only the session's main client may set it.
+
+        .. caution::
+            Experimental: Session APIs are likely to change.
+
+        Parameters
+        ----------
+        title:
+            The title, sanitized to a single printable line.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("title", title),
+        ]
+        _ctx = self._select("setSessionTitle", _args)
+        await _ctx.execute()
 
     def source_map(
         self,
@@ -15661,9 +16746,18 @@ class Service(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def ports(self) -> list[Port]:
-        """Retrieves the list of ports provided by the service."""
-        _args: list[Arg] = []
+    async def ports(self, *, declared: bool | None = False) -> list[Port]:
+        """Retrieves the list of ports provided by the service.
+
+        Parameters
+        ----------
+        declared:
+            Return only container ports declared before startup. Other service
+            types return an empty list.
+        """
+        _args = [
+            Arg("declared", declared, False),
+        ]
         _ctx = self._select("ports", _args)
         return await _ctx.execute_object_list(Port)
 
@@ -16125,211 +17219,14 @@ class Terminal(Type):
 
 
 @typecheck
-class TerminalGroup(Type):
-    def exec(
-        self,
-        *,
-        args: list[str] | None = None,
-        stdin: str | None = "",
-        copy: list[TerminalCopy] | None = None,
-        init: list[str] | None = None,
-    ) -> Container:
-        """Run the selected terminal target's command non-interactively, and
-        return the container after execution. Any exit code is allowed.
-
-        Parameters
-        ----------
-        args:
-            Arguments to append to the terminal command. Example: ["-c", "go
-            test ./..."]
-        stdin:
-            Content to write to the command's standard input.
-        copy:
-            Directories to copy into the container, in order.
-        init:
-            Commands to run after copy, in order, with the terminal command
-            and -c. Only their changes to the filesystem are kept.
-        """
-        _args = [
-            Arg("args", [] if args is None else args, []),
-            Arg("stdin", stdin, ""),
-            Arg("copy", [] if copy is None else copy, []),
-            Arg("init", [] if init is None else init, []),
-        ]
-        _ctx = self._select("exec", _args)
-        return Container(_ctx)
-
-    async def id(self) -> str:
-        """A unique identifier for this TerminalGroup.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def list_(self) -> list["TerminalTarget"]:
-        """Return the selected terminal targets and their details"""
-        _args: list[Arg] = []
-        _ctx = self._select("list", _args)
-        return await _ctx.execute_object_list(TerminalTarget)
-
-    def run(
-        self,
-        *,
-        copy: list[TerminalCopy] | None = None,
-        init: list[str] | None = None,
-    ) -> Self:
-        """Open the selected terminal target
-
-        Parameters
-        ----------
-        copy:
-            Directories to copy into the container, in order.
-        init:
-            Commands to run after copy, in order, with the terminal command
-            and -c. Only their changes to the filesystem are kept.
-        """
-        _args = [
-            Arg("copy", [] if copy is None else copy, []),
-            Arg("init", [] if init is None else init, []),
-        ]
-        _ctx = self._select("run", _args)
-        return TerminalGroup(_ctx)
-
-    def with_(
-        self, cb: Callable[["TerminalGroup"], "TerminalGroup"]
-    ) -> "TerminalGroup":
-        """Call the provided callable with current TerminalGroup.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
-
-@typecheck
-class TerminalTarget(Type):
-    async def description(self) -> str:
-        """The description of the terminal target
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("description", _args)
-        return await _ctx.execute(str)
-
-    async def id(self) -> str:
-        """A unique identifier for this TerminalTarget.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def name(self) -> str:
-        """Return the command name of the terminal target. Entrypoint targets
-        omit the module prefix.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
-
-    def original_module(self) -> Module:
-        """The module in which the terminal target is defined"""
-        _args: list[Arg] = []
-        _ctx = self._select("originalModule", _args)
-        return Module(_ctx)
-
-    async def path(self) -> list[str]:
-        """The path of the terminal target within its module
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("path", _args)
-        return await _ctx.execute(list[str])
-
-
-@typecheck
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
+
+    async def as_collection(self) -> CollectionTypeDef | None:
+        """Collection metadata, or null if this object is not a collection."""
+        _args: list[Arg] = []
+        _ctx = self._select("asCollection", _args)
+        return await _ctx.execute_object(CollectionTypeDef)
 
     async def as_enum(self) -> EnumTypeDef | None:
         """If kind is ENUM, the enum-specific type definition. If kind is not
@@ -16465,6 +17362,36 @@ class TypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("optional", _args)
         return await _ctx.execute(bool)
+
+    def with_collection(self) -> Self:
+        """Mark this object as a collection."""
+        _args: list[Arg] = []
+        _ctx = self._select("withCollection", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_delta(self, name: str) -> Self:
+        """Select the field that receives changes from the original collection."""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionDelta", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_get(self, name: str) -> Self:
+        """Select the item lookup function for this collection."""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionGet", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_keys(self, name: str) -> Self:
+        """Select the stored keys field for this collection."""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionKeys", _args)
+        return TypeDef(_ctx)
 
     def with_constructor(self, function: Function) -> Self:
         """Adds a function for constructing a new instance of an Object TypeDef,
@@ -16713,170 +17640,6 @@ class TypeDef(Type):
 
 
 @typecheck
-class Up(Type):
-    async def description(self) -> str:
-        """The description of the service
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("description", _args)
-        return await _ctx.execute(str)
-
-    async def id(self) -> str:
-        """A unique identifier for this Up.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def name(self) -> str:
-        """Return the command name of the service. Entrypoint targets omit the
-        module prefix.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
-
-    def original_module(self) -> Module:
-        """The original module in which the service has been defined"""
-        _args: list[Arg] = []
-        _ctx = self._select("originalModule", _args)
-        return Module(_ctx)
-
-    async def path(self) -> list[str]:
-        """The path of the service within its module
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("path", _args)
-        return await _ctx.execute(list[str])
-
-    def run(self) -> Self:
-        """Execute the service function"""
-        _args: list[Arg] = []
-        _ctx = self._select("run", _args)
-        return Up(_ctx)
-
-    def with_(self, cb: Callable[["Up"], "Up"]) -> "Up":
-        """Call the provided callable with current Up.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
-
-@typecheck
-class UpGroup(Type):
-    async def id(self) -> str:
-        """A unique identifier for this UpGroup.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    async def list_(self) -> list[Up]:
-        """Return a list of individual services and their details"""
-        _args: list[Arg] = []
-        _ctx = self._select("list", _args)
-        return await _ctx.execute_object_list(Up)
-
-    def run(self) -> Self:
-        """Execute all selected service functions"""
-        _args: list[Arg] = []
-        _ctx = self._select("run", _args)
-        return UpGroup(_ctx)
-
-    def with_(self, cb: Callable[["UpGroup"], "UpGroup"]) -> "UpGroup":
-        """Call the provided callable with current UpGroup.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
-
-@typecheck
 class Volume(Type):
     """A filesystem volume that can be mounted into containers."""
 
@@ -16936,30 +17699,25 @@ class Workspace(Type):
         _ctx = self._select("address", _args)
         return await _ctx.execute(str)
 
-    def agents(
+    def artifacts(
         self,
         *,
         include: list[str] | None = None,
-        exclude: list[str] | None = None,
-    ) -> AgentMiddlewareGroup:
-        """Return all agent middlewares from modules loaded in the workspace.
-
-        .. caution::
-            Experimental: Agent APIs are likely to change.
+    ) -> Artifacts:
+        """Discover static object artifacts from workspace modules without
+        evaluating their values.
 
         Parameters
         ----------
         include:
-            Only include agents matching the specified patterns
-        exclude:
-            Exclude agents matching the specified patterns
+            Only include artifacts matching these path patterns, as with
+            checks and services. A path selects that path and its children.
         """
         _args = [
             Arg("include", include, None),
-            Arg("exclude", exclude, None),
         ]
-        _ctx = self._select("agents", _args)
-        return AgentMiddlewareGroup(_ctx)
+        _ctx = self._select("artifacts", _args)
+        return Artifacts(_ctx)
 
     def changes(self, *, from_: "Workspace | None" = None) -> Changeset:
         """Return this workspace's changes, with paths relative to its working
@@ -16979,38 +17737,6 @@ class Workspace(Type):
         ]
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
-
-    def checks(
-        self,
-        *,
-        include: list[str] | None = None,
-        skip: list[str] | None = None,
-        no_generate: bool | None = None,
-        only_generate: bool | None = None,
-    ) -> CheckGroup:
-        """Return all checks from modules loaded in the workspace.
-
-        Parameters
-        ----------
-        include:
-            Only include checks matching the specified patterns
-        skip:
-            Skip checks matching the specified patterns
-        no_generate:
-            When true, only return annotated check functions; exclude
-            generate-as-checks
-        only_generate:
-            When true, only return generate-as-checks; exclude annotated check
-            functions
-        """
-        _args = [
-            Arg("include", include, None),
-            Arg("skip", skip, None),
-            Arg("noGenerate", no_generate, None),
-            Arg("onlyGenerate", only_generate, None),
-        ]
-        _ctx = self._select("checks", _args)
-        return CheckGroup(_ctx)
 
     async def compare_commits_from(
         self,
@@ -17077,7 +17803,12 @@ class Workspace(Type):
         _ctx = self._select("configFile", _args)
         return await _ctx.execute(str)
 
-    async def config_read(self, *, key: str | None = "") -> str:
+    async def config_read(
+        self,
+        *,
+        key: str | None = "",
+        effective: bool | None = False,
+    ) -> str:
         """Read a configuration value from dagger.toml.
 
         If key is empty, returns the full config.
@@ -17091,6 +17822,9 @@ class Workspace(Type):
         key:
             Dotted key path (e.g. modules.greeter.source). Empty for full
             config.
+        effective:
+            Include the selected environment, user overrides, and legacy
+            workspace settings.
 
         Returns
         -------
@@ -17108,6 +17842,7 @@ class Workspace(Type):
         """
         _args = [
             Arg("key", key, ""),
+            Arg("effective", effective, False),
         ]
         _ctx = self._select("configRead", _args)
         return await _ctx.execute(str)
@@ -17421,24 +18156,6 @@ class Workspace(Type):
         _ctx = self._select("findUp", _args)
         return await _ctx.execute(str | None)
 
-    def generators(
-        self,
-        *,
-        include: list[str] | None = None,
-    ) -> GeneratorGroup:
-        """Return all generators from modules loaded in the workspace.
-
-        Parameters
-        ----------
-        include:
-            Only include generators matching the specified patterns
-        """
-        _args = [
-            Arg("include", include, None),
-        ]
-        _ctx = self._select("generators", _args)
-        return GeneratorGroup(_ctx)
-
     def git(self) -> "WorkspaceGit":
         """Git state for this workspace. Errors if the workspace is not in a git
         repository.
@@ -17594,6 +18311,29 @@ class Workspace(Type):
         _ctx = self._select("modules", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
 
+    def resolve(self, value: str) -> Address:
+        """Resolve an address in this workspace.
+
+        A DAG address (dag://<path>) selects exactly one workspace artifact:
+        artifacts.filterUri(value).one(). Its typed loaders use that artifact
+        and never fall back to external resolution.
+
+        A value without the dag:// scheme keeps its external meaning, such as
+        a container image reference.
+
+        The Address retains this workspace across module calls and ID reloads.
+
+        Parameters
+        ----------
+        value:
+            A DAG address, or an external reference.
+        """
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("resolve", _args)
+        return Address(_ctx)
+
     def sdk(self, name: str) -> "WorkspaceSDK":
         """An installed SDK, by name.
 
@@ -17679,24 +18419,6 @@ class Workspace(Type):
         _ctx = self._select("search", _args)
         return await _ctx.execute_object_list(SearchResult)
 
-    def services(
-        self,
-        *,
-        include: list[str] | None = None,
-    ) -> UpGroup:
-        """Return all services from modules loaded in the workspace.
-
-        Parameters
-        ----------
-        include:
-            Only include services matching the specified patterns
-        """
-        _args = [
-            Arg("include", include, None),
-        ]
-        _ctx = self._select("services", _args)
-        return UpGroup(_ctx)
-
     def snapshot(self) -> Self:
         """Return a snapshot of this workspace as a stable value.
 
@@ -17725,24 +18447,6 @@ class Workspace(Type):
         _args: list[Arg] = []
         _ctx = self._select("snapshot", _args)
         return Workspace(_ctx)
-
-    def terminals(
-        self,
-        *,
-        include: list[str] | None = None,
-    ) -> TerminalGroup:
-        """Return all terminal targets from modules loaded in the workspace.
-
-        Parameters
-        ----------
-        include:
-            Only include terminal targets matching the specified patterns
-        """
-        _args = [
-            Arg("include", include, None),
-        ]
-        _ctx = self._select("terminals", _args)
-        return TerminalGroup(_ctx)
 
     def with_changes(self, changes: Changeset) -> Self:
         """Return this workspace with a changeset applied, without mutating the
@@ -18270,7 +18974,12 @@ class Workspace(Type):
         Parameters
         ----------
         commit:
-            Full commit hash to reset HEAD to.
+            Commit to reset HEAD to, resolved against this workspace's
+            repository like GitRepository.ref: a full commit hash, an
+            unambiguous hex prefix (4-40 characters), or a ref name,
+            optionally followed by revision suffixes such as HEAD~1, main^2 or
+            abc1234~2. Only the commit it resolves to is used: a ref name
+            selects its commit, it does not check out that ref.
         hard:
             Discard uncommitted changes, resetting the working tree to the
             commit.
@@ -19267,6 +19976,12 @@ class WorkspaceSDK(Type):
         _ctx = self._select("clients", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
 
+    def generate(self) -> Changeset:
+        """Generate the modules and clients managed by this SDK."""
+        _args: list[Arg] = []
+        _ctx = self._select("generate", _args)
+        return Changeset(_ctx)
+
     async def id(self) -> str:
         """A unique identifier for this WorkspaceSDK.
 
@@ -19361,9 +20076,14 @@ __all__ = [
     "Agent",
     "AgentMessage",
     "AgentMessageDelivery",
-    "AgentMiddleware",
-    "AgentMiddlewareGroup",
     "AgentState",
+    "Artifact",
+    "ArtifactDimension",
+    "ArtifactDimensionKey",
+    "ArtifactDimensionKind",
+    "ArtifactPath",
+    "ArtifactResult",
+    "Artifacts",
     "BuildArg",
     "Bytes",
     "CacheSharingMode",
@@ -19372,10 +20092,12 @@ __all__ = [
     "ChangesetMergeConflict",
     "ChangesetsMergeConflict",
     "Check",
-    "CheckGroup",
     "Client",
     "ClientFilesyncMirror",
     "Cloud",
+    "CollectionDelta",
+    "CollectionTypeDef",
+    "Command",
     "Container",
     "CurrentModule",
     "DiffStat",
@@ -19392,6 +20114,7 @@ __all__ = [
     "Error",
     "ErrorValue",
     "ExistsType",
+    "Expertise",
     "Exportable",
     "FieldTypeDef",
     "File",
@@ -19403,7 +20126,6 @@ __all__ = [
     "FunctionCallArgValue",
     "GeneratedCode",
     "Generator",
-    "GeneratorGroup",
     "GitBundle",
     "GitBundleRef",
     "GitCommit",
@@ -19419,6 +20141,7 @@ __all__ = [
     "InputTypeDef",
     "InterfaceTypeDef",
     "JSONValue",
+    "LLMContent",
     "LLMContentBlock",
     "LLMContentBlockInput",
     "LLMContentBlockKind",
@@ -19460,13 +20183,8 @@ __all__ = [
     "Stat",
     "Syncer",
     "Terminal",
-    "TerminalCopy",
-    "TerminalGroup",
-    "TerminalTarget",
     "TypeDef",
     "TypeDefKind",
-    "Up",
-    "UpGroup",
     "Void",
     "Volume",
     "Workspace",

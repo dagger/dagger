@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	enginecore "github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -133,11 +134,16 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	type running struct {
 		upstream, tunnel *dagger.Service
 		client           *dagger.Client
+		sink             *agentTraceSink
 		endpoint         string
 	}
 	stop := func(t *testctx.T, e *running) {
 		t.Helper()
 		require.NoError(t, stopNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
+	}
+	discard := func(t *testctx.T, e *running) {
+		t.Helper()
+		require.NoError(t, discardNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
 	}
 	start := func(t *testctx.T, state string, volume *dagger.CacheVolume, checkout string) *running {
 		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
@@ -154,8 +160,14 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		require.NoError(t, err)
 		e.endpoint, err = e.tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
-		e.client, err = dagger.Connect(ctx, dagger.WithRunnerHost(e.endpoint), dagger.WithWorkdir(checkout), dagger.WithLogOutput(testutil.NewTWriter(t)))
-		require.NoError(t, err)
+		// Start an independent CLI session on this exact engine, with telemetry
+		// attached before construction; an inherited nested session cannot supply
+		// the committed anchor or exercise this engine's transferred cache.
+		e.client, e.sink = connectWithTrace(ctx, t, engineconn.Config{
+			RunnerHost: e.endpoint,
+			Workdir:    checkout,
+			LogOutput:  testutil.NewTWriter(t),
+		})
 		return e
 	}
 	callReport := func(t *testctx.T, client *dagger.Client, seed string) (reportID, artifactID string) {
@@ -193,7 +205,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	aDir := newCheckout(t)
 	aVolume := outer.CacheVolume("b2-transfer-a-" + identity.NewID())
 	a := start(t, "b2-transfer-a-state-"+identity.NewID(), aVolume, aDir)
-	defer stop(t, a)
+	defer discard(t, a)
 	require.NoError(t, a.client.ModuleSource(".").AsModule().Serve(ctx))
 	aID, aArtifactID := callReport(t, a.client, "same")
 	require.Equal(t, uint64(1), countBody(t, a.client, "report"))
@@ -217,16 +229,18 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			bVolume := outer.CacheVolume("b2-transfer-b-" + identity.NewID())
 			bState := "b2-transfer-b-state-" + identity.NewID()
 			b := start(t, bState, bVolume, bDir)
-			defer func() { stop(t, b) }()
+			defer func() { discard(t, b) }()
 			var operational *dagger.Module
 			var err error
+			// warmScratchRow is B's own scratch Directory entry, when B is warm.
+			var warmScratchRow uint64
 			if !cold {
 				operational = b.client.ModuleSource(".").AsModule()
 				operational, err = operational.Sync(ctx)
 				require.NoError(t, err)
-				// Schema Files now use FileBlobLazy, so warming the SDK no longer
-				// evaluates an ordinary empty Directory as an incidental input.
-				// Warm that local donor explicitly for both import orders.
+				// Warming the SDK does not evaluate an empty Directory (schema
+				// Files are FileBlobLazy blobs), so warm that local donor
+				// explicitly for both import orders.
 				warmScratch, err := b.client.Directory().Sync(ctx)
 				require.NoError(t, err)
 				warmScratchID, err := warmScratch.ID(ctx)
@@ -243,6 +257,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				require.Equal(t, "snapshot", warmRow.SnapshotLinks[0].Role)
 				require.NotEmpty(t, warmRow.SnapshotLinks[0].RefKey)
 				t.Logf("acquisition warm scratch donor row=%d ref=%s order=%s", warmRow.ResultID, warmRow.SnapshotLinks[0].RefKey, order)
+				warmScratchRow = warmRow.ResultID
 			}
 			require.Equal(t, uint64(0), countBody(t, b.client, "report"))
 			if order == "after" {
@@ -265,22 +280,14 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			var acquisition transferFixtureReport
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
 			counters := map[string]int{}
-			builtinRoute := 0
 			for _, event := range acquisition.Parts {
 				counters[event.Kind]++
-				if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-lazy") {
-					builtinRoute++
-				}
 			}
 			require.Positive(t, counters["provider-read"], "selected artifact must read its transferred chain")
 			require.Positive(t, counters["installed-chain"])
 			require.Positive(t, counters["owner-sync"])
 			require.Positive(t, counters["settled"])
-			if cold {
-				require.Positive(t, builtinRoute, "cold SDK builtin FS must acquire a local equivalent or invoke its saved builtin")
-				assertColdPartDelegation(t, acquisition)
-			}
-			t.Logf("acquisition route counters cold=%t builtin=%d counts=%v", cold, builtinRoute, counters)
+			t.Logf("acquisition route counters cold=%t counts=%v", cold, counters)
 			var echoed struct {
 				Probe struct{ Echo struct{ Seed string } } `json:"cacheProbe"`
 			}
@@ -294,12 +301,27 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			// The scratch demand happens inside the changed-argument body, after
 			// the earlier acquisition report was captured.
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
-			scratchHandle := assertScratchAcquisition(t, acquisition, imported, cold)
+			if cold {
+				// The module's cached definition travels in the bundle, so a cold
+				// engine loads the module without running its runtime. The later
+				// uncached function calls demand the SDK runtime, and with it its
+				// builtin FS.
+				builtinRoute := 0
+				for _, event := range acquisition.Parts {
+					if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-lazy") {
+						builtinRoute++
+					}
+				}
+				require.Positive(t, builtinRoute, "cold SDK builtin FS must acquire a local equivalent or invoke its saved builtin")
+				assertColdPartDelegation(t, acquisition)
+				t.Logf("acquisition cold builtin route=%d", builtinRoute)
+			}
+			scratchHandle := assertScratchAcquisition(t, acquisition, imported, cold, warmScratchRow)
 			entries, err := dagger.Ref[*dagger.Directory](b.client, dagger.ID(scratchHandle)).Entries(ctx)
 			require.NoError(t, err)
 			require.Empty(t, entries)
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &acquisition))
-			assertScratchAcquisition(t, acquisition, imported, cold)
+			assertScratchAcquisition(t, acquisition, imported, cold, warmScratchRow)
 			reportType := ""
 			for _, value := range imported {
 				if strings.HasSuffix(value.Type.NamedType, "Report") {
@@ -317,7 +339,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				require.Equal(t, "READY", data.Node["status"])
 			}
 			loadNotes("noteFile", "consumer file notes")
-			transferBoundToolControl(ctx, t, b.client, saved)
+			transferBoundToolControl(ctx, t, b.client, b.sink, saved)
 			var checkpoint transferFixtureReport
 			require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{saved}, &checkpoint))
 			require.Len(t, checkpoint.Rows, 1)
@@ -350,6 +372,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				_, err = pressure.WithEnvVariable("PRESSURE", identity.NewID()).WithExec([]string{"dd", "if=/dev/zero", "of=/fixture/gc-pressure", "bs=1048576", "count=" + strconv.FormatInt(count, 10), "conv=fsync"}).Sync(ctx)
 				require.NoError(t, err)
 			}
+			// Stop cleanly: the restart below checks the shutdown marker.
 			stop(t, b)
 			b = start(t, bState, bVolume, bDir)
 			var restored transferFixtureReport
@@ -440,7 +463,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	t.Run("foreign context", func(ctx context.Context, t *testctx.T) {
 		volume := outer.CacheVolume("b2-transfer-foreign-" + identity.NewID())
 		foreign := start(t, "b2-transfer-foreign-state-"+identity.NewID(), volume, newCheckout(t))
-		defer stop(t, foreign)
+		defer discard(t, foreign)
 		// This bare client also uses addendum 2's runtime preparation; it never
 		// serves the Module, so schema recovery has no installed candidates.
 		_, err := foreign.client.ModuleSource(".").AsModule().Sync(ctx)
@@ -509,7 +532,10 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	})
 }
 
-func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, imported []transferFixtureMapping, cold bool) string {
+// assertScratchAcquisition finds the merged Query.directory row. When B was
+// warm (warmRow, its own scratch entry), the merge landed on that entry and
+// kept its value; otherwise the row is imported.
+func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, imported []transferFixtureMapping, cold bool, warmRow uint64) string {
 	t.Helper()
 	mapping := map[uint64]transferFixtureMapping{}
 	for _, value := range imported {
@@ -518,13 +544,19 @@ func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, import
 	var scratch *dagql.TransferFixtureRow
 	for i := range report.Rows {
 		row := &report.Rows[i]
-		if _, ok := mapping[row.ResultID]; !ok || !row.Imported || row.Call == nil || row.Call.Type.NamedType != "Directory" || row.Call.Field != "directory" || row.Call.Receiver != nil {
+		if _, ok := mapping[row.ResultID]; !ok || row.Call == nil || row.Call.Type.NamedType != "Directory" || row.Call.Field != "directory" || row.Call.Receiver != nil {
 			continue
 		}
-		require.Nil(t, scratch, "ambiguous imported Query.directory row")
+		require.Nil(t, scratch, "ambiguous merged Query.directory row")
 		scratch = row
 	}
 	require.NotNil(t, scratch)
+	if warmRow != 0 {
+		require.Equal(t, warmRow, scratch.ResultID, "the merge lands on B's warm scratch entry")
+		require.False(t, scratch.Imported, "which keeps its own value")
+	} else {
+		require.True(t, scratch.Imported)
+	}
 	platform := ""
 	for _, input := range scratch.Call.ImplicitInputs {
 		if input.Name == "engineDefaultPlatform" {
@@ -699,14 +731,18 @@ func transferContextTool(ctx context.Context, t *testctx.T, client *dagger.Clien
 	return result.LLM.WithTools.WithPrompt.Loop.Transcript
 }
 
-func transferBoundToolControl(ctx context.Context, t *testctx.T, client *dagger.Client, saved string) {
+func transferBoundToolControl(ctx context.Context, t *testctx.T, client *dagger.Client, sink *agentTraceSink, saved string) {
 	t.Helper()
 	var binding struct {
-		LLM struct{ WithTools struct{ PortableID string } }
+		LLM struct{ WithTools struct{ ID string } }
 	}
-	require.NoError(t, client.Do(ctx, &dagger.Request{Query: `query($id:ID!){llm{withTools(object:$id){portableID}}}`, Variables: map[string]any{"id": saved}}, &dagger.Response{Data: &binding}))
+	require.NoError(t, client.Do(ctx, &dagger.Request{Query: `query($id:ID!){llm{withTools(object:$id){id}}}`, Variables: map[string]any{"id": saved}}, &dagger.Response{Data: &binding}))
+	// The local handle only seeds an inert agent. Reconstruction uses the
+	// committed control digest and complete payload closure observed by the sink.
+	recipe, err := sink.captureLLMRecipe(ctx, t, client, dagger.Ref[*dagger.LLM](client, dagger.ID(binding.LLM.WithTools.ID)))
+	require.NoError(t, err)
 	bound := new(call.ID)
-	require.NoError(t, bound.Decode(binding.LLM.WithTools.PortableID))
+	require.NoError(t, bound.Decode(string(recipe)))
 	var objectID string
 	for cur := bound; cur != nil; cur = cur.Receiver() {
 		if cur.Field() != "withTools" {
@@ -715,7 +751,7 @@ func transferBoundToolControl(ctx context.Context, t *testctx.T, client *dagger.
 		for _, arg := range cur.Args() {
 			if arg.Name() == "object" {
 				id := arg.Value().(*call.LiteralID).Value()
-				require.False(t, id.IsHandle(), "portable binding carries a recipe for lazy loading")
+				require.False(t, id.IsHandle(), "traced tool binding carries a recipe for lazy loading")
 				var err error
 				objectID, err = id.Encode()
 				require.NoError(t, err)

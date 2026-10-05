@@ -51,6 +51,21 @@ func (ns *cniNS) sample() (*resourcestypes.NetworkSample, error) {
 			stat.RxDropped = n
 		}
 	}
+	if ns.netAccounting != nil {
+		attributed, err := ns.netAccounting.Sample()
+		if err != nil {
+			bklog.L.Debugf(
+				"attributed network accounting sample unavailable for %s: %s",
+				ns.vethName, err,
+			)
+		} else {
+			stat.InternalRxBytes = int64(attributed.InternalRX)
+			stat.InternalTxBytes = int64(attributed.InternalTX)
+			stat.ExternalRxBytes = int64(attributed.ExternalRX)
+			stat.ExternalTxBytes = int64(attributed.ExternalTX)
+			stat.ScopeSupported = true
+		}
+	}
 	ns.prevSample = stat
 	return stat, nil
 }

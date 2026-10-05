@@ -29,7 +29,9 @@ const (
 // NewLargeQueueLiveSpanProcessor is otel.NewLiveSpanProcessor with the enlarged
 // bounded queue above in place of the default 2048-slot one. Used on the CLI→Cloud
 // exporter (internal/cmd/dagger) and the engine's per-client store exporters so a
-// big-burst trace arrives complete.
+// big-burst trace arrives complete. The engine wraps it in WithoutCallSpans:
+// call spans, which carry frames nothing else delivers, take the lossless
+// CallSpanProcessor instead.
 func NewLargeQueueLiveSpanProcessor(exp sdktrace.SpanExporter) *telemetry.LiveSpanProcessor {
 	if exp != nil {
 		exp = telemetry.CoalescingSpanExporter{SpanExporter: exp}

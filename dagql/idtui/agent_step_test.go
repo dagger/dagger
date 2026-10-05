@@ -8,17 +8,19 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 )
 
 // The per-step UI refresh contract (hack/designs/async-agents.md §5.1
-// follow-up): the engine publishes a conversation-snapshot record on every
-// commit, and the frontend folds those into step notifications for the shell
-// handler -- which is what lets the status line and changes preview track a
-// working agent step by step instead of going a whole turn stale. The
-// interject hint rides the same signal: a mid-turn submit is absorbed at the
-// next step boundary, so the boundary is also when the hint retires.
+// follow-up): the engine publishes a control revision with a new snapshot
+// digest on every commit, and the frontend folds those into step
+// notifications for the shell handler -- which is what lets the status line
+// and changes preview track a working agent step by step instead of going a
+// whole turn stale. The interject hint rides the same signal: a mid-turn
+// submit is absorbed at the next step boundary, so the boundary is also when
+// the hint retires.
 
 // stepShellHandler is focusShellHandler plus the per-step notification probe.
 type stepShellHandler struct {
@@ -50,17 +52,12 @@ func stepTestFrontend(t *testing.T, db *dagui.DB, handler *stepShellHandler) *fr
 	return fe
 }
 
-// commitSnapshot re-imports an agent's loop span with a fresh conversation
-// snapshot digest, the way the engine's per-commit record lands in the DB,
-// then runs the ingestion hook the exporters run.
-func commitSnapshot(fe *frontendPretty, agentIdx byte, name, digest string) {
-	_, snapshots := rosterTrace()
-	loop := snapshots[2*agentIdx]
-	if loop.AgentName != name {
-		panic("test wiring: unexpected loop span for " + name)
-	}
-	loop.AgentSnapshotDigest = digest
-	fe.db.ImportSnapshots([]dagui.SpanSnapshot{loop})
+// commitSnapshot publishes an agent's next control revision with a fresh
+// conversation snapshot digest, the way the engine reports each commit, then
+// runs the ingestion hook the exporters run.
+func commitSnapshot(t *testing.T, fe *frontendPretty, handle, digest string) {
+	t.Helper()
+	publishAgentControl(t, fe.db, handle, func(a *agentcontrol.Agent) { a.Digest = digest })
 	fe.notifyAgentSteps()
 }
 
@@ -74,21 +71,20 @@ func TestSnapshotCommitNotifiesHandlerOncePerStep(t *testing.T) {
 
 	require.Empty(t, handler.stepped(), "no commits yet, no notifications")
 
-	commitSnapshot(fe, 0, "chief", "xxh3:step-one")
+	commitSnapshot(t, fe, "agent-chief", "xxh3:step-one")
 	require.Equal(t, []string{"agent-chief"}, handler.stepped())
 
-	// The same digest arriving again (spans re-export constantly) is not a
-	// new step.
+	// The same digest observed again is not a new step.
 	fe.notifyAgentSteps()
 	require.Equal(t, []string{"agent-chief"}, handler.stepped())
 
 	// The next commit is.
-	commitSnapshot(fe, 0, "chief", "xxh3:step-two")
+	commitSnapshot(t, fe, "agent-chief", "xxh3:step-two")
 	require.Equal(t, []string{"agent-chief", "agent-chief"}, handler.stepped())
 
 	// Background agents notify too -- the handler decides whose surfaces to
 	// refresh, not the trace.
-	commitSnapshot(fe, 1, "scout", "xxh3:scout-one")
+	commitSnapshot(t, fe, "agent-scout", "xxh3:scout-one")
 	require.Equal(t, []string{"agent-chief", "agent-chief", "agent-scout"}, handler.stepped())
 }
 
@@ -120,12 +116,12 @@ func TestInterjectShowsQueuedUntilStepBoundary(t *testing.T) {
 	require.NotContains(t, help, "edit queued")
 
 	// Somebody ELSE's step boundary is not this agent's drain.
-	commitSnapshot(fe, 1, "scout", "xxh3:scout-step")
+	commitSnapshot(t, fe, "agent-scout", "xxh3:scout-step")
 	require.Equal(t, "also check the logs", fe.queuedMsgLabel.Message())
 
 	// The focused agent commits: the message is on the record now (mailboxes
 	// drain at step boundaries), so the hint retires.
-	commitSnapshot(fe, 0, "chief", "xxh3:chief-step")
+	commitSnapshot(t, fe, "agent-chief", "xxh3:chief-step")
 	require.Empty(t, fe.queuedMsgLabel.Message())
 }
 
@@ -161,10 +157,9 @@ func TestRosterShowsStoppedAgents(t *testing.T) {
 	require.Len(t, fe.agentRosterEntries(), 2)
 
 	// The scout's runtime stops (dismissed, or replaced by a successor).
-	_, snapshots := rosterTrace()
-	loop := snapshots[2]
-	loop.AgentState = "STOPPED"
-	db.ImportSnapshots([]dagui.SpanSnapshot{loop})
+	publishAgentControl(t, db, "agent-scout", func(a *agentcontrol.Agent) {
+		a.State, a.StopReason = "STOPPED", "EXPLICIT"
+	})
 	fe.updateAgentRoster()
 
 	// Both entries remain: the stopped scout is still listed.

@@ -8,7 +8,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/dagger/dagger/dagql/cachefact"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
 	set "github.com/hashicorp/go-set/v3"
@@ -353,6 +352,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) eqClassID {
 	// results' forward entries to the winning canonical root.
 	dstResults := c.outputEqClassResults[ra]
 	srcResults := c.outputEqClassResults[rb]
+	joinsEntries := len(dstResults) > 0 && len(srcResults) > 0
 	if len(srcResults) > 0 {
 		if dstResults == nil {
 			dstResults = make(map[sharedResultID]struct{}, len(srcResults))
@@ -371,6 +371,9 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) eqClassID {
 	// An actual union: the winner's membership and reverse indexes are in
 	// place. Pending queue keys are recanonicalized in the same union.
 	c.recordShareUnionLocked(ra, rb)
+	if joinsEntries {
+		c.noteJoinedEntriesLocked(ra)
+	}
 	return ra
 }
 
@@ -558,13 +561,12 @@ func (c *Cache) hasUnexpiredResultForOutputEqClassLocked(
 		if res == nil {
 			continue
 		}
-		if res.remote != nil {
-			// A remote entry keeps its class's terms until its engine removes
-			// it, expired or not: it is never served, and its identity is
-			// what the cache holds it for.
+		if res.hasUnexpiredHoldingLocked(nowUnix) {
+			// Another cache's unexpired stored copy keeps the class's
+			// terms: the equivalence stays usable while any value in it is.
 			return true
 		}
-		if c.resultExpiredAtLocked(res, nowUnix) {
+		if res.noValueLocked() || c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
 		return true
@@ -621,8 +623,8 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 		if res.attachmentState() == resultAttachmentFailed {
 			continue
 		}
-		// Remote entries have no value to serve.
-		if res.remote != nil {
+		// An entry known only through holdings has no value to serve.
+		if res.noValueLocked() {
 			continue
 		}
 		if c.resultExpiredAtLocked(res, nowUnix) {
@@ -649,7 +651,7 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 			if res.attachmentState() == resultAttachmentFailed {
 				continue
 			}
-			if res.remote != nil {
+			if res.noValueLocked() {
 				continue
 			}
 			if c.resultExpiredAtLocked(res, nowUnix) {
@@ -815,7 +817,7 @@ func (c *Cache) lookupMatchForCallLocked(
 	return match
 }
 
-func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, responseFrame *ResultCall, postings *postingRecorder) error {
+func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, responseFrame *ResultCall) error {
 	if res == nil {
 		return nil
 	}
@@ -829,7 +831,7 @@ func (c *Cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 		if err != nil {
 			return err
 		}
-		c.addFramePostingsLocked(res.id, dig, frame.ExtraDigests, postings)
+		c.addFramePostingsLocked(res.id, dig, frame.ExtraDigests)
 		return nil
 	}
 	if err := indexFrame(requestFrame); err != nil {
@@ -1167,9 +1169,13 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 		frame := baseFrame.fork()
 
 		replaced := false
+		var replacedDigest digest.Digest
 		for i, extra := range frame.ExtraDigests {
 			if extra.Label != call.ExtraDigestLabelContent {
 				continue
+			}
+			if extra.Digest != contentDigest {
+				replacedDigest = extra.Digest
 			}
 			frame.ExtraDigests[i].Digest = contentDigest
 			replaced = true
@@ -1180,6 +1186,14 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 				Label:  call.ExtraDigestLabelContent,
 				Digest: contentDigest,
 			})
+		}
+		// A replaced content digest still names this result. Keep it on the
+		// frame, so it travels with the result to other engines.
+		if replacedDigest != "" {
+			kept := call.ExtraDigest{Digest: replacedDigest, Label: call.ExtraDigestLabelReplacedContent}
+			if !slices.Contains(frame.ExtraDigests, kept) {
+				frame.ExtraDigests = append(frame.ExtraDigests, kept)
+			}
 		}
 
 		for _, label := range additionalLabels {
@@ -1503,30 +1517,14 @@ func (c *Cache) teachResultIdentityLocked(
 	if err != nil {
 		return err
 	}
-	if fact, ok := c.applyPreparedResultIdentityLocked(ctx, res, requestFrame, requestDigest, requestSelf, requestInputs, provenance, indexDigest); ok {
-		c.emitIdentityLocked(res, fact)
-	}
+	c.applyPreparedResultIdentityLocked(ctx, res, requestFrame, requestDigest, requestSelf, requestInputs, provenance, indexDigest)
 	return nil
 }
 
-// emitIdentityLocked requires egraphMu for writing.
-func (c *Cache) emitIdentityLocked(res *sharedResult, fact cachefact.Identity) {
-	if !c.factsEnabled() || res == nil || !res.factAnnounced {
-		return
-	}
-	if fact.Digests == nil {
-		fact.Digests = []cachefact.Digest{}
-	}
-	c.emitFactLocked(fact)
-}
-
-// applyPreparedResultIdentityLocked has no fallible work after its first
-// mutation. When facts are enabled and the identity was applied, it returns
-// the identity fact describing the step: the postings it added, the term it
-// used and how, and the result's own expiry.
-func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *sharedResult, requestFrame *ResultCall, requestDigest, requestSelf digest.Digest, requestInputs []digest.Digest, inputProvenance []egraphInputProvenanceKind, indexDigest digest.Digest) (cachefact.Identity, bool) {
+// applyPreparedResultIdentityLocked has no fallible work after its first mutation.
+func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *sharedResult, requestFrame *ResultCall, requestDigest, requestSelf digest.Digest, requestInputs []digest.Digest, inputProvenance []egraphInputProvenanceKind, indexDigest digest.Digest) {
 	if res == nil || res.id == 0 || requestFrame == nil {
-		return cachefact.Identity{}, false
+		return
 	}
 	c.initEgraphLocked()
 
@@ -1548,7 +1546,7 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 		}
 	}
 	if len(rootSet) == 0 {
-		return cachefact.Identity{}, false
+		return
 	}
 
 	mergeIDs := make([]eqClassID, 0, len(rootSet))
@@ -1559,29 +1557,25 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 		mergeIDs = append(mergeIDs, root)
 	}
 	if len(mergeIDs) == 0 {
-		return cachefact.Identity{}, false
+		return
 	}
 	c.traceTeachResultIdentityRootSet(ctx, res, requestDigest.String(), requestSelf.String(), requestInputs, requestFrame, mergeIDs)
 	outputEqID := c.mergeEqClassesLocked(ctx, mergeIDs...)
 	if outputEqID == 0 {
-		return cachefact.Identity{}, false
+		return
 	}
 
 	inputEqIDs := c.ensureTermInputEqIDsLocked(ctx, requestInputs)
 	termDigest := calcEgraphTermDigest(requestSelf, inputEqIDs)
 	existingTerm := c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest[termDigest])
 
-	var termUse cachefact.TermUse
 	switch {
 	case c.termForResultByDigestLocked(res.id, termDigest) != nil:
 		c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
-		termUse = cachefact.TermUseReused
 	case existingTerm != nil:
 		c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance)
 		c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
-		termUse = cachefact.TermUseAssociated
 	default:
-		termUse = cachefact.TermUseCreated
 		mergedOutputEqID := c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
 
 		termID := c.nextEgraphTermID
@@ -1619,8 +1613,7 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
 	}
 
-	postings := c.newPostingRecorder()
-	c.addFramePostingsLocked(res.id, indexDigest, requestFrame.ExtraDigests, postings)
+	c.addFramePostingsLocked(res.id, indexDigest, requestFrame.ExtraDigests)
 	for termID := range c.resultTerms[res.id] {
 		term := c.egraphTerms[termID]
 		if term == nil {
@@ -1642,16 +1635,15 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 			extras[extra] = struct{}{}
 		}
 	}
-	if postings == nil {
-		return cachefact.Identity{}, false
+}
+
+// addFramePostingsLocked posts a frame's recipe digest and extra digests for
+// the result. Requires egraphMu.
+func (c *Cache) addFramePostingsLocked(resID sharedResultID, recipe digest.Digest, extras []call.ExtraDigest) {
+	c.addResultDigestPostingLocked(resID, recipe.String(), resultDigestPostingExact)
+	for _, extra := range extras {
+		c.addResultDigestPostingLocked(resID, extra.Digest.String(), resultDigestPostingExact)
 	}
-	return cachefact.Identity{
-		ID:            uint64(res.id),
-		Digests:       postings.digests,
-		Term:          factTerm(requestSelf, requestInputs, inputProvenance),
-		TermUse:       termUse,
-		ExpiresAtUnix: res.expiresAtUnix,
-	}, true
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
@@ -1736,8 +1728,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 
 	// ensure the result has its int ID initialized, then index it by that int it
 	// and by all of its digests in our various maps
-	newResult := res.id == 0
-	if newResult {
+	if res.id == 0 {
 		res.id = c.nextSharedResultID
 		c.nextSharedResultID++
 	}
@@ -1780,17 +1771,10 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 		})
 	}
 
-	var (
-		factTerms    []cachefact.Term
-		factTermUses []cachefact.TermUse
-	)
 	for _, term := range termsToIndex {
 		inputProvenance, err := c.inputProvenanceForRefs(term.inputRefs)
 		if err != nil {
 			return fmt.Errorf("derive input provenance for term %s: %w", term.selfDigest, err)
-		}
-		if c.factsEnabled() {
-			factTerms = append(factTerms, factTerm(term.selfDigest, term.inputDigests, inputProvenance))
 		}
 		// get all the eq classes for the inputs
 		inputEqIDs := c.ensureTermInputEqIDsLocked(ctx, term.inputDigests)
@@ -1802,9 +1786,6 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 			// (which is the merged eq class containing all input req digests + return val digests)
 			// is associated as the output eq class for this term; doing a merge+replair if needed.
 			c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
-			if c.factsEnabled() {
-				factTermUses = append(factTermUses, cachefact.TermUseReused)
-			}
 			continue
 		}
 		if existingTerm := c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest[termDigest]); existingTerm != nil {
@@ -1813,13 +1794,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 			// a new term
 			c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance)
 			c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
-			if c.factsEnabled() {
-				factTermUses = append(factTermUses, cachefact.TermUseAssociated)
-			}
 			continue
-		}
-		if c.factsEnabled() {
-			factTermUses = append(factTermUses, cachefact.TermUseCreated)
 		}
 
 		// no existing term with this digest, create a new one and associate it with this result; also merge the output eq class as needed
@@ -1866,8 +1841,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
 	}
 
-	postings := c.newPostingRecorder()
-	if err := c.indexResultDigestsLocked(res, requestFrame, responseFrame, postings); err != nil {
+	if err := c.indexResultDigestsLocked(res, requestFrame, responseFrame); err != nil {
 		return err
 	}
 	for termID := range c.resultTerms[res.id] {
@@ -1902,23 +1876,6 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 		}
 	}
 
-	if postings != nil {
-		if newResult {
-			fact := cachefact.Result{Origin: cachefact.OriginComputed, Digests: postings.digests, Terms: factTerms}
-			factResultDescription(res, &fact)
-			c.announceResultLocked(res, fact)
-		} else {
-			// An existing row gained this call's identity: the same step a teach
-			// takes, one term per indexed term.
-			for i, term := range factTerms {
-				fact := cachefact.Identity{ID: uint64(res.id), Term: term, TermUse: factTermUses[i], ExpiresAtUnix: res.expiresAtUnix}
-				if i == 0 {
-					fact.Digests = postings.digests
-				}
-				c.emitIdentityLocked(res, fact)
-			}
-		}
-	}
 	return nil
 }
 
@@ -1926,10 +1883,11 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	if res == nil {
 		return
 	}
-	if res.remote != nil {
-		delete(c.remoteEntries, res.remote.key)
-	}
-	if (len(c.egraphTerms) == 0 || len(c.resultOutputEqClasses) == 0) && len(c.remoteEntries) == 0 {
+	c.unindexRecipesLocked(res)
+	if len(c.egraphTerms) == 0 && len(c.resultsByID) == 1 && c.resultsByID[res.id] == res {
+		// The last entry, with no term left: the reset clears everything it
+		// indexed.
+		delete(c.resultsByID, res.id)
 		c.maybeResetEgraphLocked()
 		return
 	}
@@ -1999,9 +1957,11 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 }
 
 func (c *Cache) maybeResetEgraphLocked() {
-	// Remote entries can hold classes without terms (restored entries), and each
-	// stays until its own engine removes it.
-	if len(c.egraphTerms) != 0 || len(c.remoteEntries) != 0 {
+	// An entry can hold classes without terms, such as one known only through
+	// holdings, and an entry can outlive its class's last term, such as an
+	// expired entry a session still owns: nothing is reset while any entry
+	// remains.
+	if len(c.egraphTerms) != 0 || len(c.resultsByID) != 0 {
 		return
 	}
 
@@ -2023,7 +1983,9 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
 	c.resultsByID = nil
-	c.remoteEntries = nil
+	c.holderEntries = nil
+	c.entriesByRecipe = nil
+	c.remoteCaches = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs
@@ -2089,7 +2051,11 @@ func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, 
 
 	newEqClassToDigests := make(map[eqClassID]map[string]struct{}, len(oldRoots))
 	newEqClassExtraDigests := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(oldRoots))
-	newEgraphDigestToClass := make(map[string]eqClassID, len(c.egraphDigestToClass))
+	liveDigests := 0
+	for _, oldRoot := range oldRoots {
+		liveDigests += len(c.eqClassToDigests[oldRoot])
+	}
+	newEgraphDigestToClass := make(map[string]eqClassID, liveDigests)
 	for _, oldRoot := range oldRoots {
 		newRoot := remap[oldRoot]
 		if oldDigests := c.eqClassToDigests[oldRoot]; len(oldDigests) > 0 {

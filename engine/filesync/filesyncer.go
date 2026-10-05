@@ -15,15 +15,16 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 )
 
 type FileSyncer struct {
-	cacheManager bkcache.Accessor
+	cacheManager bkcache.SnapshotManager
 }
 
 type FileSyncerOpt struct {
-	CacheAccessor bkcache.Accessor
+	CacheAccessor bkcache.SnapshotManager
 }
 
 func NewFileSyncer(opt FileSyncerOpt) *FileSyncer {
@@ -75,6 +76,10 @@ func (ls *FileSyncer) snapshot(
 	ctx, span := Tracer(ctx).Start(ctx, "uploading "+clientPath,
 		telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("create filesync network recorders: %w", err)
+	}
 
 	statCtx := engine.LocalImportOpts{
 		Path:              clientPath,

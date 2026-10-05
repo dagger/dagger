@@ -870,7 +870,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 	t.Run("local cache survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-local-cache-state-" + identity.NewID()
+		stateKey := "persist-local-cache-state-" + identity.NewID()
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
@@ -878,7 +878,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		_, err := engineClientA.
 			Container().
 			From(alpineImage).
-			WithExec([]string{"sh", "-ec", "echo phase7-local-cache > /tmp/phase7.txt"}).
+			WithExec([]string{"sh", "-ec", "echo persist-local-cache > /tmp/persist.txt"}).
 			Sync(ctx)
 		require.NoError(t, err)
 
@@ -901,7 +901,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 	t.Run("lazy imported snapshot links count toward local cache usage and max-used prune", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-lazy-import-cache-usage-state-" + identity.NewID()
+		stateKey := "persist-lazy-import-cache-usage-state-" + identity.NewID()
 
 		runWorkload := func(ctx context.Context, t *testctx.T, client *dagger.Client) string {
 			t.Helper()
@@ -968,7 +968,7 @@ printf "%s" "$token"`,
 
 	t.Run("unclean shutdown discards local cache state and recovers", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-unclean-reset-state-" + identity.NewID()
+		stateKey := "persist-unclean-reset-state-" + identity.NewID()
 		const sentinelPath = "/state/worker/reset-sentinel"
 		randomScript := `
 set -eu
@@ -1063,7 +1063,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("container withNewFile hit survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-container-with-new-file-state-" + identity.NewID()
+		stateKey := "persist-container-with-new-file-state-" + identity.NewID()
 		const newFilePath = "/tmp/persisted-new-file.txt"
 		const newFileContents = "persisted withNewFile\n"
 
@@ -1094,7 +1094,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("container selector lazy dependencies survive restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-container-selector-lazy-state-" + identity.NewID()
+		stateKey := "persist-container-selector-lazy-state-" + identity.NewID()
 		const fileContents = "selector lazy persisted\n"
 
 		buildRetainedGraph := func(engineClient *dagger.Client) *dagger.Directory {
@@ -1143,7 +1143,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("directory search result list survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-directory-search-result-state-" + identity.NewID()
+		stateKey := "persist-directory-search-result-state-" + identity.NewID()
 		const pattern = `^\s*//\s*workspace:include\s+\S+\s*$`
 
 		runSearch := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) []string {
@@ -1202,7 +1202,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("changeset diff stat list survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-changeset-diff-stat-state-" + identity.NewID()
+		stateKey := "persist-changeset-diff-stat-state-" + identity.NewID()
 
 		runDiffStats := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) []string {
 			t.Helper()
@@ -1261,7 +1261,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("service-bound graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-service-binding-state-" + identity.NewID()
+		stateKey := "persist-service-binding-state-" + identity.NewID()
 		serviceScript := "#!/bin/sh\nwhile true; do cat /work/service-random.txt | nc -l -p 8080; done\n"
 		serviceSetupScript := `
 set -eu
@@ -1342,7 +1342,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/client-random.txt
 
 	t.Run("generator group graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-generator-group-state-" + identity.NewID()
+		stateKey := "persist-generator-group-state-" + identity.NewID()
 		// Copy the fixture out of the repo tree before pointing the client
 		// workdir at it. The repo root now carries its own dagger.toml
 		// workspace, so an in-repo workdir makes workspace detection walk up
@@ -1376,28 +1376,21 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 			return strings.TrimSpace(randomContents)
 		}
 
-		runGeneratorGroup := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) {
+		runGeneratorArtifact := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) {
 			t.Helper()
 
-			run := engineClient.
-				CurrentWorkspace().
-				Generators(dagger.WorkspaceGeneratorsOpts{Include: []string{"generate-files"}}).
-				Run()
-
-			empty, err := run.IsEmpty(ctx)
+			artifact := engineClient.CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"generate-files"}}).FilterTypes([]string{"Generator"}).One()
+			changes := artifactValue[*dagger.Changeset](ctx, t, engineClient, artifact)
+			empty, err := changes.IsEmpty(ctx)
 			require.NoError(t, err)
 			require.False(t, empty)
-
-			changesEmpty, err := run.Changes().IsEmpty(ctx)
-			require.NoError(t, err)
-			require.False(t, changesEmpty)
 		}
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		randomA := runRandom(ctx, t, engineClientA)
-		runGeneratorGroup(ctx, t, engineClientA)
+		runGeneratorArtifact(ctx, t, engineClientA)
 		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
 		upstreamSvcA = nil
 		engineSvcA = nil
@@ -1412,7 +1405,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("private field handle survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-private-field-handle-state-" + identity.NewID()
+		stateKey := "persist-private-field-handle-state-" + identity.NewID()
 		seed := identity.NewID()
 
 		callHolderUse := func(client *dagger.Client, salt string) (string, error) {
@@ -1447,7 +1440,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-function-cache-state-" + identity.NewID()
+		stateKey := "persist-function-cache-state-" + identity.NewID()
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
@@ -1477,7 +1470,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("typescript function cache control survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-typescript-function-cache-state-" + identity.NewID()
+		stateKey := "persist-typescript-function-cache-state-" + identity.NewID()
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
@@ -1507,7 +1500,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("contextual function cache survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-contextual-function-cache-state-" + identity.NewID()
+		stateKey := "persist-contextual-function-cache-state-" + identity.NewID()
 
 		getMod := func(client *dagger.Client) *dagger.Container {
 			return moduleFixture(t, client, "go/contextual-cache").
@@ -1553,7 +1546,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("container withExec output on host mount survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-container-host-mount-state-" + identity.NewID()
+		stateKey := "persist-container-host-mount-state-" + identity.NewID()
 
 		hostDirA := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(hostDirA, "input.txt"), []byte("same-content\n"), 0o600))
@@ -1597,7 +1590,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("container withExec output on host mounted file survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-container-host-file-state-" + identity.NewID()
+		stateKey := "persist-container-host-file-state-" + identity.NewID()
 
 		hostDirA := t.TempDir()
 		hostFileA := filepath.Join(hostDirA, "input.txt")
@@ -1643,7 +1636,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("container child exec during concurrent mounted directory parent eval", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-mounted-dir-parent-eval-race-state-" + identity.NewID()
+		stateKey := "persist-mounted-dir-parent-eval-race-state-" + identity.NewID()
 
 		hostDir := t.TempDir()
 		gitDir := filepath.Join(hostDir, ".git")
@@ -1667,8 +1660,8 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 		for attempt := range 50 {
 			parent := base.
-				WithMountedCache("/root/.cache/uv", engineClient.CacheVolume("phase7-race-uv-"+identity.NewID())).
-				WithMountedCache("/var/cache/foobar/plugins", engineClient.CacheVolume("phase7-race-foobar-"+identity.NewID())).
+				WithMountedCache("/root/.cache/uv", engineClient.CacheVolume("persist-race-uv-"+identity.NewID())).
+				WithMountedCache("/var/cache/foobar/plugins", engineClient.CacheVolume("persist-race-foobar-"+identity.NewID())).
 				WithWorkdir("/work").
 				WithMountedDirectory(".git", source).
 				WithSecretVariable("FOOBAR_TOKEN", secret)
@@ -1711,7 +1704,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("git repository and ref survive restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-git-restart-state-" + identity.NewID()
+		stateKey := "persist-git-restart-state-" + identity.NewID()
 		repoDir := t.TempDir()
 
 		runGit := func(args ...string) {
@@ -1890,7 +1883,7 @@ git commit -am next
 
 	t.Run("engine-dev container build survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-engine-dev-build-state-" + identity.NewID()
+		stateKey := "persist-engine-dev-build-state-" + identity.NewID()
 		// Workspace detection anchors on the git root, but the repo tree's .git
 		// varies by environment (a full dir in local checkouts, absent when the
 		// outer check runs from a remote git workspace whose clone discards it).
@@ -1989,9 +1982,9 @@ grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app
 			)
 		}
 
-		engineABootID := "phase7-engine-dev-build-engine-a"
-		engineBBootID := "phase7-engine-dev-build-engine-b"
-		engineCBootID := "phase7-engine-dev-build-engine-c"
+		engineABootID := "persist-engine-dev-build-engine-a"
+		engineBBootID := "persist-engine-dev-build-engine-b"
+		engineCBootID := "persist-engine-dev-build-engine-c"
 
 		engineA := startDevEngine(ctx, t, engineABootID)
 		t.Cleanup(func() { stopDevEngine(ctx, t, engineA) })
@@ -2053,8 +2046,8 @@ grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app
 
 	t.Run("cache volume survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-cache-volume-state-" + identity.NewID()
-		cacheKey := "phase7-cache-volume-data-" + identity.NewID()
+		stateKey := "persist-cache-volume-state-" + identity.NewID()
+		cacheKey := "persist-cache-volume-data-" + identity.NewID()
 		cacheValue := identity.NewID()
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
@@ -2092,8 +2085,8 @@ grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app
 
 	t.Run("source-backed cache volume supports concurrent mounts after restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "phase7-source-cache-volume-state-" + identity.NewID()
-		cacheKey := "phase7-source-cache-volume-data-" + identity.NewID()
+		stateKey := "persist-source-cache-volume-state-" + identity.NewID()
+		cacheKey := "persist-source-cache-volume-data-" + identity.NewID()
 
 		cacheSource := func(client *dagger.Client) *dagger.Directory {
 			return client.

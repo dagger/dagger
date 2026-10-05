@@ -168,6 +168,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				isObject:              env.Kind == persistedResultKindObject,
 				sessionResourceHandle: env.SessionResourceHandle,
 				expiresAtUnix:         row.ExpiresAtUnix,
+				replacements:          uint64(row.Replacements),
 				createdAtUnixNano:     row.CreatedAtUnixNano,
 				lastUsedAtUnixNano:    row.LastUsedAtUnixNano,
 				description:           row.Description,
@@ -176,6 +177,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			res.storeResultCall(frame)
 			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, frame)
+			if row.CloudHoldingNumber != 0 {
+				// The Cloud holding comes back before the saved offers attach
+				// to it.
+				res.noteCloudCopyLocked(uint64(row.CloudHoldingNumber), row.CloudHoldingStored, row.CloudHoldingExpiresAtUnix)
+			}
 
 			if env.Kind == persistedResultKindNull {
 				// An attached absent value keeps its row identity, recorded
@@ -463,6 +469,15 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	if importErr != nil {
 		return importErr
 	}
+	indexed := make(map[sharedResultID]struct{})
+	for _, row := range resultRows {
+		if row.Indexed {
+			indexed[sharedResultID(row.ID)] = struct{}{}
+		}
+	}
+	if err := c.indexRestoredEntries(indexed); err != nil {
+		return err
+	}
 
 	for _, resultID := range eagerDecodeResultIDs {
 		res := c.resultsByID[resultID]
@@ -490,10 +505,13 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if !res.hasValue && res.persistedEnvelope != nil && res.payloadRevision == state.payloadRevision {
 				markRestoredPartDelegation(res, *state.persistedEnvelope, call, state.snapshotOwnerLinks)
 				c.bindPartHost(res, decoded)
+				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok {
+					withSelf.InitializeResultReference(Result[Typed]{shared: res})
+				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true
-				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
-					res.objClass = objDecoded.ObjectType()
+				if objDecoded, ok := decoded.(AnyObjectResult); ok {
+					res.setObjClassLocked(objDecoded.ObjectType())
 				}
 				// The install must not touch the session-resource fields:
 				// the decoded shell only knows the row's own handle (the
@@ -727,14 +745,14 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			res.persistDecodeMu.Unlock()
 			if !leaseSyncPending {
 				if !state.isObject {
-					c.registerLazyEvaluation(res, hit, resolver)
+					c.registerLazyEvaluation(res, hit)
 					return hit, nil
 				}
 				objRes, err := wrapSharedResultWithResolver(ctx, res, hit.HitCache(), resolver)
 				if err != nil {
 					return nil, fmt.Errorf("reconstruct object result from cache hit payload: %w", err)
 				}
-				c.registerLazyEvaluation(res, objRes, resolver)
+				c.registerLazyEvaluation(res, objRes)
 				return objRes, nil
 			}
 			// The payload is installed but its owner-lease sync has not
@@ -896,10 +914,13 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			if !res.hasValue && res.persistedEnvelope != nil && res.payloadRevision == state.payloadRevision {
 				markRestoredPartDelegation(res, *state.persistedEnvelope, call, roles)
 				c.bindPartHost(res, decoded)
+				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok {
+					withSelf.InitializeResultReference(Result[Typed]{shared: res})
+				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true
-				if objDecoded, ok := decoded.(AnyObjectResult); ok && res.objClass == nil {
-					res.objClass = objDecoded.ObjectType()
+				if objDecoded, ok := decoded.(AnyObjectResult); ok {
+					res.setObjClassLocked(objDecoded.ObjectType())
 				}
 				// The install must not touch the session-resource fields:
 				// the decoded shell only knows the row's own handle, so

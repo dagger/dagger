@@ -853,14 +853,13 @@ func (s ChangesetSuite) TestWithChanges(ctx context.Context, t *testctx.T) {
 	s.testWithChangesSymlinks(t)
 }
 
-// Regression test for a snapshot use-after-release: Directory.withChanges with
-// an empty changeset used to store the parent's snapshot ref instance on the
-// derived directory instead of opening its own handle. Once the derived cache
-// entry was collected (session close plus cache prune), releasing its snapshot
-// handle invalidated the parent's still-cached snapshot, and every later use
-// of the parent from any session failed with "invalid immutable ref". A
-// dedicated nested engine is used because the repro requires an unrestricted
-// prune of the engine-wide cache.
+// Directory.withChanges with an empty changeset opens its own snapshot handle
+// rather than sharing the parent's ref instance, so collecting the derived
+// cache entry (session close plus cache prune) never invalidates the parent's
+// still-cached snapshot: later uses of the parent from any session keep
+// working instead of failing with "invalid immutable ref". A dedicated nested
+// engine is used because the test requires an unrestricted prune of the
+// engine-wide cache.
 func (ChangesetSuite) TestWithChangesEmptyChangesetKeepsParentSnapshot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -996,11 +995,10 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 
 		// A file whose identical content moves to a new path reads as a
 		// rename to git. AsPatch shells out to `git diff --no-prefix
-		// --no-index` between the a/ and b/ mount dirs; git detects the
-		// rename and used to emit a rename entry whose "rename from"/"rename
-		// to" lines still carried the a/ b/ dirs (unlike the stripped ---/+++
-		// lines), producing a patch git apply rejected with "inconsistent old
-		// filename". Applying such a changeset must still land the rename.
+		// --no-index` between the a/ and b/ mount dirs, which strips those
+		// dirs from ---/+++ lines but not from "rename from"/"rename to"
+		// lines, so it emits renames as a delete plus an add that git apply
+		// accepts. Applying such a changeset must land the rename.
 		baseDir := c.Directory().
 			WithNewFile("keep.txt", "unchanged").
 			WithNewFile("old-name.txt", "same content across the rename\n")
@@ -2134,7 +2132,7 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 func (ChangesetSuite) TestMergedDirectoryReplay(ctx context.Context, t *testctx.T) {
 	for _, mode := range []string{"two-way", "octopus", "chained"} {
 		t.Run(mode, func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
+			c, sink := connectWithTrace(ctx, t)
 			before := c.Directory().WithNewFile("base.txt", "base\n")
 			ours := before.WithNewFile("base.txt", "ours\n").Changes(before)
 			theirs := before.WithNewFile("added.txt", "theirs\n").Changes(before)
@@ -2157,7 +2155,7 @@ func (ChangesetSuite) TestMergedDirectoryReplay(ctx context.Context, t *testctx.
 			}
 			after, err := merged.After().Sync(ctx)
 			require.NoError(t, err)
-			portable, err := c.LLM().WithWorkspace(after.AsWorkspace()).PortableID(ctx)
+			portable, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(after.AsWorkspace()))
 			require.NoError(t, err)
 
 			engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngineContainer(c))).Start(ctx)
@@ -2263,11 +2261,11 @@ func (ChangesetSuite) TestSameFileRegionMerge(ctx context.Context, t *testctx.T)
 // whose content is identical yet whose timestamps diverge (as happens when
 // content-addressed caching pairs physically different materializations of
 // the same tree) rides along in the diff without ever being declared. When
-// the changeset's before directory carries a .git directory, that phantom
-// used to include .git/HEAD, and applying it mid-merge clobbered the
-// temporary repository's HEAD: the ours commit landed on the wrong branch
-// and the merge silently resolved to the other side. This was the root cause
-// of flaky workspace module inits under concurrent identical initializations.
+// the changeset's before directory carries a .git directory, that phantom can
+// include .git/HEAD. The merge never applies content under the
+// workspace-root .git directory, so it cannot clobber the temporary
+// repository's HEAD, land the ours commit on the wrong branch, and silently
+// resolve the merge to the other side.
 func (ChangesetSuite) TestMergePhantomStatOnlyChanges(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

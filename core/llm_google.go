@@ -258,11 +258,7 @@ func genaiMediaPart(block *LLMContentBlock) (*genai.Part, error) {
 	if !supported {
 		return nil, fmt.Errorf("google: unsupported %s MIME type %q", block.Kind, block.MIMEType)
 	}
-	data, err := base64.StdEncoding.DecodeString(block.Data)
-	if err != nil {
-		return nil, fmt.Errorf("google: invalid base64 %s data", block.Kind)
-	}
-	return genai.NewPartFromBytes(data, mimeType), nil
+	return genai.NewPartFromBytes(block.Data.Bytes(), mimeType), nil
 }
 
 func genaiToolResponse(block *LLMContentBlock, toolName string) (*genai.FunctionResponse, error) {

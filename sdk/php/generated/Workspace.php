@@ -23,6 +23,22 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Resolve an address in this workspace.
+     *
+     * A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+     *
+     * A value without the dag:// scheme keeps its external meaning, such as a container image reference.
+     *
+     * The Address retains this workspace across module calls and ID reloads.
+     */
+    public function resolve(string $value): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resolve');
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a native configuration, without changing an existing configuration.
      *
      * Fail if legacy configuration needs workspace migration.
@@ -814,11 +830,14 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      *
      * If key points to a table, returns flattened dotted-key output.
      */
-    public function configRead(?string $key = ''): string
+    public function configRead(?string $key = '', ?bool $effective = false): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configRead');
         if (null !== $key) {
         $leafQueryBuilder->setArgument('key', $key);
+        }
+        if (null !== $effective) {
+        $leafQueryBuilder->setArgument('effective', $effective);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'configRead');
     }
@@ -894,79 +913,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return all checks from modules loaded in the workspace.
+     * Discover static object artifacts from workspace modules without evaluating their values.
      */
-    public function checks(
-        ?array $include = null,
-        ?array $skip = null,
-        ?bool $noGenerate = null,
-        ?bool $onlyGenerate = null,
-    ): CheckGroup {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        if (null !== $skip) {
-        $innerQueryBuilder->setArgument('skip', $skip);
-        }
-        if (null !== $noGenerate) {
-        $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
-        }
-        if (null !== $onlyGenerate) {
-        $innerQueryBuilder->setArgument('onlyGenerate', $onlyGenerate);
-        }
-        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return all generators from modules loaded in the workspace.
-     */
-    public function generators(?array $include = null): GeneratorGroup
+    public function artifacts(?array $include = null): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('artifacts');
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
-        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return all services from modules loaded in the workspace.
-     */
-    public function services(?array $include = null): UpGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('services');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return all terminal targets from modules loaded in the workspace.
-     */
-    public function terminals(?array $include = null): TerminalGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminals');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        return new \Dagger\TerminalGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Return all agent middlewares from modules loaded in the workspace.
-     */
-    public function agents(?array $include = null, ?array $exclude = null): AgentMiddlewareGroup
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agents');
-        if (null !== $include) {
-        $innerQueryBuilder->setArgument('include', $include);
-        }
-        if (null !== $exclude) {
-        $innerQueryBuilder->setArgument('exclude', $exclude);
-        }
-        return new \Dagger\AgentMiddlewareGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

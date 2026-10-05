@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -533,7 +534,7 @@ func anthropicInputBlock(block *LLMContentBlock) (anthropic.ContentBlockParamUni
 	case LLMContentImage:
 		switch block.MIMEType {
 		case "image/jpeg", "image/png", "image/gif", "image/webp":
-			return anthropic.NewImageBlockBase64(block.MIMEType, block.Data), nil
+			return anthropic.NewImageBlockBase64(block.MIMEType, base64.StdEncoding.EncodeToString(block.Data)), nil
 		default:
 			return anthropic.ContentBlockParamUnion{}, fmt.Errorf("anthropic: unsupported image MIME type %q", block.MIMEType)
 		}
@@ -541,7 +542,7 @@ func anthropicInputBlock(block *LLMContentBlock) (anthropic.ContentBlockParamUni
 		if block.MIMEType != "application/pdf" {
 			return anthropic.ContentBlockParamUnion{}, fmt.Errorf("anthropic: unsupported document MIME type %q (only application/pdf is supported)", block.MIMEType)
 		}
-		return anthropic.NewDocumentBlock(anthropic.Base64PDFSourceParam{Data: block.Data}), nil
+		return anthropic.NewDocumentBlock(anthropic.Base64PDFSourceParam{Data: base64.StdEncoding.EncodeToString(block.Data)}), nil
 	case LLMContentAudio:
 		return anthropic.ContentBlockParamUnion{}, fmt.Errorf("anthropic: AUDIO content is not supported")
 	default:

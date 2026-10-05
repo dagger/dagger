@@ -498,22 +498,26 @@ func (slot *shareSlot) shareServiceRoots() []uint64 {
 }
 
 // shareSlotContext builds one slot's preparation context outside every lock:
-// the marked worker base, the receiver's exact recorded call, and, only for a
-// typed preparation that must reconstruct services, the engine's registered
-// context and its schema-only server bound through DagQL's own server helper
-// so a decoder cannot fall back to the root's client-dependent server.
+// the marked worker base, the receiver's exact recorded call, and, for every
+// typed preparation, the engine's registered context and its schema-only
+// server bound through DagQL's own server helper. A typed decode reads that
+// server, never a client's: the worker runs for no client.
 //
-// Root, factory and native decoder availability are all checked before the
-// first exact reference load.
+// For a preparation that must reconstruct services, root, factory and native
+// decoder availability are all checked before the first exact reference load.
 func (c *Cache) shareSlotContext(ctx context.Context, slot *shareSlot) (context.Context, error) {
 	if call := slot.receiver.record.Call; call != nil {
 		ctx = ContextWithCall(ctx, call)
 	}
-	if !slot.shareSlotNeedsServices() {
+	if !slot.receiver.version.payload.hasValue {
+		// An encoded receiver decodes nothing, so it needs no schema at all.
 		return ctx, nil
 	}
 	prepare := c.partPreparationContext()
 	if prepare == nil {
+		if !slot.shareSlotNeedsServices() {
+			return ctx, nil
+		}
 		return nil, fmt.Errorf("%w: no registered preparation context for a typed service receiver", ErrSnapshotShareIneligible)
 	}
 	prepared, srv, err := prepare(ctx)
@@ -530,10 +534,11 @@ func (c *Cache) shareSlotContext(ctx context.Context, slot *shareSlot) (context.
 }
 
 // PartPreparationContext builds the engine-root context and schema-only
-// server a typed sharing preparation needs to decode persisted services. The
+// server a typed sharing preparation decodes persisted values with. The
 // cache never constructs one itself: a cache with no registered callback
 // treats a typed receiver that needs service construction as ineligible, and
-// leaves service-free and encoded installs available.
+// leaves service-free and encoded installs available, decoding with no
+// server.
 type PartPreparationContext func(context.Context) (context.Context, *Server, error)
 
 // ErrSnapshotShareIneligible marks a slot the pass will not attempt. It is a
@@ -1211,6 +1216,66 @@ func (c *Cache) runSnapshotSharePass(ctx context.Context, item *snapshotShareIte
 	}
 	for _, st := range states {
 		<-st.done
+	}
+	c.reportSharedParts(receipts)
+}
+
+// SnapshotSharedPart is one part a snapshot-sharing pass completed on an
+// entry: the entry's result number, the part's address (as a span's
+// dagger.io/cache.parts lists it), the entry's dependencies, and the entry's
+// replacement count, which names the value the part and dependencies belong
+// to.
+type SnapshotSharedPart struct {
+	ResultID     uint64
+	Part         string
+	Deps         []uint64
+	Replacements uint64
+}
+
+// WithSnapshotShareReport makes the cache report, after each snapshot-sharing
+// pass that completed parts, the parts it completed. Sharing runs outside any
+// session, so no span reports them. report runs on the sharing worker with no
+// cache lock held, and must not block.
+func WithSnapshotShareReport(report func([]SnapshotSharedPart)) CacheOption {
+	return func(c *Cache) {
+		c.shareReport = report
+	}
+}
+
+// captureSharedParts records, for the report, what a finished receipt
+// completed: of its installed outputs, those the gate settled, with the
+// entry's dependencies and replacement count. It runs while the receipt
+// still holds its entry, so no replacement comes between the settlement and
+// this read, and the count names these parts and dependencies. The pass
+// reports later, after its holds are gone.
+func (c *Cache) captureSharedParts(receipt *ReadyPartReceipt) {
+	if c.shareReport == nil {
+		return
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	keys := receipt.receiver.taskSettledPartKeys(receipt.task)
+	if len(keys) == 0 {
+		return
+	}
+	deps := sortedResultIDs(receipt.receiver.deps)
+	for _, key := range keys {
+		receipt.shared = append(receipt.shared, SnapshotSharedPart{ResultID: uint64(receipt.receiver.id), Part: key, Deps: deps, Replacements: receipt.receiver.replacements})
+	}
+}
+
+// reportSharedParts reports the parts the pass's receipts completed, as each
+// receipt's finish captured them.
+func (c *Cache) reportSharedParts(receipts []*ReadyPartReceipt) {
+	if c.shareReport == nil || len(receipts) == 0 {
+		return
+	}
+	var parts []SnapshotSharedPart
+	for _, receipt := range receipts {
+		parts = append(parts, receipt.shared...)
+	}
+	if len(parts) > 0 {
+		c.shareReport(parts)
 	}
 }
 

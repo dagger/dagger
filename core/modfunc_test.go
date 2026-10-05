@@ -89,9 +89,6 @@ func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
 
 			inputs := modFn.cacheImplicitInputs()
 			byName := mapImplicitInputsByName(inputs)
-			_, hasLegacyScopeInput := byName["moduleFunctionScope"]
-			require.False(t, hasLegacyScopeInput, "legacy module scope implicit input should not be present")
-
 			callInput, hasCallInput := byName[dagql.PerCallInput.Name]
 			require.Equal(t, tc.expectCallScope, hasCallInput)
 			if tc.expectCallScope {

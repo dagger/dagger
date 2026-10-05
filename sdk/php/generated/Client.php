@@ -56,6 +56,18 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Name the current session.
+     *
+     * The title renames the session wherever its telemetry is shown (the calling client's primary span, e.g. the CLI's command span) and labels its engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+     */
+    public function setSessionTitle(string $title): void
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('setSessionTitle');
+        $leafQueryBuilder->setArgument('title', $title);
+        $this->queryLeaf($leafQueryBuilder, 'setSessionTitle');
+    }
+
+    /**
      * Creates an empty directory.
      */
     public function directory(): Directory
@@ -479,6 +491,17 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Start an empty run of text and media content, independent of any conversation.
+     *
+     * Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+     */
+    public function llmContent(): LLMContent
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llmContent');
+        return new \Dagger\LLMContent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Initialize a JSON value
      */
     public function json(): JsonValue
@@ -510,7 +533,7 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * initialize an address to load directories, containers, secrets or other object types.
+     * Resolve external references only.
      */
     public function address(string $value): Address
     {
@@ -540,6 +563,12 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         return new \Dagger\Client($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    public function sourceDir(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceDir');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     public function codegen(ModuleSource $modSource, File $introspectionJson): GeneratedCode
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegen');
@@ -562,11 +591,5 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('modSource', $modSource);
         $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    public function sourceDir(): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceDir');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

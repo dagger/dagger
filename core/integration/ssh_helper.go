@@ -18,7 +18,7 @@ import (
 	_ "embed"
 )
 
-// Private key used to test the new SSH modules ref format
+// Private key used to test SSH module refs.
 // It has read-only access to our modules testing private repositories.
 // These are all quasi-mirrors of github.com/dagger/dagger-test-modules
 // - gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git
@@ -28,7 +28,7 @@ import (
 //go:embed private_key_ro_dagger_modules_test.pem
 var base64EncodedPrivateKey string
 
-// Private key used to test the new SSH modules ref format
+// Private key used to test SSH module refs.
 // This key is just for GitHub, to transition between the fork and the main dagger-test-modules repo
 //
 //go:embed private_key_ro_dagger_modules_test_github.pem

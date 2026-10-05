@@ -272,9 +272,20 @@ func TestCacheArbitrarySessionClaimAndReleaseAreAtomic(t *testing.T) {
 		c, key := newCacheWithSeed(t)
 		recorded := make(chan struct{})
 		allowClaim := make(chan struct{})
+		releaseRecorded := make(chan struct{})
 		c.testAfterSessionArbitraryRecord = func() {
 			close(recorded)
 			<-allowClaim
+		}
+		c.testAfterSessionReleaseRecord = func() {
+			close(releaseRecorded)
+		}
+		c.testBeforeSessionOperationExit = func(sessionID string) {
+			if sessionID == "racing" {
+				// The claim has dropped its ownership locks here, so release can
+				// record its plan before the claim checks the session tombstone.
+				<-releaseRecorded
+			}
 		}
 		claimErr := make(chan error, 1)
 		go func() {
@@ -283,17 +294,17 @@ func TestCacheArbitrarySessionClaimAndReleaseAreAtomic(t *testing.T) {
 		}()
 		<-recorded
 
-		releaseStarted := make(chan struct{})
 		releaseErr := make(chan error, 1)
 		go func() {
-			close(releaseStarted)
 			releaseErr <- c.ReleaseSession(t.Context(), "racing")
 		}()
-		<-releaseStarted
 		close(allowClaim)
-		assert.ErrorIs(t, <-claimErr, ErrCacheSessionReleased)
-		assert.NilError(t, <-releaseErr)
+		claimResult, releaseResult := <-claimErr, <-releaseErr
+		assert.ErrorIs(t, claimResult, ErrCacheSessionReleased)
+		assert.NilError(t, releaseResult)
 		c.testAfterSessionArbitraryRecord = nil
+		c.testAfterSessionReleaseRecord = nil
+		c.testBeforeSessionOperationExit = nil
 
 		assertArbitraryOwnershipExact(t, c)
 		assert.NilError(t, c.ReleaseSession(t.Context(), "seed"))

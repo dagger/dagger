@@ -135,9 +135,10 @@ type Params struct {
 
 	ImageLoaderBackend imageload.Backend
 
-	Module   string
-	Function string
-	ExecCmd  []string
+	Module       string
+	ExtraModules []engine.ExtraModule
+	Function     string
+	ExecCmd      []string
 
 	EagerRuntime bool
 
@@ -211,6 +212,10 @@ type Client struct {
 	hostname       string
 	stableClientID string
 
+	// primarySpan is the span Connect was called under (e.g. the CLI's
+	// command span): the span this client's session is presented as.
+	primarySpan trace.SpanContext
+
 	nestedSessionPort int
 
 	labels enginetel.Labels
@@ -277,6 +282,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 		// infer that this is not a main client caller, server ID is never set for those currently
 		connectSpanOpts = append(connectSpanOpts, telemetry.Internal())
 	}
+
+	// The caller's span, not the connect span below, is what the session is
+	// presented as (the CLI's command span for `dagger agent`, `dagger
+	// session`, ...).
+	c.primarySpan = trace.SpanContextFromContext(ctx)
 
 	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
 	connectCtx, span := Tracer(ctx).Start(ctx, "connect", connectSpanOpts...)
@@ -669,18 +679,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		return fmt.Errorf("connect session attachables: %w", err)
 	}
 
-	c.eg.Go(func() error {
-		ctx, cancel, err := c.withClientCloseCancel(ctx)
-		if err != nil {
-			return err
-		}
-		go func() {
-			<-ctx.Done()
-			cancel(errors.New("startSession context done"))
-		}()
-		c.sessionSrv.Run(ctx)
-		return nil
-	})
+	c.runSessionAttachables()
 
 	c.httpClient = c.newHTTPClient()
 	return nil
@@ -732,21 +731,25 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 		return fmt.Errorf("connect session attachables: %w", err)
 	}
 
-	c.eg.Go(func() error {
-		ctx, cancel, err := c.withClientCloseCancel(ctx)
-		if err != nil {
-			return err
-		}
-		go func() {
-			<-ctx.Done()
-			cancel(errors.New("startSession context done"))
-		}()
-		c.sessionSrv.Run(ctx)
-		return nil
-	})
+	c.runSessionAttachables()
 
 	c.httpClient = c.newHTTPClient()
 	return nil
+}
+
+// runSessionAttachables keeps host services available through shutdown. A
+// cancelled command still needs them to persist workspace locks and finish
+// other cleanup; Close stops them after the engine acknowledges shutdown.
+func (c *Client) runSessionAttachables() {
+	c.eg.Go(func() error {
+		ctx, cancel, err := c.withClientCloseCancel(c.internalCtx)
+		if err != nil {
+			return err
+		}
+		defer cancel(errors.New("session attachables stopped"))
+		c.sessionSrv.Run(ctx)
+		return nil
+	})
 }
 
 func ConnectSessionAttachables(
@@ -1466,9 +1469,12 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	proxyReq := &http.Request{
 		Method: r.Method,
 		URL: &url.URL{
-			Scheme: "http",
-			Host:   "dagger",
-			Path:   r.URL.Path,
+			Scheme:     "http",
+			Host:       "dagger",
+			Path:       r.URL.Path,
+			RawPath:    r.URL.RawPath,
+			RawQuery:   r.URL.RawQuery,
+			ForceQuery: r.URL.ForceQuery,
 		},
 		Header: r.Header,
 		Body:   r.Body,
@@ -1774,12 +1780,17 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		CloudScaleOutEngineID:          remoteEngineID,
 		Profile:                        c.Profile,
 	}
+	if c.primarySpan.IsValid() {
+		md.PrimaryTraceID = c.primarySpan.TraceID().String()
+		md.PrimarySpanID = c.primarySpan.SpanID().String()
+	}
 	if c.EngineCloudTelemetry && c.CloudAuth != nil {
 		md.CloudTelemetryPublisher = engine.CloudTelemetryPublisherEngine
 		md.CloudURL = c.CloudURL
 		md.CredentialsPath = c.CloudCredentialsPath
 	}
 
+	md.ExtraModules = slices.Clone(c.ExtraModules)
 	if c.Module != "" {
 		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Entrypoint: true}}
 	}
