@@ -184,11 +184,11 @@ func TestStoredQueries(t *testing.T) {
 	require.NoError(t, err)
 	require.ElementsMatch(t, []digest.Digest{testDigest("shared"), testDigest("r-top"), testDigest("outside-pool")}, live, "a value outside the pool keeps its blobs live")
 
-	usage, err := cloud.CloudUsage()
+	usage, err := cloud.BlobCacheUsage()
 	require.NoError(t, err)
 	cloud.egraphMu.RLock()
 	recordBytes := func(number uint64) int64 { return cloud.resultsByID[sharedResultID(number)].storedRecordBytes }
-	want := CloudUsage{
+	want := BlobCacheUsage{
 		PoolValues:    2,
 		PoolBytes:     recordBytes(r) + recordBytes(p) + 2*cacheMetadataResultEstimatedBytes,
 		PoolBlobs:     2,
@@ -209,7 +209,7 @@ func TestStoredQueries(t *testing.T) {
 	require.ErrorContains(t, err, "no blob store")
 	_, err = c.LiveBlobs()
 	require.ErrorContains(t, err, "no blob store")
-	_, err = c.CloudUsage()
+	_, err = c.BlobCacheUsage()
 	require.ErrorContains(t, err, "no blob store")
 	_, err = c.DropStoredParts(testDigest("x"))
 	require.ErrorContains(t, err, "no blob store")

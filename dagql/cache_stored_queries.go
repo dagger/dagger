@@ -174,8 +174,8 @@ func (c *Cache) LiveBlobs() ([]digest.Digest, error) {
 	return slices.Sorted(maps.Keys(live)), nil
 }
 
-// CloudUsage is what a blob-backed cache holds, as its limits count it.
-type CloudUsage struct {
+// BlobCacheUsage is what a blob-backed cache holds, as its limits count it.
+type BlobCacheUsage struct {
 	// PoolValues and PoolBytes are the pool as the memory stage measures
 	// it: the values in the closure of the stored roots, each counted as its
 	// record's bytes plus an entry's estimate.
@@ -195,15 +195,15 @@ type CloudUsage struct {
 	RecordBytes int64
 }
 
-// CloudUsage measures the cache, read under one hold. Only a blob-backed
+// BlobCacheUsage measures the cache, read under one hold. Only a blob-backed
 // cache answers.
-func (c *Cache) CloudUsage() (CloudUsage, error) {
+func (c *Cache) BlobCacheUsage() (BlobCacheUsage, error) {
 	if !c.blobBacked {
-		return CloudUsage{}, fmt.Errorf("cloud usage: the cache has no blob store")
+		return BlobCacheUsage{}, fmt.Errorf("blob cache usage: the cache has no blob store")
 	}
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	usage := CloudUsage{
+	usage := BlobCacheUsage{
 		Entries:    len(c.resultsByID),
 		Terms:      len(c.egraphTerms),
 		ClassSlots: c.eqClassSlotsLocked(),
