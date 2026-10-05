@@ -1690,8 +1690,11 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 				c.Directory().WithNewFile("index.html", content+"-2")).
 			WithDefaultArgs([]string{
 				"sh", "-c",
-				`( cd /srv/www1 && python -m http.server 32765 ) &
-				 ( cd /srv/www2 && python -m http.server 32764 ) &
+				// 32764 is not exposed, so nothing health-checks it; wait for it
+				// before starting 32765 so the 32765 health check covers both.
+				`( cd /srv/www2 && python -m http.server 32764 ) &
+				 python -c 'import socket, sys, time; any(socket.socket().connect_ex(("127.0.0.1", 32764)) == 0 or time.sleep(0.1) for _ in range(300)) or sys.exit("port 32764 not ready")' || exit 1
+				 ( cd /srv/www1 && python -m http.server 32765 ) &
 				 wait`,
 			}).
 			WithExposedPort(32765). // NB: trying to avoid conflicts...
