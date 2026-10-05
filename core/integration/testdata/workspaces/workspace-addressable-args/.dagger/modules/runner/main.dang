@@ -44,6 +44,16 @@ type Runner {
   }
 
   """
+  Run a conversation over this module's own tools.
+
+  Its tool calls then run under this module rather than the CLI, as a worker
+  agent spawned by a module does: the delegated case for address lifting.
+  """
+  delegate(model: String!, prompt: String!): String! {
+    llm(model: model).withTools(currentNode).withPrompt(prompt).loop.transcript
+  }
+
+  """
   Use a token.
 
   Secret is blocklisted — a model-typed env:// or file:// address would mint

@@ -35,6 +35,10 @@ func (*currentTypeDefsTestServer) AuthorizeGitPush(context.Context, string, stri
 	panic("unexpected AuthorizeGitPush")
 }
 
+func (*currentTypeDefsTestServer) AuthorizeGitRead(context.Context, string) (*engine.ClientMetadata, error) {
+	panic("unexpected AuthorizeGitRead")
+}
+
 func (s *currentTypeDefsTestServer) ServeModule(context.Context, dagql.ObjectResult[*core.Module], bool, bool) error {
 	return nil
 }

@@ -317,11 +317,11 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 			Doc(`Load a file from the address.`).
 			Args(append(copyFilterArgs(), noLockArg("git ref"))...),
 		dagql.NodeFunc("gitRef", s.gitRef).
-			WithInput(gitLiveInput(dagql.PerClientInput)).
+			WithInput(gitLiveInput(gitPerClientInput)).
 			Doc(`Load a git ref (branch, tag or commit) from the address.`).
 			Args(noLockArg("git ref")),
 		dagql.NodeFunc("gitRepository", s.gitRepository).
-			WithInput(dagql.PerClientInput).
+			WithInput(gitPerClientInput).
 			Doc(`Load a git repository from the address.`),
 		dagql.NodeFunc("secret", s.secret).
 			WithInput(dagql.PerCallInput).

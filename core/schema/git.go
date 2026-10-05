@@ -53,7 +53,7 @@ type gitSchema struct {
 func (s *gitSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("git", s.git).
-			WithInput(dagql.PerClientInput).
+			WithInput(gitPerClientInput).
 			View(AllVersion).
 			Doc(`Queries a Git repository.`).
 			Args(
@@ -911,7 +911,14 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			// during `dagger generate`) that doesn't itself hold the user's
 			// credentials.
 			isTrustedDepResolution := core.IsModuleDependencyResolution(ctx)
-			if clientMetadata.ClientID != parentClientMetadata.ClientID && !isTrustedDepResolution {
+			directCaller := clientMetadata.ClientID == parentClientMetadata.ClientID
+			// A remote that an agent's model supplied as a tool argument may
+			// also use the agent owner's credentials, approved by the owner when
+			// a module drives the agent (see Server.AuthorizeGitRead). URLs with
+			// their own userinfo keep it.
+			agentAddress := !directCaller && !isTrustedDepResolution &&
+				remote.User == nil && core.IsAgentAddressResolution(ctx)
+			if !directCaller && !isTrustedDepResolution && !agentAddress {
 				break
 			}
 			credClientMetadatas := []*engine.ClientMetadata{parentClientMetadata}
@@ -958,6 +965,14 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			if metadata != nil {
 				publicMetadata = metadata
 				break
+			}
+			if agentAddress {
+				// Ask only now: public remotes need no credentials, so no approval.
+				owner, err := parent.Self().AuthorizeGitRead(ctx, remote.Remote())
+				if err != nil {
+					return inst, err
+				}
+				credClientMetadatas = []*engine.ClientMetadata{owner}
 			}
 
 			// Retrieve credentials, trying each candidate client until one succeeds.
@@ -1067,6 +1082,27 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		}
 	}
 	return inst, err
+}
+
+// gitPerClientInput is dagql.PerClientInput, except that resolving a remote an
+// agent's model supplied gets a namespace of its own. Such a lookup may carry
+// the agent owner's credentials (see core.WithAgentAddressResolution), so it
+// must neither reuse the caller's own lookups of the same URL, which may have
+// none, nor hand the owner's to them. It keeps PerClientInput's name, so
+// every other lookup keeps its existing call digest.
+var gitPerClientInput = dagql.ImplicitInput{
+	Name: dagql.PerClientInput.Name,
+	Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
+		input, err := dagql.PerClientInput.Resolver(ctx, args)
+		if err != nil || !core.IsAgentAddressResolution(ctx) {
+			return input, err
+		}
+		key, ok := input.(dagql.String)
+		if !ok {
+			return nil, fmt.Errorf("unexpected per-client cache key %T", input)
+		}
+		return dagql.NewString(key.String() + ":agent-address"), nil
+	},
 }
 
 // gitLockScopedInput scopes a ref lookup per client when its resolution can
