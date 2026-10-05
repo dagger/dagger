@@ -184,7 +184,14 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				res.noteCloudCopyLocked(uint64(row.CloudHoldingNumber), row.CloudHoldingStored, row.CloudHoldingExpiresAtUnix)
 			}
 
-			if env.Kind == persistedResultKindNull {
+			if c.blobBacked {
+				// A blob-backed cache never decodes a value: it keeps every
+				// record as it was saved, which placement copies into
+				// bundles, and takes back its stored parts.
+				if err := restoreStoredPartsLocked(res, &env, row.CallFrameJSON, row.SelfPayload); err != nil {
+					return fmt.Errorf("import result %d stored parts: %w", resultID, err)
+				}
+			} else if env.Kind == persistedResultKindNull {
 				// An attached absent value keeps its row identity, recorded
 				// call, requirements and list position: its self is the
 				// invalid nullable wrapper of the declared type, never a

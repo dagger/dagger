@@ -84,6 +84,9 @@ type CachePruneReport struct {
 	ReclaimedBytes int64
 	// DroppedEdges are the retention edges the run dropped, in order.
 	DroppedEdges []CacheRetentionDrop
+	// DroppedValues counts the values a blob-backed cache's run dropped:
+	// those that only holdings kept once their stored roots went.
+	DroppedValues int
 }
 
 // CacheRetentionDrop is one retention edge a prune run dropped: the entry's
@@ -166,6 +169,9 @@ type CacheMetadataPruneReport struct {
 	CandidatesExhausted           bool
 	// DroppedEdges are the retention edges the pass dropped, in order.
 	DroppedEdges []CacheRetentionDrop
+	// DroppedValues counts the values a blob-backed cache's pass dropped:
+	// those that only holdings kept once their stored roots went.
+	DroppedValues int
 
 	SnapshotGCAttempted bool
 	SnapshotGCSucceeded bool
@@ -527,6 +533,11 @@ func NewCache(
 		db = c.sqlDB
 	}
 
+	// An engine wipes its store after a stop that was not clean, because its
+	// snapshots may no longer match it. A blob-backed cache has no snapshots,
+	// and its store is a whole, consistent save at every commit (Checkpoint),
+	// so it restores the last save whatever ended the process, and never
+	// marks its store dirty.
 	cleanShutdownVal, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyCleanShutdown)
 	if err != nil {
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -534,7 +545,7 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("read clean_shutdown metadata: %w", err)
 	}
-	if found && cleanShutdownVal != "1" {
+	if c.uncleanStore(found, cleanShutdownVal) {
 		c.persistenceResetReason = CachePersistenceResetUncleanShutdown
 		c.tracePersistStoreWipedUncleanShutdown(ctx, cleanShutdownVal)
 		slog.Warn("dagql persistence store marked unclean; wiping and cold-starting", "cleanShutdown", cleanShutdownVal)
@@ -582,7 +593,7 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("set persistence schema version: %w", err)
 	}
-	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "0"); err != nil {
+	if err := c.markStoreDirty(ctx); err != nil {
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
 			return nil, errors.Join(fmt.Errorf("mark clean_shutdown=0 at startup: %w", err), closeErr)
 		}
@@ -593,6 +604,22 @@ func NewCache(
 	}
 	c.countBootRestored()
 	return c, nil
+}
+
+// uncleanStore reports whether an engine's store was left by a stop that
+// was not clean, so its snapshots may no longer match it. A blob-backed
+// cache's never is (see NewCache).
+func (c *Cache) uncleanStore(found bool, cleanShutdown string) bool {
+	return found && cleanShutdown != "1" && !c.blobBacked
+}
+
+// markStoreDirty marks an engine's store in use until a clean close. A
+// blob-backed cache never marks its store dirty (see NewCache).
+func (c *Cache) markStoreDirty(ctx context.Context) error {
+	if c.blobBacked {
+		return nil
+	}
+	return c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "0")
 }
 
 // countBootRestored counts, once the restore has fully succeeded, the entries
@@ -1687,8 +1714,16 @@ func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error 
 // lock that deleted it. The one other deletion is a failed in-place
 // replacement's, which collects its entry with the edge (cache_current_entry.go).
 func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) (droppedAt time.Time, removed bool, _ error) {
+	droppedAt, removed, _, err := c.removePrunedEdge(ctx, resultID)
+	return droppedAt, removed, err
+}
+
+// removePrunedEdge is removePersistedEdge for a prune. On a blob-backed cache
+// the cascade goes through holdings, and it also reports how many values it
+// dropped (dropPrunedValuesLocked).
+func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (droppedAt time.Time, removed bool, droppedValues int, _ error) {
 	if c == nil || resultID == 0 {
-		return time.Time{}, false, nil
+		return time.Time{}, false, 0, nil
 	}
 
 	var (
@@ -1701,25 +1736,34 @@ func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID
 	edge, found := c.persistedEdgesByResult[resultID]
 	if !found || edge.unpruneable {
 		c.egraphMu.Unlock()
-		return time.Time{}, false, nil
+		return time.Time{}, false, 0, nil
 	}
 	delete(c.persistedEdgesByResult, resultID)
 	droppedAt = time.Now()
+	entriesBefore := len(c.resultsByID)
 	res = c.resultsByID[resultID]
 	if res != nil {
 		var err error
 		queue, err = c.decrementIncomingOwnershipLocked(ctx, res, queue)
 		rerr = errors.Join(rerr, err)
+		if c.blobBacked {
+			queue, droppedValues, err = c.dropPrunedValuesLocked(ctx, []*sharedResult{res})
+			rerr = errors.Join(rerr, err)
+		}
 	}
 	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	onReleases = append(onReleases, collectReleases...)
 	rerr = errors.Join(rerr, collectErr)
+	if c.blobBacked && len(c.resultsByID) < entriesBefore {
+		// The Cloud compacts its classes on collection, not in a prune.
+		c.eqClassRemoved = true
+	}
 	c.egraphMu.Unlock()
 	if c.testAfterRetentionDrop != nil {
 		c.testAfterRetentionDrop(resultID)
 	}
 
-	return droppedAt, true, errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
+	return droppedAt, true, droppedValues, errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
 }
 
 func (c *Cache) incrementIncomingOwnershipLocked(ctx context.Context, res *sharedResult) {
@@ -2203,6 +2247,9 @@ type Cache struct {
 	releaseCleanupErrMu sync.Mutex
 	releaseCleanupErr   error
 
+	// checkpointMu serializes Checkpoint's saves.
+	checkpointMu sync.Mutex
+
 	persistenceResetReason CachePersistenceResetReason
 	// identity names the cache's persistence database across the engine
 	// processes that open it, and openedExisting reports that this open found
@@ -2529,7 +2576,11 @@ type sharedResult struct {
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key. Only a blob-backed cache (the Cloud)
 	// sets them. Guarded by egraphMu.
-	storedParts                 map[string]PersistedPartOffer
+	storedParts map[string]PersistedPartOffer
+	// storedRecordBytes is the size of the record a blob-backed cache stores
+	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
+	// Guarded by egraphMu.
+	storedRecordBytes           int64
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
 	// Reverse offer ownership does not propagate lookup requirements.
