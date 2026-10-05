@@ -127,7 +127,7 @@ Each implementation recovers that information with different heuristics.
 | `WORD` | An ordinary word, stored lowercase: `client`. |
 | `ACRONYM` | A word written in capitals: `HTTP`, `E2E`, `3D`. Comes from the dictionary or from a run of capitals in the input. |
 | `TERM` | A dictionary entry with a fixed mixed-case spelling: `GitHub`, `IPv6`, `iOS`. |
-| Suffix | A plural `s` and/or trailing digits attached to a word: `SHA`+`s`, `OAuth`+`2`, `HTTP`+`2`. |
+| Suffix | A plural `s` and/or trailing digits attached to an acronym or term: `SHA`+`s`, `OAuth`+`2`, `HTTP`+`2`. An ordinary word keeps its digits in its text. |
 | Casing | The joining convention: `PASCAL`, `CAMEL`, `SNAKE`, `SCREAMING_SNAKE`, `KEBAB`, `FLAT`. |
 | Acronym style | How acronyms and terms are written where a word starts with a capital: `UPPERCASE` (`HTTPClient`) or `CAPITALIZED` (`HttpClient`). |
 | Canonical name | `format(parse(x), casing, UPPERCASE)` for the casing the schema uses at that position. |
@@ -187,7 +187,8 @@ Each candidate word is one of:
    - `I`+`Pv`+`6` → `IPv6`; `Git`+`Hub` → `GitHub`; `3`+`D` → `3D`; `e`+`2`+`e`
      → `E2E`; `Ids` → `ID`+`s`.
 2. **Caps piece cover:** a whole caps piece written as a sequence of dictionary
-   entries and digit runs. `HTTPAPI` → `HTTP`+`API`; `HTTP2` → `HTTP`+`2`. This
+   entries and digit runs. `HTTPAPI` → `HTTP`+`API`; `HTTP2` → `HTTP`+`2`;
+   `APIs` → `API`+`s` (only the last entry can take the piece's plural `s`). This
    is the only place the dictionary looks *inside* a segment, because a run of
    capitals has no internal boundary information. If the cover isn't complete
    (`HTTPX`), this candidate doesn't apply.
@@ -198,7 +199,9 @@ The chosen division is the one that is best by, in order:
 
 1. the fewest letters not covered by a dictionary entry,
 2. then the fewest words (digit-only words don't count; they're glued in step 5),
-3. then the fewest plural matches (so `ios` is `iOS`, not `IO`+`s`).
+3. then the fewest plural matches (so `ios` is `iOS`, not `IO`+`s`),
+4. then the fewest words counting digit-only ones, so a heuristic word keeps
+   its digits (`ABC2`, not `ABC`·`2`).
 
 **Why matches must line up with boundaries.** Dictionary matching only
 compares whole cut segments, never arbitrary substrings. That's what keeps
@@ -208,9 +211,11 @@ dictionary entry can apply is a letter/digit cut (`get3d` → `get` + `3D`).
 
 ### 5. Digit gluing
 
-A word made only of digits is appended to the previous word's suffix:
-`OAuth`·`2` → `OAuth`+`2`, `sha256` → `SHA`+`256`. Digits that start the input
-stay a word of their own.
+A word made only of digits is appended to the previous word: to an acronym's
+or term's suffix (`OAuth`·`2` → `OAuth`+`2`, `sha256` → `SHA`+`256`), or to an
+ordinary word's text (`foo_2` → `foo2`), so a `WORD` always carries its digits
+in its text, like `base64`. Digits that start the input stay a word of their
+own.
 
 So **digits belong to the word before them by default** (`base64`, `int32`,
 `v1`, `beta1`, `win32`), and dictionary entries decide the exceptions (`3D`,
@@ -301,7 +306,9 @@ covers `HTTP2`, `SHA` covers `SHA256`.
 - The Go SDK's Dagger additions: `FS SDK LLM`
 - Acronyms found in the core schema: `GPU VCS SHA MCP OCI`
 - Common in modules: `E2E CLI TUI IO PR EC2 MD5`
-- Terms: `GitHub GitLab OAuth IPv4 IPv6 iOS macOS gRPC GraphQL 3D 2D`
+- Terms: `GitHub GitLab OAuth IPv4 IPv6 iOS macOS gRPC GraphQL 3D 2D`. Their
+  `capitalized` forms are `Oauth Ipv4 Ipv6 Ios MacOS Grpc`; the brands
+  `GitHub GitLab GraphQL` and `3D 2D` keep their spelling.
 
 ### Process
 
@@ -428,6 +435,10 @@ Notes:
 - `identifier` and `namingDictionary` follow the caller's engine version, like
   the rest of the schema.
 - `Casing` and `AcronymStyle` can gain values later without breaking anyone.
+- Like every object in the schema, `IdentifierWord` and `NamingTerm` also
+  implement `Node`.
+- The API is `@experimental` and visible to clients at engine version
+  `v1.0.0` and above.
 
 ## Engine Integration
 
@@ -503,10 +514,10 @@ Names that were already canonical don't change.
 
 Core names are written by hand in Go and are *not* run through the
 normalizer. Measured against `docs/docs-graphql/schema.graphqls` with the
-initial dictionary:
+initial dictionary, before the API above added its own (canonical) names:
 
 - All 126 type names are already canonical.
-- 698 of 705 field/argument names are already canonical. The 7 exceptions:
+- 696 of 703 field/argument names are already canonical. The 7 exceptions:
   `asSdkName`, `callId`, `filterUri`, `parentShas`, `pushUrl`, `shortSha`,
   `withoutUri`.
 - One enum still uses legacy PascalCase values with no `SCREAMING_SNAKE`
@@ -537,8 +548,8 @@ Where cheap, SDKs keep the old names as deprecated aliases for one release.
 
 ## Guarantees
 
-Checked with a prototype against the [test vectors](#test-vectors) and the full
-core schema.
+Checked against the [test vectors](#test-vectors) and the full core schema by
+the `engine/naming` tests.
 
 1. **Round trip.** If every acronym and term in `x` is in the dictionary, then
    `parse(format(parse(x), C, S))` has the same words as `parse(x)`, for every
@@ -553,6 +564,13 @@ core schema.
    `withFinalTypeName` unnecessary, and why every core type name passes
    through unchanged.
 
+One exception applies to all three: a name made only of acronyms and terms
+formats in `PASCAL`/`UPPERCASE` with no lowercase letter (`htmlURL` →
+`HTMLURL`). That output parses caseless, and lowercase is never split, so it
+comes back as one word (`htmlurl`, see [Known Limitations](#known-limitations)).
+The only such core name is the `htmlURL` field, which the schema uses in
+`CAMEL`, where it round-trips.
+
 ## Known Limitations
 
 | case | result | remedy |
@@ -561,6 +579,7 @@ core schema.
 | Unknown adjacent acronyms | `HTTPXAPIClient` → `HTTPXAPI` · `client` | add the unknown one |
 | Unknown mixed-case brand | `PostgreSQL` (not an initial entry) → `postgre_sql` | add the term |
 | Adjacent acronyms in all-caps input without separators | `E2EAPI` → `e2eapi` (caseless; lowercase is never split) | write `E2E_API` |
+| A name made only of acronyms, in `PASCAL`/`UPPERCASE` | `htmlURL` → `HTMLURL` → `htmlurl` | format it in another casing, or with `CAPITALIZED` (`HtmlUrl`) |
 | Dictionary overrides author casing | `Sha256Sum` → `SHA256Sum`; `HttpClient` → `HTTPClient` | intended |
 | A dictionary entry splits a lowercase word at a digit | `md5sum` → `md5_sum` / `MD5Sum` (because `MD5` is an entry) | intended; `base64`, `int32` stay whole |
 | Digit-led words not in the dictionary | `Get4KStream` → `get4_k_stream` | add the term (`4K`) |
