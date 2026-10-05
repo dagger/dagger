@@ -11,6 +11,7 @@ use Dagger\Exception\RegistrationError\MissingAttribute;
 use Dagger\File;
 use Dagger\Json;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
+use Dagger\Tests\Unit\Fixture\EnumDefaults;
 use Dagger\ValueObject\Argument;
 use Dagger\ValueObject\Type;
 use Generator;
@@ -177,6 +178,40 @@ class ArgumentTest extends TestCase
                 'fileWithDefaultPath',
                 'value',
             )
+        ];
+    }
+
+    /**
+     * Dagger identifies an enum member by its case name, so a default must be
+     * serialised as the case name - including when it sits inside a list.
+     */
+    #[Test]
+    #[DataProvider('provideEnumDefaults')]
+    public function itSerialisesEnumDefaultsByCaseName(
+        string $method,
+        Json $expected,
+    ): void {
+        $argument = Argument::fromReflection(
+            self::getReflectionParameter(EnumDefaults::class, $method, 'value'),
+        );
+
+        self::assertEquals($expected, $argument->default);
+    }
+
+    /** @return Generator<array{string, Json}> */
+    public static function provideEnumDefaults(): Generator
+    {
+        yield 'enum' => ['scalar', new Json('"Bar"')];
+
+        yield 'nullable enum' => ['nullable', new Json('null')];
+
+        // json_encode() throws on a pure enum, so this only works because
+        // getDefault() unwraps it to the case name first.
+        yield 'pure enum' => ['pure', new Json('"High"')];
+
+        yield 'list of enums' => [
+            'listOfEnums',
+            new Json('["Foo","Baz"]'),
         ];
     }
 
