@@ -204,17 +204,19 @@ func applyArtifactFilters(cmd *cobra.Command, addr *dagaddress.Address, artifact
 		if len(names) == 0 {
 			artifacts = artifacts.FilterTypes([]string{})
 		} else {
-			artifacts = filterArtifactTypeNames(artifacts, names)
+			artifacts = filterArtifactAddress(artifacts, &dagaddress.Address{Types: names})
 		}
 	}
-	// Workspace.artifacts(include:) already selected the path and its children.
 	return filterArtifactAddress(artifacts, addr)
 }
 
 // filterArtifactAddress applies the type and dimension filters of an address.
 // It does not apply the path: Workspace.artifacts(include:) selects it.
 func filterArtifactAddress(artifacts *dagger.Artifacts, addr *dagaddress.Address) *dagger.Artifacts {
-	artifacts = filterArtifactTypeNames(artifacts, addr.Types)
+	if len(addr.Types) > 0 {
+		// Only the engine knows which concrete types these names match.
+		artifacts = artifacts.FilterURI((&dagaddress.Address{Types: addr.Types}).String())
+	}
 	for _, filter := range addr.DimensionFilters() {
 		if filter.Keys == nil {
 			artifacts = artifacts.FilterDimensions([]string{filter.Dimension})
@@ -223,16 +225,6 @@ func filterArtifactAddress(artifacts *dagger.Artifacts, addr *dagaddress.Address
 		}
 	}
 	return artifacts
-}
-
-// filterArtifactTypeNames keeps artifacts of the listed address type names.
-// Only the engine knows which concrete types these names match, so the names
-// go through filterUri.
-func filterArtifactTypeNames(artifacts *dagger.Artifacts, names []string) *dagger.Artifacts {
-	if len(names) == 0 {
-		return artifacts
-	}
-	return artifacts.FilterURI((&dagaddress.Address{HasScheme: true, Types: names}).String())
 }
 
 func artifactKeyFlags(cmd *cobra.Command) []dagaddress.Pair {
@@ -328,19 +320,18 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 				}
 			}
 			artifacts = listArtifactTargets(artifacts, cmd, defs)
-			filter := *addr
-			filter.Query = append(slices.Clone(addr.Query), flags...)
-			if slices.ContainsFunc(filter.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
+			addr.Query = append(addr.Query, flags...)
+			if slices.ContainsFunc(addr.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
 				paths, err := readArtifactListPaths(ctx, ec.Dagger(), artifacts)
 				if err != nil {
 					return err
 				}
-				artifacts, err = filterArtifactTypeKeys(artifacts, paths, &filter)
+				artifacts, err = filterArtifactTypeKeys(artifacts, paths, addr)
 				if err != nil {
 					return err
 				}
 			}
-			artifacts = applyArtifactFilters(cmd, &filter, artifacts)
+			artifacts = applyArtifactFilters(cmd, addr, artifacts)
 			if selected == nil {
 				selected = artifacts
 			} else {

@@ -142,14 +142,13 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 				return nil, err
 			}
 		}
-		filter := *address
-		filter.Query = append(slices.Clone(address.Query), keys...)
+		address.Query = append(address.Query, keys...)
 		if strict {
-			if err := requireArtifactModules(ctx, dag, selection, filter.DimensionFilters()); err != nil {
+			if err := requireArtifactModules(ctx, dag, selection, address.DimensionFilters()); err != nil {
 				return nil, err
 			}
 		}
-		if slices.ContainsFunc(filter.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
+		if slices.ContainsFunc(address.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
 			targets, err := commandArtifactTargets(ctx, dag, cmd, selection)
 			if err != nil {
 				return nil, err
@@ -158,12 +157,12 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 			if err != nil {
 				return nil, err
 			}
-			selection, err = filterArtifactTypeKeys(selection, paths, &filter)
+			selection, err = filterArtifactTypeKeys(selection, paths, address)
 			if err != nil {
 				return nil, err
 			}
 		}
-		selection = filterArtifactAddress(selection, &filter)
+		selection = filterArtifactAddress(selection, address)
 		if selected == nil {
 			selected = selection
 		} else {

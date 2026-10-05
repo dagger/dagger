@@ -152,7 +152,6 @@ func TestAbsoluteArtifactWorkspace(t *testing.T) {
 	require.ErrorContains(t, err, "different workspaces")
 }
 
-// Minimal flags for selection and serialization tests.
 func TestArtifactSelectorFlags(t *testing.T) {
 	defs := artifact.Dimensions{
 		{Identifier: "module", Kind: "MODULE", Name: "module"},
