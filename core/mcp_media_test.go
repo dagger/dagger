@@ -100,7 +100,8 @@ func TestMediaToolDispatch(t *testing.T) {
 	for _, mode := range []string{"sequential", "parallel"} {
 		t.Run(mode, func(t *testing.T) {
 			tool := LLMTool{Name: "image", ReadOnly: mode == "parallel", Call: func(context.Context, any) (any, error) { return media, nil }}
-			msgs := newMCP().CallBatch(t.Context(), []LLMTool{tool}, []*LLMToolCall{{Name: "image", CallID: "call-1"}}, nil, nil)
+			msgs, rest := newMCP().CallBatch(t.Context(), []LLMTool{tool}, []*LLMToolCall{{Name: "image", CallID: "call-1"}}, nil, nil)
+			require.Empty(t, rest)
 			require.Len(t, msgs, 1)
 			result := msgs[0].Content[0]
 			require.Equal(t, LLMContentToolResult, result.Kind)

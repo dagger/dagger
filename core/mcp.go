@@ -114,8 +114,8 @@ type MCP struct {
 	// applyStateReturn / adoptLLM). When set, step() appends the turn's tool
 	// results to IT rather than to the LLM that made the call, so the loop
 	// resumes from the returned conversation — env, tools, prompts and all.
-	// Continuations run after the turn's other calls (CallBatch), so by then
-	// there is no other state left to persist. Transient: cleared by Clone.
+	// CallBatch stops once one is adopted; step() runs the turn's remaining
+	// calls on the continued conversation. Transient: cleared by Clone.
 	continuation dagql.ObjectResult[*LLM]
 	// stateChanged records that a tool call changed the bound workspace or
 	// bindings since selfLLM was set — this MCP has diverged from the
@@ -209,10 +209,12 @@ func (m *MCP) Standalone() *MCP {
 // SetSelfLLM records the conversation dispatching this step's tool calls, so
 // the object-tool adapter can pass it explicitly to an `LLM!` argument. Called
 // by step() on its transient MCP clone: first with the response itself, then —
-// before CallBatch runs the turn's continuations — with the turn's workspace
-// and binding changes folded in, so a continuation transforms the
-// state the turn actually produced. The conversation is in sync with this MCP
-// at that point by construction, so the divergence flag resets.
+// before CallBatch runs a continuation — with the workspace and binding
+// changes of the calls before it folded in, so a continuation transforms the
+// state the turn actually produced, and finally, once a continuation is
+// adopted, with that continuation on the MCP running the rest of the turn.
+// The conversation is in sync with this MCP at each point by construction,
+// so the divergence flag resets.
 func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -221,11 +223,11 @@ func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
 }
 
 // errContinuationAdopted is returned by the state rings (applyChangeset,
-// rebindWorkspace, rebindBoundTool) once a continuation has been adopted this
-// turn: step() resumes from the continuation, so a change made after it would
-// be dropped without a trace. Continuations normally run last (see
-// SplitContinuationCalls), so this only fires when one was reached some other
-// way, e.g. wrapped in the Timeout builtin.
+// rebindWorkspace, rebindBoundTool) once a continuation has been adopted on
+// this MCP: step() resumes from the continuation, so a change made here after
+// it would be dropped without a trace. CallBatch stops at a continuation and
+// step() runs the rest of the turn on the continued conversation, so this only
+// fires for a change racing the adoption itself.
 var errContinuationAdopted = errors.New("a conversation-replacing tool call already ran this turn; re-issue this call in the next turn so it applies to the continued conversation")
 
 // guardStateChange is called by the state rings before they mutate this MCP.
@@ -243,26 +245,6 @@ func (m *MCP) markStateChanged() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stateChanged = true
-}
-
-// SplitContinuationCalls partitions a turn's tool calls into the ones to run
-// first, in the order written, and the continuations (ReturnsLLM tools) that
-// CallBatch runs afterwards, once every other call's effect on the workspace
-// and bindings has been folded into the conversation they receive. A
-// continuation is the turn's outermost transform — "replace the conversation"
-// — so it takes everything else that happened as input: `[reload,
-// editModule]` reloads the edit just like `[editModule, reload]` does. Calls
-// to unknown tools stay with the others so they fail there normally.
-func (m *MCP) SplitContinuationCalls(tools []LLMTool, toolCalls []*LLMToolCall) (regular, continuations []*LLMToolCall) {
-	for _, toolCall := range toolCalls {
-		tool, err := m.LookupTool(toolCall.Name, tools)
-		if err == nil && tool.ReturnsLLM {
-			continuations = append(continuations, toolCall)
-			continue
-		}
-		regular = append(regular, toolCall)
-	}
-	return regular, continuations
 }
 
 // Continuation returns the LLM a tool returned during this step, if any. step()
@@ -950,22 +932,24 @@ func countCommitsSince(ctx context.Context, srv *dagql.Server, head, base dagql.
 //     load fails the tool call instead of bricking the loop. A failure here is
 //     an ordinary failed tool call: the agent survives, the old conversation
 //     stands.
-//   - one per turn: LLMs do not compose the way Changesets do, so at most one
-//     continuation may be adopted per batch of tool calls.
+//   - one per MCP: LLMs do not compose the way Changesets do, so at most one
+//     continuation may be adopted on an MCP. A later continuation in the same
+//     turn runs on the continued conversation's MCP instead (see LLM.step),
+//     transforming the first one's result.
 //   - visibility: the string returned here is the model's notice of what
 //     changed — which tools came and went, and whether the conversation
 //     history itself was replaced. A swap is never silent.
 //
 // Two mechanical details the caller handles rather than this function:
 //
-//   - ordering: CallBatch runs continuations after every other call in the
-//     turn (SplitContinuationCalls), with the turn's workspace and binding
-//     changes already folded into the conversation they receive by step(), so
-//     a continuation transforms what the turn produced. If one is reached out
-//     of order (e.g. wrapped in the Timeout builtin) the stateChanged check
-//     below refuses it rather than let it drop earlier work, and
-//     errContinuationAdopted refuses later work rather than let the
-//     continuation drop it.
+//   - ordering: a continuation runs in its written position. Before it runs,
+//     step() folds the workspace and binding changes of the calls before it
+//     into the conversation it receives, so a continuation transforms what
+//     the turn produced; CallBatch then stops, and step() runs the calls
+//     after it on the continued conversation. If one is adopted without that
+//     fold (e.g. returned some other way than a ReturnsLLM tool) the
+//     stateChanged check below refuses it rather than let it drop earlier
+//     work.
 //   - tool results: step() appends the turn's tool results to the adopted LLM,
 //     and a tool-result block is only valid where the matching tool call exists
 //     in the history. See toolResultSelectors in llm.go, which degrades an
@@ -1887,8 +1871,14 @@ func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, erro
 	}
 }
 
-// CallBatch runs one turn's tool calls and returns one result per call, in the
-// order the calls were written.
+// CallBatch runs a turn's tool calls in the order they were written, until one
+// of them adopts a continuation. It returns one result per call it ran, in
+// call order, and the calls written after the continuation, which it leaves
+// for the caller to run on the continued conversation (see LLM.step): a
+// continuation replaces the conversation — its workspace, bindings and
+// toolset — so the calls after it are written against that conversation, not
+// this one. `[checkout, log]` logs the new checkout. When no continuation is
+// adopted, every call runs and rest is empty.
 //
 // Models emit a turn's tool calls as an ordered list and read it as a script,
 // so calls take effect in the order written:
@@ -1908,13 +1898,14 @@ func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, erro
 //     call written against a failed one's effect fails on its own terms (the
 //     edit's search string is missing, the test sees the old tree), and the
 //     model reads both results together.
-//   - Continuations (LLMTool.ReturnsLLM) run last, whatever their position:
-//     see SplitContinuationCalls. beforeContinuations, if set, runs once before
-//     the first of them, so the caller can hand them a conversation that
-//     carries the turn's effects. If it fails, the continuations don't run:
-//     they would replace the conversation with one missing the turn's work.
-func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay, beforeContinuations func(context.Context) error) []*LLMMessage {
-	results := make([]*LLMMessage, len(toolCalls))
+//   - A continuation (a call whose tool returns an LLM, see
+//     isContinuationCall) is a sequential step like any other, in its
+//     position. beforeContinuation, if set, runs right before it, so the
+//     caller can hand it a conversation carrying the effects of the calls
+//     before it. If that fails, the continuation doesn't run: it would
+//     replace the conversation with one missing the turn's work.
+func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay, beforeContinuation func(context.Context) error) (results []*LLMMessage, rest []*LLMToolCall) {
+	results = make([]*LLMMessage, len(toolCalls))
 	position := make(map[*LLMToolCall]int, len(toolCalls))
 	for i, call := range toolCalls {
 		position[call] = i
@@ -1927,10 +1918,19 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 		}
 	}
 	call := func(call *LLMToolCall) *LLMContentBlock {
+		if beforeContinuation != nil && m.isContinuationCall(call, tools) {
+			if err := beforeContinuation(ctx); err != nil {
+				return &LLMContentBlock{
+					Kind:    LLMContentToolResult,
+					CallID:  call.CallID,
+					Text:    fmt.Sprintf("not run: failed to carry this turn's changes into the conversation: %s", err),
+					Errored: true,
+				}
+			}
+		}
 		return m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
 	}
 
-	regular, continuations := m.SplitContinuationCalls(tools, toolCalls)
 	// runSteps executes a plan, handing each call's result to emit.
 	var runSteps func(steps []batchStep, emit func(*LLMToolCall, *LLMContentBlock))
 	runSteps = func(steps []batchStep, emit func(*LLMToolCall, *LLMContentBlock)) {
@@ -1968,25 +1968,25 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 			}
 		}
 	}
-	runSteps(m.planBatch(tools, regular), record)
-
-	if len(continuations) > 0 && beforeContinuations != nil {
-		if err := beforeContinuations(ctx); err != nil {
-			for _, call := range continuations {
-				record(call, &LLMContentBlock{
-					Kind:    LLMContentToolResult,
-					CallID:  call.CallID,
-					Text:    fmt.Sprintf("not run: failed to carry this turn's changes into the conversation: %s", err),
-					Errored: true,
-				})
-			}
-			return results
+	// The top-level steps run one at a time so the batch can stop at the
+	// first continuation: the steps are consecutive runs of calls, so what
+	// remains after it is a suffix of toolCalls.
+	ran := 0
+	for _, step := range m.planBatch(tools, toolCalls) {
+		runSteps([]batchStep{step}, record)
+		ran += len(step.calls)
+		if m.Continuation().Self() != nil {
+			break
 		}
 	}
-	for _, c := range continuations {
-		record(c, call(c))
-	}
-	return results
+	return results[:ran], toolCalls[ran:]
+}
+
+// isContinuationCall reports whether call is to a tool that returns an LLM — a
+// continuation (see adoptLLM) — directly or wrapped in the Timeout builtin.
+func (m *MCP) isContinuationCall(call *LLMToolCall, tools []LLMTool) bool {
+	tool, err := m.planningTool(call, tools)
+	return err == nil && tool.ReturnsLLM
 }
 
 // annotateMCPSyncFailure rewrites the results of an MCP server's calls after
