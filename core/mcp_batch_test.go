@@ -139,13 +139,21 @@ func batchResults(t *testing.T, msgs []*LLMMessage) []batchResult {
 	return out
 }
 
+// runBatch runs a batch that adopts no continuation, so every call runs.
+func runBatch(ctx context.Context, t *testing.T, m *MCP, tools []LLMTool, calls []*LLMToolCall) []batchResult {
+	t.Helper()
+	results, rest := m.CallBatch(ctx, tools, calls, nil, nil)
+	require.Empty(t, rest, "no continuation was adopted, so every call runs")
+	return batchResults(t, results)
+}
+
 func TestCallBatchWriteThenReadSeesTheWrite(t *testing.T) {
 	fs := newBatchFS(nil)
 	calls := []*LLMToolCall{
 		batchCall(t, 1, "write", map[string]any{"path": "a.txt", "contents": "hello"}),
 		batchCall(t, 2, "read", map[string]any{"path": "a.txt"}),
 	}
-	results := batchResults(t, newMCP().CallBatch(t.Context(), fs.tools(), calls, nil, nil))
+	results := runBatch(t.Context(), t, newMCP(), fs.tools(), calls)
 	require.Equal(t, []batchResult{
 		{CallID: "call_1", Text: "wrote a.txt"},
 		{CallID: "call_2", Text: "hello"},
@@ -161,7 +169,7 @@ func TestCallBatchPreservesWriteOrder(t *testing.T) {
 		batchCall(t, 3, "write", map[string]any{"path": "b.txt", "contents": "b"}),
 		batchCall(t, 4, "edit", map[string]any{"path": "b.txt", "oldText": "b", "newText": "bee"}),
 	}
-	results := batchResults(t, newMCP().CallBatch(t.Context(), fs.tools(), calls, nil, nil))
+	results := runBatch(t.Context(), t, newMCP(), fs.tools(), calls)
 	for _, res := range results {
 		require.False(t, res.Errored, "%s: %s", res.CallID, res.Text)
 	}
@@ -198,7 +206,7 @@ func TestCallBatchRunsConsecutivePureCallsConcurrently(t *testing.T) {
 	for i := 1; i <= n; i++ {
 		calls = append(calls, batchCall(t, i, "wait", nil))
 	}
-	for _, res := range batchResults(t, newMCP().CallBatch(t.Context(), tools, calls, nil, nil)) {
+	for _, res := range runBatch(t.Context(), t, newMCP(), tools, calls) {
 		require.False(t, res.Errored, "%s: %s", res.CallID, res.Text)
 	}
 }
@@ -212,7 +220,7 @@ func TestCallBatchSequentialStepIsABarrier(t *testing.T) {
 		batchCall(t, 4, "read", map[string]any{"id": "r3", "path": "a.txt"}),
 		batchCall(t, 5, "read", map[string]any{"id": "r4", "path": "a.txt"}),
 	}
-	results := batchResults(t, newMCP().CallBatch(t.Context(), fs.tools(), calls, nil, nil))
+	results := runBatch(t.Context(), t, newMCP(), fs.tools(), calls)
 	require.Equal(t, []string{"a", "a", "wrote a.txt", "A", "A"}, []string{
 		results[0].Text, results[1].Text, results[2].Text, results[3].Text, results[4].Text,
 	})
@@ -245,7 +253,7 @@ func TestCallBatchReturnsResultsInCallOrder(t *testing.T) {
 		batchCall(t, 5, "nonexistent", nil),
 		batchCall(t, 6, "read", map[string]any{"path": "b.txt"}),
 	}
-	results := batchResults(t, newMCP().CallBatch(t.Context(), fs.tools(), calls, nil, nil))
+	results := runBatch(t.Context(), t, newMCP(), fs.tools(), calls)
 	require.Len(t, results, len(calls))
 	for i, res := range results {
 		require.Equal(t, calls[i].CallID, res.CallID)
@@ -261,7 +269,7 @@ func TestCallBatchFailedStepDoesNotStopTheBatch(t *testing.T) {
 		batchCall(t, 3, "read", map[string]any{"path": "a.txt"}),
 		batchCall(t, 4, "write", map[string]any{"path": "c.txt", "contents": "c"}),
 	}
-	results := batchResults(t, newMCP().CallBatch(t.Context(), fs.tools(), calls, nil, nil))
+	results := runBatch(t.Context(), t, newMCP(), fs.tools(), calls)
 
 	require.False(t, results[0].Errored)
 	require.True(t, results[1].Errored)
@@ -315,7 +323,7 @@ func TestCallBatchUnevaluableChangesetFailsItsOwnCall(t *testing.T) {
 		batchCall(t, 2, "brokenEdit", nil),
 		batchCall(t, 3, "write", map[string]any{"path": "b.txt", "contents": "b"}),
 	}
-	results := batchResults(t, m.CallBatch(ctx, tools, calls, nil, nil))
+	results := runBatch(ctx, t, m, tools, calls)
 
 	require.False(t, results[0].Errored)
 	// The evaluation error is the call's own failure — it was never handed to
@@ -332,58 +340,113 @@ func TestCallBatchUnevaluableChangesetFailsItsOwnCall(t *testing.T) {
 	require.Equal(t, "b", b, "the write after it still runs")
 }
 
-func TestCallBatchRunsContinuationsLast(t *testing.T) {
-	fs := newBatchFS(nil)
-	tools := append(fs.tools(), LLMTool{
-		Name:       "reload",
-		ReturnsLLM: true,
-		Call: fs.logged("reload", func(context.Context, any) (any, error) {
-			return "reloaded", nil
-		}),
+// testContinuation is a stand-in for an LLM a tool returned.
+func testContinuation(t *testing.T) dagql.ObjectResult[*LLM] {
+	t.Helper()
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*LLM]{Typed: &LLM{}}))
+	cont, err := dagql.NewObjectResultForCall(&LLM{}, srv, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "continuation",
+		Type:        dagql.NewResultCallType((&LLM{}).Type()),
 	})
+	require.NoError(t, err)
+	return cont
+}
 
-	t.Run("after every other call, with the turn folded in first", func(t *testing.T) {
+func TestCallBatchStopsAtContinuation(t *testing.T) {
+	fs := newBatchFS(nil)
+	cont := testContinuation(t)
+	// continuationTools adds a "reload" tool returning an LLM to fs's tools:
+	// adopting cont on m when adopt is true, failing otherwise.
+	continuationTools := func(m *MCP, adopt bool) []LLMTool {
+		return append(fs.tools(), LLMTool{
+			Name:       "reload",
+			ReturnsLLM: true,
+			Call: fs.logged("reload", func(context.Context, any) (any, error) {
+				if !adopt {
+					return nil, errors.New("reload failed")
+				}
+				m.mu.Lock()
+				defer m.mu.Unlock()
+				m.continuation = cont
+				return "reloaded", nil
+			}),
+		})
+	}
+
+	t.Run("in its position, with the calls before it folded in", func(t *testing.T) {
 		fs.log = nil
+		m := newMCP()
 		calls := []*LLMToolCall{
-			batchCall(t, 1, "reload", nil),
-			batchCall(t, 2, "write", map[string]any{"path": "a.txt", "contents": "a"}),
+			batchCall(t, 1, "write", map[string]any{"path": "a.txt", "contents": "a"}),
+			batchCall(t, 2, "reload", nil),
+			batchCall(t, 3, "read", map[string]any{"path": "a.txt"}),
+			batchCall(t, 4, "write", map[string]any{"path": "b.txt", "contents": "b"}),
 		}
-		results := batchResults(t, newMCP().CallBatch(t.Context(), tools, calls, nil, func(context.Context) error {
+		results, rest := m.CallBatch(t.Context(), continuationTools(m, true), calls, nil, func(context.Context) error {
 			fs.record("fold")
 			return nil
-		}))
+		})
 		require.Equal(t, []string{"start write", "end write", "fold", "start reload", "end reload"}, fs.log)
 		require.Equal(t, []batchResult{
-			{CallID: "call_1", Text: "reloaded"},
-			{CallID: "call_2", Text: "wrote a.txt"},
-		}, results)
+			{CallID: "call_1", Text: "wrote a.txt"},
+			{CallID: "call_2", Text: "reloaded"},
+		}, batchResults(t, results))
+		// The calls after it are written against the continued conversation,
+		// so they are left for it to run.
+		require.Equal(t, calls[2:], rest)
 	})
 
-	t.Run("even after a failed step", func(t *testing.T) {
+	t.Run("a failed continuation does not stop the batch", func(t *testing.T) {
 		fs.log = nil
+		m := newMCP()
 		calls := []*LLMToolCall{
-			batchCall(t, 1, "edit", map[string]any{"path": "missing.txt", "oldText": "x", "newText": "y"}),
-			batchCall(t, 2, "reload", nil),
+			batchCall(t, 1, "reload", nil),
+			batchCall(t, 2, "write", map[string]any{"path": "c.txt", "contents": "c"}),
 		}
 		var folded bool
-		results := batchResults(t, newMCP().CallBatch(t.Context(), tools, calls, nil, func(context.Context) error {
+		results, rest := m.CallBatch(t.Context(), continuationTools(m, false), calls, nil, func(context.Context) error {
 			folded = true
 			return nil
-		}))
+		})
 		require.True(t, folded)
-		require.True(t, results[0].Errored)
-		require.Equal(t, batchResult{CallID: "call_2", Text: "reloaded"}, results[1])
+		require.Empty(t, rest)
+		res := batchResults(t, results)
+		require.True(t, res[0].Errored)
+		require.Equal(t, batchResult{CallID: "call_2", Text: "wrote c.txt"}, res[1])
 	})
 
-	t.Run("not when the turn can't be folded in", func(t *testing.T) {
+	t.Run("not when the calls before it can't be folded in", func(t *testing.T) {
 		fs.log = nil
-		calls := []*LLMToolCall{batchCall(t, 1, "reload", nil)}
-		results := batchResults(t, newMCP().CallBatch(t.Context(), tools, calls, nil, func(context.Context) error {
+		m := newMCP()
+		calls := []*LLMToolCall{
+			batchCall(t, 1, "reload", nil),
+			batchCall(t, 2, "write", map[string]any{"path": "d.txt", "contents": "d"}),
+		}
+		results, rest := m.CallBatch(t.Context(), continuationTools(m, true), calls, nil, func(context.Context) error {
 			return errors.New("boom")
-		}))
-		require.True(t, results[0].Errored)
-		require.Contains(t, results[0].Text, "boom")
+		})
+		require.Empty(t, rest)
+		res := batchResults(t, results)
+		require.True(t, res[0].Errored)
+		require.Contains(t, res[0].Text, "boom")
 		require.NotContains(t, fs.log, "start reload")
+		require.False(t, res[1].Errored, res[1].Text)
+	})
+
+	t.Run("wrapped in Timeout", func(t *testing.T) {
+		m := newMCP()
+		allTools := NewLLMToolSet()
+		for _, tool := range continuationTools(m, true) {
+			require.True(t, allTools.Add(tool))
+		}
+		m.loadBuiltins(nil, allTools)
+		tools := allTools.Order
+		require.True(t, m.isContinuationCall(batchCall(t, 1, "reload", nil), tools))
+		require.True(t, m.isContinuationCall(batchCall(t, 2, "Timeout", map[string]any{"duration": "1s", "tool": "reload", "arguments": map[string]any{}}), tools))
+		require.False(t, m.isContinuationCall(batchCall(t, 3, "Timeout", map[string]any{"duration": "1s", "tool": "write", "arguments": map[string]any{}}), tools))
+		require.False(t, m.isContinuationCall(batchCall(t, 4, "missing", nil), tools))
 	})
 }
 
@@ -421,7 +484,7 @@ func TestPlanBatchTimeoutPlansAsTheWrappedTool(t *testing.T) {
 	require.True(t, steps[3].pure)
 
 	// The plan is only scheduling: the calls still run through Timeout.
-	results := batchResults(t, m.CallBatch(t.Context(), tools, calls, nil, nil))
+	results := runBatch(t.Context(), t, m, tools, calls)
 	require.Equal(t, "a", results[1].Text)
 	require.False(t, results[2].Errored, results[2].Text)
 	require.True(t, results[3].Errored)
@@ -507,7 +570,7 @@ func TestCallBatchMCPServerRunsCallsOnceWithoutSync(t *testing.T) {
 		batchCall(t, 3, "fs_edit", map[string]any{"id": "e", "path": "a.txt", "oldText": "one", "newText": "two"}),
 		batchCall(t, 4, "fs_read", map[string]any{"id": "r2", "path": "a.txt"}),
 	}
-	results := batchResults(t, m.CallBatch(t.Context(), tools, calls, nil, nil))
+	results := runBatch(t.Context(), t, m, tools, calls)
 	require.Equal(t, []batchResult{
 		{CallID: "call_1", Text: "wrote a.txt"},
 		{CallID: "call_2", Text: "one"},
