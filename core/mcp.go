@@ -934,7 +934,7 @@ func countCommitsSince(ctx context.Context, srv *dagql.Server, head, base dagql.
 //     stands.
 //   - one per MCP: LLMs do not compose the way Changesets do, so at most one
 //     continuation may be adopted on an MCP. A later continuation in the same
-//     turn runs on the continued conversation's MCP instead (see LLM.step),
+//     turn runs on the continued conversation's MCP instead (see toolDispatch),
 //     transforming the first one's result.
 //   - visibility: the string returned here is the model's notice of what
 //     changed — which tools came and went, and whether the conversation
@@ -1874,7 +1874,7 @@ func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, erro
 // CallBatch runs a turn's tool calls in the order they were written, until one
 // of them adopts a continuation. It returns one result per call it ran, in
 // call order, and the calls written after the continuation, which it leaves
-// for the caller to run on the continued conversation (see LLM.step): a
+// for the caller to run on the continued conversation (see toolDispatch): a
 // continuation replaces the conversation — its workspace, bindings and
 // toolset — so the calls after it are written against that conversation, not
 // this one. `[checkout, log]` logs the new checkout. When no continuation is

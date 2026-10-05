@@ -509,7 +509,7 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 			// it was written (see MCP.CallBatch). A method changes the agent's
 			// state when it returns the bound object's own type, a Workspace, a
 			// Changeset, or an LLM — the conversation itself, which the calls
-			// written after it in the batch run on (see LLM.step). A module
+			// written after it in the batch run on (see toolDispatch). A module
 			// function cached with policy Never, or a core field marked
 			// DoNotCache, is impure too: side effects and live reads are
 			// exactly what those are for.
