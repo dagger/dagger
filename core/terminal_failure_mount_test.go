@@ -34,6 +34,10 @@ func TestTerminalFailureMountLeavesCachedInputMount(t *testing.T) {
 			require.Equal(t, outputRef.SnapshotID(), terminalTestMountSnapshot(t, kind, terminalMount).SnapshotID(),
 				"the terminal shows the failed output")
 
+			// Even before anything is collected, the cached container still
+			// mounts its own input, not the failed run's output.
+			testutil.CheckFile(t, terminalTestMountSnapshot(t, kind, inputMount), "foo", "FOO")
+
 			// The failed operation ends and a garbage collection pass runs.
 			require.NoError(t, outputRef.Release(ctx))
 			require.NoError(t, store.Manager.RemoveLease(ctx, failedOperation))
@@ -49,6 +53,7 @@ func TestTerminalFailureMountLeavesCachedInputMount(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, next.Release(ctx))
 			require.Equal(t, inputRef.SnapshotID(), cached.SnapshotID(), "the cached container's mount changed")
+			testutil.CheckFile(t, cached, "foo", "FOO")
 		})
 	}
 }
