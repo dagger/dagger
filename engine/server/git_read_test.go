@@ -88,11 +88,12 @@ func TestGitReadApprovalOwnerBoundary(t *testing.T) {
 	require.Equal(t, "Allow an agent to read "+allowed+" with your Git credentials?", questions.requests[0].Prompt)
 	require.Empty(t, questions.requests[0].PersistentKey, "grants must not outlive the session")
 
-	// A denial is remembered too, so a retrying model cannot badger the user.
+	// A denial holds only for that attempt: saying no to course-correct must
+	// not stop the agent from asking again later.
 	for _, ctx := range []context.Context{moduleCtx, nestedCtx} {
 		md, err := srv.AuthorizeGitRead(ctx, denied)
 		require.ErrorContains(t, err, "denied by the owning client")
 		require.Nil(t, md)
 	}
-	require.Len(t, questions.requests, 2)
+	require.Len(t, questions.requests, 3)
 }

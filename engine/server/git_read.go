@@ -19,8 +19,9 @@ import (
 // push. When the caller is that owner itself (the user's own conversation),
 // its credentials apply as they would to any of its reads. When a module
 // drives the agent (e.g. a worker spawned by a module), the module chose the
-// conversation, so the owner approves each remote once per session first:
-// otherwise any module could read whatever the user can, by prompting a model.
+// conversation, so the owner approves each remote first; a grant lasts for the
+// session, a denial only for that attempt. Otherwise any module could read
+// whatever the user can, by prompting a model.
 func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine.ClientMetadata, error) {
 	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
@@ -57,7 +58,7 @@ func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine
 			return nil, fmt.Errorf("git read with the owner's credentials requires approval: %w", err)
 		}
 		if !allowed {
-			return nil, fmt.Errorf("git read of %s with the owner's credentials was denied by the owning client for this session", remote)
+			return nil, fmt.Errorf("git read of %s with the owner's credentials was denied by the owning client", remote)
 		}
 	}
 	return owner.daggerSession.clientMetadataSnapshot(owner.clientRecord)

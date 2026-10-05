@@ -28,7 +28,8 @@ type gitPushApproval struct {
 }
 
 // Lives only in daggerSession, never in a result, recipe, or client prompt key.
-// Remember denials too, so a tool retry cannot badger the user into approving.
+// Only grants are remembered: a "no" is often a course correction, so a later
+// attempt asks again. Concurrent requests still share the one prompt in flight.
 type gitPushApprovals struct {
 	mu        sync.Mutex
 	decisions map[gitPushApprovalKey]*gitPushApproval
@@ -53,8 +54,9 @@ func (a *gitPushApprovals) check(ctx context.Context, key gitPushApprovalKey, as
 	a.mu.Unlock()
 	decision.allowed, decision.err = ask(ctx)
 	a.mu.Lock()
-	// A canceled or unavailable prompt is not a user decision.
-	if decision.err != nil {
+	// A canceled or unavailable prompt is not a user decision, and a denial
+	// holds only for the requests already waiting on it.
+	if decision.err != nil || !decision.allowed {
 		delete(a.decisions, key)
 	}
 	close(decision.done)
@@ -162,7 +164,7 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 		if force {
 			action = "force push"
 		}
-		return nil, fmt.Errorf("git %s permission denied by the owning client for %s for this session", action, ref)
+		return nil, fmt.Errorf("git %s permission denied by the owning client for %s", action, ref)
 	}
 	return authorized()
 }
