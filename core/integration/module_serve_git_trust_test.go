@@ -28,6 +28,24 @@ func (m *Caller) Attempt(ctx context.Context, address string) string {
 }
 `
 
+// serveGitTrustNonceSource adds to the caller a function whose result is new
+// on every run, so an unchanged result proves a cache hit.
+const serveGitTrustNonceSource = `package main
+
+import (
+	"context"
+	"strconv"
+	"time"
+)
+
+func (m *Caller) Nonce(ctx context.Context, address string) string {
+	if err := dag.ServeModule(ctx, address); err != nil {
+		return err.Error()
+	}
+	return strconv.FormatInt(time.Now().UnixNano(), 10)
+}
+`
+
 // serveGitTrustPrivateRepo serves a repository that requires credentials,
 // holding a hello module and another module, and returns its URL by IP so
 // nested sessions reach it as the engine does.
@@ -121,6 +139,46 @@ func (ModuleLoadingSuite) TestServeModuleDeclaredGitClient(ctx context.Context, 
 		require.NoError(t, err)
 		require.Contains(t, out, "git authentication failed")
 		require.Contains(t, out, `declare it as a client of module "caller"'s scope`)
+	})
+
+	t.Run("a removed declaration misses the cache", func(ctx context.Context, t *testctx.T) {
+		// The declaration sits above the module's source root, outside the
+		// module's implementation digest, which the test checks stays put.
+		run := func(ctr *dagger.Container, n string, with dagger.WithContainerFunc) string {
+			out, err := ctr.WithEnvVariable("SERVE_MODULE_RUN", n).With(with).Stdout(ctx)
+			require.NoError(t, err)
+			return out
+		}
+		nonce := daggerCallAt("caller", "nonce", "--address="+hello)
+		digest := daggerQuery(`{currentWorkspace{moduleSource(path: "/modules/caller"){digest}}}`)
+
+		ctr := hostCaller(hello).WithNewFile("modules/caller/nonce.go", serveGitTrustNonceSource)
+		first := run(ctr, "1", nonce)
+		require.Regexp(t, `^[0-9]+\s*$`, first)
+		sourceDigest := run(ctr, "2", digest)
+		require.Equal(t, first, run(ctr, "3", nonce))
+
+		ctr = ctr.WithNewFile("dagger.toml", serveGitTrustWorkspaceConfig(""))
+		require.JSONEq(t, sourceDigest, run(ctr, "4", digest))
+		require.Contains(t, run(ctr, "5", nonce), `declare it as a client of module "caller"'s scope`)
+	})
+
+	t.Run("another session without credentials misses the cache", func(ctx context.Context, t *testctx.T) {
+		withNonce := func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("dagger.toml", serveGitTrustWorkspaceConfig(hello)).
+				WithNewFile("modules/caller/dagger.json", serveTreeCallerManifest).
+				WithNewFile("modules/caller/main.go", serveGitTrustCallerSource).
+				WithNewFile("modules/caller/nonce.go", serveGitTrustNonceSource).
+				With(daggerCallAt("caller", "nonce", "--address="+hello))
+		}
+		first, err := serveGitTrustBase(t, connect(ctx, t), repoURL).With(withNonce).Stdout(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `^[0-9]+\s*$`, first)
+
+		out, err := goGitBase(t, connect(ctx, t)).With(withNonce).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "git authentication failed")
 	})
 
 	t.Run("a plain program keeps its own credentials", func(ctx context.Context, t *testctx.T) {

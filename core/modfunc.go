@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -34,6 +36,12 @@ const (
 // identity of its function calls. The module serves them at run time, after
 // the cache lookup, so nothing else in the key changes when they do.
 const declaredClientsInput = "declaredClients"
+
+// declaredGitClientsInput puts the git clients a module's governing config
+// declares into the cache identity of its function calls. They decide whether
+// its code may borrow the session's git credentials, and the config can sit
+// outside the module's source.
+const declaredGitClientsInput = "declaredGitClients"
 
 type ModuleFunction struct {
 	mod    dagql.ObjectResult[*Module]
@@ -816,10 +824,57 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	}
 
 	clientsDigest, err := fn.declaredClientsDigest(ctx)
-	if err != nil || clientsDigest == "" {
+	if err != nil {
 		return err
 	}
-	return req.SetImplicitInput(ctx, declaredClientsInput, dagql.NewString(clientsDigest))
+	if clientsDigest != "" {
+		if err := req.SetImplicitInput(ctx, declaredClientsInput, dagql.NewString(clientsDigest)); err != nil {
+			return err
+		}
+	}
+	gitClientsDigest, err := fn.declaredGitClientsDigest(ctx)
+	if err != nil || gitClientsDigest == "" {
+		return err
+	}
+	if err := req.SetImplicitInput(ctx, declaredGitClientsInput, dagql.NewString(gitClientsDigest)); err != nil {
+		return err
+	}
+	// The result may come from credentials this session lent, which another
+	// session may lack.
+	session, err := dagql.PerSessionInput.Resolver(ctx, nil)
+	if err != nil {
+		return err
+	}
+	return req.SetImplicitInput(ctx, dagql.PerSessionInput.Name, session)
+}
+
+// declaredGitClientsDigest digests the git clients that the config governing
+// the function's module declares, which its code may serve with the session's
+// git credentials. It is empty when there are none.
+func (fn *ModuleFunction) declaredGitClientsDigest(ctx context.Context) (string, error) {
+	mod := fn.mod.Self()
+	if !mod.Source.Valid || mod.Source.Value.Self() == nil {
+		return "", nil
+	}
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", err
+	}
+	declared, err := ModuleDeclaredGitClients(ctx, dag, mod.Source.Value.Self())
+	if err != nil {
+		// A declaration that cannot be read must not fail calls that never
+		// serve a git client, nor let a result computed meanwhile be reused.
+		return "unreadable:" + rand.Text(), nil //nolint:nilerr // deliberate: no failure and no reuse
+	}
+	if len(declared) == 0 {
+		return "", nil
+	}
+	keys := make([]string, 0, len(declared))
+	for _, ref := range declared {
+		keys = append(keys, workspace.GitClientKey(ref))
+	}
+	slices.Sort(keys)
+	return hashutil.HashStrings(append([]string{declaredGitClientsInput}, slices.Compact(keys)...)...).String(), nil
 }
 
 // declaredClientsDigest digests the local clients the current workspace

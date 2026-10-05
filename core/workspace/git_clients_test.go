@@ -1,11 +1,9 @@
-package schema
+package workspace
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/dagger/dagger/core"
 )
 
 func TestGitClientKey(t *testing.T) {
@@ -21,11 +19,11 @@ func TestGitClientKey(t *testing.T) {
 		"GitHub.com/acme/modules/greetings",
 	}
 	for _, address := range same {
-		require.Equal(t, gitClientKey(same[0]), gitClientKey(address), address)
+		require.Equal(t, GitClientKey(same[0]), GitClientKey(address), address)
 	}
 
-	require.Equal(t, gitClientKey("http://10.0.0.5/repo.git/hello"), gitClientKey("http://10.0.0.5/repo.git/hello@main"))
-	require.Equal(t, gitClientKey("ssh://git@host:2222/repo.git/hello"), gitClientKey("ssh://host:2222/repo/hello"))
+	require.Equal(t, GitClientKey("http://10.0.0.5/repo.git/hello"), GitClientKey("http://10.0.0.5/repo.git/hello@main"))
+	require.Equal(t, GitClientKey("ssh://git@host:2222/repo.git/hello"), GitClientKey("ssh://host:2222/repo/hello"))
 
 	different := []string{
 		"github.com/acme/modules",
@@ -36,14 +34,14 @@ func TestGitClientKey(t *testing.T) {
 		"gitlab.example.com/acme/modules.git/greetings",
 	}
 	for _, address := range different {
-		require.NotEqual(t, gitClientKey(same[0]), gitClientKey(address), address)
+		require.NotEqual(t, GitClientKey(same[0]), GitClientKey(address), address)
 	}
-	require.NotEqual(t, gitClientKey("ssh://host:2222/repo/hello"), gitClientKey("ssh://host:2223/repo/hello"))
+	require.NotEqual(t, GitClientKey("ssh://host:2222/repo/hello"), GitClientKey("ssh://host:2223/repo/hello"))
 }
 
 func TestDeclaredGitClients(t *testing.T) {
 	ctx := t.Context()
-	reader := func(files map[string]string) treeFileReader {
+	reader := func(files map[string]string) TreeFileReader {
 		return func(rel string) ([]byte, bool, error) {
 			data, ok := files[rel]
 			return []byte(data), ok, nil
@@ -129,22 +127,9 @@ clients = ["github.com/acme/own/client"]
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := declaredGitClients(ctx, tc.moduleDir, reader(tc.files))
+			got, err := DeclaredGitClients(ctx, tc.moduleDir, reader(tc.files))
 			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
 		})
-	}
-}
-
-func TestModuleTreeReaderWithoutTree(t *testing.T) {
-	ctx := t.Context()
-	for _, src := range []*core.ModuleSource{
-		{Kind: core.ModuleSourceKindGit, Git: &core.GitModuleSource{}},
-		{Kind: core.ModuleSourceKindDir, DirSrc: &core.DirModuleSource{}},
-		{Kind: core.ModuleSourceKind("")},
-	} {
-		read, err := moduleTreeReader(ctx, nil, src)
-		require.NoError(t, err)
-		require.Nil(t, read, src.Kind)
 	}
 }
