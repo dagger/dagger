@@ -823,11 +823,13 @@ func (c *Client) setupOTel(ctx context.Context, state *execState) error {
 	state.cleanups.Add("close logs", stdio.Close)
 	// A stream redirected to a file is meant to go to that file, not to the
 	// exec's logs, so leave it out of telemetry. setupStdio still captures it
-	// for Container.stdout/stderr.
-	if !state.stdoutRedirected {
+	// for Container.stdout/stderr. Callers on API views before v1.0.0 opt back
+	// into logging it with LogRedirectedOutput.
+	logRedirected := state.execMD != nil && state.execMD.LogRedirectedOutput
+	if !state.stdoutRedirected || logRedirected {
 		state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
 	}
-	if !state.stderrRedirected {
+	if !state.stderrRedirected || logRedirected {
 		state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}
 	}
 

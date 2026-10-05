@@ -33,6 +33,10 @@ const defaultNestingVersion = "v1.0.0-0"
 // every v1.0.0 prerelease caller.
 const gpuAPIVersion = "v1.0.0-0"
 
+// From the v1.0 API on, withExec writes a redirected stdout/stderr only to its
+// file. Older views keep logging it too.
+const redirectNotLoggedVersion = "v1.0.0-0"
+
 // Newer views still accept experimentalPrivilegedNesting so existing callers
 // keep working, but ignore it: nesting is already the default.
 var (

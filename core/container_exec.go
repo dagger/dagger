@@ -63,6 +63,11 @@ type ContainerExecOpts struct {
 	// Redirect the command's standard error to a file in the container
 	RedirectStderr string `default:""`
 
+	// Also log streams redirected with RedirectStdout/RedirectStderr, as API
+	// views before v1.0.0 did. Not an API argument: withExec sets it from the
+	// caller's view.
+	LogRedirectedOutput bool `name:"-"`
+
 	// Exit codes this exec is allowed to exit with
 	Expect ReturnTypes `default:"SUCCESS"`
 
@@ -360,6 +365,7 @@ func (container *Container) execMeta(
 	execMD.RedirectStdinPath = opts.RedirectStdin
 	execMD.RedirectStdoutPath = opts.RedirectStdout
 	execMD.RedirectStderrPath = opts.RedirectStderr
+	execMD.LogRedirectedOutput = opts.LogRedirectedOutput
 	execMD.SystemEnvNames = container.SystemEnvNames
 	execMD.EnabledGPUs = container.EnabledGPUs
 	if opts.NoInit {

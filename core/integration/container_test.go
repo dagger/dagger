@@ -43,6 +43,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -430,12 +431,13 @@ func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testc
 
 // TestExecRedirectNotLogged: a stream redirected to a file goes only to that
 // file, not to the exec's logs, while the other stream is still logged.
-// Container.stdout/stderr keep returning the redirected output.
+// Container.stdout/stderr keep returning the redirected output. Clients on API
+// views before v1.0.0 keep the old behavior of logging the redirected stream
+// too.
 func (ContainerSuite) TestExecRedirectNotLogged(ctx context.Context, t *testctx.T) {
 	// The markers are upper-cased by the exec so they only ever appear in its
 	// output, never in its args.
-	cacheBuster := identity.NewID()
-	execs := func(c *dagger.Client) (redirectOut, redirectErr *dagger.Container) {
+	execs := func(c *dagger.Client, cacheBuster string) (redirectOut, redirectErr *dagger.Container) {
 		base := c.Container().From(alpineImage).
 			WithEnvVariable("CACHEBUST", cacheBuster)
 		redirectOut = base.WithExec([]string{"sh", "-c",
@@ -451,38 +453,54 @@ func (ContainerSuite) TestExecRedirectNotLogged(ctx context.Context, t *testctx.
 		return redirectOut, redirectErr
 	}
 
-	c, sink := connectWithTrace(ctx, t)
-	redirectOut, redirectErr := execs(c)
+	// execLogs runs both execs in a fresh traced session and returns every log
+	// record body the session emitted.
+	execLogs := func(t *testctx.T, cfg engineconn.Config, cacheBuster string) string {
+		c, sink := connectWithTrace(ctx, t, cfg)
+		redirectOut, redirectErr := execs(c, cacheBuster)
 
-	// Only sync here: reading the output back (File.contents, Container.stdout)
-	// would put it in the logs as call results.
-	_, err := redirectOut.Sync(ctx)
-	require.NoError(t, err)
-	_, err = redirectErr.Sync(ctx)
-	require.NoError(t, err)
+		// Only sync here: reading the output back (File.contents,
+		// Container.stdout) would put it in the logs as call results.
+		_, err := redirectOut.Sync(ctx)
+		require.NoError(t, err)
+		_, err = redirectErr.Sync(ctx)
+		require.NoError(t, err)
 
-	require.NoError(t, c.Close()) // close + flush logs
+		require.NoError(t, c.Close()) // close + flush logs
 
-	_, logReqs := sink.capture()
-	var logs strings.Builder
-	for _, req := range logReqs {
-		for _, rl := range req.GetResourceLogs() {
-			for _, sl := range rl.GetScopeLogs() {
-				for _, rec := range sl.GetLogRecords() {
-					logs.WriteString(rec.GetBody().GetStringValue())
-					logs.Write(rec.GetBody().GetBytesValue())
+		_, logReqs := sink.capture()
+		var logs strings.Builder
+		for _, req := range logReqs {
+			for _, rl := range req.GetResourceLogs() {
+				for _, sl := range rl.GetScopeLogs() {
+					for _, rec := range sl.GetLogRecords() {
+						logs.WriteString(rec.GetBody().GetStringValue())
+						logs.Write(rec.GetBody().GetBytesValue())
+					}
 				}
 			}
 		}
+		return logs.String()
 	}
-	require.Contains(t, logs.String(), "ERR-LOGGED")
-	require.Contains(t, logs.String(), "OUT-LOGGED")
-	require.NotContains(t, logs.String(), "OUT-REDIRECTED")
-	require.NotContains(t, logs.String(), "ERR-REDIRECTED")
+
+	t.Run("legacy view logs redirected output", func(ctx context.Context, t *testctx.T) {
+		logs := execLogs(t, engineconn.Config{VersionOverride: "v0.21.5"}, identity.NewID())
+		require.Contains(t, logs, "ERR-LOGGED")
+		require.Contains(t, logs, "OUT-LOGGED")
+		require.Contains(t, logs, "OUT-REDIRECTED")
+		require.Contains(t, logs, "ERR-REDIRECTED")
+	})
+
+	cacheBuster := identity.NewID()
+	logs := execLogs(t, engineconn.Config{}, cacheBuster)
+	require.Contains(t, logs, "ERR-LOGGED")
+	require.Contains(t, logs, "OUT-LOGGED")
+	require.NotContains(t, logs, "OUT-REDIRECTED")
+	require.NotContains(t, logs, "ERR-REDIRECTED")
 
 	// The redirected output still lands in the file and in Container.stdout
 	// and stderr. Read it back from a separate session.
-	redirectOut, redirectErr = execs(connect(ctx, t))
+	redirectOut, redirectErr := execs(connect(ctx, t), cacheBuster)
 
 	out, err := redirectOut.File("/out").Contents(ctx)
 	require.NoError(t, err)
