@@ -103,8 +103,8 @@ func (p *Provider) Directory() *dagger.Directory { return dag.Directory() }
 		want                  []string
 	}{
 		{name: "valid settings", settings: "COUNT = 3\nenabled = true\ntags = [\"a\", \"b\"]\ndir = \".\"\n", want: []string{`PASS Module loading "probe"`, `PASS Module settings "probe"`}},
-		{name: "module wiring", settings: "dir = \"provider:directory\"\n", extra: "[modules.provider]\nsource = \"provider\"\n", want: []string{`PASS Module settings "probe"`}},
-		{name: "invalid module wiring", settings: "dir = \"provider:missing\"\n", extra: "[modules.provider]\nsource = \"provider\"\n", fail: true, want: []string{`FAIL Module settings "probe"`}},
+		{name: "module wiring", settings: "dir = \"dag://provider/directory\"\n", extra: "[modules.provider]\nsource = \"provider\"\n", want: []string{`PASS Module settings "probe"`}},
+		{name: "invalid module wiring", settings: "dir = \"dag://provider/missing\"\n", extra: "[modules.provider]\nsource = \"provider\"\n", fail: true, want: []string{`FAIL Module settings "probe"`, `resolve "dag://provider/missing"`}},
 		{name: "enum setting", settings: "flavor = \"VANILLA\"\n", want: []string{`PASS Module settings "probe"`}},
 		{name: "invalid enum setting", settings: "flavor = \"INVALID\"\n", fail: true, want: []string{"ERROR", "flavor"}},
 		{name: "unknown settings", settings: "typo = true\n", fail: true, want: []string{`FAIL Module settings "probe"`, `unknown setting "typo"`}},
