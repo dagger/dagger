@@ -7,8 +7,22 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-//nolint:gocyclo // one check per bundle field and record kind; splitting hides the order of the checks
+// validateValueBundle checks a bundle and every record's payload, and returns
+// its ordinals in dependency order.
 func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
+	return checkValueBundle(bundle, false)
+}
+
+// validateValueBundleShape checks a bundle as validateValueBundle does, except
+// each record's payload: records are checked by validateTransferRecordShape,
+// and a payload is decoded only to find the parts the record's offers and
+// outputs name. The caller checks the payloads it uses.
+func validateValueBundleShape(bundle ValueBundle) ([]uint64, error) {
+	return checkValueBundle(bundle, true)
+}
+
+//nolint:gocyclo // one check per bundle field and record kind; splitting hides the order of the checks
+func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 	if bundle.Version != valueBundleVersion {
 		return nil, fmt.Errorf("unsupported value bundle version %d", bundle.Version)
 	}
@@ -27,15 +41,28 @@ func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
 		if row.SenderNumber == 0 {
 			return nil, fmt.Errorf("row %d: no sender number", id)
 		}
-		if err := validateTransferRecord(row.Record, row.DependencyIDs); err != nil {
+		validate := validateTransferRecord
+		if shapeOnly {
+			validate = validateTransferRecordShape
+		}
+		if err := validate(row.Record, row.DependencyIDs); err != nil {
 			return nil, fmt.Errorf("row %d: %w", id, err)
 		}
 		rows[id] = row
 	}
+	named := map[uint64]bool{}
+	for _, output := range bundle.Outputs {
+		named[uint64(output.Ordinal)] = true
+	}
 	// Validate complete addresses against the encoded output mapping. A pending
 	// slot may replace the descriptor, but cannot change the part's existence.
+	// Checking the shape only, a payload is mapped only for a row an offer or
+	// an output names.
 	addresses := map[uint64]map[string]CapturedCodecOutput{}
 	for id, row := range rows {
+		if shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
+			continue
+		}
 		outputs, err := mapTransferredOutputs(row.Record)
 		if err != nil {
 			return nil, err
