@@ -12052,6 +12052,179 @@ impl Node for Host {
     }
 }
 #[derive(Clone)]
+pub struct Identifier {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct IdentifierFormatOpts {
+    /// How to write acronyms and terms where a word starts with a capital.
+    #[builder(setter(into, strip_option), default)]
+    pub acronyms: Option<AcronymStyle>,
+}
+impl IntoID<Id> for Identifier {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Identifier {
+    fn graphql_type() -> &'static str {
+        "Identifier"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Identifier {
+    /// A unique identifier for this Identifier.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Format the identifier in a casing.
+    ///
+    /// # Arguments
+    ///
+    /// * `casing` - The casing to format the identifier in.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn format(&self, casing: Casing) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("format");
+        query = query.arg("casing", casing);
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Format the identifier in a casing.
+    ///
+    /// # Arguments
+    ///
+    /// * `casing` - The casing to format the identifier in.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn format_opts(
+        &self,
+        casing: Casing,
+        opts: IdentifierFormatOpts,
+    ) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("format");
+        query = query.arg("casing", casing);
+        if let Some(acronyms) = opts.acronyms {
+            query = query.arg("acronyms", acronyms);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name as given.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The words that make up the name, in order.
+    pub async fn words(&self) -> Result<Vec<IdentifierWord>, DaggerError> {
+        let query = self.selection.select("words");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| IdentifierWord {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("IdentifierWord"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+}
+impl Node for Identifier {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct IdentifierWord {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for IdentifierWord {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for IdentifierWord {
+    fn graphql_type() -> &'static str {
+        "IdentifierWord"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl IdentifierWord {
+    /// A unique identifier for this IdentifierWord.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The dictionary entry this word matched, if any.
+    pub async fn term(&self) -> Result<Option<NamingTerm>, DaggerError> {
+        let query = self.selection.select("term");
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| NamingTerm {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("NamingTerm"),
+            graphql_client: self.graphql_client.clone(),
+        }))
+    }
+    /// Standard spelling: "client" (WORD), "HTTP" (ACRONYM), "GitHub" (TERM).
+    pub async fn text(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("text");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A plural "s" and/or trailing digits: SHA+"s", OAuth+"2".
+    pub async fn suffix(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("suffix");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The kind of word.
+    pub async fn kind(&self) -> Result<IdentifierWordKind, DaggerError> {
+        let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for IdentifierWord {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct InputTypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -15052,6 +15225,59 @@ impl Syncer for ModuleSource {
     }
 }
 #[derive(Clone)]
+pub struct NamingTerm {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for NamingTerm {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for NamingTerm {
+    fn graphql_type() -> &'static str {
+        "NamingTerm"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl NamingTerm {
+    /// A unique identifier for this NamingTerm.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Standard spelling: "HTTP", "IPv6", "GitHub", "iOS".
+    pub async fn spelling(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("spelling");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Spelling in the CAPITALIZED style: "Http", "Ipv6", "GitHub", "Ios".
+    pub async fn capitalized(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("capitalized");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for NamingTerm {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct ObjectTypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -15392,6 +15618,12 @@ pub struct QueryLlmOpts<'a> {
     /// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
     #[builder(setter(into, strip_option), default)]
     pub provider: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryFormatIdentifiersOpts {
+    /// How to write acronyms and terms where a word starts with a capital.
+    #[builder(setter(into, strip_option), default)]
+    pub acronyms: Option<AcronymStyle>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryEnvFileOpts {
@@ -16237,6 +16469,82 @@ impl Query {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// Parse a name in any casing into words.
+    /// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input or input with no letters or digits.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name to parse.
+    pub fn identifier(&self, name: impl Into<String>) -> Identifier {
+        let mut query = self.selection.select("identifier");
+        query = query.arg("name", name.into());
+        Identifier {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Format many names at once, for codegen. Returns them in input order.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The names to format, in any casing.
+    /// * `casing` - The casing to format the names in.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn format_identifiers(
+        &self,
+        names: Vec<impl Into<String>>,
+        casing: Casing,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("formatIdentifiers");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query = query.arg("casing", casing);
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Format many names at once, for codegen. Returns them in input order.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The names to format, in any casing.
+    /// * `casing` - The casing to format the names in.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn format_identifiers_opts(
+        &self,
+        names: Vec<impl Into<String>>,
+        casing: Casing,
+        opts: QueryFormatIdentifiersOpts,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("formatIdentifiers");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query = query.arg("casing", casing);
+        if let Some(acronyms) = opts.acronyms {
+            query = query.arg("acronyms", acronyms);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The acronyms and terms used to parse and format identifiers.
+    pub async fn naming_dictionary(&self) -> Result<Vec<NamingTerm>, DaggerError> {
+        let query = self.selection.select("namingDictionary");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| NamingTerm {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("NamingTerm"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
     /// Load a GraphQL introspection schema for merging.
     ///
@@ -20591,6 +20899,13 @@ impl Node for WorkspaceSdk {
     }
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum AcronymStyle {
+    #[serde(rename = "CAPITALIZED")]
+    Capitalized,
+    #[serde(rename = "UPPERCASE")]
+    Uppercase,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum AgentMessageDelivery {
     #[serde(rename = "QUEUED")]
     Queued,
@@ -20631,6 +20946,21 @@ pub enum CacheSharingMode {
     Private,
     #[serde(rename = "SHARED")]
     Shared,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum Casing {
+    #[serde(rename = "CAMEL")]
+    Camel,
+    #[serde(rename = "FLAT")]
+    Flat,
+    #[serde(rename = "KEBAB")]
+    Kebab,
+    #[serde(rename = "PASCAL")]
+    Pascal,
+    #[serde(rename = "SCREAMING_SNAKE")]
+    ScreamingSnake,
+    #[serde(rename = "SNAKE")]
+    Snake,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ChangesetMergeConflict {
@@ -20708,6 +21038,15 @@ pub enum GitPushDisposition {
     Forced,
     #[serde(rename = "UP_TO_DATE")]
     UpToDate,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum IdentifierWordKind {
+    #[serde(rename = "ACRONYM")]
+    Acronym,
+    #[serde(rename = "TERM")]
+    Term,
+    #[serde(rename = "WORD")]
+    Word,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageLayerCompression {

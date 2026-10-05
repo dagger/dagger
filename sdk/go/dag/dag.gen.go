@@ -166,6 +166,14 @@ func File(name string, contents string, opts ...dagger.FileOpts) *dagger.File {
 	return client.File(name, contents, opts...)
 }
 
+// Format many names at once, for codegen. Returns them in input order.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func FormatIdentifiers(ctx context.Context, names []string, casing dagger.Casing, opts ...dagger.FormatIdentifiersOpts) ([]string, error) {
+	client := initClient()
+	return client.FormatIdentifiers(ctx, names, casing, opts...)
+}
+
 // Creates a function.
 func Function(name string, returnType *dagger.TypeDef) *dagger.Function {
 	client := initClient()
@@ -202,6 +210,16 @@ func ID(ctx context.Context) (dagger.ID, error) {
 	return client.ID(ctx)
 }
 
+// Parse a name in any casing into words.
+//
+// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input or input with no letters or digits.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func Identifier(name string) *dagger.Identifier {
+	client := initClient()
+	return client.Identifier(name)
+}
+
 // Initialize a JSON value
 func JSON() *dagger.JSONValue {
 	client := initClient()
@@ -236,6 +254,14 @@ func Module() *dagger.Module {
 func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.ModuleSource {
 	client := initClient()
 	return client.ModuleSource(refString, opts...)
+}
+
+// The acronyms and terms used to parse and format identifiers.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func NamingDictionary(ctx context.Context) ([]dagger.NamingTerm, error) {
+	client := initClient()
+	return client.NamingDictionary(ctx)
 }
 
 // Load any object by its ID.

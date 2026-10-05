@@ -12030,6 +12030,263 @@ func (r *Host) AsNode() Node {
 	}
 }
 
+// A name parsed into words, which can be formatted in any casing.
+type Identifier struct {
+	query *querybuilder.Selection
+
+	format *string
+	id     *ID
+	name   *string
+}
+
+func (r *Identifier) WithGraphQLQuery(q *querybuilder.Selection) *Identifier {
+	return &Identifier{
+		query: q,
+	}
+}
+
+// IdentifierFormatOpts contains options for Identifier.Format
+type IdentifierFormatOpts struct {
+	// How to write acronyms and terms where a word starts with a capital.
+	//
+	// Default: UPPERCASE
+	Acronyms AcronymStyle
+}
+
+// Format the identifier in a casing.
+func (r *Identifier) Format(ctx context.Context, casing Casing, opts ...IdentifierFormatOpts) (string, error) {
+	if r.format != nil {
+		return *r.format, nil
+	}
+	q := r.query.Select("format")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `acronyms` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Acronyms) {
+			q = q.Arg("acronyms", opts[i].Acronyms)
+		}
+	}
+	q = q.Arg("casing", casing)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Identifier.
+func (r *Identifier) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Identifier) XXX_GraphQLType() string {
+	return "Identifier"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Identifier) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Identifier) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Identifier) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The name as given.
+func (r *Identifier) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The words that make up the name, in order.
+func (r *Identifier) Words(ctx context.Context) ([]IdentifierWord, error) {
+	q := r.query.Select("words")
+
+	q = q.Select("id")
+
+	type words struct {
+		Id ID
+	}
+
+	convert := func(fields []words) []IdentifierWord {
+		out := []IdentifierWord{}
+
+		for i := range fields {
+			val := IdentifierWord{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "IdentifierWord")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []words
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// AsNode returns this Identifier as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Identifier) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// One word of an identifier.
+type IdentifierWord struct {
+	query *querybuilder.Selection
+
+	id     *ID
+	kind   *IdentifierWordKind
+	suffix *string
+	text   *string
+}
+
+func (r *IdentifierWord) WithGraphQLQuery(q *querybuilder.Selection) *IdentifierWord {
+	return &IdentifierWord{
+		query: q,
+	}
+}
+
+// A unique identifier for this IdentifierWord.
+func (r *IdentifierWord) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *IdentifierWord) XXX_GraphQLType() string {
+	return "IdentifierWord"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *IdentifierWord) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *IdentifierWord) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *IdentifierWord) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The kind of word.
+func (r *IdentifierWord) Kind(ctx context.Context) (IdentifierWordKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response IdentifierWordKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A plural "s" and/or trailing digits: SHA+"s", OAuth+"2".
+func (r *IdentifierWord) Suffix(ctx context.Context) (string, error) {
+	if r.suffix != nil {
+		return *r.suffix, nil
+	}
+	q := r.query.Select("suffix")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The dictionary entry this word matched, if any.
+func (r *IdentifierWord) Term(ctx context.Context) (*NamingTerm, error) {
+	q := r.query.Select("term")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &NamingTerm{
+		query: selectNode(q.Root(), *objectID, "NamingTerm"),
+	}, nil
+}
+
+// Standard spelling: "client" (WORD), "HTTP" (ACRONYM), "GitHub" (TERM).
+func (r *IdentifierWord) Text(ctx context.Context) (string, error) {
+	if r.text != nil {
+		return *r.text, nil
+	}
+	q := r.query.Select("text")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this IdentifierWord as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *IdentifierWord) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A graphql input type, which is essentially just a group of named args.
 // This is currently only used to represent pre-existing usage of graphql input types
 // in the core API. It is not used by user modules and shouldn't ever be as user
@@ -15622,6 +15879,95 @@ func (r *ModuleSource) AsSyncer() Syncer {
 	}
 }
 
+// An entry in the naming dictionary.
+type NamingTerm struct {
+	query *querybuilder.Selection
+
+	capitalized *string
+	id          *ID
+	spelling    *string
+}
+
+func (r *NamingTerm) WithGraphQLQuery(q *querybuilder.Selection) *NamingTerm {
+	return &NamingTerm{
+		query: q,
+	}
+}
+
+// Spelling in the CAPITALIZED style: "Http", "Ipv6", "GitHub", "Ios".
+func (r *NamingTerm) Capitalized(ctx context.Context) (string, error) {
+	if r.capitalized != nil {
+		return *r.capitalized, nil
+	}
+	q := r.query.Select("capitalized")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this NamingTerm.
+func (r *NamingTerm) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *NamingTerm) XXX_GraphQLType() string {
+	return "NamingTerm"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *NamingTerm) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *NamingTerm) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *NamingTerm) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Standard spelling: "HTTP", "IPv6", "GitHub", "iOS".
+func (r *NamingTerm) Spelling(ctx context.Context) (string, error) {
+	if r.spelling != nil {
+		return *r.spelling, nil
+	}
+	q := r.query.Select("spelling")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this NamingTerm as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *NamingTerm) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef struct {
 	query *querybuilder.Selection
@@ -16299,6 +16645,34 @@ func (r *Query) File(name string, contents string, opts ...FileOpts) *File {
 	}
 }
 
+// FormatIdentifiersOpts contains options for Query.FormatIdentifiers
+type FormatIdentifiersOpts struct {
+	// How to write acronyms and terms where a word starts with a capital.
+	//
+	// Default: UPPERCASE
+	Acronyms AcronymStyle
+}
+
+// Format many names at once, for codegen. Returns them in input order.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func (r *Query) FormatIdentifiers(ctx context.Context, names []string, casing Casing, opts ...FormatIdentifiersOpts) ([]string, error) {
+	q := r.query.Select("formatIdentifiers")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `acronyms` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Acronyms) {
+			q = q.Arg("acronyms", opts[i].Acronyms)
+		}
+	}
+	q = q.Arg("names", names)
+	q = q.Arg("casing", casing)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Creates a function.
 func (r *Query) Function(name string, returnType *TypeDef) *Function {
 	assertNotNil("returnType", returnType)
@@ -16475,6 +16849,20 @@ func (r *Query) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Parse a name in any casing into words.
+//
+// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input or input with no letters or digits.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func (r *Query) Identifier(name string) *Identifier {
+	q := r.query.Select("identifier")
+	q = q.Arg("name", name)
+
+	return &Identifier{
+		query: q,
+	}
+}
+
 // Initialize a JSON value
 func (r *Query) JSON() *JSONValue {
 	q := r.query.Select("json")
@@ -16579,6 +16967,41 @@ func (r *Query) ModuleSource(refString string, opts ...ModuleSourceOpts) *Module
 	return &ModuleSource{
 		query: q,
 	}
+}
+
+// The acronyms and terms used to parse and format identifiers.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func (r *Query) NamingDictionary(ctx context.Context) ([]NamingTerm, error) {
+	q := r.query.Select("namingDictionary")
+
+	q = q.Select("id")
+
+	type namingDictionary struct {
+		Id ID
+	}
+
+	convert := func(fields []namingDictionary) []NamingTerm {
+		out := []NamingTerm{}
+
+		for i := range fields {
+			val := NamingTerm{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "NamingTerm")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []namingDictionary
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Load any object by its ID.
@@ -21430,6 +21853,63 @@ func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
 	}
 }
 
+// How acronyms and terms are written where a word starts with a capital.
+type AcronymStyle string
+
+func (AcronymStyle) IsEnum() {}
+
+func (v AcronymStyle) Name() string {
+	switch v {
+	case AcronymStyleUppercase:
+		return "UPPERCASE"
+	case AcronymStyleCapitalized:
+		return "CAPITALIZED"
+	default:
+		return ""
+	}
+}
+
+func (v AcronymStyle) Value() string {
+	return string(v)
+}
+
+func (v *AcronymStyle) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *AcronymStyle) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CAPITALIZED":
+		*v = AcronymStyleCapitalized
+	case "UPPERCASE":
+		*v = AcronymStyleUppercase
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// HTTPClient, IPv6Address, GitHubRepo
+	AcronymStyleUppercase AcronymStyle = "UPPERCASE"
+
+	// HttpClient, Ipv6Address, GitHubRepo
+	AcronymStyleCapitalized AcronymStyle = "CAPITALIZED"
+)
+
 // EXPERIMENTAL: Agent APIs are likely to change.
 //
 // How a message landed in an agent's evaluation.
@@ -21705,6 +22185,91 @@ const (
 
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
+)
+
+// A convention for joining words into an identifier.
+type Casing string
+
+func (Casing) IsEnum() {}
+
+func (v Casing) Name() string {
+	switch v {
+	case CasingPascal:
+		return "PASCAL"
+	case CasingCamel:
+		return "CAMEL"
+	case CasingSnake:
+		return "SNAKE"
+	case CasingScreamingSnake:
+		return "SCREAMING_SNAKE"
+	case CasingKebab:
+		return "KEBAB"
+	case CasingFlat:
+		return "FLAT"
+	default:
+		return ""
+	}
+}
+
+func (v Casing) Value() string {
+	return string(v)
+}
+
+func (v *Casing) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *Casing) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CAMEL":
+		*v = CasingCamel
+	case "FLAT":
+		*v = CasingFlat
+	case "KEBAB":
+		*v = CasingKebab
+	case "PASCAL":
+		*v = CasingPascal
+	case "SCREAMING_SNAKE":
+		*v = CasingScreamingSnake
+	case "SNAKE":
+		*v = CasingSnake
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// HTTPClient
+	CasingPascal Casing = "PASCAL"
+
+	// httpClient
+	CasingCamel Casing = "CAMEL"
+
+	// http_client
+	CasingSnake Casing = "SNAKE"
+
+	// HTTP_CLIENT
+	CasingScreamingSnake Casing = "SCREAMING_SNAKE"
+
+	// http-client
+	CasingKebab Casing = "KEBAB"
+
+	// httpclient (output only: drops word boundaries)
+	CasingFlat Casing = "FLAT"
 )
 
 // Strategy to use when merging changesets with conflicting changes.
@@ -22190,6 +22755,70 @@ const (
 
 	// The remote ref already pointed to this commit.
 	GitPushDispositionUpToDate GitPushDisposition = "UP_TO_DATE"
+)
+
+// The kind of a word in an identifier.
+type IdentifierWordKind string
+
+func (IdentifierWordKind) IsEnum() {}
+
+func (v IdentifierWordKind) Name() string {
+	switch v {
+	case IdentifierWordKindWord:
+		return "WORD"
+	case IdentifierWordKindAcronym:
+		return "ACRONYM"
+	case IdentifierWordKindTerm:
+		return "TERM"
+	default:
+		return ""
+	}
+}
+
+func (v IdentifierWordKind) Value() string {
+	return string(v)
+}
+
+func (v *IdentifierWordKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *IdentifierWordKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ACRONYM":
+		*v = IdentifierWordKindAcronym
+	case "TERM":
+		*v = IdentifierWordKindTerm
+	case "WORD":
+		*v = IdentifierWordKindWord
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// An ordinary word.
+	IdentifierWordKindWord IdentifierWordKind = "WORD"
+
+	// An acronym, from the dictionary or a run of capitals.
+	IdentifierWordKindAcronym IdentifierWordKind = "ACRONYM"
+
+	// A dictionary term with a fixed mixed-case spelling (GitHub, IPv6).
+	IdentifierWordKindTerm IdentifierWordKind = "TERM"
 )
 
 // Compression algorithm to use for image layers.

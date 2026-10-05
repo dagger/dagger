@@ -31,6 +31,17 @@ class Void(Scalar):
     resolvers that do not return anything."""
 
 
+class AcronymStyle(Enum):
+    """How acronyms and terms are written where a word starts with a
+    capital."""
+
+    CAPITALIZED = "CAPITALIZED"
+    """HttpClient, Ipv6Address, GitHubRepo"""
+
+    UPPERCASE = "UPPERCASE"
+    """HTTPClient, IPv6Address, GitHubRepo"""
+
+
 class AgentMessageDelivery(Enum):
     """EXPERIMENTAL: Agent APIs are likely to change.  How a message
     landed in an agent's evaluation."""
@@ -87,6 +98,28 @@ class CacheSharingMode(Enum):
 
     SHARED = "SHARED"
     """Shares the cache volume amongst many build pipelines"""
+
+
+class Casing(Enum):
+    """A convention for joining words into an identifier."""
+
+    CAMEL = "CAMEL"
+    """httpClient"""
+
+    FLAT = "FLAT"
+    """httpclient (output only: drops word boundaries)"""
+
+    KEBAB = "KEBAB"
+    """http-client"""
+
+    PASCAL = "PASCAL"
+    """HTTPClient"""
+
+    SCREAMING_SNAKE = "SCREAMING_SNAKE"
+    """HTTP_CLIENT"""
+
+    SNAKE = "SNAKE"
+    """http_client"""
 
 
 class ChangesetMergeConflict(Enum):
@@ -195,6 +228,19 @@ class GitPushDisposition(Enum):
 
     UP_TO_DATE = "UP_TO_DATE"
     """The remote ref already pointed to this commit."""
+
+
+class IdentifierWordKind(Enum):
+    """The kind of a word in an identifier."""
+
+    ACRONYM = "ACRONYM"
+    """An acronym, from the dictionary or a run of capitals."""
+
+    TERM = "TERM"
+    """A dictionary term with a fixed mixed-case spelling (GitHub, IPv6)."""
+
+    WORD = "WORD"
+    """An ordinary word."""
 
 
 class ImageLayerCompression(Enum):
@@ -11591,6 +11637,203 @@ class Host(Type):
 
 
 @typecheck
+class Identifier(Type):
+    """A name parsed into words, which can be formatted in any casing."""
+
+    async def format(
+        self,
+        casing: Casing,
+        *,
+        acronyms: AcronymStyle | None = AcronymStyle.UPPERCASE,
+    ) -> str:
+        """Format the identifier in a casing.
+
+        Parameters
+        ----------
+        casing:
+            The casing to format the identifier in.
+        acronyms:
+            How to write acronyms and terms where a word starts with a
+            capital.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("casing", casing),
+            Arg("acronyms", acronyms, AcronymStyle.UPPERCASE),
+        ]
+        _ctx = self._select("format", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this Identifier.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The name as given.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def words(self) -> list["IdentifierWord"]:
+        """The words that make up the name, in order."""
+        _args: list[Arg] = []
+        _ctx = self._select("words", _args)
+        return await _ctx.execute_object_list(IdentifierWord)
+
+
+@typecheck
+class IdentifierWord(Type):
+    """One word of an identifier."""
+
+    async def id(self) -> str:
+        """A unique identifier for this IdentifierWord.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def kind(self) -> IdentifierWordKind:
+        """The kind of word.
+
+        Returns
+        -------
+        IdentifierWordKind
+            The kind of a word in an identifier.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(IdentifierWordKind)
+
+    async def suffix(self) -> str:
+        """A plural "s" and/or trailing digits: SHA+"s", OAuth+"2".
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("suffix", _args)
+        return await _ctx.execute(str)
+
+    async def term(self) -> "NamingTerm | None":
+        """The dictionary entry this word matched, if any."""
+        _args: list[Arg] = []
+        _ctx = self._select("term", _args)
+        return await _ctx.execute_object(NamingTerm)
+
+    async def text(self) -> str:
+        """Standard spelling: "client" (WORD), "HTTP" (ACRONYM), "GitHub" (TERM).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("text", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class InputTypeDef(Type):
     """A graphql input type, which is essentially just a group of named
     args. This is currently only used to represent pre-existing usage of
@@ -14990,6 +15233,81 @@ class ModuleSource(Type):
 
 
 @typecheck
+class NamingTerm(Type):
+    """An entry in the naming dictionary."""
+
+    async def capitalized(self) -> str:
+        """Spelling in the CAPITALIZED style: "Http", "Ipv6", "GitHub", "Ios".
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("capitalized", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this NamingTerm.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def spelling(self) -> str:
+        """Standard spelling: "HTTP", "IPv6", "GitHub", "iOS".
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("spelling", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class ObjectTypeDef(Type):
     """A definition of a custom object defined in a Module."""
 
@@ -15547,6 +15865,50 @@ class Query(Root):
         _ctx = self._select("file", _args)
         return File(_ctx)
 
+    async def format_identifiers(
+        self,
+        names: list[str],
+        casing: Casing,
+        *,
+        acronyms: AcronymStyle | None = AcronymStyle.UPPERCASE,
+    ) -> list[str]:
+        """Format many names at once, for codegen. Returns them in input order.
+
+        .. caution::
+            Experimental: Identifier casing APIs are likely to change.
+
+        Parameters
+        ----------
+        names:
+            The names to format, in any casing.
+        casing:
+            The casing to format the names in.
+        acronyms:
+            How to write acronyms and terms where a word starts with a
+            capital.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("names", names),
+            Arg("casing", casing),
+            Arg("acronyms", acronyms, AcronymStyle.UPPERCASE),
+        ]
+        _ctx = self._select("formatIdentifiers", _args)
+        return await _ctx.execute(list[str])
+
     def function(self, name: str, return_type: "TypeDef") -> Function:
         """Creates a function.
 
@@ -15700,6 +16062,27 @@ class Query(Root):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
+    def identifier(self, name: str) -> Identifier:
+        """Parse a name in any casing into words.
+
+        Known acronyms and terms come from the naming dictionary; everything
+        else falls back to the case heuristic. Errors on non-ASCII input or
+        input with no letters or digits.
+
+        .. caution::
+            Experimental: Identifier casing APIs are likely to change.
+
+        Parameters
+        ----------
+        name:
+            The name to parse.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("identifier", _args)
+        return Identifier(_ctx)
+
     def json(self) -> JSONValue:
         """Initialize a JSON value"""
         _args: list[Arg] = []
@@ -15799,6 +16182,16 @@ class Query(Root):
         ]
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
+
+    async def naming_dictionary(self) -> list[NamingTerm]:
+        """The acronyms and terms used to parse and format identifiers.
+
+        .. caution::
+            Experimental: Identifier casing APIs are likely to change.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("namingDictionary", _args)
+        return await _ctx.execute_object_list(NamingTerm)
 
     async def node(self, id: Type) -> Node | None:
         """Load any object by its ID."""
@@ -20072,6 +20465,7 @@ dag = Client()
 __all__ = [
     "JSON",
     "LLM",
+    "AcronymStyle",
     "Address",
     "Agent",
     "AgentMessage",
@@ -20088,6 +20482,7 @@ __all__ = [
     "Bytes",
     "CacheSharingMode",
     "CacheVolume",
+    "Casing",
     "Changeset",
     "ChangesetMergeConflict",
     "ChangesetsMergeConflict",
@@ -20136,6 +20531,9 @@ __all__ = [
     "HTTPState",
     "HealthcheckConfig",
     "Host",
+    "Identifier",
+    "IdentifierWord",
+    "IdentifierWordKind",
     "ImageLayerCompression",
     "ImageMediaTypes",
     "InputTypeDef",
@@ -20159,6 +20557,7 @@ __all__ = [
     "ModuleSource",
     "ModuleSourceExperimentalFeature",
     "ModuleSourceKind",
+    "NamingTerm",
     "NetworkProtocol",
     "Node",
     "ObjectTypeDef",

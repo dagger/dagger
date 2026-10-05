@@ -16,6 +16,50 @@ export type float = number
 // arises once client.gen.ts `export *`s those dep files.
 export { BaseClient }
 
+/**
+ * How acronyms and terms are written where a word starts with a capital.
+ */
+export enum AcronymStyle {
+  /**
+   * HttpClient, Ipv6Address, GitHubRepo
+   */
+  Capitalized = "CAPITALIZED",
+
+  /**
+   * HTTPClient, IPv6Address, GitHubRepo
+   */
+  Uppercase = "UPPERCASE",
+}
+
+/**
+ * Utility function to convert a AcronymStyle value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function AcronymStyleValueToName(value: AcronymStyle): string {
+  switch (value) {
+    case AcronymStyle.Capitalized:
+      return "CAPITALIZED"
+    case AcronymStyle.Uppercase:
+      return "UPPERCASE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a AcronymStyle name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function AcronymStyleNameToValue(name: string): AcronymStyle {
+  switch (name) {
+    case "CAPITALIZED":
+      return AcronymStyle.Capitalized
+    case "UPPERCASE":
+      return AcronymStyle.Uppercase
+    default:
+      return name as AcronymStyle
+  }
+}
 export type AddressContainerOpts = {
   /**
    * Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
@@ -433,6 +477,86 @@ export function CacheSharingModeNameToValue(name: string): CacheSharingMode {
       return CacheSharingMode.Shared
     default:
       return name as CacheSharingMode
+  }
+}
+/**
+ * A convention for joining words into an identifier.
+ */
+export enum Casing {
+  /**
+   * httpClient
+   */
+  Camel = "CAMEL",
+
+  /**
+   * httpclient (output only: drops word boundaries)
+   */
+  Flat = "FLAT",
+
+  /**
+   * http-client
+   */
+  Kebab = "KEBAB",
+
+  /**
+   * HTTPClient
+   */
+  Pascal = "PASCAL",
+
+  /**
+   * HTTP_CLIENT
+   */
+  ScreamingSnake = "SCREAMING_SNAKE",
+
+  /**
+   * http_client
+   */
+  Snake = "SNAKE",
+}
+
+/**
+ * Utility function to convert a Casing value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function CasingValueToName(value: Casing): string {
+  switch (value) {
+    case Casing.Camel:
+      return "CAMEL"
+    case Casing.Flat:
+      return "FLAT"
+    case Casing.Kebab:
+      return "KEBAB"
+    case Casing.Pascal:
+      return "PASCAL"
+    case Casing.ScreamingSnake:
+      return "SCREAMING_SNAKE"
+    case Casing.Snake:
+      return "SNAKE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a Casing name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function CasingNameToValue(name: string): Casing {
+  switch (name) {
+    case "CAMEL":
+      return Casing.Camel
+    case "FLAT":
+      return Casing.Flat
+    case "KEBAB":
+      return Casing.Kebab
+    case "PASCAL":
+      return Casing.Pascal
+    case "SCREAMING_SNAKE":
+      return Casing.ScreamingSnake
+    case "SNAKE":
+      return Casing.Snake
+    default:
+      return name as Casing
   }
 }
 export type ChangesetFilterOpts = {
@@ -2518,6 +2642,70 @@ export type HostTunnelOpts = {
  */
 export type ID = string & { __ID: never }
 
+export type IdentifierFormatOpts = {
+  /**
+   * How to write acronyms and terms where a word starts with a capital.
+   */
+  acronyms?: AcronymStyle
+}
+
+/**
+ * The kind of a word in an identifier.
+ */
+export enum IdentifierWordKind {
+  /**
+   * An acronym, from the dictionary or a run of capitals.
+   */
+  Acronym = "ACRONYM",
+
+  /**
+   * A dictionary term with a fixed mixed-case spelling (GitHub, IPv6).
+   */
+  Term = "TERM",
+
+  /**
+   * An ordinary word.
+   */
+  Word = "WORD",
+}
+
+/**
+ * Utility function to convert a IdentifierWordKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function IdentifierWordKindValueToName(
+  value: IdentifierWordKind,
+): string {
+  switch (value) {
+    case IdentifierWordKind.Acronym:
+      return "ACRONYM"
+    case IdentifierWordKind.Term:
+      return "TERM"
+    case IdentifierWordKind.Word:
+      return "WORD"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a IdentifierWordKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function IdentifierWordKindNameToValue(
+  name: string,
+): IdentifierWordKind {
+  switch (name) {
+    case "ACRONYM":
+      return IdentifierWordKind.Acronym
+    case "TERM":
+      return IdentifierWordKind.Term
+    case "WORD":
+      return IdentifierWordKind.Word
+    default:
+      return name as IdentifierWordKind
+  }
+}
 /**
  * Compression algorithm to use for image layers.
  */
@@ -3329,6 +3517,13 @@ export type ClientFileOpts = {
    * Permissions of the new file. Example: 0600
    */
   permissions?: number
+}
+
+export type ClientFormatIdentifiersOpts = {
+  /**
+   * How to write acronyms and terms where a word starts with a capital.
+   */
+  acronyms?: AcronymStyle
 }
 
 export type ClientGitOpts = {
@@ -12695,6 +12890,204 @@ export class Host extends BaseClient {
 }
 
 /**
+ * A name parsed into words, which can be formatted in any casing.
+ */
+export class Identifier extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _format?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _format?: string, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._format = _format
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this Identifier.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Format the identifier in a casing.
+   * @param casing The casing to format the identifier in.
+   * @param opts.acronyms How to write acronyms and terms where a word starts with a capital.
+   */
+  format = async (
+    casing: Casing,
+    opts?: IdentifierFormatOpts,
+  ): Promise<string> => {
+    if (this._format) {
+      return this._format
+    }
+
+    const metadata = {
+      casing: { is_enum: true, value_to_name: CasingValueToName },
+      acronyms: { is_enum: true, value_to_name: AcronymStyleValueToName },
+    }
+
+    const ctx = this._ctx.select("format", {
+      casing,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The name as given.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The words that make up the name, in order.
+   */
+  words = async (): Promise<IdentifierWord[]> => {
+    type words = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("words").select("id")
+
+    const response: Awaited<words[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new IdentifierWord(ctx.copy().selectNode(r.id, "IdentifierWord")),
+    )
+  }
+}
+
+/**
+ * One word of an identifier.
+ */
+export class IdentifierWord extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _kind?: IdentifierWordKind = undefined
+  private readonly _suffix?: string = undefined
+  private readonly _text?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _kind?: IdentifierWordKind,
+    _suffix?: string,
+    _text?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._kind = _kind
+    this._suffix = _suffix
+    this._text = _text
+  }
+
+  /**
+   * A unique identifier for this IdentifierWord.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The kind of word.
+   */
+  kind = async (): Promise<IdentifierWordKind> => {
+    if (this._kind) {
+      return this._kind
+    }
+
+    const ctx = this._ctx.select("kind")
+
+    const response: Awaited<IdentifierWordKind> = await ctx.execute()
+
+    return IdentifierWordKindNameToValue(response)
+  }
+
+  /**
+   * A plural "s" and/or trailing digits: SHA+"s", OAuth+"2".
+   */
+  suffix = async (): Promise<string> => {
+    if (this._suffix) {
+      return this._suffix
+    }
+
+    const ctx = this._ctx.select("suffix")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The dictionary entry this word matched, if any.
+   */
+  term = async (): Promise<NamingTerm | null> => {
+    const ctx = this._ctx.select("term").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new NamingTerm(ctx.copy().selectNode(response, "NamingTerm"))
+  }
+
+  /**
+   * Standard spelling: "client" (WORD), "HTTP" (ACRONYM), "GitHub" (TERM).
+   */
+  text = async (): Promise<string> => {
+    if (this._text) {
+      return this._text
+    }
+
+    const ctx = this._ctx.select("text")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * A graphql input type, which is essentially just a group of named args.
  * This is currently only used to represent pre-existing usage of graphql input types
  * in the core API. It is not used by user modules and shouldn't ever be as user
@@ -15541,6 +15934,76 @@ export class ModuleSource extends BaseClient {
 }
 
 /**
+ * An entry in the naming dictionary.
+ */
+export class NamingTerm extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _capitalized?: string = undefined
+  private readonly _spelling?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _capitalized?: string,
+    _spelling?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._capitalized = _capitalized
+    this._spelling = _spelling
+  }
+
+  /**
+   * A unique identifier for this NamingTerm.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Spelling in the CAPITALIZED style: "Http", "Ipv6", "GitHub", "Ios".
+   */
+  capitalized = async (): Promise<string> => {
+    if (this._capitalized) {
+      return this._capitalized
+    }
+
+    const ctx = this._ctx.select("capitalized")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Standard spelling: "HTTP", "IPv6", "GitHub", "iOS".
+   */
+  spelling = async (): Promise<string> => {
+    if (this._spelling) {
+      return this._spelling
+    }
+
+    const ctx = this._ctx.select("spelling")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * An object with a globally unique ID.
  */
 export interface Node {
@@ -16102,6 +16565,35 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Format many names at once, for codegen. Returns them in input order.
+   * @param names The names to format, in any casing.
+   * @param casing The casing to format the names in.
+   * @param opts.acronyms How to write acronyms and terms where a word starts with a capital.
+   * @experimental
+   */
+  formatIdentifiers = async (
+    names: string[],
+    casing: Casing,
+    opts?: ClientFormatIdentifiersOpts,
+  ): Promise<string[]> => {
+    const metadata = {
+      casing: { is_enum: true, value_to_name: CasingValueToName },
+      acronyms: { is_enum: true, value_to_name: AcronymStyleValueToName },
+    }
+
+    const ctx = this._ctx.select("formatIdentifiers", {
+      names,
+      casing,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Creates a function.
    * @param name Name of the function, in its original format from the implementation language.
    * @param returnType Return type of the function.
@@ -16159,6 +16651,18 @@ export class Client extends BaseClient {
   http = (url: string, opts?: ClientHttpOpts): File => {
     const ctx = this._ctx.select("http", { url, ...opts })
     return new File(ctx)
+  }
+
+  /**
+   * Parse a name in any casing into words.
+   *
+   * Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input or input with no letters or digits.
+   * @param name The name to parse.
+   * @experimental
+   */
+  identifier = (name: string): Identifier => {
+    const ctx = this._ctx.select("identifier", { name })
+    return new Identifier(ctx)
   }
 
   /**
@@ -16225,6 +16729,24 @@ export class Client extends BaseClient {
       __metadata: metadata,
     })
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * The acronyms and terms used to parse and format identifiers.
+   * @experimental
+   */
+  namingDictionary = async (): Promise<NamingTerm[]> => {
+    type namingDictionary = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("namingDictionary").select("id")
+
+    const response: Awaited<namingDictionary[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new NamingTerm(ctx.copy().selectNode(r.id, "NamingTerm")),
+    )
   }
 
   /**
