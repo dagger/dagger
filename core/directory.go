@@ -78,6 +78,27 @@ var _ dagql.HasDependencyResults = (*Directory)(nil)
 var _ dagql.HasDependencyResultsKinds = (*Directory)(nil)
 var _ dagql.HasLazyEvaluation = (*Directory)(nil)
 
+var _ dagql.CachePayloadSizer = (*Directory)(nil)
+
+// CachePayloadBytes reports the new-file contents and saved operation bytes
+// the directory keeps in memory. New-file contents stay after evaluation as
+// its recipe.
+func (dir *Directory) CachePayloadBytes() int64 {
+	if dir == nil {
+		return 0
+	}
+	dir.outputMu.Lock()
+	defer dir.outputMu.Unlock()
+	n := int64(len(dir.lazyJSON))
+	if dir.transferPending != nil {
+		n += int64(len(dir.transferPending.LazyJSON))
+	}
+	if lazy, ok := dir.Lazy.(*DirectoryWithNewFileLazy); ok {
+		n += int64(len(lazy.Content))
+	}
+	return n
+}
+
 func (dir *Directory) OnRelease(ctx context.Context) error {
 	if dir == nil || dir.Snapshot == nil {
 		return nil

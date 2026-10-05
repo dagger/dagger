@@ -102,15 +102,44 @@ const (
 )
 
 // CacheMetadataEstimate is a coarse estimate of memory retained by the DAGQL
-// cache's live results and symbolic graph. It intentionally models only the
-// existing result, term, and allocated eq-class cardinalities.
+// cache's live results and symbolic graph. It models the existing result,
+// term, and allocated eq-class cardinalities, plus the large byte payloads
+// whose lengths values report through CachePayloadSizer.
 type CacheMetadataEstimate struct {
 	ResultCount     int
 	TermCount       int
 	ClassSlotCount  int
 	OfferOwnerCount int
 	OfferOwnerBytes int64
+	PayloadBytes    int64
 	EstimatedBytes  int64
+}
+
+// CachePayloadSizer is implemented by values that can retain a large
+// in-memory byte payload, such as file contents held as a recipe, so the
+// structural estimate can count it. CachePayloadBytes must be cheap: report
+// lengths already at hand, never walk or serialize the value. The cache calls
+// it once, outside its own locks, before the result is published.
+type CachePayloadSizer interface {
+	CachePayloadBytes() int64
+}
+
+func cachePayloadBytes(val Typed) int64 {
+	if val == nil {
+		return 0
+	}
+	if nullable, ok := val.(Derefable); ok {
+		inner, valid := nullable.Deref()
+		if !valid {
+			return 0
+		}
+		val = inner
+	}
+	sizer, ok := UnwrapAs[CachePayloadSizer](val)
+	if !ok {
+		return 0
+	}
+	return max(sizer.CachePayloadBytes(), 0)
 }
 
 // CacheMetadataPruneReport summarizes an automatic structural pruning pass.
@@ -2241,6 +2270,10 @@ type Cache struct {
 
 	// result id -> result
 	resultsByID map[sharedResultID]*sharedResult
+	// resultPayloadBytes is the sum of payloadBytes over resultsByID. Change
+	// resultsByID only through putResultLocked and deleteResultLocked so the
+	// two stay in step.
+	resultPayloadBytes int64
 
 	// map of eq class -> all terms that have it as an input, needed during repair to
 	// figure out all the terms that need repair after eq class union
@@ -2580,6 +2613,10 @@ type sharedResult struct {
 	// persistedEnvelope is populated for imported rows and decoded lazily on
 	// first cache-hit use in a server-aware context.
 	persistedEnvelope *PersistedResultEnvelope
+	// payloadBytes is this result's share of Cache.resultPayloadBytes: the
+	// large in-memory byte payload its value or envelope retains, measured
+	// once before publication. Guarded by egraphMu once registered.
+	payloadBytes int64
 	// completeParts caches the row's complete parts for the revision of its
 	// value they were read from (see completePartKeys).
 	completeParts atomic.Pointer[rowCompleteParts]
@@ -5171,8 +5208,9 @@ func (c *Cache) EntryStats() CacheEntryStats {
 	return stats
 }
 
-// MetadataEstimate returns the current O(1) structural estimate of DAGQL cache
-// memory. It does not inspect payloads or measure physical cache usage.
+// MetadataEstimate returns the current structural estimate of DAGQL cache
+// memory. It reads maintained counts and does not inspect payloads or measure
+// physical cache usage.
 func (c *Cache) MetadataEstimate() CacheMetadataEstimate {
 	if c == nil {
 		return CacheMetadataEstimate{}
@@ -5193,14 +5231,47 @@ func (c *Cache) cacheMetadataEstimateLocked() CacheMetadataEstimate {
 		TermCount:       len(c.egraphTerms),
 		ClassSlotCount:  classSlots,
 		OfferOwnerCount: len(c.offerOwners),
+		PayloadBytes:    c.resultPayloadBytes,
 	}
 	for _, owner := range c.offerOwners {
 		estimate.OfferOwnerBytes += offerMetadataBytes(owner)
 	}
-	estimate.EstimatedBytes = estimate.OfferOwnerBytes + cacheMetadataResultEstimatedBytes*int64(estimate.ResultCount) +
+	estimate.EstimatedBytes = estimate.OfferOwnerBytes + estimate.PayloadBytes +
+		cacheMetadataResultEstimatedBytes*int64(estimate.ResultCount) +
 		cacheMetadataTermEstimatedBytes*int64(estimate.TermCount) +
 		cacheMetadataClassSlotEstimatedBytes*int64(estimate.ClassSlotCount)
 	return estimate
+}
+
+// putResultLocked registers res under its ID. Requires egraphMu for writing.
+func (c *Cache) putResultLocked(res *sharedResult) {
+	old := c.resultsByID[res.id]
+	if old == res {
+		return
+	}
+	if old != nil {
+		c.resultPayloadBytes -= old.payloadBytes
+	}
+	c.resultPayloadBytes += res.payloadBytes
+	c.resultsByID[res.id] = res
+}
+
+// deleteResultLocked unregisters res. Requires egraphMu for writing.
+func (c *Cache) deleteResultLocked(res *sharedResult) {
+	if c.resultsByID[res.id] != res {
+		return
+	}
+	c.resultPayloadBytes -= res.payloadBytes
+	delete(c.resultsByID, res.id)
+}
+
+// setResultPayloadBytesLocked replaces res's payload size, keeping the
+// registered total in step. Requires egraphMu for writing.
+func (c *Cache) setResultPayloadBytesLocked(res *sharedResult, n int64) {
+	if c.resultsByID[res.id] == res {
+		c.resultPayloadBytes += n - res.payloadBytes
+	}
+	res.payloadBytes = n
 }
 
 func (c *Cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {
@@ -6317,6 +6388,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				oc.res.inlineBorrow = source.inlineBorrow
 			}
 			oc.res.self = oc.val.Unwrap()
+			oc.res.payloadBytes = cachePayloadBytes(oc.res.self)
 			if shared := oc.val.cacheSharedResult(); shared != nil {
 				if frame := shared.loadResultCall(); frame != nil {
 					oc.res.storeResultCall(frame.clone())

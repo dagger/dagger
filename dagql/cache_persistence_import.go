@@ -174,6 +174,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				description:           row.Description,
 				recordType:            row.RecordType,
 				persistedEnvelope:     &env,
+				payloadBytes:          persistedEnvelopePayloadBytes(&env),
 			}
 			res.storeResultCall(frame)
 			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, frame)
@@ -198,7 +199,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			} else {
 				eagerDecodeResultIDs = append(eagerDecodeResultIDs, resultID)
 			}
-			c.resultsByID[resultID] = res
+			c.putResultLocked(res)
 			c.traceImportResultLoaded(ctx, importRunID, resultID, row.CallFrameJSON)
 		}
 
@@ -522,7 +523,9 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				res.payloadRevision++
 				res.onRelease = joinOnRelease(res.onRelease, decoded.cacheSharedResult().onRelease)
 			}
+			installedRevision := res.payloadRevision
 			res.payloadMu.Unlock()
+			c.updateDecodedPayloadBytes(res, decoded.Unwrap(), installedRevision)
 			if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
 				return err
 			}
@@ -667,6 +670,21 @@ func persistedEnvelopeTypeNames(env PersistedResultEnvelope, names []persistedEn
 // its items inline under the list row, so their captured results are owned by
 // the list row. Only edges are added: no attachment hook is rerun, so this
 // cannot re-enter a decode.
+// updateDecodedPayloadBytes replaces an imported row's envelope size with
+// its decoded value's, unless the row's payload changed after revision.
+// Callers hold no cache locks: sizing may take the value's own lock.
+func (c *Cache) updateDecodedPayloadBytes(res *sharedResult, decoded Typed, revision uint64) {
+	n := cachePayloadBytes(decoded)
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	res.payloadMu.RLock()
+	current := res.payloadRevision == revision
+	res.payloadMu.RUnlock()
+	if current {
+		c.setResultPayloadBytesLocked(res, n)
+	}
+}
+
 func (c *Cache) retainDecodedDependencyResults(ctx context.Context, res *sharedResult, decoded AnyResult) error {
 	var deps []AnyResult
 	collectDecodedDependencyResults(decoded, &deps)
@@ -932,7 +950,9 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				res.onRelease = joinOnRelease(res.onRelease, decoded.cacheSharedResult().onRelease)
 				c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
 			}
+			installedRevision := res.payloadRevision
 			res.payloadMu.Unlock()
+			c.updateDecodedPayloadBytes(res, decoded.Unwrap(), installedRevision)
 
 			resolver = decodeResolver
 		}

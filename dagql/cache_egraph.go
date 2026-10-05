@@ -1732,7 +1732,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 		res.id = c.nextSharedResultID
 		c.nextSharedResultID++
 	}
-	c.resultsByID[res.id] = res
+	c.putResultLocked(res)
 	if res.loadResultCall() == nil && requestFrame != nil {
 		res.storeResultCall(requestFrame.clone())
 		c.traceResultCallFrameUpdated(ctx, res, "index_wait_result_request_frame", nil, res.loadResultCall())
@@ -1887,7 +1887,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	if len(c.egraphTerms) == 0 && len(c.resultsByID) == 1 && c.resultsByID[res.id] == res {
 		// The last entry, with no term left: the reset clears everything it
 		// indexed.
-		delete(c.resultsByID, res.id)
+		c.deleteResultLocked(res)
 		c.maybeResetEgraphLocked()
 		return
 	}
@@ -1908,7 +1908,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	oldFrame := res.loadResultCall()
 	depCount := len(res.deps)
 	res.storeResultCall(nil)
-	delete(c.resultsByID, res.id)
+	c.deleteResultLocked(res)
 	c.traceResultRemoved(ctx, res, oldFrame, depCount)
 
 	nowUnix := time.Now().Unix()
@@ -1983,6 +1983,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
 	c.resultsByID = nil
+	c.resultPayloadBytes = 0
 	c.holderEntries = nil
 	c.entriesByRecipe = nil
 	c.remoteCaches = nil

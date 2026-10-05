@@ -68,6 +68,26 @@ var _ dagql.HasDependencyResults = (*File)(nil)
 var _ dagql.HasDependencyResultsKinds = (*File)(nil)
 var _ dagql.HasLazyEvaluation = (*File)(nil)
 
+var _ dagql.CachePayloadSizer = (*File)(nil)
+
+// CachePayloadBytes reports the blob contents and saved operation bytes the
+// file keeps in memory. A blob's contents stay after evaluation as its recipe.
+func (file *File) CachePayloadBytes() int64 {
+	if file == nil {
+		return 0
+	}
+	file.outputMu.Lock()
+	defer file.outputMu.Unlock()
+	n := int64(len(file.lazyJSON))
+	if file.transferPending != nil {
+		n += int64(len(file.transferPending.LazyJSON))
+	}
+	if lazy, ok := file.Lazy.(*FileBlobLazy); ok {
+		n += int64(len(lazy.Contents))
+	}
+	return n
+}
+
 func (file *File) OnRelease(ctx context.Context) error {
 	if file == nil || file.Snapshot == nil {
 		return nil
