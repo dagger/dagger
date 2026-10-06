@@ -1345,6 +1345,10 @@ func calcGitContentDigest(gitRef *core.GitRef, args treeArgs) (digest.Digest, er
 			[]core.GitRemote{{Name: "origin", URL: remoteRepo.URL.Remote()}},
 			repo.Remotes,
 		)
+		if repo.UpstreamRemote != nil {
+			remotes = core.MergeGitRemotes(nil, repo.Remotes)
+			dgstInputs = append(dgstInputs, "upstreamRemote", *repo.UpstreamRemote)
+		}
 		dgstInputs = append(dgstInputs, "remotes", hashutil.HashStrings(gitRemoteDigestInputs(remotes)...).String())
 	}
 
@@ -1977,6 +1981,9 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 		// merging these results could send a push to the wrong destination.
 		dgstInputs = append(dgstInputs, "remotes", hashutil.HashStrings(gitRemoteDigestInputs(repo.Remotes)...).String())
 	}
+	if repo.UpstreamRemote != nil {
+		dgstInputs = append(dgstInputs, "upstreamRemote", *repo.UpstreamRemote)
+	}
 	if localRepo, ok := repo.Backend.(*core.LocalGitRepository); ok {
 		// URL is empty for local repos, and a SHA alone doesn't identify the
 		// repository state it was resolved in: two checkouts at the same
@@ -1986,6 +1993,15 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 			return inst, err
 		}
 		dgstInputs = append(dgstInputs, "localRepo", dirDgst.String())
+		if localRepo.Upstream.Self() != nil {
+			// The same storage can carry different authority to complete its
+			// history or reopen its remote. Keep the exact source recipe.
+			upstreamDigest, err := localRepo.Upstream.RecipeDigest(ctx)
+			if err != nil {
+				return inst, err
+			}
+			dgstInputs = append(dgstInputs, "upstreamCapability", upstreamDigest.String())
+		}
 	}
 	if remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository); ok {
 		dgstInputs = append(dgstInputs, "authUsername", remoteRepo.AuthUsername)
@@ -2343,7 +2359,14 @@ func (s *gitSchema) withContents(ctx context.Context, parent dagql.ObjectResult[
 		return inst, err
 	}
 	repo.URL = parent.Self().URL
-	repo.Remotes = core.CloneGitRemotes(parent.Self().Remotes)
+	if parent.Self().UpstreamRemote == nil && repo.UpstreamRemote != nil {
+		// Supplied retained storage may already record a selection that its
+		// detached HEAD cannot express. Explicit registrations still win.
+		repo.Remotes = core.MergeGitRemotes(repo.Remotes, parent.Self().Remotes)
+	} else {
+		repo.Remotes = core.CloneGitRemotes(parent.Self().Remotes)
+		repo.UpstreamRemote = parent.Self().UpstreamRemote
+	}
 	repo.DiscardGitDir = parent.Self().DiscardGitDir
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
@@ -2555,6 +2578,9 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 		// GitCommit retains its repository, including its remote routing.
 		dgstInputs = append(dgstInputs, "remotes", hashutil.HashStrings(gitRemoteDigestInputs(repo.Remotes)...).String())
 	}
+	if repo.UpstreamRemote != nil {
+		dgstInputs = append(dgstInputs, "upstreamRemote", *repo.UpstreamRemote)
+	}
 	if localRepo, ok := repo.Backend.(*core.LocalGitRepository); ok {
 		// URL is empty for local repos, and a SHA alone doesn't identify the
 		// repository state it was resolved in: two checkouts at the same
@@ -2565,6 +2591,14 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 			return inst, err
 		}
 		dgstInputs = append(dgstInputs, "localRepo", dirDgst.String())
+		if localRepo.Upstream.Self() != nil {
+			// Commits retain the same source authority as refs.
+			upstreamDigest, err := localRepo.Upstream.RecipeDigest(ctx)
+			if err != nil {
+				return inst, err
+			}
+			dgstInputs = append(dgstInputs, "upstreamCapability", upstreamDigest.String())
+		}
 	}
 	if remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository); ok {
 		dgstInputs = append(dgstInputs, "authUsername", remoteRepo.AuthUsername)

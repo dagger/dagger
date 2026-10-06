@@ -786,6 +786,10 @@ func importGitBundleInto(ctx context.Context, dst *Directory, repo *GitRepositor
 
 	ctx, cancel := context.WithTimeout(ctx, gitBundleCommandTimeout)
 	defer cancel()
+	remotes, upstream, err := repo.ConfiguredRemotes(ctx)
+	if err != nil {
+		return fmt.Errorf("read git bundle source remotes: %w", err)
+	}
 	err = bundle.File.Self().Mount(ctx, bundle.File, func(bundlePath string) error {
 		header, err := inspectGitBundleFile(bundlePath)
 		if err != nil {
@@ -811,17 +815,6 @@ func importGitBundleInto(ctx context.Context, dst *Directory, repo *GitRepositor
 				out, err := source.Run(ctx, "rev-parse", "--verify", prerequisite.SHA+"^{commit}")
 				if err != nil || strings.TrimSpace(string(out)) != prerequisite.SHA {
 					return fmt.Errorf("git bundle prerequisite %s is not available from the repository", prerequisite.SHA)
-				}
-			}
-
-			// Local repositories carry remote routing in their config. Preserve
-			// that routing across bundle reconstruction, just as Tree does;
-			// other source configuration and refs remain isolated.
-			var remotes []GitRemote
-			if _, local := repo.Backend.(*LocalGitRepository); local {
-				remotes, err = readGitConfigRemotes(ctx, source)
-				if err != nil {
-					return fmt.Errorf("read git bundle source remotes: %w", err)
 				}
 			}
 
@@ -854,6 +847,9 @@ func importGitBundleInto(ctx context.Context, dst *Directory, repo *GitRepositor
 					if err := writeGitCheckoutRemote(ctx, git, remote); err != nil {
 						return fmt.Errorf("preserve git bundle source remote: %w", err)
 					}
+				}
+				if err := writeGitRemoteSelection(ctx, git, remotes, upstream); err != nil {
+					return fmt.Errorf("preserve git bundle remote selection: %w", err)
 				}
 				return normalizeCanonicalGitDir(root)
 			})

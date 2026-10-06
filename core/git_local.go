@@ -486,7 +486,7 @@ func readGitConfigRemotes(ctx context.Context, git *gitutil.GitCLI) ([]GitRemote
 	return remotes, nil
 }
 
-func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote) (_ *Directory, rerr error) {
+func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (_ *Directory, rerr error) {
 	if discardGitDir && ref.incrementalCheckoutEligible() {
 		dir, supported, err := ref.incrementalTree(ctx, srv)
 		if err != nil || supported {
@@ -537,6 +537,16 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return fmt.Errorf("could not read remotes: %w", err)
 		}
 		checkoutRemotes := MergeGitRemotes(configRemotes, remotes)
+		var upstream string
+		if upstreamRemote != nil {
+			checkoutRemotes = MergeGitRemotes(nil, remotes)
+			upstream = *upstreamRemote
+		} else {
+			upstream, err = gitBranchUpstream(ctx, git, ref.Ref.Name)
+			if err != nil {
+				return err
+			}
+		}
 
 		return MountRef(ctx, bkref, func(checkoutDir string, _ *mount.Mount) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
@@ -551,7 +561,10 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			if discardGitDir {
 				return doLocalGitTreeCheckout(ctx, git, checkoutGit, checkoutRemotes, gitURL, ref.Ref)
 			}
-			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, false)
+			if err := doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, false); err != nil {
+				return err
+			}
+			return writeGitRemoteSelection(ctx, checkoutGit, checkoutRemotes, upstream)
 		})
 	})
 	if err != nil {

@@ -608,11 +608,14 @@ func (c *Client) GitCheckoutState(ctx context.Context, checkoutPath string) (str
 // commits yet (unborn HEAD) has an empty HeadSHA and no BundlePath. The caller
 // must call Close to release the owned bundle file.
 type GitCheckoutPack struct {
-	HeadSHA      string
-	HeadRef      string
-	ObjectFormat string
-	StateDigest  string
-	BundlePath   string
+	HeadSHA           string
+	HeadRef           string
+	ObjectFormat      string
+	StateDigest       string
+	BundlePath        string
+	Remotes           []*git.CheckoutRemote
+	UpstreamRemote    string
+	HasRemoteMetadata bool
 }
 
 // Close releases the checkout bundle owned by pack.
@@ -684,10 +687,13 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStat
 				}
 			}
 			pack = &GitCheckoutPack{
-				HeadSHA:      msg.Metadata.HeadSha,
-				HeadRef:      msg.Metadata.HeadRef,
-				ObjectFormat: msg.Metadata.ObjectFormat,
-				StateDigest:  msg.Metadata.StateDigest,
+				HeadSHA:           msg.Metadata.HeadSha,
+				HeadRef:           msg.Metadata.HeadRef,
+				ObjectFormat:      msg.Metadata.ObjectFormat,
+				StateDigest:       msg.Metadata.StateDigest,
+				Remotes:           msg.Metadata.Remotes,
+				UpstreamRemote:    msg.Metadata.UpstreamRemote,
+				HasRemoteMetadata: msg.Metadata.HasRemoteMetadata,
 			}
 		case *git.PackCheckoutResponse_Chunk:
 			if pack == nil {

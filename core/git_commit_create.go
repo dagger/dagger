@@ -450,14 +450,32 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 	if err := copyGitShallowBoundary(filepath.Dir(parentObjects), meta); err != nil {
 		return err
 	}
-	remotes, err := readGitConfigRemotes(ctx, gitutil.NewGitCLI(gitutil.WithGitDir(gitDir)))
+	sourceGit := gitutil.NewGitCLI(gitutil.WithGitDir(gitDir))
+	remotes, selection, err := readGitRemoteSelection(ctx, sourceGit)
 	if err != nil {
 		return err
 	}
-	for _, remote := range remotes {
-		if err := writeGitCheckoutRemote(ctx, gitutil.NewGitCLI(gitutil.WithGitDir(meta)), remote); err != nil {
+	var upstream string
+	if selection != nil {
+		upstream = *selection
+	} else {
+		remotes, err = readGitConfigRemotes(ctx, sourceGit)
+		if err != nil {
 			return err
 		}
+		upstream, err = gitBranchUpstream(ctx, sourceGit, branchName)
+		if err != nil {
+			return err
+		}
+	}
+	metadataGit := gitutil.NewGitCLI(gitutil.WithGitDir(meta))
+	for _, remote := range remotes {
+		if err := writeGitCheckoutRemote(ctx, metadataGit, remote); err != nil {
+			return err
+		}
+	}
+	if err := writeGitRemoteSelection(ctx, metadataGit, remotes, upstream); err != nil {
+		return err
 	}
 	env := []string{
 		"GIT_DIR=" + meta, "GIT_WORK_TREE=" + work,

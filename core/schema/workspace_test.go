@@ -45,7 +45,7 @@ type workspaceCheckoutBackend struct {
 	allowCheckout <-chan struct{}
 }
 
-func (b *workspaceCheckoutBackend) Tree(ctx context.Context, _ *dagql.Server, discard bool, depth int, includeTags bool, remotes []core.GitRemote) (*core.Directory, error) {
+func (b *workspaceCheckoutBackend) Tree(ctx context.Context, _ *dagql.Server, discard bool, depth int, includeTags bool, remotes []core.GitRemote, _ *string) (*core.Directory, error) {
 	b.mu.Lock()
 	b.requests = append(b.requests, workspaceCheckoutRequest{discard, depth, includeTags, remotes})
 	b.mu.Unlock()
