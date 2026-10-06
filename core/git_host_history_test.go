@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"context"
-	"crypto/sha1" //nolint:gosec // Git pack trailer, not a security primitive
+	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
 	"os"
