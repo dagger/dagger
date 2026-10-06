@@ -19,11 +19,11 @@ func checkoutRemoteMetadata(ctx context.Context, checkout, headRef string) ([]*C
 	remotes := make([]*CheckoutRemote, 0)
 	fingerprint := sha256.New()
 	for _, name := range strings.Fields(out) {
-		fetch, err := runHostGit(ctx, checkout, "remote", "get-url", name)
+		fetch, err := runHostGit(ctx, checkout, "remote", "get-url", "--", name)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("read checkout fetch destination: %w", err)
 		}
-		push, err := runHostGit(ctx, checkout, "remote", "get-url", "--push", name)
+		push, err := runHostGit(ctx, checkout, "remote", "get-url", "--push", "--", name)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("read checkout push destination: %w", err)
 		}

@@ -429,10 +429,9 @@ func (ref *LocalGitRef) mount(ctx context.Context, depth int, includeTags bool, 
 	return ref.mountHistory(ctx, depth, includeTags, fn)
 }
 
-// readGitConfigRemotes reads the remotes configured on the repository the
-// CLI is positioned in: every remote.<name>.url and remote.<name>.pushurl,
-// in configuration order. A repository with no remotes (or no readable
-// config) reports none.
+// readGitConfigRemotes reads configured names in configuration order, then
+// asks Git for their effective fetch and push URLs. Git applies URL rewrites
+// and selects the first URL when a remote has several destinations.
 func readGitConfigRemotes(ctx context.Context, git *gitutil.GitCLI) ([]GitRemote, error) {
 	out, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "config", "-z", "--get-regexp", `^remote\.`)
 	if err != nil {
@@ -469,7 +468,6 @@ func readGitConfigRemotes(ctx context.Context, git *gitutil.GitCLI) ([]GitRemote
 		}
 		switch attr {
 		case "url":
-			// Later values shadow earlier ones, like `git config --get`.
 			remote.URL = value
 		case "pushurl":
 			// Git pushes to every configured pushurl; only the first one is
@@ -481,9 +479,32 @@ func readGitConfigRemotes(ctx context.Context, git *gitutil.GitCLI) ([]GitRemote
 	}
 	remotes := make([]GitRemote, 0, len(order))
 	for _, name := range order {
-		remotes = append(remotes, *byName[name])
+		remote, err := resolveGitConfigRemote(ctx, git, *byName[name])
+		if err != nil {
+			return nil, err
+		}
+		remotes = append(remotes, remote)
 	}
 	return remotes, nil
+}
+
+func resolveGitConfigRemote(ctx context.Context, git *gitutil.GitCLI, remote GitRemote) (GitRemote, error) {
+	if remote.URL != "" {
+		out, err := git.Run(ctx, "remote", "get-url", "--", remote.Name)
+		if err != nil {
+			return GitRemote{}, fmt.Errorf("read remote %q fetch URL: %w", remote.Name, err)
+		}
+		remote.URL = strings.TrimSuffix(string(out), "\n")
+	}
+	out, err := git.Run(ctx, "remote", "get-url", "--push", "--", remote.Name)
+	if err != nil {
+		return GitRemote{}, fmt.Errorf("read remote %q push URL: %w", remote.Name, err)
+	}
+	pushURL := strings.TrimSuffix(string(out), "\n")
+	if remote.PushURL != "" || pushURL != remote.URL {
+		remote.PushURL = pushURL
+	}
+	return remote, nil
 }
 
 func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (_ *Directory, rerr error) {

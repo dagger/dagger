@@ -109,14 +109,19 @@ type gitRemoteSelectionArgs struct {
 	UpstreamRemote string
 }
 
-func (s *gitSchema) withRemoteSelection(_ context.Context, parent *core.GitRepository, args gitRemoteSelectionArgs) (*core.GitRepository, error) {
+func (s *gitSchema) withRemoteSelection(ctx context.Context, parent *core.GitRepository, args gitRemoteSelectionArgs) (*core.GitRepository, error) {
 	var remotes []core.GitRemote
 	if err := json.Unmarshal([]byte(args.Remotes), &remotes); err != nil {
 		return nil, fmt.Errorf("decode captured remotes: %w", err)
 	}
 	for _, remote := range remotes {
-		if err := validateGitRemoteName(remote.Name); err != nil {
-			return nil, err
+		// Captured names already come from Git. Check them using Git's ref
+		// rules, which allow names such as team/trunk.
+		if remote.Name == "" {
+			return nil, fmt.Errorf("remote name must be nonempty")
+		}
+		if _, err := gitutil.NewGitCLI().Run(ctx, "check-ref-format", "refs/remotes/"+remote.Name+"/HEAD"); err != nil {
+			return nil, fmt.Errorf("invalid captured remote name %q: %w", remote.Name, err)
 		}
 		if remote.URL != "" {
 			if err := validateGitRemoteURL(remote.URL); err != nil {

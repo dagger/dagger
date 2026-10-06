@@ -56,6 +56,19 @@ func TestCaptureGitRemoteSelectionMetadata(t *testing.T) {
 	require.Equal(t, []*CheckoutRemote{{Name: "fork", Url: remote}, {Name: "trunk", Url: remote}}, meta.Remotes)
 }
 
+func TestCheckoutRemoteMetadataValidNames(t *testing.T) {
+	for _, name := range []string{"team/trunk", "-fork"} {
+		t.Run(name, func(t *testing.T) {
+			repo, home := initRepo(t, "feature")
+			commitFile(t, repo, home, "a", "one", "first")
+			gitCmd(t, home, repo, "remote", "add", "--", name, "https://example.com/repo")
+			remotes, _, _, err := checkoutRemoteMetadata(t.Context(), repo, "refs/heads/feature")
+			require.NoError(t, err)
+			require.Equal(t, []*CheckoutRemote{{Name: name, Url: "https://example.com/repo"}}, remotes)
+		})
+	}
+}
+
 func TestCheckoutRoutingURL(t *testing.T) {
 	for _, tc := range []struct{ raw, want string }{
 		{"https://example.com/repo", "https://example.com/repo"},

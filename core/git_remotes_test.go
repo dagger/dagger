@@ -38,6 +38,92 @@ func TestDefaultGitRemote(t *testing.T) {
 	}
 }
 
+func TestGitConfiguredRemoteURLs(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		config [][2]string
+		want   GitRemote
+	}{
+		{
+			name:   "first fetch URL",
+			config: [][2]string{{"remote.origin.url", "https://example.test/first"}, {"remote.origin.url", "https://example.test/second"}},
+			want:   GitRemote{Name: "origin", URL: "https://example.test/first"},
+		},
+		{
+			name:   "fetch and push rewrites",
+			config: [][2]string{{"remote.origin.url", "alias:repo"}, {"url.https://example.test/fetch/.insteadOf", "alias:"}, {"url.ssh://git@example.test/push/.pushInsteadOf", "alias:"}},
+			want:   GitRemote{Name: "origin", URL: "https://example.test/fetch/repo", PushURL: "ssh://git@example.test/push/repo"},
+		},
+		{
+			name:   "first explicit push URL",
+			config: [][2]string{{"remote.origin.url", "https://example.test/fetch"}, {"remote.origin.pushurl", "alias:first"}, {"remote.origin.pushurl", "alias:second"}, {"url.ssh://git@example.test/.insteadOf", "alias:"}},
+			want:   GitRemote{Name: "origin", URL: "https://example.test/fetch", PushURL: "ssh://git@example.test/first"},
+		},
+		{
+			name:   "push only",
+			config: [][2]string{{"remote.origin.pushurl", "https://example.test/push"}},
+			want:   GitRemote{Name: "origin", PushURL: "https://example.test/push"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := historyRepo(t, "sha1")
+			for _, entry := range tc.config {
+				gitMirrorTestRun(t, dir, "config", "--add", entry[0], entry[1])
+			}
+			remotes, err := readGitConfigRemotes(t.Context(), gitutil.NewGitCLI(gitutil.WithDir(dir)))
+			require.NoError(t, err)
+			require.Equal(t, []GitRemote{tc.want}, remotes)
+		})
+	}
+}
+
+func TestGitRemoteSelectionAfterCheckoutEdits(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		commands  [][]string
+		preserved bool
+		upstream  string
+	}{
+		{name: "unchanged", preserved: true, upstream: "trunk"},
+		{name: "detached", commands: [][]string{{"checkout", "--detach"}}, preserved: true, upstream: "trunk"},
+		{name: "new commit", commands: [][]string{{"commit", "--allow-empty", "-m", "next"}}, preserved: true, upstream: "trunk"},
+		{name: "unrelated config", commands: [][]string{{"config", "user.name", "New Author"}}, preserved: true, upstream: "trunk"},
+		{name: "rename", commands: [][]string{{"remote", "rename", "trunk", "renamed"}}},
+		{name: "remove", commands: [][]string{{"remote", "remove", "trunk"}}},
+		{name: "fetch URL", commands: [][]string{{"remote", "set-url", "trunk", "https://example.test/new"}}},
+		{name: "push rewrite", commands: [][]string{{"config", "url.ssh://git@example.test/.pushInsteadOf", "https://example.test/"}}},
+		{name: "tracking", commands: [][]string{{"config", "branch.main.remote", "fork"}, {"config", "branch.main.merge", "refs/heads/main"}}, upstream: "fork"},
+		{name: "new branch", commands: [][]string{{"checkout", "-b", "other"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := historyRepo(t, "sha1")
+			historyCommit(t, dir, "base", "base")
+			gitMirrorTestRun(t, dir, "remote", "add", "trunk", "https://example.test/trunk")
+			gitMirrorTestRun(t, dir, "remote", "add", "fork", "https://example.test/fork")
+			git := gitutil.NewGitCLI(gitutil.WithDir(dir))
+			remotes, err := readGitConfigRemotes(t.Context(), git)
+			require.NoError(t, err)
+			require.NoError(t, writeGitRemoteSelection(t.Context(), git, remotes, "trunk"))
+			for _, command := range tc.commands {
+				gitMirrorTestRun(t, dir, command...)
+			}
+			saved, selection, err := readGitRemoteSelection(t.Context(), git)
+			require.NoError(t, err)
+			if tc.preserved {
+				require.Equal(t, remotes, saved)
+				require.NotNil(t, selection)
+				require.Equal(t, "trunk", *selection)
+			} else {
+				require.Nil(t, selection, "changed Git configuration must invalidate captured routing")
+			}
+			branch := gitMirrorTestRun(t, dir, "rev-parse", "--symbolic-full-name", "HEAD")
+			_, upstream, err := readGitRemoteSelectionForRef(t.Context(), git, branch)
+			require.NoError(t, err)
+			require.Equal(t, tc.upstream, upstream)
+		})
+	}
+}
+
 func TestImplicitGitRemoteRouting(t *testing.T) {
 	upstream := ""
 	implicit := GitRemote{Name: "origin", URL: "https://example.test/repo", Implicit: true}
@@ -156,4 +242,21 @@ func TestGitContainsShallowHistory(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".git", "shallow"), []byte(base+"\n"+side+"\n"), 0600))
 	_, err = gitContains(t.Context(), git, side, tip)
 	require.ErrorIs(t, err, ErrGitHistoryIncomplete)
+}
+
+func TestGitContainsIgnoresUnreachableShallowBoundary(t *testing.T) {
+	dir := historyRepo(t, "sha1")
+	root := historyCommit(t, dir, "root", "root")
+	tip := historyCommit(t, dir, "tip", "tip")
+	gitMirrorTestRun(t, dir, "checkout", "--orphan", "unrelated")
+	gitMirrorTestRun(t, dir, "rm", "-rf", ".")
+	boundary := historyCommit(t, dir, "unrelated", "unrelated")
+	historyCommit(t, dir, "unrelated-tip", "unrelated tip")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".git", "shallow"), []byte(boundary+"\n"), 0600))
+	// root's entire history is known. Another branch's missing history
+	// cannot make the newer tip an ancestor of root.
+	historyForbidFetch(t)
+	got, err := gitContains(t.Context(), gitutil.NewGitCLI(gitutil.WithDir(dir)), root, tip)
+	require.NoError(t, err)
+	require.False(t, got)
 }

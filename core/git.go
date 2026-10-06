@@ -1500,7 +1500,7 @@ func writeGitCheckoutRemote(ctx context.Context, checkoutGit *gitutil.GitCLI, re
 		return nil
 	}
 	if remote.URL != "" {
-		if _, err := checkoutGit.Run(ctx, "remote", "add", remote.Name, remote.URL); err != nil {
+		if _, err := checkoutGit.Run(ctx, "remote", "add", "--", remote.Name, remote.URL); err != nil {
 			return fmt.Errorf("failed to add remote %s: %w", remote.Name, err)
 		}
 	}

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -120,6 +121,10 @@ func readGitRemoteSelection(ctx context.Context, git *gitutil.GitCLI) ([]GitRemo
 	if !found || key == "" {
 		return nil, nil, nil
 	}
+	valid, err := gitRemoteSelectionUnchanged(ctx, git)
+	if err != nil || !valid {
+		return nil, nil, err
+	}
 	data, err := git.Run(ctx, "config", "--get", "dagger.remotes")
 	if err != nil {
 		return nil, nil, err
@@ -131,7 +136,43 @@ func readGitRemoteSelection(ctx context.Context, git *gitutil.GitCLI) ([]GitRemo
 	return remotes, &upstream, nil
 }
 
-// readGitRemoteSelectionForRef prefers a saved selection over branch tracking.
+type gitRemoteSelectionState struct {
+	Config string `json:"config"`
+	Head   string `json:"head"`
+}
+
+func currentGitRemoteSelectionState(ctx context.Context, git *gitutil.GitCLI) (gitRemoteSelectionState, error) {
+	// Compare routing and tracking configuration, not commit IDs. New commits
+	// and detaching HEAD do not invalidate the source's captured selection.
+	config, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "config", "-z", "--get-regexp", `^(remote\.|branch\.|url\.)`)
+	if err != nil {
+		return gitRemoteSelectionState{}, err
+	}
+	head, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "symbolic-ref", "-q", "HEAD")
+	if err != nil {
+		return gitRemoteSelectionState{}, err
+	}
+	return gitRemoteSelectionState{Config: fmt.Sprintf("%x", sha256.Sum256(config)), Head: strings.TrimSpace(string(head))}, nil
+}
+
+func gitRemoteSelectionUnchanged(ctx context.Context, git *gitutil.GitCLI) (bool, error) {
+	data, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "config", "--get", "dagger.remoteSelectionState")
+	if err != nil || len(data) == 0 {
+		return false, err
+	}
+	var saved gitRemoteSelectionState
+	if err := json.Unmarshal(data, &saved); err != nil {
+		return false, err
+	}
+	current, err := currentGitRemoteSelectionState(ctx, git)
+	if err != nil {
+		return false, err
+	}
+	return current.Config == saved.Config && (current.Head == "" || current.Head == saved.Head), nil
+}
+
+// readGitRemoteSelectionForRef uses a saved selection while its checkout's
+// routing and branch tracking configuration remain unchanged.
 func readGitRemoteSelectionForRef(ctx context.Context, git *gitutil.GitCLI, name string) ([]GitRemote, string, error) {
 	remotes, selection, err := readGitRemoteSelection(ctx, git)
 	if err != nil {
@@ -159,6 +200,17 @@ func writeGitRemoteSelection(ctx context.Context, git *gitutil.GitCLI, remotes [
 		return err
 	}
 	if _, err := git.Run(ctx, "config", "dagger.remotes", string(data)); err != nil {
+		return err
+	}
+	state, err := currentGitRemoteSelectionState(ctx, git)
+	if err != nil {
+		return err
+	}
+	data, err = json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	if _, err := git.Run(ctx, "config", "dagger.remoteSelectionState", string(data)); err != nil {
 		return err
 	}
 	gitDir, err := git.GitDir(ctx)
@@ -299,6 +351,14 @@ func gitContains(ctx context.Context, git *gitutil.GitCLI, commit, ancestor stri
 		return false, err
 	}
 	for _, boundary := range boundaries {
+		reachable, err := gitIsAncestor(ctx, git, boundary, commit)
+		if err != nil {
+			return false, err
+		}
+		if !reachable {
+			// Missing history on another branch cannot change this answer.
+			continue
+		}
 		// Missing history is older than the boundary. If the candidate is
 		// at or above it, that history cannot change a negative answer.
 		// This keeps native workspace comparisons within their owned store.

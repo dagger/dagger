@@ -460,9 +460,6 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 			return err
 		}
 	}
-	if err := writeGitRemoteSelection(ctx, metadataGit, remotes, upstream); err != nil {
-		return err
-	}
 	env := []string{
 		"GIT_DIR=" + meta, "GIT_WORK_TREE=" + work,
 		"GIT_INDEX_FILE=" + filepath.Join(scratch, "index"),
@@ -514,7 +511,12 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return publishNativeCommit(gitDir, meta, branchName, sha, run)
+	if err := publishNativeCommit(gitDir, meta, branchName, sha, run); err != nil {
+		return err
+	}
+	// Publication installs the final HEAD and configuration. Capture their
+	// baseline now so the new commit keeps its parent's remote selection.
+	return writeGitRemoteSelection(ctx, gitutil.NewGitCLI(gitutil.WithGitDir(gitDir)), remotes, upstream)
 }
 
 func normalizeNativeCommitOpts(opts *GitCommitOpts) error {

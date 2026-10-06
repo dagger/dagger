@@ -87,16 +87,16 @@ func (GitSuite) TestGitBranchFilteringRemoteSelectionPersistence(ctx context.Con
 		WithWorkdir("/repo").WithExec([]string{"git", "init", "-b", "feature"}).
 		WithNewFile("base", "base").WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "base"}).
-		WithExec([]string{"git", "remote", "add", "trunk", "https://invalid.example/trunk"}).
-		WithExec([]string{"git", "remote", "add", "fork", "https://invalid.example/fork"}).
-		WithExec([]string{"git", "config", "branch.feature.remote", "trunk"}).
+		WithExec([]string{"git", "remote", "add", "--", "team/trunk", "https://invalid.example/trunk"}).
+		WithExec([]string{"git", "remote", "add", "--", "-fork", "https://invalid.example/fork"}).
+		WithExec([]string{"git", "config", "branch.feature.remote", "team/trunk"}).
 		WithExec([]string{"git", "config", "branch.feature.merge", "refs/heads/main"})
 	repo := fixture.Directory(".").AsGit()
-	assertGitRemoteSelection(ctx, t, c, repo, []string{"fork", "trunk"}, "trunk")
+	assertGitRemoteSelection(ctx, t, c, repo, []string{"-fork", "team/trunk"}, "team/trunk")
 	frozen := repo.Head().AsWorkspace().Snapshot()
-	assertGitRemoteSelection(ctx, t, c, frozen.Git().Head().AsRepository(), []string{"fork", "trunk"}, "trunk")
+	assertGitRemoteSelection(ctx, t, c, frozen.Git().Head().AsRepository(), []string{"-fork", "team/trunk"}, "team/trunk")
 	retained := frozen.Git().Head().Tree(dagger.GitRefTreeOpts{Depth: 0})
-	assertGitRemoteSelection(ctx, t, c, retained.AsGit(), []string{"fork", "trunk"}, "trunk")
+	assertGitRemoteSelection(ctx, t, c, retained.AsGit(), []string{"-fork", "team/trunk"}, "team/trunk")
 	before := repo.Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
 	changes := before.WithNewFile("authored", "authored").Changes(before)
 	headSHA, err := repo.Head().CommitSHA(ctx)
@@ -110,12 +110,65 @@ func (GitSuite) TestGitBranchFilteringRemoteSelectionPersistence(ctx context.Con
 		{"authored commit", repo.Head().WithCommit(changes, "authored", workspaceCommitDate, "Author", "author@example.com").AsRepository()},
 	} {
 		t.Run(derived.name, func(ctx context.Context, t *testctx.T) {
-			assertGitRemoteSelection(ctx, t, c, derived.repo, []string{"fork", "trunk"}, "trunk")
-			assertGitRemoteSelection(ctx, t, c, derived.repo.Head().Tree(dagger.GitRefTreeOpts{Depth: 0}).AsGit(), []string{"fork", "trunk"}, "trunk")
+			assertGitRemoteSelection(ctx, t, c, derived.repo, []string{"-fork", "team/trunk"}, "team/trunk")
+			assertGitRemoteSelection(ctx, t, c, derived.repo.Head().Tree(dagger.GitRefTreeOpts{Depth: 0}).AsGit(), []string{"-fork", "team/trunk"}, "team/trunk")
 		})
 	}
 	detached := fixture.WithExec([]string{"git", "checkout", "--detach"}).Directory(".").AsGit()
-	assertGitRemoteSelection(ctx, t, c, detached, []string{"fork", "trunk"}, "")
+	assertGitRemoteSelection(ctx, t, c, detached, []string{"-fork", "team/trunk"}, "")
+}
+
+func (GitSuite) TestGitBranchFilteringRemoteURLRewrite(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("remote", "remote"))
+	source := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	want, err := source.Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	local := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
+		WithWorkdir("/repo").WithExec([]string{"git", "init", "-b", "feature"}).
+		WithNewFile("base", "base").WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "base"}).
+		WithExec([]string{"git", "config", "url." + url + ".insteadOf", "alias:repo"}).
+		WithExec([]string{"git", "remote", "add", "origin", "alias:repo"}).Directory(".")
+	remote, err := source.WithContents(local).DefaultRemote(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, remote)
+	got, err := remote.Repository().Head(dagger.GitRepositoryHeadOpts{NoLock: true}).CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, want, got, "the resolved URL must retain access to the source service")
+}
+
+func (GitSuite) TestGitBranchFilteringEditedCheckout(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
+		WithWorkdir("/repo").WithExec([]string{"git", "init", "-b", "feature"}).
+		WithNewFile("base", "base").WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "base"}).
+		WithExec([]string{"git", "remote", "add", "trunk", "https://invalid.example/trunk"}).
+		WithExec([]string{"git", "remote", "add", "fork", "https://invalid.example/fork"}).
+		WithExec([]string{"git", "config", "branch.feature.remote", "trunk"}).
+		WithExec([]string{"git", "config", "branch.feature.merge", "refs/heads/main"})
+	retained := fixture.Directory(".").AsGit().Head().Tree(dagger.GitRefTreeOpts{Depth: 0})
+	checkout := fixture.WithDirectory("/edited", retained).WithWorkdir("/edited")
+	assertGitRemoteSelection(ctx, t, c, retained.AsGit(), []string{"fork", "trunk"}, "trunk")
+	t.Run("rename", func(ctx context.Context, t *testctx.T) {
+		edited := checkout.WithExec([]string{"git", "remote", "rename", "trunk", "renamed"}).Directory(".").AsGit()
+		assertGitRemoteSelection(ctx, t, c, edited, []string{"fork", "renamed"}, "")
+		frozen := edited.Head().AsWorkspace().Snapshot().Git().Head().AsRepository()
+		assertGitRemoteSelection(ctx, t, c, frozen, []string{"fork", "renamed"}, "")
+	})
+	t.Run("tracking", func(ctx context.Context, t *testctx.T) {
+		edited := checkout.WithExec([]string{"git", "checkout", "-B", "feature"}).
+			WithExec([]string{"git", "config", "branch.feature.remote", "fork"}).
+			WithExec([]string{"git", "config", "branch.feature.merge", "refs/heads/main"}).Directory(".").AsGit()
+		assertGitRemoteSelection(ctx, t, c, edited, []string{"fork", "trunk"}, "fork")
+	})
+	t.Run("detach", func(ctx context.Context, t *testctx.T) {
+		detached := checkout.WithExec([]string{"git", "checkout", "--detach"}).Directory(".").AsGit()
+		assertGitRemoteSelection(ctx, t, c, detached, []string{"fork", "trunk"}, "trunk")
+	})
 }
 
 func (GitSuite) TestGitBranchFilteringShallow(ctx context.Context, t *testctx.T) {

@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,6 +12,22 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCapturedGitRemoteNames(t *testing.T) {
+	for _, name := range []string{"team/trunk", "team.fork", "-fork", "origin", "", "bad..name", "bad name", "bad\nname"} {
+		t.Run(name, func(t *testing.T) {
+			remotes, err := json.Marshal([]core.GitRemote{{Name: name, URL: "https://example.test/repo"}})
+			require.NoError(t, err)
+			repo, err := (&gitSchema{}).withRemoteSelection(t.Context(), &core.GitRepository{}, gitRemoteSelectionArgs{Remotes: string(remotes), UpstreamRemote: name})
+			if name == "team/trunk" || name == "team.fork" || name == "-fork" || name == "origin" {
+				require.NoError(t, err)
+				require.Equal(t, name, repo.Remotes[0].Name)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
 
 func TestGitRefAndCommitPreserveRemoteIdentity(t *testing.T) {
 	for _, kind := range []string{"ref", "commit"} {
