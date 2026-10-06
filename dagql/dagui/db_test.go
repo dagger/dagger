@@ -123,6 +123,104 @@ func TestUpdatedSnapshotsForwardsBuriedCheck(t *testing.T) {
 	)
 }
 
+// TestUpdatedSnapshotsForwardsBuriedService covers a service instance span
+// buried beneath plumbing. The instance is passthrough, so its children must
+// not be forwarded through it just because it's surfaced.
+func TestUpdatedSnapshotsForwardsBuriedService(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		queryID
+		startID
+		innerStartID
+		instanceID
+		childID
+		grandchildID
+	)
+	innerStart := agentTestSpan(innerStartID, "service.start", spanID(startID))
+	innerStart.Passthrough = true
+	instance := agentTestSpan(instanceID, "exec redis-server", spanID(innerStartID))
+	instance.Service = true
+	instance.ServiceName = "redis"
+	instance.Passthrough = true
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		agentTestSpan(rootID, "root", SpanID{}),
+		agentTestSpan(queryID, "POST /query", spanID(rootID)),
+		agentTestSpan(startID, "Service.start", spanID(queryID)),
+		innerStart,
+		instance,
+		agentTestSpan(childID, "service child", spanID(instanceID)),
+		agentTestSpan(grandchildID, "service grandchild", spanID(childID)),
+	})
+
+	names := forwardedNames(t, db, db.UpdatedSnapshots(rootSubscription(spanID(rootID))))
+	assertForwarded(t, names,
+		[]string{"root", "POST /query", "Service.start", "service.start", "exec redis-server"},
+		[]string{"service child", "service grandchild"},
+	)
+}
+
+// TestUpdatedSnapshotsForwardsServiceDisplay covers `dagger up`'s
+// per-service display spans, which carry a service name but no instance mark.
+func TestUpdatedSnapshotsForwardsServiceDisplay(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		queryID
+		upID
+		displayID
+		readyID
+	)
+	display := agentTestSpan(displayID, "web:8080", spanID(upID))
+	display.ServiceName = "web"
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		agentTestSpan(rootID, "root", SpanID{}),
+		agentTestSpan(queryID, "POST /query", spanID(rootID)),
+		agentTestSpan(upID, "ModTreeNode.up", spanID(queryID)),
+		display,
+		agentTestSpan(readyID, "ready http://web:8080", spanID(displayID)),
+	})
+
+	names := forwardedNames(t, db, db.UpdatedSnapshots(rootSubscription(spanID(rootID))))
+	assertForwarded(t, names,
+		[]string{"root", "POST /query", "ModTreeNode.up", "web:8080"},
+		[]string{"ready http://web:8080"},
+	)
+}
+
+// TestUpdatedSnapshotsSkipsInternalService asserts internal service spans,
+// which dagui doesn't surface, aren't forwarded either.
+func TestUpdatedSnapshotsSkipsInternalService(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		queryID
+		plumbingID
+		instanceID
+		displayID
+	)
+	instance := agentTestSpan(instanceID, "internal instance", spanID(plumbingID))
+	instance.Service = true
+	instance.ServiceName = "internal"
+	instance.Internal = true
+	display := agentTestSpan(displayID, "internal display", spanID(plumbingID))
+	display.ServiceName = "internal"
+	display.Internal = true
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		agentTestSpan(rootID, "root", SpanID{}),
+		agentTestSpan(queryID, "POST /query", spanID(rootID)),
+		agentTestSpan(plumbingID, "plumbing", spanID(queryID)),
+		instance,
+		display,
+	})
+
+	names := forwardedNames(t, db, db.UpdatedSnapshots(rootSubscription(spanID(rootID))))
+	assertForwarded(t, names,
+		[]string{"root", "POST /query"},
+		[]string{"plumbing", "internal instance", "internal display"},
+	)
+}
+
 // TestUpdatedSnapshotsForwardsLateAncestors covers a surfaced span that
 // arrives before its ancestors (e.g. spans exported as they end): the
 // ancestors can't be sent with it, so they're sent once they arrive.

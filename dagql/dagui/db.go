@@ -293,7 +293,7 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 	slices.SortStableFunc(updated, func(a, b *Span) int {
 		return a.StartTime.Compare(b.StartTime)
 	})
-	snapshots := snapshotSpans(updated, func(span *Span) bool {
+	notable := func(span *Span) bool {
 		if !span.Received {
 			// don't send along any stubs; let the client-side create its own stubs
 			return false
@@ -313,13 +313,6 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			// always include revealed spans and their parents
 			return true
 		}
-		if db.needsAncestors(span) {
-			// always include spans that dagui surfaces regardless of where
-			// they sit (conversation messages, agents, checks, generators,
-			// tests), along with their ancestor chain (see below), which
-			// reveal bubbling used to take care of
-			return true
-		}
 		if span.HasProgress() || len(span.ProgressSpans.Order) > 0 {
 			// always include progress-carrying spans and their ancestor
 			// chain, so remote frontends can place them in the tree even
@@ -336,7 +329,19 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			}
 		}
 		return false
-	})
+	}
+	var snapshots []SpanSnapshot
+	for _, span := range updated {
+		// Always include spans that dagui surfaces regardless of where they
+		// sit (see Span.IsSurfacedKind), along with their ancestor chain
+		// (see below), which reveal bubbling used to take care of. Unlike
+		// the rules above, this one doesn't match through Passthrough
+		// parents: a surfaced span (e.g. a service instance) doesn't bring
+		// its children along.
+		if (span.Received && db.needsAncestors(span)) || span.Matches(notable) {
+			snapshots = append(snapshots, span.Snapshot())
+		}
+	}
 	// A surfaced span is only useful to a remote frontend if it can be placed
 	// in the tree: dagui's containment and roll-up rules walk its ancestors.
 	included := make(map[SpanID]bool, len(snapshots))
