@@ -1177,6 +1177,23 @@ func (span *Span) IsInternal() bool {
 	return span.Internal
 }
 
+// IsSurfacedKind reports whether the span is of a kind dagui surfaces on
+// its own, wherever it sits in the tree, rather than through reveal: LLM
+// conversation messages (SurfacedConversation), agent loop spans (Agents),
+// checks (SurfacedChecks), generators (SurfacedGenerators), test cases and
+// suites (TestView), service instances (SurfacedServices), and `dagger up`
+// service display spans (ServiceDisplaySpans).
+func (span *Span) IsSurfacedKind() bool {
+	return span.LLMRole != "" ||
+		span.Agent ||
+		span.CheckName != "" ||
+		span.GeneratorName != "" ||
+		span.TestCaseName != "" ||
+		span.TestSuiteName != "" ||
+		isServiceInstanceSpan(span) ||
+		isServiceDisplaySpan(span)
+}
+
 func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {
 	return span.Activity.EndTimeOrFallback(fallbackEnd)
 }

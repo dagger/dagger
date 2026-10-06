@@ -8344,7 +8344,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 }
 
 func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Span) {
-	if !isToolCallDisplay(span) || !toolNameIs(span.LLMTool, "grep") {
+	if !isToolCallDisplay(span) || !dagui.ToolNameIs(span.LLMTool, "grep") {
 		return
 	}
 	logs := fe.logs.Logs[span.ID]
@@ -8354,7 +8354,7 @@ func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Sp
 	if logs == nil {
 		return
 	}
-	summary := sanitizeSummary(strings.TrimSpace(ansi.Strip(logs.LastLine())))
+	summary := dagui.SanitizeInline(strings.TrimSpace(ansi.Strip(logs.LastLine())))
 	if summary != "" {
 		fmt.Fprint(out, out.String(" - "+summary).Faint())
 	}
