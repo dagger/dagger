@@ -192,7 +192,7 @@ func (v *sliceValue[T]) Set(s string) error {
 		if v.Init != nil {
 			vv = v.Init()
 		} else {
-			if typ := reflect.TypeOf(vv); typ.Kind() == reflect.Ptr {
+			if typ := reflect.TypeOf(vv); typ.Kind() == reflect.Pointer {
 				// hack to get a pointer to a new instance of the underlying type
 				vv = reflect.New(typ.Elem()).Interface().(T)
 			}

@@ -407,7 +407,7 @@ func (*Part) Verify() error { return nil }
 		require.Len(t, strings.Split(strings.TrimSpace(out), "\n"), 2)
 		// Parsing these lines in a shell must preserve the empty key as well.
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-			replay, err := base.WithExec([]string{"sh", "-c", "dagger check -l -a -f=cli " + line}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).Stdout(ctx)
+			replay, err := base.WithExec([]string{"sh", "-c", "dagger check -l -a -f=cli " + line}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, line+"\n", replay)
 		}
