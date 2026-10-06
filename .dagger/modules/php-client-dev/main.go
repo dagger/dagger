@@ -12,8 +12,8 @@ import (
 const (
 	phpSDKImage         = "php:8.3-cli-alpine"
 	phpSDKDigest        = "sha256:e4ffe0a17a6814009b5f0713a5444634a9c5b688ee34b8399e7d4f2db312c3b4"
-	phpSDKComposerImage = "composer/composer:2.8-bin" +
-		"@sha256:c735b6a52ea118693178babc601984dbbbd07f1d31ec87eaa881173622b467ed"
+	phpSDKComposerImage = "composer/composer:2.10-bin" +
+		"@sha256:696bfbbb82d8ab6ad3672c505bedd659e3815fd1c03cb5ef65ef7ee07a083fa6"
 )
 
 type PhpClientDev struct {
