@@ -15,7 +15,6 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dustin/go-humanize"
-	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/tuist"
@@ -870,20 +869,17 @@ func (r *renderer) renderSpan(
 		if span.LLMTool != "" {
 			if span.LLMToolServer != "" {
 				fmt.Fprint(out,
-					out.String(strcase.ToLowerCamel(span.LLMToolServer)).
+					out.String(dagui.ToolServerLabel(span.LLMToolServer)).
 						Foreground(termenv.ANSIBrightMagenta))
 				fmt.Fprint(out, " ")
 			}
-			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
+			fmt.Fprint(out, out.String(dagui.ToolNameLabel(span.LLMTool)).Bold())
 			// For recognized tools, render a styled summary of the meaningful
 			// args (paths in cyan, descriptions/content faint). Fall back to
-			// dumping the first arg for tools we don't recognize.
-			if !renderToolArgsSummary(out, span.LLMTool, span) {
+			// the first line of the first arg for tools we don't recognize.
+			if !renderToolArgsSummary(out, span) {
 				if len(span.LLMToolArgValues) > 0 {
-					// for now, only print the first arg, the rest are likely to be noisy.
-					// Show only its first line so a large multiline value (e.g. a
-					// commit message body) doesn't dominate the row.
-					fmt.Fprint(out, "(", sanitizeSummary(firstLine(span.LLMToolArgValues[0])), ")")
+					fmt.Fprint(out, "(", span.ToolArgsFallback(), ")")
 				}
 			}
 			return nil

@@ -11,82 +11,6 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 )
 
-func TestToolArgStyle(t *testing.T) {
-	// Case insensitive matching
-	assert.Equal(t, argStylePath, toolArgStyle("Read", "path"))
-	assert.Equal(t, argStylePath, toolArgStyle("read", "path"))
-	assert.Equal(t, argStylePath, toolArgStyle("READ", "path"))
-
-	// path variants
-	assert.Equal(t, argStylePath, toolArgStyle("Read", "filePath"))
-	assert.Equal(t, argStylePath, toolArgStyle("Read", "file_path"))
-	assert.Equal(t, argStylePath, toolArgStyle("Write", "path"))
-	assert.Equal(t, argStylePath, toolArgStyle("Edit", "filePath"))
-	assert.Equal(t, argStylePath, toolArgStyle("Grep", "path"))
-	assert.Equal(t, argStylePath, toolArgStyle("Find", "path"))
-	assert.Equal(t, argStylePath, toolArgStyle("Ls", "path"))
-
-	// Type_method matching: tries method part after _
-	assert.Equal(t, argStyleContent, toolArgStyle("Container_withExec", "args"))
-	assert.Equal(t, argStyleContent, toolArgStyle("SomeCustomTool", "args"))
-	assert.Equal(t, argStyleNone, toolArgStyle("Git_withCommit", "message")) // no "withcommit.message" rule
-	// No rule for "file.path", so Directory_file doesn't match
-	assert.Equal(t, argStyleNone, toolArgStyle("Directory_file", "path"))
-
-	// Unknown tool: no special style for path
-	assert.Equal(t, argStyleNone, toolArgStyle("SomeCustomTool", "path"))
-
-	// description on declarative tools
-	assert.Equal(t, argStyleDesc, toolArgStyle("DeclareOutput", "description"))
-	assert.Equal(t, argStyleDesc, toolArgStyle("Save", "description"))
-	assert.Equal(t, argStyleNone, toolArgStyle("Read", "description"))
-
-	// prompt: always content style
-	assert.Equal(t, argStyleContent, toolArgStyle("anything", "prompt"))
-	assert.Equal(t, argStyleContent, toolArgStyle("Read", "prompt"))
-
-	// command on Bash
-	assert.Equal(t, argStyleContent, toolArgStyle("Bash", "command"))
-	assert.Equal(t, argStyleNone, toolArgStyle("Read", "command"))
-
-	// content/contents on Write
-	assert.Equal(t, argStyleContent, toolArgStyle("Write", "content"))
-	assert.Equal(t, argStyleContent, toolArgStyle("Write", "contents"))
-	assert.Equal(t, argStyleNone, toolArgStyle("Read", "content"))
-
-	// newText on Edit (oldText intentionally omitted)
-	assert.Equal(t, argStyleContent, toolArgStyle("Edit", "newText"))
-	assert.Equal(t, argStyleContent, toolArgStyle("Edit", "new_text"))
-
-	// Grep.regex and Grep.pattern
-	assert.Equal(t, argStyleDesc, toolArgStyle("Grep", "regex"))
-	assert.Equal(t, argStyleDesc, toolArgStyle("Grep", "pattern"))
-	assert.Equal(t, argStyleNone, toolArgStyle("Read", "regex"))
-
-	// Commit.message
-	assert.Equal(t, argStyleDesc, toolArgStyle("Commit", "message"))
-	assert.Equal(t, argStyleNone, toolArgStyle("Read", "message"))
-
-	// Checks.include
-	assert.Equal(t, argStyleDesc, toolArgStyle("Checks", "include"))
-	assert.Equal(t, argStyleDesc, toolArgStyle("Check", "include"))
-	assert.Equal(t, argStyleNone, toolArgStyle("Read", "include"))
-
-	// isConventionalArg
-	assert.True(t, isConventionalArg("Read", "path"))
-	assert.True(t, isConventionalArg("Write", "content"))
-	assert.True(t, isConventionalArg("anything", "prompt"))
-	assert.True(t, isConventionalArg("Read", "limit"))
-	assert.False(t, isConventionalArg("Read", "description"))
-}
-
-func TestFirstLine(t *testing.T) {
-	assert.Equal(t, "hello", firstLine("hello"))
-	assert.Equal(t, "hello …", firstLine("hello\nworld"))
-	assert.Equal(t, "hello …", firstLine("hello  \nworld"))
-	assert.Equal(t, " …", firstLine("\nworld"))
-}
-
 func renderSummary(t *testing.T, toolName string, names, values []string) string {
 	t.Helper()
 	var buf strings.Builder
@@ -98,7 +22,7 @@ func renderSummary(t *testing.T, toolName string, names, values []string) string
 			LLMToolArgValues: values,
 		},
 	}
-	renderToolArgsSummary(out, toolName, span)
+	renderToolArgsSummary(out, span)
 	return buf.String()
 }
 
@@ -155,16 +79,6 @@ func tabExpandWidth(s string) int {
 		}
 	}
 	return col
-}
-
-func TestSanitizeSummary(t *testing.T) {
-	// Tabs (source-code indentation, common for Edit old_text/new_text) become
-	// spaces so ansi.StringWidth matches what the terminal renders.
-	assert.Equal(t, "  var x", sanitizeSummary("\t var x"))
-	// Other control characters are dropped entirely.
-	assert.Equal(t, "ab", sanitizeSummary("a\x1b\rb"))
-	// Ordinary text (including the ellipsis firstLine adds) is untouched.
-	assert.Equal(t, "hello …", sanitizeSummary("hello …"))
 }
 
 // TestRenderToolArgsSummaryTabWidth is a regression test for the Edit-tool
