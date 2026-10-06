@@ -32,7 +32,8 @@ func newWorkspaceDoctorCmd(hidden bool) *cobra.Command {
 		Long: `Check workspace configuration, lockfile, engine connectivity, Cloud authentication,
 module loading, and module settings.
 
-Missing configuration or lockfiles and Cloud authentication problems are warnings.
+Missing configuration or lockfiles, legacy configuration fields, and Cloud
+authentication problems are warnings.
 Invalid files, unavailable engines, module loading failures, and invalid settings
 cause a nonzero exit status. Object settings are resolved using their configured
 addresses, which may invoke module functions. Loading modules can populate dagger.lock.`,
@@ -186,10 +187,18 @@ func doctorWorkspaceFiles(ctx context.Context, report *doctorReport, ws *workspa
 		report.result(ctx, "Workspace config", "", errors.New("no dagger.toml selected"), true)
 	} else {
 		data, err := readFile(filepath.Join(ws.Root, ws.ConfigFile))
+		var warnings []string
 		if err == nil {
 			_, err = workspacepkg.ParseConfigAt(ctx, data, filepath.Dir(ws.ConfigFile))
 		}
-		report.result(ctx, "Workspace config", ws.ConfigFile+" is loadable", err, false)
+		if err == nil {
+			// ParseConfigAt only logs legacy fields, and a passing row hides logs.
+			warnings, _ = workspacepkg.CheckConfigFields(data, filepath.ToSlash(ws.ConfigFile))
+			if len(warnings) > 0 {
+				err = errors.New(strings.Join(warnings, "; "))
+			}
+		}
+		report.result(ctx, "Workspace config", ws.ConfigFile+" is loadable", err, len(warnings) > 0)
 	}
 	lockPath := filepath.Join(ws.Root, ws.LockFile)
 	data, err := readFile(lockPath)

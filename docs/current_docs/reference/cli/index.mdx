@@ -2925,7 +2925,8 @@ Check whether your workspace is ready to run Dagger
 Check workspace configuration, lockfile, engine connectivity, Cloud authentication,
 module loading, and module settings.
 
-Missing configuration or lockfiles and Cloud authentication problems are warnings.
+Missing configuration or lockfiles, legacy configuration fields, and Cloud
+authentication problems are warnings.
 Invalid files, unavailable engines, module loading failures, and invalid settings
 cause a nonzero exit status. Object settings are resolved using their configured
 addresses, which may invoke module functions. Loading modules can populate dagger.lock.

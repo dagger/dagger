@@ -41,7 +41,9 @@ func TestWorkspaceDoctorFiles(t *testing.T) {
 		{name: "valid", files: map[string]string{"dagger.toml": "", "dagger.lock": string(validLock)}, output: []string{"PASS Workspace config", "PASS Lockfile"}},
 		{name: "missing", output: []string{"WARN Workspace config", "WARN Lockfile"}},
 		{name: "both invalid", files: map[string]string{"dagger.toml": "[broken", "dagger.lock": "invalid"}, failures: 2, output: []string{"FAIL Workspace config", "FAIL Lockfile"}},
-		{name: "legacy lock", files: map[string]string{".dagger/lock": string(validLock)}, output: []string{"WARN Workspace config", "PASS Lockfile"}},
+		{name: "legacy sdk field", files: map[string]string{"dagger.toml": "[modules.provider]\nsource = './sdk'\n[modules.provider.as-sdk]\nname = 'custom'\n", "dagger.lock": string(validLock)}, output: []string{"WARN Workspace config", "PASS Lockfile"}},
+		{name: "unknown field", files: map[string]string{"dagger.toml": "[modules.provider]\nsource = './sdk'\npath = 'typo'\n", "dagger.lock": string(validLock)}, failures: 1, output: []string{"FAIL Workspace config", "PASS Lockfile"}},
+		{name: "legacy lock",files: map[string]string{".dagger/lock": string(validLock)}, output: []string{"WARN Workspace config", "PASS Lockfile"}},
 		{name: "invalid canonical wins", files: map[string]string{"dagger.lock": "broken", ".dagger/lock": string(validLock)}, failures: 1, output: []string{"FAIL Lockfile"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
