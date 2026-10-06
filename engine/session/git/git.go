@@ -212,3 +212,30 @@ func (p GitAttachableProxy) ApplyBundle(srv Git_ApplyBundleServer) error {
 	}
 	return srv.SendAndClose(response)
 }
+
+func (p GitAttachableProxy) SnapshotState(ctx context.Context, req *SnapshotRequest) (*CheckoutStateResponse, error) {
+	return p.client.SnapshotState(grpcutil.IncomingToOutgoingContext(ctx), req)
+}
+
+func (p GitAttachableProxy) Snapshot(req *SnapshotRequest, srv Git_SnapshotServer) error {
+	ctx, cancel := context.WithCancelCause(srv.Context())
+	defer cancel(errors.New("proxy stream closed"))
+
+	clientStream, err := p.client.Snapshot(grpcutil.IncomingToOutgoingContext(ctx), req)
+	if err != nil {
+		return fmt.Errorf("create client stream: %w", err)
+	}
+
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, srv)
+}
+
+func (p GitAttachableProxy) SnapshotUploadPack(srv Git_SnapshotUploadPackServer) error {
+	ctx, cancel := context.WithCancelCause(srv.Context())
+	defer cancel(errors.New("proxy stream closed"))
+
+	clientStream, err := p.client.SnapshotUploadPack(grpcutil.IncomingToOutgoingContext(ctx))
+	if err != nil {
+		return fmt.Errorf("create client workspace upload-pack stream: %w", err)
+	}
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, srv)
+}
