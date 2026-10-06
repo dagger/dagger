@@ -132,8 +132,8 @@ func packCapturedCommit(ctx context.Context, checkout, scratch, sha string, dept
 		}
 	}
 	env := []string{"GIT_NO_LAZY_FETCH=1", "GIT_NO_REPLACE_OBJECTS=1", "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + strconv.Quote(strings.TrimSpace(objects))}
-	// Probe in the isolated repository with lazy fetching disabled. Missing
-	// commits, trees or blobs are a normal optional-donor miss, not a partial pack.
+	// Probe the anchor cheaply in the isolated repository with lazy fetching
+	// disabled: a missing commit is a normal optional-donor miss.
 	typ, err := runIsolatedHostGit(ctx, scratch, env, strings.NewReader(sha+"\n"), "cat-file", "--batch-check=%(objecttype)")
 	if err != nil {
 		return "", err
@@ -144,15 +144,13 @@ func packCapturedCommit(ctx context.Context, checkout, scratch, sha string, dept
 	if strings.TrimSpace(string(typ)) != "commit" {
 		return "", fmt.Errorf("captured history anchor is not a commit")
 	}
-	inventory, err := runIsolatedHostGit(ctx, scratch, env, nil, "rev-list", "--objects", "--missing=print", sha)
-	if err != nil {
-		return "", err
-	}
-	if strings.HasPrefix(string(inventory), "?") || strings.Contains(string(inventory), "\n?") {
-		return "", fmt.Errorf("%w: incomplete closure", errHostHistoryUnavailable)
-	}
+	// The scratch repository is no partial clone and lazy fetching is off, so
+	// pack-objects fails outright on any missing ancestor, tree or blob rather
+	// than writing a partial pack. Detecting that up front would walk the whole
+	// history a second time for nothing: the engine treats every failure as a
+	// miss.
 	prefix := filepath.Join(scratch, "objects", "pack", "pack")
-	hash, err := runIsolatedHostGit(ctx, scratch, env, strings.NewReader(sha+"\n"), "pack-objects", "--revs", "--delta-base-offset", prefix)
+	hash, err := runIsolatedHostGit(ctx, scratch, env, strings.NewReader(sha+"\n"), "pack-objects", "--revs", "--missing=error", "--delta-base-offset", prefix)
 	if err != nil {
 		return "", err
 	}

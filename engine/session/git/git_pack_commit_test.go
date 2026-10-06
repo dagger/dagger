@@ -84,7 +84,7 @@ func TestPackCommitStreamsUnlocked(t *testing.T) {
 
 func TestPackCommitUnavailable(t *testing.T) {
 	skipIfNoGit(t)
-	for _, mode := range []string{"moved", "missing", "shallow", "partial", "missing-parent", "corrupt-parent", "cancelled"} {
+	for _, mode := range []string{"moved", "missing", "unknown-commit", "shallow", "partial", "missing-parent", "corrupt-parent", "cancelled"} {
 		t.Run(mode, func(t *testing.T) {
 			repo, home := initRepo(t, "main")
 			if mode == "missing-parent" || mode == "corrupt-parent" {
@@ -100,6 +100,8 @@ func TestPackCommitUnavailable(t *testing.T) {
 				gitCmd(t, home, repo, "tag", "moved")
 			case "missing":
 				require.NoError(t, os.RemoveAll(repo))
+			case "unknown-commit":
+				req.CommitSha = strings.Repeat("e", 40)
 			case "shallow":
 				require.NoError(t, os.WriteFile(filepath.Join(repo, ".git", "shallow"), []byte(sha+"\n"), 0600))
 			case "missing-parent":
@@ -128,7 +130,9 @@ func TestPackCommitUnavailable(t *testing.T) {
 			switch mode {
 			case "moved":
 				require.Equal(t, CHECKOUT_STATE_MISMATCH, srv.metadata(t).Error.Type)
-			case "corrupt-parent":
+			case "partial", "missing-parent", "corrupt-parent":
+				// Only pack-objects notices an incomplete or corrupt closure;
+				// it fails without a pack, which the engine treats as a miss.
 				require.Equal(t, PACK_FAILED, srv.metadata(t).Error.Type)
 			default:
 				require.Equal(t, HISTORY_UNAVAILABLE, srv.metadata(t).Error.Type)
