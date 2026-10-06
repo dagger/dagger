@@ -35,6 +35,7 @@ func findArtifactsFixture() (*Artifacts, func(*Artifact) string) {
 		{ModuleName: "roster", Path: []string{"roster", "members"}, TypeName: "RosterMember", Node: get},
 		{ModuleName: "roster", Path: []string{"roster", "members", "head"}, TypeName: "GitRef", Node: head},
 	}}
+	scope.AllDimensions = scope.DimensionDefinitions()
 	tag := func(entry *Artifact) string {
 		if entry.ModuleName == "roster" {
 			return "tool Roster, live"
@@ -125,6 +126,7 @@ func TestFindArtifactsItemRows(t *testing.T) {
 		keyed(scope.Entries[4], "chief"),
 		keyed(scope.Entries[4], "worker one"),
 	}}
+	expanded.AllDimensions = expanded.DimensionDefinitions()
 	rows, err := artifactItemRows(expanded, tag)
 	require.NoError(t, err)
 	require.Equal(t, `dag+check://?check=broken/load — LOAD ERROR: loading module "broken": boom

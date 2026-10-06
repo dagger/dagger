@@ -288,9 +288,9 @@ type ArtifactSelector struct {
 type Artifacts struct {
 	Entries  []*Artifact
 	Selector ArtifactSelector
-	// Scope lists the dimensions of every loaded module. Names resolve in
-	// this scope, so a path filter cannot change what a name means.
-	Scope artifact.Dimensions
+	// AllDimensions lists the dimensions of every loaded module. Names resolve
+	// against it, so a filter cannot change what a name means.
+	AllDimensions artifact.Dimensions
 }
 
 var _ dagql.PersistedObject = (*Artifact)(nil)
@@ -306,7 +306,7 @@ func (*Artifacts) TypeDescription() string {
 }
 
 func (a *Artifacts) filter(matches func(*Artifact) bool) *Artifacts {
-	selected := &Artifacts{Entries: make([]*Artifact, 0, len(a.Entries)), Selector: a.Selector.clone(), Scope: a.Scope}
+	selected := &Artifacts{Entries: make([]*Artifact, 0, len(a.Entries)), Selector: a.Selector.clone(), AllDimensions: a.AllDimensions}
 	for _, artifact := range a.Entries {
 		if matches(artifact) {
 			selected.Entries = append(selected.Entries, artifact.Clone())
@@ -499,7 +499,7 @@ func (a *Artifact) WorkspaceContext(ctx context.Context) (context.Context, error
 }
 
 func (a *Artifacts) WithArtifacts(other *Artifacts) (*Artifacts, error) {
-	selected := &Artifacts{Entries: []*Artifact{}, Scope: artifact.Union(a.Scope, other.Scope)}
+	selected := &Artifacts{Entries: []*Artifact{}, AllDimensions: artifact.Union(a.AllDimensions, other.AllDimensions)}
 	seen := map[string]bool{}
 	for _, artifact := range slices.Concat(a.Entries, other.Entries) {
 		key, err := artifact.identity()
@@ -874,6 +874,7 @@ func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root d
 		})
 	}
 	slices.SortFunc(artifacts.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
+	artifacts.AllDimensions = artifacts.DimensionDefinitions()
 	return artifacts, nil
 }
 
@@ -952,15 +953,15 @@ type persistedArtifact struct {
 	ContextWorkspace uint64 `json:",omitempty"`
 }
 type persistedArtifacts struct {
-	Tree     persistedModTree
-	Entries  []persistedArtifact
-	Selector ArtifactSelector
-	Scope    artifact.Dimensions
+	Tree          persistedModTree
+	Entries       []persistedArtifact
+	Selector      ArtifactSelector
+	AllDimensions artifact.Dimensions
 }
 
-func encodeArtifacts(enc *dagql.PersistEncodeContext, entries []*Artifact, selector ArtifactSelector, scope artifact.Dimensions) (dagql.PersistedObjectEncoding, error) {
+func encodeArtifacts(enc *dagql.PersistEncodeContext, entries []*Artifact, selector ArtifactSelector, allDimensions artifact.Dimensions) (dagql.PersistedObjectEncoding, error) {
 	tree := newPersistedModTreeEncoder(enc)
-	payload := persistedArtifacts{Selector: selector, Scope: scope}
+	payload := persistedArtifacts{Selector: selector, AllDimensions: allDimensions}
 	for _, a := range entries {
 		p := persistedArtifact{ModuleName: a.ModuleName, LoadFailure: a.LoadFailure, Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName, Directives: a.Directives}
 		p.DimensionNames = a.DimensionNames
@@ -995,7 +996,7 @@ func decodeArtifacts(ctx context.Context, dec *dagql.PersistDecodeContext, raw j
 	if err != nil {
 		return nil, err
 	}
-	result := &Artifacts{Selector: payload.Selector, Scope: payload.Scope}
+	result := &Artifacts{Selector: payload.Selector, AllDimensions: payload.AllDimensions}
 	for _, p := range payload.Entries {
 		a := &Artifact{ModuleName: p.ModuleName, LoadFailure: p.LoadFailure, Path: p.Path, DimensionKeys: p.DimensionKeys, TypeName: p.TypeName, Directives: p.Directives, Node: nodes[p.Node]}
 		a.DimensionNames = p.DimensionNames
@@ -1031,7 +1032,7 @@ func (*Artifact) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDe
 	return result.Entries[0], nil
 }
 func (a *Artifacts) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	return encodeArtifacts(enc, a.Entries, a.Selector, a.Scope)
+	return encodeArtifacts(enc, a.Entries, a.Selector, a.AllDimensions)
 }
 func (*Artifacts) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
 	return decodeArtifacts(ctx, dec, raw)

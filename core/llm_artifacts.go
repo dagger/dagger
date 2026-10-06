@@ -69,7 +69,7 @@ func (m *MCP) Artifacts(ctx context.Context, srv *dagql.Server, include []string
 // the selection's paths.
 func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, workspace *Artifacts, include []string) (*Artifacts, error) {
 	// Names resolve in both parts, including entries that include skips.
-	result := &Artifacts{Entries: []*Artifact{}, Scope: artifact.Union(workspace.Scope, (&Artifacts{Entries: bound}).DimensionDefinitions())}
+	result := &Artifacts{Entries: []*Artifact{}, AllDimensions: artifact.Union(workspace.AllDimensions, (&Artifacts{Entries: bound}).DimensionDefinitions())}
 	if include != nil {
 		result.Selector.Paths = make([]string, 0, len(include))
 		for _, pattern := range include {
@@ -360,7 +360,7 @@ func scopeWorkspaceArtifacts(ctx context.Context, srv *dagql.Server, ws dagql.Ob
 	for _, entry := range artifacts.Self().Entries {
 		entries = append(entries, entry.Clone())
 	}
-	return &Artifacts{Entries: entries, Scope: artifacts.Self().Scope}, nil
+	return &Artifacts{Entries: entries, AllDimensions: artifacts.Self().AllDimensions}, nil
 }
 
 // scopeLLM returns the conversation whose scope (LLM.artifacts) a tool

@@ -549,7 +549,7 @@ func artifactPathRows(scope, selection *Artifacts, tag func(*Artifact) string) (
 			entries[uri] = entry
 		}
 	}
-	names := scope.nameScope()
+	names := scope.AllDimensions
 	rows := make([]artifactRow, 0, len(paths))
 	for _, path := range paths {
 		entry := entries[path.URI]

@@ -25,7 +25,7 @@ func collectionArtifactFixture() *Artifacts {
 			})
 		}
 	}
-	artifacts.Scope = artifacts.DimensionDefinitions()
+	artifacts.AllDimensions = artifacts.DimensionDefinitions()
 	return artifacts
 }
 
@@ -48,6 +48,7 @@ func parallelCollectionFixture(nested bool) (*Artifacts, artifactCollectionKeyFu
 			all.Entries = append(all.Entries, &Artifact{Path: []string{name, "check"}, Node: &ModTreeNode{Name: "check", Parent: item}})
 		}
 	}
+	all.AllDimensions = all.DimensionDefinitions()
 	return all, func(_ context.Context, receiver *Artifact) ([]collectionKey, error) {
 		if nested && receiver.Node.Name == "modules" {
 			return []collectionKey{{text: "b"}, {text: "a"}}, nil

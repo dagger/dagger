@@ -25,13 +25,12 @@ func (a *Artifact) dimensionName(identifier string) string {
 	return identifier
 }
 
-// displayNames maps each dimension in the name scope to its display name. A
-// name has one meaning per scope, so entries share these names.
+// displayNames maps each dimension to its display name. A name has one
+// meaning in AllDimensions, so entries share these names.
 func (a *Artifacts) displayNames() map[string]string {
-	scope := a.nameScope()
-	names := make(map[string]string, len(scope))
-	for _, dim := range scope {
-		names[dim.Identifier] = scope.DisplayName(dim)
+	names := make(map[string]string, len(a.AllDimensions))
+	for _, dim := range a.AllDimensions {
+		names[dim.Identifier] = a.AllDimensions.DisplayName(dim)
 	}
 	return names
 }
@@ -91,20 +90,14 @@ func (a *Artifacts) DimensionDefinitions() artifact.Dimensions {
 	return artifact.Union(sets...)
 }
 
-// nameScope is where dimension names resolve: every loaded dimension, not
-// only those on the selected paths.
-func (a *Artifacts) nameScope() artifact.Dimensions {
-	return artifact.Union(a.Scope, a.DimensionDefinitions())
-}
-
-// BindDimensions resolves names in the name scope. This is delayed until a
+// BindDimensions resolves names against AllDimensions. This is delayed until a
 // result is requested, so filter order cannot bind an alias to a dimension
 // that happened to have matching runtime keys.
 func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 	bound := a.filter(func(*Artifact) bool { return true })
 	bound.Selector.Dimensions = nil
 	bound.Selector.DimensionAlternatives = nil
-	dims := a.nameScope()
+	dims := a.AllDimensions
 	selected := a.DimensionDefinitions()
 	for _, filter := range a.Selector.Dimensions {
 		id, err := dims.Resolve(filter.Dimension)
@@ -134,7 +127,7 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 }
 
 func (a *Artifacts) ResolveDimension(name string) (string, error) {
-	return a.nameScope().Resolve(name)
+	return a.AllDimensions.Resolve(name)
 }
 
 func (a *Artifacts) hasCollections() bool {
@@ -331,7 +324,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 			}
 			// Match the exclusion with its own selector. The entries already
 			// satisfy the inclusion filters.
-			excluded, err := (&Artifacts{Entries: result.Entries, Scope: a.Scope}).FilterURI(address)
+			excluded, err := (&Artifacts{Entries: result.Entries, AllDimensions: a.AllDimensions}).FilterURI(address)
 			if err != nil {
 				return nil, err
 			}
@@ -372,7 +365,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 		}
 		return bound, nil
 	}
-	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector, Scope: bound.Scope}
+	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector, AllDimensions: bound.AllDimensions}
 	names := bound.displayNames()
 	// Each worker owns one slot; flatten only after all workers finish so
 	// discovery order is independent of evaluation completion order.
