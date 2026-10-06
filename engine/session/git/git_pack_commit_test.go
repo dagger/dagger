@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -56,6 +57,29 @@ func TestPackCommitExactClosure(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Streaming can take a long time; it must not hold the checkout lock, or
+// CheckoutState on the same checkout times out meanwhile.
+func TestPackCommitStreamsUnlocked(t *testing.T) {
+	skipIfNoGit(t)
+	repo, home := initRepo(t, "main")
+	commitFile(t, repo, home, "file", "data", "tip")
+	sha := gitCmd(t, home, repo, "rev-parse", "HEAD")
+	state := checkoutDigest(t, repo)
+	sends := 0
+	srv := &fakePackCheckoutServer{onSend: func(*PackCheckoutResponse) {
+		sends++
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		unlock, err := gitCheckoutLocks.lock(ctx, filepath.Clean(repo))
+		require.NoError(t, err, "checkout lock held while streaming")
+		unlock()
+	}}
+	require.NoError(t, GitAttachable{}.PackCommit(&PackCommitRequest{CheckoutPath: repo, ExpectedStateDigest: state, CommitSha: sha}, srv))
+	require.Nil(t, srv.metadata(t).Error)
+	require.Positive(t, srv.chunkCount())
+	require.Equal(t, 1+srv.chunkCount(), sends)
 }
 
 func TestPackCommitUnavailable(t *testing.T) {

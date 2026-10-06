@@ -34,7 +34,15 @@ func (s GitAttachable) PackCommit(req *PackCommitRequest, srv Git_PackCommitServ
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	// Like PackCheckout, hold the checkout lock only while reading state and
+	// packing: streaming up to MaxGitPackBytes over the session must not
+	// starve CheckoutState, CaptureGit or PackCheckout on the same checkout.
+	locked := true
+	defer func() {
+		if locked {
+			unlock()
+		}
+	}()
 	state, err := collectCheckoutState(ctx, req.CheckoutPath)
 	if err != nil {
 		return sendErr(HISTORY_UNAVAILABLE, err)
@@ -61,6 +69,8 @@ func (s GitAttachable) PackCommit(req *PackCommitRequest, srv Git_PackCommitServ
 	if err != nil || latest.digest() != req.ExpectedStateDigest {
 		return sendErr(CHECKOUT_STATE_MISMATCH, errors.New("captured checkout changed while packing"))
 	}
+	unlock()
+	locked = false
 	if err := srv.Send(&PackCheckoutResponse{Msg: &PackCheckoutResponse_Metadata{Metadata: &PackCheckoutMetadata{HeadSha: req.CommitSha, ObjectFormat: "sha1", StateDigest: req.ExpectedStateDigest}}}); err != nil {
 		return err
 	}
