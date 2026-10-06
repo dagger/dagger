@@ -233,22 +233,24 @@ func (s *workspaceSchema) checkpointClientLocal(
 	// Retain only an optional session-local donor capability, not host objects
 	// or client routes in the portable recipe. Bundle-backed (dirty/unpushed)
 	// captures retain their existing local repository path; only a clean remote
-	// base can donate complete history lazily, when history is demanded.
-	if err := registerCheckpointHostHistory(clientCtx, query, ws, inst.Self(), metadata, len(bundle) != 0); err != nil {
-		return inst, fmt.Errorf("register captured history donor: %w", err)
-	}
+	// base can donate complete history lazily, when history is demanded. The
+	// donor is only an optimization: registering none never fails the snapshot.
+	registerCheckpointHostHistory(clientCtx, query, ws, inst.Self(), metadata, len(bundle) != 0)
 
 	return inst, nil
 }
 
-func registerCheckpointHostHistory(ctx context.Context, query *core.Query, captured, frozen *core.Workspace, metadata *gitsession.CaptureGitMetadata, hasBundle bool) error {
+// registerCheckpointHostHistory reports whether the capture registered an
+// approved host history donor. It never fails.
+func registerCheckpointHostHistory(ctx context.Context, query *core.Query, captured, frozen *core.Workspace, metadata *gitsession.CaptureGitMetadata, hasBundle bool) bool {
 	if hasBundle || metadata.RemoteUrl == "" {
-		return nil
+		return false
 	}
-	if source, ok := frozen.BaseSource().(*core.WorkspaceSourceGitRef); ok {
-		return query.RegisterCapturedHostHistory(ctx, source.Ref.Self().Repo, captured.ClientID, captured.HostPath(), metadata.CheckoutStateDigest, metadata.BaseSha, metadata.RemoteUrl)
+	source, ok := frozen.BaseSource().(*core.WorkspaceSourceGitRef)
+	if !ok || source.Ref.Self() == nil {
+		return false
 	}
-	return nil
+	return query.RegisterCapturedHostHistory(ctx, source.Ref.Self().Repo, captured.ClientID, captured.HostPath(), metadata.CheckoutStateDigest, metadata.BaseSha, metadata.RemoteUrl)
 }
 
 func (s *workspaceSchema) checkpointGitRef(

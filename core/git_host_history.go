@@ -33,29 +33,36 @@ type hostHistoryDonor struct{ owner, path, state string }
 // owning-client capture and approval. The caller must pass the exact captured
 // remote anchor, not the checkout HEAD or an arbitrary later ref. No host IO is
 // performed here; replay and other clients continue to use the remote recipe.
-func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.ObjectResult[*GitRepository], owner, path, state, anchor, remoteURL string) error {
+//
+// It reports whether a donor was registered, and never fails: the donor is
+// only an optimization, so a capture it does not recognize, or cannot key,
+// registers nothing rather than failing the capture.
+func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.ObjectResult[*GitRepository], owner, path, state, anchor, remoteURL string) bool {
 	if repo.Self() == nil {
-		return nil
+		return false
 	}
 	remote, ok := repo.Self().Backend.(*RemoteGitRepository)
 	if !ok {
-		return nil
+		return false
 	}
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return err
+		return false
 	}
-	if owner == "" || owner != md.ClientID || path == "" || state == "" || len(anchor) != 40 || !IsFullGitSHA(anchor) {
-		return fmt.Errorf("host history registration requires the captured owner's exact remote anchor")
+	if owner == "" || owner != md.ClientID || path == "" || state == "" {
+		return false
+	}
+	// PackCommit and the importer handle SHA-1 only; a SHA-256 checkout keeps
+	// the remote path.
+	if len(anchor) != 40 || !IsFullGitSHA(anchor) {
+		return false
 	}
 	if captured, ok := capturedGitRemote(remoteURL); !ok || remote.URL.Remote() != captured {
-		// The donor is only an optimization: a route this repository does not
-		// recognize registers nothing rather than failing the capture.
-		return nil
+		return false
 	}
 	recipe, err := repo.RecipeDigest(ctx)
 	if err != nil {
-		return err
+		return false
 	}
 	q.hostHistoryMu.Lock()
 	defer q.hostHistoryMu.Unlock()
@@ -63,7 +70,7 @@ func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.Obje
 		q.hostHistory = make(map[hostHistoryKey]hostHistoryDonor)
 	}
 	q.hostHistory[hostHistoryKey{recipe, anchor}] = hostHistoryDonor{owner, path, state}
-	return nil
+	return true
 }
 
 // capturedGitRemote spells a client-reported remote URL the way Query.git

@@ -38,7 +38,7 @@ func TestCapturedHostHistoryScope(t *testing.T) {
 	}
 	parent, other := makeRef("alice", anchor), makeRef("bob", anchor)
 	q := &Query{} // No server/host available: registration cannot perform IO.
-	require.NoError(t, q.RegisterCapturedHostHistory(ctx, parent.Self().Repo, md.ClientID, "/approved", "state", anchor, url.Remote()))
+	require.True(t, q.RegisterCapturedHostHistory(ctx, parent.Self().Repo, md.ClientID, "/approved", "state", anchor, url.Remote()))
 	donor, ok, err := q.capturedHostHistory(ctx, parent)
 	require.NoError(t, err)
 	require.True(t, ok)
@@ -50,9 +50,10 @@ func TestCapturedHostHistoryScope(t *testing.T) {
 	_, ok, err = q.capturedHostHistory(foreign, parent)
 	require.NoError(t, err)
 	require.False(t, ok, "donor routes never cross owners")
-	require.Error(t, q.RegisterCapturedHostHistory(foreign, parent.Self().Repo, md.ClientID, "/approved", "state", anchor, url.Remote()))
+	require.False(t, q.RegisterCapturedHostHistory(foreign, parent.Self().Repo, md.ClientID, "/approved", "state", anchor, url.Remote()),
+		"only the capturing owner registers, and a mismatch never fails the capture")
 	unrelated := &Query{}
-	require.NoError(t, unrelated.RegisterCapturedHostHistory(ctx, parent.Self().Repo, md.ClientID, "/approved", "state", anchor, "https://other.test/repo.git"),
+	require.False(t, unrelated.RegisterCapturedHostHistory(ctx, parent.Self().Repo, md.ClientID, "/approved", "state", anchor, "https://other.test/repo.git"),
 		"an unrecognized route is not a donor, and never fails the capture")
 	_, ok, err = unrelated.capturedHostHistory(ctx, parent)
 	require.NoError(t, err)
@@ -93,7 +94,7 @@ func TestCapturedHostHistorySSHDefaultUser(t *testing.T) {
 	ref := &gitutil.Ref{SHA: anchor, Name: anchor}
 	parent := env.attach(t, ctx, cache, srv, "ssh-ref", &GitRef{Repo: repo, Ref: ref, Backend: &RemoteGitRef{repo: remote, Ref: ref}}).(dagql.ObjectResult[*GitRef])
 	q := &Query{}
-	require.NoError(t, q.RegisterCapturedHostHistory(ctx, repo, md.ClientID, "/approved", "state", anchor, "ssh://example.test/repo.git"))
+	require.True(t, q.RegisterCapturedHostHistory(ctx, repo, md.ClientID, "/approved", "state", anchor, "ssh://example.test/repo.git"))
 	_, ok, err := q.capturedHostHistory(ctx, parent)
 	require.NoError(t, err)
 	require.True(t, ok)
