@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/util/gitutil"
@@ -15,11 +16,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// gitReadApprovalKey is what an owner approves an agent to read: one
-// repository, in its canonical spelling (see canonicalGitReadRemote), with
-// that owner's credentials.
+// gitReadApprovalKey is what an owner approves: one module (see
+// gitReadRequester) driving an agent to read one repository, in its canonical
+// spelling (see canonicalGitReadRemote), with that owner's credentials.
+// Another module asks again, as the prompt naming the module implies.
 type gitReadApprovalKey struct {
-	owner, remote string
+	owner, requester, remote string
 }
 
 type gitReadApprovals = gitApprovals[gitReadApprovalKey]
@@ -35,9 +37,9 @@ const gitReadPromptPrefix = "Allow an agent to read "
 // push. When the caller is that owner itself (the user's own conversation),
 // its credentials apply as they would to any of its reads. When a module
 // drives the agent (e.g. a worker spawned by a module), the module chose the
-// conversation, so the owner approves each remote first; a grant lasts for the
-// session, a denial only for that attempt. Otherwise any module could read
-// whatever the user can, by prompting a model.
+// conversation, so the owner approves each remote for that module first; a
+// grant lasts for the session, a denial only for that attempt. Otherwise any
+// module could read whatever the user can, by prompting a model.
 func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine.ClientMetadata, error) {
 	// The remote is model-supplied: reject before prompting, and never echo
 	// what may hold credentials.
@@ -61,7 +63,11 @@ func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine
 	if err != nil {
 		return nil, err
 	}
-	key := gitReadApprovalKey{owner: owner.clientID, remote: remote}
+	key := gitReadApprovalKey{
+		owner:     owner.clientID,
+		requester: resolvedModuleLoadIdentity(requester),
+		remote:    remote,
+	}
 	allowed, err := client.daggerSession.gitReadApprovals.check(ctx, key, func(ctx context.Context) (bool, error) {
 		conn, available, err := srv.SpecificClientAttachableConn(ctx, owner.clientID, core.SpecificClientAttachableConnOpts{IfAvailable: true})
 		if err != nil {
@@ -71,7 +77,7 @@ func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine
 			return false, fmt.Errorf("owning client is not available to approve the read")
 		}
 		response, err := prompt.NewPromptClient(conn).PromptBool(ctx, &prompt.BoolRequest{
-			Prompt: gitReadPrompt(remote, requester),
+			Prompt: gitReadPrompt(remote, requester.Self().Name()),
 		})
 		if status.Code(err) == codes.Unimplemented {
 			return false, fmt.Errorf("owning client cannot prompt (not interactive)")
@@ -131,20 +137,22 @@ func canonicalGitReadRemote(remote string) (*gitutil.GitURL, error) {
 	return parsed, nil
 }
 
-// gitReadRequester names the module nearest the caller: the one whose code
-// drives the agent asking to read.
-func gitReadRequester(client *clientRuntime) (string, error) {
-	if mod := client.mod.Self(); mod != nil {
-		return mod.Name(), nil
+// gitReadRequester returns the module nearest the caller: the one whose code
+// drives the agent asking to read. Approvals are scoped to it by its load
+// identity (source, pin and name), so another module, even one with the same
+// name, asks again.
+func gitReadRequester(client *clientRuntime) (dagql.ObjectResult[*core.Module], error) {
+	if client.mod.Self() != nil {
+		return client.mod, nil
 	}
 	parents, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
 	if err != nil {
-		return "", err
+		return dagql.ObjectResult[*core.Module]{}, err
 	}
 	for i := len(parents) - 1; i >= 0; i-- {
-		if mod := parents[i].mod.Self(); mod != nil {
-			return mod.Name(), nil
+		if parents[i].mod.Self() != nil {
+			return parents[i].mod, nil
 		}
 	}
-	return "", nil
+	return dagql.ObjectResult[*core.Module]{}, errors.New("no module requesting the git read")
 }

@@ -38,10 +38,14 @@ type gitReadTestSession struct {
 	questions                   *readPromptServer
 	owner                       *clientRuntime
 	ownerCtx, moduleCtx, nested context.Context
+	// otherCtx is another module the owner called; impostorCtx another module
+	// named like the first, loaded from another source.
+	otherCtx, impostorCtx context.Context
 }
 
 // newGitReadTestSession is a session with an owner able to answer prompts, a
-// module client it called, and that module's nested API client.
+// module client it called, that module's nested API client, and two other
+// module clients it called.
 func newGitReadTestSession(t *testing.T, allow map[string]bool) *gitReadTestSession {
 	t.Helper()
 	listener := bufconn.Listen(1 << 20)
@@ -65,10 +69,16 @@ func newGitReadTestSession(t *testing.T, allow map[string]bool) *gitReadTestSess
 	}
 	owner := newClient("owner")
 	module := newClient("module", "owner")
-	module.mod = sessionTestModuleResult(t, "staff")
+	module.mod = sessionTestModuleResultWithGitSource(t, "staff", "https://github.com/org/staff", "1111111111111111111111111111111111111111")
 	// A module-created container's nested API client is still delegated.
 	nested := newClient("nested", "owner", "module")
-	sess.clientRuntimes = map[string]*clientRuntime{"owner": owner, "module": module, "nested": nested}
+	other := newClient("other", "owner")
+	other.mod = sessionTestModuleResult(t, "other")
+	impostor := newClient("impostor", "owner")
+	impostor.mod = sessionTestModuleResultWithGitSource(t, "staff", "https://github.com/evil/staff", "2222222222222222222222222222222222222222")
+	sess.clientRuntimes = map[string]*clientRuntime{
+		"owner": owner, "module": module, "nested": nested, "other": other, "impostor": impostor,
+	}
 	installTestClientRecords(sess)
 	sess.attachables.callers["owner"] = &sessionAttachableCaller{ctx: t.Context(), conn: conn}
 	clientContext := func(client *clientRuntime) context.Context {
@@ -80,12 +90,14 @@ func newGitReadTestSession(t *testing.T, allow map[string]bool) *gitReadTestSess
 		return ctx
 	}
 	return &gitReadTestSession{
-		srv:       &Server{daggerSessions: map[string]*daggerSession{"session": sess}},
-		questions: questions,
-		owner:     owner,
-		ownerCtx:  clientContext(owner),
-		moduleCtx: clientContext(module),
-		nested:    clientContext(nested),
+		srv:         &Server{daggerSessions: map[string]*daggerSession{"session": sess}},
+		questions:   questions,
+		owner:       owner,
+		ownerCtx:    clientContext(owner),
+		moduleCtx:   clientContext(module),
+		nested:      clientContext(nested),
+		otherCtx:    clientContext(other),
+		impostorCtx: clientContext(impostor),
 	}
 }
 
@@ -120,6 +132,38 @@ func TestGitReadApprovalOwnerBoundary(t *testing.T) {
 		md, err := s.srv.AuthorizeGitRead(ctx, denied)
 		require.ErrorContains(t, err, "denied by the owning client")
 		require.Nil(t, md)
+	}
+	require.Len(t, s.questions.requests, 3)
+}
+
+func TestGitReadApprovalPerModule(t *testing.T) {
+	const remote = "https://example.com/repo"
+	const staffPrompt = "Allow an agent to read " + remote + ` with your Git credentials (requested by module "staff")?`
+	const otherPrompt = "Allow an agent to read " + remote + ` with your Git credentials (requested by module "other")?`
+	s := newGitReadTestSession(t, map[string]bool{staffPrompt: true, otherPrompt: true})
+
+	_, err := s.srv.AuthorizeGitRead(s.moduleCtx, remote)
+	require.NoError(t, err)
+	require.Equal(t, []string{staffPrompt}, s.questions.prompts())
+
+	// The prompt named the module, so the grant is that module's: another
+	// module reading the same remote is asked about separately.
+	for range 2 {
+		md, err := s.srv.AuthorizeGitRead(s.otherCtx, remote)
+		require.NoError(t, err)
+		require.Equal(t, s.owner.clientMetadata, md)
+	}
+	require.Equal(t, []string{staffPrompt, otherPrompt}, s.questions.prompts())
+
+	// A module only named like the approved one is not it.
+	_, err = s.srv.AuthorizeGitRead(s.impostorCtx, remote)
+	require.NoError(t, err)
+	require.Equal(t, []string{staffPrompt, otherPrompt, staffPrompt}, s.questions.prompts())
+
+	// The original grants still hold.
+	for _, ctx := range []context.Context{s.moduleCtx, s.nested, s.otherCtx} {
+		_, err := s.srv.AuthorizeGitRead(ctx, remote)
+		require.NoError(t, err)
 	}
 	require.Len(t, s.questions.requests, 3)
 }
