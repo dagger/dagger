@@ -353,7 +353,7 @@ func TestOwnedShallowHistoryJoin(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name               string
+		name                string
 		store, child, other string
 	}{
 		{"older ancestor", owned, c2, root},
