@@ -648,9 +648,11 @@ func (*artifactsSchema) withoutURI(_ context.Context, parent *core.Artifacts, ar
 	return parent.WithoutURI(address)
 }
 
-func (s *workspaceSchema) artifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args struct {
+type workspaceArtifactsArgs struct {
 	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
-}) (*core.Artifacts, error) {
+}
+
+func (s *workspaceSchema) artifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceArtifactsArgs) (*core.Artifacts, error) {
 	return s.collectArtifacts(ctx, parent, workspaceIncludePatterns(args.Include))
 }
 

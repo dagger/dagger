@@ -198,7 +198,10 @@ func (s *workspaceSchema) configRead(
 	}
 
 	envName, envSelected := selectedWorkspaceEnv(ctx, parent)
-	overlay := parent.UserConfigOverlay()
+	overlay, err := workspaceUserConfigOverlay(ctx, parent)
+	if err != nil {
+		return "", err
+	}
 	switch {
 	case envSelected && !isExplicitEnvConfigKey(args.Key):
 		// Env-scoped reads return the effective active config: base values
@@ -209,7 +212,7 @@ func (s *workspaceSchema) configRead(
 			return "", err
 		}
 
-		effective, err := effectiveWorkspaceConfigBytes(parent, cfg, envName)
+		effective, err := effectiveWorkspaceConfigBytes(overlay, cfg, envName)
 		if err != nil {
 			return "", err
 		}
@@ -286,8 +289,8 @@ func isExplicitEnvConfigKey(key string) bool {
 // overlay and the selected env overlay (when envName is non-empty) applied.
 // The merge order matches module loading: base config, then user-level
 // overrides, then the selected environment.
-func effectiveWorkspaceConfigBytes(ws *core.Workspace, cfg *workspace.Config, envName string) ([]byte, error) {
-	applied, err := workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
+func effectiveWorkspaceConfigBytes(overlay *workspace.UserWorkspaceOverlay, cfg *workspace.Config, envName string) ([]byte, error) {
+	applied, err := workspace.ApplyUserOverlay(cfg, overlay)
 	if err != nil {
 		return nil, err
 	}

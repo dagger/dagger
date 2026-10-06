@@ -9,6 +9,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -251,6 +252,70 @@ region = "eu-west-1"
 		require.NoError(t, err)
 		require.Equal(t, "shared", strings.TrimSpace(string(out)))
 	})
+}
+
+// TestWorkspaceUserConfigSnapshot covers a snapshot of a checkout — the
+// workspace an agent session works on. A snapshot is a portable value that
+// carries no user overlay of its own, so the overlay is resolved from the
+// caller's user config by the snapshot's origin remote.
+func (WorkspaceSuite) TestWorkspaceUserConfigSnapshot(ctx context.Context, t *testctx.T) {
+	workdir := newWorkspaceConfigWorkdir(ctx, t, userConfigWorkspaceFixture)
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = workdir
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out))
+	}
+	git("add", ".")
+	git("commit", "-m", "initial")
+	publishCheckpointRemote(ctx, t, workdir)
+	origin := git("remote", "get-url", "origin")
+
+	// Keep the query and user config outside the checkout, so the snapshot
+	// has no untracked files to ask about.
+	scratch := t.TempDir()
+	queryPath := writeQueryDoc(t, scratch, "snapshot.graphql", `{
+  currentWorkspace {
+    snapshot {
+      configRead(key: "modules.aws.settings.profile", effective: true)
+    }
+  }
+}
+`)
+	readProfile := func(userConfigTOML string) string {
+		t.Helper()
+		userConfigPath := filepath.Join(t.TempDir(), "config.toml")
+		if userConfigTOML != "" {
+			require.NoError(t, os.WriteFile(userConfigPath, []byte(userConfigTOML), 0o600))
+		}
+		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--silent", "query", "-M", "--doc", queryPath)
+		require.NoError(t, err)
+		var res struct {
+			CurrentWorkspace struct {
+				Snapshot struct {
+					ConfigRead string
+				}
+			}
+		}
+		require.NoError(t, json.Unmarshal(out, &res), string(out))
+		return res.CurrentWorkspace.Snapshot.ConfigRead
+	}
+
+	require.Equal(t, "alice-dev", readProfile(fmt.Sprintf(`
+[workspaces.%q.modules.aws.settings]
+profile = "alice-dev"
+`, origin)))
+
+	// Another caller's user config applies to the same snapshot.
+	require.Equal(t, "bob-dev", readProfile(fmt.Sprintf(`
+[workspaces.%q.modules.aws.settings]
+profile = "bob-dev"
+`, origin)))
+
+	// Without user config, the repository value applies.
+	require.Equal(t, "shared", readProfile(""))
 }
 
 func (WorkspaceSuite) TestWorkspaceUserConfigWrites(ctx context.Context, t *testctx.T) {

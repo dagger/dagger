@@ -149,7 +149,11 @@ func (s *workspaceSchema) lookupSettingHint(
 	staged *stagedWorkspaceConfig,
 	envName, moduleName, settingName string,
 ) (constructorArgHint, bool) {
-	cfg, err := workspace.ApplyUserOverlay(staged.Config, ws.UserConfigOverlay())
+	overlay, err := workspaceUserConfigOverlay(ctx, ws)
+	if err != nil {
+		return constructorArgHint{}, false
+	}
+	cfg, err := workspace.ApplyUserOverlay(staged.Config, overlay)
 	if err != nil {
 		return constructorArgHint{}, false
 	}

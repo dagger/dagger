@@ -68,7 +68,11 @@ func effectiveSDKModuleSettings(
 		return nil, fmt.Errorf("SDK %q is not installed", sdkName)
 	}
 
-	effective, err := workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
+	overlay, err := workspaceUserConfigOverlay(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	effective, err := workspace.ApplyUserOverlay(cfg, overlay)
 	if err != nil {
 		return nil, err
 	}
