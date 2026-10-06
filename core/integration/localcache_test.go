@@ -587,7 +587,11 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
 				})
 		},
 	)
-	devEngine := devEngineContainerAsService(engine)
+	// The assertions span many execs and depend on this one engine process's
+	// in-memory state, so hold the engine for the whole test. Bound-only
+	// services stop once no exec has used them for a grace period.
+	devEngine, err := devEngineContainerAsService(engine).Start(ctx)
+	require.NoError(t, err)
 
 	metricsCtr := c.Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngine).
@@ -656,7 +660,7 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
 
 	// Warm the static core schema first. Its typedef results are deliberately
 	// unpruneable and form the stable engine-lifetime floor for this test.
-	_, err := engineClientContainer(ctx, t, c, devEngine).
+	_, err = engineClientContainer(ctx, t, c, devEngine).
 		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	require.NoError(t, err)
