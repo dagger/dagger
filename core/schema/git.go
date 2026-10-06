@@ -239,6 +239,20 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("url").Doc(`The remote's fetch URL.`),
 				dagql.Arg("pushUrl").Doc(`Push destination, when pushes go somewhere other than url. Empty uses url.`),
 			),
+		dagql.NodeFunc("remotes", s.remotes).
+			View(AfterVersion("v1.0.0-0")).IsPersistable().
+			Doc("List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers."),
+		dagql.Func("__withRemoteSelection", s.withRemoteSelection).
+			View(AfterVersion("v1.0.0-0")).IsPersistable().
+			Doc("(Internal-only) Record captured remote configuration and upstream selection."),
+		dagql.NodeFunc("remote", s.remote).
+			View(AfterVersion("v1.0.0-0")).IsPersistable().
+			Doc("Look up a remote by name. Fails when the remote does not exist.").
+			Args(dagql.Arg("name").Doc("The remote's name.")),
+		dagql.NodeFunc("defaultRemote", s.defaultRemote).
+			View(AfterVersion("v1.0.0-0")).IsPersistable().
+			Doc("Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.",
+				"Frozen workspaces retain their captured upstream selection. Does not contact remote servers."),
 		dagql.NodeFunc("__cleaned", s.cleaned).
 			IsPersistable().
 			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
@@ -342,6 +356,11 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The resolved ref name at this ref.`).
 			Deprecated(`Use "name" instead.`),
+		dagql.NodeFunc("contains", s.contains).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return true when the other ref's commit equals this commit or is an ancestor of it.",
+				"Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.").
+			Args(dagql.Arg("other").Doc("The ref whose commit to look for in this ref's history.")),
 		dagql.NodeFunc("commonAncestor", s.commonAncestor).
 			Doc(`Find the best common ancestor between this ref and another ref.`).
 			Args(
@@ -402,6 +421,14 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
+	srv.InstallObject(dagql.NewClass[*core.GitRemoteHandle](srv).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*core.GitRemoteHandle]{
+		dagql.NodeFunc("repository", s.remoteRepository).
+			WithInput(dagql.PerClientInput).
+			View(AfterVersion("v1.0.0-0")).IsPersistable().
+			Doc("Access this remote's repository using its fetch URL and the caller's credentials, or the source's existing capability for this exact destination.",
+				"HEAD is the remote's HEAD, independent of the workspace's selected commit. Remote registration alone does not grant credentials."),
+	}.Install(srv)
 	srv.InstallObject(dagql.NewClass[*core.GitPushResult](srv).View(AfterVersion("v1.0.0-0")))
 	core.GitPushDispositions.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.Fields[*core.GitPushResult]{}.Install(srv)
@@ -1342,7 +1369,7 @@ func calcGitContentDigest(gitRef *core.GitRef, args treeArgs) (digest.Digest, er
 		// merged configuration as the checkout so differing routing cannot
 		// share a Directory, while equivalent registration orders still can.
 		remotes := core.MergeGitRemotes(
-			[]core.GitRemote{{Name: "origin", URL: remoteRepo.URL.Remote()}},
+			[]core.GitRemote{{Name: "origin", URL: remoteRepo.URL.Remote(), Implicit: true}},
 			repo.Remotes,
 		)
 		if repo.UpstreamRemote != nil {

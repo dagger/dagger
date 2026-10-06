@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -97,7 +98,7 @@ func (repo *GitRepository) ConfiguredRemotes(ctx context.Context) ([]GitRemote, 
 			return nil, "", err
 		}
 	case *RemoteGitRepository:
-		remotes = []GitRemote{{Name: "origin", URL: backend.URL.Remote()}}
+		remotes = []GitRemote{{Name: "origin", URL: backend.URL.Remote(), Implicit: true}}
 	}
 	return MergeGitRemotes(remotes, repo.Remotes), upstream, nil
 }
@@ -128,6 +129,23 @@ func readGitRemoteSelection(ctx context.Context, git *gitutil.GitCLI) ([]GitRemo
 		return nil, nil, err
 	}
 	return remotes, &upstream, nil
+}
+
+// readGitRemoteSelectionForRef prefers a saved selection over branch tracking.
+func readGitRemoteSelectionForRef(ctx context.Context, git *gitutil.GitCLI, name string) ([]GitRemote, string, error) {
+	remotes, selection, err := readGitRemoteSelection(ctx, git)
+	if err != nil {
+		return nil, "", err
+	}
+	if selection != nil {
+		return remotes, *selection, nil
+	}
+	remotes, err = readGitConfigRemotes(ctx, git)
+	if err != nil {
+		return nil, "", err
+	}
+	upstream, err := gitBranchUpstream(ctx, git, name)
+	return remotes, upstream, err
 }
 
 // Retained trees are rebuilt from objects rather than copied. Keep captured
@@ -167,4 +185,130 @@ func SelectDefaultGitRemote(remotes []GitRemote, upstream string) *GitRemote {
 		}
 	}
 	return nil
+}
+
+var ErrGitHistoryIncomplete = errors.New("git ancestry requires complete history")
+
+// Contains compares commit ancestry, borrowing cached objects through the same
+// mount pipeline as logs and merge bases.
+func (ref *GitRef) Contains(ctx context.Context, other *GitRef) (bool, error) {
+	if ref == nil || other == nil || ref.Ref == nil || other.Ref == nil || ref.Ref.SHA == "" || other.Ref.SHA == "" {
+		return false, fmt.Errorf("contains requires two resolved Git commits")
+	}
+	if err := context.Cause(ctx); err != nil {
+		return false, err
+	}
+	if ref.Ref.SHA == other.Ref.SHA {
+		return true, nil
+	}
+	var contains bool
+	refs := []*GitRef{ref, other}
+	err := mountRefs(ctx, refs, func(git *gitutil.GitCLI, shas []string) error {
+		var err error
+		contains, err = gitContains(ctx, git, shas[0], shas[1])
+		return err
+	})
+	if errors.Is(err, ErrGitHistoryIncomplete) {
+		return containsWithFullHistory(ctx, refs)
+	}
+	return contains, err
+}
+
+// Fill shallow boundaries through retained capabilities, in a private joined
+// repository. The supplied checkout and its remote configuration stay untouched.
+func containsWithFullHistory(ctx context.Context, refs []*GitRef) (bool, error) {
+	var history []*GitRef
+	for _, ref := range refs {
+		local, ok := ref.Backend.(*LocalGitRef)
+		if !ok || local.repo.Upstream.Self() == nil {
+			continue
+		}
+		upstream := local.repo.Upstream
+		err := ref.Backend.mount(ctx, 0, false, func(git *gitutil.GitCLI) error {
+			boundaries, err := gitShallowBoundaries(ctx, git)
+			if err != nil {
+				return err
+			}
+			for _, sha := range boundaries {
+				commit := &gitutil.Ref{SHA: sha}
+				backend, err := upstream.Self().Backend.Get(ctx, commit)
+				if err != nil {
+					return err
+				}
+				history = append(history, &GitRef{Repo: upstream, Backend: backend, Ref: commit})
+			}
+			return nil
+		})
+		if err != nil {
+			return false, err
+		}
+	}
+	if len(history) == 0 {
+		return false, ErrGitHistoryIncomplete
+	}
+	git, shas, cleanup, err := refJoin(ctx, refs)
+	if err != nil {
+		return false, err
+	}
+	defer cleanup()
+	for _, ref := range history {
+		boundaries, err := gitShallowBoundaries(ctx, git)
+		if err != nil {
+			return false, err
+		}
+		if len(boundaries) == 0 {
+			break
+		}
+		err = ref.Backend.mount(ctx, 0, false, func(source *gitutil.GitCLI) error {
+			url, err := source.URL(ctx)
+			if err != nil {
+				return err
+			}
+			_, err = git.Run(ctx, "fetch", "--no-tags", "--unshallow", url, ref.Ref.SHA)
+			return err
+		})
+		if err != nil {
+			return false, fmt.Errorf("%w: fetch boundary %s: %w", ErrGitHistoryIncomplete, ref.Ref.SHA, err)
+		}
+	}
+	return gitContains(ctx, git, shas[0], shas[1])
+}
+
+func gitShallowBoundaries(ctx context.Context, git *gitutil.GitCLI) ([]string, error) {
+	path, err := git.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "shallow")
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(strings.TrimSuffix(string(path), "\n"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read Git shallow boundaries: %w", err)
+	}
+	return strings.Fields(string(data)), nil
+}
+
+func gitContains(ctx context.Context, git *gitutil.GitCLI, commit, ancestor string) (bool, error) {
+	contains, err := gitIsAncestor(ctx, git, ancestor, commit)
+	if err != nil || contains {
+		return contains, err
+	}
+	boundaries, err := gitShallowBoundaries(ctx, git)
+	if err != nil {
+		return false, err
+	}
+	for _, boundary := range boundaries {
+		// Missing history is older than the boundary. If the candidate is
+		// at or above it, that history cannot change a negative answer.
+		// This keeps native workspace comparisons within their owned store.
+		above, err := gitIsAncestor(ctx, git, boundary, ancestor)
+		if err != nil {
+			return false, err
+		}
+		if !above {
+			return false, ErrGitHistoryIncomplete
+		}
+	}
+	return false, nil
 }

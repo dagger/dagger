@@ -56,6 +56,9 @@ type GitRemote struct {
 	Name    string `json:"name"`
 	URL     string `json:"url,omitempty"`
 	PushURL string `json:"pushURL,omitempty"`
+	// Implicit origin metadata describes the source without fixing a push
+	// route. The caller can still apply pushInsteadOf when choosing a target.
+	Implicit bool `json:"implicit,omitempty"`
 }
 
 func (remote GitRemote) Clone() GitRemote {
@@ -121,7 +124,7 @@ func MergeGitRemotes(base, overlay []GitRemote) []GitRemote {
 // RemoteConfig returns the registered remote with the given name, or nil.
 func (repo *GitRepository) RemoteConfig(name string) *GitRemote {
 	for i := range repo.Remotes {
-		if repo.Remotes[i].Name == name {
+		if repo.Remotes[i].Name == name && !repo.Remotes[i].Implicit {
 			return &repo.Remotes[i]
 		}
 	}
@@ -735,9 +738,10 @@ type persistedGitRepositoryPayload struct {
 }
 
 type persistedGitRemotePayload struct {
-	Name    string `json:"name"`
-	URL     string `json:"url,omitempty"`
-	PushURL string `json:"pushURL,omitempty"`
+	Name     string `json:"name"`
+	URL      string `json:"url,omitempty"`
+	PushURL  string `json:"pushURL,omitempty"`
+	Implicit bool   `json:"implicit,omitempty"`
 }
 
 type persistedLocalGitRepositoryPayload struct {
@@ -1859,7 +1863,7 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 				if _, err := git.Run(egCtx, "remote", "add", remoteName, remoteURL); err != nil {
 					return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
 				}
-				if _, err := git.Run(egCtx, "fetch", "--no-tags", remoteName, ref.Ref.SHA); err != nil {
+				if _, err := git.Run(egCtx, "fetch", "--no-tags", "--update-shallow", remoteName, ref.Ref.SHA); err != nil {
 					return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
 				}
 				return nil

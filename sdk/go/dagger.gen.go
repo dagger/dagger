@@ -10841,6 +10841,7 @@ type GitRef struct {
 
 	commit    *string
 	commitSHA *string
+	contains  *bool
 	id        *ID
 	name      *string
 	ref       *string
@@ -10931,6 +10932,23 @@ func (r *GitRef) CommonAncestor(other *GitRef) *GitRef {
 	return &GitRef{
 		query: q,
 	}
+}
+
+// Return true when the other ref's commit equals this commit or is an ancestor of it.
+//
+// Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.
+func (r *GitRef) Contains(ctx context.Context, other *GitRef) (bool, error) {
+	assertNotNil("other", other)
+	if r.contains != nil {
+		return *r.contains, nil
+	}
+	q := r.query.Select("contains")
+	q = q.Arg("other", other)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this GitRef.
@@ -11210,6 +11228,92 @@ func (r *GitRef) AsNode() Node {
 	}
 }
 
+// A named reference to a remote Git repository.
+type GitRemote struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	name *string
+}
+
+func (r *GitRemote) WithGraphQLQuery(q *querybuilder.Selection) *GitRemote {
+	return &GitRemote{
+		query: q,
+	}
+}
+
+// A unique identifier for this GitRemote.
+func (r *GitRemote) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitRemote) XXX_GraphQLType() string {
+	return "GitRemote"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitRemote) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitRemote) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitRemote) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The remote's name.
+func (r *GitRemote) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Access this remote's repository using its fetch URL and the caller's credentials, or the source's existing capability for this exact destination.
+//
+// HEAD is the remote's HEAD, independent of the workspace's selected commit. Remote registration alone does not grant credentials.
+func (r *GitRemote) Repository() *GitRepository {
+	q := r.query.Select("repository")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// AsNode returns this GitRemote as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitRemote) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A git repository.
 type GitRepository struct {
 	query *querybuilder.Selection
@@ -11333,6 +11437,25 @@ func (r *GitRepository) Commit(id string) *GitCommit {
 	}
 }
 
+// Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.
+//
+// Frozen workspaces retain their captured upstream selection. Does not contact remote servers.
+func (r *GitRepository) DefaultRemote(ctx context.Context) (*GitRemote, error) {
+	q := r.query.Select("defaultRemote")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &GitRemote{
+		query: selectNode(q.Root(), *objectID, "GitRemote"),
+	}, nil
+}
+
 // GitRepositoryHeadOpts contains options for GitRepository.Head
 type GitRepositoryHeadOpts struct {
 	// Ignore the workspace lockfile for this lookup.
@@ -11443,6 +11566,49 @@ func (r *GitRepository) Ref(name string, opts ...GitRepositoryRefOpts) *GitRef {
 	return &GitRef{
 		query: q,
 	}
+}
+
+// Look up a remote by name. Fails when the remote does not exist.
+func (r *GitRepository) Remote(name string) *GitRemote {
+	q := r.query.Select("remote")
+	q = q.Arg("name", name)
+
+	return &GitRemote{
+		query: q,
+	}
+}
+
+// List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers.
+func (r *GitRepository) Remotes(ctx context.Context) ([]GitRemote, error) {
+	q := r.query.Select("remotes")
+
+	q = q.Select("id")
+
+	type remotes struct {
+		Id ID
+	}
+
+	convert := func(fields []remotes) []GitRemote {
+		out := []GitRemote{}
+
+		for i := range fields {
+			val := GitRemote{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GitRemote")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []remotes
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // GitRepositoryTagOpts contains options for GitRepository.Tag

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -161,12 +162,12 @@ func validateGitRemoteURL(remoteURL string) error {
 	return nil
 }
 
-// gitRemoteDigestInputs flattens registered remotes for content digesting,
+// gitRemoteDigestInputs flattens remote metadata for content digesting,
 // with explicit counts so entry boundaries never collide.
 func gitRemoteDigestInputs(remotes []core.GitRemote) []string {
-	inputs := make([]string, 0, len(remotes)*3)
+	inputs := make([]string, 0, len(remotes)*4)
 	for _, remote := range remotes {
-		inputs = append(inputs, remote.Name, remote.URL, remote.PushURL)
+		inputs = append(inputs, remote.Name, remote.URL, remote.PushURL, strconv.FormatBool(remote.Implicit))
 	}
 	return inputs
 }

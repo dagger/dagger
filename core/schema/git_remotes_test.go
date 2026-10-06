@@ -14,7 +14,7 @@ import (
 
 func TestGitRefAndCommitPreserveRemoteIdentity(t *testing.T) {
 	for _, kind := range []string{"ref", "commit"} {
-		for _, input := range []string{"selection", "capability"} {
+		for _, input := range []string{"selection", "capability", "routing"} {
 			t.Run(kind+"/"+input, func(t *testing.T) {
 				ctx, srv, cache, _ := resolverOutputFixture(t)
 				srv.InstallObject(dagql.NewClass[*core.GitRef](srv))
@@ -33,14 +33,20 @@ func TestGitRefAndCommitPreserveRemoteIdentity(t *testing.T) {
 				require.NoError(t, err)
 				sha := strings.Repeat("a", 40)
 				var previousDigests []string
-				for i := range 4 {
+				count := 4
+				if input == "routing" {
+					count = 2
+				}
+				for i := range count {
 					backend := &core.LocalGitRepository{Directory: storage}
 					repo := &core.GitRepository{
 						Backend: backend,
 						URL:     dagql.NonNull(dagql.String(url.Remote())),
 						Remotes: []core.GitRemote{{Name: "fork", URL: url.Remote()}, {Name: "trunk", URL: "https://unreachable.invalid/trunk.git"}},
 					}
-					if input == "selection" {
+					if input == "routing" {
+						repo.Remotes = []core.GitRemote{{Name: "origin", URL: url.Remote(), Implicit: i == 1}}
+					} else if input == "selection" {
 						// An absent hint and a captured detached HEAD are distinct too:
 						// only the former may discover tracking configuration from storage.
 						if i > 0 {

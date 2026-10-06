@@ -878,7 +878,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			// The clone URL is the remote itself, so it doubles as the
 			// checkout's origin; registered remotes overlay it.
 			checkoutRemotes := MergeGitRemotes(
-				[]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}},
+				[]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote(), Implicit: true}},
 				remotes,
 			)
 			if upstreamRemote != nil {

@@ -270,6 +270,7 @@ func TestGitRepositoryRemotesPersistence(t *testing.T) {
 	dir := volumeTestCachedObjectResult(t, ctx, cache, srv, "push-routing", "git-directory", &Directory{})
 	for _, remotes := range [][]GitRemote{
 		nil,
+		{{Name: "origin", URL: "https://fetch.test/repo", Implicit: true}},
 		{
 			{Name: "origin", URL: "https://fetch.test/repo", PushURL: "ssh://git@example.test/repo"},
 			{Name: "upstream", URL: "https://upstream.test/repo"},
