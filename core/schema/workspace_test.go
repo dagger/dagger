@@ -23,6 +23,8 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // The qualification test must only Peek: any attempt to mount/evaluate this
@@ -441,7 +443,11 @@ func TestCheckpointHostHistorySkipsBundles(t *testing.T) {
 	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), CheckoutStateDigest: "captured", BaseSha: anchor, HeadSha: anchor}
 	// A clean remote snapshot qualifies with the same route and metadata. No
 	// host IO is needed, even without an attached engine/server on the Query.
-	require.True(t, registerCheckpointHostHistory(ctx, &core.Query{}, captured, frozen, metadata, false))
+	registered, attrs := checkpointHostHistoryOutcome(t, ctx, func(ctx context.Context) bool {
+		return registerCheckpointHostHistory(ctx, &core.Query{}, captured, frozen, metadata, false)
+	})
+	require.True(t, registered)
+	require.Equal(t, map[string]string{"git.history.donor_registered": "true"}, attrs)
 	for _, scenario := range []string{"dirty", "unpushed"} {
 		t.Run(scenario, func(t *testing.T) {
 			copy := *metadata
@@ -453,13 +459,39 @@ func TestCheckpointHostHistorySkipsBundles(t *testing.T) {
 			// Even if a future composition keeps a remote base after applying a
 			// bundle, it must not register a donor. A nil Query makes any attempt
 			// to touch the registry fail, rather than merely returning no pack.
-			require.False(t, registerCheckpointHostHistory(ctx, nil, captured, frozen, &copy, true))
+			registered, attrs := checkpointHostHistoryOutcome(t, ctx, func(ctx context.Context) bool {
+				return registerCheckpointHostHistory(ctx, nil, captured, frozen, &copy, true)
+			})
+			require.False(t, registered)
+			require.Equal(t, map[string]string{"git.history.donor_skipped": "bundle-backed capture"}, attrs)
 		})
 	}
 }
 
+// checkpointHostHistoryOutcome runs a registration under a recorded span and
+// returns its result with the git.history.donor_* attributes it recorded.
+func checkpointHostHistoryOutcome(t *testing.T, ctx context.Context, register func(context.Context) bool) (bool, map[string]string) {
+	t.Helper()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	defer provider.Shutdown(context.WithoutCancel(ctx))
+	ctx, span := provider.Tracer("workspace-test").Start(ctx, "Workspace.snapshot")
+	registered := register(ctx)
+	span.End()
+	attrs := map[string]string{}
+	for _, ended := range recorder.Ended() {
+		for _, kv := range ended.Attributes() {
+			if strings.HasPrefix(string(kv.Key), "git.history.donor_") {
+				attrs[string(kv.Key)] = kv.Value.Emit()
+			}
+		}
+	}
+	return registered, attrs
+}
+
 // Capture supports SHA-256 checkouts, but donation is SHA-1 only. A clean
-// remote-backed SHA-256 capture registers nothing and still succeeds.
+// remote-backed SHA-256 capture registers nothing, records why, and still
+// succeeds.
 func TestCheckpointHostHistorySkipsSHA256(t *testing.T) {
 	ctx, srv, cache, _ := resolverOutputFixture(t)
 	srv.InstallObject(dagql.NewClass[*core.GitRef](srv))
@@ -475,7 +507,11 @@ func TestCheckpointHostHistorySkipsSHA256(t *testing.T) {
 	captured := &core.Workspace{ClientID: owner.ClientID}
 	captured.SetHostPath("/approved")
 	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), CheckoutStateDigest: "captured", BaseSha: anchor, HeadSha: anchor}
-	require.False(t, registerCheckpointHostHistory(ctx, &core.Query{}, captured, frozen, metadata, false))
+	registered, attrs := checkpointHostHistoryOutcome(t, ctx, func(ctx context.Context) bool {
+		return registerCheckpointHostHistory(ctx, &core.Query{}, captured, frozen, metadata, false)
+	})
+	require.False(t, registered)
+	require.Equal(t, map[string]string{"git.history.donor_skipped": "captured anchor is not a full SHA-1"}, attrs)
 }
 
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {

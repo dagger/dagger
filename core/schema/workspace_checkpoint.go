@@ -241,14 +241,18 @@ func (s *workspaceSchema) checkpointClientLocal(
 }
 
 // registerCheckpointHostHistory reports whether the capture registered an
-// approved host history donor. It never fails.
+// approved host history donor. It never fails; why it registered none is
+// recorded on the current span.
 func registerCheckpointHostHistory(ctx context.Context, query *core.Query, captured, frozen *core.Workspace, metadata *gitsession.CaptureGitMetadata, hasBundle bool) bool {
-	if hasBundle || metadata.RemoteUrl == "" {
-		return false
+	if hasBundle {
+		return core.SkipHostHistoryDonor(ctx, "bundle-backed capture", nil)
+	}
+	if metadata.RemoteUrl == "" {
+		return core.SkipHostHistoryDonor(ctx, "capture has no remote URL", nil)
 	}
 	source, ok := frozen.BaseSource().(*core.WorkspaceSourceGitRef)
 	if !ok || source.Ref.Self() == nil {
-		return false
+		return core.SkipHostHistoryDonor(ctx, "snapshot base is not a Git ref", nil)
 	}
 	return query.RegisterCapturedHostHistory(ctx, source.Ref.Self().Repo, captured.ClientID, captured.HostPath(), metadata.CheckoutStateDigest, metadata.BaseSha, metadata.RemoteUrl)
 }

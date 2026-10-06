@@ -36,33 +36,41 @@ type hostHistoryDonor struct{ owner, path, state string }
 //
 // It reports whether a donor was registered, and never fails: the donor is
 // only an optimization, so a capture it does not recognize, or cannot key,
-// registers nothing rather than failing the capture.
+// registers nothing rather than failing the capture. Either outcome is
+// recorded on the current span, so a donor that never engages is debuggable.
 func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.ObjectResult[*GitRepository], owner, path, state, anchor, remoteURL string) bool {
 	if repo.Self() == nil {
-		return false
+		return SkipHostHistoryDonor(ctx, "no captured repository", nil)
 	}
 	remote, ok := repo.Self().Backend.(*RemoteGitRepository)
 	if !ok {
-		return false
+		return SkipHostHistoryDonor(ctx, "captured repository is not remote", nil)
 	}
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return false
+		return SkipHostHistoryDonor(ctx, "no client metadata", err)
 	}
-	if owner == "" || owner != md.ClientID || path == "" || state == "" {
-		return false
+	if owner == "" || owner != md.ClientID {
+		return SkipHostHistoryDonor(ctx, "caller is not the capturing owner", nil)
+	}
+	if path == "" || state == "" {
+		return SkipHostHistoryDonor(ctx, "capture has no checkout path or state digest", nil)
 	}
 	// PackCommit and the importer handle SHA-1 only; a SHA-256 checkout keeps
 	// the remote path.
 	if len(anchor) != 40 || !IsFullGitSHA(anchor) {
-		return false
+		return SkipHostHistoryDonor(ctx, "captured anchor is not a full SHA-1", nil)
 	}
-	if captured, ok := capturedGitRemote(remoteURL); !ok || remote.URL.Remote() != captured {
-		return false
+	captured, ok := capturedGitRemote(remoteURL)
+	if !ok {
+		return SkipHostHistoryDonor(ctx, "captured remote URL is not parseable", nil)
+	}
+	if remote.URL.Remote() != captured {
+		return SkipHostHistoryDonor(ctx, "captured remote route does not match the repository", nil)
 	}
 	recipe, err := repo.RecipeDigest(ctx)
 	if err != nil {
-		return false
+		return SkipHostHistoryDonor(ctx, "repository recipe digest failed", err)
 	}
 	q.hostHistoryMu.Lock()
 	defer q.hostHistoryMu.Unlock()
@@ -70,7 +78,25 @@ func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.Obje
 		q.hostHistory = make(map[hostHistoryKey]hostHistoryDonor)
 	}
 	q.hostHistory[hostHistoryKey{recipe, anchor}] = hostHistoryDonor{owner, path, state}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Bool(hostHistoryDonorRegisteredAttr, true))
 	return true
+}
+
+const (
+	hostHistoryDonorRegisteredAttr = "git.history.donor_registered"
+	hostHistoryDonorSkippedAttr    = "git.history.donor_skipped"
+)
+
+// SkipHostHistoryDonor records on the current span why a capture registered
+// no approved host history donor, and the error behind it, if any. It always
+// returns false, the registration result.
+func SkipHostHistoryDonor(ctx context.Context, reason string, err error) bool {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String(hostHistoryDonorSkippedAttr, reason))
+	if err != nil {
+		span.RecordError(err)
+	}
+	return false
 }
 
 // capturedGitRemote spells a client-reported remote URL the way Query.git
