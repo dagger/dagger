@@ -20040,9 +20040,11 @@ type WorkspaceWithUpdatedModulesOpts struct {
 	Names []string
 	// New version request for exactly one selected module. Cannot be combined with a version suffix.
 	Version string
+	// New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
+	Source string
 }
 
-// Return this workspace with updated module versions and lockfile state.
+// Return this workspace with updated module sources, versions and lockfile state.
 //
 // An SDK client scope is regenerated when it targets an updated module.
 func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) *Workspace {
@@ -20055,6 +20057,10 @@ func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) 
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
+		}
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
 		}
 	}
 
