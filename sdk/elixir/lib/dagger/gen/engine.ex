@@ -61,6 +61,43 @@ defmodule Dagger.Engine do
 
     Client.execute(engine.client, query_builder)
   end
+
+  @doc """
+  The session with the given ID on this engine (experimental).
+  """
+  @spec session(t(), String.t()) :: Dagger.EngineSession.t()
+  def session(%__MODULE__{} = engine, id) do
+    query_builder =
+      engine.query_builder |> QB.select("session") |> QB.put_arg("id", id)
+
+    %Dagger.EngineSession{
+      query_builder: query_builder,
+      client: engine.client
+    }
+  end
+
+  @doc """
+  Sessions on this engine (experimental).
+  """
+  @spec sessions(t()) :: {:ok, [Dagger.EngineSession.t()]} | {:error, term()}
+  def sessions(%__MODULE__{} = engine) do
+    query_builder =
+      engine.query_builder |> QB.select("sessions") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(engine.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.EngineSession{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("EngineSession"),
+           client: engine.client
+         }
+       end}
+    end
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Engine do

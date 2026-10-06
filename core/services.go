@@ -906,6 +906,35 @@ func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) e
 	return err
 }
 
+// StopClientServices stops the session's client-specific services, such as
+// tunnels and terminals, that belong to any of the given clients. It is called
+// when those clients have left, since nobody else can stop them.
+func (ss *Services) StopClientServices(ctx context.Context, sessionID string, clientIDs map[string]struct{}) error {
+	ss.l.Lock()
+	var svcs []*RunningService
+	for key, svc := range ss.running {
+		if key.SessionID != sessionID || key.ClientID == "" {
+			continue
+		}
+		if _, ok := clientIDs[key.ClientID]; ok {
+			svcs = append(svcs, svc)
+		}
+	}
+	ss.l.Unlock()
+
+	eg := new(errgroup.Group)
+	for _, svc := range svcs {
+		eg.Go(func() error {
+			bklog.G(ctx).Debugf("stopping service %s of departed client %s", svc.Host, svc.Key.ClientID)
+			if err := ss.StopRunning(ctx, svc, true); err != nil {
+				return fmt.Errorf("stop %s: %w", svc.Host, err)
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
+}
+
 // Detach detaches from the given service. If the service is not running, it is
 // a no-op. If the service is running, it is stopped if there are no other
 // clients using it.

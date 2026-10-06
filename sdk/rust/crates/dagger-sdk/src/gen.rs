@@ -7847,6 +7847,37 @@ impl Engine {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Sessions on this engine (experimental).
+    pub async fn sessions(&self) -> Result<Vec<EngineSession>, DaggerError> {
+        let query = self.selection.select("sessions");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| EngineSession {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("EngineSession"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// The session with the given ID on this engine (experimental).
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The session's ID.
+    pub fn session(&self, id: impl Into<String>) -> EngineSession {
+        let mut query = self.selection.select("session");
+        query = query.arg("id", id.into());
+        EngineSession {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The local engine cache state tracked by dagql
     pub fn local_cache(&self) -> EngineCache {
         let query = self.selection.select("localCache");
@@ -8174,6 +8205,205 @@ impl EngineCacheEntrySet {
     }
 }
 impl Node for EngineCacheEntrySet {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct EngineSession {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for EngineSession {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for EngineSession {
+    fn graphql_type() -> &'static str {
+        "EngineSession"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl EngineSession {
+    /// A unique identifier for this EngineSession.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The clients that connected directly to the session.
+    pub async fn clients(&self) -> Result<Vec<EngineSessionClient>, DaggerError> {
+        let query = self.selection.select("clients");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| EngineSessionClient {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("EngineSessionClient"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// The client of the session with the given ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The client's ID.
+    pub fn client(&self, id: impl Into<String>) -> EngineSessionClient {
+        let mut query = self.selection.select("client");
+        query = query.arg("id", id.into());
+        EngineSessionClient {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// End the session and everything running in it. Returns once teardown is scheduled.
+    pub async fn stop(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("stop");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The session's ID.
+    pub async fn session_id(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sessionID");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether the session outlives the client that created it.
+    pub async fn detached(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("detached");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// When the session was created, in RFC 3339 format.
+    pub async fn created_at(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("createdAt");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for EngineSession {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct EngineSessionClient {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for EngineSessionClient {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for EngineSessionClient {
+    fn graphql_type() -> &'static str {
+        "EngineSessionClient"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl EngineSessionClient {
+    /// A unique identifier for this EngineSessionClient.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Host ports this client forwards into the session, with the service each reaches.
+    pub async fn forwards(&self) -> Result<Vec<Port>, DaggerError> {
+        let query = self.selection.select("forwards");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| Port {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Port"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Disconnect this client from the session.
+    pub async fn close(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("close");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The client's ID.
+    pub async fn client_id(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("clientID");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The hostname of the machine the client runs on.
+    pub async fn hostname(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("hostname");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The client's process ID.
+    pub async fn pid(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("pid");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A short form of the client's command line.
+    pub async fn command(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("command");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether the client runs in the background, without a terminal.
+    pub async fn background(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("background");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether the client's attachables connection is open.
+    pub async fn connected(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("connected");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Attachable kinds this client serves, for example files, secrets, terminal.
+    pub async fn provides(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("provides");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Address of the workspace this client is bound to, if any.
+    pub async fn workspace(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("workspace");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for EngineSessionClient {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();

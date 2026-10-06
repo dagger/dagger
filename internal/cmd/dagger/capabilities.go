@@ -295,6 +295,7 @@ func init() {
 	for _, cmd := range []*cobra.Command{traceCmd, cloudTracesViewCmd, cloudLogsCmd} {
 		setCommandCapabilities(cmd, mayRenderPipeline)
 	}
+	setCommandCapabilities(sessionsCmd, mayCallEngine, maySelectWorkspace, mayRenderPipeline)
 
 	for _, cmd := range []*cobra.Command{
 		initCmd,

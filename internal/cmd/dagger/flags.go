@@ -142,6 +142,15 @@ func (v *sliceValue[T]) Type() string {
 	return "[]" + t.Type()
 }
 
+// items returns the slice's values.
+func (v *sliceValue[T]) items() []DaggerValue {
+	items := make([]DaggerValue, len(v.value))
+	for i, item := range v.value {
+		items[i] = item
+	}
+	return items
+}
+
 func (v *sliceValue[T]) String() string {
 	ss := []string{}
 	for _, v := range v.value {

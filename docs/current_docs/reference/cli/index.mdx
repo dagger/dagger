@@ -33,6 +33,7 @@ dagger [options] [subcommand | file...]
 * [dagger lock](#dagger-lock)	 - Manage Dagger lockfiles
 * [dagger module](#dagger-module)	 - Install, use, and develop Dagger modules
 * [dagger sdk](#dagger-sdk)	 - Inspect and configure SDKs
+* [dagger sessions](#dagger-sessions)	 - List, inspect, attach to and stop the sessions on the engine (experimental)
 * [dagger settings](#dagger-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
 * [dagger shell](#dagger-shell)	 - Open a terminal for a container or directory in your project
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
@@ -70,6 +71,7 @@ dagger agent [FILTERS] [OPTIONS]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -121,6 +123,7 @@ dagger api call [options] [function]...
 
 ```
       --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
+      --detach               Run the call in a detached session: in the engine alone when it needs nothing from this machine, else in a background process (experimental)
   -j, --json                 Present result as JSON
   -m, --load-module string   Use a one-off module (local path or git ref)
   -M, --no-load-module       Don't load any module for this command
@@ -137,6 +140,7 @@ dagger api call [options] [function]...
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -184,6 +188,7 @@ dagger api functions [options] [function]...
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -248,6 +253,7 @@ EOF
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -309,6 +315,7 @@ dagger api with-session python main.py
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -353,6 +360,7 @@ dagger check [--failfast] [FILTERS] [OPTIONS]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1184,6 +1192,7 @@ dagger generate [FILTERS] [OPTIONS]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1224,6 +1233,7 @@ dagger init
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1274,6 +1284,7 @@ dagger module install github.com/shykes/daggerverse/hello@v0.3.0
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1366,6 +1377,7 @@ dagger list [TYPE | COLLECTION]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1583,6 +1595,7 @@ dagger lock list [SELECTOR...]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1645,6 +1658,7 @@ dagger lock update [SELECTOR...]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1740,6 +1754,7 @@ dagger module client add <module> [--sdk=SDK]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1779,6 +1794,7 @@ dagger module client list [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1821,6 +1837,7 @@ dagger module client rm <module> [--sdk=SDK]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1852,6 +1869,7 @@ dagger module client scope [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -1899,6 +1917,7 @@ dagger module client update
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1942,6 +1961,7 @@ dagger module init SDK [flags]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -1992,6 +2012,7 @@ dagger module install github.com/shykes/daggerverse/hello@v0.3.0
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2015,6 +2036,7 @@ dagger module list [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2061,6 +2083,7 @@ dagger module migrate [PATH] [flags]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -2099,6 +2122,7 @@ dagger module recommend [flags]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -2169,6 +2193,7 @@ dagger module settings [module] [key] [value...] [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2213,6 +2238,7 @@ dagger module uninstall hello
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2260,6 +2286,7 @@ dagger module update [NAME|SOURCE...] [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2291,6 +2318,7 @@ dagger module version NAME|SOURCE [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2334,6 +2362,7 @@ dagger sdk list [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2396,6 +2425,7 @@ dagger sdk scope is-module [BOOL] [flags]
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2428,6 +2458,7 @@ dagger sdk scope list [flags]
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2458,6 +2489,7 @@ dagger sdk scope name [NAME] [flags]
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2488,6 +2520,7 @@ dagger sdk scope sdk [SDK] [flags]
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
       --path string        Select a scope by path instead of the workspace CWD
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2496,6 +2529,173 @@ dagger sdk scope sdk [SDK] [flags]
 ### SEE ALSO
 
 * [dagger sdk scope](#dagger-sdk-scope)	 - Inspect and configure SDK scopes
+
+## dagger sessions
+
+List, inspect, attach to and stop the sessions on the engine (experimental)
+
+### Synopsis
+
+List, inspect, attach to and stop the sessions on the engine.
+
+A session started with 'dagger call --detach' or 'dagger up --detach' keeps
+running after the command returns, until it is stopped. Run another command in
+a session with the global --session flag.
+
+```
+dagger sessions
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+* [dagger sessions attach](#dagger-sessions-attach)	 - Follow a session's work from its start, and provide a terminal and prompts for it
+* [dagger sessions inspect](#dagger-sessions-inspect)	 - Show a session's clients and what each provides
+* [dagger sessions list](#dagger-sessions-list)	 - List the sessions on the engine
+* [dagger sessions stop](#dagger-sessions-stop)	 - End a session and everything running in it, or disconnect one of its clients
+
+## dagger sessions attach
+
+Follow a session's work from its start, and provide a terminal and prompts for it
+
+### Synopsis
+
+Follow a session's work from its start, and provide a terminal and prompts for it.
+
+Attaching replays the session's progress and output, then follows it live
+until the session ends. Work in the session that opens a terminal or asks a
+question gets this terminal. Press Ctrl-C to leave; a detached session keeps
+running.
+
+```
+dagger sessions attach SESSION [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger sessions](#dagger-sessions)	 - List, inspect, attach to and stop the sessions on the engine (experimental)
+
+## dagger sessions inspect
+
+Show a session's clients and what each provides
+
+```
+dagger sessions inspect SESSION [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger sessions](#dagger-sessions)	 - List, inspect, attach to and stop the sessions on the engine (experimental)
+
+## dagger sessions list
+
+List the sessions on the engine
+
+```
+dagger sessions list [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger sessions](#dagger-sessions)	 - List, inspect, attach to and stop the sessions on the engine (experimental)
+
+## dagger sessions stop
+
+End a session and everything running in it, or disconnect one of its clients
+
+```
+dagger sessions stop SESSION [flags]
+```
+
+### Options
+
+```
+      --client string   Disconnect only this client of the session
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -E, --no-exit            Leave the TUI running after completion
+      --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -s, --silent             Do not show progress at all
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -w, --web                Open trace URL in a web browser
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger sessions](#dagger-sessions)	 - List, inspect, attach to and stop the sessions on the engine (experimental)
 
 ## dagger settings
 
@@ -2520,6 +2720,7 @@ dagger settings [module] [key] [value...]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2559,6 +2760,7 @@ dagger shell [FILTERS] [OPTIONS]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -2605,6 +2807,7 @@ dagger module uninstall hello
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2627,9 +2830,11 @@ dagger up [FILTERS] [OPTIONS]
 ```
       --absolute        Show absolute links (alias: --abs)
   -a, --all             Expand collections and list each item
+      --detach          Run the services and forward their ports in the background, in a detached session (experimental)
   -f, --format FORMAT   Output FORMAT: table, link, or cli (requires --list) (default "table")
   -l, --list            List available services
       --module NAME     Select artifacts from module NAME
+      --no-forward      With --detach, only start the services, leaving no local process; forward them later with 'dagger --session ID up --detach' (experimental)
 ```
 
 ### Options inherited from parent commands
@@ -2641,6 +2846,7 @@ dagger up [FILTERS] [OPTIONS]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -2690,6 +2896,7 @@ dagger update [NAME|SOURCE...]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2745,6 +2952,7 @@ applies a named overlay; dagger.toml is the source of truth.
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2817,6 +3025,7 @@ dagger workspace cat PATH [PATH...] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2862,6 +3071,7 @@ dagger workspace config [key] [value] [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2884,6 +3094,7 @@ dagger workspace config-file [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2906,6 +3117,7 @@ dagger workspace cwd [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2944,6 +3156,7 @@ dagger workspace entrypoint [NAME] [flags]
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
       --env string         Apply a named env overlay; writes target it, creating it if missing
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -2999,6 +3212,7 @@ dagger workspace exec [OPTIONS] [--] COMMAND [ARGS...] [flags]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -3050,6 +3264,7 @@ dagger workspace export [PATH] -o DEST [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -3091,6 +3306,7 @@ dagger workspace find [PATH...] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -3116,6 +3332,7 @@ They do not load installed modules.
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -3151,6 +3368,7 @@ dagger workspace git dirty [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -3191,6 +3409,7 @@ dagger workspace git log [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -3213,6 +3432,7 @@ dagger workspace git ref [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -3235,6 +3455,7 @@ dagger workspace git sha [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -3270,6 +3491,7 @@ dagger workspace git url [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -3332,6 +3554,7 @@ dagger workspace grep PATTERN [PATH...] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
@@ -3364,6 +3587,7 @@ dagger workspace ls [PATH...] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -3409,6 +3633,7 @@ dagger workspace migrate [flags]
   -E, --no-exit            Leave the TUI running after completion
       --progress string    Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count        Reduce verbosity (show progress, but clean up at the end)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
@@ -3452,6 +3677,7 @@ dagger workspace remotes [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
@@ -3474,6 +3700,7 @@ dagger workspace root [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --session string     Run in the existing session with this ID instead of a new one (experimental)
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)

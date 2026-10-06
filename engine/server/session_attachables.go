@@ -23,18 +23,25 @@ type sessionAttachableManager struct {
 	mu      sync.Mutex
 	callers map[string]*sessionAttachableCaller
 	waiters map[string][]chan struct{}
+	// registered holds every client ID that has registered attachables. A
+	// registered client without an active caller has left, so lookups for it
+	// fail at once instead of waiting.
+	registered map[string]struct{}
 }
 
 type sessionAttachableCaller struct {
 	ctx       context.Context
+	cancel    context.CancelCauseFunc
 	conn      *grpc.ClientConn
 	supported map[string]struct{}
+	services  map[string]struct{}
 }
 
 func newSessionAttachableManager() *sessionAttachableManager {
 	return &sessionAttachableManager{
-		callers: map[string]*sessionAttachableCaller{},
-		waiters: map[string][]chan struct{}{},
+		callers:    map[string]*sessionAttachableCaller{},
+		waiters:    map[string][]chan struct{}{},
+		registered: map[string]struct{}{},
 	}
 }
 
@@ -49,11 +56,18 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 
 	caller := &sessionAttachableCaller{
 		ctx:       ctx,
+		cancel:    cancel,
 		conn:      cc,
 		supported: map[string]struct{}{},
+		services:  map[string]struct{}{},
 	}
 	for _, methodURL := range methodURLs {
-		caller.supported[strings.ToLower(methodURL)] = struct{}{}
+		methodURL = strings.ToLower(methodURL)
+		caller.supported[methodURL] = struct{}{}
+		// method URLs are "/<service>/<method>"
+		if service, _, ok := strings.Cut(strings.TrimPrefix(methodURL, "/"), "/"); ok {
+			caller.services[service] = struct{}{}
+		}
 	}
 
 	m.mu.Lock()
@@ -62,6 +76,7 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 		return fmt.Errorf("session attachables for client %q already exist", clientID)
 	}
 	m.callers[clientID] = caller
+	m.registered[clientID] = struct{}{}
 	m.wakeWaitersLocked(clientID)
 	m.mu.Unlock()
 
@@ -79,15 +94,33 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 	return nil
 }
 
+// Close ends the attachables connection of clientID, if one is open.
+func (m *sessionAttachableManager) Close(clientID string, cause error) {
+	m.mu.Lock()
+	caller := m.callers[clientID]
+	m.mu.Unlock()
+	if caller != nil {
+		caller.cancel(cause)
+	}
+}
+
 func (m *sessionAttachableManager) Lookup(clientID string) (engineutil.SessionCaller, bool) {
+	caller := m.lookup(clientID)
+	if caller == nil {
+		return nil, false
+	}
+	return caller, true
+}
+
+func (m *sessionAttachableManager) lookup(clientID string) *sessionAttachableCaller {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	caller, ok := m.callers[clientID]
 	if !ok || !caller.active() {
-		return nil, false
+		return nil
 	}
-	return caller, true
+	return caller
 }
 
 func (m *sessionAttachableManager) Wait(ctx context.Context, clientID string) (engineutil.SessionCaller, error) {
@@ -96,6 +129,10 @@ func (m *sessionAttachableManager) Wait(ctx context.Context, clientID string) (e
 		if caller, ok := m.callers[clientID]; ok && caller.active() {
 			m.mu.Unlock()
 			return caller, nil
+		}
+		if _, ok := m.registered[clientID]; ok {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("client %q has left the session: its session attachables connection ended", clientID)
 		}
 
 		waiter := make(chan struct{})
@@ -151,6 +188,12 @@ func (caller *sessionAttachableCaller) active() bool {
 
 func (caller *sessionAttachableCaller) Supports(method string) bool {
 	_, ok := caller.supported[strings.ToLower(method)]
+	return ok
+}
+
+// Provides reports whether the caller serves the given gRPC service.
+func (caller *sessionAttachableCaller) Provides(service string) bool {
+	_, ok := caller.services[strings.ToLower(service)]
 	return ok
 }
 

@@ -3099,6 +3099,15 @@ type Engine implements Node {
   """The name of the engine instance."""
   name: String!
 
+  """Sessions on this engine (experimental)."""
+  sessions: [EngineSession!]!
+
+  """The session with the given ID on this engine (experimental)."""
+  session(
+    """The session's ID."""
+    id: String!
+  ): EngineSession!
+
   """The local engine cache state tracked by dagql"""
   localCache: EngineCache!
 }
@@ -3216,6 +3225,75 @@ type EngineCacheEntrySet implements Node {
 
   """The total disk space used by the cache entries in this set."""
   diskSpaceBytes: Int!
+}
+
+"""A session on the Dagger engine (experimental)"""
+type EngineSession implements Node {
+  """A unique identifier for this EngineSession."""
+  id: ID!
+
+  """The clients that connected directly to the session."""
+  clients: [EngineSessionClient!]!
+
+  """The client of the session with the given ID."""
+  client(
+    """The client's ID."""
+    id: String!
+  ): EngineSessionClient!
+
+  """
+  End the session and everything running in it. Returns once teardown is scheduled.
+  """
+  stop: Void
+
+  """The session's ID."""
+  sessionID: String!
+
+  """Whether the session outlives the client that created it."""
+  detached: Boolean!
+
+  """When the session was created, in RFC 3339 format."""
+  createdAt: String!
+}
+
+"""A client of a session on the Dagger engine (experimental)"""
+type EngineSessionClient implements Node {
+  """A unique identifier for this EngineSessionClient."""
+  id: ID!
+
+  """
+  Host ports this client forwards into the session, with the service each reaches.
+  """
+  forwards: [Port!]!
+
+  """Disconnect this client from the session."""
+  close: Void
+
+  """The client's ID."""
+  clientID: String!
+
+  """The hostname of the machine the client runs on."""
+  hostname: String!
+
+  """The client's process ID."""
+  pid: Int
+
+  """A short form of the client's command line."""
+  command: String
+
+  """Whether the client runs in the background, without a terminal."""
+  background: Boolean!
+
+  """Whether the client's attachables connection is open."""
+  connected: Boolean!
+
+  """
+  Attachable kinds this client serves, for example files, secrets, terminal.
+  """
+  provides: [String!]!
+
+  """Address of the workspace this client is bound to, if any."""
+  workspace: String
 }
 
 """A definition of a custom enum defined in a Module."""

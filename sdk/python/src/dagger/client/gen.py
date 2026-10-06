@@ -7104,6 +7104,26 @@ class Engine(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    def session(self, id: str) -> "EngineSession":
+        """The session with the given ID on this engine (experimental).
+
+        Parameters
+        ----------
+        id:
+            The session's ID.
+        """
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("session", _args)
+        return EngineSession(_ctx)
+
+    async def sessions(self) -> list["EngineSession"]:
+        """Sessions on this engine (experimental)."""
+        _args: list[Arg] = []
+        _ctx = self._select("sessions", _args)
+        return await _ctx.execute_object_list(EngineSession)
+
 
 @typecheck
 class EngineCache(Type):
@@ -7578,6 +7598,367 @@ class EngineCacheEntrySet(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
+
+
+@typecheck
+class EngineSession(Type):
+    """A session on the Dagger engine (experimental)"""
+
+    def client(self, id: str) -> "EngineSessionClient":
+        """The client of the session with the given ID.
+
+        Parameters
+        ----------
+        id:
+            The client's ID.
+        """
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("client", _args)
+        return EngineSessionClient(_ctx)
+
+    async def clients(self) -> list["EngineSessionClient"]:
+        """The clients that connected directly to the session."""
+        _args: list[Arg] = []
+        _ctx = self._select("clients", _args)
+        return await _ctx.execute_object_list(EngineSessionClient)
+
+    async def created_at(self) -> str:
+        """When the session was created, in RFC 3339 format.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("createdAt", _args)
+        return await _ctx.execute(str)
+
+    async def detached(self) -> bool:
+        """Whether the session outlives the client that created it.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("detached", _args)
+        return await _ctx.execute(bool)
+
+    async def id(self) -> str:
+        """A unique identifier for this EngineSession.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def session_id(self) -> str:
+        """The session's ID.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sessionID", _args)
+        return await _ctx.execute(str)
+
+    async def stop(self) -> Void | None:
+        """End the session and everything running in it. Returns once teardown is
+        scheduled.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("stop", _args)
+        await _ctx.execute()
+
+
+@typecheck
+class EngineSessionClient(Type):
+    """A client of a session on the Dagger engine (experimental)"""
+
+    async def background(self) -> bool:
+        """Whether the client runs in the background, without a terminal.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("background", _args)
+        return await _ctx.execute(bool)
+
+    async def client_id(self) -> str:
+        """The client's ID.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("clientID", _args)
+        return await _ctx.execute(str)
+
+    async def close(self) -> Void | None:
+        """Disconnect this client from the session.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("close", _args)
+        await _ctx.execute()
+
+    async def command(self) -> str | None:
+        """A short form of the client's command line.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("command", _args)
+        return await _ctx.execute(str | None)
+
+    async def connected(self) -> bool:
+        """Whether the client's attachables connection is open.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("connected", _args)
+        return await _ctx.execute(bool)
+
+    async def forwards(self) -> list["Port"]:
+        """Host ports this client forwards into the session, with the service
+        each reaches.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("forwards", _args)
+        return await _ctx.execute_object_list(Port)
+
+    async def hostname(self) -> str:
+        """The hostname of the machine the client runs on.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hostname", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this EngineSessionClient.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def pid(self) -> int | None:
+        """The client's process ID.
+
+        Returns
+        -------
+        int | None
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("pid", _args)
+        return await _ctx.execute(int | None)
+
+    async def provides(self) -> list[str]:
+        """Attachable kinds this client serves, for example files, secrets,
+        terminal.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("provides", _args)
+        return await _ctx.execute(list[str])
+
+    async def workspace(self) -> str | None:
+        """Address of the workspace this client is bound to, if any.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("workspace", _args)
+        return await _ctx.execute(str | None)
 
 
 @typecheck
@@ -20114,6 +20495,8 @@ __all__ = [
     "EngineCache",
     "EngineCacheEntry",
     "EngineCacheEntrySet",
+    "EngineSession",
+    "EngineSessionClient",
     "EnumTypeDef",
     "EnumValueTypeDef",
     "EnvFile",

@@ -44,6 +44,13 @@ const (
 	// observer re-reading ever-growing state emits volume quadratic in that
 	// state's size, bloating the engine-side telemetry stores.
 	SuppressTelemetryHeader = "X-Dagger-Suppress-Telemetry"
+
+	// DetachQueryHeader makes the engine run a single /query request on its
+	// own and reply at once, so the work continues after the client leaves.
+	// Its value is the format the engine writes the result in, on the span
+	// the request came from: "plain", "json" or "id" (see
+	// internal/callresult). Only in a detached session.
+	DetachQueryHeader = "X-Dagger-Detach-Query"
 )
 
 // ExtraModule specifies a module to load at connect time in addition to
@@ -201,6 +208,22 @@ type ClientMetadata struct {
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.
 	Profile bool `json:"profile,omitempty"`
+
+	// DetachedSession asks for the session this client creates to outlive it:
+	// a detached session ends only when it is stopped through the engine API
+	// or when the engine stops. Only the creating client's value is used.
+	DetachedSession bool `json:"detached_session,omitempty"`
+
+	// JoinExistingSession makes the engine refuse this client, instead of
+	// creating a session, when no session with SessionID exists.
+	JoinExistingSession bool `json:"join_existing_session,omitempty"`
+
+	// Background, PID and Command describe the client process for listings:
+	// whether it runs in the background without a terminal, its process ID,
+	// and a short form of its command line.
+	Background bool   `json:"background,omitempty"`
+	PID        int    `json:"pid,omitempty"`
+	Command    string `json:"command,omitempty"`
 }
 
 type suppressTelemetryCtxKey struct{}
@@ -218,6 +241,21 @@ func ContextWithTelemetrySuppression(ctx context.Context) context.Context {
 func TelemetrySuppressedFromContext(ctx context.Context) bool {
 	val, _ := ctx.Value(suppressTelemetryCtxKey{}).(bool)
 	return val
+}
+
+type detachQueryCtxKey struct{}
+
+// ContextWithDetachedQuery marks the context so that HTTP requests made with
+// it carry DetachQueryHeader with the given result format.
+func ContextWithDetachedQuery(ctx context.Context, format string) context.Context {
+	return context.WithValue(ctx, detachQueryCtxKey{}, format)
+}
+
+// DetachedQueryFromContext returns the result format of a context marked
+// with ContextWithDetachedQuery, or "".
+func DetachedQueryFromContext(ctx context.Context) string {
+	format, _ := ctx.Value(detachQueryCtxKey{}).(string)
+	return format
 }
 
 type clientMetadataCtxKey struct{}
@@ -268,6 +306,14 @@ const (
 	// An engine decides once per session, before any stream opens, and answers
 	// every stream of the session alike, reconnects included.
 	CloudTelemetryPublisherHeader = "X-Dagger-Cloud-Telemetry-Publisher"
+
+	// SessionTelemetryHeader, set to "true" on a telemetry subscription,
+	// subscribes to the session's telemetry instead of the client's own: the
+	// stream replays and follows the store of the session's main client until
+	// the session ends. In a detached session every client's telemetry
+	// reaches that store; in an attached one, the main client's and its
+	// nested clients'.
+	SessionTelemetryHeader = "X-Dagger-Session-Telemetry"
 )
 
 func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {

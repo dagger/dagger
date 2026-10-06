@@ -794,17 +794,17 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			// has one. Normally that's the current client; for trusted module
 			// dependency/SDK resolution running under a nested client without a
 			// socket (e.g. a codegen exec during `dagger generate`), fall back to the
-			// session's originating client.
+			// root client of the current client's chain.
 			sshSocketCtx := ctx
 			sshAuthSocketPath := clientMetadata.SSHAuthSocketPath
 			if sshAuthSocketPath == "" && core.IsModuleDependencyResolution(ctx) {
-				mainClientMetadata, err := parent.Self().MainClientCallerMetadata(ctx)
+				rootClientMetadata, err := parent.Self().RootClientMetadata(ctx)
 				if err != nil {
 					return inst, err
 				}
-				if mainClientMetadata.SSHAuthSocketPath != "" {
-					sshSocketCtx = engine.ContextWithClientMetadata(ctx, mainClientMetadata)
-					sshAuthSocketPath = mainClientMetadata.SSHAuthSocketPath
+				if rootClientMetadata.SSHAuthSocketPath != "" {
+					sshSocketCtx = engine.ContextWithClientMetadata(ctx, rootClientMetadata)
+					sshAuthSocketPath = rootClientMetadata.SSHAuthSocketPath
 				}
 			}
 			if sshAuthSocketPath == "" {
@@ -894,22 +894,22 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			// git access from nested module runtime code must not implicitly use the
 			// host's credentials, so by default we only do so when we ARE the
 			// non-module caller. For trusted module dependency/SDK resolution we
-			// additionally fall back to the session's originating client, since
-			// codegen can run under a nested client (e.g. a git-less codegen exec
-			// during `dagger generate`) that doesn't itself hold the user's
-			// credentials.
+			// additionally fall back to the root client of the current client's
+			// chain, since codegen can run under a nested client (e.g. a git-less
+			// codegen exec during `dagger generate`) that doesn't itself hold the
+			// user's credentials.
 			isTrustedDepResolution := core.IsModuleDependencyResolution(ctx)
 			if clientMetadata.ClientID != parentClientMetadata.ClientID && !isTrustedDepResolution {
 				break
 			}
 			credClientMetadatas := []*engine.ClientMetadata{parentClientMetadata}
 			if isTrustedDepResolution {
-				mainClientMetadata, err := parent.Self().MainClientCallerMetadata(ctx)
+				rootClientMetadata, err := parent.Self().RootClientMetadata(ctx)
 				if err != nil {
 					return inst, err
 				}
-				if mainClientMetadata.ClientID != parentClientMetadata.ClientID {
-					credClientMetadatas = append(credClientMetadatas, mainClientMetadata)
+				if rootClientMetadata.ClientID != parentClientMetadata.ClientID {
+					credClientMetadatas = append(credClientMetadatas, rootClientMetadata)
 				}
 			}
 

@@ -211,6 +211,8 @@
                 "reference/api/engine-cache",
                 "reference/api/engine-cache-entry",
                 "reference/api/engine-cache-entry-set",
+                "reference/api/engine-session",
+                "reference/api/engine-session-client",
                 "reference/api/enum-type-def",
                 "reference/api/enum-value-type-def",
                 "reference/api/env-file",
