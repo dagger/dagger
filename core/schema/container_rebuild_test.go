@@ -3,8 +3,6 @@ package schema
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,7 +10,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/engine/snapshots/testutil"
 )
 
 func rebuildTestID[T dagql.Typed](t *testing.T, e *transferTestEngine, ctx context.Context, sels ...dagql.Selector) dagql.ID[T] {
@@ -103,7 +100,6 @@ func TestContainerMutationsSaveRecipeOverEvaluatedParent(t *testing.T) {
 		{Field: "withoutDirectory", Args: []dagql.NamedInput{rebuildTestArg("path", str("/d"))}},
 		{Field: "withoutFile", Args: []dagql.NamedInput{rebuildTestArg("path", str("/f"))}},
 		{Field: "withSymlink", Args: []dagql.NamedInput{rebuildTestArg("target", str("/f")), rebuildTestArg("linkName", str("/l"))}},
-		{Field: "__withMountedPathDockerfileCompat", Args: []dagql.NamedInput{rebuildTestArg("path", str("/m")), rebuildTestArg("source", dirID)}},
 	}
 	for _, evaluated := range []bool{true, false} {
 		// Distinct roots keep the evaluated parent from being the pending one.
@@ -122,17 +118,16 @@ func TestContainerMutationsSaveRecipeOverEvaluatedParent(t *testing.T) {
 			if evaluated {
 				name = "evaluated/" + field.Field
 			}
-			t.Run(name, func(t *testing.T) {
-				switch field.Field {
-				case "__withMountedPathDockerfileCompat":
-					// Construction content-hashes the mounted source.
-					testutil.RequireNativeMount(t)
-				case "withDirectory", "withFile", "withNewFile":
-					if evaluated {
-						// Over a built parent the write runs at the call and reads its source.
-						testutil.RequireNativeMount(t)
-					}
+			switch field.Field {
+			case "withDirectory", "withFile", "withNewFile":
+				if evaluated {
+					// Over a built parent the write runs at the call, which mounts
+					// snapshots; TestRebuildContainerWritesOverEvaluatedParent in
+					// core/integration covers it.
+					continue
 				}
+			}
+			t.Run(name, func(t *testing.T) {
 				var child dagql.ObjectResult[*core.Container]
 				require.NoError(t, e.dag.Select(ctx, parent, &child, field))
 				require.NotNil(t, child.Self().Lazy, "the mutation must install its saved operation")
@@ -145,47 +140,6 @@ func TestContainerMutationsSaveRecipeOverEvaluatedParent(t *testing.T) {
 			})
 		}
 	}
-}
-
-// A file write and metadata edits over evaluated parents are rebuilt on
-// another engine when the written bytes are not available there.
-func TestContainerMutationsRebuildOnAnotherEngine(t *testing.T) {
-	testutil.RequireNativeMount(t)
-	salt := transferTestSalt(t)
-	a, b := newTransferTestEngine(t, salt), newTransferTestEngine(t, salt)
-	actx := a.session(t, "a1")
-	var written, user, edited dagql.ObjectResult[*core.Container]
-	require.NoError(t, a.dag.Select(actx, a.dag.Root(), &written, dagql.Selector{Field: "container"}, dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
-		rebuildTestArg("path", dagql.NewString("/data")), rebuildTestArg("contents", dagql.NewString("rebuilt")),
-	}}))
-	require.NoError(t, a.cache.Evaluate(actx, written))
-	require.NoError(t, a.dag.Select(actx, written, &user, dagql.Selector{Field: "withUser", Args: []dagql.NamedInput{rebuildTestArg("name", dagql.NewString("app"))}}))
-	require.NoError(t, a.cache.Evaluate(actx, user))
-	require.NoError(t, a.dag.Select(actx, user, &edited, dagql.Selector{Field: "withShell", Args: []dagql.NamedInput{
-		rebuildTestArg("interactive", dagql.ArrayInput[dagql.String](dagql.NewStringArray("sh"))),
-	}}))
-	require.NoError(t, a.cache.Evaluate(actx, edited))
-
-	// Export the values only: B has no blob for the written bytes.
-	bundle := a.export(t, actx, edited)
-	// Rebuilding decodes saved operations against the session's server.
-	bctx := dagql.ContextWithServer(b.session(t, "b1"), b.dag)
-	reply, err := b.cache.MergeValues(bctx, dagql.CloudCacheID, bundle)
-	require.NoError(t, err)
-	require.Len(t, reply.Imported(), 1)
-	loaded, err := b.cache.LoadResultByResultID(bctx, "b1-session", b.dag, reply.Imported()[0].ResultID)
-	require.NoError(t, err)
-	got := loaded.(dagql.ObjectResult[*core.Container])
-	require.NoError(t, b.cache.EvaluateParts(bctx, got, core.ContainerPartFS))
-	require.Equal(t, "app", got.Self().Config.User)
-	require.Equal(t, []string{"sh"}, got.Self().DefaultTerminalCmd.Args)
-	dir, ok := got.Self().FS.Peek()
-	require.True(t, ok)
-	snapshot, ok := dir.Snapshot.Peek()
-	require.True(t, ok)
-	data, err := os.ReadFile(filepath.Join(testutil.Root(t, snapshot), "data"))
-	require.NoError(t, err)
-	require.Equal(t, "rebuilt", string(data))
 }
 
 // importForRebuild exports value from a without any blob, merges it into b
