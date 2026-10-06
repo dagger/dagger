@@ -975,7 +975,7 @@ func (CollectionsSuite) TestBatchReplacement(ctx context.Context, t *testctx.T) 
 	t.Run("CLI query and flags", func(ctx context.Context, t *testctx.T) {
 		for _, args := range [][]string{
 			{"check", "--generated=false", "items/verify?collections-items-item=a&collections-items-item=b"},
-			{"check", "--generated=false", "items/verify", "--collections-items-item=a", "--collections-items-item=b"},
+			{"check", "--generated=false", "items/verify", "--collections-item=a", "--collections-item=b"},
 			{"check", "--generated=false", "items/verify?collections-items-item=a", "items/verify?collections-items-item=b"},
 		} {
 			out, err := base.With(daggerExec(args...)).CombinedOutput(ctx)

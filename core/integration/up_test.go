@@ -734,9 +734,9 @@ source = "../%s"
 				With(daggerExec("start", "-l", "-f=link")).
 				CombinedOutput(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "dag+service://"+tc.path+"/web")
-			require.Contains(t, out, "dag+service://"+tc.path+"/redis")
-			require.Contains(t, out, "dag+service://"+tc.path+"/infra/database")
+			require.Contains(t, out, "dag+service://?service="+tc.path+"/web")
+			require.Contains(t, out, "dag+service://?service="+tc.path+"/redis")
+			require.Contains(t, out, "dag+service://?service="+tc.path+"/infra/database")
 		})
 	}
 }
