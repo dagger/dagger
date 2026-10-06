@@ -9,6 +9,8 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type gitRefWithCommitArgs struct {
@@ -178,13 +180,7 @@ func (s *gitSchema) gitRefWithCommitRepository(ctx context.Context, parent dagql
 		if err := srv.Select(ctx, parent.Self().Repo, &checkoutParent, dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(parent.Self().Ref.SHA)}}}); err != nil {
 			return inst, err
 		}
-		// Pin the exact canonical tree, not a caller-supplied equal directory.
-		// It is already materialized for same-base changes; evaluation here
-		// makes its snapshot an owned dependency even if the mirror is evicted.
-		if err := srv.Select(ctx, checkoutParent, &parentTree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}); err != nil {
-			return inst, err
-		}
-		if _, err := parentTree.Self().Snapshot.GetOrEval(ctx, parentTree.Result); err != nil {
+		if parentTree, err = gitCheckoutParentTree(ctx, srv, checkoutParent); err != nil {
 			return inst, err
 		}
 	}
@@ -210,6 +206,31 @@ func (s *gitSchema) gitRefWithCommitRepository(ctx context.Context, parent dagql
 		},
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo.Self().CloneWithBackend(backend))
+}
+
+// gitCheckoutParentTree pins the exact canonical tree of a remote parent, not a
+// caller-supplied equal directory. It is already materialized for same-base
+// changes; evaluation here makes its snapshot an owned dependency even if the
+// mirror is evicted. The tree is only an optimization: it lets the child's
+// checkout be incremental, and a remote parent without one gets a full checkout
+// instead. The committed repository already owns every object it needs, so a
+// fallback or replay must not fail (or need the network) just because the tree
+// cannot be rebuilt: any failure other than the caller's own cancellation drops
+// it, recording why on the current span.
+func gitCheckoutParentTree(ctx context.Context, srv *dagql.Server, checkoutParent dagql.ObjectResult[*core.GitRef]) (tree dagql.ObjectResult[*core.Directory], rerr error) {
+	defer func() {
+		if rerr != nil && ctx.Err() == nil {
+			trace.SpanFromContext(ctx).SetAttributes(attribute.String("dagger.git.checkout.parent_tree.fallback", rerr.Error()))
+			tree, rerr = dagql.ObjectResult[*core.Directory]{}, nil
+		}
+	}()
+	if err := srv.Select(ctx, checkoutParent, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}); err != nil {
+		return tree, err
+	}
+	if _, err := tree.Self().Snapshot.GetOrEval(ctx, tree.Result); err != nil {
+		return tree, err
+	}
+	return tree, nil
 }
 
 // This private field gives the materialized Git storage an identity that can be

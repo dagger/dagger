@@ -14,6 +14,8 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestNativeCommitBaseCacheScope(t *testing.T) {
@@ -363,6 +365,77 @@ func TestGitTreeContentIdentityAfterMaterialization(t *testing.T) {
 		require.Equal(t, 1, backends[i+1].calls)
 	}
 	require.ErrorContains(t, cache.Evaluate(ctx, trees[0]), "authentication required", "successful content must not authorize the socket-less recipe")
+}
+
+// A remote parent's pinned tree only enables an incremental checkout of the
+// child. Failing to build it (e.g. replay after eviction, offline) drops it
+// rather than failing the committed repository; cancellation still surfaces.
+func TestGitCheckoutParentTreeBestEffort(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	const attr = "dagger.git.checkout.parent_tree.fallback"
+	for _, tc := range []struct {
+		name     string
+		err      error
+		canceled bool
+	}{
+		{name: "materialized"},
+		{name: "unavailable", err: errors.New("authentication required")},
+		{name: "canceled", err: errors.New("authentication required"), canceled: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, srv, cache, server := resolverOutputFixture(t)
+			server.platform = core.Platform{OS: "linux", Architecture: "amd64"}
+			srv.InstallObject(dagql.NewClass[*core.GitRef](srv))
+			s := &gitSchema{}
+			dagql.Fields[*core.GitRepository]{dagql.NodeFunc("ref", s.ref).View(AllVersion).IsPersistable()}.Install(srv)
+			dagql.Fields[*core.GitRef]{dagql.NodeFunc("tree", s.tree).View(AllVersion).IsPersistable()}.Install(srv)
+			u, err := gitutil.ParseURL("https://unreachable.invalid/repository.git")
+			require.NoError(t, err)
+			repo := resolverAttach(t, ctx, srv, cache, "repository", &core.GitRepository{Backend: &core.RemoteGitRepository{URL: u}, URL: dagql.NonNull(dagql.String(u.Remote()))})
+			var ref dagql.ObjectResult[*core.GitRef]
+			require.NoError(t, srv.Select(ctx, repo, &ref, dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(sha)}}}))
+			snapshot := &resolverOutputRef{root: t.TempDir(), id: "parent"}
+			server.manager.inputs = map[string]*resolverOutputRef{"parent": snapshot}
+			checkout := &authScopedTreeBackend{snapshot: snapshot, err: tc.err}
+			ref.Self().Backend = checkout
+
+			recorder := tracetest.NewSpanRecorder()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+			defer provider.Shutdown(context.WithoutCancel(ctx))
+			ctx, span := provider.Tracer("git-test").Start(ctx, "withCommitRepository")
+			if tc.canceled {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+			tree, err := gitCheckoutParentTree(ctx, srv, ref)
+			span.End()
+			attrs := map[string]string{}
+			for _, ended := range recorder.Ended() {
+				if ended.SpanContext().SpanID() != span.SpanContext().SpanID() {
+					continue
+				}
+				for _, kv := range ended.Attributes() {
+					attrs[string(kv.Key)] = kv.Value.AsString()
+				}
+			}
+			switch {
+			case tc.canceled:
+				require.ErrorIs(t, err, context.Canceled)
+				require.NotContains(t, attrs, attr)
+			case tc.err != nil:
+				require.NoError(t, err)
+				require.Nil(t, tree.Self(), "an unavailable tree is dropped, not pinned")
+				require.Contains(t, attrs[attr], tc.err.Error())
+				require.Equal(t, 1, checkout.calls)
+			default:
+				require.NoError(t, err)
+				require.NotNil(t, tree.Self())
+				require.NotContains(t, attrs, attr)
+				require.Equal(t, 1, checkout.calls, "the pinned tree is evaluated")
+			}
+		})
+	}
 }
 
 func TestGitCommitTreeDefersContentIdentity(t *testing.T) {
