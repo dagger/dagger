@@ -621,6 +621,17 @@ func (repo *LocalGitRepository) attachDependencyResults(
 		repo.HistorySource = source
 		owned = append(owned, source)
 	}
+	if repo.Upstream.Self() != nil {
+		if err := repo.validateUpstream(); err != nil {
+			return nil, err
+		}
+		upstream, err := attachLazyInput(attach, repo.Upstream, "git upstream")
+		if err != nil {
+			return nil, err
+		}
+		repo.Upstream = upstream
+		owned = append(owned, upstream)
+	}
 	if repo.CheckoutBase != nil {
 		parent, err := attachLazyInput(attach, repo.CheckoutBase.Parent, "git checkout parent")
 		if err != nil {
@@ -707,6 +718,7 @@ type persistedGitRemotePayload struct {
 
 type persistedLocalGitRepositoryPayload struct {
 	HistorySourceResultID uint64                    `json:"historySourceResultID,omitempty"`
+	UpstreamResultID      uint64                    `json:"upstreamResultID,omitempty"`
 	DirectoryResultID     uint64                    `json:"directoryResultID"`
 	CheckoutBase          *persistedGitCheckoutBase `json:"checkoutBase,omitempty"`
 }
@@ -846,6 +858,16 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, enc *dagql
 			}
 			payload.Local.HistorySourceResultID = sourceID
 		}
+		if backend.Upstream.Self() != nil {
+			if err := backend.validateUpstream(); err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			upstreamID, err := encodePersistedObjectRef(enc, backend.Upstream, "git upstream")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			payload.Local.UpstreamResultID = upstreamID
+		}
 		if base := backend.CheckoutBase; base != nil {
 			parentID, err := encodePersistedObjectRef(enc, base.Parent, "git checkout parent")
 			if err != nil {
@@ -918,6 +940,16 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.Pers
 				return nil, err
 			}
 			backend.HistorySource = source
+		}
+		if persisted.Local.UpstreamResultID != 0 {
+			upstream, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dec, persisted.Local.UpstreamResultID, "git upstream")
+			if err != nil {
+				return nil, err
+			}
+			backend.Upstream = upstream
+			if err := backend.validateUpstream(); err != nil {
+				return nil, err
+			}
 		}
 		if base := persisted.Local.CheckoutBase; base != nil {
 			if err := base.validate(); err != nil {

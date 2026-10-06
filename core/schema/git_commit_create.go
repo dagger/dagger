@@ -201,6 +201,7 @@ func (s *gitSchema) gitRefWithCommitRepository(ctx context.Context, parent dagql
 	backend := &core.LocalGitRepository{
 		Directory:     dir,
 		HistorySource: historySource,
+		Upstream:      core.GitUpstream(parent.Self().Repo),
 		CheckoutBase: &core.GitCheckoutBase{
 			Parent: checkoutParent, CommitSHA: head.SHA, Tree: parentTree,
 		},
