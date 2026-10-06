@@ -131,15 +131,31 @@ func (repo *LocalGitRepository) Remote(ctx context.Context) (*gitutil.Remote, er
 }
 
 // ResolveShortSHA expands an abbreviated commit SHA against the repository's
-// authorized object database. Owned shallow storage hydrates on this explicit
-// demand so unknown ancestry cannot hide an ambiguous prefix.
+// authorized object database. The raw owned storage is tried first, so a prefix
+// of the anchor or of the workspace's own commits never fetches the remote.
+// Only when nothing matches there does owned shallow storage hydrate its
+// complete history and retry; ambiguity and other local errors are final.
 func (repo *LocalGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
-	complete, err := repo.fullHistory(ctx)
-	if err != nil {
+	sha, err := repo.resolveShortSHA(ctx, prefix)
+	if err == nil || repo.HistorySource.Self() == nil || !errors.Is(err, gitutil.ErrShortSHANotFound) {
+		return sha, err
+	}
+	complete, herr := repo.fullHistory(ctx)
+	if herr != nil {
+		return "", herr
+	}
+	if complete == repo {
+		// No shallow boundary: the storage was already complete.
 		return "", err
 	}
+	return complete.resolveShortSHA(ctx, prefix)
+}
+
+// resolveShortSHA resolves against this repository's raw storage only; it
+// never hydrates.
+func (repo *LocalGitRepository) resolveShortSHA(ctx context.Context, prefix string) (string, error) {
 	var sha string
-	err = complete.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
 		var err error
 		sha, err = git.ResolveShortSHA(ctx, prefix)
 		return err

@@ -457,6 +457,13 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryUnavailable(ctx context.Cont
 	recent, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 2})
 	require.NoError(t, err)
 	require.Equal(t, []string{headSHA, firstSHA}, workspaceRemoteHistorySHAs(ctx, t, recent))
+	// Prefixes of commits already in owned storage (local work and the remote
+	// anchor) resolve locally; hydrating here would fail without the origin.
+	for _, sha := range []string{headSHA, firstSHA, fixture.git(ctx, t, "rev-parse", "main")} {
+		got, err := head.AsRepository().Ref(sha[:12]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, sha, got)
+	}
 	_, err = head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
 	require.Error(t, err, "unavailable ancestry must not silently truncate deep history")
 	_, err = ws.Git().Head().Log(ctx, dagger.GitRefLogOpts{Paths: []string{"ancient.txt"}, Limit: 100})
