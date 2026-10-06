@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  Module code can serve a private git client that its own config declares; the engine resolves the address with the session's main-client git credentials, and the declared git clients are part of the module call's cache key.
+time: 2026-10-05T18:13:00Z
+custom:
+  Author: eunomie
+  PR: 14493

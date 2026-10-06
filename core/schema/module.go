@@ -2168,7 +2168,26 @@ func (s *moduleSchema) serveModule(ctx context.Context, self *core.Query, args s
 		if gitutil.IsCommitSHA(args.RefPin) {
 			sel.Args = append(sel.Args, dagql.NamedInput{Name: "pinOverridesVersion", Value: dagql.Boolean(true)})
 		}
-		if err := dag.Select(ctx, dag.Root(), &src, sel); err != nil {
+		caller, callerErr := self.Server.ModuleParent(ctx)
+		if callerErr != nil && !errors.Is(callerErr, core.ErrNoCurrentModule) {
+			return void, fmt.Errorf("serve module %q: %w", args.Address, callerErr)
+		}
+		resolveCtx, declared := ctx, false
+		if callerErr == nil {
+			if declared, err = callerDeclaresGitClient(ctx, dag, caller, args.Address); err != nil {
+				return void, fmt.Errorf("serve module %q from module %q: %w", args.Address, caller.Self().Name(), err)
+			}
+			if declared {
+				// The module's own config declares this client, as a module's
+				// config declares a dependency: resolve it with the credentials
+				// dependency resolution may use.
+				resolveCtx = core.WithModuleDependencyResolution(ctx)
+			}
+		}
+		if err := dag.Select(resolveCtx, dag.Root(), &src, sel); err != nil {
+			if callerErr == nil && !declared && errors.Is(err, gitutil.ErrGitAuthFailed) {
+				return void, fmt.Errorf("serve module %q: %w; declare it as a client of module %q's scope", args.Address, err, caller.Self().Name())
+			}
 			return void, fmt.Errorf("serve module %q: %w", args.Address, err)
 		}
 	} else if caller, err := self.Server.ModuleParent(ctx); err == nil {
