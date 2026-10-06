@@ -289,6 +289,15 @@ func moduleRefHint(address *core.Address) string {
 
 type addressSchema struct{}
 
+// addressRequestedCacheInput is the cache input of Address.directory and
+// Address.file: dagql.RequestedCacheInput("noCache"), except that a
+// model-supplied address gets a namespace of its own, as Query.git does (see
+// gitPerClientInput). Its remote git lookup may carry the agent owner's
+// credentials, or go through the bound workspace's repository, so its result
+// must not answer the same client's ordinary lookup of the same address.
+// Every other lookup keeps its call digest.
+var addressRequestedCacheInput = agentAddressScopedInput(dagql.RequestedCacheInput("noCache"))
+
 var _ SchemaResolvers = &addressSchema{}
 
 func (s *addressSchema) Install(srv *dagql.Server) {
@@ -309,11 +318,11 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 			Doc(`Load a container from the address.`).
 			Args(noLockArg("image tag")),
 		dagql.NodeFunc("directory", s.directory).
-			WithInput(gitLiveInput(dagql.RequestedCacheInput("noCache"))).
+			WithInput(gitLiveInput(addressRequestedCacheInput)).
 			Doc(`Load a directory from the address.`).
 			Args(append(copyFilterArgs(), noLockArg("git ref"))...),
 		dagql.NodeFunc("file", s.file).
-			WithInput(gitLiveInput(dagql.RequestedCacheInput("noCache"))).
+			WithInput(gitLiveInput(addressRequestedCacheInput)).
 			Doc(`Load a file from the address.`).
 			Args(append(copyFilterArgs(), noLockArg("git ref"))...),
 		dagql.NodeFunc("gitRef", s.gitRef).

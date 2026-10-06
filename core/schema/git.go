@@ -1090,19 +1090,28 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 // must neither reuse the caller's own lookups of the same URL, which may have
 // none, nor hand the owner's to them. It keeps PerClientInput's name, so
 // every other lookup keeps its existing call digest.
-var gitPerClientInput = dagql.ImplicitInput{
-	Name: dagql.PerClientInput.Name,
-	Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
-		input, err := dagql.PerClientInput.Resolver(ctx, args)
-		if err != nil || !core.IsAgentAddressResolution(ctx) {
-			return input, err
-		}
-		key, ok := input.(dagql.String)
-		if !ok {
-			return nil, fmt.Errorf("unexpected per-client cache key %T", input)
-		}
-		return dagql.NewString(key.String() + ":agent-address"), nil
-	},
+var gitPerClientInput = agentAddressScopedInput(dagql.PerClientInput)
+
+// agentAddressScopedInput wraps input, a cache input resolving to a string
+// key, to give lookups of a model-supplied address (see
+// core.WithAgentAddressResolution) a namespace of their own. It keeps input's
+// name and, for every other lookup, its key, so their call digests don't
+// change.
+func agentAddressScopedInput(input dagql.ImplicitInput) dagql.ImplicitInput {
+	return dagql.ImplicitInput{
+		Name: input.Name,
+		Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
+			resolved, err := input.Resolver(ctx, args)
+			if err != nil || !core.IsAgentAddressResolution(ctx) {
+				return resolved, err
+			}
+			key, ok := resolved.(dagql.String)
+			if !ok {
+				return nil, fmt.Errorf("unexpected %s cache key %T", input.Name, resolved)
+			}
+			return dagql.NewString(key.String() + ":agent-address"), nil
+		},
+	}
 }
 
 // gitLockScopedInput scopes a ref lookup per client when its resolution can
