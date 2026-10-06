@@ -229,7 +229,8 @@ func (s *workspaceSchema) checkpointClientLocal(
 	if err != nil {
 		return inst, fmt.Errorf("construct portable workspace snapshot: %w", err)
 	}
-	// A successful owning-client capture approves this exact checkout state.
+	// A successful owning-client capture approves this checkout as a donor of
+	// the captured anchor's history; later ref moves do not change its closure.
 	// Retain only an optional session-local donor capability, not host objects
 	// or client routes in the portable recipe. Bundle-backed (dirty/unpushed)
 	// captures retain their existing local repository path; only a clean remote
@@ -254,7 +255,7 @@ func registerCheckpointHostHistory(ctx context.Context, query *core.Query, captu
 	if !ok || source.Ref.Self() == nil {
 		return core.SkipHostHistoryDonor(ctx, "snapshot base is not a Git ref", nil)
 	}
-	return query.RegisterCapturedHostHistory(ctx, source.Ref.Self().Repo, captured.ClientID, captured.HostPath(), metadata.CheckoutStateDigest, metadata.BaseSha, metadata.RemoteUrl)
+	return query.RegisterCapturedHostHistory(ctx, source.Ref.Self().Repo, captured.ClientID, captured.HostPath(), metadata.BaseSha, metadata.RemoteUrl)
 }
 
 func (s *workspaceSchema) checkpointGitRef(

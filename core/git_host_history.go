@@ -32,7 +32,7 @@ type hostHistoryKey struct {
 	recipe digest.Digest
 	sha    string
 }
-type hostHistoryDonor struct{ owner, path, state string }
+type hostHistoryDonor struct{ owner, path string }
 
 // hostHistoryRegistry holds a client's approved donors. A Query and its clones
 // share one registry, so a donor registered through either is visible to both.
@@ -80,7 +80,7 @@ func (r *hostHistoryRegistry) empty() bool {
 // only an optimization, so a capture it does not recognize, or cannot key,
 // registers nothing rather than failing the capture. Either outcome is
 // recorded on the current span, so a donor that never engages is debuggable.
-func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.ObjectResult[*GitRepository], owner, path, state, anchor, remoteURL string) bool {
+func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.ObjectResult[*GitRepository], owner, path, anchor, remoteURL string) bool {
 	if repo.Self() == nil {
 		return SkipHostHistoryDonor(ctx, "no captured repository", nil)
 	}
@@ -95,8 +95,8 @@ func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.Obje
 	if owner == "" || owner != md.ClientID {
 		return SkipHostHistoryDonor(ctx, "caller is not the capturing owner", nil)
 	}
-	if path == "" || state == "" {
-		return SkipHostHistoryDonor(ctx, "capture has no checkout path or state digest", nil)
+	if path == "" {
+		return SkipHostHistoryDonor(ctx, "capture has no checkout path", nil)
 	}
 	// PackCommit and the importer handle SHA-1 only; a SHA-256 checkout keeps
 	// the remote path.
@@ -114,7 +114,7 @@ func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.Obje
 	if err != nil {
 		return SkipHostHistoryDonor(ctx, "repository recipe digest failed", err)
 	}
-	q.hostHistories().register(hostHistoryKey{recipe, anchor}, hostHistoryDonor{owner, path, state})
+	q.hostHistories().register(hostHistoryKey{recipe, anchor}, hostHistoryDonor{owner, path})
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Bool(hostHistoryDonorRegisteredAttr, true))
 	return true
 }

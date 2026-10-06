@@ -440,7 +440,7 @@ func TestCheckpointHostHistorySkipsBundles(t *testing.T) {
 	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
 	captured := &core.Workspace{ClientID: owner.ClientID}
 	captured.SetHostPath("/approved")
-	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), CheckoutStateDigest: "captured", BaseSha: anchor, HeadSha: anchor}
+	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), BaseSha: anchor, HeadSha: anchor}
 	// A clean remote snapshot qualifies with the same route and metadata. No
 	// host IO is needed, even without an attached engine/server on the Query.
 	registered, attrs := checkpointHostHistoryOutcome(t, ctx, func(ctx context.Context) bool {
@@ -506,7 +506,7 @@ func TestCheckpointHostHistorySkipsSHA256(t *testing.T) {
 	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
 	captured := &core.Workspace{ClientID: owner.ClientID}
 	captured.SetHostPath("/approved")
-	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), CheckoutStateDigest: "captured", BaseSha: anchor, HeadSha: anchor}
+	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), BaseSha: anchor, HeadSha: anchor}
 	registered, attrs := checkpointHostHistoryOutcome(t, ctx, func(ctx context.Context) bool {
 		return registerCheckpointHostHistory(ctx, &core.Query{}, captured, frozen, metadata, false)
 	})
