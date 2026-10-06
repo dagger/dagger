@@ -61,6 +61,19 @@ func (gitURL *GitURL) Remote() string {
 	return gitURLCopy.String()
 }
 
+// RedactedRemote is Remote without any userinfo, safe to record in logs and
+// profiles: HTTP(S) userinfo may carry credentials (user:token@host).
+func (gitURL *GitURL) RedactedRemote() string {
+	gitURLCopy := *gitURL
+	gitURLCopy.Fragment = nil
+	gitURLCopy.User = nil
+	if gitURLCopy.scpStyle {
+		// SCPStyleURL.String always renders the "user@" separator.
+		return gitURLCopy.Host + ":" + gitURLCopy.Path
+	}
+	return gitURLCopy.String()
+}
+
 func (gitURL *GitURL) String() string {
 	if gitURL.scpStyle {
 		result := sshutil.SCPStyleURL{

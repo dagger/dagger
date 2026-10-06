@@ -7,6 +7,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestRedactedRemote(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://user:token@github.com/moby/buildkit.git#main": "https://github.com/moby/buildkit.git",
+		"https://token@github.com/moby/buildkit":               "https://github.com/moby/buildkit",
+		"https://github.com/moby/buildkit":                     "https://github.com/moby/buildkit",
+		"ssh://git@github.com/moby/buildkit.git":               "ssh://github.com/moby/buildkit.git",
+		"git@github.com:moby/buildkit.git#v1.0.0":              "github.com:moby/buildkit.git",
+	} {
+		u, err := ParseURL(in)
+		require.NoError(t, err, in)
+		require.Equal(t, want, u.RedactedRemote(), in)
+	}
+}
+
 func TestParseURL(t *testing.T) {
 	tests := []struct {
 		url    string

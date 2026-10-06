@@ -671,7 +671,9 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 	lockKey := remoteGitLockPrefix + repo.URL.Remote()
 	var profWait *wcprof.Wait
 	if wcprof.Enabled(ctx) {
-		profWait = wcprof.BeginWaitIdent(ctx, lockKey, wcprof.WaitReasonLock)
+		// Profiles are dumped and shared: identify the lock without the
+		// URL's userinfo, which may carry credentials.
+		profWait = wcprof.BeginWaitIdent(ctx, remoteGitLockPrefix+repo.URL.RedactedRemote(), wcprof.WaitReasonLock)
 	}
 	locker.Lock(lockKey)
 	profWait.End()
