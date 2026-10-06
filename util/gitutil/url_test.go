@@ -208,6 +208,61 @@ func TestParseURL(t *testing.T) {
 	}
 }
 
+func TestSameRepository(t *testing.T) {
+	const repo = "git@github.com:dagger/dagger.io"
+	for _, tc := range []struct {
+		other string
+		same  bool
+	}{
+		{"git@github.com:dagger/dagger.io.git", true},
+		{"https://github.com/dagger/dagger.io", true},
+		{"https://GitHub.com/dagger/dagger.io/", true},
+		{"ssh://git@github.com/dagger/dagger.io.git", true},
+		{"ssh://git@github.com:22/dagger/dagger.io", true},
+		{"https://github.com/dagger/dagger.io#main:docs", true},
+		{"ssh://git@github.com:2222/dagger/dagger.io", false},
+		{"https://github.com/dagger/dagger", false},
+		{"https://github.com/vito/dagger.io", false},
+		{"https://gitlab.com/dagger/dagger.io", false},
+	} {
+		t.Run(tc.other, func(t *testing.T) {
+			a, err := ParseURL(repo)
+			require.NoError(t, err)
+			b, err := ParseURL(tc.other)
+			require.NoError(t, err)
+			require.Equal(t, tc.same, SameRepository(a, b))
+			require.Equal(t, tc.same, SameRepository(b, a))
+		})
+	}
+	require.False(t, SameRepository(nil, nil))
+}
+
+func TestSameRepositoryPathCase(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		same bool
+	}{
+		// GitHub and GitLab route paths case-insensitively.
+		{"https://github.com/dagger/dagger.io", "https://github.com/Dagger/Dagger.io.git", true},
+		{"git@github.com:dagger/dagger.io", "https://GitHub.com/DAGGER/dagger.io", true},
+		{"https://gitlab.com/group/project", "git@gitlab.com:Group/Project.git", true},
+		{"https://github.com/dagger/dagger.io", "https://github.com/Dagger/dagger", false},
+		// Elsewhere, differently cased paths may be different repositories.
+		{"https://git.example.com/org/repo", "https://git.example.com/Org/Repo", false},
+		{"https://bitbucket.org/org/repo", "https://bitbucket.org/Org/repo", false},
+		{"https://git.example.com/org/repo", "https://git.example.com/org/repo.git", true},
+	} {
+		t.Run(tc.a+" "+tc.b, func(t *testing.T) {
+			a, err := ParseURL(tc.a)
+			require.NoError(t, err)
+			b, err := ParseURL(tc.b)
+			require.NoError(t, err)
+			require.Equal(t, tc.same, SameRepository(a, b))
+			require.Equal(t, tc.same, SameRepository(b, a))
+		})
+	}
+}
+
 func TestParseCloneURL(t *testing.T) {
 	tests := []struct {
 		name        string
