@@ -22,8 +22,12 @@ type workspaceLookupLockOverrideKey struct{}
 type workspaceLookupLockDisabledKey struct{}
 type workspaceLookupLockRefreshKey struct{}
 
+// withoutWorkspaceLookupLock resolves lookups made with ctx live: without
+// reading or writing the workspace lock, and without reusing the session's
+// listing of a git remote.
 func withoutWorkspaceLookupLock(ctx context.Context) context.Context {
 	ctx = context.WithValue(ctx, workspaceLookupLockDisabledKey{}, true)
+	ctx = core.ContextWithLiveGitRemote(ctx)
 	return dagql.WithPerClientCacheScope(ctx)
 }
 

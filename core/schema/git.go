@@ -98,8 +98,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		// Named ref lookups consult the calling client's workspace lock (which
 		// pin applies, and whether one should be written), so their results
 		// are scoped per client even though the repository itself is shared.
+		// noLock asks for a live resolution, which no earlier call may answer:
+		// it gets a fresh key per call (see gitLiveInput).
 		dagql.NodeFunc("head", s.head).
-			WithInput(dagql.PerClientInput).
+			WithInput(gitLiveInput(dagql.PerClientInput)).
 			Doc(`Returns details for HEAD.`).
 			Args(
 				dagql.Arg("noLock").
@@ -120,7 +122,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 					Doc(`Ignore the workspace lockfile for this lookup.`),
 			),
 		dagql.NodeFunc("branch", s.branch).
-			WithInput(dagql.PerClientInput).
+			WithInput(gitLiveInput(dagql.PerClientInput)).
 			View(AllVersion).
 			Doc(`Returns details of a branch.`).
 			Args(
@@ -130,7 +132,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 					Doc(`Ignore the workspace lockfile for this lookup.`),
 			),
 		dagql.NodeFunc("tag", s.tag).
-			WithInput(dagql.PerClientInput).
+			WithInput(gitLiveInput(dagql.PerClientInput)).
 			View(AllVersion).
 			Doc(`Returns details of a tag.`).
 			Args(
@@ -157,7 +159,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("id").Doc(`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
 			),
 		dagql.NodeFunc("latest", s.latest).
-			WithInput(dagql.PerClientInput).
+			WithInput(gitLiveInput(dagql.PerClientInput)).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(
 				`Return the latest stable release tag, falling back to HEAD when no release exists.`,
@@ -1074,8 +1076,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 // lookups. A full commit SHA never consults the lock, so SHA lookups stay
 // shared: that is what workspace snapshots pin their refs by. The same holds
 // for revision suffixes applied to a full SHA (e.g. <sha>~2): only the base
-// of a revision can consult the lock.
+// of a revision can consult the lock. noLock asks for a live resolution and
+// gets a fresh key per call, except for a full SHA: it is immutable.
 func gitLockScopedInput(argName string) dagql.ImplicitInput {
+	perClient := gitLiveInput(dagql.PerClientInput)
 	return dagql.ImplicitInput{
 		Name: "cachePerClientLock:" + argName,
 		Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
@@ -1088,9 +1092,18 @@ func gitLockScopedInput(argName string) dagql.ImplicitInput {
 					return dagql.NewString(""), nil
 				}
 			}
-			return dagql.PerClientInput.Resolver(ctx, args)
+			return perClient.Resolver(ctx, args)
 		},
 	}
+}
+
+// gitLiveInput wraps a lookup's cache input so that noLock: true, a request
+// to resolve the ref live, gets a fresh key per call rather than the result of
+// an earlier lookup. Without noLock the input's name and value are unchanged,
+// so existing call digests are too. The resolver then lists the remote again
+// (see core.ContextWithLiveGitRemote).
+func gitLiveInput(input dagql.ImplicitInput) dagql.ImplicitInput {
+	return dagql.PerCallWhen("noLock", input)
 }
 
 // gitRepositoryNamedInputs spells out the arguments for __gitRepository. Only
