@@ -3475,6 +3475,9 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 	if client.clientID == client.daggerSession.mainClientCallerID {
 		return nil, fmt.Errorf("%w: main client caller has no current module", core.ErrNoCurrentModule)
 	}
+	if client.fnCall == nil {
+		return nil, core.ErrNoCurrentFunctionCall
+	}
 	return client.fnCall, nil
 }
 

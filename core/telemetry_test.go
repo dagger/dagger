@@ -113,6 +113,9 @@ func (ms *mockServer) ModuleParent(context.Context) (dagql.ObjectResult[*Module]
 }
 
 func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error) {
+	if ms.functionCall == nil {
+		return nil, ErrNoCurrentFunctionCall
+	}
 	return ms.functionCall, nil
 }
 
