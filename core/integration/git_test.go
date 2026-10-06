@@ -1667,6 +1667,77 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 	require.Contains(t, commit, strings.TrimSpace(head))
 }
 
+// noLock asks a lookup to resolve the ref live, so a remote that moves
+// mid-session is seen by the next noLock lookup, rather than answered from
+// the session's first resolution. Lookups without noLock keep today's
+// behavior: a lookup the client already made returns its earlier result.
+func (GitSuite) TestRemoteUpdatesNoLock(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	svc, err := svc.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := svc.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", url, "."})
+	revParse := func(ctr *dagger.Container) string {
+		t.Helper()
+		out, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	push := func(name string) string {
+		t.Helper()
+		ctr = ctr.WithExec([]string{"sh", "-c", "touch " + name + " && git add " + name + ` && git commit -m "` + name + `" && git push origin main`})
+		return revParse(ctr)
+	}
+	commitOf := func(ref *dagger.GitRef) string {
+		t.Helper()
+		sha, err := ref.CommitSHA(ctx)
+		require.NoError(t, err)
+		return sha
+	}
+	repo := func() *dagger.GitRepository { return c.Git(url) }
+	liveRef := func() string {
+		return commitOf(repo().Ref("main", dagger.GitRepositoryRefOpts{NoLock: true}))
+	}
+	liveAddress := func() string {
+		return commitOf(c.Address(url + "#main").GitRef(dagger.AddressGitRefOpts{NoLock: true}))
+	}
+
+	initial := revParse(ctr)
+	require.Equal(t, initial, liveRef())
+	require.Equal(t, initial, liveAddress())
+	// A plain lookup in the same session agrees with the live one.
+	require.Equal(t, initial, commitOf(repo().Ref("main")))
+
+	second := push("second")
+	require.NotEqual(t, initial, second)
+	require.Equal(t, second, liveRef(), "a noLock ref lookup must list the remote again")
+	require.Equal(t, second, liveAddress(), "a noLock address lookup must list the remote again")
+
+	// A plain lookup the client already made is answered from its cache, as
+	// before: plain lookups are stable for the session.
+	require.Equal(t, initial, commitOf(repo().Ref("main")))
+	// A plain lookup the client has not made yet resolves from the session's
+	// listing, which the live lookup refreshed.
+	require.Equal(t, second, commitOf(repo().Branch("main")))
+
+	third := push("third")
+	require.Equal(t, third, liveAddress())
+	require.Equal(t, third, liveRef())
+	require.Equal(t, initial, commitOf(repo().Ref("main")))
+	require.Equal(t, second, commitOf(repo().Branch("main")))
+}
+
 func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 	content := identity.NewID()
 	hostname := func(c *dagger.Client) string {

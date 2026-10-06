@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  Git ref lookups with `noLock: true` (on `GitRepository.ref`, `head`, `branch`,
+  `tag` and `latest`, and on `Address.gitRef`, `directory` and `file`) now
+  resolve live, as documented: a remote that moved mid-session is listed again
+  instead of answering from the session's first lookup. Agents, which always
+  pass `noLock`, now see the current commit of a branch. The newer listing
+  also replaces the session's, so later lookups of refs not yet resolved see
+  it; lookups already made without `noLock` keep their result.
+time: 2026-10-06T12:00:00Z
+custom:
+  Author: vito

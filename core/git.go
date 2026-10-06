@@ -364,17 +364,26 @@ func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRe
 
 // LoadRemote returns remote metadata, loading it once when a resolver needs it.
 // Lazy loading allows frozen lock lookups to use pins without network access.
+//
+// Under ContextWithLiveGitRemote, a remote repository lists its refs again
+// instead of reusing this session's listing, and stores the new listing
+// back: the result is shared by the session's clients, which converge on the
+// newer refs rather than keep answering other names from a listing older
+// than one already observed. Refs resolved earlier are unaffected; they hold
+// their own commits.
 func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, error) {
 	repo.remoteMu.Lock()
 	defer repo.remoteMu.Unlock()
 
 	var session string
-	if _, remote := repo.Backend.(*RemoteGitRepository); remote {
+	_, isRemote := repo.Backend.(*RemoteGitRepository)
+	if isRemote {
 		if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
 			session = clientMetadata.SessionID
 		}
 	}
-	if repo.Remote != nil && (repo.Remote.Refs != nil || repo.Remote.Symrefs != nil) && repo.remoteSession == session {
+	live := isRemote && liveGitRemoteFromContext(ctx) != nil
+	if !live && repo.Remote != nil && (repo.Remote.Refs != nil || repo.Remote.Symrefs != nil) && repo.remoteSession == session {
 		return repo.Remote, nil
 	}
 

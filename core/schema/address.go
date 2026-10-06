@@ -309,15 +309,15 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 			Doc(`Load a container from the address.`).
 			Args(noLockArg("image tag")),
 		dagql.NodeFunc("directory", s.directory).
-			WithInput(dagql.RequestedCacheInput("noCache")).
+			WithInput(gitLiveInput(dagql.RequestedCacheInput("noCache"))).
 			Doc(`Load a directory from the address.`).
 			Args(append(copyFilterArgs(), noLockArg("git ref"))...),
 		dagql.NodeFunc("file", s.file).
-			WithInput(dagql.RequestedCacheInput("noCache")).
+			WithInput(gitLiveInput(dagql.RequestedCacheInput("noCache"))).
 			Doc(`Load a file from the address.`).
 			Args(append(copyFilterArgs(), noLockArg("git ref"))...),
 		dagql.NodeFunc("gitRef", s.gitRef).
-			WithInput(dagql.PerClientInput).
+			WithInput(gitLiveInput(dagql.PerClientInput)).
 			Doc(`Load a git ref (branch, tag or commit) from the address.`).
 			Args(noLockArg("git ref")),
 		dagql.NodeFunc("gitRepository", s.gitRepository).

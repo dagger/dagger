@@ -131,6 +131,27 @@ func RequestedCacheInput(argName string) ImplicitInput {
 	}
 }
 
+// PerCallWhen wraps input so that a call passing argName: true gets a fresh
+// per-call key, like PerCallInput. The input keeps its name, and its value
+// when argName is false or absent, so ordinary calls keep their digests. Use
+// it for an argument that asks a lookup to resolve live (e.g. noLock): the
+// call itself must not be answered from an earlier one.
+func PerCallWhen(argName string, input ImplicitInput) ImplicitInput {
+	return ImplicitInput{
+		Name: input.Name,
+		Resolver: func(ctx context.Context, args map[string]Input) (Input, error) {
+			perCall, err := inputBoolArg(args, argName)
+			if err != nil {
+				return nil, err
+			}
+			if perCall {
+				return PerCallInput.Resolver(ctx, args)
+			}
+			return input.Resolver(ctx, args)
+		},
+	}
+}
+
 func inputBoolArg(args map[string]Input, argName string) (bool, error) {
 	raw, ok := args[argName]
 	if !ok || raw == nil {
@@ -150,11 +171,11 @@ func inputBoolArg(args map[string]Input, argName string) (bool, error) {
 		}
 		booleanVal, ok := val.Value.(Boolean)
 		if !ok {
-			return false, fmt.Errorf("cacheAsRequested input %q must wrap Boolean, got %T", argName, val.Value)
+			return false, fmt.Errorf("cache input argument %q must wrap Boolean, got %T", argName, val.Value)
 		}
 		return booleanVal.Bool(), nil
 	default:
-		return false, fmt.Errorf("cacheAsRequested input %q must be Boolean, got %T", argName, raw)
+		return false, fmt.Errorf("cache input argument %q must be Boolean, got %T", argName, raw)
 	}
 }
 
