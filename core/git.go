@@ -918,9 +918,6 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.Pers
 				return nil, err
 			}
 			backend.HistorySource = source
-			if err := backend.validateHistorySource(ctx); err != nil {
-				return nil, err
-			}
 		}
 		if base := persisted.Local.CheckoutBase; base != nil {
 			if err := base.validate(); err != nil {
@@ -940,6 +937,7 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.Pers
 				backend.CheckoutBase.Tree = backend.CheckoutBase.provenTree(ctx)
 			}
 		}
+		// Validation depends on CheckoutBase, so run it once both are restored.
 		if err := backend.validateHistorySource(ctx); err != nil {
 			return nil, err
 		}
