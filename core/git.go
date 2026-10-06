@@ -1493,7 +1493,7 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 		})
 	}
 
-	if handled, err := mountOwnedShallowParentHistory(ctx, refs, fn); err != nil || handled {
+	if handled, err := mountOwnedShallowHistory(ctx, refs, fn); err != nil || handled {
 		return err
 	}
 	if handled, err := mountRefsWithLocalDonor(ctx, refs, fn); err != nil || handled {

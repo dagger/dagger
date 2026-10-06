@@ -215,7 +215,9 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryOrdinary(ctx context.Context
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture := newWorkspaceRemoteHistoryFixture(ctx, t, c)
-	before := fixture.repo.Head()
+	remote := fixture.repo.Head()
+	before := remote
+	var local []string
 	ws := before.AsWorkspace()
 	for n := 1; n <= 2; n++ {
 		parentSHA, err := before.CommitSHA(ctx)
@@ -244,6 +246,15 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryOrdinary(ctx context.Context
 		require.NoError(t, err)
 		require.Equal(t, []string{headSHA}, workspaceRemoteHistorySHAs(ctx, t, ahead))
 		behind, err := before.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 101})
+		require.NoError(t, err)
+		require.Empty(t, behind)
+		local = append([]string{headSHA}, local...)
+		// Against the original remote ref, the range spans every local commit
+		// and is still answered from the owned store, in both directions.
+		ahead, err = head.Log(ctx, dagger.GitRefLogOpts{Base: remote, Limit: 101})
+		require.NoError(t, err)
+		require.Equal(t, local, workspaceRemoteHistorySHAs(ctx, t, ahead))
+		behind, err = remote.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 101})
 		require.NoError(t, err)
 		require.Empty(t, behind)
 		if n == 2 {

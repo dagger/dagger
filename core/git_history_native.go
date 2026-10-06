@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -11,51 +12,164 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 )
 
-// A direct-parent comparison is complete even with unknown older ancestry:
-// either range excludes the shared boundary. Borrow only the child's store and
-// its exact shallow file; never union independently shallow repositories.
-func mountOwnedShallowParentHistory(ctx context.Context, refs []*GitRef, fn func(*gitutil.GitCLI, []string) error) (bool, error) {
+// mountOwnedShallowHistory answers a two-ref history read from an owned
+// shallow child's store alone, when the other ref is the child's anchor or one
+// of the anchor's descendants already in that store: its direct parent, an
+// earlier workspace commit, or the pinned remote ref itself.
+//
+// Such a read is complete even with unknown older ancestry. The anchor is an
+// ancestor of both sides, so everything below it is reachable from both:
+// ranges exclude it and merge bases cannot lie beneath it. Borrow only the
+// child's store and its exact shallow file; never union independently shallow
+// repositories. Anything else (siblings, older ancestors, unrelated or
+// unauthorized refs) reports unhandled and takes the existing path.
+func mountOwnedShallowHistory(ctx context.Context, refs []*GitRef, fn func(*gitutil.GitCLI, []string) error) (bool, error) {
 	if len(refs) != 2 {
 		return false, nil
 	}
 	for i, child := range refs {
 		local, ok := child.Backend.(*LocalGitRef)
-		if !ok || local.repo.HistorySource.Self() == nil {
+		if !ok || local.repo == nil || local.repo.HistorySource.Self() == nil {
 			continue
 		}
-		parent := refs[1-i]
-		matches, err := nativeParentHistoryCandidate(ctx, child, parent)
+		other := refs[1-i]
+		matches, err := ownedShallowHistoryCandidate(ctx, child, other)
 		if err != nil {
 			return false, err
 		}
 		if !matches {
 			continue
 		}
+		anchor := local.repo.HistorySource.Self().Ref.SHA
 		handled := false
 		err = local.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
 			dir, err := local.repo.nativeGitDir(ctx, source.Dir())
 			if err != nil {
-				return err
-			}
-			shallow, err := ownedShallowBoundary(dir, local.repo.HistorySource.Self().Ref.SHA)
-			if err != nil || !shallow {
-				return err
-			}
-			valid, err := validateNativeParentHistory(ctx, source, parent.Ref.SHA, child.Ref.SHA, true)
-			if err != nil || !valid {
-				return err
-			}
-			handled = true
-			return withGitObjectView(ctx, []string{filepath.Join(dir, "objects")}, "sha1", func(view *gitutil.GitCLI) error {
-				if err := copyGitShallowBoundary(dir, view.Dir()); err != nil {
-					return err
+				if nativeCommitFallback(err) {
+					return nil // unsupported layout: leave the read to the existing path
 				}
-				return fn(view, []string{refs[0].Ref.SHA, refs[1].Ref.SHA})
-			})
+				return err
+			}
+			handled, err = joinOwnedShallowHistory(ctx, dir, anchor, child.Ref.SHA, other.Ref.SHA, []string{refs[0].Ref.SHA, refs[1].Ref.SHA}, fn)
+			return err
 		})
-		return handled, err
+		if err != nil || handled {
+			return handled, err
+		}
 	}
 	return false, nil
+}
+
+// joinOwnedShallowHistory runs fn in a private view of one owned shallow
+// store, carrying its exact boundary, once both commits are proven to be in
+// that store at or above the anchor. The checks run in the view itself: it has
+// no refs, replacement refs or info/grafts, so they see raw parents only.
+func joinOwnedShallowHistory(ctx context.Context, gitDir, anchor, child, other string, shas []string, fn func(*gitutil.GitCLI, []string) error) (bool, error) {
+	for _, sha := range []string{anchor, child, other} {
+		if len(sha) != 40 || !IsFullGitSHA(sha) {
+			return false, nil
+		}
+	}
+	shallow, err := ownedShallowBoundary(gitDir, anchor)
+	if err != nil || !shallow {
+		// A complete store is the other helpers' business.
+		return false, err
+	}
+	handled := false
+	err = withGitObjectView(ctx, []string{filepath.Join(gitDir, "objects")}, "sha1", func(view *gitutil.GitCLI) error {
+		if err := copyGitShallowBoundary(gitDir, view.Dir()); err != nil {
+			return err
+		}
+		raw := view.New(gitutil.WithArgs("--no-replace-objects"))
+		for _, sha := range []string{child, other} {
+			out, err := raw.New(gitutil.WithIgnoreError()).Run(ctx, "cat-file", "-t", sha)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(string(out)) != "commit" {
+				return nil // not in the owned store: older or foreign history
+			}
+			ok, err := gitIsAncestor(ctx, raw, anchor, sha)
+			if err != nil || !ok {
+				return err
+			}
+		}
+		handled = true
+		return fn(view, shas)
+	})
+	return handled, err
+}
+
+// gitIsAncestor reports whether ancestor is reachable from (or equal to)
+// commit. Exit status 1 is a plain "no"; anything else is a real failure.
+func gitIsAncestor(ctx context.Context, git *gitutil.GitCLI, ancestor, commit string) (bool, error) {
+	_, err := git.Run(ctx, "merge-base", "--is-ancestor", ancestor, commit)
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &exitErr) && exitErr.ExitCode() == 1:
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+// ownedShallowHistoryCandidate authorizes answering a read about other from
+// child's owned store. The other ref must carry the same remote capability as
+// the child's history source: a remote ref of the exact same repository
+// recipe (including auth), or another owned checkout inheriting the same
+// history source. Equal URLs, SHAs or contents confer nothing. The direct
+// parent relationship (nativeParentHistoryCandidate) is accepted as before.
+func ownedShallowHistoryCandidate(ctx context.Context, child, other *GitRef) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if child == nil || other == nil {
+		return false, nil
+	}
+	local, ok := child.Backend.(*LocalGitRef)
+	if !ok || local.repo == nil || child.Ref == nil || child.Repo.Self() == nil || child.Repo.Self().Backend != local.repo {
+		return false, nil
+	}
+	source := local.repo.HistorySource.Self()
+	if source == nil || source.Ref == nil || source.Repo.Self() == nil {
+		return false, nil
+	}
+	if other.Ref == nil || other.Repo.Self() == nil {
+		return false, nil
+	}
+	if parent, err := nativeParentHistoryCandidate(ctx, child, other); err != nil || parent {
+		return parent, err
+	}
+	switch backend := other.Backend.(type) {
+	case *RemoteGitRef:
+		want, err := source.Repo.RecipeDigest(ctx)
+		if err != nil {
+			return false, err
+		}
+		got, err := other.Repo.RecipeDigest(ctx)
+		if err != nil {
+			return false, err
+		}
+		return got == want, nil
+	case *LocalGitRef:
+		repo := backend.repo
+		if repo == nil || other.Repo.Self().Backend != repo || repo.HistorySource.Self() == nil {
+			return false, nil
+		}
+		want, err := local.repo.HistorySource.RecipeDigest(ctx)
+		if err != nil {
+			return false, err
+		}
+		got, err := repo.HistorySource.RecipeDigest(ctx)
+		if err != nil {
+			return false, err
+		}
+		return got == want, nil
+	default:
+		return false, nil
+	}
 }
 
 // mountRefsWithLocalDonor answers a joined history read (log ranges, merge
