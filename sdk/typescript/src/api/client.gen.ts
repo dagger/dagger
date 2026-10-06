@@ -11942,6 +11942,7 @@ export class GitRef extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _commit?: string = undefined
   private readonly _commitSHA?: string = undefined
+  private readonly _contains?: boolean = undefined
   private readonly _name?: string = undefined
   private readonly _ref?: string = undefined
 
@@ -11953,6 +11954,7 @@ export class GitRef extends BaseClient {
     _id?: ID,
     _commit?: string,
     _commitSHA?: string,
+    _contains?: boolean,
     _name?: string,
     _ref?: string,
   ) {
@@ -11961,6 +11963,7 @@ export class GitRef extends BaseClient {
     this._id = _id
     this._commit = _commit
     this._commitSHA = _commitSHA
+    this._contains = _contains
     this._name = _name
     this._ref = _ref
   }
@@ -12037,6 +12040,24 @@ export class GitRef extends BaseClient {
   commonAncestor = (other: GitRef): GitRef => {
     const ctx = this._ctx.select("commonAncestor", { other })
     return new GitRef(ctx)
+  }
+
+  /**
+   * Return true when the other ref's commit equals this commit or is an ancestor of it.
+   *
+   * Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.
+   * @param other The ref whose commit to look for in this ref's history.
+   */
+  contains = async (other: GitRef): Promise<boolean> => {
+    if (this._contains) {
+      return this._contains
+    }
+
+    const ctx = this._ctx.select("contains", { other })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -12172,6 +12193,64 @@ export class GitRef extends BaseClient {
 }
 
 /**
+ * A named reference to a remote Git repository.
+ */
+export class GitRemote extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this GitRemote.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The remote's name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Access this remote's repository using its fetch URL and the caller's credentials, or the source's existing capability for this exact destination.
+   *
+   * HEAD is the remote's HEAD, independent of the workspace's selected commit. Remote registration alone does not grant credentials.
+   */
+  repository = (): GitRepository => {
+    const ctx = this._ctx.select("repository")
+    return new GitRepository(ctx)
+  }
+}
+
+/**
  * A git repository.
  */
 export class GitRepository extends BaseClient {
@@ -12258,6 +12337,22 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.
+   *
+   * Frozen workspaces retain their captured upstream selection. Does not contact remote servers.
+   */
+  defaultRemote = async (): Promise<GitRemote | null> => {
+    const ctx = this._ctx.select("defaultRemote").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new GitRemote(ctx.copy().selectNode(response, "GitRemote"))
+  }
+
+  /**
    * Returns details for HEAD.
    * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */
@@ -12292,6 +12387,32 @@ export class GitRepository extends BaseClient {
   ref = (name: string, opts?: GitRepositoryRefOpts): GitRef => {
     const ctx = this._ctx.select("ref", { name, ...opts })
     return new GitRef(ctx)
+  }
+
+  /**
+   * Look up a remote by name. Fails when the remote does not exist.
+   * @param name The remote's name.
+   */
+  remote = (name: string): GitRemote => {
+    const ctx = this._ctx.select("remote", { name })
+    return new GitRemote(ctx)
+  }
+
+  /**
+   * List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers.
+   */
+  remotes = async (): Promise<GitRemote[]> => {
+    type remotes = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("remotes").select("id")
+
+    const response: Awaited<remotes[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new GitRemote(ctx.copy().selectNode(r.id, "GitRemote")),
+    )
   }
 
   /**

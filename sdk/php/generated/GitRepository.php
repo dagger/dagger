@@ -169,6 +169,41 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers.
+     */
+    public function remotes(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('remotes');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'remotes');
+    }
+
+    /**
+     * Look up a remote by name. Fails when the remote does not exist.
+     */
+    public function remote(string $name): GitRemote
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('remote');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\GitRemote($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.
+     *
+     * Frozen workspaces retain their captured upstream selection. Does not contact remote servers.
+     */
+    public function defaultRemote(): ?GitRemote
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('defaultRemote');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\GitRemote::class, new \Dagger\Id((string)$id), 'GitRemote');
+    }
+
+    /**
      * Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
      *
      * Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
