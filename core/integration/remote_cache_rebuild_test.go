@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
@@ -19,18 +20,24 @@ import (
 // rebuildOnAnotherEngine builds values on engine A, exports them with no
 // blob, imports them into engine B and evaluates each imported row there, so
 // B must rebuild every part from its saved operation. check reads the
-// rebuilt values through B's client, by name.
-func rebuildOnAnotherEngine(ctx context.Context, t *testctx.T, build func(*dagger.Client) map[string]dagger.ID, check func(*dagger.Client, map[string]string)) {
-	onAnotherEngine(ctx, t, true, build, check)
+// rebuilt values through B's client, by name. It returns the exported record
+// of each value, by name.
+func rebuildOnAnotherEngine(ctx context.Context, t *testctx.T, build func(*dagger.Client) map[string]dagger.ID, check func(*dagger.Client, map[string]string)) map[string]dagql.PersistedRecord {
+	return onAnotherEngine(ctx, t, true, func(a *dagger.Client, _ func() *dagger.Client) map[string]dagger.ID {
+		return build(a)
+	}, check)
 }
 
 // onAnotherEngine builds values on engine A, exports them with no blob and
 // imports them into engine B, evaluating each imported row there when rebuild
-// is set. check gets B's client and the imported handles, by name.
-func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func(*dagger.Client) map[string]dagger.ID, check func(*dagger.Client, map[string]string)) {
+// is set. build can open more sessions on A with connectA. check gets B's
+// client and the imported handles, by name. It returns the exported record of
+// each value, by name.
+func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func(a *dagger.Client, connectA func() *dagger.Client) map[string]dagger.ID, check func(*dagger.Client, map[string]string)) map[string]dagql.PersistedRecord {
 	outer := connect(ctx, t)
 	type running struct {
 		upstream, tunnel *dagger.Service
+		endpoint         string
 		client           *dagger.Client
 	}
 	start := func(state string, volume *dagger.CacheVolume) *running {
@@ -41,9 +48,9 @@ func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func
 		tunnel, err := outer.Host().Tunnel(e.upstream).Start(ctx)
 		require.NoError(t, err)
 		e.tunnel = tunnel
-		endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		e.endpoint, err = tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
-		e.client, err = dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		e.client, err = dagger.Connect(ctx, dagger.WithRunnerHost(e.endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
 		require.NoError(t, err)
 		return e
 	}
@@ -52,10 +59,22 @@ func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func
 	bVolume := outer.CacheVolume("rebuild-b-" + id)
 	a := start("rebuild-a-state-"+id, aVolume)
 	defer func() { require.NoError(t, discardNestedEngine(ctx, &a.client, &a.upstream, &a.tunnel)) }()
+	var sessionsA []*dagger.Client
+	defer func() {
+		for _, c := range sessionsA {
+			require.NoError(t, closeClientBounded(ctx, c))
+		}
+	}()
+	connectA := func() *dagger.Client {
+		c, err := dagger.Connect(ctx, dagger.WithRunnerHost(a.endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		require.NoError(t, err)
+		sessionsA = append(sessionsA, c)
+		return c
+	}
 	b := start("rebuild-b-state-"+id, bVolume)
 	defer func() { require.NoError(t, discardNestedEngine(ctx, &b.client, &b.upstream, &b.tunnel)) }()
 
-	roots := build(a.client)
+	roots := build(a.client, connectA)
 	for name, root := range roots {
 		var exported []transferFixtureMapping
 		require.NoError(t, transferFixtureSelected(ctx, a.client, "rebuild-"+name+".json", []string{string(root)}, []string{}, &exported), name)
@@ -64,12 +83,37 @@ func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func
 	_, err := outer.Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
 		WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/rebuild-*.json /destination/bundles/"}).Sync(ctx)
 	require.NoError(t, err)
+	records := map[string]dagql.PersistedRecord{}
+	rootOrdinals := map[string]dagql.TransferOrdinal{}
+	for name := range roots {
+		raw, err := outer.Container().From(alpineImage).WithMountedCache("/source", aVolume).
+			WithEnvVariable("READ", identity.NewID()).WithExec([]string{"cat", "/source/bundles/rebuild-" + name + ".json"}).Stdout(ctx)
+		require.NoError(t, err, name)
+		var bundle dagql.ValueBundle
+		require.NoError(t, json.Unmarshal([]byte(raw), &bundle), name)
+		require.Len(t, bundle.Roots, 1, name)
+		rootOrdinals[name] = bundle.Roots[0].Ordinal
+		for _, value := range bundle.Values {
+			if value.Ordinal == bundle.Roots[0].Ordinal {
+				records[name] = value.Record
+			}
+		}
+		require.Contains(t, records, name)
+	}
 
 	handles := map[string]string{}
 	for name := range roots {
 		var imported []transferFixtureMapping
 		require.NoError(t, transferFixture(ctx, b.client, "import", "rebuild-"+name+".json", []string{}, &imported), name)
+		// The bundle's one root, and only it, lands on B.
 		require.NotEmpty(t, imported, name)
+		var importedRoots []dagql.TransferOrdinal
+		for _, mapping := range imported {
+			if mapping.Root {
+				importedRoots = append(importedRoots, mapping.Ordinal)
+			}
+		}
+		require.Equal(t, []dagql.TransferOrdinal{rootOrdinals[name]}, importedRoots, name)
 		handle := imported[0].Handle
 		if rebuild {
 			var evaluated bool
@@ -84,6 +128,45 @@ func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func
 		require.NotEqual(t, "provider-read", event.Kind, "nothing was offered for download: %+v", event)
 	}
 	check(b.client, handles)
+	return records
+}
+
+// requireRebuildRoute asserts that every part of an exported value can be
+// rebuilt on another engine, as that engine routes a demand for it: by the
+// value's saved operation, or by delegation to its parent.
+func requireRebuildRoute(t *testctx.T, record dagql.PersistedRecord) {
+	t.Helper()
+	family, ok := dagql.PersistedObjectFamilyByName(record.Envelope.ObjectCodec)
+	require.True(t, ok, record.Envelope.ObjectCodec)
+	router, ok := family.Transfer.(dagql.PersistedPartRouter)
+	require.True(t, ok, record.Envelope.ObjectCodec)
+	var payload struct {
+		Parts map[dagql.PartKey]json.RawMessage `json:"parts"`
+	}
+	require.NoError(t, json.Unmarshal(record.Envelope.ObjectJSON, &payload))
+	parts := []dagql.PartKey{"snapshot"}
+	if payload.Parts != nil {
+		parts = slices.Collect(maps.Keys(payload.Parts))
+	}
+	require.NotEmpty(t, parts)
+	for _, part := range parts {
+		route, err := router.RouteParts(dagql.PersistedPayloadVisit{Call: record.Call, Payload: record.Envelope.ObjectJSON}, part)
+		require.NoError(t, err, part)
+		require.True(t, route.HasLazyOperation || route.Delegation != nil, "part %s has neither a saved operation nor a delegation", part)
+	}
+}
+
+// savedOperation is the operation an exported value keeps to rebuild itself:
+// its kind, for a Directory or File, and its arguments. A Container's
+// operation is named by its call's field.
+func savedOperation(t *testctx.T, record dagql.PersistedRecord) (string, json.RawMessage) {
+	t.Helper()
+	var payload struct {
+		LazyKind string          `json:"lazyKind"`
+		LazyJSON json.RawMessage `json:"lazyJSON"`
+	}
+	require.NoError(t, json.Unmarshal(record.Envelope.ObjectJSON, &payload))
+	return payload.LazyKind, payload.LazyJSON
 }
 
 // engineResultID is the engine result a handle names.
@@ -245,7 +328,7 @@ func (RemoteCacheTransferSuite) TestManifestStaysOnEngine(ctx context.Context, t
 // Changeset.asPatch is rebuilt on another engine when its blob is missing.
 func (RemoteCacheTransferSuite) TestRebuildChangesetPatch(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
-	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
+	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
 		before := c.Directory().WithNewFile("data", "before\n")
 		patch, err := before.WithNewFile("data", seed+"\n").Changes(before).AsPatch().ID(ctx)
 		require.NoError(t, err)
@@ -256,12 +339,15 @@ func (RemoteCacheTransferSuite) TestRebuildChangesetPatch(ctx context.Context, t
 		require.NoError(t, err)
 		require.Contains(t, contents, "+"+seed)
 	})
+	kind, _ := savedOperation(t, records["patch"])
+	require.Equal(t, "changeset.asPatch", kind)
+	requireRebuildRoute(t, records["patch"])
 }
 
 // Changeset merges are rebuilt on another engine when their blob is missing.
 func (RemoteCacheTransferSuite) TestRebuildChangesetMerges(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
-	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
+	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
 		change := func(path string) dagger.ID {
 			before := c.Directory().WithNewFile(path, "0\n")
 			return syncedID(ctx, t, before.WithNewFile(path, seed+"\n").Changes(before))
@@ -292,6 +378,14 @@ func (RemoteCacheTransferSuite) TestRebuildChangesetMerges(ctx context.Context, 
 			}
 		}
 	})
+	for field, record := range records {
+		kind, raw := savedOperation(t, record)
+		require.Equal(t, "changeset.merge", kind, field)
+		var merge struct{ Workspace bool }
+		require.NoError(t, json.Unmarshal(raw, &merge), field)
+		require.Equal(t, field == "__mergeForWorkspaceCommit", merge.Workspace, field)
+		requireRebuildRoute(t, record)
+	}
 }
 
 // A merge conflict is reported by the call that asks for the merge, as before
@@ -350,7 +444,7 @@ func requireRebuiltCommit(ctx context.Context, t *testctx.T, dir *dagger.Directo
 func (RemoteCacheTransferSuite) TestRebuildGitCommitDirectory(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
 	var sha string
-	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
+	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
 		head := rebuildGitRepo(c, seed)
 		headID, err := head.ID(ctx)
 		require.NoError(t, err)
@@ -368,6 +462,9 @@ func (RemoteCacheTransferSuite) TestRebuildGitCommitDirectory(ctx context.Contex
 	}, func(c *dagger.Client, handles map[string]string) {
 		requireRebuiltCommit(ctx, t, dagger.Ref[*dagger.Directory](c, dagger.ID(handles["commit"])), sha, "edited "+seed+"\n")
 	})
+	kind, _ := savedOperation(t, records["commit"])
+	require.Equal(t, "gitCommit", kind)
+	requireRebuildRoute(t, records["commit"])
 }
 
 // Workspace.__pullDirectory is rebuilt on another engine when its blob is
@@ -375,7 +472,7 @@ func (RemoteCacheTransferSuite) TestRebuildGitCommitDirectory(ctx context.Contex
 func (RemoteCacheTransferSuite) TestRebuildWorkspacePullDirectory(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
 	var sha string
-	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
+	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
 		head := rebuildGitRepo(c, seed)
 		asWorkspace := dagger.GitRefAsWorkspaceOpts{Cwd: "/"}
 		source := head.WithCommit(rebuildGitChanges(head, "pulled "+seed+"\n"), "pull me", workspaceCommitDate, "Author", "author@example.com").AsWorkspace(asWorkspace)
@@ -395,6 +492,9 @@ func (RemoteCacheTransferSuite) TestRebuildWorkspacePullDirectory(ctx context.Co
 	}, func(c *dagger.Client, handles map[string]string) {
 		requireRebuiltCommit(ctx, t, dagger.Ref[*dagger.Directory](c, dagger.ID(handles["pull"])), sha, "pulled "+seed+"\n")
 	})
+	kind, _ := savedOperation(t, records["pull"])
+	require.Equal(t, "workspace.pull", kind)
+	requireRebuildRoute(t, records["pull"])
 }
 
 // A file write and metadata edits over evaluated parents are rebuilt on
@@ -433,7 +533,7 @@ func (RemoteCacheTransferSuite) TestRebuildContainerWritesOverEvaluatedParent(ct
 		"evaluated-__withMountedPathDockerfileCompat": "/m/source",
 		"pending-__withMountedPathDockerfileCompat":   "/m/source",
 	}
-	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
+	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
 		source := c.Directory().WithNewFile("source", seed)
 		sourceID := syncedID(ctx, t, source)
 		// Distinct roots keep the evaluated parent from being the pending one.
@@ -461,6 +561,9 @@ func (RemoteCacheTransferSuite) TestRebuildContainerWritesOverEvaluatedParent(ct
 		// first read over a pending one.
 		for name, id := range written {
 			requirePending(ctx, t, c, strings.HasPrefix(name, "pending-"), id)
+			// Container.user settles the metadata only; no part is read.
+			_, err := dagger.Ref[*dagger.Container](c, id).User(ctx)
+			require.NoError(t, err, name)
 		}
 		return written
 	}, func(c *dagger.Client, handles map[string]string) {
@@ -471,26 +574,47 @@ func (RemoteCacheTransferSuite) TestRebuildContainerWritesOverEvaluatedParent(ct
 			require.Equal(t, seed, contents, name)
 		}
 	})
+	require.Len(t, records, len(paths))
+	for name, record := range records {
+		_, raw := savedOperation(t, record)
+		require.NotEmpty(t, raw, "%s must keep its saved operation", name)
+		requireRebuildRoute(t, record)
+	}
 }
 
 // The result of directory().withFile("go.mod", <src>.file("go.mod")) is a cache
-// hit on another engine after it is merged there, for a src whose other files
-// changed: the file's content digest travels with the result.
+// hit for a src whose other files changed: in a second session on the engine
+// that made it, and on another engine after it is merged there, because the
+// file's content digest travels with the result.
 func (RemoteCacheTransferSuite) TestUnchangedFileFromChangedSourceHitsOnAnotherEngine(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
-	withGoMod := func(c *dagger.Client, variant string) dagger.ID {
+	// goModSource is evaluated first, as a host directory is.
+	goModSource := func(c *dagger.Client, variant string) *dagger.Directory {
 		src, err := c.Directory().
 			WithNewFile("go.mod", "module "+seed+"\n").
 			WithNewFile("main.go", "package main // "+variant+"\n").
 			Sync(ctx)
 		require.NoError(t, err)
+		return src
+	}
+	withGoMod := func(c *dagger.Client, src *dagger.Directory) dagger.ID {
 		id, err := c.Directory().WithFile("go.mod", src.File("go.mod")).ID(ctx)
 		require.NoError(t, err)
 		return id
 	}
-	onAnotherEngine(ctx, t, false, func(c *dagger.Client) map[string]dagger.ID {
-		return map[string]dagger.ID{"go.mod": withGoMod(c, "v1")}
+	onAnotherEngine(ctx, t, false, func(c *dagger.Client, connectA func() *dagger.Client) map[string]dagger.ID {
+		src := goModSource(c, "v1")
+		var before transferFixtureReport
+		require.NoError(t, transferFixture(ctx, c, "report", "", []string{}, &before))
+		first := withGoMod(c, src)
+		// A hit would answer with a result the engine already had.
+		for _, row := range before.Rows {
+			require.NotEqual(t, row.ResultID, engineResultID(t, string(first)), "the first call runs")
+		}
+		again := connectA()
+		require.Equal(t, engineResultID(t, string(first)), engineResultID(t, string(withGoMod(again, goModSource(again, "v2")))), "a second session on the same engine hits")
+		return map[string]dagger.ID{"go.mod": first}
 	}, func(c *dagger.Client, handles map[string]string) {
-		require.Equal(t, engineResultID(t, handles["go.mod"]), engineResultID(t, string(withGoMod(c, "v2"))), "the same call with a changed source hits the merged result")
+		require.Equal(t, engineResultID(t, handles["go.mod"]), engineResultID(t, string(withGoMod(c, goModSource(c, "v2")))), "the same call on the other engine after the merge")
 	})
 }

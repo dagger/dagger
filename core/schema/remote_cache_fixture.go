@@ -35,6 +35,8 @@ type remoteCacheFixtureMapping struct {
 	ResultID uint64                `json:"resultID"`
 	Type     *dagql.ResultCallType `json:"type"`
 	Handle   string                `json:"handle"`
+	// Root marks an import's entries for the roots the merge imported.
+	Root bool `json:"root,omitempty"`
 }
 type remoteCacheBodyEntry struct {
 	Parent   string `json:"parent"`
@@ -234,7 +236,14 @@ func fixtureImportedMappings(bundle dagql.ValueBundle, merged dagql.MergeReply, 
 	if hasNonRoot && !validatedNonRoot {
 		return nil, fmt.Errorf("fixture merge lacks a reported non-root row")
 	}
-	return fixtureMappings(bundle, values)
+	mappings, err := fixtureMappings(bundle, values)
+	if err != nil {
+		return nil, err
+	}
+	for i := range roots {
+		mappings[i].Root = true
+	}
+	return mappings, nil
 }
 func readFixtureBodies(root *os.Root) ([]remoteCacheBodyCount, error) {
 	dir, err := root.Open(".")

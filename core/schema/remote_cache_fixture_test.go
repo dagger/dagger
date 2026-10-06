@@ -109,6 +109,8 @@ func TestRemoteCacheFixture(t *testing.T) {
 	require.Len(t, second, 1)
 	require.Equal(t, first[0].ResultID, second[0].ResultID)
 	require.Equal(t, id.EngineResultID(), first[0].ResultID)
+	require.True(t, first[0].Root)
+	require.False(t, exported[0].Root, "only an import marks roots")
 	values, err := srv.Query(ctx, `query($ids:[ID!]!){_remoteCacheFixture(operation:"evaluate",ids:$ids)}`, map[string]any{"ids": []any{first[0].Handle}})
 	require.NoError(t, err)
 	evaluatedJSON, err := json.Marshal(values["_remoteCacheFixture"])
