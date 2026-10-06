@@ -351,25 +351,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	if err != nil {
 		return nil, err
 	}
-	var manifestDesc ocispecs.Descriptor
-	var manifest ocispecs.Manifest
-	if opts.ResolveMode == ResolveModeDefault {
-		metadata, err := r.ensureImageConfigMetadata(ctx, resolvedRef, rootDesc, fetcher, platformMatcher, true)
-		if err != nil {
-			return nil, err
-		}
-		manifestDesc = metadata.manifestDesc
-		manifest = metadata.manifest
-	} else {
-		provider := contentutil.FromFetcher(fetcher)
-		var err error
-		manifestDesc, manifest, err = resolveManifestDescriptor(ctx, provider, rootDesc, platformMatcher, true)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(imageMetadataLeaseTTL), bkcache.MakeTemporary)
+	leaseCtx, release, err := r.newPullLease(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +360,24 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 			release(context.WithoutCancel(leaseCtx))
 		}
 	}()
+
+	var manifestDesc ocispecs.Descriptor
+	var manifest ocispecs.Manifest
+	if opts.ResolveMode == ResolveModeDefault {
+		metadata, err := r.ensureImageConfigMetadata(leaseCtx, resolvedRef, rootDesc, fetcher, platformMatcher, true)
+		if err != nil {
+			return nil, err
+		}
+		manifestDesc = metadata.manifestDesc
+		manifest = metadata.manifest
+	} else {
+		provider := contentutil.FromFetcher(fetcher)
+		var err error
+		manifestDesc, manifest, err = resolveManifestDescriptor(leaseCtx, provider, rootDesc, platformMatcher, true)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	metadata := map[digest.Digest]ocispecs.Descriptor{}
 	recordNonLayers := images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
@@ -626,7 +626,7 @@ func (r *Resolver) tryLocalCanonicalClosure(
 		return nil, false, nil, nil
 	}
 
-	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(imageMetadataLeaseTTL), bkcache.MakeTemporary)
+	leaseCtx, release, err := r.newPullLease(ctx)
 	if err != nil {
 		return nil, false, nil, err
 	}
