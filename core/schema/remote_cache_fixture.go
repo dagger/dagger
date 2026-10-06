@@ -299,9 +299,9 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		if args.Path != "" {
 			return nil, fmt.Errorf("report does not accept a path")
 		}
-	case "evaluate":
+	case "evaluate", "pending":
 		if len(args.IDs) == 0 || args.Path != "" {
-			return nil, fmt.Errorf("evaluate requires handles and no path")
+			return nil, fmt.Errorf("%s requires handles and no path", args.Operation)
 		}
 	case "recordBody":
 		if args.Path != "" || len(args.IDs) != 0 {
@@ -411,6 +411,16 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		}
 		err = cache.EvaluateTransferFixtureRoots(ctx, md.SessionID, srv, ids)
 		response = err == nil
+	case "pending":
+		// Whether each row still has work to run, without demanding it.
+		pending := make([]bool, 0, len(ids))
+		err = cache.WithTransferFixtureRoots(ctx, md.SessionID, ids, func(roots []dagql.AnyResult) error {
+			for _, root := range roots {
+				pending = append(pending, dagql.HasPendingLazyEvaluation(root))
+			}
+			return nil
+		})
+		response = pending
 	case "report":
 		var report remoteCacheFixtureReport
 		report.Persistence.PersistenceResetReason = cache.PersistenceResetReason()

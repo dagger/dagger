@@ -126,6 +126,22 @@ func selectHidden(ctx context.Context, t *testctx.T, c *dagger.Client, id dagger
 	return result.Node[field].ID
 }
 
+// requirePending asserts whether each value still has work to run on the
+// engine c is connected to, without running it.
+func requirePending(ctx context.Context, t *testctx.T, c *dagger.Client, want bool, ids ...dagger.ID) {
+	t.Helper()
+	handles := make([]string, len(ids))
+	for i, id := range ids {
+		handles[i] = string(id)
+	}
+	var pending []bool
+	require.NoError(t, transferFixture(ctx, c, "pending", "", handles, &pending))
+	require.Len(t, pending, len(ids))
+	for i, got := range pending {
+		require.Equal(t, want, got, "value %d", i)
+	}
+}
+
 // syncedID evaluates value and returns its ID.
 func syncedID[T interface {
 	Sync(context.Context) (T, error)
@@ -231,8 +247,10 @@ func (RemoteCacheTransferSuite) TestRebuildChangesetPatch(ctx context.Context, t
 	seed := identity.NewID()
 	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
 		before := c.Directory().WithNewFile("data", "before\n")
-		patch := before.WithNewFile("data", seed+"\n").Changes(before).AsPatch()
-		return map[string]dagger.ID{"patch": syncedID(ctx, t, patch)}
+		patch, err := before.WithNewFile("data", seed+"\n").Changes(before).AsPatch().ID(ctx)
+		require.NoError(t, err)
+		requirePending(ctx, t, c, false, patch) // the patch is written at the call
+		return map[string]dagger.ID{"patch": patch}
 	}, func(c *dagger.Client, handles map[string]string) {
 		contents, err := dagger.Ref[*dagger.File](c, dagger.ID(handles["patch"])).Contents(ctx)
 		require.NoError(t, err)
@@ -250,7 +268,11 @@ func (RemoteCacheTransferSuite) TestRebuildChangesetMerges(ctx context.Context, 
 		}
 		ours, theirs, third := change("ours"), change("theirs"), change("third")
 		merge := func(field string, changes any) dagger.ID {
-			return selectHidden(ctx, t, c, ours, "Changeset", field, map[string]any{"changes": changes})
+			merged := selectHidden(ctx, t, c, ours, "Changeset", field, map[string]any{"changes": changes})
+			// The merge runs at the call. Check before the next merge, which
+			// may run this one.
+			requirePending(ctx, t, c, false, merged)
+			return merged
 		}
 		return map[string]dagger.ID{
 			"__mergeWithChangeset":      merge("__mergeWithChangeset", theirs),
@@ -339,6 +361,7 @@ func (RemoteCacheTransferSuite) TestRebuildGitCommitDirectory(ctx context.Contex
 			"authorName":  "Author",
 			"authorEmail": "author@example.com",
 		})
+		requirePending(ctx, t, c, false, committed) // the commit is made at the call
 		sha, err = dagger.Ref[*dagger.Directory](c, committed).AsGit().Head().CommitSHA(ctx)
 		require.NoError(t, err)
 		return map[string]dagger.ID{"commit": committed}
@@ -365,6 +388,7 @@ func (RemoteCacheTransferSuite) TestRebuildWorkspacePullDirectory(ctx context.Co
 			"committerName":  "Committer",
 			"committerEmail": "committer@example.com",
 		})
+		requirePending(ctx, t, c, false, pulled) // the pull runs at the call
 		sha, err = dagger.Ref[*dagger.Directory](c, pulled).AsGit().Head().CommitSHA(ctx)
 		require.NoError(t, err)
 		return map[string]dagger.ID{"pull": pulled}
@@ -399,7 +423,7 @@ func (RemoteCacheTransferSuite) TestRebuildContainerMutations(ctx context.Contex
 
 // Container mutations that write over an evaluated parent run at the call and
 // keep their saved operation, so another engine rebuilds them; a Dockerfile
-// compat mount does over a pending parent too.
+// compat mount keeps it over a pending parent too, and runs on first read.
 func (RemoteCacheTransferSuite) TestRebuildContainerWritesOverEvaluatedParent(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
 	paths := map[string]string{
@@ -426,13 +450,19 @@ func (RemoteCacheTransferSuite) TestRebuildContainerWritesOverEvaluatedParent(ct
 			require.NoError(t, err)
 			return id
 		}
-		return map[string]dagger.ID{
+		written := map[string]dagger.ID{
 			"evaluated-withDirectory":                     id(evaluated.WithDirectory("/d", source)),
 			"evaluated-withFile":                          id(evaluated.WithFile("/f", source.File("source"))),
 			"evaluated-withNewFile":                       id(evaluated.WithNewFile("/n", seed)),
 			"evaluated-__withMountedPathDockerfileCompat": mounted(evaluated),
 			"pending-__withMountedPathDockerfileCompat":   mounted(pending),
 		}
+		// The work runs when it always did: at the call over a built parent, on
+		// first read over a pending one.
+		for name, id := range written {
+			requirePending(ctx, t, c, strings.HasPrefix(name, "pending-"), id)
+		}
+		return written
 	}, func(c *dagger.Client, handles map[string]string) {
 		require.Len(t, handles, len(paths))
 		for name, handle := range handles {
