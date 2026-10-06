@@ -1020,6 +1020,42 @@ sleep infinity
 	}
 }
 
+// TestSSHAuthSockResumeFromCheckout resumes a session, as `dagger agent
+// --resume` does, from the checkout of a private SSH repository it started in,
+// with no SSH agent running either time. Capturing the checkout prepared an
+// agent from its identity file; the resuming CLI, in a session of its own,
+// prepares one for its checkout's origin to replay the snapshot's recipe.
+func (GitSuite) TestSSHAuthSockResumeFromCheckout(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	// Addressed by IP, which a separate session can still reach.
+	remote := privateGitSSHRemote(ctx, t, c)
+	checkout := func(c *dagger.Client) *dagger.Container {
+		return daggerCliBase(t, c).
+			With(remote.cli).
+			WithExec([]string{"apk", "add", "git"}).
+			WithEnvVariable("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=no").
+			WithExec([]string{"git", "clone", remote.url, "/checkout"}).
+			WithWorkdir("/checkout").
+			WithNewFile("README", "dirty tracked file\n")
+	}
+
+	recipe, err := sink.captureShellRecipe(ctx, t, checkout(c), `llm | with-workspace --workspace $(current-workspace | snapshot)`)
+	require.NoError(t, err)
+	fields := workspaceRecipeFields(t, recipe)
+	require.Contains(t, fields, "_sshAuthSocket", "the snapshot reconstructs from the SSH remote")
+	require.NotContains(t, fields, "__gitDir")
+
+	// A fresh session caches nothing the capture produced, so replaying the
+	// recipe scopes an SSH agent again, and none is running.
+	resumed := "resumed-" + identity.NewID()
+	_, err = checkout(connect(ctx, t)).
+		With(daggerQuery(`{ node(id: %q) { ... on LLM {
+			spawn(handle: %q, name: %q, state: IDLE, error: "", parentHandle: "")
+		} } }`, recipe, resumed, resumed)).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
 func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
