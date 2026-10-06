@@ -54,6 +54,19 @@ type Runner {
   }
 
   """
+  Like delegate, with the conversation bound to a checkout of source, as an
+  agent working in a checked-out repository is.
+  """
+  delegateIn(model: String!, prompt: String!, source: GitRef!): String! {
+    llm(model: model)
+      .withWorkspace(source.asWorkspace)
+      .withTools(currentNode)
+      .withPrompt(prompt)
+      .loop
+      .transcript
+  }
+
+  """
   Use a token.
 
   Secret is blocklisted — a model-typed env:// or file:// address would mint

@@ -1785,99 +1785,6 @@ func (LLMSuite) TestAddressableToolArgs(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "Alpine Linux")
 	})
 
-	t.Run("a private git URL reads with the caller's credentials", func(ctx context.Context, t *testctx.T) {
-		addr := privateGitAddress(ctx, t, c) + "#main"
-		model := cannedRecordingModel(ctx, t, c, c.LLM().
-			WithPrompt("which commit is the private branch?").
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "commitOf",
-					Arguments: dagger.JSON(fmt.Sprintf(`{"ref":%q}`, addr))},
-			}).
-			WithToolResult("call_1", "", false).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
-			}))
-
-		// The CLI drives this conversation, so its credential helper answers.
-		out, err := base.With(withPrivateGitCredentials).With(daggerShell(fmt.Sprintf(
-			`llm --model="%s" | with-tools $(runner) | with-prompt "which commit is the private branch?" | loop | transcript`,
-			model,
-		))).Stdout(ctx)
-		require.NoError(t, err)
-		require.Regexp(t, `commit: [0-9a-f]{40}`, out)
-	})
-
-	t.Run("a module-driven private git URL needs the owner's approval", func(ctx context.Context, t *testctx.T) {
-		addr := privateGitAddress(ctx, t, c) + "#main"
-		const prompt = "which commit is the delegated private branch?"
-		model := cannedRecordingModel(ctx, t, c, c.LLM().
-			WithPrompt(prompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "commitOf",
-					Arguments: dagger.JSON(fmt.Sprintf(`{"ref":%q}`, addr))},
-			}).
-			WithToolResult("call_1", "", false).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
-			}))
-
-		// The runner module drives this conversation, as a module spawning a
-		// worker does: its address may read with the CLI's credentials, but
-		// only once the CLI approves, which a non-interactive CLI cannot.
-		// Without the owner's credentials it would fail authentication.
-		out, err := base.With(withPrivateGitCredentials).With(daggerShell(fmt.Sprintf(
-			`runner | delegate --model="%s" --prompt=%q`, model, prompt,
-		))).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "requires approval: owning client cannot prompt (not interactive)")
-		require.NotContains(t, out, "authentication failed")
-		require.NotRegexp(t, `commit: [0-9a-f]{40}`, out)
-	})
-
-	t.Run("an approved module-driven private git URL reads with the owner's credentials", func(ctx context.Context, t *testctx.T) {
-		addr := privateGitAddress(ctx, t, c) + "#main"
-		const prompt = "which commit is the approved private branch?"
-		model := cannedRecordingModel(ctx, t, c, c.LLM().
-			WithPrompt(prompt).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "commitOf",
-					Arguments: dagger.JSON(fmt.Sprintf(`{"ref":%q}`, addr))},
-			}).
-			WithToolResult("call_1", "", false).
-			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
-			}))
-
-		// Answering the approval prompt takes a terminal, so run the CLI on
-		// the host with a PTY, its credential helper in its global config.
-		workdir := t.TempDir()
-		initGitRepo(ctx, t, workdir)
-		require.NoError(t, os.CopyFS(workdir, os.DirFS(filepath.Join("testdata", "workspaces", "workspace-addressable-args"))))
-		gitConfig := filepath.Join(t.TempDir(), "gitconfig")
-		require.NoError(t, os.WriteFile(gitConfig, []byte(fmt.Sprintf(
-			"[credential]\n\thelper = \"!f() { echo username=x-access-token; echo password=%s; }; f\"\n", privateGitToken)), 0o600))
-
-		console, err := newTUIConsole(t, 60*time.Second)
-		require.NoError(t, err)
-		defer console.Close()
-		tty := console.Tty()
-		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 200}))
-		cmd := hostDaggerCommand(ctx, t, workdir, "-c",
-			fmt.Sprintf(`runner | delegate --model="%s" --prompt=%q`, model, prompt))
-		cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL="+gitConfig)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
-		require.NoError(t, cmd.Start())
-
-		_, err = console.ExpectString("Allow an agent to read")
-		require.NoError(t, err)
-		_, err = console.SendLine("y")
-		require.NoError(t, err)
-		_, err = console.ExpectString("commit: ")
-		require.NoError(t, err)
-		go console.ExpectEOF()
-		require.NoError(t, cmd.Wait())
-	})
-
 	t.Run("an encoded Container ID round-trips", func(ctx context.Context, t *testctx.T) {
 		const marker = "address-lift round-trip"
 		ctrID, err := c.Container().From(alpineImage).
@@ -1947,19 +1854,267 @@ func (LLMSuite) TestAddressableToolArgs(ctx context.Context, t *testctx.T) {
 	})
 }
 
-// privateGitToken authenticates every request to privateGitAddress's
-// repository; withPrivateGitCredentials hands it to the CLI's credential
-// helper.
+// TestPrivateGitToolArgs covers model-supplied URLs of private repositories:
+// the agent's owner (the CLI) authenticates them with its own credential
+// helper. A conversation the CLI drives reads silently; one a module drives
+// (as a worker spawned by a module is) needs the owner's approval per remote,
+// and a denial holds only for that attempt.
+func (LLMSuite) TestPrivateGitToolArgs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-addressable-args")
+	remote := privateGitHTTPRemote(ctx, t, c)
+	addr := remote.url + "#main"
+	// commitOf the private ref, once per tool call.
+	recording := func(prompt string, calls int) string {
+		llm := c.LLM().WithPrompt(prompt)
+		for i := range calls {
+			id := fmt.Sprintf("call_%d", i+1)
+			llm = llm.WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: "commitOf",
+					Arguments: dagger.JSON(fmt.Sprintf(`{"ref":%q}`, addr))},
+			}).WithToolResult(id, "", false)
+		}
+		return cannedRecordingModel(ctx, t, c, llm.WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+	}
+
+	t.Run("the CLI's conversation reads with its credentials", func(ctx context.Context, t *testctx.T) {
+		const prompt = "which commit is the private branch?"
+		out, err := base.With(remote.cli).With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-tools $(runner) | with-prompt %q | loop | transcript`,
+			recording(prompt, 1), prompt,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `commit: [0-9a-f]{40}`, out)
+	})
+
+	t.Run("a module's conversation needs the owner's approval", func(ctx context.Context, t *testctx.T) {
+		// The runner module drives this conversation, as a module spawning a
+		// worker does: a non-interactive CLI cannot approve. Without the
+		// owner's credentials it would fail authentication.
+		const prompt = "which commit is the delegated private branch?"
+		out, err := base.With(remote.cli).With(daggerShell(fmt.Sprintf(
+			`runner | delegate --model="%s" --prompt=%q`, recording(prompt, 1), prompt,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "requires approval: owning client cannot prompt (not interactive)")
+		require.NotContains(t, out, "authentication failed")
+		require.NotRegexp(t, `commit: [0-9a-f]{40}`, out)
+	})
+
+	t.Run("an approved module's conversation reads with the owner's credentials", func(ctx context.Context, t *testctx.T) {
+		// Answering the prompt takes a terminal, so run the CLI on the host
+		// under a PTY. The model tries twice: the first attempt is denied,
+		// and the denial must not stick.
+		const prompt = "which commit is the approved private branch?"
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+		require.NoError(t, os.CopyFS(workdir, os.DirFS(filepath.Join("testdata", "workspaces", "workspace-addressable-args"))))
+
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+		tty := console.Tty()
+		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 200}))
+		cmd := hostDaggerCommand(ctx, t, workdir, "-c",
+			fmt.Sprintf(`runner | delegate --model="%s" --prompt=%q`, recording(prompt, 2), prompt))
+		cmd.Env = append(cmd.Env, remote.hostEnv(t)...)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
+		require.NoError(t, cmd.Start())
+
+		// The TUI redraws a prompt while it is open, so wait for each answer
+		// to land before expecting the next prompt.
+		for _, answer := range []string{"n", "y"} {
+			_, err = console.ExpectString("Allow an agent to read")
+			require.NoError(t, err)
+			_, err = console.SendLine(answer)
+			require.NoError(t, err)
+			if answer == "n" {
+				_, err = console.ExpectString("was denied by the owning client")
+				require.NoError(t, err)
+			}
+		}
+		_, err = console.ExpectString("commit: ")
+		require.NoError(t, err)
+		go console.ExpectEOF()
+		require.NoError(t, cmd.Wait())
+	})
+}
+
+// TestPrivateGitToolArgsFromWorkspaceRemote covers a module-driven agent
+// bound to a checkout of a private repository: another ref of that same
+// repository resolves through the checkout's own authenticated repository, so
+// it needs no approval, whichever spelling of the URL the model uses.
+func (LLMSuite) TestPrivateGitToolArgsFromWorkspaceRemote(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-addressable-args")
+	remote := privateGitHTTPRemote(ctx, t, c)
+
+	const prompt = "which commit is the other branch?"
+	// Not the URL the workspace was checked out from, but the same remote.
+	addr := strings.TrimSuffix(remote.url, ".git") + "/#other"
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt(prompt).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "commitOf",
+				Arguments: dagger.JSON(fmt.Sprintf(`{"ref":%q}`, addr))},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+
+	// The CLI checks out main with its own credentials; the runner module's
+	// conversation, bound to that checkout, reads other. A non-interactive
+	// CLI could not approve a new credential grant, so success shows none
+	// was needed.
+	out, err := base.With(remote.cli).With(daggerShell(fmt.Sprintf(
+		`runner | delegate-in --model="%s" --prompt=%q --source=%q`, model, prompt, remote.url+"#main",
+	))).Stdout(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, out, "requires approval")
+	require.Regexp(t, `commit: [0-9a-f]{40}`, out)
+}
+
+// TestPrivateGitToolArgsFromLocalCheckout covers the same shortcut for a
+// workspace whose repository is owned storage derived from the private
+// repository: a local checkout whose main has a commit the remote's lacks. The
+// URL names the remote, so <remote>#main must be the remote's main, not the
+// checkout's own, still without a new credential grant. A commit SHA names the
+// same commit anywhere, so the checkout's unpushed commit still resolves by
+// SHA.
+func (LLMSuite) TestPrivateGitToolArgsFromLocalCheckout(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	remote := privateGitHTTPRemote(ctx, t, c)
+	checkout := workspaceFixture(t, c, "workspace-addressable-args").
+		With(remote.cli).
+		WithExec([]string{"sh", "-euxc", `
+git remote add origin "$1"
+git fetch -q origin
+git checkout -q -b main origin/main
+git add -A
+git commit -q -m local
+# A local branch named like a remote one, at another commit.
+git branch other main
+`, "sh", remote.url})
+	revParse := func(rev string) string {
+		out, err := checkout.WithExec([]string{"git", "rev-parse", rev}).Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	localMain, remoteMain, remoteOther := revParse("main"), revParse("origin/main"), revParse("origin/other")
+	require.NotEqual(t, localMain, remoteMain)
+	require.NotEqual(t, localMain, remoteOther)
+
+	for _, tc := range []struct {
+		name string
+		// source is the GitRef the runner module's conversation is bound to.
+		source string
+	}{
+		{
+			// A snapshot of the CLI's checkout, as a worker spawned from the
+			// user's workspace is bound to: storage reconstructed from a
+			// bundle of the unpushed commit, holding no branches.
+			name:   "snapshot",
+			source: `$(current-workspace | snapshot | git | head)`,
+		},
+		{
+			// The whole checkout as the remote's storage: its local main and
+			// other branches are at the unpushed commit, and must not shadow
+			// the remote's.
+			name:   "local branches",
+			source: fmt.Sprintf(`$(git %q | with-contents $(host | directory .) | head)`, remote.url),
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			const prompt = "which commits are main and other?"
+			llm := c.LLM().WithPrompt(prompt)
+			for i, addr := range []string{
+				remote.url + "#main",
+				strings.TrimSuffix(remote.url, ".git") + "/#other",
+				// An unpushed commit, abbreviated: the checkout's own
+				// objects have it.
+				remote.url + "#" + localMain[:12],
+			} {
+				id := fmt.Sprintf("call_%d", i+1)
+				llm = llm.WithResponse([]dagger.LLMContentBlockInput{
+					{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: "commitOf",
+						Arguments: dagger.JSON(fmt.Sprintf(`{"ref":%q}`, addr))},
+				}).WithToolResult(id, "", false)
+			}
+			model := cannedRecordingModel(ctx, t, c, llm.WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+			// A non-interactive CLI could not approve a new credential grant,
+			// so success shows none was needed.
+			out, err := checkout.With(daggerShell(fmt.Sprintf(
+				`runner | delegate-in --model="%s" --prompt=%q --source=%s`, model, prompt, tc.source,
+			))).Stdout(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, out, "requires approval")
+			require.Contains(t, out, "commit: "+remoteMain)
+			require.Contains(t, out, "commit: "+remoteOther)
+			// Only the abbreviated SHA resolves to the checkout's own main.
+			require.Equal(t, 1, strings.Count(out, "commit: "+localMain))
+		})
+	}
+}
+
+// privateGitRemote is a repository that rejects anonymous reads, with the
+// credentials to read it as a CLI would hold them.
+type privateGitRemote struct {
+	// url is reachable from the engine without a service binding, which a
+	// model-supplied URL cannot carry: the service's IP address.
+	url string
+	// cli configures a containerized CLI with the credentials.
+	cli dagger.WithContainerFunc
+	// hostEnv configures a CLI run on the test host with the credentials.
+	hostEnv func(*testctx.T) []string
+}
+
 const privateGitToken = "agent-read-token"
 
-// privateGitAddress serves a repository whose reads require credentials, and
-// returns a URL a model can supply for it: an IP address, which the engine
-// reaches without the service binding a bare URL cannot carry.
-func privateGitAddress(ctx context.Context, t *testctx.T, c *dagger.Client) string {
+func privateGitHTTPRemote(ctx context.Context, t *testctx.T, c *dagger.Client) privateGitRemote {
 	t.Helper()
-	content := c.Directory().WithNewFile("README", "private")
+	// main, plus a branch "other" a workspace checked out at main lacks.
+	content := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/repo").
+		WithExec([]string{"sh", "-euxc", `
+git init -b main
+git config user.email root@localhost
+git config user.name Test
+echo private > README
+git add README
+git commit -m init
+git checkout -b other
+echo other > OTHER
+git add OTHER
+git commit -m other
+git checkout main
+`}).
+		Directory("/repo")
 	svc, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", makeGitDir(c, content, "main"), "",
 		c.SetSecret("agent-read-token", privateGitToken))
+	helper := fmt.Sprintf("!f() { echo username=x-access-token; echo password=%s; }; f", privateGitToken)
+	return privateGitRemote{
+		url: "http://" + startedServiceIP(ctx, t, c, svc) + "/repo.git",
+		cli: func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithExec([]string{"git", "config", "--global", "credential.helper", helper})
+		},
+		hostEnv: func(t *testctx.T) []string {
+			gitConfig := filepath.Join(t.TempDir(), "gitconfig")
+			require.NoError(t, os.WriteFile(gitConfig, []byte(fmt.Sprintf("[credential]\n\thelper = %q\n", helper)), 0o600))
+			return []string{"GIT_CONFIG_GLOBAL=" + gitConfig}
+		},
+	}
+}
+
+// startedServiceIP starts svc for the rest of the test and returns its IP.
+func startedServiceIP(ctx context.Context, t *testctx.T, c *dagger.Client, svc *dagger.Service) string {
+	t.Helper()
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = svc.Stop(ctx) })
@@ -1971,10 +2126,5 @@ func privateGitAddress(ctx context.Context, t *testctx.T, c *dagger.Client) stri
 	require.NoError(t, err)
 	fields := strings.Fields(hosts)
 	require.NotEmpty(t, fields, "unexpected getent output: %q", hosts)
-	return "http://" + fields[0] + "/repo.git"
-}
-
-func withPrivateGitCredentials(ctr *dagger.Container) *dagger.Container {
-	return ctr.WithExec([]string{"git", "config", "--global", "credential.helper",
-		fmt.Sprintf("!f() { echo username=x-access-token; echo password=%s; }; f", privateGitToken)})
+	return fields[0]
 }
