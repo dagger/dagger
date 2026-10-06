@@ -172,6 +172,11 @@ type DB struct {
 	// finally see them
 	seenSpans map[SpanID]struct{}
 
+	// unsentAncestors holds ancestors of surfaced spans (see
+	// Span.IsSurfacedKind) that UpdatedSnapshots needed to send but couldn't,
+	// because they hadn't been received yet; they're sent once they arrive.
+	unsentAncestors map[SpanID]struct{}
+
 	pendingResumeOutputs map[resumeOutputKey]SpanSet
 	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
 	resolvedLogsBySpan   map[SpanID][]sdklog.Record
@@ -262,6 +267,8 @@ func NewDB() *DB {
 		updatedSpans: NewOrderedSet(spanKeyFunc),
 		seenSpans:    make(map[SpanID]struct{}),
 
+		unsentAncestors: make(map[SpanID]struct{}),
+
 		pendingResumeOutputs: make(map[resumeOutputKey]SpanSet),
 		pendingLogsByOutput:  make(map[resumeOutputKey][]sdklog.Record),
 		resolvedLogsBySpan:   make(map[SpanID][]sdklog.Record),
@@ -306,6 +313,13 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			// always include revealed spans and their parents
 			return true
 		}
+		if db.needsAncestors(span) {
+			// always include spans that dagui surfaces regardless of where
+			// they sit (conversation messages, agents, checks, generators,
+			// tests), along with their ancestor chain (see below), which
+			// reveal bubbling used to take care of
+			return true
+		}
 		if span.HasProgress() || len(span.ProgressSpans.Order) > 0 {
 			// always include progress-carrying spans and their ancestor
 			// chain, so remote frontends can place them in the tree even
@@ -323,24 +337,72 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 		}
 		return false
 	})
+	// A surfaced span is only useful to a remote frontend if it can be placed
+	// in the tree: dagui's containment and roll-up rules walk its ancestors.
+	included := make(map[SpanID]bool, len(snapshots))
+	for _, snapshot := range snapshots {
+		included[snapshot.ID] = true
+	}
+	snapshots = db.appendSurfacedAncestors(snapshots, included)
 	for spanID := range filter {
 		span := db.Spans.Map[spanID]
 		if span == nil {
 			continue
 		}
-		if !db.hasSeen(spanID) {
+		if !db.hasSeen(spanID) && !included[spanID] {
+			included[spanID] = true
 			snapshots = append(snapshots, span.Snapshot())
 		}
 		for p := range span.Parents {
-			if !db.hasSeen(p.ID) {
+			if !db.hasSeen(p.ID) && !included[p.ID] {
+				included[p.ID] = true
 				snapshots = append(snapshots, p.Snapshot())
 			}
 		}
 	}
 	for _, snapshot := range snapshots {
 		db.seen(snapshot.ID)
+		if span := db.Spans.Map[snapshot.ID]; span != nil && span.Received {
+			delete(db.unsentAncestors, snapshot.ID)
+		}
 	}
 	db.updatedSpans = NewOrderedSet(spanKeyFunc)
+	return snapshots
+}
+
+// needsAncestors reports whether UpdatedSnapshots must forward the span along
+// with any of its ancestors the frontend hasn't seen: a surfaced span, or an
+// ancestor of one that couldn't be sent before it was received.
+func (db *DB) needsAncestors(span *Span) bool {
+	if span.IsSurfacedKind() {
+		return true
+	}
+	_, unsent := db.unsentAncestors[span.ID]
+	return unsent
+}
+
+// appendSurfacedAncestors appends, for each snapshot that needsAncestors, its
+// ancestors the frontend hasn't seen and that aren't already included. An
+// ancestor that hasn't been received yet is remembered instead, and sent
+// (with its own ancestors) once it arrives.
+func (db *DB) appendSurfacedAncestors(snapshots []SpanSnapshot, included map[SpanID]bool) []SpanSnapshot {
+	for _, snapshot := range snapshots {
+		span := db.Spans.Map[snapshot.ID]
+		if span == nil || !db.needsAncestors(span) {
+			continue
+		}
+		for p := range span.Parents {
+			if !p.Received {
+				db.unsentAncestors[p.ID] = struct{}{}
+				continue
+			}
+			if included[p.ID] || db.hasSeen(p.ID) {
+				continue
+			}
+			included[p.ID] = true
+			snapshots = append(snapshots, p.Snapshot())
+		}
+	}
 	return snapshots
 }
 
