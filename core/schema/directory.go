@@ -706,6 +706,7 @@ type dirWithTimestampsArgs struct {
 	Timestamp int
 }
 
+//nolint:dupl // symmetric with fileSchema.chown; each builds its own lazy object type
 func (s *directorySchema) withTimestamps(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirWithTimestampsArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1049,26 +1050,7 @@ type withoutDirectoryArgs struct {
 }
 
 func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
-	}
-
-	dir := &core.Directory{
-		Platform: parent.Self().Platform,
-		Services: slices.Clone(parent.Self().Services),
-		Lazy: &core.DirectoryWithoutLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Paths:     []string{args.Path},
-		},
-		Dir:      new(core.LazyAccessor[string, *core.Directory]),
-		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
-	}
-	if parentDir, ok := parent.Self().Dir.Peek(); ok {
-		dir.SetPath(parentDir)
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	return s.withoutPath(ctx, parent, args.Path)
 }
 
 type withoutFileArgs struct {
@@ -1076,6 +1058,12 @@ type withoutFileArgs struct {
 }
 
 func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	return s.withoutPath(ctx, parent, args.Path)
+}
+
+// withoutPath backs withoutDirectory and withoutFile, which only differ in
+// their API argument types.
+func (s *directorySchema) withoutPath(ctx context.Context, parent dagql.ObjectResult[*core.Directory], path string) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
@@ -1087,7 +1075,7 @@ func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		Lazy: &core.DirectoryWithoutLazy{
 			LazyState: core.NewLazyState(),
 			Parent:    parent,
-			Paths:     []string{args.Path},
+			Paths:     []string{path},
 		},
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),

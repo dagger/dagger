@@ -2605,9 +2605,9 @@ func (s *moduleSourceSchema) buildModuleConfig(
 	if src.SDK != nil {
 		modCfg.SDK = &modules.SDK{
 			Source:       src.SDK.Source,
-			Debug:        src.SDK.Debug,
-			Config:       src.SDK.Config,
-			Experimental: src.SDK.Experimental,
+			Debug:        src.SDK.Debug,        //nolint:staticcheck // deprecated; written back for legacy JSON config compat
+			Config:       src.SDK.Config,       //nolint:staticcheck // deprecated; written back for legacy JSON config compat
+			Experimental: src.SDK.Experimental, //nolint:staticcheck // deprecated; written back for legacy JSON config compat
 		}
 	}
 
