@@ -87,6 +87,9 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 	if cm.snapshotOwnerLeases == nil {
 		cm.snapshotOwnerLeases = make(map[string]map[string]struct{})
 	}
+	if cm.ownerLeaseSnapshots == nil {
+		cm.ownerLeaseSnapshots = make(map[string]map[string]struct{})
+	}
 
 	return nil
 }
@@ -211,6 +214,10 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 			cm.snapshotOwnerLeases[currentSnapshotID] = make(map[string]struct{})
 		}
 		cm.snapshotOwnerLeases[currentSnapshotID][leaseID] = struct{}{}
+		if cm.ownerLeaseSnapshots[leaseID] == nil {
+			cm.ownerLeaseSnapshots[leaseID] = make(map[string]struct{})
+		}
+		cm.ownerLeaseSnapshots[leaseID][currentSnapshotID] = struct{}{}
 	}
 
 	// AddResource does not check whether a target still exists. GC can finish
@@ -242,12 +249,14 @@ func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) erro
 	}
 
 	cm.mu.Lock()
-	for snapshotID, leaseIDs := range cm.snapshotOwnerLeases {
+	for snapshotID := range cm.ownerLeaseSnapshots[leaseID] {
+		leaseIDs := cm.snapshotOwnerLeases[snapshotID]
 		delete(leaseIDs, leaseID)
 		if len(leaseIDs) == 0 {
 			delete(cm.snapshotOwnerLeases, snapshotID)
 		}
 	}
+	delete(cm.ownerLeaseSnapshots, leaseID)
 	cm.mu.Unlock()
 
 	return nil

@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Pruning a large local cache no longer stalls the engine: removing a result's
+  owner lease used to scan every snapshot in the manager while holding the
+  snapshot metadata lock, so a routine GC pass could run for tens of minutes
+  with live sessions and the disk-pressure collector queued behind it. Lease
+  removal now walks only the snapshots that lease actually owns.
+time: 2026-10-06T15:08:00Z
+custom:
+  Author: goingforstudying-ctrl
