@@ -21,21 +21,25 @@ type gitPushApprovalKey struct {
 	force              bool
 }
 
-type gitPushApproval struct {
+type gitApproval struct {
 	done    chan struct{}
 	allowed bool
 	err     error
 }
 
-// Lives only in daggerSession, never in a result, recipe, or client prompt key.
-// Only grants are remembered: a "no" is often a course correction, so a later
-// attempt asks again. Concurrent requests still share the one prompt in flight.
-type gitPushApprovals struct {
+// gitApprovals remembers an owner's answers to one kind of Git approval prompt,
+// keyed by what was approved. It lives only in daggerSession, never in a
+// result, recipe, or client prompt key. Only grants are remembered: a "no" is
+// often a course correction, so a later attempt asks again. Concurrent
+// requests still share the one prompt in flight.
+type gitApprovals[K comparable] struct {
 	mu        sync.Mutex
-	decisions map[gitPushApprovalKey]*gitPushApproval
+	decisions map[K]*gitApproval
 }
 
-func (a *gitPushApprovals) check(ctx context.Context, key gitPushApprovalKey, ask func(context.Context) (bool, error)) (bool, error) {
+type gitPushApprovals = gitApprovals[gitPushApprovalKey]
+
+func (a *gitApprovals[K]) check(ctx context.Context, key K, ask func(context.Context) (bool, error)) (bool, error) {
 	a.mu.Lock()
 	if decision, ok := a.decisions[key]; ok {
 		a.mu.Unlock()
@@ -46,9 +50,9 @@ func (a *gitPushApprovals) check(ctx context.Context, key gitPushApprovalKey, as
 			return decision.allowed, decision.err
 		}
 	}
-	decision := &gitPushApproval{done: make(chan struct{})}
+	decision := &gitApproval{done: make(chan struct{})}
 	if a.decisions == nil {
-		a.decisions = make(map[gitPushApprovalKey]*gitPushApproval)
+		a.decisions = make(map[K]*gitApproval)
 	}
 	a.decisions[key] = decision
 	a.mu.Unlock()

@@ -205,7 +205,7 @@ type daggerSession struct {
 	allowedLLMModules []string
 
 	gitPushApprovals gitPushApprovals
-	gitReadApprovals gitPushApprovals
+	gitReadApprovals gitReadApprovals
 
 	lockFiles  map[workspaceLockKey]*workspaceLockState
 	lockFileMu sync.RWMutex
