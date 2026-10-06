@@ -1,10 +1,10 @@
 kind: Fixed
 body: |
   Git repositories derived from a remote, such as a dirty or unpushed workspace
-  snapshot or a commit on a remote workspace, now resolve refs they do not
-  contain through that remote with its original authentication. Agent tools can
-  fetch other branches of a private repository from the workspace they were
-  given.
+  snapshot or a commit on a remote workspace, now resolve refs and commits they
+  do not contain through that remote with its original authentication, and list
+  its branches and tags. Agent tools can fetch other branches of a private
+  repository from the workspace they were given.
 time: 2026-09-30T21:40:00Z
 custom:
   Author: vito

@@ -10972,8 +10972,9 @@ class GitRepository(Type):
             walk needs. Other git revision syntax (`^{...}`, `@{...}`,
             `:path`, ranges) is not supported.
             A repository derived from a remote one (e.g. a workspace's history
-            after a snapshot or commit) resolves names it does not contain
-            itself through that remote, with its authentication.
+            after a snapshot or commit) resolves names and commits it does not
+            contain itself through that remote, with its authentication. Its
+            branches and tags listings include the remote's.
         no_lock:
             Ignore the workspace lockfile for this lookup.
         """

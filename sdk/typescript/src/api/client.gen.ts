@@ -12286,7 +12286,7 @@ export class GitRepository extends BaseClient {
    *
    * The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
    *
-   * A repository derived from a remote one (e.g. a workspace's history after a snapshot or commit) resolves names it does not contain itself through that remote, with its authentication.
+   * A repository derived from a remote one (e.g. a workspace's history after a snapshot or commit) resolves names and commits it does not contain itself through that remote, with its authentication. Its branches and tags listings include the remote's.
    * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */
   ref = (name: string, opts?: GitRepositoryRefOpts): GitRef => {

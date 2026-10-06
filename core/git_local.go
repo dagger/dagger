@@ -199,6 +199,22 @@ func (repo *LocalGitRepository) resolveShortSHA(ctx context.Context, prefix stri
 	return sha, nil
 }
 
+// HasCommit reports whether the repository's raw storage contains the commit.
+// It never hydrates: a commit beyond an owned shallow boundary is absent.
+func (repo *LocalGitRepository) HasCommit(ctx context.Context, sha string) (bool, error) {
+	var has bool
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		// --quiet: a missing commit is an answer, not an error worth logging.
+		out, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", "--quiet", sha+"^{commit}")
+		if err != nil {
+			return err
+		}
+		has = strings.EqualFold(strings.TrimSpace(string(out)), sha)
+		return nil
+	})
+	return has, err
+}
+
 func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*File, error) {
 	var gitDir string
 	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {

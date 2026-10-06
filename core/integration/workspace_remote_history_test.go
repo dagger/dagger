@@ -121,7 +121,40 @@ func (WorkspaceSuite) TestWorkspaceRemoteCommitResolvesUpstreamRefs(ctx context.
 	require.NoError(t, err)
 	require.Equal(t, fixture.git(ctx, t, "rev-parse", "main"), base)
 
+	// Revisions of a remote-only name walk the remote's history, and SHAs read
+	// from remote-resolved refs can be passed back in: the storage lacks those
+	// commits, so they resolve through the remote too.
+	divergentSHA := fixture.git(ctx, t, "rev-parse", "divergent")
+	for name, want := range map[string]string{
+		"divergent^0":       divergentSHA,
+		"divergent~1":       fixture.git(ctx, t, "rev-parse", "old"),
+		divergentSHA:        divergentSHA,
+		divergentSHA + "~1": fixture.git(ctx, t, "rev-parse", "old"),
+	} {
+		got, err := repo.Ref(name).CommitSHA(ctx)
+		require.NoError(t, err, name)
+		require.Equal(t, want, got, name)
+	}
+	contents, err = repo.Ref(divergentSHA).Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("divergent.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "divergent\n", contents)
+	contents, err = repo.Commit(divergentSHA).Tree(dagger.GitCommitTreeOpts{DiscardGitDir: true}).File("divergent.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "divergent\n", contents)
+
+	// Listings include the names ref resolves through the remote.
+	branches, err := repo.Branches(ctx)
+	require.NoError(t, err)
+	require.Subset(t, branches, []string{"main", "divergent", "side"})
+	tags, err := repo.Tags(ctx)
+	require.NoError(t, err)
+	require.Subset(t, tags, []string{"old", "merge"})
+	tags, err = repo.Tags(ctx, dagger.GitRepositoryTagsOpts{Patterns: []string{"refs/tags/m*"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"merge"}, tags)
+
 	_, err = repo.Ref("missing").CommitSHA(ctx)
+	require.ErrorContains(t, err, `ref "missing" not found locally`)
 	require.ErrorContains(t, err, `does not contain ref "missing"`)
 }
 
