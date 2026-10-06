@@ -16,8 +16,8 @@ type agentAddressKey struct{}
 // WithAgentAddressResolution marks ctx as resolving an external address an
 // agent's model supplied as a tool argument. Git may then authenticate the
 // read with the agent owner's credentials, with their approval when a module
-// drives the agent (see Server.AuthorizeGitRead). Only the address lookup is
-// marked, never the tool's own execution.
+// drives the agent or the read is over SSH (see Server.AuthorizeGitRead). Only
+// the address lookup is marked, never the tool's own execution.
 func WithAgentAddressResolution(ctx context.Context) context.Context {
 	return context.WithValue(ctx, agentAddressKey{}, true)
 }

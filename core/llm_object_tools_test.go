@@ -343,7 +343,9 @@ func TestObjectMethodSchema(t *testing.T) {
 		require.Contains(t, desc, "dag://<module>/")
 		require.Contains(t, desc, "FindArtifacts lists what exists")
 		require.Contains(t, desc, "or a "+want.typeName+" ID from a prior tool result")
-		for _, hostForm := range []string{"tcp://", "udp://", "ssh://", "file://", "local"} {
+		// ssh:// is a remote git URL, not a host form: Query.git lends the
+		// owner's SSH agent only as it authorizes.
+		for _, hostForm := range []string{"tcp://", "udp://", "file://", "local"} {
 			require.NotContains(t, desc, hostForm, field)
 		}
 	}
@@ -1159,13 +1161,13 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 		// lookup would fail differently).
 		withDirField := fieldByName(srv.Schema().Types["LiftTestRunner"], "withDir")
 		require.NotNil(t, withDirField)
-		for _, addr := range []string{"/etc", "file:///etc", "git@github.com:org/repo"} {
+		for _, addr := range []string{"/etc", "file:///etc", "./src"} {
 			_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), withDirField, map[string]any{
 				"dir": addr,
 			})
 			require.Error(t, err)
 			require.Contains(t, err.Error(), fmt.Sprintf("%q is not a Directory ID or an accepted Directory address", addr))
-			require.Contains(t, err.Error(), "https://, http:// or git:// git URL or a dag:// address")
+			require.Contains(t, err.Error(), "only a remote git URL (https://, http://, git://, ssh:// or git@host:path) or a dag:// address")
 			require.NotContains(t, err.Error(), "nor a resolvable")
 		}
 	})
@@ -1192,15 +1194,16 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 // TestCheckLiftableAddress covers the forms a model may supply for a liftable
 // arg: dag:// addresses and forms whose decoding stays off the calling
 // client's host. Everything the Address decoders would read from the host —
-// local paths, file:// URLs, ssh git URLs (the client's SSH agent), tcp://
-// tunnels — is refused before decoding.
+// local paths, file:// URLs, tcp:// tunnels — is refused before decoding.
+// Remote git URLs, ssh:// and scp-style included, lift: Query.git decides
+// whose credentials they may use (Server.AuthorizeGitRead).
 func TestCheckLiftableAddress(t *testing.T) {
 	accepted := map[string][]string{
 		"Container":     {"golang:1.26", "registry.example.com/org/img@sha256:abc", "dag://mod/ctr"},
-		"Directory":     {"https://github.com/org/repo#main:docs", "git://example.com/repo", "http://example.com/repo.git", "dag://staff/members/workspace?member=chief"},
-		"File":          {"https://github.com/org/repo#main:README.md", "dag+file://mod/readme"},
-		"GitRef":        {"https://github.com/org/repo#main", "https://github.com/org/repo", "dag://staff/members/head?member=chief", "dag+git-ref://committer/saved/head?saved-workspace=abc"},
-		"GitRepository": {"https://github.com/org/repo", "dag://mod/repo"},
+		"Directory":     {"https://github.com/org/repo#main:docs", "git://example.com/repo", "http://example.com/repo.git", "ssh://git@github.com/org/repo", "git@github.com:org/repo.git", "dag://staff/members/workspace?member=chief"},
+		"File":          {"https://github.com/org/repo#main:README.md", "git@github.com:org/repo#main:README.md", "dag+file://mod/readme"},
+		"GitRef":        {"https://github.com/org/repo#main", "https://github.com/org/repo", "ssh://git@github.com/org/repo#main", "git@github.com:org/repo#main", "dag://staff/members/head?member=chief", "dag+git-ref://committer/saved/head?saved-workspace=abc"},
+		"GitRepository": {"https://github.com/org/repo", "git@github.com:org/repo", "dag://mod/repo"},
 		"Service":       {"dag://mod/server"},
 	}
 	for typeName, addrs := range accepted {
@@ -1210,10 +1213,10 @@ func TestCheckLiftableAddress(t *testing.T) {
 	}
 
 	refused := map[string][]string{
-		"Directory":     {".", "/etc", "./src", "~/secrets", "file:///etc", "file:.", "ssh://git@github.com/org/repo", "git@github.com:org/repo.git"},
-		"File":          {"/etc/passwd", "README.md", "file:///etc/passwd", "git@github.com:org/repo#main:README.md"},
-		"GitRef":        {".", "/home/me/repo#main", "file:///home/me/repo#main", "ssh://git@github.com/org/repo#main", "git@github.com:org/repo#main"},
-		"GitRepository": {".", "../other", "file:///home/me/repo", "git@github.com:org/repo"},
+		"Directory":     {".", "/etc", "./src", "~/secrets", "file:///etc", "file:."},
+		"File":          {"/etc/passwd", "README.md", "file:///etc/passwd"},
+		"GitRef":        {".", "/home/me/repo#main", "file:///home/me/repo#main"},
+		"GitRepository": {".", "../other", "file:///home/me/repo"},
 		"Service":       {"tcp://localhost:8080", "udp://127.0.0.1:53", "localhost:8080"},
 	}
 	for typeName, addrs := range refused {

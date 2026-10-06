@@ -806,10 +806,17 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			// has one. Normally that's the current client; for trusted module
 			// dependency/SDK resolution running under a nested client without a
 			// socket (e.g. a codegen exec during `dagger generate`), fall back to the
-			// session's originating client.
+			// session's originating client. A remote an agent's model supplied uses
+			// the agent owner's, as that owner authorizes.
 			sshSocketCtx := ctx
 			sshAuthSocketPath := clientMetadata.SSHAuthSocketPath
-			if sshAuthSocketPath == "" && core.IsModuleDependencyResolution(ctx) {
+			isTrustedDepResolution := core.IsModuleDependencyResolution(ctx)
+			if core.IsAgentAddressResolution(ctx) && !isTrustedDepResolution {
+				sshSocketCtx, sshAuthSocketPath, err = agentAddressSSHAuth(ctx, parent.Self(), remote)
+				if err != nil {
+					return inst, err
+				}
+			} else if sshAuthSocketPath == "" && isTrustedDepResolution {
 				mainClientMetadata, err := parent.Self().MainClientCallerMetadata(ctx)
 				if err != nil {
 					return inst, err
@@ -1082,6 +1089,35 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		}
 	}
 	return inst, err
+}
+
+// agentAddressSSHAuth returns the SSH agent a model-supplied SSH remote may
+// authenticate with: the agent owner's, once the owner approves the read (see
+// Server.AuthorizeGitRead, which always asks for SSH), along with a context
+// carrying the owner's metadata to scope it under. An owner without
+// SSH_AUTH_SOCK gets an agent prepared for the remote from its configured
+// identities as for push, except that it never prompts to unlock one: a key
+// needing a passphrase fails, telling the user to add it to their SSH agent.
+func agentAddressSSHAuth(ctx context.Context, query *core.Query, remote *gitutil.GitURL) (context.Context, string, error) {
+	owner, err := query.AuthorizeGitRead(ctx, remote.Remote())
+	if err != nil {
+		return nil, "", err
+	}
+	if owner.SSHAuthSocketPath == "" {
+		ownerCtx := engine.ContextWithClientMetadata(ctx, owner)
+		bk, err := query.Engine(ownerCtx)
+		if err != nil {
+			return nil, "", err
+		}
+		path, err := bk.PrepareGitSSHReadAuth(ownerCtx, remote.Remote())
+		if err != nil {
+			return nil, "", fmt.Errorf("prepare SSH authentication: %w", err)
+		}
+		withAgent := *owner
+		withAgent.SSHAuthSocketPath = path
+		owner = &withAgent
+	}
+	return engine.ContextWithClientMetadata(ctx, owner), owner.SSHAuthSocketPath, nil
 }
 
 // gitPerClientInput is dagql.PerClientInput, except that resolving a remote an

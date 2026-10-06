@@ -168,32 +168,81 @@ func TestGitReadApprovalPerModule(t *testing.T) {
 	require.Len(t, s.questions.requests, 3)
 }
 
+func TestGitReadApprovalSSH(t *testing.T) {
+	const (
+		allowed = "git@example.com:org/allowed"
+		denied  = "ssh://git@example.com/org/denied"
+	)
+	const allowedPrompt = "Allow an agent to read " + allowed + " with your SSH keys?"
+	const moduleAllowedPrompt = "Allow an agent to read " + allowed + ` with your SSH keys (requested by module "staff")?`
+	s := newGitReadTestSession(t, map[string]bool{allowedPrompt: true, moduleAllowedPrompt: true})
+
+	// An SSH agent is not scoped to a host, so even the owner's own
+	// conversation asks before offering the owner's keys to a model's choice.
+	for range 2 {
+		md, err := s.srv.AuthorizeGitRead(s.ownerCtx, allowed)
+		require.NoError(t, err)
+		require.Equal(t, s.owner.clientMetadata, md)
+	}
+	require.Equal(t, []string{allowedPrompt}, s.questions.prompts(), "a grant lasts for the session")
+	for range 2 {
+		md, err := s.srv.AuthorizeGitRead(s.ownerCtx, denied)
+		require.ErrorContains(t, err, "denied by the owning client")
+		require.Nil(t, md)
+	}
+	require.Len(t, s.questions.requests, 3, "a denial is not remembered")
+
+	// The owner's own grant is not a module's: a module driving an agent is
+	// asked about separately, by name.
+	for range 2 {
+		md, err := s.srv.AuthorizeGitRead(s.moduleCtx, allowed)
+		require.NoError(t, err)
+		require.Equal(t, s.owner.clientMetadata, md)
+	}
+	require.Len(t, s.questions.requests, 4)
+	require.Equal(t, moduleAllowedPrompt, s.questions.requests[3].Prompt)
+	_, err := s.srv.AuthorizeGitRead(s.moduleCtx, denied)
+	require.ErrorContains(t, err, "denied by the owning client")
+	require.Equal(t, "Allow an agent to read "+denied+` with your SSH keys (requested by module "staff")?`,
+		s.questions.requests[4].Prompt)
+}
+
 func TestGitReadApprovalNormalizesRemote(t *testing.T) {
-	const canonical = "https://example.com/org/repo"
+	const canonical = "ssh://git@example.com/org/repo"
+	const httpsPrompt = `Allow an agent to read https://example.com/org/repo with your Git credentials (requested by module "staff")?`
 	s := newGitReadTestSession(t, map[string]bool{
-		"Allow an agent to read " + canonical + ` with your Git credentials (requested by module "staff")?`: true,
+		"Allow an agent to read " + canonical + " with your SSH keys?": true,
+		httpsPrompt: true,
 	})
 	for _, remote := range []string{
 		canonical,
-		"https://Example.COM/org/repo.git",
-		"https://example.com/org/repo/",
-		"https://example.com/org/repo.git/",
+		"ssh://example.com/org/repo",
+		"ssh://git@Example.COM/org/repo.git",
+		"ssh://git@example.com/org/repo/",
+		"ssh://git@example.com/org/repo.git/",
 	} {
-		_, err := s.srv.AuthorizeGitRead(s.moduleCtx, remote)
+		_, err := s.srv.AuthorizeGitRead(s.ownerCtx, remote)
 		require.NoError(t, err, remote)
 	}
 	require.Len(t, s.questions.requests, 1, "spellings of one repository share a grant")
 
-	// Another scheme, host or path is another grant.
-	for _, remote := range []string{
-		"http://example.com/org/repo",
-		"https://example.org/org/repo",
-		"https://example.com/org/other",
-	} {
+	// HTTPS authenticates with other credentials, so it is approved apart.
+	for _, remote := range []string{"https://EXAMPLE.com/org/repo.git", "https://example.com/org/repo/"} {
 		_, err := s.srv.AuthorizeGitRead(s.moduleCtx, remote)
+		require.NoError(t, err, remote)
+	}
+	require.Len(t, s.questions.requests, 2)
+
+	// Another user, host or path is another grant.
+	for _, remote := range []string{
+		"ssh://deploy@example.com/org/repo",
+		"ssh://git@example.org/org/repo",
+		"ssh://git@example.com/org/other",
+	} {
+		_, err := s.srv.AuthorizeGitRead(s.ownerCtx, remote)
 		require.ErrorContains(t, err, "denied by the owning client", remote)
 	}
-	require.Len(t, s.questions.requests, 4)
+	require.Len(t, s.questions.requests, 5)
 }
 
 func TestGitReadApprovalRejectsRemote(t *testing.T) {
@@ -224,7 +273,7 @@ func TestGitReadApprovalRejectsRemote(t *testing.T) {
 }
 
 func TestGitReadPromptEscapes(t *testing.T) {
-	got := gitReadPrompt("https://example.com/\u202erepo", "mod\x1b[31m")
+	got := gitReadPrompt("https://example.com/\u202erepo", false, "mod\x1b[31m")
 	require.Equal(t, `Allow an agent to read https://example.com/\u202erepo with your Git credentials (requested by module "mod\x1b[31m")?`, got)
 	require.True(t, strings.HasPrefix(got, gitReadPromptPrefix))
 }

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,8 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -1854,92 +1857,123 @@ func (LLMSuite) TestAddressableToolArgs(ctx context.Context, t *testctx.T) {
 	})
 }
 
-// TestPrivateGitToolArgs covers model-supplied URLs of private repositories:
-// the agent's owner (the CLI) authenticates them with its own credential
-// helper. A conversation the CLI drives reads silently; one a module drives
-// (as a worker spawned by a module is) needs the owner's approval per remote,
-// and a denial holds only for that attempt.
+// TestPrivateGitToolArgs covers model-supplied URLs of private repositories,
+// over each transport: the agent's owner (the CLI) authenticates them with its
+// own credentials — a credential helper for HTTP, an SSH agent for SSH. A
+// conversation the CLI drives reads HTTP silently; one a module drives (as a
+// worker spawned by a module is) needs the owner's approval per remote, and a
+// denial holds only for that attempt. SSH always needs approval: an SSH agent
+// offers the owner's keys to whichever host it is pointed at.
 func (LLMSuite) TestPrivateGitToolArgs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-addressable-args")
-	remote := privateGitHTTPRemote(ctx, t, c)
-	addr := remote.url + "#main"
-	// commitOf the private ref, once per tool call.
-	recording := func(prompt string, calls int) string {
-		llm := c.LLM().WithPrompt(prompt)
-		for i := range calls {
-			id := fmt.Sprintf("call_%d", i+1)
-			llm = llm.WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: "commitOf",
-					Arguments: dagger.JSON(fmt.Sprintf(`{"ref":%q}`, addr))},
-			}).WithToolResult(id, "", false)
-		}
-		return cannedRecordingModel(ctx, t, c, llm.WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
-		}))
-	}
 
-	t.Run("the CLI's conversation reads with its credentials", func(ctx context.Context, t *testctx.T) {
-		const prompt = "which commit is the private branch?"
-		out, err := base.With(remote.cli).With(daggerShell(fmt.Sprintf(
-			`llm --model="%s" | with-tools $(runner) | with-prompt %q | loop | transcript`,
-			recording(prompt, 1), prompt,
-		))).Stdout(ctx)
-		require.NoError(t, err)
-		require.Regexp(t, `commit: [0-9a-f]{40}`, out)
-	})
-
-	t.Run("a module's conversation needs the owner's approval", func(ctx context.Context, t *testctx.T) {
-		// The runner module drives this conversation, as a module spawning a
-		// worker does: a non-interactive CLI cannot approve. Without the
-		// owner's credentials it would fail authentication.
-		const prompt = "which commit is the delegated private branch?"
-		out, err := base.With(remote.cli).With(daggerShell(fmt.Sprintf(
-			`runner | delegate --model="%s" --prompt=%q`, recording(prompt, 1), prompt,
-		))).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "requires approval: owning client cannot prompt (not interactive)")
-		require.NotContains(t, out, "authentication failed")
-		require.NotRegexp(t, `commit: [0-9a-f]{40}`, out)
-	})
-
-	t.Run("an approved module's conversation reads with the owner's credentials", func(ctx context.Context, t *testctx.T) {
-		// Answering the prompt takes a terminal, so run the CLI on the host
-		// under a PTY. The model tries twice: the first attempt is denied,
-		// and the denial must not stick.
-		const prompt = "which commit is the approved private branch?"
-		workdir := t.TempDir()
-		initGitRepo(ctx, t, workdir)
-		require.NoError(t, os.CopyFS(workdir, os.DirFS(filepath.Join("testdata", "workspaces", "workspace-addressable-args"))))
-
-		console, err := newTUIConsole(t, 60*time.Second)
-		require.NoError(t, err)
-		defer console.Close()
-		tty := console.Tty()
-		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 200}))
-		cmd := hostDaggerCommand(ctx, t, workdir, "-c",
-			fmt.Sprintf(`runner | delegate --model="%s" --prompt=%q`, recording(prompt, 2), prompt))
-		cmd.Env = append(cmd.Env, remote.hostEnv(t)...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
-		require.NoError(t, cmd.Start())
-
-		// The TUI redraws a prompt while it is open, so wait for each answer
-		// to land before expecting the next prompt.
-		for _, answer := range []string{"n", "y"} {
-			_, err = console.ExpectString("Allow an agent to read")
-			require.NoError(t, err)
-			_, err = console.SendLine(answer)
-			require.NoError(t, err)
-			if answer == "n" {
-				_, err = console.ExpectString("was denied by the owning client")
-				require.NoError(t, err)
+	for _, transport := range []struct {
+		name  string
+		serve func(context.Context, *testctx.T, *dagger.Client) privateGitRemote
+		// ownReadAsks: even the CLI's own conversation needs approval.
+		ownReadAsks bool
+	}{
+		{"http", privateGitHTTPRemote, false},
+		{"ssh", privateGitSSHRemote, true},
+	} {
+		t.Run(transport.name, func(ctx context.Context, t *testctx.T) {
+			remote := transport.serve(ctx, t, c)
+			addr := remote.url + "#main"
+			// commitOf the private ref, once per tool call.
+			recording := func(prompt string, calls int) string {
+				llm := c.LLM().WithPrompt(prompt)
+				for i := range calls {
+					id := fmt.Sprintf("call_%d", i+1)
+					llm = llm.WithResponse([]dagger.LLMContentBlockInput{
+						{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: "commitOf",
+							Arguments: dagger.JSON(fmt.Sprintf(`{"ref":%q}`, addr))},
+					}).WithToolResult(id, "", false)
+				}
+				return cannedRecordingModel(ctx, t, c, llm.WithResponse([]dagger.LLMContentBlockInput{
+					{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+				}))
 			}
-		}
-		_, err = console.ExpectString("commit: ")
-		require.NoError(t, err)
-		go console.ExpectEOF()
-		require.NoError(t, cmd.Wait())
-	})
+			// approveOnHost runs a dagger shell script with the credentials,
+			// answering each read approval prompt in turn. Answering takes a
+			// terminal, so run the CLI on the host under a PTY.
+			approveOnHost := func(ctx context.Context, t *testctx.T, script string, answers ...string) {
+				workdir := t.TempDir()
+				initGitRepo(ctx, t, workdir)
+				require.NoError(t, os.CopyFS(workdir, os.DirFS(filepath.Join("testdata", "workspaces", "workspace-addressable-args"))))
+
+				console, err := newTUIConsole(t, 60*time.Second)
+				require.NoError(t, err)
+				defer console.Close()
+				tty := console.Tty()
+				require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 200}))
+				cmd := hostDaggerCommand(ctx, t, workdir, "-c", script)
+				cmd.Env = append(cmd.Env, remote.hostEnv(t)...)
+				cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
+				require.NoError(t, cmd.Start())
+
+				// The TUI redraws a prompt while it is open, so wait for each
+				// answer to land before expecting the next prompt.
+				for _, answer := range answers {
+					_, err = console.ExpectString("Allow an agent to read")
+					require.NoError(t, err)
+					_, err = console.SendLine(answer)
+					require.NoError(t, err)
+					if answer == "n" {
+						_, err = console.ExpectString("was denied by the owning client")
+						require.NoError(t, err)
+					}
+				}
+				_, err = console.ExpectString("commit: ")
+				require.NoError(t, err)
+				go console.ExpectEOF()
+				require.NoError(t, cmd.Wait())
+			}
+
+			t.Run("the CLI's conversation reads with its credentials", func(ctx context.Context, t *testctx.T) {
+				const prompt = "which commit is the private branch?"
+				script := fmt.Sprintf(`llm --model="%s" | with-tools $(runner) | with-prompt %q | loop | transcript`,
+					recording(prompt, 1), prompt)
+				out, err := base.With(remote.cli).With(daggerShell(script)).Stdout(ctx)
+				require.NoError(t, err)
+				if !transport.ownReadAsks {
+					require.Regexp(t, `commit: [0-9a-f]{40}`, out)
+					return
+				}
+				// A non-interactive CLI cannot approve, and nothing touches
+				// its keys before it does.
+				require.Contains(t, out, "requires approval: owning client cannot prompt (not interactive)")
+				require.NotContains(t, out, "prepare SSH authentication")
+				require.NotRegexp(t, `commit: [0-9a-f]{40}`, out)
+
+				approveOnHost(ctx, t, script, "y")
+			})
+
+			t.Run("a module's conversation needs the owner's approval", func(ctx context.Context, t *testctx.T) {
+				// The runner module drives this conversation, as a module
+				// spawning a worker does: a non-interactive CLI cannot approve.
+				// Without the owner's credentials it would fail authentication.
+				const prompt = "which commit is the delegated private branch?"
+				out, err := base.With(remote.cli).With(daggerShell(fmt.Sprintf(
+					`runner | delegate --model="%s" --prompt=%q`, recording(prompt, 1), prompt,
+				))).Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "requires approval: owning client cannot prompt (not interactive)")
+				require.NotContains(t, out, "authentication failed")
+				require.NotContains(t, out, "without an SSH socket")
+				require.NotRegexp(t, `commit: [0-9a-f]{40}`, out)
+			})
+
+			t.Run("an approved module's conversation reads with the owner's credentials", func(ctx context.Context, t *testctx.T) {
+				// The model tries twice: the first attempt is denied, and the
+				// denial must not stick.
+				const prompt = "which commit is the approved private branch?"
+				approveOnHost(ctx, t,
+					fmt.Sprintf(`runner | delegate --model="%s" --prompt=%q`, recording(prompt, 2), prompt),
+					"n", "y")
+			})
+		})
+	}
 }
 
 // TestPrivateGitToolArgsFromWorkspaceRemote covers a module-driven agent
@@ -2108,6 +2142,68 @@ git checkout main
 			gitConfig := filepath.Join(t.TempDir(), "gitconfig")
 			require.NoError(t, os.WriteFile(gitConfig, []byte(fmt.Sprintf("[credential]\n\thelper = %q\n", helper)), 0o600))
 			return []string{"GIT_CONFIG_GLOBAL=" + gitConfig}
+		},
+	}
+}
+
+func privateGitSSHRemote(ctx context.Context, t *testctx.T, c *dagger.Client) privateGitRemote {
+	t.Helper()
+	keys := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "openssh"}).
+		WithExec([]string{"ssh-keygen", "-t", "ed25519", "-f", "/root/.ssh/host_key", "-N", ""}).
+		WithExec([]string{"ssh-keygen", "-t", "ed25519", "-f", "/root/.ssh/id_ed25519", "-N", ""}).
+		WithExec([]string{"cp", "/root/.ssh/id_ed25519.pub", "/root/.ssh/authorized_keys"})
+	privateKey, err := keys.File("/root/.ssh/id_ed25519").Contents(ctx)
+	require.NoError(t, err)
+	const port = 2222
+	svc := keys.
+		WithNewFile("/root/start.sh", `#!/bin/sh
+set -eux
+git init -b main /root/repo
+cd /root/repo
+echo private > README
+git add README
+git -c user.email=root@localhost -c user.name=Test commit -m init
+chmod 0600 /root/.ssh/host_key
+exec $(which sshd) -D -e -h /root/.ssh/host_key -p 2222
+`).
+		WithExposedPort(port).
+		WithDefaultArgs([]string{"sh", "/root/start.sh"}).
+		AsService()
+	return privateGitRemote{
+		url: fmt.Sprintf("ssh://root@%s:%d/root/repo", startedServiceIP(ctx, t, c, svc), port),
+		// An identity file but no agent, for an agent prepared on demand. A
+		// non-interactive CLI never gets that far: it cannot approve the read.
+		cli: func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithExec([]string{"apk", "add", "openssh-client"}).
+				WithEnvVariable("SSH_AUTH_SOCK", "").
+				WithNewFile("/root/.ssh/id_ed25519", privateKey, dagger.ContainerWithNewFileOpts{Permissions: 0o600})
+		},
+		// An agent already running, holding the key, without touching the
+		// host's own SSH configuration.
+		hostEnv: func(t *testctx.T) []string {
+			key, err := ssh.ParseRawPrivateKey([]byte(privateKey))
+			require.NoError(t, err)
+			keyring := agent.NewKeyring()
+			require.NoError(t, keyring.Add(agent.AddedKey{PrivateKey: key}))
+			sock := filepath.Join(t.TempDir(), "agent.sock")
+			l, err := net.Listen("unix", sock)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = l.Close() })
+			go func() {
+				for {
+					conn, err := l.Accept()
+					if err != nil {
+						return
+					}
+					go func() {
+						defer conn.Close()
+						_ = agent.ServeAgent(keyring, conn)
+					}()
+				}
+			}()
+			return []string{"SSH_AUTH_SOCK=" + sock}
 		},
 	}
 }

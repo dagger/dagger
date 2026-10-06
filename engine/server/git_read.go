@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -34,12 +35,19 @@ const gitReadPromptPrefix = "Allow an agent to read "
 // a read of remote, an address an agent's model supplied as a tool argument.
 //
 // The owner is the trusted caller before the first module boundary, as for
-// push. When the caller is that owner itself (the user's own conversation),
-// its credentials apply as they would to any of its reads. When a module
-// drives the agent (e.g. a worker spawned by a module), the module chose the
-// conversation, so the owner approves each remote for that module first; a
-// grant lasts for the session, a denial only for that attempt. Otherwise any
-// module could read whatever the user can, by prompting a model.
+// push. The owner approves each remote first when:
+//
+//   - a module drives the agent (e.g. a worker spawned by a module): the module
+//     chose the conversation, and otherwise any module could read whatever the
+//     user can by prompting a model. The grant is that module's;
+//   - the remote is read over SSH, even in the owner's own conversation: an SSH
+//     agent offers the user's keys to whichever host it is pointed at, unlike a
+//     credential helper, which answers per host, so a prompt-injected model
+//     could otherwise make the engine authenticate as the user anywhere.
+//
+// The owner's own conversation reads HTTP(S) remotes silently, with its
+// credentials as for any of its reads. A grant lasts for the session, a denial
+// only for that attempt.
 func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine.ClientMetadata, error) {
 	// The remote is model-supplied: reject before prompting, and never echo
 	// what may hold credentials.
@@ -56,12 +64,19 @@ func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine
 	if err != nil {
 		return nil, err
 	}
-	if !delegated {
+	viaSSH := parsed.Scheme == gitutil.SSHProtocol
+	if !delegated && !viaSSH {
 		return owner.daggerSession.clientMetadataSnapshot(owner.clientRecord)
 	}
-	requester, err := gitReadRequester(client)
-	if err != nil {
-		return nil, err
+	// The owner's own conversation has no requesting module.
+	var requester dagql.ObjectResult[*core.Module]
+	var requesterName string
+	if delegated {
+		requester, err = gitReadRequester(client)
+		if err != nil {
+			return nil, err
+		}
+		requesterName = requester.Self().Name()
 	}
 	key := gitReadApprovalKey{
 		owner:     owner.clientID,
@@ -77,7 +92,7 @@ func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine
 			return false, fmt.Errorf("owning client is not available to approve the read")
 		}
 		response, err := prompt.NewPromptClient(conn).PromptBool(ctx, &prompt.BoolRequest{
-			Prompt: gitReadPrompt(remote, requester.Self().Name()),
+			Prompt: gitReadPrompt(remote, viaSSH, requesterName),
 		})
 		if status.Code(err) == codes.Unimplemented {
 			return false, fmt.Errorf("owning client cannot prompt (not interactive)")
@@ -99,12 +114,16 @@ func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine
 // gitReadPrompt asks the owner to approve a read of remote. Every value in it
 // is literal text, escaped for terminals (including bidi/control characters),
 // not Markdown: the URL is model-supplied, the module name module-supplied.
-func gitReadPrompt(remote, requester string) string {
+func gitReadPrompt(remote string, viaSSH bool, requester string) string {
+	using := "your Git credentials"
+	if viaSSH {
+		using = "your SSH keys"
+	}
 	var by string
 	if requester != "" {
 		by = " (requested by module " + strconv.QuoteToASCII(requester) + ")"
 	}
-	return fmt.Sprintf("%s%s with your Git credentials%s?", gitReadPromptPrefix, literalText(remote), by)
+	return fmt.Sprintf("%s%s with %s%s?", gitReadPromptPrefix, literalText(remote), using, by)
 }
 
 func literalText(s string) string {
@@ -116,8 +135,10 @@ var errInvalidGitReadRemote = errors.New("invalid git remote URL")
 
 // canonicalGitReadRemote validates a remote an agent may read with its owner's
 // credentials, as AuthorizeGitPush validates a destination, and spells it the
-// one way approvals are keyed by: the host lowercased, and a trailing "/" or
-// ".git" dropped.
+// one way approvals are keyed by: the host lowercased, SSH's default user
+// "git" made explicit, and a trailing "/" or ".git" dropped. HTTP(S) and SSH
+// spellings of a repository stay distinct, since each authenticates with
+// different credentials.
 func canonicalGitReadRemote(remote string) (*gitutil.GitURL, error) {
 	if strings.ContainsAny(remote, "\r\n\x00?#") {
 		return nil, errInvalidGitReadRemote
@@ -127,7 +148,13 @@ func canonicalGitReadRemote(remote string) (*gitutil.GitURL, error) {
 		return nil, errInvalidGitReadRemote
 	}
 	if parsed.User != nil {
-		return nil, errors.New("git remote URL must not contain embedded credentials")
+		_, password := parsed.User.Password()
+		if password || parsed.Scheme != gitutil.SSHProtocol {
+			return nil, errors.New("git remote URL must not contain embedded credentials")
+		}
+	}
+	if parsed.Scheme == gitutil.SSHProtocol && parsed.User == nil {
+		parsed.User = url.User("git")
 	}
 	parsed.Host = strings.ToLower(parsed.Host)
 	parsed.Path = strings.TrimSuffix(strings.TrimRight(parsed.Path, "/"), ".git")

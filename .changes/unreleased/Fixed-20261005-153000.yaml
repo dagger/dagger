@@ -1,12 +1,11 @@
 kind: Fixed
 body: |
   Agents driven by modules, such as workers spawned by a staff module, can now
-  read private HTTP(S) Git repositories passed to their tools by URL, using the
-  user's Git credentials once the user approves each repository for the
-  session. Previously only the user's own conversation could, and workers
-  failed to authenticate. Another ref of the repository an agent's workspace
-  was checked out from needs no approval: it reads through that checkout's own
-  credentials.
+  read private Git repositories passed to their tools by URL, using the user's
+  Git credentials once the user approves each repository for the session.
+  Previously only the user's own conversation could, and workers failed to
+  authenticate. Another ref of the repository an agent's workspace was checked
+  out from needs no approval: it reads through that checkout's own credentials.
 time: 2026-10-05T15:30:00Z
 custom:
   Author: vito

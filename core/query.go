@@ -103,7 +103,8 @@ type Server interface {
 
 	// AuthorizeGitRead returns the client whose Git credentials may
 	// authenticate a read of the remote that an agent's model supplied as a
-	// tool argument, asking that owner first when a module drives the agent.
+	// tool argument, asking that owner first when a module drives the agent
+	// or the remote is read over SSH.
 	AuthorizeGitRead(context.Context, string) (*engine.ClientMetadata, error)
 
 	// The cached workspace result from ensureWorkspaceLoaded.
