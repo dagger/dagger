@@ -175,6 +175,92 @@ source = "`+repoURL+`#main:entrypoint"
 	require.Equal(t, "hello", strings.TrimSpace(out))
 }
 
+func (ModuleSuite) TestDangModuleEntrypointAtGitRoot(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	mod := c.Directory().
+		WithNewFile("dagger-module.toml", `name = "tiny"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`).
+		WithDirectory("entrypoint", c.Host().Directory("./testdata/modules/dang/module-entrypoint")).
+		WithNewFile("marker.txt", "marker\n")
+	gitDaemon, repoURL := gitService(ctx, t, c, mod.WithDirectory("sub/tiny", mod))
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+	base := goGitBase(t, c).WithServiceBinding(gitHost, gitDaemon)
+
+	for name, ref := range map[string]string{"root": repoURL + "#main", "subpath": repoURL + "#main:sub/tiny"} {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			entries, err := base.
+				With(daggerExec("core", "module-source", "--ref-string", ref, "directory", "--path", ".", "entries")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, entries, "entrypoint/")
+			require.Contains(t, entries, "marker.txt")
+
+			out, err := base.With(daggerCallAt(ref, "hello")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello", strings.TrimSpace(out))
+		})
+	}
+}
+
+func (ModuleSuite) TestModuleAtLocalRepoRoot(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := goGitBase(t, c).
+		WithNewFile(".gitignore", "ignored.txt\n").
+		WithNewFile("ignored.txt", "ignored\n").
+		WithNewFile("marker.txt", "marker\n")
+	contextFiles := func(ctx context.Context, t *testctx.T, ctr *dagger.Container) string {
+		t.Helper()
+		out, err := ctr.
+			With(daggerExec("core", "module-source", "--ref-string", ".", "context-directory", "glob", "--pattern", "**")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	t.Run("entrypoint module", func(ctx context.Context, t *testctx.T) {
+		ctr := base.
+			WithNewFile("dagger-module.toml", `name = "tiny"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`).
+			WithDirectory("entrypoint", c.Host().Directory("./testdata/modules/dang/module-entrypoint"))
+
+		files := contextFiles(ctx, t, ctr)
+		require.Contains(t, files, "entrypoint/main.dang")
+		require.Contains(t, files, "marker.txt")
+		require.NotContains(t, files, "ignored.txt")
+
+		out, err := ctr.With(daggerCallAt(".", "hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello", strings.TrimSpace(out))
+	})
+
+	// A manifest v2 module ignores include, so only a module without an SDK
+	// takes this path with include patterns.
+	t.Run("module without an SDK", func(ctx context.Context, t *testctx.T) {
+		files := contextFiles(ctx, t, base.
+			WithNewFile("dagger-module.toml", `name = "plain"
+engineVersion = "latest"
+include = ["keep/**", "!keep/drop/**"]
+`).
+			WithNewFile("keep/kept.txt", "kept\n").
+			WithNewFile("keep/drop/dropped.txt", "dropped\n"))
+		require.Contains(t, files, "marker.txt")
+		require.Contains(t, files, "keep/kept.txt")
+		require.NotContains(t, files, "dropped.txt")
+		require.NotContains(t, files, "ignored.txt")
+	})
+}
+
 // The workspace an entrypoint receives has its working directory at the module
 // it serves, so a shared entrypoint can find the module without a path
 // generated into it.
