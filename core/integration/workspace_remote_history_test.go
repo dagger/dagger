@@ -4,7 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"testing"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -196,7 +203,7 @@ func workspaceRemoteHistoryFetches(sink *agentTraceSink, ancestor string) (shall
 		}
 		remote, inScope := false, ancestor == ""
 		for parent := parents[id]; parent != ""; parent = parents[parent] {
-			remote = remote || strings.HasPrefix(names[parent], "fetching git://")
+			remote = remote || strings.HasPrefix(names[parent], "fetching git://") || strings.HasPrefix(names[parent], "fetching http://")
 			inScope = inScope || names[parent] == ancestor
 		}
 		if !remote || !inScope {
@@ -484,4 +491,336 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryUnavailable(ctx context.Cont
 	require.NotEmpty(t, full, "failure must come from attempting the deferred remote fetch")
 	_, commitFetches := workspaceRemoteHistoryFetches(sink, "Workspace.withCommit")
 	require.Empty(t, commitFetches, "native descendants must commit without hydrating the unavailable origin")
+}
+
+// Unlike the container-only fixtures above, this clean checkout is approved by
+// CurrentWorkspace().Snapshot() in the owning client. The origin has its own object
+// store so removing or replacing the donor cannot accidentally break fallback.
+type workspaceHostHistoryFixture struct {
+	client   *dagger.Client
+	sink     *agentTraceSink
+	checkout string
+	origin   *httptest.Server
+	git      func(...string) string
+	shas     []string
+	straySHA string
+}
+
+// Use upload-pack over smart HTTP: the test image includes Git but not
+// the separately packaged git-daemon executable. This server advertises
+// only the origin's frozen refs and reads its packed repository.
+func hostHistoryOriginServer(t *testing.T, repo string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		args := []string{"upload-pack", "--stateless-rpc"}
+		if r.Method == http.MethodGet && r.URL.Path == "/repo/info/refs" && r.URL.Query().Get("service") == "git-upload-pack" {
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+			_, _ = io.WriteString(w, "001e# service=git-upload-pack\n0000")
+			args = append(args, "--advertise-refs")
+		} else if r.Method == http.MethodPost && r.URL.Path == "/repo/git-upload-pack" {
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		} else {
+			http.NotFound(w, r)
+			return
+		}
+		args = append(args, repo)
+		cmd := exec.CommandContext(r.Context(), "git", args...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+		if protocol := r.Header.Get("Git-Protocol"); protocol != "" {
+			cmd.Env = append(cmd.Env, "GIT_PROTOCOL="+protocol)
+		}
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = r.Body, w, io.Discard
+		if err := cmd.Run(); err != nil {
+			t.Logf("host history origin upload-pack: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func newWorkspaceHostHistoryFixture(ctx context.Context, t *testctx.T) workspaceHostHistoryFixture {
+	t.Helper()
+	checkout := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = checkout
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_AUTHOR_DATE="+workspaceCommitDate, "GIT_COMMITTER_DATE="+workspaceCommitDate)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "git %v: %s", args, out)
+		return strings.TrimSpace(string(out))
+	}
+	write := func(path, content string) {
+		t.Helper()
+		require.NoError(t, os.WriteFile(filepath.Join(checkout, path), []byte(content), 0o600))
+	}
+	git("init", "-b", "main")
+	for _, setting := range [][2]string{{"user.name", "Oracle"}, {"user.email", "oracle@example.com"}, {"commit.gpgsign", "false"}, {"core.hooksPath", "/dev/null"}, {"gc.auto", "0"}} {
+		git("config", setting[0], setting[1])
+	}
+	write("fixture-id", identity.NewID())
+	write("ancient.txt", "root\n")
+	write("selected.txt", "base\n")
+	git("add", ".")
+	git("commit", "-m", "root")
+	write("ancient.txt", "old\n")
+	git("commit", "-am", "old")
+	git("checkout", "-b", "side")
+	write("side.txt", "side\n")
+	git("add", ".")
+	git("commit", "-m", "side")
+	git("checkout", "main")
+	write("main.txt", "main\n")
+	git("add", ".")
+	git("commit", "-m", "main")
+	git("merge", "--no-ff", "side", "-m", "merge")
+	write("tip.txt", "tip\n")
+	git("add", ".")
+	git("commit", "-m", "tip")
+	shas := strings.Fields(git("rev-list", "main"))
+	// An unreachable branch shares neither ancestry nor content with main.
+	// Packing the donor's entire object store would leak all of these objects.
+	git("checkout", "--orphan", "unrelated")
+	git("rm", "-rf", ".")
+	write("unrelated.txt", identity.NewID())
+	git("add", ".")
+	git("commit", "-m", "unrelated")
+	straySHA := git("rev-parse", "HEAD")
+	git("tag", "unrelated-tag")
+	git("checkout", "main")
+	git("repack", "-ad")
+	originDir := filepath.Join(t.TempDir(), "origin.git")
+	git("clone", "--bare", "--no-hardlinks", ".", originDir)
+
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout), dagger.WithLogOutput(io.Discard))...)
+	origin := hostHistoryOriginServer(t.Unwrap(), originDir)
+	port := origin.Listener.Addr().(*net.TCPAddr).Port
+	tunnel, err := c.Host().Service([]dagger.PortForward{{Frontend: 80, Backend: port}}).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = tunnel.Stop(context.Background()) })
+	host, err := tunnel.Hostname(ctx)
+	require.NoError(t, err)
+	url := "http://" + host + "/repo"
+	git("remote", "add", "origin", url)
+	git("update-ref", "refs/remotes/origin/main", shas[0])
+	git("branch", "--set-upstream-to=origin/main", "main")
+	// Route only the host's HTTP transport via loopback. The captured recipe
+	// still contains the engine-reachable origin URL, not a rewritten URL.
+	git("config", "http."+url+".proxy", origin.URL)
+	require.Equal(t, url, git("remote", "get-url", "origin"))
+	require.Equal(t, shas[0]+"\tHEAD", git("ls-remote", "origin", "HEAD"))
+	// Bind the tunnel to an engine-side Git request before capture. A started
+	// host tunnel alone does not establish the remote Git service's DNS route.
+	remoteSHA, err := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: tunnel}).Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, shas[0], remoteSHA)
+	require.Empty(t, git("status", "--porcelain"))
+	return workspaceHostHistoryFixture{client: c, sink: sink, checkout: checkout, origin: origin, git: git, shas: shas, straySHA: straySHA}
+}
+
+func (f workspaceHostHistoryFixture) commit(ctx context.Context, t *testctx.T) *dagger.GitRef {
+	t.Helper()
+	id, err := f.client.CurrentWorkspace().Snapshot().ID(ctx)
+	require.NoError(t, err)
+	base := dagger.Ref[*dagger.Workspace](f.client, id)
+	sha, err := base.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, f.shas[0], sha, "capture must preserve the advertised remote anchor")
+	ws := workspaceRemoteHistoryCommit(ctx, t, f.client, base, 1)
+	head := ws.Git().Head()
+	contents, err := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("selected.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "local 1\n", contents)
+	empty, err := ws.Git().Uncommitted().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty)
+	recent, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, recent, 2)
+	parent, err := recent[1].Sha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, f.shas[0], parent)
+	return head
+}
+
+func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryOrdinary(ctx context.Context, t *testctx.T) {
+	fixture := newWorkspaceHostHistoryFixture(ctx, t)
+	fixture.commit(ctx, t)
+	require.NoError(t, fixture.client.Close())
+	names, _ := workspaceRemoteHistoryTrace(fixture.sink)
+	for _, name := range names {
+		require.NotEqual(t, "git request approved host commit closure", name, "capture and ordinary consumers must not request a donor pack")
+		require.NotEqual(t, "git import approved host commit closure", name)
+		require.NotEqual(t, "git hydrate owned history", name)
+		require.NotEqual(t, "pack host git checkout", name, "clean advertised capture must remain remote-backed")
+	}
+	shallow, full := workspaceRemoteHistoryFetches(fixture.sink, "")
+	require.NotEmpty(t, shallow, "ordinary commit must exercise a real depth-one remote capture")
+	require.Empty(t, full, "ordinary commit/source/status/short-log must not fetch complete history")
+}
+
+func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryOffline(ctx context.Context, t *testctx.T) {
+	fixture := newWorkspaceHostHistoryFixture(ctx, t)
+	c := fixture.client
+	head := fixture.commit(ctx, t)
+	headSHA, err := head.CommitSHA(ctx)
+	require.NoError(t, err)
+	// Closing the real HTTP listener cannot be undone by service auto-restart.
+	// The donor is still alive and has the exact captured SHA's full ancestry.
+	fixture.origin.Close()
+	commits, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
+	require.NoError(t, err, "approved host history must satisfy deep demand without the origin")
+	want := append([]string{headSHA}, fixture.shas...)
+	require.ElementsMatch(t, want, workspaceRemoteHistorySHAs(ctx, t, commits))
+	require.Equal(t, fixture.shas[0], fixture.git("rev-parse", "HEAD"))
+	require.Empty(t, fixture.git("status", "--porcelain"), "hydration must not modify the donor")
+
+	// Once hydrated, the engine owns the closure. A different log selector and
+	// retained full checkout must survive loss of both the donor and origin.
+	require.NoError(t, os.RemoveAll(filepath.Join(fixture.checkout, ".git")))
+	again, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 101})
+	require.NoError(t, err)
+	require.ElementsMatch(t, want, workspaceRemoteHistorySHAs(ctx, t, again))
+	tree, err := head.Tree(dagger.GitRefTreeOpts{Depth: -1}).Sync(ctx)
+	require.NoError(t, err)
+	out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+		WithDirectory("/checkout", tree).WithWorkdir("/checkout").
+		WithEnvVariable("STRAY_SHA", fixture.straySHA).
+		WithExec([]string{"sh", "-ec", `
+ test "$(git rev-parse --is-shallow-repository)" = false
+ test ! -s .git/objects/info/alternates
+ git fsck --full --no-dangling >&2
+ git show "$(git rev-list --max-parents=0 HEAD):ancient.txt" | grep -qx root
+ if git cat-file -e "$STRAY_SHA" 2>/dev/null; then
+   echo 'unrelated commit was imported' >&2; exit 1
+ fi
+ if git for-each-ref --format='%(refname)' | grep unrelated; then
+   echo 'unrelated refs were imported' >&2; exit 1
+ fi
+ git rev-list --objects HEAD | cut -d ' ' -f 1 | sort -u > /reachable
+ git cat-file --batch-all-objects --batch-check='%(objectname)' | sort -u > /actual
+ diff -u /reachable /actual >&2
+ git rev-list HEAD
+`}).Stdout(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, want, strings.Fields(out))
+	require.NoError(t, c.Close())
+	_, full := workspaceRemoteHistoryFetches(fixture.sink, "")
+	require.Empty(t, full, "host reuse must not even attempt a full remote fetch")
+	names, parents := workspaceRemoteHistoryTrace(fixture.sink)
+	imports := 0
+	for id, name := range names {
+		if name == "git import approved host commit closure" {
+			for parent := parents[id]; parent != ""; parent = parents[parent] {
+				if names[parent] == "GitRef.log" {
+					imports++
+					break
+				}
+			}
+		}
+		if name == "git hydrate owned history" {
+			for parent := parents[id]; parent != ""; parent = parents[parent] {
+				require.NotEqual(t, "Workspace.withCommit", names[parent], "ordinary commit must remain shallow")
+				require.NotEqual(t, "Workspace.snapshot", names[parent], "capture must not hydrate history")
+			}
+		}
+	}
+	require.Equal(t, 1, imports, "deep demand must import once, then reuse its owned closure")
+}
+
+// Approval covers the captured commit's closure, not the checkout's refs.
+// Committing, branching, tagging and switching branches after capture is the
+// normal case and must not disable the donor, nor widen what it donates.
+func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryMovedCheckout(ctx context.Context, t *testctx.T) {
+	fixture := newWorkspaceHostHistoryFixture(ctx, t)
+	c := fixture.client
+	head := fixture.commit(ctx, t)
+	headSHA, err := head.CommitSHA(ctx)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(fixture.checkout, "after.txt"), []byte(identity.NewID()), 0o600))
+	fixture.git("add", "after.txt")
+	fixture.git("commit", "-m", "after capture")
+	afterSHA := fixture.git("rev-parse", "HEAD")
+	afterBlob := fixture.git("rev-parse", "HEAD:after.txt")
+	fixture.git("tag", "after-capture")
+	fixture.git("checkout", "-b", "moved")
+	require.NotEqual(t, fixture.shas[0], fixture.git("rev-parse", "HEAD"))
+	// Without the origin, only the donor can satisfy deep demand.
+	fixture.origin.Close()
+	commits, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
+	require.NoError(t, err, "a donor whose refs moved after capture must still donate")
+	want := append([]string{headSHA}, fixture.shas...)
+	require.ElementsMatch(t, want, workspaceRemoteHistorySHAs(ctx, t, commits))
+	tree, err := head.Tree(dagger.GitRefTreeOpts{Depth: -1}).Sync(ctx)
+	require.NoError(t, err)
+	out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+		WithDirectory("/checkout", tree).WithWorkdir("/checkout").
+		WithEnvVariable("AFTER_SHA", afterSHA).
+		WithEnvVariable("AFTER_BLOB", afterBlob).
+		WithEnvVariable("STRAY_SHA", fixture.straySHA).
+		WithExec([]string{"sh", "-ec", `
+ test "$(git rev-parse --is-shallow-repository)" = false
+ git fsck --full --no-dangling >&2
+ for object in "$AFTER_SHA" "$AFTER_BLOB" "$STRAY_SHA"; do
+   if git cat-file -e "$object" 2>/dev/null; then
+     echo "object outside the captured closure was imported: $object" >&2; exit 1
+   fi
+ done
+ if git for-each-ref --format='%(refname)' | grep -e after-capture -e moved; then
+   echo 'refs moved after capture were imported' >&2; exit 1
+ fi
+ git rev-list --objects HEAD | cut -d ' ' -f 1 | sort -u > /reachable
+ git cat-file --batch-all-objects --batch-check='%(objectname)' | sort -u > /actual
+ diff -u /reachable /actual >&2
+ git rev-list HEAD
+`}).Stdout(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, want, strings.Fields(out))
+	require.NoError(t, c.Close())
+	_, full := workspaceRemoteHistoryFetches(fixture.sink, "")
+	require.Empty(t, full, "a moved donor must not fall back to a full remote fetch")
+	names, _ := workspaceRemoteHistoryTrace(fixture.sink)
+	imported := false
+	for _, name := range names {
+		imported = imported || name == "git import approved host commit closure"
+	}
+	require.True(t, imported, "deep demand must import the moved donor's closure")
+}
+
+func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryFallback(ctx context.Context, t *testctx.T) {
+	for _, scenario := range []string{"missing donor", "replaced donor", "shallow donor"} {
+		t.Run(scenario, func(ctx context.Context, t *testctx.T) {
+			fixture := newWorkspaceHostHistoryFixture(ctx, t)
+			head := fixture.commit(ctx, t)
+			headSHA, err := head.CommitSHA(ctx)
+			require.NoError(t, err)
+			switch scenario {
+			case "missing donor", "replaced donor":
+				require.NoError(t, os.RemoveAll(filepath.Join(fixture.checkout, ".git")))
+				if scenario == "replaced donor" {
+					fixture.git("init", "-b", "replacement")
+					fixture.git("-c", "user.name=Replacement", "-c", "user.email=replacement@example.com", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "replacement")
+				}
+			case "shallow donor":
+				require.NoError(t, os.WriteFile(filepath.Join(fixture.checkout, ".git", "shallow"), []byte(fixture.shas[0]+"\n"), 0o600))
+				require.Equal(t, "true", fixture.git("rev-parse", "--is-shallow-repository"))
+			}
+			commits, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
+			require.NoError(t, err, "unusable donor must fall back to the reconstructible remote recipe")
+			require.ElementsMatch(t, append([]string{headSHA}, fixture.shas...), workspaceRemoteHistorySHAs(ctx, t, commits))
+			require.NoError(t, fixture.client.Close())
+			names, _ := workspaceRemoteHistoryTrace(fixture.sink)
+			requested := false
+			for _, name := range names {
+				requested = requested || name == "git request approved host commit closure"
+				require.NotEqual(t, "git import approved host commit closure", name, "invalid donor must not be imported")
+			}
+			require.True(t, requested, "must try the registered donor before remote fallback")
+			_, full := workspaceRemoteHistoryFetches(fixture.sink, "GitRef.log")
+			require.NotEmpty(t, full, "must exercise remote fallback, not previously hydrated history")
+			_, commitFetches := workspaceRemoteHistoryFetches(fixture.sink, "Workspace.withCommit")
+			require.Empty(t, commitFetches, "ordinary commit must not fetch complete history eagerly")
+		})
+	}
 }
