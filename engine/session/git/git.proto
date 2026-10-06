@@ -120,13 +120,15 @@ message PackCheckoutRequest {
 
 // A captured checkout is an optional donor for precisely this commit. The
 // payload is a non-thin raw pack, not a bundle, of the commit's complete
-// closure.
+// closure. The checkout's refs may have moved since capture: the closure of a
+// fixed SHA does not depend on them, and the engine verifies what it imports.
+// The response metadata carries no state_digest.
 message PackCommitRequest {
+  // expected_state_digest pinned the checkout's refs to their captured state.
   // depth was the closure depth; only the complete closure is ever requested.
-  reserved 4;
-  reserved "depth";
+  reserved 2, 4;
+  reserved "expected_state_digest", "depth";
   string checkout_path = 1;
-  string expected_state_digest = 2;
   string commit_sha = 3;
 }
 

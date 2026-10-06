@@ -15,6 +15,14 @@ import (
 
 // PackCommit is deliberately separate from PackCheckout: an older client must
 // never interpret a scoped request as permission to send all branches and tags.
+//
+// It neither checks the checkout's refs against their captured state nor takes
+// the checkout lock. The closure of a fixed SHA does not depend on where HEAD,
+// branches or tags point, so committing, switching branches or fetching after
+// capture must not disable the donor; the engine verifies object hashes and the
+// exact closure inventory on import. Packing only reads the object database
+// into private scratch, so it need not serialize with CheckoutState, CaptureGit
+// or PackCheckout on the same checkout either.
 func (s GitAttachable) PackCommit(req *PackCommitRequest, srv Git_PackCommitServer) error {
 	ctx, cancel := context.WithTimeout(srv.Context(), gitPackTimeout)
 	defer cancel()
@@ -24,34 +32,11 @@ func (s GitAttachable) PackCommit(req *PackCommitRequest, srv Git_PackCommitServ
 		}
 		return srv.Send(&PackCheckoutResponse{Msg: &PackCheckoutResponse_Metadata{Metadata: &PackCheckoutMetadata{Error: &ErrorInfo{Type: kind, Message: err.Error()}}}})
 	}
-	if req.CheckoutPath == "" || req.ExpectedStateDigest == "" || !validCommitSHA(req.CommitSha) {
-		return sendErr(INVALID_REQUEST, errors.New("captured checkout, state and SHA-1 commit required"))
+	if req.CheckoutPath == "" || !validCommitSHA(req.CommitSha) {
+		return sendErr(INVALID_REQUEST, errors.New("captured checkout and SHA-1 commit required"))
 	}
 	if !checkoutHasGitEntry(req.CheckoutPath) {
 		return sendErr(HISTORY_UNAVAILABLE, errors.New("captured checkout unavailable"))
-	}
-	unlock, err := gitCheckoutLocks.lock(ctx, filepath.Clean(req.CheckoutPath))
-	if err != nil {
-		return err
-	}
-	// Like PackCheckout, hold the checkout lock only while reading state and
-	// packing: streaming up to MaxGitPackBytes over the session must not
-	// starve CheckoutState, CaptureGit or PackCheckout on the same checkout.
-	locked := true
-	defer func() {
-		if locked {
-			unlock()
-		}
-	}()
-	state, err := collectCheckoutState(ctx, req.CheckoutPath)
-	if err != nil {
-		return sendErr(HISTORY_UNAVAILABLE, err)
-	}
-	if state.digest() != req.ExpectedStateDigest {
-		return sendErr(CHECKOUT_STATE_MISMATCH, errors.New("captured checkout changed"))
-	}
-	if state.objectFormat != "sha1" {
-		return sendErr(HISTORY_UNAVAILABLE, errors.New("unsupported object format"))
 	}
 	tmp, err := os.MkdirTemp("", "dagger-pack-commit-")
 	if err != nil {
@@ -65,13 +50,7 @@ func (s GitAttachable) PackCommit(req *PackCommitRequest, srv Git_PackCommitServ
 	if err != nil {
 		return sendErr(PACK_FAILED, err)
 	}
-	latest, err := collectCheckoutState(ctx, req.CheckoutPath)
-	if err != nil || latest.digest() != req.ExpectedStateDigest {
-		return sendErr(CHECKOUT_STATE_MISMATCH, errors.New("captured checkout changed while packing"))
-	}
-	unlock()
-	locked = false
-	if err := srv.Send(&PackCheckoutResponse{Msg: &PackCheckoutResponse_Metadata{Metadata: &PackCheckoutMetadata{HeadSha: req.CommitSha, ObjectFormat: "sha1", StateDigest: req.ExpectedStateDigest}}}); err != nil {
+	if err := srv.Send(&PackCheckoutResponse{Msg: &PackCheckoutResponse_Metadata{Metadata: &PackCheckoutMetadata{HeadSha: req.CommitSha, ObjectFormat: "sha1"}}}); err != nil {
 		return err
 	}
 	f, err := os.Open(pack)
@@ -122,6 +101,10 @@ func packCapturedCommit(ctx context.Context, checkout, scratch, sha string) (str
 	shallow, err := runHostGit(ctx, checkout, "rev-parse", "--is-shallow-repository")
 	if err != nil || strings.TrimSpace(shallow) != "false" {
 		return "", fmt.Errorf("%w: shallow donor", errHostHistoryUnavailable)
+	}
+	format, err := runHostGit(ctx, checkout, "rev-parse", "--show-object-format")
+	if err != nil || strings.TrimSpace(format) != "sha1" {
+		return "", fmt.Errorf("%w: unsupported object format", errHostHistoryUnavailable)
 	}
 	if _, err := runIsolatedHostGit(ctx, scratch, nil, nil, "init", "--bare", "--template=", "--object-format=sha1"); err != nil {
 		return "", err

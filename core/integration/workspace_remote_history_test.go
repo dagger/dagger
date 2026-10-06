@@ -729,8 +729,67 @@ func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryOffline(ctx context.Contex
 	require.Equal(t, 1, imports, "deep demand must import once, then reuse its owned closure")
 }
 
+// Approval covers the captured commit's closure, not the checkout's refs.
+// Committing, branching, tagging and switching branches after capture is the
+// normal case and must not disable the donor, nor widen what it donates.
+func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryMovedCheckout(ctx context.Context, t *testctx.T) {
+	fixture := newWorkspaceHostHistoryFixture(ctx, t)
+	c := fixture.client
+	head := fixture.commit(ctx, t)
+	headSHA, err := head.CommitSHA(ctx)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(fixture.checkout, "after.txt"), []byte(identity.NewID()), 0o600))
+	fixture.git("add", "after.txt")
+	fixture.git("commit", "-m", "after capture")
+	afterSHA := fixture.git("rev-parse", "HEAD")
+	afterBlob := fixture.git("rev-parse", "HEAD:after.txt")
+	fixture.git("tag", "after-capture")
+	fixture.git("checkout", "-b", "moved")
+	require.NotEqual(t, fixture.shas[0], fixture.git("rev-parse", "HEAD"))
+	// Without the origin, only the donor can satisfy deep demand.
+	fixture.origin.Close()
+	commits, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
+	require.NoError(t, err, "a donor whose refs moved after capture must still donate")
+	want := append([]string{headSHA}, fixture.shas...)
+	require.ElementsMatch(t, want, workspaceRemoteHistorySHAs(ctx, t, commits))
+	tree, err := head.Tree(dagger.GitRefTreeOpts{Depth: -1}).Sync(ctx)
+	require.NoError(t, err)
+	out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+		WithDirectory("/checkout", tree).WithWorkdir("/checkout").
+		WithEnvVariable("AFTER_SHA", afterSHA).
+		WithEnvVariable("AFTER_BLOB", afterBlob).
+		WithEnvVariable("STRAY_SHA", fixture.straySHA).
+		WithExec([]string{"sh", "-ec", `
+ test "$(git rev-parse --is-shallow-repository)" = false
+ git fsck --full --no-dangling >&2
+ for object in "$AFTER_SHA" "$AFTER_BLOB" "$STRAY_SHA"; do
+   if git cat-file -e "$object" 2>/dev/null; then
+     echo "object outside the captured closure was imported: $object" >&2; exit 1
+   fi
+ done
+ if git for-each-ref --format='%(refname)' | grep -e after-capture -e moved; then
+   echo 'refs moved after capture were imported' >&2; exit 1
+ fi
+ git rev-list --objects HEAD | cut -d ' ' -f 1 | sort -u > /reachable
+ git cat-file --batch-all-objects --batch-check='%(objectname)' | sort -u > /actual
+ diff -u /reachable /actual >&2
+ git rev-list HEAD
+`}).Stdout(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, want, strings.Fields(out))
+	require.NoError(t, c.Close())
+	_, full := workspaceRemoteHistoryFetches(fixture.sink, "")
+	require.Empty(t, full, "a moved donor must not fall back to a full remote fetch")
+	names, _ := workspaceRemoteHistoryTrace(fixture.sink)
+	imported := false
+	for _, name := range names {
+		imported = imported || name == "git import approved host commit closure"
+	}
+	require.True(t, imported, "deep demand must import the moved donor's closure")
+}
+
 func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryFallback(ctx context.Context, t *testctx.T) {
-	for _, scenario := range []string{"missing donor", "replaced donor", "changed HEAD", "shallow donor"} {
+	for _, scenario := range []string{"missing donor", "replaced donor", "shallow donor"} {
 		t.Run(scenario, func(ctx context.Context, t *testctx.T) {
 			fixture := newWorkspaceHostHistoryFixture(ctx, t)
 			head := fixture.commit(ctx, t)
@@ -743,10 +802,6 @@ func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryFallback(ctx context.Conte
 					fixture.git("init", "-b", "replacement")
 					fixture.git("-c", "user.name=Replacement", "-c", "user.email=replacement@example.com", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "replacement")
 				}
-			case "changed HEAD":
-				// The exact old SHA is still present, but approval belongs to the
-				// captured state, not any future checkout at the same path.
-				fixture.git("commit", "--allow-empty", "-m", "after capture")
 			case "shallow donor":
 				require.NoError(t, os.WriteFile(filepath.Join(fixture.checkout, ".git", "shallow"), []byte(fixture.shas[0]+"\n"), 0o600))
 				require.Equal(t, "true", fixture.git("rev-parse", "--is-shallow-repository"))

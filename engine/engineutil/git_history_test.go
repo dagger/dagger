@@ -44,9 +44,9 @@ func (s *historyTestStream) Recv() (*git.PackCheckoutResponse, error) {
 }
 
 func TestReceiveGitCommitPack(t *testing.T) {
-	req := &git.PackCommitRequest{CheckoutPath: "/approved", ExpectedStateDigest: "captured", CommitSha: strings.Repeat("a", 40)}
+	req := &git.PackCommitRequest{CheckoutPath: "/approved", CommitSha: strings.Repeat("a", 40)}
 	metadata := func(sha string) *git.PackCheckoutResponse {
-		return &git.PackCheckoutResponse{Msg: &git.PackCheckoutResponse_Metadata{Metadata: &git.PackCheckoutMetadata{HeadSha: sha, StateDigest: req.ExpectedStateDigest, ObjectFormat: "sha1"}}}
+		return &git.PackCheckoutResponse{Msg: &git.PackCheckoutResponse_Metadata{Metadata: &git.PackCheckoutMetadata{HeadSha: sha, ObjectFormat: "sha1"}}}
 	}
 	donorError := func(kind git.ErrorInfo_ErrorType, msg string) *git.PackCheckoutResponse {
 		return &git.PackCheckoutResponse{Msg: &git.PackCheckoutResponse_Metadata{Metadata: &git.PackCheckoutMetadata{Error: &git.ErrorInfo{Type: kind, Message: msg}}}}

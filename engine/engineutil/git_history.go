@@ -65,10 +65,12 @@ func ReceiveGitCommitPack(ctx context.Context, client git.GitClient, req *git.Pa
 			if md.Error != nil {
 				return nil, fmt.Errorf("host history pack: %s: %s", md.Error.Type, md.Error.Message)
 			}
-			if md.HeadSha != req.CommitSha || md.StateDigest != req.ExpectedStateDigest || md.ObjectFormat != "sha1" || md.HeadRef != "" {
+			// PackCommit does not pin the checkout's refs, so there is no
+			// state digest to check: the importer verifies the closure itself.
+			if md.HeadSha != req.CommitSha || md.ObjectFormat != "sha1" || md.HeadRef != "" {
 				return nil, fmt.Errorf("host history metadata does not match captured request")
 			}
-			pack = &GitCheckoutPack{HeadSHA: md.HeadSha, StateDigest: md.StateDigest, ObjectFormat: md.ObjectFormat}
+			pack = &GitCheckoutPack{HeadSHA: md.HeadSha, ObjectFormat: md.ObjectFormat}
 		case *git.PackCheckoutResponse_Chunk:
 			if pack == nil {
 				return nil, fmt.Errorf("host history bytes before metadata")
