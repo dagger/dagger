@@ -100,11 +100,11 @@ func TestPushSSHAuthLazyAndExistingAgent(t *testing.T) {
 	}
 	require.Empty(t, m.agents)
 	t.Setenv("SSH_AUTH_SOCK", "/existing/agent.sock")
-	socket, err := m.prepare(t.Context(), "git@example.com:repo")
+	socket, err := m.prepare(t.Context(), "git@example.com:repo", false)
 	require.NoError(t, err)
 	require.Equal(t, "/existing/agent.sock", socket)
 	require.Empty(t, m.agents)
-	_, err = m.prepare(t.Context(), "ssh://git:secret@example.com/repo")
+	_, err = m.prepare(t.Context(), "ssh://git:secret@example.com/repo", false)
 	require.ErrorContains(t, err, "must not contain a password")
 	require.NotContains(t, err.Error(), "secret")
 }
@@ -112,7 +112,7 @@ func TestPushSSHAuthLazyAndExistingAgent(t *testing.T) {
 func TestPushSSHAuthUnencrypted(t *testing.T) {
 	h := &pushPassphraseHandler{err: errors.New("unexpected prompt")}
 	m := newTestPushSSHAuth(t, h, "")
-	socket, err := m.prepare(t.Context(), "git@example.com:repo")
+	socket, err := m.prepare(t.Context(), "git@example.com:repo", false)
 	require.NoError(t, err)
 	require.Zero(t, h.calls.Load())
 	conn, err := net.Dial("unix", socket)
@@ -130,7 +130,7 @@ func TestPushSSHAuthUnencrypted(t *testing.T) {
 	require.NoError(t, m.Close())
 	_, err = os.Stat(filepath.Dir(socket))
 	require.ErrorIs(t, err, os.ErrNotExist)
-	_, err = m.prepare(t.Context(), "git@example.com:repo")
+	_, err = m.prepare(t.Context(), "git@example.com:repo", false)
 	require.ErrorIs(t, err, context.Canceled)
 }
 
@@ -139,10 +139,10 @@ func TestPushSSHAuthEncrypted(t *testing.T) {
 	h := &pushPassphraseHandler{passphrase: passphrase}
 	m := newTestPushSSHAuth(t, h, passphrase)
 	require.Zero(t, h.calls.Load())
-	socket, err := m.prepare(t.Context(), "git@example.com:repo")
+	socket, err := m.prepare(t.Context(), "git@example.com:repo", false)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, h.calls.Load())
-	again, err := m.prepare(t.Context(), "git@example.com:repo")
+	again, err := m.prepare(t.Context(), "git@example.com:repo", false)
 	require.NoError(t, err)
 	require.Equal(t, socket, again)
 	require.EqualValues(t, 1, h.calls.Load(), "unlock only once for this destination and session")
@@ -161,7 +161,7 @@ func TestPushSSHAuthUnlockFailure(t *testing.T) {
 			m := newTestPushSSHAuth(t, h, "correct secret")
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
-			_, err := m.prepare(ctx, "git@example.com:repo")
+			_, err := m.prepare(ctx, "git@example.com:repo", false)
 			require.Error(t, err)
 			require.NotContains(t, err.Error(), "correct secret")
 			require.Empty(t, m.agents)
@@ -176,7 +176,7 @@ func TestPushSSHAuthCanceledWait(t *testing.T) {
 	m.lock <- struct{}{}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := m.prepare(ctx, "git@example.com:repo")
+	_, err := m.prepare(ctx, "git@example.com:repo", false)
 	<-m.lock
 	require.ErrorIs(t, err, context.Canceled)
 }
@@ -203,7 +203,7 @@ func TestPushSSHAuthConcurrentReuse(t *testing.T) {
 	sockets := make([]string, 3)
 	errors := make([]error, 3)
 	for i := range sockets {
-		wg.Go(func() { sockets[i], errors[i] = m.prepare(t.Context(), "git@example.com:repo") })
+		wg.Go(func() { sockets[i], errors[i] = m.prepare(t.Context(), "git@example.com:repo", false) })
 	}
 	wg.Wait()
 	for i := range sockets {
@@ -219,7 +219,7 @@ func TestPushSSHAuthCancelActiveUnlock(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { _, err := m.prepare(ctx, "git@example.com:repo"); done <- err }()
+	go func() { _, err := m.prepare(ctx, "git@example.com:repo", false); done <- err }()
 	select {
 	case <-h.started:
 	case <-time.After(10 * time.Second):
@@ -238,7 +238,80 @@ func TestPushSSHAuthCancelActiveUnlock(t *testing.T) {
 func TestPushSSHAuthNonInteractive(t *testing.T) {
 	m := newTestPushSSHAuth(t, nil, "encrypted fixture")
 	m.handler = nil
-	_, err := m.prepare(t.Context(), "git@example.com:repo")
+	_, err := m.prepare(t.Context(), "git@example.com:repo", false)
 	require.ErrorContains(t, err, "interactive dagger CLI")
 	require.Empty(t, m.agents)
+}
+
+// An agent's reads never prompt to unlock a key, even from an interactive CLI:
+// a passphrase prompt would fight the TUI for the keyboard.
+func TestPushSSHAuthNoUnlock(t *testing.T) {
+	t.Run("encrypted key fails fast", func(t *testing.T) {
+		h := &pushPassphraseHandler{passphrase: "fixture passphrase"}
+		m := newTestPushSSHAuth(t, h, h.passphrase)
+		_, err := m.prepare(t.Context(), "git@example.com:repo", true)
+		require.ErrorContains(t, err, "needs a passphrase")
+		require.ErrorContains(t, err, "add it to your SSH agent (ssh-add)")
+		require.NotContains(t, err.Error(), h.passphrase)
+		require.Zero(t, h.calls.Load())
+		require.Empty(t, m.agents)
+
+		// Even past that check, loading the key never asks for its passphrase.
+		keys, _, err := m.identities(t.Context(), nil)
+		require.NoError(t, err)
+		a, err := startPushSSHAgent(t.Context())
+		require.NoError(t, err)
+		err = m.addKey(t.Context(), a, keys[0], false)
+		a.close()
+		require.ErrorContains(t, err, "add it to your SSH agent (ssh-add)")
+		require.Zero(t, h.calls.Load())
+
+		// A push may still unlock it, and a read then reuses that agent.
+		socket, err := m.prepare(t.Context(), "git@example.com:repo", false)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, h.calls.Load())
+		again, err := m.prepare(t.Context(), "git@example.com:repo", true)
+		require.NoError(t, err)
+		require.Equal(t, socket, again)
+		require.EqualValues(t, 1, h.calls.Load())
+	})
+
+	t.Run("unencrypted key loads", func(t *testing.T) {
+		h := &pushPassphraseHandler{err: errors.New("unexpected prompt")}
+		m := newTestPushSSHAuth(t, h, "")
+		socket, err := m.prepare(t.Context(), "git@example.com:repo", true)
+		require.NoError(t, err)
+		require.Zero(t, h.calls.Load())
+		conn, err := net.Dial("unix", socket)
+		require.NoError(t, err)
+		defer conn.Close()
+		keys, err := agent.NewClient(conn).List()
+		require.NoError(t, err)
+		require.Len(t, keys, 1)
+	})
+
+	t.Run("unloadable key names the fix", func(t *testing.T) {
+		h := &pushPassphraseHandler{err: errors.New("unexpected prompt")}
+		m := newTestPushSSHAuth(t, h, "")
+		bogus := filepath.Join(t.TempDir(), "bogus")
+		require.NoError(t, os.WriteFile(bogus, []byte("not a key"), 0600))
+		m.identities = func(context.Context, *gitutil.GitURL) ([]string, string, error) { return []string{bogus}, "", nil }
+		_, err := m.prepare(t.Context(), "git@example.com:repo", true)
+		require.ErrorContains(t, err, "add it to your SSH agent (ssh-add)")
+		require.Zero(t, h.calls.Load())
+		require.Empty(t, m.agents)
+	})
+
+	t.Run("running agent is used as is", func(t *testing.T) {
+		m := newPushSSHAuth(t.Context(), nil)
+		t.Cleanup(func() { require.NoError(t, m.Close()) })
+		m.identities = func(context.Context, *gitutil.GitURL) ([]string, string, error) {
+			t.Fatal("must not discover keys with an agent running")
+			return nil, "", nil
+		}
+		t.Setenv("SSH_AUTH_SOCK", "/existing/agent.sock")
+		socket, err := m.prepare(t.Context(), "git@example.com:repo", true)
+		require.NoError(t, err)
+		require.Equal(t, "/existing/agent.sock", socket)
+	})
 }

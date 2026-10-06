@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/util/gitutil"
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
 
@@ -75,7 +76,11 @@ func (a *pushSSHAgent) close() {
 	_ = os.RemoveAll(a.dir)
 }
 
-func (m *pushSSHAuth) prepare(ctx context.Context, remote string) (string, error) {
+// prepare returns an SSH agent socket authenticating to remote. With noUnlock,
+// as for an agent's reads, it never prompts for a passphrase: those prompts
+// fight the TUI for the keyboard. It then uses only a running or configured
+// agent or unencrypted identity files, and fails fast on an encrypted one.
+func (m *pushSSHAuth) prepare(ctx context.Context, remote string, noUnlock bool) (string, error) {
 	u, err := gitutil.ParseURL(remote)
 	if err != nil || u.Scheme != gitutil.SSHProtocol || u.Host == "" {
 		return "", errors.New("invalid SSH remote")
@@ -121,6 +126,16 @@ func (m *pushSSHAuth) prepare(ctx context.Context, remote string) (string, error
 	if len(keys) == 0 {
 		return "", errors.New("no SSH identity files found; configure an IdentityFile or SSH_AUTH_SOCK")
 	}
+	if noUnlock {
+		// Fail before starting an agent, naming the fix rather than ssh-add's
+		// failure to find an askpass.
+		for _, key := range keys {
+			if pushSSHKeyEncrypted(key) {
+				return "", fmt.Errorf("SSH identity %s needs a passphrase, which Dagger cannot ask for here; "+
+					"add it to your SSH agent (ssh-add) and run dagger with SSH_AUTH_SOCK set", strconv.QuoteToASCII(key))
+			}
+		}
+	}
 	a, err := startPushSSHAgent(m.ctx)
 	if err != nil {
 		return "", err
@@ -132,7 +147,7 @@ func (m *pushSSHAuth) prepare(ctx context.Context, remote string) (string, error
 		}
 	}()
 	for _, key := range keys {
-		if err := m.addKey(ctx, a, key); err != nil {
+		if err := m.addKey(ctx, a, key, !noUnlock); err != nil {
 			return "", err
 		}
 	}
@@ -177,11 +192,23 @@ func startPushSSHAgent(ctx context.Context) (*pushSSHAgent, error) {
 	}
 }
 
-func (m *pushSSHAuth) addKey(ctx context.Context, a *pushSSHAgent, key string) error {
+// pushSSHKeyEncrypted reports whether the identity file at path needs a
+// passphrase. A key it cannot read or parse is left for ssh-add to judge.
+func pushSSHKeyEncrypted(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	_, err = ssh.ParseRawPrivateKey(data)
+	var missing *ssh.PassphraseMissingError
+	return errors.As(err, &missing)
+}
+
+func (m *pushSSHAuth) addKey(ctx context.Context, a *pushSSHAgent, key string, unlock bool) error {
 	askCtx, cancelRequest := context.WithCancel(ctx)
 	defer cancelRequest()
 	exe := m.askpassExecutable
-	if exe == "" || m.handler == nil {
+	if exe == "" || m.handler == nil || !unlock {
 		// Non-CLI attachables must never re-execute their own binary as askpass.
 		// Unencrypted keys still work; encrypted keys fail without a prompt.
 		exe = filepath.Join(a.dir, "interactive-unlock-unavailable")
@@ -210,7 +237,7 @@ func (m *pushSSHAuth) addKey(ctx context.Context, a *pushSSHAgent, key string) e
 			return
 		}
 		attempts++
-		if m.handler == nil {
+		if m.handler == nil || !unlock {
 			promptErr = errors.New("SSH key needs a passphrase; an interactive client is required")
 			http.Error(w, "key unlocking unavailable", http.StatusForbidden)
 			return
@@ -245,6 +272,10 @@ func (m *pushSSHAuth) addKey(ctx context.Context, a *pushSSHAgent, key string) e
 		return promptErr
 	}
 	if err != nil {
+		if !unlock {
+			return fmt.Errorf("could not load SSH identity %s (encrypted, unsupported, or unreadable); "+
+				"add it to your SSH agent (ssh-add) and run dagger with SSH_AUTH_SOCK set", strconv.QuoteToASCII(key))
+		}
 		if m.handler == nil || m.askpassExecutable == "" {
 			return errors.New("could not load SSH identity; an encrypted key requires an interactive dagger CLI")
 		}

@@ -114,7 +114,7 @@ func (s GitAttachable) PreparePushSSHAuth(ctx context.Context, req *PreparePushS
 	if s.pushSSH == nil {
 		return nil, fmt.Errorf("client does not support preparing SSH authentication")
 	}
-	path, err := s.pushSSH.prepare(ctx, req.GetRemote())
+	path, err := s.pushSSH.prepare(ctx, req.GetRemote(), req.GetNoUnlock())
 	if err != nil {
 		return nil, err
 	}
