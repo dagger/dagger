@@ -178,7 +178,7 @@ func TestLiftScopeSelection(t *testing.T) {
 		// Several matches are an error listing them, pointing to discovery.
 		_, err = call(t, m, "eval", map[string]any{"target": "go/*"})
 		require.ErrorContains(t, err, `"go/*" is not a resolvable Artifact address`)
-		require.ErrorContains(t, err, "dag://go/* matches 2 artifacts:\ndag://go/lint\ndag://go/test")
+		require.ErrorContains(t, err, "dag://go/* matches 2 artifacts:\ndag://?check=go/lint\ndag://?check=go/test")
 		require.ErrorContains(t, err, "FindArtifacts lists what exists")
 	})
 
@@ -301,7 +301,7 @@ func TestQualifyCollidingTrees(t *testing.T) {
 	// The plain address selects the artifact of every colliding object; where
 	// one is required, the error lists addresses that tell them apart.
 	_, err = filter("dag://staff/members/head").One()
-	require.ErrorContains(t, err, "matches 2 artifacts:\ndag://staff/staff-view/members/head\ndag://staff/staff-pull-tools/members/head")
+	require.ErrorContains(t, err, "matches 2 artifacts:\ndag://?directory=staff/staff-view/members/head\ndag://?directory=staff/staff-pull-tools/members/head")
 	require.Len(t, filter("staff/members/*").Entries, 2)
 	require.Len(t, filter("staff/inbox").Entries, 1)
 	// Include patterns match the plain path too.

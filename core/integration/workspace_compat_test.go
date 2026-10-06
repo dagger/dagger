@@ -850,7 +850,7 @@ func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.C
 	runCtr := ctr.With(compatDaggerExec("generate", "hello-with-generators:generate-*", "-y", "--progress=plain"))
 	runOut, err := runCtr.CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, runOut, "dag://hello-with-generators/generate-files")
+	require.Contains(t, runOut, "dag://?generator=hello-with-generators/generate-files")
 
 	// Generated changes still apply relative to where the command runs; only
 	// the workspace config location moved to the repo root.

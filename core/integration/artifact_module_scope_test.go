@@ -29,7 +29,7 @@ source = "dang"
 				args := append(slices.Clone(command), "-l", "-f=link", selector)
 				out, err := listing.With(daggerExec(args...)).Stdout(ctx)
 				require.NoError(t, err, strings.Join(args, " "))
-				require.Contains(t, out, "://good/")
+				require.Contains(t, out, "=good/")
 				require.NotContains(t, out, "bad/load")
 			}
 			if command[0] != "check" {

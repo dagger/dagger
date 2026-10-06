@@ -254,7 +254,7 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 		require.Len(t, listed, 2)
 		for _, check := range listed {
 			uri := check.Get("uri").String()
-			require.Contains(t, []string{"dag://empty-generate/stale", "dag://non-empty-generate/stale"}, uri)
+			require.Contains(t, []string{"dag://?check=empty-generate/stale", "dag://?check=non-empty-generate/stale"}, uri)
 			out, err := modGen.With(daggerQuery(`{currentWorkspace{artifacts{filterUri(uri:%q){one{uri}}}}}`, uri)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, uri, gjson.Get(out, "currentWorkspace.artifacts.filterUri.one.uri").String())
@@ -734,10 +734,10 @@ source = "../%s"
 				With(daggerExec("check", "-l", "-f=link")).
 				CombinedOutput(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "dag+check://"+tc.path+"/passing-check")
-			require.Contains(t, out, "dag+check://"+tc.path+"/failing-check")
-			require.Contains(t, out, "dag+check://"+tc.path+"/test/lint")
-			require.Contains(t, out, "dag+check://"+tc.path+"/test/unit")
+			require.Contains(t, out, "dag+check://?check="+tc.path+"/passing-check")
+			require.Contains(t, out, "dag+check://?check="+tc.path+"/failing-check")
+			require.Contains(t, out, "dag+check://?check="+tc.path+"/test/lint")
+			require.Contains(t, out, "dag+check://?check="+tc.path+"/test/unit")
 			// run a specific passing check
 			_, err = modGen.
 				With(daggerExec("--progress=report", "check", tc.path+":passing-check")).
@@ -901,7 +901,7 @@ entrypoint = true`, 1)
 			With(daggerNonNestedExec("check", "-l", "-f=link")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Equal(t, "dag+check://generate/stale\n", out)
+		require.Equal(t, "dag+check://?check=generate/stale\n", out)
 		require.NotContains(t, out, "alpha-sdk/generate")
 	})
 

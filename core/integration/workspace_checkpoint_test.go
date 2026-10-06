@@ -429,7 +429,7 @@ func (*Probe) Frozen() error { return nil }
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &got}))
 	require.Len(t, got.Node.Artifacts.Checks.List, 1)
-	require.Equal(t, "dag://probe/frozen", got.Node.Artifacts.Checks.List[0].Name)
+	require.Equal(t, "dag://?check=probe/frozen", got.Node.Artifacts.Checks.List[0].Name)
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotPinsGitOverlayRecipe(ctx context.Context, t *testctx.T) {
