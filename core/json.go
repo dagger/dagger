@@ -28,6 +28,12 @@ func (p JSON) Bytes() []byte {
 
 var _ dagql.Typed = JSON{}
 
+var _ dagql.CachePayloadSizer = JSON{}
+
+func (p JSON) CachePayloadBytes() int64 {
+	return int64(len(p))
+}
+
 func (p JSON) TypeName() string {
 	return "JSON"
 }

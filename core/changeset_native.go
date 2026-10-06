@@ -21,7 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TryNativeWorkspaceMerge reconciles same-base local Git changes without
+// TryNativeWorkspaceMerge reconciles same-base Git changes without
 // restaging the baseline. The returned filesystem is a COW child of Before,
 // not a raw After tree: Git normalizes only changed paths, while unchanged
 // filesystem metadata survives. Temporary indexes, commits and objects never
@@ -64,14 +64,17 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 	}
 	span.SetAttributes(attribute.Int("dagger.git.native_merge.scoped_stage_paths",
 		len(commitStagePaths(contents[0].paths))+len(commitStagePaths(contents[1].paths))))
-	local := lazy.Ref.Self().Backend.(*LocalGitRef)
+	local, err := nativeCommitRepository(ctx, lazy.Ref)
+	if err != nil {
+		return nil, true, err
+	}
 	var result *Directory
-	err := local.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
+	err = local.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
 		out, err := source.Run(ctx, "rev-parse", "--absolute-git-dir")
 		if err != nil {
 			return err
 		}
-		gitDir, err := nativeCommitGitDir(ctx, strings.TrimSuffix(string(out), "\n"))
+		gitDir, err := local.nativeGitDir(ctx, strings.TrimSuffix(string(out), "\n"))
 		if err != nil {
 			return err
 		}
@@ -212,33 +215,8 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	for _, changes := range paths {
-		for _, p := range commitStagePaths(changes) {
-			switch path.Base(p) {
-			case ".gitattributes", ".gitignore":
-				// Changing controls can restage otherwise unchanged baseline
-				// files in the legacy whole-worktree add. Do not emulate that.
-				return nativeCommitUnsupportedReason("merge-controls-change")
-			}
-		}
-		// An added directory must be an ancestor of some added file.
-		filled := map[string]bool{}
-		for _, p := range changes.Added {
-			if strings.HasSuffix(p, "/") {
-				continue
-			}
-			for dir := path.Dir(p); dir != "." && dir != "/"; dir = path.Dir(dir) {
-				if filled[dir+"/"] {
-					break // its ancestors were recorded with it
-				}
-				filled[dir+"/"] = true
-			}
-		}
-		for _, p := range changes.Added {
-			if strings.HasSuffix(p, "/") && !filled[p] {
-				return nativeCommitUnsupportedReason("empty-directory")
-			}
-		}
+	if err := validateNativeMergePaths(paths); err != nil {
+		return err
 	}
 	scratch, err := os.MkdirTemp("", "dagger-workspace-merge-")
 	if err != nil {
@@ -247,6 +225,9 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 	defer os.RemoveAll(scratch)
 	meta := filepath.Join(scratch, "repo")
 	if _, err := runWorkspaceCommitGit(ctx, scratch, nil, "init", "--bare", "--template=", "--object-format=sha1", "--ref-format=files", meta); err != nil {
+		return err
+	}
+	if err := copyGitShallowBoundary(filepath.Dir(parentObjects), meta); err != nil {
 		return err
 	}
 	env := []string{
@@ -323,6 +304,40 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 		return err
 	}
 	return nativeWorkspaceCheckout(run, base, trees[0], merged)
+}
+
+// validateNativeMergePaths rejects deltas the native merge does not emulate:
+// changed Git controls and empty added directories.
+func validateNativeMergePaths(paths []*ChangesetPaths) error {
+	for _, changes := range paths {
+		for _, p := range commitStagePaths(changes) {
+			switch path.Base(p) {
+			case ".gitattributes", ".gitignore":
+				// Changing controls can restage otherwise unchanged baseline
+				// files in the legacy whole-worktree add. Do not emulate that.
+				return nativeCommitUnsupportedReason("merge-controls-change")
+			}
+		}
+		// An added directory must be an ancestor of some added file.
+		filled := map[string]bool{}
+		for _, p := range changes.Added {
+			if strings.HasSuffix(p, "/") {
+				continue
+			}
+			for dir := path.Dir(p); dir != "." && dir != "/"; dir = path.Dir(dir) {
+				if filled[dir+"/"] {
+					break // its ancestors were recorded with it
+				}
+				filled[dir+"/"] = true
+			}
+		}
+		for _, p := range changes.Added {
+			if strings.HasSuffix(p, "/") && !filled[p] {
+				return nativeCommitUnsupportedReason("empty-directory")
+			}
+		}
+	}
+	return nil
 }
 
 // nativeMergeLabels name the two sides in merge-tree's conflict messages: the

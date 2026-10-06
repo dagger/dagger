@@ -37,6 +37,55 @@ func SDKScopeKey(entry SDKEntry, configDir, workspacePath string) (string, bool,
 	return key, false, err
 }
 
+// ModuleScopeLocalClients maps each module scope to the local client targets
+// its SDK scopes declare, both as workspace-root-relative paths. Entries that
+// do not resolve inside the workspace are left out.
+func ModuleScopeLocalClients(cfg *Config, configDir string) map[string][]string {
+	return moduleScopeClients(cfg, configDir, true)
+}
+
+// ModuleScopeGitClients maps each module scope, as a workspace-root-relative
+// path, to the git client refs its SDK scopes declare, as written.
+func ModuleScopeGitClients(cfg *Config, configDir string) map[string][]string {
+	return moduleScopeClients(cfg, configDir, false)
+}
+
+func moduleScopeClients(cfg *Config, configDir string, local bool) map[string][]string {
+	if cfg == nil {
+		return nil
+	}
+	clients := map[string][]string{}
+	for _, entry := range cfg.SDKs {
+		for key, scope := range entry.Scopes {
+			if !scope.IsModule {
+				continue
+			}
+			modulePath, err := ResolveSDKManagedPath(configDir, key)
+			if err != nil {
+				continue
+			}
+			for _, target := range scope.Clients {
+				if IsLocalRef(target, "") != local {
+					continue
+				}
+				if local {
+					if target, err = ResolveSDKManagedPath(configDir, target); err != nil {
+						continue
+					}
+				}
+				if slices.Contains(clients[modulePath], target) {
+					continue
+				}
+				clients[modulePath] = append(clients[modulePath], target)
+			}
+		}
+	}
+	for _, targets := range clients {
+		slices.Sort(targets)
+	}
+	return clients
+}
+
 // ReconcileSDKScopes merges compatible records for the same SDK and resolved
 // workspace path. It retains the first key in sorted order. On conflict, cfg
 // remains unchanged. Returned messages describe every reconciled record.

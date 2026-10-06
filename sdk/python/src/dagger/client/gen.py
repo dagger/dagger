@@ -4726,10 +4726,10 @@ class Container(Type):
             container. Example: "./stdin.txt"
         redirect_stdout:
             Redirect the command's standard output to a file in the container.
-            Example: "./stdout.txt"
+            The redirected output is not logged. Example: "./stdout.txt"
         redirect_stderr:
             Redirect the command's standard error to a file in the container.
-            Example: "./stderr.txt"
+            The redirected output is not logged. Example: "./stderr.txt"
         expect:
             Exit codes this command is allowed to exit with without error
         disable_dagger_in_dagger:
@@ -19082,8 +19082,10 @@ class Workspace(Type):
         *,
         names: list[str] | None = None,
         version: str | None = "",
+        source: str | None = "",
     ) -> Self:
-        """Return this workspace with updated module versions and lockfile state.
+        """Return this workspace with updated module sources, versions and
+        lockfile state.
 
         An SDK client scope is regenerated when it targets an updated module.
 
@@ -19095,10 +19097,15 @@ class Workspace(Type):
         version:
             New version request for exactly one selected module. Cannot be
             combined with a version suffix.
+        source:
+            New source for exactly one selected module. Resolved like an
+            install source. Cannot be combined with a version or a version
+            suffix.
         """
         _args = [
             Arg("names", [] if names is None else names, []),
             Arg("version", version, ""),
+            Arg("source", source, ""),
         ]
         _ctx = self._select("withUpdatedModules", _args)
         return Workspace(_ctx)

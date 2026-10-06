@@ -13,6 +13,7 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -2447,6 +2448,49 @@ type FunctionCall struct {
 	// CallerAgent resolution, so it propagates through arbitrarily nested
 	// module calls. Zero when the call did not originate from an agent turn.
 	callerAgent dagql.ObjectResult[*Agent]
+
+	// processSpan is the span that the processes started for this call parent
+	// their telemetry to, carried engine-side only like callerAgent. A module
+	// entrypoint sets it to the function call span: its module process is
+	// otherwise parented to the entrypoint's own withExec, which buries the
+	// function body inside the entrypoint's plumbing.
+	processSpan trace.SpanContext
+
+	// plumbingSpan holds the work that runs this call without being its body,
+	// carried engine-side only like processSpan. A module entrypoint sets it
+	// to its own span, so that its module process's dependency loading lands
+	// there too (see WithModuleProcessRequest).
+	plumbingSpan trace.SpanContext
+}
+
+// PlumbingSpanContext returns the span holding the work that runs this call
+// without being its body, if the call's runtime set one.
+func (fnCall *FunctionCall) PlumbingSpanContext() trace.SpanContext {
+	if fnCall == nil {
+		return trace.SpanContext{}
+	}
+	return fnCall.plumbingSpan
+}
+
+// SetPlumbingSpanContext sets the span holding the work that runs this call
+// without being its body.
+func (fnCall *FunctionCall) SetPlumbingSpanContext(spanCtx trace.SpanContext) {
+	fnCall.plumbingSpan = spanCtx
+}
+
+// ProcessSpanContext returns the span that the processes started for this call
+// parent their telemetry to, if the call's runtime set one.
+func (fnCall *FunctionCall) ProcessSpanContext() trace.SpanContext {
+	if fnCall == nil {
+		return trace.SpanContext{}
+	}
+	return fnCall.processSpan
+}
+
+// SetProcessSpanContext sets the span that the processes started for this call
+// parent their telemetry to.
+func (fnCall *FunctionCall) SetProcessSpanContext(spanCtx trace.SpanContext) {
+	fnCall.processSpan = spanCtx
 }
 
 // CallerAgent returns the agent whose turn dispatched this function call, if

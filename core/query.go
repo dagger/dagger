@@ -87,6 +87,10 @@ type Server interface {
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 
+	// The client whose host the module ModuleParent returns was loaded from:
+	// the nearest non-module client above that module.
+	ModuleParentHostClientMetadata(context.Context) (*engine.ClientMetadata, error)
+
 	// AuthorizeGitPush resolves optional owner URL routing and checks permission
 	// before any destination credentials are used. Its result stays operation-local.
 	AuthorizeGitPush(context.Context, string, string, bool, bool) (*GitPushAuthorization, error)

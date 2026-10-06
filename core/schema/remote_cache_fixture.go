@@ -35,6 +35,8 @@ type remoteCacheFixtureMapping struct {
 	ResultID uint64                `json:"resultID"`
 	Type     *dagql.ResultCallType `json:"type"`
 	Handle   string                `json:"handle"`
+	// Root marks an import's entries for the roots the merge imported.
+	Root bool `json:"root,omitempty"`
 }
 type remoteCacheBodyEntry struct {
 	Parent   string `json:"parent"`
@@ -234,7 +236,14 @@ func fixtureImportedMappings(bundle dagql.ValueBundle, merged dagql.MergeReply, 
 	if hasNonRoot && !validatedNonRoot {
 		return nil, fmt.Errorf("fixture merge lacks a reported non-root row")
 	}
-	return fixtureMappings(bundle, values)
+	mappings, err := fixtureMappings(bundle, values)
+	if err != nil {
+		return nil, err
+	}
+	for i := range roots {
+		mappings[i].Root = true
+	}
+	return mappings, nil
 }
 func readFixtureBodies(root *os.Root) ([]remoteCacheBodyCount, error) {
 	dir, err := root.Open(".")
@@ -299,9 +308,9 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		if args.Path != "" {
 			return nil, fmt.Errorf("report does not accept a path")
 		}
-	case "evaluate":
+	case "evaluate", "pending":
 		if len(args.IDs) == 0 || args.Path != "" {
-			return nil, fmt.Errorf("evaluate requires handles and no path")
+			return nil, fmt.Errorf("%s requires handles and no path", args.Operation)
 		}
 	case "recordBody":
 		if args.Path != "" || len(args.IDs) != 0 {
@@ -411,6 +420,16 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 		}
 		err = cache.EvaluateTransferFixtureRoots(ctx, md.SessionID, srv, ids)
 		response = err == nil
+	case "pending":
+		// Whether each row still has work to run, without demanding it.
+		pending := make([]bool, 0, len(ids))
+		err = cache.WithTransferFixtureRoots(ctx, md.SessionID, ids, func(roots []dagql.AnyResult) error {
+			for _, root := range roots {
+				pending = append(pending, dagql.HasPendingLazyEvaluation(root))
+			}
+			return nil
+		})
+		response = pending
 	case "report":
 		var report remoteCacheFixtureReport
 		report.Persistence.PersistenceResetReason = cache.PersistenceResetReason()

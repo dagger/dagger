@@ -7,6 +7,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
@@ -193,4 +195,48 @@ func resolveImplicitInputString(t *testing.T, input dagql.ImplicitInput, ctx con
 	strVal, ok := value.(dagql.String)
 	require.True(t, ok, "expected dagql.String implicit input value, got %T", value)
 	return strVal.String()
+}
+
+type runtimeLessTestSDK struct {
+	moduleOwnershipRuntime
+}
+
+func (*runtimeLessTestSDK) HasNoRuntime() bool { return true }
+
+func TestModuleFunctionLoadRuntimeSpan(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		sdk   SDK
+		spans []string
+	}{
+		{name: "runtime", sdk: &moduleOwnershipRuntime{}, spans: []string{"load sdk runtime"}},
+		{name: "no runtime", sdk: &runtimeLessTestSDK{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newModuleOwnershipTest(t)
+			src := newTypeDefDetachedResult(t, f.dag, "load-runtime-source", &ModuleSource{
+				Kind:    ModuleSourceKindDir,
+				SDKImpl: tc.sdk,
+			})
+			mod := newTypeDefDetachedResult(t, f.dag, "load-runtime-module", &Module{
+				NameField: "test",
+				Source:    dagql.NonNull(src),
+			})
+
+			sr := tracetest.NewSpanRecorder()
+			tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+			ctx, root := tp.Tracer("modfunc-test").Start(t.Context(), "call")
+			_, err := (&ModuleFunction{mod: mod}).loadFunctionRuntime(ctx)
+			root.End()
+			require.NoError(t, err)
+
+			var spans []string
+			for _, span := range sr.Ended() {
+				if span.Name() != "call" {
+					spans = append(spans, span.Name())
+				}
+			}
+			require.Equal(t, tc.spans, spans)
+		})
+	}
 }

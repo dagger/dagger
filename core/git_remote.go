@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/hashutil"
@@ -111,6 +112,36 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 	slog.Info("loaded git remote metadata", "cache_hit", cacheRes.HitCache(), "cache_key", cacheKey)
 
 	return remoteFromCacheResult(cacheRes.Value())
+}
+
+// PrimePublicRemote reuses the anonymous visibility probe's advertisement in
+// the existing session-owned metadata cache. It never changes a repository
+// object shared by several sessions, and never seeds a credentialed or
+// service-bound lookup. Existing metadata (including an in-flight load) wins.
+func (repo *RemoteGitRepository) PrimePublicRemote(ctx context.Context, remote *gitutil.Remote) error {
+	if remote == nil || repo.URL == nil || repo.URL.User != nil ||
+		(repo.URL.Scheme != "http" && repo.URL.Scheme != "https") ||
+		repo.AuthUsername != "" || repo.AuthToken.Self() != nil ||
+		repo.AuthHeader.Self() != nil || repo.SSHAuthSocket.Self() != nil || len(repo.Services) != 0 {
+		return nil
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil //nolint:nilerr // Priming is optional when the context has no engine cache.
+	}
+	cacheKey, err := repo.remoteCacheKey(ctx)
+	if err != nil {
+		return err
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(context.Context) (any, error) {
+		payload, err := json.Marshal(remote)
+		return string(payload), err
+	})
+	return err
 }
 
 func remoteFromCacheResult(cacheRes any) (*gitutil.Remote, error) {
@@ -319,12 +350,12 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 }
 
 func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) (retErr error) {
-	return repo.initRemote(ctx, func(remote string) error {
+	return repo.initRemote(ctx, func(remote string) (rerr error) {
 		git, cleanup, err := repo.setup(ctx)
 		if err != nil {
 			return err
 		}
-		defer cleanup()
+		defer func() { rerr = errors.Join(rerr, cleanup()) }()
 		git = git.New(gitutil.WithGitDir(remote))
 		remoteRefs := make([]*RemoteGitRef, len(refs))
 		for i, ref := range refs {
@@ -637,8 +668,16 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 		return err
 	}
 	locker := query.Locker()
-	locker.Lock(remoteGitLockPrefix + repo.URL.Remote())
-	defer locker.Unlock(remoteGitLockPrefix + repo.URL.Remote())
+	lockKey := remoteGitLockPrefix + repo.URL.Remote()
+	var profWait *wcprof.Wait
+	if wcprof.Enabled(ctx) {
+		// Profiles are dumped and shared: identify the lock without the
+		// URL's userinfo, which may carry credentials.
+		profWait = wcprof.BeginWaitIdent(ctx, remoteGitLockPrefix+repo.URL.RedactedRemote(), wcprof.WaitReasonLock)
+	}
+	locker.Lock(lockKey)
+	profWait.End()
+	defer locker.Unlock(lockKey)
 
 	if repo.Mirror.Self() == nil {
 		return fmt.Errorf("remote git mirror is nil for %s", repo.URL.Remote())
@@ -663,10 +702,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 		return err
 	}
 	defer func() {
-		err := lm.Unmount()
-		if retErr == nil {
-			retErr = err
-		}
+		retErr = errors.Join(retErr, lm.Unmount())
 	}()
 
 	git := gitutil.NewGitCLI(gitutil.WithGitDir(dir))

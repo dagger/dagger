@@ -1044,12 +1044,12 @@ export type ContainerWithExecOpts = {
   redirectStdin?: string
 
   /**
-   * Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+   * Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
    */
   redirectStdout?: string
 
   /**
-   * Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+   * Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
    */
   redirectStderr?: string
 
@@ -4233,6 +4233,11 @@ export type WorkspaceWithUpdatedModulesOpts = {
    * New version request for exactly one selected module. Cannot be combined with a version suffix.
    */
   version?: string
+
+  /**
+   * New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
+   */
+  source?: string
 }
 
 export type WorkspaceWithoutClientOpts = {
@@ -7533,8 +7538,8 @@ export class Container extends BaseClient {
    * @param opts.useEntrypoint Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
    * @param opts.stdin Content to write to the command's standard input. Example: "Hello world")
    * @param opts.redirectStdin Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+   * @param opts.redirectStdout Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
+   * @param opts.redirectStderr Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
    * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
@@ -18636,11 +18641,12 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with updated module versions and lockfile state.
+   * Return this workspace with updated module sources, versions and lockfile state.
    *
    * An SDK client scope is regenerated when it targets an updated module.
    * @param opts.names Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
    * @param opts.version New version request for exactly one selected module. Cannot be combined with a version suffix.
+   * @param opts.source New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
    */
   withUpdatedModules = (opts?: WorkspaceWithUpdatedModulesOpts): Workspace => {
     const ctx = this._ctx.select("withUpdatedModules", { ...opts })

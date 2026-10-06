@@ -115,6 +115,11 @@ type execState struct {
 	// stashed by setupSecretScrubbing, so the profile-argv scrubber at the emit
 	// site reuses the exact same secret set as the stdout/stderr scrubbers.
 	profSecretFilePaths []string
+	// stdoutRedirected/stderrRedirected are set by setupStdio when the stream
+	// is redirected to a file in the container, in which case setupOTel leaves
+	// it out of the exec's logs.
+	stdoutRedirected bool
+	stderrRedirected bool
 
 	startedOnce *sync.Once
 	startedCh   chan<- struct{}
@@ -765,6 +770,7 @@ func (c *Client) setupStdio(_ context.Context, state *execState) error {
 				return fmt.Errorf("chown redirect stdout file: %w", err)
 			}
 			stdoutWriters = append(stdoutWriters, redirectStdoutFile)
+			state.stdoutRedirected = true
 		}
 
 		redirectStderrPath := state.execMD.RedirectStderrPath
@@ -781,6 +787,7 @@ func (c *Client) setupStdio(_ context.Context, state *execState) error {
 				return fmt.Errorf("chown redirect stderr file: %w", err)
 			}
 			stderrWriters = append(stderrWriters, redirectStderrFile)
+			state.stderrRedirected = true
 		}
 	}
 
@@ -814,8 +821,17 @@ func (c *Client) setupOTel(ctx context.Context, state *execState) error {
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	state.cleanups.Add("close logs", stdio.Close)
-	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
-	state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}
+	// A stream redirected to a file is meant to go to that file, not to the
+	// exec's logs, so leave it out of telemetry. setupStdio still captures it
+	// for Container.stdout/stderr. Callers on API views before v1.0.0 opt back
+	// into logging it with LogRedirectedOutput.
+	logRedirected := state.execMD != nil && state.execMD.LogRedirectedOutput
+	if !state.stdoutRedirected || logRedirected {
+		state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
+	}
+	if !state.stderrRedirected || logRedirected {
+		state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}
+	}
 
 	listener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
 		return net.Listen("tcp", "127.0.0.1:0")

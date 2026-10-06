@@ -2,12 +2,15 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type gitRefWithCommitArgs struct {
@@ -63,6 +66,80 @@ func (args gitRefWithCommitArgs) selectors() []dagql.NamedInput {
 	}
 }
 
+type gitRefNativeCommitBaseArgs struct {
+	Depth        int    `default:"0"`
+	ParentRecipe string `internal:"true" default:""`
+}
+
+func (s *gitSchema) gitRefNativeCommitBaseKey(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], _ gitRefNativeCommitBaseArgs, req *dagql.CallRequest) error {
+	// A ref's content digest may intentionally alias equivalent remote refs.
+	// Object promotion must instead retain the exact recipe/auth/service scope.
+	digest, err := parent.RecipeDigest(ctx)
+	if err != nil {
+		return err
+	}
+	return req.SetArgInput(ctx, "parentRecipe", dagql.String(digest.String()), false)
+}
+
+func (s *gitSchema) gitRefNativeCommitBase(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args gitRefNativeCommitBaseArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := core.GitRemoteCommitBase(ctx, parent, args.Depth)
+	if err != nil {
+		return inst, err
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		return inst, errors.Join(err, dir.OnRelease(context.WithoutCancel(ctx)))
+	}
+	return inst, nil
+}
+
+type gitRefHydrateRepositoryArgs struct {
+	Directory dagql.ID[*core.Directory]
+	Scope     string `internal:"true" default:""`
+}
+
+func (s *gitSchema) gitRefHydrateRepositoryKey(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], _ gitRefHydrateRepositoryArgs, req *dagql.CallRequest) error {
+	sourceKey, err := parent.RecipeDigest(ctx)
+	if err != nil {
+		return err
+	}
+	arg := req.Arg("directory")
+	if arg == nil || arg.Value == nil || arg.Value.ResultRef == nil {
+		return fmt.Errorf("hydrate repository requires an exact directory recipe")
+	}
+	// Use the request's structural input, not ID.Load's content-equivalent
+	// value: aliases may share a snapshot but must not share owned provenance.
+	dirKey, err := (dagql.ResultCallStructuralInputRef{Result: arg.Value.ResultRef}).InputDigest(ctx)
+	if err != nil {
+		return err
+	}
+	return req.SetArgInput(ctx, "scope", dagql.String(sourceKey.String()+" "+dirKey.String()), false)
+}
+
+func (s *gitSchema) gitRefHydrateRepository(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args gitRefHydrateRepositoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	local, err := args.Directory.Load(ctx, srv)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := core.HydrateGitRepository(ctx, parent, local)
+	if err != nil {
+		return inst, err
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		return inst, errors.Join(err, dir.OnRelease(context.WithoutCancel(ctx)))
+	}
+	return inst, nil
+}
+
 func (s *gitSchema) gitRefWithCommit(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args gitRefWithCommitArgs) (inst dagql.ObjectResult[*core.GitRef], err error) {
 	if _, err := args.opts(); err != nil {
 		return inst, err
@@ -95,10 +172,17 @@ func (s *gitSchema) gitRefWithCommitRepository(ctx context.Context, parent dagql
 	if err != nil {
 		return inst, err
 	}
-	if _, local := parent.Self().Backend.(*core.LocalGitRef); !local {
-		// Reusing a remote parent after cache eviction could fetch it again,
-		// despite the new repository already owning all required objects.
-		return repo, nil
+	checkoutParent := parent
+	var parentTree dagql.ObjectResult[*core.Directory]
+	if _, remote := parent.Self().Backend.(*core.RemoteGitRef); remote {
+		// Source-only tree recipes pin named refs to their resolved SHA. Retain
+		// that same exact pinned recipe, including its repository/auth scope.
+		if err := srv.Select(ctx, parent.Self().Repo, &checkoutParent, dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(parent.Self().Ref.SHA)}}}); err != nil {
+			return inst, err
+		}
+		if parentTree, err = gitCheckoutParentTree(ctx, srv, checkoutParent); err != nil {
+			return inst, err
+		}
 	}
 	remote, err := repo.Self().LoadRemote(ctx)
 	if err != nil {
@@ -108,13 +192,45 @@ func (s *gitSchema) gitRefWithCommitRepository(ctx context.Context, parent dagql
 	if err != nil {
 		return inst, fmt.Errorf("resolve committed repository HEAD: %w", err)
 	}
+	var historySource dagql.ObjectResult[*core.GitRef]
+	if _, remote := parent.Self().Backend.(*core.RemoteGitRef); remote {
+		historySource = checkoutParent
+	} else if local, ok := parent.Self().Repo.Self().Backend.(*core.LocalGitRepository); ok {
+		historySource = local.HistorySource
+	}
 	backend := &core.LocalGitRepository{
-		Directory: dir,
+		Directory:     dir,
+		HistorySource: historySource,
 		CheckoutBase: &core.GitCheckoutBase{
-			Parent: parent, CommitSHA: head.SHA,
+			Parent: checkoutParent, CommitSHA: head.SHA, Tree: parentTree,
 		},
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo.Self().CloneWithBackend(backend))
+}
+
+// gitCheckoutParentTree pins the exact canonical tree of a remote parent, not a
+// caller-supplied equal directory. It is already materialized for same-base
+// changes; evaluation here makes its snapshot an owned dependency even if the
+// mirror is evicted. The tree is only an optimization: it lets the child's
+// checkout be incremental, and a remote parent without one gets a full checkout
+// instead. The committed repository already owns every object it needs, so a
+// fallback or replay must not fail (or need the network) just because the tree
+// cannot be rebuilt: any failure other than the caller's own cancellation drops
+// it, recording why on the current span.
+func gitCheckoutParentTree(ctx context.Context, srv *dagql.Server, checkoutParent dagql.ObjectResult[*core.GitRef]) (tree dagql.ObjectResult[*core.Directory], rerr error) {
+	defer func() {
+		if rerr != nil && ctx.Err() == nil {
+			trace.SpanFromContext(ctx).SetAttributes(attribute.String("dagger.git.checkout.parent_tree.fallback", rerr.Error()))
+			tree, rerr = dagql.ObjectResult[*core.Directory]{}, nil
+		}
+	}()
+	if err := srv.Select(ctx, checkoutParent, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}); err != nil {
+		return tree, err
+	}
+	if _, err := tree.Self().Snapshot.GetOrEval(ctx, tree.Result); err != nil {
+		return tree, err
+	}
+	return tree, nil
 }
 
 // This private field gives the materialized Git storage an identity that can be
@@ -132,51 +248,11 @@ func (s *gitSchema) gitRefWithCommitDirectory(ctx context.Context, parent dagql.
 	if err != nil {
 		return inst, err
 	}
-	// Same-base local edits can update an isolated Git index directly. The
-	// returned storage owns its new objects through snapshot ancestry, without
-	// a retained checkout or a copy of the parent's history. Divergent and
-	// unsupported inputs, and any native failure, use the general three-way
-	// reconciliation below.
-	if dir, supported, err := core.GitCommitChangesetNative(ctx, parent, changes.Self(), opts); err != nil {
-		return inst, err
-	} else if supported {
-		return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
-	}
-	var tree dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parent, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}}); err != nil {
-		return inst, err
-	}
-	beforeID, err := changes.Self().Before.ID()
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
 	}
-	var ours dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, tree, &ours, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}}}); err != nil {
-		return inst, err
-	}
-	var merged dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, ours, &merged, dagql.Selector{Field: "withChangeset", Args: []dagql.NamedInput{
-		{Name: "changes", Value: args.Changes}, {Name: "onConflict", Value: core.FailOnMergeConflict},
-	}}); err != nil {
-		return inst, fmt.Errorf("apply commit changes: %w", err)
-	}
-	treeID, err := tree.ID()
-	if err != nil {
-		return inst, err
-	}
-	var applied dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, merged.Self().After, &applied, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](treeID)}}}); err != nil {
-		return inst, err
-	}
-	var ws dagql.ObjectResult[*core.Workspace]
-	if err := srv.Select(ctx, parent, &ws, dagql.Selector{Field: "asWorkspace"}); err != nil {
-		return inst, err
-	}
-	base, err := workspaceGitCheckout(ctx, srv, ws)
-	if err != nil {
-		return inst, err
-	}
-	dir, err := core.GitCommitChangeset(ctx, base, applied.Self(), opts)
+	dir, err := evaluatedDirectory(ctx, query, &core.DirectoryGitCommitLazy{LazyState: core.NewLazyState(), Parent: parent, Changes: changes, Opts: opts})
 	if err != nil {
 		return inst, err
 	}

@@ -32,8 +32,40 @@ func (cell *PartGateCell) loadOrCreate() *PartWriterGate {
 // rowCompleteParts is a row's complete parts as read from the record of one
 // revision of its value.
 type rowCompleteParts struct {
-	version *capturedRowRevision
-	keys    []string
+	stamp completePartsStamp
+	keys  []string
+}
+
+// completePartsStamp is what rowCompleteParts keeps of the capture it was read
+// from: enough to tell the capture still describes the row, without holding
+// the captured representation. A cached capture of an undecoded row would
+// otherwise keep its envelope alive after decoding drops it. Every change to
+// a published row's envelope advances its payload revision, so the revision
+// stands in for the envelope's identity.
+type completePartsStamp struct {
+	payloadRevision    uint64
+	hasValue, isObject bool
+	outputs            capturedOutputVersions
+}
+
+func newCompletePartsStamp(version *capturedRowRevision) completePartsStamp {
+	return completePartsStamp{
+		payloadRevision: version.payload.payloadRevision,
+		hasValue:        version.payload.hasValue,
+		isObject:        version.payload.isObject,
+		outputs:         version.outputs,
+	}
+}
+
+// current reports whether the stamped capture still describes row.
+func (stamp *completePartsStamp) current(row *sharedResult) bool {
+	if stamp.outputs.check() != nil {
+		return false
+	}
+	row.payloadMu.RLock()
+	defer row.payloadMu.RUnlock()
+	return row.payloadRevision == stamp.payloadRevision &&
+		row.hasValue == stamp.hasValue && row.isObject == stamp.isObject
 }
 
 // completePartKeys returns the address keys of the row's complete parts,
@@ -44,7 +76,7 @@ type rowCompleteParts struct {
 // its bookkeeping is in flight, the parts the row's gate has settled, a
 // subset, are returned instead. It never waits on another row.
 func (c *Cache) completePartKeys(ctx context.Context, row *sharedResult) []string {
-	if cached := row.completeParts.Load(); cached != nil && cached.version.check(row) == nil {
+	if cached := row.completeParts.Load(); cached != nil && cached.stamp.current(row) {
 		return cached.keys
 	}
 	record, version, err := c.captureRowRecord(ctx, row)
@@ -66,7 +98,7 @@ func (c *Cache) completePartKeys(ctx context.Context, row *sharedResult) []strin
 	}
 	slices.Sort(keys)
 	keys = slices.Compact(keys)
-	row.completeParts.Store(&rowCompleteParts{version: version, keys: keys})
+	row.completeParts.Store(&rowCompleteParts{stamp: newCompletePartsStamp(version), keys: keys})
 	return keys
 }
 

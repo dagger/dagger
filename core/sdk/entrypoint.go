@@ -108,6 +108,10 @@ func (sdk *entrypointSDK) AlwaysEnablesSelfCalls() bool {
 	return true
 }
 
+func (sdk *entrypointSDK) HasNoRuntime() bool {
+	return true
+}
+
 func (sdk *entrypointSDK) Runtime(
 	ctx context.Context,
 	deps *core.SchemaBuilder,

@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -146,7 +147,12 @@ func GitCommitChangesetNativeBase(ctx context.Context, parent dagql.ObjectResult
 	if ref == nil || ref.Ref == nil || ref.Repo.Self() == nil || len(ref.Ref.SHA) != 40 || !IsFullGitSHA(ref.Ref.SHA) || changes == nil || changes.Before.Self() == nil {
 		return false, nil
 	}
-	if _, ok := ref.Backend.(*LocalGitRef); !ok {
+	if ref.Ref.Name != "" && ref.Ref.Name != ref.Ref.SHA && !strings.HasPrefix(ref.Ref.Name, "refs/heads/") {
+		return false, nil
+	}
+	switch ref.Backend.(type) {
+	case *LocalGitRef, *RemoteGitRef:
+	default:
 		return false, nil
 	}
 	lazy, ok := changes.Before.Self().Lazy.(*DirectoryGitTreeLazy)
@@ -157,7 +163,7 @@ func GitCommitChangesetNativeBase(ctx context.Context, parent dagql.ObjectResult
 	if base.Repo.Self() == nil {
 		return false, nil
 	}
-	if !lazy.DiscardGitDir && !base.Repo.Self().DiscardGitDir || base.Ref.SHA != ref.Ref.SHA {
+	if lazy.KeepGitDir || !lazy.DiscardGitDir && !base.Repo.Self().DiscardGitDir || base.Ref.SHA != ref.Ref.SHA {
 		return false, nil
 	}
 	baseRepo, err := base.Repo.RecipeDigest(ctx)
@@ -263,8 +269,10 @@ func nativeCommitFallback(err error) bool {
 // The bool is false when the caller must use the checkout path: unsupported
 // provenance/storage/semantics, or any failure of the native transaction (see
 // nativeFallback). Only the caller's own cancellation is returned as an error.
-// Currently supported: complete local SHA-1 branches/commit IDs without
-// alternates or linked worktrees, and ordinary files/symlinks including Git
+// Currently supported: complete snapshot-owned SHA-1 branches/commit IDs, or
+// owned shallow history with an exact remote anchor capability, without
+// alternates or linked worktrees. Remote inputs first acquire an owned closure
+// through their exact repository recipe. Ordinary files/symlinks include Git
 // attributes and ignore rules. Changes at or inside a gitlink, or to
 // .gitmodules, use the existing checkout path (see stageNativeChanges).
 func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*GitRef], changes *Changeset, opts GitCommitOpts) (_ *Directory, supported bool, rerr error) {
@@ -283,17 +291,23 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 	if err != nil || !ok {
 		return nil, false, err
 	}
+	if err := normalizeNativeCommitOpts(&opts); err != nil {
+		return nil, true, err
+	}
 	content, err := changes.content(ctx)
 	if err != nil {
 		return nil, true, fmt.Errorf("changeset content: %w", err)
 	}
-	local := parent.Self().Backend.(*LocalGitRef)
+	local, err := nativeCommitRepository(ctx, parent)
+	if err != nil {
+		return nil, true, err
+	}
 	var gitSubdir string
-	dir, err := withGitMergeWorkspace(ctx, local.repo.Directory, "GitRef native commit transaction", func(ws *gitMergeWorkspace) error {
+	dir, err := withGitMergeWorkspace(ctx, local.Directory, "GitRef native commit transaction", func(ws *gitMergeWorkspace) error {
 		if err := checkNativeSnapshotDepth(ws.mount); err != nil {
 			return err
 		}
-		gitDir, err := nativeCommitGitDir(ctx, ws.workDir)
+		gitDir, err := local.nativeGitDir(ctx, ws.workDir)
 		if err != nil {
 			return err
 		}
@@ -301,7 +315,7 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 		if err != nil {
 			return err
 		}
-		return local.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
+		return local.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
 			objects, err := source.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			if err != nil {
 				return err
@@ -328,6 +342,10 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 // nativeCommitGitDir accepts only an object database owned by this snapshot.
 // In particular a borrowed/partial database must not become a durable output.
 func nativeCommitGitDir(ctx context.Context, root string) (string, error) {
+	return nativeCommitGitDirWithShallow(ctx, root, false)
+}
+
+func nativeCommitGitDirWithShallow(ctx context.Context, root string, allowShallow bool) (string, error) {
 	gitDir := filepath.Join(root, ".git")
 	info, err := os.Lstat(gitDir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -347,7 +365,7 @@ func nativeCommitGitDir(ctx context.Context, root string) (string, error) {
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", err
 		}
-		if len(data) != 0 {
+		if len(data) != 0 && (!allowShallow || entry.path != "shallow") {
 			return "", nativeCommitUnsupportedReason(entry.reason)
 		}
 	}
@@ -427,6 +445,9 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 	}
 	meta := filepath.Join(scratch, "repo")
 	if _, err := runWorkspaceCommitGit(ctx, scratch, nil, "init", "--bare", "--template=", "--object-format=sha1", "--ref-format=files", meta); err != nil {
+		return err
+	}
+	if err := copyGitShallowBoundary(filepath.Dir(parentObjects), meta); err != nil {
 		return err
 	}
 	remotes, err := readGitConfigRemotes(ctx, gitutil.NewGitCLI(gitutil.WithGitDir(gitDir)))
@@ -979,7 +1000,11 @@ func batchPathSpecs(specs []string) [][]string {
 }
 
 // runWorkspaceCommitGit layers explicit commit inputs over the hermetic Git environment.
-func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, args ...string) (_ string, rerr error) {
+func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
+	return runWorkspaceCommitGitInput(ctx, dir, extraEnv, nil, args...)
+}
+
+func runWorkspaceCommitGitInput(ctx context.Context, dir string, extraEnv []string, stdin io.Reader, args ...string) (_ string, rerr error) {
 	// Callers may supply -c key=value before the verb. Never include those
 	// values, pathspecs, commit messages, or identity inputs in the span name.
 	commandArgs := args
@@ -1006,6 +1031,7 @@ func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, a
 	}()
 	cmd := gitCmd(ctx, dir, args...)
 	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.Stdin = stdin
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
@@ -1035,4 +1061,124 @@ func gitErrorArgs(args []string) string {
 		s = strings.ToValidUTF8(s[:maxGitErrorArgsBytes], "") + "…"
 	}
 	return s
+}
+
+const persistedDirectoryLazyKindGitCommit = "gitCommit"
+
+// DirectoryGitCommitLazy produces the Git storage of GitRef.withCommit: the
+// parent's repository with Changes committed under Opts. Identity and dates
+// are explicit, so a rerun creates the same commit.
+type DirectoryGitCommitLazy struct {
+	LazyState
+	Parent  dagql.ObjectResult[*GitRef]
+	Changes dagql.ObjectResult[*Changeset]
+	Opts    GitCommitOpts
+}
+
+type persistedDirectoryGitCommitLazy struct {
+	ParentResultID  uint64        `json:"parentResultID"`
+	ChangesResultID uint64        `json:"changesResultID"`
+	Opts            GitCommitOpts `json:"opts"`
+}
+
+func (lazy *DirectoryGitCommitLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	return evaluateDirectoryOutput(ctx, &lazy.LazyState, "GitRef.__withCommitDirectory", dir, func(ctx context.Context) (*Directory, error) {
+		return gitCommitDirectory(ctx, lazy.Parent, lazy.Changes, lazy.Opts)
+	})
+}
+
+// gitCommitDirectory commits changes on parent. Same-base edits can update an
+// isolated Git index directly. Local storage shares its existing objects
+// through snapshot ancestry; remote inputs first promote a private authorized
+// closure, never a retained checkout. Divergent and unsupported inputs, and
+// any native failure, use the general reconciliation.
+func gitCommitDirectory(ctx context.Context, parent dagql.ObjectResult[*GitRef], changes dagql.ObjectResult[*Changeset], opts GitCommitOpts) (*Directory, error) {
+	if dir, supported, err := GitCommitChangesetNative(ctx, parent, changes.Self(), opts); err != nil || supported {
+		return dir, err
+	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var tree dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, parent, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}}); err != nil {
+		return nil, err
+	}
+	beforeID, err := changes.Self().Before.ID()
+	if err != nil {
+		return nil, err
+	}
+	var ours dagql.ObjectResult[*Changeset]
+	if err := srv.Select(ctx, tree, &ours, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*Directory](beforeID)}}}); err != nil {
+		return nil, err
+	}
+	changesID, err := changes.ID()
+	if err != nil {
+		return nil, err
+	}
+	var merged dagql.ObjectResult[*Changeset]
+	if err := srv.Select(ctx, ours, &merged, dagql.Selector{Field: "withChangeset", Args: []dagql.NamedInput{
+		{Name: "changes", Value: dagql.NewID[*Changeset](changesID)}, {Name: "onConflict", Value: FailOnMergeConflict},
+	}}); err != nil {
+		return nil, fmt.Errorf("apply commit changes: %w", err)
+	}
+	treeID, err := tree.ID()
+	if err != nil {
+		return nil, err
+	}
+	var applied dagql.ObjectResult[*Changeset]
+	if err := srv.Select(ctx, merged.Self().After, &applied, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*Directory](treeID)}}}); err != nil {
+		return nil, err
+	}
+	var base dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, parent, &base,
+		dagql.Selector{Field: "asWorkspace"},
+		dagql.Selector{Field: "git"},
+		dagql.Selector{Field: "__checkout"},
+	); err != nil {
+		return nil, err
+	}
+	return GitCommitChangeset(ctx, base, applied.Self(), opts)
+}
+
+func (lazy *DirectoryGitCommitLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachLazyInput(attach, lazy.Parent, "DirectoryGitCommitLazy.Parent")
+	if err != nil {
+		return nil, err
+	}
+	changes, err := attachLazyInput(attach, lazy.Changes, "DirectoryGitCommitLazy.Changes")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Changes = changes
+	return []dagql.AnyResult{parent, changes}, nil
+}
+
+func (lazy *DirectoryGitCommitLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "git commit parent")
+	if err != nil {
+		return nil, err
+	}
+	changesID, err := encodePersistedObjectRef(enc, lazy.Changes, "git commit changes")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedDirectoryGitCommitLazy{ParentResultID: parentID, ChangesResultID: changesID, Opts: lazy.Opts})
+}
+
+func decodeDirectoryGitCommitLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*Directory], error) {
+	var persisted persistedDirectoryGitCommitLazy
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted git commit lazy: %w", err)
+	}
+	parent, err := loadPersistedObjectResultByResultID[*GitRef](ctx, dec, persisted.ParentResultID, "git commit parent")
+	if err != nil {
+		return nil, err
+	}
+	changes, err := loadPersistedObjectResultByResultID[*Changeset](ctx, dec, persisted.ChangesResultID, "git commit changes")
+	if err != nil {
+		return nil, err
+	}
+	return &DirectoryGitCommitLazy{LazyState: NewLazyState(), Parent: parent, Changes: changes, Opts: persisted.Opts}, nil
 }

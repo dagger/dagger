@@ -154,6 +154,10 @@ func clonePersistedEnvelope(env PersistedResultEnvelope) (PersistedResultEnvelop
 	if err != nil {
 		return PersistedResultEnvelope{}, err
 	}
+	env.StoredParts, err = clonePartOffers(env.StoredParts)
+	if err != nil {
+		return PersistedResultEnvelope{}, err
+	}
 	env.ObjectJSON = slices.Clone(env.ObjectJSON)
 	env.ScalarJSON = slices.Clone(env.ScalarJSON)
 	env.Items = slices.Clone(env.Items)

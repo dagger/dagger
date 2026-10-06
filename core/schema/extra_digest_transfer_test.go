@@ -144,38 +144,6 @@ func withHostSocket(t *testing.T, e *transferTestEngine, ctx context.Context, _ 
 	return ctr
 }
 
-// withGoMod copies go.mod out of a source whose main.go is the variant:
-// directory().withFile("go.mod", <source>.file("go.mod")). The source is
-// evaluated first, as a host directory is.
-func withGoMod(t *testing.T, e *transferTestEngine, ctx context.Context, variant string) dagql.AnyResult {
-	t.Helper()
-	var src dagql.ObjectResult[*core.Directory]
-	require.NoError(t, e.dag.Select(ctx, e.dag.Root(), &src,
-		dagql.Selector{Field: "directory"},
-		dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString("go.mod")},
-			{Name: "contents", Value: dagql.NewString("module x\n")},
-		}},
-		dagql.Selector{Field: "withNewFile", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString("main.go")},
-			{Name: "contents", Value: dagql.NewString("package main // " + variant + "\n")},
-		}}))
-	require.NoError(t, e.cache.Evaluate(ctx, src))
-	var file dagql.ObjectResult[*core.File]
-	require.NoError(t, e.dag.Select(ctx, src, &file,
-		dagql.Selector{Field: "file", Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString("go.mod")}}}))
-	fileID, err := file.ID()
-	require.NoError(t, err)
-	var dir dagql.ObjectResult[*core.Directory]
-	require.NoError(t, e.dag.Select(ctx, e.dag.Root(), &dir,
-		dagql.Selector{Field: "directory"},
-		dagql.Selector{Field: "withFile", Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString("go.mod")},
-			{Name: "source", Value: dagql.NewID[*core.File](fileID)},
-		}}))
-	return dir
-}
-
 // withVolatile is container().withVolatileVariable("CI_RUN_ID", variant)
 // .withEnvVariable("X", "y").
 func withVolatile(t *testing.T, e *transferTestEngine, ctx context.Context, variant string) dagql.AnyResult {
@@ -239,11 +207,12 @@ func transferTestSalt(t *testing.T) []byte {
 // A result is exported from one engine and merged into another. There, a
 // session makes a call that a second session on the first engine gets as a
 // cache hit, and gets it as a hit too. Some of these calls meet the result
-// only through an extra digest: a secret or socket handle, the content of a
-// file taken from a source that changed elsewhere, or a volatile variable's
-// call, or a content digest that a later one replaced. Engines of one
-// organization share one secret salt; under different salts a salted handle
-// differs, and the call misses.
+// only through an extra digest: a secret or socket handle, a volatile
+// variable's call, or a content digest that a later one replaced. The content
+// of a file taken from a source that changed elsewhere needs native snapshot
+// mounts; TestUnchangedFileFromChangedSourceHitsOnAnotherEngine in
+// core/integration covers it. Engines of one organization share one secret
+// salt; under different salts a salted handle differs, and the call misses.
 func TestEquivalentResultHitsAfterMergeIntoAnotherEngine(t *testing.T) {
 	secretURI := withSecret(dagql.Selector{Field: "secret", Args: []dagql.NamedInput{
 		{Name: "uri", Value: dagql.NewString("env://TRANSFER_SECRET")},
@@ -254,7 +223,6 @@ func TestEquivalentResultHitsAfterMergeIntoAnotherEngine(t *testing.T) {
 		first    string
 		then     string
 		ownSalts bool
-		mounts   bool
 		hit      bool
 	}{
 		{name: "the same call, no extra digest", build: withEnv, first: "v", then: "v", hit: true},
@@ -268,15 +236,11 @@ func TestEquivalentResultHitsAfterMergeIntoAnotherEngine(t *testing.T) {
 			{Name: "cacheKey", Value: dagql.Opt(dagql.NewString("transfer-cache-key"))},
 		}}), hit: true},
 		{name: "host.unixSocket", build: withHostSocket, hit: true},
-		{name: "Directory.file of an unchanged file from a changed source", build: withGoMod, first: "v1", then: "v2", mounts: true, hit: true},
 		{name: "withVolatileVariable with a new value", build: withVolatile, first: "run-1", then: "run-2", hit: true},
 		{name: "a content digest replaced after publication", build: withReplacedContent, first: "replaced", then: "kept", hit: true},
 		{name: "secret(uri) under different salts", build: secretURI, ownSalts: true, hit: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.mounts {
-				testutil.RequireNativeMount(t)
-			}
 			saltA := transferTestSalt(t)
 			saltB := saltA
 			if tc.ownSalts {

@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  When a module's code calls `serveModule` with a local path, the engine now resolves it in the module's own tree instead of the caller's workspace, so the module serves its own client and not a same-named module in the caller.
+time: 2026-10-05T18:11:00Z
+custom:
+  Author: eunomie
+  PR: 14490

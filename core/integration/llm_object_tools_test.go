@@ -1048,7 +1048,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		continued := strings.Join([]string{
 			"[continued via tool startFresh]",
 			"Continuing from the returned conversation.",
-			"Toolset unchanged (22 tools).",
+			"Toolset unchanged (23 tools).",
 			"Conversation history replaced: 2 messages -> 0 messages.",
 		}, "\n")
 		continuationModel := cannedRecordingModel(ctx, t, c, c.LLM().
@@ -1076,7 +1076,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		require.Contains(t, out, "done")
 	})
 
-	t.Run("at most one continuation per turn", func(ctx context.Context, t *testctx.T) {
+	t.Run("consecutive continuations chain", func(ctx context.Context, t *testctx.T) {
 		model := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt("continue twice").
 			WithResponse([]dagger.LLMContentBlockInput{
@@ -1084,28 +1084,30 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "continueWithMarker"},
 			}).
 			WithToolResult("call_1", "", false).
-			WithToolResult("call_2", "", true).
+			WithToolResult("call_2", "", false).
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
 			}))
 
-		// LLMs do not merge the way Changesets do, so the second swap in a batch is
-		// refused rather than silently discarding the first.
+		// The second continuation runs on the conversation the first returned,
+		// so it transforms that one rather than being refused or discarding it.
 		out, err := base.With(daggerShell(fmt.Sprintf(
 			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "continue twice" | loop | transcript`,
 			model,
 		))).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "only one is allowed")
+		require.NotContains(t, out, "only one is allowed")
+		require.NotContains(t, out, "already ran this turn")
+		require.Equal(t, 2, strings.Count(out, "Continuing from the returned conversation."), out)
 		require.Contains(t, out, "done")
 	})
 
-	// Continuations run after the turn's other calls, on the state those calls
-	// produced (MCP.SplitContinuationCalls), so `[edit, reload]` reloads the
-	// edit. That holds whichever order the model emitted them in: the
-	// continuation receives a conversation with addFirst's changeset already
-	// overlaid and adds its marker on top. Both files must survive, and neither
-	// call may be refused.
+	// A continuation runs in its written position. The calls before it land
+	// first and are folded into the conversation it receives, so `[edit,
+	// reload]` reloads the edit; the calls after it run on the conversation it
+	// returned — its workspace, bindings and toolset — so `[checkout, read]`
+	// reads the new checkout. Either way, both files must survive, and no call
+	// may be refused.
 	loopThen := func(ctx context.Context, t *testctx.T, prompt, model, then string) string {
 		t.Helper()
 		out, err := base.With(daggerShell(fmt.Sprintf(
@@ -1127,7 +1129,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 			},
 		},
 		{
-			name: "an edit emitted after the continuation is carried into it too",
+			name: "an edit emitted after the continuation lands on the continued workspace",
 			calls: []dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "addFirst"},
@@ -1138,6 +1140,14 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 			calls: []dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "swap"},
 				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "continueWithMarker"},
+			},
+		},
+		{
+			name: "a continuation wrapped in Timeout runs in its position too",
+			calls: []dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "Timeout",
+					Arguments: dagger.JSON(`{"duration":"1m","tool":"continueWithMarker","arguments":{}}`)},
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "addFirst"},
 			},
 		},
 	} {
@@ -1167,37 +1177,26 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		})
 	}
 
-	t.Run("a continuation reached out of order refuses the work it would drop", func(ctx context.Context, t *testctx.T) {
-		// Wrapping the continuation in the Timeout builtin runs it in its
-		// written position instead of last, so the changeset call after it
-		// runs on a workspace the adopted conversation will never see. The
-		// changeset call is refused rather than silently dropped, the model is
-		// told to re-issue it, and the loop carries on from the continuation.
+	t.Run("a read emitted after the continuation sees the continued workspace", func(ctx context.Context, t *testctx.T) {
+		// readMarker is pure, and the marker only exists in the workspace the
+		// continuation bound: reading it before the continuation ran, or on
+		// the conversation that made the call, would fail.
 		model := cannedRecordingModel(ctx, t, c, c.LLM().
-			WithPrompt("continue then edit").
+			WithPrompt("continue then read").
 			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "Timeout",
-					Arguments: dagger.JSON(`{"duration":"1m","tool":"continueWithMarker","arguments":{}}`)},
-				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "addFirst"},
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "readMarker"},
 			}).
 			WithToolResult("call_1", "", false).
-			WithToolResult("call_2", "", true).
+			WithToolResult("call_2", "", false).
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
 			}))
 
-		transcript := loopThen(ctx, t, "continue then edit", model, "transcript")
+		transcript := loopThen(ctx, t, "continue then read", model, "transcript")
 		require.Contains(t, transcript, "Continuing from the returned conversation.")
-		require.Contains(t, transcript, "re-issue this call in the next turn")
+		require.NotContains(t, transcript, "[Tool result ERROR]")
 		require.Contains(t, transcript, "done")
-
-		require.Equal(t, "swapped by continuation", strings.TrimSpace(
-			loopThen(ctx, t, "continue then edit", model, "workspace | file CONTINUED.txt | contents")))
-		_, err := base.With(daggerShell(fmt.Sprintf(
-			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "continue then edit" | loop | workspace | file FIRST.txt | contents`,
-			model,
-		))).Stdout(ctx)
-		require.Error(t, err, "the refused changeset must not have landed")
 	})
 
 	t.Run("the base workspace does not already contain the marker", func(ctx context.Context, t *testctx.T) {
@@ -1813,6 +1812,40 @@ func (LLMSuite) TestAddressableToolArgs(ctx context.Context, t *testctx.T) {
 		// in the tool call's arguments it is buried in the encoded
 		// (protobuf+base64) ID — so seeing it in the transcript proves the
 		// ID decoded directly into the same container, no address lookup.
+		require.Contains(t, out, marker)
+	})
+
+	t.Run("a list mixing addresses and IDs lifts element-wise", func(ctx context.Context, t *testctx.T) {
+		const marker = "address-lift list element"
+		ctrID, err := c.Container().From(alpineImage).
+			WithNewFile("/marker.txt", marker).ID(ctx)
+		require.NoError(t, err)
+		args, err := json.Marshal(map[string]any{
+			// The plain image has no marker, so it prints its OS instead.
+			"cmd":       []string{"sh", "-c", "cat /marker.txt 2>/dev/null || cat /etc/os-release"},
+			"sandboxes": []string{alpineImage, string(ctrID)},
+		})
+		require.NoError(t, err)
+
+		model := cannedRecordingModel(ctx, t, c, c.LLM().
+			WithPrompt("what OS is every sandbox running?").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "execAll",
+					Arguments: dagger.JSON(args)},
+			}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-tools $(runner) | with-prompt "what OS is every sandbox running?" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		// The image ref lifted into the real image, and the ID decoded
+		// directly into the container holding the marker.
+		require.Contains(t, out, "Alpine Linux")
 		require.Contains(t, out, marker)
 	})
 }

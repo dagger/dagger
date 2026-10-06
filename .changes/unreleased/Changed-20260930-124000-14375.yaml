@@ -1,0 +1,6 @@
+kind: Changed
+body: Reuse the prepared core schema when building artifact discovery servers.
+time: 2026-09-30T12:40:00-07:00
+custom:
+    Author: grouville
+    PR: "14375"

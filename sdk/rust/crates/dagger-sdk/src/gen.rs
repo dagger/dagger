@@ -3282,13 +3282,13 @@ pub struct ContainerWithExecOpts<'a> {
     /// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
-    /// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+    /// Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stderr: Option<&'a str>,
     /// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdin: Option<&'a str>,
-    /// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+    /// Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
     /// Content to write to the command's standard input. Example: "Hello world")
@@ -18220,6 +18220,9 @@ pub struct WorkspaceWithUpdatedModulesOpts<'a> {
     /// Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
     #[builder(setter(into, strip_option), default)]
     pub names: Option<Vec<&'a str>>,
+    /// New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
+    #[builder(setter(into, strip_option), default)]
+    pub source: Option<&'a str>,
     /// New version request for exactly one selected module. Cannot be combined with a version suffix.
     #[builder(setter(into, strip_option), default)]
     pub version: Option<&'a str>,
@@ -19744,7 +19747,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with updated module versions and lockfile state.
+    /// Return this workspace with updated module sources, versions and lockfile state.
     /// An SDK client scope is regenerated when it targets an updated module.
     ///
     /// # Arguments
@@ -19758,7 +19761,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with updated module versions and lockfile state.
+    /// Return this workspace with updated module sources, versions and lockfile state.
     /// An SDK client scope is regenerated when it targets an updated module.
     ///
     /// # Arguments
@@ -19774,6 +19777,9 @@ impl Workspace {
         }
         if let Some(version) = opts.version {
             query = query.arg("version", version);
+        }
+        if let Some(source) = opts.source {
+            query = query.arg("source", source);
         }
         Workspace {
             proc: self.proc.clone(),

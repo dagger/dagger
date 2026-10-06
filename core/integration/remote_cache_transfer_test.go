@@ -34,6 +34,7 @@ type transferFixtureMapping struct {
 	ResultID uint64                `json:"resultID"`
 	Type     *dagql.ResultCallType `json:"type"`
 	Handle   string                `json:"handle"`
+	Root     bool                  `json:"root"`
 }
 type transferFixtureReport struct {
 	Persistence enginecore.RemoteCacheFixturePersistence `json:"persistence"`

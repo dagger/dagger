@@ -42,8 +42,12 @@ const persistedResultEnvelopeVersion = 5
 type PersistedResultEnvelope struct {
 	Imported      bool                 `json:"imported,omitempty"`
 	PendingOffers []PersistedPartOffer `json:"pendingOffers,omitempty"`
-	Version       int                  `json:"version"`
-	Kind          string               `json:"kind"`
+	// StoredParts are a blob-backed cache's stored parts of the value, which
+	// only its saved envelope carries: in memory they stay on the entry, so
+	// no record sent to an engine carries them.
+	StoredParts []PersistedPartOffer `json:"storedParts,omitempty"`
+	Version     int                  `json:"version"`
+	Kind        string               `json:"kind"`
 	// TypeName identifies the GraphQL value type of object and scalar
 	// envelopes.
 	TypeName string `json:"typeName,omitempty"`
@@ -59,6 +63,19 @@ type PersistedResultEnvelope struct {
 	ObjectJSON            json.RawMessage           `json:"objectJSON,omitempty"`
 	ScalarJSON            json.RawMessage           `json:"scalarJSON,omitempty"`
 	Items                 []PersistedResultEnvelope `json:"items,omitempty"`
+}
+
+// persistedEnvelopePayloadBytes is the length of the encoded value an
+// undecoded imported row retains in memory.
+func persistedEnvelopePayloadBytes(env *PersistedResultEnvelope) int64 {
+	if env == nil {
+		return 0
+	}
+	n := int64(len(env.ObjectJSON) + len(env.ScalarJSON))
+	for i := range env.Items {
+		n += persistedEnvelopePayloadBytes(&env.Items[i])
+	}
+	return n
 }
 
 type PersistedObjectCache interface {

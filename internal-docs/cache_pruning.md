@@ -367,15 +367,21 @@ At a high level, the prune implementation in `dagql/cache_prune.go` does this:
 10. compact eq-classes if needed
 11. trigger snapshot metadata GC if something was actually reclaimed
 
+Steps 1-4 run once per pass. A later policy reuses that measured state only to
+decide it has nothing to do, since measuring holds the lock and is most of a
+pass's cost. Before a later policy plans removals, and after any policy removes
+entries, the state is measured again: results published since may retain what
+the policy would remove.
+
 This is absolutely a best-effort pruning pass, not an optimal solver.
 
 ## Structural Estimate And Memory Pruning
 
-The cache exposes an O(1) estimate from cardinalities already protected by
-`egraphMu`:
+The cache exposes an O(1) estimate from cardinalities and a payload total
+already protected by `egraphMu`:
 
 ```text
-estimated bytes = 3072*R + 512*T + 768*C
+estimated bytes = 3072*R + 512*T + 768*C + P
 ```
 
 Where:
@@ -384,13 +390,42 @@ Where:
 - `T` is `len(egraphTerms)`, the number of live symbolic operation terms
 - `C` is `len(egraphParents)-1`, the allocated union-find class-slot
   high-water
+- `P` is the sum of the live results' payload bytes (below)
 
 The weights are a calibrated bundle for ordinary result-owned calls, payloads,
 dependencies, indexes, maps, terms, and classes. They are not claims about the
 isolated size of any one Go object. The estimate intentionally ignores exact
-map capacity, dependency fan-out, call-string length, payload size, imported
-envelope size, and allocator fragmentation. It bounds the reproduced
+map capacity, dependency fan-out, call-string length, and allocator
+fragmentation. It bounds the reproduced
 population-growth problem; it is not a process RSS measurement.
+
+### Payload Bytes
+
+Some values keep a large byte payload in memory for the life of their cache
+entry. The common case is a `File` or `Directory` whose operation is a blob or
+new-file write: the operation stays as the value's recipe after evaluation, so
+its contents stay too. Each module schema's introspection JSON
+(`__schemaJSONFile`) is such a blob, about 0.5 MB per distinct schema.
+
+A value reports such payloads through the optional `CachePayloadSizer`
+interface, which must only read lengths already at hand. Today these do:
+
+- `String`, `JSON`, and `JSONValue`: their length
+- `File`: blob contents, plus saved operation bytes (`lazyJSON`) on restored
+  and transferred values
+- `Directory`: new-file content, plus saved operation bytes
+
+Each `sharedResult` records its `payloadBytes` once, and the cache keeps their
+sum over `resultsByID` in step on every registration, removal, and in-place
+value replacement. A fresh result is measured outside cache locks before it is
+published. An imported or merged row starts at its envelope's encoded length
+and switches to its decoded value's size when it is decoded. Later in-place
+changes to a value, such as a part install swapping a recipe for saved
+operation bytes, keep the earlier measurement.
+
+The payload term is not calibrated and not a heap measurement: it counts only
+what values report, at encoded length, and never walks object graphs or call
+arguments.
 
 The class-slot coefficient is 768 rather than the initial 1,024 hypothesis
 because 1,024 produced a 2.199 churn-compaction estimate-to-heap ratio, outside
@@ -415,6 +450,7 @@ When the estimate exceeds the maximum, `PruneMetadataEstimate`:
 4. computes active closure and candidates using `KeepDuration=0`, no filters,
    and the current deterministic order
 5. gives each simulated collected result the same coarse structural credit
+   plus its own payload bytes
 6. reuses the existing greedy ownership simulation until the target is reached
    or candidates are exhausted
 7. applies persisted-edge cuts through the shared live collector
@@ -607,6 +643,32 @@ The basic idea is:
 This is how pruning avoids double-counting shared snapshots or other shared
 storage.
 
+A snapshot's owner lease retains its whole parent chain, so a result's usage
+identities are that chain, not only the snapshots its value reports. The usage
+pass resolves each snapshot's parent outside the lock and adds the ancestors as
+identities (`snapshotChains` in `dagql/cache_usage.go`). Ancestors are sized
+directly by snapshot ID, since the value only knows how to size its own
+snapshots. In practice:
+
+- an image's lower layers count once, against the earliest result that retains
+  them, so the `from` result shows the whole image
+- a result stacked on others shows only its own layer while the results below
+  it are alive, and pruning it is credited with only that layer
+- once the results below are gone, the layers they left behind are charged to
+  the result still retaining them
+
+Parent links never change, so each pass reuses the parents and sorted chains
+the previous pass resolved and keeps only the ones it visited. Rows on the same
+snapshot share its chain slice. If any row's chain has an
+unresolved link (a lookup failed, or the row appeared after sampling), the pass
+is deferred like any other incomplete membership: a row missing ancestors would
+let the simulation credit layers it still retains.
+
+One case stays uncounted. A merge snapshot's recorded usage leaves out files
+hardlinked from other merge inputs, and those inputs are not in its parent
+chain. Once the inputs' results are collected, that data stays on disk with
+the merge without being charged to it.
+
 ## Size Measurement
 
 Disk prune needs approximate physical reclaim sizes, so it measures usage before
@@ -697,6 +759,16 @@ removed persisted roots. Structural reports deliberately have no per-root
 entries, so this decision uses the aggregate removed-root count. The low-level
 cleanup semantics are intentionally delegated to containerd rather than
 reimplemented in dagql.
+
+Removing a lease only marks the metadata DB dirty, and leases are released
+outside any prune too: session teardown, failed execs, stopped services. So the
+engine also tracks deletions through containerd's mutation callback and, at the
+end of every GC pass, collects whatever is still pending, whatever the policies
+decided (`snapshotGarbage` in `engine/server/snapshot_garbage.go`). The first
+pass after startup always collects, since containerd's deletion count does not
+survive a restart. This collection also runs with `gc.enabled=false`: disabling
+GC stops the engine from choosing entries to drop, but nothing references this
+data anymore.
 
 That is enough to understand the current prune story at a high level. The
 lease/snapshot side can be documented in finer detail separately.
@@ -850,8 +922,8 @@ Important limitations:
 - the planner is greedy, not optimal
 - it does not reason about richer value/cost tradeoffs
 - disk mode relies on approximate/current physical size measurements
-- structural mode does not model rare large calls, payloads, imported
-  envelopes, map capacity, or allocator fragmentation
+- structural mode does not model rare large calls, payloads that values do not
+  report, map capacity, or allocator fragmentation
 - the full O(N) snapshot and simulation allocate substantial temporary memory
 - it accepts drift between snapshot time and apply time
 
@@ -865,7 +937,8 @@ ownership model.
 The current dagql prune model treats persisted edges as prunable retention roots
 and protects live session closure and unpruneable roots. Disk mode uses measured
 physical size and worker policies. Structural mode triggers automatically or
-manually from an O(1) `R/T/C` estimate, force-compacts class slots, and uses
-equal coarse credit without physical details. Both modes reuse the same graph
+manually from an O(1) `R/T/C` estimate plus reported payload bytes,
+force-compacts class slots, and credits each result an equal structural share
+plus its own payload bytes, without physical details. Both modes reuse the same graph
 snapshot, greedy ownership simulation, live unpruneable recheck, persisted-edge
 cuts, normal ownership cascade, and containerd lease cleanup.

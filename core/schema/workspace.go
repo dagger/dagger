@@ -462,11 +462,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("withUpdatedModules", s.withUpdatedModules).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
-			Doc("Return this workspace with updated module versions and lockfile state.",
+			Doc("Return this workspace with updated module sources, versions and lockfile state.",
 				"An SDK client scope is regenerated when it targets an updated module.").
 			Args(
 				dagql.Arg("names").Doc("Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules."),
 				dagql.Arg("version").View(AfterVersion("v1.0.0-0")).Doc("New version request for exactly one selected module. Cannot be combined with a version suffix."),
+				dagql.Arg("source").View(AfterVersion("v1.0.0-0")).Doc("New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix."),
 			),
 		dagql.NodeFunc("sdks", s.sdks).
 			View(AfterVersion("v1.0.0-0")).

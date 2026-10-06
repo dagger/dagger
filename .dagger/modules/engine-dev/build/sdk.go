@@ -174,8 +174,12 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		// We cannot mount the directory because bun will struggle with symlinks when compiling
 		// the introspector binary.
 		WithDirectory("/src", rootfs).
+		// Install from the committed yarn.lock (bun migrates it) instead of
+		// resolving package.json ranges against whatever is newest on npm.
+		// It's added to the builder only, so it isn't shipped in the SDK image.
+		WithFile("/src/yarn.lock", build.source.File("sdk/typescript/yarn.lock")).
 		WithWorkdir("/src").
-		WithExec([]string{"bun", "install"}).
+		WithExec([]string{"bun", "install", "--frozen-lockfile"}).
 		// Create introspector binary
 		WithExec([]string{"bun", "build", "src/module/entrypoint/introspection_entrypoint.ts", "--compile", "--outfile", "/bin/ts-introspector"}).
 		// Build the SDK bundled that contains the whole static library + default client

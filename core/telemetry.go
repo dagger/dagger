@@ -170,7 +170,11 @@ func AroundFunc(
 	// skip the closure walk below.
 	rootClaimed := claimCallPayload(payloadKeys, callDigest.String())
 
-	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
+	startCtx := ctx
+	if plumbing, ok := moduleProcessPlumbingParent(ctx, spanName, req.Field); ok {
+		startCtx = trace.ContextWithSpanContext(ctx, plumbing)
+	}
+	ctx, span := Tracer(ctx).Start(startCtx, spanName, trace.WithAttributes(attrs...))
 	initCacheEvidence(span, req)
 
 	// Fill any gaps in this call's recipe closure over the payload log lane.
@@ -195,6 +199,39 @@ func AroundFunc(
 		recordCacheEvidence(ctx, span, req.CacheEvidence, res)
 		logResult(ctx, res, req.ResultCall)
 	}
+}
+
+type moduleProcessRequestKey struct{}
+
+type moduleProcessRequest struct {
+	plumbingSpan trace.SpanContext
+	requestSpan  trace.SpanID
+}
+
+// WithModuleProcessRequest marks a request from a module process whose
+// function call keeps its plumbing in plumbingSpan. The current span of ctx
+// must be the request's own span: only the request's top-level calls move.
+func WithModuleProcessRequest(ctx context.Context, plumbingSpan trace.SpanContext) context.Context {
+	return context.WithValue(ctx, moduleProcessRequestKey{}, moduleProcessRequest{
+		plumbingSpan: plumbingSpan,
+		requestSpan:  trace.SpanContextFromContext(ctx).SpanID(),
+	})
+}
+
+// moduleProcessPlumbingParent reports where a module process's top-level call
+// belongs when it is plumbing rather than function body: serveModule loads a
+// dependency, and engine-private calls (such as _implementationScoped when the
+// next request installs that dependency) are machinery. Calls nested in a
+// body call stay where they are.
+func moduleProcessPlumbingParent(ctx context.Context, spanName, field string) (trace.SpanContext, bool) {
+	req, ok := ctx.Value(moduleProcessRequestKey{}).(moduleProcessRequest)
+	if !ok || trace.SpanContextFromContext(ctx).SpanID() != req.requestSpan {
+		return trace.SpanContext{}, false
+	}
+	if spanName != "Query.serveModule" && !strings.HasPrefix(field, "_") {
+		return trace.SpanContext{}, false
+	}
+	return req.plumbingSpan, true
 }
 
 // callPayloadAttr encodes frame as the dagger.io/dag.call span attribute. ok is

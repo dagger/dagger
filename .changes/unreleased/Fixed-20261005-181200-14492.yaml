@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  A git module's calls are now keyed on its commit, so code that serves a sibling module from the same repository re-runs when the sibling changes instead of returning a stale cached result.
+time: 2026-10-05T18:12:00Z
+custom:
+  Author: eunomie
+  PR: 14492

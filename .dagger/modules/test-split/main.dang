@@ -28,8 +28,9 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
     timeout: String,
+    parallel: Int,
   ): Void {
-    engineDev(ws: self.ws).test(timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    engineDev(ws: self.ws).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   let testCliEngineSpecific(
@@ -51,17 +52,136 @@ type TestSplit {
     ebpfProgs: [String!],
     pkg: String! = "./core/integration",
     race: Boolean,
+    parallel: Int,
   ): Void {
-    engineDev(ws: self.ws).test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    engineDev(ws: self.ws).test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   """
-  Test Base
+  Base integration tests not assigned to another shard
   """
   pub testBase: Void @check {
     testSkip(
-      # Keep this list exact so similarly named unit tests outside the integration
-      # package remain in the base shard.
+      # Exact exclusions preserve similarly named suites and leave new suites
+      # in this catch-all shard until they are explicitly assigned elsewhere.
+      skip: [
+        "^TestCLI$",
+        "^TestCachePersistence$",
+        "^TestCall$",
+        "^TestClientGenerator$",
+        "^TestContainer$",
+        "^TestDaggerCMD$",
+        "^TestDockerfile$",
+        "^TestElixir$",
+        "^TestEngine$",
+        "^TestGo$",
+        "^TestInterface$",
+        "^TestJava$",
+        "^TestLLM$",
+        "^TestLocalCache$",
+        "^TestModule$",
+        "^TestModuleConfig$",
+        "^TestModuleDefinitionSuite$",
+        "^TestModuleLoading$",
+        "^TestPHP$",
+        "^TestProvision$",
+        "^TestPython$",
+        "^TestShell$",
+        "^TestTelemetry$",
+        "^TestTypescript$",
+        "^TestWorkspace$",
+        "^TestWorkspaceAPI$",
+        "^TestWorkspaceCompat$",
+        "^TestWorkspaceLegacyDefaultPath$",
+        "^TestWorkspaceMigration$",
+        "^TestWorkspaceModules$",
+        "^TestWorkspaceSelection$",
+        "^TestAgentRestore$",
+        "^TestAgents$",
+        "^TestArtifacts$",
+        "^TestCache$",
+        "^TestCallIDRebuild$",
+        "^TestCommandHints$",
+        "^TestDaggerUpVerifyHarness$",
+        "^TestDang$",
+        "^TestDirectory$",
+        "^TestEnvFile$",
+        "^TestGPU$",
+        "^TestGenerators$",
+        "^TestGit$",
+        "^TestHTTP$",
+        "^TestHost$",
+        "^TestLegacy$",
+        "^TestListen$",
+        "^TestLocalDir$",
+        "^TestLockfile$",
+        "^TestRemoteCacheTransferSuite$",
+        "^TestRuntimeCodegen$",
+        "^TestSecretProvider$",
+        "^TestSequential$",
+        "^TestType$",
+      ],
+      race: true,
+      parallel: 16,
+    )
+  }
+
+  """
+  Base integration tests assigned to the additional shard
+  """
+  pub testBaseExtra: Void @check {
+    testSpecific(
+      run: [
+        "^TestAgentRestore$",
+        "^TestAgents$",
+        "^TestArtifacts$",
+        "^TestCache$",
+        "^TestCallIDRebuild$",
+        "^TestCommandHints$",
+        "^TestDaggerUpVerifyHarness$",
+        "^TestDang$",
+        "^TestDirectory$",
+        "^TestEnvFile$",
+        "^TestGPU$",
+        "^TestGenerators$",
+        "^TestGit$",
+        "^TestHTTP$",
+        "^TestHost$",
+        "^TestLegacy$",
+        "^TestListen$",
+        "^TestLocalDir$",
+        "^TestLockfile$",
+        "^TestRemoteCacheTransferSuite$",
+        "^TestRuntimeCodegen$",
+        "^TestSecretProvider$",
+        "^TestSequential$",
+        "^TestType$",
+      ],
+      race: true,
+      parallel: 16,
+    )
+  }
+
+  """
+  Package patterns covered by the package-test shard
+  """
+  pub packagePatterns: String! {
+    # Match the source tree used by engine-dev tests: workspace-only tools
+    # excluded from that tree must not become explicit package arguments.
+    go(ws: self.ws, source: engineDev(ws: self.ws).source, race: true, cgo: true).env.withExec([
+      "go", "list", "-race", "-f",
+      "{{if ne .ImportPath \"github.com/dagger/dagger/core/integration\"}}{{.ImportPath}}{{end}}",
+      "./...",
+    ]).stdout
+  }
+
+  """
+  Package tests outside core/integration, with the engine fixtures preserved
+  """
+  pub testPackages: Void @check {
+    testSkip(
+      # Preserve the old base exclusions: telemetry and CLI package suites
+      # already have dedicated checks, while similarly named tests still run.
       skip: [
         "^TestCLI$",
         "^TestCachePersistence$",
@@ -95,8 +215,9 @@ type TestSplit {
         "^TestWorkspaceModules$",
         "^TestWorkspaceSelection$",
       ],
-      pkg: "./...",
+      pkg: self.packagePatterns,
       race: true,
+      parallel: 4,
     )
   }
 
