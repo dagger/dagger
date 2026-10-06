@@ -337,7 +337,7 @@ func partContentError(ctx context.Context, desc ocispecs.Descriptor, stage strin
 
 // partHTTPReader keeps one sequential response for contiguous reads. Another
 // offset reopens with Range. The cursor mutex serializes reads; Close cancels
-// and closes the current response without waiting for it.
+// and closes the current response without waiting for the cursor.
 type partHTTPReader struct {
 	provider *partContentProvider
 	desc     ocispecs.Descriptor
@@ -360,6 +360,8 @@ type partHTTPStream struct {
 	cancel context.CancelCauseFunc
 	body   io.ReadCloser
 	stop   func() bool
+	// closed is closed once the cancellation callback has closed body.
+	closed chan struct{}
 	// idle is time spent blocked without byte progress, including the
 	// connection and headers.
 	idle time.Duration
@@ -367,11 +369,16 @@ type partHTTPStream struct {
 }
 
 // close gives the body one closer: this path if it stops the cancellation
-// callback first, otherwise the callback that cancellation already started.
+// callback first, otherwise the callback that cancellation already started,
+// which close waits for so the body is closed when it returns.
 func (s *partHTTPStream) close() {
 	s.once.Do(func() {
-		if s.body != nil && s.stop() {
-			_ = s.body.Close()
+		if s.body != nil {
+			if s.stop() {
+				_ = s.body.Close()
+			} else {
+				<-s.closed
+			}
 		}
 		s.cancel(nil)
 	})
@@ -516,7 +523,11 @@ func (r *partHTTPReader) request(off int64) (*partHTTPStream, *http.Response, er
 		return nil, nil, err
 	}
 	stream.body = resp.Body
-	stream.stop = context.AfterFunc(ctx, func() { _ = resp.Body.Close() })
+	stream.closed = make(chan struct{})
+	stream.stop = context.AfterFunc(ctx, func() {
+		_ = resp.Body.Close()
+		close(stream.closed)
+	})
 	return stream, resp, nil
 }
 
