@@ -1998,8 +1998,15 @@ func (c *Cache) maybeResetEgraphLocked() {
 	// persisted ID at startup for the same reason.
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, newSlots int) {
+	return c.compactEqClassesModeLocked(force, false)
+}
+
+// compactEqClassesModeLocked is compactEqClassesLocked; with freeAll, it also
+// frees every slot when no class is live, which compactEqClassesLocked leaves.
+//
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, oldSlots int, newSlots int) {
 	if len(c.egraphParents) <= 1 {
 		return false, 0, 0
 	}
@@ -2031,7 +2038,7 @@ func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, 
 
 	oldSlots = len(c.egraphParents) - 1
 	newSlots = len(liveRoots)
-	if newSlots == 0 || oldSlots == newSlots || (!force && oldSlots < newSlots*2) {
+	if (newSlots == 0 && !freeAll) || oldSlots == newSlots || (!force && oldSlots < newSlots*2) {
 		return false, oldSlots, newSlots
 	}
 
