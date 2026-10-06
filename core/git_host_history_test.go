@@ -100,6 +100,37 @@ func TestCapturedHostHistorySSHDefaultUser(t *testing.T) {
 	require.True(t, ok)
 }
 
+// A Query and its clones share one donor registry, even when none has been
+// registered at clone time: a donor registered through either is visible to
+// both.
+func TestCapturedHostHistorySharedWithClones(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "host-history-clone")
+	ctx, cache, srv := env.open(t)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRef]{}))
+	md, err := engine.ClientMetadataFromContext(ctx)
+	require.NoError(t, err)
+	url, err := gitutil.ParseURL("https://example.test/repo.git")
+	require.NoError(t, err)
+	makeRef := func(key, sha string) dagql.ObjectResult[*GitRef] {
+		remote := &RemoteGitRepository{URL: url, AuthUsername: key}
+		repo := env.attach(t, ctx, cache, srv, key+"-repo", &GitRepository{Backend: remote, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+		ref := &gitutil.Ref{SHA: sha, Name: sha}
+		return env.attach(t, ctx, cache, srv, key+"-ref", &GitRef{Repo: repo, Ref: ref, Backend: &RemoteGitRef{repo: remote, Ref: ref}}).(dagql.ObjectResult[*GitRef])
+	}
+	viaClone, viaOriginal := makeRef("clone", strings.Repeat("a", 40)), makeRef("original", strings.Repeat("b", 40))
+	q := &Query{}
+	clone := q.Clone()
+	require.True(t, clone.RegisterCapturedHostHistory(ctx, viaClone.Self().Repo, md.ClientID, "/approved", "state", viaClone.Self().Ref.SHA, url.Remote()))
+	require.True(t, q.RegisterCapturedHostHistory(ctx, viaOriginal.Self().Repo, md.ClientID, "/approved", "state", viaOriginal.Self().Ref.SHA, url.Remote()))
+	for _, query := range []*Query{q, clone, clone.Clone()} {
+		for _, parent := range []dagql.ObjectResult[*GitRef]{viaClone, viaOriginal} {
+			_, ok, err := query.capturedHostHistory(ctx, parent)
+			require.NoError(t, err)
+			require.True(t, ok)
+		}
+	}
+}
+
 // hostHistoryTestPack returns a donated pack of the anchor's closure, as
 // PackCommit produces it, or a bad one: "unrelated" adds objects outside the
 // authorized closure and "truncated" is not a valid pack at all.

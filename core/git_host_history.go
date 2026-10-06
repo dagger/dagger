@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/dagql"
@@ -28,6 +29,43 @@ type hostHistoryKey struct {
 	sha    string
 }
 type hostHistoryDonor struct{ owner, path, state string }
+
+// hostHistoryRegistry holds a client's approved donors. A Query and its clones
+// share one registry, so a donor registered through either is visible to both.
+type hostHistoryRegistry struct {
+	mu     sync.Mutex
+	donors map[hostHistoryKey]hostHistoryDonor
+}
+
+// hostHistories returns the Query's registry, allocating it before it can be
+// shared with a clone.
+func (q *Query) hostHistories() *hostHistoryRegistry {
+	q.hostHistoryMu.Lock()
+	defer q.hostHistoryMu.Unlock()
+	if q.hostHistory == nil {
+		q.hostHistory = &hostHistoryRegistry{donors: map[hostHistoryKey]hostHistoryDonor{}}
+	}
+	return q.hostHistory
+}
+
+func (r *hostHistoryRegistry) register(key hostHistoryKey, donor hostHistoryDonor) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.donors[key] = donor
+}
+
+func (r *hostHistoryRegistry) lookup(key hostHistoryKey) (hostHistoryDonor, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	donor, ok := r.donors[key]
+	return donor, ok
+}
+
+func (r *hostHistoryRegistry) empty() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.donors) == 0
+}
 
 // RegisterCapturedHostHistory records an optional donor only after successful
 // owning-client capture and approval. The caller must pass the exact captured
@@ -72,12 +110,7 @@ func (q *Query) RegisterCapturedHostHistory(ctx context.Context, repo dagql.Obje
 	if err != nil {
 		return SkipHostHistoryDonor(ctx, "repository recipe digest failed", err)
 	}
-	q.hostHistoryMu.Lock()
-	defer q.hostHistoryMu.Unlock()
-	if q.hostHistory == nil {
-		q.hostHistory = make(map[hostHistoryKey]hostHistoryDonor)
-	}
-	q.hostHistory[hostHistoryKey{recipe, anchor}] = hostHistoryDonor{owner, path, state}
+	q.hostHistories().register(hostHistoryKey{recipe, anchor}, hostHistoryDonor{owner, path, state})
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Bool(hostHistoryDonorRegisteredAttr, true))
 	return true
 }
@@ -129,9 +162,7 @@ func (q *Query) capturedHostHistory(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return hostHistoryDonor{}, false, err
 	}
-	q.hostHistoryMu.Lock()
-	donor, ok := q.hostHistory[hostHistoryKey{recipe, parent.Self().Ref.SHA}]
-	q.hostHistoryMu.Unlock()
+	donor, ok := q.hostHistories().lookup(hostHistoryKey{recipe, parent.Self().Ref.SHA})
 	return donor, ok && donor.owner == md.ClientID, nil
 }
 
@@ -141,10 +172,7 @@ func (q *Query) approvedHostCommitPack(ctx context.Context, parent dagql.ObjectR
 	if depth != 0 {
 		return nil, nil
 	}
-	q.hostHistoryMu.Lock()
-	empty := len(q.hostHistory) == 0
-	q.hostHistoryMu.Unlock()
-	if empty {
+	if q.hostHistories().empty() {
 		return nil, nil
 	}
 	donor, ok, err := q.capturedHostHistory(ctx, parent)

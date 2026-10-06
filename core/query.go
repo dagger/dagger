@@ -39,8 +39,9 @@ type Query struct {
 
 	// Optional capture-approved donors belong to this client's Query, never
 	// the engine or persisted recipes. They contain capabilities, not objects.
+	// Clones share the registry.
 	hostHistoryMu sync.Mutex
-	hostHistory   map[hostHistoryKey]hostHistoryDonor
+	hostHistory   *hostHistoryRegistry
 }
 
 var (
@@ -313,6 +314,10 @@ func (q *Query) Clone() *Query {
 	q.cacheVolumeStoreMu.Lock()
 	cp.cacheVolumeStore = q.cacheVolumeStore
 	q.cacheVolumeStoreMu.Unlock()
+
+	// Allocate the donor registry before sharing it, so a registration through
+	// either the original or the clone is visible to both.
+	cp.hostHistory = q.hostHistories()
 
 	return cp
 }
