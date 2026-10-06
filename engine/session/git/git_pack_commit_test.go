@@ -2,7 +2,6 @@ package git
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,49 +13,38 @@ import (
 
 func TestPackCommitExactClosure(t *testing.T) {
 	skipIfNoGit(t)
-	for _, depth := range []int32{0, 1} {
-		t.Run(fmt.Sprint(depth), func(t *testing.T) {
-			repo, home := initRepo(t, "main")
-			commitFile(t, repo, home, "old", "old history", "old")
-			parent := gitCmd(t, home, repo, "rev-parse", "HEAD")
-			commitFile(t, repo, home, "file", "authorized", "tip")
-			sha := gitCmd(t, home, repo, "rev-parse", "HEAD")
-			gitCmd(t, home, repo, "checkout", "--orphan", "private")
-			gitCmd(t, home, repo, "rm", "-rf", ".")
-			commitFile(t, repo, home, "secret", "unrelated private object", "secret")
-			secret := gitCmd(t, home, repo, "rev-parse", "HEAD:secret")
-			replacement := gitCmd(t, home, repo, "rev-parse", "HEAD")
-			gitCmd(t, home, repo, "tag", "private-tag")
-			gitCmd(t, home, repo, "replace", sha, replacement)
-			gitCmd(t, home, repo, "checkout", "main")
-			state := checkoutDigest(t, repo)
-			srv := &fakePackCheckoutServer{}
-			require.NoError(t, GitAttachable{}.PackCommit(&PackCommitRequest{CheckoutPath: repo, ExpectedStateDigest: state, CommitSha: sha, Depth: depth}, srv))
-			require.Nil(t, srv.metadata(t).Error)
-			require.Empty(t, srv.metadata(t).HeadRef)
-			require.Equal(t, state, checkoutDigest(t, repo))
-			dest := t.TempDir()
-			gitCmd(t, home, dest, "init", "--bare")
-			if depth == 1 {
-				require.NoError(t, os.WriteFile(filepath.Join(dest, "shallow"), []byte(sha+"\n"), 0600))
-			}
-			_, err := runHostGitBytes(t.Context(), dest, nil, strings.NewReader(string(srv.bundleBytes())), "index-pack", "--stdin", "--strict")
-			require.NoError(t, err)
-			require.NoError(t, os.WriteFile(filepath.Join(dest, "HEAD"), []byte(sha+"\n"), 0600))
-			require.NoError(t, os.RemoveAll(repo))
-			gitCmd(t, home, dest, "fsck", "--full", "--strict")
-			require.Equal(t, "authorized", gitCmd(t, home, dest, "show", "HEAD:file"))
-			inventory := gitCmd(t, home, dest, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)")
-			require.NotContains(t, inventory, secret)
-			require.NotContains(t, inventory, replacement)
-			require.Empty(t, gitCmd(t, home, dest, "for-each-ref"))
-			if depth == 1 {
-				require.NotContains(t, inventory, parent)
-			} else {
-				require.Contains(t, inventory, parent)
-			}
-		})
-	}
+	repo, home := initRepo(t, "main")
+	commitFile(t, repo, home, "old", "old history", "old")
+	parent := gitCmd(t, home, repo, "rev-parse", "HEAD")
+	commitFile(t, repo, home, "file", "authorized", "tip")
+	sha := gitCmd(t, home, repo, "rev-parse", "HEAD")
+	gitCmd(t, home, repo, "checkout", "--orphan", "private")
+	gitCmd(t, home, repo, "rm", "-rf", ".")
+	commitFile(t, repo, home, "secret", "unrelated private object", "secret")
+	secret := gitCmd(t, home, repo, "rev-parse", "HEAD:secret")
+	replacement := gitCmd(t, home, repo, "rev-parse", "HEAD")
+	gitCmd(t, home, repo, "tag", "private-tag")
+	gitCmd(t, home, repo, "replace", sha, replacement)
+	gitCmd(t, home, repo, "checkout", "main")
+	state := checkoutDigest(t, repo)
+	srv := &fakePackCheckoutServer{}
+	require.NoError(t, GitAttachable{}.PackCommit(&PackCommitRequest{CheckoutPath: repo, ExpectedStateDigest: state, CommitSha: sha}, srv))
+	require.Nil(t, srv.metadata(t).Error)
+	require.Empty(t, srv.metadata(t).HeadRef)
+	require.Equal(t, state, checkoutDigest(t, repo))
+	dest := t.TempDir()
+	gitCmd(t, home, dest, "init", "--bare")
+	_, err := runHostGitBytes(t.Context(), dest, nil, strings.NewReader(string(srv.bundleBytes())), "index-pack", "--stdin", "--strict")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dest, "HEAD"), []byte(sha+"\n"), 0600))
+	require.NoError(t, os.RemoveAll(repo))
+	gitCmd(t, home, dest, "fsck", "--full", "--strict")
+	require.Equal(t, "authorized", gitCmd(t, home, dest, "show", "HEAD:file"))
+	inventory := gitCmd(t, home, dest, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)")
+	require.NotContains(t, inventory, secret)
+	require.NotContains(t, inventory, replacement)
+	require.Empty(t, gitCmd(t, home, dest, "for-each-ref"))
+	require.Contains(t, inventory, parent)
 }
 
 // Streaming can take a long time; it must not hold the checkout lock, or

@@ -24,8 +24,8 @@ func (s GitAttachable) PackCommit(req *PackCommitRequest, srv Git_PackCommitServ
 		}
 		return srv.Send(&PackCheckoutResponse{Msg: &PackCheckoutResponse_Metadata{Metadata: &PackCheckoutMetadata{Error: &ErrorInfo{Type: kind, Message: err.Error()}}}})
 	}
-	if req.CheckoutPath == "" || req.ExpectedStateDigest == "" || !validCommitSHA(req.CommitSha) || (req.Depth != 0 && req.Depth != 1) {
-		return sendErr(INVALID_REQUEST, errors.New("captured checkout, state and SHA-1 commit with depth zero or one required"))
+	if req.CheckoutPath == "" || req.ExpectedStateDigest == "" || !validCommitSHA(req.CommitSha) {
+		return sendErr(INVALID_REQUEST, errors.New("captured checkout, state and SHA-1 commit required"))
 	}
 	if !checkoutHasGitEntry(req.CheckoutPath) {
 		return sendErr(HISTORY_UNAVAILABLE, errors.New("captured checkout unavailable"))
@@ -58,7 +58,7 @@ func (s GitAttachable) PackCommit(req *PackCommitRequest, srv Git_PackCommitServ
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	pack, err := packCapturedCommit(ctx, req.CheckoutPath, tmp, req.CommitSha, int(req.Depth))
+	pack, err := packCapturedCommit(ctx, req.CheckoutPath, tmp, req.CommitSha)
 	if errors.Is(err, errHostHistoryUnavailable) {
 		return sendErr(HISTORY_UNAVAILABLE, err)
 	}
@@ -111,25 +111,20 @@ func validCommitSHA(sha string) bool {
 }
 
 // Borrow only the object database, never refs, replacement refs, config or the
-// donor's shallow boundaries. All writable Git metadata lives in scratch.
-func packCapturedCommit(ctx context.Context, checkout, scratch, sha string, depth int) (string, error) {
+// donor's shallow boundaries. All writable Git metadata lives in scratch. The
+// pack is always the commit's complete closure, so a shallow donor never
+// qualifies.
+func packCapturedCommit(ctx context.Context, checkout, scratch, sha string) (string, error) {
 	objects, err := runHostGit(ctx, checkout, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 	if err != nil {
 		return "", fmt.Errorf("%w: object database", errHostHistoryUnavailable)
 	}
-	if depth == 0 {
-		shallow, err := runHostGit(ctx, checkout, "rev-parse", "--is-shallow-repository")
-		if err != nil || strings.TrimSpace(shallow) != "false" {
-			return "", fmt.Errorf("%w: shallow donor", errHostHistoryUnavailable)
-		}
+	shallow, err := runHostGit(ctx, checkout, "rev-parse", "--is-shallow-repository")
+	if err != nil || strings.TrimSpace(shallow) != "false" {
+		return "", fmt.Errorf("%w: shallow donor", errHostHistoryUnavailable)
 	}
 	if _, err := runIsolatedHostGit(ctx, scratch, nil, nil, "init", "--bare", "--template=", "--object-format=sha1"); err != nil {
 		return "", err
-	}
-	if depth == 1 {
-		if err := os.WriteFile(filepath.Join(scratch, "shallow"), []byte(sha+"\n"), 0600); err != nil {
-			return "", err
-		}
 	}
 	env := []string{"GIT_NO_LAZY_FETCH=1", "GIT_NO_REPLACE_OBJECTS=1", "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + strconv.Quote(strings.TrimSpace(objects))}
 	// Probe the anchor cheaply in the isolated repository with lazy fetching

@@ -128,7 +128,7 @@ func (q *Query) approvedHostCommitPack(ctx context.Context, parent dagql.ObjectR
 	if !available {
 		return nil, nil
 	}
-	pack, err := engineutil.ReceiveGitCommitPack(ctx, gitsession.NewGitClient(conn), &gitsession.PackCommitRequest{CheckoutPath: donor.path, ExpectedStateDigest: donor.state, CommitSha: parent.Self().Ref.SHA, Depth: int32(depth)})
+	pack, err := engineutil.ReceiveGitCommitPack(ctx, gitsession.NewGitClient(conn), &gitsession.PackCommitRequest{CheckoutPath: donor.path, ExpectedStateDigest: donor.state, CommitSha: parent.Self().Ref.SHA})
 	if cause := context.Cause(ctx); cause != nil {
 		return nil, errors.Join(cause, pack.Close())
 	}

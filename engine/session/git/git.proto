@@ -119,12 +119,15 @@ message PackCheckoutRequest {
 }
 
 // A captured checkout is an optional donor for precisely this commit. The
-// payload is a non-thin raw pack, not a bundle. Depth is zero (complete) or one.
+// payload is a non-thin raw pack, not a bundle, of the commit's complete
+// closure.
 message PackCommitRequest {
+  // depth was the closure depth; only the complete closure is ever requested.
+  reserved 4;
+  reserved "depth";
   string checkout_path = 1;
   string expected_state_digest = 2;
   string commit_sha = 3;
-  int32 depth = 4;
 }
 
 // PackCheckoutResponse streams one metadata message first, then the bundle
