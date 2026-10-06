@@ -231,13 +231,17 @@ func groupCloudListRows(rows []cloudCheckRow, columns []string) []groupedCloudLi
 			group = &groupedCloudListRow{
 				Values:    values,
 				Result:    row.Result,
+				Status:    row.Check.Status,
 				UpdatedAt: row.UpdatedAt,
 			}
 			byKey[key] = group
 			order = append(order, key)
 			continue
 		}
-		group.Result = stricterCloudResult(group.Result, row.Result)
+		if stricter := stricterCloudResult(group.Result, row.Result); stricter != group.Result {
+			group.Result = stricter
+			group.Status = row.Check.Status
+		}
 		if row.UpdatedAt.After(group.UpdatedAt) {
 			group.UpdatedAt = row.UpdatedAt
 		}
@@ -255,6 +259,9 @@ func groupCloudListRows(rows []cloudCheckRow, columns []string) []groupedCloudLi
 type groupedCloudListRow struct {
 	Values    map[string]string
 	Result    string
+	// Status is the raw Cloud check status (e.g. "queued", "running",
+	// "errored") backing Result, used for finer-grained watch progress output.
+	Status    string
 	UpdatedAt time.Time
 }
 

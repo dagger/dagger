@@ -4,15 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/core/gitref"
 )
+
+// cloudCheckWatchInterval is the default polling interval used by
+// `dagger cloud checks list --watch`.
+const cloudCheckWatchInterval = 5 * time.Second
 
 var cloudCheckCmd = &cobra.Command{
 	Use:     "checks",
@@ -41,7 +48,12 @@ var cloudCheckOffCmd = &cobra.Command{
 	RunE:  runCloudCheckSet(false),
 }
 
-var cloudCheckListFailed bool
+var (
+	cloudCheckListFailed   bool
+	cloudCheckListWatch    bool
+	cloudCheckListFailFast bool
+	cloudCheckListInterval time.Duration
+)
 
 var cloudCheckListCmd = &cobra.Command{
 	Use:   "list [version]",
@@ -59,6 +71,9 @@ var cloudCheckStatusCmd = &cobra.Command{
 
 func init() {
 	cloudCheckListCmd.Flags().BoolVar(&cloudCheckListFailed, "failed", false, "Only list failed checks")
+	cloudCheckListCmd.Flags().BoolVar(&cloudCheckListWatch, "watch", false, "Wait until all checks have finished; exit non-zero if any check did not succeed")
+	cloudCheckListCmd.Flags().BoolVar(&cloudCheckListFailFast, "fail-fast", false, "When watching, stop as soon as a check is not successful")
+	cloudCheckListCmd.Flags().DurationVar(&cloudCheckListInterval, "interval", cloudCheckWatchInterval, "Polling interval used while watching")
 	cloudCheckCmd.AddCommand(cloudCheckOnCmd, cloudCheckOffCmd, cloudCheckListCmd, cloudCheckStatusCmd)
 	cloudCmd.AddCommand(cloudCheckCmd)
 }
@@ -230,6 +245,9 @@ func runCloudCheckStatus(cmd *cobra.Command, _ []string) error {
 }
 
 func runCloudCheckList(cmd *cobra.Command, args []string) error {
+	if cloudCheckListFailFast && !cloudCheckListWatch {
+		return fmt.Errorf("--fail-fast requires --watch")
+	}
 	remote, address, err := selectedRemoteWorkspaceAddress(cmd.Context(), "cloud checks list")
 	if err != nil {
 		return err
@@ -238,14 +256,145 @@ func runCloudCheckList(cmd *cobra.Command, args []string) error {
 		remote.Version = args[0]
 		address = gitref.RefString(remote.CloneRef, remote.Path, remote.Version)
 	}
-	rows, err := loadWorkspaceModuleCheckRows(cmd.Context(), remote)
-	if errors.Is(err, errCloudNotAuthenticated) {
-		return fmt.Errorf("not authenticated; run 'dagger cloud login' to view Cloud checks")
+	if cloudCheckListWatch {
+		return watchCloudCheckList(cmd, remote, address)
 	}
+	grouped, err := loadGroupedCloudCheckRows(cmd.Context(), remote)
 	if err != nil {
 		return err
 	}
-	grouped := groupCloudListRows(rows, []string{"check"})
+	return outputCloudCheckList(cmd, grouped, address)
+}
+
+// watchCloudCheckList polls the Cloud checks for the workspace until every
+// check has finished (none pending), then renders the result. It exits with a
+// non-zero status (a returned error) if any check did not succeed. With
+// --fail-fast it stops and fails as soon as a non-successful check is seen,
+// without waiting for the remaining checks to finish.
+func watchCloudCheckList(cmd *cobra.Command, remote workspaceRemoteAddress, address string) error {
+	return watchCloudCheckListLoop(cmd, address, cloudCheckListInterval, func(ctx context.Context) ([]groupedCloudListRow, error) {
+		return loadGroupedCloudCheckRows(ctx, remote)
+	})
+}
+
+// watchCloudCheckListLoop is the fetch-agnostic core of watchCloudCheckList,
+// split out so the polling and exit behavior can be tested without a Cloud
+// client.
+func watchCloudCheckListLoop(cmd *cobra.Command, address string, interval time.Duration, fetch func(context.Context) ([]groupedCloudListRow, error)) error {
+	ctx := cmd.Context()
+	if interval <= 0 {
+		interval = cloudCheckWatchInterval
+	}
+	for {
+		grouped, err := fetch(ctx)
+		if err != nil {
+			return err
+		}
+		pending, failed := summarizeCloudCheckResults(grouped)
+
+		if (cloudCheckListFailFast && failed) || !pending {
+			if outErr := outputCloudCheckList(cmd, grouped, address); outErr != nil {
+				return outErr
+			}
+			if failed {
+				return cloudChecksFailedError(grouped)
+			}
+			return nil
+		}
+
+		// Still waiting: print which checks are pending/queued/errored so the
+		// user gets visual feedback on progress. Written to stderr to keep the
+		// final result table on stdout clean.
+		printCloudCheckWatchProgress(cmd.ErrOrStderr(), grouped)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+}
+
+// printCloudCheckWatchProgress writes a one-line progress update listing the
+// checks that are still pending, queued, or have errored, grouped by state.
+func printCloudCheckWatchProgress(w io.Writer, rows []groupedCloudListRow) {
+	var queued, pending, errored []string
+	for _, row := range rows {
+		name := dash(row.Values["check"])
+		switch {
+		case row.Result == "green":
+			// finished successfully
+		case row.Result != "pending":
+			errored = append(errored, name)
+		case strings.EqualFold(row.Status, "queued"):
+			queued = append(queued, name)
+		default:
+			pending = append(pending, name)
+		}
+	}
+
+	var parts []string
+	if len(pending) > 0 {
+		parts = append(parts, fmt.Sprintf("%s pending: %s", cloudResultEmoji("pending"), strings.Join(pending, ", ")))
+	}
+	if len(queued) > 0 {
+		parts = append(parts, fmt.Sprintf("⏳ queued: %s", strings.Join(queued, ", ")))
+	}
+	if len(errored) > 0 {
+		parts = append(parts, fmt.Sprintf("%s errored: %s", cloudResultEmoji("red"), strings.Join(errored, ", ")))
+	}
+	if len(parts) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "Waiting for Cloud checks — %s\n", strings.Join(parts, "; "))
+}
+
+// summarizeCloudCheckResults reports whether any check is still pending and
+// whether any check finished in a non-successful (non-green) state.
+func summarizeCloudCheckResults(rows []groupedCloudListRow) (pending, failed bool) {
+	for _, row := range rows {
+		switch row.Result {
+		case "green":
+		case "pending":
+			pending = true
+		default:
+			failed = true
+		}
+	}
+	return pending, failed
+}
+
+// cloudChecksFailedError builds the error returned (and thus the non-zero exit)
+// when one or more Cloud checks did not succeed.
+func cloudChecksFailedError(rows []groupedCloudListRow) error {
+	var names []string
+	for _, row := range rows {
+		if row.Result != "green" && row.Result != "pending" {
+			names = append(names, dash(row.Values["check"]))
+		}
+	}
+	if len(names) == 0 {
+		return errors.New("one or more Cloud checks did not succeed")
+	}
+	return fmt.Errorf("Cloud checks did not succeed: %s", strings.Join(names, ", "))
+}
+
+// loadGroupedCloudCheckRows fetches and groups (one row per check) the Cloud
+// checks for the workspace.
+func loadGroupedCloudCheckRows(ctx context.Context, remote workspaceRemoteAddress) ([]groupedCloudListRow, error) {
+	rows, err := loadWorkspaceModuleCheckRows(ctx, remote)
+	if errors.Is(err, errCloudNotAuthenticated) {
+		return nil, fmt.Errorf("not authenticated; run 'dagger cloud login' to view Cloud checks")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return groupCloudListRows(rows, []string{"check"}), nil
+}
+
+// outputCloudCheckList renders the grouped check rows, applying the --failed
+// filter and printing a friendly message when nothing matches.
+func outputCloudCheckList(cmd *cobra.Command, grouped []groupedCloudListRow, address string) error {
 	if cloudCheckListFailed {
 		failed := grouped[:0]
 		for _, row := range grouped {
@@ -260,7 +409,7 @@ func runCloudCheckList(cmd *cobra.Command, args []string) error {
 		if cloudCheckListFailed {
 			what = "failed Cloud checks"
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "No %s found for %s.\n", what, address)
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "No %s found for %s.\n", what, address)
 		return err
 	}
 	renderCloudCheckList(cmd, grouped)
