@@ -79,6 +79,8 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 	err = ref.mount(ctx, depth, false, func(_ *gitutil.GitCLI) error {
 		// mount holds both the mirror lock and its snapshot lease. Borrow an
 		// actual read-only mount so Git cannot freshen inherited pack mtimes.
+		// Reading Mirror.snapshot directly is only safe because ref.mount →
+		// initRemote → Mirror.acquire holds mirror.mu until this callback returns.
 		return MountRef(ctx, ref.repo.Mirror.Self().snapshot, func(source string, _ *mount.Mount) error {
 			if _, err := nativeCommitGitDirWithShallow(ctx, source, true); err != nil {
 				return err
@@ -111,13 +113,6 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 // A non-thin pack contains exactly the selected history, even when unrelated
 // objects are delta bases in the donor pack. Git reuses compressed objects where
 // possible; the cost of traversal/packing is still real and traced separately.
-func packRemoteCommitBase(ctx context.Context, source, dest, sha string, remotes []GitRemote) error {
-	if _, err := nativeCommitGitDir(ctx, source); err != nil {
-		return err
-	}
-	return packRemoteCommitBaseDepth(ctx, source, dest, sha, remotes, 0)
-}
-
 func packRemoteCommitBaseDepth(ctx context.Context, source, dest, sha string, remotes []GitRemote, depth int) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "git pack remote commit closure", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)

@@ -13,6 +13,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// packRemoteCommitBase packs a complete commit closure from a non-bare
+// working repository, as the isolation and fallback tests need.
+func packRemoteCommitBase(ctx context.Context, source, dest, sha string, remotes []GitRemote) error {
+	if _, err := nativeCommitGitDir(ctx, source); err != nil {
+		return err
+	}
+	return packRemoteCommitBaseDepth(ctx, source, dest, sha, remotes, 0)
+}
+
 func TestRemoteCommitBaseProvenance(t *testing.T) {
 	env := newPersistedFamiliesTestEnv(t, "remote-commit-provenance")
 	ctx, cache, srv := env.open(t)
