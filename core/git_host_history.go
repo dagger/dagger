@@ -1,9 +1,13 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -248,11 +252,22 @@ func (q *Query) importApprovedHostCommitBase(ctx context.Context, pack *engineut
 
 // Validate the received pack in an isolated object database before publishing
 // any snapshot. No alternates, host refs or mutable mount paths survive. The
-// inventory must equal the requested closure, including when a donor is buggy.
-// Objects are checked at Git's default fsck severity, not --strict: the closure
-// is pinned by SHA, so it is byte-identical to what the remote serves, and the
-// remote path (which does not fsck fetches) accepts legacy objects such as
-// zero-padded tree modes too.
+// inventory must equal the requested closure exactly, including when a donor
+// is buggy: nothing from the donor's other objects, nothing missing.
+//
+// Validation stays proportional to what the remote path does, which neither
+// fscks fetched packs nor lists them, so it never buffers object lists:
+//
+//   - index-pack verifies the pack and every object's hash. Objects are not
+//     fsck-checked: the closure is pinned by SHA, so it is byte-identical to
+//     what the remote serves, legacy objects such as zero-padded tree modes
+//     included.
+//   - A full closure walk (rev-list --objects, missing objects are errors)
+//     proves the closure is in the store; its output is only counted.
+//   - Every object in the store came from the pack, whose index counts its
+//     entries, duplicates included. Equal counts then prove the store holds
+//     exactly the closure. Git treats the empty tree as present even when no
+//     store holds it, so when the closure has it, the index must too.
 func importHostCommitPack(ctx context.Context, dest, packPath, sha string, remotes []GitRemote) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "git import approved host commit closure", telemetry.Internal())
 	span.SetAttributes(attribute.Int("git.history.depth", 0))
@@ -264,38 +279,43 @@ func importHostCommitPack(ctx context.Context, dest, packPath, sha string, remot
 	if err != nil {
 		return err
 	}
-	// index-pack verifies the pack and object hashes; its fsck is always
-	// strict-level, so object checks are left to the default-severity fsck below.
-	_, indexErr := runWorkspaceCommitGitInput(ctx, dest, nil, f, "index-pack", "--stdin")
+	// Without --strict, index-pack does not fsck objects (its fsck would be
+	// strict-level) and keeps duplicate entries in the index.
+	indexed, indexErr := runWorkspaceCommitGitInput(ctx, dest, nil, f, "index-pack", "--stdin")
 	if err := errors.Join(indexErr, f.Close()); err != nil {
+		return err
+	}
+	kind, packHash, _ := strings.Cut(strings.TrimSpace(indexed), "\t")
+	if kind != "pack" || len(packHash) != 40 || !IsFullGitSHA(packHash) {
+		return fmt.Errorf("unexpected index-pack output %q", indexed)
+	}
+	index, err := readGitPackIndex(filepath.Join(dest, "objects", "pack", "pack-"+packHash+".idx"))
+	if err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dest, "HEAD"), []byte(sha+"\n"), 0644); err != nil {
 		return err
 	}
-	if _, err := runWorkspaceCommitGit(ctx, dest, nil, "fsck", "--no-reflogs", sha); err != nil {
+	closure := &gitObjectLineCounter{}
+	if err := runWorkspaceCommitGitStream(ctx, dest, nil, nil, closure, "rev-list", "--objects", "--no-object-names", "--missing=error", sha); err != nil {
 		return err
 	}
-	closure, err := runWorkspaceCommitGit(ctx, dest, nil, "rev-list", "--objects", "--no-object-names", sha)
-	if err != nil {
-		return err
+	if !closure.valid() {
+		return fmt.Errorf("unexpected rev-list output")
 	}
-	objects, err := runWorkspaceCommitGit(ctx, dest, nil, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)")
-	if err != nil {
-		return err
-	}
-	wanted := map[string]bool{}
-	for _, id := range strings.Fields(closure) {
-		wanted[id] = true
-	}
-	for _, id := range strings.Fields(objects) {
-		if !wanted[id] {
-			return fmt.Errorf("host history pack contains an object outside the authorized closure")
+	if closure.emptyTree {
+		has, err := index.has(gitEmptyTreeSHA1)
+		if err != nil {
+			return err
 		}
-		delete(wanted, id)
+		if !has {
+			return fmt.Errorf("host history pack is incomplete")
+		}
 	}
-	if len(wanted) != 0 {
-		return fmt.Errorf("host history pack is incomplete")
+	if closure.objects != uint64(index.objects()) {
+		// The closure is in the store, so the pack holds more entries than the
+		// closure: objects outside it, or the same object twice.
+		return fmt.Errorf("host history pack has %d objects, the authorized closure %d", index.objects(), closure.objects)
 	}
 	for _, remote := range remotes {
 		// Use the same remote writer as remote promotion, never donor config.
@@ -304,4 +324,109 @@ func importHostCommitPack(ctx context.Context, dest, packPath, sha string, remot
 		}
 	}
 	return nil
+}
+
+// gitEmptyTreeSHA1 is the SHA-1 empty tree, which Git reports as present
+// whether or not an object store holds it.
+const gitEmptyTreeSHA1 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+// gitObjectLineCounter counts the object IDs rev-list prints, one per line,
+// noting the empty tree, without retaining them. Writes never fail, so the
+// command is never left blocked on a full pipe; malformed output is reported
+// by valid afterwards.
+type gitObjectLineCounter struct {
+	objects   uint64
+	emptyTree bool
+	malformed bool
+	line      [40]byte
+	partial   int
+}
+
+func (c *gitObjectLineCounter) Write(p []byte) (int, error) {
+	for _, b := range p {
+		if b != '\n' {
+			if c.partial < len(c.line) {
+				c.line[c.partial] = b
+			}
+			c.partial++
+			continue
+		}
+		if c.partial != len(c.line) {
+			c.malformed = true
+		} else if string(c.line[:]) == gitEmptyTreeSHA1 {
+			c.emptyTree = true
+		}
+		c.objects++
+		c.partial = 0
+	}
+	return len(p), nil
+}
+
+func (c *gitObjectLineCounter) valid() bool { return !c.malformed && c.partial == 0 }
+
+// gitPackIndex reads a version 2 SHA-1 pack index without loading it: the
+// object count from its fan-out table, and lookups by binary search.
+type gitPackIndex struct {
+	path   string
+	fanout [256]uint32
+}
+
+const gitPackIndexHeaderBytes = 8 + 256*4
+
+func readGitPackIndex(path string) (*gitPackIndex, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	header := make([]byte, gitPackIndexHeaderBytes)
+	if _, err := io.ReadFull(f, header); err != nil {
+		return nil, fmt.Errorf("read pack index: %w", err)
+	}
+	if !bytes.Equal(header[:8], []byte{0xff, 't', 'O', 'c', 0, 0, 0, 2}) {
+		return nil, fmt.Errorf("unsupported pack index format")
+	}
+	index := &gitPackIndex{path: path}
+	for i := range index.fanout {
+		index.fanout[i] = binary.BigEndian.Uint32(header[8+4*i:])
+		if i > 0 && index.fanout[i] < index.fanout[i-1] {
+			return nil, fmt.Errorf("corrupt pack index fan-out")
+		}
+	}
+	return index, nil
+}
+
+func (x *gitPackIndex) objects() uint32 { return x.fanout[255] }
+
+func (x *gitPackIndex) has(hexID string) (bool, error) {
+	id, err := hex.DecodeString(hexID)
+	if err != nil || len(id) != 20 {
+		return false, fmt.Errorf("invalid SHA-1 object ID %q", hexID)
+	}
+	f, err := os.Open(x.path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	lo := uint32(0)
+	if id[0] > 0 {
+		lo = x.fanout[id[0]-1]
+	}
+	hi := x.fanout[id[0]]
+	entry := make([]byte, 20)
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if _, err := f.ReadAt(entry, gitPackIndexHeaderBytes+int64(mid)*20); err != nil {
+			return false, fmt.Errorf("read pack index: %w", err)
+		}
+		switch c := bytes.Compare(entry, id); {
+		case c == 0:
+			return true, nil
+		case c < 0:
+			lo = mid + 1
+		default:
+			hi = mid
+		}
+	}
+	return false, nil
 }

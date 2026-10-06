@@ -2,10 +2,14 @@ package core
 
 import (
 	"bytes"
+	"compress/zlib"
 	"context"
+	"crypto/sha1" //nolint:gosec // Git pack trailer, not a security primitive
+	"encoding/binary"
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -133,10 +137,39 @@ func TestCapturedHostHistorySharedWithClones(t *testing.T) {
 
 // hostHistoryTestPack returns a donated pack of the anchor's closure, as
 // PackCommit produces it, or a bad one: "unrelated" adds objects outside the
-// authorized closure and "truncated" is not a valid pack at all.
+// authorized closure, "incomplete" lacks one of its blobs, "duplicate" holds
+// one of its objects twice, "corrupt" has a damaged byte, and "truncated" is
+// not a valid pack at all. "empty-tree" is a valid closure holding the empty
+// tree; "empty-tree-stray" swaps that tree for an object outside the closure.
 func hostHistoryTestPack(t *testing.T, kind string) (source, pack, anchor string) {
 	t.Helper()
+	if strings.HasPrefix(kind, "empty-tree") {
+		source = t.TempDir()
+		gitMirrorTestRun(t, source, "init", "--quiet", "--bare")
+		commit, err := runWorkspaceCommitGit(t.Context(), source, nil, "commit-tree", gitEmptyTreeSHA1, "-m", "empty")
+		require.NoError(t, err)
+		anchor = strings.TrimSpace(commit)
+		ids := []string{anchor, gitEmptyTreeSHA1}
+		if kind == "empty-tree-stray" {
+			stray, err := runWorkspaceCommitGitInput(t.Context(), source, nil, strings.NewReader("private\n"), "hash-object", "-w", "--stdin")
+			require.NoError(t, err)
+			ids[1] = strings.TrimSpace(stray)
+		}
+		return source, hostHistoryRawPack(t, source, ids), anchor
+	}
 	source, _, anchor = gitMirrorTestSource(t)
+	switch kind {
+	case "incomplete", "duplicate":
+		ids := strings.Fields(gitMirrorTestRun(t, source, "rev-list", "--objects", "--no-object-names", anchor))
+		blob := gitMirrorTestRun(t, source, "rev-parse", anchor+":small")
+		require.Contains(t, ids, blob)
+		if kind == "incomplete" {
+			ids = slices.DeleteFunc(ids, func(id string) bool { return id == blob })
+		} else {
+			ids = append(ids, blob)
+		}
+		return source, hostHistoryRawPack(t, source, ids), anchor
+	}
 	prefix := filepath.Join(t.TempDir(), "pack")
 	input := anchor + "\n"
 	if kind == "unrelated" {
@@ -147,16 +180,69 @@ func hostHistoryTestPack(t *testing.T, kind string) (source, pack, anchor string
 	hash, err := runWorkspaceCommitGitInput(t.Context(), source, nil, strings.NewReader(input), "pack-objects", "--revs", prefix)
 	require.NoError(t, err)
 	pack = prefix + "-" + strings.TrimSpace(hash) + ".pack"
-	if kind == "truncated" {
+	switch kind {
+	case "truncated":
 		require.NoError(t, os.WriteFile(pack, []byte("PACK"), 0600))
+	case "corrupt":
+		data, err := os.ReadFile(pack)
+		require.NoError(t, err)
+		data[len(data)/2] ^= 0xff
+		require.NoError(t, os.WriteFile(pack, data, 0600))
 	}
 	return source, pack, anchor
+}
+
+// hostHistoryRawPack writes an undeltified pack of exactly these objects, in
+// order and duplicates included, as a buggy or hostile donor could send it.
+func hostHistoryRawPack(t *testing.T, source string, ids []string) string {
+	t.Helper()
+	types := map[string]byte{"commit": 1, "tree": 2, "blob": 3, "tag": 4}
+	var pack bytes.Buffer
+	pack.WriteString("PACK")
+	require.NoError(t, binary.Write(&pack, binary.BigEndian, [2]uint32{2, uint32(len(ids))}))
+	for _, id := range ids {
+		typ := gitMirrorTestRun(t, source, "cat-file", "-t", id)
+		data, err := runWorkspaceCommitGit(t.Context(), source, nil, "cat-file", typ, id)
+		require.NoError(t, err)
+		size := len(data)
+		header := types[typ]<<4 | byte(size&0x0f)
+		for size >>= 4; size > 0; size >>= 7 {
+			pack.WriteByte(header | 0x80)
+			header = byte(size & 0x7f)
+		}
+		pack.WriteByte(header)
+		z := zlib.NewWriter(&pack)
+		_, err = z.Write([]byte(data))
+		require.NoError(t, err)
+		require.NoError(t, z.Close())
+	}
+	sum := sha1.Sum(pack.Bytes())
+	pack.Write(sum[:])
+	path := filepath.Join(t.TempDir(), "raw.pack")
+	require.NoError(t, os.WriteFile(path, pack.Bytes(), 0600))
+	return path
 }
 
 // The importer rejects every invalid pack; the caller turns a rejection into
 // a remote fallback (see TestApprovedHostCommitBaseFallback).
 func TestImportHostCommitPack(t *testing.T) {
-	for _, kind := range []string{"complete", "unrelated", "truncated", "missing", "cancelled"} {
+	for kind, rejected := range map[string]string{
+		"complete":   "",
+		"empty-tree": "",
+		// More entries than the closure: stray objects or duplicates.
+		"unrelated": "the authorized closure",
+		"duplicate": "the authorized closure",
+		// The empty tree is present to Git without being stored; equal counts
+		// must not hide a stray object in its place.
+		"empty-tree-stray": "incomplete",
+		// The closure walk fails on any missing object.
+		"incomplete": "rev-list",
+		"missing":    "rev-list",
+		// index-pack verifies the pack and object hashes.
+		"corrupt":   "index-pack",
+		"truncated": "index-pack",
+		"cancelled": "",
+	} {
 		t.Run(kind, func(t *testing.T) {
 			source, pack, anchor := hostHistoryTestPack(t, kind)
 			if kind == "missing" {
@@ -170,19 +256,43 @@ func TestImportHostCommitPack(t *testing.T) {
 			}
 			dest := t.TempDir()
 			err := importHostCommitPack(ctx, dest, pack, anchor, []GitRemote{{Name: "origin", URL: "https://example.test/repo.git"}})
-			if kind != "complete" {
+			switch {
+			case kind == "cancelled":
 				require.Error(t, err)
+				return
+			case rejected != "":
+				require.ErrorContains(t, err, rejected)
 				return
 			}
 			require.NoError(t, err)
+			closure := gitMirrorTestRun(t, source, "rev-list", "--objects", "--no-object-names", anchor)
 			require.NoError(t, os.RemoveAll(source))
 			require.NoError(t, os.Remove(pack))
 			gitMirrorTestRun(t, dest, "fsck", "--full", "--strict")
 			require.Equal(t, anchor, gitMirrorTestRun(t, dest, "rev-parse", "HEAD"))
 			require.Empty(t, gitMirrorTestRun(t, dest, "for-each-ref"))
 			require.NoFileExists(t, filepath.Join(dest, "objects", "info", "alternates"))
+			stored := strings.Fields(gitMirrorTestRun(t, dest, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)"))
+			require.ElementsMatch(t, strings.Fields(closure), stored, "the store holds exactly the closure")
 		})
 	}
+}
+
+// Objects with valid hashes but malformed content are not fsck-checked, but
+// the closure walk still parses every commit and tree, so a tree Git cannot
+// read is rejected.
+func TestImportHostCommitPackRejectsMalformedTree(t *testing.T) {
+	source := t.TempDir()
+	gitMirrorTestRun(t, source, "init", "--quiet", "--bare")
+	tree, err := runWorkspaceCommitGitInput(t.Context(), source, nil, strings.NewReader("not a tree"), "hash-object", "-t", "tree", "--literally", "-w", "--stdin")
+	require.NoError(t, err)
+	commit, err := runWorkspaceCommitGit(t.Context(), source, nil, "commit-tree", strings.TrimSpace(tree), "-m", "malformed")
+	if err != nil {
+		t.Skipf("git refuses to commit a malformed tree: %v", err)
+	}
+	sha := strings.TrimSpace(commit)
+	pack := hostHistoryRawPack(t, source, []string{sha, strings.TrimSpace(tree)})
+	require.ErrorContains(t, importHostCommitPack(t.Context(), t.TempDir(), pack, sha, nil), "rev-list")
 }
 
 // Legacy objects that only --strict fsck rejects (e.g. zero-padded tree modes,

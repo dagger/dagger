@@ -1004,7 +1004,15 @@ func runWorkspaceCommitGit(ctx context.Context, dir string, extraEnv []string, a
 	return runWorkspaceCommitGitInput(ctx, dir, extraEnv, nil, args...)
 }
 
-func runWorkspaceCommitGitInput(ctx context.Context, dir string, extraEnv []string, stdin io.Reader, args ...string) (_ string, rerr error) {
+func runWorkspaceCommitGitInput(ctx context.Context, dir string, extraEnv []string, stdin io.Reader, args ...string) (string, error) {
+	var stdout bytes.Buffer
+	err := runWorkspaceCommitGitStream(ctx, dir, extraEnv, stdin, &stdout, args...)
+	return stdout.String(), err
+}
+
+// runWorkspaceCommitGitStream is runWorkspaceCommitGitInput writing stdout to
+// a stream, for output too large to buffer.
+func runWorkspaceCommitGitStream(ctx context.Context, dir string, extraEnv []string, stdin io.Reader, stdout io.Writer, args ...string) (rerr error) {
 	// Callers may supply -c key=value before the verb. Never include those
 	// values, pathspecs, commit messages, or identity inputs in the span name.
 	commandArgs := args
@@ -1032,18 +1040,18 @@ func runWorkspaceCommitGitInput(ctx context.Context, dir string, extraEnv []stri
 	cmd := gitCmd(ctx, dir, args...)
 	cmd.Env = append(cmd.Env, extraEnv...)
 	cmd.Stdin = stdin
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		// No ignored paths is a successful eligibility check, not a failed
 		// Git operation. Preserve real process failures and cancellation.
 		var exit *exec.ExitError
 		if operation == "check-ignore" && ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1 {
-			return stdout.String(), nil
+			return nil
 		}
-		return stdout.String(), fmt.Errorf("git %s: %w: %s", gitErrorArgs(args), err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("git %s: %w: %s", gitErrorArgs(args), err, strings.TrimSpace(stderr.String()))
 	}
-	return stdout.String(), nil
+	return nil
 }
 
 // maxGitErrorArgsBytes bounds the command line quoted in a git error.
