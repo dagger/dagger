@@ -187,14 +187,14 @@ type incrementalGitCheckoutEntry struct {
 
 // No baseline filesystem traversal: tree/index scans are Git metadata only.
 // A supported result is immutable evidence for the immediately following apply.
-func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, parent, child string, ownedShallow ...bool) (*incrementalGitCheckoutPlan, string, error) {
+func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, parent, child string, ownedShallow bool) (*incrementalGitCheckoutPlan, string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
 	if len(parent) != 40 || len(child) != 40 || !IsFullGitSHA(parent) || !IsFullGitSHA(child) {
 		return nil, "commit-format", nil
 	}
-	if _, err := nativeCommitGitDirWithShallow(ctx, source.Dir(), len(ownedShallow) > 0 && ownedShallow[0]); err != nil {
+	if _, err := nativeCommitGitDirWithShallow(ctx, source.Dir(), ownedShallow); err != nil {
 		if nativeCommitFallback(err) {
 			return nil, "repository-layout", nil
 		}

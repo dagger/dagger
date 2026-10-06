@@ -351,8 +351,11 @@ func nativeParentHistoryRefs(ctx context.Context, refs []*GitRef) ([]*GitRef, er
 		}
 		remote := refs[1-i]
 		matches, err := nativeParentHistoryCandidate(ctx, candidate, remote)
-		if err != nil || !matches {
+		if err != nil {
 			return refs, err
+		}
+		if !matches {
+			continue
 		}
 		valid := false
 		err = local.repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
@@ -360,8 +363,11 @@ func nativeParentHistoryRefs(ctx context.Context, refs []*GitRef) ([]*GitRef, er
 			valid, err = validateNativeParentHistory(ctx, git, remote.Ref.SHA, candidate.Ref.SHA)
 			return err
 		})
-		if err != nil || !valid {
+		if err != nil {
 			return refs, err
+		}
+		if !valid {
+			continue
 		}
 		borrowed := *remote
 		borrowed.Backend = &LocalGitRef{Ref: remote.Ref, repo: local.repo}
@@ -415,11 +421,13 @@ func nativeParentHistoryCandidate(ctx context.Context, child, remote *GitRef) (b
 	return parentRecipe == remoteRecipe, nil
 }
 
-func validateNativeParentHistory(ctx context.Context, source *gitutil.GitCLI, parent, child string, ownedShallow ...bool) (bool, error) {
+// validateNativeParentHistory accepts only complete storage: owned shallow
+// children are answered by mountOwnedShallowHistory instead.
+func validateNativeParentHistory(ctx context.Context, source *gitutil.GitCLI, parent, child string) (bool, error) {
 	if len(parent) != 40 || len(child) != 40 || !IsFullGitSHA(parent) || !IsFullGitSHA(child) {
 		return false, nil
 	}
-	if _, err := nativeCommitGitDirWithShallow(ctx, source.Dir(), len(ownedShallow) > 0 && ownedShallow[0]); err != nil {
+	if _, err := nativeCommitGitDir(ctx, source.Dir()); err != nil {
 		if nativeCommitFallback(err) {
 			return false, nil
 		}
