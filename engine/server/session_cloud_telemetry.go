@@ -352,8 +352,9 @@ func (srv *Server) refreshSessionCloudToken(ctx context.Context, sess *daggerSes
 	ctx = engine.ContextWithClientMetadata(ctx, md)
 	// The session enters its closing state before services stop and their final
 	// telemetry is collected, but the main client's attachables remain available
-	// to this accepted shutdown request. Only their actual removal closes this
-	// path; cloudRefreshGate closes it deliberately after the final Cloud flush.
+	// to this accepted shutdown request: they live on mainAttachablesCtx, which
+	// the shutdown ends after the final Cloud flush. Only their actual removal
+	// closes this path; cloudRefreshGate closes it deliberately just before.
 	attachable := func() error {
 		if sess.attachables != nil {
 			if _, ok := sess.attachables.Lookup(record.clientID); !ok {
