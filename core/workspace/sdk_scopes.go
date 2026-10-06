@@ -115,7 +115,7 @@ func ParseConfigAt(ctx context.Context, data []byte, configDir string) (*Config,
 	if err != nil {
 		return nil, err
 	}
-	warnings, err := ConfigWarnings(data, filepath.ToSlash(filepath.Join(configDir, ConfigFileName)))
+	warnings, err := CheckConfigFields(data, filepath.ToSlash(filepath.Join(configDir, ConfigFileName)))
 	if err != nil {
 		return nil, err
 	}

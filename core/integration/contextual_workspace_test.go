@@ -304,14 +304,11 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceCLIExposure(ctx context.C
 	})
 }
 
-// TestContextualWorkspaceModuleSourceLocalDeps is the regression test for
-// https://github.com/dagger/dagger/issues/13139: loading a module that has a
-// local dependency from module code used to fail while resolving the
-// dependency — user-defaults loading ran the outer .env find-up against the
-// caller's host with the module's client metadata, which can only time out
-// ("failed to get requester session: context deadline exceeded"). The
-// outerEnvFile module-context guard fixed it; this pins the repro from the
-// issue: a module loading a sibling module that depends on "../dep".
+// TestContextualWorkspaceModuleSourceLocalDeps checks that a module can load
+// a sibling module with a local "../dep" dependency from module code. Loading
+// the dependency's user defaults must not run the outer .env find-up against
+// the caller's host with the module's client metadata, which can only time
+// out ("failed to get requester session: context deadline exceeded").
 func (ContextualWorkspaceSuite) TestContextualWorkspaceModuleSourceLocalDeps(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

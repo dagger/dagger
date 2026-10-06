@@ -36,16 +36,18 @@ type Module struct {
 	SDKConfig *SDKConfig `field:"true" name:"sdk" doc:"The SDK config used by this module."`
 
 	// Deps contains the module's dependency DAG. Its SchemaBuilder may retain a
-	// query root and lazy schema, but never runtime authority; execution still
-	// requires the held ClientScope carried by the calling context.
+	// query root, but never a built schema or runtime authority: its schema
+	// comes from the current client's memo, and execution still requires the
+	// held ClientScope carried by the calling context.
 	Deps *SchemaBuilder
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime dagql.Nullable[dagql.ObjectResult[*Container]]
 
 	// Definition is the cached result of ModuleSource._moduleDefinition when
-	// the module's type definitions came from its container runtime: the
-	// definition-only module the runtime reported. Keeping the reference puts
+	// the module's type definitions came from its container runtime, or of
+	// ModuleSource._moduleTypesDefinition when they came from its SDK's
+	// ModuleTypes: the definition-only module. Keeping the reference puts
 	// the definition row inside this module's closure, so a bundle that
 	// carries the module carries the definition too.
 	Definition dagql.Nullable[dagql.ObjectResult[*Module]]

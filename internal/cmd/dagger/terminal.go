@@ -168,7 +168,7 @@ func selectShellArtifact(ctx context.Context, dag *dagger.Client, terminals *dag
 		return shellArtifact{}, err
 	}
 	if entrypoint != "" {
-		entrypointItems, err := shellArtifacts(ctx, dag, terminals.FilterTypes([]string{"Container"}).FilterURI("dag://"+entrypoint+"/**"))
+		entrypointItems, err := shellArtifacts(ctx, dag, terminals.FilterTypes([]string{"Container"}).FilterPathPattern(entrypoint+"/**"))
 		if err != nil {
 			return shellArtifact{}, err
 		}

@@ -489,14 +489,18 @@ defmodule Dagger.Artifacts do
   @doc """
   Evaluate the selection in parallel, retaining each result and error.
   """
-  @spec values(t(), [{:fail_fast, boolean() | nil}, {:arguments, Dagger.JSON.t() | nil}]) ::
-          {:ok, [Dagger.ArtifactResult.t()]} | {:error, term()}
+  @spec values(t(), [
+          {:fail_fast, boolean() | nil},
+          {:arguments, Dagger.JSON.t() | nil},
+          {:max_concurrency, integer() | nil}
+        ]) :: {:ok, [Dagger.ArtifactResult.t()]} | {:error, term()}
   def values(%__MODULE__{} = artifacts, optional_args \\ []) do
     query_builder =
       artifacts.query_builder
       |> QB.select("values")
       |> QB.maybe_put_arg("failFast", optional_args[:fail_fast])
       |> QB.maybe_put_arg("arguments", optional_args[:arguments])
+      |> QB.maybe_put_arg("maxConcurrency", optional_args[:max_concurrency])
       |> QB.select("id")
 
     with {:ok, items} <- Client.execute(artifacts.client, query_builder) do

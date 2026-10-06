@@ -118,7 +118,7 @@ func scratchTestCache(t *testing.T, store *testutil.Store, path, session string)
 	// Use the actual resolver and actual scalar identity input.
 	dagql.Fields[*core.Query]{dagql.NodeFunc("directory", (&directorySchema{}).directory).WithInput(engineDefaultPlatformInput)}.Install(srv)
 	cache.EnableTransferFixtureParts()
-	return ctx, cache, srv
+	return dagql.ContextWithServer(ctx, srv), cache, srv
 }
 
 func scratchSelect(t *testing.T, ctx context.Context, srv *dagql.Server) dagql.ObjectResult[*core.Directory] {

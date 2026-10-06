@@ -598,7 +598,7 @@ func workspaceConfigPendingModules(
 			legacyFieldPolicy:  legacyWorkspaceFieldPolicyRejectAsWorkspace,
 		}
 
-		if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
+		if workspace.IsLocalRef(entry.Source, "") {
 			resolved := workspace.ResolveModuleEntrySource(configDir, entry.Source)
 			if filepath.IsAbs(resolved) {
 				mod.Ref = resolved

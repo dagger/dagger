@@ -119,6 +119,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	)
 	// The stored parts, like the offers, belonged to the old value.
 	cur.storedParts = nil
+	cur.storedRecordBytes = fresh.storedRecordBytes
 	for _, offer := range cur.partOffersLocked() {
 		more, err := c.retirePartOfferLocked(ctx, cur, offer.record.Address)
 		queue = append(queue, more...)
@@ -152,6 +153,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.hasValue = fresh.hasValue
 	cur.persistedEnvelope = fresh.persistedEnvelope
 	cur.payloadRevision++
+	c.setResultPayloadBytesLocked(cur, fresh.payloadBytes)
 	// fresh was never registered, so its own lease cleanup does nothing.
 	cur.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(cur), fresh.onRelease)
 	cur.createdAtUnixNano = fresh.createdAtUnixNano

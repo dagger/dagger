@@ -43,6 +43,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -393,11 +394,11 @@ func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testc
 		require.NoError(t, err)
 		require.Equal(t, "goodbye\n", stderr)
 
-		_, err = exec.Stdout(ctx)
+		stdout, err = exec.Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello\n", stdout)
 
-		_, err = exec.Stderr(ctx)
+		stderr, err = exec.Stderr(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "goodbye\n", stderr)
 	})
@@ -418,14 +419,102 @@ func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testc
 		require.NoError(t, err)
 		require.Equal(t, "goodbye\n", stderr)
 
-		_, err = exec.Stdout(ctx)
+		stdout, err = exec.Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello\n", stdout)
 
-		_, err = exec.Stderr(ctx)
+		stderr, err = exec.Stderr(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "goodbye\n", stderr)
 	})
+}
+
+// TestExecRedirectNotLogged: a stream redirected to a file goes only to that
+// file, not to the exec's logs, while the other stream is still logged.
+// Container.stdout/stderr keep returning the redirected output. Clients on API
+// views before v1.0.0 keep the old behavior of logging the redirected stream
+// too.
+func (ContainerSuite) TestExecRedirectNotLogged(ctx context.Context, t *testctx.T) {
+	// The markers are upper-cased by the exec so they only ever appear in its
+	// output, never in its args.
+	execs := func(c *dagger.Client, cacheBuster string) (redirectOut, redirectErr *dagger.Container) {
+		base := c.Container().From(alpineImage).
+			WithEnvVariable("CACHEBUST", cacheBuster)
+		redirectOut = base.WithExec([]string{"sh", "-c",
+			"echo out-redirected | tr a-z A-Z; echo err-logged | tr a-z A-Z >&2",
+		}, dagger.ContainerWithExecOpts{
+			RedirectStdout: "/out",
+		})
+		redirectErr = base.WithExec([]string{"sh", "-c",
+			"echo out-logged | tr a-z A-Z; echo err-redirected | tr a-z A-Z >&2",
+		}, dagger.ContainerWithExecOpts{
+			RedirectStderr: "/err",
+		})
+		return redirectOut, redirectErr
+	}
+
+	// execLogs runs both execs in a fresh traced session and returns every log
+	// record body the session emitted.
+	execLogs := func(t *testctx.T, cfg engineconn.Config, cacheBuster string) string {
+		c, sink := connectWithTrace(ctx, t, cfg)
+		redirectOut, redirectErr := execs(c, cacheBuster)
+
+		// Only sync here: reading the output back (File.contents,
+		// Container.stdout) would put it in the logs as call results.
+		_, err := redirectOut.Sync(ctx)
+		require.NoError(t, err)
+		_, err = redirectErr.Sync(ctx)
+		require.NoError(t, err)
+
+		require.NoError(t, c.Close()) // close + flush logs
+
+		_, logReqs := sink.capture()
+		var logs strings.Builder
+		for _, req := range logReqs {
+			for _, rl := range req.GetResourceLogs() {
+				for _, sl := range rl.GetScopeLogs() {
+					for _, rec := range sl.GetLogRecords() {
+						logs.WriteString(rec.GetBody().GetStringValue())
+						logs.Write(rec.GetBody().GetBytesValue())
+					}
+				}
+			}
+		}
+		return logs.String()
+	}
+
+	t.Run("legacy view logs redirected output", func(ctx context.Context, t *testctx.T) {
+		logs := execLogs(t, engineconn.Config{VersionOverride: "v0.21.5"}, identity.NewID())
+		require.Contains(t, logs, "ERR-LOGGED")
+		require.Contains(t, logs, "OUT-LOGGED")
+		require.Contains(t, logs, "OUT-REDIRECTED")
+		require.Contains(t, logs, "ERR-REDIRECTED")
+	})
+
+	cacheBuster := identity.NewID()
+	logs := execLogs(t, engineconn.Config{}, cacheBuster)
+	require.Contains(t, logs, "ERR-LOGGED")
+	require.Contains(t, logs, "OUT-LOGGED")
+	require.NotContains(t, logs, "OUT-REDIRECTED")
+	require.NotContains(t, logs, "ERR-REDIRECTED")
+
+	// The redirected output still lands in the file and in Container.stdout
+	// and stderr. Read it back from a separate session.
+	redirectOut, redirectErr := execs(connect(ctx, t), cacheBuster)
+
+	out, err := redirectOut.File("/out").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "OUT-REDIRECTED\n", out)
+	out, err = redirectOut.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "OUT-REDIRECTED\n", out)
+
+	errOut, err := redirectErr.File("/err").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ERR-REDIRECTED\n", errOut)
+	errOut, err = redirectErr.Stderr(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ERR-REDIRECTED\n", errOut)
 }
 
 func (ContainerSuite) TestExecWithWorkdir(ctx context.Context, t *testctx.T) {
@@ -5232,7 +5321,6 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		require.NotEqual(t, output2a, output2b)
 
 		// we only changed /tmpdir/b/f, so the execs that included /tmpdir/a/f should be cached across clients
-		// this is the assertion that failed before the fix this test was added for
 		require.Equal(t, output1a, output2a)
 		// and the execs that included /tmpdir/b/f should not be cached across clients since we modified that file
 		require.NotEqual(t, output1b, output2b)

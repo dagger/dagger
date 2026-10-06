@@ -178,7 +178,54 @@ func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
 		return nil
 	})
 }
+
+// validateTransferRecord checks a transferred record against its direct
+// dependencies: its shape, as validateTransferRecordShape does, its payload by
+// its codec, and every reference it makes.
 func validateTransferRecord(rec PersistedRecord, deps []uint64) error {
+	if err := validateTransferRecordHeader(rec); err != nil {
+		return err
+	}
+	if err := walkTransferPayloads(&rec.Envelope, rec.Call, nil, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+		if family.Transfer != nil {
+			if err := family.Transfer.ValidateForeign(v); err != nil {
+				return nil, err
+			}
+		}
+		return v.Payload, nil
+	}); err != nil {
+		return err
+	}
+	direct, err := validateTransferDependencies(rec, deps)
+	if err != nil {
+		return err
+	}
+	rec.Envelope.PendingOffers = nil
+	_, err = VisitEncodedReferences(rec, directTransferReferences(direct))
+	return err
+}
+
+// validateTransferRecordShape checks what validateTransferRecord checks
+// without decoding the record's payload: its identity, its envelope's
+// structure, its dependencies, its offers' references, and its call's
+// references.
+func validateTransferRecordShape(rec PersistedRecord, deps []uint64) error {
+	if err := validateTransferRecordHeader(rec); err != nil {
+		return err
+	}
+	if err := validateTransferEnvelopeStructure(rec.Envelope, true); err != nil {
+		return err
+	}
+	direct, err := validateTransferDependencies(rec, deps)
+	if err != nil {
+		return err
+	}
+	return visitResultCallReferences(rec.Call, nil, directTransferReferences(direct))
+}
+
+// validateTransferRecordHeader checks a transferred record's identity, call,
+// envelope and storage links.
+func validateTransferRecordHeader(rec PersistedRecord) error {
 	if rec.ResultID == 0 || rec.Envelope.ResultID != rec.ResultID {
 		return fmt.Errorf("row/envelope self ID mismatch")
 	}
@@ -191,31 +238,31 @@ func validateTransferRecord(rec PersistedRecord, deps []uint64) error {
 	if len(rec.SnapshotLinks) != 0 {
 		return fmt.Errorf("bundle contains local storage links")
 	}
-	if err := walkTransferPayloads(&rec.Envelope, rec.Call, nil, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
-		if family.Transfer != nil {
-			if err := family.Transfer.ValidateForeign(v); err != nil {
-				return nil, err
-			}
-		}
-		return v.Payload, nil
-	}); err != nil {
-		return err
-	}
+	return nil
+}
+
+// validateTransferDependencies checks a transferred record's dependency list
+// and its offers' references, and returns its direct dependencies.
+func validateTransferDependencies(rec PersistedRecord, deps []uint64) (map[uint64]bool, error) {
 	direct := map[uint64]bool{}
 	for _, id := range deps {
 		if id == 0 || direct[id] {
-			return fmt.Errorf("zero or duplicate dependency %d", id)
+			return nil, fmt.Errorf("zero or duplicate dependency %d", id)
 		}
 		direct[id] = true
 	}
-	env := rec.Envelope
-	for _, offer := range env.PendingOffers {
+	for _, offer := range rec.Envelope.PendingOffers {
 		if err := validateOfferReferences(offer); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	rec.Envelope.PendingOffers = nil
-	_, err := VisitEncodedReferences(rec, func(ref *PersistedRef) error {
+	return direct, nil
+}
+
+// directTransferReferences refuses a child or call reference to a row that is
+// not one of direct.
+func directTransferReferences(direct map[uint64]bool) PersistedRefVisitor {
+	return func(ref *PersistedRef) error {
 		if ref.RecipeID != nil {
 			return nil
 		}
@@ -223,8 +270,7 @@ func validateTransferRecord(rec PersistedRecord, deps []uint64) error {
 			return fmt.Errorf("reference %s to %d is not a direct dependency", ref.Path, ref.ResultID)
 		}
 		return nil
-	})
-	return err
+	}
 }
 
 func validateTransferEnvelope(env PersistedResultEnvelope, typ *ResultCallType, root bool) error {
@@ -274,6 +320,37 @@ func validateTransferEnvelopeKind(env PersistedResultEnvelope, typ *ResultCallTy
 		}
 	default:
 		return fmt.Errorf("unknown envelope kind %q", env.Kind)
+	}
+	return nil
+}
+
+// validateTransferEnvelopeStructure checks what visitPersistedEnvelope checks
+// of an envelope's structure, without decoding object payloads.
+func validateTransferEnvelopeStructure(env PersistedResultEnvelope, root bool) error {
+	if env.Version != persistedResultEnvelopeVersion {
+		return fmt.Errorf("unsupported envelope version %d", env.Version)
+	}
+	if !root && (env.Imported || len(env.PendingOffers) != 0) {
+		return fmt.Errorf("root metadata on inline value")
+	}
+	switch env.Kind {
+	case persistedResultKindNull, persistedResultKindScalar:
+		if len(env.Items) != 0 || len(env.ObjectJSON) != 0 {
+			return fmt.Errorf("%s kind carries a body", env.Kind)
+		}
+	case persistedResultKindRef:
+		if root {
+			return fmt.Errorf("root envelope cannot be a result reference")
+		}
+	case persistedResultKindObject:
+	case persistedResultKindList:
+		for _, item := range env.Items {
+			if err := validateTransferEnvelopeStructure(item, false); err != nil {
+				return err
+			}
+		}
+	default:
+		return fmt.Errorf("unsupported kind %q", env.Kind)
 	}
 	return nil
 }

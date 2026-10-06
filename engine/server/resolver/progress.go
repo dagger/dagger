@@ -8,13 +8,13 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/dagger/dagger/engine/snapshots"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// progressIngester wraps a content.Ingester so that layer blobs written
-// through it (e.g. by remotes.FetchHandler) stream download progress as
-// telemetry, keyed by blob digest.
+// progressIngester wraps a content.Ingester so layer blobs written through it
+// stream download progress, keyed by blob digest.
 type progressIngester struct {
 	content.Ingester
 }
@@ -34,12 +34,8 @@ func (pi progressIngester) Writer(ctx context.Context, opts ...content.WriterOpt
 	return wrapProgressWriter(ctx, w, wOpts.Desc), nil
 }
 
-// wrapProgressWriter wraps a content.Writer so the layer blob written
-// through it streams transfer progress as telemetry, keyed by blob digest
-// — the same wrapper serves pull (blobs fetched into the content store)
-// and push (blobs copied to a registry's writer). Non-layer blobs pass
-// through untouched: manifests and configs are tiny. The wrapper emits a
-// pending state immediately so the item appears before bytes move.
+// wrapProgressWriter wraps a content.Writer so layer blobs written through it
+// stream download progress as telemetry, keyed by blob digest.
 func wrapProgressWriter(ctx context.Context, w content.Writer, desc ocispecs.Descriptor) content.Writer {
 	if !images.IsLayerType(desc.MediaType) || desc.Size <= 0 {
 		return w
@@ -67,6 +63,34 @@ type progressWriter struct {
 	mu       sync.Mutex
 	offset   int64
 	lastEmit time.Time
+}
+
+// attributedWriter publishes bytes only after the registry commits them. A
+// failed attempt can therefore undercount bytes sent before the failure, but it
+// cannot report buffered bytes that never reached the registry.
+type attributedWriter struct {
+	content.Writer
+	network *enginetelemetry.NetworkAccumulator
+	written int64
+}
+
+func (w *attributedWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	w.written += int64(n)
+	return n, err
+}
+
+func (w *attributedWriter) Commit(
+	ctx context.Context,
+	size int64,
+	expected digest.Digest,
+	opts ...content.Opt,
+) error {
+	if err := w.Writer.Commit(ctx, size, expected, opts...); err != nil {
+		return err
+	}
+	w.network.Add(w.written)
+	return nil
 }
 
 func (pw *progressWriter) Status() (content.Status, error) {

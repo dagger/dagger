@@ -37,7 +37,7 @@ dagger [options] [subcommand | file...]
 * [dagger shell](#dagger-shell)	 - Open a terminal for a container or directory in your project
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
 * [dagger up](#dagger-up)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
-* [dagger update](#dagger-update)	 - Update installed module versions and lockfile state
+* [dagger update](#dagger-update)	 - Update installed module sources, versions and lockfile state
 * [dagger version](#dagger-version)	 - Print dagger version
 * [dagger workspace](#dagger-workspace)	 - Inspect workspace files and config
 
@@ -58,7 +58,7 @@ dagger agent [FILTERS] [OPTIONS]
   -f, --format FORMAT         Output FORMAT: table, link, or cli (requires --list) (default "table")
   -l, --list                  List available agents
       --module NAME           Select artifacts from module NAME
-  -r, --resume trace[=list]   Restore agents from a past session's trace: a retained engine archive, falling back to Dagger Cloud. With no trace ID, list retained engine archives
+  -r, --resume trace[=list]   Restore agents from a past session's trace: a retained engine archive, falling back to Dagger Cloud. With no trace ID, pick a retained session to resume (or list them when not interactive)
 ```
 
 ### Options inherited from parent commands
@@ -340,6 +340,7 @@ dagger check [--failfast] [FILTERS] [OPTIONS]
   -l, --list                 List available checks
   -m, --load-module string   Use a one-off module (local path or git ref)
       --module NAME          Select artifacts from module NAME
+  -j, --parallel int         Run at most this many checks at once; 0 means no limit. Defaults to $DAGGER_CHECK_PARALLEL
       --skip link            Exclude checks selected by this link
 ```
 
@@ -924,8 +925,8 @@ dagger cloud traces list --pr 123 --json
       --pr string               Only traces of this pull request number
       --provider string         Only traces of this CI provider, e.g. github
       --repo strings            Only traces of this repository, e.g. github.com/org/repo (repeatable)
-      --since string            Only traces that started after this time: a duration (30m, 2d, 1w) or a date (2006-01-02, RFC 3339)
-      --sort string             Sort order: start (newest first) or duration (longest first) (default "start")
+      --since string            Only traces that started after this time: a duration (30m, 2d, 1w) or a date (2006-01-02, RFC 3339). Defaults to 1h with --sort duration
+      --sort string             Sort order: start (newest first) or duration (longest first). Duration sorts within --since, which defaults to 1h (default "start")
       --status string           Only traces with this status: passed, failed or running
       --tag string              Only traces of this git tag
       --token string            Only traces that this token sent (token ID or name)
@@ -1169,6 +1170,7 @@ dagger generate [FILTERS] [OPTIONS]
   -l, --list            List available generators
       --module NAME     Select artifacts from module NAME
       --no-apply        Compute and show a summary of generated changes without applying them
+  -j, --parallel int    Run at most this many generators at once; 0 means no limit
       --require-load    Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)
 ```
 
@@ -1678,7 +1680,7 @@ dagger module
 * [dagger module search](#dagger-module-search)	 - Search for modules you can install
 * [dagger module settings](#dagger-module-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
 * [dagger module uninstall](#dagger-module-uninstall)	 - Uninstall a module from your workspace
-* [dagger module update](#dagger-module-update)	 - Update installed module versions and lockfile state
+* [dagger module update](#dagger-module-update)	 - Update installed module sources, versions and lockfile state
 * [dagger module version](#dagger-module-version)	 - Print the version request for an installed module
 
 ## dagger module client
@@ -2222,16 +2224,19 @@ dagger module uninstall hello
 
 ## dagger module update
 
-Update installed module versions and lockfile state
+Update installed module sources, versions and lockfile state
 
 ### Synopsis
 
 Update an installed module by name or source.
 
 Use --version VERSION or append @VERSION to set a new version request.
+Use --source SOURCE to change the source address. The new source can include
+a version. A local path is relative to the current directory, as with install.
+The module keeps its name and settings.
 Match an installed name first.
 Source matching ignores the version and must select exactly one installation.
-Without a new version, refresh the existing request.
+Without a new version or source, refresh the existing request.
 
 With no arguments, this refreshes all installed modules. It does not refresh
 client targets or runtime targets. If a client scope targets an updated module,
@@ -2245,6 +2250,7 @@ dagger module update [NAME|SOURCE...] [flags]
 ### Options
 
 ```
+      --source string    New source address for one installed module
       --version string   New version request for one installed module
 ```
 
@@ -2648,16 +2654,19 @@ dagger up [FILTERS] [OPTIONS]
 
 ## dagger update
 
-Update installed module versions and lockfile state
+Update installed module sources, versions and lockfile state
 
 ### Synopsis
 
 Update an installed module by name or source.
 
 Use --version VERSION or append @VERSION to set a new version request.
+Use --source SOURCE to change the source address. The new source can include
+a version. A local path is relative to the current directory, as with install.
+The module keeps its name and settings.
 Match an installed name first.
 Source matching ignores the version and must select exactly one installation.
-Without a new version, refresh the existing request.
+Without a new version or source, refresh the existing request.
 
 With no arguments, this refreshes all installed modules. It does not refresh
 client targets or runtime targets. If a client scope targets an updated module,
@@ -2671,6 +2680,7 @@ dagger update [NAME|SOURCE...]
 ### Options
 
 ```
+      --source string    New source address for one installed module
       --version string   New version request for one installed module
 ```
 

@@ -89,6 +89,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
 					View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("noLock").
+					View(AfterVersion("v1.0.0-beta.15")).
+					Doc(`Ignore the workspace lockfile for this lookup.`),
 			),
 		dagql.NodeFunc("build", s.build).
 			View(BeforeVersion("v0.19.0")).
@@ -207,26 +210,27 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			if err != nil {
 				return nil, err
 			}
-			if parentPendingLazy {
-				var healthcheck *dockerspec.HealthcheckConfig
-				if ctr.Config.Healthcheck != nil {
-					hc := *ctr.Config.Healthcheck
-					hc.Test = slices.Clone(ctr.Config.Healthcheck.Test)
-					healthcheck = &hc
-				}
-				volumes := make([]string, 0, len(ctr.Config.Volumes))
-				for volume := range ctr.Config.Volumes {
-					volumes = append(volumes, volume)
-				}
-				ctr.Lazy = &core.ContainerWithImageConfigMetadataLazy{
-					LazyState:   core.NewLazyState(),
-					Parent:      parent,
-					Healthcheck: healthcheck,
-					OnBuild:     slices.Clone(ctr.Config.OnBuild),
-					Shell:       slices.Clone(ctr.Config.Shell),
-					Volumes:     volumes,
-					StopSignal:  ctr.Config.StopSignal,
-				}
+			var healthcheck *dockerspec.HealthcheckConfig
+			if ctr.Config.Healthcheck != nil {
+				hc := *ctr.Config.Healthcheck
+				hc.Test = slices.Clone(ctr.Config.Healthcheck.Test)
+				healthcheck = &hc
+			}
+			volumes := make([]string, 0, len(ctr.Config.Volumes))
+			for volume := range ctr.Config.Volumes {
+				volumes = append(volumes, volume)
+			}
+			ctr.Lazy = &core.ContainerWithImageConfigMetadataLazy{
+				LazyState:   core.NewLazyState(),
+				Parent:      parent,
+				Healthcheck: healthcheck,
+				OnBuild:     slices.Clone(ctr.Config.OnBuild),
+				Shell:       slices.Clone(ctr.Config.Shell),
+				Volumes:     volumes,
+				StopSignal:  ctr.Config.StopSignal,
+			}
+			if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+				return nil, err
 			}
 			return ctr, nil
 		}).
@@ -306,14 +310,15 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			if err != nil {
 				return nil, err
 			}
-			if parentPendingLazy {
-				hc := *ctr.Config.Healthcheck
-				hc.Test = slices.Clone(ctr.Config.Healthcheck.Test)
-				ctr.Lazy = &core.ContainerWithHealthcheckLazy{
-					LazyState:   core.NewLazyState(),
-					Parent:      parent,
-					Healthcheck: hc,
-				}
+			hc := *ctr.Config.Healthcheck
+			hc.Test = slices.Clone(ctr.Config.Healthcheck.Test)
+			ctr.Lazy = &core.ContainerWithHealthcheckLazy{
+				LazyState:   core.NewLazyState(),
+				Parent:      parent,
+				Healthcheck: hc,
+			}
+			if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+				return nil, err
 			}
 			return ctr, nil
 		}).
@@ -337,11 +342,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			if err != nil {
 				return nil, err
 			}
-			if parentPendingLazy {
-				ctr.Lazy = &core.ContainerWithoutHealthcheckLazy{
-					LazyState: core.NewLazyState(),
-					Parent:    parent,
-				}
+			ctr.Lazy = &core.ContainerWithoutHealthcheckLazy{
+				LazyState: core.NewLazyState(),
+				Parent:    parent,
+			}
+			if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+				return nil, err
 			}
 			return ctr, nil
 		}).
@@ -653,10 +659,18 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Content to write to the command's standard input. Example: "Hello world")`),
 				dagql.Arg("redirectStdin").Doc(
 					`Redirect the command's standard input from a file in the container. Example: "./stdin.txt"`),
-				dagql.Arg("redirectStdout").Doc(
-					`Redirect the command's standard output to a file in the container. Example: "./stdout.txt"`),
-				dagql.Arg("redirectStderr").Doc(
-					`Redirect the command's standard error to a file in the container. Example: "./stderr.txt"`),
+				dagql.Arg("redirectStdout").
+					View(AfterVersion(redirectNotLoggedVersion)).
+					Doc(`Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"`),
+				dagql.Arg("redirectStdout").
+					View(BeforeVersion(redirectNotLoggedVersion)).
+					Doc(`Redirect the command's standard output to a file in the container. Example: "./stdout.txt"`),
+				dagql.Arg("redirectStderr").
+					View(AfterVersion(redirectNotLoggedVersion)).
+					Doc(`Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"`),
+				dagql.Arg("redirectStderr").
+					View(BeforeVersion(redirectNotLoggedVersion)).
+					Doc(`Redirect the command's standard error to a file in the container. Example: "./stderr.txt"`),
 				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
 				disableNestingArg,
 				legacyNestingArg,
@@ -866,6 +880,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 
 		dagql.NodeFunc("manifest", s.manifest).
 			View(AfterVersion("v1.0.0-0")).
+			// A manifest names this engine's layer digests, which a rebuild elsewhere
+			// does not reproduce: manifest and layer(id) stay on one engine.
+			WithInput(dagql.PerEngineCacheInput).
 			Doc(`Computes and returns the manifest for this container as a File.`).
 			Args(
 				dagql.Arg("forcedCompression").Doc(
@@ -880,6 +897,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 
 		dagql.NodeFunc("layer", s.layer).
 			View(AfterVersion("v1.0.0-0")).
+			// A manifest names this engine's layer digests, which a rebuild elsewhere
+			// does not reproduce: manifest and layer(id) stay on one engine.
+			WithInput(dagql.PerEngineCacheInput).
 			Doc(`Returns the image layer or configuration blob with the given digest as a File.`).
 			Args(
 				dagql.Arg("id").Doc(`Digest of the layer or configuration blob (e.g. "sha256:abc123...").`),
@@ -1095,6 +1115,7 @@ type containerFromArgs struct {
 	RegistryService       dagql.Optional[core.ServiceID]
 	Protocol              dagql.Optional[core.RegistryProtocol]
 	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
+	NoLock                bool `name:"noLock" default:"false"`
 }
 
 func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], insecureSkipTLSVerify bool) (serverresolver.RegistryTransport, error) {
@@ -1172,6 +1193,9 @@ var fromSessionScopeInput = dagql.ImplicitInput{
 
 //nolint:gocyclo
 func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
+	if args.NoLock {
+		ctx = withoutWorkspaceLookupLock(ctx)
+	}
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return inst, err
 	}
@@ -1526,36 +1550,36 @@ func (s *containerSchema) build(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Container],
 	args containerBuildArgs,
-) (*core.Container, error) {
+) (inst dagql.ObjectResult[*core.Container], _ error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
-		return nil, err
+		return inst, err
 	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
 
 	contextDir, err := args.Context.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 	buildctxDir, err := applyDockerIgnore(ctx, srv, contextDir, args.Dockerfile)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	secrets, err := dagql.LoadIDResults(ctx, srv, args.Secrets)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	buildctxDirID, err := buildctxDir.RecipeID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get build context recipe ID: %w", err)
+		return inst, fmt.Errorf("failed to get build context recipe ID: %w", err)
 	}
 
 	return parent.Self().Build(
@@ -1693,6 +1717,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if core.Supports(ctx, defaultNestingVersion) {
 		args.ExperimentalPrivilegedNesting = !args.DisableDaggerInDagger
 	}
+	args.LogRedirectedOutput = !core.Supports(ctx, redirectNotLoggedVersion)
 
 	var md *engineutil.ExecutionMetadata
 	if args.ExecMD.Self != nil {
@@ -1852,14 +1877,13 @@ func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithSymlinkLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Target:    target,
-			LinkPath:  linkName,
-		}
-	} else if _, err := ctr.WithSymlink(ctx, parent, target, linkName); err != nil {
+	ctr.Lazy = &core.ContainerWithSymlinkLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		LinkPath:  linkName,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -1878,12 +1902,13 @@ func (s *containerSchema) withGPU(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerSetGPUsLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Devices:   slices.Clone(args.Devices),
-		}
+	ctr.Lazy = &core.ContainerSetGPUsLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Devices:   slices.Clone(args.Devices),
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -1898,12 +1923,13 @@ func (s *containerSchema) withAllGPUs(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerSetGPUsLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Devices:   devices,
-		}
+	ctr.Lazy = &core.ContainerSetGPUsLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Devices:   devices,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -1958,12 +1984,13 @@ func (s *containerSchema) withoutEntrypoint(ctx context.Context, parent dagql.Ob
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithoutEntrypointLazy{
-			LazyState:       core.NewLazyState(),
-			Parent:          parent,
-			KeepDefaultArgs: args.KeepDefaultArgs,
-		}
+	ctr.Lazy = &core.ContainerWithoutEntrypointLazy{
+		LazyState:       core.NewLazyState(),
+		Parent:          parent,
+		KeepDefaultArgs: args.KeepDefaultArgs,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2001,12 +2028,13 @@ func (s *containerSchema) withDefaultArgs(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		c.Lazy = &core.ContainerWithDefaultArgsLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Args:      slices.Clone(args.Args),
-		}
+	c.Lazy = &core.ContainerWithDefaultArgsLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Args:      slices.Clone(args.Args),
+	}
+	if err := evaluateOverBuiltParent(ctx, c, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return c, nil
 }
@@ -2060,12 +2088,13 @@ func (s *containerSchema) withUser(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithUserLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Name:      args.Name,
-		}
+	ctr.Lazy = &core.ContainerWithUserLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Name:      args.Name,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2082,11 +2111,12 @@ func (s *containerSchema) withoutUser(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithoutUserLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-		}
+	ctr.Lazy = &core.ContainerWithoutUserLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2150,11 +2180,12 @@ func (s *containerSchema) withoutWorkdir(ctx context.Context, parent dagql.Objec
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithoutWorkdirLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-		}
+	ctr.Lazy = &core.ContainerWithoutWorkdirLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2237,12 +2268,13 @@ func (s *containerSchema) withEnvFileVariables(ctx context.Context, parent dagql
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithEnvFileVariablesLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Source:    ef,
-		}
+	ctr.Lazy = &core.ContainerWithEnvFileVariablesLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Source:    ef,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2283,13 +2315,14 @@ func (s *containerSchema) withVolatileVariable(ctx context.Context, parent dagql
 		return inst, err
 	}
 	ctr.WithVolatileVariable(args.Name, args.Value)
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithVolatileVariableLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Name:      args.Name,
-			Value:     args.Value,
-		}
+	ctr.Lazy = &core.ContainerWithVolatileVariableLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Name:      args.Name,
+		Value:     args.Value,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2416,12 +2449,13 @@ func (s *containerSchema) withoutVolatileVariable(ctx context.Context, parent da
 		return nil, err
 	}
 	ctr.WithoutVolatileVariable(args.Name)
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithoutVolatileVariableLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Name:      args.Name,
-		}
+	ctr.Lazy = &core.ContainerWithoutVolatileVariableLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Name:      args.Name,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2594,13 +2628,14 @@ func (s *containerSchema) withAnnotation(ctx context.Context, parent dagql.Objec
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithAnnotationLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Name:      args.Name,
-			Value:     args.Value,
-		}
+	ctr.Lazy = &core.ContainerWithAnnotationLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Name:      args.Name,
+		Value:     args.Value,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2618,12 +2653,13 @@ func (s *containerSchema) withoutAnnotation(ctx context.Context, parent dagql.Ob
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithoutAnnotationLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Name:      args.Name,
-		}
+	ctr.Lazy = &core.ContainerWithoutAnnotationLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Name:      args.Name,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -2835,35 +2871,32 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 	}
 
 	target := absPath(parent.Self().Config.WorkingDir, args.Path)
-	if !parentPendingLazy {
-		if _, err := ctr.WithMountedPathDockerfileCompat(ctx, target, dir, args.SourcePath, args.ReadOnly); err != nil {
-			return inst, err
-		}
-	} else {
-		sourceIsFile, err := core.DockerfileCompatMountSourceIsFile(ctx, dir, srv, args.SourcePath)
-		if err != nil {
-			return inst, err
-		}
-		ctr.Lazy = &core.ContainerWithMountedPathDockerfileCompatLazy{
-			LazyState:  core.NewLazyState(),
-			Parent:     parent,
-			Target:     target,
-			Source:     dir,
-			SourcePath: args.SourcePath,
-			Readonly:   args.ReadOnly,
-		}
-		mount := core.ContainerMount{
-			Target:   target,
-			Readonly: args.ReadOnly,
-		}
-		if sourceIsFile {
-			mount.FileSource = new(core.LazyAccessor[*core.File, *core.Container])
-		} else {
-			mount.DirectorySource = new(core.LazyAccessor[*core.Directory, *core.Container])
-		}
-		ctr.Mounts = ctr.Mounts.With(mount)
+	sourceIsFile, err := core.DockerfileCompatMountSourceIsFile(ctx, dir, srv, args.SourcePath)
+	if err != nil {
+		return inst, err
 	}
+	ctr.Lazy = &core.ContainerWithMountedPathDockerfileCompatLazy{
+		LazyState:  core.NewLazyState(),
+		Parent:     parent,
+		Target:     target,
+		Source:     dir,
+		SourcePath: args.SourcePath,
+		Readonly:   args.ReadOnly,
+	}
+	mount := core.ContainerMount{
+		Target:   target,
+		Readonly: args.ReadOnly,
+	}
+	if sourceIsFile {
+		mount.FileSource = new(core.LazyAccessor[*core.File, *core.Container])
+	} else {
+		mount.DirectorySource = new(core.LazyAccessor[*core.Directory, *core.Container])
+	}
+	ctr.Mounts = ctr.Mounts.With(mount)
 
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
+	}
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 	if err != nil {
 		return inst, err
@@ -3104,10 +3137,6 @@ func (s *containerSchema) withMountedVolume(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
-	if !parentPendingLazy {
-		_, err := ctr.WithMountedVolume(ctx, target, volume, args.ReadOnly)
-		return ctr, err
-	}
 	ctr.Lazy = &core.ContainerWithMountedVolumeLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -3122,6 +3151,9 @@ func (s *containerSchema) withMountedVolume(ctx context.Context, parent dagql.Ob
 			Volume: volume,
 		},
 	})
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
@@ -3145,10 +3177,6 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
-	if !parentPendingLazy {
-		_, err := ctr.WithMountedTemp(ctx, target, args.Size.Value.Int())
-		return ctr, err
-	}
 	ctr.Lazy = &core.ContainerWithMountedTempLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
@@ -3161,6 +3189,9 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.Obje
 			Size: args.Size.Value.Int(),
 		},
 	})
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
+	}
 	return ctr, nil
 }
 
@@ -3232,13 +3263,14 @@ func (s *containerSchema) withLabel(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithLabelLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Name:      args.Name,
-			Value:     args.Value,
-		}
+	ctr.Lazy = &core.ContainerWithLabelLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Name:      args.Name,
+		Value:     args.Value,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -3259,12 +3291,13 @@ func (s *containerSchema) withoutLabel(ctx context.Context, parent dagql.ObjectR
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithoutLabelLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Name:      args.Name,
-		}
+	ctr.Lazy = &core.ContainerWithoutLabelLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Name:      args.Name,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -3559,6 +3592,15 @@ func cloneContainerForSchemaChild(ctx context.Context, parent dagql.ObjectResult
 	return ctr, parentPendingLazy, nil
 }
 
+// evaluateOverBuiltParent runs a mutation's operation right away when its
+// parent was already built, as the mutation did before it saved the operation.
+func evaluateOverBuiltParent(ctx context.Context, ctr *core.Container, parentPendingLazy bool) error {
+	if parentPendingLazy {
+		return nil
+	}
+	return ctr.Evaluate(ctx)
+}
+
 func expandEnvVar(ctx context.Context, parent *core.Container, input string, expand bool) (string, error) {
 	if !expand {
 		return input, nil
@@ -3624,13 +3666,14 @@ func (s *containerSchema) withSecretVariable(ctx context.Context, parent dagql.O
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithSecretVariableLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Name:      args.Name,
-			Secret:    secret,
-		}
+	ctr.Lazy = &core.ContainerWithSecretVariableLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Name:      args.Name,
+		Secret:    secret,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -3648,12 +3691,13 @@ func (s *containerSchema) withoutSecretVariable(ctx context.Context, parent dagq
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithoutSecretVariableLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Name:      args.Name,
-		}
+	ctr.Lazy = &core.ContainerWithoutSecretVariableLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Name:      args.Name,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -3695,10 +3739,6 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 	if err != nil {
 		return nil, err
 	}
-	if !parentPendingLazy {
-		_, err := ctr.WithMountedSecret(ctx, parent, target, secret, owner, fs.FileMode(args.Mode))
-		return ctr, err
-	}
 	var secretOwner *core.Ownership
 	if owner != "" {
 		ownership, err := ctr.ResolveOwnership(ctx, parent, owner)
@@ -3729,6 +3769,9 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 		Source:    secret,
 		Owner:     owner,
 		Mode:      fs.FileMode(args.Mode),
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -3767,16 +3810,15 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithDirectoryLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Path:      path,
-			Source:    dir,
-			Filter:    args.CopyFilter,
-			Owner:     owner,
-		}
-	} else if _, err := ctr.WithDirectory(ctx, parent, path, dir, args.CopyFilter, owner); err != nil {
+	ctr.Lazy = &core.ContainerWithDirectoryLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Path:      path,
+		Source:    dir,
+		Filter:    args.CopyFilter,
+		Owner:     owner,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
 		return nil, err
 	}
 	return ctr, nil
@@ -3822,19 +3864,18 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return inst, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithFileLazy{
-			LazyState:   core.NewLazyState(),
-			Parent:      parent,
-			Path:        path,
-			Source:      file,
-			Permissions: perms,
-			Owner:       owner,
-		}
-	} else if _, err := ctr.WithFile(ctx, parent, path, file, perms, owner); err != nil {
-		return inst, err
+	ctr.Lazy = &core.ContainerWithFileLazy{
+		LazyState:   core.NewLazyState(),
+		Parent:      parent,
+		Path:        path,
+		Source:      file,
+		Permissions: perms,
+		Owner:       owner,
 	}
 
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
+	}
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 	return inst, err
 }
@@ -3933,13 +3974,12 @@ func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 	if err != nil {
 		return inst, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithoutPathLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Path:      path,
-		}
-	} else if _, err := ctr.WithoutPaths(ctx, parent, path); err != nil {
+	ctr.Lazy = &core.ContainerWithoutPathLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Path:      path,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -3969,13 +4009,12 @@ func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithoutPathLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Path:      path,
-		}
-	} else if _, err := ctr.WithoutPaths(ctx, parent, path); err != nil {
+	ctr.Lazy = &core.ContainerWithoutPathLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Path:      path,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -4069,18 +4108,17 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithFileLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Path:      path,
-			Source:    newFile,
-			Owner:     owner,
-		}
-	} else if _, err := ctr.WithFile(ctx, parent, path, newFile, nil, owner); err != nil {
-		return inst, err
+	ctr.Lazy = &core.ContainerWithFileLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Path:      path,
+		Source:    newFile,
+		Owner:     owner,
 	}
 
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
@@ -4120,18 +4158,17 @@ func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent dagql.Ob
 	if err != nil {
 		return inst, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithFileLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Path:      args.Path,
-			Source:    newFile,
-			Owner:     args.Owner,
-		}
-	} else if _, err := ctr.WithFile(ctx, parent, args.Path, newFile, nil, args.Owner); err != nil {
-		return inst, err
+	ctr.Lazy = &core.ContainerWithFileLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Path:      args.Path,
+		Source:    newFile,
+		Owner:     args.Owner,
 	}
 
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return inst, err
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
@@ -4362,37 +4399,31 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, err
-	}
 	platformVariantResults, err := dagql.LoadIDResults(ctx, srv, args.PlatformVariants)
 	if err != nil {
 		return inst, err
 	}
-	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, platformVariantResults...)...); err != nil {
-		return inst, err
-	}
-	platformVariants := make([]*core.Container, 0, len(platformVariantResults))
+	platformVariants := make([]dagql.ObjectResult[*core.Container], 0, len(platformVariantResults))
 	for _, variant := range platformVariantResults {
 		if variant.Self() != nil {
-			platformVariants = append(platformVariants, variant.Self())
+			platformVariants = append(platformVariants, variant)
 		}
 	}
+	return newContainerImageFile(ctx, srv, query, &core.FileContainerImageLazy{
+		LazyState:         core.NewLazyState(),
+		Parent:            parent,
+		PlatformVariants:  platformVariants,
+		ForcedCompression: args.ForcedCompression.Value,
+		MediaTypes:        args.MediaTypes,
+	})
+}
 
-	f, err := parent.Self().AsTarball(ctx, platformVariants,
-		args.ForcedCompression.Value,
-		args.MediaTypes,
-		"container.tar",
-	)
+func newContainerImageFile(ctx context.Context, srv *dagql.Server, query *core.Query, lazy *core.FileContainerImageLazy) (dagql.ObjectResult[*core.File], error) {
+	file, err := evaluatedFile(ctx, query, lazy)
 	if err != nil {
-		return inst, err
+		return dagql.ObjectResult[*core.File]{}, err
 	}
-	fileInst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, f)
-	if err != nil {
-		return inst, err
-	}
-	return fileInst, nil
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 }
 
 type containerExportImageArgs struct {
@@ -4568,22 +4599,13 @@ func (s *containerSchema) manifest(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, err
-	}
-	if err := evaluateContainerImageParts(ctx, cache, parent); err != nil {
-		return inst, err
-	}
-	parentDigest, err := parent.RecipeDigest(ctx)
-	if err != nil {
-		return inst, err
-	}
-	f, err := parent.Self().Manifest(ctx, parentDigest, args.ForcedCompression.Value, args.MediaTypes)
-	if err != nil {
-		return inst, err
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
+	return newContainerImageFile(ctx, srv, query, &core.FileContainerImageLazy{
+		LazyState:         core.NewLazyState(),
+		Parent:            parent,
+		ForcedCompression: args.ForcedCompression.Value,
+		MediaTypes:        args.MediaTypes,
+		Manifest:          true,
+	})
 }
 
 type containerLayerArgs struct {
@@ -4647,13 +4669,14 @@ func (s *containerSchema) withServiceBinding(ctx context.Context, parent dagql.O
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithServiceBindingLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Service:   svc,
-			Alias:     args.Alias,
-		}
+	ctr.Lazy = &core.ContainerWithServiceBindingLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Service:   svc,
+		Alias:     args.Alias,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -4680,12 +4703,13 @@ func (s *containerSchema) withExposedPort(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithExposedPortLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Port:      port,
-		}
+	ctr.Lazy = &core.ContainerWithExposedPortLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Port:      port,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -4704,13 +4728,14 @@ func (s *containerSchema) withoutExposedPort(ctx context.Context, parent dagql.O
 	if err != nil {
 		return nil, err
 	}
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithoutExposedPortLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Port:      args.Port,
-			Protocol:  args.Protocol,
-		}
+	ctr.Lazy = &core.ContainerWithoutExposedPortLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Port:      args.Port,
+		Protocol:  args.Protocol,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }
@@ -4785,12 +4810,13 @@ func withContainerShell(ctx context.Context, parent dagql.ObjectResult[*core.Con
 		return nil, err
 	}
 	ctr.DefaultTerminalCmd = opts
-	if parentPendingLazy {
-		ctr.Lazy = &core.ContainerWithDefaultTerminalCmdLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Opts:      opts,
-		}
+	ctr.Lazy = &core.ContainerWithDefaultTerminalCmdLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Opts:      opts,
+	}
+	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
+		return nil, err
 	}
 	return ctr, nil
 }

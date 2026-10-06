@@ -1,0 +1,6 @@
+kind: Changed
+body: Start the first analytics upload during command execution to reduce exit latency for short commands.
+time: 2026-09-30T12:40:00-07:00
+custom:
+    Author: grouville
+    PR: "14378"

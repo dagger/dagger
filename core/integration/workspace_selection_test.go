@@ -339,16 +339,10 @@ module = "go-sdk"
 // TestWorkspaceSelectionCommandPolicy should pin down which commands accept
 // --workspace and where local-only restrictions are enforced.
 func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.Context, t *testctx.T) {
-	// The `dagger migrate` command was removed in the CLI 1.0 redesign;
-	// migration is now part of `dagger setup`. The -W rejection test it
-	// used to anchor no longer applies.
-
 	t.Run("local-only workspace mutations accept a local selected workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		// `dagger workspace init` was removed in CLI 1.0; a raw `workspace
-		// config` write (which creates dagger.toml when missing) is the modern
-		// local-only mutation that materializes a workspace config at the
-		// selected workspace's cwd.
+		// A raw `workspace config --here` write is a local-only mutation: it
+		// creates dagger.toml at the selected workspace's cwd when missing.
 		ctr := workspaceBase(t, c).
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			WithWorkdir("/work/caller").

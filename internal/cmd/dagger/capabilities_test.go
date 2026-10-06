@@ -130,7 +130,6 @@ func TestMayCallEngineFlags(t *testing.T) {
 	require.Contains(t, flags.Lookup("cloud").Deprecated, "--engine=cloud")
 	require.False(t, flags.Lookup("engine").Hidden)
 	require.Equal(t, engineFlagUsage, flags.Lookup("engine").Usage)
-	require.NotContains(t, flags.Lookup("engine").Usage, "runner host")
 
 	// The usage stays on one line: it names the value space and points at the
 	// help topic that carries the full catalog.

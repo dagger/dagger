@@ -1,0 +1,121 @@
+"""
+A roster of agents whose committed histories are a collection, shaped like
+vito/agents' staff module: each member's HEAD is addressable as
+dag://roster/members/head?member=<name>, and the roster exists only in the
+state of a bound Roster (or of the View minted from it), never in a fresh one.
+"""
+type Roster {
+  # Live agent handles, by name. Private, like staff's roster.
+  let agents: Map[Agent!]! = [:]
+
+  """
+  Put an agent on the roster under a name.
+  """
+  withWorker(name: String!, worker: Agent!): Roster! {
+    self.agents = self.agents.with(name, worker)
+    self
+  }
+
+  """
+  The roster as a collection, one member per name.
+  """
+  members: Members! {
+    Members(currentNode.{{... on Dagger.Roster!}}, agents.keys)
+  }
+
+  """
+  The agent behind a name. Collection plumbing: Members reaches the private
+  roster through it.
+  """
+  memberAgent(name: String!): Agent! {
+    let agent = agents[name]
+    if (agent == null) {
+      raise `no member named "${name}"`
+    }
+    agent
+  }
+
+  """
+  A narrower view of the roster, the way staff hands workers PullTools
+  instead of itself.
+  """
+  view: View! {
+    View(currentNode.{{... on Dagger.Roster!}})
+  }
+}
+
+"""
+The roster as a collection: names as keys, each agent's history as the item.
+"""
+type Members @collection {
+  let roster: Dagger.Roster!
+
+  """
+  Member names.
+  """
+  names: [String!]! @keys
+
+  new(roster: Dagger.Roster!, names: [String!]!) {
+    self.roster = roster
+    self.names = names
+    self
+  }
+
+  """
+  The member with this name.
+  """
+  member(name: String!): Member! @get {
+    Member(name, roster.memberAgent(name))
+  }
+}
+
+"""
+One member: an agent and the workspace it works in.
+"""
+type Member {
+  """
+  The member's name.
+  """
+  name: String!
+
+  let agent: Agent!
+
+  new(name: String!, agent: Agent!) {
+    self.name = name
+    self.agent = agent
+    self
+  }
+
+  """
+  The agent's workspace as of its last committed step.
+  """
+  workspace: Workspace! @cache(policy: FunctionCachePolicy.Never) {
+    agent.snapshot.sync.workspace
+  }
+
+  """
+  The agent's committed history: the HEAD of its workspace.
+  """
+  head: GitRef! @cache(policy: FunctionCachePolicy.Never) {
+    workspace.git.head
+  }
+}
+
+"""
+A narrower tool object over a roster: only its members.
+"""
+type View {
+  let roster: Dagger.Roster!
+
+  new(roster: Dagger.Roster!) {
+    self.roster = roster
+    self
+  }
+
+  """
+  The roster's members.
+  """
+  members: Dagger.RosterMembers! {
+    roster.members
+  }
+}

@@ -301,7 +301,7 @@ func introspectWorkspaceModule(
 	configDir string,
 	source string,
 ) (*core.Module, error) {
-	if core.FastModuleSourceKindCheck(source, "") != core.ModuleSourceKindLocal {
+	if !workspace.IsLocalRef(source, "") {
 		return introspectModule(ctx, srv, source)
 	}
 

@@ -249,8 +249,8 @@ func TestMigrationScopeRejectsUnnormalizedPaths(t *testing.T) {
 
 func TestMigrationSDKUpdatesOnlyChangedConfigs(t *testing.T) {
 	files := map[string]string{
-		"dagger.toml":           "[modules.dang]\nsource = 'dang'\n[sdks.dang]\nmodule = 'dang'\n[sdks.dang.scopes.app]\nmodule = true\n",
-		"parent/dagger.toml":    "[modules.go]\nsource = 'go'\n[sdks.go]\nmodule = 'go'\n[sdks.go.scopes.lib]\nmodule = true\n",
+		"dagger.toml":           "[modules.dang]\nsource = 'dang'\n[sdks.dang]\nmodule = 'dang'\n[sdks.dang.scopes.app]\nis-module = true\n",
+		"parent/dagger.toml":    "[modules.go]\nsource = 'go'\n[sdks.go]\nmodule = 'go'\n[sdks.go.scopes.lib]\nis-module = true\n",
 		"unrelated/dagger.toml": "not even valid TOML",
 	}
 	updates, err := migratedConfigSDKUpdates([]string{"dagger.toml", "parent/dagger.toml"}, func(file string) ([]byte, error) {

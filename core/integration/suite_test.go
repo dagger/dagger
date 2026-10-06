@@ -78,7 +78,11 @@ func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagge
 	}, opts...)
 	client, err := dagger.Connect(ctx, opts...)
 	require.NoError(t, err)
-	t.Cleanup(func() { client.Close() })
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Logf("client close: %v", err)
+		}
+	})
 	return client
 }
 
@@ -281,7 +285,8 @@ func goCache(c *dagger.Client) dagger.WithContainerFunc {
 			WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
 			WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 			WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
-			WithEnvVariable("GOCACHE", "/go/build-cache")
+			WithEnvVariable("GOCACHE", "/go/build-cache").
+			With(withRepoGoModules(c))
 	}
 }
 

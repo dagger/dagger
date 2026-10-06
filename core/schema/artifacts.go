@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"unicode"
-	"unicode/utf8"
+	"sync"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/artifact"
@@ -64,7 +63,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme."), dagql.Arg("dimension").Doc("Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.")),
 		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
 		// Each invocation gets a new cache key. Retain its results so SDK clients can load their IDs.
-		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object.")),
+		dagql.NodeFunc("values", s.values).WithInput(dagql.PerCallInput).Doc("Evaluate the selection in parallel, retaining each result and error.").Args(dagql.Arg("failFast").Doc("Cancel remaining work after the first failure."), dagql.Arg("arguments").Doc("Field arguments applied to each artifact, as a JSON object."), dagql.Arg("maxConcurrency").Doc("Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.")),
 		dagql.Func("modules", s.modules).Doc("List the modules represented in this selection without evaluating artifact values."),
 		dagql.Func("types", s.types).Doc("List concrete type definitions represented in this selection, sorted by name with no duplicates."),
 		dagql.Func("filterDirectives", s.filterDirectives).Doc("Keep artifacts with any listed directive. Does not filter by type or workspace settings.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
@@ -104,7 +103,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("uri", s.artifactURI).
 			Doc("The artifact's DAG address, such as dag://engine-dev/playground.").
 			Args(
-				dagql.Arg("absolute").Doc("Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address."),
+				dagql.Arg("absolute").Doc("Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address."),
 				dagql.Arg("dimensionKeys").Doc("Include the dimension keys as a query. Without them, the address is a path selector."),
 				dagql.Arg("typeAssertion").Doc("Include the artifact type in the scheme: dag+container://."),
 			),
@@ -252,13 +251,18 @@ func (*artifactsSchema) filterURI(_ context.Context, parent *core.Artifacts, arg
 }
 
 // checkArtifactAddressWorkspace reserves the absolute form. Only the current
-// workspace, at its own commit, is accepted.
+// workspace, at its own commit, is accepted. Artifacts without a workspace
+// (see core.BoundArtifacts) never match an absolute address, so they do not
+// constrain it.
 func checkArtifactAddressWorkspace(entries []*core.Artifact, addr *dagaddress.Address, uri string) error {
 	if !addr.Absolute {
 		return nil
 	}
 	notSupported := fmt.Errorf("address selects another workspace; filters cannot change workspace: %s", uri)
 	for _, artifact := range entries {
+		if artifact.Workspace.Self() == nil {
+			continue
+		}
 		address, commit, err := artifact.Workspace.Self().GitAddress()
 		if err != nil || address != addr.Workspace || commit != addr.Version {
 			return notSupported
@@ -276,7 +280,7 @@ func (*artifactsSchema) dimensionDefinitions(_ context.Context, parent *core.Art
 	return parent.DimensionDefinitions(), nil
 }
 
-func (s *artifactsSchema) pathDefinitions(ctx context.Context, parent *core.Artifacts, args struct {
+func (*artifactsSchema) pathDefinitions(_ context.Context, parent *core.Artifacts, args struct {
 	Absolute      bool `default:"false"`
 	TypeAssertion bool `default:"false"`
 	Dimension     dagql.Optional[dagql.String]
@@ -297,36 +301,7 @@ func (s *artifactsSchema) pathDefinitions(ctx context.Context, parent *core.Arti
 		}
 		parent = &core.Artifacts{Entries: items}
 	}
-	paths := map[string]*core.ArtifactPath{}
-	for _, entry := range parent.Entries {
-		uri, err := entry.URI(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion})
-		if err != nil {
-			return nil, err
-		}
-		path := paths[uri]
-		if path == nil {
-			description, err := s.description(ctx, entry, struct{}{})
-			if err != nil {
-				return nil, err
-			}
-			path = &core.ArtifactPath{ModuleName: entry.ModuleName, URI: uri, Description: description, Dimensions: []string{}}
-			paths[uri] = path
-		}
-		if entry.LoadFailure != nil {
-			path.LoadError = entry.LoadFailure.Message
-		}
-		for _, dimension := range entry.DimensionDefinitions() {
-			if !slices.Contains(path.Dimensions, dimension.Identifier) {
-				path.Dimensions = append(path.Dimensions, dimension.Identifier)
-			}
-		}
-	}
-	result := make([]*core.ArtifactPath, 0, len(paths))
-	for _, path := range paths {
-		result = append(result, path)
-	}
-	slices.SortFunc(result, func(a, b *core.ArtifactPath) int { return strings.Compare(a.URI, b.URI) })
-	return result, nil
+	return parent.PathDefinitions(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion})
 }
 func (*artifactsSchema) dimensions(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]string, error) {
 	expanded, err := expandArtifacts(ctx, parent)
@@ -335,44 +310,12 @@ func (*artifactsSchema) dimensions(ctx context.Context, parent *core.Artifacts, 
 	}
 	return expanded.Dimensions(), nil
 }
-func (s *artifactsSchema) dimensionKeys(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]string, error) {
-	dimension, err := parent.ResolveDimension(args.Dimension)
-	if err != nil {
-		return nil, err
-	}
-	if artifact.IsStaticDimension(dimension) {
-		selected, err := parent.FilterDimensions([]string{dimension}).SchemaSelection()
-		if err != nil {
-			return nil, err
-		}
-		var keys []string
-		for _, entry := range selected.Entries {
-			keys = append(keys, entry.StaticDimensionKey(dimension))
-		}
-		slices.Sort(keys)
-		return slices.Compact(keys), nil
-	}
-	items, err := s.dimensionItems(ctx, parent, args)
-	if err != nil {
-		return nil, err
-	}
-	return (&core.Artifacts{Entries: items}).DimensionKeys(dimension), nil
+func (*artifactsSchema) dimensionKeys(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]string, error) {
+	return parent.ExpandDimensionKeys(ctx, args.Dimension)
 }
 
 func (*artifactsSchema) dimensionItems(ctx context.Context, parent *core.Artifacts, args struct{ Dimension string }) ([]*core.Artifact, error) {
-	dimension, err := parent.ResolveDimension(args.Dimension)
-	if err != nil {
-		return nil, err
-	}
-	filtered, err := parent.FilterDimensions([]string{args.Dimension}).BindDimensions()
-	if err != nil {
-		return nil, err
-	}
-	expanded, err := expandArtifacts(ctx, filtered.ForDimensionKeys(dimension))
-	if err != nil {
-		return nil, err
-	}
-	return expanded.DimensionItems(dimension)
+	return parent.ExpandDimensionItems(ctx, args.Dimension)
 }
 func (*artifactsSchema) items(ctx context.Context, parent *core.Artifacts, _ struct{}) ([]*core.Artifact, error) {
 	expanded, err := expandArtifacts(ctx, parent)
@@ -395,18 +338,24 @@ func (*artifactsSchema) one(ctx context.Context, parent *core.Artifacts, _ struc
 }
 func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{}) (string, error) {
 	var workspaceID uint64
-	for i, entry := range parent.Entries {
+	for _, entry := range parent.Entries {
 		// Module and type keys are static. Only collection keys are resolved.
 		if slices.ContainsFunc(entry.DimensionKeys, func(key *core.ArtifactDimensionKey) bool {
 			return key.Dimension != artifact.ModuleDimension && !strings.HasPrefix(key.Dimension, "type:")
 		}) {
 			return "", fmt.Errorf("a selection with resolved collection keys has no single DAG address; use the individual artifact addresses")
 		}
+		// A relative address has no workspace, so it can mix one workspace's
+		// artifacts with artifacts that have none (see core.BoundArtifacts),
+		// such as an LLM's scope. It cannot tell two workspaces apart.
+		if entry.Workspace.Self() == nil {
+			continue
+		}
 		id, err := entry.Workspace.ID()
 		if err != nil {
 			return "", err
 		}
-		if i > 0 && id.EngineResultID() != workspaceID {
+		if workspaceID != 0 && id.EngineResultID() != workspaceID {
 			return "", fmt.Errorf("a selection from multiple workspaces has no single DAG address; use the individual artifact addresses")
 		}
 		workspaceID = id.EngineResultID()
@@ -428,16 +377,11 @@ func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{
 	return bound.URI(), nil
 }
 
+// expandArtifacts enumerates the selected collections' keys. Each collection
+// receiver evaluates in its own artifact's workspace (see
+// core.Artifact.WorkspaceContext), so a selection may mix workspaces and
+// artifacts without one.
 func expandArtifacts(ctx context.Context, parent *core.Artifacts) (*core.Artifacts, error) {
-	if len(parent.Entries) > 0 && parent.Entries[0].Workspace.Self() != nil {
-		ws := parent.Entries[0].Workspace
-		var err error
-		ctx, err = withWorkspaceClientContext(ctx, ws.Self())
-		if err != nil {
-			return nil, err
-		}
-		ctx = core.WorkspaceToContext(ctx, ws)
-	}
 	return parent.Expand(ctx)
 }
 func (*artifactsSchema) artifactURI(_ context.Context, parent *core.Artifact, args struct {
@@ -461,7 +405,9 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 	if err != nil {
 		return nil, err
 	}
-	if artifact.TypeName == "Check" && artifact.LoadFailure == nil {
+	// A bound artifact (no workspace) is rooted at a live local value, which a
+	// cloud engine cannot reconstruct: its checks always run locally.
+	if artifact.TypeName == "Check" && artifact.LoadFailure == nil && artifact.Workspace.Self() != nil {
 		md, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, err
@@ -627,13 +573,13 @@ func artifactCloudInput(ctx context.Context, srv *dagql.Server, input dagql.Inpu
 	}
 }
 
-// evaluateArtifact selects the artifact's value in its own workspace.
+// evaluateArtifact selects the artifact's value in its own workspace, or in
+// the caller's context for an artifact without one.
 func evaluateArtifact(ctx context.Context, artifact *core.Artifact, dest any, inputs ...dagql.NamedInput) error {
-	ctx, err := withWorkspaceClientContext(ctx, artifact.Workspace.Self())
+	ctx, err := artifact.WorkspaceContext(ctx)
 	if err != nil {
 		return err
 	}
-	ctx = core.WorkspaceToContext(ctx, artifact.Workspace)
 	var value dagql.AnyObjectResult
 	err = artifact.Evaluate(ctx, &value, inputs...)
 	if artifact.LoadFailure != nil {
@@ -861,25 +807,7 @@ func (*artifactsSchema) filterDirectives(_ context.Context, parent *core.Artifac
 }
 
 func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ struct{}) (string, error) {
-	if parent.LoadFailure != nil {
-		return "this workspace module could not be loaded", nil
-	}
-	if parent.Node == nil {
-		return "", nil
-	}
-	generator := parent.Node.Parent
-	if parent.Node.Name == "stale" && generator != nil && slices.Contains(generator.Directives, "generate") {
-		if obj := generator.ObjectType(); obj != nil && obj.Name == "Generator" && obj.SourceModuleName == "" {
-			description, _, _ := strings.Cut(generator.Description, "\n")
-			description = strings.TrimRight(strings.TrimSpace(description), ".:;!?")
-			if description == "" {
-				return "staleness check", nil
-			}
-			first, size := utf8.DecodeRuneInString(description)
-			return "staleness check: " + string(unicode.ToLower(first)) + description[size:], nil
-		}
-	}
-	return parent.Node.Description, nil
+	return parent.Description(), nil
 }
 
 // Keep planned artifacts in the query graph so value evaluation, remote
@@ -893,9 +821,13 @@ func (*artifactsSchema) evaluationItems(ctx context.Context, parent *core.Artifa
 }
 
 func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], args struct {
-	FailFast  bool      `default:"false"`
-	Arguments core.JSON `default:"{}"`
+	FailFast       bool      `default:"false"`
+	Arguments      core.JSON `default:"{}"`
+	MaxConcurrency int       `default:"0"`
 }) ([]*core.ArtifactResult, error) {
+	if args.MaxConcurrency < 0 {
+		return nil, fmt.Errorf("maxConcurrency must not be negative: %d", args.MaxConcurrency)
+	}
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -910,7 +842,13 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 	}
 	results := make([]*core.ArtifactResult, len(selection))
 	evaluationErrors := make([]error, len(selection))
-	jobs := parallel.New().WithContextualTracer(true).WithFailFast(args.FailFast).WithRollupLogs(true).WithRollupSpans(true)
+	remoteJobs := parallel.New().WithContextualTracer(true).WithFailFast(args.FailFast).WithRollupLogs(true).WithRollupSpans(true)
+	// Checks that scale out run on cloud engines, so the limit applies only to
+	// the jobs this engine runs.
+	localJobs := remoteJobs
+	if args.MaxConcurrency > 0 {
+		localJobs = localJobs.WithLimit(args.MaxConcurrency)
+	}
 	for i, selected := range selection {
 		artifact := selected.Self()
 		uri, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
@@ -920,14 +858,18 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		result := &core.ArtifactResult{Artifact: artifact.Clone()}
 		results[i] = result
 		var attrs []attribute.KeyValue
-		localCheck := artifact.TypeName == "Check" && (!md.EnableCloudScaleOut || artifact.LoadFailure != nil)
+		localCheck := artifact.TypeName == "Check" && (!md.EnableCloudScaleOut || artifact.LoadFailure != nil || artifact.Workspace.Self() == nil)
 		if localCheck {
 			attrs = append(attrs, attribute.String(telemetry.CheckNameAttr, uri))
 		}
 		if slices.Contains(artifact.Directives, "generate") {
 			attrs = append(attrs, attribute.String(telemetry.GeneratorNameAttr, uri))
 		}
-		jobs = jobs.WithJob(uri, func(ctx context.Context) error {
+		group := &localJobs
+		if artifact.TypeName == "Check" && !localCheck {
+			group = &remoteJobs
+		}
+		*group = group.WithJob(uri, func(ctx context.Context) error {
 			ctx = core.WithCheckName(ctx, uri)
 			srv, err := core.CurrentDagqlServer(ctx)
 			if err == nil {
@@ -958,7 +900,7 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		}, attrs...)
 	}
 	// Failures are data in the result list, including cancellation by fail-fast.
-	_ = jobs.Run(ctx)
+	runArtifactJobs(ctx, args.FailFast, localJobs, remoteJobs)
 	for i, err := range evaluationErrors {
 		if err == nil {
 			continue
@@ -971,6 +913,27 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		results[i].Error = dagql.NonNull(failure)
 	}
 	return results, nil
+}
+
+// runArtifactJobs runs the groups at the same time. With fail-fast, the first
+// failure in any group cancels the jobs in every group.
+func runArtifactJobs(ctx context.Context, failFast bool, groups ...parallel.Jobs) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	var wg sync.WaitGroup
+	for _, group := range groups {
+		if len(group.Jobs) == 0 {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := group.Run(ctx); err != nil && failFast {
+				cancel(err)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func (*artifactsSchema) resultValue(ctx context.Context, parent dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {

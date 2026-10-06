@@ -8,6 +8,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/iancoleman/strcase"
@@ -49,6 +51,12 @@ func (*ArtifactPath) TypeDescription() string {
 
 // Artifact holds a complete address and its deferred object value. The module
 // tree and workspace are retained so evaluation does not depend on the caller.
+//
+// A workspace artifact has a Workspace and a tree rooted at a fresh
+// construction of its module. A bound artifact (see BoundArtifacts) has no
+// Workspace: its tree is rooted at a live object value (ModTreeNode.RootValue),
+// e.g. an LLM's bound tool object. It evaluates in its ContextWorkspace, if
+// any, else in the caller's context.
 type Artifact struct {
 	ModuleName     string `field:"true" doc:"The installed module name."`
 	DimensionNames map[string]string
@@ -58,7 +66,16 @@ type Artifact struct {
 	Directives     []string `field:"true" doc:"The directives carried by this artifact."`
 	LoadFailure    *ModuleLoadFailure
 	Node           *ModTreeNode
-	Workspace      dagql.ObjectResult[*Workspace]
+	// Workspace is the workspace that supplied the artifact: its address is
+	// relative to it, and it names the artifact's identity. Unset for a
+	// bound artifact.
+	Workspace dagql.ObjectResult[*Workspace]
+	// ContextWorkspace is the workspace a bound artifact evaluates in — for an
+	// LLM's scope, the conversation's workspace — so a required Workspace
+	// argument along its path is the same whoever evaluates it, a module
+	// function included. It is not part of the address or identity; a
+	// workspace artifact evaluates in its own Workspace instead.
+	ContextWorkspace dagql.ObjectResult[*Workspace]
 }
 
 // Clone gives each API result its own writable dependency wrappers. Attachment
@@ -102,6 +119,9 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 		}
 	}
 	if opts.Absolute {
+		if a.Workspace.Self() == nil {
+			return "", fmt.Errorf("%s has no absolute address: it is not a workspace artifact", addr.String())
+		}
 		workspace, commit, err := a.Workspace.Self().GitAddress()
 		if err != nil {
 			return "", err
@@ -111,6 +131,83 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 		addr.Version = commit
 	}
 	return addr.String(), nil
+}
+
+// Description is the description of the field that supplies the artifact. A
+// load failure describes the module that could not be loaded; a generator's
+// stale check is described from its generator.
+func (a *Artifact) Description() string {
+	if a.LoadFailure != nil {
+		if a.Workspace.Self() == nil {
+			return "this bound tool object could not be loaded"
+		}
+		return "this workspace module could not be loaded"
+	}
+	if a.Node == nil {
+		return ""
+	}
+	generator := a.Node.Parent
+	if a.Node.Name == "stale" && generator != nil && slices.Contains(generator.Directives, "generate") {
+		if obj := generator.ObjectType(); obj != nil && obj.Name == "Generator" && obj.SourceModuleName == "" {
+			description, _, _ := strings.Cut(generator.Description, "\n")
+			description = strings.TrimRight(strings.TrimSpace(description), ".:;!?")
+			if description == "" {
+				return "staleness check"
+			}
+			first, size := utf8.DecodeRuneInString(description)
+			return "staleness check: " + string(unicode.ToLower(first)) + description[size:]
+		}
+	}
+	return a.Node.Description
+}
+
+// PathDefinitions lists the entries' schema paths, one per address (without
+// dimension keys), sorted by address. It reads no runtime values: apply
+// SchemaSelection first so the selection's filters are bound.
+func (a *Artifacts) PathDefinitions(opts ArtifactURIOpts) ([]*ArtifactPath, error) {
+	opts.DimensionKeys = false
+	paths := map[string]*ArtifactPath{}
+	for _, entry := range a.Entries {
+		uri, err := entry.URI(opts)
+		if err != nil {
+			return nil, err
+		}
+		path := paths[uri]
+		if path == nil {
+			path = &ArtifactPath{ModuleName: entry.ModuleName, URI: uri, Description: entry.Description(), Dimensions: []string{}}
+			paths[uri] = path
+		}
+		if entry.LoadFailure != nil {
+			path.LoadError = entry.LoadFailure.Message
+		}
+		for _, dimension := range entry.DimensionDefinitions() {
+			if !slices.Contains(path.Dimensions, dimension.Identifier) {
+				path.Dimensions = append(path.Dimensions, dimension.Identifier)
+			}
+		}
+	}
+	result := make([]*ArtifactPath, 0, len(paths))
+	for _, path := range paths {
+		result = append(result, path)
+	}
+	slices.SortFunc(result, func(a, b *ArtifactPath) int { return strings.Compare(a.URI, b.URI) })
+	return result, nil
+}
+
+// artifactReferenceChainKey carries the chain of artifact references being
+// resolved in a context, to detect reference cycles.
+type artifactReferenceChainKey struct{}
+
+// WithArtifactReference records that the reference ref (a canonical address)
+// is being resolved in ctx. It fails if ref is already being resolved further
+// up the chain: evaluating it would construct itself, e.g. through a module
+// whose constructor defaults to an address of its own artifact.
+func WithArtifactReference(ctx context.Context, ref string) (context.Context, error) {
+	chain, _ := ctx.Value(artifactReferenceChainKey{}).([]string)
+	if slices.Contains(chain, ref) {
+		return nil, fmt.Errorf("module reference cycle detected: %s -> %s", strings.Join(chain, " -> "), ref)
+	}
+	return context.WithValue(ctx, artifactReferenceChainKey{}, append(slices.Clip(chain), ref)), nil
 }
 
 // ArtifactTypeName is the CLI-case form of a GraphQL type name, as used in a
@@ -300,18 +397,95 @@ func (a *Artifacts) FilterParentDirectives(directives []string, exclude bool) *A
 	return selected
 }
 
-// identity distinguishes addresses in different workspaces, even if their
-// values happen to be the same object.
+// identity distinguishes addresses in different workspaces, or rooted at
+// different bound values, even if their values happen to be the same object.
 func (a *Artifact) identity() (string, error) {
-	var workspaceID uint64
+	scope, err := a.scope()
+	if err != nil {
+		return "", err
+	}
+	return scope + ":" + artifactIdentity(a), nil
+}
+
+// scope names what the artifact's address is relative to: its workspace
+// ("w<result ID>"), else the live value its tree is rooted at ("v<result ID>"),
+// else nothing ("").
+func (a *Artifact) scope() (string, error) {
 	if a.Workspace.Self() != nil {
 		id, err := a.Workspace.ID()
 		if err != nil {
 			return "", err
 		}
-		workspaceID = id.EngineResultID()
+		return fmt.Sprintf("w%d", id.EngineResultID()), nil
 	}
-	return fmt.Sprintf("%d:%s", workspaceID, artifactIdentity(a)), nil
+	if root := a.BoundRoot(); root != nil {
+		id, err := root.ID()
+		if err != nil {
+			return "", fmt.Errorf("artifact %s root: %w", strings.Join(a.Path, "/"), err)
+		}
+		return fmt.Sprintf("v%d", id.EngineResultID()), nil
+	}
+	return "", nil
+}
+
+// BoundRoot returns the live value a bound artifact's tree is rooted at, or
+// nil for a workspace artifact, which is evaluated from a fresh construction.
+func (a *Artifact) BoundRoot() dagql.AnyObjectResult {
+	if root := a.boundRootNode(); root != nil {
+		return root.RootValue
+	}
+	return nil
+}
+
+// boundRootNode returns the node a bound artifact's tree is rooted at: the
+// one holding the live value. Nil for a workspace artifact.
+func (a *Artifact) boundRootNode() *ModTreeNode {
+	if a.Workspace.Self() != nil {
+		return nil
+	}
+	for node := a.Node; node != nil; node = node.Parent {
+		if node.RootValue != nil {
+			return node
+		}
+	}
+	return nil
+}
+
+// unqualifiedPath is the path of a bound artifact whose tree was qualified by
+// its bound type (see qualifyCollidingTrees) without that segment: the path
+// the address would have had if no other bound object collided with it. Nil
+// for any other artifact.
+func (a *Artifact) unqualifiedPath() []string {
+	root := a.boundRootNode()
+	if root == nil || root.Parent == nil || root.Parent.Name == "" {
+		return nil
+	}
+	path := a.Node.Path().CliCase()
+	qualifier := len(root.Path()) - 1
+	if qualifier < 0 || qualifier >= len(path) {
+		return nil
+	}
+	return slices.Delete(path, qualifier, qualifier+1)
+}
+
+// WorkspaceContext binds the workspace the artifact evaluates in into ctx:
+// its owning client for host routing, and the workspace itself for
+// contextual and Workspace-typed arguments. That is the artifact's own
+// Workspace, else its ContextWorkspace (see BoundArtifacts); with neither,
+// ctx is left as is.
+func (a *Artifact) WorkspaceContext(ctx context.Context) (context.Context, error) {
+	ws := a.Workspace
+	if ws.Self() == nil {
+		ws = a.ContextWorkspace
+	}
+	if ws.Self() == nil {
+		return ctx, nil
+	}
+	ctx, err := WorkspaceClientContext(ctx, ws.Self())
+	if err != nil {
+		return nil, err
+	}
+	return WorkspaceToContext(ctx, ws), nil
 }
 
 func (a *Artifacts) WithArtifacts(other *Artifacts) (*Artifacts, error) {
@@ -443,7 +617,15 @@ func (a *Artifact) matchesPattern(pattern string) (bool, error) {
 	if a.Node == nil {
 		return false, nil
 	}
-	return doublestar.PathMatch(pattern, strings.Join(a.Node.Path().CliCase(), "/"))
+	if match, err := doublestar.PathMatch(pattern, strings.Join(a.Node.Path().CliCase(), "/")); err != nil || match {
+		return match, err
+	}
+	// A bound tree qualified by its type still answers to the plain path,
+	// which then selects the artifact of every colliding bound object.
+	if path := a.unqualifiedPath(); path != nil {
+		return doublestar.PathMatch(pattern, strings.Join(path, "/"))
+	}
+	return false, nil
 }
 
 func (a *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
@@ -508,9 +690,15 @@ func (a *Artifacts) DimensionKeys(dimension string) []string {
 }
 
 // FilterURI applies a DAG address as one filter: the chain of path, type, and
-// dimension-key filters the address encodes.
+// dimension-key filters the address encodes. An absolute address names a
+// workspace, so it never selects an artifact without one (see BoundArtifacts);
+// callers check that the workspace is the selection's own.
 func (a *Artifacts) FilterURI(addr *dagaddress.Address) (*Artifacts, error) {
 	selected := a
+	if addr.Absolute && slices.ContainsFunc(a.Entries, func(artifact *Artifact) bool { return artifact.Workspace.Self() == nil }) {
+		selected = a.filter(func(artifact *Artifact) bool { return artifact.Workspace.Self() != nil })
+		selected.Selector.Paths = selected.exactPaths()
+	}
 	if addr.Path != "" {
 		var err error
 		selected, err = selected.FilterPattern(addr.Path)
@@ -614,6 +802,71 @@ func (a *Artifact) AssertType(types []string) error {
 	return fmt.Errorf("%s is a %s, not %s", uri, a.TypeName, strings.Join(types, " or "))
 }
 
+// ResolveURI selects the one artifact a DAG address names. The address's path
+// and dimension keys filter the selection; its type assertion only chooses
+// among several matches, so a single artifact of another type is left for
+// AssertType to report. expand enumerates the selected collections' keys.
+func (a *Artifacts) ResolveURI(ctx context.Context, addr *dagaddress.Address, expand func(context.Context, *Artifacts) (*Artifacts, error)) (*Artifact, error) {
+	untyped := *addr
+	untyped.Types = nil
+	selected, err := a.FilterURI(&untyped)
+	if err != nil {
+		return nil, err
+	}
+	if len(selected.Entries) > 1 && len(addr.Types) > 0 {
+		selected = selected.FilterTypeNames(addr.Types)
+	}
+	selected, err = expand(ctx, selected)
+	if err != nil {
+		return nil, err
+	}
+	if len(selected.Entries) == 0 {
+		return nil, errors.New("no artifact matches")
+	}
+	return selected.One()
+}
+
+// BoundArtifacts discovers the artifacts of a module rooted at a live value of
+// one of its objects rather than a fresh construction of its main object:
+// evaluating one selects its path from root. Paths are qualified with the
+// module name, as a workspace module's are, but never use entrypoint
+// shorthand. Unlike workspace discovery, a constructor that requires
+// arguments does not hide the tree, since it is never called.
+func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root dagql.AnyObjectResult) (*Artifacts, error) {
+	tree, err := NewModTree(ctx, mod)
+	if err != nil {
+		return nil, err
+	}
+	// Root the tree at the bound value's own type: the main object, or
+	// another object of the module (e.g. a narrower view of it).
+	rootType, ok := tree.types[root.Type().Name()]
+	if !ok {
+		return nil, fmt.Errorf("module %q has no object type %q", mod.Self().Name(), root.Type().Name())
+	}
+	tree.Type = rootType
+	var nodes []*ModTreeNode
+	if err := walkArtifactNodes(ctx, tree, func(node *ModTreeNode) { nodes = append(nodes, node) }, map[string]bool{}); err != nil {
+		return nil, err
+	}
+	// Name the root after the module under a synthetic parent, like a
+	// workspace module root, so paths and dimension names match.
+	tree.RootValue = root
+	tree.Parent = &ModTreeNode{}
+	tree.Name = mod.Self().Name()
+	artifacts := &Artifacts{Entries: []*Artifact{}}
+	for _, node := range nodes {
+		if node == tree {
+			continue
+		}
+		artifacts.Entries = append(artifacts.Entries, &Artifact{
+			ModuleName: tree.Name, Path: node.Path().CliCase(), DimensionKeys: []*ArtifactDimensionKey{},
+			Directives: node.Directives, TypeName: node.ObjectType().Name, Node: node,
+		})
+	}
+	slices.SortFunc(artifacts.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
+	return artifacts, nil
+}
+
 // Evaluate selects the artifact's value in the caller's session. The cached
 // module tree carries the dagql server that discovered it, whose field specs
 // reference module provenance results owned by that session. A fresh server
@@ -685,6 +938,8 @@ type persistedArtifact struct {
 	Directives     []string
 	Node           int
 	Workspace      uint64
+	// ContextWorkspace is Artifact.ContextWorkspace; zero when unset.
+	ContextWorkspace uint64 `json:",omitempty"`
 }
 type persistedArtifacts struct {
 	Tree     persistedModTree
@@ -705,6 +960,12 @@ func encodeArtifacts(enc *dagql.PersistEncodeContext, entries []*Artifact, selec
 		}
 		if a.Workspace.Self() != nil {
 			p.Workspace, err = encodePersistedObjectRef(enc, a.Workspace, "artifact workspace")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+		}
+		if a.ContextWorkspace.Self() != nil {
+			p.ContextWorkspace, err = encodePersistedObjectRef(enc, a.ContextWorkspace, "artifact context workspace")
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
@@ -734,6 +995,10 @@ func decodeArtifacts(ctx context.Context, dec *dagql.PersistDecodeContext, raw j
 			return nil, fmt.Errorf("artifact references missing tree node %d", p.Node)
 		}
 		a.Workspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.Workspace, "artifact workspace")
+		if err != nil {
+			return nil, err
+		}
+		a.ContextWorkspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.ContextWorkspace, "artifact context workspace")
 		if err != nil {
 			return nil, err
 		}
@@ -774,6 +1039,18 @@ func (a *Artifact) AttachDependencyResults(_ context.Context, _ dagql.AnyResult,
 		a.Workspace, ok = value.(dagql.ObjectResult[*Workspace])
 		if !ok {
 			return nil, fmt.Errorf("artifact workspace has unexpected type %T", value)
+		}
+		owned = append(owned, value)
+	}
+	if a.ContextWorkspace.Self() != nil {
+		value, err := attach(a.ContextWorkspace)
+		if err != nil {
+			return nil, err
+		}
+		var ok bool
+		a.ContextWorkspace, ok = value.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("artifact context workspace has unexpected type %T", value)
 		}
 		owned = append(owned, value)
 	}

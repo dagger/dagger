@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"mime"
 	"net"
@@ -33,11 +32,20 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 func init() {
 	strcase.ConfigureAcronym("LLM", "LLM")
+	// Acronyms only match a whole name, so a module type definition naming
+	// these core types would otherwise normalize to "Llmcontent" /
+	// "LlmcontentBlock", miss the core type, and be namespaced as a
+	// module-local object. Modules return LLMContent from functions exposed
+	// as LLM tools. Registering names one by one is a stopgap; see
+	// dagger/dagger#13668 for the underlying acronym-handling problem.
+	strcase.ConfigureAcronym("LLMContent", "LLMContent")
+	strcase.ConfigureAcronym("LLMContentBlock", "LLMContentBlock")
 }
 
 const (
@@ -359,7 +367,7 @@ type LLMContentBlock struct {
 	Errored bool `field:"true" json:"errored,omitempty" doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)."`
 
 	MIMEType string             `field:"true" name:"mimeType" json:"mime_type,omitempty" doc:"The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds)."`
-	Data     string             `field:"true" json:"data,omitempty" doc:"Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds)."`
+	Data     dagql.Bytes        `field:"true" json:"data,omitempty" doc:"The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds)."`
 	Content  []*LLMContentBlock `field:"true" json:"content,omitempty" doc:"Ordered content returned by a tool, following any text (for TOOL_RESULT kind)."`
 
 	// Provider-specific opaque data. Exposed so a conversation exported via
@@ -385,6 +393,7 @@ func (b *LLMContentBlock) Clone() *LLMContentBlock {
 	}
 	cp := *b
 	cp.Arguments = slices.Clone(b.Arguments)
+	cp.Data = slices.Clone(b.Data)
 	cp.Content = cloneLLMContent(b.Content)
 	return &cp
 }
@@ -414,7 +423,7 @@ func (b *LLMContentBlock) validate(remaining *int) error {
 		return fmt.Errorf("nil content block")
 	}
 	media := b.Kind == LLMContentImage || b.Kind == LLMContentAudio || b.Kind == LLMContentDocument
-	if !media && (b.MIMEType != "" || b.Data != "") {
+	if !media && (b.MIMEType != "" || len(b.Data) != 0) {
 		return fmt.Errorf("%s cannot contain media data or MIME type", b.Kind)
 	}
 	if b.Kind != LLMContentToolResult && (len(b.Content) != 0 || b.Errored) {
@@ -452,8 +461,8 @@ func (b *LLMContentBlock) validateMedia(remaining *int) error {
 	if b.Text != "" {
 		return fmt.Errorf("%s cannot contain text", b.Kind)
 	}
-	if b.MIMEType == "" || b.Data == "" {
-		return fmt.Errorf("%s requires MIME type and base64 data", b.Kind)
+	if b.MIMEType == "" || len(b.Data) == 0 {
+		return fmt.Errorf("%s requires MIME type and data", b.Kind)
 	}
 	mt, params, err := mime.ParseMediaType(b.MIMEType)
 	if err != nil || len(params) != 0 || mt != b.MIMEType {
@@ -462,43 +471,12 @@ func (b *LLMContentBlock) validateMedia(remaining *int) error {
 	if (b.Kind == LLMContentImage && !strings.HasPrefix(mt, "image/")) || (b.Kind == LLMContentAudio && !strings.HasPrefix(mt, "audio/")) || (b.Kind == LLMContentDocument && mt != "application/pdf") {
 		return fmt.Errorf("MIME type %q does not match %s", mt, b.Kind)
 	}
-	encodedSize := len(b.Data)
-	if encodedSize > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
-		encodedSize -= strings.Count(b.Data, "\r") + strings.Count(b.Data, "\n")
-		if encodedSize > base64.StdEncoding.EncodedLen(MaxLLMMediaBytes) {
-			return fmt.Errorf("media exceeds %d decoded bytes", MaxLLMMediaBytes)
-		}
+	if len(b.Data) > MaxLLMMediaBytes {
+		return fmt.Errorf("media exceeds %d bytes", MaxLLMMediaBytes)
 	}
-	// NewDecoder accepts concatenated padded chunks at read boundaries,
-	// unlike DecodeString. Require padding to terminate the entire value.
-	if pad := strings.IndexByte(b.Data, '='); pad >= 0 {
-		padding := 0
-		for _, char := range b.Data[pad:] {
-			switch char {
-			case '=':
-				padding++
-				if padding > 2 {
-					return fmt.Errorf("invalid base64 media padding")
-				}
-			case '\r', '\n':
-			default:
-				return fmt.Errorf("invalid base64 media data after padding")
-			}
-		}
-	}
-	// Stream validation instead of allocating a decoded copy for every
-	// schema, recipe and provider boundary. Count actual decoded bytes:
-	// base64 permits CR/LF, so its encoded length is not an exact budget.
-	size, err := io.Copy(io.Discard, base64.NewDecoder(base64.StdEncoding.Strict(), strings.NewReader(b.Data)))
-	if err != nil {
-		return fmt.Errorf("invalid base64 media data: %w", err)
-	}
-	if size == 0 {
-		return fmt.Errorf("media must contain 1 to %d decoded bytes", MaxLLMMediaBytes)
-	}
-	*remaining -= int(size)
+	*remaining -= len(b.Data)
 	if *remaining < 0 {
-		return fmt.Errorf("message media exceeds %d decoded bytes", MaxLLMMediaBytes)
+		return fmt.Errorf("message media exceeds %d bytes", MaxLLMMediaBytes)
 	}
 	return nil
 }
@@ -546,7 +524,7 @@ type LLMContentBlockInput struct {
 	Errored   bool                                      `doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)." default:"false"`
 	Signature string                                    `doc:"Provider-specific opaque data (e.g. Anthropic thinking signature)." default:""`
 	MIMEType  string                                    `name:"mimeType" doc:"Media MIME type; required for inline data, inferred for a file." default:""`
-	Data      string                                    `doc:"Base64-encoded media bytes. Supply exactly one of data or file for media." default:""`
+	Data      dagql.Optional[dagql.Bytes]               `doc:"Media bytes. Supply exactly one of data or file for media."`
 	File      dagql.Optional[FileID]                    `doc:"A media file to resolve to inline bytes."`
 	Content   []dagql.InputObject[LLMContentBlockInput] `doc:"Ordered TEXT or media blocks returned by a tool." default:"[]"`
 }
@@ -574,7 +552,7 @@ func (in LLMContentBlockInput) ToLLMContentBlock() *LLMContentBlock {
 		Errored:   in.Errored,
 		Signature: in.Signature,
 		MIMEType:  in.MIMEType,
-		Data:      in.Data,
+		Data:      in.Data.Value,
 		Content:   content,
 	}
 }
@@ -583,7 +561,7 @@ func (in LLMContentBlockInput) ToLLMContentBlock() *LLMContentBlock {
 func (in LLMContentBlockInput) Resolve(ctx context.Context) (*LLMContentBlock, error) {
 	block := in.ToLLMContentBlock()
 	if in.File.Valid {
-		if in.Data != "" {
+		if len(in.Data.Value) != 0 {
 			return nil, fmt.Errorf("supply exactly one of file or data")
 		}
 		if in.Kind != LLMContentImage && in.Kind != LLMContentAudio && in.Kind != LLMContentDocument {
@@ -629,10 +607,12 @@ func LLMContentFromFile(ctx context.Context, id FileID, mimeType string) (*LLMCo
 	if err != nil {
 		return nil, err
 	}
-	return llmContentFromBytes(data, mimeType)
+	return LLMContentFromBytes(data, mimeType)
 }
 
-func llmContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error) {
+// LLMContentFromBytes builds a media block from raw bytes, inferring the
+// media kind (and, when mimeType is empty, the MIME type) from its contents.
+func LLMContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error) {
 	if len(data) == 0 || len(data) > MaxLLMMediaBytes {
 		return nil, fmt.Errorf("media must contain 1 to %d bytes", MaxLLMMediaBytes)
 	}
@@ -653,11 +633,73 @@ func llmContentFromBytes(data []byte, mimeType string) (*LLMContentBlock, error)
 	default:
 		return nil, fmt.Errorf("unsupported media MIME type %q; expected image, audio, or PDF", mimeType)
 	}
-	block := &LLMContentBlock{Kind: kind, MIMEType: mimeType, Data: base64.StdEncoding.EncodeToString(data)}
+	block := &LLMContentBlock{Kind: kind, MIMEType: mimeType, Data: dagql.NewBytes(data)}
 	if err := block.Validate(); err != nil {
 		return nil, err
 	}
 	return block, nil
+}
+
+// LLMContent is an ordered run of text and media blocks built outside any
+// conversation. A function exposed as an LLM tool returns it to make the
+// blocks the tool result's own content (e.g. a caption and a screenshot), in
+// the order they were added.
+type LLMContent struct {
+	Blocks []*LLMContentBlock `field:"true" json:"blocks" doc:"The ordered text and media blocks."`
+}
+
+func (*LLMContent) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMContent",
+		NonNull:   true,
+	}
+}
+
+func (*LLMContent) TypeDescription() string {
+	return "An ordered run of text and media content for a model to read, built outside any conversation."
+}
+
+func (c *LLMContent) Clone() *LLMContent {
+	if c == nil {
+		return nil
+	}
+	return &LLMContent{Blocks: cloneLLMContent(c.Blocks)}
+}
+
+// The content is self-contained data: its media is inline bytes, so the
+// persisted payload is the value itself and carries no references.
+func (c *LLMContent) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = enc
+	if c == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted LLM content: nil LLM content")
+	}
+	return encodePersistedObjectPayload(c)
+}
+
+func (*LLMContent) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dec
+	var content LLMContent
+	if err := json.Unmarshal(payload, &content); err != nil {
+		return nil, fmt.Errorf("decode persisted LLM content payload: %w", err)
+	}
+	if err := ValidateLLMContent(content.Blocks); err != nil {
+		return nil, fmt.Errorf("decode persisted LLM content payload: %w", err)
+	}
+	return &content, nil
+}
+
+// WithBlock appends a block, enforcing the per-message media budget across
+// the whole run so an oversized result fails where it is built rather than
+// when the tool result is validated.
+func (c *LLMContent) WithBlock(block *LLMContentBlock) (*LLMContent, error) {
+	cp := c.Clone()
+	cp.Blocks = append(cp.Blocks, block)
+	if err := ValidateLLMContent(cp.Blocks); err != nil {
+		return nil, err
+	}
+	return cp, nil
 }
 
 // LLMMessageOriginKind classifies who put a message on the conversation
@@ -2397,48 +2439,18 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	}
 	llm.mcp.SetSelfLLM(responded)
 
-	// CallBatch runs the calls in the order written, except continuations —
-	// tools returning an LLM — which run last, so the conversation they receive
-	// carries the turn's workspace and binding changes: `[editModule, reload]`
-	// reloads the edit. Before they run, fold those changes into the
-	// conversation, materialized here the way the response itself was above.
-	// See MCP.SplitContinuationCalls.
-	base := responded
-	var folded bool
-	resultMsgs := llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallDisplays, func(ctx context.Context) error {
-		if sels := stateDeltaSelectors(llm.mcp, wsBefore, toolsBefore); len(sels) > 0 {
-			var withState dagql.ObjectResult[*LLM]
-			if err := srv.Select(ctx, responded, &withState, sels...); err != nil {
-				return err
-			}
-			base = withState
-		}
-		folded = true
-		llm.mcp.SetSelfLLM(base)
-		return nil
-	})
-
-	// In-step state changes — a Changeset overlaid onto the bound workspace, a
-	// Workspace returned, an object rebound as the new state — live only on this
-	// step's transient MCP clone. They must be re-recorded onto the materialized
-	// state as withWorkspace/withTools selectors, or later steps rebuild history
-	// from the stale bindings and silently revert them. Once folded into base
-	// for the continuations, they already are.
-	var stateSels []dagql.Selector
-	if !folded {
-		stateSels = stateDeltaSelectors(llm.mcp, wsBefore, toolsBefore)
+	// Run the turn's tool calls in the order written; see toolDispatch.
+	dispatch := &toolDispatch{
+		srv:         srv,
+		mcp:         llm.mcp,
+		tools:       tools,
+		base:        responded,
+		wsBefore:    wsBefore,
+		toolsBefore: toolsBefore,
 	}
-
-	// A tool may have returned an LLM: it acted as a continuation, and the turn
-	// resumes from THAT conversation — its env, tools, system prompts and
-	// history — instead of the one that made the call (see MCP.adoptLLM). Its ID
-	// records the transform, so loading it restores that conversation. The turn's state changes
-	// were folded into the conversation it derived from above, and adoptLLM
-	// refuses a continuation that would drop any, so nothing remains to persist
-	// on top of it.
-	if cont := llm.mcp.Continuation(); cont.Self() != nil {
-		base = cont
-	}
+	resultMsgs := dispatch.run(ctx, toolCalls, res.ToolCallDisplays)
+	base := dispatch.base
+	stateSels := dispatch.stateSelectors()
 
 	toolNames := make(map[string]string, len(toolCalls))
 	for _, tc := range toolCalls {
@@ -2485,6 +2497,119 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	}
 
 	return stepped, nil
+}
+
+// toolDispatch runs one turn's tool calls for step(), in the order written.
+// A continuation — a tool returning an LLM — replaces the conversation
+// mid-turn, so the calls the model wrote after it run on THAT conversation:
+// its workspace, bindings and toolset. `[checkout, log]` logs the new
+// checkout, and `[edit, reload]` reloads the edit.
+//
+// mcp is the transient MCP running the current stretch of calls, with its
+// toolset, and base the materialized conversation it is in sync with as of
+// wsBefore and toolsBefore. Before a continuation runs, the stretch's
+// workspace and binding changes are folded into base (fold), so the
+// continuation receives them.
+type toolDispatch struct {
+	srv         *dagql.Server
+	mcp         *MCP
+	tools       []LLMTool
+	base        dagql.ObjectResult[*LLM]
+	wsBefore    *call.ID
+	toolsBefore []boundToolBinding
+}
+
+// run runs the calls and returns one result per call, in call order.
+func (d *toolDispatch) run(ctx context.Context, toolCalls []*LLMToolCall, displays map[string]toolCallDisplay) []*LLMMessage {
+	var results []*LLMMessage
+	for remaining := toolCalls; len(remaining) > 0; {
+		ran, rest := d.mcp.CallBatch(ctx, d.tools, remaining, displays, d.fold)
+		results = append(results, ran...)
+		// A tool returned an LLM: it acted as a continuation, and the turn
+		// resumes from THAT conversation — its env, tools, system prompts and
+		// history — instead of the one that made the call (see MCP.adoptLLM).
+		// Its ID records the transform, so loading it restores that
+		// conversation. The state changes before it were folded into the
+		// conversation it derived from, and adoptLLM refuses a continuation
+		// that would drop any.
+		cont := d.mcp.Continuation()
+		if cont.Self() == nil {
+			break
+		}
+		d.base = cont
+		if len(rest) == 0 {
+			break
+		}
+		if err := d.continueOn(ctx, cont); err != nil {
+			text := fmt.Sprintf("not run: failed to load the tools of the conversation continued by an earlier call: %s", err)
+			for _, tc := range rest {
+				endToolCallDisplay(displays, tc.CallID, true, text)
+				results = append(results, &LLMMessage{
+					Role: LLMMessageRoleUser,
+					Content: []*LLMContentBlock{{
+						Kind:    LLMContentToolResult,
+						CallID:  tc.CallID,
+						Text:    text,
+						Errored: true,
+					}},
+				})
+			}
+			break
+		}
+		remaining = rest
+	}
+	return results
+}
+
+// fold records the current stretch's state changes onto base, materialized
+// the way the response itself was, and hands base to the MCP as the
+// conversation a continuation receives.
+func (d *toolDispatch) fold(ctx context.Context) error {
+	if sels := stateDeltaSelectors(d.mcp, d.wsBefore, d.toolsBefore); len(sels) > 0 {
+		var withState dagql.ObjectResult[*LLM]
+		if err := d.srv.Select(ctx, d.base, &withState, sels...); err != nil {
+			return err
+		}
+		d.base = withState
+	}
+	// base now carries the MCP's state: later changes are relative to it.
+	d.wsBefore, _ = d.mcp.WorkspaceID()
+	d.toolsBefore, _ = d.mcp.BoundToolBindings()
+	d.mcp.SetSelfLLM(d.base)
+	return nil
+}
+
+// continueOn prepares a continuation to run the calls the model wrote after
+// the one that returned it, the way the next step would run them: a transient
+// clone of its MCP, dispatching on its behalf, with its toolset. The bindings
+// are captured before the toolset is built, since building it already touches
+// them (see step).
+func (d *toolDispatch) continueOn(ctx context.Context, cont dagql.ObjectResult[*LLM]) error {
+	next := cont.Self().mcp.Clone()
+	wsBefore, _ := next.WorkspaceID()
+	toolsBefore, _ := next.BoundToolBindings()
+	next.SetSelfLLM(cont)
+	tools, err := next.Tools(ctx)
+	if err != nil {
+		return err
+	}
+	d.mcp, d.tools = next, tools
+	d.wsBefore, d.toolsBefore = wsBefore, toolsBefore
+	return nil
+}
+
+// stateSelectors re-records the in-step state changes — a Changeset overlaid
+// onto the bound workspace, a Workspace returned, an object rebound as the
+// new state — that live only on the transient MCP. They must be recorded onto
+// the materialized state as withWorkspace/withTools selectors, or later steps
+// rebuild history from the stale bindings and silently revert them. If the
+// turn ended on an adopted continuation, nothing remains to persist on top of
+// it.
+func (d *toolDispatch) stateSelectors() []dagql.Selector {
+	if d.mcp.Continuation().Self() != nil {
+		return nil
+	}
+	return stateDeltaSelectors(d.mcp, d.wsBefore, d.toolsBefore)
 }
 
 // toolResultSelectors builds the selectors that append this turn's tool results
@@ -2696,6 +2821,11 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 			return nil, fmt.Errorf("message %d: %w", i, err)
 		}
 	}
+
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create LLM network recorders: %w", err)
+	}
 	b := backoff.NewExponentialBackOff()
 	// Sane defaults (ideally not worth extra knobs)
 	b.InitialInterval = 1 * time.Second
@@ -2770,13 +2900,17 @@ func contentBlockInputMap(block *LLMContentBlock) map[string]any {
 	for i, child := range block.Content {
 		content[i] = contentBlockInputMap(child)
 	}
-	return map[string]any{
+	m := map[string]any{
 		"kind": string(block.Kind), "text": block.Text,
 		"callId": block.CallID, "toolName": block.ToolName,
 		"arguments": string(block.Arguments), "errored": block.Errored,
 		"signature": block.Signature, "mimeType": block.MIMEType,
-		"data": block.Data, "content": content,
+		"content": content,
 	}
+	if len(block.Data) != 0 {
+		m["data"] = block.Data
+	}
+	return m
 }
 
 // contentBlockInputs decodes maps rather than constructing bare InputObjects:
@@ -3248,6 +3382,11 @@ func (llm *LLM) WithWorkspace(ws dagql.ObjectResult[*Workspace]) *LLM {
 
 func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
 	return llm.mcp.workspace
+}
+
+// Artifacts returns the conversation's artifact scope; see MCP.Artifacts.
+func (llm *LLM) Artifacts(ctx context.Context, srv *dagql.Server, include []string) (*Artifacts, error) {
+	return llm.mcp.Artifacts(ctx, srv, include)
 }
 
 // A variable in the LLM environment

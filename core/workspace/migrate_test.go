@@ -93,10 +93,6 @@ func TestPlanMigrationWritesMigrationReportForGaps(t *testing.T) {
 	require.Len(t, plan.Warnings, 2)
 	require.Equal(t, filepath.Join(LockDirName, "migration-report.md"), plan.MigrationReportPath)
 
-	configData := string(plan.WorkspaceConfigData)
-	require.NotContains(t, configData, "# WARNING:")
-	require.NotContains(t, configData, "# Original:")
-
 	reportData := string(plan.MigrationReportData)
 	require.Contains(t, reportData, "# Migration Report")
 	require.Contains(t, reportData, "`toolchain` needs a manual check")

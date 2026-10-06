@@ -16,12 +16,29 @@ import (
 
 func listedArtifactKeys(items []listedArtifact) []dagaddress.Pair {
 	var keys []dagaddress.Pair
+	var seen map[dagaddress.Pair]struct{}
 	for _, item := range items {
 		for _, key := range item.DimensionKeys {
 			pair := dagaddress.Pair{Dimension: key.Dimension, Key: key.Key, HasKey: true}
-			if !slices.Contains(keys, pair) {
-				keys = append(keys, pair)
+			if seen == nil {
+				if slices.Contains(keys, pair) {
+					continue
+				}
+				// Small rows scan their few keys. From 32 keys on, a map avoids
+				// comparing each new key against every key already collected.
+				if len(keys) >= 32 {
+					seen = make(map[dagaddress.Pair]struct{}, 2*len(keys))
+					for _, previous := range keys {
+						seen[previous] = struct{}{}
+					}
+				}
+			} else if _, exists := seen[pair]; exists {
+				continue
 			}
+			if seen != nil {
+				seen[pair] = struct{}{}
+			}
+			keys = append(keys, pair)
 		}
 	}
 	return keys

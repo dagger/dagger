@@ -16,6 +16,10 @@ import (
 
 const snapshotTransferLeaseLabel = "dagger.io/snapshot-transfer"
 
+// operationLeaseLabel marks the lease a lazy operation scope creates for the
+// snapshots its operation produces.
+const operationLeaseLabel = "dagger.io/operation"
+
 // resourcePin owns a transfer's resources until the returned ref or provider
 // is released. It is independent of a caller's ambient lease.
 type resourcePin struct {
@@ -53,6 +57,27 @@ func ReleaseTransferLeasesAfterRestart(ctx context.Context, lm leases.Manager) e
 		}
 		if err := lm.Delete(ctx, lease); err != nil && !cerrdefs.IsNotFound(err) {
 			rerr = stderrors.Join(rerr, fmt.Errorf("release previous snapshot transfer lease %s: %w", lease.ID, err))
+		}
+	}
+	return rerr
+}
+
+// ReleaseOperationLeasesAfterRestart deletes the operation leases an earlier
+// process left behind. Those leases never expire, so they would otherwise
+// retain their snapshots forever. It must run only at startup, before any
+// operation can start.
+func ReleaseOperationLeasesAfterRestart(ctx context.Context, lm leases.Manager) error {
+	previous, err := lm.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list operation leases: %w", err)
+	}
+	var rerr error
+	for _, lease := range previous {
+		if lease.Labels[operationLeaseLabel] != "true" {
+			continue
+		}
+		if err := lm.Delete(ctx, lease); err != nil && !cerrdefs.IsNotFound(err) {
+			rerr = stderrors.Join(rerr, fmt.Errorf("release previous operation lease %s: %w", lease.ID, err))
 		}
 	}
 	return rerr
@@ -189,12 +214,34 @@ func (s *lazyLeaseScope) ensure(ctx context.Context) (context.Context, error) {
 	if s.lease != nil {
 		return leases.WithLease(ctx, s.lease.l.ID), nil
 	}
-	lease, leaseCtx, err := NewLease(ctx, s.lm, s.opts...)
+	lease, leaseCtx, err := newOperationLease(ctx, s.lm, s.opts...)
 	if err != nil {
 		return ctx, err
 	}
 	s.lease = lease
 	return leaseCtx, nil
+}
+
+// newOperationLease creates the lease for a live operation. Unlike NewLease's
+// leases it never expires: containerd stops treating an expired lease as a
+// root, so any garbage collection after the deadline would delete snapshots a
+// long-running exec or service is still using. The scope deletes the lease
+// when its operation ends, and ReleaseOperationLeasesAfterRestart deletes any
+// an earlier process left behind.
+func newOperationLease(ctx context.Context, lm leases.Manager, opts ...leases.Opt) (*LeaseRef, context.Context, error) {
+	opts = append([]leases.Opt{leases.WithRandomID()}, opts...)
+	opts = append(opts, func(l *leases.Lease) error {
+		if l.Labels == nil {
+			l.Labels = map[string]string{}
+		}
+		l.Labels[operationLeaseLabel] = "true"
+		return nil
+	})
+	l, err := lm.Create(ctx, opts...)
+	if err != nil {
+		return nil, ctx, err
+	}
+	return &LeaseRef{lm: lm, l: l}, leases.WithLease(ctx, l.ID), nil
 }
 
 func (s *lazyLeaseScope) release(ctx context.Context) error {
@@ -334,6 +381,29 @@ func (l *LeaseManager) DeleteResource(ctx context.Context, lease leases.Lease, r
 func (l *LeaseManager) ListResources(ctx context.Context, lease leases.Lease) ([]leases.Resource, error) {
 	ctx = namespaces.WithNamespace(ctx, l.ns)
 	return l.manager.ListResources(ctx, lease)
+}
+
+// LeaseExistingSnapshot adds an existing snapshot to the context's operation
+// lease, so the operation owns it as it owns the snapshots it creates, and
+// reopens it. It fails when the context has no lease.
+func (cm *snapshotManager) LeaseExistingSnapshot(ctx context.Context, snapshotID string) (ImmutableRef, error) {
+	ctx, err := EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for existing snapshot")
+	}
+	leaseID, ok := leases.FromContext(ctx)
+	if !ok || leaseID == "" {
+		return nil, errors.Errorf("lease existing snapshot %s: no lease in context", snapshotID)
+	}
+	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
+		ID:   snapshotID,
+		Type: "snapshots/" + cm.Snapshotter.Name(),
+	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		return nil, errors.Wrapf(err, "attach snapshot %s to lease %s", snapshotID, leaseID)
+	}
+	// AddResource accepts absent targets. GetBySnapshotID checks the snapshot
+	// still exists, now that the lease holds it.
+	return cm.GetBySnapshotID(ctx, snapshotID)
 }
 
 // PinSnapshot protects an existing snapshot and its ancestry independently of

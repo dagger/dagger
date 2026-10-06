@@ -953,7 +953,7 @@ func buildCaptureBundle(ctx context.Context, checkout, tmpDir, objectFormat, bas
 	if _, err := runHostGitBytes(ctx, checkout, stageEnv, nil, "read-tree", head); err != nil {
 		return "", errors.New("initialize worktree staging index failed")
 	}
-	if err := stageCapturePaths(ctx, checkout, stageEnv, paths); err != nil {
+	if err := stageCapturePaths(ctx, checkout, tmpDir, stageEnv, paths); err != nil {
 		return "", err
 	}
 	worktreeSHA := ""
@@ -1004,7 +1004,7 @@ type captureBundleHeader struct {
 	refs          map[string]string
 }
 
-func stageCapturePaths(ctx context.Context, checkout string, stageEnv []string, paths []capturedPath) error {
+func stageCapturePaths(ctx context.Context, checkout, tmpDir string, stageEnv []string, paths []capturedPath) error {
 	var remove bytes.Buffer
 	for _, p := range paths {
 		if p.tracked {
@@ -1017,6 +1017,20 @@ func stageCapturePaths(ctx context.Context, checkout string, stageEnv []string, 
 			return errors.New("stage tracked worktree selection failed")
 		}
 	}
+	// Stage every selected file with a constant number of git processes. One
+	// hash-object and one update-index per file cost two process spawns each,
+	// and every update-index rewrites the whole staging index, so capture time
+	// grew with (selected files) x (index entries): thousands of untracked
+	// files in a large checkout took minutes. Instead, copy the exact bytes that
+	// were just revalidated into private files (so a concurrent edit to the
+	// worktree cannot slip in between check and hash), hash them all in one
+	// process, and apply every index entry in a single batch.
+	blobDir := filepath.Join(tmpDir, "blobs")
+	if err := os.Mkdir(blobDir, 0o700); err != nil {
+		return errors.New("create capture staging area failed")
+	}
+	var staged []capturedPath
+	var blobPaths bytes.Buffer
 	for _, expected := range paths {
 		if expected.deleted {
 			continue
@@ -1025,11 +1039,28 @@ func stageCapturePaths(ctx context.Context, checkout string, stageEnv []string, 
 		if err != nil || got.deleted != expected.deleted || got.mode != expected.mode || got.size != expected.size || got.digest != expected.digest {
 			return errors.New("selected worktree content changed during capture; retry")
 		}
-		blobOut, err := runHostGitBytes(ctx, checkout, stageEnv, bytes.NewReader(data),
-			"hash-object", "--no-filters", "-w", "--stdin")
-		if err != nil {
+		blobPath := filepath.Join(blobDir, strconv.Itoa(len(staged)))
+		if err := os.WriteFile(blobPath, data, 0o600); err != nil {
 			return errors.New("write selected worktree content failed")
 		}
+		blobPaths.WriteString(blobPath)
+		blobPaths.WriteByte('\n')
+		staged = append(staged, got)
+	}
+	if len(staged) == 0 {
+		return nil
+	}
+	blobOut, err := runHostGitBytes(ctx, checkout, stageEnv, &blobPaths,
+		"hash-object", "--no-filters", "-w", "--stdin-paths")
+	if err != nil {
+		return errors.New("write selected worktree content failed")
+	}
+	oids := strings.Fields(string(blobOut))
+	if len(oids) != len(staged) {
+		return errors.New("write selected worktree content failed")
+	}
+	var entries bytes.Buffer
+	for i, got := range staged {
 		mode := "100644"
 		switch {
 		case got.mode&os.ModeSymlink != 0:
@@ -1037,12 +1068,13 @@ func stageCapturePaths(ctx context.Context, checkout string, stageEnv []string, 
 		case got.mode.Perm()&0o111 != 0:
 			mode = "100755"
 		}
-		if _, err := runHostGitBytes(ctx, checkout, stageEnv, nil,
-			"update-index", "--add", "--replace", "--cacheinfo", mode, strings.TrimSpace(string(blobOut)), expected.path); err != nil {
-			return errors.New("stage selected worktree content failed")
-		}
+		// --index-info implies --add and --replace, matching the per-path
+		// --cacheinfo form, and -z keeps arbitrary path bytes intact.
+		fmt.Fprintf(&entries, "%s %s\t%s\x00", mode, oids[i], got.path)
 	}
-
+	if _, err := runHostGitBytes(ctx, checkout, stageEnv, &entries, "update-index", "-z", "--index-info"); err != nil {
+		return errors.New("stage selected worktree content failed")
+	}
 	return nil
 }
 

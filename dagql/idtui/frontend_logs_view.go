@@ -127,13 +127,6 @@ func isToolCallDisplay(span *dagui.Span) bool {
 	return span != nil && span.LLMRole != "" && span.LLMTool != ""
 }
 
-func collapsesToolOutput(span *dagui.Span) bool {
-	if !isToolCallDisplay(span) {
-		return false
-	}
-	return toolNameIs(span.LLMTool, "read") || toolNameIs(span.LLMTool, "grep")
-}
-
 func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dagui.TraceRow, focused bool) []string {
 	span := row.Span
 	if span.Message != "" || (!row.Expanded && span.LLMTool == "") {
@@ -177,7 +170,7 @@ func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dag
 		argsView.sync(logPrefix, trimPrefix, limit, s.fe.finalRender, false)
 		lines = append(lines, s.RenderChildResult(ctx, argsView).Lines...)
 	}
-	if collapsesToolOutput(span) && !row.Expanded {
+	if span.CollapsesToolOutput() && !row.Expanded {
 		return lines
 	}
 

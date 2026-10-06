@@ -36,6 +36,16 @@ type Swapper {
   }
 
   """
+  Read the marker continueWithMarker adds, from the current workspace.
+
+  Paired with continueWithMarker in one batch: written after it, it must run
+  on the continued conversation's workspace, where the marker exists.
+  """
+  readMarker(ws: Workspace!): String! {
+    ws.file("CONTINUED.txt").contents
+  }
+
+  """
   Hand back a conversation whose history has been wiped.
 
   There is no lineage requirement: any LLM may be adopted, so this IS adopted — the

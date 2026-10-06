@@ -40,9 +40,9 @@ import (
 // for the session instead: resending would only be refused again.
 //
 // While the session runs the forwarder follows the store's end. The main
-// client's shutdown waits, within the session's Cloud bound, for it to reach
-// the end as of then (drain), while the client's attachables can still
-// refresh an OAuth token. Once the session's providers have shut down, the
+// client's shutdown waits for it to reach the end as of then (drain) only
+// when the token may need a refresh through the client's attachables. That
+// wait stays within the session's Cloud bound. Once the session's providers have shut down, the
 // store's end is final (finish): the forwarder keeps going in the background,
 // after the session is gone, until it is caught up, the credential can no
 // longer be used, Cloud rejects it, or cloudForwardBackgroundTimeout passes,
@@ -399,11 +399,14 @@ func (f *cloudForwarder) drain(ctx context.Context) error {
 // timeout, and then releases. It never waits.
 func (f *cloudForwarder) finish() {
 	f.finishOnce.Do(func() {
-		close(f.finished)
 		f.timerMu.Lock()
-		f.deadline = time.AfterFunc(f.tuning.backgroundTimeout, func() {
-			f.stop(errCloudForwardDeadline)
-		})
+		if f.ctx.Err() == nil {
+			f.deadline = time.AfterFunc(f.tuning.backgroundTimeout, func() {
+				f.stop(errCloudForwardDeadline)
+			})
+		}
+		// The deadline must exist before caught-up lanes can release it.
+		close(f.finished)
 		f.timerMu.Unlock()
 		for _, lane := range f.lanes {
 			lane.wake()

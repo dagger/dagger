@@ -227,7 +227,8 @@ func (TypescriptSuite) TestSignatureUnexported(ctx context.Context, t *testctx.T
 
 	objs := inspectModuleObjects(ctx, t, modGen)
 
-	// Now that we resolve by reference, we should only have one object
+	// Objects are resolved by reference from the main object, so only Minimal
+	// is registered: nothing it exposes references Foo or Bar.
 	require.Equal(t, 1, len(objs.Array()))
 	require.Equal(t, "Minimal", objs.Get("0.name").String())
 }

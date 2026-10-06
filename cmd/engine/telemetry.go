@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/server"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetry/cgroupmetrics"
+	"github.com/dagger/dagger/engine/telemetry/networkmetrics"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/cloud/auth"
@@ -203,8 +204,12 @@ func initResourceMetrics(ctx context.Context, cfg config.TelemetryConfig) *sdkme
 	)
 	// Keep the callback registered through provider shutdown so the final
 	// collection can still read the engine cgroup.
-	if _, err := cgroupmetrics.Register(ctx, provider.Meter(cgroupmetrics.InstrumentationScopeName)); err != nil {
+	meter := provider.Meter(cgroupmetrics.InstrumentationScopeName)
+	if _, err := cgroupmetrics.Register(ctx, meter); err != nil {
 		slog.Warn("failed to register engine cgroup resource metrics", "error", err)
+	}
+	if _, err := networkmetrics.Register(ctx, meter); err != nil {
+		slog.Warn("failed to register engine network resource metrics", "error", err)
 	}
 	return provider
 }

@@ -1252,18 +1252,18 @@ class Test(Base):
 	})
 }
 
-// TestASTFollowUp exercises Python patterns the AST analyzer used to drop
-// silently or mishandle. Each subtest invokes “dagger call“ end-to-end so
+// TestASTAnalyzerPatterns exercises Python patterns the AST analyzer must
+// recognize. Each subtest invokes “dagger call“ end-to-end so
 // the AST analyzer's schema, the engine's validation, and the runtime's
 // dispatch all have to agree — anything that survives an integration run
 // here matches what a real user would see.
-func (PythonSuite) TestASTFollowUp(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestASTAnalyzerPatterns(ctx context.Context, t *testctx.T) {
 	t.Run("aliased dagger module and decorators", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// ``import dagger as d`` plus ``from dagger import object_type as ot,
-		// function as fn`` — the decorator name allow-list used to miss
-		// every aliased form.
+		// function as fn`` — aliased decorators must be recognized as Dagger
+		// decorators.
 		modGen := pythonModInit(t, c, `
 import dagger as d
 from dagger import object_type as ot, function as fn, field as fld
@@ -1328,8 +1328,8 @@ class Test(Base):
 	t.Run("@staticmethod first parameter survives", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		// @staticmethod has no implicit receiver — pre-fix the first
-		// argument was dropped as if it were ``self``.
+		// @staticmethod has no implicit receiver, so its first parameter is
+		// a real argument.
 		modGen := pythonModInit(t, c, `
 import dagger
 from dagger import function, object_type
@@ -1349,9 +1349,8 @@ class Test:
 	t.Run("class-body constants used as defaults", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		// ``DEFAULT = "x"`` declared inside the class body was silently
-		// recorded as the literal name string before the class-scope
-		// constant resolution work.
+		// ``DEFAULT = "x"`` declared inside the class body and used as a
+		// default resolves to its value.
 		modGen := pythonModInit(t, c, `
 import dagger
 from dagger import function, object_type
@@ -1402,8 +1401,8 @@ class Test:
 		c := connect(ctx, t)
 
 		// ``from .helpers import DEFAULT_NAME`` then used as a parameter
-		// default. Pre-fix the analyzer recorded the literal name string
-		// ``"DEFAULT_NAME"`` instead of the value.
+		// default. The default resolves to the imported constant's value,
+		// not the name ``"DEFAULT_NAME"``.
 		modGen := daggerCliBase(t, c).
 			With(withPythonModule(t, c, "python/base-test")).
 			With(fileContents("src/test/helpers.py", `
@@ -1859,11 +1858,10 @@ class Test:
 // TestEnumDefaultValue verifies that an enum used as a default for a
 // function argument is honored both at call time and in the --help text.
 //
-// Regression test: the --help output used to drop the default for enum-typed
-// args because the engine reconstructed the Query type's typedef from GraphQL
+// The engine reconstructs the Query type's typedef from GraphQL
 // introspection, which prints enum defaults as bare identifiers (e.g. RED)
-// rather than JSON strings (e.g. "RED"). The CLI couldn't parse the bare
-// identifier as JSON, so it silently fell back to "no default".
+// rather than JSON strings (e.g. "RED"). The default must reach the CLI as
+// JSON for --help to show it.
 func (PythonSuite) TestEnumDefaultValue(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

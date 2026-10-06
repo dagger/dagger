@@ -100,26 +100,36 @@ func TestSelectModuleUpdates(t *testing.T) {
 	for _, tc := range []struct {
 		selectors []string
 		version   string
+		source    string
 		err       string
 	}{
-		{nil, "v2", "--version requires exactly one"},
-		{[]string{"tools", "local"}, "v2", "--version requires exactly one"},
-		{[]string{"tools@v2"}, "v2", "use either a version suffix or --version"},
-		{[]string{"local"}, "v2", "local module source"},
-		{[]string{"tools@v1", "github.com/acme/repo/tools@v2"}, "", "conflicting update requests"},
+		{nil, "v2", "", "--version requires exactly one"},
+		{[]string{"tools", "local"}, "v2", "", "--version requires exactly one"},
+		{[]string{"tools@v2"}, "v2", "", "use either a version suffix or --version"},
+		{[]string{"local"}, "v2", "", "local module source"},
+		{[]string{"tools@v1", "github.com/acme/repo/tools@v2"}, "", "", "conflicting update requests"},
+		{nil, "", "example.com/tools", "--source requires exactly one"},
+		{[]string{"tools", "local"}, "", "example.com/tools", "--source requires exactly one"},
+		{[]string{"tools"}, "v2", "example.com/tools", "use either --source or --version"},
+		{[]string{"tools@v2"}, "", "example.com/tools", "use either --source or a version suffix"},
+		{[]string{"missing"}, "", "example.com/tools", `module "missing" is not installed`},
 	} {
-		_, err := SelectModuleUpdates(modules, ".", ".", tc.selectors, tc.version)
+		_, err := SelectModuleUpdates(modules, ".", ".", tc.selectors, tc.version, tc.source)
 		require.ErrorContains(t, err, tc.err)
 	}
-	selections, err := SelectModuleUpdates(modules, ".", ".", []string{"github.com/acme/repo/tools"}, "v2")
+	selections, err := SelectModuleUpdates(modules, ".", ".", []string{"github.com/acme/repo/tools"}, "v2", "")
 	require.NoError(t, err)
 	require.Equal(t, "tools", selections[0].Name)
 	require.Equal(t, "v2", selections[0].Version)
 	require.Equal(t, "github.com/acme/repo/tools", selections[0].Source)
-	selections, err = SelectModuleUpdates(modules, ".", ".", nil, "")
+	selections, err = SelectModuleUpdates(modules, ".", ".", []string{"local"}, "", "../elsewhere")
+	require.NoError(t, err)
+	require.Equal(t, "local", selections[0].Name)
+	require.Empty(t, selections[0].Version)
+	selections, err = SelectModuleUpdates(modules, ".", ".", nil, "", "")
 	require.NoError(t, err)
 	require.Equal(t, []string{"local", "tools"}, []string{selections[0].Name, selections[1].Name})
-	selections, err = SelectModuleUpdates(modules, ".", ".", []string{"tools@v2", "github.com/acme/repo/tools@v2"}, "")
+	selections, err = SelectModuleUpdates(modules, ".", ".", []string{"tools@v2", "github.com/acme/repo/tools@v2"}, "", "")
 	require.NoError(t, err)
 	require.Len(t, selections, 1)
 }
@@ -139,11 +149,11 @@ func TestSelectModuleLocalPathCharacters(t *testing.T) {
 			require.Equal(t, source, split)
 			require.Empty(t, version)
 			require.False(t, hasVersion)
-			selections, err := SelectModuleUpdates(modules, "/work", "/work", []string{source}, "")
+			selections, err := SelectModuleUpdates(modules, "/work", "/work", []string{source}, "", "")
 			require.NoError(t, err)
 			require.Len(t, selections, 1)
 			require.Empty(t, selections[0].Version)
-			_, err = SelectModuleUpdates(modules, "/work", "/work", []string{source}, "v2")
+			_, err = SelectModuleUpdates(modules, "/work", "/work", []string{source}, "v2", "")
 			require.ErrorContains(t, err, "local module source")
 		})
 	}

@@ -86,12 +86,12 @@ class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
-     * Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+     * The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
      */
-    public function data(): string
+    public function data(): Bytes
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('data');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'data');
+        return new \Dagger\Bytes((string)$this->queryLeaf($leafQueryBuilder, 'data'));
     }
 
     /**

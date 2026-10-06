@@ -139,13 +139,16 @@ var updateAliasCmd = newModuleUpdateCmd()
 func newModuleUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update [NAME|SOURCE...]",
-		Short: "Update installed module versions and lockfile state",
+		Short: "Update installed module sources, versions and lockfile state",
 		Long: `Update an installed module by name or source.
 
 Use --version VERSION or append @VERSION to set a new version request.
+Use --source SOURCE to change the source address. The new source can include
+a version. A local path is relative to the current directory, as with install.
+The module keeps its name and settings.
 Match an installed name first.
 Source matching ignores the version and must select exactly one installation.
-Without a new version, refresh the existing request.
+Without a new version or source, refresh the existing request.
 
 With no arguments, this refreshes all installed modules. It does not refresh
 client targets or runtime targets. If a client scope targets an updated module,
@@ -155,6 +158,7 @@ entries in dagger.lock.`,
 		RunE: runModuleUpdate,
 	}
 	cmd.Flags().String("version", "", "New version request for one installed module")
+	cmd.Flags().String("source", "", "New source address for one installed module")
 	return cmd
 }
 

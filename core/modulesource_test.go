@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core/gitref"
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/engineutil"
 )
 
 type moduleSourceAttachTestSDK struct {
@@ -288,4 +290,38 @@ func moduleSourceTestSyntheticCall(op string, typ dagql.Typed) *dagql.ResultCall
 		SyntheticOp: op,
 		Type:        dagql.NewResultCallType(typ.Type()),
 	}
+}
+
+func TestLocalContextFilePath(t *testing.T) {
+	ctxPath := t.TempDir()
+	src := &ModuleSource{
+		Kind:              ModuleSourceKindLocal,
+		Local:             &LocalModuleSource{ContextDirectoryPath: ctxPath},
+		SourceRootSubpath: "module",
+	}
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{"dagger-module.toml", filepath.Join(ctxPath, "module", "dagger-module.toml")},
+		{"../shared/config", filepath.Join(ctxPath, "shared", "config")},
+		{"/shared/config", filepath.Join(ctxPath, "shared", "config")},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			path, err := src.localContextFilePath(tc.path)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, path)
+		})
+	}
+	// The direct read must reject escapes before contacting the caller's host.
+	fs := NewModuleSourceFS(&engineutil.Client{}, src)
+	for _, path := range []string{"../../outside", "/../outside"} {
+		t.Run(path, func(t *testing.T) {
+			_, err := fs.ReadFile(t.Context(), path)
+			require.ErrorContains(t, err, "outside of context directory")
+		})
+	}
+	src.Local.Foreign = true
+	_, err := fs.ReadFile(t.Context(), "dagger-module.toml")
+	require.ErrorIs(t, err, ErrForeignModuleContext)
 }

@@ -65,10 +65,11 @@ func planWorkspaceInstallConfig(
 				return plan, fmt.Errorf("module %q is already installed from %q; use dagger mod update %s --version VERSION to change its version", name, existing.Source, name)
 			}
 			return plan, fmt.Errorf(
-				"module %q already exists in workspace config with source %q (new source %q)",
+				"module %q already exists in workspace config with source %q (new source %q); use dagger mod update %s --source SOURCE to change its source",
 				name,
 				existing.Source,
 				sourcePath,
+				name,
 			)
 		}
 		if args.AsSdk {
@@ -172,11 +173,12 @@ func planWorkspaceEnvInstallConfig(
 				return plan, fmt.Errorf("module %q is already installed in env %q from %q; use dagger mod update %s --version VERSION to change its version", name, envName, existing.Source, name)
 			}
 			return plan, fmt.Errorf(
-				"module %q already exists in env %q with source %q (new source %q)",
+				"module %q already exists in env %q with source %q (new source %q); use dagger mod update %s --source SOURCE to change its source",
 				name,
 				envName,
 				existing.Source,
 				sourcePath,
+				name,
 			)
 		}
 		entry.Settings = existing.Settings

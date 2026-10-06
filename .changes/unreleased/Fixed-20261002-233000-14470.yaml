@@ -1,0 +1,13 @@
+kind: Fixed
+body: |
+  The engine's local cache no longer fills the disk with data that nothing uses.
+
+  Data left behind by failed commands, stopped services, and ended sessions is
+  now deleted on every garbage collection pass, even when no cache entry is
+  pruned. Cache usage now includes the lower layers each entry keeps on disk,
+  such as a pulled image's base layers, so the `maxUsedSpace` and
+  `reservedSpace` settings apply to what is actually stored.
+time: 2026-10-02T23:30:00.000000000+00:00
+custom:
+    Author: sipsma
+    PR: "14470"

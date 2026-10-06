@@ -60,9 +60,8 @@ func workspaceWriteKinds() []workspaceWriteKind {
 // TestWorkspaceWithDirectoryMerges covers the field callers reach for when they
 // want Directory.withDirectory's merge on a workspace: writing into a path
 // without discarding what is already there. That is what an SDK needs to
-// scaffold a module beside the config the engine just wrote, and before this
-// field existed the only spelling for it — withNewDirectory — merged on a value
-// or git workspace but replaced on a host-backed one (dagger/dagger#13955).
+// scaffold a module beside the config the engine just wrote. withDirectory
+// merges and withNewDirectory replaces, on every workspace kind.
 func (WorkspaceSuite) TestWorkspaceWithDirectoryMerges(ctx context.Context, t *testctx.T) {
 	for _, kind := range workspaceWriteKinds() {
 		t.Run(kind.name, func(ctx context.Context, t *testctx.T) {
@@ -177,9 +176,7 @@ func (WorkspaceSuite) TestWorkspaceWithDirectoryExportPreservesExistingFiles(ctx
 // workspaceInitOverExistingFixture is an SDK module whose module-init scaffolds
 // through Workspace.withDirectory, which is what an SDK needs once its
 // destination may already hold something: the user's own files, and the module
-// config the engine writes in the same init. dagger/go-sdk#30 pinned that
-// guarantee from the SDK side by reading the destination back and layering onto
-// it by hand; withDirectory is that read-back moved into the API.
+// config the engine writes in the same init. Both survive the scaffold.
 func workspaceInitOverExistingFixture(t testing.TB, c *dagger.Client) *dagger.Container {
 	t.Helper()
 	return goGitBase(t, c).
@@ -256,10 +253,9 @@ func (WorkspaceSuite) TestModuleInitScaffoldsOverExistingContent(ctx context.Con
 	require.NoError(t, err)
 }
 
-// The comparison dagger/dagger#13955 was reported with: one call, one source,
-// one path, put to a host-backed workspace and to the synthetic workspace made
-// out of that same workspace's own content. They answered differently about
-// what they had removed.
+// The same withNewDirectory call, with one source and one path, reports the
+// same removals on a host-backed workspace and on the synthetic workspace made
+// out of that same workspace's own content.
 func (WorkspaceSuite) TestWorkspaceWithNewDirectoryAgreesWithSyntheticCopy(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
@@ -285,9 +281,7 @@ func (WorkspaceSuite) TestWorkspaceWithNewDirectoryAgreesWithSyntheticCopy(ctx c
 }
 
 // TestWorkspaceWithNewDirectoryReplaces pins withNewDirectory to replacement on
-// every workspace kind. dagger/dagger#13955: it replaced on a host-backed
-// workspace and merged on a value or git one, so the same call meant two
-// different things depending only on where the workspace came from.
+// every workspace kind.
 func (WorkspaceSuite) TestWorkspaceWithNewDirectoryReplaces(ctx context.Context, t *testctx.T) {
 	for _, kind := range workspaceWriteKinds() {
 		t.Run(kind.name, func(ctx context.Context, t *testctx.T) {

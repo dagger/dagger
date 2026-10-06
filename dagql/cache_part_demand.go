@@ -27,11 +27,7 @@ type LazyOperationInvocation interface {
 }
 
 func (c *Cache) partDecodeContext(ctx context.Context, row *sharedResult, record PersistedRecord) *PersistDecodeContext {
-	server := CurrentDagqlServer(ctx)
-	if server == nil {
-		server = row.partGate.server.Load()
-	}
-	return NewPersistDecodeContext(server, uint64(row.id), record.Call).WithSnapshotRoles(record.SnapshotLinks)
+	return NewPersistDecodeContext(CurrentDagqlServer(ctx), uint64(row.id), record.Call).WithSnapshotRoles(record.SnapshotLinks)
 }
 func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if _, ok := UnwrapAs[HasPartHost](res); !ok {

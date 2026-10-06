@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
@@ -968,6 +969,8 @@ func runGitEnv(ctx context.Context, dir string, args ...string) (_ string, rerr 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
 	if err := cmd.Run(); err != nil {
 		return stdout.String(), fmt.Errorf("git %v: %w: %s", args, err, strings.TrimSpace(stderr.String()+stdout.String()))
 	}

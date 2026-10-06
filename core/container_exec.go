@@ -63,6 +63,11 @@ type ContainerExecOpts struct {
 	// Redirect the command's standard error to a file in the container
 	RedirectStderr string `default:""`
 
+	// Also log streams redirected with RedirectStdout/RedirectStderr, as API
+	// views before v1.0.0 did. Not an API argument: withExec sets it from the
+	// caller's view.
+	LogRedirectedOutput bool `name:"-"`
+
 	// Exit codes this exec is allowed to exit with
 	Expect ReturnTypes `default:"SUCCESS"`
 
@@ -360,6 +365,7 @@ func (container *Container) execMeta(
 	execMD.RedirectStdinPath = opts.RedirectStdin
 	execMD.RedirectStdoutPath = opts.RedirectStdout
 	execMD.RedirectStderrPath = opts.RedirectStderr
+	execMD.LogRedirectedOutput = opts.LogRedirectedOutput
 	execMD.SystemEnvNames = container.SystemEnvNames
 	execMD.EnabledGPUs = container.EnabledGPUs
 	if opts.NoInit {
@@ -2123,50 +2129,13 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 					if mountRef == nil {
 						continue
 					}
-					switch {
-					case ctrMount.DirectorySource != nil && !ctrMount.Readonly:
-						inputDir, ok := ctrMount.DirectorySource.Peek()
-						if !ok || inputDir == nil {
-							continue
-						}
-						dirPath, _ := inputDir.Dir.Peek()
-						outputDir := &Directory{
-							Platform: inputDir.Platform,
-							Services: slices.Clone(inputDir.Services),
-							Dir:      new(LazyAccessor[string, *Directory]),
-							Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
-						}
-						outputDir.SetPath(dirPath)
-						outputDir.SetSnapshot(mountRef)
-						untrackResolvedRef(mountRef)
-						if ctrMount.DirectorySource == nil {
-							ctrMount.DirectorySource = new(LazyAccessor[*Directory, *Container])
-						}
-						ctrMount.DirectorySource.setValue(outputDir)
-						terminalContainer.Mounts[i] = ctrMount
-						terminalContainerNeedsRelease = true
-					case ctrMount.FileSource != nil && !ctrMount.Readonly:
-						inputFile, ok := ctrMount.FileSource.Peek()
-						if !ok || inputFile == nil {
-							continue
-						}
-						filePath, _ := inputFile.File.Peek()
-						outputFile := &File{
-							Platform: inputFile.Platform,
-							Services: slices.Clone(inputFile.Services),
-							File:     new(LazyAccessor[string, *File]),
-							Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
-						}
-						outputFile.SetPath(filePath)
-						outputFile.SetSnapshot(mountRef)
-						untrackResolvedRef(mountRef)
-						if ctrMount.FileSource == nil {
-							ctrMount.FileSource = new(LazyAccessor[*File, *Container])
-						}
-						ctrMount.FileSource.setValue(outputFile)
-						terminalContainer.Mounts[i] = ctrMount
-						terminalContainerNeedsRelease = true
+					terminalMount, ok := terminalFailureMount(terminalContainer.Mounts[i], ctrMount, mountRef)
+					if !ok {
+						continue
 					}
+					untrackResolvedRef(mountRef)
+					terminalContainer.Mounts[i] = terminalMount
+					terminalContainerNeedsRelease = true
 				}
 				srv, err := CurrentDagqlServer(ctx)
 				if err != nil {
@@ -2367,6 +2336,55 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 		}
 		return nil
 	})
+}
+
+// terminalFailureMount returns the terminal container's mount for a writable
+// input mount, showing the failed exec's output in place of the input.
+//
+// It always installs a new accessor on the terminal's own mount. The input
+// mount's accessors belong to the exec's parent container (see
+// execInputMounts), which is a cached result: writing the output through them
+// would point that cached container at a snapshot only the failed operation
+// holds, so once it is collected the next exec from the cached container finds
+// its mount gone, and until then it silently mounts the failed output.
+func terminalFailureMount(terminalMount, inputMount ContainerMount, outputRef bkcache.ImmutableRef) (ContainerMount, bool) {
+	switch {
+	case inputMount.DirectorySource != nil && !inputMount.Readonly:
+		inputDir, ok := inputMount.DirectorySource.Peek()
+		if !ok || inputDir == nil {
+			return terminalMount, false
+		}
+		dirPath, _ := inputDir.Dir.Peek()
+		outputDir := &Directory{
+			Platform: inputDir.Platform,
+			Services: slices.Clone(inputDir.Services),
+			Dir:      new(LazyAccessor[string, *Directory]),
+			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+		}
+		outputDir.SetPath(dirPath)
+		outputDir.SetSnapshot(outputRef)
+		terminalMount.DirectorySource = new(LazyAccessor[*Directory, *Container])
+		terminalMount.DirectorySource.setValue(outputDir)
+		return terminalMount, true
+	case inputMount.FileSource != nil && !inputMount.Readonly:
+		inputFile, ok := inputMount.FileSource.Peek()
+		if !ok || inputFile == nil {
+			return terminalMount, false
+		}
+		filePath, _ := inputFile.File.Peek()
+		outputFile := &File{
+			Platform: inputFile.Platform,
+			Services: slices.Clone(inputFile.Services),
+			File:     new(LazyAccessor[string, *File]),
+			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+		}
+		outputFile.SetPath(filePath)
+		outputFile.SetSnapshot(outputRef)
+		terminalMount.FileSource = new(LazyAccessor[*File, *Container])
+		terminalMount.FileSource.setValue(outputFile)
+		return terminalMount, true
+	}
+	return terminalMount, false
 }
 
 // execInputMounts pairs this container's settled mount list shape with

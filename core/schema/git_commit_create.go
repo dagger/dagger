@@ -71,6 +71,22 @@ func (s *gitSchema) gitRefWithCommit(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return inst, err
 	}
+	var repo dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(ctx, parent, &repo, dagql.Selector{Field: "__withCommitRepository", Args: args.selectors()}); err != nil {
+		return inst, err
+	}
+	err = srv.Select(ctx, repo, &inst, dagql.Selector{Field: "head"})
+	return inst, err
+}
+
+// Keep the parent relationship in a private, replayable repository recipe. A
+// source-only checkout can then reuse the parent's canonical materialization;
+// public withContents must not infer provenance from arbitrary supplied storage.
+func (s *gitSchema) gitRefWithCommitRepository(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args gitRefWithCommitArgs) (inst dagql.ObjectResult[*core.GitRepository], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
 	var dir dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, parent, &dir, dagql.Selector{Field: "__withCommitDirectory", Args: args.selectors()}); err != nil {
 		return inst, err
@@ -79,8 +95,26 @@ func (s *gitSchema) gitRefWithCommit(ctx context.Context, parent dagql.ObjectRes
 	if err != nil {
 		return inst, err
 	}
-	err = srv.Select(ctx, repo, &inst, dagql.Selector{Field: "head"})
-	return inst, err
+	if _, local := parent.Self().Backend.(*core.LocalGitRef); !local {
+		// Reusing a remote parent after cache eviction could fetch it again,
+		// despite the new repository already owning all required objects.
+		return repo, nil
+	}
+	remote, err := repo.Self().LoadRemote(ctx)
+	if err != nil {
+		return inst, err
+	}
+	head, err := remote.Lookup("HEAD")
+	if err != nil {
+		return inst, fmt.Errorf("resolve committed repository HEAD: %w", err)
+	}
+	backend := &core.LocalGitRepository{
+		Directory: dir,
+		CheckoutBase: &core.GitCheckoutBase{
+			Parent: parent, CommitSHA: head.SHA,
+		},
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo.Self().CloneWithBackend(backend))
 }
 
 // This private field gives the materialized Git storage an identity that can be
@@ -98,41 +132,11 @@ func (s *gitSchema) gitRefWithCommitDirectory(ctx context.Context, parent dagql.
 	if err != nil {
 		return inst, err
 	}
-	var tree dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parent, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.NewBoolean(true)}}}); err != nil {
-		return inst, err
-	}
-	beforeID, err := changes.Self().Before.ID()
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
 	}
-	var ours dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, tree, &ours, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}}}); err != nil {
-		return inst, err
-	}
-	var merged dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, ours, &merged, dagql.Selector{Field: "withChangeset", Args: []dagql.NamedInput{
-		{Name: "changes", Value: args.Changes}, {Name: "onConflict", Value: core.FailOnMergeConflict},
-	}}); err != nil {
-		return inst, fmt.Errorf("apply commit changes: %w", err)
-	}
-	treeID, err := tree.ID()
-	if err != nil {
-		return inst, err
-	}
-	var applied dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, merged.Self().After, &applied, dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](treeID)}}}); err != nil {
-		return inst, err
-	}
-	var ws dagql.ObjectResult[*core.Workspace]
-	if err := srv.Select(ctx, parent, &ws, dagql.Selector{Field: "asWorkspace"}); err != nil {
-		return inst, err
-	}
-	base, err := workspaceGitCheckout(ctx, srv, ws)
-	if err != nil {
-		return inst, err
-	}
-	dir, err := core.GitCommitChangeset(ctx, base, applied.Self(), opts)
+	dir, err := evaluatedDirectory(ctx, query, &core.DirectoryGitCommitLazy{LazyState: core.NewLazyState(), Parent: parent, Changes: changes, Opts: opts})
 	if err != nil {
 		return inst, err
 	}

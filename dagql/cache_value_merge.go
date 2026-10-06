@@ -17,11 +17,14 @@ import (
 // cloudCacheID.
 //
 // It derives each record's recipe outside the graph lock, in a private cache
-// with provisional numbers, as an import did. Then, in one hold of egraphMu,
-// it picks every record's target and decides it, relocates the records to the
-// final numbers and runs every check that can fail, and only then changes the
-// cache. An entry whose dependency attachment is still open is waited on
-// first, and the decision starts again: that is the only restart.
+// with provisional numbers, as an import did. An engine prepares a record its
+// cache already holds a value for from its call and offers only, since merge
+// keeps that value. Then, in one hold of egraphMu, it picks every record's
+// target and decides it, relocates the records to the final numbers and runs
+// every check that can fail, and only then changes the cache. The decision
+// starts again in two cases: an entry whose dependency attachment is still
+// open is waited on first, and a decision that installs a record prepared from
+// its call and offers only prepares the bundle in full first.
 //
 // For each record, by its recipe's current entry:
 //   - none: a new entry stores the record;
@@ -58,7 +61,7 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 		return MergeReply{}, err
 	}
 	defer op.finish(false)
-	prep, err := c.prepareValueMerge(ctx, input)
+	prep, err := c.prepareValueMerge(ctx, input, true)
 	if err != nil {
 		return MergeReply{}, err
 	}
@@ -85,6 +88,13 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 			continue
 		}
 		commit, err := c.planValueMergeLocked(ctx, from, prep)
+		if errors.Is(err, errMergeNeedsFullPrep) {
+			c.egraphMu.Unlock()
+			if prep, err = c.prepareValueMerge(ctx, input, false); err != nil {
+				return MergeReply{}, err
+			}
+			continue
+		}
 		if err != nil {
 			c.egraphMu.Unlock()
 			return MergeReply{}, err
@@ -171,41 +181,67 @@ type valueMergePrep struct {
 	index   map[uint64]*TransferredValue
 	firstID uint64
 	plans   map[uint64]transferIdentityPlan
-	// records are the bundle's records at their provisional numbers, as
-	// validated, by ordinal, and refs the provisional numbers each one
-	// references, itself included.
+	// records are the bundle's records at their provisional numbers, by
+	// ordinal, and refs the provisional numbers each one references, itself
+	// included. A light record is relocated in its call and offers only, and
+	// has no refs.
 	records map[uint64]PersistedRecord
 	refs    map[uint64][]uint64
-	// completeParts are the part keys each record proves complete, by
-	// ordinal. A part key is an address and its completeness, which the
-	// record's payload decides; relocation rewrites only reference numbers,
-	// never to or from zero, so the keys read at provisional numbers are the
-	// ones at the final numbers.
+	// recordBytes are, on a blob-backed cache only, each record's size as
+	// persistence writes it, by ordinal (encodedRecordBytes), measured once
+	// the record is prepared with its payload: relocation changes only
+	// reference numbers.
+	recordBytes map[uint64]int64
+	// completeParts are the part keys each record but a light one proves
+	// complete, by ordinal. A part key is an address and its completeness,
+	// which the record's payload decides; relocation rewrites only reference
+	// numbers, never to or from zero, so the keys read at provisional numbers
+	// are the ones at the final numbers.
 	completeParts map[uint64][]string
+	// light are the records prepared from their call and offers only: the
+	// cache held a value for their recipe that merge keeps.
+	light map[uint64]bool
 }
+
+// errMergeNeedsFullPrep is planValueMergeLocked's answer when it installs a
+// light record: the merge prepares the bundle in full and decides again.
+var errMergeNeedsFullPrep = errors.New("merge values: a light record is installed")
 
 // prepareValueMerge validates the bundle and derives each record's identity.
 // On an engine, the bundle's outputs with chains become offers embedded in
 // their records; the Cloud drops the bundle's parts, since the upload decides
 // what it stores.
-func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valueMergePrep, error) {
-	raw, err := json.Marshal(input)
+//
+// A record's identity comes from its call. With skipKept, on an engine, a
+// record whose recipe's current entry holds a value merge would keep, as the
+// cache stands, is prepared light: from its call and offers only, since merge
+// doesn't install it. Its payload is neither validated by its codec nor
+// relocated; its shape, its call's references and its offers' are checked
+// (validateTransferRecordShape).
+func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKept bool) (*valueMergePrep, error) {
+	bundle, err := cloneValueBundle(input)
 	if err != nil {
 		return nil, err
 	}
-	var bundle ValueBundle
-	if err := json.Unmarshal(raw, &bundle); err != nil {
-		return nil, err
-	}
-	if _, err := validateValueBundle(bundle); err != nil {
+	// The bundle is validated once, before its outputs become offers: each
+	// output with a chain is checked as the offer it becomes, against the
+	// same slots, and the ownership walk takes its owner's dependencies in
+	// the same order. Each payload merge uses is validated below.
+	order, err := validateValueBundleShape(bundle)
+	if err != nil {
 		return nil, err
 	}
 	c.embedMergedParts(&bundle)
-	order, err := validateValueBundle(bundle)
-	if err != nil {
-		return nil, err
+	var recordBytes map[uint64]int64
+	if c.blobBacked {
+		// Dropping the parts drops their owners' edges, so the roots'
+		// closure is checked again without them.
+		if order, err = validateValueBundleShape(bundle); err != nil {
+			return nil, err
+		}
+		recordBytes = map[uint64]int64{}
 	}
-	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, completeParts: map[uint64][]string{}}
+	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}}
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
 		prep.index[uint64(row.Ordinal)] = row
@@ -229,38 +265,36 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valu
 		ref.ResultID = prep.firstID + ref.ResultID - 1
 		return nil
 	}
+	// Every record is first relocated in its call and offers, which is all
+	// its identity and the bundle's ownership graph read. Relocation maps
+	// ordinals one to one onto nonzero numbers, so what the validation
+	// checked at ordinals holds at provisional numbers: neither the records
+	// nor the private cache's ownership are checked again.
 	private := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
 	for _, id := range order {
 		row := prep.index[id]
-		var refs []uint64
-		rec, err := VisitEncodedReferences(row.Record, func(ref *PersistedRef) error {
-			if err := relocate(ref); err != nil {
-				return err
-			}
-			if ref.RecipeID == nil && ref.ResultID != 0 {
-				refs = append(refs, ref.ResultID)
-			}
-			return nil
-		})
+		rec := row.Record
+		rec.ResultID = prep.firstID + id - 1
+		rec.Envelope.ResultID = rec.ResultID
+		rec.Envelope.Imported = true
+		rec.Call = rec.Call.clone()
+		if err := visitResultCallReferences(rec.Call, nil, relocate); err != nil {
+			return nil, err
+		}
+		offers, err := clonePartOffers(rec.Envelope.PendingOffers)
 		if err != nil {
 			return nil, err
 		}
-		slices.Sort(refs)
-		prep.refs[id] = slices.Compact(refs)
-		rec.Envelope.Imported = true
-		deps := make(map[sharedResultID]struct{}, len(row.DependencyIDs))
-		relocatedDeps := make([]uint64, 0, len(row.DependencyIDs))
-		for _, dep := range row.DependencyIDs {
-			if _, ok := deps[sharedResultID(prep.firstID+dep-1)]; ok {
-				continue
+		for i := range offers {
+			if err := visitPersistedPartOffer(&offers[i], nil, relocate); err != nil {
+				return nil, err
 			}
+		}
+		rec.Envelope.PendingOffers = offers
+		deps := make(map[sharedResultID]struct{}, len(row.DependencyIDs))
+		for _, dep := range row.DependencyIDs {
 			deps[sharedResultID(prep.firstID+dep-1)] = struct{}{}
-			relocatedDeps = append(relocatedDeps, prep.firstID+dep-1)
 		}
-		if err := validateTransferRecord(rec, relocatedDeps); err != nil {
-			return nil, err
-		}
-		prep.completeParts[id] = recordCompletePartKeys(rec)
 		prep.records[id] = rec
 		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle}
 		res.storeResultCall(rec.Call)
@@ -269,10 +303,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valu
 			// the cache.
 			res.noteCloudCopyLocked(row.SenderNumber, true, row.ExpiresAtUnix)
 		}
-		private.resultsByID[res.id] = res
-	}
-	if err := private.validateStoredOwnershipLocked(); err != nil {
-		return nil, err
+		private.putResultLocked(res)
 	}
 	for _, res := range private.resultsByID {
 		if err := walkTransferCalls(res.loadResultCall(), func(*ResultCall) error { return nil }, func(ref *ResultCallRef) error {
@@ -304,7 +335,80 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle) (*valu
 			}
 		}
 	}
+
+	if skipKept && !c.blobBacked {
+		prep.light = c.keptMergeRecords(prep)
+	}
+	// Every other record is prepared with its payload.
+	for _, id := range order {
+		if !prep.light[id] {
+			if err := prep.prepareRecordPayload(id, relocate); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return prep, nil
+}
+
+// prepareRecordPayload validates the record of ordinal id with its payload,
+// and relocates it in full to its provisional numbers with relocate.
+func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocate PersistedRefVisitor) error {
+	row := prep.index[id]
+	if err := validateTransferRecord(row.Record, row.DependencyIDs); err != nil {
+		return fmt.Errorf("row %d: %w", id, err)
+	}
+	if _, err := mapTransferredOutputs(row.Record); err != nil {
+		return err
+	}
+	var refs []uint64
+	rec, err := VisitEncodedReferences(row.Record, func(ref *PersistedRef) error {
+		if err := relocate(ref); err != nil {
+			return err
+		}
+		if ref.RecipeID == nil && ref.ResultID != 0 {
+			refs = append(refs, ref.ResultID)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	slices.Sort(refs)
+	prep.refs[id] = slices.Compact(refs)
+	rec.Envelope.Imported = true
+	// The record shares its call with the private cache's entry, whose
+	// identity merge applies.
+	rec.Call = prep.records[id].Call
+	prep.completeParts[id] = recordCompletePartKeys(rec)
+	prep.records[id] = rec
+	// A blob-backed cache prepares every record so: skipKept applies to an
+	// engine only.
+	if prep.recordBytes != nil {
+		prep.recordBytes[id] = encodedRecordBytes(rec)
+	}
+	return nil
+}
+
+// keptMergeRecords returns the records merge would keep, deciding now
+// (decideMergeRowLocked): their recipe's current entry has a value, and
+// either it hasn't expired or the record has. A wrong guess costs no
+// correctness: planValueMergeLocked refuses to install a light record.
+func (c *Cache) keptMergeRecords(prep *valueMergePrep) map[uint64]bool {
+	kept := map[uint64]bool{}
+	now := time.Now().Unix()
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	for _, id := range prep.order {
+		cur := c.currentEntryForRecipeLocked(prep.plans[id].recipe)
+		if cur == nil || cur.noValueLocked() {
+			continue
+		}
+		expiry := prep.index[id].ExpiresAtUnix
+		if !c.resultExpiredAtLocked(cur, now) || expiry != 0 && expiry <= now {
+			kept[id] = true
+		}
+	}
+	return kept
 }
 
 // embedMergedParts prepares the bundle's parts for the cache. On an engine,
@@ -329,6 +433,37 @@ func (c *Cache) embedMergedParts(bundle *ValueBundle) {
 		}
 	}
 	bundle.Outputs = nil
+}
+
+// cloneValueBundle copies a bundle for merge to change, leaving the input
+// untouched, without encoding its payloads: each record field by field, and
+// the outputs, which carry no payload, by a JSON round trip.
+func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
+	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots)}
+	if in.Values != nil {
+		out.Values = make([]TransferredValue, len(in.Values))
+	}
+	for i, value := range in.Values {
+		env, err := clonePersistedEnvelope(value.Record.Envelope)
+		if err != nil {
+			return ValueBundle{}, err
+		}
+		value.Record.Envelope = env
+		value.Record.Call = value.Record.Call.clone()
+		value.Record.SnapshotLinks = cloneSnapshotRefLinks(value.Record.SnapshotLinks)
+		value.DependencyIDs = slices.Clone(value.DependencyIDs)
+		out.Values[i] = value
+	}
+	if in.Outputs != nil {
+		raw, err := json.Marshal(in.Outputs)
+		if err != nil {
+			return ValueBundle{}, err
+		}
+		if err := json.Unmarshal(raw, &out.Outputs); err != nil {
+			return ValueBundle{}, err
+		}
+	}
+	return out, nil
 }
 
 // transferIdentityPlanOf derives the identity of res, a record in the private
@@ -434,6 +569,8 @@ type mergeRow struct {
 	// action that installs it.
 	rec  PersistedRecord
 	deps []sharedResultID
+	// recordBytes is rec's size, on a blob-backed cache.
+	recordBytes int64
 	// offers are the record's incoming offers, and admitted those this row's
 	// selection admitted, in commit order: a later row can still supersede
 	// one for the same part. The final set per entry and part key is
@@ -531,6 +668,12 @@ func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *va
 		row.action, row.target, row.res = mergeKeep, b.res, b.res
 		row.keptExpired = b.keptExpired || b.action.installs() && b.expired
 	}
+	// Everything after the decisions reads the payloads and parts of the
+	// records merge installs, which a light record doesn't have: the cache
+	// changed since the preparation.
+	if commit.installsLight() {
+		return nil, errMergeNeedsFullPrep
+	}
 	commit.byNumber = make(map[sharedResultID]*sharedResult, len(commit.rows))
 	commit.installed = map[*sharedResult]*mergeRow{}
 	for _, row := range commit.rows {
@@ -550,6 +693,16 @@ func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *va
 		return nil, err
 	}
 	return commit, nil
+}
+
+// installsLight reports whether the commit installs a light record.
+func (commit *valueMergeCommit) installsLight() bool {
+	for _, row := range commit.rows {
+		if row.action.installs() && commit.prep.light[row.ordinal] {
+			return true
+		}
+	}
+	return false
 }
 
 // decideMergeRowLocked decides a record whose recipe no earlier record of the
@@ -658,17 +811,17 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 				row.deps = append(row.deps, n)
 			}
 		}
-		// The preparation validated the record at its provisional numbers,
-		// which are one to one with ordinals (validateTransferRecord).
-		// Relocation maps each ordinal to one nonzero number and applies
-		// that map to references and dependencies alike, and it lists each
-		// dependency once as it maps them (seen, above), though two records
-		// of one recipe map to one entry. So every child or call reference
-		// is still a direct dependency, none is zero and none is listed
-		// twice: the payload's checks aren't repeated here. The offers,
-		// every row's, are checked at the final numbers with the graph
-		// (checkMergeGraphLocked).
+		// The preparation validated the record at its ordinals
+		// (validateTransferRecord). Relocation maps each ordinal to one
+		// nonzero number and applies that map to references and
+		// dependencies alike, and it lists each dependency once as it maps
+		// them (seen, above), though two records of one recipe map to one
+		// entry. So every child or call reference is still a direct
+		// dependency, none is zero and none is listed twice: the payload's
+		// checks aren't repeated here. The offers, every row's, are checked
+		// at the final numbers with the graph (checkMergeGraphLocked).
 		row.rec = rec
+		row.recordBytes = prep.recordBytes[row.ordinal]
 		if !c.blobBacked {
 			row.offers = rec.Envelope.PendingOffers
 		}
@@ -848,7 +1001,7 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			fallthrough
 		case mergeCreate:
 			c.installMergedRecordLocked(row.res, row)
-			c.resultsByID[row.res.id] = row.res
+			c.putResultLocked(row.res)
 			row.res.onRelease = c.resultSnapshotLeaseCleanup(row.res)
 			c.indexRecipeLocked(row.plan.recipe, row.res)
 			created = append(created, row.res)
@@ -1002,6 +1155,7 @@ type mergeReplacement struct {
 func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow) {
 	rec := row.rec
 	res.imported = true
+	res.storedRecordBytes = row.recordBytes
 	res.expiresAtUnix = row.value.ExpiresAtUnix
 	res.sessionResourceHandle = rec.Envelope.SessionResourceHandle
 	res.description = row.plan.row.description
@@ -1013,10 +1167,15 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow) {
 	res.self = nil
 	res.persistedEnvelope = &rec.Envelope
 	res.payloadRevision++
+	c.setResultPayloadBytesLocked(res, persistedEnvelopePayloadBytes(&rec.Envelope))
 	if res.createdAtUnixNano == 0 {
 		res.createdAtUnixNano = time.Now().UnixNano()
 	}
 	res.payloadMu.Unlock()
+	if c.blobBacked {
+		// On the Cloud, an export that stores a value uses it.
+		touchSharedResultLastUsed(res, time.Now().UnixNano())
+	}
 	res.transferRevision++
 }
 
@@ -1204,7 +1363,7 @@ func recordCompletePartKeys(record PersistedRecord) []string {
 // capture still describes the value, and those its part gate has settled.
 func completePartKeysLocked(res *sharedResult) []string {
 	keys := res.settledPartKeys()
-	if cached := res.completeParts.Load(); cached != nil && cached.version.check(res) == nil {
+	if cached := res.completeParts.Load(); cached != nil && cached.stamp.current(res) {
 		keys = append(keys, cached.keys...)
 	}
 	slices.Sort(keys)
@@ -1219,11 +1378,13 @@ func completePartKeysLocked(res *sharedResult) []string {
 // egraphMu for writing.
 func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, queue collectionQueue) collectionQueue {
 	if c.blobBacked {
+		res.storedRecordBytes = 0
 		res.payloadMu.Lock()
 		res.persistedEnvelope = nil
 		res.hasValue = false
 		res.payloadRevision++
 		res.payloadMu.Unlock()
+		c.setResultPayloadBytesLocked(res, 0)
 		return queue
 	}
 	c.unindexRecipesLocked(res)

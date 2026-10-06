@@ -71,7 +71,9 @@ func runServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.Artifa
 	defer telemetry.EndWithCause(zoomSpan, &rerr)
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
-	results, err := evaluateArtifacts(ctx, dag, upGroup, false)
+	// Services hold their slot until they stop, so a limit would leave queued
+	// services waiting forever.
+	results, err := evaluateArtifacts(ctx, dag, upGroup, false, 0)
 	if err != nil {
 		return err
 	}

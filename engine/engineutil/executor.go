@@ -63,6 +63,13 @@ type ExecutionMetadata struct {
 	RedirectStdinPath  string
 	RedirectStdoutPath string
 	RedirectStderrPath string
+	// LogRedirectedOutput keeps redirected stdout/stderr in the exec's logs
+	// too, for API views before v1.0.0. By default a redirected stream goes
+	// only to its file.
+	//
+	// json:"-" like ProfArgs below: core derives it from the exec's opts on
+	// every run, so it must not perturb an exec cache key.
+	LogRedirectedOutput bool `json:"-"`
 
 	SecretEnvNames  []string
 	SecretFilePaths []string

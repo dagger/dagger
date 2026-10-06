@@ -112,7 +112,7 @@ pub struct LlmContentBlockInput {
     pub arguments: Json,
     pub call_id: String,
     pub content: Vec<LlmContentBlockInput>,
-    pub data: String,
+    pub data: Bytes,
     pub errored: bool,
     pub file: Id,
     pub kind: LlmContentBlockKind,
@@ -337,6 +337,13 @@ pub struct Address {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct AddressContainerOpts {
+    /// Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+    /// A DAG address is unaffected: its module evaluates as usual.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct AddressDirectoryOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
@@ -346,6 +353,10 @@ pub struct AddressDirectoryOpts<'a> {
     pub include: Option<Vec<&'a str>>,
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
+    /// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+    /// A DAG address is unaffected: its module evaluates as usual.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct AddressFileOpts<'a> {
@@ -357,6 +368,17 @@ pub struct AddressFileOpts<'a> {
     pub include: Option<Vec<&'a str>>,
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
+    /// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+    /// A DAG address is unaffected: its module evaluates as usual.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct AddressGitRefOpts {
+    /// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+    /// A DAG address is unaffected: its module evaluates as usual.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
 }
 impl IntoID<Id> for Address {
     fn into_id(
@@ -393,8 +415,28 @@ impl Address {
         query.execute(self.graphql_client.clone()).await
     }
     /// Load a container from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn container(&self) -> Container {
         let query = self.selection.select("container");
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a container from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn container_opts(&self, opts: AddressContainerOpts) -> Container {
+        let mut query = self.selection.select("container");
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -432,6 +474,9 @@ impl Address {
         }
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
+        }
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
         }
         Directory {
             proc: self.proc.clone(),
@@ -471,6 +516,9 @@ impl Address {
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
         }
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
         File {
             proc: self.proc.clone(),
             selection: query,
@@ -478,8 +526,28 @@ impl Address {
         }
     }
     /// Load a git ref (branch, tag or commit) from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn git_ref(&self) -> GitRef {
         let query = self.selection.select("gitRef");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a git ref (branch, tag or commit) from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn git_ref_opts(&self, opts: AddressGitRefOpts) -> GitRef {
+        let mut query = self.selection.select("gitRef");
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
         GitRef {
             proc: self.proc.clone(),
             selection: query,
@@ -1014,7 +1082,7 @@ pub struct Artifact {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactUriOpts {
-    /// Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address.
+    /// Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address.
     #[builder(setter(into, strip_option), default)]
     pub absolute: Option<bool>,
     /// Include the dimension keys as a query. Without them, the address is a path selector.
@@ -1473,6 +1541,9 @@ pub struct ArtifactsValuesOpts {
     /// Cancel remaining work after the first failure.
     #[builder(setter(into, strip_option), default)]
     pub fail_fast: Option<bool>,
+    /// Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
+    #[builder(setter(into, strip_option), default)]
+    pub max_concurrency: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactsFilterDirectivesOpts {
@@ -1719,6 +1790,9 @@ impl Artifacts {
         }
         if let Some(arguments) = opts.arguments {
             query = query.arg("arguments", arguments);
+        }
+        if let Some(max_concurrency) = opts.max_concurrency {
+            query = query.arg("maxConcurrency", max_concurrency);
         }
         let query = query.select("id");
         let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
@@ -2889,6 +2963,9 @@ pub struct ContainerFromOpts<'a> {
     /// Allow HTTPS registry communication without verifying the server certificate.
     #[builder(setter(into, strip_option), default)]
     pub insecure_skip_tls_verify: Option<bool>,
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
     /// Protocol to use for registry communication.
     /// Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
     #[builder(setter(into, strip_option), default)]
@@ -3205,13 +3282,13 @@ pub struct ContainerWithExecOpts<'a> {
     /// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
-    /// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+    /// Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stderr: Option<&'a str>,
     /// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdin: Option<&'a str>,
-    /// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+    /// Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
     /// Content to write to the command's standard input. Example: "Hello world")
@@ -3548,6 +3625,9 @@ impl Container {
         }
         if let Some(insecure_skip_tls_verify) = opts.insecure_skip_tls_verify {
             query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
+        }
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
         }
         Container {
             proc: self.proc.clone(),
@@ -10993,7 +11073,34 @@ pub struct GitRepository {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryHeadOpts {
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryRefOpts {
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryBranchOpts {
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryTagOpts {
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryLatestOpts<'a> {
+    /// Ignore the workspace lockfile for this lookup.
+    #[builder(setter(into, strip_option), default)]
+    pub no_lock: Option<bool>,
     /// Version query used to select the greatest matching release ref.
     #[builder(setter(into, strip_option), default)]
     pub version: Option<&'a str>,
@@ -11064,8 +11171,28 @@ impl GitRepository {
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns details for HEAD.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn head(&self) -> GitRef {
         let query = self.selection.select("head");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns details for HEAD.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn head_opts(&self, opts: GitRepositoryHeadOpts) -> GitRef {
+        let mut query = self.selection.select("head");
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
         GitRef {
             proc: self.proc.clone(),
             selection: query,
@@ -11081,8 +11208,46 @@ impl GitRepository {
     /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
     ///
     /// The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn r#ref(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("ref");
+        query = query.arg("name", name.into());
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns details of a ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+    ///
+    /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
+    ///
+    /// The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn r#ref_opts(&self, name: impl Into<String>, opts: GitRepositoryRefOpts) -> GitRef {
+        let mut query = self.selection.select("ref");
+        query = query.arg("name", name.into());
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns details of a branch.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Branch's name (e.g., "main").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn branch(&self, name: impl Into<String>) -> GitRef {
+        let mut query = self.selection.select("branch");
         query = query.arg("name", name.into());
         GitRef {
             proc: self.proc.clone(),
@@ -11095,8 +11260,27 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `name` - Branch's name (e.g., "main").
-    pub fn branch(&self, name: impl Into<String>) -> GitRef {
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn branch_opts(&self, name: impl Into<String>, opts: GitRepositoryBranchOpts) -> GitRef {
         let mut query = self.selection.select("branch");
+        query = query.arg("name", name.into());
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns details of a tag.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Tag's name (e.g., "v0.3.9").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn tag(&self, name: impl Into<String>) -> GitRef {
+        let mut query = self.selection.select("tag");
         query = query.arg("name", name.into());
         GitRef {
             proc: self.proc.clone(),
@@ -11109,9 +11293,13 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `name` - Tag's name (e.g., "v0.3.9").
-    pub fn tag(&self, name: impl Into<String>) -> GitRef {
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn tag_opts(&self, name: impl Into<String>, opts: GitRepositoryTagOpts) -> GitRef {
         let mut query = self.selection.select("tag");
         query = query.arg("name", name.into());
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
+        }
         GitRef {
             proc: self.proc.clone(),
             selection: query,
@@ -11135,7 +11323,7 @@ impl GitRepository {
         }
     }
     /// Return the latest stable release tag, falling back to HEAD when no release exists.
-    /// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+    /// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned unless noLock is enabled.
     ///
     /// # Arguments
     ///
@@ -11149,7 +11337,7 @@ impl GitRepository {
         }
     }
     /// Return the latest stable release tag, falling back to HEAD when no release exists.
-    /// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+    /// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned unless noLock is enabled.
     ///
     /// # Arguments
     ///
@@ -11158,6 +11346,9 @@ impl GitRepository {
         let mut query = self.selection.select("latest");
         if let Some(version) = opts.version {
             query = query.arg("version", version);
+        }
+        if let Some(no_lock) = opts.no_lock {
+            query = query.arg("noLock", no_lock);
         }
         GitRef {
             proc: self.proc.clone(),
@@ -12236,6 +12427,12 @@ pub struct Llm {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct LlmArtifactsOpts<'a> {
+    /// Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct LlmWithModelOpts<'a> {
     /// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
     #[builder(setter(into, strip_option), default)]
@@ -12469,6 +12666,41 @@ impl Llm {
     pub fn workspace(&self) -> Workspace {
         let query = self.selection.select("workspace");
         Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Discover every artifact this conversation can address, as one selection, without evaluating their values.
+    /// Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.
+    /// The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.
+    /// Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn artifacts(&self) -> Artifacts {
+        let query = self.selection.select("artifacts");
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Discover every artifact this conversation can address, as one selection, without evaluating their values.
+    /// Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.
+    /// The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.
+    /// Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn artifacts_opts<'a>(&self, opts: LlmArtifactsOpts<'a>) -> Artifacts {
+        let mut query = self.selection.select("artifacts");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        Artifacts {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -13125,6 +13357,152 @@ impl Syncer for Llm {
     }
 }
 #[derive(Clone)]
+pub struct LlmContent {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmContentWithFileOpts<'a> {
+    /// The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub mime_type: Option<&'a str>,
+}
+impl IntoID<Id> for LlmContent {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for LlmContent {
+    fn graphql_type() -> &'static str {
+        "LLMContent"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl LlmContent {
+    /// A unique identifier for this LLMContent.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Append a block of text.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The text.
+    pub fn with_text(&self, text: impl Into<String>) -> LlmContent {
+        let mut query = self.selection.select("withText");
+        query = query.arg("text", text.into());
+        LlmContent {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - The media file. Its contents become the block's inline bytes.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_file(&self, file: impl IntoID<Id>) -> LlmContent {
+        let mut query = self.selection.select("withFile");
+        query = query.arg_lazy(
+            "file",
+            Box::new(move || {
+                let file = file.clone();
+                Box::pin(async move { file.into_id().await.unwrap().quote() })
+            }),
+        );
+        LlmContent {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - The media file. Its contents become the block's inline bytes.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_file_opts<'a>(
+        &self,
+        file: impl IntoID<Id>,
+        opts: LlmContentWithFileOpts<'a>,
+    ) -> LlmContent {
+        let mut query = self.selection.select("withFile");
+        query = query.arg_lazy(
+            "file",
+            Box::new(move || {
+                let file = file.clone();
+                Box::pin(async move { file.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(mime_type) = opts.mime_type {
+            query = query.arg("mimeType", mime_type);
+        }
+        LlmContent {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append image, audio, or PDF bytes as an inline media block. The media kind follows the MIME type.
+    /// Prefer withFile for anything but small payloads: the bytes become part of the content's identity, so they travel with every reference to it.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The media bytes.
+    /// * `mime_type` - The media MIME type, e.g. "image/png".
+    pub fn with_data(&self, data: Bytes, mime_type: impl Into<String>) -> LlmContent {
+        let mut query = self.selection.select("withData");
+        query = query.arg("data", data);
+        query = query.arg("mimeType", mime_type.into());
+        LlmContent {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The ordered text and media blocks.
+    pub async fn blocks(&self) -> Result<Vec<LlmContentBlock>, DaggerError> {
+        let query = self.selection.select("blocks");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| LlmContentBlock {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("LLMContentBlock"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+}
+impl Node for LlmContent {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct LlmContentBlock {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -13194,8 +13572,8 @@ impl LlmContentBlock {
         let query = self.selection.select("mimeType");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
-    pub async fn data(&self) -> Result<String, DaggerError> {
+    /// The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+    pub async fn data(&self) -> Result<Bytes, DaggerError> {
         let query = self.selection.select("data");
         query.execute(self.graphql_client.clone()).await
     }
@@ -15841,6 +16219,16 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Start an empty run of text and media content, independent of any conversation.
+    /// Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+    pub fn llm_content(&self) -> LlmContent {
+        let query = self.selection.select("llmContent");
+        LlmContent {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Initialize a JSON value
     pub fn json(&self) -> JsonValue {
         let query = self.selection.select("json");
@@ -17832,6 +18220,9 @@ pub struct WorkspaceWithUpdatedModulesOpts<'a> {
     /// Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
     #[builder(setter(into, strip_option), default)]
     pub names: Option<Vec<&'a str>>,
+    /// New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
+    #[builder(setter(into, strip_option), default)]
+    pub source: Option<&'a str>,
     /// New version request for exactly one selected module. Cannot be combined with a version suffix.
     #[builder(setter(into, strip_option), default)]
     pub version: Option<&'a str>,
@@ -19356,7 +19747,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with updated module versions and lockfile state.
+    /// Return this workspace with updated module sources, versions and lockfile state.
     /// An SDK client scope is regenerated when it targets an updated module.
     ///
     /// # Arguments
@@ -19370,7 +19761,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with updated module versions and lockfile state.
+    /// Return this workspace with updated module sources, versions and lockfile state.
     /// An SDK client scope is regenerated when it targets an updated module.
     ///
     /// # Arguments
@@ -19386,6 +19777,9 @@ impl Workspace {
         }
         if let Some(version) = opts.version {
             query = query.arg("version", version);
+        }
+        if let Some(source) = opts.source {
+            query = query.arg("source", source);
         }
         Workspace {
             proc: self.proc.clone(),

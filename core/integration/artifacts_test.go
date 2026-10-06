@@ -941,6 +941,12 @@ settings.input = "dag://provider:marker"
 	require.NotContains(t, err.Error(), "artifact")
 	_, err = base.With(daggerQuery(`{ address(value: "dag://provider/marker") { file { contents } } }`)).Stdout(ctx)
 	requireErrOut(t, err, "a DAG address needs a workspace; use Workspace.resolve")
+	// The git decoders must not read a DAG address as a local path on the
+	// caller's host: path cleaning turns "dag://../.." into a traversal.
+	_, err = base.With(daggerQuery(`{ address(value: "dag://../../../../../../..") { gitRepository { head { commit } } } }`)).Stdout(ctx)
+	requireErrOut(t, err, "a DAG address needs a workspace; use Workspace.resolve")
+	_, err = base.With(daggerQuery(`{ address(value: "dag+git-ref://../../../../../../..#main") { gitRef { commit } } }`)).Stdout(ctx)
+	requireErrOut(t, err, "a DAG address needs a workspace; use Workspace.resolve")
 }
 
 func (ArtifactsSuite) TestAliasAndShorthandSetting(ctx context.Context, t *testctx.T) {
@@ -1461,7 +1467,9 @@ func (ArtifactsSuite) TestLazyValueFailures(ctx context.Context, t *testctx.T) {
 
 func (ArtifactsSuite) TestCheckScaleOut(ctx context.Context, t *testctx.T) {
 	sink := newAgentTraceSink(t)
-	c := connect(ctx, t, sink.clientOpts()...)
+	c := connect(ctx, t, append(sink.clientOpts(),
+		dagger.WithEnvironmentVariable("_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT", "60s"),
+	)...)
 	target := devEngineContainerAsService(devEngineContainer(c))
 	source := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithServiceBinding("scaleout-engine", target).

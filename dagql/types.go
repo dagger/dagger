@@ -627,6 +627,12 @@ func (String) Type() *ast.Type {
 
 var _ ScalarType = String("")
 
+var _ CachePayloadSizer = String("")
+
+func (s String) CachePayloadBytes() int64 {
+	return int64(len(s))
+}
+
 func (String) TypeName() string {
 	return "String"
 }

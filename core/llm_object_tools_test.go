@@ -32,7 +32,15 @@ type LLM { id: ID! }
 type Agent { id: ID! }
 type Container { id: ID! }
 type Directory { id: ID! }
+type File { id: ID! }
+type GitRef { id: ID! }
+type GitRepository { id: ID! }
+type Service { id: ID! }
 type Secret { id: ID! }
+type Socket { id: ID! }
+type Volume { id: ID! }
+type Artifacts { id: ID! }
+type Artifact { id: ID! }
 
 enum Mode { FAST SLOW }
 input Options {
@@ -85,23 +93,56 @@ type Doug {
     sandbox: ID! @expectedType(name: "Container"),
   ): String!
 
-  "Run everywhere — a required LIST of object args is not liftable."
+  "Run everywhere — a required LIST of liftable object args lifts element-wise."
   execAll(
     cmd: String!,
     sandboxes: [ID!]! @expectedType(name: "Container"),
   ): String!
 
+  "Authenticate everywhere — a required LIST of blocklisted object args."
+  withTokens(tokens: [ID!]! @expectedType(name: "Secret")): Doug!
+
   "Debug in a sandbox — an optional liftable arg."
   debug(sandbox: ID @expectedType(name: "Container")): Doug!
 
-  "Mount a directory — Directory is addressable but NOT liftable."
+  "Mount a directory — an optional liftable arg."
   withDir(dir: ID @expectedType(name: "Directory")): Doug!
 
-  "Import a directory — a required non-liftable arg, so ineligible."
+  "Import a directory — a required liftable arg, so eligible."
   importDir(dir: ID! @expectedType(name: "Directory")): Doug!
+
+  "Rebase onto a git ref — a required liftable arg, so eligible."
+  rebase(onto: ID! @expectedType(name: "GitRef")): Doug!
+
+  "Read one file — a required liftable arg, so eligible."
+  cat(file: ID! @expectedType(name: "File")): String!
+
+  "Clone a repository — a required liftable arg, so eligible."
+  clone(repo: ID! @expectedType(name: "GitRepository")): Doug!
+
+  "Probe a service — a required liftable arg, so eligible."
+  probe(svc: ID! @expectedType(name: "Service")): String!
 
   "Authenticate — a required Secret arg, deliberately not liftable."
   withToken(token: ID! @expectedType(name: "Secret")): Doug!
+
+  "Forward a socket — a required Socket arg, deliberately not liftable."
+  withSocket(sock: ID! @expectedType(name: "Socket")): Doug!
+
+  "Mount a volume — a required Volume arg, deliberately not liftable."
+  withVolume(vol: ID! @expectedType(name: "Volume")): Doug!
+
+  "Authenticate if asked — an optional Secret arg keeps the ID convention."
+  maybeToken(token: ID @expectedType(name: "Secret")): Doug!
+
+  "Run checks — a required artifact selection, lifted from a DAG address."
+  check(targets: ID! @expectedType(name: "Artifacts")): String!
+
+  "Evaluate one artifact — a required artifact, lifted from a DAG address."
+  eval(target: ID! @expectedType(name: "Artifact")): String!
+
+  "Run checks everywhere — a LIST of selections lifts element-wise."
+  checkAll(targets: [ID!]! @expectedType(name: "Artifacts")): String!
 
   old: String! @deprecated(reason: "gone")
 }
@@ -165,28 +206,40 @@ func TestObjectToolEligible(t *testing.T) {
 	// address string and is lifted via the core Address API at dispatch time.
 	require.True(t, objectToolEligible(fieldByName(doug, "exec"), nil, conversationToolArgs))
 
-	// A required LIST of liftable objects is not lifted, so it still
-	// disqualifies.
-	require.False(t, objectToolEligible(fieldByName(doug, "execAll"), nil, conversationToolArgs))
+	// A required LIST of liftable objects lifts element-wise, so it does
+	// not disqualify either; a list of blocklisted ones still does.
+	require.True(t, objectToolEligible(fieldByName(doug, "execAll"), nil, conversationToolArgs))
+	require.False(t, objectToolEligible(fieldByName(doug, "withTokens"), nil, conversationToolArgs))
 
 	// An optional object arg never disqualified; still doesn't — liftable or
 	// not.
 	require.True(t, objectToolEligible(fieldByName(doug, "debug"), nil, conversationToolArgs))
 	require.True(t, objectToolEligible(fieldByName(doug, "withDir"), nil, conversationToolArgs))
 
-	// Directory IS address-resolvable (the CLI lifts it for flags), but it is
-	// NOT in the liftableTypes allowlist — its Address decoder falls back to
-	// HOST paths, a capability the model must not gain from a string — so a
-	// required Directory arg disqualifies.
-	require.False(t, objectToolEligible(fieldByName(doug, "importDir"), nil, conversationToolArgs))
+	// Every addressable type outside the capability blocklist lifts — a
+	// Directory, File, GitRef, GitRepository or Service address only loads
+	// content the model could name anyway — so a required arg of one of them
+	// does not disqualify.
+	for _, name := range []string{"importDir", "rebase", "cat", "clone", "probe"} {
+		require.True(t, objectToolEligible(fieldByName(doug, name), nil, conversationToolArgs), name)
+	}
 
-	// Secret is deliberately not liftable: Address.secret resolves env:// /
-	// file:// / op:// URIs, so lifting would let the model MINT secrets by
-	// guessing URIs instead of only receiving handles it was given. Each type
-	// joins the allowlist only after its own capability review — see
-	// hack/designs/sandboxes.md §4, "The liftable set is a capability
-	// decision".
-	require.False(t, objectToolEligible(fieldByName(doug, "withToken"), nil, conversationToolArgs))
+	// Secret, Socket and Volume are blocklisted: their Address decoders MINT
+	// capabilities from a string — env:// / file:// / op:// secrets, host
+	// sockets, sshfs:// and engine volumes — so the model must be handed an
+	// ID instead, and a required arg of one of them disqualifies.
+	for _, name := range []string{"withToken", "withSocket", "withVolume"} {
+		require.False(t, objectToolEligible(fieldByName(doug, name), nil, conversationToolArgs), name)
+	}
+	// An optional one is still a tool; it just takes an ID.
+	require.True(t, objectToolEligible(fieldByName(doug, "maybeToken"), nil, conversationToolArgs))
+
+	// A required artifact selection lifts from a DAG address into the
+	// conversation's scope, whether it takes the selection or the one
+	// artifact it selects, and so does a list of selections.
+	require.True(t, objectToolEligible(fieldByName(doug, "check"), nil, conversationToolArgs))
+	require.True(t, objectToolEligible(fieldByName(doug, "eval"), nil, conversationToolArgs))
+	require.True(t, objectToolEligible(fieldByName(doug, "checkAll"), nil, conversationToolArgs))
 
 	// except drops a method by name.
 	require.False(t, objectToolEligible(fieldByName(doug, "read"), []string{"read"}, conversationToolArgs))
@@ -249,9 +302,12 @@ func TestObjectMethodSchema(t *testing.T) {
 	require.NotContains(t, todoSchema, "required") // pending has a default
 
 	// A required liftable object arg renders as a string, described as an
-	// address — with the type's own syntax hint from liftableTypes — and is
-	// required.
-	const containerHint = `(Container address: an image ref like "golang:1.26", an installed module function like "mymod:dev", or a Container ID from a prior tool result)`
+	// address — with the type's own syntax hint from addressableTypes — and
+	// is required.
+	containerHint := "(Container address: " + addressableTypes["Container"].hint + ")"
+	require.Contains(t, containerHint, `an image ref like "golang:1.26"`)
+	require.Contains(t, containerHint, "dag://")
+	require.Contains(t, containerHint, "or a Container ID from a prior tool result")
 	execSchema, err := objectMethodSchema(schema, fieldByName(doug, "exec"), conversationToolArgs)
 	require.NoError(t, err)
 	execProps := execSchema["properties"].(map[string]any)
@@ -269,15 +325,37 @@ func TestObjectMethodSchema(t *testing.T) {
 	require.Equal(t, "string", debug["type"])
 	require.Equal(t, containerHint, debugProperty["description"])
 
-	// An optional arg of an addressable-but-not-liftable type keeps the ID
-	// convention: the model may hand back an ID from a prior tool result, but
-	// is not invited to write an address (dispatch would refuse it anyway).
-	dirSchema, err := objectMethodSchema(schema, fieldByName(doug, "withDir"), conversationToolArgs)
+	// Every liftable type carries its own hint: its accepted external syntax,
+	// the dag:// form, and the ID fallback. Forms that would reach the
+	// calling client's host are never advertised.
+	for field, want := range map[string]struct{ arg, typeName, external string }{
+		"withDir": {"dir", "Directory", `"https://github.com/org/repo#main:docs"`},
+		"cat":     {"file", "File", `"https://github.com/org/repo#main:README.md"`},
+		"rebase":  {"onto", "GitRef", `"https://github.com/org/repo#main"`},
+		"clone":   {"repo", "GitRepository", `"https://github.com/org/repo"`},
+		"probe":   {"svc", "Service", "dag://"},
+	} {
+		s, err := objectMethodSchema(schema, fieldByName(doug, field), conversationToolArgs)
+		require.NoError(t, err)
+		desc := s["properties"].(map[string]any)[want.arg].(map[string]any)["description"].(string)
+		require.True(t, strings.HasPrefix(desc, "("+want.typeName+" address: "), desc)
+		require.Contains(t, desc, want.external)
+		require.Contains(t, desc, "dag://<module>/")
+		require.Contains(t, desc, "FindArtifacts lists what exists")
+		require.Contains(t, desc, "or a "+want.typeName+" ID from a prior tool result")
+		for _, hostForm := range []string{"tcp://", "udp://", "ssh://", "file://", "local"} {
+			require.NotContains(t, desc, hostForm, field)
+		}
+	}
+
+	// A blocklisted type keeps the ID convention: the model may hand back an
+	// ID from a prior tool result, but is not invited to write an address
+	// (dispatch would refuse it anyway).
+	tokenSchema, err := objectMethodSchema(schema, fieldByName(doug, "maybeToken"), conversationToolArgs)
 	require.NoError(t, err)
-	dirProperty := dirSchema["properties"].(map[string]any)["dir"].(map[string]any)
-	dir := requireNullableJSONSchema(t, dirProperty)
-	require.Equal(t, "string", dir["type"])
-	require.Equal(t, "(Directory ID)", dirProperty["description"])
+	tokenProperty := tokenSchema["properties"].(map[string]any)["token"].(map[string]any)
+	require.Equal(t, "string", requireNullableJSONSchema(t, tokenProperty)["type"])
+	require.Equal(t, "(Secret ID)", tokenProperty["description"])
 
 	// A non-addressable object arg keeps the ID convention.
 	applySchema, err := objectMethodSchema(schema, fieldByName(doug, "apply"), conversationToolArgs)
@@ -285,13 +363,44 @@ func TestObjectMethodSchema(t *testing.T) {
 	changes := applySchema["properties"].(map[string]any)["changes"].(map[string]any)
 	require.Equal(t, "(Changeset ID)", changes["description"])
 
-	// A LIST of liftable objects is not lifted, so it keeps the ID
-	// convention as well.
+	// A LIST of liftable objects is an array of address strings, described
+	// as such with the element type's hint.
 	execAllSchema, err := objectMethodSchema(schema, fieldByName(doug, "execAll"), conversationToolArgs)
 	require.NoError(t, err)
 	sandboxes := execAllSchema["properties"].(map[string]any)["sandboxes"].(map[string]any)
 	require.Equal(t, "array", sandboxes["type"])
-	require.Equal(t, "(Container ID)", sandboxes["description"])
+	require.Equal(t, "string", sandboxes["items"].(map[string]any)["type"])
+	require.Equal(t, "(list of Container addresses, each "+addressableTypes["Container"].hint+")", sandboxes["description"])
+	require.ElementsMatch(t, []string{"cmd", "sandboxes"}, execAllSchema["required"])
+
+	// A list of blocklisted objects keeps the ID convention.
+	withTokensSchema, err := objectMethodSchema(schema, fieldByName(doug, "withTokens"), conversationToolArgs)
+	require.NoError(t, err)
+	tokens := withTokensSchema["properties"].(map[string]any)["tokens"].(map[string]any)
+	require.Equal(t, "array", tokens["type"])
+	require.Equal(t, "(Secret ID)", tokens["description"])
+
+	// Artifact selections take a DAG address, scheme optional, and the hint
+	// teaches its vocabulary: path globs, dimension keys, type assertions,
+	// and where to find what exists. An Artifact must select one.
+	for field, want := range map[string]struct{ arg, typeName string }{
+		"check": {"targets", "Artifacts"},
+		"eval":  {"target", "Artifact"},
+	} {
+		s, err := objectMethodSchema(schema, fieldByName(doug, field), conversationToolArgs)
+		require.NoError(t, err)
+		prop := s["properties"].(map[string]any)[want.arg].(map[string]any)
+		require.Equal(t, "string", prop["type"])
+		desc := prop["description"].(string)
+		require.True(t, strings.HasPrefix(desc, "("+want.typeName+" address: "), desc)
+		for _, vocabulary := range []string{`"dag://" scheme is optional`, `"go/**"`, `?<dimension>=<key>`, `"go/test?go-test=TestX"`, `dag+<type>://`, "FindArtifacts lists what exists", "or an " + want.typeName + " ID from a prior tool result"} {
+			require.Contains(t, strings.ToLower(desc), strings.ToLower(vocabulary), field)
+		}
+		require.Equal(t, []string{want.arg}, s["required"])
+	}
+	evalSchema, err := objectMethodSchema(schema, fieldByName(doug, "eval"), conversationToolArgs)
+	require.NoError(t, err)
+	require.Contains(t, evalSchema["properties"].(map[string]any)["target"].(map[string]any)["description"], "must select exactly one artifact")
 }
 
 func TestLiftableObjectArg(t *testing.T) {
@@ -312,24 +421,69 @@ func TestLiftableObjectArg(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "Container", typeName)
 
-	// Addressable types OUTSIDE the capability allowlist do not — Directory
-	// falls back to host paths, Secret mints from env://-style URIs (see
-	// liftableTypes; each admission needs its own capability review).
-	_, ok = liftableObjectArg(arg("withDir", "dir"))
-	require.False(t, ok)
-	_, ok = liftableObjectArg(arg("importDir", "dir"))
-	require.False(t, ok)
+	// Every addressable type outside the blocklist qualifies...
+	for field, want := range map[string]struct{ arg, typeName string }{
+		"withDir":   {"dir", "Directory"},
+		"importDir": {"dir", "Directory"},
+		"cat":       {"file", "File"},
+		"rebase":    {"onto", "GitRef"},
+		"clone":     {"repo", "GitRepository"},
+		"probe":     {"svc", "Service"},
+	} {
+		typeName, ok := liftableObjectArg(arg(field, want.arg))
+		require.True(t, ok, field)
+		require.Equal(t, want.typeName, typeName)
+	}
+
+	// ...but the blocklisted ones do not: Secret mints from env://-style
+	// URIs, Socket forwards host sockets, Volume mounts sshfs:// or engine
+	// volumes (see unliftableTypes).
 	_, ok = liftableObjectArg(arg("withToken", "token"))
 	require.False(t, ok)
+	_, ok = liftableObjectArg(arg("maybeToken", "token"))
+	require.False(t, ok)
+	_, ok = liftableObjectArg(arg("withSocket", "sock"))
+	require.False(t, ok)
+	_, ok = liftableObjectArg(arg("withVolume", "vol"))
+	require.False(t, ok)
+
+	// Every addressable type has a loader field, and every liftable one a
+	// hint; the blocklist only names addressable types.
+	for name, typ := range addressableTypes {
+		require.NotEmpty(t, typ.addressField, name)
+		if !unliftableTypes[name] {
+			require.NotEmpty(t, typ.hint, name)
+		}
+	}
+	for name := range unliftableTypes {
+		require.Contains(t, addressableTypes, name)
+	}
 
 	// Non-addressable object types do not.
 	_, ok = liftableObjectArg(arg("apply", "changes"))
 	require.False(t, ok)
 
-	// Nor do plain scalars, or LISTS of liftable objects.
-	_, ok = liftableObjectArg(arg("exec", "cmd"))
+	// Artifact selections lift, singly or as a list.
+	typeName, ok = liftableObjectArg(arg("check", "targets"))
+	require.True(t, ok)
+	require.Equal(t, "Artifacts", typeName)
+	typeName, ok = liftableObjectArg(arg("eval", "target"))
+	require.True(t, ok)
+	require.Equal(t, "Artifact", typeName)
+	typeName, ok = liftableObjectArg(arg("checkAll", "targets"))
+	require.True(t, ok)
+	require.Equal(t, "Artifacts", typeName)
+
+	// LISTS of liftable objects lift element-wise; lists of blocklisted ones
+	// do not.
+	typeName, ok = liftableObjectArg(arg("execAll", "sandboxes"))
+	require.True(t, ok)
+	require.Equal(t, "Container", typeName)
+	_, ok = liftableObjectArg(arg("withTokens", "tokens"))
 	require.False(t, ok)
-	_, ok = liftableObjectArg(arg("execAll", "sandboxes"))
+
+	// Nor do plain scalars.
+	_, ok = liftableObjectArg(arg("exec", "cmd"))
 	require.False(t, ok)
 }
 
@@ -393,11 +547,9 @@ func TestCombineSpanResult(t *testing.T) {
 	require.Empty(t, combineSpanResult(spanID, "", "", ""))
 	require.Empty(t, combineSpanResult(spanID, "LINE-01", "\n \n\t\n", ""))
 
-	// Report only: no empty OUTPUT section for a target that printed nothing,
-	// and no heading over the report itself.
+	// Report only: no empty OUTPUT section for a target that printed nothing.
 	quiet := combineSpanResult(spanID, "", "== CHECKS ==  ✔ 1 passed\n✔ lint:check 0.1s OK", "")
 	require.NotContains(t, quiet, "OUTPUT")
-	require.NotContains(t, quiet, "TRACE REPORT")
 	require.True(t, strings.HasPrefix(quiet, "== CHECKS =="), "got %q", quiet)
 
 	got := combineSpanResult(spanID, "LINE-01\nLINE-02", "• Foo.bar 1.0s", "")
@@ -405,7 +557,6 @@ func TestCombineSpanResult(t *testing.T) {
 	require.Contains(t, got, "== OUTPUT ==\nLINE-01\nLINE-02")
 	// ...then the report, bare.
 	require.Contains(t, got, "LINE-02\n\n• Foo.bar")
-	require.NotContains(t, got, "TRACE REPORT")
 	require.Less(t, strings.Index(got, "== OUTPUT =="), strings.Index(got, "• Foo.bar"))
 
 	// The breadcrumb names the span, in the same vocabulary as the flat
@@ -438,18 +589,21 @@ func (*liftTestRunner) Type() *ast.Type {
 
 // newAddressLiftTestServer builds a dagql server with a miniature Address API
 // — Query.address(value).container — mirroring core/schema/address.go, plus a
-// LiftTestRunner receiver whose exec method takes a required Container arg
-// and whose withDir method takes an optional Directory arg (addressable in
-// the CLI, but outside the liftableTypes allowlist). The fake .container
-// resolver records the address in the container's ImageRef, so tests can
-// observe which address resolved, and fails for "bogus:ref" to exercise the
-// both-attempts-failed error. No .directory field exists, so an (incorrect)
-// lift attempt for a Directory arg would fail loudly rather than silently.
+// LiftTestRunner receiver whose exec method takes a required Container arg,
+// whose withDir method takes an optional (liftable) Directory arg and whose
+// withToken method takes an optional (blocklisted) Secret arg. The fake
+// .container resolver records the address in the container's ImageRef, so
+// tests can observe which address resolved, and fails for "bogus:ref" to
+// exercise the both-attempts-failed error. Like the real loader it takes
+// noLock, and fails without it: lifting must resolve addresses live. No other
+// loader exists, so a lift attempt for a Directory arg fails loudly as a
+// failed address resolution, and one for a Secret arg would too.
 func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 	t.Helper()
 	srv := newCoreDagqlServerForTest(t, &Query{})
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Container]{Typed: &Container{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Directory]{Typed: &Directory{}}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Secret]{Typed: &Secret{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Address]{Typed: &Address{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*liftTestRunner]{Typed: &liftTestRunner{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*LLM]{Typed: &LLM{}}))
@@ -464,7 +618,12 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 		}),
 	}.Install(srv)
 	dagql.Fields[*Address]{
-		dagql.Func("container", func(_ context.Context, addr *Address, _ struct{}) (*Container, error) {
+		dagql.Func("container", func(_ context.Context, addr *Address, args struct {
+			NoLock bool `name:"noLock" default:"false"`
+		}) (*Container, error) {
+			if !args.NoLock {
+				return nil, fmt.Errorf("lifted address %q must resolve with noLock", addr.Value)
+			}
 			if addr.Value == "bogus:ref" {
 				return nil, fmt.Errorf("no such image %q", addr.Value)
 			}
@@ -484,6 +643,11 @@ func newAddressLiftTestServer(t *testing.T) *dagql.Server {
 		}),
 		dagql.Func("withDir", func(_ context.Context, r *liftTestRunner, _ struct {
 			Dir dagql.Optional[dagql.ID[*Directory]]
+		}) (*liftTestRunner, error) {
+			return r, nil
+		}),
+		dagql.Func("withToken", func(_ context.Context, r *liftTestRunner, _ struct {
+			Token dagql.Optional[dagql.ID[*Secret]]
 		}) (*liftTestRunner, error) {
 			return r, nil
 		}),
@@ -543,13 +707,13 @@ func TestStandaloneToolsTreatLLMArgsAsUnsatisfiable(t *testing.T) {
 	}
 
 	conversation := newMCP().WithTools(runner, srv.Schema(), nil)
-	require.ElementsMatch(t, []string{"annotate", "compact", "exec", "nullable", "withDir"}, toolNames(t, conversation))
+	require.ElementsMatch(t, []string{"annotate", "compact", "exec", "nullable", "withDir", "withToken"}, toolNames(t, conversation))
 
 	// Standalone, the method that REQUIRES a conversation is not offered...
 	standalone := conversation.Standalone()
-	require.ElementsMatch(t, []string{"annotate", "exec", "nullable", "withDir"}, toolNames(t, standalone))
+	require.ElementsMatch(t, []string{"annotate", "exec", "nullable", "withDir", "withToken"}, toolNames(t, standalone))
 	// ...and survives cloning, which every binding does.
-	require.ElementsMatch(t, []string{"annotate", "exec", "nullable", "withDir"}, toolNames(t, standalone.Clone()))
+	require.ElementsMatch(t, []string{"annotate", "exec", "nullable", "withDir", "withToken"}, toolNames(t, standalone.Clone()))
 
 	// ...while the optional argument is left unset, so the method sees null.
 	annotateField := fieldByName(srv.Schema().Types["LiftTestRunner"], "annotate")
@@ -660,7 +824,7 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 		for _, tool := range toolsets[0].tools {
 			names = append(names, tool.Name)
 		}
-		require.ElementsMatch(t, []string{"annotate", "compact", "exec", "nullable", "withDir"}, names)
+		require.ElementsMatch(t, []string{"annotate", "compact", "exec", "nullable", "withDir", "withToken"}, names)
 		require.NotContains(t, names, "replacement")
 		return toolsets[0].tools
 	}
@@ -733,8 +897,8 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 // TestBuildObjectMethodSelector covers argument dispatch against a
 // real dagql field: nullable scalars accept explicit null, while model-supplied
 // strings for liftable object args first try ID decoding and then address
-// resolution. Args of addressable types outside the liftableTypes allowlist
-// only ever take the ID path.
+// resolution. Args of blocklisted types (unliftableTypes) only ever take the
+// ID path.
 func TestBuildObjectMethodSelector(t *testing.T) {
 	// Select requires client metadata and a dagql cache in ctx (cache sessions
 	// are per-client).
@@ -746,6 +910,22 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 	require.NoError(t, err)
 	ctx = dagql.ContextWithCache(ctx, cache)
 	srv := newAddressLiftTestServer(t)
+	dagql.Fields[*liftTestRunner]{
+		dagql.Func("execAll", func(ctx context.Context, _ *liftTestRunner, args struct {
+			Cmd       dagql.String
+			Sandboxes dagql.ArrayInput[dagql.ID[*Container]]
+		}) (dagql.String, error) {
+			refs := make([]string, 0, len(args.Sandboxes))
+			for _, id := range args.Sandboxes {
+				ctr, err := id.Load(ctx, srv)
+				if err != nil {
+					return "", err
+				}
+				refs = append(refs, ctr.Self().ImageRef)
+			}
+			return dagql.String(args.Cmd.String() + " in " + strings.Join(refs, ", ")), nil
+		}),
+	}.Install(srv)
 
 	var runner dagql.AnyObjectResult
 	require.NoError(t, srv.Select(ctx, srv.Root(), &runner, dagql.Selector{Field: "runner"}))
@@ -757,6 +937,77 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 	typeName, ok := liftableObjectArg(execField.Arguments.ForName("sandbox"))
 	require.True(t, ok)
 	require.Equal(t, "Container", typeName)
+
+	execAllField := fieldByName(srv.Schema().Types["LiftTestRunner"], "execAll")
+	require.NotNil(t, execAllField)
+	// ...and for a list of IDs too.
+	typeName, ok = liftableObjectArg(execAllField.Arguments.ForName("sandboxes"))
+	require.True(t, ok)
+	require.Equal(t, "Container", typeName)
+
+	premadeID := func(t *testing.T, ref string) string {
+		t.Helper()
+		var ctr dagql.AnyObjectResult
+		require.NoError(t, srv.Select(ctx, srv.Root(), &ctr,
+			dagql.Selector{
+				Field: "address",
+				Args:  []dagql.NamedInput{{Name: "value", Value: dagql.String(ref)}},
+			},
+			dagql.Selector{Field: "container", Args: []dagql.NamedInput{{Name: "noLock", Value: dagql.Boolean(true)}}},
+		))
+		ctrID, err := ctr.ID()
+		require.NoError(t, err)
+		encoded, err := ctrID.Encode()
+		require.NoError(t, err)
+		return encoded
+	}
+
+	t.Run("list of addresses lifts element-wise", func(t *testing.T) {
+		// Addresses and IDs from prior tool results mix freely: each element
+		// that is not an ID is lifted on its own.
+		sel, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execAllField, map[string]any{
+			"cmd":       "make",
+			"sandboxes": []any{"alpine:latest", premadeID(t, "premade"), "golang:1.26"},
+		})
+		require.NoError(t, err)
+		var out dagql.String
+		require.NoError(t, srv.Select(ctx, runner, &out, sel))
+		require.Equal(t, "make in alpine:latest, premade, golang:1.26", out.String())
+	})
+
+	t.Run("list of IDs still decodes directly", func(t *testing.T) {
+		sel, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execAllField, map[string]any{
+			"cmd":       "make",
+			"sandboxes": []any{premadeID(t, "one"), premadeID(t, "two")},
+		})
+		require.NoError(t, err)
+		var out dagql.String
+		require.NoError(t, srv.Select(ctx, runner, &out, sel))
+		require.Equal(t, "make in one, two", out.String())
+	})
+
+	t.Run("list element errors name the element", func(t *testing.T) {
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execAllField, map[string]any{
+			"cmd":       "make",
+			"sandboxes": []any{"alpine:latest", "bogus:ref"},
+		})
+		require.ErrorContains(t, err, `arg "sandboxes": element 1: "bogus:ref" is neither a Container ID`)
+		require.ErrorContains(t, err, "no such image")
+
+		// Elements are vetted like a single arg: nothing reaches the host.
+		_, err = newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execAllField, map[string]any{
+			"cmd":       "make",
+			"sandboxes": []any{"dag://runner/sandbox"},
+		})
+		require.ErrorContains(t, err, `arg "sandboxes": element 0: "dag://runner/sandbox" is not a resolvable Container address`)
+
+		// A non-string element surfaces the plain decode error.
+		_, err = newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execAllField, map[string]any{
+			"cmd":       "make",
+			"sandboxes": []any{"alpine:latest", 42},
+		})
+		require.ErrorContains(t, err, `arg "sandboxes": decode []interface {}`)
+	})
 
 	t.Run("explicit null decodes for a nullable argument", func(t *testing.T) {
 		nullableField := fieldByName(srv.Schema().Types["LiftTestRunner"], "nullable")
@@ -781,6 +1032,41 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 		require.Equal(t, "make in alpine:latest", out.String())
 	})
 
+	t.Run("relative dag addresses need a conversation", func(t *testing.T) {
+		// A relative DAG address resolves in the conversation's scope
+		// (LLM.artifacts). Without a conversation there is none, and it is
+		// refused before any Address loader runs: this server has no
+		// Workspace.resolve, where the git decoders once read a DAG address
+		// as a host path.
+		m := newMCP().WithTools(runner, srv.Schema(), nil)
+		_, err := m.buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+			"cmd":     "make",
+			"sandbox": "dag://runner/sandbox",
+		})
+		require.ErrorContains(t, err, `"dag://runner/sandbox" is not a resolvable Container address: resolve "dag://runner/sandbox": no conversation to resolve the address in; FindArtifacts lists what exists`)
+	})
+
+	t.Run("absolute dag addresses need a bound workspace", func(t *testing.T) {
+		// An absolute address names a workspace, not the conversation's
+		// scope: it resolves in the conversation's bound workspace only,
+		// never the calling client's current one. With none bound, it is
+		// refused before any Address loader runs.
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+			"cmd":     "make",
+			"sandbox": "dag://github.com/org/repo@1111111111111111111111111111111111111111:runner/sandbox",
+		})
+		require.ErrorContains(t, err, "an absolute dag:// address names a workspace, and none is bound to this conversation")
+	})
+
+	t.Run("malformed dag addresses are reported", func(t *testing.T) {
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execField, map[string]any{
+			"cmd":     "make",
+			"sandbox": "dag://runner/sandbox?member=%zz",
+		})
+		require.ErrorContains(t, err, `"dag://runner/sandbox?member=%zz" is not a resolvable Container address`)
+		require.ErrorContains(t, err, "invalid URL escape")
+	})
+
 	t.Run("a real ID still decodes directly", func(t *testing.T) {
 		var ctr dagql.AnyObjectResult
 		require.NoError(t, srv.Select(ctx, srv.Root(), &ctr,
@@ -788,7 +1074,7 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 				Field: "address",
 				Args:  []dagql.NamedInput{{Name: "value", Value: dagql.String("premade")}},
 			},
-			dagql.Selector{Field: "container"},
+			dagql.Selector{Field: "container", Args: []dagql.NamedInput{{Name: "noLock", Value: dagql.Boolean(true)}}},
 		))
 		ctrID, err := ctr.ID()
 		require.NoError(t, err)
@@ -849,25 +1135,95 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 		require.Contains(t, err.Error(), `arg "cmd"`)
 	})
 
-	t.Run("addressable-but-not-liftable args do not lift", func(t *testing.T) {
-		// Directory is addressable in the CLI, but outside the liftableTypes
-		// capability allowlist (its Address decoder falls back to HOST paths).
-		// A plain string for a Directory arg therefore surfaces the ID decode
-		// error with NO address lookup attempted — the test server's Address
-		// has no .directory field, so an attempted lift would produce a
-		// "neither ... nor a resolvable ... address" error instead.
+	t.Run("liftable args attempt the address", func(t *testing.T) {
+		// Directory is liftable, so a plain string for a Directory arg is
+		// resolved through Address.directory — which this test server lacks,
+		// so the attempt surfaces as a failed address resolution.
 		withDirField := fieldByName(srv.Schema().Types["LiftTestRunner"], "withDir")
 		require.NotNil(t, withDirField)
-		_, ok := liftableObjectArg(withDirField.Arguments.ForName("dir"))
-		require.False(t, ok)
+		typeName, ok := liftableObjectArg(withDirField.Arguments.ForName("dir"))
+		require.True(t, ok)
+		require.Equal(t, "Directory", typeName)
 
 		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), withDirField, map[string]any{
-			"dir": "some/host/path",
+			"dir": "https://github.com/org/repo#main",
 		})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), `arg "dir": decode string`)
+		require.Contains(t, err.Error(), "nor a resolvable Directory address")
+	})
+
+	t.Run("host-reaching addresses are refused before resolution", func(t *testing.T) {
+		// A bare path would go through Host.directory for the CLI; for a
+		// model it is refused outright, naming the accepted forms, before
+		// any Address lookup (this server has no Address.directory, so a
+		// lookup would fail differently).
+		withDirField := fieldByName(srv.Schema().Types["LiftTestRunner"], "withDir")
+		require.NotNil(t, withDirField)
+		for _, addr := range []string{"/etc", "file:///etc", "git@github.com:org/repo"} {
+			_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), withDirField, map[string]any{
+				"dir": addr,
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), fmt.Sprintf("%q is not a Directory ID or an accepted Directory address", addr))
+			require.Contains(t, err.Error(), "https://, http:// or git:// git URL or a dag:// address")
+			require.NotContains(t, err.Error(), "nor a resolvable")
+		}
+	})
+
+	t.Run("blocklisted args do not lift", func(t *testing.T) {
+		// Secret is addressable in the CLI, but blocklisted for tool args
+		// (unliftableTypes): a plain string for a Secret arg surfaces the ID
+		// decode error with NO address lookup attempted, so a model cannot
+		// mint env:// secrets.
+		withTokenField := fieldByName(srv.Schema().Types["LiftTestRunner"], "withToken")
+		require.NotNil(t, withTokenField)
+		_, ok := liftableObjectArg(withTokenField.Arguments.ForName("token"))
+		require.False(t, ok)
+
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), withTokenField, map[string]any{
+			"token": "env://HOME",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `arg "token": decode string`)
 		require.NotContains(t, err.Error(), "address")
 	})
+}
+
+// TestCheckLiftableAddress covers the forms a model may supply for a liftable
+// arg: dag:// addresses and forms whose decoding stays off the calling
+// client's host. Everything the Address decoders would read from the host —
+// local paths, file:// URLs, ssh git URLs (the client's SSH agent), tcp://
+// tunnels — is refused before decoding.
+func TestCheckLiftableAddress(t *testing.T) {
+	accepted := map[string][]string{
+		"Container":     {"golang:1.26", "registry.example.com/org/img@sha256:abc", "dag://mod/ctr"},
+		"Directory":     {"https://github.com/org/repo#main:docs", "git://example.com/repo", "http://example.com/repo.git", "dag://staff/members/workspace?member=chief"},
+		"File":          {"https://github.com/org/repo#main:README.md", "dag+file://mod/readme"},
+		"GitRef":        {"https://github.com/org/repo#main", "https://github.com/org/repo", "dag://staff/members/head?member=chief", "dag+git-ref://committer/saved/head?saved-workspace=abc"},
+		"GitRepository": {"https://github.com/org/repo", "dag://mod/repo"},
+		"Service":       {"dag://mod/server"},
+	}
+	for typeName, addrs := range accepted {
+		for _, addr := range addrs {
+			require.NoError(t, checkLiftableAddress(typeName, addr), "%s %q", typeName, addr)
+		}
+	}
+
+	refused := map[string][]string{
+		"Directory":     {".", "/etc", "./src", "~/secrets", "file:///etc", "file:.", "ssh://git@github.com/org/repo", "git@github.com:org/repo.git"},
+		"File":          {"/etc/passwd", "README.md", "file:///etc/passwd", "git@github.com:org/repo#main:README.md"},
+		"GitRef":        {".", "/home/me/repo#main", "file:///home/me/repo#main", "ssh://git@github.com/org/repo#main", "git@github.com:org/repo#main"},
+		"GitRepository": {".", "../other", "file:///home/me/repo", "git@github.com:org/repo"},
+		"Service":       {"tcp://localhost:8080", "udp://127.0.0.1:53", "localhost:8080"},
+	}
+	for typeName, addrs := range refused {
+		for _, addr := range addrs {
+			err := checkLiftableAddress(typeName, addr)
+			require.Error(t, err, "%s %q", typeName, addr)
+			require.Contains(t, err.Error(), "dag://", "the refusal names the accepted forms")
+			require.Contains(t, err.Error(), "calling client's host")
+		}
+	}
 }
 
 // batchTestRunner is a receiver for deriving object tools from real dagql

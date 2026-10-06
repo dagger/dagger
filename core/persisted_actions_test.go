@@ -24,6 +24,9 @@ func TestPersistedArtifactsShareOwnersThroughRestart(t *testing.T) {
 	entries := []*Artifact{
 		{Path: []string{"cold", "lint"}, TypeName: "Check", DimensionKeys: []*ArtifactDimensionKey{}, Directives: []string{"check"}, Workspace: wsRes, Node: &ModTreeNode{Name: "lint", Description: "lints", Parent: root, Module: modRes, Directives: []string{"check"}}},
 		{Path: []string{"cold", "format"}, TypeName: "Changeset", DimensionKeys: []*ArtifactDimensionKey{}, Directives: []string{"generate"}, Workspace: wsRes, Node: &ModTreeNode{Name: "format", Parent: root, Module: modRes, Directives: []string{"generate"}}},
+		// A bound artifact (an LLM's scope): no workspace, rooted at the
+		// value, evaluated in its scope's workspace.
+		{Path: []string{"cold", "bound"}, TypeName: "Directory", DimensionKeys: []*ArtifactDimensionKey{}, ContextWorkspace: wsRes, Node: &ModTreeNode{Name: "bound", Parent: root, Module: modRes}},
 	}
 	artifacts := env.attach(t, ctx, cache, srv, "artifacts", &Artifacts{Entries: entries})
 	single := env.attach(t, ctx, cache, srv, "artifact", entries[0])
@@ -41,6 +44,7 @@ func TestPersistedArtifactsShareOwnersThroughRestart(t *testing.T) {
 	}
 	refs := persistedVisitedRefs(t, ctx, cache, artifacts)
 	require.Equal(t, wsID, refs["objectJSON.Entries[0].Workspace"])
+	require.Equal(t, wsID, refs["objectJSON.Entries[2].ContextWorkspace"])
 	require.Equal(t, modID, refs["objectJSON.Tree.nodes[0].moduleResultID"])
 	require.Equal(t, dirID, refs["objectJSON.Tree.nodes[0].rootValueResultID"])
 	snapshotOwners := func(snapshotID string) int {
@@ -67,13 +71,16 @@ func TestPersistedArtifactsShareOwnersThroughRestart(t *testing.T) {
 			return res
 		}
 		restored := load("artifacts").Unwrap().(*Artifacts)
-		require.Len(t, restored.Entries, 2)
+		require.Len(t, restored.Entries, 3)
 		require.Equal(t, "lint", restored.Entries[0].Node.Name)
 		require.Equal(t, []string{"check"}, restored.Entries[0].Directives)
 		require.Equal(t, []string{"generate"}, restored.Entries[1].Node.Directives)
 		require.Same(t, restored.Entries[0].Node.Parent, restored.Entries[1].Node.Parent)
 		require.Equal(t, wsID, persistedRowID(t, cache, restored.Entries[0].Workspace))
 		require.Equal(t, dirID, persistedRowID(t, cache, restored.Entries[0].Node.Parent.RootValue))
+		require.Nil(t, restored.Entries[2].Workspace.Self(), "a bound artifact stays without a workspace")
+		require.Equal(t, wsID, persistedRowID(t, cache, restored.Entries[2].ContextWorkspace))
+		require.Equal(t, dirID, persistedRowID(t, cache, restored.Entries[2].BoundRoot()))
 		require.Equal(t, "cold", load("artifact").Unwrap().(*Artifact).Node.Parent.Name)
 		require.Equal(t, wsID, persistedRowID(t, cache, load("address").Unwrap().(*Address).BoundWorkspace))
 		require.Equal(t, wsID, persistedRowID(t, cache, load("sdk").Unwrap().(*WorkspaceSDK).Workspace))

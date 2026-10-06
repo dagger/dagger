@@ -56,9 +56,9 @@ func TestAnthropicMediaRequest(t *testing.T) {
 		{Role: LLMMessageRoleSystem, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "instructions"}}},
 		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{
 			{Kind: LLMContentText, Text: "before"},
-			{Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U="},
+			{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")},
 			{Kind: LLMContentText, Text: "between"},
-			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "cGRm"},
+			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: []byte("pdf")},
 		}},
 		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{
 			{Kind: LLMContentThinking, Text: "thinking", Signature: "opaque"},
@@ -66,9 +66,9 @@ func TestAnthropicMediaRequest(t *testing.T) {
 			{Kind: LLMContentToolCall, CallID: "call-2", ToolName: "read", Arguments: JSON(`{}`)},
 		}},
 		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call-2", Text: "legacy", Errored: true, Content: []*LLMContentBlock{
-			{Kind: LLMContentImage, MIMEType: "image/jpeg", Data: "aW1hZ2U="},
+			{Kind: LLMContentImage, MIMEType: "image/jpeg", Data: []byte("image")},
 			{Kind: LLMContentText, Text: "caption"},
-			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "cGRm"},
+			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: []byte("pdf")},
 		}}}},
 		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call-1", Text: "done"}}},
 	}
@@ -111,9 +111,9 @@ func TestGenaiMediaRequest(t *testing.T) {
 	request := sentMediaRequest(t, client, requests, []*LLMMessage{
 		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{
 			{Kind: LLMContentText, Text: "before"},
-			{Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U="},
-			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: "YXVkaW8="},
-			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "cGRm"},
+			{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")},
+			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: []byte("audio")},
+			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: []byte("pdf")},
 			{Kind: LLMContentText, Text: "after"},
 		}},
 		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{
@@ -122,10 +122,10 @@ func TestGenaiMediaRequest(t *testing.T) {
 			{Kind: LLMContentToolCall, CallID: "call-2", ToolName: "read", Arguments: JSON(`{}`), Signature: "c2ln"},
 		}},
 		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call-2", Text: "legacy", Errored: true, Content: []*LLMContentBlock{
-			{Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U="},
+			{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")},
 			{Kind: LLMContentText, Text: "caption"},
-			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: "YXVkaW8="},
-			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "cGRm"},
+			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: []byte("audio")},
+			{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: []byte("pdf")},
 		}}}},
 		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call-1", Text: "done"}}},
 	})
@@ -164,7 +164,7 @@ func TestGenaiWAVMIMETypes(t *testing.T) {
 	wav := []byte("RIFF\x24\x00\x00\x00WAVEfmt ")
 	for _, mimeType := range []string{"", "audio/wav", "audio/wave", "audio/x-wav"} {
 		t.Run(mimeType, func(t *testing.T) {
-			audio, err := llmContentFromBytes(wav, mimeType)
+			audio, err := LLMContentFromBytes(wav, mimeType)
 			require.NoError(t, err)
 			require.Equal(t, LLMContentAudio, audio.Kind)
 			if mimeType != "" {
@@ -201,7 +201,7 @@ func TestProviderMediaOnlyToolResult(t *testing.T) {
 			request := sentMediaRequest(t, client, requests, []*LLMMessage{
 				{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "look"}}},
 				{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{{Kind: LLMContentToolCall, CallID: "call-1", ToolName: "read", Arguments: JSON(`{}`)}}},
-				{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{{Kind: LLMContentImage, MIMEType: "image/png", Data: "eA=="}}}}},
+				{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("x")}}}}},
 			})
 			if provider == "anthropic" {
 				var messages []struct {
@@ -229,19 +229,18 @@ func TestProviderMediaValidation(t *testing.T) {
 				role  LLMMessageRole
 				block *LLMContentBlock
 			}{
-				{"system media", LLMMessageRoleSystem, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: "eA=="}},
-				{"assistant media", LLMMessageRoleAssistant, &LLMContentBlock{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: "eA=="}},
-				{"unsupported image", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/svg+xml", Data: "eA=="}},
-				{"unsupported document", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentDocument, MIMEType: "application/zip", Data: "eA=="}},
-				{"unsupported audio", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentAudio, MIMEType: "audio/unknown", Data: "eA=="}},
-				{"invalid base64", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: "invalid!"}},
+				{"system media", LLMMessageRoleSystem, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("x")}},
+				{"assistant media", LLMMessageRoleAssistant, &LLMContentBlock{Kind: LLMContentDocument, MIMEType: "application/pdf", Data: []byte("x")}},
+				{"unsupported image", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/svg+xml", Data: []byte("x")}},
+				{"unsupported document", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentDocument, MIMEType: "application/zip", Data: []byte("x")}},
+				{"unsupported audio", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentAudio, MIMEType: "audio/unknown", Data: []byte("x")}},
 				{"unknown kind", LLMMessageRoleUser, &LLMContentBlock{Kind: "UNKNOWN"}},
 				{"nil block", LLMMessageRoleUser, nil},
 				{"missing data", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png"}},
-				{"missing MIME type", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentImage, Data: "eA=="}},
+				{"missing MIME type", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentImage, Data: []byte("x")}},
 				{"nested tool call", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{{Kind: LLMContentToolCall, CallID: "call-2", ToolName: "read"}}}},
-				{"nested invalid base64", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{{Kind: LLMContentImage, MIMEType: "image/png", Data: "invalid!"}}}},
-				{"nested unsupported", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{{Kind: LLMContentImage, MIMEType: "image/svg+xml", Data: "eA=="}}}},
+				{"nested missing data", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{{Kind: LLMContentImage, MIMEType: "image/png"}}}},
+				{"nested unsupported", LLMMessageRoleUser, &LLMContentBlock{Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{{Kind: LLMContentImage, MIMEType: "image/svg+xml", Data: []byte("x")}}}},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					_, err := client.SendQuery(t.Context(), []*LLMMessage{{Role: tc.role, Content: []*LLMContentBlock{tc.block}}}, nil, &LLMCallOpts{})
@@ -254,8 +253,8 @@ func TestProviderMediaValidation(t *testing.T) {
 	t.Run("anthropic audio", func(t *testing.T) {
 		client, requests := mediaRequestClient(t, "anthropic")
 		for _, block := range []*LLMContentBlock{
-			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: "eA=="},
-			{Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: "eA=="}}},
+			{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: []byte("x")},
+			{Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{{Kind: LLMContentAudio, MIMEType: "audio/wav", Data: []byte("x")}}},
 		} {
 			_, err := client.SendQuery(t.Context(), []*LLMMessage{{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{block}}}, nil, &LLMCallOpts{})
 			require.ErrorContains(t, err, "AUDIO content is not supported")

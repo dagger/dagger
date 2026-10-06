@@ -1,0 +1,15 @@
+kind: Experimental
+body: |
+  Add `llmContent`, a builder for ordered text and media content outside any
+  conversation: `llmContent().withText(...).withFile(...)`. A function exposed
+  as an LLM tool can return `LLMContent`, and the model receives its blocks as
+  the tool result's own content, e.g. a caption and a screenshot for it to
+  look at.
+
+  Media bytes in `LLMContentBlock.data` and `LLMContentBlockInput.data` are
+  now the `Bytes` scalar rather than a base64 `String`. The wire encoding is
+  unchanged, so exported and recorded conversations still load.
+time: 2026-09-30T19:30:00.000000000Z
+custom:
+    Author: vito
+    PR: "14429"

@@ -33,7 +33,7 @@ func TestMCPMediaContent(t *testing.T) {
 		require.Len(t, blocks, 8)
 		require.Equal(t, "before", blocks[0].Text)
 		require.Equal(t, LLMContentImage, blocks[1].Kind)
-		require.Equal(t, encoded, blocks[1].Data, "MCP SDK bytes must be encoded exactly once")
+		require.Equal(t, dagql.Bytes(data), blocks[1].Data, "MCP SDK bytes must be carried as-is")
 		require.Equal(t, "between", blocks[2].Text)
 		require.Equal(t, LLMContentAudio, blocks[3].Kind)
 		require.Equal(t, LLMContentDocument, blocks[4].Kind)
@@ -56,13 +56,14 @@ func TestMCPMediaContent(t *testing.T) {
 		require.True(t, result.Errored)
 		require.Equal(t, "shot-1", result.CallID)
 		require.Len(t, result.Content, 2)
-		require.Equal(t, encoded, result.Content[1].Data)
+		require.Equal(t, dagql.Bytes(data), result.Content[1].Data)
 		require.Contains(t, result.ContentText(), "[image: image/png]")
 		recorder.mu.Lock()
 		defer recorder.mu.Unlock()
 		var logged bool
 		for _, record := range recorder.records {
 			require.NotContains(t, record.body, encoded)
+			require.NotContains(t, record.body, string(data))
 			logged = logged || strings.Contains(record.body, "[image: image/png]")
 		}
 		require.True(t, logged)
@@ -95,11 +96,12 @@ func TestMCPMediaContent(t *testing.T) {
 }
 
 func TestMediaToolDispatch(t *testing.T) {
-	media := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: base64.StdEncoding.EncodeToString([]byte("image"))}
+	media := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")}
 	for _, mode := range []string{"sequential", "parallel"} {
 		t.Run(mode, func(t *testing.T) {
 			tool := LLMTool{Name: "image", ReadOnly: mode == "parallel", Call: func(context.Context, any) (any, error) { return media, nil }}
-			msgs := newMCP().CallBatch(t.Context(), []LLMTool{tool}, []*LLMToolCall{{Name: "image", CallID: "call-1"}}, nil, nil)
+			msgs, rest := newMCP().CallBatch(t.Context(), []LLMTool{tool}, []*LLMToolCall{{Name: "image", CallID: "call-1"}}, nil, nil)
+			require.Empty(t, rest)
 			require.Len(t, msgs, 1)
 			result := msgs[0].Content[0]
 			require.Equal(t, LLMContentToolResult, result.Kind)
@@ -120,7 +122,7 @@ func TestMediaToolDispatch(t *testing.T) {
 }
 
 func TestMediaToolTextBudget(t *testing.T) {
-	media := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: base64.StdEncoding.EncodeToString([]byte("unchanged image"))}
+	media := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("unchanged image")}
 	result := &LLMContentBlock{Kind: LLMContentToolResult}
 	for range 10 {
 		result.Content = append(result.Content, &LLMContentBlock{Kind: LLMContentText, Text: strings.Repeat("line\n", 10000)}, media.Clone())
@@ -141,12 +143,12 @@ func TestMediaToolTextBudget(t *testing.T) {
 func TestMediaContinuationEquality(t *testing.T) {
 	msg := &LLMMessage{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{
 		Kind: LLMContentToolResult, CallID: "call-1", Content: []*LLMContentBlock{{
-			Kind: LLMContentImage, MIMEType: "image/png", Data: "aW1hZ2U=",
+			Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image"),
 		}},
 	}}}
 	clone := msg.Clone()
 	require.True(t, messagesEqual(msg, clone))
-	clone.Content[0].Content[0].Data = "b3RoZXI="
+	clone.Content[0].Content[0].Data = []byte("other")
 	require.False(t, messagesEqual(msg, clone))
 	clone = msg.Clone()
 	clone.Content[0].Content[0].MIMEType = "image/jpeg"
@@ -157,7 +159,7 @@ func TestMediaContinuationEquality(t *testing.T) {
 }
 
 func TestMediaToolResultSelectors(t *testing.T) {
-	media := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: base64.StdEncoding.EncodeToString([]byte("image"))}
+	media := &LLMContentBlock{Kind: LLMContentImage, MIMEType: "image/png", Data: []byte("image")}
 	msg := &LLMMessage{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call-1", Text: "caption", Content: []*LLMContentBlock{media}}}}
 	t.Run("attached", func(t *testing.T) {
 		sels, err := toolResultSelectors(nil, []*LLMMessage{msg}, nil)
@@ -167,7 +169,7 @@ func TestMediaToolResultSelectors(t *testing.T) {
 		require.Equal(t, dagql.NewString("caption"), sels[0].Args[1].Value)
 		require.Equal(t, "blocks", sels[0].Args[3].Name)
 		inputs := sels[0].Args[3].Value.(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]])
-		require.Equal(t, media.Data, inputs[0].Value.Data)
+		require.Equal(t, media.Data, inputs[0].Value.Data.Value)
 	})
 	t.Run("continuation", func(t *testing.T) {
 		sels, err := toolResultSelectors(&LLM{}, []*LLMMessage{msg}, map[string]string{"call-1": "reload"})
@@ -176,6 +178,6 @@ func TestMediaToolResultSelectors(t *testing.T) {
 		inputs := sels[0].Args[0].Value.(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]])
 		require.Len(t, inputs, 2)
 		require.Equal(t, "[continued via tool reload]\ncaption", inputs[0].Value.Text)
-		require.Equal(t, media.Data, inputs[1].Value.Data)
+		require.Equal(t, media.Data, inputs[1].Value.Data.Value)
 	})
 }

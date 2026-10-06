@@ -572,10 +572,11 @@ func (LLMSuite) TestRecomposeSameBatchStateReturn(ctx context.Context, t *testct
 	base := workspaceFixture(t, c, "workspace-tool-return").
 		WithNewFile(recomposeModulePath, initial).
 		WithNewFile("next-source.txt", updated)
-	// Deliberately emit reload first. Continuations run last and must see both
-	// the source edit and same-type receiver returned by the other calls.
+	// Continuations run in their written position, on the state the calls
+	// before them produced: reload must see both the source edit and the
+	// same-type receiver returned by the calls emitted before it.
 	script := c.LLM().WithPrompt("update and reload").WithResponse([]dagger.LLMContentBlockInput{
-		recomposeTool("reload", "reload"), recomposeTool("advance", "advance"), recomposeTool("edit", "updateSource"),
+		recomposeTool("advance", "advance"), recomposeTool("edit", "updateSource"), recomposeTool("reload", "reload"),
 	}).WithToolResult("advance", "", false).WithToolResult("edit", "", false).WithToolResult("reload", "", false).
 		WithResponse([]dagger.LLMContentBlockInput{recomposeTool("added", "added")}).WithToolResult("added", "", false).
 		WithResponse([]dagger.LLMContentBlockInput{recomposeTool("read", "readState")}).WithToolResult("read", "", false).

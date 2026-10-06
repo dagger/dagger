@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
-	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -15,25 +15,27 @@ type BKNetworkSampler interface {
 }
 
 type netNSSampler struct {
-	netNS          BKNetworkSampler
-	meter          metric.Meter
-	commonAttrs    attribute.Set
-	baselineSample *resourcestypes.NetworkSample
-	rxBytes        metric.Int64Gauge
-	rxPackets      metric.Int64Gauge
-	rxDropped      metric.Int64Gauge
-	txBytes        metric.Int64Gauge
-	txPackets      metric.Int64Gauge
-	txDropped      metric.Int64Gauge
+	netNS            BKNetworkSampler
+	meter            metric.Meter
+	commonAttrs      attribute.Set
+	baselineSample   *resourcestypes.NetworkSample
+	networkRxBytes   metric.Int64Gauge
+	networkTxBytes   metric.Int64Gauge
+	internalRxBytes  metric.Int64Gauge
+	internalTxBytes  metric.Int64Gauge
+	externalRxBytes  metric.Int64Gauge
+	externalTxBytes  metric.Int64Gauge
+	networkAvailable metric.Int64Gauge
 }
 
 type netNSSample struct {
-	rxBytes   int64GaugeSample
-	rxDropped int64GaugeSample
-	rxPackets int64GaugeSample
-	txBytes   int64GaugeSample
-	txDropped int64GaugeSample
-	txPackets int64GaugeSample
+	networkRxBytes   int64GaugeSample
+	networkTxBytes   int64GaugeSample
+	internalRxBytes  int64GaugeSample
+	internalTxBytes  int64GaugeSample
+	externalRxBytes  int64GaugeSample
+	externalTxBytes  int64GaugeSample
+	networkAvailable int64GaugeSample
 }
 
 func newNetNSSampler(netNS BKNetworkSampler, meter metric.Meter, commonAttrs attribute.Set) (*netNSSampler, error) {
@@ -44,47 +46,41 @@ func newNetNSSampler(netNS BKNetworkSampler, meter metric.Meter, commonAttrs att
 	}
 
 	var err error
-	if s.rxBytes, err = meter.Int64Gauge(
-		telemetry.NetstatRxBytes,
-		metric.WithDescription("Total number of bytes received over the network"),
+	if s.networkRxBytes, err = meter.Int64Gauge(
+		telemetryattrs.NetworkRxBytes,
+		metric.WithDescription("Network-layer bytes received by this operation"),
 		metric.WithUnit("bytes"),
 	); err != nil {
-		return nil, fmt.Errorf("failed to create rx bytes gauge: %w", err)
+		return nil, fmt.Errorf("failed to create network rx bytes gauge: %w", err)
 	}
-	if s.rxDropped, err = meter.Int64Gauge(
-		telemetry.NetstatRxDropped,
-		metric.WithDescription("Total number of received packets dropped"),
-		metric.WithUnit("packets"),
-	); err != nil {
-		return nil, fmt.Errorf("failed to create rx dropped gauge: %w", err)
-	}
-	if s.txBytes, err = meter.Int64Gauge(
-		telemetry.NetstatTxBytes,
-		metric.WithDescription("Total number of bytes transmitted over the network"),
+	if s.networkTxBytes, err = meter.Int64Gauge(
+		telemetryattrs.NetworkTxBytes,
+		metric.WithDescription("Network-layer bytes transmitted by this operation"),
 		metric.WithUnit("bytes"),
 	); err != nil {
-		return nil, fmt.Errorf("failed to create tx bytes gauge: %w", err)
+		return nil, fmt.Errorf("failed to create network tx bytes gauge: %w", err)
 	}
-	if s.txDropped, err = meter.Int64Gauge(
-		telemetry.NetstatTxDropped,
-		metric.WithDescription("Total number of transmitted packets dropped"),
-		metric.WithUnit("packets"),
-	); err != nil {
-		return nil, fmt.Errorf("failed to create tx dropped gauge: %w", err)
+	for _, scoped := range []struct {
+		name        string
+		description string
+		dst         *metric.Int64Gauge
+	}{
+		{telemetryattrs.NetworkInternalRxBytes, "Network-layer bytes received from Dagger-managed networks", &s.internalRxBytes},
+		{telemetryattrs.NetworkInternalTxBytes, "Network-layer bytes transmitted to Dagger-managed networks", &s.internalTxBytes},
+		{telemetryattrs.NetworkExternalRxBytes, "Network-layer bytes received from outside Dagger-managed networks", &s.externalRxBytes},
+		{telemetryattrs.NetworkExternalTxBytes, "Network-layer bytes transmitted outside Dagger-managed networks", &s.externalTxBytes},
+	} {
+		*scoped.dst, err = meter.Int64Gauge(scoped.name, metric.WithDescription(scoped.description), metric.WithUnit("bytes"))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create %s gauge: %w", scoped.name, err)
+		}
 	}
-	if s.rxPackets, err = meter.Int64Gauge(
-		telemetry.NetstatRxPackets,
-		metric.WithDescription("Total number of packets received over the network"),
-		metric.WithUnit("packets"),
+	if s.networkAvailable, err = meter.Int64Gauge(
+		telemetryattrs.NetworkAvailable,
+		metric.WithDescription("Whether attributed eBPF network accounting is available"),
+		metric.WithUnit("1"),
 	); err != nil {
-		return nil, fmt.Errorf("failed to create rx packets gauge: %w", err)
-	}
-	if s.txPackets, err = meter.Int64Gauge(
-		telemetry.NetstatTxPackets,
-		metric.WithDescription("Total number of packets transmitted over the network"),
-		metric.WithUnit("packets"),
-	); err != nil {
-		return nil, fmt.Errorf("failed to create tx packets gauge: %w", err)
+		return nil, fmt.Errorf("failed to create network availability gauge: %w", err)
 	}
 
 	s.baselineSample, err = s.netNS.Sample()
@@ -98,12 +94,13 @@ func newNetNSSampler(netNS BKNetworkSampler, meter metric.Meter, commonAttrs att
 
 func (s *netNSSampler) sample(ctx context.Context) error {
 	sample := netNSSample{
-		rxBytes:   newInt64GaugeSample(s.rxBytes, s.commonAttrs),
-		rxPackets: newInt64GaugeSample(s.rxPackets, s.commonAttrs),
-		rxDropped: newInt64GaugeSample(s.rxDropped, s.commonAttrs),
-		txBytes:   newInt64GaugeSample(s.txBytes, s.commonAttrs),
-		txPackets: newInt64GaugeSample(s.txPackets, s.commonAttrs),
-		txDropped: newInt64GaugeSample(s.txDropped, s.commonAttrs),
+		networkRxBytes:   newInt64GaugeSample(s.networkRxBytes, s.commonAttrs),
+		networkTxBytes:   newInt64GaugeSample(s.networkTxBytes, s.commonAttrs),
+		internalRxBytes:  newInt64GaugeSample(s.internalRxBytes, s.commonAttrs),
+		internalTxBytes:  newInt64GaugeSample(s.internalTxBytes, s.commonAttrs),
+		externalRxBytes:  newInt64GaugeSample(s.externalRxBytes, s.commonAttrs),
+		externalTxBytes:  newInt64GaugeSample(s.externalTxBytes, s.commonAttrs),
+		networkAvailable: newInt64GaugeSample(s.networkAvailable, s.commonAttrs),
 	}
 
 	bkSample, err := s.netNS.Sample()
@@ -112,19 +109,29 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 	}
 	bkSample = normalizeNetworkSample(bkSample)
 
-	sample.rxBytes.add(bkSample.RxBytes - s.baselineSample.RxBytes)
-	sample.rxPackets.add(bkSample.RxPackets - s.baselineSample.RxPackets)
-	sample.rxDropped.add(bkSample.RxDropped - s.baselineSample.RxDropped)
-	sample.txBytes.add(bkSample.TxBytes - s.baselineSample.TxBytes)
-	sample.txPackets.add(bkSample.TxPackets - s.baselineSample.TxPackets)
-	sample.txDropped.add(bkSample.TxDropped - s.baselineSample.TxDropped)
+	if s.baselineSample.ScopeSupported && bkSample.ScopeSupported {
+		sample.networkAvailable.add(1)
+		internalRX := bkSample.InternalRxBytes - s.baselineSample.InternalRxBytes
+		internalTX := bkSample.InternalTxBytes - s.baselineSample.InternalTxBytes
+		externalRX := bkSample.ExternalRxBytes - s.baselineSample.ExternalRxBytes
+		externalTX := bkSample.ExternalTxBytes - s.baselineSample.ExternalTxBytes
+		sample.networkRxBytes.add(internalRX + externalRX)
+		sample.networkTxBytes.add(internalTX + externalTX)
+		sample.internalRxBytes.add(internalRX)
+		sample.internalTxBytes.add(internalTX)
+		sample.externalRxBytes.add(externalRX)
+		sample.externalTxBytes.add(externalTX)
+	} else {
+		sample.networkAvailable.add(0)
+	}
 
-	sample.rxBytes.record(ctx)
-	sample.rxDropped.record(ctx)
-	sample.txBytes.record(ctx)
-	sample.txDropped.record(ctx)
-	sample.rxPackets.record(ctx)
-	sample.txPackets.record(ctx)
+	sample.networkRxBytes.record(ctx)
+	sample.networkTxBytes.record(ctx)
+	sample.internalRxBytes.record(ctx)
+	sample.internalTxBytes.record(ctx)
+	sample.externalRxBytes.record(ctx)
+	sample.externalTxBytes.record(ctx)
+	sample.networkAvailable.record(ctx)
 
 	return nil
 }

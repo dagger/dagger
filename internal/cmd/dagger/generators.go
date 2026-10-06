@@ -25,6 +25,7 @@ var (
 	generateListMode    bool
 	generateRequireLoad bool
 	generateNoApply     bool
+	generateParallel    int
 )
 
 func init() {
@@ -32,6 +33,7 @@ func init() {
 	generateCmd.Flags().BoolVarP(&generateListMode, "list", "l", false, "List available generators")
 	generateCmd.Flags().BoolVar(&generateRequireLoad, "require-load", false, "Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)")
 	generateCmd.Flags().BoolVar(&generateNoApply, "no-apply", false, "Compute and show a summary of generated changes without applying them")
+	generateCmd.Flags().IntVarP(&generateParallel, "parallel", "j", 0, "Run at most this many generators at once; 0 means no limit")
 }
 
 var generateCmd = &cobra.Command{
@@ -39,6 +41,9 @@ var generateCmd = &cobra.Command{
 	Short: "Generate derived files for your project — code, SDKs, types, docs, etc.",
 	Args:  cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateParallel(generateParallel); err != nil {
+			return err
+		}
 		disposition, err := generateChangesetDisposition(generateListMode, autoApply, generateNoApply, idtui.RunningInAgent())
 		if err != nil {
 			return err
@@ -118,7 +123,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
-	results, err := evaluateArtifacts(ctx, dag, generators, false)
+	results, err := evaluateArtifacts(ctx, dag, generators, false, generateParallel)
 	if err != nil {
 		return err
 	}

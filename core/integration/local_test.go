@@ -858,8 +858,7 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 		//
 		// This is debatable behavior but given the various inconstencies around how hardlinks are handled
 		// in different snapshotters, users can't rely on hardlink status being exactly preserved from their
-		// host filesystem anyways. This behavior also seems to have existed for a while (i.e. before
-		// filesync refactorizing), so calling this "expected" for the time being.
+		// host filesystem anyways.
 		//
 		// fstest.CreateFile("z", []byte("a"), 0o644),
 		fstest.Link("dirA/a", "z"),

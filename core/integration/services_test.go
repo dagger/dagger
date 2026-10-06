@@ -623,7 +623,7 @@ func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *te
 	srv := c.Container().
 		From(alpineImage).
 		WithFile("/bin/app", script).
-		WithSymlink("doesnt", "matter"). // Note this is done via a dagOp; which broke things at one point
+		WithSymlink("doesnt", "matter"). // WithSymlink runs as a dagOp, so this covers services built from dagOp-produced containers
 		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
 		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
 		WithExposedPort(1337)
@@ -700,9 +700,17 @@ func (ServiceSuite) TestExecServiceExitShortCircuits(ctx context.Context, t *tes
 func (ServiceSuite) TestServiceDependencyExitShortCircuits(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	// dep only crashes once the consumer's command has started, so app has
+	// already been returned as running and the exit must propagate through it.
+	// The watchdog exits with a different code so a missing signal can't pass
+	// for the intended crash.
+	gate := c.CacheVolume("service-dependency-exit-" + identity.NewID())
+
 	dep := c.Container().
 		From(alpineImage).
-		WithDefaultArgs([]string{"sh", "-c", "sleep 1; echo dependency crashed >&2; exit 42"}).
+		WithMountedCache("/gate", gate).
+		WithDefaultArgs([]string{"sh", "-c",
+			"for i in $(seq 1 1200); do if [ -f /gate/consumer-started ]; then echo dependency crashed >&2; exit 42; fi; sleep 0.1; done; echo consumer never started >&2; exit 1"}).
 		AsService()
 
 	depHost, err := dep.Hostname(ctx)
@@ -711,7 +719,7 @@ func (ServiceSuite) TestServiceDependencyExitShortCircuits(ctx context.Context, 
 	srv := c.Container().
 		From(alpineImage).
 		WithServiceBinding("dep", dep).
-		WithDefaultArgs([]string{"sh", "-c", "sleep 30"}).
+		WithDefaultArgs([]string{"sh", "-c", "while true; do sleep 1; done"}).
 		AsService()
 
 	host, err := srv.Hostname(ctx)
@@ -720,8 +728,9 @@ func (ServiceSuite) TestServiceDependencyExitShortCircuits(ctx context.Context, 
 	_, err = c.Container().
 		From(alpineImage).
 		WithEnvVariable("CACHEBUST", identity.NewID()).
+		WithMountedCache("/gate", gate).
 		WithServiceBinding("app", srv).
-		WithExec([]string{"sh", "-c", "sleep 10; echo should-not-run"}).
+		WithExec([]string{"sh", "-c", "touch /gate/consumer-started; sleep 10; echo should-not-run"}).
 		Sync(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "bound service "+host+" (aliased as app) exited")
@@ -954,6 +963,7 @@ func (ServiceSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		With(withRepoGoModules(c)).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
@@ -987,6 +997,7 @@ func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T)
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		With(withRepoGoModules(c)).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
@@ -1688,8 +1699,11 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 				c.Directory().WithNewFile("index.html", content+"-2")).
 			WithDefaultArgs([]string{
 				"sh", "-c",
-				`( cd /srv/www1 && python -m http.server 32765 ) &
-				 ( cd /srv/www2 && python -m http.server 32764 ) &
+				// 32764 is not exposed, so nothing health-checks it; wait for it
+				// before starting 32765 so the 32765 health check covers both.
+				`( cd /srv/www2 && python -m http.server 32764 ) &
+				 python -c 'import socket, sys, time; any(socket.socket().connect_ex(("127.0.0.1", 32764)) == 0 or time.sleep(0.1) for _ in range(300)) or sys.exit("port 32764 not ready")' || exit 1
+				 ( cd /srv/www1 && python -m http.server 32765 ) &
 				 wait`,
 			}).
 			WithExposedPort(32765). // NB: trying to avoid conflicts...
