@@ -4726,10 +4726,10 @@ class Container(Type):
             container. Example: "./stdin.txt"
         redirect_stdout:
             Redirect the command's standard output to a file in the container.
-            Example: "./stdout.txt"
+            The redirected output is not logged. Example: "./stdout.txt"
         redirect_stderr:
             Redirect the command's standard error to a file in the container.
-            Example: "./stderr.txt"
+            The redirected output is not logged. Example: "./stderr.txt"
         expect:
             Exit codes this command is allowed to exit with without error
         disable_dagger_in_dagger:

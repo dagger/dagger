@@ -659,10 +659,18 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Content to write to the command's standard input. Example: "Hello world")`),
 				dagql.Arg("redirectStdin").Doc(
 					`Redirect the command's standard input from a file in the container. Example: "./stdin.txt"`),
-				dagql.Arg("redirectStdout").Doc(
-					`Redirect the command's standard output to a file in the container. Example: "./stdout.txt"`),
-				dagql.Arg("redirectStderr").Doc(
-					`Redirect the command's standard error to a file in the container. Example: "./stderr.txt"`),
+				dagql.Arg("redirectStdout").
+					View(AfterVersion(redirectNotLoggedVersion)).
+					Doc(`Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"`),
+				dagql.Arg("redirectStdout").
+					View(BeforeVersion(redirectNotLoggedVersion)).
+					Doc(`Redirect the command's standard output to a file in the container. Example: "./stdout.txt"`),
+				dagql.Arg("redirectStderr").
+					View(AfterVersion(redirectNotLoggedVersion)).
+					Doc(`Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"`),
+				dagql.Arg("redirectStderr").
+					View(BeforeVersion(redirectNotLoggedVersion)).
+					Doc(`Redirect the command's standard error to a file in the container. Example: "./stderr.txt"`),
 				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
 				disableNestingArg,
 				legacyNestingArg,
@@ -1709,6 +1717,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if core.Supports(ctx, defaultNestingVersion) {
 		args.ExperimentalPrivilegedNesting = !args.DisableDaggerInDagger
 	}
+	args.LogRedirectedOutput = !core.Supports(ctx, redirectNotLoggedVersion)
 
 	var md *engineutil.ExecutionMetadata
 	if args.ExecMD.Self != nil {
