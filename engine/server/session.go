@@ -2601,6 +2601,16 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		)
 		defer telemetry.EndWithCause(span, &rerr)
 
+		// A module process is the direct child of the client its function call
+		// runs under; that call's plumbing span takes its dependency loading.
+		if len(client.parentClientIDs) > 0 {
+			if parents, err := sess.ancestorRuntimes(client.clientRecord); err == nil {
+				if plumbing := parents[len(parents)-1].fnCall.PlumbingSpanContext(); plumbing.IsValid() {
+					ctx = core.WithModuleProcessRequest(ctx, plumbing)
+				}
+			}
+		}
+
 		// wcprof completeness checksum: record this trace and its
 		// session-root span once, from the OUTERMOST query (a main client has no
 		// parents; nested module-runtime clients do). The engine span total is NOT

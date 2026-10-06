@@ -115,6 +115,12 @@ func (r *entrypointRuntime) Call(
 		}
 	}()
 
+	fnCall.SetProcessSpanContext(dagql.UserFacingSpanContext(ctx))
+
+	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+	fnCall.SetPlumbingSpanContext(span.SpanContext())
+
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return fmt.Errorf("get Dagger server for entrypoint call: %w", err)
@@ -135,9 +141,6 @@ func (r *entrypointRuntime) Call(
 	if err != nil {
 		return err
 	}
-
-	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
 
 	var resultJSON []byte
 	_, err = evalDangSource(

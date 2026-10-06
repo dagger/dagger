@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -957,12 +958,26 @@ func (fn *ModuleFunction) declaredClientsDigest(ctx context.Context) (string, er
 	return hashutil.HashStrings(inputs...).String(), nil
 }
 
-func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRuntime, rerr error) {
-	// hide all this internal plumbing making up the call
-	ctx, hideSpan := Tracer(ctx).Start(ctx, "load sdk runtime", telemetry.Internal())
-	defer telemetry.EndWithCause(hideSpan, &rerr)
+// runtimeLessSDK is implemented by SDKs that call a module without loading a
+// runtime, such as a module entrypoint evaluated in the engine.
+type runtimeLessSDK interface {
+	HasNoRuntime() bool
+}
 
+func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRuntime, rerr error) {
 	mod := fn.mod.Self()
+	var noRuntime bool
+	if !mod.Runtime.Valid && mod.Source.Valid {
+		sdk, ok := mod.Source.Value.Self().SDKImpl.(runtimeLessSDK)
+		noRuntime = ok && sdk.HasNoRuntime()
+	}
+	if !noRuntime {
+		// hide all this internal plumbing making up the call
+		var hideSpan trace.Span
+		ctx, hideSpan = Tracer(ctx).Start(ctx, "load sdk runtime", telemetry.Internal())
+		defer telemetry.EndWithCause(hideSpan, &rerr)
+	}
+
 	if mod.Runtime.Valid {
 		return &ContainerRuntime{Container: mod.Runtime.Value}, nil
 	}
