@@ -9,7 +9,6 @@ package core
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -255,9 +254,9 @@ region = "eu-west-1"
 }
 
 // TestWorkspaceUserConfigSnapshot covers a snapshot of a checkout — the
-// workspace an agent session works on. A snapshot is a portable value that
-// carries no user overlay of its own, so the overlay is resolved from the
-// caller's user config by the snapshot's origin remote.
+// workspace an agent session works on. The snapshot carries the user-level
+// overlay it was captured with in its recipe, and Workspace.withUserConfig
+// re-reads the caller's user config to pick up later edits.
 func (WorkspaceSuite) TestWorkspaceUserConfigSnapshot(ctx context.Context, t *testctx.T) {
 	workdir := newWorkspaceConfigWorkdir(ctx, t, userConfigWorkspaceFixture)
 	git := func(args ...string) string {
@@ -270,52 +269,48 @@ func (WorkspaceSuite) TestWorkspaceUserConfigSnapshot(ctx context.Context, t *te
 	}
 	git("add", ".")
 	git("commit", "-m", "initial")
+	// A served origin lets the checkout be captured as a portable snapshot.
 	publishCheckpointRemote(ctx, t, workdir)
 	origin := git("remote", "get-url", "origin")
 
-	// Keep the query and user config outside the checkout, so the snapshot
-	// has no untracked files to ask about.
-	scratch := t.TempDir()
-	queryPath := writeQueryDoc(t, scratch, "snapshot.graphql", `{
-  currentWorkspace {
-    snapshot {
-      configRead(key: "modules.aws.settings.profile", effective: true)
-    }
-  }
-}
-`)
-	readProfile := func(userConfigTOML string) string {
+	// Keep the user config outside the checkout, so the snapshot has no
+	// untracked files to ask about.
+	userConfigPath := filepath.Join(t.TempDir(), "config.toml")
+	writeProfile := func(profile string) {
 		t.Helper()
-		userConfigPath := filepath.Join(t.TempDir(), "config.toml")
-		if userConfigTOML != "" {
-			require.NoError(t, os.WriteFile(userConfigPath, []byte(userConfigTOML), 0o600))
-		}
-		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--silent", "query", "-M", "--doc", queryPath)
+		require.NoError(t, os.WriteFile(userConfigPath, []byte(fmt.Sprintf(`
+[workspaces.%q.modules.aws.settings]
+profile = %q
+`, origin, profile)), 0o600))
+	}
+	writeProfile("alice-dev")
+
+	c := connect(ctx, t,
+		dagger.WithWorkdir(workdir),
+		dagger.WithEnvironmentVariable("DAGGER_CONFIG", userConfigPath))
+	profile := func(ws *dagger.Workspace) string {
+		t.Helper()
+		out, err := ws.ConfigRead(ctx, dagger.WorkspaceConfigReadOpts{
+			Key:       "modules.aws.settings.profile",
+			Effective: true,
+		})
 		require.NoError(t, err)
-		var res struct {
-			CurrentWorkspace struct {
-				Snapshot struct {
-					ConfigRead string
-				}
-			}
-		}
-		require.NoError(t, json.Unmarshal(out, &res), string(out))
-		return res.CurrentWorkspace.Snapshot.ConfigRead
+		return out
 	}
 
-	require.Equal(t, "alice-dev", readProfile(fmt.Sprintf(`
-[workspaces.%q.modules.aws.settings]
-profile = "alice-dev"
-`, origin)))
+	frozen := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	require.Equal(t, "alice-dev", profile(frozen))
 
-	// Another caller's user config applies to the same snapshot.
-	require.Equal(t, "bob-dev", readProfile(fmt.Sprintf(`
-[workspaces.%q.modules.aws.settings]
-profile = "bob-dev"
-`, origin)))
+	// Edits made mid-session leave the snapshot as captured until it is
+	// explicitly refreshed.
+	writeProfile("bob-dev")
+	require.Equal(t, "alice-dev", profile(frozen))
+	require.Equal(t, "bob-dev", profile(frozen.WithUserConfig()))
 
-	// Without user config, the repository value applies.
-	require.Equal(t, "shared", readProfile(""))
+	// Each refresh re-reads: a removed entry drops the user-level value.
+	require.NoError(t, os.Remove(userConfigPath))
+	require.Equal(t, "shared", profile(frozen.WithUserConfig()))
+	require.Equal(t, "alice-dev", profile(frozen))
 }
 
 func (WorkspaceSuite) TestWorkspaceUserConfigWrites(ctx context.Context, t *testctx.T) {

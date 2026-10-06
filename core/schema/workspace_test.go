@@ -449,7 +449,8 @@ func TestEffectiveWorkspaceConfigBytesAppliesUserOverlay(t *testing.T) {
 			},
 		}
 	}
-	overlay := &workspace.UserWorkspaceOverlay{
+	ws := &core.Workspace{}
+	ws.SetUserConfigOverlay(&workspace.UserWorkspaceOverlay{
 		Modules: map[string]workspace.EnvModuleOverlay{
 			"aws": {Settings: map[string]any{"profile": "alice-dev"}},
 		},
@@ -458,11 +459,11 @@ func TestEffectiveWorkspaceConfigBytesAppliesUserOverlay(t *testing.T) {
 				"aws": {Settings: map[string]any{"region": "us-west-2"}},
 			}},
 		},
-	}
+	})
 
 	t.Run("without env", func(t *testing.T) {
 		t.Parallel()
-		data, err := effectiveWorkspaceConfigBytes(overlay, baseCfg(), "")
+		data, err := effectiveWorkspaceConfigBytes(ws, baseCfg(), "")
 		require.NoError(t, err)
 
 		profile, err := workspace.ReadConfigValue(data, "modules.aws.settings.profile")
@@ -476,7 +477,7 @@ func TestEffectiveWorkspaceConfigBytesAppliesUserOverlay(t *testing.T) {
 
 	t.Run("with user-defined env", func(t *testing.T) {
 		t.Parallel()
-		data, err := effectiveWorkspaceConfigBytes(overlay, baseCfg(), "dev")
+		data, err := effectiveWorkspaceConfigBytes(ws, baseCfg(), "dev")
 		require.NoError(t, err)
 
 		region, err := workspace.ReadConfigValue(data, "modules.aws.settings.region")
@@ -486,7 +487,7 @@ func TestEffectiveWorkspaceConfigBytesAppliesUserOverlay(t *testing.T) {
 
 	t.Run("no overlay leaves config unchanged", func(t *testing.T) {
 		t.Parallel()
-		data, err := effectiveWorkspaceConfigBytes(nil, baseCfg(), "")
+		data, err := effectiveWorkspaceConfigBytes(&core.Workspace{}, baseCfg(), "")
 		require.NoError(t, err)
 
 		profile, err := workspace.ReadConfigValue(data, "modules.aws.settings.profile")

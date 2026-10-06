@@ -19110,6 +19110,22 @@ class Workspace(Type):
         _ctx = self._select("withUpdatedModules", _args)
         return Workspace(_ctx)
 
+    def with_user_config(self) -> Self:
+        """Return this workspace with the calling client's user-level config re-
+        read and applied.
+
+        User-level config (the [workspaces.*] section of the Dagger config
+        file) is read when a session loads its workspace, and snapshots keep
+        that configuration. Call this to pick up edits made since, for example
+        when an agent reloads its modules.
+
+        The entry is matched by the workspace's git origin remote. A workspace
+        without one, or without a matching entry, gets no user-level config.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withUserConfig", _args)
+        return Workspace(_ctx)
+
     def with_workdir(self, path: str) -> Self:
         """Return this workspace with its working directory pointed at the given
         workspace-relative path.

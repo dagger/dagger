@@ -59,6 +59,75 @@ profile = "alice-dev"
 	})
 }
 
+func TestUserWorkspaceOverlayEncoding(t *testing.T) {
+	t.Parallel()
+
+	parse := func(t *testing.T, data string) *UserWorkspaceOverlay {
+		t.Helper()
+		cfg, err := ParseUserConfig([]byte(data))
+		require.NoError(t, err)
+		overlay := cfg.MatchWorkspaceOverlay("github.com/acme/api")
+		require.NotNil(t, overlay)
+		return overlay
+	}
+
+	t.Run("round trips setting values with their types", func(t *testing.T) {
+		t.Parallel()
+		overlay := parse(t, `
+[workspaces."github.com/acme/api".modules.aws]
+source = "github.com/acme/aws"
+
+[workspaces."github.com/acme/api".modules.aws.settings]
+profile = "alice-dev"
+retries = 3
+verbose = true
+regions = ["us-east-1", "us-west-2"]
+
+[workspaces."github.com/acme/api".env.dev.modules.aws.settings]
+retries = 5
+`)
+		encoded, err := EncodeUserWorkspaceOverlay(overlay)
+		require.NoError(t, err)
+		decoded, err := DecodeUserWorkspaceOverlay(encoded)
+		require.NoError(t, err)
+		require.Equal(t, overlay, decoded)
+
+		// Re-encoding the decoded overlay is stable, so its recipe is too.
+		again, err := EncodeUserWorkspaceOverlay(decoded)
+		require.NoError(t, err)
+		require.Equal(t, encoded, again)
+	})
+
+	t.Run("key order does not affect the encoding", func(t *testing.T) {
+		t.Parallel()
+		a := parse(t, `
+[workspaces."github.com/acme/api".modules.aws.settings]
+profile = "alice-dev"
+region = "us-west-2"
+`)
+		b := parse(t, `
+[workspaces."github.com/acme/api".modules.aws.settings]
+region = "us-west-2"
+profile = "alice-dev"
+`)
+		encodedA, err := EncodeUserWorkspaceOverlay(a)
+		require.NoError(t, err)
+		encodedB, err := EncodeUserWorkspaceOverlay(b)
+		require.NoError(t, err)
+		require.Equal(t, encodedA, encodedB)
+	})
+
+	t.Run("nil encodes as empty", func(t *testing.T) {
+		t.Parallel()
+		encoded, err := EncodeUserWorkspaceOverlay(nil)
+		require.NoError(t, err)
+		require.Empty(t, encoded)
+		decoded, err := DecodeUserWorkspaceOverlay("")
+		require.NoError(t, err)
+		require.Nil(t, decoded)
+	})
+}
+
 func TestNormalizeGitRemote(t *testing.T) {
 	t.Parallel()
 

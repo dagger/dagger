@@ -128,8 +128,9 @@ type Workspace struct {
 	userConfigKey string
 
 	// userConfigOverlay is the user-level config overlay matched for this
-	// workspace by userConfigKey. Internal only — user config can carry
-	// personal values that must not surface through GraphQL or IDs.
+	// workspace by userConfigKey. Not a GraphQL field: a live workspace reads
+	// it once at session load, and value workspaces carry it in their recipe
+	// via Workspace.__withUserConfigOverlay (see Workspace.withUserConfig).
 	userConfigOverlay *workspacepkg.UserWorkspaceOverlay
 
 	// selectedEnv is the dagger.toml environment selected when this workspace

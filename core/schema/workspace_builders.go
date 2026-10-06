@@ -87,11 +87,7 @@ func effectiveWorkspaceConfig(
 	ws *core.Workspace,
 	cfg *workspace.Config,
 ) (*workspace.Config, error) {
-	overlay, err := workspaceUserConfigOverlay(ctx, ws)
-	if err != nil {
-		return nil, err
-	}
-	applied, err := workspace.ApplyUserOverlay(cfg, overlay)
+	applied, err := workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
 	if err != nil {
 		return nil, err
 	}

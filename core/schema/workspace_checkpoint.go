@@ -524,6 +524,16 @@ func checkpointWorkspaceMetadataComposition(
 		return inst, err
 	}
 	inst = withEnv
+	// The user-level overlay rides in the recipe, so the frozen workspace
+	// keeps the configuration it was captured with, even when rebuilt in
+	// another session; Workspace.withUserConfig refreshes it explicitly.
+	if overlay := metadata.UserConfigOverlay(); overlay != nil {
+		withOverlay, err := workspaceWithUserConfigOverlay(ctx, srv, inst, overlay)
+		if err != nil {
+			return inst, err
+		}
+		inst = withOverlay
+	}
 	if mounts, ok := metadata.MountsDir(); ok {
 		for _, mountPath := range metadata.MountPoints() {
 			stat, err := mounts.Self().Stat(ctx, mounts, srv, mountPath, true)

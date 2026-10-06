@@ -18654,6 +18654,18 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with the calling client's user-level config re-read and applied.
+   *
+   * User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+   *
+   * The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+   */
+  withUserConfig = (): Workspace => {
+    const ctx = this._ctx.select("withUserConfig")
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with its working directory pointed at the given workspace-relative path.
    * @param path Workspace-relative path to use as the working directory.
    */

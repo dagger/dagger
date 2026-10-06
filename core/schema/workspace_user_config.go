@@ -2,12 +2,10 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 
-	"github.com/opencontainers/go-digest"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -17,32 +15,68 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-// workspaceUserConfigOverlay returns the user-level config overlay that
-// applies to ws for the calling client.
+// withUserConfig re-reads the calling host's user-level config and returns
+// the workspace with the overlay matching its origin remote, or with none
+// when nothing matches.
 //
-// A live workspace carries the overlay its owning client resolved when the
-// session loaded it. A value workspace (a snapshot, or Directory/GitRef
-// asWorkspace) carries none: it is portable, and user config holds personal
-// values that must not ride in its recipe. Its overlay is resolved at use
-// instead, from the calling host's user config, keyed by the workspace's
-// origin remote. That keeps a snapshot — the workspace an agent works on —
-// configured the same as the checkout it was taken from.
-func workspaceUserConfigOverlay(ctx context.Context, ws *core.Workspace) (*workspace.UserWorkspaceOverlay, error) {
-	if ws == nil {
-		return nil, nil
+// A live workspace reads user config once, when the session loads it, and a
+// snapshot carries that overlay in its recipe from then on, so nothing on the
+// hot path ever touches the host's config file. This is the explicit refresh:
+// an agent reloading its modules calls it to pick up config edits made since.
+// The result is the parent plus __withUserConfigOverlay, so everything derived
+// from it keys on the overlay through its ID, like any other workspace input.
+func (s *workspaceSchema) withUserConfig(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	_ struct{},
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
 	}
-	if !ws.IsValueWorkspace() {
-		return ws.UserConfigOverlay(), nil
+	var overlay *workspace.UserWorkspaceOverlay
+	if key := core.WorkspaceOrigin(parent.Self()); key != "" {
+		userCfg, err := callerUserConfig(ctx)
+		if err != nil {
+			return inst, err
+		}
+		overlay = userCfg.MatchWorkspaceOverlay(key)
 	}
-	key := core.WorkspaceOrigin(ws)
-	if key == "" {
-		return nil, nil
+	return workspaceWithUserConfigOverlay(ctx, srv, parent, overlay)
+}
+
+// workspaceWithUserConfigOverlay records overlay on ws as a real selector, so
+// the overlay is part of the result's identity and survives rebuilding the
+// workspace from its recipe.
+func workspaceWithUserConfigOverlay(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws dagql.ObjectResult[*core.Workspace],
+	overlay *workspace.UserWorkspaceOverlay,
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	encoded, err := workspace.EncodeUserWorkspaceOverlay(overlay)
+	if err != nil {
+		return inst, err
 	}
-	userCfg, err := callerUserConfig(ctx)
-	if err != nil || userCfg == nil {
+	err = srv.Select(ctx, ws, &inst, dagql.Selector{
+		Field: "__withUserConfigOverlay",
+		Args:  []dagql.NamedInput{{Name: "overlay", Value: dagql.NewString(encoded)}},
+	})
+	return inst, err
+}
+
+func (s *workspaceSchema) withUserConfigOverlay(
+	_ context.Context,
+	parent *core.Workspace,
+	args struct{ Overlay string },
+) (*core.Workspace, error) {
+	overlay, err := workspace.DecodeUserWorkspaceOverlay(args.Overlay)
+	if err != nil {
 		return nil, err
 	}
-	return userCfg.MatchWorkspaceOverlay(key), nil
+	ws := parent.Clone()
+	ws.SetUserConfigOverlay(overlay)
+	return ws, nil
 }
 
 // callerUserConfig reads the user-level config of the host the call comes
@@ -77,32 +111,4 @@ func callerUserConfig(ctx context.Context) (*workspace.UserConfig, error) {
 		return nil, fmt.Errorf("parsing user config %s: %w", hostMD.UserConfigPath, err)
 	}
 	return userCfg, nil
-}
-
-// workspaceUserConfigCacheInput keys a cached call on a value workspace by
-// the user-level overlay the caller resolves for it, since that overlay is
-// read from the caller's host rather than carried in the workspace's ID.
-// Callers with the same overlay (or none) share results; a caller with
-// different user settings never sees another's. Live workspaces carry their
-// overlay with them and need no extra key.
-func workspaceUserConfigCacheInput[A any](
-	ctx context.Context,
-	parent dagql.ObjectResult[*core.Workspace],
-	_ A,
-	req *dagql.CallRequest,
-) error {
-	ws := parent.Self()
-	if ws == nil || !ws.IsValueWorkspace() {
-		return nil
-	}
-	overlay, err := workspaceUserConfigOverlay(ctx, ws)
-	if err != nil || overlay == nil {
-		return err
-	}
-	// encoding/json sorts map keys, so equal overlays digest equally.
-	data, err := json.Marshal(overlay)
-	if err != nil {
-		return fmt.Errorf("digest user config overlay: %w", err)
-	}
-	return req.SetImplicitInput(ctx, "userConfig", dagql.NewString(digest.FromBytes(data).String()))
 }

@@ -139,6 +139,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Select the config environment carried by this workspace.").
 			Args(dagql.Arg("name").Doc("Environment name, or empty to clear the selection.")),
+		dagql.NodeFunc("withUserConfig", s.withUserConfig).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Reads the calling client's user config").
+			Doc("Return this workspace with the calling client's user-level config re-read and applied.",
+				"User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.",
+				"The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config."),
+		dagql.Func("__withUserConfigOverlay", s.withUserConfigOverlay).
+			View(AfterVersion("v1.0.0-0")),
 		dagql.Func("__workspaceModule", s.workspaceModule).
 			View(AfterVersion("v1.0.0-0")),
 		dagql.NodeFunc("__workspaceSDK", s.workspaceSDK).
@@ -356,7 +364,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
 			Doc("Return this workspace with no module selected as its entrypoint."),
-		dagql.NodeFuncWithDynamicInputs("withInitModule", s.withSDKModuleInitialized, workspaceUserConfigCacheInput[sdkModuleInitArgs]).
+		dagql.NodeFunc("withInitModule", s.withSDKModuleInitialized).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a location initialized as a module scope.",
 				"The selected SDK module records the scope and generates the module source.").
@@ -368,13 +376,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("entrypoint").View(AfterVersion("v1.0.0-0")).Doc("Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed."),
 				dagql.Arg("settings").Doc("Explicit SDK-module constructor setting overrides for this scope."),
 			),
-		dagql.NodeFuncWithDynamicInputs("detectScope", s.sdkModuleDetectScope, workspaceUserConfigCacheInput[sdkModuleDetectScopeArgs]).
+		dagql.NodeFunc("detectScope", s.sdkModuleDetectScope).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return the selected SDK module's current scope at this workspace location.").
 			Args(
 				dagql.Arg("sdk").Doc("SDK name to probe. Required."),
 			),
-		dagql.NodeFuncWithDynamicInputs("withClient", s.withSDKModuleClient, workspaceUserConfigCacheInput[sdkModuleClientAddArgs]).
+		dagql.NodeFunc("withClient", s.withSDKModuleClient).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a generated module client added to one SDK scope.",
 				"Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.").
@@ -383,7 +391,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sdk").Doc("Optional SDK name. Inspect all installed SDKs when omitted."),
 				dagql.Arg("settings").Doc("Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name."),
 			),
-		dagql.NodeFuncWithDynamicInputs("withoutClient", s.withoutSDKModuleClient, workspaceUserConfigCacheInput[sdkModuleClientRemoveArgs]).
+		dagql.NodeFunc("withoutClient", s.withoutSDKModuleClient).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a module client removed from the deepest matching recorded scope.",
 				"Fail if several SDKs have that deepest scope. The selected SDK module regenerates the complete scope.",
@@ -392,7 +400,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("module").Doc("The recorded target to remove."),
 				dagql.Arg("sdk").Doc("Optional SDK name. Search all installed SDKs when omitted."),
 			),
-		dagql.NodeFuncWithDynamicInputs("withUpdatedClients", s.withUpdatedSDKModuleClients, workspaceUserConfigCacheInput[sdkModuleClientUpdateArgs]).
+		dagql.NodeFunc("withUpdatedClients", s.withUpdatedSDKModuleClients).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with the selected module clients updated.",
 				"The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.",
@@ -469,10 +477,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("version").View(AfterVersion("v1.0.0-0")).Doc("New version request for exactly one selected module. Cannot be combined with a version suffix."),
 				dagql.Arg("source").View(AfterVersion("v1.0.0-0")).Doc("New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix."),
 			),
-		dagql.NodeFuncWithDynamicInputs("sdks", s.sdks, workspaceUserConfigCacheInput[struct{}]).
+		dagql.NodeFunc("sdks", s.sdks).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Installed SDKs."),
-		dagql.NodeFuncWithDynamicInputs("sdk", s.sdk, workspaceUserConfigCacheInput[struct{ Name string }]).
+		dagql.NodeFunc("sdk", s.sdk).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("An installed SDK, by name.").
 			Args(
@@ -545,7 +553,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Current location within the workspace root.",
 				`The workspace root is returned as "/".`,
 				"Relative paths in workspace APIs resolve from here."),
-		dagql.NodeFuncWithDynamicInputs("artifacts", s.artifacts, workspaceUserConfigCacheInput[workspaceArtifactsArgs]).
+		dagql.NodeFunc("artifacts", s.artifacts).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Discover static object artifacts from workspace modules without evaluating their values.").
 			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.")),
@@ -4102,11 +4110,7 @@ func workspaceEffectiveConfig(ctx context.Context, ws *core.Workspace) (*workspa
 	if err != nil {
 		return nil, err
 	}
-	overlay, err := workspaceUserConfigOverlay(ctx, ws)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err = workspace.ApplyUserOverlay(cfg, overlay)
+	cfg, err = workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
 	if err != nil {
 		return nil, err
 	}

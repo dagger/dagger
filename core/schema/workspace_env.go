@@ -23,11 +23,7 @@ func (s *workspaceSchema) envList(
 	}
 
 	// User-level overrides may add environments for this workspace.
-	overlay, err := workspaceUserConfigOverlay(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err = workspace.ApplyUserOverlay(cfg, overlay)
+	cfg, err = workspace.ApplyUserOverlay(cfg, parent.UserConfigOverlay())
 	if err != nil {
 		return nil, err
 	}
