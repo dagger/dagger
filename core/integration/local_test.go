@@ -828,8 +828,6 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 
 	require.NotEqual(t, dgst1Root, dgst3Root)
 
-	require.NoError(t, c3.Close())
-
 	fullDirChanges = fstest.Apply(
 		// replace hardlink with its own file that's the same as before but its own inode
 		fstest.Remove("z"),
@@ -860,12 +858,17 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 		// in different snapshotters, users can't rely on hardlink status being exactly preserved from their
 		// host filesystem anyways.
 		//
+		// Reusing the previous load's snapshot is best-effort: once c3 closes, its snapshot can be garbage
+		// collected and the load falls back to a fresh copy of the host. c3 stays open until here so the
+		// snapshot is still held and the reuse is deterministic.
+		//
 		// fstest.CreateFile("z", []byte("a"), 0o644),
 		fstest.Link("dirA/a", "z"),
 	)))
 
 	require.Equal(t, dgst3Root, dgst4Root)
 
+	require.NoError(t, c3.Close())
 	require.NoError(t, c4.Close())
 }
 
