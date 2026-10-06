@@ -231,6 +231,7 @@
                 "reference/api/git-commit",
                 "reference/api/git-push-result",
                 "reference/api/git-ref",
+                "reference/api/git-remote",
                 "reference/api/healthcheck-config",
                 "reference/api/host",
                 "reference/api/http-state",

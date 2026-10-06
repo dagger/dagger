@@ -11,6 +11,15 @@ import ApiType from "@site/src/components/api/ApiType";
 
 <GitRepositoryType />
 
+## Filter by branch ancestry
+
+`GitRef.contains` checks whether another commit is reachable from the receiver's history. Comparing the workspace commit with the default remote's current HEAD determines whether the commit has reached the default branch.
+
+Run `CurrentCommit` to obtain the workspace's `GitRef` ID, then pass it as `$current` to `InDefaultBranch`. `noLock: true` resolves the remote HEAD without a lock-file pin.
+
+```graphql file=./snippets/git-branch-filtering.graphql
+```
+
 ## API reference
 
 <ApiType name="GitRepository" />
