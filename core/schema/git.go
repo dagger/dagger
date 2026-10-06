@@ -28,13 +28,10 @@ import (
 
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
-	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 func init() {
@@ -526,6 +523,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		return inst, fmt.Errorf("current call is nil")
 	}
 
+	var publicMetadata *gitutil.Remote
 	var experimentalServiceHostID *call.ID
 	if args.ExperimentalServiceHost.Valid {
 		experimentalServiceHostID, err = args.ExperimentalServiceHost.Value.ID()
@@ -934,7 +932,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				}
 			}
 
-			public, err := cachedIsRemotePublic(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote, len(gitServices) > 0)
+			metadata, err := cachedPublicRemote(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote, len(gitServices) > 0)
 			if err != nil {
 				// A workspace pin may let child fields resolve without contacting
 				// this repository. Don't fail the parent visibility probe when a
@@ -945,7 +943,8 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				}
 				return inst, err
 			}
-			if public {
+			if metadata != nil {
+				publicMetadata = metadata
 				break
 			}
 
@@ -1050,6 +1049,11 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		Args:  gitRepositoryNamedInputs(remote, args, experimentalServiceHostID, sshAuthSocketID, httpAuthTokenID, httpAuthHeaderID),
 		View:  curCall.View,
 	})
+	if err == nil && publicMetadata != nil {
+		if backend, ok := inst.Self().Backend.(*core.RemoteGitRepository); ok {
+			err = backend.PrimePublicRemote(ctx, publicMetadata)
+		}
+	}
 	return inst, err
 }
 
@@ -1279,81 +1283,84 @@ func calcGitContentDigest(gitRef *core.GitRef, args treeArgs) (digest.Digest, er
 	return hashutil.HashStrings(dgstInputs...), nil
 }
 
-// cachedIsRemotePublic shares one probe per session: git is per-client input,
-// so a remote reached from both the CLI and a module's dependency resolution
+// cachedPublicRemote shares one probe and its advertisement per session. Git
+// is per-client input, so a remote reached from both the CLI and a module's dependency resolution
 // would otherwise be probed once per client. The probe sends no credentials,
 // so the URL alone identifies the answer — except behind a service binding,
 // where visibility depends on the service.
 //
 // A repository that turns private mid-session keeps its cached answer until the
 // command ends, and credentials stay unattached until then. RemoteGitRepository
-// .Remote caches the whole ls-remote advertisement on the same session key, so
-// that window already exists for the far larger answer.
-func cachedIsRemotePublic(
+// .Remote already caches advertisements for one session; reusing this probe
+// does not extend that freshness window.
+func cachedPublicRemote(
 	ctx context.Context,
 	remote *gitutil.GitURL,
 	serviceBound bool,
-) (_ bool, rerr error) {
+) (_ *gitutil.Remote, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "git remote visibility", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	if serviceBound {
-		return IsRemotePublic(ctx, remote)
+		return probePublicRemote(ctx, remote)
 	}
 
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
-		return IsRemotePublic(ctx, remote)
+		return probePublicRemote(ctx, remote)
 	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return false, fmt.Errorf("git remote visibility session metadata: %w", err)
+		return nil, fmt.Errorf("git remote visibility session metadata: %w", err)
 	}
 
 	cacheKey := hashutil.HashStrings("gitRemoteVisibility", clientMetadata.SessionID, remote.Remote()).String()
 	cacheRes, err := cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(ctx context.Context) (any, error) {
-		return IsRemotePublic(ctx, remote)
+		return probePublicRemote(ctx, remote)
 	})
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	public, ok := cacheRes.Value().(bool)
+	metadata, ok := cacheRes.Value().(*gitutil.Remote)
 	if !ok {
-		return false, fmt.Errorf("unexpected git remote visibility cache value type %T", cacheRes.Value())
+		return nil, fmt.Errorf("unexpected git remote visibility cache value type %T", cacheRes.Value())
 	}
-	return public, nil
+	return metadata, nil
 }
 
+// IsRemotePublic checks anonymous access without attaching caller credentials.
 func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
-	// check if repo is public
-	repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
-		Name: "origin",
-		URLs: []string{remote.Remote()},
-	})
-	_, err := repo.ListContext(ctx, &git.ListOptions{Auth: nil})
+	metadata, err := probePublicRemote(ctx, remote)
+	return metadata != nil, err
+}
+
+// A nil advertisement means the repository requires authentication.
+// Published advertisements are immutable in the session cache.
+func probePublicRemote(ctx context.Context, remote *gitutil.GitURL) (*gitutil.Remote, error) {
+	metadata, err := publicRemoteAdvertisement(ctx, remote)
 	if err != nil {
 		// Some Git hosts return a 200 HTML login page for unauthenticated refs: go-git reports ErrInvalidPktLen
 		// treat as auth-required/private
 		if errors.Is(err, pktline.ErrInvalidPktLen) {
-			return false, nil
+			return nil, nil
 		}
 		// Azure Repos may also redirect unauthenticated private repository
 		// probes to a sign-in endpoint instead of returning a Git transport
 		// auth error.
 		if strings.Contains(err.Error(), "http redirect:") && strings.Contains(err.Error(), "does not end with /info/refs") {
-			return false, nil
+			return nil, nil
 		}
 		if errors.Is(err, transport.ErrAuthenticationRequired) {
-			return false, nil
+			return nil, nil
 		}
 		// AzureDevops handling
 		if strings.Contains(err.Error(), `target "/_signin" does not end`) {
-			return false, nil
+			return nil, nil
 		}
 
-		return false, err
+		return nil, err
 	}
-	return true, nil
+	return metadata, nil
 }
 
 type refArgs struct {
