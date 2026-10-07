@@ -11539,6 +11539,8 @@ func (r *GitRepository) WithBundle(bundle *GitBundle, opts ...GitRepositoryWithB
 // Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
 //
 // The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+//
+// When the receiver is a remote repository (or was derived from one), that remote is retained with its authentication: refs the supplied storage does not contain resolve through it.
 func (r *GitRepository) WithContents(directory *Directory) *GitRepository {
 	assertNotNil("directory", directory)
 	q := r.query.Select("withContents")
@@ -20063,6 +20065,19 @@ func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) 
 			q = q.Arg("source", opts[i].Source)
 		}
 	}
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with the calling client's user-level config re-read and applied.
+//
+// User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+//
+// The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+func (r *Workspace) WithUserConfig() *Workspace {
+	q := r.query.Select("withUserConfig")
 
 	return &Workspace{
 		query: q,

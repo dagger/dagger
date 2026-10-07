@@ -130,7 +130,7 @@ func TestArtifactCLITypeKeyOmission(t *testing.T) {
 			slices.Reverse(rows)
 		}
 	})
-	for _, command := range []string{"generate", "up", "agent"} {
+	for _, command := range []string{"generate", "start", "agent"} {
 		t.Run(command+" keeps module context", func(t *testing.T) {
 			typ := commandArtifactTypes(&cobra.Command{Use: command})[0]
 			row := listedArtifact{DimensionKeys: []struct{ Dimension, Key string }{{"module", "contributor"}, {"type:" + typ, "contributor/operation"}}}

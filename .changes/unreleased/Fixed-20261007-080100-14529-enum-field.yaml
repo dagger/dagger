@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  An object that has an enum field can now be passed as a module function argument instead of failing to convert.
+time: 2026-10-07T08:01:00Z
+custom:
+  Author: eunomie
+  PR: 14529

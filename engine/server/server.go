@@ -62,6 +62,7 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
@@ -732,6 +733,9 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	}
 	if err := bkcache.ReleaseOperationLeasesAfterRestart(ctx, srv.leaseManager); err != nil {
 		return localCacheStateResetNone, fmt.Errorf("release previous operation leases: %w", err)
+	}
+	if err := resolver.ReleasePullLeasesAfterRestart(ctx, srv.leaseManager); err != nil {
+		return localCacheStateResetNone, fmt.Errorf("release previous image pull leases: %w", err)
 	}
 
 	return localCacheStateResetNone, nil

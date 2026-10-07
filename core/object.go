@@ -278,7 +278,10 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 		if err != nil {
 			return nil, err
 		}
-		return modType.ConvertToSDKInput(ctx, typed)
+		if typed == nil {
+			return nil, nil
+		}
+		return modType.ConvertToSDKInput(ctx, typed.Unwrap())
 	}
 }
 

@@ -229,8 +229,33 @@ func (s *workspaceSchema) checkpointClientLocal(
 	if err != nil {
 		return inst, fmt.Errorf("construct portable workspace snapshot: %w", err)
 	}
+	// A successful owning-client capture approves this checkout as a donor of
+	// the captured anchor's history; later ref moves do not change its closure.
+	// Retain only an optional session-local donor capability, not host objects
+	// or client routes in the portable recipe. Bundle-backed (dirty/unpushed)
+	// captures retain their existing local repository path; only a clean remote
+	// base can donate complete history lazily, when history is demanded. The
+	// donor is only an optimization: registering none never fails the snapshot.
+	registerCheckpointHostHistory(clientCtx, query, ws, inst.Self(), metadata, len(bundle) != 0)
 
 	return inst, nil
+}
+
+// registerCheckpointHostHistory reports whether the capture registered an
+// approved host history donor. It never fails; why it registered none is
+// recorded on the current span.
+func registerCheckpointHostHistory(ctx context.Context, query *core.Query, captured, frozen *core.Workspace, metadata *gitsession.CaptureGitMetadata, hasBundle bool) bool {
+	if hasBundle {
+		return core.SkipHostHistoryDonor(ctx, "bundle-backed capture", nil)
+	}
+	if metadata.RemoteUrl == "" {
+		return core.SkipHostHistoryDonor(ctx, "capture has no remote URL", nil)
+	}
+	source, ok := frozen.BaseSource().(*core.WorkspaceSourceGitRef)
+	if !ok || source.Ref.Self() == nil {
+		return core.SkipHostHistoryDonor(ctx, "snapshot base is not a Git ref", nil)
+	}
+	return query.RegisterCapturedHostHistory(ctx, source.Ref.Self().Repo, captured.ClientID, captured.HostPath(), metadata.BaseSha, metadata.RemoteUrl)
 }
 
 func (s *workspaceSchema) checkpointGitRef(
@@ -524,6 +549,16 @@ func checkpointWorkspaceMetadataComposition(
 		return inst, err
 	}
 	inst = withEnv
+	// The user-level overlay rides in the recipe, so the frozen workspace
+	// keeps the configuration it was captured with, even when rebuilt in
+	// another session; Workspace.withUserConfig refreshes it explicitly.
+	if overlay := metadata.UserConfigOverlay(); overlay != nil {
+		withOverlay, err := workspaceWithUserConfigOverlay(ctx, srv, inst, overlay)
+		if err != nil {
+			return inst, err
+		}
+		inst = withOverlay
+	}
 	if mounts, ok := metadata.MountsDir(); ok {
 		for _, mountPath := range metadata.MountPoints() {
 			stat, err := mounts.Self().Stat(ctx, mounts, srv, mountPath, true)

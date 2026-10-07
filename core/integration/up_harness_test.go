@@ -41,7 +41,7 @@ stop_dagger() {
 	kill -KILL "-$WATCHDOG_PID" 2>/dev/null || :
 	wait "$WATCHDOG_PID" 2>/dev/null || :
 	if [ -f "$STATE/shutdown-timeout" ]; then
-		echo "FAIL: dagger up shutdown timed out after $(($(date +%%s) - STARTED))s (budget ${SHUTDOWN_TIMEOUT}s)"
+		echo "FAIL: dagger start shutdown timed out after $(($(date +%%s) - STARTED))s (budget ${SHUTDOWN_TIMEOUT}s)"
 		return 1
 	fi
 }
@@ -56,7 +56,7 @@ trap cleanup EXIT
 
 STARTED=$(date +%%s)
 echo "START: module-loading preparation (budget ${PREPARE_TIMEOUT}s)"
-timeout -s KILL "$PREPARE_TIMEOUT" dagger up -l "$@"
+timeout -s KILL "$PREPARE_TIMEOUT" dagger start -l "$@"
 STATUS=$?
 ELAPSED=$(($(date +%%s) - STARTED))
 if [ "$STATUS" -ne 0 ]; then
@@ -65,7 +65,7 @@ if [ "$STATUS" -ne 0 ]; then
 fi
 echo "DONE: module-loading preparation after ${ELAPSED}s"
 
-dagger up "$@" &
+dagger start "$@" &
 DAGGER_PID=$!
 STARTED=$(date +%%s)
 DEADLINE=$((STARTED + READY_TIMEOUT))

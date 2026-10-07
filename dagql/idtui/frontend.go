@@ -806,7 +806,7 @@ func (r *renderer) renderCall( //nolint: gocyclo
 				fmt.Fprint(out, "  ")
 			}
 			r.indent(out, indentLevel)
-			depth-- //nolint:ineffassign
+			depth-- //nolint:ineffassign,staticcheck
 		} else {
 			printed := 0
 			for _, arg := range visibleArgs {

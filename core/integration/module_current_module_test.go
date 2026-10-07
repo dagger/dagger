@@ -2,7 +2,8 @@ package core
 
 // These tests cover `dag.CurrentModule()` calls made from inside module code.
 // They verify access to the generated call context, installed dependencies,
-// module identity, module source, and workdir helpers.
+// module identity, module source, and workdir helpers. They also cover what a
+// client outside any function gets from `currentFunctionCall`.
 //
 // See also:
 // - module_self_calls_test.go: modules invoking their own API.
@@ -105,4 +106,16 @@ func (ModuleSuite) TestCurrentModuleAPI(ctx context.Context, t *testctx.T) {
 			requireErrOut(t, err, `workdir path "/foo" escapes workdir`)
 		})
 	})
+}
+
+func (ModuleSuite) TestCurrentFunctionCallOutsideFunction(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "-q", "curl"}).
+		WithExec([]string{"sh", "-c", `curl -s -u "$DAGGER_SESSION_TOKEN:" -H 'Content-Type: application/json' ` +
+			`-d '{"query":"{currentFunctionCall{name}}"}' "http://127.0.0.1:$DAGGER_SESSION_PORT/query"`}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "no current function call")
 }

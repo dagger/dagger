@@ -1381,10 +1381,12 @@ func TestCacheReleasedPublicationStopsWaitingOnTheCurrentEntrysAttachment(t *tes
 	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	assert.NilError(t, c.WaitSessionRelease(waitCtx, "session-a"), "the release finishes while B's attachment is open")
+	// A's call is the session's last operation, so the release finishes on
+	// A's goroutine just before its call returns.
 	select {
 	case a := <-aDone:
 		assert.Assert(t, errors.Is(a.err, ErrCacheSessionReleased), "the released session's call fails: %v", a.err)
-	default:
+	case <-time.After(5 * time.Second):
 		t.Fatal("the released session's call is still in flight")
 	}
 	assert.Assert(t, releasedA.Load(), "the released session's value is released")

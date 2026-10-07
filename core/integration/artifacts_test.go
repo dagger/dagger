@@ -206,7 +206,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 		{[]string{"list", "-a", "-f=link", "base"}, []string{"base"}},
 		{[]string{"check", "-l", "-f=link", "verify"}, []string{"verify"}},
 		{[]string{"generate", "-l", "-f=link", "generate"}, []string{"generate"}},
-		{[]string{"up", "-l", "-f=link", "web"}, []string{"web"}},
+		{[]string{"start", "-l", "-f=link", "web"}, []string{"web"}},
 		{[]string{"agent", "-l", "-f=link", "assistant"}, []string{"assistant"}},
 		{[]string{"shell", "-l", "-f=link", "base"}, []string{"base"}},
 		{[]string{"list", "containers", "-f=link"}, []string{"base", "broken", "consumer/base"}},
@@ -218,7 +218,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 				out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 				require.NoError(t, err)
 				var want []string
-				typ := map[string]string{"list": "container", "check": "check", "generate": "generator", "up": "service", "agent": "expertise", "shell": "container"}[tc.args[0]]
+				typ := map[string]string{"list": "container", "check": "check", "generate": "generator", "start": "service", "agent": "expertise", "shell": "container"}[tc.args[0]]
 				for _, path := range tc.paths {
 					address := strings.Replace(strings.TrimSuffix(uri, "base")+path, "dag://", "dag+"+typ+"://", 1)
 					want = append(want, address)
@@ -593,7 +593,7 @@ func (ArtifactsSuite) TestHelpProgress(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", artifactSource(c)).
 		WithEnvVariable("DAGGER_PROGRESS", "report")
-	for _, command := range []string{"check", "generate", "up", "shell", "agent", "list"} {
+	for _, command := range []string{"check", "generate", "start", "shell", "agent", "list"} {
 		t.Run(command, func(ctx context.Context, t *testctx.T) {
 			action := "Load " + command + " filters"
 			if command == "list" {
@@ -1214,7 +1214,7 @@ up.skip = ["skipped-service", "skipped-unmarked-service"]
 		{"check", "--generated=true", "withGenerated", "check"},
 		{"check", "--generated=false", "withoutGenerated", "check"},
 		{"generate", "", "generators", "generator"},
-		{"up", "", "services", "service"},
+		{"start", "", "services", "service"},
 		{"agent", "", "agents", "expertise"},
 	} {
 		t.Run(tc.command+tc.flag, func(ctx context.Context, t *testctx.T) {
@@ -1591,7 +1591,7 @@ func (ArtifactsSuite) TestUnknownEnvironment(ctx context.Context, t *testctx.T) 
 		WithDirectory(".", artifactSource(c))
 	for _, command := range [][]string{
 		{"list", "-a", "--type=Check"}, {"check", "-l"}, {"generate", "-l"},
-		{"up", "-l"}, {"shell", "-l"}, {"agent", "-l"},
+		{"start", "-l"}, {"shell", "-l"}, {"agent", "-l"},
 	} {
 		t.Run(strings.Join(command, " "), func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"--env", "missing"}, command...)

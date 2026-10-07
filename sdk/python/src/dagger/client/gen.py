@@ -10971,6 +10971,10 @@ class GitRepository(Type):
             the resulting commit; remote repositories fetch the history the
             walk needs. Other git revision syntax (`^{...}`, `@{...}`,
             `:path`, ranges) is not supported.
+            A repository derived from a remote one (e.g. a workspace's history
+            after a snapshot or commit) resolves names and commits it does not
+            contain itself through that remote, with its authentication. Its
+            branches and tags listings include the remote's.
         no_lock:
             Ignore the workspace lockfile for this lookup.
         """
@@ -11098,6 +11102,10 @@ class GitRepository(Type):
         configuration; that configuration is not rewritten. Use
         Directory.asGit to open the supplied repository without retaining the
         receiver's routing.
+
+        When the receiver is a remote repository (or was derived from one),
+        that remote is retained with its authentication: refs the supplied
+        storage does not contain resolve through it.
 
         Parameters
         ----------
@@ -19108,6 +19116,22 @@ class Workspace(Type):
             Arg("source", source, ""),
         ]
         _ctx = self._select("withUpdatedModules", _args)
+        return Workspace(_ctx)
+
+    def with_user_config(self) -> Self:
+        """Return this workspace with the calling client's user-level config re-
+        read and applied.
+
+        User-level config (the [workspaces.*] section of the Dagger config
+        file) is read when a session loads its workspace, and snapshots keep
+        that configuration. Call this to pick up edits made since, for example
+        when an agent reloads its modules.
+
+        The entry is matched by the workspace's git origin remote. A workspace
+        without one, or without a matching entry, gets no user-level config.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withUserConfig", _args)
         return Workspace(_ctx)
 
     def with_workdir(self, path: str) -> Self:

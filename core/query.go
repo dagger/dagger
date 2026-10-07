@@ -36,11 +36,18 @@ type Query struct {
 
 	cacheVolumeStoreMu sync.Mutex
 	cacheVolumeStore   *cacheVolumeStore
+
+	// Optional capture-approved donors belong to this client's Query, never
+	// the engine or persisted recipes. They contain capabilities, not objects.
+	// Clones share the registry.
+	hostHistoryMu sync.Mutex
+	hostHistory   *hostHistoryRegistry
 }
 
 var (
-	ErrNoCurrentModule    = fmt.Errorf("no current module")
-	ErrNoCurrentWorkspace = fmt.Errorf("no current workspace")
+	ErrNoCurrentModule       = fmt.Errorf("no current module")
+	ErrNoCurrentFunctionCall = fmt.Errorf("no current function call")
+	ErrNoCurrentWorkspace    = fmt.Errorf("no current workspace")
 )
 
 type SpecificClientAttachableConnOpts struct {
@@ -94,6 +101,11 @@ type Server interface {
 	// AuthorizeGitPush resolves optional owner URL routing and checks permission
 	// before any destination credentials are used. Its result stays operation-local.
 	AuthorizeGitPush(context.Context, string, string, bool, bool) (*GitPushAuthorization, error)
+
+	// AuthorizeGitRead returns the client whose Git credentials may
+	// authenticate a read of the remote that an agent's model supplied as a
+	// tool argument, asking that owner first when a module drives the agent.
+	AuthorizeGitRead(context.Context, string) (*engine.ClientMetadata, error)
 
 	// The cached workspace result from ensureWorkspaceLoaded.
 	CurrentWorkspace(context.Context) (*Workspace, error)
@@ -308,6 +320,10 @@ func (q *Query) Clone() *Query {
 	q.cacheVolumeStoreMu.Lock()
 	cp.cacheVolumeStore = q.cacheVolumeStore
 	q.cacheVolumeStoreMu.Unlock()
+
+	// Allocate the donor registry before sharing it, so a registration through
+	// either the original or the clone is visible to both.
+	cp.hostHistory = q.hostHistories()
 
 	return cp
 }

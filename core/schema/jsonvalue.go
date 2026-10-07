@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -186,8 +188,10 @@ func (s jsonvalueSchema) fields(ctx context.Context, obj *core.JSONValue, args s
 		return nil, fmt.Errorf("value is not an object")
 	}
 
+	// Sort the keys so the same contents always list the same fields: results
+	// are cached by call, so a resolver's output must not depend on map order.
 	result := make([]dagql.String, 0, len(m))
-	for key := range m {
+	for _, key := range slices.Sorted(maps.Keys(m)) {
 		result = append(result, dagql.String(key))
 	}
 	return result, nil

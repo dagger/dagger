@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  `dagger up` is now `dagger start`. `dagger up` still works as a hidden alias.
+time: 2026-09-30T12:00:00Z
+custom:
+  Author: shykes
+  PR: "14438"

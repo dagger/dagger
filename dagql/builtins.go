@@ -53,7 +53,7 @@ func builtinOrTyped(val any) (Typed, error) {
 				arr.Values = append(arr.Values, elem)
 			}
 			return arr, nil
-		case reflect.Ptr:
+		case reflect.Pointer:
 			elem, err := builtinOrTyped(reflect.New(valT.Elem()).Elem().Interface())
 			if err != nil {
 				return nil, fmt.Errorf("slice elem: %w", err)
@@ -263,7 +263,7 @@ func builtinOrInput(val any) (Input, error) {
 				arr.Values = append(arr.Values, elem)
 			}
 			return arr, nil
-		case reflect.Ptr:
+		case reflect.Pointer:
 			input, err := builtinOrInput(reflect.New(valT.Elem()).Elem().Interface())
 			if err != nil {
 				return nil, fmt.Errorf("pointer elem: %w", err)

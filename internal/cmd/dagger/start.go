@@ -18,22 +18,25 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var upListMode bool
+var startListMode bool
 
 func init() {
-	registerCommandArtifactFlags(upCmd)
-	upCmd.Flags().BoolVarP(&upListMode, "list", "l", false, "List available services")
+	registerCommandArtifactFlags(startCmd)
+	startCmd.Flags().BoolVarP(&startListMode, "list", "l", false, "List available services")
 }
 
-var upCmd = &cobra.Command{
-	Use:   "up [FILTERS] [OPTIONS]",
-	Short: "Run your project's services for local development — databases, APIs, dev servers, etc.",
-	Args:  cobra.ArbitraryArgs,
+var startCmd = &cobra.Command{
+	Use:     "start [FILTERS] [OPTIONS]",
+	Aliases: []string{"up"},
+	Short:   "Run your project's services for local development — databases, APIs, dev servers, etc.",
+	Args:    cobra.ArbitraryArgs,
 	Annotations: map[string]string{
 		showFinalProgressKey: "true",
+		// "up" is the former name of this command.
+		hiddenAliasesAnnotation: "up",
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if !upListMode {
+		if !startListMode {
 			previous := opts.RootFilter
 			opts.RootFilter = (*dagui.DB).ServiceDisplaySpans
 			defer func() { opts.RootFilter = previous }()
@@ -56,7 +59,7 @@ var upCmd = &cobra.Command{
 				if err != nil {
 					return err
 				}
-				if upListMode {
+				if startListMode {
 					return listArtifactSelection(ctx, dag, services, cmd)
 				}
 				return runServices(ctx, dag, services, cmd)
@@ -65,7 +68,7 @@ var upCmd = &cobra.Command{
 	},
 }
 
-func runServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.Artifacts, _ *cobra.Command) (rerr error) {
+func runServices(ctx context.Context, dag *dagger.Client, services *dagger.Artifacts, _ *cobra.Command) (rerr error) {
 	ctx, zoomSpan := Tracer().Start(ctx, "services", telemetry.Passthrough())
 	// The report uses this span's failure to include the cause and its logs.
 	defer telemetry.EndWithCause(zoomSpan, &rerr)
@@ -73,7 +76,7 @@ func runServices(ctx context.Context, dag *dagger.Client, upGroup *dagger.Artifa
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 	// Services hold their slot until they stop, so a limit would leave queued
 	// services waiting forever.
-	results, err := evaluateArtifacts(ctx, dag, upGroup, false, 0)
+	results, err := evaluateArtifacts(ctx, dag, services, false, 0)
 	if err != nil {
 		return err
 	}

@@ -19,7 +19,7 @@ func commandArtifactTypes(cmd *cobra.Command) []string {
 		return []string{"Check"}
 	case "generate":
 		return []string{"Generator"}
-	case "up":
+	case "start":
 		return []string{"Service"}
 	case "agent":
 		return []string{"Expertise"}
@@ -114,7 +114,7 @@ func commandPathExclusions(command string, generated bool, cfg *workspace.Config
 		switch command {
 		case "check":
 			skip = entry.Check.Skip
-		case "up":
+		case "start":
 			skip = entry.Up.Skip
 		}
 		if len(skip) > 0 {

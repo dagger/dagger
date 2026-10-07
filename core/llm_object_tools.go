@@ -1221,7 +1221,7 @@ func (m *MCP) liftAddress(ctx context.Context, srv *dagql.Server, typeName, addr
 			if err := checkLiftableAddress(typeName, addr); err != nil {
 				return "", fmt.Errorf("%q is not a %s ID or an accepted %s address: %w", addr, typeName, typeName, err)
 			}
-			obj, err = resolveObjectAddress(ctx, srv, addr, addressableTypes[typeName].addressField)
+			obj, err = resolveObjectAddress(WithAgentAddressResolution(ctx), srv, addr, addressableTypes[typeName].addressField)
 			if err != nil {
 				if dagaddress.IsAddress(addr) {
 					// Plainly not an ID: the decode error would only be noise.

@@ -364,17 +364,26 @@ func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRe
 
 // LoadRemote returns remote metadata, loading it once when a resolver needs it.
 // Lazy loading allows frozen lock lookups to use pins without network access.
+//
+// Under ContextWithLiveGitRemote, a remote repository lists its refs again
+// instead of reusing this session's listing, and stores the new listing
+// back: the result is shared by the session's clients, which converge on the
+// newer refs rather than keep answering other names from a listing older
+// than one already observed. Refs resolved earlier are unaffected; they hold
+// their own commits.
 func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, error) {
 	repo.remoteMu.Lock()
 	defer repo.remoteMu.Unlock()
 
 	var session string
-	if _, remote := repo.Backend.(*RemoteGitRepository); remote {
+	_, isRemote := repo.Backend.(*RemoteGitRepository)
+	if isRemote {
 		if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
 			session = clientMetadata.SessionID
 		}
 	}
-	if repo.Remote != nil && (repo.Remote.Refs != nil || repo.Remote.Symrefs != nil) && repo.remoteSession == session {
+	live := isRemote && liveGitRemoteFromContext(ctx) != nil
+	if !live && repo.Remote != nil && (repo.Remote.Refs != nil || repo.Remote.Symrefs != nil) && repo.remoteSession == session {
 		return repo.Remote, nil
 	}
 
@@ -621,6 +630,17 @@ func (repo *LocalGitRepository) attachDependencyResults(
 		repo.HistorySource = source
 		owned = append(owned, source)
 	}
+	if repo.Upstream.Self() != nil {
+		if err := repo.validateUpstream(); err != nil {
+			return nil, err
+		}
+		upstream, err := attachLazyInput(attach, repo.Upstream, "git upstream")
+		if err != nil {
+			return nil, err
+		}
+		repo.Upstream = upstream
+		owned = append(owned, upstream)
+	}
 	if repo.CheckoutBase != nil {
 		parent, err := attachLazyInput(attach, repo.CheckoutBase.Parent, "git checkout parent")
 		if err != nil {
@@ -707,6 +727,7 @@ type persistedGitRemotePayload struct {
 
 type persistedLocalGitRepositoryPayload struct {
 	HistorySourceResultID uint64                    `json:"historySourceResultID,omitempty"`
+	UpstreamResultID      uint64                    `json:"upstreamResultID,omitempty"`
 	DirectoryResultID     uint64                    `json:"directoryResultID"`
 	CheckoutBase          *persistedGitCheckoutBase `json:"checkoutBase,omitempty"`
 }
@@ -846,6 +867,16 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, enc *dagql
 			}
 			payload.Local.HistorySourceResultID = sourceID
 		}
+		if backend.Upstream.Self() != nil {
+			if err := backend.validateUpstream(); err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			upstreamID, err := encodePersistedObjectRef(enc, backend.Upstream, "git upstream")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			payload.Local.UpstreamResultID = upstreamID
+		}
 		if base := backend.CheckoutBase; base != nil {
 			parentID, err := encodePersistedObjectRef(enc, base.Parent, "git checkout parent")
 			if err != nil {
@@ -918,6 +949,16 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.Pers
 				return nil, err
 			}
 			backend.HistorySource = source
+		}
+		if persisted.Local.UpstreamResultID != 0 {
+			upstream, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dec, persisted.Local.UpstreamResultID, "git upstream")
+			if err != nil {
+				return nil, err
+			}
+			backend.Upstream = upstream
+			if err := backend.validateUpstream(); err != nil {
+				return nil, err
+			}
 		}
 		if base := persisted.Local.CheckoutBase; base != nil {
 			if err := base.validate(); err != nil {

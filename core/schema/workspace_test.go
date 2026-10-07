@@ -23,6 +23,8 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // The qualification test must only Peek: any attempt to mount/evaluate this
@@ -422,6 +424,94 @@ func TestWorkspaceSnapshotScopesSSHAuth(t *testing.T) {
 			require.Equal(t, tc.wantSocket, scoped)
 		})
 	}
+}
+
+func TestCheckpointHostHistorySkipsBundles(t *testing.T) {
+	ctx, srv, cache, _ := resolverOutputFixture(t)
+	srv.InstallObject(dagql.NewClass[*core.GitRef](srv))
+	owner, err := engine.ClientMetadataFromContext(ctx)
+	require.NoError(t, err)
+	url, err := gitutil.ParseURL("https://example.test/repo.git")
+	require.NoError(t, err)
+	anchor := strings.Repeat("a", 40)
+	repo := resolverAttach(t, ctx, srv, cache, "captured-host-repo", &core.GitRepository{Backend: &core.RemoteGitRepository{URL: url}})
+	ref := resolverAttach(t, ctx, srv, cache, "captured-host-ref", &core.GitRef{Repo: repo, Ref: &gitutil.Ref{SHA: anchor, Name: anchor}})
+	frozen := &core.Workspace{}
+	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+	captured := &core.Workspace{ClientID: owner.ClientID}
+	captured.SetHostPath("/approved")
+	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), BaseSha: anchor, HeadSha: anchor}
+	// A clean remote snapshot qualifies with the same route and metadata. No
+	// host IO is needed, even without an attached engine/server on the Query.
+	registered, attrs := checkpointHostHistoryOutcome(t, ctx, func(ctx context.Context) bool {
+		return registerCheckpointHostHistory(ctx, &core.Query{}, captured, frozen, metadata, false)
+	})
+	require.True(t, registered)
+	require.Equal(t, map[string]string{"git.history.donor_registered": "true"}, attrs)
+	for _, scenario := range []string{"dirty", "unpushed"} {
+		t.Run(scenario, func(t *testing.T) {
+			copy := *metadata
+			if scenario == "dirty" {
+				copy.WorktreeSha = strings.Repeat("b", 40)
+			} else {
+				copy.HeadSha = strings.Repeat("b", 40)
+			}
+			// Even if a future composition keeps a remote base after applying a
+			// bundle, it must not register a donor. A nil Query makes any attempt
+			// to touch the registry fail, rather than merely returning no pack.
+			registered, attrs := checkpointHostHistoryOutcome(t, ctx, func(ctx context.Context) bool {
+				return registerCheckpointHostHistory(ctx, nil, captured, frozen, &copy, true)
+			})
+			require.False(t, registered)
+			require.Equal(t, map[string]string{"git.history.donor_skipped": "bundle-backed capture"}, attrs)
+		})
+	}
+}
+
+// checkpointHostHistoryOutcome runs a registration under a recorded span and
+// returns its result with the git.history.donor_* attributes it recorded.
+func checkpointHostHistoryOutcome(t *testing.T, ctx context.Context, register func(context.Context) bool) (bool, map[string]string) {
+	t.Helper()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	defer provider.Shutdown(context.WithoutCancel(ctx))
+	ctx, span := provider.Tracer("workspace-test").Start(ctx, "Workspace.snapshot")
+	registered := register(ctx)
+	span.End()
+	attrs := map[string]string{}
+	for _, ended := range recorder.Ended() {
+		for _, kv := range ended.Attributes() {
+			if strings.HasPrefix(string(kv.Key), "git.history.donor_") {
+				attrs[string(kv.Key)] = kv.Value.Emit()
+			}
+		}
+	}
+	return registered, attrs
+}
+
+// Capture supports SHA-256 checkouts, but donation is SHA-1 only. A clean
+// remote-backed SHA-256 capture registers nothing, records why, and still
+// succeeds.
+func TestCheckpointHostHistorySkipsSHA256(t *testing.T) {
+	ctx, srv, cache, _ := resolverOutputFixture(t)
+	srv.InstallObject(dagql.NewClass[*core.GitRef](srv))
+	owner, err := engine.ClientMetadataFromContext(ctx)
+	require.NoError(t, err)
+	url, err := gitutil.ParseURL("https://example.test/repo.git")
+	require.NoError(t, err)
+	anchor := strings.Repeat("a", 64)
+	repo := resolverAttach(t, ctx, srv, cache, "captured-sha256-repo", &core.GitRepository{Backend: &core.RemoteGitRepository{URL: url}})
+	ref := resolverAttach(t, ctx, srv, cache, "captured-sha256-ref", &core.GitRef{Repo: repo, Ref: &gitutil.Ref{SHA: anchor, Name: anchor}})
+	frozen := &core.Workspace{}
+	frozen.SetSource(core.NewWorkspaceSourceGitRef(ref.Result, false))
+	captured := &core.Workspace{ClientID: owner.ClientID}
+	captured.SetHostPath("/approved")
+	metadata := &gitsession.CaptureGitMetadata{RemoteUrl: url.Remote(), BaseSha: anchor, HeadSha: anchor}
+	registered, attrs := checkpointHostHistoryOutcome(t, ctx, func(ctx context.Context) bool {
+		return registerCheckpointHostHistory(ctx, &core.Query{}, captured, frozen, metadata, false)
+	})
+	require.False(t, registered)
+	require.Equal(t, map[string]string{"git.history.donor_skipped": "captured anchor is not a full SHA-1"}, attrs)
 }
 
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {

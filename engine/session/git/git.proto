@@ -11,6 +11,8 @@ service Git {
   rpc GetConfig(GitConfigRequest) returns (GitConfigResponse);
   rpc CheckoutState(CheckoutStateRequest) returns (CheckoutStateResponse);
   rpc PackCheckout(PackCheckoutRequest) returns (stream PackCheckoutResponse);
+  // Exact local object closure only; never fetches or exports checkout refs.
+  rpc PackCommit(PackCommitRequest) returns (stream PackCheckoutResponse);
   rpc PackUncommitted(PackUncommittedRequest) returns (stream PackUncommittedResponse);
   rpc CaptureGit(CaptureGitRequest) returns (stream CaptureGitResponse);
   rpc ApplyBundle(stream ApplyBundleRequest) returns (ApplyBundleResponse);
@@ -116,6 +118,20 @@ message PackCheckoutRequest {
   string expected_state_digest = 2;
 }
 
+// A captured checkout is an optional donor for precisely this commit. The
+// payload is a non-thin raw pack, not a bundle, of the commit's complete
+// closure. The checkout's refs may have moved since capture: the closure of a
+// fixed SHA does not depend on them, and the engine verifies what it imports.
+// The response metadata carries no state_digest.
+message PackCommitRequest {
+  // expected_state_digest pinned the checkout's refs to their captured state.
+  // depth was the closure depth; only the complete closure is ever requested.
+  reserved 2, 4;
+  reserved "expected_state_digest", "depth";
+  string checkout_path = 1;
+  string commit_sha = 3;
+}
+
 // PackCheckoutResponse streams one metadata message first, then the bundle
 // bytes in chunks.
 message PackCheckoutResponse {
@@ -193,6 +209,8 @@ message ErrorInfo {
     CAPTURE_FAILED = 12;
     // The checkout is usable, but capture has no committed baseline.
     CAPTURE_UNSUPPORTED = 13;
+    // Optional local donor lacks the requested complete object closure.
+    HISTORY_UNAVAILABLE = 14;
   }
   ErrorType type = 1;
   string message = 2;

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -289,6 +290,15 @@ func moduleRefHint(address *core.Address) string {
 
 type addressSchema struct{}
 
+// addressRequestedCacheInput is the cache input of Address.directory and
+// Address.file: dagql.RequestedCacheInput("noCache"), except that a
+// model-supplied address gets a namespace of its own, as Query.git does (see
+// gitPerClientInput). Its remote git lookup may carry the agent owner's
+// credentials, or go through the bound workspace's repository, so its result
+// must not answer the same client's ordinary lookup of the same address.
+// Every other lookup keeps its call digest.
+var addressRequestedCacheInput = agentAddressScopedInput(dagql.RequestedCacheInput("noCache"))
+
 var _ SchemaResolvers = &addressSchema{}
 
 func (s *addressSchema) Install(srv *dagql.Server) {
@@ -309,19 +319,19 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 			Doc(`Load a container from the address.`).
 			Args(noLockArg("image tag")),
 		dagql.NodeFunc("directory", s.directory).
-			WithInput(dagql.RequestedCacheInput("noCache")).
+			WithInput(gitLiveInput(addressRequestedCacheInput)).
 			Doc(`Load a directory from the address.`).
 			Args(append(copyFilterArgs(), noLockArg("git ref"))...),
 		dagql.NodeFunc("file", s.file).
-			WithInput(dagql.RequestedCacheInput("noCache")).
+			WithInput(gitLiveInput(addressRequestedCacheInput)).
 			Doc(`Load a file from the address.`).
 			Args(append(copyFilterArgs(), noLockArg("git ref"))...),
 		dagql.NodeFunc("gitRef", s.gitRef).
-			WithInput(dagql.PerClientInput).
+			WithInput(gitLiveInput(gitPerClientInput)).
 			Doc(`Load a git ref (branch, tag or commit) from the address.`).
 			Args(noLockArg("git ref")),
 		dagql.NodeFunc("gitRepository", s.gitRepository).
-			WithInput(dagql.PerClientInput).
+			WithInput(gitPerClientInput).
 			Doc(`Load a git repository from the address.`),
 		dagql.NodeFunc("secret", s.secret).
 			WithInput(dagql.PerCallInput).
@@ -435,6 +445,10 @@ func (s *addressSchema) file(
 				},
 			},
 		})
+		if err := selectRemoteGitAddress(ctx, r.Self(), gitURL, &inst, q); err != nil {
+			return inst, err
+		}
+		return inst, nil
 	} else {
 		// Local file
 		q = []dagql.Selector{
@@ -527,6 +541,10 @@ func (s *addressSchema) directory(
 				},
 			})
 		}
+		if err := selectRemoteGitAddress(ctx, r.Self(), gitURL, &inst, q); err != nil {
+			return inst, err
+		}
+		return inst, nil
 	} else {
 		q = queryLocalDirectory(addr, args.CopyFilter)
 	}
@@ -573,6 +591,137 @@ func queryRemoteGitRoot(gitURL *gitutil.GitURL, noLock bool) []dagql.Selector {
 	q = append(q, dagql.Selector{
 		Field: "tree",
 	})
+	return q
+}
+
+// selectRemoteGitAddress selects q, a query rooted at Query.git for gitURL.
+//
+// A ref an agent's model supplied on the remote of the workspace bound to its
+// conversation resolves through the repository that workspace already reads
+// that remote with instead (see agentWorkspaceGitRepo), so reading another
+// branch of the agent's own repository needs no new credentials or approval.
+func selectRemoteGitAddress(ctx context.Context, addr *core.Address, gitURL *gitutil.GitURL, dest any, q []dagql.Selector) error {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+	if core.IsAgentAddressResolution(ctx) {
+		if repo, name, ok := agentWorkspaceGitRepo(ctx, addr, gitURL); ok {
+			return srv.Select(ctx, repo, dest, withRefName(q[1:], name)...)
+		}
+	}
+	return srv.Select(ctx, srv.Root(), dest, q...)
+}
+
+// agentWorkspaceGitRepo returns the repository to resolve gitURL's ref in, and
+// the name to resolve there, when gitURL names a ref on the remote of the
+// address's bound workspace, over any transport.
+//
+// That is the remote repository behind the workspace's own (core.GitUpstream):
+// the workspace's repository itself when it is remote (e.g. a checkout of a
+// remote ref), or the remote owned storage was derived from (e.g. a snapshot
+// of the owner's checkout, or a remote workspace after a commit), with the
+// credentials the workspace was built with. Either way the read reaches only a
+// remote the workspace could already read. Owned storage without an upstream
+// does not qualify: the address then takes the normal Query.git path.
+//
+// The URL names the remote, so a named ref (a branch, a tag, HEAD, a
+// fully-qualified ref, or a revision of one) resolves there, never as a
+// same-named local branch of owned storage, which GitRepository.ref would
+// prefer. A commit names the same commit wherever it is stored, so one the
+// workspace's own objects hold (unpushed commits included) resolves from them;
+// see workspaceCommitName.
+//
+// Only an explicit ref qualifies: the workspace repository's HEAD is the
+// checkout, not the remote's default branch.
+func agentWorkspaceGitRepo(ctx context.Context, addr *core.Address, gitURL *gitutil.GitURL) (_ dagql.ObjectResult[*core.GitRepository], name string, _ bool) {
+	var none dagql.ObjectResult[*core.GitRepository]
+	if gitURL.Fragment == nil || gitURL.Fragment.Ref == "" || addr.BoundWorkspace.Self() == nil {
+		return none, "", false
+	}
+	name = gitURL.Fragment.Ref
+	src, ok := addr.BoundWorkspace.Self().BaseSource().(*core.WorkspaceSourceGitRef)
+	if !ok || src.Ref.Self() == nil {
+		return none, "", false
+	}
+	repo := src.Ref.Self().Repo
+	if repo.Self() == nil || !namesRepository(repo.Self(), gitURL) {
+		return none, "", false
+	}
+	upstream := core.GitUpstream(repo)
+	if upstream.Self() == nil {
+		return none, "", false
+	}
+	if upstream.Self() == repo.Self() {
+		// The workspace's repository is the remote itself.
+		return repo, name, true
+	}
+	if !namesRepository(upstream.Self(), gitURL) {
+		return none, "", false
+	}
+	if local, ok := workspaceCommitName(ctx, repo.Self(), upstream.Self(), name); ok {
+		return repo, local, true
+	}
+	return upstream, name, true
+}
+
+// workspaceCommitName returns the name to resolve in owned storage repo when
+// name is a commit (optionally followed by revision suffixes) that repo should
+// resolve itself rather than its upstream.
+//
+// A full SHA is left to repo: GitRepository.ref resolves it locally when the
+// storage holds the commit, and through the upstream otherwise. An abbreviated
+// SHA is expanded against repo's objects here and returned in full, so no
+// local branch named like the prefix can shadow it; a prefix also naming one
+// of the upstream's refs is that ref, as named refs win over prefixes in git.
+// Anything else resolves through the upstream.
+func workspaceCommitName(ctx context.Context, repo, upstream *core.GitRepository, name string) (string, bool) {
+	rev, err := gitutil.ParseRevision(name)
+	if err != nil {
+		// Let the upstream report the syntax error.
+		return "", false
+	}
+	switch {
+	case gitutil.IsCommitSHA(rev.Base):
+		return name, true
+	case gitutil.IsCommitSHAPrefix(rev.Base):
+		if remote, err := upstream.LoadRemote(ctx); err == nil {
+			if _, err := remote.Lookup(rev.Base); err == nil {
+				return "", false
+			}
+		}
+		sha, err := repo.ResolveShortSHA(ctx, rev.Base)
+		if err != nil {
+			return "", false
+		}
+		return sha + strings.TrimPrefix(rev.Expr, rev.Base), true
+	}
+	return "", false
+}
+
+// namesRepository reports whether gitURL names repo's own URL, over any
+// transport.
+func namesRepository(repo *core.GitRepository, gitURL *gitutil.GitURL) bool {
+	if !repo.URL.Valid {
+		return false
+	}
+	repoURL, err := gitutil.ParseURL(repo.URL.Value.String())
+	return err == nil && gitutil.SameRepository(repoURL, gitURL)
+}
+
+// withRefName returns q, whose first selector is GitRepository.ref, resolving
+// name instead.
+func withRefName(q []dagql.Selector, name string) []dagql.Selector {
+	if len(q) == 0 || q[0].Field != "ref" {
+		return q
+	}
+	q = slices.Clone(q)
+	q[0].Args = slices.Clone(q[0].Args)
+	for i, arg := range q[0].Args {
+		if arg.Name == "name" {
+			q[0].Args[i].Value = dagql.NewString(name)
+		}
+	}
 	return q
 }
 
@@ -752,6 +901,10 @@ func (s *addressSchema) gitRef(
 			return inst, fmt.Errorf("git ref address cannot contain subdir")
 		}
 		q = queryRemoteGitRef(gitURL, args.NoLock)
+		if err := selectRemoteGitAddress(ctx, r.Self(), gitURL, &inst, q); err != nil {
+			return inst, err
+		}
+		return inst, nil
 	} else {
 		// Local ref
 		path, ref, _ := strings.Cut(addr, "#")

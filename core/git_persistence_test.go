@@ -198,6 +198,67 @@ func TestGitCheckoutBaseContentEquivalentParentTree(t *testing.T) {
 	require.Zero(t, payload.Local.CheckoutBase.TreeResultID)
 }
 
+// Owned storage retains the exact remote it was derived from, authentication
+// included, so names it lacks can be resolved without asking the caller for
+// credentials again. Only a remote repository may be retained.
+func TestGitUpstreamPersistence(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "git-upstream")
+	ctx, cache, srv := env.open(t)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRef]{}))
+	url, err := gitutil.ParseURL("ssh://git@example.com/private/repo.git")
+	require.NoError(t, err)
+	remote := &RemoteGitRepository{URL: url, AuthUsername: "authorized-reader", Platform: Platform{OS: "linux", Architecture: "amd64"}}
+	upstream := env.attach(t, ctx, cache, srv, "remote-repo", &GitRepository{Backend: remote, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+	dir := env.directory(t, ctx, cache, srv, "owned", "owned-snapshot")
+	plain := env.attach(t, ctx, cache, srv, "plain-owned-repo", &GitRepository{Backend: &LocalGitRepository{Directory: dir}, Remote: &gitutil.Remote{}})
+	child := env.attach(t, ctx, cache, srv, "owned-repo", &GitRepository{Backend: &LocalGitRepository{Directory: dir, Upstream: upstream}, Remote: &gitutil.Remote{}})
+	childID, upstreamID, dirID, plainID := persistedRowID(t, cache, child), persistedRowID(t, cache, upstream), persistedRowID(t, cache, dir), persistedRowID(t, cache, plain)
+	require.Equal(t, map[string]uint64{
+		"objectJSON.local.directoryResultID": dirID,
+		"objectJSON.local.upstreamResultID":  upstreamID,
+	}, assertPersistedRefsMatchOwnership(t, ctx, cache, child))
+	encoding := persistedEncoding(t, ctx, cache, child)
+	frame, err := child.ResultCall()
+	require.NoError(t, err)
+	for range 2 {
+		ctx, cache, srv = env.restart(t, ctx, cache)
+		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRef]{}))
+		loaded, err := cache.LoadResultByResultID(ctx, env.session, srv, childID)
+		require.NoError(t, err)
+		local := loaded.Unwrap().(*GitRepository).Backend.(*LocalGitRepository)
+		require.Equal(t, upstreamID, persistedRowID(t, cache, local.Upstream))
+		require.Equal(t, "authorized-reader", local.Upstream.Self().Backend.(*RemoteGitRepository).AuthUsername)
+		require.Equal(t, encoding.Envelope, persistedEncoding(t, ctx, cache, loaded).Envelope)
+	}
+	// A retained upstream must be a remote: owned storage never resolves
+	// names through another owned repository or a directory.
+	for _, badUpstream := range []uint64{plainID, dirID, 999999} {
+		var payload persistedGitRepositoryPayload
+		require.NoError(t, json.Unmarshal(encoding.Envelope.ObjectJSON, &payload))
+		payload.Local.UpstreamResultID = badUpstream
+		data, err := json.Marshal(payload)
+		require.NoError(t, err)
+		_, err = (&GitRepository{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, childID, frame), data)
+		require.Error(t, err)
+	}
+}
+
+func TestGitUpstreamOf(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "git-upstream-of")
+	ctx, cache, srv := env.open(t)
+	url, err := gitutil.ParseURL("https://example.com/repo.git")
+	require.NoError(t, err)
+	remote := env.attach(t, ctx, cache, srv, "remote", &GitRepository{Backend: &RemoteGitRepository{URL: url}, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+	dir := env.directory(t, ctx, cache, srv, "dir", "dir-snapshot")
+	plain := env.attach(t, ctx, cache, srv, "plain", &GitRepository{Backend: &LocalGitRepository{Directory: dir}, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+	derived := env.attach(t, ctx, cache, srv, "derived", &GitRepository{Backend: &LocalGitRepository{Directory: dir, Upstream: remote}, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+
+	require.Equal(t, persistedRowID(t, cache, remote), persistedRowID(t, cache, GitUpstream(remote)), "a remote is its own upstream")
+	require.Equal(t, persistedRowID(t, cache, remote), persistedRowID(t, cache, GitUpstream(derived)), "derived storage passes its upstream on")
+	require.Nil(t, GitUpstream(plain).Self(), "storage with no remote origin has no upstream")
+	require.Nil(t, GitUpstream(dagql.ObjectResult[*GitRepository]{}).Self())
+}
+
 func TestGitRepositoryRemotesPersistence(t *testing.T) {
 	ctx := t.Context()
 	cache, err := dagql.NewCache(ctx, "", nil, nil)

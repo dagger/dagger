@@ -1038,6 +1038,24 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with the calling client's user-level config re-read and applied.
+
+  User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+
+  The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+  """
+  @spec with_user_config(t()) :: Dagger.Workspace.t()
+  def with_user_config(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("withUserConfig")
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with its working directory pointed at the given workspace-relative path.
   """
   @spec with_workdir(t(), String.t()) :: Dagger.Workspace.t()

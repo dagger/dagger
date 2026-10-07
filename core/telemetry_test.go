@@ -55,6 +55,10 @@ func (*mockServer) AuthorizeGitPush(context.Context, string, string, bool, bool)
 	panic("unexpected AuthorizeGitPush")
 }
 
+func (*mockServer) AuthorizeGitRead(context.Context, string) (*engine.ClientMetadata, error) {
+	panic("unexpected AuthorizeGitRead")
+}
+
 func (ms *mockServer) RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error) {
 	return engine.NewNestedClientTransport(nil), nil
 }
@@ -113,6 +117,9 @@ func (ms *mockServer) ModuleParent(context.Context) (dagql.ObjectResult[*Module]
 }
 
 func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error) {
+	if ms.functionCall == nil {
+		return nil, ErrNoCurrentFunctionCall
+	}
 	return ms.functionCall, nil
 }
 

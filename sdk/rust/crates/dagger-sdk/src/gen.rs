@@ -11208,6 +11208,8 @@ impl GitRepository {
     /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
     ///
     /// The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
+    ///
+    /// A repository derived from a remote one (e.g. a workspace's history after a snapshot or commit) resolves names and commits it does not contain itself through that remote, with its authentication. Its branches and tags listings include the remote's.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn r#ref(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("ref");
@@ -11227,6 +11229,8 @@ impl GitRepository {
     /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
     ///
     /// The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
+    ///
+    /// A repository derived from a remote one (e.g. a workspace's history after a snapshot or commit) resolves names and commits it does not contain itself through that remote, with its authentication. Its branches and tags listings include the remote's.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn r#ref_opts(&self, name: impl Into<String>, opts: GitRepositoryRefOpts) -> GitRef {
         let mut query = self.selection.select("ref");
@@ -11545,6 +11549,7 @@ impl GitRepository {
     /// Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
     /// Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
     /// The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+    /// When the receiver is a remote repository (or was derived from one), that remote is retained with its authentication: refs the supplied storage does not contain resolve through it.
     ///
     /// # Arguments
     ///
@@ -18646,6 +18651,17 @@ impl Workspace {
     pub fn with_config_environment(&self, name: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withConfigEnvironment");
         query = query.arg("name", name.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with the calling client's user-level config re-read and applied.
+    /// User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+    /// The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+    pub fn with_user_config(&self) -> Workspace {
+        let query = self.selection.select("withUserConfig");
         Workspace {
             proc: self.proc.clone(),
             selection: query,

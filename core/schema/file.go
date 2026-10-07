@@ -393,6 +393,7 @@ type fileChownArgs struct {
 	Owner string
 }
 
+//nolint:dupl // symmetric with directorySchema.withTimestamps; each builds its own lazy object type
 func (s *fileSchema) chown(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.File],

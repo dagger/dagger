@@ -8,10 +8,12 @@ import (
 	"github.com/dagger/dagger/engine/session/git"
 )
 
-// PrepareGitSSHAuth must only be called for an authorized push or a snapshot of
-// the owning client's checkout, with that client's metadata. Ordinary Git reads
-// must not initialize or unlock an agent. This neither registers nor returns a
-// socket handle; the caller decides how to scope the prepared socket.
+// PrepareGitSSHAuth must only be called for an authorized push or a snapshot
+// of the owning client's checkout, with that client's metadata — or for the
+// SSH origin of a client's own checkout, when it replays a recipe that scoped
+// an SSH agent (Host._sshAuthSocket, e.g. when resuming a trace). Ordinary Git
+// reads must not initialize or unlock an agent. This neither registers nor
+// returns a socket handle; the caller decides how to scope the prepared socket.
 func (c *Client) PrepareGitSSHAuth(ctx context.Context, remote string) (string, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
