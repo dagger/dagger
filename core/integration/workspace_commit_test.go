@@ -1363,26 +1363,41 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFilteredDirectoryDeletion(ctx conte
 // TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe covers a commit scoped
 // to one file of a workspace that also holds an uncommitted build output, e.g.
 // a `go test -c` binary in tmp/ (trace dfa26d7aa772715725e427efc5b65cdb).
-// Freezing the receiver re-records its whole pending overlay; inlined as a
-// patch blob, the binary made one span's call 129 MB, past what any trace can
-// hold. A binary or oversized overlay must be applied raw instead, and the
-// uncommitted file must survive the commit.
+// Freezing the receiver used to re-record its whole pending overlay as one
+// inline patch blob; the binary made one span's call 129 MB, past what any
+// trace can hold. The overlay must stay by reference, whether freezing keeps
+// the workspace (a remote repository) or rebuilds its base to record a local
+// checkout's remote selection, and the uncommitted file must survive.
 func (WorkspaceSuite) TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		name, path, build string
+		local             bool
 	}{
 		{name: "binary", path: "tmp/app.test", build: "head -c 4194304 /dev/urandom > tmp/app.test"},
 		{name: "oversized text", path: "tmp/build.log", build: "yes 'compiling a package' | head -c 17825792 > tmp/build.log"},
+		{name: "binary in a local checkout", path: "tmp/app.test", build: "head -c 4194304 /dev/urandom > tmp/app.test", local: true},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			c, sink := connectWithTrace(ctx, t)
-			daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("notes.txt", "base\n"))
 			outputs := c.Container().From(alpineImage).WithWorkdir("/out").
 				WithExec([]string{"sh", "-ec", "mkdir tmp; " + tc.build}).
 				Directory("/out")
 			size, err := outputs.File(tc.path).Size(ctx)
 			require.NoError(t, err)
-			ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
+			var base *dagger.GitRef
+			if tc.local {
+				base = c.Container().From(alpineImage).
+					WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
+					WithWorkdir("/repo").WithExec([]string{"git", "init", "-b", "main"}).
+					WithNewFile("notes.txt", "base\n").
+					WithExec([]string{"git", "add", "."}).
+					WithExec([]string{"git", "commit", "-m", "base"}).
+					Directory(".").AsGit().Head()
+			} else {
+				daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("notes.txt", "base\n"))
+				base = c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main")
+			}
+			ws := base.AsWorkspace().
 				WithNewFile("notes.txt", "committed\n").
 				WithDirectory("/", outputs)
 

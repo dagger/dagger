@@ -432,6 +432,31 @@ func (*Probe) Frozen() error { return nil }
 	require.Equal(t, "dag://probe/frozen", got.Node.Artifacts.Checks.List[0].Name)
 }
 
+// TestWorkspaceFromBranchIsPinned covers a Git workspace addressed by a
+// mutable ref: its recipe, and the recipes of edits built on it, already name
+// the commit, so freezing it returns it as is.
+func (WorkspaceSuite) TestWorkspaceFromBranchIsPinned(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "original"))
+	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
+		WithNewFile("base.txt", "overlay")
+	contents, err := ws.File("base.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "overlay", contents)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(ws))
+	require.NoError(t, err)
+	id := new(call.ID)
+	require.NoError(t, id.Decode(string(recipe)))
+	dag, err := id.ToProto()
+	require.NoError(t, err)
+	var resolved bool
+	for _, vertex := range dag.GetRecipe().CallsByDigest {
+		require.NotEqual(t, "branch", vertex.Field, "the workspace must be pinned at construction: %s", id.Display())
+		resolved = resolved || vertex.Field == "__resolvedRef"
+	}
+	require.True(t, resolved, "the branch must be recorded as its resolved commit: %s", id.Display())
+}
+
 func (WorkspaceSuite) TestWorkspaceSnapshotPinsGitOverlayRecipe(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "original"))

@@ -76,8 +76,6 @@ func (s *workspaceSchema) freeze(
 	case *core.WorkspaceSourceGitRef:
 		return s.checkpointGitRef(ctx, srv, parent, src, nil)
 	case *core.WorkspaceSourceOverlay:
-		// Rootless workspaces deliberately ignore their host path and accumulate
-		// edits against an in-engine empty tree.
 		switch base := src.Base.(type) {
 		case *core.WorkspaceSourceDirectory:
 			return parent, nil
@@ -90,6 +88,8 @@ func (s *workspaceSchema) freeze(
 			}
 			return checkpointOverlay(ctx, srv, frozen, src.Changes)
 		case *core.WorkspaceSourceRootlessLocal:
+			// Rootless workspaces deliberately ignore their host path and
+			// accumulate edits against an in-engine empty tree.
 			return s.checkpointRootless(ctx, srv, parent)
 		default:
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace snapshot cannot normalize overlay base %T", src.Base)
@@ -259,6 +259,19 @@ func registerCheckpointHostHistory(ctx context.Context, query *core.Query, captu
 	return query.RegisterCapturedHostHistory(ctx, source.Ref.Self().Repo, captured.ClientID, captured.HostPath(), metadata.BaseSha, metadata.RemoteUrl)
 }
 
+// checkpointGitRef freezes a Git workspace. It is already pinned: Git refs
+// record their resolved commit (__resolvedRef) when selected, so even a
+// workspace on a branch never names the branch in its recipe, and its edits
+// are in-engine recipes over that commit. So it is kept as it is, except for
+// a local checkout whose remote selection was never recorded.
+//
+// Such a checkout's branch tracking is read from its current branch, which
+// anything detaching HEAD (pinning, committing) loses. Its selection is
+// recorded first, so the frozen repository, and checkouts derived from it,
+// still name their upstream remote. That rebuilds the base, and the overlay is
+// reapplied onto it by reference: re-rendering it as one patch would inline
+// the edits again (tool edits are already patch blobs) and the outputs MCP
+// keeps out of the recipe as raw changesets (see MCP.applyChangeset).
 func (s *workspaceSchema) checkpointGitRef(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -273,28 +286,26 @@ func (s *workspaceSchema) checkpointGitRef(
 	}
 
 	repo := ref.Repo
-	// Remote configuration and captured local selection are already fixed.
-	// Keep their recipe: native commits prove their base and retain their
-	// history source through it. Only a local checkout with uncaptured branch
-	// tracking needs a selection recorded before HEAD becomes detached.
-	if _, local := repo.Self().Backend.(*core.LocalGitRepository); local && repo.Self().UpstreamRemote == nil {
-		remotes, upstream, err := repo.Self().ConfiguredRemotes(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("read workspace Git remotes: %w", err)
-		}
-		data, err := json.Marshal(remotes)
-		if err != nil {
-			return inst, err
-		}
-		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
-			Field: "__withRemoteSelection",
-			Args: []dagql.NamedInput{
-				{Name: "remotes", Value: dagql.String(data)},
-				{Name: "upstreamRemote", Value: dagql.String(upstream)},
-			},
-		}); err != nil {
-			return inst, fmt.Errorf("record workspace Git remotes: %w", err)
-		}
+	if _, local := repo.Self().Backend.(*core.LocalGitRepository); !local || repo.Self().UpstreamRemote != nil {
+		// Remote configuration, or a captured selection, is already fixed.
+		return parent, nil
+	}
+	remotes, upstream, err := repo.Self().ConfiguredRemotes(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("read workspace Git remotes: %w", err)
+	}
+	data, err := json.Marshal(remotes)
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, repo, &repo, dagql.Selector{
+		Field: "__withRemoteSelection",
+		Args: []dagql.NamedInput{
+			{Name: "remotes", Value: dagql.String(data)},
+			{Name: "upstreamRemote", Value: dagql.String(upstream)},
+		},
+	}); err != nil {
+		return inst, fmt.Errorf("record workspace Git remotes: %w", err)
 	}
 	var pinned dagql.ObjectResult[*core.GitRef]
 	if err := srv.Select(ctx, repo, &pinned, dagql.Selector{
@@ -311,9 +322,14 @@ func (s *workspaceSchema) checkpointGitRef(
 	}
 
 	if overlay != nil && overlay.Changes.Self() != nil {
-		var err error
-		inst, err = checkpointOverlay(ctx, srv, inst, overlay.Changes)
+		changesID, err := overlay.Changes.ID()
 		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, inst, &inst, dagql.Selector{
+			Field: "withChanges",
+			Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+		}); err != nil {
 			return inst, fmt.Errorf("reapply workspace Git overlay: %w", err)
 		}
 	}
@@ -693,16 +709,16 @@ func checkpointApprovalSummary(candidates []*gitsession.CaptureGitCandidate) str
 	return summary.String()
 }
 
-// checkpointOverlay records only the already-approved engine edits as a patch.
-// Keeping the old Changeset ID would retain the live host receiver in the recipe.
+// checkpointOverlay records a host-backed workspace's engine edits, on top of
+// its captured checkout, as a patch. Keeping the old Changeset ID would retain
+// the live host receiver in the recipe: the overlay is diffed against a sparse
+// host read (see overlayEditWithHost), and MCP applies host-backed tool edits
+// raw.
 //
-// The overlay is everything pending against the frozen base, so it is the
-// workspace's whole uncommitted state, build outputs included. A patch that
-// core.EmbedPatch refuses (too large, or carrying a binary file) is not
-// inlined: the overlay is applied raw instead, as MCP.applyChangeset does,
-// so the recipe references the changeset's producer rather than carrying its
-// output. For a host-backed overlay that means the recipe re-reads the touched
-// host paths on replay, which beats a recipe no trace can record.
+// A patch that core.EmbedPatch refuses (too large, or carrying a binary file)
+// is not inlined: the overlay is applied raw instead, as MCP.applyChangeset
+// does, so the recipe re-reads the touched host paths on replay, which beats
+// a recipe no trace can record.
 func checkpointOverlay(
 	ctx context.Context,
 	srv *dagql.Server,
