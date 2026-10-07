@@ -394,23 +394,22 @@ func (l *spanLookup) markedSpanIDs() (checks, tests map[string]struct{}) {
 type logLookup struct {
 	mu         sync.RWMutex
 	rowsBySpan map[string][]int64
+	archive    []archiveLogMeta
 }
 
 func newLogLookup() *logLookup {
 	return &logLookup{rowsBySpan: make(map[string][]int64)}
 }
 
-func (l *logLookup) add(row Log) {
-	if !row.SpanID.Valid {
-		return
-	}
-	l.mu.Lock()
-	l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
-	l.mu.Unlock()
-}
+func (l *logLookup) add(row Log) { l.addAll([]Log{row}) }
 
 func (l *logLookup) addAll(rows []Log) {
+	metadata := make([]archiveLogMeta, len(rows))
+	for i, row := range rows {
+		metadata[i] = archiveLogMetadata(row)
+	}
 	l.mu.Lock()
+	l.archive = append(l.archive, metadata...)
 	for _, row := range rows {
 		if !row.SpanID.Valid {
 			continue
