@@ -2,6 +2,7 @@ package introspection
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/engine/naming"
@@ -66,25 +67,52 @@ func (ids Identifiers) Add(dict *naming.Dictionary, name string) {
 // AddSchema records the words of every type, field, argument, input field
 // and enum value name in the schema.
 func (ids Identifiers) AddSchema(dict *naming.Dictionary, s *Schema) {
+	for _, name := range s.identifierNames() {
+		ids.Add(dict, name)
+	}
+}
+
+// identifierNames returns the distinct type, field, argument, input field and
+// enum value names in the schema, sorted, leaving out introspection names
+// ("__" prefix) and names that can't be parsed into words (no letters or
+// digits, like "_").
+func (s *Schema) identifierNames() []string {
+	seen := map[string]bool{}
+	add := func(name string) {
+		if strings.HasPrefix(name, "__") || !strings.ContainsFunc(name, isAlnum) {
+			return
+		}
+		seen[name] = true
+	}
 	for _, t := range s.Types {
 		if strings.HasPrefix(t.Name, "__") {
 			// Introspection types, and every name inside them.
 			continue
 		}
-		ids.Add(dict, t.Name)
+		add(t.Name)
 		for _, f := range t.Fields {
-			ids.Add(dict, f.Name)
+			add(f.Name)
 			for _, arg := range f.Args {
-				ids.Add(dict, arg.Name)
+				add(arg.Name)
 			}
 		}
 		for _, f := range t.InputFields {
-			ids.Add(dict, f.Name)
+			add(f.Name)
 		}
 		for _, v := range t.EnumValues {
-			ids.Add(dict, v.Name)
+			add(v.Name)
 		}
 	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func isAlnum(r rune) bool {
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9'
 }
 
 // Identifier returns the words the engine parsed name into, as a
