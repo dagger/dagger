@@ -482,7 +482,7 @@ func checkoutSSHAuthSocketPath(ctx context.Context, query *core.Query, caller *e
 	}
 	ws, err := query.CurrentWorkspace(ctx)
 	if err != nil || ws == nil || ws.ClientID != caller.ClientID || ws.HostPath() == "" {
-		return "", nil
+		return "", nil //nolint:nilerr // no checkout of the caller's own to authorize an agent
 	}
 	bk, err := query.Engine(ctx)
 	if err != nil {
@@ -490,7 +490,7 @@ func checkoutSSHAuthSocketPath(ctx context.Context, query *core.Query, caller *e
 	}
 	origin := hostCheckoutOriginURL(ctx, bk, ws.HostPath())
 	if remote, err := gitutil.ParseURL(origin); err != nil || remote.Scheme != gitutil.SSHProtocol {
-		return "", nil
+		return "", nil //nolint:nilerr // not an SSH origin, so no agent to prepare
 	}
 	path, err := bk.PrepareGitSSHAuth(ctx, origin)
 	if err != nil {
