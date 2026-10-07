@@ -102,6 +102,15 @@ func (m *ModuleEnumType) CollectContent(ctx context.Context, value dagql.AnyResu
 }
 
 func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, error) {
+	// The owning module uses original member names even when its entrypoint
+	// schema already contains a canonical projection of the same enum.
+	for _, enumTypeDef := range m.mod.Self().EnumDefs {
+		if enumTypeDef.Self().AsEnum.Value.Self().Name == m.typeDef.Name {
+			return &ModuleEnum{TypeDef: enumTypeDef.Self().AsEnum.Value.Self(), Local: true}, nil
+		}
+	}
+
+
 	// Check the dependencies
 	srv, err := m.mod.Self().Deps.Schema(ctx)
 	if err != nil {
@@ -117,12 +126,6 @@ func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, error) {
 		return enum, nil
 	}
 
-	// If not check if the enum is part of its own module
-	for _, enumTypeDef := range m.mod.Self().EnumDefs {
-		if enumTypeDef.Self().AsEnum.Value.Self().Name == m.typeDef.Name {
-			return &ModuleEnum{TypeDef: enumTypeDef.Self().AsEnum.Value.Self(), Local: true}, nil
-		}
-	}
 
 	return nil, fmt.Errorf("%T.getDecoder: failed to get enum type %q", m, m.typeDef.Name)
 }
