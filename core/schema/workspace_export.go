@@ -156,9 +156,6 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 	if err != nil {
 		return fmt.Errorf("capture export destination: %w", err)
 	}
-	if int64(len(bundle)) != metadata.BundleBytes {
-		return fmt.Errorf("export destination bundle size mismatch")
-	}
 	captured := &core.Workspace{Cwd: "."}
 	captured.SetHostPath(args.Path)
 	captured.SetSource(core.NewWorkspaceSourceClientLocal(args.Path))

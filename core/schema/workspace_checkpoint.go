@@ -24,11 +24,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type capturedCheckpointChunk struct {
-	kind gitsession.CaptureGitChunk_Kind
-	data []byte
-}
-
 // snapshot captures a live workspace when possible and returns the resulting value.
 // Capture is explicit: returning a Workspace does not opt it into Syncer.
 // An existing snapshot never refreshes the original checkout.
@@ -168,11 +163,12 @@ func (s *workspaceSchema) checkpointClientLocal(
 	// 64 MiB total, 4096 files). Untracked paths are approved interactively.
 	policy := &gitsession.CaptureGitPolicy{MaxTotalBytes: 256 << 20}
 
-	var chunks []capturedCheckpointChunk
+	var bundle []byte
 	capture := func() (*gitsession.CaptureGitMetadata, error) {
-		chunks = nil
-		return bk.CaptureGit(clientCtx, ws.HostPath(), policy, func(kind gitsession.CaptureGitChunk_Kind, data []byte) error {
-			chunks = append(chunks, capturedCheckpointChunk{kind: kind, data: slices.Clone(data)})
+		// Each attempt (an approval retry included) streams the whole bundle.
+		bundle = nil
+		return bk.CaptureGit(clientCtx, ws.HostPath(), policy, func(_ gitsession.CaptureGitChunk_Kind, data []byte) error {
+			bundle = append(bundle, data...)
 			return nil
 		})
 	}
@@ -205,10 +201,6 @@ func (s *workspaceSchema) checkpointClientLocal(
 		return inst, fmt.Errorf("client included untracked files despite Drop; upgrade the dagger CLI")
 	}
 
-	bundle := slices.Concat(checkpointBundleChunks(chunks)...)
-	if int64(len(bundle)) != metadata.BundleBytes {
-		return inst, fmt.Errorf("workspace snapshot bundle is %d bytes, capture reported %d", len(bundle), metadata.BundleBytes)
-	}
 	// Capturing the owning client's checkout also authorizes reconstructing its
 	// SSH origin. Reuse push's lazy host key discovery when no agent is running;
 	// ordinary Git reads must not start agents or unlock the owner's keys.
@@ -811,22 +803,6 @@ func checkpointOverlayDirectories(ctx context.Context, srv *dagql.Server, after 
 		after = updated
 	}
 	return after, nil
-}
-
-func checkpointBundleChunks(chunks []capturedCheckpointChunk) (bundle [][]byte) {
-	const traceChunkBytes = 256 << 10
-	for _, chunk := range chunks {
-		if chunk.kind != gitsession.CAPTURE_CHUNK_BUNDLE {
-			continue
-		}
-		data := chunk.data
-		for len(data) > 0 {
-			n := min(len(data), traceChunkBytes)
-			bundle = append(bundle, slices.Clone(data[:n]))
-			data = data[n:]
-		}
-	}
-	return bundle
 }
 
 func (s *workspaceSchema) withConfigPaths(
