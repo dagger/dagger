@@ -262,6 +262,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc("Path of the file to remove. Relative paths resolve from the workspace cwd."),
 			),
+		dagql.NodeFunc("withoutFiles", s.withoutFiles).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with files removed, without mutating the source.").
+			Args(
+				dagql.Arg("paths").Doc("Paths of the files to remove. Relative paths resolve from the workspace cwd."),
+			),
 		dagql.NodeFunc("withoutDirectory", s.withoutDirectory).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a directory removed, without mutating the source.").
@@ -1945,6 +1951,45 @@ func (s *workspaceSchema) withoutFile(
 			Field: "withoutFile",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.NewString(resolvedPath)},
+			},
+		})
+		return updated, err
+	}, nil)
+}
+
+type workspaceWithoutFilesArgs struct {
+	Paths []string
+}
+
+// withoutFiles is withoutFile for many paths in one step, as
+// Directory.withoutFiles is for a directory.
+func (s *workspaceSchema) withoutFiles(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithoutFilesArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	resolvedPaths := make([]string, 0, len(args.Paths))
+	for _, p := range args.Paths {
+		resolvedPath, err := resolveWorkspacePath(p, parent.Self().Cwd)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		resolvedPaths = append(resolvedPaths, resolvedPath)
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	pathInputs := dagql.ArrayInput[dagql.String](dagql.NewStringArray(resolvedPaths...))
+	return s.overlayEdit(ctx, parent, resolvedPaths, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		var updated dagql.ObjectResult[*core.Directory]
+		err := srv.Select(ctx, base, &updated, dagql.Selector{
+			Field: "withoutFiles",
+			Args: []dagql.NamedInput{
+				{Name: "paths", Value: pathInputs},
 			},
 		})
 		return updated, err
