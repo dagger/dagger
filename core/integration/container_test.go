@@ -6244,7 +6244,23 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestSaveHostContainerd(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	nerdctl := nerdctlSetup(ctx, t, c, containerSetupOpts{name: "save-host-containerd", version: "v2.1.2"})
+	nerdctl := nerdctlSetup(ctx, t, c, containerSetupOpts{
+		name:    "save-host-containerd",
+		version: "v2.1.2",
+		// Increase GC pressure so content the export writes without a lease
+		// is likely to be deleted before the image record that references it
+		// is created.
+		middleware: func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithExec([]string{"sh", "-c", `cat >> /etc/containerd/config.toml <<'EOF'
+
+[plugins."io.containerd.gc.v1.scheduler"]
+  pause_threshold = 0.5
+  mutation_threshold = 1
+  schedule_delay = "0s"
+  startup_delay = "0s"
+EOF`})
+		},
+	})
 	nerdctl, err := nerdctlLoadEngine(ctx, c, nerdctl, "registry.dagger.io/engine:dev")
 	require.NoError(t, err)
 
