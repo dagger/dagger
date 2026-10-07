@@ -1530,6 +1530,7 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 				return dagql.NewObjectResultForCurrentCall(ctx, installed.orCurrent(ctx), &Check{
 					Assertion: dagql.NonNull(dagql.String(fun.Description)),
 					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace, CacheTTL: field.Spec.TTL,
+					Address: CheckNameFromContext(ctx),
 				})
 			},
 		})

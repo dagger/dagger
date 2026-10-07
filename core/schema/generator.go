@@ -34,8 +34,17 @@ func (generatorSchema) changeset(ctx context.Context, parent dagql.ObjectResult[
 	err = evaluateArtifact(ctx, parent.Self().Artifact, &result, inputs...)
 	return result, err
 }
-func (generatorSchema) stale(_ context.Context, parent dagql.ObjectResult[*core.Generator], _ struct{}) (*core.Check, error) {
-	return &core.Check{Generator: parent, Assertion: dagql.NonNull(dagql.String("generated files are up to date"))}, nil
+func (generatorSchema) stale(ctx context.Context, parent dagql.ObjectResult[*core.Generator], _ struct{}) (*core.Check, error) {
+	address := core.CheckNameFromContext(ctx)
+	if address == "" {
+		// Derive the stale check's address from its generator's address, so the
+		// span is named (e.g. dag://golang/generate-all/stale) even when reached
+		// outside a workspace artifact evaluation.
+		if uri, err := parent.Self().Artifact.URI(core.ArtifactURIOpts{DimensionKeys: true}); err == nil {
+			address = uri + "/stale"
+		}
+	}
+	return &core.Check{Generator: parent, Assertion: dagql.NonNull(dagql.String("generated files are up to date")), Address: address}, nil
 }
 func (generatorSchema) sync(ctx context.Context, parent dagql.ObjectResult[*core.Generator], _ struct{}) (*core.Generator, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
