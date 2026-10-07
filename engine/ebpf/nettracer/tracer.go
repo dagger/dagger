@@ -320,7 +320,7 @@ func cgroupID(path string) (uint64, error) {
 // counters that look authoritative.
 func EngineAccountingAvailable() bool {
 	t := activeTracer.Load()
-	return t != nil && t.cgroupEnabled && fallbackCommands.Load() == nil
+	return t != nil && t.cgroupEnabled
 }
 
 // EngineAccountingError explains why engine-wide accounting is unavailable.
@@ -329,18 +329,15 @@ func EngineAccountingError() error {
 	if t == nil {
 		return errors.New("engine cgroup network accounting is not initialized")
 	}
-	if fallbackCommands.Load() != nil {
-		return errors.New("subprocess cgroups lack network accounting; engine aggregate is incomplete")
-	}
 	return t.cgroupErr
 }
 
 // SampleEngine returns cumulative packet counters for sockets in the engine's
-// exact cgroup and its dedicated sibling subprocess subtrees, in the engine network
-// namespace. Module and withExec cgroups remain excluded.
+// exact cgroup, in the engine network namespace. Sibling helper, module, and
+// withExec cgroups remain excluded.
 func SampleEngine() (EngineSample, error) {
 	t := activeTracer.Load()
-	if t == nil || !t.cgroupEnabled || fallbackCommands.Load() != nil {
+	if t == nil || !t.cgroupEnabled {
 		return EngineSample{}, errors.New("engine cgroup network accounting is unavailable")
 	}
 	return t.sampleEngine()

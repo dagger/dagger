@@ -286,10 +286,10 @@ static __always_inline int add_cgroup_bytes(struct __sk_buff *skb,
         __u64 *bytes = bpf_map_lookup_elem(&operation_byte_counters, &key);
         if (bytes)
             *bytes += skb->len;
+        return 1;
     }
-    /* Both the engine's exact cgroup and the sibling operation subtrees
-     * contribute to this aggregate. Their hooks cover disjoint cgroups, so
-     * each packet is counted once. Workload cgroups remain excluded. */
+    /* Engine totals cover only the engine's own cgroup. Sibling helpers
+     * are attributed to their operation spans, just like executor workloads. */
     struct cgroup_counter_key key = {
         .direction = direction,
         .scope = scope,
@@ -357,6 +357,17 @@ static __always_inline __u64 workload_cgroup_id(struct __sk_buff *skb)
 static __always_inline int add_workload_bytes(struct __sk_buff *skb,
                                               __u8 direction)
 {
+    /* SSHFS helpers below a workload have their own counters, including
+     * traffic before the workload starts. Userspace adds those counters
+     * to the exec sample; do not also count them in this inherited hook. */
+    struct operation_counter_key helper_key = {
+        .cgroup_id = bpf_skb_cgroup_id(skb),
+        .direction = direction,
+        .scope = SCOPE_INTERNAL,
+    };
+    if (bpf_map_lookup_elem(&operation_byte_counters, &helper_key))
+        return 1;
+
     /* Traffic within a workload's own network namespace is not network
      * use. */
     if (skb->ifindex == LOOPBACK_IFINDEX)

@@ -175,6 +175,31 @@ func TestWorkloadAccounting(t *testing.T) {
 	require.Zero(t, otherSample.InternalTX)
 	require.Zero(t, otherSample.InternalRX)
 
+	// SSHFS helpers have separate counters that the exec sampler adds.
+	// The inherited workload hook must not also account for their packets.
+	helperPath := filepath.Join(parent, "with-helper")
+	withHelper, err := tracer.Workload(helperPath, cookie)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, withHelper.Close())
+		require.NoError(t, removeWhenEmpty(helperPath))
+	})
+	cmd = exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestWorkloadNetworkHelper$")
+	cmd.Env = append(os.Environ(), "NETTRACER_HELPER=public-udp")
+	helper, err := PrepareCommandIn(cmd, helperPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, helper.Close()) })
+	output.Reset()
+	cmd.Stdout, cmd.Stderr = &output, &output
+	require.NoError(t, cmd.Run(), output.String())
+	require.NoError(t, helper.WaitEmpty(t.Context()))
+	helperSample, err := helper.Sample()
+	require.NoError(t, err)
+	require.Greater(t, helperSample.ExternalTX, uint64(0))
+	workloadSample, err := withHelper.Sample()
+	require.NoError(t, err)
+	require.Equal(t, Sample{}, workloadSample, "helper traffic must not be counted twice")
+
 	require.NoError(t, workload.Close())
 	_, err = workload.Sample()
 	require.Error(t, err, "closed workloads release their counters")

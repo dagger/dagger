@@ -50,7 +50,12 @@ func TestGenerateBaseSpecCgroupParent(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, state.cleanups.Run()) })
 
 			require.NoError(t, client.generateBaseSpec(t.Context(), state))
-			require.Equal(t, tc.want, state.spec.Linux.CgroupsPath)
+			require.Equal(t, tc.want, state.resourceCgroupPath)
+			if tc.name == "systemd parent" {
+				require.Equal(t, tc.want, state.spec.Linux.CgroupsPath)
+			} else {
+				require.Equal(t, tc.want+"/container", state.spec.Linux.CgroupsPath)
+			}
 		})
 	}
 }

@@ -47,10 +47,22 @@ func killContainerCgroup(ctx context.Context, id, cgroupPath string) error {
 		return err
 	}
 	path := manager.GetPaths()[""]
-	if id == "" || id == "." || id == ".." || !filepath.IsAbs(path) || filepath.Clean(path) != path || filepath.Base(path) != id || path == "/" {
+	if !validContainerCgroupPath(id, path) {
 		return fmt.Errorf("refusing cgroup recovery for container %q at %q", id, path)
 	}
 	return killAndDrainCgroup(ctx, path, cgroups.WriteFile, cgroups.ReadFile)
+}
+
+// Only accept an execution's container child. Matching an ID
+// anywhere in the path could target the exec parent or an SSHFS helper.
+func validContainerCgroupPath(id, path string) bool {
+	if id == "" || id == "." || id == ".." || filepath.Base(id) != id ||
+		!filepath.IsAbs(path) || filepath.Clean(path) != path || path == "/" {
+		return false
+	}
+	execPath := filepath.Dir(path)
+	return filepath.Base(path) == "container" && filepath.Base(execPath) == id &&
+		filepath.Base(filepath.Dir(execPath)) == "exec"
 }
 
 // cgroup.kill is recursive, but signals complete asynchronously. The root's

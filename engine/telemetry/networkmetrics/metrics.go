@@ -30,7 +30,7 @@ type instruments struct {
 func register(meter metric.Meter, sampleNetwork sampler) (metric.Registration, error) {
 	bytes, err := meter.Int64ObservableCounter(BytesName,
 		metric.WithUnit("By"),
-		metric.WithDescription("Cumulative network-layer bytes for the engine process and its subprocess operations, excluding executor workloads."),
+		metric.WithDescription("Cumulative network-layer bytes for the engine process cgroup, excluding sibling helper and executor cgroups."),
 	)
 	if err != nil {
 		return nil, err
