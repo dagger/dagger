@@ -110,6 +110,8 @@ export OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf
 exec dagger query
 `}, core.ContainerWithExecOpts{
 				Stdin: `{container{from(address:"` + alpineImage + `"){withExec(args:["sleep","12"]){stdout}}}}`,
+				// Connect to the test engine, not the outer one.
+				DisableDaggerInDagger: true,
 			})
 		clients.Go(func() error {
 			_, err := client.Sync(ctx)
@@ -159,7 +161,9 @@ exec dagger query
 	engineRunning = true
 	_, err = engineClientContainer(ctx, t, c, engineService).
 		WithEnvVariable("CLIENT_NONCE", identity.NewID()).
-		WithExec([]string{"dagger", "core", "version"}).
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{
+			DisableDaggerInDagger: true,
+		}).
 		Sync(ctx)
 	require.NoError(t, err)
 
