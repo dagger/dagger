@@ -131,6 +131,105 @@ func EmbedPatch(ctx context.Context, srv *dagql.Server, name string, patch []byt
 	return blob, err
 }
 
+// ApplyPatchOnto applies p to ws, the workspace whose root p was rendered
+// against (RenderPatchOnto), as recipes that hold p and nothing of the
+// changeset it came from: removed files, the patch, embedded with EmbedPatch
+// as a blob called name, then removed and new directories, in the order
+// PatchOnto prescribes.
+//
+// It is the one way the engine records a rendered changeset in a workspace's
+// recipe, so the changeset's producer is never replayed. A patch EmbedPatch
+// refuses fails with its error, for the caller to apply the changeset raw
+// (PatchNotEmbeddable). The result is lazy: nothing evaluates the patch here.
+func ApplyPatchOnto(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws dagql.ObjectResult[*Workspace],
+	p *PatchOnto,
+	name string,
+	onConflict PatchConflict,
+) (dagql.ObjectResult[*Workspace], error) {
+	selectWS := func(sel dagql.Selector) error {
+		sel.View = srv.View
+		return srv.Select(ctx, ws, &ws, sel)
+	}
+	if len(p.RemovedFiles) > 0 {
+		// Before the patch, which only writes: deletions are path-only.
+		removed := make([]string, len(p.RemovedFiles))
+		for i, f := range p.RemovedFiles {
+			removed[i] = "/" + f
+		}
+		if err := selectWS(dagql.Selector{
+			Field: "withoutFiles",
+			Args:  []dagql.NamedInput{{Name: "paths", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(removed...))}},
+		}); err != nil {
+			return ws, err
+		}
+	}
+	if len(p.Patch) > 0 {
+		blob, err := EmbedPatch(ctx, srv, name, p.Patch)
+		if err != nil {
+			// Still PatchNotEmbeddable through the wrap, for the raw fallback.
+			return ws, fmt.Errorf("embed %s: %w", name, err)
+		}
+		blobID, err := blob.ID()
+		if err != nil {
+			return ws, err
+		}
+		if err := selectWS(dagql.Selector{
+			Field: "withPatchFile",
+			Args: []dagql.NamedInput{
+				{Name: "patch", Value: dagql.NewID[*File](blobID)},
+				{Name: "onConflict", Value: onConflict},
+			},
+		}); err != nil {
+			return ws, err
+		}
+	}
+	// What a patch cannot express. Paths are absolute: the workspace resolves
+	// relative ones from its cwd.
+	for _, dir := range p.RemovedDirectories {
+		if err := selectWS(dagql.Selector{
+			Field: "withoutDirectory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString("/" + dir)}},
+		}); err != nil {
+			return ws, err
+		}
+	}
+	for _, dir := range p.NewDirectories {
+		// Merged in rather than replaced (withNewDirectory), which would drop
+		// what the workspace holds there and Before did not, e.g. ignored
+		// files. A directory created by the merge takes the source's mode.
+		var empty dagql.ObjectResult[*Directory]
+		if err := srv.Select(ctx, srv.Root(), &empty,
+			dagql.Selector{View: srv.View, Field: "directory"},
+			dagql.Selector{View: srv.View, Field: "withNewDirectory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("dir")},
+				{Name: "permissions", Value: dagql.NewInt(dir.Permissions)},
+			}},
+			dagql.Selector{View: srv.View, Field: "directory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("dir")},
+			}},
+		); err != nil {
+			return ws, fmt.Errorf("directory %q: %w", dir.Path, err)
+		}
+		emptyID, err := empty.ID()
+		if err != nil {
+			return ws, err
+		}
+		if err := selectWS(dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("/" + dir.Path)},
+				{Name: "source", Value: dagql.NewID[*Directory](emptyID)},
+			},
+		}); err != nil {
+			return ws, err
+		}
+	}
+	return ws, nil
+}
+
 // RenderPatchOnto renders the changeset as a patch against base, a tree the
 // changeset is about to be applied to at prefix (a base-relative directory;
 // "." for its root). Paths in the result are base-relative.

@@ -1394,84 +1394,9 @@ func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root d
 		return "", nil
 	}
 
-	newWS := m.workspace
-	selectWS := func(sel dagql.Selector) error {
-		sel.View = srv.View
-		return srv.Select(ctx, newWS, &newWS, sel)
-	}
-	if len(rendered.RemovedFiles) > 0 {
-		// Before the patch, which only writes: deletions are path-only.
-		removed := make([]string, len(rendered.RemovedFiles))
-		for i, p := range rendered.RemovedFiles {
-			removed[i] = "/" + p
-		}
-		if err := selectWS(dagql.Selector{
-			Field: "withoutFiles",
-			Args:  []dagql.NamedInput{{Name: "paths", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(removed...))}},
-		}); err != nil {
-			return "", err
-		}
-	}
-	if len(rendered.Patch) > 0 {
-		blob, err := EmbedPatch(ctx, srv, "changeset.patch", rendered.Patch)
-		if err != nil {
-			// Still PatchNotEmbeddable through the wrap, for the raw fallback.
-			return "", fmt.Errorf("embed changeset patch: %w", err)
-		}
-		blobID, err := blob.ID()
-		if err != nil {
-			return "", err
-		}
-		if err := selectWS(dagql.Selector{
-			Field: "withPatchFile",
-			Args: []dagql.NamedInput{
-				{Name: "patch", Value: dagql.NewID[*File](blobID)},
-				{Name: "onConflict", Value: PatchConflictLeaveMarkers},
-			},
-		}); err != nil {
-			return "", err
-		}
-	}
-	// What a patch cannot express. Paths are absolute: the workspace
-	// resolves relative ones from its cwd.
-	for _, dir := range rendered.RemovedDirectories {
-		if err := selectWS(dagql.Selector{
-			Field: "withoutDirectory",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString("/" + dir)}},
-		}); err != nil {
-			return "", err
-		}
-	}
-	for _, dir := range rendered.NewDirectories {
-		// Merged in rather than replaced (withNewDirectory), which would drop
-		// what the workspace holds there and Before did not, e.g. ignored
-		// files. A directory created by the merge takes the source's mode.
-		var empty dagql.ObjectResult[*Directory]
-		if err := srv.Select(ctx, srv.Root(), &empty,
-			dagql.Selector{View: srv.View, Field: "directory"},
-			dagql.Selector{View: srv.View, Field: "withNewDirectory", Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("dir")},
-				{Name: "permissions", Value: dagql.NewInt(dir.Permissions)},
-			}},
-			dagql.Selector{View: srv.View, Field: "directory", Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("dir")},
-			}},
-		); err != nil {
-			return "", fmt.Errorf("directory %q: %w", dir.Path, err)
-		}
-		emptyID, err := empty.ID()
-		if err != nil {
-			return "", err
-		}
-		if err := selectWS(dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("/" + dir.Path)},
-				{Name: "source", Value: dagql.NewID[*Directory](emptyID)},
-			},
-		}); err != nil {
-			return "", err
-		}
+	newWS, err := ApplyPatchOnto(ctx, srv, m.workspace, rendered, "changeset.patch", PatchConflictLeaveMarkers)
+	if err != nil {
+		return "", err
 	}
 	// withPatchFile is lazy, and nothing else here runs it. Force the new
 	// root now, so a patch git cannot apply fails this call and leaves the

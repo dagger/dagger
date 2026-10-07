@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"path"
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -709,16 +707,19 @@ func checkpointApprovalSummary(candidates []*gitsession.CaptureGitCandidate) str
 	return summary.String()
 }
 
-// checkpointOverlay records a host-backed workspace's engine edits, on top of
-// its captured checkout, as a patch. Keeping the old Changeset ID would retain
-// the live host receiver in the recipe: the overlay is diffed against a sparse
-// host read (see overlayEditWithHost), and MCP applies host-backed tool edits
-// raw.
+// checkpointOverlay records a host-backed workspace's engine edits on top of
+// its captured checkout, so the frozen recipe no longer reads the client's
+// filesystem. The overlay itself cannot be kept: it is diffed against a
+// sparse live host read (see overlayEditWithHost), and MCP applies tool edits
+// to a host-backed workspace raw. So it is rendered against the captured tree
+// and recorded as that patch (core.ApplyPatchOnto), as MCP records tool edits
+// on an in-engine workspace.
 //
-// A patch that core.EmbedPatch refuses (too large, or carrying a binary file)
-// is not inlined: the overlay is applied raw instead, as MCP.applyChangeset
-// does, so the recipe re-reads the touched host paths on replay, which beats
-// a recipe no trace can record.
+// A patch core.EmbedPatch refuses, too large or carrying a binary file, is not
+// recorded: binaries and large content stay out of recipes and traces. The
+// overlay is applied raw instead, as MCP.applyChangeset does, and that is the
+// one case where the frozen recipe still depends on the host: replaying it
+// re-reads the touched host paths, through the owning client.
 func checkpointOverlay(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -731,17 +732,16 @@ func checkpointOverlay(
 	}); err != nil {
 		return out, err
 	}
-	beforeID, err := before.ID()
-	if err != nil {
-		return out, err
-	}
 	// Rendered against the frozen tree itself, and bounded: git stops at the
 	// first binary hunk or past the budget, rather than writing out a build
 	// output's base85 only for it to be refused.
 	rendered, err := changes.Self().RenderPatchOnto(ctx, before, ".", core.EmbeddedPatchMaxBytes)
-	var blob dagql.ObjectResult[*core.File]
-	if err == nil && len(rendered.Patch) > 0 {
-		blob, err = core.EmbedPatch(ctx, srv, "workspace-overlay.patch", rendered.Patch)
+	if err == nil {
+		if rendered.IsEmpty() {
+			return frozen, nil
+		}
+		// Rendered against this very tree, so it fits by construction.
+		out, err = core.ApplyPatchOnto(ctx, srv, frozen, rendered, "workspace-overlay.patch", core.PatchConflictFail)
 	}
 	if core.PatchNotEmbeddable(err) {
 		changesID, err := changes.ID()
@@ -754,90 +754,9 @@ func checkpointOverlay(
 		return out, err
 	}
 	if err != nil {
-		return out, fmt.Errorf("render workspace overlay patch: %w", err)
-	}
-	after := before
-	if blob.Self() != nil {
-		blobID, err := blob.ID()
-		if err != nil {
-			return out, err
-		}
-		if err := srv.Select(ctx, before, &after, dagql.Selector{
-			Field: "withPatchFile", Args: []dagql.NamedInput{{Name: "patch", Value: dagql.NewID[*core.File](blobID)}},
-		}); err != nil {
-			return out, fmt.Errorf("apply workspace overlay to checkpoint: %w", err)
-		}
-	}
-	after, err = checkpointOverlayDirectories(ctx, srv, after, changes.Self())
-	if err != nil {
-		return out, err
-	}
-	var delta dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, after, &delta,
-		dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}}},
-	); err != nil {
 		return out, fmt.Errorf("apply workspace overlay to checkpoint: %w", err)
 	}
-	deltaID, err := delta.ID()
-	if err != nil {
-		return out, err
-	}
-	err = srv.Select(ctx, frozen, &out, dagql.Selector{
-		Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](deltaID)}},
-	})
-	return out, err
-}
-
-// Git patches cannot record empty directories. Restore directory edits with
-// literal paths and modes, without retaining the old (possibly live) recipe.
-// Include parents of deleted files: applying a patch can remove a directory
-// whose final file was deleted even when the overlay kept that directory.
-func checkpointOverlayDirectories(ctx context.Context, srv *dagql.Server, after dagql.ObjectResult[*core.Directory], changes *core.Changeset) (dagql.ObjectResult[*core.Directory], error) {
-	paths, err := changes.ComputePaths(ctx)
-	if err != nil {
-		return after, err
-	}
-	var candidates []string
-	for _, p := range slices.Concat(paths.Added, paths.AllRemoved) {
-		if strings.HasSuffix(p, "/") {
-			candidates = append(candidates, strings.TrimSuffix(p, "/"))
-		}
-	}
-	for _, p := range paths.AllRemoved {
-		for parent := path.Dir(strings.TrimSuffix(p, "/")); parent != "." && parent != "/"; parent = path.Dir(parent) {
-			candidates = append(candidates, parent)
-		}
-	}
-	slices.Sort(candidates)
-	for _, p := range slices.Compact(candidates) {
-		want, err := changes.After.Self().Stat(ctx, changes.After, srv, p, true)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
-			return after, err
-		}
-		actual, err := after.Self().Stat(ctx, after, srv, p, true)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
-			return after, err
-		}
-		selector := dagql.Selector{Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString(p)}}}
-		switch {
-		case want != nil && want.IsDir():
-			if actual != nil && actual.IsDir() && actual.Permissions == want.Permissions {
-				continue
-			}
-			selector.Field = "withNewDirectory"
-			selector.Args = append(selector.Args, dagql.NamedInput{Name: "permissions", Value: dagql.NewInt(want.Permissions)})
-		case want == nil && actual != nil && actual.IsDir():
-			selector.Field = "withoutDirectory"
-		default:
-			continue
-		}
-		var updated dagql.ObjectResult[*core.Directory]
-		if err := srv.Select(ctx, after, &updated, selector); err != nil {
-			return after, err
-		}
-		after = updated
-	}
-	return after, nil
+	return out, nil
 }
 
 func checkpointBundleChunks(chunks []capturedCheckpointChunk) (bundle [][]byte) {

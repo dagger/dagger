@@ -434,7 +434,7 @@ func (*Probe) Frozen() error { return nil }
 
 // TestWorkspaceFromBranchIsPinned covers a Git workspace addressed by a
 // mutable ref: its recipe, and the recipes of edits built on it, already name
-// the commit, so freezing it returns it as is.
+// the commit rather than the branch, before anything freezes it.
 func (WorkspaceSuite) TestWorkspaceFromBranchIsPinned(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "original"))
@@ -518,6 +518,77 @@ func (WorkspaceSuite) TestWorkspaceSnapshotPreservesDirectories(ctx context.Cont
 	var id call.ID
 	require.NoError(t, id.Decode(string(recipe)))
 	require.NotContains(t, id.Display(), "branch(name:")
+}
+
+// TestWorkspaceSnapshotHostOverlay covers engine edits on a host-backed
+// workspace. Snapshot records them on the captured checkout as a patch, with
+// deletions, a directory replaced by a file, removed and new empty
+// directories intact, so the frozen recipe no longer reads the host. A binary
+// edit stays out of the recipe: the overlay is applied raw instead.
+func (WorkspaceSuite) TestWorkspaceSnapshotHostOverlay(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = workdir
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+	}
+	git("init", "-b", "main")
+	git("config", "user.name", "Snapshot")
+	git("config", "user.email", "snapshot@example.com")
+	for name, contents := range map[string]string{
+		"keep.txt":           "base\n",
+		"drop.txt":           "drop me\n",
+		"replaced/inner.txt": "a directory, for now\n",
+		"gone/file.txt":      "remove my directory\n",
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(workdir, name)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, name), []byte(contents), 0o644))
+	}
+	git("add", ".")
+	git("commit", "-m", "base")
+
+	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
+	live := c.CurrentWorkspace()
+	frozen := snapshotWorkspace(ctx, t, c, live.
+		WithNewFile("keep.txt", "edited\n").
+		WithoutFile("drop.txt").
+		WithoutDirectory("replaced").
+		WithNewFile("replaced", "now a file\n").
+		WithoutDirectory("gone").
+		WithDirectory("empty", c.Directory()))
+	contents, err := frozen.File("keep.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "edited\n", contents)
+	contents, err = frozen.File("replaced").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "now a file\n", contents)
+	for _, name := range []string{"drop.txt", "gone"} {
+		exists, err := frozen.Directory("/").Exists(ctx, name)
+		require.NoError(t, err)
+		require.False(t, exists, "the overlay removed %s", name)
+	}
+	entries, err := frozen.Directory("empty").Entries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(frozen))
+	require.NoError(t, err)
+	fields := workspaceRecipeFields(t, string(recipe))
+	require.Contains(t, fields, "withPatchFile", "the overlay must be recorded as a patch")
+	require.Contains(t, fields, "withoutFiles", "deletions must be recorded beside the patch")
+	_, err = os.Stat(filepath.Join(workdir, "drop.txt"))
+	require.NoError(t, err, "snapshot must leave the host checkout alone")
+
+	binary := snapshotWorkspace(ctx, t, c, live.WithNewFile("app.bin", "ELF\x00\x01"))
+	contents, err = binary.File("app.bin").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ELF\x00\x01", contents)
+	recipe, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(binary))
+	require.NoError(t, err)
+	fields = workspaceRecipeFields(t, string(recipe))
+	require.NotContains(t, fields, "withPatchFile", "a binary must not be embedded as a patch")
+	require.Contains(t, fields, "withChanges", "the binary overlay must be applied raw")
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotRejectsNestedClientCapture(ctx context.Context, t *testctx.T) {
