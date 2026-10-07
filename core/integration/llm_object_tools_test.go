@@ -1014,8 +1014,28 @@ func (LLMSuite) TestChangesetToolKeepsEmptyDirectories(ctx context.Context, t *t
 	})
 }
 
+// cwdPathDang is vito/editor's cwdPath, for a type's body: it resolves a path
+// the model passed relative to the workspace cwd, the frame
+// source.directory(".") and so a tool's Changeset are measured from. A
+// leading "/" is relative to the workspace root, anything else to the cwd; a
+// path outside the cwd is an error.
+const cwdPathDang = `
+  let cwdPath(tool: String!, source: Workspace!, path: String!): String! {
+    let cwd = Path("/").join(Path(source.cwd))
+    let abs = if (path.hasPrefix("/")) {
+      Path(path)
+    } else {
+      cwd.join(Path(path))
+    }
+    if (!cwd.contains(abs)) {
+      raise ` + "`${tool}: ${path} is outside the current directory ${cwd.string}`" + `
+    }
+    abs.relativeTo(cwd).string ?? "."
+  }
+`
+
 // editorDang is a codegen module with vito/editor's edit and mv tools: pure
-// changesets built from reads of the workspace, relative to its cwd.
+// changesets built from reads of the workspace, measured from its cwd.
 const editorDang = `
 type Codegen {
   agent(base: LLM!): LLM! @agent {
@@ -1023,17 +1043,19 @@ type Codegen {
   }
 
   edit(source: Workspace!, filePath: String!, oldText: String!, newText: String!): Changeset! {
-    let base = source.directory(".", include: [filePath])
+    let rel = cwdPath("edit", source, filePath)
+    let base = source.directory(".", include: [rel])
     base
-      .withFile(filePath, source.file(filePath).withReplaced(oldText, newText))
+      .withFile(rel, source.file(rel).withReplaced(oldText, newText))
       .changes(base)
   }
 
   mv(source: Workspace!, oldPath: String!, newPath: String!): Changeset! {
+    let src = cwdPath("mv", source, oldPath)
     let base = source.directory(".")
-    base.withFile(newPath, base.file(oldPath)).withoutFile(oldPath).changes(base)
+    base.withFile(cwdPath("mv", source, newPath), base.file(src)).withoutFile(src).changes(base)
   }
-}
+` + cwdPathDang + `}
 `
 
 // TestChangesetToolPatchesPureEdits covers file edits: their changesets are
@@ -1108,8 +1130,11 @@ func (LLMSuite) TestChangesetToolPatchesPureEdits(ctx context.Context, t *testct
 	check(ctx, t, dagger.Ref[*dagger.LLM](connect(ctx, t), recipe).Workspace())
 }
 
-// cwdDang has an edit and a generator measured from the workspace cwd, as
-// vito/editor's tools are, and a generator measured from the workspace root.
+// cwdDang has tools that measure their changesets from the workspace cwd, the
+// convention for a changeset a function returns: vito/editor's edit, by a
+// cwd-relative and a root-relative path, a generator that runs in a copy of
+// the cwd, and an SDK-style generator that diffs two workspaces with
+// Workspace.changes, which measures from the cwd.
 const cwdDang = `
 type Codegen {
   agent(base: LLM!): LLM! @agent {
@@ -1117,8 +1142,17 @@ type Codegen {
   }
 
   edit(source: Workspace!, label: String!): Changeset! {
-    let base = source.directory(".", include: ["notes.txt"])
-    base.withFile("notes.txt", source.file("notes.txt").withReplaced("old", label)).changes(base)
+    editAt(source, "notes.txt", label)
+  }
+
+  editByRootPath(source: Workspace!, label: String!): Changeset! {
+    editAt(source, "/sub/notes.txt", label)
+  }
+
+  let editAt(source: Workspace!, filePath: String!, label: String!): Changeset! {
+    let rel = cwdPath("edit", source, filePath)
+    let base = source.directory(".", include: [rel])
+    base.withFile(rel, source.file(rel).withReplaced("old", label)).changes(base)
   }
 
   @cache(policy: FunctionCachePolicy.Never)
@@ -1133,36 +1167,35 @@ type Codegen {
       .changes(source.directory("."))
   }
 
-  @cache(policy: FunctionCachePolicy.Never)
-  generateAtRoot(source: Workspace!, label: String!): Changeset! {
-    let before = container.from("alpine:3.22")
-      .withWorkdir("/src")
-      .withDirectory(".", source.directory("/"))
-      .withEnvVariable("LABEL", label)
-      .withEnvVariable("CACHEBUST", UUID.v7)
-    let after = before.withExec(["sh", "-ec", "echo \"$LABEL\" >> sub/notes.txt; mkdir -p sub/made/empty"]).sync
-    after.directory(".").changes(before.directory("."))
+  generateWorkspace(source: Workspace!, label: String!): Changeset! {
+    let notes = source.file("notes.txt").contents
+    source.withNewFile("notes.txt", notes + label + "\n").changes(source)
   }
-}
+` + cwdPathDang + `}
 `
 
-// TestChangesetToolAppliesAtCwd covers a workspace whose cwd is not its root,
-// with tools that measure their changesets from the cwd, like vito/editor's.
-// The workspace applies changesets at its root, so the changeset has to be
-// placed at the cwd first, or the edit lands on the root's file of the same
-// name. A changeset measured from the root still applies there.
+// TestChangesetToolAppliesAtCwd covers a workspace whose cwd is not its root.
+// A tool's changeset is measured from the workspace cwd, as Workspace.changes
+// measures them, but the workspace applies changes at its root: the
+// changeset is placed at the cwd first, or the edit lands on the root's file
+// of the same name.
 func (LLMSuite) TestChangesetToolAppliesAtCwd(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		name, tool, want string
 		generated        bool
 	}{
 		{name: "pure edit", tool: "edit", want: "sub new\n"},
+		{name: "pure edit by root path", tool: "editByRootPath", want: "sub new\n"},
 		{name: "generator", tool: "generate", want: "sub old\nnew\n", generated: true},
-		{name: "generator at the root", tool: "generateAtRoot", want: "sub old\nnew\n", generated: true},
+		{name: "workspace generator", tool: "generateWorkspace", want: "sub old\nnew\n"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			c, sink := connectWithTrace(ctx, t)
 			source := generatorWorkspace(c, cwdDang).
+				// Workspace.changes measures from the cwd for a module
+				// past changesetCwdCutover (v1.0.0-beta.10), which
+				// generatorWorkspace's v1.0.0-0 is not.
+				WithNewFile("modules/codegen/dagger.json", `{"name":"codegen","engineVersion":"v1.0.0","sdk":"dang"}`).
 				WithNewFile("notes.txt", "root old\n").
 				WithNewFile("sub/notes.txt", "sub old\n")
 			ws := source.AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "sub"})
@@ -1209,10 +1242,11 @@ func (LLMSuite) TestChangesetToolAppliesAtCwd(ctx context.Context, t *testctx.T)
 			WithNewFile(".dagger/modules/swapper/main.dang", `
 type Swapper {
   edit(source: Workspace!, label: String!): Changeset! {
-    let base = source.directory(".", include: ["notes.txt"])
-    base.withFile("notes.txt", source.file("notes.txt").withReplaced("old", label)).changes(base)
+    let rel = cwdPath("edit", source, "notes.txt")
+    let base = source.directory(".", include: [rel])
+    base.withFile(rel, source.file(rel).withReplaced("old", label)).changes(base)
   }
-}
+`+cwdPathDang+`}
 `)
 		model := cannedRecordingModel(ctx, t, c, c.LLM().
 			WithPrompt("edit the notes").

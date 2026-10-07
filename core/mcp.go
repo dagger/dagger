@@ -1220,10 +1220,10 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 // Either way, a changeset that touches .git is refused
 // (refuseGitMetadataChanges).
 //
-// A tool may measure its changeset from the workspace cwd rather than its
-// root: vito/editor's tools read the workspace at ".", which resolves from the
-// cwd. Workspace.withChanges applies at the root, so such a changeset is first
-// placed at the cwd (workspaceTreePrefix).
+// A tool's changeset is measured from the workspace cwd, as Workspace.changes
+// measures them and `dagger generate` applies them: a changeset returned from
+// a function applies wherever its caller stands. Workspace.withChanges and
+// withPatchFile apply at the root, so it is placed at the cwd first.
 func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (string, error) {
 	if m.workspace.Self() == nil {
 		return "", fmt.Errorf("cannot apply changes: no workspace bound")
@@ -1244,8 +1244,7 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	ws := m.workspace.Self()
 	root, inEngine := ws.SourceDirectory()
 	inEngine = inEngine && !ws.ClientLocalBase()
-	state := m.workspaceState(ctx, root)
-	prefix := changesetWorkspacePrefix(ctx, ws, state, changes)
+	prefix := workspaceCwdPrefix(ws)
 
 	if inEngine {
 		out, err := m.applyChangesetPatch(ctx, srv, root, prefix, changes)
@@ -1295,47 +1294,15 @@ func isGitMetadataPath(p string) bool {
 	return false
 }
 
-// workspaceState returns the recipe digests of the bound workspace's own
-// state: the workspace, and the trees its reads may return as they are, its
-// root (when in the engine) and its mounts. A digest that cannot be had is
-// left out, which only keeps a changeset read from it from being placed at
-// the directory it was read from (see changesetWorkspacePrefix).
-func (m *MCP) workspaceState(ctx context.Context, root dagql.ObjectResult[*Directory]) map[digest.Digest]bool {
-	state := map[digest.Digest]bool{}
-	results := []interface {
-		RecipeDigest(context.Context) (digest.Digest, error)
-	}{m.workspace}
-	if root.Self() != nil {
-		results = append(results, root)
-	}
-	if mounts, ok := m.workspace.Self().MountsDir(); ok {
-		results = append(results, mounts)
-	}
-	for _, res := range results {
-		if dgst, err := res.RecipeDigest(ctx); err == nil {
-			state[dgst] = true
-		}
-	}
-	return state
-}
-
-// changesetWorkspacePrefix reports where in the workspace root a changeset
-// was measured from: where its Before reads the workspace (see
-// workspaceTreePrefix), or the root when that cannot be told, e.g. for a tree
-// read back out of a container.
-func changesetWorkspacePrefix(ctx context.Context, ws *Workspace, state map[digest.Digest]bool, changes dagql.ObjectResult[*Changeset]) string {
-	before := changes.Self().Before
-	if before.Self() == nil {
+// workspaceCwdPrefix returns a workspace's cwd as a path relative to its root,
+// "." for the root itself, whichever way the cwd is spelled ("", ".", "/",
+// "sub" or "/sub").
+func workspaceCwdPrefix(ws *Workspace) string {
+	cwd := path.Clean("/" + ws.Cwd)
+	if cwd == "/" {
 		return "."
 	}
-	recipe, err := before.RecipeID(ctx)
-	if err != nil {
-		return "."
-	}
-	if prefix, ok := workspaceTreePrefix(recipe, state, ws); ok {
-		return prefix
-	}
-	return "."
+	return strings.TrimPrefix(cwd, "/")
 }
 
 // changesetAt places a changeset measured from a directory of the workspace
@@ -1408,7 +1375,7 @@ func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes d
 
 // applyChangesetPatch applies a changeset to an in-engine workspace as a patch
 // rendered against the workspace's root, with Workspace.withPatchFile. The
-// changeset applies at prefix, the directory it was measured from.
+// changeset applies at prefix, the workspace cwd it was measured from.
 //
 // The patch starts from the workspace's own content, so applying it
 // reproduces what Workspace.withChanges would by construction: there is
