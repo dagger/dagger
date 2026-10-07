@@ -831,6 +831,44 @@ func (LLMSuite) TestChangesetToolRefusesMounts(ctx context.Context, t *testctx.T
 	require.Equal(t, []string{"lib.txt"}, mounted)
 }
 
+// TestChangesetToolFailsUnappliablePatch covers a patch git refuses to apply
+// to the workspace: the changeset writes link/x, but link is a symlink in the
+// workspace, and git will not create a file beyond one. The tool call must
+// fail then and there, leaving the workspace as it was, rather than the lazy
+// patch failing whatever reads the workspace next, here the next changeset.
+func (LLMSuite) TestChangesetToolFailsUnappliablePatch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := generatorWorkspace(c, `
+type Codegen {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  write(label: String!): Changeset! {
+    directory.withNewFile(label, "new\n").changes(directory.withNewFile(label, "old\n"))
+  }
+}
+`).
+		WithNewDirectory("real").
+		WithSymlink("real", "link")
+	result := runToolTurns(ctx, t, c, source.AsWorkspace(), "write", "link/x", "real/x")
+	transcript, err := result.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "link/x done")
+	require.Contains(t, transcript, "apply changeset patch to the workspace")
+	require.Contains(t, transcript, "real/x done")
+	require.Contains(t, transcript, "+new\n")
+
+	got, err := result.Workspace().File("real/x").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "new\n", got)
+	stat, err := result.Workspace().Directory("/").Stat(ctx, "link", dagger.DirectoryStatOpts{DoNotFollowSymlinks: true})
+	require.NoError(t, err)
+	kind, err := stat.FileType(ctx)
+	require.NoError(t, err)
+	require.Equal(t, dagger.FileTypeSymlink, kind)
+}
+
 // TestChangesetToolKeepsEmptyDirectories locks in that a Changeset-returning
 // tool's empty directory survives being recorded on a snapshot workspace,
 // beside the file it scaffolds: the overlay must not reduce the changeset to

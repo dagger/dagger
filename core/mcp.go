@@ -1377,7 +1377,9 @@ func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes d
 // nothing to check and nothing to fall back to. Only a changeset that touches
 // a workspace mount is refused, as withChanges refuses it; a patch that is too
 // large or carries binary content fails with ErrPatchTooLarge or
-// ErrPatchBinary, for the caller to apply it raw.
+// ErrPatchBinary, for the caller to apply it raw. Should git still refuse the
+// patch, e.g. a file it would create beyond a symbolic link, the call fails
+// and the bound workspace stays as it was.
 func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root dagql.ObjectResult[*Directory], prefix string, changes dagql.ObjectResult[*Changeset]) (string, error) {
 	paths, err := changes.Self().ComputePaths(ctx)
 	if err != nil {
@@ -1470,6 +1472,19 @@ func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root d
 			},
 		}); err != nil {
 			return "", err
+		}
+	}
+	// withPatchFile is lazy, and nothing else here runs it. Force the new
+	// root now, so a patch git cannot apply fails this call and leaves the
+	// binding where it was, rather than surfacing from whatever reads the
+	// workspace next (often the next changeset, rendered against it).
+	if newRoot, ok := newWS.Self().SourceDirectory(); ok && newRoot.Self() != nil {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return "", err
+		}
+		if err := cache.Evaluate(ctx, newRoot); err != nil {
+			return "", fmt.Errorf("apply changeset patch to the workspace: %w", err)
 		}
 	}
 	m.workspace = newWS
