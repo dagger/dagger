@@ -76,6 +76,12 @@ const (
 
 	DaggerQemuEmulatorMountPoint = "/dev/.dagger_qemu_emulator"
 
+	// DaggerCLIDir holds the engine's dagger CLI in containers with nesting
+	// enabled, and is appended to their PATH. It lives under /dev because
+	// every container gets a fresh /dev, so nothing is created in the
+	// container's own filesystem.
+	DaggerCLIDir = "/dev/.dagger"
+
 	cgroupSampleInterval     = 5 * time.Second
 	finalCgroupSampleTimeout = 5 * time.Second
 
@@ -402,6 +408,39 @@ func (c *Client) injectInit(_ context.Context, state *execState) error {
 	return nil
 }
 
+// injectDaggerCLI mounts the engine's own dagger CLI read-only into containers
+// that can connect back to Dagger, and appends its directory to PATH. The CLI
+// is built for the engine's architecture; the bundled QEMU runs host binaries
+// directly, so it also works in emulated containers.
+func (c *Client) injectDaggerCLI(_ context.Context, state *execState) error {
+	if state.nestedClientMetadata == nil || state.nestedClientMetadata.ClientID == "" {
+		return nil
+	}
+
+	state.mounts = append(state.mounts, executor.Mount{
+		Src:      hostBindMount{srcPath: distconsts.DaggerCLIPath},
+		Dest:     path.Join(DaggerCLIDir, "dagger"),
+		Readonly: true,
+	})
+
+	env := slices.Clone(state.procInfo.Meta.Env)
+	for i, kv := range env {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k != "PATH" {
+			continue
+		}
+		if v == "" {
+			v = DaggerCLIDir
+		} else {
+			v += ":" + DaggerCLIDir
+		}
+		env[i] = k + "=" + v
+	}
+	state.procInfo.Meta.Env = env
+
+	return nil
+}
+
 func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	var extraOpts []ctdoci.SpecOpts
 	// Reverse cleanup order: delete the container, release its mounts, take
@@ -548,10 +587,12 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 			metaMount = &mnt
 
 		case mnt.Destination == DaggerQemuEmulatorMountPoint,
+			strings.HasPrefix(mnt.Destination, DaggerCLIDir+"/"),
 			strings.HasPrefix(mnt.Destination, "/dev/pipes/"):
 			// Keep specific sub-mounts of /dev in the OCI spec so that runc processes
 			// them after the /dev tmpfs mount. The qemu emulator is at
-			// /dev/.dagger_qemu_emulator and /dev/pipes/ is used by heredoc processing.
+			// /dev/.dagger_qemu_emulator, the dagger CLI is under /dev/.dagger/ and
+			// /dev/pipes/ is used by heredoc processing.
 			filteredMounts = append(filteredMounts, mnt)
 
 		case containerfs.IsSpecialMountType(mnt.Type):

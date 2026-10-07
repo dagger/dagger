@@ -221,6 +221,7 @@ func (c *Client) Run(
 	err := c.run(ctx, state,
 		namedSetupFunc{"setupNetwork", c.setupNetwork},
 		namedSetupFunc{"injectInit", c.injectInit},
+		namedSetupFunc{"injectDaggerCLI", c.injectDaggerCLI},
 		namedSetupFunc{"generateBaseSpec", c.generateBaseSpec},
 		namedSetupFunc{"filterEnvs", c.filterEnvs},
 		namedSetupFunc{"setupRootfs", c.setupRootfs},
