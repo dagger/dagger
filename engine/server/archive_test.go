@@ -354,7 +354,10 @@ func TestArchiveHistorySplitsLargeBatches(t *testing.T) {
 	}
 }
 
-func TestArchiveHistoryRejectsSingleOversizedRow(t *testing.T) {
+// A row too large for any frame on its own must not make the whole history
+// unreadable: it is skipped with an empty frame that still advances the
+// cursor, and the rows after it are served.
+func TestArchiveHistorySkipsSingleOversizedRow(t *testing.T) {
 	for _, signal := range []string{"traces", "logs", "metrics"} {
 		t.Run(signal, func(t *testing.T) {
 			srv := &Server{clientDBs: clientdb.NewDBs(t.TempDir())}
@@ -366,20 +369,100 @@ func TestArchiveHistoryRejectsSingleOversizedRow(t *testing.T) {
 			}
 			manifest := archive.Manifest{TraceID: archiveTestTrace, MainClientID: "main", HighWater: archive.HighWater{Spans: 3, Logs: 3, Metrics: 3}}
 			resp := httptest.NewRecorder()
-			err = srv.serveArchiveSignalWithPayloadLimit(resp, httptest.NewRequest(http.MethodGet, "/", nil), manifest, manifest.HighWater, false, signal, 1024)
-			require.ErrorContains(t, err, fmt.Sprintf("archive %s row 2", signal))
-			kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
+			require.NoError(t, srv.serveArchiveSignalWithPayloadLimit(resp, httptest.NewRequest(http.MethodGet, "/", nil), manifest, manifest.HighWater, false, signal, 1024))
+			for i, want := range [][]string{{"small"}, nil, {"after oversized"}} {
+				kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
+				require.NoError(t, err)
+				require.Equal(t, enginetel.LiveFrameData, kind)
+				require.Equal(t, int64(i+1), cursor, "every row advances the cursor, the skipped one included")
+				require.Equal(t, want, archiveSignalValues(t, signal, payload))
+			}
+			kind, cursor, _, err := enginetel.ReadLiveFrame(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, enginetel.LiveFrameData, kind)
-			require.Equal(t, int64(1), cursor)
-			require.Equal(t, []string{"small"}, archiveSignalValues(t, signal, payload))
-			_, cursor, _, err = enginetel.ReadLiveFrame(resp.Body)
-			require.ErrorIs(t, err, enginetel.ErrLiveStream)
-			require.ErrorContains(t, err, fmt.Sprintf("archive %s row 2", signal))
-			require.Equal(t, int64(1), cursor, "failure must not advance past the oversized row")
-			require.Empty(t, resp.Body.Bytes(), "an incomplete history must not have a terminal frame")
+			require.Equal(t, enginetel.LiveFrameTerminal, kind)
+			require.Equal(t, int64(3), cursor)
 		})
 	}
+}
+
+// An oversized span keeps its identity and small attributes, losing only the
+// largest values (typically its dagger.io/dag.call frame) until it fits.
+func TestArchiveHistoryStripsOversizedSpanAttributes(t *testing.T) {
+	srv := &Server{clientDBs: clientdb.NewDBs(t.TempDir())}
+	db, err := srv.clientDBs.Open(t.Context(), "main")
+	require.NoError(t, err)
+	defer db.Close()
+	str := func(k, v string) *otlpcommonv1.KeyValue {
+		return &otlpcommonv1.KeyValue{Key: k, Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: v}}}
+	}
+	attrs, err := clientdb.MarshalProtoJSONs([]*otlpcommonv1.KeyValue{
+		str(telemetry.DagDigestAttr, "xxh3:aaaa"),
+		str(telemetry.DagCallAttr, strings.Repeat("A", 4096)),
+		str("big", strings.Repeat("b", 600)),
+	})
+	require.NoError(t, err)
+	_, err = db.AppendSpans([]clientdb.Span{{
+		TraceID: archiveTestTrace, SpanID: fmt.Sprintf("%016x", 1), Name: "huge call",
+		Resource: []byte("{}"), InstrumentationScope: []byte("{}"),
+		Attributes: attrs, Links: []byte("[]"), Events: []byte("[]"),
+	}})
+	require.NoError(t, err)
+	manifest := archive.Manifest{TraceID: archiveTestTrace, MainClientID: "main", HighWater: archive.HighWater{Spans: 1}}
+	resp := httptest.NewRecorder()
+	require.NoError(t, srv.serveArchiveSignalWithPayloadLimit(resp, httptest.NewRequest(http.MethodGet, "/", nil), manifest, manifest.HighWater, false, "traces", 1024))
+	kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameData, kind)
+	require.Equal(t, int64(1), cursor)
+	require.LessOrEqual(t, len(payload), 1024)
+	var batch coltracepb.ExportTraceServiceRequest
+	require.NoError(t, proto.Unmarshal(payload, &batch))
+	var names, keys []string
+	for _, rs := range batch.GetResourceSpans() {
+		for _, ss := range rs.GetScopeSpans() {
+			for _, span := range ss.GetSpans() {
+				names = append(names, span.GetName())
+				for _, kv := range span.GetAttributes() {
+					keys = append(keys, kv.GetKey())
+				}
+			}
+		}
+	}
+	require.Equal(t, []string{"huge call"}, names)
+	require.Equal(t, []string{telemetry.DagDigestAttr, "big"}, keys, "only the largest attribute needed dropping")
+	kind, _, _, err = enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameTerminal, kind)
+}
+
+// Dropping an agent control record would silently misstate an agent's
+// lifecycle, so an oversized one still fails the read.
+func TestArchiveHistoryRejectsOversizedControlRecord(t *testing.T) {
+	srv := &Server{clientDBs: clientdb.NewDBs(t.TempDir())}
+	db, err := srv.clientDBs.Open(t.Context(), "main")
+	require.NoError(t, err)
+	defer db.Close()
+	appendArchiveSignalRow(t, db, "logs", 1, archiveTestTrace, "small")
+	a := archiveAgent()
+	a.Name = strings.Repeat("x", 2048)
+	rec := controlTestRecord(t, a.Record())
+	row, err := logRecordRow(&rec)
+	require.NoError(t, err)
+	_, err = db.AppendLogs([]clientdb.Log{row})
+	require.NoError(t, err)
+	manifest := archive.Manifest{TraceID: archiveTestTrace, MainClientID: "main", HighWater: archive.HighWater{Logs: 2}}
+	resp := httptest.NewRecorder()
+	err = srv.serveArchiveSignalWithPayloadLimit(resp, httptest.NewRequest(http.MethodGet, "/", nil), manifest, manifest.HighWater, true, "logs", 1024)
+	require.ErrorContains(t, err, "archive logs row 2 is an agent control record")
+	kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, enginetel.LiveFrameData, kind)
+	require.Equal(t, int64(1), cursor)
+	require.Equal(t, []string{"small"}, archiveSignalValues(t, "logs", payload))
+	_, cursor, _, err = enginetel.ReadLiveFrame(resp.Body)
+	require.ErrorIs(t, err, enginetel.ErrLiveStream)
+	require.Equal(t, int64(1), cursor, "failure must not advance past the control record")
+	require.Empty(t, resp.Body.Bytes(), "an incomplete history must not have a terminal frame")
 }
 
 func appendArchiveSignalRow(t *testing.T, db *clientdb.DB, signal string, index int, traceID, value string) {
