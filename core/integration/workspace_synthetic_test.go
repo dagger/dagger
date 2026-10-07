@@ -1,10 +1,11 @@
 package core
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"strings"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
@@ -596,7 +597,7 @@ func (WorkspaceSuite) TestChainedOverlayGitRefWorkspaceReportsAllOverlayChanges(
 	queryCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
 	defer cancel()
 
-	changed := core.Ref[*core.GitRef](c, refID).
+	changed := core.Ref[*core.GitRef](core.NewQuery(c), refID).
 		AsWorkspace(core.GitRefAsWorkspaceOpts{Cwd: "/app"}).
 		WithNewFile("a.txt", "a").
 		WithNewFile("b.txt", "b")

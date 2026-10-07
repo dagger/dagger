@@ -1,7 +1,6 @@
 package daggercmd
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
+
+	"dagger.io/dagger/core"
 
 	"github.com/charmbracelet/huh"
 	"github.com/juju/ansiterm/tabwriter"

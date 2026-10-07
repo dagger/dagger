@@ -1,12 +1,13 @@
 package daggercmd
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"github.com/charmbracelet/bubbles/key"
 

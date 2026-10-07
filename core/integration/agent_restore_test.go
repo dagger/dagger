@@ -19,7 +19,6 @@ package core
 // connectWithTrace, which starts its own CLI session either way.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"io"
@@ -34,6 +33,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
@@ -656,7 +657,7 @@ func startArchiveEngine(ctx context.Context, t *testctx.T, host *dagger.Client, 
 	service, err := devEngineContainerAsService(ctr).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = service.Stop(context.WithoutCancel(ctx), core.ServiceStopOpts{Kill: true}) })
-	tunnel, err := host.Host().Tunnel(service).Start(ctx)
+	tunnel, err := core.NewQuery(host).Host().Tunnel(service).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = tunnel.Stop(context.WithoutCancel(ctx)) })
 	endpoint, err := tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})

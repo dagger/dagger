@@ -13,6 +13,8 @@ import (
 	"context"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -111,7 +113,7 @@ func (ModuleSuite) TestCurrentModuleAPI(ctx context.Context, t *testctx.T) {
 func (ModuleSuite) TestCurrentFunctionCallOutsideFunction(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	out, err := c.Container().From(alpineImage).
+	out, err := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "-q", "curl"}).
 		WithExec([]string{"sh", "-c", `curl -s -u "$DAGGER_SESSION_TOKEN:" -H 'Content-Type: application/json' ` +
 			`-d '{"query":"{currentFunctionCall{name}}"}' "http://127.0.0.1:$DAGGER_SESSION_PORT/query"`}).

@@ -12,13 +12,14 @@ package core
 // - workspace_modules_test.go: installing modules into workspaces.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"

@@ -8,7 +8,6 @@ package core
 // - platform_test.go: platform-aware container execution.
 
 import (
-	sdkcore "dagger.io/dagger/core"
 	"bytes"
 	"context"
 	"crypto/md5"
@@ -30,6 +29,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	sdkcore "dagger.io/dagger/core"
 
 	"github.com/containerd/platforms"
 	engineconfig "github.com/dagger/dagger/engine/config"
@@ -4238,7 +4239,7 @@ type registryOptions struct {
 func publishAndRead(ctx context.Context, registry *core.Service, ref string, opts registryOptions) (string, error) {
 	_, err := dag.Container().
 		WithNewFile("/hello.txt", "hello").
-		Publish(ctx, ref, core.ContainerPublishOpts{
+		Publish(ctx, ref, sdkcore.ContainerPublishOpts{
 			RegistryService:       registry,
 			Protocol:              opts.protocol,
 			InsecureSkipTLSVerify: opts.insecureSkipTLSVerify,
@@ -4248,7 +4249,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 	}
 
 	return dag.Container().
-		From(ref, core.ContainerFromOpts{
+		From(ref, sdkcore.ContainerFromOpts{
 			RegistryService:       registry,
 			Protocol:              opts.protocol,
 			InsecureSkipTLSVerify: opts.insecureSkipTLSVerify,
@@ -4957,7 +4958,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			ref := registryRef("testcontainerpublishforcecompression" + strings.ToLower(string(tc.compression)))
 			_, err := sdkcore.NewQuery(c).Container().
 				From(alpineImage).
-				Publish(ctx, ref, core.ContainerPublishOpts{
+				Publish(ctx, ref, sdkcore.ContainerPublishOpts{
 					ForcedCompression: tc.compression,
 				})
 			require.NoError(t, err)
@@ -5028,7 +5029,7 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			ref := registryRef("testcontainerpublishmediatypes" + strings.ToLower(string(tc.mediaTypes)))
 			_, err := sdkcore.NewQuery(c).Container().
 				From(alpineImage).
-				Publish(ctx, ref, core.ContainerPublishOpts{
+				Publish(ctx, ref, sdkcore.ContainerPublishOpts{
 					MediaTypes: tc.mediaTypes,
 				})
 			require.NoError(t, err)
@@ -6421,7 +6422,7 @@ func (ContainerSuite) TestLoadHostContainerd(ctx context.Context, t *testctx.T) 
 		_, err = alt.
 			// HACK: buildkit isn't distributed in the nerdctl image we use, so
 			// just tag the image instead of building it
-			// WithExec([]string{"nerdctl", "build", "-t", imageName, "-"}, core.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).
+			// WithExec([]string{"nerdctl", "build", "-t", imageName, "-"}, sdkcore.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).
 			WithExec([]string{"nerdctl", "pull", "alpine"}).
 			WithExec([]string{"nerdctl", "tag", "alpine", imageName}).
 			Sync(ctx)
@@ -6622,7 +6623,7 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 			// Keep each session open until test cleanup so automatic pruning can't
 			// evict the producer result between these cross-client cache checks.
 
-			// This is used to test selecting a file different way, e.g. c.Host().File() vs c.Host().Directory().File()
+			// This is used to test selecting a file different way, e.g. sdkcore.NewQuery(c).Host().File() vs sdkcore.NewQuery(c).Host().Directory().File()
 			// has no effect on the expected caching behavior
 			f := fileSelector(c, dir)
 

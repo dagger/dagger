@@ -70,7 +70,7 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 
 	eventsID := identity.NewID()
 	// The engine publishes the session's telemetry to the same Cloud.
-	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding("cloud", fakeCloud)
 	}))
 	_, err = base.
@@ -82,7 +82,7 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 		WithEnvVariable("DAGGER_CLOUD_URL", "http://cloud:8080/"+eventsID).
 		WithEnvVariable("DAGGER_CLOUD_TOKEN", "test").
 		WithEnvVariable("DAGGER_SILENT", "true").
-		WithExec([]string{"go", "run", "./core/integration/testdata/basic-container/"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		WithExec([]string{"go", "run", "./core/integration/testdata/basic-container/"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	require.NoError(t, err, "silent SDK session handshake, query, and close must succeed")
 
@@ -204,7 +204,7 @@ func (ClientSuite) TestClientStableID(ctx context.Context, t *testctx.T) {
 		WithUser("auser").
 		WithWorkdir("/work").
 		WithNewFile("/query.graphql", `{ version }`).
-		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		File("/home/auser/.local/state/dagger/stable_client_id").
 		Contents(ctx)
 	require.NoError(t, err)
@@ -246,7 +246,7 @@ func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
 	clientCtr := engineClientContainer(ctx, t, c, devEngineContainerAsService(devEngine))
 	_, err := clientCtr.
 		WithNewFile("/query.graphql", `{ version }`). // arbitrary valid query
-		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).Sync(ctx)
+		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).Sync(ctx)
 
 	require.NoError(t, err)
 }
@@ -286,7 +286,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 
 	eventsID := identity.NewID()
 	// The engine publishes the session's telemetry to the same Cloud.
-	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding("cloud", fakeCloud)
 	}))
 
@@ -307,7 +307,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 		WithExec([]string{"git", "init"}). // init a git repo to test git labels
 		WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "init test repo"}).
-		WithExec([]string{"dagger", "run", "go", "run", "./core/integration/testdata/basic-container/"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		WithExec([]string{"dagger", "run", "go", "run", "./core/integration/testdata/basic-container/"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Stderr(ctx)
 	require.NoError(t, err)
 

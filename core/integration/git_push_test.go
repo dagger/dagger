@@ -1,13 +1,14 @@
 package core
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"

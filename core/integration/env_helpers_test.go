@@ -4,9 +4,10 @@ package core
 // legacy `.env` tests. It is helper-only and should not own behavior coverage.
 
 import (
-	"dagger.io/dagger/core"
 	"os"
 	"strings"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"

@@ -10,7 +10,6 @@ package core
 // - engine_persistence_test.go: engine state across restarts.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -22,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
@@ -1069,10 +1070,10 @@ func (SecretSuite) TestCrossSessionSecretURIRecipeReplay(ctx context.Context, t 
 			if customCacheKey {
 				opts.CacheKey = identity.NewID()
 			}
-			secret := source.Secret("env://REPLAY_SECRET", opts)
+			secret := core.NewQuery(source).Secret("env://REPLAY_SECRET", opts)
 			secretID, err := secret.ID(ctx)
 			require.NoError(t, err)
-			ctr := source.Container().From(alpineImage).
+			ctr := core.NewQuery(source).Container().From(alpineImage).
 				WithSecretVariable("VALUE", secret).
 				WithExec([]string{"sh", "-c", `printf '%s' "$VALUE" | base64`})
 			before, err := ctr.Stdout(ctx)
@@ -1090,7 +1091,7 @@ func (SecretSuite) TestCrossSessionSecretURIRecipeReplay(ctx context.Context, t 
 				Variables: map[string]any{"id": string(id)},
 			}, &dagger.Response{Data: &binding}))
 			portable, err := sink.captureLLMRecipe(ctx, t, source,
-				core.Ref[*core.LLM](source, core.ID(binding.LLM.WithTools.ID)))
+				core.Ref[*core.LLM](core.NewQuery(source), core.ID(binding.LLM.WithTools.ID)))
 			require.NoError(t, err)
 			llmRecipe := new(call.ID)
 			require.NoError(t, llmRecipe.Decode(string(portable)))
@@ -1111,9 +1112,9 @@ func (SecretSuite) TestCrossSessionSecretURIRecipeReplay(ctx context.Context, t 
 			target, _ := connectWithTrace(ctx, t, engineconn.Config{
 				ExtraEnv: []string{"REPLAY_SECRET=after"},
 			})
-			after, err := core.Ref[*core.Container](target, core.ID(recipe)).Stdout(ctx)
+			after, err := core.Ref[*core.Container](core.NewQuery(target), core.ID(recipe)).Stdout(ctx)
 			require.NoError(t, err)
-			plaintext, secretErr := core.Ref[*core.Secret](target, secretID).Plaintext(ctx)
+			plaintext, secretErr := core.Ref[*core.Secret](core.NewQuery(target), secretID).Plaintext(ctx)
 			if customCacheKey {
 				// Explicit cache keys deliberately equate different plaintexts.
 				// The new binding supplies B, but cached computations still use A.

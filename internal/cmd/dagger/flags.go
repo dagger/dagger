@@ -1,7 +1,6 @@
 package daggercmd
 
 import (
-	"dagger.io/dagger/core"
 	"bytes"
 	"context"
 	"encoding/csv"
@@ -11,6 +10,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"dagger.io/dagger/core"
 
 	"github.com/containerd/platforms"
 	"github.com/spf13/pflag"

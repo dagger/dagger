@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
@@ -22,31 +24,31 @@ import (
 func (WorkspaceSuite) TestWorkspaceRemoteParentHistoryDoesNotFetch(ctx context.Context, t *testctx.T) {
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
-	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("file.txt", "base\n"))
-	remote := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Head()
+	service, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("file.txt", "base\n"))
+	remote := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service}).Head()
 	base := remote.AsWorkspace()
 	working := base.WithNewFile("file.txt", "committed\n")
-	id, err := working.WithCommit(working.Git().Uncommitted(), "remote child", workspaceCommitDate, dagger.WorkspaceWithCommitOpts{AuthorName: "Oracle", AuthorEmail: "oracle@example.com"}).ID(ctx)
+	id, err := working.WithCommit(working.Git().Uncommitted(), "remote child", workspaceCommitDate, core.WorkspaceWithCommitOpts{AuthorName: "Oracle", AuthorEmail: "oracle@example.com"}).ID(ctx)
 	require.NoError(t, err)
-	child := dagger.Ref[*dagger.Workspace](c, id)
+	child := core.Ref[*core.Workspace](core.NewQuery(c), id)
 	head := child.Git().Head()
 	remoteSHA, err := remote.CommitSHA(ctx)
 	require.NoError(t, err)
 	_, err = service.Stop(ctx)
 	require.NoError(t, err)
 
-	ahead, err := head.Log(ctx, dagger.GitRefLogOpts{Base: remote, Limit: 101})
+	ahead, err := head.Log(ctx, core.GitRefLogOpts{Base: remote, Limit: 101})
 	require.NoError(t, err)
 	require.Len(t, ahead, 1)
 	parents, err := ahead[0].ParentShas(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{remoteSHA}, parents)
-	behind, err := remote.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 101})
+	behind, err := remote.Log(ctx, core.GitRefLogOpts{Base: head, Limit: 101})
 	require.NoError(t, err)
 	require.Empty(t, behind)
 	// A different tree selector forces another incremental materialization;
 	// its canonical parent dependency must work without restarting the source.
-	contents, err := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true, Depth: -1}).File("file.txt").Contents(ctx)
+	contents, err := head.Tree(core.GitRefTreeOpts{DiscardGitDir: true, Depth: -1}).File("file.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "committed\n", contents)
 	gotSHA, err := remote.CommitSHA(ctx)
@@ -105,7 +107,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteCommitResolvesUpstreamRefs(ctx context.
 		require.NoError(t, err, name)
 		require.Equal(t, want, got, name)
 	}
-	contents, err := repo.Ref("divergent").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("divergent.txt").Contents(ctx)
+	contents, err := repo.Ref("divergent").Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("divergent.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "divergent\n", contents)
 
@@ -135,10 +137,10 @@ func (WorkspaceSuite) TestWorkspaceRemoteCommitResolvesUpstreamRefs(ctx context.
 		require.NoError(t, err, name)
 		require.Equal(t, want, got, name)
 	}
-	contents, err = repo.Ref(divergentSHA).Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("divergent.txt").Contents(ctx)
+	contents, err = repo.Ref(divergentSHA).Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("divergent.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "divergent\n", contents)
-	contents, err = repo.Commit(divergentSHA).Tree(dagger.GitCommitTreeOpts{DiscardGitDir: true}).File("divergent.txt").Contents(ctx)
+	contents, err = repo.Commit(divergentSHA).Tree(core.GitCommitTreeOpts{DiscardGitDir: true}).File("divergent.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "divergent\n", contents)
 
@@ -149,7 +151,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteCommitResolvesUpstreamRefs(ctx context.
 	tags, err := repo.Tags(ctx)
 	require.NoError(t, err)
 	require.Subset(t, tags, []string{"old", "merge"})
-	tags, err = repo.Tags(ctx, dagger.GitRepositoryTagsOpts{Patterns: []string{"refs/tags/m*"}})
+	tags, err = repo.Tags(ctx, core.GitRepositoryTagsOpts{Patterns: []string{"refs/tags/m*"}})
 	require.NoError(t, err)
 	require.Equal(t, []string{"merge"}, tags)
 
@@ -162,15 +164,15 @@ func (WorkspaceSuite) TestWorkspaceRemoteCommitResolvesUpstreamRefs(ctx context.
 // history that a different test is supposed to fetch lazily. Everything is
 // created in containers; no host workspace capture participates in the commits.
 type workspaceRemoteHistoryFixture struct {
-	repo    *dagger.GitRepository
-	oracle  *dagger.Container
-	server  *dagger.Container
-	service *dagger.Service
+	repo    *core.GitRepository
+	oracle  *core.Container
+	server  *core.Container
+	service *core.Service
 }
 
 func newWorkspaceRemoteHistoryFixture(ctx context.Context, t *testctx.T, c *dagger.Client) workspaceRemoteHistoryFixture {
 	t.Helper()
-	oracle := c.Container().From(alpineImage).
+	oracle := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		WithEnvVariable("GIT_AUTHOR_DATE", workspaceCommitDate).
 		WithEnvVariable("GIT_COMMITTER_DATE", workspaceCommitDate).
@@ -206,14 +208,14 @@ func newWorkspaceRemoteHistoryFixture(ctx context.Context, t *testctx.T, c *dagg
 	// The sentinel survives service restarts. Removing repo.git below therefore
 	// makes the remote genuinely unavailable, unlike merely stopping a service
 	// which the Git backend is allowed to restart automatically.
-	server := oracle.WithMountedCache("/srv", c.CacheVolume(identity.NewID())).
+	server := oracle.WithMountedCache("/srv", core.NewQuery(c).CacheVolume(identity.NewID())).
 		WithExec([]string{"sh", "-ec", "if [ ! -e /srv/initialized ]; then cp -a /seed.git /srv/repo.git; touch /srv/initialized; fi"})
 	service := server.WithExposedPort(9418).
 		WithDefaultArgs([]string{"git", "daemon", "--verbose", "--export-all", "--base-path=/srv"}).AsService()
 	host, err := service.Hostname(ctx)
 	require.NoError(t, err)
 	return workspaceRemoteHistoryFixture{
-		repo:   c.Git("git://"+host+"/repo.git", dagger.GitOpts{ExperimentalServiceHost: service}),
+		repo:   core.NewQuery(c).Git("git://"+host+"/repo.git", core.GitOpts{ExperimentalServiceHost: service}),
 		oracle: oracle, server: server, service: service,
 	}
 }
@@ -225,16 +227,16 @@ func (f workspaceRemoteHistoryFixture) git(ctx context.Context, t *testctx.T, ar
 	return strings.TrimSpace(out)
 }
 
-func workspaceRemoteHistoryCommit(ctx context.Context, t *testctx.T, c *dagger.Client, ws *dagger.Workspace, n int) *dagger.Workspace {
+func workspaceRemoteHistoryCommit(ctx context.Context, t *testctx.T, c *dagger.Client, ws *core.Workspace, n int) *core.Workspace {
 	t.Helper()
 	working := ws.WithNewFile("selected.txt", fmt.Sprintf("local %d\n", n))
 	id, err := working.WithCommit(working.Git().Uncommitted(), fmt.Sprintf("local %d", n), workspaceCommitDate,
-		dagger.WorkspaceWithCommitOpts{AuthorName: "Oracle", AuthorEmail: "oracle@example.com"}).ID(ctx)
+		core.WorkspaceWithCommitOpts{AuthorName: "Oracle", AuthorEmail: "oracle@example.com"}).ID(ctx)
 	require.NoError(t, err)
-	return dagger.Ref[*dagger.Workspace](c, id)
+	return core.Ref[*core.Workspace](core.NewQuery(c), id)
 }
 
-func workspaceRemoteHistorySHAs(ctx context.Context, t *testctx.T, commits []dagger.GitCommit) []string {
+func workspaceRemoteHistorySHAs(ctx context.Context, t *testctx.T, commits []core.GitCommit) []string {
 	t.Helper()
 	shas := make([]string, len(commits))
 	for i, commit := range commits {
@@ -307,7 +309,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryOrdinary(ctx context.Context
 		require.NoError(t, err)
 		// Materialize both the public source and the committed tree. An ID-only
 		// test can miss an eager fetch deferred until directory consumption.
-		for _, file := range []*dagger.File{ws.File("selected.txt"), head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("selected.txt")} {
+		for _, file := range []*core.File{ws.File("selected.txt"), head.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("selected.txt")} {
 			contents, err := file.Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, fmt.Sprintf("local %d\n", n), contents)
@@ -315,33 +317,33 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryOrdinary(ctx context.Context
 		empty, err := ws.Git().Uncommitted().IsEmpty(ctx)
 		require.NoError(t, err)
 		require.True(t, empty)
-		recent, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 2})
+		recent, err := head.Log(ctx, core.GitRefLogOpts{Limit: 2})
 		require.NoError(t, err)
 		require.Equal(t, []string{headSHA, parentSHA}, workspaceRemoteHistorySHAs(ctx, t, recent))
 		parents, err := recent[0].ParentShas(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{parentSHA}, parents)
-		ahead, err := head.Log(ctx, dagger.GitRefLogOpts{Base: before, Limit: 101})
+		ahead, err := head.Log(ctx, core.GitRefLogOpts{Base: before, Limit: 101})
 		require.NoError(t, err)
 		require.Equal(t, []string{headSHA}, workspaceRemoteHistorySHAs(ctx, t, ahead))
-		behind, err := before.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 101})
+		behind, err := before.Log(ctx, core.GitRefLogOpts{Base: head, Limit: 101})
 		require.NoError(t, err)
 		require.Empty(t, behind)
 		local = append([]string{headSHA}, local...)
 		// Against the original remote ref, the range spans every local commit
 		// and is still answered from the owned store, in both directions.
-		ahead, err = head.Log(ctx, dagger.GitRefLogOpts{Base: remote, Limit: 101})
+		ahead, err = head.Log(ctx, core.GitRefLogOpts{Base: remote, Limit: 101})
 		require.NoError(t, err)
 		require.Equal(t, local, workspaceRemoteHistorySHAs(ctx, t, ahead))
-		behind, err = remote.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 101})
+		behind, err = remote.Log(ctx, core.GitRefLogOpts{Base: head, Limit: 101})
 		require.NoError(t, err)
 		require.Empty(t, behind)
 		if n == 2 {
 			// Requested checkout depth is public behavior, independent of the
 			// owned snapshot's remote-anchor boundary. Truncate the exported
 			// graph at HEAD without rewriting its raw parent metadata.
-			out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
-				WithDirectory("/checkout", head.Tree(dagger.GitRefTreeOpts{Depth: 1})).WithWorkdir("/checkout").
+			out, err := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+				WithDirectory("/checkout", head.Tree(core.GitRefTreeOpts{Depth: 1})).WithWorkdir("/checkout").
 				WithEnvVariable("HEAD_SHA", headSHA).WithEnvVariable("PARENT_SHA", parentSHA).
 				WithExec([]string{"sh", "-ec", `
  test "$(git rev-parse --is-shallow-repository)" = true
@@ -378,10 +380,10 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 			require.Len(t, parents, 1)
 			localSHAs := []string{headSHA, parents[0]}
 			remoteSHAs := strings.Fields(fixture.git(ctx, t, "rev-list", "main"))
-			var commits []dagger.GitCommit
+			var commits []core.GitCommit
 			switch demand {
 			case "deep log":
-				commits, err = head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
+				commits, err = head.Log(ctx, core.GitRefLogOpts{Limit: 100})
 				require.NoError(t, err)
 				require.ElementsMatch(t, append(localSHAs, remoteSHAs...), workspaceRemoteHistorySHAs(ctx, t, commits))
 				mergeSHA := fixture.git(ctx, t, "rev-parse", "merge")
@@ -395,7 +397,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 					}
 				}
 			case "old path":
-				commits, err = head.Log(ctx, dagger.GitRefLogOpts{Limit: 100, Paths: []string{"ancient.txt"}})
+				commits, err = head.Log(ctx, core.GitRefLogOpts{Limit: 100, Paths: []string{"ancient.txt"}})
 				require.NoError(t, err)
 				require.Equal(t, strings.Fields(fixture.git(ctx, t, "rev-list", "main", "--", "ancient.txt")), workspaceRemoteHistorySHAs(ctx, t, commits))
 			case "older comparison", "divergent comparison":
@@ -404,12 +406,12 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 					name = "divergent"
 				}
 				other := fixture.repo.Ref(name)
-				commits, err = head.Log(ctx, dagger.GitRefLogOpts{Base: other, Limit: 100})
+				commits, err = head.Log(ctx, core.GitRefLogOpts{Base: other, Limit: 100})
 				require.NoError(t, err)
 				expected := append([]string(nil), localSHAs...)
 				expected = append(expected, strings.Fields(fixture.git(ctx, t, "rev-list", "main", "^"+name))...)
 				require.ElementsMatch(t, expected, workspaceRemoteHistorySHAs(ctx, t, commits))
-				behind, err := other.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 100})
+				behind, err := other.Log(ctx, core.GitRefLogOpts{Base: head, Limit: 100})
 				require.NoError(t, err)
 				require.ElementsMatch(t, strings.Fields(fixture.git(ctx, t, "rev-list", name, "^main")), workspaceRemoteHistorySHAs(ctx, t, behind))
 			case "full bundle":
@@ -419,7 +421,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 				require.NoError(t, err)
 				// A full bundle must have no prerequisites or engine-local
 				// alternates: a completely independent clone can verify and use it.
-				out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+				out, err := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
 					WithMountedFile("/export.bundle", bundle).
 					WithExec([]string{"git", "clone", "/export.bundle", "/checkout"}).
 					WithWorkdir("/checkout").
@@ -436,11 +438,11 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 			case "retained checkout":
 				// A new container sees only this directory, not the engine's
 				// mirror/object pool. fsck and old-tree access must work offline.
-				tree, err := head.Tree(dagger.GitRefTreeOpts{Depth: -1}).Sync(ctx)
+				tree, err := head.Tree(core.GitRefTreeOpts{Depth: -1}).Sync(ctx)
 				require.NoError(t, err)
 				_, err = fixture.service.Stop(ctx)
 				require.NoError(t, err)
-				out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+				out, err := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
 					WithDirectory("/checkout", tree).WithWorkdir("/checkout").
 					WithExec([]string{"sh", "-ec", `
  test "$(git rev-parse --is-shallow-repository)" = false
@@ -463,7 +465,7 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 						message, err := commit.MessageHeadline(ctx)
 						require.NoError(t, err)
 						require.Equal(t, "old", message)
-						contents, err := commit.Tree(dagger.GitCommitTreeOpts{DiscardGitDir: true}).File("ancient.txt").Contents(ctx)
+						contents, err := commit.Tree(core.GitCommitTreeOpts{DiscardGitDir: true}).File("ancient.txt").Contents(ctx)
 						require.NoError(t, err)
 						require.Equal(t, "old\n", contents)
 					}
@@ -480,11 +482,11 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryDemand(ctx context.Context, 
 				// Different API selectors avoid reusing the original log response.
 				// This proves offline reuse after hydration, not engine GC/restart:
 				// the private mirror and owned hydrated snapshot are still warm.
-				again, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 101})
+				again, err := head.Log(ctx, core.GitRefLogOpts{Limit: 101})
 				require.NoError(t, err)
 				require.ElementsMatch(t, append(localSHAs, remoteSHAs...), workspaceRemoteHistorySHAs(ctx, t, again))
-				out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
-					WithDirectory("/checkout", head.Tree(dagger.GitRefTreeOpts{Depth: -1})).WithWorkdir("/checkout").
+				out, err := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+					WithDirectory("/checkout", head.Tree(core.GitRefTreeOpts{Depth: -1})).WithWorkdir("/checkout").
 					WithExec([]string{"sh", "-ec", `
  test "$(git rev-parse --is-shallow-repository)" = false
  test ! -s .git/objects/info/alternates
@@ -541,10 +543,10 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryUnavailable(ctx context.Cont
 	head := ws.Git().Head()
 	headSHA, err := head.CommitSHA(ctx)
 	require.NoError(t, err)
-	contents, err := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true, Depth: -1}).File("selected.txt").Contents(ctx)
+	contents, err := head.Tree(core.GitRefTreeOpts{DiscardGitDir: true, Depth: -1}).File("selected.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "local 2\n", contents)
-	recent, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 2})
+	recent, err := head.Log(ctx, core.GitRefLogOpts{Limit: 2})
 	require.NoError(t, err)
 	require.Equal(t, []string{headSHA, firstSHA}, workspaceRemoteHistorySHAs(ctx, t, recent))
 	// Prefixes of commits already in owned storage (local work and the remote
@@ -554,9 +556,9 @@ func (WorkspaceSuite) TestWorkspaceRemoteLazyHistoryUnavailable(ctx context.Cont
 		require.NoError(t, err)
 		require.Equal(t, sha, got)
 	}
-	_, err = head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
+	_, err = head.Log(ctx, core.GitRefLogOpts{Limit: 100})
 	require.Error(t, err, "unavailable ancestry must not silently truncate deep history")
-	_, err = ws.Git().Head().Log(ctx, dagger.GitRefLogOpts{Paths: []string{"ancient.txt"}, Limit: 100})
+	_, err = ws.Git().Head().Log(ctx, core.GitRefLogOpts{Paths: []string{"ancient.txt"}, Limit: 100})
 	require.Error(t, err, "unavailable ancestry must not silently omit old path matches")
 	require.NoError(t, c.Close())
 	_, full := workspaceRemoteHistoryFetches(sink, "GitRef.log")
@@ -668,7 +670,7 @@ func newWorkspaceHostHistoryFixture(ctx context.Context, t *testctx.T) workspace
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout), dagger.WithLogOutput(io.Discard))...)
 	origin := hostHistoryOriginServer(t.Unwrap(), originDir)
 	port := origin.Listener.Addr().(*net.TCPAddr).Port
-	tunnel, err := c.Host().Service([]dagger.PortForward{{Frontend: 80, Backend: port}}).Start(ctx)
+	tunnel, err := core.NewQuery(c).Host().Service([]core.PortForward{{Frontend: 80, Backend: port}}).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = tunnel.Stop(context.Background()) })
 	host, err := tunnel.Hostname(ctx)
@@ -684,30 +686,30 @@ func newWorkspaceHostHistoryFixture(ctx context.Context, t *testctx.T) workspace
 	require.Equal(t, shas[0]+"\tHEAD", git("ls-remote", "origin", "HEAD"))
 	// Bind the tunnel to an engine-side Git request before capture. A started
 	// host tunnel alone does not establish the remote Git service's DNS route.
-	remoteSHA, err := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: tunnel}).Head().CommitSHA(ctx)
+	remoteSHA, err := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: tunnel}).Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, shas[0], remoteSHA)
 	require.Empty(t, git("status", "--porcelain"))
 	return workspaceHostHistoryFixture{client: c, sink: sink, checkout: checkout, origin: origin, git: git, shas: shas, straySHA: straySHA}
 }
 
-func (f workspaceHostHistoryFixture) commit(ctx context.Context, t *testctx.T) *dagger.GitRef {
+func (f workspaceHostHistoryFixture) commit(ctx context.Context, t *testctx.T) *core.GitRef {
 	t.Helper()
-	id, err := f.client.CurrentWorkspace().Snapshot().ID(ctx)
+	id, err := core.NewQuery(f.client).CurrentWorkspace().Snapshot().ID(ctx)
 	require.NoError(t, err)
-	base := dagger.Ref[*dagger.Workspace](f.client, id)
+	base := core.Ref[*core.Workspace](core.NewQuery(f.client), id)
 	sha, err := base.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, f.shas[0], sha, "capture must preserve the advertised remote anchor")
 	ws := workspaceRemoteHistoryCommit(ctx, t, f.client, base, 1)
 	head := ws.Git().Head()
-	contents, err := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("selected.txt").Contents(ctx)
+	contents, err := head.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("selected.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "local 1\n", contents)
 	empty, err := ws.Git().Uncommitted().IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, empty)
-	recent, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 2})
+	recent, err := head.Log(ctx, core.GitRefLogOpts{Limit: 2})
 	require.NoError(t, err)
 	require.Len(t, recent, 2)
 	parent, err := recent[1].Sha(ctx)
@@ -741,7 +743,7 @@ func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryOffline(ctx context.Contex
 	// Closing the real HTTP listener cannot be undone by service auto-restart.
 	// The donor is still alive and has the exact captured SHA's full ancestry.
 	fixture.origin.Close()
-	commits, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
+	commits, err := head.Log(ctx, core.GitRefLogOpts{Limit: 100})
 	require.NoError(t, err, "approved host history must satisfy deep demand without the origin")
 	want := append([]string{headSHA}, fixture.shas...)
 	require.ElementsMatch(t, want, workspaceRemoteHistorySHAs(ctx, t, commits))
@@ -751,12 +753,12 @@ func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryOffline(ctx context.Contex
 	// Once hydrated, the engine owns the closure. A different log selector and
 	// retained full checkout must survive loss of both the donor and origin.
 	require.NoError(t, os.RemoveAll(filepath.Join(fixture.checkout, ".git")))
-	again, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 101})
+	again, err := head.Log(ctx, core.GitRefLogOpts{Limit: 101})
 	require.NoError(t, err)
 	require.ElementsMatch(t, want, workspaceRemoteHistorySHAs(ctx, t, again))
-	tree, err := head.Tree(dagger.GitRefTreeOpts{Depth: -1}).Sync(ctx)
+	tree, err := head.Tree(core.GitRefTreeOpts{Depth: -1}).Sync(ctx)
 	require.NoError(t, err)
-	out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+	out, err := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
 		WithDirectory("/checkout", tree).WithWorkdir("/checkout").
 		WithEnvVariable("STRAY_SHA", fixture.straySHA).
 		WithExec([]string{"sh", "-ec", `
@@ -820,13 +822,13 @@ func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryMovedCheckout(ctx context.
 	require.NotEqual(t, fixture.shas[0], fixture.git("rev-parse", "HEAD"))
 	// Without the origin, only the donor can satisfy deep demand.
 	fixture.origin.Close()
-	commits, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
+	commits, err := head.Log(ctx, core.GitRefLogOpts{Limit: 100})
 	require.NoError(t, err, "a donor whose refs moved after capture must still donate")
 	want := append([]string{headSHA}, fixture.shas...)
 	require.ElementsMatch(t, want, workspaceRemoteHistorySHAs(ctx, t, commits))
-	tree, err := head.Tree(dagger.GitRefTreeOpts{Depth: -1}).Sync(ctx)
+	tree, err := head.Tree(core.GitRefTreeOpts{Depth: -1}).Sync(ctx)
 	require.NoError(t, err)
-	out, err := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+	out, err := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
 		WithDirectory("/checkout", tree).WithWorkdir("/checkout").
 		WithEnvVariable("AFTER_SHA", afterSHA).
 		WithEnvVariable("AFTER_BLOB", afterBlob).
@@ -878,7 +880,7 @@ func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryFallback(ctx context.Conte
 				require.NoError(t, os.WriteFile(filepath.Join(fixture.checkout, ".git", "shallow"), []byte(fixture.shas[0]+"\n"), 0o600))
 				require.Equal(t, "true", fixture.git("rev-parse", "--is-shallow-repository"))
 			}
-			commits, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
+			commits, err := head.Log(ctx, core.GitRefLogOpts{Limit: 100})
 			require.NoError(t, err, "unusable donor must fall back to the reconstructible remote recipe")
 			require.ElementsMatch(t, append([]string{headSHA}, fixture.shas...), workspaceRemoteHistorySHAs(ctx, t, commits))
 			require.NoError(t, fixture.client.Close())

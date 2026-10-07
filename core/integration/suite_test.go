@@ -5,7 +5,6 @@ package core
 // helpers.
 
 import (
-	sdkcore "dagger.io/dagger/core"
 	"archive/tar"
 	"bytes"
 	"context"
@@ -18,6 +17,8 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+
+	sdkcore "dagger.io/dagger/core"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"

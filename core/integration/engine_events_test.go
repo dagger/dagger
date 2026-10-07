@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
@@ -169,12 +171,12 @@ func requireSessionCacheSpanCounts(t *testctx.T, spans []cacheSpanLine) map[stri
 // engineEventsEngine is a dev engine with the given state that exports its
 // cache events to the fake Cloud under its own token, with no automatic
 // garbage collection, so an explicit prune is its only one.
-func engineEventsEngine(ctx context.Context, t *testctx.T, c *dagger.Client, cloud telemetrySplitCloud, state string) *dagger.Service {
+func engineEventsEngine(ctx context.Context, t *testctx.T, c *dagger.Client, cloud telemetrySplitCloud, state string) *core.Service {
 	enable := engineWithConfig(ctx, t, engineConfigWithEnabled(false), func(_ context.Context, _ *testctx.T, cfg config.Config) config.Config {
 		cfg.Telemetry.EngineEvents = true
 		return cfg
 	})
-	engine, err := devEngineContainerAsService(devEngineContainerWithStateKey(c, state, enable, func(ctr *dagger.Container) *dagger.Container {
+	engine, err := devEngineContainerAsService(devEngineContainerWithStateKey(c, state, enable, func(ctr *core.Container) *core.Container {
 		return cloud.bind(ctr).WithEnvVariable("DAGGER_CLOUD_TOKEN", "test")
 	})).Start(ctx)
 	require.NoError(t, err)
@@ -200,11 +202,11 @@ func (ClientSuite) TestEngineEventsToCloud(ctx context.Context, t *testctx.T) {
 	cloud := newTelemetrySplitCloud(t, c)
 	cli := daggerCliFile(t, c)
 	state := "dagger-engine-events-state-" + identity.NewID()
-	query := func(engine *dagger.Service, query string) {
+	query := func(engine *core.Service, query string) {
 		_, err := telemetrySplitClient(ctx, t, c, cli, engine, cloud).
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
 			WithNewFile("/query.graphql", query).
-			WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+			WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 			Sync(ctx)
 		require.NoError(t, err)
 	}
@@ -412,21 +414,21 @@ func (ClientSuite) TestCacheSpanCountsPerSessionInSharedTrace(ctx context.Contex
 
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
-	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+	code := core.NewQuery(c).Host().Directory(thisRepoPath, core.HostDirectoryOpts{
 		Include: []string{"core/integration/testdata/telemetry-session/", "sdk/go/", "go.mod", "go.sum"},
 	})
-	session := c.Container().
+	session := core.NewQuery(c).Container().
 		From(golangImage).
 		With(goCache(c)).
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
 		WithExec([]string{"go", "build", "-o", "/bin/telemetry-session", "./core/integration/testdata/telemetry-session/"}).
 		File("/bin/telemetry-session")
-	endpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	endpoint, err := engine.Endpoint(ctx, core.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	require.NoError(t, err)
 
 	sequentialTrace, overlappingTrace := randomHex(t, 16), randomHex(t, 16)
-	_, err = cloud.bind(c.Container().From(alpineImage)).
+	_, err = cloud.bind(core.NewQuery(c).Container().From(alpineImage)).
 		WithServiceBinding("dev-engine", engine).
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithMountedFile("/bin/telemetry-session", session).
@@ -439,7 +441,7 @@ func (ClientSuite) TestCacheSpanCountsPerSessionInSharedTrace(ctx context.Contex
 		WithEnvVariable("MARKER", identity.NewID()).
 		WithEnvVariable("SEQUENTIAL", "00-"+sequentialTrace+"-"+randomHex(t, 8)+"-01").
 		WithEnvVariable("OVERLAPPING", "00-"+overlappingTrace+"-"+randomHex(t, 8)+"-01").
-		WithExec([]string{"sh", "-c", sharedTraceScript}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		WithExec([]string{"sh", "-c", sharedTraceScript}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	require.NoError(t, err)
 
@@ -519,7 +521,7 @@ func (ProvisionSuite) TestImageDriverEngineEventsNeedEnable(ctx context.Context,
 	cloudHost, err := cloud.service.Hostname(ctx)
 	require.NoError(t, err)
 
-	dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: t.Name(), middleware: func(ctr *dagger.Container) *dagger.Container {
+	dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: t.Name(), middleware: func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding("cloud", cloud.service)
 	}})
 	dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
@@ -536,16 +538,16 @@ func (ProvisionSuite) TestImageDriverEngineEventsNeedEnable(ctx context.Context,
 	provision := func(tag string, enable bool) (eventsID string) {
 		eventsID = identity.NewID()
 		cloudURL := "http://" + cloudHost + ":8080/" + eventsID
-		engineImage := c.Container().Import(c.Host().File(tarPath)).
-			WithNewFile("/usr/local/bin/dagger-test-entrypoint.sh", entrypoint, dagger.ContainerWithNewFileOpts{Permissions: 0o755}).
+		engineImage := core.NewQuery(c).Container().Import(core.NewQuery(c).Host().File(tarPath)).
+			WithNewFile("/usr/local/bin/dagger-test-entrypoint.sh", entrypoint, core.ContainerWithNewFileOpts{Permissions: 0o755}).
 			WithEntrypoint([]string{"/usr/local/bin/dagger-test-entrypoint.sh"}).
 			WithEnvVariable("DAGGER_CLOUD_URL", cloudURL)
 		if enable {
 			engineImage = engineImage.WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_EVENTS", "1")
 		}
-		ctr, err := loadEngineTar(ctx, dockerc, "docker", tag, engineImage.AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.ImageLayerCompressionGzip,
-			MediaTypes:        dagger.ImageMediaTypesDockerMediaTypes,
+		ctr, err := loadEngineTar(ctx, dockerc, "docker", tag, engineImage.AsTarball(core.ContainerAsTarballOpts{
+			ForcedCompression: core.ImageLayerCompressionGzip,
+			MediaTypes:        core.ImageMediaTypesDockerMediaTypes,
 		}))
 		require.NoError(t, err)
 
@@ -559,7 +561,7 @@ func (ProvisionSuite) TestImageDriverEngineEventsNeedEnable(ctx context.Context,
 				"from", "--address=" + alpineImage,
 				"with-exec", "--args", "echo," + marker,
 				"stdout",
-			}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true, DisableDaggerInDagger: true}).
+			}, core.ContainerWithExecOpts{InsecureRootCapabilities: true, DisableDaggerInDagger: true}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, marker)
@@ -578,8 +580,8 @@ func (ProvisionSuite) TestImageDriverEngineEventsNeedEnable(ctx context.Context,
 		out, err := cloud.reader.
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
 			WithWorkdir("/events/"+eventsID+"/v1").
-			WithExec([]string{"sh", "-c", script}, dagger.ContainerWithExecOpts{
-				Expect: dagger.ReturnTypeAny,
+			WithExec([]string{"sh", "-c", script}, core.ContainerWithExecOpts{
+				Expect: core.ReturnTypeAny,
 			}).
 			Stdout(ctx)
 		require.NoError(t, err)

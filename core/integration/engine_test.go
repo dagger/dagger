@@ -10,7 +10,6 @@ package core
 // - engine_persistence_test.go: engine state across restarts.
 
 import (
-	"dagger.io/dagger/core"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -25,6 +24,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"

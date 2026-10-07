@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -84,7 +86,7 @@ var (
 	patchTestRemoved = []string{"gone/del.txt", "ren/from.txt"}
 )
 
-func requireWorkspaceFiles(ctx context.Context, t *testctx.T, ws *dagger.Workspace, want map[string]string, removed []string) {
+func requireWorkspaceFiles(ctx context.Context, t *testctx.T, ws *core.Workspace, want map[string]string, removed []string) {
 	t.Helper()
 	for name, contents := range want {
 		got, err := ws.File("/" + name).Contents(ctx)
@@ -99,18 +101,18 @@ func requireWorkspaceFiles(ctx context.Context, t *testctx.T, ws *dagger.Workspa
 
 func (WorkspaceSuite) TestWorkspaceWithPatchFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	source := c.Directory()
+	source := core.NewQuery(c).Directory()
 	for name, contents := range patchTestFiles {
 		source = source.WithNewFile(name, contents)
 	}
-	patch := c.Directory().WithNewFile("change.patch", gitPatch(ctx, t, patchTestFiles, patchTestEdit(t))).File("change.patch")
+	patch := core.NewQuery(c).Directory().WithNewFile("change.patch", gitPatch(ctx, t, patchTestFiles, patchTestEdit(t))).File("change.patch")
 
 	t.Run("value workspace", func(ctx context.Context, t *testctx.T) {
 		requireWorkspaceFiles(ctx, t, source.AsWorkspace().WithPatchFile(patch), patchTestWant, patchTestRemoved)
 	})
 
 	t.Run("paths are relative to the root, whatever the cwd", func(ctx context.Context, t *testctx.T) {
-		ws := source.AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "sub"}).WithPatchFile(patch)
+		ws := source.AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "sub"}).WithPatchFile(patch)
 		requireWorkspaceFiles(ctx, t, ws, patchTestWant, patchTestRemoved)
 		// The cwd is kept: relative reads resolve from it.
 		got, err := ws.File("mod.txt").Contents(ctx)
@@ -119,7 +121,7 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFile(ctx context.Context, t *testctx
 	})
 
 	t.Run("an empty patch changes nothing", func(ctx context.Context, t *testctx.T) {
-		empty := c.Directory().WithNewFile("empty.patch", "").File("empty.patch")
+		empty := core.NewQuery(c).Directory().WithNewFile("empty.patch", "").File("empty.patch")
 		ws := source.AsWorkspace().WithPatchFile(empty)
 		requireWorkspaceFiles(ctx, t, ws, patchTestFiles, nil)
 		unchanged, err := ws.Changes().IsEmpty(ctx)
@@ -132,8 +134,8 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFile(ctx context.Context, t *testctx
 		_, err := drifted.WithPatchFile(patch).File("/sub/mod.txt").Contents(ctx)
 		require.Error(t, err, "a hunk that no longer applies fails by default")
 
-		got, err := drifted.WithPatchFile(patch, dagger.WorkspaceWithPatchFileOpts{
-			OnConflict: dagger.PatchConflictLeaveConflictMarkers,
+		got, err := drifted.WithPatchFile(patch, core.WorkspaceWithPatchFileOpts{
+			OnConflict: core.PatchConflictLeaveConflictMarkers,
 		}).File("/sub/mod.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, got, "<<<<<<< workspace")
@@ -142,7 +144,7 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFile(ctx context.Context, t *testctx
 	})
 
 	t.Run("a mount is read-only", func(ctx context.Context, t *testctx.T) {
-		ws := source.AsWorkspace().WithMountedDirectory("/sub", c.Directory().WithNewFile("mod.txt", "one\ntwo\nthree\n"))
+		ws := source.AsWorkspace().WithMountedDirectory("/sub", core.NewQuery(c).Directory().WithNewFile("mod.txt", "one\ntwo\nthree\n"))
 		_, err := ws.WithPatchFile(patch).File("/keep.txt").Contents(ctx)
 		require.ErrorContains(t, err, "is a read-only mount")
 	})
@@ -158,8 +160,8 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileGit(ctx context.Context, t *test
 	git("add", "-A")
 	git("commit", "-m", "patch fixture")
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	patch := c.Directory().WithNewFile("change.patch", gitPatch(ctx, t, patchTestFiles, patchTestEdit(t))).File("change.patch")
-	ws := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()).WithPatchFile(patch)
+	patch := core.NewQuery(c).Directory().WithNewFile("change.patch", gitPatch(ctx, t, patchTestFiles, patchTestEdit(t))).File("change.patch")
+	ws := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace()).WithPatchFile(patch)
 	requireWorkspaceFiles(ctx, t, ws, patchTestWant, patchTestRemoved)
 }
 
@@ -194,8 +196,8 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileHost(ctx context.Context, t *tes
 	require.Contains(t, patchText, "GIT binary patch")
 
 	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(checkout, "sub")))
-	patch := c.Directory().WithNewFile("change.patch", patchText).File("change.patch")
-	ws := c.CurrentWorkspace().WithPatchFile(patch)
+	patch := core.NewQuery(c).Directory().WithNewFile("change.patch", patchText).File("change.patch")
+	ws := core.NewQuery(c).CurrentWorkspace().WithPatchFile(patch)
 	removed := append([]string{"lonely/only.txt", "nest/deep/only.txt"}, patchTestRemoved...)
 	requireWorkspaceFiles(ctx, t, ws, patchTestWant, removed)
 
@@ -256,9 +258,9 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileHostEmptiedDir(ctx context.Conte
 		}
 	})
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	patch := c.Directory().WithNewFile("change.patch", patchText).File("change.patch")
+	patch := core.NewQuery(c).Directory().WithNewFile("change.patch", patchText).File("change.patch")
 	// A later edit must not bring the emptied directory back.
-	ws := c.CurrentWorkspace().WithPatchFile(patch).WithNewFile("later.txt", "later\n")
+	ws := core.NewQuery(c).CurrentWorkspace().WithPatchFile(patch).WithNewFile("later.txt", "later\n")
 	require.NoError(t, ws.Export(ctx))
 
 	for _, name := range []string{"lonely", "pair/del.txt", "shared/sub"} {
@@ -290,26 +292,26 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileCreatesExisting(ctx context.Cont
 	git("commit", "-m", "patch fixture")
 
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	newFile := c.Directory().WithNewFile("change.patch", gitPatch(ctx, t, nil, func(dir string) {
+	newFile := core.NewQuery(c).Directory().WithNewFile("change.patch", gitPatch(ctx, t, nil, func(dir string) {
 		writeTestFile(t, dir, "exists.txt", "patch\n")
 	})).File("change.patch")
 	renamed := map[string]string{"from.txt": strings.Repeat("renamed content\n", 20)}
-	rename := c.Directory().WithNewFile("change.patch", gitPatch(ctx, t, renamed, func(dir string) {
+	rename := core.NewQuery(c).Directory().WithNewFile("change.patch", gitPatch(ctx, t, renamed, func(dir string) {
 		require.NoError(t, os.Rename(filepath.Join(dir, "from.txt"), filepath.Join(dir, "onto.txt")))
 	})).File("change.patch")
-	markers := dagger.WorkspaceWithPatchFileOpts{OnConflict: dagger.PatchConflictLeaveConflictMarkers}
+	markers := core.WorkspaceWithPatchFileOpts{OnConflict: core.PatchConflictLeaveConflictMarkers}
 
-	value := c.Directory().
+	value := core.NewQuery(c).Directory().
 		WithNewFile("exists.txt", "host\n").
 		WithNewFile("from.txt", renamed["from.txt"]).
 		WithNewFile("onto.txt", "host\n").
 		AsWorkspace()
-	for name, ws := range map[string]*dagger.Workspace{
+	for name, ws := range map[string]*core.Workspace{
 		"value workspace": value,
-		"host workspace":  c.CurrentWorkspace(),
+		"host workspace":  core.NewQuery(c).CurrentWorkspace(),
 	} {
 		t.Run(name, func(ctx context.Context, t *testctx.T) {
-			for _, patch := range []*dagger.File{newFile, rename} {
+			for _, patch := range []*core.File{newFile, rename} {
 				_, err := ws.WithPatchFile(patch).File("/exists.txt").Contents(ctx)
 				require.Error(t, err)
 
@@ -325,7 +327,7 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileCreatesExisting(ctx context.Cont
 		})
 	}
 
-	err := c.CurrentWorkspace().WithPatchFile(newFile).Export(ctx)
+	err := core.NewQuery(c).CurrentWorkspace().WithPatchFile(newFile).Export(ctx)
 	require.ErrorContains(t, err, "exists.txt: already exists in working directory")
 	got, err := os.ReadFile(filepath.Join(checkout, "exists.txt"))
 	require.NoError(t, err)
@@ -340,9 +342,9 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileHostMount(ctx context.Context, t
 	patchText := gitPatch(ctx, t, map[string]string{"vendor/lib.txt": "lib\n"}, func(dir string) {
 		writeTestFile(t, dir, "vendor/lib.txt", "hacked\n")
 	})
-	patch := c.Directory().WithNewFile("change.patch", patchText).File("change.patch")
-	ws := c.CurrentWorkspace().
-		WithMountedDirectory("/vendor", c.Directory().WithNewFile("lib.txt", "lib\n")).
+	patch := core.NewQuery(c).Directory().WithNewFile("change.patch", patchText).File("change.patch")
+	ws := core.NewQuery(c).CurrentWorkspace().
+		WithMountedDirectory("/vendor", core.NewQuery(c).Directory().WithNewFile("lib.txt", "lib\n")).
 		WithPatchFile(patch)
 	_, err := ws.File("/vendor/lib.txt").Contents(ctx)
 	require.ErrorContains(t, err, "is a read-only mount")

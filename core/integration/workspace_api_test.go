@@ -1611,8 +1611,8 @@ func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePrivateSSH(ctx context.Cont
 			sockPath, cleanup := setupPrivateRepoSSHAgent(t)
 			defer cleanup()
 
-			ref := c.Git(cloneRef, dagger.GitOpts{
-				SSHAuthSocket: c.Host().UnixSocket(sockPath),
+			ref := core.NewQuery(c).Git(cloneRef, core.GitOpts{
+				SSHAuthSocket: core.NewQuery(c).Host().UnixSocket(sockPath),
 			}).Head()
 			commit, err := ref.CommitSHA(ctx)
 			require.NoError(t, err)
@@ -1628,7 +1628,7 @@ engineVersion = "latest"
 			src := ws.ModuleSource("workspace-module")
 			kind, err := src.Kind(ctx)
 			require.NoError(t, err)
-			require.Equal(t, dagger.ModuleSourceKindGitSource, kind)
+			require.Equal(t, core.ModuleSourceKindGitSource, kind)
 			gotClone, err := src.CloneRef(ctx)
 			require.NoError(t, err)
 			require.Equal(t, cloneRef, gotClone)
@@ -2233,7 +2233,7 @@ func (WorkspaceAPISuite) TestHostWorkspaceWithoutFiles(ctx context.Context, t *t
 	git("commit", "-m", "fixture")
 
 	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(checkout, "sub")))
-	base := c.CurrentWorkspace()
+	base := core.NewQuery(c).CurrentWorkspace()
 	ws := base.WithoutFiles([]string{"drop.txt", "/other/drop.txt"})
 
 	_, err := ws.File("drop.txt").Contents(ctx)

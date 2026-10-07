@@ -20,7 +20,6 @@ package core
 // - module_runtime_behavior_test.go: services used from module code.
 
 import (
-	"dagger.io/dagger/core"
 	"bytes"
 	"context"
 	_ "embed"
@@ -38,6 +37,8 @@ import (
 	"testing"
 	"text/template"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"

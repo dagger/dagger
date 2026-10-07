@@ -1,7 +1,6 @@
 package core
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
@@ -204,7 +205,7 @@ git commit -m attributes
 	// captured or reconstructed receivers whose inputs might differ.
 	id, err := base.WithChanges(pending.Changes(before)).ID(ctx)
 	require.NoError(t, err, tc.name)
-	working := core.Ref[*core.Workspace](c, id)
+	working := core.Ref[*core.Workspace](core.NewQuery(c), id)
 	original := workspaceCommitManifest(ctx, t, inspector, working.Directory("/"))
 	if tc.checkInput != nil {
 		tc.checkInput(original)
@@ -221,7 +222,7 @@ git commit -m attributes
 		id, err := working.WithCommit(delta, "reconcile "+tc.name, workspaceCommitDate, core.WorkspaceWithCommitOpts{
 			AuthorName: "Oracle", AuthorEmail: "oracle@example.com",
 		}).ID(ctx)
-		return core.Ref[*core.Workspace](c, id), err
+		return core.Ref[*core.Workspace](core.NewQuery(c), id), err
 	}
 	fast, fastErr := commit(changes)
 	legacy, legacyErr := commit(oracle)
@@ -513,7 +514,7 @@ func (WorkspaceSuite) TestWorkspaceCommittedHistoryDoesNotFetch(ctx context.Cont
 			WithNewFile("pending.txt", "keep pending"), message, []string{"base.txt"})
 		require.NoError(t, err)
 		require.Equal(t, []string{"pending.txt"}, state.Git.Uncommitted.AddedPaths)
-		return core.Ref[*core.Workspace](c, state.ID)
+		return core.Ref[*core.Workspace](core.NewQuery(c), state.ID)
 	}
 	next, side := commit("next"), commit("side")
 	for _, tc := range []struct {
@@ -675,11 +676,11 @@ func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, 
 		preStatus := time.Since(started)
 
 		started = time.Now()
-		id, err := ws.WithCommit(core.Ref[*core.Changeset](c, selectedID), fmt.Sprintf("perf: edit %d", i), workspaceCommitDate,
+		id, err := ws.WithCommit(core.Ref[*core.Changeset](core.NewQuery(c), selectedID), fmt.Sprintf("perf: edit %d", i), workspaceCommitDate,
 			core.WorkspaceWithCommitOpts{AuthorName: "Performance Fixture", AuthorEmail: "performance@example.com"}).ID(ctx)
 		require.NoError(t, err)
 		commitTime := time.Since(started)
-		next := core.Ref[*core.Workspace](c, id)
+		next := core.Ref[*core.Workspace](core.NewQuery(c), id)
 
 		started = time.Now()
 		pending := next.Git().Uncommitted()
@@ -972,7 +973,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, 
 	require.NoError(t, err)
 	require.Equal(t, baseSHA, oldSHA)
 
-	recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(core.Ref[*core.Workspace](c, second.ID)))
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(core.Ref[*core.Workspace](core.NewQuery(c), second.ID)))
 	require.NoError(t, err)
 	id := new(call.ID)
 	require.NoError(t, id.Decode(string(recipe)))
@@ -1015,7 +1016,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFreezesHostAndAuthor(ctx context.Co
 	headBefore, statusBefore := git("rev-parse", "HEAD"), git("status", "--porcelain")
 	committed, err := commitWorkspace(ctx, c, ws, "engine commit", nil)
 	require.NoError(t, err)
-	recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(core.Ref[*core.Workspace](c, committed.ID)))
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(core.Ref[*core.Workspace](core.NewQuery(c), committed.ID)))
 	require.NoError(t, err)
 	requireWorkspaceRecipeUsesHostGit(t, recipe)
 	require.NotEqual(t, headBefore, committed.Git.Head.Commit)
@@ -1532,7 +1533,7 @@ func (*Probe) Committed() error { return nil }
 `)
 	committed, err := commitWorkspace(ctx, c, ws, "add module", nil)
 	require.NoError(t, err)
-	checks, err := core.Ref[*core.Workspace](c, committed.ID).Artifacts().FilterTypes([]string{"Check"}).WithoutURI("**/stale").Items(ctx)
+	checks, err := core.Ref[*core.Workspace](core.NewQuery(c), committed.ID).Artifacts().FilterTypes([]string{"Check"}).WithoutURI("**/stale").Items(ctx)
 	require.NoError(t, err)
 	require.Len(t, checks, 1)
 	name, err := checks[0].URI(ctx)

@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/cloud"
@@ -37,24 +39,24 @@ const telemetrySplitReleasedEngine = "registry.dagger.io/engine:v1.0.0-beta.14"
 // telemetrySplitCloud is a fake Dagger Cloud and a container that reads what
 // it received. events is the volume it records into.
 type telemetrySplitCloud struct {
-	service  *dagger.Service
-	reader   *dagger.Container
-	events   *dagger.CacheVolume
+	service  *core.Service
+	reader   *core.Container
+	events   *core.CacheVolume
 	eventsID string
 }
 
-func newTelemetrySplitCloud(t *testctx.T, c *dagger.Client, withs ...dagger.WithContainerFunc) telemetrySplitCloud {
+func newTelemetrySplitCloud(t *testctx.T, c *dagger.Client, withs ...core.WithContainerFunc) telemetrySplitCloud {
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
-	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+	code := core.NewQuery(c).Host().Directory(thisRepoPath, core.HostDirectoryOpts{
 		Include: []string{
 			"core/integration/testdata/telemetry/",
 			"go.mod",
 			"go.sum",
 		},
 	})
-	events := c.CacheVolume("dagger-telemetry-split-events-" + identity.NewID())
-	base := c.Container().
+	events := core.NewQuery(c).CacheVolume("dagger-telemetry-split-events-" + identity.NewID())
+	base := core.NewQuery(c).Container().
 		From(golangImage).
 		With(goCache(c)).
 		WithMountedDirectory("/src", code).
@@ -76,7 +78,7 @@ func newTelemetrySplitCloud(t *testctx.T, c *dagger.Client, withs ...dagger.With
 }
 
 // bind gives a container the fake Cloud as its Dagger Cloud.
-func (cloud telemetrySplitCloud) bind(ctr *dagger.Container) *dagger.Container {
+func (cloud telemetrySplitCloud) bind(ctr *core.Container) *core.Container {
 	return ctr.
 		WithServiceBinding("cloud", cloud.service).
 		WithEnvVariable("DAGGER_CLOUD_URL", "http://cloud:8080/"+cloud.eventsID)
@@ -202,17 +204,17 @@ func (got telemetrySplitReceived) requireSpansFromOneWriter(t *testctx.T) {
 // telemetrySplitEngine is an engine container from ctr that serves on
 // tcp://:1234 and reaches the fake Cloud. It has no Cloud token of its own,
 // so it exports no engine cache events.
-func telemetrySplitEngine(c *dagger.Client, ctr *dagger.Container, cloud telemetrySplitCloud) *dagger.Container {
+func telemetrySplitEngine(c *dagger.Client, ctr *core.Container, cloud telemetrySplitCloud) *core.Container {
 	return telemetrySplitEngineWithoutCloud(c, cloud.bind(ctr))
 }
 
 // telemetrySplitEngineWithoutCloud is telemetrySplitEngine for an engine with
 // no route to the fake Cloud.
-func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
+func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *core.Container) *core.Container {
 	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
 	return ctr.
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-telemetry-split-state-"+identity.NewID())).
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithMountedCache("/var/lib/dagger", core.NewQuery(c).CacheVolume("dagger-telemetry-split-state-"+identity.NewID())).
+		WithExposedPort(1234, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
 		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--network-name", deviceName,
@@ -220,19 +222,19 @@ func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *dagger.Container) *
 		})
 }
 
-func telemetrySplitEngineBase(c *dagger.Client, released bool) *dagger.Container {
+func telemetrySplitEngineBase(c *dagger.Client, released bool) *core.Container {
 	if released {
-		return c.Container().From(telemetrySplitReleasedEngine)
+		return core.NewQuery(c).Container().From(telemetrySplitReleasedEngine)
 	}
 	return devEngineContainer(c)
 }
 
 // telemetrySplitClient is a container running cli against the engine, with
 // the fake Cloud as its Dagger Cloud and a token for it.
-func telemetrySplitClient(ctx context.Context, t *testctx.T, c *dagger.Client, cli *dagger.File, engine *dagger.Service, cloud telemetrySplitCloud) *dagger.Container {
-	endpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+func telemetrySplitClient(ctx context.Context, t *testctx.T, c *dagger.Client, cli *core.File, engine *core.Service, cloud telemetrySplitCloud) *core.Container {
+	endpoint, err := engine.Endpoint(ctx, core.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	require.NoError(t, err)
-	return cloud.bind(c.Container().From(alpineImage)).
+	return cloud.bind(core.NewQuery(c).Container().From(alpineImage)).
 		WithServiceBinding("dev-engine", engine).
 		WithMountedFile("/bin/dagger", cli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
@@ -247,7 +249,7 @@ func telemetrySplitClient(ctx context.Context, t *testctx.T, c *dagger.Client, c
 func (ClientSuite) TestTelemetrySplitPublishesOnce(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	devCLI := daggerCliFile(t, c)
-	releasedCLI := c.Container().From(telemetrySplitReleasedEngine).File("/usr/local/bin/dagger")
+	releasedCLI := core.NewQuery(c).Container().From(telemetrySplitReleasedEngine).File("/usr/local/bin/dagger")
 
 	for _, tc := range []struct {
 		name           string
@@ -273,7 +275,7 @@ func (ClientSuite) TestTelemetrySplitPublishesOnce(ctx context.Context, t *testc
 			query := fmt.Sprintf(`{ container { from(address: %q) { withExec(args: ["sh", "-c", "echo $0-out", %q]) { exitCode } } } }`, alpineImage, marker)
 			_, err = telemetrySplitClient(ctx, t, c, cli, engine, cloud).
 				WithNewFile("/query.graphql", query).
-				WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+				WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 				Sync(ctx)
 			require.NoError(t, err)
 
@@ -311,7 +313,7 @@ func (ClientSuite) TestTelemetrySplitEngineCannotReachCloud(ctx context.Context,
 	query := fmt.Sprintf(`{ container { from(address: %q) { withExec(args: ["sh", "-c", "echo $0-out", %q]) { exitCode } } } }`, alpineImage, marker)
 	_, err = telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
 		WithNewFile("/query.graphql", query).
-		WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	require.NoError(t, err)
 
@@ -393,8 +395,8 @@ func newTelemetrySplitTLS(t *testctx.T, serverName string) telemetrySplitTLS {
 
 // telemetrySplitScaleOutModule is a module with one check, whose exec prints
 // "<marker>-out".
-func telemetrySplitScaleOutModule(c *dagger.Client, marker string) *dagger.Directory {
-	return c.Host().Directory("./testdata/checks/hello-with-checks", dagger.HostDirectoryOpts{
+func telemetrySplitScaleOutModule(c *dagger.Client, marker string) *core.Directory {
+	return core.NewQuery(c).Host().Directory("./testdata/checks/hello-with-checks", core.HostDirectoryOpts{
 		Include: []string{"dagger.json", "go.mod", "go.sum"},
 	}).WithNewFile("main.go", fmt.Sprintf(`// A module with one check for the telemetry split's scale-out test
 package main
@@ -435,14 +437,14 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 				InstanceID:     "telemetry-split-remote",
 			})
 			require.NoError(t, err)
-			fakeCloud := newTelemetrySplitCloud(t, c, func(ctr *dagger.Container) *dagger.Container {
+			fakeCloud := newTelemetrySplitCloud(t, c, func(ctr *core.Container) *core.Container {
 				return ctr.WithEnvVariable("FAKE_CLOUD_ENGINE_SPEC", string(spec))
 			})
 
 			remote := devEngineContainerAsService(telemetrySplitEngine(c, devEngineContainer(c), fakeCloud))
 			// Terminates the parent engine's TLS for the remote engine, as
 			// Dagger Cloud's engine endpoint does.
-			tlsProxy := c.Container().From(alpineImage).
+			tlsProxy := core.NewQuery(c).Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "socat"}).
 				WithServiceBinding("remote-engine", remote).
 				WithNewFile("/tls/server.pem", tlsFiles.serverPEM).
@@ -463,7 +465,7 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 				WithExec([]string{"git", "init"}).
 				WithDirectory("/work/mod", telemetrySplitScaleOutModule(c, marker)).
 				WithWorkdir("/work/mod").
-				WithExec([]string{"/bin/dagger", "--progress=plain", "check", "--scale-out", "split-check"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+				WithExec([]string{"/bin/dagger", "--progress=plain", "check", "--scale-out", "split-check"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 				Sync(ctx)
 			require.NoError(t, err)
 
@@ -496,8 +498,8 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 // telemetrySplitMarkerModule is a module whose function, run as a nested
 // client, opens a span of its own, which the SDK posts to the engine from
 // inside its container, and prints a marker assembled inside its exec.
-func telemetrySplitMarkerModule(c *dagger.Client) *dagger.Directory {
-	return c.Directory().
+func telemetrySplitMarkerModule(c *dagger.Client) *core.Directory {
+	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.json", `{"name": "marker", "sdk": "go", "source": "."}`).
 		WithNewFile("main.go", fmt.Sprintf(`package main
 
@@ -548,10 +550,10 @@ func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T)
 
 	mainID, nestedID := identity.NewID(), identity.NewID()
 	_, err = telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
-		WithExec(markerExecArgs("main-marker-", mainID), dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		WithExec(markerExecArgs("main-marker-", mainID), core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		WithDirectory("/work/marker", telemetrySplitMarkerModule(c)).
 		WithWorkdir("/work/marker").
-		WithExec([]string{"/bin/dagger", "call", "-m", ".", "emit", "--prefix=nested-marker-", "--id=" + nestedID}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		WithExec([]string{"/bin/dagger", "call", "-m", ".", "emit", "--prefix=nested-marker-", "--id=" + nestedID}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	require.NoError(t, err)
 
@@ -614,12 +616,12 @@ func (ClientSuite) TestEngineTelemetryCloudOAuthRefresh(ctx context.Context, t *
 	engine, err := devEngineContainerAsService(telemetrySplitEngine(c, devEngineContainer(c), cloud).
 		WithEnvVariable("DAGGER_CLOUD_AUTH_URL", "http://cloud:8080/"+cloud.eventsID+"/engine")).Start(ctx)
 	require.NoError(t, err)
-	endpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	endpoint, err := engine.Endpoint(ctx, core.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	require.NoError(t, err)
 
 	markerID := identity.NewID()
 	staleCreds := `{"access_token":"stale-token","token_type":"Bearer","refresh_token":"test-refresh-token","expiry":"2020-01-01T00:00:00Z"}`
-	clientCtr := cloud.bind(c.Container().From(alpineImage)).
+	clientCtr := cloud.bind(core.NewQuery(c).Container().From(alpineImage)).
 		WithServiceBinding("dev-engine", engine).
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
@@ -628,7 +630,7 @@ func (ClientSuite) TestEngineTelemetryCloudOAuthRefresh(ctx context.Context, t *
 		WithNewFile("/root/.config/dagger/credentials.json", staleCreds).
 		WithNewFile("/root/.config/dagger/org", `{"id":"org-telemetry-test","name":"telemetry-test"}`).
 		WithEnvVariable("DAGGER_CLOUD_AUTH_URL", "http://cloud:8080/"+cloud.eventsID+"/client").
-		WithExec(markerExecArgs("refresh-marker-", markerID), dagger.ContainerWithExecOpts{DisableDaggerInDagger: true})
+		WithExec(markerExecArgs("refresh-marker-", markerID), core.ContainerWithExecOpts{DisableDaggerInDagger: true})
 	_, err = clientCtr.Sync(ctx)
 	require.NoError(t, err)
 
@@ -676,7 +678,7 @@ func (ClientSuite) TestEngineTelemetryCloudOutage(ctx context.Context, t *testct
 			"from", "--address=" + alpineImage,
 			"with-exec", "--args=true",
 			"stdout",
-		}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	require.NoError(t, err, "a hanging Cloud must never fail the build")
 }
