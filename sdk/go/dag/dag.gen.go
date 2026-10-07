@@ -315,9 +315,14 @@ func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 }
 
 // Constructs an SSHFS volume.
-func SshfsVolume(endpoint string, privateKey *dagger.Secret, opts ...dagger.SshfsVolumeOpts) *dagger.Volume {
+func SSHFSVolume(endpoint string, privateKey *dagger.Secret, opts ...dagger.SSHFSVolumeOpts) *dagger.Volume {
 	client := initClient()
-	return client.SshfsVolume(endpoint, privateKey, opts...)
+	return client.SSHFSVolume(endpoint, privateKey, opts...)
+}
+
+// Deprecated: use SSHFSVolume instead.
+func SshfsVolume(endpoint string, privateKey *dagger.Secret, opts ...dagger.SSHFSVolumeOpts) *dagger.Volume {
+	return SSHFSVolume(endpoint, privateKey, opts...)
 }
 
 // Create a new TypeDef.

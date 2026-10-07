@@ -9987,7 +9987,7 @@ func (r *GeneratedCode) MarshalJSON() ([]byte, error) {
 }
 
 // List of paths to mark generated in version control (i.e. .gitattributes).
-func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error) {
+func (r *GeneratedCode) VCSGeneratedPaths(ctx context.Context) ([]string, error) {
 	q := r.query.Select("vcsGeneratedPaths")
 
 	var response []string
@@ -9996,14 +9996,24 @@ func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error)
 	return response, q.Execute(ctx)
 }
 
+// Deprecated: use VCSGeneratedPaths instead.
+func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error) {
+	return r.VCSGeneratedPaths(ctx)
+}
+
 // List of paths to ignore in version control (i.e. .gitignore).
-func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
+func (r *GeneratedCode) VCSIgnoredPaths(ctx context.Context) ([]string, error) {
 	q := r.query.Select("vcsIgnoredPaths")
 
 	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Deprecated: use VCSIgnoredPaths instead.
+func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
+	return r.VCSIgnoredPaths(ctx)
 }
 
 // Set the list of paths to mark generated in version control.
@@ -10357,7 +10367,7 @@ func (r *GitBundleRef) Name(ctx context.Context) (string, error) {
 }
 
 // The object ID the advertised ref resolves to.
-func (r *GitBundleRef) Sha(ctx context.Context) (string, error) {
+func (r *GitBundleRef) SHA(ctx context.Context) (string, error) {
 	if r.sha != nil {
 		return *r.sha, nil
 	}
@@ -10367,6 +10377,11 @@ func (r *GitBundleRef) Sha(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Deprecated: use SHA instead.
+func (r *GitBundleRef) Sha(ctx context.Context) (string, error) {
+	return r.SHA(ctx)
 }
 
 // AsNode returns this GitBundleRef as a Node.
@@ -10611,13 +10626,18 @@ func (r *GitCommit) MessageHeadline(ctx context.Context) (string, error) {
 }
 
 // Parent commit SHAs.
-func (r *GitCommit) ParentShas(ctx context.Context) ([]string, error) {
+func (r *GitCommit) ParentSHAs(ctx context.Context) ([]string, error) {
 	q := r.query.Select("parentShas")
 
 	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Deprecated: use ParentSHAs instead.
+func (r *GitCommit) ParentShas(ctx context.Context) ([]string, error) {
+	return r.ParentSHAs(ctx)
 }
 
 // GitCommitReleaseTagOpts contains options for GitCommit.ReleaseTag
@@ -10650,7 +10670,7 @@ func (r *GitCommit) ReleaseTag(ctx context.Context, opts ...GitCommitReleaseTagO
 }
 
 // The full commit SHA.
-func (r *GitCommit) Sha(ctx context.Context) (string, error) {
+func (r *GitCommit) SHA(ctx context.Context) (string, error) {
 	if r.sha != nil {
 		return *r.sha, nil
 	}
@@ -10662,8 +10682,13 @@ func (r *GitCommit) Sha(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Deprecated: use SHA instead.
+func (r *GitCommit) Sha(ctx context.Context) (string, error) {
+	return r.SHA(ctx)
+}
+
 // The abbreviated commit SHA.
-func (r *GitCommit) ShortSha(ctx context.Context) (string, error) {
+func (r *GitCommit) ShortSHA(ctx context.Context) (string, error) {
 	if r.shortSha != nil {
 		return *r.shortSha, nil
 	}
@@ -10673,6 +10698,11 @@ func (r *GitCommit) ShortSha(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Deprecated: use ShortSHA instead.
+func (r *GitCommit) ShortSha(ctx context.Context) (string, error) {
+	return r.ShortSHA(ctx)
 }
 
 // GitCommitTreeOpts contains options for GitCommit.Tree
@@ -10815,7 +10845,7 @@ func (r *GitPushResult) Ref(ctx context.Context) (string, error) {
 }
 
 // The object ID pushed to the remote.
-func (r *GitPushResult) Sha(ctx context.Context) (string, error) {
+func (r *GitPushResult) SHA(ctx context.Context) (string, error) {
 	if r.sha != nil {
 		return *r.sha, nil
 	}
@@ -10825,6 +10855,11 @@ func (r *GitPushResult) Sha(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Deprecated: use SHA instead.
+func (r *GitPushResult) Sha(ctx context.Context) (string, error) {
+	return r.SHA(ctx)
 }
 
 // AsNode returns this GitPushResult as a Node.
@@ -13469,7 +13504,7 @@ type LLMWithToolResultOpts struct {
 }
 
 // Append the result of a tool call to the message history.
-func (r *LLM) WithToolResult(callId string, content string, errored bool, opts ...LLMWithToolResultOpts) *LLM {
+func (r *LLM) WithToolResult(callID string, content string, errored bool, opts ...LLMWithToolResultOpts) *LLM {
 	q := r.query.Select("withToolResult")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `blocks` optional argument
@@ -13477,7 +13512,7 @@ func (r *LLM) WithToolResult(callId string, content string, errored bool, opts .
 			q = q.Arg("blocks", opts[i].Blocks)
 		}
 	}
-	q = q.Arg("callId", callId)
+	q = q.Arg("callId", callID)
 	q = q.Arg("content", content)
 	q = q.Arg("errored", errored)
 
@@ -17117,8 +17152,8 @@ func (r *Query) SourceMap(filename string, line int, column int) *SourceMap {
 	}
 }
 
-// SshfsVolumeOpts contains options for Query.SshfsVolume
-type SshfsVolumeOpts struct {
+// SSHFSVolumeOpts contains options for Query.SSHFSVolume
+type SSHFSVolumeOpts struct {
 	// known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
 	KnownHosts *Secret
 	// Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
@@ -17129,8 +17164,11 @@ type SshfsVolumeOpts struct {
 	ExperimentalServiceHost *Service
 }
 
+// Deprecated: use SSHFSVolumeOpts instead.
+type SshfsVolumeOpts = SSHFSVolumeOpts
+
 // Constructs an SSHFS volume.
-func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, opts ...SshfsVolumeOpts) *Volume {
+func (r *Query) SSHFSVolume(endpoint string, privateKey *Secret, opts ...SSHFSVolumeOpts) *Volume {
 	assertNotNil("privateKey", privateKey)
 	q := r.query.Select("sshfsVolume")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -17157,6 +17195,11 @@ func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, opts ...SshfsVo
 	return &Volume{
 		query: q,
 	}
+}
+
+// Deprecated: use SSHFSVolume instead.
+func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, opts ...SSHFSVolumeOpts) *Volume {
+	return r.SSHFSVolume(endpoint, privateKey, opts...)
 }
 
 // Create a new TypeDef.
@@ -19779,7 +19822,7 @@ func (r *Workspace) SDK(name string) *WorkspaceSDK {
 }
 
 // Installed SDKs.
-func (r *Workspace) Sdks(ctx context.Context) ([]WorkspaceSDK, error) {
+func (r *Workspace) SDKs(ctx context.Context) ([]WorkspaceSDK, error) {
 	q := r.query.Select("sdks")
 
 	q = q.Select("id")
@@ -19809,6 +19852,11 @@ func (r *Workspace) Sdks(ctx context.Context) ([]WorkspaceSDK, error) {
 	}
 
 	return convert(response), nil
+}
+
+// Deprecated: use SDKs instead.
+func (r *Workspace) Sdks(ctx context.Context) ([]WorkspaceSDK, error) {
+	return r.SDKs(ctx)
 }
 
 // WorkspaceSearchOpts contains options for Workspace.Search
@@ -22832,7 +22880,7 @@ func (v ImageLayerCompression) Name() string {
 		return "Gzip"
 	case ImageLayerCompressionZstd:
 		return "Zstd"
-	case ImageLayerCompressionEstarGz:
+	case ImageLayerCompressionEStarGz:
 		return "EStarGZ"
 	case ImageLayerCompressionUncompressed:
 		return "Uncompressed"
@@ -22865,7 +22913,7 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 	case "":
 		*v = ""
 	case "EStarGZ":
-		*v = ImageLayerCompressionEstarGz
+		*v = ImageLayerCompressionEStarGz
 	case "ESTARGZ":
 		*v = ImageLayerCompressionEstargz
 	case "Gzip":
@@ -22885,8 +22933,11 @@ const (
 
 	ImageLayerCompressionZstd ImageLayerCompression = "Zstd"
 
-	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
-	ImageLayerCompressionEstargz ImageLayerCompression = ImageLayerCompressionEstarGz
+	ImageLayerCompressionEStarGz ImageLayerCompression = "EStarGZ"
+	ImageLayerCompressionEstargz ImageLayerCompression = ImageLayerCompressionEStarGz
+
+	// Deprecated: use ImageLayerCompressionEStarGz instead.
+	ImageLayerCompressionEstarGz ImageLayerCompression = ImageLayerCompressionEStarGz
 
 	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
 )
@@ -22898,7 +22949,7 @@ func (ImageMediaTypes) IsEnum() {}
 
 func (v ImageMediaTypes) Name() string {
 	switch v {
-	case ImageMediaTypesOcimediaTypes:
+	case ImageMediaTypesOciMediaTypes:
 		return "OCIMediaTypes"
 	case ImageMediaTypesDockerMediaTypes:
 		return "DockerMediaTypes"
@@ -22937,7 +22988,7 @@ func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
 	case "OCI":
 		*v = ImageMediaTypesOci
 	case "OCIMediaTypes":
-		*v = ImageMediaTypesOcimediaTypes
+		*v = ImageMediaTypesOciMediaTypes
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
@@ -22945,8 +22996,11 @@ func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCIMediaTypes"
-	ImageMediaTypesOci           ImageMediaTypes = ImageMediaTypesOcimediaTypes
+	ImageMediaTypesOciMediaTypes ImageMediaTypes = "OCIMediaTypes"
+	ImageMediaTypesOci           ImageMediaTypes = ImageMediaTypesOciMediaTypes
+
+	// Deprecated: use ImageMediaTypesOciMediaTypes instead.
+	ImageMediaTypesOcimediaTypes ImageMediaTypes = ImageMediaTypesOciMediaTypes
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
