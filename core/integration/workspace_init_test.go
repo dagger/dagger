@@ -184,13 +184,13 @@ func (WorkspaceSuite) TestWorkspaceWithInitialized(ctx context.Context, t *testc
 			}
 		})
 	}
-	t.Run("mounted config is read-only", func(ctx context.Context, t *testctx.T) {
+	t.Run("mounted config is not initialized over", func(ctx context.Context, t *testctx.T) {
 		root := t.TempDir()
 		initGitRepo(ctx, t, root)
 		c := connect(ctx, t, dagger.WithWorkdir(root))
 		mounted := c.Directory().WithNewFile("dagger.toml", "# mounted\n").File("dagger.toml")
 		_, err := c.CurrentWorkspace().WithMountedFile("dagger.toml", mounted).WithInitialized().ID(ctx)
-		require.ErrorContains(t, err, "is a read-only mount and cannot be modified")
+		require.ErrorContains(t, err, "dagger.toml is mounted; use withoutMount to unmount it first")
 		require.NoFileExists(t, filepath.Join(root, "dagger.toml"))
 	})
 

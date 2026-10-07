@@ -474,11 +474,24 @@ func (WorkspaceSuite) TestOverlayWorkspaceWithoutFiles(ctx context.Context, t *t
 		requireEntry(t, baseEntries, "drop.txt")
 	})
 
-	t.Run("a mount is read-only", func(ctx context.Context, t *testctx.T) {
-		mounted := ws.WithMountedDirectory("vendor", c.Directory().WithNewFile("lib.txt", "lib"))
-		_, err := mounted.WithoutFiles([]string{"drop.txt", "vendor/lib.txt"}).
-			Changes(dagger.WorkspaceChangesOpts{From: mounted}).IsEmpty(ctx)
-		require.ErrorContains(t, err, "is a read-only mount and cannot be modified")
+	t.Run("paths in a mount are removed from the mount", func(ctx context.Context, t *testctx.T) {
+		mounted := ws.WithMountedDirectory("vendor", c.Directory().
+			WithNewFile("lib.txt", "lib").
+			WithNewFile("keep.txt", "kept"))
+		removed := mounted.WithoutFiles([]string{"drop.txt", "vendor/lib.txt"})
+		_, err := removed.File("vendor/lib.txt").Contents(ctx)
+		require.Error(t, err)
+		kept, err := removed.File("vendor/keep.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "kept", kept)
+		// Only the workspace's own removal is pending.
+		paths, err := removed.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: mounted}).RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"app/drop.txt"}, paths)
+
+		// The mount point itself is not a file to remove.
+		_, err = mounted.WithoutFiles([]string{"drop.txt", "vendor"}).File("keep.txt").Contents(ctx)
+		require.ErrorContains(t, err, "is a mount point and cannot be removed")
 	})
 }
 
