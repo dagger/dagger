@@ -62,24 +62,97 @@ The LLM acts through the methods of the objects it's bound to via
   the LLM's ID (the same shape it uses to persist a `Changeset` overlay via
   `withWorkspace`), so state transitions are ordinary selectors — durable and
   reconstructable when loaded. At most one binding per object type is kept.
-- **State is recorded field-wise, not by the call that produced it.** The
-  returned object's identity is its producing call (often `@cache(Never)`, e.g.
-  `start`), so binding it as-is would replay that call wherever the state is
-  loaded. Instead MCP diffs the returned module object against the receiver
-  and rebinds `recv!__withField(name:, value:)!…` — one pure, engine-owned,
-  hidden setter per changed field (`core/object_state.go`); object references
-  ride in `value` as ID edges. A return that changes nothing records nothing;
-  a field the return drops is recorded as null. A module object's producing
-  call is never recorded: a state that can't be encoded fails the tool call.
-  Core objects, which have no fields to diff, are rebound as returned.
-  Collection objects are refused. The producing call stays visible in the
-  trace as the tool call's own span; only the recipe forgets it.
+- **State is recorded by what it is, not by the call that produced it** — see
+  "Recording state" below.
 - To the *model*, objects are never named, passed, or returned as handles;
   binding is author-side. There is no `Type#N` registry and no free-form
   script surface. Host-writing fields (`export`) are simply not reachable:
   they are not bound-object methods.
 - When two bound objects expose the same method name, the last `withTools`
   wins; a bound method also overrides a builtin of the same name.
+
+### Recording state
+
+A recorded state is loaded again wherever the conversation is: by the first
+tool dispatch of a resumed session, and by `__rebindState(previous:)` when a
+tool reload recomposes the agent. Whatever its recipe names runs again
+whenever that load misses the cache. So the recipe must say what the state
+*is*, never which call produced it: the methods that return a new state are
+typically `@cache(Never)` (`start`, `restart`, `spawn`), and replaying them
+starts engines and hires workers again.
+
+**Why module objects need this, and core objects don't.** An SDK returns a
+module object as its fields, as JSON; the engine materializes them as a new
+result of the method call, so the returned object's recipe is
+`recv!method(…)`. A function that returns a core object (a `Workspace`,
+`Changeset`, `LLM`, `Directory`) instead returns a result it built with core
+calls, and the call adopts that result, recipe included (see where `dagql`'s
+cache completes a call whose value is already an attached result). Its recipe
+is that chain of core calls (`ws!withNewFile(…)`) and does not name the module
+call. It does re-run the core work on a cold load, which is why a `Changeset`
+is applied as a patch rendered against the workspace (`MCP.applyChangeset`).
+Other core returns, and bound core objects, rely on core calls being hermetic.
+
+**What is recorded.** A same-type return of a module object becomes
+`root!__withField(name:, value:)!…` (`core/object_state.go`):
+
+- `__withField` is an engine-owned field installed on every module object type
+  beside `__rebindState`. It is not in `TypeDef.Functions`, so it never becomes
+  a tool, an entrypoint proxy or an SDK method. It is a pure, persistable
+  setter that clones the receiver with one field replaced, and carries the
+  module's `Module`/`ModuleProvider`, so its frames keep module provenance and
+  `withTools` can resolve their type without loading them.
+- `value` is a `StateValue`: exactly one of `scalar` (JSON), `node` (an ID),
+  `list` or `entries` (key/value), or none of them for null, mirroring how a
+  module object is persisted (`persistedModuleObjectValue`). `node` is a real
+  ID argument, so a reference is an edge of the recipe and is rewritten from
+  handle form to recipe form when the recipe is persisted, rather than an
+  opaque string. `StateValue` is in no schema: engine selects and recipe replay
+  decode it from the field spec, so it never surfaces in introspection or
+  generated SDKs.
+- The **root** is the previous state's recipe with its `__withField` and
+  `__rebindState` frames peeled off: the object the composition bound, or after
+  a tool reload, the new revision's initial object. The frames set each field
+  that differs from the root, once, in name order. The chain is thus at most one
+  frame per field, values a later step overwrote leave the recipe together with
+  their producers, and equal states on one root share a recipe however they
+  were reached. The root is in the previous state's own receiver chain, so
+  selecting on it is a cache hit.
+- **What counts as a change** is decided against the receiver, not the root:
+  references compare by identity (the result for handle-form IDs, the recipe
+  digest otherwise), everything else by canonical JSON. A return equal to its
+  receiver records nothing, so the binding, and the LLM's recipe, do not
+  advance for an idempotent call. A field the return drops is recorded as null,
+  since `__withField` can only set.
+- A module object's producing call is never recorded. A state that cannot be
+  encoded fails the tool call; `@collection` objects are refused outright (their
+  identity includes a `CollectionBase` that is not a field, and a bound
+  collection has no author methods to call). Core objects have no fields to
+  diff and are rebound as returned.
+
+The producing call is not lost: it is the tool call's own span in the trace.
+Only the recipe forgets it.
+
+**Loading.** `LLM.withTools(object:)` is a lazy reference: loading an LLM never
+loads its tool state, and the first dispatch on a binding loads it. A warm cache
+(the same engine, or a persisted result) hits on the last frame's digest and
+evaluates nothing else; a cold one (another engine, an evicted result) walks the
+chain, loading the root and every reference each frame sets, which is why the
+chain is rebuilt from its root rather than appended to: an appended chain loads
+every value a field ever held. Each frame attaches its references exactly as
+an SDK-returned object's are attached.
+
+**The boundary.** References keep their own recipes. A field holding a
+`Directory` that a `@cache(Never)` call returned still records that call, and a
+cold load of the current state runs it. The state is plain data plus
+references; what loading a reference costs is the reference's business, and
+within a session the cache covers it.
+
+**Known costs.** A map-valued field is recorded whole whenever it changes, so a
+map growing by one entry per step costs O(N²) frame payload over a session;
+entry-level setters would make that linear. `__rebindState` still loads the
+previous object on recompose, where it could instead re-root the frames onto
+the new revision's initial object.
 
 ### Binding self via `Query.currentNode`
 
