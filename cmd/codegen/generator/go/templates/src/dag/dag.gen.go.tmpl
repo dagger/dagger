@@ -83,7 +83,7 @@ func Close() error {
 		{{- end -}}
 		{{- range $arg := $field.Args -}}
 		{{- if not (IsArgOptional $arg) -}}
-		{{ $arg.Name | FormatParamName }},
+		{{ $arg.Name | FormatArgName }},
 		{{- end -}}
 		{{- end -}}
 		{{- if HasOptionals $field.Args -}}
@@ -91,6 +91,10 @@ func Close() error {
 		{{- end -}}
 	)
 }
+{{- with FieldLegacyWrapper $field true $supportsVoid "dagger" }}
+
+{{ . }}
+{{- end }}
 
 {{ end }}
 {{- end }}
