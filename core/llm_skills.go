@@ -284,7 +284,7 @@ type workspaceSkillSource struct {
 // named skill (frontmatter name, else the containing directory's base name). It
 // returns nil when no workspace is bound.
 func (s workspaceSkillSource) enumerate(ctx context.Context) (map[string]discoveredSkill, error) {
-	if s.m.workspace.Self() == nil {
+	if !s.m.HasWorkspace() {
 		return nil, nil
 	}
 	srv, err := s.m.baseServer(ctx)
@@ -322,7 +322,11 @@ func (s workspaceSkillSource) read(ctx context.Context, name, rel string) (strin
 	}
 	// Load just the requested file — Workspace.file scopes the host sync to that
 	// single path rather than syncing the whole skill directory or workspace tree.
-	return readSkillFile(ctx, srv, s.m.workspace, path.Join(sk.dir, rel))
+	ws, err := s.m.Workspace(ctx)
+	if err != nil {
+		return "", err
+	}
+	return readSkillFile(ctx, srv, ws, path.Join(sk.dir, rel))
 }
 
 // skillIndexDir resolves a directory containing only the workspace's SKILL.md
@@ -333,7 +337,11 @@ func (s workspaceSkillSource) read(ctx context.Context, name, rel string) (strin
 // manifests instead of slurping the whole workspace tree.
 func (s workspaceSkillSource) skillIndexDir(ctx context.Context, srv *dagql.Server) (dagql.ObjectResult[*Directory], error) {
 	var dir dagql.ObjectResult[*Directory]
-	err := srv.Select(ctx, s.m.workspace, &dir, dagql.Selector{
+	ws, err := s.m.Workspace(ctx)
+	if err != nil {
+		return dir, err
+	}
+	err = srv.Select(ctx, ws, &dir, dagql.Selector{
 		Field: "directory",
 		Args: []dagql.NamedInput{
 			{Name: "path", Value: dagql.NewString(".")},

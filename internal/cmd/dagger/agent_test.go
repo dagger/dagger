@@ -214,3 +214,85 @@ func TestSnapshotWorkspaceFallback(t *testing.T) {
 		})
 	}
 }
+
+// TestAttachDefersWorkspaceBaseline covers adopting a restored agent: the
+// engine binds a restored conversation's workspace lazily, and pinning the
+// synchronization baseline by ID would load it, once per adopted agent. The
+// baseline must instead be chosen on first use, with the same preference as
+// before: the seed's workspace, else the snapshot's.
+func TestAttachDefersWorkspaceBaseline(t *testing.T) {
+	for _, seedFails := range []bool{false, true} {
+		t.Run(map[bool]string{false: "seed workspace", true: "snapshot fallback"}[seedFails], func(t *testing.T) {
+			var queries []string
+			dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
+				var query dagger.Request
+				require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
+				queries = append(queries, query.Query)
+				var payload any
+				switch {
+				case strings.Contains(query.Query, "... on Workspace{id}"):
+					// Reading back a pinned workspace's ID.
+					id := strings.SplitN(strings.SplitN(query.Query, `node(id:"`, 2)[1], `"`, 2)[0]
+					payload = map[string]any{"data": map[string]any{"node": map[string]string{"id": id}}}
+				case strings.Contains(query.Query, "seed"):
+					if seedFails {
+						payload = map[string]any{"errors": []map[string]string{{"message": "Agent has no field seed"}}}
+					} else {
+						payload = map[string]any{"data": map[string]any{"node": map[string]any{"seed": map[string]any{"workspace": map[string]string{"id": "seed-workspace"}}}}}
+					}
+				case strings.Contains(query.Query, "workspace"):
+					payload = map[string]any{"data": map[string]any{"node": map[string]any{"workspace": map[string]string{"id": "snapshot-workspace"}}}}
+				case strings.Contains(query.Query, "model"):
+					payload = map[string]any{"data": map[string]any{"node": map[string]string{"model": "test-model"}}}
+				case strings.Contains(query.Query, "snapshot"):
+					payload = map[string]any{"data": map[string]any{"node": map[string]any{"snapshot": map[string]string{"id": "snapshot-llm"}}}}
+				default:
+					t.Errorf("unexpected query: %s", query.Query)
+				}
+				body, err := json.Marshal(payload)
+				require.NoError(t, err)
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(bytes.NewReader(body))}, nil
+			}}))
+			require.NoError(t, err)
+			defer dag.Close()
+
+			s := &LLMSession{dag: dag, plumbingCtx: t.Context()}
+			// Selecting an LLM's workspace is what loads it; reading back a
+			// pinned workspace's ID (... on Workspace{id}) is not.
+			loads := func() int {
+				n := 0
+				for _, query := range queries {
+					if strings.Contains(query, "workspace{id}") {
+						n++
+					}
+				}
+				return n
+			}
+			a, err := s.AttachRestored(t.Context(), "restored-handle", "worker", "restored-agent")
+			require.NoError(t, err)
+			require.Zero(t, loads(), "adoption must not load the agent's workspace: %q", queries)
+
+			want := "seed-workspace"
+			if seedFails {
+				want = "snapshot-workspace"
+			}
+			id, err := a.lastSynced().ID(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, want, string(id))
+			resolved := loads()
+			require.NotZero(t, resolved)
+			_, err = a.lastSynced().ID(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, resolved, loads(), "the baseline is pinned once chosen")
+
+			// An explicit save replaces a baseline that was never resolved.
+			b, err := s.Attach(t.Context(), "other-handle", "other", "other-agent")
+			require.NoError(t, err)
+			b.setLastSynced(dagger.Ref[*dagger.Workspace](dag, dagger.ID("saved-workspace")))
+			id, err = b.lastSynced().ID(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, "saved-workspace", string(id))
+			require.Equal(t, resolved, loads())
+		})
+	}
+}
