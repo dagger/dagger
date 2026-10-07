@@ -17,10 +17,9 @@ from the trace it published: its agents, their conversations, and the whole
 TUI view of the run, into the session in front of you.
 
 This is `hack/designs/async-agents.md` §4.1 ("Resume from trace — the next
-thread") made concrete. It supersedes nothing: §4.1 states the *why* and the
-constraints, `hack/designs/notes/recommendation.md` §3.1/§6 states the
-*restore verb* and the save-file format, and this document states the
-*implementation* — what to fetch, what the trace is missing, what to add to
+thread") made concrete. It supersedes nothing: async-agents §4.1 states the
+*why* and the constraints, and this document states the *restore verb* and
+the *implementation* — what to fetch, what the trace is missing, what to add to
 the engine to close those gaps, and what the client does with the result.
 
 Status: proposal, mostly built. §11's slices 1–6 (the engine facts, the
@@ -149,11 +148,10 @@ the source: carry the reason on the terminal record (§4.4). Then:
 
 `RUNNING` is the one deliberate deviation from "exactly as it was", and it is
 forced: the loop died with the session, so a roster that redisplays it as
-running is lying in the way async-agents §3.4 forbids (recommendation §6.1
-says the same). What survives is the last *committed* step; a partially
-executed step is discarded, and the pending input re-steps when the agent is
-next prompted. Nothing auto-continues: a restored agent spends no tokens
-until the user says so.
+running is lying in the way async-agents §3.4 forbids. What survives is the
+last *committed* step; a partially executed step is discarded, and the pending
+input re-steps when the agent is next prompted. Nothing auto-continues: a
+restored agent spends no tokens until the user says so.
 
 Reading "the state before teardown" needs the record *history*, not just the
 latest: `ingestAgentState` keeps latest-wins (`dagql/dagui/agents.go:142`), so
@@ -168,8 +166,9 @@ tombstone that was never re-hydrated projects IDLE-from-absence with the
 new". Re-hydration fixes that case as a side effect.
 
 **(b) Restore is all-or-nothing, and eager.** The chief's recorded chain binds
-its workers by ID (`withTools(object: staff!withWorker(name, …llm!agent(handle:…)))`
-— the pure form recommendation §3.2 landed, `modules/staff/main.dang:102`).
+its workers by ID: its `Staff` state's `members` field holds each worker as
+`…llm!agent(handle:…)`, recorded field-wise rather than as the `spawn` that
+hired it (`hack/designs/workspace-agents.md` §2, "Recording state").
 If a worker is not re-hydrated *before* the chief's first tool dispatch, the
 dispatch resolves the handle against an empty registry and — today — `Send`'s
 `GetOrCreate` mints an amnesiac twin from the seed (async-agents §10.2, item
@@ -256,10 +255,9 @@ loadLLMFromID(<snapshot>) { agent(handle: <ID>, name: <Name>) { rehydrate(state:
 
 ## 4. Engine changes
 
-Five, each small. Three are shared with recommendation.md and pay for
-themselves there too.
+Five, each small.
 
-### 4.1 `Agent.rehydrate` (recommendation §3.1, verbatim)
+### 4.1 `Agent.rehydrate`
 
 ```graphql
 type Agent {
@@ -288,9 +286,11 @@ projection stays a projection): `PAUSED` sets `paused`; `FAILED` sets `done` +
 resume clears the tombstone facts and relaunches from the restored snapshot;
 `IDLE` sets nothing.
 The existence check is the guard that makes a late restore loud instead of a
-silent no-op (recommendation §6.2's seed race).
+silent no-op. That is the seed race: anything that addresses an instance
+before its `rehydrate` runs creates the entry from that handle's seed, the
+agent's initial conversation, and the snapshot is silently discarded.
 
-### 4.2 `Send` stops being generative (recommendation §3.1)
+### 4.2 `Send` stops being generative
 
 `AgentRuntimes.Send` routes through `GetOrCreate` (`core/agent.go:331`), so a
 registry miss *creates* — that is what booted amnesiac twins in §10.2 and
@@ -298,9 +298,9 @@ item 13. With re-hydration explicit, `Send` uses `Get` and errors on a miss
 ("agent %q has no runtime in this session"). Signal-with-start survives: it
 starts an entry that exists.
 
-This matters more here than in recommendation.md, because importing the trace
-into the live DB (§5.1) puts *every* agent of the old session on the roster —
-including any this session failed to restore. Focusing one and typing at it
+This matters here because importing the trace into the live DB (§5.1) puts
+*every* agent of the old session on the roster — including any this session
+failed to restore. Focusing one and typing at it
 must say "no runtime in this session", not quietly start a second loop with
 no history.
 
@@ -512,7 +512,7 @@ between a loud failure and a wrong handle).
 
 ### 5.3 Executing the plan
 
-Order and atomicity are load-bearing (recommendation §6.2's seed race):
+Order and atomicity are load-bearing (the seed race, §4.1):
 
 1. Fetch the trace, under a span so the wait is visible, before the
    interactive loop starts — the same place `LoadSession` runs today
@@ -554,9 +554,8 @@ with positional agent names (composition comes from the trace, not from
 `trace_id` to `sessionMetadata` (`internal/cmd/dagger/llm.go:394-401`),
 written by `AutoSaveSession` from the root span's trace ID. The picker
 (`resumeSessionInteractive`, `internal/cmd/dagger/shell_commands.go:340`) then
-has it for free, and the direction recommendation §6 sketched — the save file
-as a pointer, the trace as the store — becomes available without deciding it
-now.
+has it for free, and the save file can later become a pointer, with the trace
+as the store, without deciding it now.
 
 ## 6. Continuity: one conversation, many loops
 
@@ -657,18 +656,14 @@ swap races a step's commit).
 
 ## 8. Dependencies and interactions
 
-- **`Staff.dismiss` must lose its effectful recorded form** (recommendation
-  §3.2's `withDismissed`, the half not yet landed —
-  `modules/staff/main.dang:686-701` still mutates self directly). Otherwise
-  loading a restored chief's chain re-executes `dismiss`, which stops a
-  worker this design just re-hydrated, and drags the per-call-nonce cascade
-  (recommendation §1) along with it. `spawn`'s half is already pure
-  (`withWorker`, `main.dang:102`), which is what makes worker restore work at
-  all.
-- **`@cache(Never)` module functions returning their own type** elsewhere
-  (recommendation §3.3) re-execute on a restored chain: `engineLab.start`,
-  `tuiQa.start`, `mcpLab.start`. Not a blocker for agents, but a resumed
-  session will re-run them; the sweep in recommendation §3.3 is the fix.
+- **A restored chain must not record effectful calls.** Loading a restored
+  chief's chain must not re-execute `dismiss`, which would stop a worker this
+  design just re-hydrated, nor `spawn`; elsewhere the same goes for
+  `@cache(Never)` methods returning their own type, like `engineLab.start`,
+  `tuiQa.start` and `mcpLab.start`. `modules/staff` first fixed its own with
+  pure `withWorker`/`withDismissed` setters (§13.6); tool state is now
+  recorded field-wise for every module (`hack/designs/workspace-agents.md` §2,
+  "Recording state"), so no module needs such setters for replay safety.
 - **Session-independent registry** (async-agents item 13's recommended fix)
   is *not* this, and fork-on-resume (§1) is the decision that says so. If it
   ever lands, resume-from-trace becomes reattach for same-engine traces and
@@ -743,8 +738,8 @@ test above should be seen failing before the change that fixes it.
    telemetry, no consumer yet; verifiable with a unit test on the record
    shape (`core/agent_telemetry_test.go` has the pattern).
 2. **Engine verb**: §4.1 `rehydrate` + §4.2 non-generative `send` + §4.5
-   publication. Independently useful: it is also what recommendation §6's
-   save-file roster needs.
+   publication. Independently useful: it is also what a save-file roster
+   would need.
 3. **Client projection**: §5.2 `RestorePlan` + `CallIDForDigest`.
 4. **Import**: §5.1's sealing, passthrough root, whole-trace surfacing fix,
    driven by a canned trace — no Cloud, no engine.
