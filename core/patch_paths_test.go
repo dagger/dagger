@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -192,5 +193,32 @@ new mode 100755
 			{Old: "ren/from.txt", New: "ren/to file.txt"},
 			{New: "añadido.txt"},
 		}, got)
+
+		// Sections split the patch whole, each one from its own header.
+		sections, err := ParsePatchSections(patch)
+		require.NoError(t, err)
+		require.Len(t, sections, len(got))
+		var joined []byte
+		for i, section := range sections {
+			require.Equal(t, got[i], section.PatchFilePaths)
+			require.True(t, bytes.HasPrefix(section.Patch, []byte("diff --git ")), string(section.Patch))
+			reparsed, err := ParsePatchPaths(section.Patch)
+			require.NoError(t, err)
+			require.Equal(t, []PatchFilePaths{got[i]}, reparsed)
+			joined = append(joined, section.Patch...)
+		}
+		require.Equal(t, string(patch), string(joined))
+	})
+
+	t.Run("sections skip a preamble", func(t *testing.T) {
+		patch := "commit message\n\ndiff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n" +
+			"diff --git a/y b/y\r\nnew file mode 100644\r\n--- /dev/null\r\n+++ b/y\r\n@@ -0,0 +1 @@\r\n+y"
+		sections, err := ParsePatchSections([]byte(patch))
+		require.NoError(t, err)
+		require.Len(t, sections, 2)
+		require.Equal(t, PatchFilePaths{Old: "x", New: "x"}, sections[0].PatchFilePaths)
+		require.Equal(t, "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n", string(sections[0].Patch))
+		require.Equal(t, PatchFilePaths{New: "y"}, sections[1].PatchFilePaths)
+		require.Equal(t, "diff --git a/y b/y\r\nnew file mode 100644\r\n--- /dev/null\r\n+++ b/y\r\n@@ -0,0 +1 @@\r\n+y", string(sections[1].Patch))
 	})
 }
