@@ -28,6 +28,7 @@ class Codegen
             $this->writeDir,
             $this->schema->supportsNullableObjects(),
             $interfaceNames,
+            $this->schema->identifiers,
         );
 
         $filteredTypes = array_filter($this->schema->types, function (IntrospectionType $type) {
