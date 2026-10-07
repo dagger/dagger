@@ -65,6 +65,37 @@ source = "./entrypoint"
 	require.Equal(t, "hello", strings.TrimSpace(out))
 }
 
+func (ModuleSuite) TestDangModuleEntrypointEnumRoundtrip(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := goGitBase(t, c).
+		WithNewFile("dagger.toml", "[modules.tiny]\nsource = \"tiny\"\n").
+		WithNewFile("tiny/dagger-module.toml", "name = \"tiny\"\n[entrypoint]\nkind = \"dang\"\nsource = \"./entrypoint\"\n").
+		WithNewFile("tiny/entrypoint/main.dang", `type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef.withEnum("Status").withEnumMember("Ready", value: "ready"),
+      typeDef.withObject("Tiny")
+        .withConstructor(function("", typeDef.withObject("Tiny")))
+        .withFunction(function("State", typeDef.withEnum("Status"))
+          .withArg("status", typeDef.withEnum("Status"))),
+    ]
+  }
+  pub call(workspace: Workspace!, receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!): JSON! {
+    if (fnName == "") { "{}" :: JSON! }
+    else {
+      if (fnArgs != ("{\"status\":\"Ready\"}" :: JSON!)) {
+        raise "the owning module must receive the original enum name"
+      }
+      "\"Ready\"" :: JSON!
+    }
+  }
+}`).
+		With(daggerCallAt("tiny", "state", "--status", "READY"))
+	out, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "READY", strings.TrimSpace(out))
+}
+
 // The engine records which interface it drove a module through, but the span is
 // internal: it belongs in a trace, not in the output of an ordinary call.
 func (ModuleSuite) TestModuleEntrypointInterfaceSpanIsInternal(ctx context.Context, t *testctx.T) {

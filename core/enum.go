@@ -110,7 +110,6 @@ func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, error) {
 		}
 	}
 
-
 	// Check the dependencies
 	srv, err := m.mod.Self().Deps.Schema(ctx)
 	if err != nil {
@@ -125,7 +124,6 @@ func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, error) {
 		}
 		return enum, nil
 	}
-
 
 	return nil, fmt.Errorf("%T.getDecoder: failed to get enum type %q", m, m.typeDef.Name)
 }
