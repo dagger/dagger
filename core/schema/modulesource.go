@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
@@ -1008,11 +1009,15 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 			return inst, fmt.Errorf("workspace module source: Git workspace has no repository URL")
 		}
 		cloneRef := ref.Repo.Self().URL.Value.String()
+		repoURL, err := gitutil.ParseURL(cloneRef)
+		if err != nil {
+			return inst, fmt.Errorf("workspace module source repository URL: %w", err)
+		}
 		src.Kind = core.ModuleSourceKindGit
 		src.Git = &core.GitModuleSource{
 			CloneRef:         cloneRef,
 			ResolvedCloneRef: cloneRef,
-			HTMLRepoURL:      cloneRef,
+			HTMLRepoURL:      repoURL.HTMLURL(),
 			Version:          cmp.Or(ref.Ref.ShortName(), ref.Ref.SHA),
 			Commit:           ref.Ref.SHA,
 			Ref:              ref.Ref.Name,

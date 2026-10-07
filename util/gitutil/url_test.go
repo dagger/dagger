@@ -21,6 +21,26 @@ func TestRedactedRemote(t *testing.T) {
 	}
 }
 
+func TestGitURLHTMLURL(t *testing.T) {
+	for _, tc := range []struct{ remote, want string }{
+		{"git@github.com:dagger/dagger.io", "https://github.com/dagger/dagger.io"},
+		{"git@github.com:dagger/dagger.io.git", "https://github.com/dagger/dagger.io"},
+		{"ssh://git@github.com:2222/dagger/dagger.io.git", "https://github.com/dagger/dagger.io"},
+		{"git://git.example:9418/team/repo.git", "https://git.example/team/repo"},
+		{"https://user:password@git.example:8443/team/repo.git#main:module", "https://git.example:8443/team/repo"},
+		{"http://git.example:8080/team/repo", "http://git.example:8080/team/repo"},
+		{"ssh://git@[::1]:2222/team/repo.git", "https://[::1]/team/repo"},
+	} {
+		t.Run(tc.remote, func(t *testing.T) {
+			u, err := ParseURL(tc.remote)
+			require.NoError(t, err)
+			original := u.String()
+			require.Equal(t, tc.want, u.HTMLURL())
+			require.Equal(t, original, u.String(), "browser links must not change the clone transport")
+		})
+	}
+}
+
 func TestParseURL(t *testing.T) {
 	tests := []struct {
 		url    string
