@@ -289,7 +289,9 @@ type Artifacts struct {
 	Entries  []*Artifact
 	Selector ArtifactSelector
 	// AllDimensions lists the dimensions of every loaded module. Names resolve
-	// against it, so a filter cannot change what a name means.
+	// against it, so a filter cannot change what a name means. It omits
+	// modules that are not loaded, but names start with their module, so
+	// those modules cannot change a name either.
 	AllDimensions artifact.Dimensions
 }
 

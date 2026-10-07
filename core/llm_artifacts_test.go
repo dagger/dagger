@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -339,12 +340,17 @@ func TestMergeScopeArtifacts(t *testing.T) {
 	require.Equal(t, []string{"app/build", "git-tools/head", "roster/members", "roster/members/dir"}, paths(all))
 	require.Same(t, bound[0], all.Entries[2], "the bound roster wins")
 
-	narrowed, err := mergeScopeArtifacts(bound, shadowed, nil, &Artifacts{Entries: workspace[3:]}, []string{"roster:members"})
+	// Workspace.artifacts narrows its entries but keeps all loaded dimensions.
+	narrowedWorkspace := &Artifacts{Entries: workspace[3:], AllDimensions: (&Artifacts{Entries: workspace}).DimensionDefinitions()}
+	narrowed, err := mergeScopeArtifacts(bound, shadowed, nil, narrowedWorkspace, []string{"roster:members"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"roster/members/**"}, narrowed.Selector.Paths)
 	// The workspace part arrives already narrowed by Workspace.artifacts;
 	// include narrows the bound part the same way.
 	require.Equal(t, []string{"app/build", "roster/members", "roster/members/dir"}, paths(narrowed))
+	// include skips git-tools/head, but its dimensions still count for names.
+	require.True(t, slices.ContainsFunc(narrowed.AllDimensions, func(d *ArtifactDimension) bool { return d.Identifier == "type:GitRef" }))
+	require.Equal(t, "container", narrowed.Entries[0].DimensionNames["type:Container"])
 
 	// A roster bound as a fresh construction has the workspace's values: the
 	// workspace's roster wins, entrypoint shorthand and all.
