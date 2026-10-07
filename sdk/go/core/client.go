@@ -1,9 +1,6 @@
 package core
 
 import (
-	"context"
-	"sync"
-
 	dagger "dagger.io/dagger"
 	"github.com/dagger/querybuilder"
 )
@@ -23,34 +20,11 @@ func (r *Query) QueryBuilder() *querybuilder.Selection {
 	return r.query
 }
 
-var (
-	defaultRoot   *Query
-	defaultRootMu sync.Mutex
-)
-
-// initRoot lazily connects to the engine using dagger.Default, the
-// process-wide shared connection, and caches the resulting query root for
-// this package's top-level functions (Container(), Directory(), etc.).
+// initRoot uses the default transport without opening a connection. Object
+// construction stays lazy, and closing the default session permits reconnecting.
 func initRoot() *Query {
-	defaultRootMu.Lock()
-	defer defaultRootMu.Unlock()
-
-	if defaultRoot == nil {
-		client, err := dagger.Default(context.Background())
-		if err != nil {
-			panic(err)
-		}
-		defaultRoot = NewQuery(client)
-	}
-	return defaultRoot
+	return &Query{query: querybuilder.Query().Client(dagger.DefaultGraphQLClient())}
 }
 
-// Close closes the default engine connection used by this package's
-// top-level functions.
-func Close() error {
-	defaultRootMu.Lock()
-	defer defaultRootMu.Unlock()
-
-	defaultRoot = nil
-	return dagger.Close()
-}
+// Close closes the shared default engine connection.
+func Close() error { return dagger.Close() }
