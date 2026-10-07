@@ -45,8 +45,9 @@ type Query struct {
 }
 
 var (
-	ErrNoCurrentModule    = fmt.Errorf("no current module")
-	ErrNoCurrentWorkspace = fmt.Errorf("no current workspace")
+	ErrNoCurrentModule       = fmt.Errorf("no current module")
+	ErrNoCurrentFunctionCall = fmt.Errorf("no current function call")
+	ErrNoCurrentWorkspace    = fmt.Errorf("no current workspace")
 )
 
 type SpecificClientAttachableConnOpts struct {

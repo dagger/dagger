@@ -1251,17 +1251,17 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		src.SourceRootSubpath + "/" + moduleSourceConfigFilename(src),
 	}
 
-	if src.SourceSubpath == "." {
-		// "." ends up matching nothing, so we convert it to "*"
-		fullIncludePaths = append(fullIncludePaths, "*")
-	} else if src.SourceSubpath != "" {
-		// load the source dir if set
-		fullIncludePaths = append(fullIncludePaths, src.SourceSubpath)
-	} else {
-		// otherwise load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
+	sourcePath := src.SourceSubpath
+	if sourcePath == "" {
+		// with no source dir, load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
 		// that's now going to be upgraded to using the python sdk and needs pyproject.toml to be loaded
-		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath)
+		sourcePath = src.SourceRootSubpath
 	}
+	if sourcePath == "." {
+		// "." ends up matching nothing, so we convert it to "*"
+		sourcePath = "*"
+	}
+	fullIncludePaths = append(fullIncludePaths, sourcePath)
 
 	if src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil {
 		// Directory sources already carry their complete in-engine context.

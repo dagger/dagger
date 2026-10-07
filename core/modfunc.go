@@ -1392,21 +1392,22 @@ func (fn *ModuleFunction) loadContextualGitArg(
 // function body. It keys off an active function call, not merely a module in
 // context: a direct client (CLI/SDK) and schema-walking flows like `dagger
 // generate` load a module but run no function, and must still be allowed to
-// auto-inject a Workspace. ErrNoCurrentModule is the direct-client signal and is
-// swallowed; any other error is a real lookup failure.
+// auto-inject a Workspace. ErrNoCurrentModule and ErrNoCurrentFunctionCall are
+// the direct-client signals and are swallowed; any other error is a real lookup
+// failure.
 func callerInModuleFunction(ctx context.Context) (bool, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return false, fmt.Errorf("get current query: %w", err)
 	}
-	fnCall, err := query.CurrentFunctionCall(ctx)
-	if errors.Is(err, ErrNoCurrentModule) {
+	_, err = query.CurrentFunctionCall(ctx)
+	if errors.Is(err, ErrNoCurrentModule) || errors.Is(err, ErrNoCurrentFunctionCall) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("get current function call: %w", err)
 	}
-	return fnCall != nil, nil
+	return true, nil
 }
 
 // loadWorkspaceArg loads a workspace argument by resolving it through the

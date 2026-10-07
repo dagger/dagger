@@ -227,6 +227,50 @@ func (DangSuite) TestEnums(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "P256", strings.TrimSpace(out))
 	})
+
+	t.Run("object with an enum field as an argument", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goGitBase(t, c).
+			WithNewFile("dagger.toml", "[modules.types]\nsource = \".dagger/modules/types\"\n").
+			WithNewFile(".dagger/modules/types/dagger-module.toml", `name = "types"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "dang"
+`).
+			WithNewFile(".dagger/modules/types/main.dang", `enum Mood {
+  HAPPY
+  GRUMPY
+}
+
+type Pair {
+  pub left: String!
+  pub mood: Mood!
+
+  new(left: String!, mood: Mood!) {
+    self.left = left
+    self.mood = mood
+    self
+  }
+}
+
+type Types {
+  pub pair(left: String!, mood: Mood!): Pair! {
+    Pair(left: left, mood: mood)
+  }
+
+  pub join(pair: Pair!): String! {
+    pair.left + ":" + JSON.encode(pair.mood)
+  }
+}
+`).
+			With(daggerShellAt("types", "join $(pair --left a --mood GRUMPY)")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `a:"GRUMPY"`, strings.TrimSpace(out))
+	})
 }
 
 func (DangSuite) TestMismatch(_ context.Context, t *testctx.T) {
