@@ -251,7 +251,7 @@ git commit -m attributes
 		if tc.checkResult != nil {
 			tc.checkResult(result)
 		}
-		parents, err := result.Git().Head().TargetCommit().ParentShas(ctx)
+		parents, err := result.Git().Head().TargetCommit().ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{baseSHA}, parents, tc.name)
 		contents, err := result.File("pending.txt").Contents(ctx)
@@ -1181,7 +1181,7 @@ func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, 
 		message, err := ahead[0].Message(ctx)
 		require.NoError(t, err)
 		require.Equal(t, fmt.Sprintf("perf: edit %d", i), strings.TrimSpace(message))
-		parents, err := ahead[0].ParentShas(ctx)
+		parents, err := ahead[0].ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{beforeSHA}, parents)
 		behind, err := before.Log(ctx, core.GitRefLogOpts{Base: head, Limit: 101})

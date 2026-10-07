@@ -255,7 +255,7 @@ func (GitSuite) TestGitBundlePreservesAnnotatedTag(ctx context.Context, t *testc
 	refs, err := bundle.Refs(ctx)
 	require.NoError(t, err)
 	require.Len(t, refs, 1)
-	bundleSHA, err := refs[0].Sha(ctx)
+	bundleSHA, err := refs[0].SHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, tagSHA, bundleSHA)
 
@@ -265,7 +265,7 @@ func (GitSuite) TestGitBundlePreservesAnnotatedTag(ctx context.Context, t *testc
 	remoteRefs, err := remoteBundle.Refs(ctx)
 	require.NoError(t, err)
 	require.Len(t, remoteRefs, 1)
-	remoteBundleSHA, err := remoteRefs[0].Sha(ctx)
+	remoteBundleSHA, err := remoteRefs[0].SHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, tagSHA, remoteBundleSHA)
 

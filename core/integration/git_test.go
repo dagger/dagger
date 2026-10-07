@@ -203,7 +203,7 @@ func requireSampleGitHiddenCommit(ctx context.Context, t *testctx.T, c *dagger.C
 
 func requireStrictCommit(ctx context.Context, t *testctx.T, repo *core.GitRepository, refStr string) {
 	ref := repo.Commit(refStr)
-	_, err := ref.Sha(ctx)
+	_, err := ref.SHA(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "invalid commit SHA")
 }
@@ -280,11 +280,11 @@ func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 	sha := "c80ac2c13df7d573a069938e01ca13f7a81f0345"
 
 	commit := repo.Commit(sha)
-	gotSHA, err := commit.Sha(ctx)
+	gotSHA, err := commit.SHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sha, gotSHA)
 
-	shortSHA, err := commit.ShortSha(ctx)
+	shortSHA, err := commit.ShortSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sha[:len(shortSHA)], shortSHA)
 
@@ -296,11 +296,11 @@ func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, authoredDate)
 
-	parents, err := commit.ParentShas(ctx)
+	parents, err := commit.ParentSHAs(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, parents)
 
-	refCommitSHA, err := repo.Ref(sha).TargetCommit().Sha(ctx)
+	refCommitSHA, err := repo.Ref(sha).TargetCommit().SHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sha, refCommitSHA)
 
@@ -382,7 +382,7 @@ git add . && git commit -m unrelated
 	})
 	t.Run("merge first parent", func(ctx context.Context, t *testctx.T) {
 		assertPaths(t, merge.Changes(), []string{"topic"}, nil, nil)
-		parents, err := merge.ParentShas(ctx)
+		parents, err := merge.ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Len(t, parents, 2)
 		assertPaths(t, merge.Changes(core.GitCommitChangesOpts{Against: repo.Commit(parents[1])}), []string{"main"}, nil, nil)
@@ -421,7 +421,7 @@ git add . && git commit -m other
 	t.Run("stable recipe", func(ctx context.Context, t *testctx.T) {
 		first, err := ordinary.Changes().ID(ctx)
 		require.NoError(t, err)
-		sha, err := ordinary.Sha(ctx)
+		sha, err := ordinary.SHA(ctx)
 		require.NoError(t, err)
 		second, err := repo.Commit(sha).Changes().ID(ctx)
 		require.NoError(t, err)
@@ -1901,7 +1901,7 @@ func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
 		require.Equal(t, oldCommit, resolved)
 
 		// commit() accepts an abbreviated SHA too
-		sha, err := git.Commit(oldCommit[:7]).Sha(ctx)
+		sha, err := git.Commit(oldCommit[:7]).SHA(ctx)
 		require.NoError(t, err)
 		require.Equal(t, oldCommit, sha)
 
@@ -2170,7 +2170,7 @@ func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx
 		advertised, err := repo.Tags(ctx)
 		require.NoError(t, err)
 		commit := repo.Head().TargetCommit()
-		sha, err = commit.Sha(ctx)
+		sha, err = commit.SHA(ctx)
 		require.NoError(t, err)
 		tagRef, err := commit.ReleaseTag(ctx)
 		require.NoError(t, err)
@@ -2278,7 +2278,7 @@ func (GitSuite) TestGitBundleRefFreshness(ctx context.Context, t *testctx.T) {
 		name, err := refs[0].Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "refs/heads/main", name)
-		sha, err = refs[0].Sha(ctx)
+		sha, err = refs[0].SHA(ctx)
 		require.NoError(t, err)
 		head, err := core.NewQuery(c).Git(repoURL).Branch("main").CommitSHA(ctx)
 		require.NoError(t, err)
@@ -2337,7 +2337,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 		t.Helper()
 		out := make([]string, 0, len(commits))
 		for _, commit := range commits {
-			sha, err := commit.Sha(ctx)
+			sha, err := commit.SHA(ctx)
 			require.NoError(t, err)
 			out = append(out, sha)
 		}
@@ -2373,12 +2373,12 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, authoredDate)
 
-		parents, err := log[0].ParentShas(ctx)
+		parents, err := log[0].ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{shaB}, parents)
 
 		// the oldest commit is a root commit
-		parents, err = log[2].ParentShas(ctx)
+		parents, err = log[2].ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Empty(t, parents)
 	})
@@ -2443,7 +2443,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 				require.True(t, reachable[logSHAs[i]],
 					"%s is not a parent of any commit listed before it", logSHAs[i])
 			}
-			parents, err := commit.ParentShas(ctx)
+			parents, err := commit.ParentSHAs(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, parents)
 			for _, parent := range parents {
@@ -2460,7 +2460,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 
 		c2 := connect(ctx, t)
-		reloadedSHA, err := core.Ref[*core.GitCommit](core.NewQuery(c2), id).Sha(ctx)
+		reloadedSHA, err := core.Ref[*core.GitCommit](core.NewQuery(c2), id).SHA(ctx)
 		require.NoError(t, err)
 		require.Equal(t, logSHAs[1], reloadedSHA)
 	})
@@ -2505,7 +2505,7 @@ func (GitSuite) TestGitLogBoundedRemoteHistory(ctx context.Context, t *testctx.T
 	commits, err = repo.Head().Log(ctx, core.GitRefLogOpts{Limit: 3, Paths: []string{"old.txt"}})
 	require.NoError(t, err)
 	require.Len(t, commits, 1)
-	sha, err := commits[0].Sha(ctx)
+	sha, err := commits[0].SHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, root, sha)
 
