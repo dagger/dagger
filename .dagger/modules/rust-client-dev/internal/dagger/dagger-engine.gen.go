@@ -468,41 +468,145 @@ func (r *DaggerEngine) Test(ctx context.Context, opts ...DaggerEngineTestOpts) e
 	return q.Execute(ctx)
 }
 
+// DaggerEngineTestProfileOpts contains options for DaggerEngine.TestProfile
+type DaggerEngineTestProfileOpts struct {
+	//
+	// Only run these tests
+	//
+	Run string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:131:2)
+	//
+	// Skip these tests
+	//
+	Skip string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:134:2)
+
+	// Default: "./..."
+	Pkg string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:137:2)
+	//
+	// Abort test run on first failure
+	//
+	Failfast bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:140:2)
+	//
+	// How many tests to run in parallel - defaults to the number of CPUs
+	//
+	Parallel int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:143:2)
+	//
+	// How long before timing out the test run
+	//
+	Timeout string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:146:2)
+
+	Race bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:148:2)
+
+	// Default: 1
+	Count int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:151:2)
+
+	EnvFile *Secret // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:153:2)
+	//
+	// Enable verbose output
+	//
+	TestVerbose bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:156:2)
+	//
+	// Enable the given ebpf progs in the engine during tests
+	//
+	EbpfProgs []string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:159:2)
+}
+
+// Run core engine tests against an engine recording a wcprof wall-clock
+// profile, and return the recording.
+//
+// The test engine records every session from startup (_DAGGER_WCPROF=1). The
+// dump is fetched from its debug endpoint after `go test` exits, whether or
+// not the tests passed, so a failing run still yields a profile. Benchmark
+// tests gated on _DAGGER_BENCH are opted in, since profiling is what they are
+// for: select them with `run` like any other test.
+func (r *DaggerEngine) TestProfile(opts ...DaggerEngineTestProfileOpts) *DaggerEngineTestProfileResult { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:127:1)
+	q := r.query.Select("testProfile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `envFile` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EnvFile) {
+			q = q.Arg("envFile", opts[i].EnvFile)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `ebpfProgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
+			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+	}
+
+	return &DaggerEngineTestProfileResult{
+		query: q,
+	}
+}
+
 // DaggerEngineTestTelemetryOpts contains options for DaggerEngine.TestTelemetry
 type DaggerEngineTestTelemetryOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:105:2)
+	Run string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:223:2)
 	//
 	// Skip these tests
 	//
-	Skip string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:108:2)
+	Skip string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:226:2)
 
-	Update bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:110:2)
+	Update bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:228:2)
 
-	Failfast bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:112:2)
+	Failfast bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:230:2)
 
-	Parallel int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:114:2)
+	Parallel int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:232:2)
 
-	Timeout string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:116:2)
+	Timeout string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:234:2)
 
-	Race bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:118:2)
+	Race bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:236:2)
 
 	// Default: 1
-	Count int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:120:2)
+	Count int // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:238:2)
 
-	EnvFile *Secret // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:122:2)
+	EnvFile *Secret // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:240:2)
 
-	TestVerbose bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:124:2)
+	TestVerbose bool // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:242:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:127:2)
+	EbpfProgs []string // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:245:2)
 }
 
 // Run telemetry tests
-func (r *DaggerEngine) TestTelemetry(opts ...DaggerEngineTestTelemetryOpts) *Changeset { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:101:1)
+func (r *DaggerEngine) TestTelemetry(opts ...DaggerEngineTestTelemetryOpts) *Changeset { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:219:1)
 	q := r.query.Select("testTelemetry")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument
@@ -738,6 +842,115 @@ func (r *DaggerEngineLoadedEngine) Start(ctx context.Context, opts ...DaggerEngi
 // AsNode returns this DaggerEngineLoadedEngine as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *DaggerEngineLoadedEngine) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// The result of a profiled test run: the test engine's wcprof recording, and
+// how the tests went.
+type DaggerEngineTestProfileResult struct { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:101:6)
+	query *querybuilder.Selection
+
+	exitCode *int
+	id       *ID
+	output   *string
+}
+
+func (r *DaggerEngineTestProfileResult) WithGraphQLQuery(q *querybuilder.Selection) *DaggerEngineTestProfileResult {
+	return &DaggerEngineTestProfileResult{
+		query: q,
+	}
+}
+
+// The test engine's wcprof dump (engine/wcprof), covering every
+// session the tests opened
+func (r *DaggerEngineTestProfileResult) Dump() *File { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:104:2)
+	q := r.query.Select("dump")
+
+	return &File{
+		query: q,
+	}
+}
+
+// The exit status of `go test`
+func (r *DaggerEngineTestProfileResult) ExitCode(ctx context.Context) (int, error) { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:106:2)
+	if r.exitCode != nil {
+		return *r.exitCode, nil
+	}
+	q := r.query.Select("exitCode")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this DaggerEngineTestProfileResult.
+func (r *DaggerEngineTestProfileResult) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *DaggerEngineTestProfileResult) XXX_GraphQLType() string {
+	return "DaggerEngineTestProfileResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *DaggerEngineTestProfileResult) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *DaggerEngineTestProfileResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *DaggerEngineTestProfileResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *DaggerEngineTestProfileResult) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = DaggerEngineTestProfileResult{query: selectNode(dag.query, id, "DaggerEngineTestProfileResult")}
+	return nil
+}
+
+// The tail of the test output (stdout and stderr)
+func (r *DaggerEngineTestProfileResult) Output(ctx context.Context) (string, error) { // dagger-engine (../../../../../.dagger/modules/engine-dev/test.go:108:2)
+	if r.output != nil {
+		return *r.output, nil
+	}
+	q := r.query.Select("output")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this DaggerEngineTestProfileResult as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *DaggerEngineTestProfileResult) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}

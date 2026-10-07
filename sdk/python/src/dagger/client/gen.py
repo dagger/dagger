@@ -18956,6 +18956,39 @@ class Workspace(Type):
         _ctx = self._select("withNewFile", _args)
         return Workspace(_ctx)
 
+    def with_patch_file(
+        self,
+        patch: File,
+        *,
+        on_conflict: PatchConflict | None = PatchConflict.FAIL,
+    ) -> Self:
+        """Return this workspace with the given Git-compatible patch file
+        applied, without mutating the source.
+
+        Paths in the patch are relative to the workspace root, whatever its
+        cwd, as `git diff` writes them. Patching a path at or under a mount is
+        an error.
+
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        patch:
+            File containing the patch to apply
+        on_conflict:
+            How to handle hunks that no longer apply to the target content:
+            fail (default), or apply what fits and leave git-style conflict
+            markers where it doesn't.
+        """
+        _args = [
+            Arg("patch", patch),
+            Arg("onConflict", on_conflict, PatchConflict.FAIL),
+        ]
+        _ctx = self._select("withPatchFile", _args)
+        return Workspace(_ctx)
+
     def with_reset(
         self,
         commit: str,
@@ -19263,6 +19296,21 @@ class Workspace(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withoutFile", _args)
+        return Workspace(_ctx)
+
+    def without_files(self, paths: list[str]) -> Self:
+        """Return this workspace with files removed, without mutating the source.
+
+        Parameters
+        ----------
+        paths:
+            Paths of the files to remove. Relative paths resolve from the
+            workspace cwd.
+        """
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withoutFiles", _args)
         return Workspace(_ctx)
 
     def without_module(

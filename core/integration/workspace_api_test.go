@@ -2215,6 +2215,48 @@ func (WorkspaceAPISuite) TestHostWorkspaceFunctionalRemoves(ctx context.Context,
 	}
 }
 
+// TestHostWorkspaceWithoutFiles removes several host files in one step and
+// exports the removals, leaving the files beside them alone.
+func (WorkspaceAPISuite) TestHostWorkspaceWithoutFiles(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	for name, contents := range map[string]string{
+		"sub/drop.txt":   "drop",
+		"sub/keep.txt":   "keep",
+		"other/drop.txt": "drop",
+		"other/keep.txt": "keep",
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(checkout, name)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(checkout, name), []byte(contents), 0o644))
+	}
+	git("add", "-A")
+	git("commit", "-m", "fixture")
+
+	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(checkout, "sub")))
+	base := c.CurrentWorkspace()
+	ws := base.WithoutFiles([]string{"drop.txt", "/other/drop.txt"})
+
+	_, err := ws.File("drop.txt").Contents(ctx)
+	require.Error(t, err, "a removed file must not resurface from the host")
+	got, err := ws.File("/other/keep.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "keep", got)
+
+	require.NoError(t, ws.Export(ctx))
+	for _, name := range []string{"sub/drop.txt", "other/drop.txt"} {
+		_, err := os.Stat(filepath.Join(checkout, name))
+		require.ErrorIs(t, err, os.ErrNotExist, name)
+	}
+	for _, name := range []string{"base.txt", "sub/keep.txt", "other/keep.txt"} {
+		_, err := os.Stat(filepath.Join(checkout, name))
+		require.NoError(t, err, name)
+	}
+	var status []string
+	for line := range strings.SplitSeq(git("status", "--porcelain"), "\n") {
+		status = append(status, strings.Join(strings.Fields(line), " "))
+	}
+	require.ElementsMatch(t, []string{"D other/drop.txt", "D sub/drop.txt"}, status)
+}
+
 // TestHostWorkspaceOverlayReads verifies reads through a host overlay: the
 // overlay stores no full read root (materializing one would upload the whole
 // host tree — the perf half is checked by tracing Host.directory for a missing

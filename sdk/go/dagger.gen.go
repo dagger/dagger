@@ -19914,6 +19914,35 @@ func (r *Workspace) WithNewFile(path string, contents string, opts ...WorkspaceW
 	}
 }
 
+// WorkspaceWithPatchFileOpts contains options for Workspace.WithPatchFile
+type WorkspaceWithPatchFileOpts struct {
+	// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+	//
+	// Default: FAIL
+	OnConflict PatchConflict
+}
+
+// Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+//
+// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Workspace) WithPatchFile(patch *File, opts ...WorkspaceWithPatchFileOpts) *Workspace {
+	assertNotNil("patch", patch)
+	q := r.query.Select("withPatchFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+	q = q.Arg("patch", patch)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithResetOpts contains options for Workspace.WithReset
 type WorkspaceWithResetOpts struct {
 	// Discard uncommitted changes, resetting the working tree to the commit.
@@ -20191,6 +20220,16 @@ func (r *Workspace) WithoutEntrypoint() *Workspace {
 func (r *Workspace) WithoutFile(path string) *Workspace {
 	q := r.query.Select("withoutFile")
 	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with files removed, without mutating the source.
+func (r *Workspace) WithoutFiles(paths []string) *Workspace {
+	q := r.query.Select("withoutFiles")
+	q = q.Arg("paths", paths)
 
 	return &Workspace{
 		query: q,

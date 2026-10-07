@@ -1966,8 +1966,7 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 		// stays a failure rather than passing for a conflict whenever some
 		// other hunk happened to be rejected as well.
 		if failed := wholeFileApplyErrors(stderr.String()); len(failed) > 0 {
-			return fmt.Errorf("git apply: %d file(s) could not be patched at all, which conflict markers cannot express:\n%s",
-				len(failed), strings.Join(failed, "\n"))
+			return wholeFileApplyError(failed)
 		}
 		if len(conflicted) == 0 {
 			// No rejects written: a hard failure (bad patch, not a content
@@ -1993,6 +1992,29 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 	fmt.Fprintf(stdio.Stderr, "WARNING: %d file(s) no longer match the patch; conflict markers were left in: %s\n",
 		len(conflictedTargets), strings.Join(conflictedTargets, ", "))
 	return nil
+}
+
+// wholeFileApplyError is applyGitPatch's error under LEAVE_CONFLICT_MARKERS
+// for files git apply --reject skipped outright.
+func wholeFileApplyError(failed []string) error {
+	return fmt.Errorf("git apply: %d file(s) could not be patched at all, which conflict markers cannot express:\n%s",
+		len(failed), strings.Join(failed, "\n"))
+}
+
+// PatchCreatesExistingError is the error applying a patch gives when the
+// files it creates (new files, rename and copy targets) already exist, as
+// `git apply` words it: with FAIL it is git's own message, and with
+// LEAVE_CONFLICT_MARKERS it is the whole-file failure applyGitPatch reports,
+// since --reject skips such a file without writing a reject for it.
+func PatchCreatesExistingError(onConflict PatchConflict, existing []string) error {
+	failed := make([]string, len(existing))
+	for i, p := range existing {
+		failed[i] = p + ": already exists in working directory"
+	}
+	if onConflict == PatchConflictLeaveMarkers {
+		return wholeFileApplyError(failed)
+	}
+	return fmt.Errorf("git apply: %s", strings.Join(failed, "\n"))
 }
 
 // wholeFileApplyErrors picks out of git apply --reject's stderr the errors

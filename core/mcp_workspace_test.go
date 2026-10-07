@@ -6,6 +6,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The .git paths applyChangeset refuses: any .git component, at the root or
+// nested, file or directory, but not names that merely contain ".git".
+func TestIsGitMetadataPath(t *testing.T) {
+	for p, want := range map[string]bool{
+		".git":                  true,
+		".git/":                 true,
+		".git/HEAD":             true,
+		".git/refs/heads/main":  true,
+		"vendor/x/.git":         true,
+		"vendor/x/.git/":        true,
+		"vendor/x/.git/HEAD":    true,
+		"/.git/HEAD":            true,
+		".gitignore":            false,
+		".github/workflows/x":   false,
+		"src/.gitkeep":          false,
+		"foo.git/HEAD":          false,
+		"docs/git/.git-blame":   false,
+		"main.go":               false,
+		"vendor/x/":             false,
+		"vendor/.git-x/objects": false,
+	} {
+		require.Equal(t, want, isGitMetadataPath(p), p)
+	}
+}
+
 func TestWorkspaceMountSummary(t *testing.T) {
 	prev := &Workspace{mountPoints: []string{"mnt/kept", "mnt/removed"}}
 	next := &Workspace{mountPoints: []string{"config", "mnt/added", "mnt/kept"}}

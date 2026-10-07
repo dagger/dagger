@@ -4175,6 +4175,13 @@ export type WorkspaceWithNewFileOpts = {
   permissions?: number
 }
 
+export type WorkspaceWithPatchFileOpts = {
+  /**
+   * How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+   */
+  onConflict?: PatchConflict
+}
+
 export type WorkspaceWithResetOpts = {
   /**
    * Discard uncommitted changes, resetting the working tree to the commit.
@@ -18591,6 +18598,30 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+   *
+   * Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+   * @param patch File containing the patch to apply
+   * @param opts.onConflict How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+   * @experimental
+   */
+  withPatchFile = (
+    patch: File,
+    opts?: WorkspaceWithPatchFileOpts,
+  ): Workspace => {
+    const metadata = {
+      onConflict: { is_enum: true, value_to_name: PatchConflictValueToName },
+    }
+
+    const ctx = this._ctx.select("withPatchFile", {
+      patch,
+      ...opts,
+      __metadata: metadata,
+    })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
    *
    * A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
@@ -18751,6 +18782,15 @@ export class Workspace extends BaseClient {
    */
   withoutFile = (path: string): Workspace => {
     const ctx = this._ctx.select("withoutFile", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with files removed, without mutating the source.
+   * @param paths Paths of the files to remove. Relative paths resolve from the workspace cwd.
+   */
+  withoutFiles = (paths: string[]): Workspace => {
+    const ctx = this._ctx.select("withoutFiles", { paths })
     return new Workspace(ctx)
   }
 
