@@ -413,7 +413,7 @@ func (c *Client) injectInit(_ context.Context, state *execState) error {
 // is built for the engine's architecture; the bundled QEMU runs host binaries
 // directly, so it also works in emulated containers.
 func (c *Client) injectDaggerCLI(_ context.Context, state *execState) error {
-	if state.nestedClientMetadata == nil || state.nestedClientMetadata.ClientID == "" {
+	if !state.hasDaggerCLI() {
 		return nil
 	}
 
@@ -423,7 +423,21 @@ func (c *Client) injectDaggerCLI(_ context.Context, state *execState) error {
 		Readonly: true,
 	})
 
-	env := slices.Clone(state.procInfo.Meta.Env)
+	state.procInfo.Meta.Env = appendDaggerCLIToPath(state.procInfo.Meta.Env)
+
+	return nil
+}
+
+// hasDaggerCLI reports whether the container gets the dagger CLI, i.e. whether
+// it can connect back to Dagger as a nested client.
+func (state *execState) hasDaggerCLI() bool {
+	return state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != ""
+}
+
+// appendDaggerCLIToPath returns a copy of env with DaggerCLIDir appended to
+// PATH, if PATH is set.
+func appendDaggerCLIToPath(env []string) []string {
+	env = slices.Clone(env)
 	for i, kv := range env {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok || k != "PATH" {
@@ -436,9 +450,7 @@ func (c *Client) injectDaggerCLI(_ context.Context, state *execState) error {
 		}
 		env[i] = k + "=" + v
 	}
-	state.procInfo.Meta.Env = env
-
-	return nil
+	return env
 }
 
 func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {

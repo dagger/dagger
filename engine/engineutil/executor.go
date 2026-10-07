@@ -398,9 +398,11 @@ func (c *Client) Exec(ctx context.Context, id string, process executor.ProcessIn
 	// is in the process of being created and check again every 100ms or until
 	// context is canceled.
 	var runcState *runc.Container
+	var execState *execState
 	for {
 		c.runningMu.RLock()
-		execState, ok := c.running[id]
+		var ok bool
+		execState, ok = c.running[id]
 		c.runningMu.RUnlock()
 		if !ok {
 			return fmt.Errorf("container %s not found", id)
@@ -441,6 +443,9 @@ func (c *Client) Exec(ctx context.Context, id string, process executor.ProcessIn
 
 	if len(process.Meta.Env) > 0 {
 		spec.Process.Env = process.Meta.Env
+		if execState.hasDaggerCLI() {
+			spec.Process.Env = appendDaggerCLIToPath(spec.Process.Env)
+		}
 	}
 
 	if process.Meta.User != "" {
