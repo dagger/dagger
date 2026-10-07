@@ -97,7 +97,9 @@ struct {
     __type(value, __u8);
 } internal_v6 SEC(".maps");
 
-/* Private and special-use addresses: never the public internet. */
+/* Addresses that are not globally reachable, per the IANA special-purpose
+ * registries. A value of 0 marks a more specific, globally reachable
+ * exception inside a non-public range. */
 struct {
     __uint(type, BPF_MAP_TYPE_LPM_TRIE);
     __uint(map_flags, BPF_F_NO_PREALLOC);
@@ -192,8 +194,9 @@ struct {
     __type(value, __u32);
 } engine_loopback_ifindex SEC(".maps");
 
-/* remote_in reports whether a packet's remote address is in the given
- * tries: 1 if it is, 0 if not, and -1 for non-IP or malformed packets.
+/* remote_in reports whether a packet's remote address matches the given
+ * tries with a nonzero value: 1 if it does, 0 if not, and -1 for non-IP or
+ * malformed packets.
  * Validate a complete IP header before using its remote address. Reading only
  * the source address can succeed on a truncated receive-side header. */
 static __always_inline int remote_in(struct __sk_buff *skb, __u8 direction,
@@ -214,7 +217,8 @@ static __always_inline int remote_in(struct __sk_buff *skb, __u8 direction,
         struct ipv4_lpm_key key = {.prefixlen = 32};
         __builtin_memcpy(&key.addr, &header[direction == DIR_TX ? 16 : 12],
                          sizeof(key.addr));
-        return bpf_map_lookup_elem(v4, &key) ? 1 : 0;
+        __u8 *match = bpf_map_lookup_elem(v4, &key);
+        return match && *match ? 1 : 0;
     }
 
     if (proto == bpf_htons(ETH_P_IPV6)) {
@@ -225,7 +229,8 @@ static __always_inline int remote_in(struct __sk_buff *skb, __u8 direction,
         struct ipv6_lpm_key key = {.prefixlen = 128};
         __builtin_memcpy(key.addr, &header[direction == DIR_TX ? 24 : 8],
                          sizeof(key.addr));
-        return bpf_map_lookup_elem(v6, &key) ? 1 : 0;
+        __u8 *match = bpf_map_lookup_elem(v6, &key);
+        return match && *match ? 1 : 0;
     }
 
     return -1;
@@ -371,8 +376,11 @@ static __always_inline int add_workload_bytes(struct __sk_buff *skb,
         /* A socket in a namespace nested in the workload, such as a nested
          * engine's container, is on networks this engine does not know. Only
          * traffic to the public internet is known to be external; skip the
-         * rest rather than misclassify it. */
+         * rest, including this engine's own networks, rather than
+         * misclassify it. */
         if (remote_in(skb, direction, skb->protocol, 0,
+                      &internal_v4, &internal_v6) != 0 ||
+            remote_in(skb, direction, skb->protocol, 0,
                       &nonpublic_v4, &nonpublic_v6) != 0)
             return 1;
         scope = SCOPE_EXTERNAL;

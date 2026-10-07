@@ -18,11 +18,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// isPublic applies nonPublicPrefixes as the LPM tries do: the longest
+// matching prefix decides.
+func isPublic(addr netip.Addr) bool {
+	bits, public := -1, true
+	for _, entry := range nonPublicPrefixes {
+		if entry.prefix.Contains(addr) && entry.prefix.Bits() > bits {
+			bits, public = entry.prefix.Bits(), entry.public
+		}
+	}
+	return public
+}
+
 func TestNonPublicPrefixes(t *testing.T) {
 	v4, v6 := 0, 0
-	for _, prefix := range nonPublicPrefixes {
-		require.Equal(t, prefix.Masked(), prefix, "prefix %s must be masked", prefix)
-		if prefix.Addr().Is4() {
+	for _, entry := range nonPublicPrefixes {
+		require.Equal(t, entry.prefix.Masked(), entry.prefix, "prefix %s must be masked", entry.prefix)
+		if entry.prefix.Addr().Is4() {
 			v4++
 		} else {
 			v6++
@@ -31,19 +43,18 @@ func TestNonPublicPrefixes(t *testing.T) {
 	// Each family's trie holds at most 32 prefixes.
 	require.LessOrEqual(t, v4, 32)
 	require.LessOrEqual(t, v6, 32)
-	for _, public := range []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"} {
-		addr := netip.MustParseAddr(public)
-		for _, prefix := range nonPublicPrefixes {
-			require.False(t, prefix.Contains(addr), "%s is public but in %s", addr, prefix)
-		}
+	for _, public := range []string{
+		"1.1.1.1", "8.8.8.8", "192.0.0.9", "192.0.0.10",
+		"2606:4700:4700::1111", "64:ff9b::808:808", "2001:1::1", "2001:4:112::1", "2001:20::1",
+	} {
+		require.True(t, isPublic(netip.MustParseAddr(public)), "%s is globally reachable", public)
 	}
-	for _, private := range []string{"10.89.3.2", "172.17.0.2", "192.168.1.1", "100.64.0.1", "fd00::1", "fe80::1"} {
-		addr := netip.MustParseAddr(private)
-		found := false
-		for _, prefix := range nonPublicPrefixes {
-			found = found || prefix.Contains(addr)
-		}
-		require.True(t, found, "%s is not public", addr)
+	for _, private := range []string{
+		"10.89.3.2", "172.17.0.2", "192.168.1.1", "100.64.0.1", "192.0.0.8", "192.0.2.1",
+		"198.51.100.1", "203.0.113.1", "224.0.0.1", "255.255.255.255",
+		"fd00::1", "fe80::1", "2001:db8::1", "2001:2::1", "2001::1", "3fff::1", "ff02::1",
+	} {
+		require.False(t, isPublic(netip.MustParseAddr(private)), "%s is not globally reachable", private)
 	}
 }
 
@@ -149,7 +160,9 @@ func TestWorkloadAccounting(t *testing.T) {
 	require.Equal(t, Sample{}, otherSample, "a nested namespace's private traffic is not counted")
 
 	// Its traffic to a public address counts as external. Sending a UDP
-	// datagram needs only a route, not a reply.
+	// datagram needs only a route, not a reply. 192.0.2.1 is a documentation
+	// address; mark it public here so no internet access is needed.
+	require.NoError(t, tracer.setNonPublicPrefix(netip.MustParsePrefix("192.0.2.1/32"), true))
 	cmd = exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestWorkloadNetworkHelper$")
 	cmd.Env = append(os.Environ(), "NETTRACER_HELPER=public-udp")
 	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(otherFD.Fd())}
@@ -171,9 +184,8 @@ func TestWorkloadNetworkHelper(t *testing.T) {
 	switch os.Getenv("NETTRACER_HELPER") {
 	case "workload":
 	case "public-udp":
-		// 192.0.2.0/24 is reserved for documentation, so no reply comes
-		// back, but it is not in nonPublicPrefixes either: only the send
-		// counts.
+		// The test marks this documentation address public; no reply comes
+		// back, and only the send is counted.
 		conn, err := net.Dial("udp", "192.0.2.1:9")
 		require.NoError(t, err)
 		defer conn.Close()

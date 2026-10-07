@@ -126,10 +126,10 @@ func New() (*Tracer, error) {
 			return nil, fmt.Errorf("registering link-local prefix %s: %w", prefix, err)
 		}
 	}
-	for _, prefix := range nonPublicPrefixes {
-		if err := t.addNonPublicPrefix(prefix); err != nil {
+	for _, entry := range nonPublicPrefixes {
+		if err := t.setNonPublicPrefix(entry.prefix, entry.public); err != nil {
 			objs.Close()
-			return nil, fmt.Errorf("registering non-public prefix %s: %w", prefix, err)
+			return nil, fmt.Errorf("registering non-public prefix %s: %w", entry.prefix, err)
 		}
 	}
 	finishUnavailable := func(err error) (*Tracer, error) {
@@ -393,38 +393,70 @@ func (t *Tracer) AddInternalPrefix(prefix netip.Prefix) error {
 	return t.objs.InternalV6.Put(ipv6LPMKey{PrefixLen: uint32(prefix.Bits()), Address: addr}, one)
 }
 
-// nonPublicPrefixes are private and special-use ranges, never the public
-// internet. Traffic from namespaces nested in a workload counts as external
-// only to addresses outside them.
-var nonPublicPrefixes = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("10.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("127.0.0.0/8"),
-	netip.MustParsePrefix("169.254.0.0/16"),
-	netip.MustParsePrefix("172.16.0.0/12"),
-	netip.MustParsePrefix("192.0.0.0/24"),
-	netip.MustParsePrefix("192.168.0.0/16"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-	netip.MustParsePrefix("224.0.0.0/4"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("::/128"),
-	netip.MustParsePrefix("::1/128"),
-	netip.MustParsePrefix("::ffff:0:0/96"),
-	netip.MustParsePrefix("fc00::/7"),
-	netip.MustParsePrefix("fe80::/10"),
-	netip.MustParsePrefix("ff00::/8"),
+// nonPublicPrefixes are the addresses the IANA special-purpose registries
+// mark as not globally reachable, with their globally reachable exceptions
+// (public: true). Traffic from namespaces nested in a workload counts as
+// external only to addresses outside them. Multicast and broadcast are
+// never internet destinations either.
+// https://www.iana.org/assignments/iana-ipv4-special-registry/
+// https://www.iana.org/assignments/iana-ipv6-special-registry/
+var nonPublicPrefixes = []struct {
+	prefix netip.Prefix
+	public bool
+}{
+	{prefix: netip.MustParsePrefix("0.0.0.0/8")},
+	{prefix: netip.MustParsePrefix("10.0.0.0/8")},
+	{prefix: netip.MustParsePrefix("100.64.0.0/10")},
+	{prefix: netip.MustParsePrefix("127.0.0.0/8")},
+	{prefix: netip.MustParsePrefix("169.254.0.0/16")},
+	{prefix: netip.MustParsePrefix("172.16.0.0/12")},
+	{prefix: netip.MustParsePrefix("192.0.0.0/24")},
+	{prefix: netip.MustParsePrefix("192.0.0.9/32"), public: true},
+	{prefix: netip.MustParsePrefix("192.0.0.10/32"), public: true},
+	{prefix: netip.MustParsePrefix("192.0.2.0/24")},
+	{prefix: netip.MustParsePrefix("192.88.99.2/32")},
+	{prefix: netip.MustParsePrefix("192.168.0.0/16")},
+	{prefix: netip.MustParsePrefix("198.18.0.0/15")},
+	{prefix: netip.MustParsePrefix("198.51.100.0/24")},
+	{prefix: netip.MustParsePrefix("203.0.113.0/24")},
+	{prefix: netip.MustParsePrefix("224.0.0.0/4")},
+	{prefix: netip.MustParsePrefix("240.0.0.0/4")},
+	{prefix: netip.MustParsePrefix("::/128")},
+	{prefix: netip.MustParsePrefix("::1/128")},
+	{prefix: netip.MustParsePrefix("::ffff:0:0/96")},
+	{prefix: netip.MustParsePrefix("64:ff9b:1::/48")},
+	{prefix: netip.MustParsePrefix("100::/64")},
+	{prefix: netip.MustParsePrefix("100:0:0:1::/64")},
+	{prefix: netip.MustParsePrefix("2001::/23")},
+	{prefix: netip.MustParsePrefix("2001:1::1/128"), public: true},
+	{prefix: netip.MustParsePrefix("2001:1::2/128"), public: true},
+	{prefix: netip.MustParsePrefix("2001:1::3/128"), public: true},
+	{prefix: netip.MustParsePrefix("2001:3::/32"), public: true},
+	{prefix: netip.MustParsePrefix("2001:4:112::/48"), public: true},
+	{prefix: netip.MustParsePrefix("2001:20::/28"), public: true},
+	{prefix: netip.MustParsePrefix("2001:30::/28"), public: true},
+	{prefix: netip.MustParsePrefix("2001:db8::/32")},
+	{prefix: netip.MustParsePrefix("3fff::/20")},
+	{prefix: netip.MustParsePrefix("5f00::/16")},
+	{prefix: netip.MustParsePrefix("fc00::/7")},
+	{prefix: netip.MustParsePrefix("fe80::/10")},
+	{prefix: netip.MustParsePrefix("ff00::/8")},
 }
 
-func (t *Tracer) addNonPublicPrefix(prefix netip.Prefix) error {
-	one := uint8(1)
+// setNonPublicPrefix records prefix as not globally reachable, or as a
+// globally reachable exception inside a non-public prefix.
+func (t *Tracer) setNonPublicPrefix(prefix netip.Prefix, public bool) error {
+	value := uint8(1)
+	if public {
+		value = 0
+	}
 	if prefix.Addr().Is4() {
 		addr := prefix.Addr().As4()
 		key := ipv4LPMKey{PrefixLen: uint32(prefix.Bits()), Address: binary.NativeEndian.Uint32(addr[:])}
-		return t.objs.NonpublicV4.Put(key, one)
+		return t.objs.NonpublicV4.Put(key, value)
 	}
 	addr := prefix.Addr().As16()
-	return t.objs.NonpublicV6.Put(ipv6LPMKey{PrefixLen: uint32(prefix.Bits()), Address: addr}, one)
+	return t.objs.NonpublicV6.Put(ipv6LPMKey{PrefixLen: uint32(prefix.Bits()), Address: addr}, value)
 }
 
 // AddInternalPrefixesForVeth classifies the addresses of the bridge that
