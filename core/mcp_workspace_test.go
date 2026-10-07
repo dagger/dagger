@@ -34,7 +34,7 @@ func TestIsGitMetadataPath(t *testing.T) {
 func TestWorkspaceMountSummary(t *testing.T) {
 	prev := &Workspace{mountPoints: []string{"mnt/kept", "mnt/removed"}}
 	next := &Workspace{mountPoints: []string{"config", "mnt/added", "mnt/kept"}}
-	require.Equal(t, "Mounted (read-only): config\nMounted (read-only): mnt/added\nUnmounted: mnt/removed", summarizeMountChanges(prev, next))
+	require.Equal(t, "Mounted: config\nMounted: mnt/added\nUnmounted: mnt/removed", summarizeMountChanges(prev, next))
 	require.Equal(t, []string{"config", "mnt/added", "mnt/kept", "mnt/removed"}, unionMountPoints(prev, next))
 	require.Empty(t, summarizeMountChanges(prev, prev))
 	require.Empty(t, summarizeMountChanges(nil, nil))

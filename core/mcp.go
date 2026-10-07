@@ -698,13 +698,12 @@ func (m *MCP) summarizeWorkspaceChange(ctx context.Context, srv *dagql.Server, p
 		if err != nil {
 			return "", err
 		}
-		if mounts := summarizeMountChanges(prev.Self(), ws.Self()); mounts != "" {
-			if summary == "" {
-				return mounts, nil
-			}
-			return mounts + "\n\n" + summary, nil
+		parts := []string{
+			summarizeMountChanges(prev.Self(), ws.Self()),
+			summarizeMountEdits(ctx, srv, prev.Self(), ws.Self()),
+			summary,
 		}
-		return summary, nil
+		return strings.Join(slices.DeleteFunc(parts, func(s string) bool { return s == "" }), "\n\n"), nil
 	case WorkspaceRelationSameOrigin:
 		return m.summarizeWorkspaceMove(ctx, srv, prev, ws), nil
 	default:
@@ -761,8 +760,9 @@ func (m *MCP) summarizeWorkspaceRootDiff(ctx context.Context, srv *dagql.Server,
 }
 
 // summarizeWorkspaceDiff filters both sparse comparisons and the full-root
-// fallback before inspecting paths. Mounted content is a read-only attachment,
-// not a pending edit; Git metadata is not a working-tree edit either.
+// fallback before inspecting paths. Mounted content, edits to it included, is
+// an attachment rather than a pending edit (summarizeMountEdits names the
+// mounts edited); Git metadata is not a working-tree edit either.
 func (m *MCP) summarizeWorkspaceDiff(ctx context.Context, srv *dagql.Server, prev, ws *Workspace, before, after dagql.ObjectResult[*Directory]) (string, error) {
 	excluded := append(unionMountPoints(prev, ws), ".git")
 	var err error
@@ -818,13 +818,102 @@ func summarizeMountChanges(prev, next *Workspace) string {
 	var lines []string
 	for _, point := range after {
 		if !slices.Contains(before, point) {
-			lines = append(lines, fmt.Sprintf("Mounted (read-only): %s", point))
+			lines = append(lines, fmt.Sprintf("Mounted: %s", point))
 		}
 	}
 	for _, point := range before {
 		if !slices.Contains(after, point) {
 			lines = append(lines, fmt.Sprintf("Unmounted: %s", point))
 		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// summarizeMountEdits names the mounts both sides of a workspace swap share
+// whose content the swap changed, e.g. by an edit beneath the mount point:
+// such edits land in the mounts tree, which the pending-changes diff
+// (summarizeWorkspaceEdits) leaves out. Like summarizeMountChanges it reports
+// where, never the mounted files, which may be whole attached trees; mounts on
+// one side only are summarizeMountChanges' to report. Best-effort: a failure
+// leaves the summary out.
+func summarizeMountEdits(ctx context.Context, srv *dagql.Server, prev, next *Workspace) string {
+	before, ok := prev.MountsDir()
+	if !ok {
+		return ""
+	}
+	after, ok := next.MountsDir()
+	if !ok {
+		return ""
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return ""
+	}
+	afterID, err := after.ID()
+	if err != nil {
+		return ""
+	}
+	if stableIDDigest(beforeID) == stableIDDigest(afterID) {
+		return ""
+	}
+	prevPoints, nextPoints := prev.MountPoints(), next.MountPoints()
+	var shared, oneSided []string
+	for _, point := range unionMountPoints(prev, next) {
+		if slices.Contains(prevPoints, point) && slices.Contains(nextPoints, point) {
+			shared = append(shared, point)
+		} else {
+			oneSided = append(oneSided, point)
+		}
+	}
+	if len(shared) == 0 {
+		return ""
+	}
+	warn := func(err error) string {
+		slog.Warn("failed to summarize mount edits", "error", err)
+		return ""
+	}
+	if before, err = withoutMountPoints(ctx, srv, before, oneSided); err != nil {
+		return warn(err)
+	}
+	if after, err = withoutMountPoints(ctx, srv, after, oneSided); err != nil {
+		return warn(err)
+	}
+	if beforeID, err = before.ID(); err != nil {
+		return warn(err)
+	}
+	var changes dagql.ObjectResult[*Changeset]
+	if err := srv.Select(ctx, after, &changes, dagql.Selector{
+		View:  srv.View,
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
+		},
+	}); err != nil {
+		return warn(err)
+	}
+	changed := shared
+	tooLarge, err := changesetTooLarge(ctx, changes)
+	if err != nil {
+		return warn(err)
+	}
+	if !tooLarge {
+		// Within the budget, name just the mounts that changed; past it,
+		// every shared one, rather than walk the whole difference.
+		paths, err := changes.Self().ComputePaths(ctx)
+		if err != nil {
+			return warn(err)
+		}
+		all := slices.Concat(paths.Added, paths.Modified, paths.AllRemoved)
+		changed = slices.DeleteFunc(slices.Clone(shared), func(point string) bool {
+			return !slices.ContainsFunc(all, func(p string) bool {
+				p = strings.TrimSuffix(p, "/")
+				return p == point || strings.HasPrefix(p, point+"/")
+			})
+		})
+	}
+	lines := make([]string, len(changed))
+	for i, point := range changed {
+		lines[i] = fmt.Sprintf("Mounted content changed: %s", point)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1363,12 +1452,18 @@ func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes d
 //
 // The patch starts from the workspace's own content, so applying it
 // reproduces what Workspace.withChanges would by construction: there is
-// nothing to check and nothing to fall back to. Only a changeset that touches
-// a workspace mount is refused, as withChanges refuses it; a patch that is too
-// large or carries binary content fails with ErrPatchTooLarge or
-// ErrPatchBinary, for the caller to apply it raw. Should git still refuse the
-// patch, e.g. a file it would create beyond a symbolic link, the call fails
-// and the bound workspace stays as it was.
+// nothing to check and nothing to fall back to. A patch that is too large or
+// carries binary content fails with ErrPatchTooLarge or ErrPatchBinary, for
+// the caller to apply it raw. Should git still refuse the patch, e.g. a file
+// it would create beyond a symbolic link, the call fails and the bound
+// workspace stays as it was.
+//
+// What the changeset changes in a workspace mount is rendered against the
+// mounts tree rather than the root, since that is what the workspace holds
+// there; both trees are keyed by workspace path, so the two renderings make
+// one patch, and Workspace.withPatchFile (like the removals around it) sends
+// each part back to its own tree. Mounted edits are recorded in the recipe as
+// a patch too, then, and never become pending changes.
 //
 // The patch is recorded with onConflict LEAVE_CONFLICT_MARKERS rather than
 // FAIL. Applied now, it fits by construction; it can only stop fitting when
@@ -1377,17 +1472,7 @@ func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes d
 // longer fit then leave conflict markers instead of failing the whole
 // restore; a file git cannot patch at all still fails it.
 func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root dagql.ObjectResult[*Directory], prefix string, changes dagql.ObjectResult[*Changeset]) (string, error) {
-	paths, err := changes.Self().ComputePaths(ctx)
-	if err != nil {
-		return "", fmt.Errorf("compute changeset paths: %w", err)
-	}
-	for _, p := range slices.Concat(paths.Added, paths.Modified, paths.AllRemoved) {
-		p = path.Join(prefix, strings.TrimSuffix(p, "/"))
-		if m.workspace.Self().MountedPath(p) {
-			return "", fmt.Errorf("workspace path %q is a read-only mount and cannot be modified", p)
-		}
-	}
-	rendered, err := changes.Self().RenderPatchOnto(ctx, root, prefix, changesetPatchMaxBytes)
+	rendered, err := renderChangesetOntoWorkspace(ctx, m.workspace.Self(), root, prefix, changes)
 	if err != nil {
 		if errors.Is(err, ErrPatchTooLarge) || errors.Is(err, ErrPatchBinary) {
 			return "", err
@@ -1489,13 +1574,22 @@ func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root d
 	// withPatchFile is lazy, and nothing else here runs it. Force the new
 	// root now, so a patch git cannot apply fails this call and leaves the
 	// binding where it was, rather than surfacing from whatever reads the
-	// workspace next (often the next changeset, rendered against it).
+	// workspace next (often the next changeset, rendered against it). The
+	// same goes for the mounts tree, when the changeset edited it.
+	var forced []dagql.AnyResult
 	if newRoot, ok := newWS.Self().SourceDirectory(); ok && newRoot.Self() != nil {
+		forced = append(forced, newRoot)
+	}
+	prevMounts, _ := m.workspace.Self().MountsDir()
+	if newMounts, ok := newWS.Self().MountsDir(); ok && newMounts.Self() != prevMounts.Self() {
+		forced = append(forced, newMounts)
+	}
+	if len(forced) > 0 {
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return "", err
 		}
-		if err := cache.Evaluate(ctx, newRoot); err != nil {
+		if err := cache.Evaluate(ctx, forced...); err != nil {
 			return "", fmt.Errorf("apply changeset patch to the workspace: %w", err)
 		}
 	}
@@ -1507,6 +1601,58 @@ func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root d
 		shown = nil
 	}
 	return m.summarizeAppliedPatch(ctx, changes, shown), nil
+}
+
+// renderChangesetOntoWorkspace renders a changeset measured from prefix as a
+// patch against what the workspace holds at its paths: root's content, and
+// for paths in a mount, the mounts tree's. A directory above a mount point is
+// left out of the root's part: both trees hold it already, and the mounts
+// tree's part creates whatever it needs beneath it. The two parts share one
+// size budget.
+func renderChangesetOntoWorkspace(ctx context.Context, ws *Workspace, root dagql.ObjectResult[*Directory], prefix string, changes dagql.ObjectResult[*Changeset]) (*PatchOnto, error) {
+	mounts, ok := ws.MountsDir()
+	if !ok {
+		return changes.Self().RenderPatchOnto(ctx, root, prefix, changesetPatchMaxBytes)
+	}
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("compute changeset paths: %w", err)
+	}
+	rooted := func(p string) string {
+		return path.Join(prefix, strings.TrimSuffix(p, "/"))
+	}
+	mounted := paths.Filter(func(p string) bool {
+		return ws.MountedPath(rooted(p))
+	})
+	if mounted.IsEmpty() {
+		return changes.Self().RenderPatchOntoPaths(ctx, root, prefix, paths, changesetPatchMaxBytes)
+	}
+	for _, p := range mounted.AllRemoved {
+		replaced := slices.ContainsFunc(paths.Added, func(added string) bool {
+			return rooted(added) == rooted(p)
+		})
+		if ws.IsMountPoint(rooted(p)) && !replaced {
+			// As Workspace.withChanges refuses it.
+			return nil, fmt.Errorf("workspace path %q is a mount point and cannot be removed; use withoutMount to unmount it", rooted(p))
+		}
+	}
+	unmounted := paths.Filter(func(p string) bool {
+		if ws.MountedPath(rooted(p)) {
+			return false
+		}
+		return !strings.HasSuffix(p, "/") || !ws.HasMountsUnder(rooted(p))
+	})
+	rendered := &PatchOnto{}
+	if !unmounted.IsEmpty() {
+		if rendered, err = changes.Self().RenderPatchOntoPaths(ctx, root, prefix, unmounted, changesetPatchMaxBytes); err != nil {
+			return nil, err
+		}
+	}
+	mountRendered, err := changes.Self().RenderPatchOntoPaths(ctx, mounts, prefix, mounted, changesetPatchMaxBytes-int64(len(rendered.Patch)))
+	if err != nil {
+		return nil, err
+	}
+	return rendered.Merge(mountRendered), nil
 }
 
 // workspaceDirectory returns the bound workspace's root directory, for
