@@ -82,7 +82,7 @@ func TestMainClientAttachablesLastUntilFinalCloudFlush(t *testing.T) {
 	var mu sync.Mutex
 	var available []bool
 	sess.cloudFlushers = []func(context.Context){func(context.Context) {
-		ok := true
+		var ok bool
 		if sess.closingCtx.Err() != nil {
 			// The closing ends attachables asynchronously. Once it has ended the
 			// other client's, the main client's must still be up for a while.
