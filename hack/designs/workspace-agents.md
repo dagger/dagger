@@ -142,11 +142,12 @@ chain is rebuilt from its root rather than appended to: an appended chain loads
 every value a field ever held. Each frame attaches its references exactly as
 an SDK-returned object's are attached.
 
-**The boundary.** References keep their own recipes. A field holding a
-`Directory` that a `@cache(Never)` call returned still records that call, and a
-cold load of the current state runs it. The state is plain data plus
-references; what loading a reference costs is the reference's business, and
-within a session the cache covers it.
+**The boundary.** References keep their own recipes. A field holding a module
+object that a `@cache(Never)` method returned still records that call, and a
+cold load of the current state runs it; a core object a module function
+returned, like a `Directory`, records the core calls that built it, as above.
+The state is plain data plus references; what loading a reference costs is the
+reference's business, and within a session the cache covers it.
 
 **Known costs.** A map-valued field is recorded whole whenever it changes, so a
 map growing by one entry per step costs O(N²) frame payload over a session;
