@@ -97,6 +97,27 @@ func TestWorkloadAccounting(t *testing.T) {
 	require.Zero(t, sample.ExternalTX)
 	require.Zero(t, sample.ExternalRX)
 
+	// Sockets in another network namespace never count toward a workload.
+	otherPath := filepath.Join(parent, "other-netns")
+	other, err := tracer.Workload(otherPath, cookie+1)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, other.Close())
+		require.NoError(t, removeWhenEmpty(otherPath))
+	})
+	otherFD, err := os.Open(otherPath)
+	require.NoError(t, err)
+	defer otherFD.Close()
+	cmd = exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestWorkloadNetworkHelper$")
+	cmd.Env = append(os.Environ(), "NETTRACER_HELPER=workload", "NETTRACER_PEER="+peer)
+	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(otherFD.Fd())}
+	output.Reset()
+	cmd.Stdout, cmd.Stderr = &output, &output
+	require.NoError(t, cmd.Run(), output.String())
+	otherSample, err := other.Sample()
+	require.NoError(t, err)
+	require.Equal(t, Sample{}, otherSample)
+
 	require.NoError(t, workload.Close())
 	_, err = workload.Sample()
 	require.Error(t, err, "closed workloads release their counters")

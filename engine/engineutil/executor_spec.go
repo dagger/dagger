@@ -1476,7 +1476,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	if tracer := nettracer.Active(); tracer != nil && sampleCgroup {
 		path := filepath.Join(cgroupMountpoint, cgroupPath)
 		workload, err := func() (*nettracer.Workload, error) {
-			cookie, err := runInNetNS(ctx, state, nettracer.CurrentNetnsCookie)
+			cookie, err := workloadNetnsCookie(ctx, state)
 			if err != nil {
 				return nil, fmt.Errorf("network namespace cookie: %w", err)
 			}

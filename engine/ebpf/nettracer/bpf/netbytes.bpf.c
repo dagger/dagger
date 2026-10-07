@@ -133,6 +133,15 @@ struct {
     __type(value, __u64);
 } workload_netns_cookies SEC(".maps");
 
+/* Set when the workload parent is deeper than MAX_WORKLOAD_PARENT_LEVEL, so
+ * the engine reports workload accounting unavailable instead of zeros. */
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u64);
+} workload_parent_too_deep SEC(".maps");
+
 /* The cgroup whose children are workloads (e.g. /exec), where the workload
  * programs are attached once. */
 struct {
@@ -303,6 +312,11 @@ static __always_inline __u64 workload_cgroup_id(struct __sk_buff *skb)
         if (ancestor == *parent)
             return bpf_skb_ancestor_cgroup_id(skb, level + 1);
     }
+    /* Every socket these programs see is below the parent, so reaching the
+     * bound means the parent is deeper than it. */
+    __u64 *too_deep = bpf_map_lookup_elem(&workload_parent_too_deep, &zero_key);
+    if (too_deep)
+        *too_deep = 1;
     return 0;
 }
 

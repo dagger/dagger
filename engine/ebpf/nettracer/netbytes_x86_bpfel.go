@@ -105,6 +105,7 @@ type netbytesMapSpecs struct {
 	WorkloadByteCounters   *ebpf.MapSpec `ebpf:"workload_byte_counters"`
 	WorkloadNetnsCookies   *ebpf.MapSpec `ebpf:"workload_netns_cookies"`
 	WorkloadParentCgroupId *ebpf.MapSpec `ebpf:"workload_parent_cgroup_id"`
+	WorkloadParentTooDeep  *ebpf.MapSpec `ebpf:"workload_parent_too_deep"`
 }
 
 // netbytesVariableSpecs contains global variables before they are loaded into the kernel.
@@ -143,6 +144,7 @@ type netbytesMaps struct {
 	WorkloadByteCounters   *ebpf.Map `ebpf:"workload_byte_counters"`
 	WorkloadNetnsCookies   *ebpf.Map `ebpf:"workload_netns_cookies"`
 	WorkloadParentCgroupId *ebpf.Map `ebpf:"workload_parent_cgroup_id"`
+	WorkloadParentTooDeep  *ebpf.Map `ebpf:"workload_parent_too_deep"`
 }
 
 func (m *netbytesMaps) Close() error {
@@ -157,6 +159,7 @@ func (m *netbytesMaps) Close() error {
 		m.WorkloadByteCounters,
 		m.WorkloadNetnsCookies,
 		m.WorkloadParentCgroupId,
+		m.WorkloadParentTooDeep,
 	)
 }
 

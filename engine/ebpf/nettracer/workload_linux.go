@@ -159,6 +159,13 @@ func (w *Workload) keys() []netbytesOperationCounterKey {
 
 // Sample returns the workload's cumulative counters.
 func (w *Workload) Sample() (Sample, error) {
+	var tooDeep uint64
+	if err := w.tracer.objs.WorkloadParentTooDeep.Lookup(uint32(0), &tooDeep); err != nil {
+		return Sample{}, err
+	}
+	if tooDeep != 0 {
+		return Sample{}, errors.New("workload parent cgroup is deeper than workload accounting supports")
+	}
 	var sample Sample
 	dst := []*uint64{&sample.InternalRX, &sample.ExternalRX, &sample.InternalTX, &sample.ExternalTX}
 	for i, key := range w.keys() {
