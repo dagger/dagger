@@ -23,7 +23,7 @@
 			{{- range $i, $line := $desc }}
 				{{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
 				{{- if (eq $i 0) }}
-   * @param {{ $arg.Name }} {{ $line }}
+   * @param {{ $arg.Name | ArgName }} {{ $line }}
 				{{- else }}
    * {{ $line }}
 				{{- end }}
@@ -41,7 +41,7 @@
 				{{- range $i, $line := $desc }}
 					{{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
 					{{- if (eq $i 0) }}
-   * @param opts.{{ $arg.Name }} {{ $line }}
+   * @param opts.{{ $arg.Name | ArgName }} {{ $line }}
 					{{- else }}
    * {{ $line }}
 					{{- end }}

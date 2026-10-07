@@ -30,7 +30,7 @@ is identical. The dot is an introspection.Field. */ -}}
 
       		{{- with $optionals }}
       			{{- if $required }}, {{ end -}}
-      ...opts
+      {{ template "call_opts" $optionals }}
 			{{- end -}}
 			{{- if gt (len $enums) 0 -}}, __metadata: metadata{{- end -}}
 {{""}} },{{- end }}

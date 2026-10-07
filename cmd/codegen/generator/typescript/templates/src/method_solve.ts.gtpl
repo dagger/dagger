@@ -12,7 +12,7 @@
 	{{- /* Write method comment. */ -}}
 	{{- template "method_comment" . }}
 	{{- /* Write async method name. */ -}}
-	{{- "" }}  {{ .Name | FormatName }} = async (
+	{{- "" }}  {{ .Name | FormatMethodName }} = async (
 
 	{{- /* Write required arguments. */ -}}
 	{{- if $required }}
@@ -23,7 +23,7 @@
 	{{- if $optionals }}
 		{{- /* Insert a comma if there was previous required arguments. */ -}}
 		{{- if $required }}, {{ end }}
-    opts?: {{ $parentName }}{{ .Name | PascalCase }}Opts {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) 
+    opts?: {{ OptsTypeName $parentName .Name }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) 
     {{ "" }} 
     {{- end }}
 	{{- end }}
@@ -33,4 +33,5 @@
 	{{- /* Body is shared with the dep prototype augmentations. */ -}}
 	{{- template "method_solve_body" . }}
   }
+	{{- template "method_alias" . }}
 {{- end }}

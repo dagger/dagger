@@ -127,17 +127,27 @@ export function {{ $enumName | PascalCase }}NameToValue(name: string): {{ $enumN
 		{{- range . }}
 			{{- $optionals := GetOptionalArgs .Args }}
 			{{- if gt (len $optionals) 0 }}
-export type {{ $.Name | QueryToClient }}{{ .Name | PascalCase }}Opts = {
-				{{- template "field" $optionals }}
+				{{- $optsName := OptsTypeName ($.Name | QueryToClient) .Name }}
+				{{- $legacyOptsName := LegacyOptsTypeName ($.Name | QueryToClient) .Name }}
+export type {{ $optsName }} = {
+				{{- template "field" (OptsFields $optionals) }}
 }
-{{ "" }}	{{- end }}
+{{ "" }}
+				{{- if ne $optsName $legacyOptsName }}
+/**
+ * @deprecated use {{ $optsName }} instead.
+ */
+export type {{ $legacyOptsName }} = {{ $optsName }}
+{{ "" }}
+				{{- end }}
+			{{- end }}
 		{{- end }}
 	{{- end }}
 
 	{{- /* Generate input GraphQL type. */ -}}
 	{{- with .InputFields }}
 export type {{ $.Name | FormatName }} = {
-		{{- template "field" (SortInputFields .) }}
+		{{- template "field" (InputFields (SortInputFields .)) }}
 }
 {{ "" }}
 	{{- end }}
@@ -145,8 +155,14 @@ export type {{ $.Name | FormatName }} = {
 {{- end }}
 
 {{- define "field" }}
-	{{- range $i, $field := . }}
+	{{- $isOpts := .Opts }}
+	{{- range $i, $field := .Fields }}
 		{{- $opt := "" }}
+		{{- /* Opts keys are TS names; input object fields go over the wire. */ -}}
+		{{- $key := $field.Name }}
+		{{- if $isOpts }}
+			{{- $key = $field.Name | ArgName }}
+		{{- end }}
 
 		{{- /* Add ? if field is optional. */ -}}
 		{{- if $field.TypeRef.IsOptional }}
@@ -177,7 +193,16 @@ export type {{ $.Name | FormatName }} = {
 		{{- end }}
 
 		{{- /* Write type. */}}
-  {{ $field.Name }}{{ $opt }}: {{ $field | FormatInputType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+  {{ $key }}{{ $opt }}: {{ $field | FormatInputType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+
+		{{- /* Keep accepting the schema name of a renamed opts key. */ -}}
+		{{- if ne $key $field.Name }}
+
+  /**
+   * @deprecated use {{ $key }} instead.
+   */
+  {{ $field.Name }}{{ $opt }}: {{ $field | FormatInputType }}
+		{{- end }}
 
 	{{- end }}
 {{- end }}
