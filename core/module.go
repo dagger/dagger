@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -120,6 +121,27 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+// EngineView is the API view of the engine version the module declares, or
+// the empty (latest) view for a module without a source.
+func (mod *Module) EngineView() call.View {
+	if mod == nil || !mod.Source.Valid || mod.Source.Value.Self() == nil {
+		return ""
+	}
+	return call.View(engine.APIViewVersion(mod.Source.Value.Self().EngineVersion))
+}
+
+// Namer normalizes the module's own names: the rules of the engine version
+// it declares.
+func (mod *Module) Namer() Namer {
+	return NamerForView(mod.EngineView())
+}
+
+// ConstructorName is the name of the module's constructor field on Query:
+// its name in camelCase, by the module's naming rules.
+func (mod *Module) ConstructorName() string {
+	return mod.Namer().FieldName(mod.Name())
+}
+
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 	if src := mod.GetSource(); src != nil && src.Entrypoint != nil {
 		for _, objDef := range mod.ObjectDefs {
@@ -145,11 +167,12 @@ func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 // This is needed because namespaceObject rewrites obj.Name to match the
 // module's final name, but obj.OriginalName always reflects the SDK name.
 func (mod *Module) ObjectByOriginalName(name string) (*ObjectTypeDef, bool) {
+	namer := mod.Namer()
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
 			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.OriginalName) == gqlObjectName(name) {
+			if namer.ObjectName(obj.OriginalName) == namer.ObjectName(name) {
 				return obj, true
 			}
 		}
@@ -158,11 +181,12 @@ func (mod *Module) ObjectByOriginalName(name string) (*ObjectTypeDef, bool) {
 }
 
 func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
+	namer := mod.Namer()
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
 			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.Name) == gqlObjectName(name) {
+			if obj.Name == name || namer.ObjectName(obj.Name) == namer.ObjectName(name) {
 				return obj, true
 			}
 		}
@@ -531,20 +555,20 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *da
 	return nil
 }
 
-func functionResultByOriginalName(obj *ObjectTypeDef, name string) (dagql.ObjectResult[*Function], bool) {
+func functionResultByOriginalName(namer Namer, obj *ObjectTypeDef, name string) (dagql.ObjectResult[*Function], bool) {
 	for _, fn := range obj.Functions {
 		fnSelf := fn.Self()
-		if strings.EqualFold(fnSelf.OriginalName, name) || strings.EqualFold(fnSelf.Name, gqlFieldName(name)) {
+		if strings.EqualFold(fnSelf.OriginalName, name) || strings.EqualFold(fnSelf.Name, namer.FieldName(name)) {
 			return fn, true
 		}
 	}
 	return dagql.ObjectResult[*Function]{}, false
 }
 
-func functionArgResultByName(fn *Function, name string) (dagql.ObjectResult[*FunctionArg], bool) {
+func functionArgResultByName(namer Namer, fn *Function, name string) (dagql.ObjectResult[*FunctionArg], bool) {
 	for _, arg := range fn.Args {
 		argSelf := arg.Self()
-		if strings.EqualFold(argSelf.OriginalName, name) || strings.EqualFold(argSelf.Name, gqlFieldName(name)) {
+		if strings.EqualFold(argSelf.OriginalName, name) || strings.EqualFold(argSelf.Name, namer.ArgName(name)) {
 			return arg, true
 		}
 	}
@@ -552,11 +576,12 @@ func functionArgResultByName(fn *Function, name string) (dagql.ObjectResult[*Fun
 }
 
 func (mod *Module) objectTypeDefResultByOriginalName(name string) (dagql.ObjectResult[*TypeDef], bool) {
+	namer := mod.Namer()
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
 			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.OriginalName) == gqlObjectName(name) {
+			if namer.ObjectName(obj.OriginalName) == namer.ObjectName(name) {
 				return objDef, true
 			}
 		}
@@ -565,11 +590,12 @@ func (mod *Module) objectTypeDefResultByOriginalName(name string) (dagql.ObjectR
 }
 
 func (mod *Module) objectTypeDefResultByName(name string) (dagql.ObjectResult[*TypeDef], bool) {
+	namer := mod.Namer()
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
 			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.Name) == gqlObjectName(name) {
+			if obj.Name == name || namer.ObjectName(obj.Name) == namer.ObjectName(name) {
 				return objDef, true
 			}
 		}
@@ -598,7 +624,7 @@ func (mod *Module) customizationTarget(path []string) (dagql.ObjectResult[*TypeD
 		return objDef, obj.Constructor.Value, true
 	}
 	for i, segment := range path {
-		fn, ok := functionResultByOriginalName(obj, segment)
+		fn, ok := functionResultByOriginalName(mod.Namer(), obj, segment)
 		if !ok {
 			return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
 		}
@@ -629,7 +655,7 @@ func (mod *Module) patchFunctionArg(
 	argName string,
 	patch func(dagql.ObjectResult[*FunctionArg]) (dagql.ObjectResult[*FunctionArg], error),
 ) (dagql.ObjectResult[*Function], bool, error) {
-	arg, ok := functionArgResultByName(fn.Self(), argName)
+	arg, ok := functionArgResultByName(mod.Namer(), fn.Self(), argName)
 	if !ok {
 		return fn, false, nil
 	}
@@ -1388,7 +1414,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 }
 
 func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, field *FieldTypeDef, state *moduleValidationState) error {
-	if gqlFieldName(field.Name) == "id" {
+	if mod.Namer().FieldName(field.Name) == "id" {
 		return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
 	}
 	// Workspace cannot be stored as a field on a module object
@@ -1414,7 +1440,7 @@ func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, 
 }
 
 func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDef, fn *Function, state *moduleValidationState) error {
-	if gqlFieldName(fn.Name) == "id" {
+	if mod.Namer().FieldName(fn.Name) == "id" {
 		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 	}
 	if fn.IsCheck && fn.CheckReturnType.Self() == nil && fn.ReturnType.Self().Kind != TypeDefKindVoid &&
@@ -1507,7 +1533,7 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef dagql.O
 	}
 	for _, fnRes := range iface.Functions {
 		fn := fnRes.Self()
-		if gqlFieldName(fn.Name) == "id" {
+		if mod.Namer().FieldName(fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on interface %q", fn.Name, iface.Name)
 		}
 		if err := mod.validateTypeDef(ctx, fn.ReturnType, state); err != nil {
@@ -1521,6 +1547,93 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef dagql.O
 		}
 	}
 	return nil
+}
+
+// depTypeReference resolves a reference to a dependency's type whose name, as
+// normalized by this module's naming rules, isn't the dependency's name for
+// it.
+//
+// SDKs refer to a dependency's types by their schema names, or by names
+// derived from them (the Go SDK's bindings spell DepUserIds as DepUserIDs).
+// When the dependency names its types by other rules than this module (one
+// of them declares an engine version older than IdentifierNamingVersion),
+// this module's rules can respell such a name: strcase turns "DepHTTPClient"
+// into "DepHttpclient", and engine/naming turns "DepUserIds" into
+// "DepUserIDs". The respelled name then misses the dependency's type, and the
+// reference would be namespaced as a type of this module instead. So a miss
+// falls back to the dependency type that the reference names verbatim, or
+// whose name normalizes to the same name by this module's rules, and the
+// reference takes that type's name.
+//
+// For a legacy module this only applies to types of dependency modules, so
+// its references to core types resolve exactly as they always have.
+func (mod *Module) depTypeReference(ctx context.Context, dag *dagql.Server, typeDef dagql.ObjectResult[*TypeDef]) (dagql.ObjectResult[*TypeDef], error) {
+	td := typeDef.Self()
+	name, _ := typeDefNames(td)
+	if name == "" || mod.Deps == nil {
+		return typeDef, nil
+	}
+	if _, ok, err := mod.Deps.ModTypeFor(ctx, td); err != nil || ok {
+		return typeDef, err
+	}
+	depTypeDefs, err := mod.Deps.TypeDefs(ctx, dag)
+	if err != nil {
+		return typeDef, err
+	}
+	_, originalName := typeDefNames(td)
+	namer := mod.Namer()
+	for _, dep := range depTypeDefs {
+		depTD := dep.Self()
+		if depTD == nil || depTD.Kind != td.Kind {
+			continue
+		}
+		depName, _ := typeDefNames(depTD)
+		if depName == "" || (depName != originalName && namer.ObjectName(depName) != name) {
+			continue
+		}
+		if namer.Legacy() && typeDefSourceModuleName(depTD) == "" {
+			// a core type
+			continue
+		}
+		renamed, err := withFinalTypeNameWithServer(ctx, dag, typeDef, depName)
+		if err != nil {
+			return typeDef, err
+		}
+		if _, ok, err := mod.Deps.ModTypeFor(ctx, renamed.Self()); err != nil || !ok {
+			return typeDef, err
+		}
+		return renamed, nil
+	}
+	return typeDef, nil
+}
+
+// typeDefNames returns the name and original name of an object, interface
+// or enum typedef.
+func typeDefNames(td *TypeDef) (name, originalName string) {
+	switch {
+	case td == nil:
+	case td.Kind == TypeDefKindObject && td.AsObject.Valid:
+		return td.AsObject.Value.Self().Name, td.AsObject.Value.Self().OriginalName
+	case td.Kind == TypeDefKindInterface && td.AsInterface.Valid:
+		return td.AsInterface.Value.Self().Name, td.AsInterface.Value.Self().OriginalName
+	case td.Kind == TypeDefKindEnum && td.AsEnum.Valid:
+		return td.AsEnum.Value.Self().Name, td.AsEnum.Value.Self().OriginalName
+	}
+	return "", ""
+}
+
+// typeDefSourceModuleName returns the module that defines an object,
+// interface or enum typedef, or "" for a core type.
+func typeDefSourceModuleName(td *TypeDef) string {
+	switch {
+	case td.Kind == TypeDefKindObject && td.AsObject.Valid:
+		return td.AsObject.Value.Self().SourceModuleName
+	case td.Kind == TypeDefKindInterface && td.AsInterface.Valid:
+		return td.AsInterface.Value.Self().SourceModuleName
+	case td.Kind == TypeDefKindEnum && td.AsEnum.Valid:
+		return td.AsEnum.Value.Self().SourceModuleName
+	}
+	return ""
 }
 
 // prefix the given typedef (and any recursively referenced typedefs) with this
@@ -1675,6 +1788,14 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 	}
 
 	switch typeDef.Self().Kind {
+	case TypeDefKindObject, TypeDefKindInterface, TypeDefKindEnum:
+		typeDef, err = mod.depTypeReference(ctx, dag, typeDef)
+		if err != nil {
+			return typeDef, err
+		}
+	}
+
+	switch typeDef.Self().Kind {
 	case TypeDefKindList:
 		list := typeDef.Self().AsList.Value
 		elementTypeDef, err := mod.namespaceTypeDef(ctx, modPath, list.Self().ElementTypeDef)
@@ -1715,7 +1836,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, fmt.Errorf("namespace object type lookup: %w", err)
 		}
 		if !ok {
-			targetName := namespaceObject(obj.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := mod.Namer().NamespaceObject(obj.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if obj.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
 					Field: "__withName",
@@ -1826,7 +1947,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, fmt.Errorf("namespace interface type lookup: %w", err)
 		}
 		if !ok {
-			targetName := namespaceObject(iface.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := mod.Namer().NamespaceObject(iface.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if iface.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedIface, &updatedIface, dagql.Selector{
 					Field: "__withName",
@@ -1904,7 +2025,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, nil
 		}
 		if !ok {
-			targetName := namespaceObject(enum.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := mod.Namer().NamespaceObject(enum.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if enum.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedEnum, &updatedEnum, dagql.Selector{
 					Field: "__withName",

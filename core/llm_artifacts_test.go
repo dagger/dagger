@@ -254,7 +254,7 @@ func TestQualifyCollidingTrees(t *testing.T) {
 			parent := root
 			for segment := range strings.SplitSeq(field, "/") {
 				node := &ModTreeNode{Name: segment, Parent: parent}
-				entries = append(entries, &Artifact{ModuleName: "staff", Path: node.Path().CliCase(), TypeName: "Directory", Node: node})
+				entries = append(entries, &Artifact{ModuleName: "staff", Path: node.CLIPath(), TypeName: "Directory", Node: node})
 				parent = node
 			}
 		}
@@ -306,7 +306,7 @@ func TestQualifyCollidingTrees(t *testing.T) {
 	require.Len(t, filter("staff/members/*").Entries, 2)
 	require.Len(t, filter("staff/inbox").Entries, 1)
 	// Include patterns match the plain path too.
-	match, err := matchesInclude(pulls.entries[2], []string{IncludePattern("staff/log-of")})
+	match, err := matchesInclude(pulls.entries[2], IncludePatterns("staff/log-of"))
 	require.NoError(t, err)
 	require.True(t, match)
 }

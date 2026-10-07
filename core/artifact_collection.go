@@ -206,9 +206,9 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 			itemNode.CollectionKeys = nil
 			item := *selected
 			item.Node = &itemNode
-			item.Path = itemNode.CommandPath().CliCase()
+			item.Path = itemNode.CommandCLIPath()
 			if len(item.Path) == 0 {
-				item.Path = itemNode.Path().CliCase()
+				item.Path = itemNode.CLIPath()
 			}
 			item.TypeName = itemNode.ObjectType().Name
 			item.Directives = nil
@@ -528,14 +528,17 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 		return err
 	}
 	if members != nil {
+		// The path segments spell the node's path, by its module's rules (see
+		// ModTreeNode.CLIPath).
+		namer := node.Namer()
 		path := []string{}
 		parent := node
 		for parent.Parent != nil && parent.CollectionDimension == nil {
-			path = append(path, ArtifactTypeName(parent.Name))
+			path = append(path, namer.CLIName(parent.Name))
 			parent = parent.Parent
 		}
 		slices.Reverse(path)
-		prefix := "/" + ArtifactTypeName(node.Module.Self().Name())
+		prefix := "/" + namer.CLIName(node.Module.Self().Name())
 		if parent.CollectionDimension != nil {
 			prefix = parent.CollectionDimension.Identifier
 		}

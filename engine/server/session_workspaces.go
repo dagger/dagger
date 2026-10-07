@@ -1474,6 +1474,11 @@ func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string,
 // comparison, matching the include matchers (ModTreePath.Glob/CliCase) and CLI
 // command names: "myMod", "my-mod", "MyMod" are the same module. Glob
 // metacharacters survive, so a glob never equals a module name.
+//
+// This is a comparison key, never shown, so it keeps the legacy strcase
+// rules whatever a module's engine version: they split digits off letters,
+// so a module name and its CLI spelling by either the legacy or the latest
+// rules (e2e-tests, e-2-e-tests) share a key.
 func canonicalWorkspaceModuleName(name string) string {
 	return strcase.ToKebab(name)
 }
@@ -1551,9 +1556,13 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 		return mods
 	}
 
+	// A module's constructor field is spelled by its engine version's naming
+	// rules, which aren't known before it loads: accept every spelling.
 	servedFields := make(map[string]struct{}, len(served))
 	for name := range served {
-		servedFields[strcase.ToLowerCamel(name)] = struct{}{}
+		for _, field := range core.FieldNameCandidates(name) {
+			servedFields[field] = struct{}{}
+		}
 	}
 
 	selected := make([]bool, len(mods))
@@ -1567,7 +1576,7 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 		}
 		matched := false
 		for i, mod := range mods {
-			if pendingModuleRootFieldName(mod) == field {
+			if slices.Contains(pendingModuleRootFieldNames(mod), field) {
 				selected[i] = true
 				matched = true
 			}
@@ -1711,11 +1720,14 @@ func pendingWorkspaceEntrypointIndexes(mods []pendingModule) []int {
 	return indexes
 }
 
-func pendingModuleRootFieldName(mod pendingModule) string {
+// pendingModuleRootFieldNames are the spellings a pending module's
+// constructor field may have: the module's engine version, which selects its
+// naming rules, isn't known until it loads.
+func pendingModuleRootFieldNames(mod pendingModule) []string {
 	if mod.Name != "" {
-		return strcase.ToLowerCamel(mod.Name)
+		return core.FieldNameCandidates(mod.Name)
 	}
-	return strcase.ToLowerCamel(moduleProgressName(mod))
+	return core.FieldNameCandidates(moduleProgressName(mod))
 }
 
 func isCoreRootField(field string) bool {

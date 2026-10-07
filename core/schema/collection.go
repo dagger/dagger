@@ -20,7 +20,9 @@ func installCollectionSchema(s *moduleSchema, dag *dagql.Server) {
 		dagql.Func("asCollection", s.typeDefAsCollection).View(AfterVersion("v1.0.0-0")).Doc("Collection metadata, or null if this object is not a collection."),
 	}.Install(dag)
 	dagql.Fields[*core.ObjectTypeDef]{
-		dagql.Func("__withCollectionMember", s.objectTypeDefWithCollectionMember),
+		// Records the caller's view, which selects the naming rules for the
+		// member name (see typeDefNamingView).
+		dagql.Func("__withCollectionMember", s.objectTypeDefWithCollectionMember).View(AllVersion),
 		dagql.NodeFunc("__collectionProjection", s.collectionProjection),
 	}.Install(dag)
 	dagql.Fields[*core.CollectionTypeDef]{
@@ -68,6 +70,7 @@ func withCollectionMember(ctx context.Context, def *core.TypeDef, role, name str
 	var obj dagql.ObjectResult[*core.ObjectTypeDef]
 	err = dag.Select(ctx, def.AsObject.Value, &obj, dagql.Selector{
 		Field: "__withCollectionMember",
+		View:  typeDefNamingView(ctx),
 		Args:  []dagql.NamedInput{{Name: "role", Value: dagql.String(role)}, {Name: "name", Value: dagql.String(name)}},
 	})
 	if err != nil {
@@ -76,8 +79,8 @@ func withCollectionMember(ctx context.Context, def *core.TypeDef, role, name str
 	return def.WithObjectTypeDef(obj), nil
 }
 
-func (s *moduleSchema) objectTypeDefWithCollectionMember(_ context.Context, obj *core.ObjectTypeDef, args struct{ Role, Name string }) (*core.ObjectTypeDef, error) {
-	return obj.WithCollectionMember(args.Role, args.Name)
+func (s *moduleSchema) objectTypeDefWithCollectionMember(ctx context.Context, obj *core.ObjectTypeDef, args struct{ Role, Name string }) (*core.ObjectTypeDef, error) {
+	return obj.WithCollectionMember(core.NamerFromContext(ctx), args.Role, args.Name)
 }
 
 func (s *moduleSchema) typeDefAsCollection(_ context.Context, def *core.TypeDef, _ struct{}) (dagql.Nullable[*core.CollectionTypeDef], error) {

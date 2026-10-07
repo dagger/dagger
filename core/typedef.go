@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 
@@ -64,9 +63,19 @@ var _ dagql.PersistedObject = (*Function)(nil)
 var _ dagql.PersistedObjectDecoder = (*Function)(nil)
 var _ dagql.HasDependencyResults = (*Function)(nil)
 
+// NewFunction creates a function, normalizing its name with the latest
+// naming rules. Module typedefs use (Namer).NewFunction, with the rules of
+// the module's engine version.
 func NewFunction(name string, returnType dagql.ObjectResult[*TypeDef]) *Function {
-	gqlName := strcase.ToLowerCamel(name)
-	if strings.HasPrefix(name, "load") && strings.HasSuffix(name, "FromID") && strings.HasSuffix(gqlName, "FromId") {
+	return LatestNamer.NewFunction(name, returnType)
+}
+
+// NewFunction creates a function, normalizing its name with n.
+func (n Namer) NewFunction(name string, returnType dagql.ObjectResult[*TypeDef]) *Function {
+	gqlName := n.FieldName(name)
+	// strcase writes the ID acronym as "Id"; keep loadFooFromID's spelling.
+	// engine/naming spells it right already.
+	if n.Legacy() && strings.HasPrefix(name, "load") && strings.HasSuffix(name, "FromID") && strings.HasSuffix(gqlName, "FromId") {
 		gqlName = strings.TrimSuffix(gqlName, "FromId") + "FromID"
 	}
 	return &Function{
@@ -487,9 +496,16 @@ func (fn *Function) LookupArg(nameAnyCase string) (dagql.ObjectResult[*FunctionA
 	return dagql.ObjectResult[*FunctionArg]{}, false
 }
 
+// NewFunctionArg creates a function argument, normalizing its name with the
+// latest naming rules. Module typedefs use (Namer).NewFunctionArg.
 func NewFunctionArg(name string, typeDef dagql.ObjectResult[*TypeDef], desc string, defaultValue JSON, defaultPath string, defaultAddress string, ignore []string, deprecated *string) *FunctionArg {
+	return LatestNamer.NewFunctionArg(name, typeDef, desc, defaultValue, defaultPath, defaultAddress, ignore, deprecated)
+}
+
+// NewFunctionArg creates a function argument, normalizing its name with n.
+func (n Namer) NewFunctionArg(name string, typeDef dagql.ObjectResult[*TypeDef], desc string, defaultValue JSON, defaultPath string, defaultAddress string, ignore []string, deprecated *string) *FunctionArg {
 	return &FunctionArg{
-		Name:           strcase.ToLowerCamel(name),
+		Name:           n.ArgName(name),
 		Description:    desc,
 		TypeDef:        typeDef,
 		DefaultValue:   defaultValue,
@@ -1330,9 +1346,16 @@ func (obj *ObjectTypeDef) AttachDependencyResults(
 	return owned, nil
 }
 
+// NewObjectTypeDef creates an object typedef, normalizing its name with the
+// latest naming rules. Module typedefs use (Namer).NewObjectTypeDef.
 func NewObjectTypeDef(name, description string, deprecated *string) *ObjectTypeDef {
+	return LatestNamer.NewObjectTypeDef(name, description, deprecated)
+}
+
+// NewObjectTypeDef creates an object typedef, normalizing its name with n.
+func (n Namer) NewObjectTypeDef(name, description string, deprecated *string) *ObjectTypeDef {
 	return &ObjectTypeDef{
-		Name:         strcase.ToCamel(name),
+		Name:         n.ObjectName(name),
 		OriginalName: name,
 		Description:  description,
 		Deprecated:   deprecated,
@@ -1357,11 +1380,12 @@ func (obj *ObjectTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap]
 
 // WithName renames the object to an already-final GraphQL name. This is an
 // internal rename (the `__withName` field), only ever given a name that has
-// already been normalized — the module-namespaced name from namespaceObject,
+// already been normalized — the module-namespaced name from NamespaceObject,
 // or an SDK-internal marker. Raw SDK names are normalized once at creation
-// (NewObjectTypeDef); re-running strcase.ToCamel here would corrupt
-// already-cased multi-word names (e.g. "ModuleAOverlay" -> "ModuleAoverlay"),
-// since ToCamel is not idempotent.
+// (NewObjectTypeDef). The name is stored verbatim: the legacy strcase rules
+// are not idempotent (re-running them turns "ModuleAOverlay" into
+// "ModuleAoverlay"), and a final name may come from a module whose rules
+// differ from the caller's.
 func (obj *ObjectTypeDef) WithName(name string) *ObjectTypeDef {
 	obj = obj.Clone()
 	obj.Name = name
@@ -1392,9 +1416,17 @@ func (obj *ObjectTypeDef) FieldByOriginalName(name string) (*FieldTypeDef, bool)
 	return nil, false
 }
 
+// FunctionByName finds a function by its schema name. A name in another
+// casing matches if it normalizes to the function's name under the latest or
+// the legacy rules (the object doesn't know which its module uses).
 func (obj *ObjectTypeDef) FunctionByName(name string) (*Function, bool) {
 	for _, fn := range obj.Functions {
-		if fn.Self().Name == gqlFieldName(name) {
+		if fn.Self().Name == name {
+			return fn.Self(), true
+		}
+	}
+	for _, fn := range obj.Functions {
+		if anyNamerMatches(fn.Self().Name, name, Namer.FieldName) {
 			return fn.Self(), true
 		}
 	}
@@ -1502,9 +1534,16 @@ type FieldTypeDef struct {
 	OriginalName string
 }
 
+// NewFieldTypeDef creates a field typedef, normalizing its name with the
+// latest naming rules. Module typedefs use (Namer).NewFieldTypeDef.
 func NewFieldTypeDef(name string, typeDef dagql.ObjectResult[*TypeDef], description string, deprecated *string) *FieldTypeDef {
+	return LatestNamer.NewFieldTypeDef(name, typeDef, description, deprecated)
+}
+
+// NewFieldTypeDef creates a field typedef, normalizing its name with n.
+func (n Namer) NewFieldTypeDef(name string, typeDef dagql.ObjectResult[*TypeDef], description string, deprecated *string) *FieldTypeDef {
 	return &FieldTypeDef{
-		Name:         strcase.ToLowerCamel(name),
+		Name:         n.FieldName(name),
 		Description:  description,
 		TypeDef:      typeDef,
 		Deprecated:   deprecated,
@@ -1625,9 +1664,17 @@ type InterfaceTypeDef struct {
 	OriginalName string
 }
 
+// NewInterfaceTypeDef creates an interface typedef, normalizing its name with
+// the latest naming rules. Module typedefs use (Namer).NewInterfaceTypeDef.
 func NewInterfaceTypeDef(name, description string) *InterfaceTypeDef {
+	return LatestNamer.NewInterfaceTypeDef(name, description)
+}
+
+// NewInterfaceTypeDef creates an interface typedef, normalizing its name with
+// n.
+func (n Namer) NewInterfaceTypeDef(name, description string) *InterfaceTypeDef {
 	return &InterfaceTypeDef{
-		Name:         strcase.ToCamel(name),
+		Name:         n.ObjectName(name),
 		OriginalName: name,
 		Description:  description,
 	}
@@ -1795,9 +1842,16 @@ type ScalarTypeDef struct {
 	SourceModuleName string `field:"true" doc:"If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise." doNotCache:"simple field selection"`
 }
 
+// NewScalarTypeDef creates a scalar typedef, normalizing its name with the
+// latest naming rules. Module typedefs use (Namer).NewScalarTypeDef.
 func NewScalarTypeDef(name, description string) *ScalarTypeDef {
+	return LatestNamer.NewScalarTypeDef(name, description)
+}
+
+// NewScalarTypeDef creates a scalar typedef, normalizing its name with n.
+func (n Namer) NewScalarTypeDef(name, description string) *ScalarTypeDef {
 	return &ScalarTypeDef{
-		Name:         strcase.ToCamel(name),
+		Name:         n.ObjectName(name),
 		OriginalName: name,
 		Description:  description,
 	}
@@ -2103,9 +2157,16 @@ func (enum *EnumTypeDef) AttachDependencyResults(
 	return owned, nil
 }
 
+// NewEnumTypeDef creates an enum typedef, normalizing its name with the
+// latest naming rules. Module typedefs use (Namer).NewEnumTypeDef.
 func NewEnumTypeDef(name, description string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumTypeDef {
+	return LatestNamer.NewEnumTypeDef(name, description, sourceMap)
+}
+
+// NewEnumTypeDef creates an enum typedef, normalizing its name with n.
+func (n Namer) NewEnumTypeDef(name, description string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumTypeDef {
 	typedef := &EnumTypeDef{
-		Name:         strcase.ToCamel(name),
+		Name:         n.ObjectName(name),
 		OriginalName: name,
 		Description:  description,
 	}
@@ -2262,10 +2323,17 @@ func (enumValue *EnumMemberTypeDef) AttachDependencyResults(
 	return []dagql.AnyResult{typed}, nil
 }
 
+// NewEnumMemberTypeDef creates an enum member, normalizing its name with the
+// latest naming rules. Module typedefs use (Namer).NewEnumMemberTypeDef.
 func NewEnumMemberTypeDef(name, value, description string, deprecated *string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumMemberTypeDef {
+	return LatestNamer.NewEnumMemberTypeDef(name, value, description, deprecated, sourceMap)
+}
+
+// NewEnumMemberTypeDef creates an enum member, normalizing its name with n.
+func (n Namer) NewEnumMemberTypeDef(name, value, description string, deprecated *string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumMemberTypeDef {
 	typedef := &EnumMemberTypeDef{
 		OriginalName: name,
-		Name:         gqlEnumMemberName(name),
+		Name:         n.EnumMemberName(name),
 		Value:        value,
 		Description:  description,
 		Deprecated:   deprecated,

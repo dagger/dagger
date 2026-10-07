@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/naming"
 )
 
@@ -107,7 +107,10 @@ func (s *Schema) Merge(moduleTypes JSON, moduleName string) (*Schema, error) {
 		target.Types = append(target.Types, t)
 	}
 
-	if err := mergeQueryConstructor(target, module.Schema, moduleName); err != nil {
+	// The constructor is named by the rules of the schema's version: the
+	// module's own, when the schema is a module's codegen schema.
+	namer := NamerForView(call.View(s.Introspection.SchemaVersion))
+	if err := mergeQueryConstructor(namer, target, module.Schema, moduleName); err != nil {
 		return nil, err
 	}
 	return &Schema{Introspection: merged}, nil
@@ -154,13 +157,13 @@ func isModuleDefinedType(t *codegenintrospection.Type) bool {
 // its Query type, that field (carrying its arguments) is reused; otherwise a
 // no-arg constructor pointing at the module's main object is synthesized. The
 // main object is the one whose name matches moduleName in PascalCase.
-func mergeQueryConstructor(target, module *codegenintrospection.Schema, moduleName string) error {
+func mergeQueryConstructor(namer Namer, target, module *codegenintrospection.Schema, moduleName string) error {
 	queryType := target.Query()
 	if queryType == nil {
 		return fmt.Errorf("schema has no Query type")
 	}
 
-	fieldName := strcase.ToLowerCamel(moduleName)
+	fieldName := namer.FieldName(moduleName)
 	if findField(queryType, fieldName) != nil {
 		// Idempotent: the constructor is already registered.
 		return nil
@@ -174,7 +177,7 @@ func mergeQueryConstructor(target, module *codegenintrospection.Schema, moduleNa
 		}
 	}
 
-	mainObject := target.Types.Get(strcase.ToCamel(moduleName))
+	mainObject := target.Types.Get(namer.ObjectName(moduleName))
 	if mainObject == nil {
 		// No main object: the module's other types are still merged, but
 		// there is nothing to construct.

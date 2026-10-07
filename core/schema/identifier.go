@@ -76,10 +76,12 @@ func (s identifierSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.NamingTerm]{}.Install(srv)
 }
 
-// namingDictionaryFor returns the dictionary for the caller. There is one
-// dictionary so far; additions will be selected by engine version.
-func namingDictionaryFor(context.Context) *naming.Dictionary {
-	return naming.Latest
+// namingDictionaryFor returns the dictionary of the caller's engine version:
+// the view recorded in a view-scoped call, else the view of the current
+// server (see core.CallerView). Dictionary additions only apply to callers at
+// or above the engine version that introduced them.
+func namingDictionaryFor(ctx context.Context) *naming.Dictionary {
+	return naming.DictionaryFor(string(core.CallerView(ctx)))
 }
 
 // SchemaIdentifiers returns the words of every type, field, argument, input
@@ -95,7 +97,9 @@ func SchemaIdentifiers(ctx context.Context, view call.View, schema *codegenintro
 		return nil
 	}
 	ids := codegenintrospection.Identifiers{}
-	ids.AddSchema(namingDictionaryFor(ctx), schema)
+	// The schema's view is the engine version of whoever it's for (a module's
+	// codegen schema has the module's), which selects the dictionary.
+	ids.AddSchema(naming.DictionaryFor(string(view)), schema)
 	return ids
 }
 

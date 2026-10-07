@@ -149,10 +149,12 @@ func (s *ModTreePathTestSuite) TestIsParentOf(ctx context.Context, t *testctx.T)
 	}
 
 	for _, tc := range testCases {
-		s.Run(tc.name, func() {
-			result := tc.parent.Contains(ctx, tc.child)
-			require.Equal(s.T(), tc.expected, result, "parent: %v, child: %v", tc.parent, tc.child)
-		})
+		for _, namer := range []Namer{LegacyNamer, LatestNamer} {
+			s.Run(tc.name, func() {
+				result := tc.parent.Contains(ctx, namer, tc.child)
+				require.Equal(s.T(), tc.expected, result, "parent: %v, child: %v, legacy: %v", tc.parent, tc.child, namer.Legacy())
+			})
+		}
 	}
 }
 
@@ -346,10 +348,12 @@ func (s *ModTreePathTestSuite) TestGlob(ctx context.Context, t *testctx.T) {
 	}
 
 	for _, tc := range testCases {
-		s.Run(tc.name, func() {
-			result, err := tc.path.Glob(ctx, tc.pattern)
-			require.NoError(s.T(), err)
-			require.Equal(s.T(), tc.expected, result, "path: %v, pattern: %s", tc.path, tc.pattern)
-		})
+		for _, namer := range []Namer{LegacyNamer, LatestNamer} {
+			s.Run(tc.name, func() {
+				result, err := tc.path.Glob(ctx, namer, tc.pattern)
+				require.NoError(s.T(), err)
+				require.Equal(s.T(), tc.expected, result, "path: %v, pattern: %s, legacy: %v", tc.path, tc.pattern, namer.Legacy())
+			})
+		}
 	}
 }
