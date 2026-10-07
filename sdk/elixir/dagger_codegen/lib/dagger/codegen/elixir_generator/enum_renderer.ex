@@ -38,7 +38,8 @@ defmodule Dagger.Codegen.ElixirGenerator.EnumRenderer do
       ?\n,
       render_from_string_function(type.enum_values),
       ?\n,
-      ?\n
+      ?\n,
+      render_legacy_aliases(type.enum_values)
     ]
   end
 
@@ -53,6 +54,30 @@ defmodule Dagger.Codegen.ElixirGenerator.EnumRenderer do
       ?\n,
       "def #{fun_name}(), do: #{return_value}"
     ]
+  end
+
+  @doc """
+  Render deprecated aliases for the functions whose name changed when it was
+  formatted from the schema's identifier words, under their legacy names.
+  Renders nothing for schemas without words, or when a legacy name is taken.
+  """
+  def render_legacy_aliases(enum_values) do
+    names = MapSet.new(enum_values, &Formatter.format_function_name(&1.name))
+
+    enum_values
+    |> Enum.map(fn %{name: name} ->
+      {Formatter.format_function_name(name), Formatter.legacy_function_name(name)}
+    end)
+    |> Enum.reject(fn {_fun_name, legacy_name} -> MapSet.member?(names, legacy_name) end)
+    |> Enum.uniq_by(fn {_fun_name, legacy_name} -> legacy_name end)
+    |> Enum.map(fn {fun_name, legacy_name} ->
+      """
+      @doc false
+      @deprecated "Use #{fun_name}/0 instead"
+      def #{legacy_name}(), do: #{fun_name}()
+
+      """
+    end)
   end
 
   def render_from_string_function(enum_values) do

@@ -60,7 +60,12 @@ defmodule Dagger.Codegen.NamingTest do
 
     assert Naming.from_map(%{
              "prerequisiteSHAs" => [
-               %{"kind" => "WORD", "text" => "prerequisite", "suffix" => "", "capitalized" => "Prerequisite"},
+               %{
+                 "kind" => "WORD",
+                 "text" => "prerequisite",
+                 "suffix" => "",
+                 "capitalized" => "Prerequisite"
+               },
                %{"kind" => "ACRONYM", "text" => "SHA", "suffix" => "s", "capitalized" => "Sha"}
              ]
            }) == %{

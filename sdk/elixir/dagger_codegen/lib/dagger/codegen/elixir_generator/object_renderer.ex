@@ -46,7 +46,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
           render_function(type, field, module_var),
           ?\n
         ]
-      end
+      end,
+      render_legacy_aliases(type, module_var)
     ]
   end
 
@@ -98,17 +99,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
   def render_function(type, field, module_var) do
     fun_name = Formatter.format_function_name(field.name)
     {optional_args, required_args} = Enum.split_with(field.args, &InputValue.is_optional?/1)
-
-    collision? = fn required_arg ->
-      Formatter.format_var_name(required_arg.name) == module_var
-    end
-
-    module_var =
-      if Enum.any?(required_args, collision?) do
-        module_var <> "_"
-      else
-        module_var
-      end
+    module_var = module_var_for(module_var, required_args)
 
     [
       Renderer.render_deprecated(field),
@@ -128,6 +119,59 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       render_return_value(type, field, module_var),
       ?\n,
       "end"
+    ]
+  end
+
+  # The variable of the object itself, renamed when a required argument has
+  # the same name.
+  defp module_var_for(module_var, required_args) do
+    if Enum.any?(required_args, &(Formatter.format_var_name(&1.name) == module_var)) do
+      module_var <> "_"
+    else
+      module_var
+    end
+  end
+
+  @doc """
+  Render deprecated aliases for the functions whose name changed when it was
+  formatted from the schema's identifier words, under their legacy names.
+  Renders nothing for schemas without words, or when a legacy name is taken.
+  """
+  def render_legacy_aliases(type, module_var) do
+    names = MapSet.new(type.fields, &Formatter.format_function_name(&1.name))
+
+    type.fields
+    |> Enum.map(&{&1, Formatter.legacy_function_name(&1.name)})
+    |> Enum.reject(fn {_field, legacy_name} -> MapSet.member?(names, legacy_name) end)
+    |> Enum.uniq_by(fn {_field, legacy_name} -> legacy_name end)
+    |> Enum.map(fn {field, legacy_name} ->
+      [render_legacy_alias(field, legacy_name, module_var), ?\n]
+    end)
+  end
+
+  defp render_legacy_alias(field, legacy_name, module_var) do
+    fun_name = Formatter.format_function_name(field.name)
+    {optional_args, required_args} = Enum.split_with(field.args, &InputValue.is_optional?/1)
+    module_var = module_var_for(module_var, required_args)
+
+    optional_arg = if optional_args == [], do: [], else: ["optional_args"]
+
+    args =
+      [module_var | Enum.map(required_args, &Formatter.format_var_name(&1.name))] ++ optional_arg
+
+    [
+      "@doc false",
+      ?\n,
+      ~s(@deprecated "Use #{fun_name}/#{length(args)} instead"),
+      ?\n,
+      "def #{legacy_name}(",
+      render_function_args(module_var, required_args, optional_args),
+      ") do",
+      ?\n,
+      "#{fun_name}(#{Enum.join(args, ", ")})",
+      ?\n,
+      "end",
+      ?\n
     ]
   end
 
