@@ -4,7 +4,7 @@ use genco::quote;
 
 use crate::functions::{CommonFunctions, TypeRefExt};
 use crate::rust::functions::{
-    format_name, format_struct_comment, format_struct_name, id_handle_struct, render_required_args,
+    format_struct_comment, id_handle_struct, member_name, render_required_args, type_name,
 };
 use crate::utility::OptionExt;
 
@@ -34,7 +34,7 @@ pub fn render_interface(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<r
 
     // Override the GraphQL name for Loadable: the Rust struct is
     // NodeClient but the GraphQL type is Node.
-    let loadable_tokens = render_loadable_impl(&client_type, Some(original_graphql_name));
+    let loadable_tokens = render_loadable_impl(funcs, &client_type, Some(original_graphql_name));
 
     let trait_impl_tokens = render_trait_impl_for_client(funcs, t);
 
@@ -51,7 +51,10 @@ pub fn render_interface(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<r
 
 /// Generate `pub trait Foo { async fn id(&self) -> Result<Id, DaggerError>; ... }`
 fn render_trait(funcs: &CommonFunctions, t: &FullType) -> rust::Tokens {
-    let trait_name = t.name.pipe(|s| format_name(s)).unwrap_or_default();
+    let trait_name = t
+        .name
+        .pipe(|s| type_name(funcs.names(), s))
+        .unwrap_or_default();
     let dagger_error = rust::import("crate::errors", "DaggerError");
 
     let methods = t
@@ -91,7 +94,7 @@ fn render_trait_method(
     dagger_error: &rust::Import,
 ) -> Option<rust::Tokens> {
     let name = field.name.as_ref()?;
-    let fn_name = format_struct_name(name);
+    let fn_name = member_name(funcs.names(), name);
     let type_ref = &field.type_.as_ref()?.type_ref;
     let output_type = funcs.format_output_type(type_ref);
 
@@ -144,7 +147,7 @@ fn render_trait_method_args(
             if a.input_value.type_.is_optional() {
                 return None;
             }
-            let n = format_struct_name(&a.input_value.name);
+            let n = member_name(funcs.names(), &a.input_value.name);
             let t = funcs.format_input_type(&a.input_value.type_);
 
             if a.input_value.type_.is_id() {
@@ -175,7 +178,10 @@ fn is_self_handle(funcs: &CommonFunctions, field: &FullTypeFields) -> bool {
 
 /// Generate `impl Foo for FooClient { ... }`.
 fn render_trait_impl_for_client(funcs: &CommonFunctions, t: &FullType) -> rust::Tokens {
-    let iface_name = t.name.pipe(|s| format_name(s)).unwrap_or_default();
+    let iface_name = t
+        .name
+        .pipe(|s| type_name(funcs.names(), s))
+        .unwrap_or_default();
     let client_name = format!("{}Client", &iface_name);
     let graphql_name = t.name.as_deref().unwrap_or_default();
 
@@ -217,7 +223,7 @@ fn render_trait_impl_method(
     self_graphql_name: &str,
 ) -> Option<rust::Tokens> {
     let name = field.name.as_ref()?;
-    let fn_name = format_struct_name(name);
+    let fn_name = member_name(funcs.names(), name);
     let type_ref = &field.type_.as_ref()?.type_ref;
     let output_type = funcs.format_output_type(type_ref);
     let dagger_error = rust::import("crate::errors", "DaggerError");
@@ -314,7 +320,7 @@ fn render_trait_impl_arg_parts(
             if a.input_value.type_.is_optional() {
                 return None;
             }
-            let n = format_struct_name(&a.input_value.name);
+            let n = member_name(funcs.names(), &a.input_value.name);
             let t = funcs.format_input_type(&a.input_value.type_);
 
             let sig = if a.input_value.type_.is_id() {
@@ -349,10 +355,13 @@ pub fn render_interface_impl_for_object(
 ) -> rust::Tokens {
     let object_name = object_type
         .name
-        .pipe(|s| format_name(s))
+        .pipe(|s| type_name(funcs.names(), s))
         .unwrap_or_default();
     let object_graphql_name = object_type.name.as_deref().unwrap_or_default();
-    let iface_name = iface_type.name.pipe(|s| format_name(s)).unwrap_or_default();
+    let iface_name = iface_type
+        .name
+        .pipe(|s| type_name(funcs.names(), s))
+        .unwrap_or_default();
 
     let methods = iface_type
         .fields

@@ -810,4 +810,362 @@ mod tests {
             "expected optional string field to borrow with &'a str"
         );
     }
+
+    /// Schema whose names the guessing converter splits badly, with the
+    /// words the engine parsed them into under `__identifiers`.
+    fn identifier_words_schema() -> String {
+        fn words(words: &[(&str, &str, &str, &str)]) -> String {
+            let words = words
+                .iter()
+                .map(|(kind, text, suffix, capitalized)| {
+                    format!(
+                        r#"{{"kind":"{kind}","text":"{text}","suffix":"{suffix}","capitalized":"{capitalized}"}}"#
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("[{words}]")
+        }
+        let identifiers = [
+            ("ID", words(&[("ACRONYM", "ID", "", "Id")])),
+            ("Query", words(&[("WORD", "query", "", "Query")])),
+            (
+                "JSONValue",
+                words(&[
+                    ("ACRONYM", "JSON", "", "Json"),
+                    ("WORD", "value", "", "Value"),
+                ]),
+            ),
+            (
+                "jsonValue",
+                words(&[
+                    ("ACRONYM", "JSON", "", "Json"),
+                    ("WORD", "value", "", "Value"),
+                ]),
+            ),
+            (
+                "prerequisiteSHAs",
+                words(&[
+                    ("WORD", "prerequisite", "", "Prerequisite"),
+                    ("ACRONYM", "SHA", "s", "Sha"),
+                ]),
+            ),
+            (
+                "experimentalWithAllGPUs",
+                words(&[
+                    ("WORD", "experimental", "", "Experimental"),
+                    ("WORD", "with", "", "With"),
+                    ("WORD", "all", "", "All"),
+                    ("ACRONYM", "GPU", "s", "Gpu"),
+                ]),
+            ),
+            (
+                "insecureSkipTLSVerify",
+                words(&[
+                    ("WORD", "insecure", "", "Insecure"),
+                    ("WORD", "skip", "", "Skip"),
+                    ("ACRONYM", "TLS", "", "Tls"),
+                    ("WORD", "verify", "", "Verify"),
+                ]),
+            ),
+            (
+                "LLMInput",
+                words(&[
+                    ("ACRONYM", "LLM", "", "Llm"),
+                    ("WORD", "input", "", "Input"),
+                ]),
+            ),
+            (
+                "ImageMediaTypes",
+                words(&[
+                    ("WORD", "image", "", "Image"),
+                    ("WORD", "media", "", "Media"),
+                    ("WORD", "type", "s", "Type"),
+                ]),
+            ),
+            ("OCI", words(&[("ACRONYM", "OCI", "", "Oci")])),
+            ("ref", words(&[("WORD", "ref", "", "Ref")])),
+        ]
+        .iter()
+        .map(|(name, words)| format!(r#""{name}":{words}"#))
+        .collect::<Vec<_>>()
+        .join(",");
+
+        format!(
+            r#"{{
+  "__identifiers": {{{identifiers}}},
+  "__schema": {{
+    "queryType": {{"name": "Query"}},
+    "mutationType": null,
+    "subscriptionType": null,
+    "types": [
+      {{
+        "kind": "SCALAR", "name": "ID", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      }},
+      {{
+        "kind": "SCALAR", "name": "String", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      }},
+      {{
+        "kind": "SCALAR", "name": "Boolean", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      }},
+      {{
+        "kind": "ENUM", "name": "ImageMediaTypes", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "possibleTypes": null,
+        "enumValues": [
+          {{"name": "OCI", "description": null, "isDeprecated": false, "deprecationReason": null}}
+        ]
+      }},
+      {{
+        "kind": "INPUT_OBJECT", "name": "LLMInput", "description": null,
+        "fields": null, "interfaces": null, "enumValues": null, "possibleTypes": null,
+        "inputFields": [
+          {{
+            "name": "prerequisiteSHAs", "description": null,
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "SCALAR", "name": "String", "ofType": null}}}},
+            "defaultValue": null
+          }},
+          {{
+            "name": "ref", "description": null,
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "SCALAR", "name": "String", "ofType": null}}}},
+            "defaultValue": null
+          }}
+        ]
+      }},
+      {{
+        "kind": "OBJECT", "name": "JSONValue", "description": null,
+        "fields": [
+          {{
+            "name": "id", "description": null, "args": [],
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "SCALAR", "name": "ID", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null
+          }},
+          {{
+            "name": "prerequisiteSHAs", "description": null, "args": [],
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "SCALAR", "name": "String", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null
+          }},
+          {{
+            "name": "experimentalWithAllGPUs", "description": null,
+            "args": [
+              {{
+                "name": "prerequisiteSHAs", "description": null,
+                "type": {{"kind": "NON_NULL", "name": null,
+                  "ofType": {{"kind": "SCALAR", "name": "String", "ofType": null}}}},
+                "defaultValue": null
+              }},
+              {{
+                "name": "insecureSkipTLSVerify", "description": null,
+                "type": {{"kind": "SCALAR", "name": "Boolean", "ofType": null}},
+                "defaultValue": null
+              }}
+            ],
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "OBJECT", "name": "JSONValue", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null
+          }}
+        ],
+        "inputFields": null, "interfaces": [],
+        "enumValues": null, "possibleTypes": null
+      }},
+      {{
+        "kind": "OBJECT", "name": "Query", "description": null,
+        "fields": [
+          {{
+            "name": "jsonValue", "description": null, "args": [],
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "OBJECT", "name": "JSONValue", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null
+          }}
+        ],
+        "inputFields": null, "interfaces": [],
+        "enumValues": null, "possibleTypes": null
+      }}
+    ],
+    "directives": []
+  }}
+}}"#
+        )
+    }
+
+    fn lines_with(code: &str, needle: &str) -> String {
+        code.lines()
+            .filter(|l| l.contains(needle))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Whether `code` contains `needle`, ignoring whitespace: the generated
+    /// code is only formatted by rustfmt later.
+    fn has(code: &str, needle: &str) -> bool {
+        fn squash(s: &str) -> String {
+            s.chars().filter(|c| !c.is_whitespace()).collect()
+        }
+        squash(code).contains(&squash(needle))
+    }
+
+    #[test]
+    fn identifier_words_name_rust_identifiers() {
+        let code = generate_from_json(&identifier_words_schema());
+
+        // Types: PascalCase with capitalized acronyms.
+        assert!(has(&code, "pub struct JsonValue {"), "{code}");
+        assert!(has(&code, "pub struct LlmInput {"), "{code}");
+        assert!(has(&code, "pub enum ImageMediaTypes {"), "{code}");
+        assert!(has(&code, "Oci,"), "{}", lines_with(&code, "Oci"));
+        // Methods and arguments: snake_case from the words.
+        assert!(
+            has(&code, "pub async fn prerequisite_shas(&self"),
+            "{}",
+            lines_with(&code, "prerequisite")
+        );
+        assert!(
+            has(&code, "pub fn experimental_with_all_gpus(&self"),
+            "{}",
+            lines_with(&code, "experimental")
+        );
+        assert!(
+            has(&code, "prerequisite_shas: impl Into<String>"),
+            "{}",
+            lines_with(&code, "prerequisite")
+        );
+        // Options structs and their fields.
+        assert!(
+            has(&code, "pub struct JsonValueExperimentalWithAllGpusOpts {"),
+            "{}",
+            lines_with(&code, "Opts")
+        );
+        assert!(
+            has(&code, "pub insecure_skip_tls_verify: Option<bool>,"),
+            "{}",
+            lines_with(&code, "insecure")
+        );
+    }
+
+    #[test]
+    fn identifier_words_keep_wire_names() {
+        let code = generate_from_json(&identifier_words_schema());
+
+        // Selections and arguments use the schema's names.
+        assert!(has(&code, r#"self.selection.select("prerequisiteSHAs")"#));
+        assert!(has(
+            &code,
+            r#"self.selection.select("experimentalWithAllGPUs")"#
+        ));
+        assert!(has(
+            &code,
+            r#"query.arg("prerequisiteSHAs", prerequisite_shas.into())"#
+        ));
+        assert!(has(
+            &code,
+            r#"query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify)"#
+        ));
+        assert!(has(
+            &code,
+            r#"fn graphql_type() -> &'static str { "JSONValue" }"#
+        ));
+        // Enum variants serialize as the schema's values.
+        assert!(
+            has(&code, r#"#[serde(rename = "OCI")] Oci,"#),
+            "{}",
+            lines_with(&code, "OCI")
+        );
+        // Input object fields keep the wire name serde derived before.
+        assert!(
+            has(
+                &code,
+                r#"#[serde(rename = "prerequisite_sh_as")] pub prerequisite_shas: String,"#
+            ),
+            "{}",
+            lines_with(&code, "prerequisite")
+        );
+        // Unchanged names get no rename, and keywords stay escaped.
+        assert!(has(&code, "pub r#ref: String,"));
+        assert!(!has(&code, r#"#[serde(rename = "ref")]"#));
+    }
+
+    #[test]
+    fn identifier_words_keep_old_names_as_deprecated_aliases() {
+        let code = generate_from_json(&identifier_words_schema());
+
+        assert!(
+            has(
+                &code,
+                r#"#[deprecated(note = "use prerequisite_shas")] pub async fn prerequisite_sh_as(&self"#
+            ),
+            "{}",
+            lines_with(&code, "prerequisite")
+        );
+        assert!(has(&code, "self.prerequisite_shas().await"));
+        assert!(
+            has(
+                &code,
+                r#"#[deprecated(note = "use experimental_with_all_gpus")] pub fn experimental_with_all_gp_us(&self"#
+            ),
+            "{}",
+            lines_with(&code, "experimental")
+        );
+        assert!(has(
+            &code,
+            "self.experimental_with_all_gpus(prerequisite_shas)"
+        ));
+        // Only async methods are awaited.
+        assert!(!has(
+            &code,
+            "self.experimental_with_all_gpus(prerequisite_shas).await"
+        ));
+        assert!(
+            has(
+                &code,
+                r#"#[deprecated(note = "use experimental_with_all_gpus")] pub fn experimental_with_all_gp_us_opts(&self"#
+            ),
+            "{}",
+            lines_with(&code, "experimental")
+        );
+        assert!(has(
+            &code,
+            "self.experimental_with_all_gpus_opts(prerequisite_shas, opts)"
+        ));
+        assert!(
+            has(
+                &code,
+                r#"#[deprecated(note = "use JsonValueExperimentalWithAllGpusOpts")] pub type JsonValueExperimentalWithAllGpUsOpts = JsonValueExperimentalWithAllGpusOpts;"#
+            ),
+            "{}",
+            lines_with(&code, "Opts")
+        );
+        // Names that didn't change get no alias.
+        assert_eq!(code.matches("fn json_value(").count(), 1);
+    }
+
+    #[test]
+    fn missing_identifier_words_keep_guessed_names() {
+        let code = generate_from_json(&identifier_words_schema().replacen(
+            "\"__identifiers\"",
+            "\"__unused\"",
+            1,
+        ));
+
+        assert!(has(&code, "pub async fn prerequisite_sh_as(&self"));
+        assert!(has(&code, "pub fn experimental_with_all_gp_us(&self"));
+        assert!(has(
+            &code,
+            "pub struct JsonValueExperimentalWithAllGpUsOpts {"
+        ));
+        assert!(has(&code, "pub prerequisite_sh_as: String,"));
+        assert!(!code.contains("deprecated"));
+        assert!(!code.contains("serde(rename = \"prerequisite"));
+        assert!(!code.contains("prerequisite_shas"));
+        assert!(has(&code, "pub struct JsonValue {"));
+    }
 }

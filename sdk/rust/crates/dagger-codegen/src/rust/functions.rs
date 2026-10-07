@@ -1,5 +1,6 @@
 use crate::functions::*;
-use convert_case::{Case, Casing};
+use crate::naming::{Acronyms, Casing, Names};
+use convert_case::{Case, Casing as _};
 use dagger_sdk::core::introspection::{FullTypeFields, TypeRef};
 use genco::prelude::rust;
 use genco::quote;
@@ -10,12 +11,19 @@ use crate::utility::OptionExt;
 
 use super::templates::object_tmpl::render_optional_field_args;
 
+/// The Rust type name for a schema name, guessing its words. Used when the
+/// schema has no identifier words.
 pub fn format_name(s: &str) -> String {
     s.to_case(Case::Pascal)
 }
 
+/// The Rust function, argument or field name for a schema name, guessing its
+/// words. Used when the schema has no identifier words.
 pub fn format_struct_name(s: &str) -> String {
-    let s = s.to_case(Case::Snake);
+    escape_keyword(s.to_case(Case::Snake))
+}
+
+fn escape_keyword(s: String) -> String {
     match s.as_ref() {
         "async" => "r#async".to_string(),
         "await" => "r#await".to_string(),
@@ -28,18 +36,87 @@ pub fn format_struct_name(s: &str) -> String {
     }
 }
 
-pub fn field_options_struct_name(field: &FullTypeFields) -> Option<String> {
+/// The Rust type name for a schema type: PascalCase with capitalized
+/// acronyms (`JsonValue`, `LlmTokenUsage`), from the schema's identifier
+/// words when it has them.
+pub fn type_name(names: &Names, s: &str) -> String {
+    if let Some(name) = names.format(s, Casing::Pascal, Acronyms::Capitalized) {
+        return name;
+    }
+    // An interface's client struct is named after the interface: FooClient.
+    if let Some(name) = s
+        .strip_suffix("Client")
+        .and_then(|iface| names.format(iface, Casing::Pascal, Acronyms::Capitalized))
+    {
+        return name + "Client";
+    }
+    format_name(s)
+}
+
+/// The Rust name for a schema field, argument or input field: snake_case,
+/// from the schema's identifier words when it has them.
+pub fn member_name(names: &Names, s: &str) -> String {
+    match names.format(s, Casing::Snake, Acronyms::Uppercase) {
+        Some(name) => escape_keyword(name),
+        None => format_struct_name(s),
+    }
+}
+
+/// The Rust variant name for a schema enum value: PascalCase with
+/// capitalized acronyms, like types.
+pub fn variant_name(names: &Names, s: &str) -> String {
+    names
+        .format(s, Casing::Pascal, Acronyms::Capitalized)
+        .unwrap_or_else(|| format_name(s))
+}
+
+pub fn field_options_struct_name(
+    funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> Option<String> {
     field
+        .parent_type
+        .as_ref()
+        .and_then(|p| p.name.as_ref().map(|n| type_name(funcs.names(), n)))
+        .zip(field.name.as_ref().map(|n| type_name(funcs.names(), n)))
+        .map(|(parent_name, field_name)| format!("{parent_name}{field_name}Opts"))
+}
+
+/// The options struct name the field had before identifier words, when it
+/// differs from today's.
+pub fn legacy_field_options_struct_name(
+    funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> Option<String> {
+    let legacy = field
         .parent_type
         .as_ref()
         .and_then(|p| p.name.as_ref().map(|n| format_name(n)))
         .zip(field.name.as_ref().map(|n| format_name(n)))
-        .map(|(parent_name, field_name)| format!("{parent_name}{field_name}Opts"))
+        .map(|(parent_name, field_name)| format!("{parent_name}{field_name}Opts"))?;
+    if Some(&legacy) == field_options_struct_name(funcs, field).as_ref() {
+        None
+    } else {
+        Some(legacy)
+    }
+}
+
+/// The name the function had before identifier words, when it differs from
+/// today's.
+pub fn legacy_function_name(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<String> {
+    let name = field.name.as_ref()?;
+    let legacy = format_struct_name(name);
+    if legacy == member_name(funcs.names(), name) {
+        None
+    } else {
+        Some(legacy)
+    }
 }
 
 pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+    let fn_name = field.name.pipe(|n| member_name(funcs.names(), n))?;
     let is_convert_id = funcs.convert_id(field);
-    let is_async = field.type_.pipe(|t| &t.type_ref).pipe(|t| {
+    let is_async = field.type_.pipe(|t| &t.type_ref).and_then(|t| {
         if !is_convert_id
             && t.is_object()
             && (!t.is_optional() || !funcs.supports_nullable_objects())
@@ -53,7 +130,7 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
     });
 
     let signature = quote! {
-        pub $(is_async) fn $(field.name.pipe(|n | format_struct_name(n)))
+        pub $(is_async.clone()) fn $(&fn_name)
     };
 
     let lifecycle = format_optional_args(funcs, field)
@@ -71,6 +148,46 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
     let args = format_function_args(funcs, field, lifecycle.as_ref());
 
     let output_type = render_field_output_type(funcs, field);
+
+    // Keep the name the method had before identifier words as a deprecated
+    // alias.
+    let deprecated = legacy_function_name(funcs, field).map(|legacy| {
+        let note = format!("use {fn_name}");
+        let has_opts = matches!(&args, Some((_, _, true)));
+        let required_args = format_required_function_args(funcs, field);
+        let forwarded = required_arg_names(funcs, field);
+        let await_ = is_async.as_ref().map(|_| quote!(.await));
+        let opts_alias = if has_opts {
+            let opts_args = args.as_ref().map(|(a, _, _)| a.clone());
+            let mut opts_forwarded = forwarded.clone();
+            opts_forwarded.push("opts".to_string());
+            Some(quote! {
+                #[deprecated(note = $(quoted(note.clone())))]
+                pub $(is_async.clone()) fn $(&legacy)_opts$(lifecycle.clone())(
+                    $opts_args
+                ) -> $(&output_type) {
+                    self.$(&fn_name)_opts($(for a in &opts_forwarded join (, ) => $a))$(await_.clone())
+                }
+            })
+        } else {
+            None
+        };
+        let plain_args = if has_opts {
+            required_args
+        } else {
+            args.as_ref().map(|(a, _, _)| a.clone())
+        };
+        quote! {
+            #[deprecated(note = $(quoted(note.clone())))]
+            pub $(is_async.clone()) fn $(&legacy)(
+                $plain_args
+            ) -> $(&output_type) {
+                self.$(&fn_name)($(for a in &forwarded join (, ) => $a))$(await_)
+            }
+
+            $opts_alias
+        }
+    });
 
     if let Some((args, desc, true)) = args {
         let required_args = format_required_function_args(funcs, field);
@@ -99,6 +216,8 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
 
                 $(render_execution(funcs, field))
             }
+
+            $deprecated
         })
     } else {
         Some(quote! {
@@ -114,12 +233,26 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
 
                 $(render_execution(funcs, field))
             }
+
+            $deprecated
         })
     }
 }
 
+/// The Rust names of a field's required arguments, in order.
+fn required_arg_names(funcs: &CommonFunctions, field: &FullTypeFields) -> Vec<String> {
+    field
+        .args
+        .iter()
+        .flatten()
+        .flatten()
+        .filter(|a| !a.input_value.type_.is_optional())
+        .map(|a| member_name(funcs.names(), &a.input_value.name))
+        .collect()
+}
+
 pub(crate) fn render_required_args(
-    _funcs: &CommonFunctions,
+    funcs: &CommonFunctions,
     field: &FullTypeFields,
 ) -> Option<rust::Tokens> {
     if let Some(args) = field.args.as_ref() {
@@ -131,7 +264,7 @@ pub(crate) fn render_required_args(
                         return None;
                     }
 
-                    let n = format_struct_name(&s.input_value.name);
+                    let n = member_name(funcs.names(), &s.input_value.name);
                     let name = &s.input_value.name;
 
                     if s.input_value.type_.is_scalar() {
@@ -197,7 +330,7 @@ pub(crate) fn render_required_args(
     }
 }
 
-fn render_optional_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+fn render_optional_args(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
     if let Some(args) = field.args.as_ref() {
         let args = args
             .iter()
@@ -207,7 +340,7 @@ fn render_optional_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
                         return None;
                     }
 
-                    let n = format_struct_name(&s.input_value.name);
+                    let n = member_name(funcs.names(), &s.input_value.name);
                     let name = &s.input_value.name;
 
                     Some(quote! {
@@ -260,9 +393,9 @@ fn render_output_type(funcs: &CommonFunctions, type_ref: &TypeRef) -> rust::Toke
 pub fn id_handle_struct(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<String> {
     let handle = funcs.id_handle_type(field)?;
     Some(if funcs.is_interface(&handle) {
-        format!("{}Client", format_name(&handle))
+        format!("{}Client", type_name(funcs.names(), &handle))
     } else {
-        format_name(&handle)
+        type_name(funcs.names(), &handle)
     })
 }
 
@@ -373,7 +506,7 @@ fn format_function_args(
 
                     let t = funcs.format_input_type(&s.input_value.type_);
 
-                    let n = format_struct_name(&s.input_value.name);
+                    let n = member_name(funcs.names(), &s.input_value.name);
                     if let Some(desc) = s.input_value.description.as_ref().and_then(|d| {
                         if !d.is_empty() {
                             Some(write_comment_line(&format!("* `{n}` - {}", d)))
@@ -405,7 +538,7 @@ fn format_function_args(
         };
 
         if type_field_has_optional(field) {
-            let field_name = field_options_struct_name(field);
+            let field_name = field_options_struct_name(funcs, field);
             argument_description.push(quote! {
                 $(field_name.pipe(|_| write_comment_line("* `opt` - optional argument, see inner type for documentation, use <func>_opts to use")))
             });
@@ -466,7 +599,7 @@ fn format_required_function_args(
                     }
 
                     let t = funcs.format_input_type(&s.input_value.type_);
-                    let n = format_struct_name(&s.input_value.name);
+                    let n = member_name(funcs.names(), &s.input_value.name);
 
                     if s.input_value.type_.is_id() {
                         let into_id = rust::import("crate::id", "IntoID");

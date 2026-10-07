@@ -10,6 +10,7 @@ use genco::prelude::rust;
 
 use crate::functions::CommonFunctions;
 use crate::generator::Generator;
+use crate::naming::Names;
 use crate::visitor::{VisitHandlers, Visitor};
 
 use self::format::FormatTypeFunc;
@@ -33,10 +34,12 @@ impl Generator for RustGenerator {
             .filter(|t| t.full_type.kind == Some(__TypeKind::INTERFACE))
             .filter_map(|t| t.full_type.name.clone())
             .collect();
+        let names = Arc::new(Names::new(schema.identifiers.clone()));
         let common_funcs = Arc::new(CommonFunctions::new(
-            Arc::new(FormatTypeFunc {}),
+            Arc::new(FormatTypeFunc::new(names.clone())),
             schema.schema_version.as_deref(),
             interface_names,
+            names,
         ));
 
         tracing::info!("generating dagger for rust");
@@ -46,10 +49,11 @@ impl Generator for RustGenerator {
             handlers: VisitHandlers {
                 visit_scalar: Arc::new({
                     let render = render.clone();
+                    let common_funcs = common_funcs.clone();
 
                     move |t| {
                         tracing::debug!("generating scalar");
-                        let rendered_scalar = render_scalar(t)?;
+                        let rendered_scalar = render_scalar(&common_funcs, t)?;
 
                         let mut render = render.lock().unwrap();
 
@@ -134,11 +138,11 @@ impl Generator for RustGenerator {
                 }),
                 visit_enum: Arc::new({
                     let render = render.clone();
-                    let _common_funcs = common_funcs.clone();
+                    let common_funcs = common_funcs.clone();
 
                     move |t| {
                         tracing::debug!("generating enum");
-                        let rendered_scalar = render_enum(t)?;
+                        let rendered_scalar = render_enum(&common_funcs, t)?;
 
                         let mut render = render.lock().unwrap();
 

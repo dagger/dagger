@@ -1,8 +1,19 @@
+use std::sync::Arc;
+
 use crate::functions::FormatTypeFuncs;
+use crate::naming::Names;
 
-use super::functions::format_name;
+use super::functions::type_name;
 
-pub struct FormatTypeFunc;
+pub struct FormatTypeFunc {
+    names: Arc<Names>,
+}
+
+impl FormatTypeFunc {
+    pub fn new(names: Arc<Names>) -> Self {
+        Self { names }
+    }
+}
 
 impl FormatTypeFuncs for FormatTypeFunc {
     fn format_kind_list(&self, representation: &str, _input: bool, _immutable: bool) -> String {
@@ -44,32 +55,32 @@ impl FormatTypeFuncs for FormatTypeFunc {
         _input: bool,
     ) -> String {
         let mut rep = representation.to_string();
-        rep.push_str(&format_name(ref_name));
+        rep.push_str(&type_name(&self.names, ref_name));
         rep
     }
 
     fn format_kind_object(&self, representation: &str, ref_name: &str) -> String {
         let mut rep = representation.to_string();
-        rep.push_str(&format_name(ref_name));
+        rep.push_str(&type_name(&self.names, ref_name));
         rep
     }
 
     fn format_kind_interface(&self, representation: &str, ref_name: &str) -> String {
         // Interface return types use the FooClient struct.
         let mut rep = representation.to_string();
-        rep.push_str(&format!("{}{}", format_name(ref_name), "Client"));
+        rep.push_str(&format!("{}{}", type_name(&self.names, ref_name), "Client"));
         rep
     }
 
     fn format_kind_input_object(&self, representation: &str, ref_name: &str) -> String {
         let mut rep = representation.to_string();
-        rep.push_str(&format_name(ref_name));
+        rep.push_str(&type_name(&self.names, ref_name));
         rep
     }
 
     fn format_kind_enum(&self, representation: &str, ref_name: &str) -> String {
         let mut rep = representation.to_string();
-        rep.push_str(&format_name(ref_name));
+        rep.push_str(&type_name(&self.names, ref_name));
         rep
     }
 }

@@ -5,6 +5,7 @@ use dagger_sdk::core::introspection::{
 };
 use itertools::Itertools;
 
+use crate::naming::Names;
 use crate::utility::OptionExt;
 
 pub trait FormatTypeFuncs {
@@ -31,6 +32,7 @@ pub struct CommonFunctions {
     format_type_funcs: DynFormatTypeFuncs,
     supports_nullable_objects: bool,
     interface_names: HashSet<String>,
+    names: Arc<Names>,
 }
 
 impl CommonFunctions {
@@ -38,12 +40,19 @@ impl CommonFunctions {
         funcs: DynFormatTypeFuncs,
         schema_version: Option<&str>,
         interface_names: HashSet<String>,
+        names: Arc<Names>,
     ) -> Self {
         Self {
             format_type_funcs: funcs,
             supports_nullable_objects: supports_nullable_objects(schema_version),
             interface_names,
+            names,
         }
+    }
+
+    /// The words of the schema's names, for formatting identifiers.
+    pub fn names(&self) -> &Names {
+        &self.names
     }
 
     pub fn supports_nullable_objects(&self) -> bool {
