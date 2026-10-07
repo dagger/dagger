@@ -95,6 +95,11 @@ func devEngineContainerWithStateKey(c *dagger.Client, stateCacheKey string, with
 			// avoid network conflicts with other tests
 			"--network-name", deviceName,
 			"--network-cidr", cidr,
+			// An engine pre-creates a pool of network namespaces, 128 by
+			// default. Tests run many nested engines at once, and the kernel
+			// creates and destroys all of those namespaces under its global
+			// network lock, which every service start and stop also needs.
+			"--oci-cni-pool-size", "1",
 		})
 }
 
