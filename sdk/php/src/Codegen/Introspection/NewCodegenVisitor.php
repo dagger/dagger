@@ -11,24 +11,46 @@ use Dagger\Client\AbstractObject;
 use Dagger\Client\AbstractScalar;
 use Dagger\Client\IdAble;
 use Dagger\Codegen\CodeWriter;
+use Dagger\Codegen\Naming\Casing;
+use Dagger\Codegen\Naming\Identifiers;
 use Nette\PhpGenerator\ClassType;
 use Nette\PhpGenerator\EnumType;
 use Nette\PhpGenerator\InterfaceType;
+use Nette\PhpGenerator\Literal;
 use Nette\PhpGenerator\Method;
 
 /**
  * Codegen visitor that works with raw introspection data,
  * supporting @expectedType directives and first-class interfaces.
+ *
+ * When the schema carries the engine's identifier words (engine views
+ * v1.0.0 and above), PHP names are formatted from them:
+ *
+ *   - methods and their parameters: CAMEL / UPPERCASE (filterURI, callID);
+ *   - enum cases: SCREAMING_SNAKE (PER_SESSION), keeping the schema name
+ *     where that would collide with another value's case (Gzip vs GZIP).
+ *
+ * Otherwise every name falls back to the legacy conversion, so older
+ * schemas generate byte-identical code. Class names always use the legacy
+ * conversion: PHP class names are case-insensitive, so reformatting them
+ * would only rename files, which breaks PSR-4 autoloading of the old
+ * spelling on case-sensitive filesystems.
+ *
+ * Only PHP identifiers change. Everything sent over the wire (field names,
+ * argument names, input object fields, enum values) and every GraphQL type
+ * name stays exactly as the schema has it.
  */
 class NewCodegenVisitor extends CodeWriter
 {
     /**
      * @param string[] $interfaceNames names of the schema's interface types
+     * @param ?Identifiers $identifiers the words of the schema's names, if it has them
      */
     public function __construct(
         string $targetDirectory,
         private readonly bool $supportsNullableObjects = true,
         private readonly array $interfaceNames = [],
+        private readonly ?Identifiers $identifiers = null,
     ) {
         parent::__construct($targetDirectory);
     }
@@ -91,11 +113,23 @@ class NewCodegenVisitor extends CodeWriter
             $enumClass->addComment($type->description);
         }
 
+        $caseNames = $this->enumCaseNames($type);
         foreach ($type->enumValues as $value) {
-            $case = $enumClass->addCase($value->name, $value->name);
+            // The case's value is what goes over the wire: always the schema name.
+            $case = $enumClass->addCase($caseNames[$value->name], $value->name);
             if ($value->description !== null) {
                 $case->addComment($value->description);
             }
+        }
+
+        // Keep renamed cases reachable under their old name.
+        foreach ($type->enumValues as $value) {
+            $caseName = $caseNames[$value->name];
+            if ($caseName === $value->name) {
+                continue;
+            }
+            $enumClass->addConstant($value->name, new Literal('self::' . $caseName))
+                ->addComment("@deprecated Use {$caseName} instead.");
         }
 
         $this->write($enumClass);
@@ -132,6 +166,7 @@ class NewCodegenVisitor extends CodeWriter
         foreach ($type->fields as $field) {
             $this->generateObjectMethod($objectClass, $field, $type);
         }
+        $this->addLegacyMethods($objectClass, $type->fields);
 
         $this->write($objectClass);
     }
@@ -152,6 +187,7 @@ class NewCodegenVisitor extends CodeWriter
         foreach ($type->fields as $field) {
             $this->generateInterfaceMethod($interfaceClass, $field, $type);
         }
+        $this->addLegacyMethods($interfaceClass, $type->fields);
 
         $this->write($interfaceClass);
 
@@ -167,6 +203,7 @@ class NewCodegenVisitor extends CodeWriter
         foreach ($type->fields as $field) {
             $this->generateObjectMethod($clientClass, $field, $type, true);
         }
+        $this->addLegacyMethods($clientClass, $type->fields);
 
         $this->write($clientClass);
     }
@@ -179,7 +216,7 @@ class NewCodegenVisitor extends CodeWriter
         IntrospectionType $parentType,
         bool $isInterfaceClient = false,
     ): void {
-        $method = $class->addMethod($field->name);
+        $method = $class->addMethod($this->methodName($field->name));
         if ($field->description !== null) {
             $method->addComment($field->description);
         }
@@ -301,7 +338,7 @@ class NewCodegenVisitor extends CodeWriter
         IntrospectionField $field,
         IntrospectionType $parentType,
     ): void {
-        $method = $interface->addMethod($field->name);
+        $method = $interface->addMethod($this->methodName($field->name));
         if ($field->description !== null) {
             $method->addComment($field->description);
         }
@@ -470,7 +507,7 @@ class NewCodegenVisitor extends CodeWriter
         Method $method,
         ?IntrospectionField $field = null,
     ): void {
-        $parameter = $method->addParameter($arg->name);
+        $parameter = $method->addParameter($this->argName($arg->name));
 
         if (!$arg->isRequired()) {
             $parameter->setNullable();
@@ -491,10 +528,12 @@ class NewCodegenVisitor extends CodeWriter
     private function generateMethodArgsBody(Method $method, array $args, string $targetVar): void
     {
         foreach ($args as $arg) {
+            // The argument goes over the wire under its schema name.
+            $phpName = $this->argName($arg->name);
             if (!$arg->isRequired()) {
-                $method->addBody('if (null !== $?) {', [$arg->name]);
+                $method->addBody('if (null !== $?) {', [$phpName]);
             }
-            $method->addBody('$?->setArgument(?, $?);', [$targetVar, $arg->name, $arg->name]);
+            $method->addBody('$?->setArgument(?, $?);', [$targetVar, $arg->name, $phpName]);
             if (!$arg->isRequired()) {
                 $method->addBody('}');
             }
@@ -514,6 +553,81 @@ class NewCodegenVisitor extends CodeWriter
     }
 
     // ---- Formatting helpers ----
+
+    /**
+     * The PHP name of the method generated for a field.
+     */
+    private function methodName(string $fieldName): string
+    {
+        return $this->identifiers?->format($fieldName, Casing::CAMEL) ?? $fieldName;
+    }
+
+    /**
+     * The PHP name of an argument's parameter.
+     */
+    private function argName(string $argName): string
+    {
+        return $this->identifiers?->format($argName, Casing::CAMEL) ?? $argName;
+    }
+
+    /**
+     * The PHP case names of an enum's values, keyed by value.
+     *
+     * A value whose formatted name would collide with another value's
+     * (legacy values like Gzip next to their GZIP alias) keeps its schema
+     * name, so every value keeps a case.
+     *
+     * @return array<string, string>
+     */
+    private function enumCaseNames(IntrospectionType $type): array
+    {
+        $values = array_map(static fn(IntrospectionEnumValue $value) => $value->name, $type->enumValues);
+
+        $formatted = [];
+        foreach ($values as $value) {
+            $formatted[$value] = $this->identifiers?->format($value, Casing::SCREAMING_SNAKE) ?? $value;
+        }
+        $counts = array_count_values($formatted);
+
+        $names = [];
+        foreach ($formatted as $value => $name) {
+            $collides = $name !== $value
+                && ($counts[$name] > 1 || in_array($name, $values, true));
+            $names[$value] = $collides ? $value : $name;
+        }
+
+        return $names;
+    }
+
+    /**
+     * Keeps the methods of fields whose PHP name changed beyond letter case
+     * as deprecated forwarders, under the name they had before identifier
+     * words. PHP method names are case-insensitive, so a case-only rename
+     * needs none: the old spelling still calls the new method.
+     *
+     * @param IntrospectionField[] $fields
+     */
+    private function addLegacyMethods(ClassType|InterfaceType $class, array $fields): void
+    {
+        foreach ($fields as $field) {
+            $name = $this->methodName($field->name);
+            if (strtolower($name) === strtolower($field->name) || $class->hasMethod($field->name)) {
+                continue;
+            }
+
+            $method = $class->getMethod($name);
+            $legacy = $method->cloneWithName($field->name);
+            $legacy->setComment("@deprecated Use {$name}() instead.");
+            if ($class instanceof ClassType) {
+                $call = '$this->' . $name . '(' . implode(', ', array_map(
+                    static fn(string $param) => '$' . $param,
+                    array_keys($method->getParameters()),
+                )) . ');';
+                $legacy->setBody($method->getReturnType() === 'void' ? $call : 'return ' . $call);
+            }
+            $class->setMethods([...array_values($class->getMethods()), $legacy]);
+        }
+    }
 
     private function formatPhpClassName(string $objectName): string
     {
