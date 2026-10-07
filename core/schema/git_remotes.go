@@ -14,19 +14,14 @@ import (
 
 type gitRemoteArgs struct{ Name string }
 
-func (s *gitSchema) remotes(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], _ struct{}) (dagql.ObjectResultArray[*core.GitRemoteHandle], error) {
+func (s *gitSchema) remotes(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], _ struct{}) (dagql.Array[*core.GitRemoteHandle], error) {
 	remotes, _, err := parent.Self().ConfiguredRemotes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	srv := dagql.CurrentDagqlServer(ctx)
-	results := make(dagql.ObjectResultArray[*core.GitRemoteHandle], 0, len(remotes))
+	results := make(dagql.Array[*core.GitRemoteHandle], 0, len(remotes))
 	for _, remote := range remotes {
-		var result dagql.ObjectResult[*core.GitRemoteHandle]
-		if err := srv.Select(ctx, parent, &result, dagql.Selector{Field: "remote", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(remote.Name)}}}); err != nil {
-			return nil, err
-		}
-		results = append(results, result)
+		results = append(results, &core.GitRemoteHandle{Name: dagql.String(remote.Name), URL: remote.URL, Source: parent})
 	}
 	return results, nil
 }

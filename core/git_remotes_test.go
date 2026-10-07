@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -259,4 +261,37 @@ func TestGitContainsIgnoresUnreachableShallowBoundary(t *testing.T) {
 	got, err := gitContains(t.Context(), gitutil.NewGitCLI(gitutil.WithDir(dir)), root, tip)
 	require.NoError(t, err)
 	require.False(t, got)
+}
+
+func TestGitContainsShallowBoundaryWalks(t *testing.T) {
+	for _, count := range []int{0, 32} {
+		t.Run(fmt.Sprintf("unrelated_%d", count), func(t *testing.T) {
+			dir := historyRepo(t, "sha1")
+			root := historyCommit(t, dir, "root", "root")
+			boundary := historyCommit(t, dir, "base", "base")
+			tip := historyCommit(t, dir, "tip", "tip")
+			var boundaries []string
+			if count > 0 {
+				gitMirrorTestRun(t, dir, "checkout", "--orphan", "unrelated")
+				gitMirrorTestRun(t, dir, "rm", "-rf", ".")
+				for i := range count {
+					boundaries = append(boundaries, historyCommit(t, dir, "unrelated", fmt.Sprintf("unrelated %d", i)))
+				}
+			}
+			boundaries = append(boundaries, boundary)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, ".git", "shallow"), []byte(strings.Join(boundaries, "\n")+"\n"), 0600))
+			walks := 0
+			git := gitutil.NewGitCLI(gitutil.WithDir(dir), gitutil.WithExec(func(_ context.Context, cmd *exec.Cmd) error {
+				for _, arg := range cmd.Args {
+					if arg == "merge-base" || arg == "rev-list" {
+						walks++
+					}
+				}
+				return cmd.Run()
+			}))
+			_, err := gitContains(t.Context(), git, tip, root)
+			require.ErrorIs(t, err, ErrGitHistoryIncomplete)
+			require.Equal(t, 2, walks, "unrelated boundaries must not add ancestry walks")
+		})
+	}
 }

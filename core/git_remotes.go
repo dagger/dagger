@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -266,22 +267,44 @@ func (ref *GitRef) Contains(ctx context.Context, other *GitRef) (bool, error) {
 	return contains, err
 }
 
-// Fill shallow boundaries through retained capabilities, in a private joined
-// repository. The supplied checkout and its remote configuration stay untouched.
+// Fill only the shallow boundaries that can affect this comparison, through
+// retained capabilities in a private repository. Leave supplied storage untouched.
 func containsWithFullHistory(ctx context.Context, refs []*GitRef) (bool, error) {
+	git, shas, cleanup, err := refJoin(ctx, refs)
+	if err != nil {
+		return false, err
+	}
+	defer cleanup()
+	contains, err := gitIsAncestor(ctx, git, shas[1], shas[0])
+	if err != nil || contains {
+		return contains, err
+	}
+	boundaries, err := gitMissingAncestryBoundaries(ctx, git, shas[0], shas[1])
+	if err != nil || len(boundaries) == 0 {
+		return false, err
+	}
+	needed := make(map[string]bool, len(boundaries))
+	for _, sha := range boundaries {
+		needed[sha] = true
+	}
 	var history []*GitRef
+	seen := make(map[*LocalGitRepository]bool)
 	for _, ref := range refs {
 		local, ok := ref.Backend.(*LocalGitRef)
-		if !ok || local.repo.Upstream.Self() == nil {
+		if !ok || local.repo.Upstream.Self() == nil || seen[local.repo] {
 			continue
 		}
+		seen[local.repo] = true
 		upstream := local.repo.Upstream
-		err := ref.Backend.mount(ctx, 0, false, func(git *gitutil.GitCLI) error {
+		err := local.repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
 			boundaries, err := gitShallowBoundaries(ctx, git)
 			if err != nil {
 				return err
 			}
 			for _, sha := range boundaries {
+				if !needed[sha] {
+					continue
+				}
 				commit := &gitutil.Ref{SHA: sha}
 				backend, err := upstream.Self().Backend.Get(ctx, commit)
 				if err != nil {
@@ -295,21 +318,14 @@ func containsWithFullHistory(ctx context.Context, refs []*GitRef) (bool, error) 
 			return false, err
 		}
 	}
-	if len(history) == 0 {
-		return false, ErrGitHistoryIncomplete
-	}
-	git, shas, cleanup, err := refJoin(ctx, refs)
-	if err != nil {
-		return false, err
-	}
-	defer cleanup()
+	var fetchErr error
 	for _, ref := range history {
 		boundaries, err := gitShallowBoundaries(ctx, git)
 		if err != nil {
 			return false, err
 		}
-		if len(boundaries) == 0 {
-			break
+		if !slices.Contains(boundaries, ref.Ref.SHA) {
+			continue // An earlier fetch may have completed this boundary too.
 		}
 		err = ref.Backend.mount(ctx, 0, false, func(source *gitutil.GitCLI) error {
 			url, err := source.URL(ctx)
@@ -320,10 +336,15 @@ func containsWithFullHistory(ctx context.Context, refs []*GitRef) (bool, error) 
 			return err
 		})
 		if err != nil {
-			return false, fmt.Errorf("%w: fetch boundary %s: %w", ErrGitHistoryIncomplete, ref.Ref.SHA, err)
+			fetchErr = errors.Join(fetchErr, fmt.Errorf("fetch boundary %s: %w", ref.Ref.SHA, err))
+			continue // Another boundary may still supply a positive answer.
+		}
+		contains, err := gitContains(ctx, git, shas[0], shas[1])
+		if !errors.Is(err, ErrGitHistoryIncomplete) {
+			return contains, err
 		}
 	}
-	return gitContains(ctx, git, shas[0], shas[1])
+	return false, errors.Join(ErrGitHistoryIncomplete, fetchErr)
 }
 
 func gitShallowBoundaries(ctx context.Context, git *gitutil.GitCLI) ([]string, error) {
@@ -346,29 +367,42 @@ func gitContains(ctx context.Context, git *gitutil.GitCLI, commit, ancestor stri
 	if err != nil || contains {
 		return contains, err
 	}
-	boundaries, err := gitShallowBoundaries(ctx, git)
+	boundaries, err := gitMissingAncestryBoundaries(ctx, git, commit, ancestor)
 	if err != nil {
 		return false, err
 	}
-	for _, boundary := range boundaries {
-		reachable, err := gitIsAncestor(ctx, git, boundary, commit)
-		if err != nil {
-			return false, err
-		}
-		if !reachable {
-			// Missing history on another branch cannot change this answer.
-			continue
-		}
-		// Missing history is older than the boundary. If the candidate is
-		// at or above it, that history cannot change a negative answer.
-		// This keeps native workspace comparisons within their owned store.
-		above, err := gitIsAncestor(ctx, git, boundary, ancestor)
-		if err != nil {
-			return false, err
-		}
-		if !above {
-			return false, ErrGitHistoryIncomplete
-		}
+	if len(boundaries) > 0 {
+		return false, ErrGitHistoryIncomplete
 	}
 	return false, nil
+}
+
+// Missing ancestors can affect the answer only below boundaries reachable from
+// commit but not ancestor. One revision walk classifies all boundaries, rather
+// than repeating an ancestry walk for every shallow branch.
+func gitMissingAncestryBoundaries(ctx context.Context, git *gitutil.GitCLI, commit, ancestor string) ([]string, error) {
+	boundaries, err := gitShallowBoundaries(ctx, git)
+	if err != nil || len(boundaries) == 0 {
+		return nil, err
+	}
+	needed := make(map[string]bool, len(boundaries))
+	for _, sha := range boundaries {
+		needed[sha] = false
+	}
+	out, err := git.Run(ctx, "rev-list", commit, "--not", ancestor)
+	if err != nil {
+		return nil, err
+	}
+	for sha := range strings.SplitSeq(string(out), "\n") {
+		if _, boundary := needed[sha]; boundary {
+			needed[sha] = true
+		}
+	}
+	var missing []string
+	for _, sha := range boundaries {
+		if needed[sha] {
+			missing = append(missing, sha)
+		}
+	}
+	return missing, nil
 }

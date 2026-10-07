@@ -199,6 +199,66 @@ func (GitSuite) TestGitBranchFilteringShallow(ctx context.Context, t *testctx.T)
 	require.Equal(t, boundaries, after, "history completion must not mutate the supplied checkout")
 }
 
+func (GitSuite) TestGitBranchFilteringShallowUnrelatedHistory(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).With(gitUserConfig)
+	makeHistory := func(path string) *dagger.Container {
+		prefix := strings.TrimPrefix(path, "/")
+		return fixture.WithWorkdir(path).
+			WithExec([]string{"git", "init", "-b", "main"}).
+			WithNewFile(prefix+"-base", path).WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "base"}).
+			WithNewFile(prefix+"-boundary", path).WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "boundary"}).
+			WithNewFile(prefix+"-tip", path).WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "tip"})
+	}
+	primary := makeHistory("/primary")
+	other := makeHistory("/other")
+	service, url := gitService(ctx, t, c, primary.Directory("."))
+	source := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	joined := fixture.WithDirectory("/primary", primary.Directory(".")).
+		WithDirectory("/other", other.Directory(".")).WithWorkdir("/joined").
+		WithExec([]string{"git", "init", "-b", "checkout"}).
+		WithExec([]string{"git", "fetch", "--depth=2", "file:///primary", "main:main"}).
+		WithExec([]string{"git", "fetch", "--depth=2", "--update-shallow", "file:///other", "main:unrelated"}).
+		WithExec([]string{"git", "checkout", "main"})
+	shallow := joined.Directory(".")
+	boundaries, err := shallow.File(".git/shallow").Contents(ctx)
+	require.NoError(t, err)
+	require.Len(t, strings.Fields(boundaries), 2)
+	local := source.WithContents(shallow)
+	// Completing main is enough to prove these commits are unrelated. Its
+	// source cannot serve the boundary from the other repository.
+	contains, err := local.Head().Contains(ctx, local.Branch("unrelated"))
+	require.NoError(t, err)
+	require.False(t, contains)
+	// A merge includes both incomplete branches, but finding the ancestor
+	// through either parent is enough. The other history can remain missing.
+	base, err := primary.WithExec([]string{"git", "rev-parse", "HEAD~2"}).Stdout(ctx)
+	require.NoError(t, err)
+	merged := joined.WithExec([]string{"git", "merge", "--allow-unrelated-histories", "-m", "join", "unrelated"}).Directory(".")
+	contains, err = source.WithContents(merged).Head().Contains(ctx, source.Ref(strings.TrimSpace(base)))
+	require.NoError(t, err)
+	require.True(t, contains)
+	// Either supplied ref may retain the source that can fill a boundary.
+	// A failed attempt through main's source must not discard that access.
+	otherService, otherURL := gitService(ctx, t, c, other.Directory("."))
+	otherSource := c.Git(otherURL, dagger.GitOpts{ExperimentalServiceHost: otherService})
+	otherBase, err := other.WithExec([]string{"git", "rev-parse", "HEAD~2"}).Stdout(ctx)
+	require.NoError(t, err)
+	withOtherBase := joined.
+		WithExec([]string{"git", "fetch", "--depth=1", "--update-shallow", "file:///other", strings.TrimSpace(otherBase) + ":refs/heads/other-base"}).
+		WithExec([]string{"git", "merge", "--allow-unrelated-histories", "-m", "join", "unrelated"}).Directory(".")
+	contains, err = source.WithContents(withOtherBase).Head().Contains(ctx, otherSource.WithContents(withOtherBase).Branch("other-base"))
+	require.NoError(t, err)
+	require.True(t, contains)
+	after, err := shallow.File(".git/shallow").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, boundaries, after, "history completion must not mutate the supplied checkout")
+}
+
 func (GitSuite) TestGitBranchFilteringApprovedHostHistory(ctx context.Context, t *testctx.T) {
 	fixture := newWorkspaceHostHistoryFixture(ctx, t)
 	c := fixture.client
@@ -365,6 +425,12 @@ func (GitSuite) TestGitBranchFilteringPrivateSnapshot(ctx context.Context, t *te
 	contains, err := remote.Repository().Head(dagger.GitRepositoryHeadOpts{NoLock: true}).Contains(ctx, current)
 	require.NoError(t, err)
 	require.True(t, contains)
+	remotes, err := frozen.Git().Head().AsRepository().Remotes(ctx)
+	require.NoError(t, err)
+	require.Len(t, remotes, 1)
+	contains, err = remotes[0].Repository().Head(dagger.GitRepositoryHeadOpts{NoLock: true}).Contains(ctx, current)
+	require.NoError(t, err)
+	require.True(t, contains, "listed remotes must retain the source's authentication")
 	// Even on the same server, another repository does not inherit the token.
 	other := frozen.Git().Head().AsRepository().WithRemote("other", baseURL+"/other.git").Remote("other").Repository()
 	_, err = other.Head(dagger.GitRepositoryHeadOpts{NoLock: true}).CommitSHA(ctx)

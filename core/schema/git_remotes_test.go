@@ -1,7 +1,9 @@
 package schema
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +14,45 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGitRemotesListRetainsSource(t *testing.T) {
+	ctx, srv, cache, _ := resolverOutputFixture(t)
+	srv.InstallObject(dagql.NewClass[*core.GitRemoteHandle](srv))
+	s := &gitSchema{}
+	lookups := 0
+	dagql.Fields[*core.GitRepository]{
+		dagql.NodeFunc("remotes", s.remotes),
+		dagql.NodeFunc("remote", func(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args gitRemoteArgs) (dagql.ObjectResult[*core.GitRemoteHandle], error) {
+			lookups++
+			return s.remote(ctx, parent, args)
+		}),
+	}.Install(srv)
+	upstream := ""
+	remotes := make([]core.GitRemote, 32)
+	for i := range remotes {
+		remotes[i] = core.GitRemote{Name: fmt.Sprintf("remote-%02d", i), URL: fmt.Sprintf("https://example.test/repo-%02d", i)}
+	}
+	parent := resolverAttach(t, ctx, srv, cache, "repository", &core.GitRepository{Remotes: remotes, UpstreamRemote: &upstream})
+	list, err := parent.Select(ctx, srv, dagql.Selector{Field: "remotes"})
+	require.NoError(t, err)
+	for i, remote := range remotes {
+		item, err := list.NthValue(ctx, i+1)
+		require.NoError(t, err)
+		handle, ok := dagql.UnwrapAs[*core.GitRemoteHandle](item)
+		require.True(t, ok)
+		require.Equal(t, remote.Name, handle.Name.String())
+		require.Equal(t, remote.URL, handle.URL)
+		require.Same(t, parent.Self(), handle.Source.Self())
+		id, err := item.ID()
+		require.NoError(t, err)
+		loaded, err := srv.Load(ctx, id)
+		require.NoError(t, err)
+		restored, ok := dagql.UnwrapAs[*core.GitRemoteHandle](loaded)
+		require.True(t, ok)
+		require.Same(t, parent.Self(), restored.Source.Self())
+	}
+	require.Zero(t, lookups, "listing must use its configuration read rather than look up every remote again")
+}
 
 func TestCapturedGitRemoteNames(t *testing.T) {
 	for _, name := range []string{"team/trunk", "team.fork", "-fork", "origin", "", "bad..name", "bad name", "bad\nname"} {
