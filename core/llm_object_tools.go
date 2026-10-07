@@ -625,9 +625,10 @@ var selectionTypes = map[string]string{
 
 // remoteGitSchemes are the git URL schemes a model may supply. The Address
 // git decoders read anything else from the calling client's host: a path is a
-// local directory or repository, and an ssh:// or scp-style URL borrows the
-// client's SSH agent socket.
-var remoteGitSchemes = []string{gitutil.HTTPSProtocol, gitutil.HTTPProtocol, gitutil.GitProtocol}
+// local directory or repository. An ssh:// or scp-style URL authenticates
+// with the agent owner's SSH agent, which Query.git only lends an agent with
+// the owner's approval (see Server.AuthorizeGitRead).
+var remoteGitSchemes = []string{gitutil.HTTPSProtocol, gitutil.HTTPProtocol, gitutil.GitProtocol, gitutil.SSHProtocol}
 
 // remoteGitURL accepts only a git URL with one of the remoteGitSchemes.
 func remoteGitURL(addr string) error {
@@ -635,7 +636,7 @@ func remoteGitURL(addr string) error {
 	if err == nil && slices.Contains(remoteGitSchemes, u.Scheme) {
 		return nil
 	}
-	return errors.New("only an https://, http:// or git:// git URL or a dag:// address is accepted; local paths and ssh URLs would reach the calling client's host")
+	return errors.New("only a remote git URL (https://, http://, git://, ssh:// or git@host:path) or a dag:// address is accepted; local paths would reach the calling client's host")
 }
 
 // addressableTypes lists every object type with an Address.<field> loader in
@@ -654,22 +655,22 @@ var addressableTypes = map[string]addressableType{
 	"Directory": {
 		addressField: "directory",
 		external:     remoteGitURL,
-		hint:         `an https:// or git:// git URL with an optional #<ref>:<subdir> like "https://github.com/org/repo#main:docs", ` + dagAddressHint + `, or a Directory ID from a prior tool result`,
+		hint:         `a remote git URL (https://, ssh:// or git@host:path) with an optional #<ref>:<subdir> like "https://github.com/org/repo#main:docs", ` + dagAddressHint + `, or a Directory ID from a prior tool result`,
 	},
 	"File": {
 		addressField: "file",
 		external:     remoteGitURL,
-		hint:         `an https:// or git:// git URL with #<ref>:<path> like "https://github.com/org/repo#main:README.md", ` + dagAddressHint + `, or a File ID from a prior tool result`,
+		hint:         `a remote git URL (https://, ssh:// or git@host:path) with #<ref>:<path> like "https://github.com/org/repo#main:README.md", ` + dagAddressHint + `, or a File ID from a prior tool result`,
 	},
 	"GitRef": {
 		addressField: "gitRef",
 		external:     remoteGitURL,
-		hint:         `an https:// or git:// git URL with an optional #<branch, tag or commit> like "https://github.com/org/repo#main" (the default branch without one), ` + dagAddressHint + `, or a GitRef ID from a prior tool result`,
+		hint:         `a remote git URL (https://, ssh:// or git@host:path) with an optional #<branch, tag or commit> like "https://github.com/org/repo#main" (the default branch without one), ` + dagAddressHint + `, or a GitRef ID from a prior tool result`,
 	},
 	"GitRepository": {
 		addressField: "gitRepository",
 		external:     remoteGitURL,
-		hint:         `an https:// or git:// git URL without a #ref like "https://github.com/org/repo", ` + dagAddressHint + `, or a GitRepository ID from a prior tool result`,
+		hint:         `a remote git URL (https://, ssh:// or git@host:path) without a #ref like "https://github.com/org/repo", ` + dagAddressHint + `, or a GitRepository ID from a prior tool result`,
 	},
 	"Service": {
 		addressField: "service",
@@ -695,8 +696,10 @@ var addressableTypes = map[string]addressableType{
 // calling client's host: each type's external check admits only forms whose
 // decoding stays off the host (image refs, remote git URLs), besides dag://
 // addresses. The CLI's host fallbacks — local paths for Directory/File,
-// local repositories and SSH agents for the git types, host tunnels for
-// Service — are refused before the Address decoder runs.
+// local repositories for the git types, host tunnels for Service — are
+// refused before the Address decoder runs. A private remote git URL may still
+// authenticate with the agent owner's credential helper or SSH agent, but
+// only as Query.git authorizes it (see Server.AuthorizeGitRead).
 var unliftableTypes = map[string]bool{
 	"Secret": true,
 	"Socket": true,
@@ -1221,7 +1224,7 @@ func (m *MCP) liftAddress(ctx context.Context, srv *dagql.Server, typeName, addr
 			if err := checkLiftableAddress(typeName, addr); err != nil {
 				return "", fmt.Errorf("%q is not a %s ID or an accepted %s address: %w", addr, typeName, typeName, err)
 			}
-			obj, err = resolveObjectAddress(ctx, srv, addr, addressableTypes[typeName].addressField)
+			obj, err = resolveObjectAddress(WithAgentAddressResolution(ctx), srv, addr, addressableTypes[typeName].addressField)
 			if err != nil {
 				if dagaddress.IsAddress(addr) {
 					// Plainly not an ID: the decode error would only be noise.

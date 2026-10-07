@@ -1,0 +1,12 @@
+kind: Added
+body: |
+  Agents can read Git repositories by SSH URL (`ssh://` or `git@host:path`)
+  passed to their tools, authenticating with the user's SSH agent once the user
+  approves each repository for the session. Since an SSH agent's keys are not
+  scoped to a host, this asks even in the user's own conversation. Without a
+  running SSH agent, Dagger starts one on demand from the user's unencrypted
+  identity files, as for push; a key with a passphrase must be added to the
+  user's SSH agent instead.
+time: 2026-10-05T16:05:00Z
+custom:
+  Author: vito

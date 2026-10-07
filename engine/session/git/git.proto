@@ -303,6 +303,10 @@ message CaptureGitCandidate {
 
 message PreparePushSSHAuthRequest {
   string remote = 1;
+  // Never prompt to unlock an encrypted identity: use a running agent or
+  // unencrypted identity files, else fail. Set for an agent's reads, where a
+  // passphrase prompt would fight the TUI for the keyboard.
+  bool no_unlock = 2;
 }
 
 message PreparePushSSHAuthResponse {

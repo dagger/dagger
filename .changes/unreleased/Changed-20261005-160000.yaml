@@ -1,0 +1,8 @@
+kind: Changed
+body: |
+  Denying an agent's Git push (or read) at the prompt no longer applies for the
+  rest of the session: a later attempt asks again, so a "no" can be a
+  temporary course correction. Approvals still last for the session.
+time: 2026-10-05T16:00:00Z
+custom:
+  Author: vito
