@@ -169,7 +169,8 @@ func artifactClientParams(params client.Params, addresses []string) (client.Para
 func artifactPaths(addresses []*dagaddress.Address, keys ...dagaddress.Pair) []string {
 	var paths []string
 	for _, addr := range addresses {
-		if addr.Path == "" {
+		path := addr.ArtifactPath()
+		if path == "" {
 			// Module selectors are known before schema discovery. Reuse include
 			// narrowing without guessing which module owns a type or collection.
 			var modules []string
@@ -187,7 +188,7 @@ func artifactPaths(addresses []*dagaddress.Address, keys ...dagaddress.Pair) []s
 			paths = append(paths, modules...)
 			continue
 		}
-		paths = append(paths, addr.Path)
+		paths = append(paths, path)
 	}
 	return paths
 }

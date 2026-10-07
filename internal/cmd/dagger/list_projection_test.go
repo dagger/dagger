@@ -11,20 +11,20 @@ import (
 
 func TestArtifactCollectionTypeKeys(t *testing.T) {
 	item := listedArtifact{
-		URI: "dag+go-test://go/modules/tests?go-module=./api&go-test=TestHealth", CollectionItem: true,
+		URI: "dag+go-test://?artifact-go-test=go/modules/tests&go-module=./api&go-test=TestHealth", CollectionItem: true,
 		DimensionKeys: []struct{ Dimension, Key string }{{"go/modules", "./api"}, {"go/modules/tests", "TestHealth"}, {"type:GoTest", "go/modules/tests"}},
 	}
-	path := artifactListPath{URI: "dag+check://go/modules/tests/run", Dimensions: []string{"go/modules", "go/modules/tests", "type:Check"}}
+	path := artifactListPath{URI: "dag+check://?check=go/modules/tests/run", Dimensions: []string{"go/modules", "go/modules/tests", "type:Check"}}
 	for _, tc := range []struct {
 		name  string
 		paths []artifactListPath
 		omit  bool
 	}{
 		{"descendant operations", []artifactListPath{path}, true},
-		{"module checks do not match a test key", []artifactListPath{path, {URI: "dag+check://go/modules/test", Dimensions: []string{"go/modules", "type:Check"}}}, true},
-		{"empty sibling counts", []artifactListPath{path, {URI: "dag+check://other/tests/run", Dimensions: path.Dimensions}}, false},
+		{"module checks do not match a test key", []artifactListPath{path, {URI: "dag+check://?check=go/modules/test", Dimensions: []string{"go/modules", "type:Check"}}}, true},
+		{"empty sibling counts", []artifactListPath{path, {URI: "dag+check://?check=other/tests/run", Dimensions: path.Dimensions}}, false},
 		{"unknown schema", nil, false},
-		{"path boundaries", []artifactListPath{{URI: "dag+check://go/modules/tests-extra/run", Dimensions: path.Dimensions}}, false},
+		{"path boundaries", []artifactListPath{{URI: "dag+check://?check=go/modules/tests-extra/run", Dimensions: path.Dimensions}}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			other := item
@@ -42,18 +42,18 @@ func TestArtifactCollectionTypeKeys(t *testing.T) {
 
 func TestArtifactCLITypeKeyOmission(t *testing.T) {
 	item := listedArtifact{
-		URI: "dag+check://go/modules/tests/run?go-module=.&go-test=TestFoo",
+		URI: "dag+check://?check=go/modules/tests/run&go-module=.&go-test=TestFoo",
 		DimensionKeys: []struct{ Dimension, Key string }{
 			{"module", "go"}, {"go/modules", "."}, {"go/modules/tests", "TestFoo"}, {"type:Check", "go/modules/tests/run"},
 		},
 	}
-	run := artifactListPath{URI: "dag+check://go/modules/tests/run", ModuleName: "go", Dimensions: []string{"module", "go/modules", "go/modules/tests", "type:Check"}}
+	run := artifactListPath{URI: "dag+check://?check=go/modules/tests/run", ModuleName: "go", Dimensions: []string{"module", "go/modules", "go/modules/tests", "type:Check"}}
 	sibling := func(uri string) artifactListPath {
 		path := run
 		path.URI = uri
 		return path
 	}
-	container := artifactListPath{URI: "dag+container://go/modules/tests/container", ModuleName: "go", Dimensions: []string{"module", "go/modules", "go/modules/tests", "type:Container"}}
+	container := artifactListPath{URI: "dag+container://?container=go/modules/tests/container", ModuleName: "go", Dimensions: []string{"module", "go/modules", "go/modules/tests", "type:Container"}}
 	for _, tc := range []struct {
 		name  string
 		paths []artifactListPath
@@ -61,18 +61,18 @@ func TestArtifactCLITypeKeyOmission(t *testing.T) {
 		omit  bool
 	}{
 		{"single check on an item", []artifactListPath{run}, []string{"Check"}, true},
-		{"unlisted sibling check", []artifactListPath{run, sibling("dag+check://go/modules/tests/validate")}, []string{"Check"}, false},
-		{"empty sibling with the same dimensions", []artifactListPath{run, sibling("dag+check://go/empty/tests/run")}, []string{"Check"}, false},
-		{"parent check lacks the test dimension", []artifactListPath{run, {URI: "dag+check://go/modules/check", ModuleName: "go", Dimensions: []string{"module", "go/modules", "type:Check"}}}, []string{"Check"}, true},
-		{"descendant check adds another dimension", []artifactListPath{run, {URI: "dag+check://go/modules/tests/parts/run", ModuleName: "go", Dimensions: append(slices.Clone(run.Dimensions), "go/modules/tests/parts")}}, []string{"Check"}, false},
-		{"another module does not match", []artifactListPath{run, {URI: "dag+check://other/modules/tests/run", ModuleName: "other", Dimensions: run.Dimensions}}, []string{"Check"}, true},
+		{"unlisted sibling check", []artifactListPath{run, sibling("dag+check://?check=go/modules/tests/validate")}, []string{"Check"}, false},
+		{"empty sibling with the same dimensions", []artifactListPath{run, sibling("dag+check://?check=go/empty/tests/run")}, []string{"Check"}, false},
+		{"parent check lacks the test dimension", []artifactListPath{run, {URI: "dag+check://?check=go/modules/check", ModuleName: "go", Dimensions: []string{"module", "go/modules", "type:Check"}}}, []string{"Check"}, true},
+		{"descendant check adds another dimension", []artifactListPath{run, {URI: "dag+check://?check=go/modules/tests/parts/run", ModuleName: "go", Dimensions: append(slices.Clone(run.Dimensions), "go/modules/tests/parts")}}, []string{"Check"}, false},
+		{"another module does not match", []artifactListPath{run, {URI: "dag+check://?check=other/modules/tests/run", ModuleName: "other", Dimensions: run.Dimensions}}, []string{"Check"}, true},
 		{"command type excludes other types", []artifactListPath{run, container}, []string{"Check"}, true},
 		{"untyped list keeps type distinction", []artifactListPath{run, container}, nil, false},
 		{"untyped list with only one path", []artifactListPath{run}, nil, true},
 		{"wrong command type", []artifactListPath{run, container}, []string{"Container"}, false},
 		{"duplicate schema paths", []artifactListPath{run, run}, []string{"Check"}, true},
 		{"unknown schema", nil, []string{"Check"}, false},
-		{"target absent from schema", []artifactListPath{sibling("dag+check://go/modules/tests/validate")}, []string{"Check"}, false},
+		{"target absent from schema", []artifactListPath{sibling("dag+check://?check=go/modules/tests/validate")}, []string{"Check"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Reverse both input orders. No omission can depend on an earlier
@@ -93,7 +93,7 @@ func TestArtifactCLITypeKeyOmission(t *testing.T) {
 		row := item
 		row.DimensionKeys = slices.Clone(item.DimensionKeys)
 		row.DimensionKeys[3] = struct{ Dimension, Key string }{"type:Container", "go/modules/tests/container"}
-		paths := []artifactListPath{container, {URI: "dag+directory://go/modules/tests/files", ModuleName: "go", Dimensions: []string{"module", "go/modules", "go/modules/tests", "type:Directory"}}}
+		paths := []artifactListPath{container, {URI: "dag+directory://?directory=go/modules/tests/files", ModuleName: "go", Dimensions: []string{"module", "go/modules", "go/modules/tests", "type:Directory"}}}
 		index, err := newArtifactNameIndex(paths)
 		require.NoError(t, err)
 		require.False(t, canOmitArtifactCLITypeKey(row, index, commandArtifactTypes(&cobra.Command{Use: "shell"})))
@@ -112,7 +112,7 @@ func TestArtifactCLITypeKeyOmission(t *testing.T) {
 		require.False(t, canOmitArtifactCLITypeKey(group, index, []string{"Check"}))
 	})
 	t.Run("cached proof preserves module and dimension scope", func(t *testing.T) {
-		paths := []artifactListPath{run, {URI: "dag+check://go/modules/check", ModuleName: "go", Dimensions: []string{"module", "go/modules", "type:Check"}}}
+		paths := []artifactListPath{run, {URI: "dag+check://?check=go/modules/check", ModuleName: "go", Dimensions: []string{"module", "go/modules", "type:Check"}}}
 		index, err := newArtifactNameIndex(paths)
 		require.NoError(t, err)
 		rows := []listedArtifact{item, item, item, item}

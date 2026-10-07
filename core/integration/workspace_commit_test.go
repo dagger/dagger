@@ -1432,7 +1432,7 @@ func (*Probe) Committed() error { return nil }
 	require.Len(t, checks, 1)
 	name, err := checks[0].URI(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag://probe/committed", name)
+	require.Equal(t, "dag://?check=probe/committed", name)
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context, t *testctx.T) {

@@ -21,9 +21,6 @@ func TestArtifactModuleSelectionBeforeExpansion(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, selected.Entries, 2)
 	require.Equal(t, []string{"go", "playwright"}, selected.DimensionKeys("module"))
-	uri, err := selected.Entries[0].URI(ArtifactURIOpts{DimensionKeys: true})
-	require.NoError(t, err)
-	require.Equal(t, "dag://test", uri, "the path already identifies the module")
 	address, err := dagaddress.Parse("dag://?module=playwright")
 	require.NoError(t, err)
 	selected, err = all.FilterURI(address)
@@ -92,9 +89,6 @@ func TestArtifactTypeDimensionPrunesBeforeExpansion(t *testing.T) {
 		require.Len(t, expanded.Entries, 1)
 		for _, item := range expanded.Entries {
 			require.Equal(t, []*ArtifactDimensionKey{{Dimension: "app/items", Key: "a"}, {Dimension: "type:Item", Key: "items"}}, item.DimensionKeys)
-			uri, err := item.URI(ArtifactURIOpts{DimensionKeys: true})
-			require.NoError(t, err)
-			require.Equal(t, "dag://items?item=a", uri)
 		}
 	}
 	static, err := all.FilterDimensionKeys("type:Container", []string{"static"}).expand(t.Context(), func(context.Context, *Artifact) ([]collectionKey, error) {

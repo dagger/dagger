@@ -65,7 +65,8 @@ func omitCollectionTypeKeys(items []listedArtifact, paths []artifactListPath) er
 		}
 		slices.Sort(dimensions)
 		dimensions = slices.Compact(dimensions)
-		cacheKey := addr.Path + "\x00" + strings.Join(dimensions, "\x00")
+		itemPath := addr.ArtifactPath(addr.Types...)
+		cacheKey := itemPath + "\x00" + strings.Join(dimensions, "\x00")
 		if omit, ok := cache[cacheKey]; ok {
 			items[i].OmitTypeKey = omit
 			continue
@@ -75,8 +76,8 @@ func omitCollectionTypeKeys(items []listedArtifact, paths []artifactListPath) er
 			if slices.ContainsFunc(dimensions, func(d string) bool { return !slices.Contains(path.Dimensions, d) }) {
 				continue
 			}
-			candidate := addresses[j]
-			if candidate.Path != addr.Path && !strings.HasPrefix(candidate.Path, addr.Path+"/") {
+			candidate := addresses[j].ArtifactPath(addresses[j].Types...)
+			if candidate != itemPath && !strings.HasPrefix(candidate, itemPath+"/") {
 				safe = false
 				break
 			}

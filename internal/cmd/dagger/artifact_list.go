@@ -83,7 +83,11 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		if err != nil {
 			return err
 		}
+		typeKey, ok := addr.TypeKey(addr.Types...)
 		addr.Query = nil
+		if ok {
+			addr.Query = []dagaddress.Pair{typeKey}
+		}
 		path := addr.String()
 		groups[path] = append(groups[path], item)
 	}
@@ -161,7 +165,7 @@ func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection 
 			if dim == artifact.ModuleDimension {
 				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{dim, path.ModuleName})
 			} else if strings.HasPrefix(dim, "type:") {
-				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{dim, addr.Path})
+				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{dim, addr.ArtifactPath(addr.Types...)})
 			} else {
 				item.Presence = append(item.Presence, dim)
 			}

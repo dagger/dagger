@@ -1989,10 +1989,10 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 		isError bool
 	}{
 		{block: toolCall("add", "withMember", `{"name":"a","contents":"hello from the roster"}`)},
-		{block: show("plain", "dag://roster/members/dir?member=a")},
-		{block: show("typed", "dag+directory://roster/members/dir?member=a")},
-		{block: show("wrong_type", "dag+file://roster/members/dir?member=a"), isError: true},
-		{block: show("missing", "dag://roster/members/dir?member=nobody"), isError: true},
+		{block: show("plain", "dag://roster/members/dir?roster-member=a")},
+		{block: show("typed", "dag+directory://roster/members/dir?roster-member=a")},
+		{block: show("wrong_type", "dag+file://roster/members/dir?roster-member=a"), isError: true},
+		{block: show("missing", "dag://roster/members/dir?roster-member=nobody"), isError: true},
 	}
 	script := c.LLM().WithPrompt("show the new member")
 	for _, call := range calls {
@@ -2026,7 +2026,7 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 		// artifact's...
 		require.Contains(t, out, "is a Directory, not file")
 		// ...and an unknown key does not fall back to a fresh roster.
-		require.Contains(t, out, `resolve "dag://roster/members/dir?member=nobody": no artifact matches`)
+		require.Contains(t, out, `resolve "dag://roster/members/dir?roster-member=nobody": no artifact matches`)
 		require.Contains(t, out, "done")
 	})
 
@@ -2034,9 +2034,9 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 		// The same address through Workspace.resolve evaluates a fresh
 		// Roster, which has no members.
 		_, err := base.With(daggerShell(
-			`current-workspace | resolve "dag://roster/members/dir?member=a" | directory | entries`,
+			`current-workspace | resolve "dag://roster/members/dir?roster-member=a" | directory | entries`,
 		)).Stdout(ctx)
-		requireErrOut(t, err, `resolve "dag://roster/members/dir?member=a": no artifact matches`)
+		requireErrOut(t, err, `resolve "dag://roster/members/dir?roster-member=a": no artifact matches`)
 	})
 
 	t.Run("selection args take addresses in the conversation's scope", func(ctx context.Context, t *testctx.T) {
@@ -2057,10 +2057,10 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 			block   dagger.LLMContentBlockInput
 			isError bool
 		}{
-			{block: toolCall("one", "read", `{"target":"roster/members/notes?member=a"}`)},
-			{block: toolCall("typed", "read", `{"target":"dag+file://roster/members/notes?member=a"}`)},
+			{block: toolCall("one", "read", `{"target":"roster/members/notes?roster-member=a"}`)},
+			{block: toolCall("typed", "read", `{"target":"dag+file://roster/members/notes?roster-member=a"}`)},
 			{block: toolCall("many", "read", `{"target":"roster/members/*"}`), isError: true},
-			{block: toolCall("nobody", "readAll", `{"targets":"roster/members/notes?member=nobody"}`), isError: true},
+			{block: toolCall("nobody", "readAll", `{"targets":"roster/members/notes?roster-member=nobody"}`), isError: true},
 		} {
 			script = script.
 				WithResponse([]dagger.LLMContentBlockInput{call.block}).
@@ -2085,16 +2085,16 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 		// The bare glob selects the bound roster's notes, member a included:
 		// the rebinding earlier in the turn is in scope. Evaluated inside the
 		// module function, the notes still get the conversation's workspace.
-		require.Contains(t, out, "dag://roster/members/notes?member=a: "+notes, out)
+		require.Contains(t, out, "dag://?file=roster/members/notes&roster-member=a: "+notes, out)
 		// A keyed address, with or without a type assertion, picks one.
 		require.Equal(t, 2, strings.Count(out, "read: "+notes), out)
 		// An Artifact must be exactly one: several matches are listed.
 		require.Contains(t, out, `"roster/members/*" is not a resolvable Artifact address: dag://roster/members/* matches 2 artifacts`)
-		require.Contains(t, out, "dag://roster/members/dir?member=a")
+		require.Contains(t, out, "dag://?directory=roster/members/dir&roster-member=a")
 		require.Contains(t, out, "FindArtifacts lists what exists")
 		// A collection path with an unknown key has no items: refused, not
 		// handed to the function as an empty selection.
-		require.Contains(t, out, `"roster/members/notes?member=nobody" is not a resolvable Artifacts address: no artifact matches dag://roster/members/notes?member=nobody`)
+		require.Contains(t, out, `"roster/members/notes?roster-member=nobody" is not a resolvable Artifacts address: no artifact matches dag://roster/members/notes?roster-member=nobody`)
 		require.Contains(t, out, "done")
 	})
 
@@ -2109,19 +2109,19 @@ scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $rost
 			return out
 		}
 		// The collection's keys come from the bound roster's state...
-		require.Equal(t, "dag://roster/members/dir?member=a\n",
+		require.Equal(t, "dag://?directory=roster/members/dir&roster-member=a\n",
 			run(ctx, t, `$scope | filter-uri "dag://roster/members/dir" | items | uri`))
 		// ...and so does the value.
 		require.Equal(t, "hello from the roster",
-			run(ctx, t, `$scope | filter-uri "dag://roster/members/dir?member=a" | one | value | file f | contents`))
+			run(ctx, t, `$scope | filter-uri "dag://roster/members/dir?roster-member=a" | one | value | file f | contents`))
 		// The workspace's other modules are in scope, constructed fresh.
-		require.Equal(t, "dag://notes/docs\n",
+		require.Equal(t, "dag://?directory=notes/docs\n",
 			run(ctx, t, `$scope | filter-uri "dag://notes/**" | items | uri`))
 		require.Equal(t, "README\n",
 			run(ctx, t, `$scope | filter-uri "dag://notes/docs" | one | value | entries`))
 		// The workspace's own roster is shadowed by the bound one: the
 		// collection is listed once, not once per roster.
-		require.Equal(t, "dag://roster/members\n",
+		require.Equal(t, "dag://?artifact-roster-members=roster/members\n",
 			run(ctx, t, `$scope | filter-uri "dag://roster/members" | items | uri`))
 	})
 
@@ -2144,8 +2144,8 @@ scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $rost
 			`llm | with-tools $(roster) | artifacts | filter-uri "dag://{notes,roster}/**" | path-definitions | uri`,
 		)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "dag://roster/members\n")
-		require.NotContains(t, out, "dag://notes/")
+		require.Contains(t, out, "dag://?artifact-roster-members=roster/members\n")
+		require.NotContains(t, out, "=notes/")
 	})
 
 	t.Run("a freshly constructed binding yields to the workspace", func(ctx context.Context, t *testctx.T) {
@@ -2183,7 +2183,7 @@ scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $rost
 // tool's collection, in the shape of vito/agents' staff and committer modules
 // (the workspace-agent-refs fixture mirrors them): a never-started chief
 // Agent is put on a Roster, and its committed history is addressed as
-// dag://roster/members/head?member=chief — which only resolves against the
+// dag://roster/members/head?roster-members-member=chief — which only resolves against the
 // BOUND Roster (or a View minted from it), since a fresh one has no members —
 // and handed to GitRef-taking tools of another module by the model.
 func (LLMSuite) TestBoundCollectionRefs(ctx context.Context, t *testctx.T) {
@@ -2222,7 +2222,7 @@ roster=$(roster | with-worker --name chief --worker $chief)
 	toolCall := func(id, name, args string) dagger.LLMContentBlockInput {
 		return dagger.LLMContentBlockInput{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: name, Arguments: dagger.JSON(args)}
 	}
-	const chiefHead = "dag://roster/members/head?member=chief"
+	const chiefHead = "dag://roster/members/head?roster-members-member=chief"
 	conversation := func(prompt string, calls ...dagger.LLMContentBlockInput) string {
 		script := c.LLM().WithPrompt(prompt)
 		for _, call := range calls {
@@ -2242,7 +2242,7 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		const prompt = "look at the chief's work"
 		model := conversation(prompt,
 			toolCall("plain", "show", fmt.Sprintf(`{"from":%q}`, chiefHead)),
-			toolCall("typed", "show", `{"from":"dag+git-ref://roster/members/head?member=chief"}`),
+			toolCall("typed", "show", `{"from":"dag+git-ref://roster/members/head?roster-members-member=chief"}`),
 		)
 		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
 		// Both spellings reach the chief's HEAD, which only the bound roster
@@ -2271,19 +2271,19 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		model := conversation(prompt,
 			toolCall("find", "FindArtifacts", `{"type":"GitRef"}`),
 			toolCall("items", "FindArtifacts", `{"address":"roster/members/head","view":"items"}`),
-			toolCall("show", "show", `{"from":"dag+git-ref://roster/members/head?member=chief"}`),
+			toolCall("show", "show", `{"from":"dag+git-ref://roster/members/head?roster-members-member=chief"}`),
 		)
 		transcript := run(ctx, t, chat(model, "$roster", prompt)+" | transcript")
 		// The path, with a placeholder for the member it needs, is marked as
 		// read from the bound roster...
 		require.Contains(t, transcript,
-			"dag+git-ref://roster/members/head?member=<name> — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+			"dag+git-ref://?git-ref=roster/members/head&roster-members-member=<name> — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
 		// ...followed by the live members' keys, so the model needs no
 		// second call to learn them...
-		require.Contains(t, transcript, "member=<name> — keys: chief")
+		require.Contains(t, transcript, "roster-members-member=<name> — keys: chief")
 		// ...and the items are its live members, fully keyed.
 		require.Contains(t, transcript,
-			"dag+git-ref://roster/members/head?member=chief — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+			"dag+git-ref://?git-ref=roster/members/head&roster-members-member=chief — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
 		require.Contains(t, transcript, "commit "+chiefSHA)
 		require.Contains(t, transcript, "+from the chief")
 	})
@@ -2355,9 +2355,9 @@ func (LLMSuite) TestFindArtifacts(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "Modules that failed to load")
 		// The checks: the loaded module's, and the load failure in place of
 		// the broken module's.
-		require.Contains(t, out, "dag+check://good/verify — A trivial check. Used to prove the module loaded for `dagger check`.")
-		require.Contains(t, out, "dag+check://bad/load — LOAD ERROR: ")
-		require.NotContains(t, out, "dag+service://good/web —")
+		require.Contains(t, out, "dag+check://?check=good/verify — A trivial check. Used to prove the module loaded for `dagger check`.")
+		require.Contains(t, out, "dag+check://?check=bad/load — LOAD ERROR: ")
+		require.NotContains(t, out, "dag+service://?service=good/web —")
 		require.Contains(t, out, "done")
 	})
 }

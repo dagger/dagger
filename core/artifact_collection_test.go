@@ -25,6 +25,7 @@ func collectionArtifactFixture() *Artifacts {
 			})
 		}
 	}
+	artifacts.AllDimensions = artifacts.DimensionDefinitions()
 	return artifacts
 }
 
@@ -47,6 +48,7 @@ func parallelCollectionFixture(nested bool) (*Artifacts, artifactCollectionKeyFu
 			all.Entries = append(all.Entries, &Artifact{Path: []string{name, "check"}, Node: &ModTreeNode{Name: "check", Parent: item}})
 		}
 	}
+	all.AllDimensions = all.DimensionDefinitions()
 	return all, func(_ context.Context, receiver *Artifact) ([]collectionKey, error) {
 		if nested && receiver.Node.Name == "modules" {
 			return []collectionKey{{text: "b"}, {text: "a"}}, nil
@@ -200,11 +202,12 @@ func TestArtifactCollectionExpansionPrunesParents(t *testing.T) {
 
 func TestArtifactCollectionDimensionBinding(t *testing.T) {
 	all := collectionArtifactFixture()
-	_, err := all.FilterDimensionKeys("item", []string{"a"}).BindDimensions()
-	require.ErrorContains(t, err, "ambiguous dimension")
+	// A path filter does not narrow name resolution.
+	for _, selected := range []*Artifacts{all, all.FilterPath([]string{"items"})} {
+		_, err := selected.FilterDimensionKeys("item", []string{"a"}).BindDimensions()
+		require.ErrorContains(t, err, "ambiguous dimension")
+	}
 	for _, selected := range []*Artifacts{
-		all.FilterDimensionKeys("item", []string{"a"}).FilterPath([]string{"items"}),
-		all.FilterPath([]string{"items"}).FilterDimensionKeys("item", []string{"a"}),
 		all.FilterPath([]string{"items"}).FilterDimensionKeys("app-items", []string{"a"}),
 		all.FilterPath([]string{"items"}).FilterDimensionKeys("app/items", []string{"a"}),
 	} {
@@ -214,15 +217,17 @@ func TestArtifactCollectionDimensionBinding(t *testing.T) {
 		require.Equal(t, []*ArtifactDimensionKey{{Dimension: "app/items", Key: "a"}, {Dimension: "type:Item", Key: "items"}}, expanded.Entries[0].DimensionKeys)
 		uri, err := expanded.Entries[0].URI(ArtifactURIOpts{DimensionKeys: true})
 		require.NoError(t, err)
-		require.Equal(t, "dag://items?item=a", uri)
-		addr, err := dagaddress.Parse(expanded.URI())
-		require.NoError(t, err)
-		roundTrip, err := all.FilterURI(addr)
-		require.NoError(t, err)
-		roundTrip, err = roundTrip.Expand(context.Background())
-		require.NoError(t, err)
-		require.Len(t, roundTrip.Entries, 1)
-		require.Equal(t, expanded.Entries[0].DimensionKeys, roundTrip.Entries[0].DimensionKeys)
+		require.Equal(t, "dag://?artifact-item=items&app-items-item=a", uri)
+		for _, printed := range []string{uri, expanded.URI()} {
+			addr, err := dagaddress.Parse(printed)
+			require.NoError(t, err)
+			roundTrip, err := all.FilterURI(addr)
+			require.NoError(t, err)
+			roundTrip, err = roundTrip.Expand(context.Background())
+			require.NoError(t, err)
+			require.Len(t, roundTrip.Entries, 1)
+			require.Equal(t, expanded.Entries[0].DimensionKeys, roundTrip.Entries[0].DimensionKeys)
+		}
 	}
 	require.Empty(t, all.Selector.Dimensions)
 }
@@ -233,7 +238,7 @@ func TestArtifactCollectionDimensionAlternatives(t *testing.T) {
 	expanded, err := selected.Expand(context.Background())
 	require.NoError(t, err)
 	require.Len(t, expanded.Entries, 4)
-	narrowed, err := selected.FilterPath([]string{"items"}).FilterDimensionKeys("item", []string{"a"}).Expand(context.Background())
+	narrowed, err := selected.FilterPath([]string{"items"}).FilterDimensionKeys("app-items", []string{"a"}).Expand(context.Background())
 	require.NoError(t, err)
 	require.Len(t, narrowed.Entries, 1)
 	for _, names := range [][]string{nil, {}, {"missing"}} {
@@ -268,7 +273,7 @@ func TestArtifactCollectionExactEndpoints(t *testing.T) {
 func TestArtifactCollectionExclusions(t *testing.T) {
 	all, err := collectionArtifactFixture().FilterPattern("items*")
 	require.NoError(t, err)
-	exclusion, err := dagaddress.Parse("items?item=a")
+	exclusion, err := dagaddress.Parse("items?app-items=a")
 	require.NoError(t, err)
 	selected, err := all.WithoutURI(exclusion)
 	require.NoError(t, err)
@@ -279,7 +284,7 @@ func TestArtifactCollectionExclusions(t *testing.T) {
 	require.Equal(t, []*ArtifactDimensionKey{{Dimension: "type:Items", Key: "items"}}, expanded.Entries[0].DimensionKeys)
 	require.Equal(t, []*ArtifactDimensionKey{{Dimension: "app/items", Key: "b"}, {Dimension: "type:Item", Key: "items"}}, expanded.Entries[1].DimensionKeys)
 	for _, key := range []string{"a", "b"} {
-		narrowed := all.FilterDimensionKeys("item", []string{key})
+		narrowed := all.FilterDimensionKeys("app-items", []string{key})
 		narrowed, err = narrowed.WithoutURI(exclusion)
 		require.NoError(t, err)
 		expanded, err := narrowed.Expand(t.Context())

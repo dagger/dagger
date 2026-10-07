@@ -96,7 +96,7 @@ func runServices(ctx context.Context, dag *dagger.Client, services *dagger.Artif
 		if result.Value == nil || result.Value.Type != "Service" {
 			return fmt.Errorf("%s did not return a Service", result.Artifact.URI)
 		}
-		name := strings.TrimPrefix(result.Artifact.URI, "dag://")
+		name := strings.Join(result.Artifact.Path, "/")
 		for host, mapping := range cfg.Ports {
 			backend := strings.ReplaceAll(mapping.BackendService, ":", "/")
 			for moduleName, module := range cfg.Modules {

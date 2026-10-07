@@ -13,6 +13,7 @@ package dagaddress
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -137,6 +138,42 @@ func parseQuery(query string) ([]Pair, error) {
 type DimensionFilter struct {
 	Dimension string
 	Keys      []string
+}
+
+// ArtifactPath returns the path, or the type dimension key that holds it.
+func (addr *Address) ArtifactPath(types ...string) string {
+	if pair, ok := addr.TypeKey(types...); ok {
+		return pair.Key
+	}
+	return addr.Path
+}
+
+// TypeKey returns the type dimension key of an address without a path. That
+// key holds the artifact path. It matches "type:<Type>", and
+// "artifact-<type>" for types and the type assertion. A collection can share
+// the plain "<type>", so the plain name matches only for types: pass only
+// types that cannot name a collection here. A printed address uses the plain
+// name only when no collection has it, so its own type assertion is safe.
+func (addr *Address) TypeKey(types ...string) (Pair, bool) {
+	if addr.Path != "" {
+		return Pair{}, false
+	}
+	for _, plain := range []bool{false, true} {
+		for _, pair := range addr.Query {
+			if !pair.HasKey {
+				continue
+			}
+			if !plain && strings.HasPrefix(pair.Dimension, "type:") {
+				return pair, true
+			}
+			for _, typ := range slices.Concat(types, addr.Types) {
+				if !plain && pair.Dimension == "artifact-"+typ || plain && pair.Dimension == typ && slices.Contains(types, typ) {
+					return pair, true
+				}
+			}
+		}
+	}
+	return Pair{}, false
 }
 
 // DimensionFilters groups the query pairs by dimension, in first-seen order.

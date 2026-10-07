@@ -712,22 +712,26 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		}
 		nodes = append(nodes, sdkNodes...)
 	}
+	// Names resolve against every loaded node, including those the include
+	// patterns skip.
+	var loaded []*core.Artifact
 	for _, node := range nodes {
-		match, err := matchWorkspaceInclude(ctx, node, include)
-		if err != nil {
-			return nil, err
-		}
-		if !match {
-			continue
-		}
 		path := node.CommandPath().CliCase()
 		if len(path) == 0 {
 			path = node.Path().CliCase()
 		}
-		result.Entries = append(result.Entries, &core.Artifact{
+		entry := &core.Artifact{
 			ModuleName: node.Path()[0], Path: path, DimensionKeys: []*core.ArtifactDimensionKey{},
 			Directives: node.Directives, TypeName: node.ObjectType().Name, Node: node, Workspace: parent,
-		})
+		}
+		loaded = append(loaded, entry)
+		match, err := matchWorkspaceInclude(ctx, node, include)
+		if err != nil {
+			return nil, err
+		}
+		if match {
+			result.Entries = append(result.Entries, entry)
+		}
 	}
 	seenFailures := map[string]bool{}
 	for _, failure := range failures {
@@ -735,11 +739,15 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			continue
 		}
 		seenFailures[failure.Name] = true
-		result.Entries = append(result.Entries, &core.Artifact{
+		entry := &core.Artifact{
 			ModuleName: failure.Name, Path: []string{failure.Name, "load"}, DimensionKeys: []*core.ArtifactDimensionKey{},
 			Directives: []string{"check"}, TypeName: "Check", LoadFailure: &failure, Workspace: parent,
-		})
+		}
+		loaded = append(loaded, entry)
+		result.Entries = append(result.Entries, entry)
 	}
+	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
+	result.NameEntries()
 	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
 	if err := validateArtifactPaths(result.Entries); err != nil {
 		return nil, err

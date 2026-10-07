@@ -220,7 +220,7 @@ func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *
 		if err != nil {
 			return err
 		}
-		name := strings.TrimSuffix(address.Path, "/load")
+		name := strings.TrimSuffix(address.ArtifactPath(address.Types...), "/load")
 		entry, ok := cfg.Modules[name]
 		if !ok || !workspace.IsLocalRef(entry.Source, "") {
 			continue
@@ -241,7 +241,11 @@ func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *
 		remaining, loadErr := artifactLoadFailures(loadCtx, dag, generated.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{name}}))
 		if loadErr == nil {
 			for _, failure := range remaining {
-				if failure.URI == "dag://"+name+"/load" {
+				address, err := dagaddress.Parse(failure.URI)
+				if err != nil {
+					return err
+				}
+				if address.ArtifactPath(address.Types...) == name+"/load" {
 					loadErr = fmt.Errorf("still fails to load with this run's changes: %s", strings.TrimSuffix(failure.LoadError, "; run `dagger generate` and commit the generated files"))
 					break
 				}

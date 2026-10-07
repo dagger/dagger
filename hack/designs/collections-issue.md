@@ -167,36 +167,49 @@ A collection field creates a dimension. Its item keys become the keys for that d
 
 For example:
 
+In module `go`, the author writes `Module` and `Test`. The schema namespaces them:
+
 ```graphql
-type Golang { modules: GoModules! }
-type App { dependencies: GoModules! }
+type Go { modules: GoModules! }
 type GoModule { tests: GoTests! }
 type GoTest { container: Container! }
 ```
 
-This schema has three dimensions:
+This schema has two dimensions:
 
-| Collection field | Collection type | Short name | Qualified name |
+| Collection field | Identifier | Short name | Qualified name |
 | -- | -- | -- | -- |
-| `Golang.modules` | `GoModules` | `go-module` | `golang-modules` |
-| `App.dependencies` | `GoModules` | `go-module` | `app-dependencies` |
-| `GoModule.tests` | `GoTests` | `go-test` | `go-module-tests` |
+| `Go.modules` | `/go/modules` | `go-module` | `go-modules-module` |
+| `GoModule.tests` | `/go/modules/tests` | `go-test` | `go-modules-tests-test` |
 
 All collection values returned by `GoModule.tests` share one dimension. A list of test keys combines their keys. Selecting a parent module narrows that list.
 
+#### Static dimensions
+
+Each artifact also has two static dimensions. The engine knows their keys without loading collections:
+
+| Identifier | Short name | Key |
+| -- | -- | -- |
+| `module` | `module` | The installed module name |
+| `type:<TypeName>` | The type in CLI case, such as `container` | The full artifact path, such as `go/modules/tests/container` |
+
+The qualified name of a type dimension is `artifact-` plus the short name, such as `artifact-container`.
+
+The type dimension key holds the path. Thus the dimension keys alone identify an artifact. See [Artifact identity](#artifact-identity).
+
 #### Dimension names
 
-Each dimension has a stable identifier: the exact GraphQL parent type and field name, separated by a dot. Include any module namespace in the type name. For example, `Golang.modules` identifies one dimension. Adding another collection field does not change it. Renaming that type or field does.
+Each dimension has a stable identifier: the schema path of its collection field, starting with the module name. A nested collection starts from its parent dimension's identifier. For example, in module `go`, `Go.modules` has the identifier `/go/modules`, and `GoModule.tests` has `/go/modules/tests`. Adding another collection field does not change an identifier. Renaming a field on its path does.
 
-The short name comes from the author's item type, in CLI case. For example, `GoModule` gives `go-module`. The qualified name combines the parent type and field in CLI case, with a hyphen: `Golang.modules` gives `golang-modules`. Omit the engine's module namespace from both names. Do not choose a primary dimension when names conflict.
+The short name comes from the item type's namespaced schema name, in CLI case. The namespace keeps short names unique across modules. For example, in module `go`, the type `Module` is `GoModule` in the schema and gives `go-module`. The qualified name combines the identifier's fields and the item name: `/go/modules` with item `GoModule` gives `go-modules-module`. Do not choose a primary dimension when names conflict.
 
-Resolve short and qualified names against the dimensions on the selected schema paths. Apply all path filters first. Each input address supplies the path scope for its own query. Separate key filters use the paths of the whole selection. Key filters and runtime key values do not affect name resolution. Resolve names when reading or running the selection, so filter order does not matter.
+Resolve short and qualified names against the dimensions of every loaded module, not only those on the selected paths. Path filters, key filters, and runtime key values do not affect name resolution. A name has one meaning in a workspace. Resolve names when reading or running the selection, so filter order does not matter.
 
-For example, the path `golang/modules/tests/container` crosses `Golang.modules` and `GoModule.tests`. It accepts `go-module` and `go-test`. Adding `App.dependencies` does not change that path or those names.
+For example, the path `go/modules/tests/container` crosses `Go.modules` and `GoModule.tests`. It accepts `go-module` and `go-test`.
 
-With no path filter, `go-module` is ambiguous in this schema. Use `golang-modules` or `app-dependencies`. Qualified names are also accepted when the short name is unique. If a name matches several dimensions, reject it and report their exact identifiers. This rule also applies when one dimension's short name matches another's qualified name. Accept exact identifiers in every place that accepts a dimension name. Identifiers are case-sensitive.
+Suppose the module adds `GoApp.dependencies`, which also returns `GoModules`. Then `go-module` is ambiguous, with or without a path filter. Use the qualified name `go-modules-module` or `go-app-dependencies-module`. Qualified names are also accepted when the short name is unique. If a name matches several dimensions, reject it and report their exact identifiers. This rule also applies when one dimension's short name matches another's qualified name. Accept exact identifiers in every place that accepts a dimension name. Identifiers are case-sensitive.
 
-Artifact metadata uses stable identifiers. A complete artifact address uses the short name if it is unique on that path. Otherwise, use the qualified name. If that name also conflicts, use the exact identifier. Stored filters over multiple paths use exact identifiers. Adding unrelated fields cannot change the meaning of a complete artifact address.
+Artifact metadata uses stable identifiers. A complete artifact address uses the short name if it is unique in the workspace. Otherwise, use the qualified name. If that name also conflicts, use the exact identifier. Stored filters over multiple paths use exact identifiers. Adding a field cannot change the meaning of a name. It can make a short name ambiguous, which is an error, never a different match.
 
 Build the dimension list from the module schema before adding the standard collection operations. Operations such as `subset` do not create new dimensions. Empty collections still have dimensions in the schema.
 
@@ -247,23 +260,29 @@ The container for one test has this address:
 
 ```json
 {
-  "path": ["golang", "modules", "tests", "container"],
+  "path": ["go", "modules", "tests", "container"],
   "dimensionKeys": [
-    {"dimension": "Golang.modules", "key": "sdk/go"},
-    {"dimension": "GoModule.tests", "key": "TestConnect"}
+    {"dimension": "module", "key": "go"},
+    {"dimension": "/go/modules", "key": "sdk/go"},
+    {"dimension": "/go/modules/tests", "key": "TestConnect"},
+    {"dimension": "type:Container", "key": "go/modules/tests/container"}
   ]
 }
 ```
 
-The Artifacts `uri()` formatter includes the dimension keys:
+The Artifacts `uri()` formatter prints the type dimension key, then the collection dimension keys. It prints no path:
 
 ```text
-dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect
+dag://?container=go/modules/tests/container&go-module=sdk/go&go-test=TestConnect
 ```
 
-Collection selection inserts `get(key: ...)` calls. `get` and the keys are not path segments. The engine enumerates item objects and their children. It also retains the collection object at its own path, without a key for that collection. Thus `golang/modules` is a `GoModules` artifact; adding a `Golang.modules` key at the same path selects a `GoModule` artifact. `batch` is an explicit path on the collection object, not a child of each item.
+Collection selection inserts `get(key: ...)` calls. `get` and the keys are not path segments. The engine enumerates item objects and their children. It also retains the collection object at its own path, without a key for that collection. Thus `go/modules` is a `GoModules` artifact; adding a `Go.modules` key at the same path selects a `GoModule` artifact. `batch` is an explicit path on the collection object, not a child of each item.
 
-Artifact identity is the path plus all dimension keys. Distinct keys remain distinct even if `get` returns the same object. Filters never rewrite addresses or turn a collection artifact into a subset.
+#### Artifact identity
+
+Artifact identity is the set of all dimension keys, including the static keys. The type dimension key is the full path, so the path adds no information.
+
+Distinct keys remain distinct even if `get` returns the same object. Filters never rewrite addresses or turn a collection artifact into a subset.
 
 Alternatives in one filter use OR. Chained filters use AND. Unknown dimension names or keys match nothing. An ambiguous name is an error. A key filter applies to all collection values represented by its dimension. Skip keys that do not match, but retain the original collection for value lookup. A test absent from one module must not fail selection in another.
 
@@ -290,13 +309,13 @@ Artifact and delta keys use the same string form. Strings and string scalars use
 Use dimension keys in the query part of a DAG address:
 
 ```text
-dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect
+dag://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect
 ```
 
-Each pair accepts an exact dimension identifier, a short name, or a qualified name. Names must be unambiguous on the selected paths. Repeat a dimension to select alternative keys:
+Each pair accepts an exact dimension identifier, a short name, or a qualified name. Names must be unambiguous in the workspace. Repeat a dimension to select alternative keys:
 
 ```text
-dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect&go-test=TestQuery
+dag://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect&go-test=TestQuery
 ```
 
 Use the key text defined above. `/` needs no escape in a key. Percent-encode `&`, `=`, `#`, `+`, `%`, and spaces. A bare dimension name, such as `?go-module`, selects any key. With `=`, an empty value selects the empty string key.
@@ -305,40 +324,49 @@ When an exact path ends at a collection field, omit its dimension to select the 
 
 | Address | Selection |
 | -- | -- |
-| `dag://golang/modules` | The `GoModules` collection |
-| `dag://golang/modules?go-module=sdk/go` | One `GoModule` item |
-| `dag://golang/modules?go-module` | All items in that collection |
+| `dag://go/modules` | The `GoModules` collection |
+| `dag://go/modules?go-module=sdk/go` | One `GoModule` item |
+| `dag://go/modules?go-module` | All items in that collection |
+
+The path is a short form of the type dimension key. These addresses select the same artifact:
+
+```text
+dag://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect
+dag://?container=go/modules/tests/container&go-module=sdk/go&go-test=TestConnect
+```
+
+The two forms differ in one way: the path accepts glob patterns, such as `go/**`. A type dimension key matches only the exact path.
 
 Parent dimensions still select the containing objects. A complete address has one key for each item selection along the path. Missing parent keys or alternative keys can select several artifacts. `Workspace.resolve` uses the Artifacts rule: require exactly one match.
 
-For each dimension, `Artifact.uri()` tries its short name, then its qualified name, then its exact identifier. It uses the first name that is unambiguous on the path. Order pairs from parent to child. `Artifacts.uri` uses exact identifiers for selectors over several paths.
+For each dimension, `Artifact.uri()` tries its short name, then its qualified name, then its exact identifier. It uses the first name that is unambiguous in the workspace. Order pairs from parent to child. `Artifacts.uri` uses exact identifiers for selectors over several paths.
 
 When `uri` returns an address, `artifacts.filterUri(a.uri)` must select the same set as `a`. One address cannot express OR across different dimensions or collection key exclusions. Reject `uri` for those selections; keep the filters valid for listing and execution.
 
 ### 5. Use the existing CLI and resolver
 
 ```console
-$ dagger list go-tests golang --go-module=sdk/go
+$ dagger list go-tests go --go-module=sdk/go
 TestConnect
 TestQuery
 
-$ dagger list -a golang/modules/tests/container --go-module=sdk/go --go-test=TestConnect
-dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect
+$ dagger list -a go/modules/tests/container --go-module=sdk/go --go-test=TestConnect
+dag://?container=go/modules/tests/container&go-module=sdk/go&go-test=TestConnect
 ```
 
-Use the Artifacts flags `--<dimension>=<key>`. They accept exact identifiers, short names, or qualified names, unambiguous on the selected paths. If a short name conflicts with a command flag, help and runnable lists use the qualified name. A DAG link query also accepts dimension names that conflict with flags. Repeat flags for alternatives; do not split values on commas. Use schema metadata to register flags, including for empty collections.
+Use the Artifacts flags `--<dimension>=<key>`. They accept exact identifiers, short names, or qualified names, unambiguous in the workspace. If a short name conflicts with a command flag, help and runnable lists use the qualified name. A DAG link query also accepts dimension names that conflict with flags. Repeat flags for alternatives; do not split values on commas. Use schema metadata to register flags, including for empty collections.
 
 A flag has the same meaning as one query pair, and the two combine. Quote an address that contains `&`:
 
 ```console
-$ dagger list -a 'dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect'
-dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect
+$ dagger list -a 'dag://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect'
+dag://?container=go/modules/tests/container&go-module=sdk/go&go-test=TestConnect
 ```
 
 `Workspace.resolve` accepts the same complete address:
 
 ```text
-ws.resolve("dag://golang/modules/tests/container?go-module=sdk/go&go-test=TestConnect").container()
+ws.resolve("dag://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect").container()
 ```
 
 `resolve` requires exactly one match. Missing keys or repeated dimensions can produce several matches; they use the same selection rules as `artifacts`. Unknown or unused selectors produce no match. Reject malformed selectors and paths that require two item selections for the same dimension. Workspace errors never trigger external resolution.
@@ -348,14 +376,14 @@ Default `uri()` output must resolve to the same value.
 `dagger call`, the shell, and generated clients use the standard collection API directly:
 
 ```console
-dagger call golang modules get --key=sdk/go tests subset --keys=TestConnect --keys=TestQuery batch run sync
+dagger call go modules get --key=sdk/go tests subset --keys=TestConnect --keys=TestQuery batch run sync
 ```
 
 ### 6. Select checks and generators
 
 `dagger check` and `dagger generate` use the shared Artifacts selection API. Add dimension filters to their path and directive filters. The dimension names, key text, and filter rules are the same as for `dagger list`.
 
-Resolve dimension names within the selected paths. Then merge keys for the same dimension with OR, and combine different dimensions with AND. An omitted dimension selects all keys. An empty key list matches nothing.
+Resolve dimension names in the workspace. Then merge keys for the same dimension with OR, and combine different dimensions with AND. An omitted dimension selects all keys. An empty key list matches nothing.
 
 For execution, intersect the filters with each collection's keys, then call `subset` with the matching keys. Passing the raw filter to `subset` would fail when a requested test exists in another Go module only.
 
@@ -366,13 +394,13 @@ Apply batch replacement in the shared Artifacts evaluator, before reading select
 The base design can read each static `Check.pass` directly. Collection selections with a batch must first pass through batch replacement. This is an extension to Artifacts evaluation.
 
 ```console
-$ dagger check golang/modules/tests/run --go-module=sdk/go --go-test=TestConnect --go-test=TestQuery
+$ dagger check go/modules/tests/run --go-module=sdk/go --go-test=TestConnect --go-test=TestQuery
 # One batch run for these two tests in sdk/go.
 
-$ dagger check golang/modules/tests/lint --go-module=sdk/go --go-test=TestConnect --go-test=TestQuery
+$ dagger check go/modules/tests/lint --go-module=sdk/go --go-test=TestConnect --go-test=TestQuery
 # Two item checks if GoTests has no batch lint check.
 
-$ dagger check 'dag://golang/modules/tests/run?go-module=sdk/go&go-test=TestConnect&go-test=TestQuery'
+$ dagger check 'dag://go/modules/tests/run?go-module=sdk/go&go-test=TestConnect&go-test=TestQuery'
 # The same selection as the first command.
 ```
 
