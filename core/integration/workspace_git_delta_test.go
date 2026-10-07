@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -136,7 +138,7 @@ func (WorkspaceSuite) TestWithGitUncommittedIsPerClient(ctx context.Context, t *
 	note := filepath.Join(repo, "note.txt")
 	read := func(c *dagger.Client) string {
 		t.Helper()
-		ctr := c.Container().From(alpineImage).
+		ctr := core.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithNewFile("/repo/tracked.txt", "base\n").
 			WithWorkdir("/repo")

@@ -1,7 +1,6 @@
 package daggercmd
 
 import (
-	"dagger.io/dagger/core"
 	"cmp"
 	"context"
 	"errors"
@@ -13,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"

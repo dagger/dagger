@@ -150,7 +150,7 @@ legacy-default-path = true
 			require.NoError(t, err)
 			require.Equal(t, "dag://?check=reader/check-marker", name)
 
-			passed, err := artifactValue[*dagger.Check](ctx, t, c, &checks[0]).Pass(ctx)
+			passed, err := artifactValue[*core.Check](ctx, t, c, &checks[0]).Pass(ctx)
 			require.NoError(t, err)
 			require.True(t, passed)
 
@@ -160,11 +160,11 @@ legacy-default-path = true
 			editedChecks, err := edited.Artifacts().FilterTypes([]string{"Check"}).Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, editedChecks, 1)
-			passed, err = artifactValue[*dagger.Check](ctx, t, c, &editedChecks[0]).Pass(ctx)
+			passed, err = artifactValue[*core.Check](ctx, t, c, &editedChecks[0]).Pass(ctx)
 			require.NoError(t, err)
 			require.False(t, passed)
 
-			passed, err = artifactValue[*dagger.Check](ctx, t, c, &checks[0]).Pass(ctx)
+			passed, err = artifactValue[*core.Check](ctx, t, c, &checks[0]).Pass(ctx)
 			require.NoError(t, err)
 			require.True(t, passed)
 		})

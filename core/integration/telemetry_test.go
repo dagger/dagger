@@ -8,12 +8,13 @@ package core
 // - cloud_test.go: cloud trace and reporting integration.
 
 import (
-	"dagger.io/dagger/core"
 	"bytes"
 	"context"
 	"fmt"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"

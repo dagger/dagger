@@ -4,7 +4,6 @@ package core
 // utilities. It is helper-only and should not own behavior coverage.
 
 import (
-	"dagger.io/dagger/core"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/dagger/dagger/cmd/codegen/introspection"

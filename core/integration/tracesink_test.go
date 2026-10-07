@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -156,7 +158,7 @@ func connectWithTrace(ctx context.Context, t *testctx.T, configs ...engineconn.C
 // temporary agent never starts a loop. Returning an encoded recipe rather than
 // its local seed ID allows the caller to close the source and use a fresh client.
 // This is capture evidence, not archive finalization evidence.
-func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, c *dagger.Client, llm *dagger.LLM) (dagger.ID, error) {
+func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, c *dagger.Client, llm *core.LLM) (core.ID, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -174,7 +176,7 @@ func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, 
 
 // captureShellRecipe captures a nested shell's committed conversation after its
 // client exits. The outer session's telemetry carries the nested control records.
-func (sink *agentTraceSink) captureShellRecipe(ctx context.Context, t *testctx.T, base *dagger.Container, selection string) (string, error) {
+func (sink *agentTraceSink) captureShellRecipe(ctx context.Context, t *testctx.T, base *core.Container, selection string) (string, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -190,7 +192,7 @@ func (sink *agentTraceSink) captureShellRecipe(ctx context.Context, t *testctx.T
 // committedRecipe also serves containerized shell fixtures: they spawn a named
 // inert agent instead of invoking a serialization API, then the enclosing client
 // observes that agent's committed recipe in forwarded telemetry.
-func (sink *agentTraceSink) committedRecipe(ctx context.Context, handle string) (dagger.ID, error) {
+func (sink *agentTraceSink) committedRecipe(ctx context.Context, handle string) (core.ID, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -236,7 +238,7 @@ func (sink *agentTraceSink) committedRecipe(ctx context.Context, handle string) 
 			return "", invalid
 		}
 		if encoded != "" {
-			return dagger.ID(encoded), nil
+			return core.ID(encoded), nil
 		}
 		select {
 		case <-ctx.Done():

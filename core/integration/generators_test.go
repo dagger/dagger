@@ -10,7 +10,6 @@ package core
 // - workspace_modules_test.go: installing modules into workspaces.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"encoding/json"
 	"path/filepath"
@@ -19,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	workspacecfg "github.com/dagger/dagger/core/workspace"

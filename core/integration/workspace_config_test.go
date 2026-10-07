@@ -10,7 +10,6 @@ package core
 // - module_config_test.go: module-shaped `dagger-module.toml` config.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"os"
@@ -18,6 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"

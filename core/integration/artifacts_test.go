@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/internal/testutil"
@@ -22,8 +24,8 @@ func TestArtifacts(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ArtifactsSuite{})
 }
 
-func artifactSource(c *dagger.Client) *dagger.Directory {
-	return c.Directory().
+func artifactSource(c *dagger.Client) *core.Directory {
+	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.provider]
 source = "./provider"
 entrypoint = true
@@ -413,7 +415,7 @@ func (ArtifactsSuite) TestValueAfterDiscoveringSessionEnds(ctx context.Context, 
 	discovered, err := testutil.QueryWithClient[struct {
 		Node struct {
 			Artifacts struct {
-				FilterPath struct{ One struct{ ID dagger.ID } }
+				FilterPath struct{ One struct{ ID core.ID } }
 			}
 		}
 	}](discoverer, t, `query($ws: ID!) {
@@ -451,7 +453,7 @@ func (ArtifactsSuite) TestInclude(ctx context.Context, t *testctx.T) {
 		{[]string{"**:source"}, []string{"dag://?directory=docs/source", "dag://?directory=other-docs/source"}},
 		{[]string{"base", "consumer/base"}, []string{"dag://?container=base", "dag://?container=consumer/base"}},
 	} {
-		items, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: tc.patterns}).Items(ctx)
+		items, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: tc.patterns}).Items(ctx)
 		require.NoError(t, err)
 		got := []string{}
 		for i := range items {
@@ -467,14 +469,14 @@ func (ArtifactsSuite) TestWorkspaceBindingAndIDs(ctx context.Context, t *testctx
 	c := connect(ctx, t)
 	for _, address := range []string{"base", "consumer/base"} {
 		t.Run(address, func(ctx context.Context, t *testctx.T) {
-			var ids []dagger.ID
+			var ids []core.ID
 			for _, contents := range []string{"first", "second"} {
 				wsID, err := artifactSource(c).WithNewFile("marker.txt", contents).AsWorkspace().ID(ctx)
 				require.NoError(t, err)
 				res, err := testutil.QueryWithClient[struct {
 					Node struct {
 						Artifacts struct {
-							Selected struct{ Items []struct{ ID dagger.ID } }
+							Selected struct{ Items []struct{ ID core.ID } }
 						}
 					}
 				}](c, t, `query($ws: ID!, $path: [String!]!) {
@@ -538,11 +540,11 @@ func (ArtifactsSuite) TestLegacyAddress(ctx context.Context, t *testctx.T) {
 
 func (ArtifactsSuite) TestAddressHints(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := c.Directory().AsWorkspace()
+	ws := core.NewQuery(c).Directory().AsWorkspace()
 	_, err := ws.Resolve("missing:serve").Service().ID(ctx)
 	require.ErrorContains(t, err, "write it as a DAG address: dag://missing/serve")
 
-	_, err = c.Address("missing:serve").Service().ID(ctx)
+	_, err = core.NewQuery(c).Address("missing:serve").Service().ID(ctx)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "write it as a DAG address")
 	require.NotContains(t, err.Error(), "no installed module matches")
@@ -556,7 +558,7 @@ func (ArtifactsSuite) TestWorkspaceHelpDiscoveryFailures(ctx context.Context, t 
 	base := nativeWorkspaceBase(t, c).With(nonNestedDevEngine(c))
 	for _, fixture := range []struct {
 		name string
-		ctr  *dagger.Container
+		ctr  *core.Container
 		err  string
 	}{
 		{name: "engine unavailable", ctr: base.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "invalid://"), err: `no driver for scheme "invalid"`},
@@ -885,12 +887,12 @@ func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {
 
 func (ArtifactsSuite) TestAddressIDs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	var ids []dagger.ID
+	var ids []core.ID
 	for _, contents := range []string{"first", "second"} {
 		wsID, err := artifactSource(c).WithNewFile("marker.txt", contents).AsWorkspace().ID(ctx)
 		require.NoError(t, err)
 		got, err := testutil.QueryWithClient[struct {
-			Node struct{ Resolve struct{ ID dagger.ID } }
+			Node struct{ Resolve struct{ ID core.ID } }
 		}](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { resolve(value: "dag://consumer/base") { id } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
@@ -1007,7 +1009,7 @@ func (ArtifactsSuite) TestCheckReturnTypes(ctx context.Context, t *testctx.T) {
 		{name: "string list", returnType: "[String!]!", body: `["ok"]`, invalid: true},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			src := c.Directory().WithNewFile("dagger.toml", `[modules.example]
+			src := core.NewQuery(c).Directory().WithNewFile("dagger.toml", `[modules.example]
 source = "./example"
 entrypoint = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
@@ -1023,7 +1025,7 @@ source = "dang"
 				return
 			}
 			require.Empty(t, loadError)
-			check := artifactValue[*dagger.Check](ctx, t, c, checkArtifact)
+			check := artifactValue[*core.Check](ctx, t, c, checkArtifact)
 			pass, err := check.Pass(ctx)
 			require.NoError(t, err)
 			require.Equal(t, !tc.fails, pass)
@@ -1041,7 +1043,7 @@ source = "dang"
 
 func (ArtifactsSuite) TestCheckProjection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	src := c.Directory().WithNewFile("dagger.toml", `[modules.example]
+	src := core.NewQuery(c).Directory().WithNewFile("dagger.toml", `[modules.example]
 source = "./example"
 entrypoint = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
@@ -1082,7 +1084,7 @@ More details."""
  {"uri":"dag://?check=failing","directives":["check"]},
  {"uri":"dag://?check=passing","directives":["check"]}
  ]}}}}`, string(*metadata))
-	selected := dagger.Ref[*dagger.Workspace](c, wsID).Artifacts().FilterTypes([]string{"Check"})
+	selected := core.Ref[*core.Workspace](core.NewQuery(c), wsID).Artifacts().FilterTypes([]string{"Check"})
 	selectionID, err := selected.ID(ctx)
 	require.NoError(t, err)
 	opts = &testutil.QueryOptions{Variables: map[string]any{"selection": selectionID}}
@@ -1127,7 +1129,7 @@ More details."""
 	}
 
 	// Generator objects are lazy. Explicit generation executes the stored function.
-	generators, err := dagger.Ref[*dagger.Workspace](c, wsID).Artifacts().FilterTypes([]string{"Generator"}).AsGenerators(ctx)
+	generators, err := core.Ref[*core.Workspace](core.NewQuery(c), wsID).Artifacts().FilterTypes([]string{"Generator"}).AsGenerators(ctx)
 	require.NoError(t, err)
 	require.Len(t, generators, 2)
 	clean, err := generators[0].Stale().Pass(ctx)
@@ -1158,7 +1160,7 @@ check.skip = ["skipped", "scan?"]
 generate.skip = ["skipped-generate"]
 up.skip = ["skipped-service", "skipped-unmarked-service"]
 `
-	source := c.Directory().
+	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", config).
 		WithNewFile("probe/dagger-module.toml", "name = \"probe\"\nengineVersion = \"latest\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("probe/main.dang", `type Probe {
@@ -1246,7 +1248,7 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 	description, err := all.FilterURI("dag://gen/stale").One().Description(ctx)
 	require.NoError(t, err)
 	require.Equal(t, `staleness check: generate assets`, description)
-	uris := func(ctx context.Context, t *testctx.T, selection *dagger.Artifacts) []string {
+	uris := func(ctx context.Context, t *testctx.T, selection *core.Artifacts) []string {
 		id, err := selection.ID(ctx)
 		require.NoError(t, err)
 		got, err := testutil.QueryWithClient[struct {
@@ -1263,21 +1265,21 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 	allURIs := uris(ctx, t, all)
 	for _, tc := range []struct {
 		name   string
-		filter func([]string, bool) *dagger.Artifacts
+		filter func([]string, bool) *core.Artifacts
 		match  string
 		want   []string
 	}{
-		{"types", func(names []string, exclude bool) *dagger.Artifacts {
-			return all.FilterTypes(names, dagger.ArtifactsFilterTypesOpts{Exclude: exclude})
+		{"types", func(names []string, exclude bool) *core.Artifacts {
+			return all.FilterTypes(names, core.ArtifactsFilterTypesOpts{Exclude: exclude})
 		}, "Changeset", []string{"dag://?changeset=edit"}},
-		{"directives", func(names []string, exclude bool) *dagger.Artifacts {
-			return all.FilterDirectives(names, dagger.ArtifactsFilterDirectivesOpts{Exclude: exclude})
+		{"directives", func(names []string, exclude bool) *core.Artifacts {
+			return all.FilterDirectives(names, core.ArtifactsFilterDirectivesOpts{Exclude: exclude})
 		}, "check", []string{"dag://?check=gen/stale"}},
-		{"parent types", func(names []string, exclude bool) *dagger.Artifacts {
-			return all.FilterParentTypes(names, dagger.ArtifactsFilterParentTypesOpts{Exclude: exclude})
+		{"parent types", func(names []string, exclude bool) *core.Artifacts {
+			return all.FilterParentTypes(names, core.ArtifactsFilterParentTypesOpts{Exclude: exclude})
 		}, "Generator", []string{"dag://?check=gen/stale"}},
-		{"parent directives", func(names []string, exclude bool) *dagger.Artifacts {
-			return all.FilterParentDirectives(names, dagger.ArtifactsFilterParentDirectivesOpts{Exclude: exclude})
+		{"parent directives", func(names []string, exclude bool) *core.Artifacts {
+			return all.FilterParentDirectives(names, core.ArtifactsFilterParentDirectivesOpts{Exclude: exclude})
 		}, "generate", []string{"dag://?check=gen/stale"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
@@ -1315,7 +1317,7 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 		require.NoError(t, err)
 		require.Len(t, items, 2)
 		for i, want := range []string{"configured:original", "configured:other"} {
-			out, err := artifactValue[*dagger.Container](ctx, t, c, &items[i]).File("/marker").Contents(ctx)
+			out, err := artifactValue[*core.Container](ctx, t, c, &items[i]).File("/marker").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, want, out)
 		}
@@ -1324,14 +1326,14 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 	})
 }
 
-func artifactValue[T dagger.Loadable[T]](ctx context.Context, t *testctx.T, c *dagger.Client, artifact *dagger.Artifact) T {
+func artifactValue[T core.Loadable[T]](ctx context.Context, t *testctx.T, c *dagger.Client, artifact *core.Artifact) T {
 	t.Helper()
 	id, err := artifact.Value().ID(ctx)
 	require.NoError(t, err)
-	return dagger.Ref[T](c, id)
+	return core.Ref[T](core.NewQuery(c), id)
 }
 
-func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, artifacts *dagger.Artifacts, base ...*dagger.LLM) (*dagger.LLM, error) {
+func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *core.Workspace, artifacts *core.Artifacts, base ...*core.LLM) (*core.LLM, error) {
 	if artifacts == nil {
 		artifacts = ws.Artifacts()
 	}
@@ -1352,11 +1354,11 @@ func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *dagger.Wor
 	if err != nil {
 		return nil, err
 	}
-	refs := make([]*dagger.Expertise, len(agents))
+	refs := make([]*core.Expertise, len(agents))
 	for i := range agents {
 		refs[i] = &agents[i]
 	}
-	llm := c.LLM().WithWorkspace(ws)
+	llm := core.NewQuery(c).LLM().WithWorkspace(ws)
 	if len(base) > 0 {
 		llm = base[0]
 	}
@@ -1365,7 +1367,7 @@ func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *dagger.Wor
 	if err != nil {
 		return nil, err
 	}
-	return dagger.Ref[*dagger.LLM](c, id), nil
+	return core.Ref[*core.LLM](core.NewQuery(c), id), nil
 }
 
 func (ArtifactsSuite) TestCheckCachePolicy(ctx context.Context, t *testctx.T) {
@@ -1471,7 +1473,7 @@ func (ArtifactsSuite) TestCheckScaleOut(ctx context.Context, t *testctx.T) {
 		dagger.WithEnvironmentVariable("_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT", "60s"),
 	)...)
 	target := devEngineContainerAsService(devEngineContainer(c))
-	source := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+	source := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding("scaleout-engine", target).
 			WithEnvVariable("_DAGGER_TESTS_CLOUD_RUNNER_HOST", "tcp://scaleout-engine:1234")
 	}))

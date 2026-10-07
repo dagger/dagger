@@ -1,13 +1,14 @@
 package daggercmd
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	_ "embed"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
+
+	"dagger.io/dagger/core"
 
 	"go.opentelemetry.io/otel/trace"
 
@@ -367,7 +368,7 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 			slog.Debug("attached agent workspace is not a usable synchronization baseline", "error", err)
 			continue
 		}
-		attached.setLastSynced(core.Ref[*core.Workspace](s.dag, id))
+		attached.setLastSynced(core.Ref[*core.Workspace](core.NewQuery(s.dag), id))
 		break
 	}
 	if err := attached.setLLM(snapshot); err != nil {
@@ -534,7 +535,7 @@ func normalizeSessionTitle(title string) string {
 func (s *LLMSession) publishTitle(title string) {
 	publish := s.titlePublisher
 	if publish == nil && s.dag != nil {
-		publish = s.dag.SetSessionTitle
+		publish = core.NewQuery(s.dag).SetSessionTitle
 	}
 	if publish == nil {
 		return

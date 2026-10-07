@@ -20,7 +20,7 @@ import (
 const changesHistoryLimit = 20
 
 type changesCommit struct {
-	ID              dagger.ID
+	ID              core.ID
 	SHA             string
 	MessageHeadline string
 }
@@ -32,7 +32,7 @@ type workspaceChangesPreview struct {
 
 	// changes are the uncommitted edits Files summarizes, and changesVersion
 	// identifies their content: the workspace and what it is compared to.
-	changes        *dagger.Changeset
+	changes        *core.Changeset
 	changesVersion string
 }
 
@@ -329,7 +329,7 @@ const commitDiffQuery = `query CommitDiff($commit: ID!) {
   } }
 }`
 
-func loadCommitDiff(ctx context.Context, dag *dagger.Client, id dagger.ID) (idtui.DiffDetail, error) {
+func loadCommitDiff(ctx context.Context, dag *dagger.Client, id core.ID) (idtui.DiffDetail, error) {
 	var response struct {
 		Commit struct {
 			SHA          string

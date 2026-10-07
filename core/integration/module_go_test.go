@@ -8,7 +8,6 @@ package core
 // - module_type_test.go: cross-SDK custom type behavior.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"testing"

@@ -1,11 +1,12 @@
 package core
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 

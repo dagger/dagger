@@ -3,7 +3,6 @@ package core
 // These tests cover GPU device access through container execution.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"dagger.io/dagger/core"
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"

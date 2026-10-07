@@ -8,7 +8,6 @@ package core
 // - cross_session_test.go: behavior across Dagger sessions.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -23,6 +22,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/distconsts"

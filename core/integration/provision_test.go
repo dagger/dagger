@@ -8,7 +8,6 @@ package core
 // - engine_test.go: engine lifecycle behavior after provisioning.
 
 import (
-	"dagger.io/dagger/core"
 	"cmp"
 	"context"
 	"crypto/rand"
@@ -20,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"

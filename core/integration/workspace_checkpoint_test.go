@@ -4,7 +4,6 @@ package core
 // portable, host-independent workspace.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"net"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"

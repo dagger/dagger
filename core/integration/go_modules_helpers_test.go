@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"golang.org/x/mod/module"
 )
@@ -68,8 +70,8 @@ var repoGoModules = sync.OnceValues(func() (repoGoModuleFiles, error) {
 // withRepoGoModules makes Go commands in the container get the repo's
 // dependencies from the test runner's module cache, used as a file://
 // module proxy, and go to the network only for anything else.
-func withRepoGoModules(c *dagger.Client) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
+func withRepoGoModules(c *dagger.Client) core.WithContainerFunc {
+	return func(ctr *core.Container) *core.Container {
 		mods, err := repoGoModules()
 		if err != nil {
 			// Not fatal: the container downloads modules as before.
@@ -77,7 +79,7 @@ func withRepoGoModules(c *dagger.Client) dagger.WithContainerFunc {
 		}
 		const proxyDir = "/repo-go-modules"
 		return ctr.
-			WithMountedDirectory(proxyDir, c.Host().Directory(mods.downloadDir, dagger.HostDirectoryOpts{
+			WithMountedDirectory(proxyDir, core.NewQuery(c).Host().Directory(mods.downloadDir, core.HostDirectoryOpts{
 				Include: mods.files,
 			})).
 			WithEnvVariable("GOPROXY", "file://"+proxyDir+",https://proxy.golang.org,direct")

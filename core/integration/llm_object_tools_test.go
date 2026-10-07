@@ -9,7 +9,6 @@ package core
 //     --run 'TestLLM/TestObjectToolset' --pkg ./core/integration --test-verbose
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/creack/pty"
@@ -197,7 +198,7 @@ type Editor {
 		Variables: map[string]any{"model": model, "object": objectID},
 	}, &dagger.Response{Data: &res}))
 	require.Contains(t, res.LLM.WithTools.Tools, "## readMarker")
-	seed := core.Ref[*core.LLM](c, core.ID(res.LLM.WithTools.ID)).
+	seed := core.Ref[*core.LLM](core.NewQuery(c), core.ID(res.LLM.WithTools.ID)).
 		WithPrompt("before restore").
 		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "remembered"}})
 	snapshot, err := sink.captureLLMRecipe(ctx, t, c, seed)
@@ -476,7 +477,7 @@ type Builder {
 
 	require.NoError(t, c.Close())
 	target := connect(ctx, t)
-	restored := core.Ref[*core.LLM](target, recipe)
+	restored := core.Ref[*core.LLM](core.NewQuery(target), recipe)
 	got, err := restored.Workspace().File("main.bin").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "ELF\x00\x01", got)
@@ -716,7 +717,7 @@ type Runner {
 			// cache-mounted sentinel rejects an actual replay of either command.
 			require.NoError(t, c.Close())
 			target := connect(ctx, t)
-			restored := core.Ref[*core.LLM](target, recipe)
+			restored := core.Ref[*core.LLM](core.NewQuery(target), recipe)
 			got, err := restored.Workspace().File("unchanged.txt").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "keep me\n", got)
@@ -871,7 +872,7 @@ func (LLMSuite) TestChangesetToolPatchesWorkspace(ctx context.Context, t *testct
 			// sentinel fails the command if it replays.
 			require.NoError(t, c.Close())
 			target := connect(ctx, t)
-			restored := core.Ref[*core.LLM](target, recipe)
+			restored := core.Ref[*core.LLM](core.NewQuery(target), recipe)
 			got, err = restored.Workspace().File("unchanged.txt").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
@@ -908,7 +909,7 @@ func (LLMSuite) TestChangesetToolRegeneratesIgnoredFile(ctx context.Context, t *
 
 	require.NoError(t, c.Close())
 	target := connect(ctx, t)
-	got, err = core.Ref[*core.LLM](target, recipe).Workspace().File("gen.txt").Contents(ctx)
+	got, err = core.Ref[*core.LLM](core.NewQuery(target), recipe).Workspace().File("gen.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "second\n", got)
 }
@@ -957,7 +958,7 @@ func (LLMSuite) TestChangesetToolPatchesDirectories(ctx context.Context, t *test
 
 	require.NoError(t, c.Close())
 	target := connect(ctx, t)
-	check(ctx, t, core.Ref[*core.LLM](target, recipe).Workspace())
+	check(ctx, t, core.Ref[*core.LLM](core.NewQuery(target), recipe).Workspace())
 }
 
 // TestChangesetToolRefusesMounts covers a changeset that writes under a
@@ -1220,7 +1221,7 @@ func (LLMSuite) TestChangesetToolPatchesPureEdits(ctx context.Context, t *testct
 	}
 	require.Len(t, pathsComputed, 2, "each tool's changeset computes its paths once")
 
-	check(ctx, t, core.Ref[*core.LLM](connect(ctx, t), recipe).Workspace())
+	check(ctx, t, core.Ref[*core.LLM](core.NewQuery(connect(ctx, t)), recipe).Workspace())
 }
 
 // cwdDang has tools that measure their changesets from the workspace cwd, the
@@ -1323,7 +1324,7 @@ func (LLMSuite) TestChangesetToolAppliesAtCwd(ctx context.Context, t *testctx.T)
 			require.False(t, fields[tc.tool])
 			require.True(t, fields["withPatchFile"])
 			require.NoError(t, c.Close())
-			check(ctx, t, core.Ref[*core.LLM](connect(ctx, t), recipe).Workspace())
+			check(ctx, t, core.Ref[*core.LLM](core.NewQuery(connect(ctx, t)), recipe).Workspace())
 		})
 	}
 
