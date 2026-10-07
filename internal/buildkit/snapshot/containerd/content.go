@@ -61,7 +61,7 @@ func (c *Store) ListStatuses(ctx context.Context, filters ...string) ([]content.
 
 func (c *Store) Abort(ctx context.Context, ref string) error {
 	var err error
-	ctx, err = bksnapshots.EnsureLease(ctx)
+	ctx, err = ensureLease(ctx)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (c *Store) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content
 
 func (c *Store) Writer(ctx context.Context, opts ...content.WriterOpt) (content.Writer, error) {
 	var err error
-	ctx, err = bksnapshots.EnsureLease(ctx)
+	ctx, err = ensureLease(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +87,23 @@ func (c *Store) Writer(ctx context.Context, opts ...content.WriterOpt) (content.
 	}
 	leaseID, _ := leases.FromContext(ctx)
 	return &nsWriter{Writer: w, ns: c.ns, leaseID: leaseID}, nil
+}
+
+// ensureLease returns ctx with a lease that is also set on the outgoing gRPC
+// metadata. When this store proxies a gRPC request to a remote containerd,
+// such as the host containerd, the caller's lease is only in the incoming
+// metadata, which a containerd client does not forward. Without it, the
+// remote containerd writes content that is not leased, and its GC can delete
+// that content before anything references it.
+func ensureLease(ctx context.Context) (context.Context, error) {
+	ctx, err := bksnapshots.EnsureLease(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
+		ctx = leases.WithLease(ctx, leaseID)
+	}
+	return ctx, nil
 }
 
 func (c *Store) WithFallbackNS(ns string) content.Store {
