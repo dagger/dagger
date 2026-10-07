@@ -1,11 +1,12 @@
 use dagger_sdk::core::introspection::{FullType, FullTypeFields, FullTypeFieldsArgs};
 use genco::prelude::rust;
 use genco::quote;
+use genco::tokens::quoted;
 
 use crate::functions::CommonFunctions;
 use crate::rust::functions::{
-    field_options_struct_name, format_function, format_name, format_optional_args,
-    format_struct_comment, format_struct_name,
+    field_options_struct_name, format_function, format_optional_args, format_struct_comment,
+    legacy_field_options_struct_name, member_name, type_name,
 };
 use crate::utility::OptionExt;
 
@@ -33,16 +34,16 @@ fn render_object_inner(
     let graphql_client = rust::import("crate::core::graphql_client", "DynGraphQLClient");
     let arc = rust::import("std::sync", "Arc");
 
-    let into_id_impl = render_into_id_impl(t);
+    let into_id_impl = render_into_id_impl(funcs, t);
     let loadable_impl = if include_loadable {
-        render_loadable_impl(t, None)
+        render_loadable_impl(funcs, t, None)
     } else {
         None
     };
 
     Ok(quote! {
         #[derive(Clone)]
-        pub struct $(t.name.pipe(|s| format_name(s))) {
+        pub struct $(t.name.pipe(|s| type_name(funcs.names(), s))) {
             pub proc: Option<$arc<$session_proc>>,
             pub selection: $selection,
             pub graphql_client: $graphql_client
@@ -54,7 +55,7 @@ fn render_object_inner(
 
         $loadable_impl
 
-        impl $(t.name.pipe(|s| format_name(s))) {
+        impl $(t.name.pipe(|s| type_name(funcs.names(), s))) {
             $(t.fields.pipe(|f| render_functions(funcs, f)))
         }
     })
@@ -64,6 +65,7 @@ fn render_object_inner(
 /// it's used as the GraphQL type name (needed for interface client
 /// structs where the Rust name is `FooClient` but GraphQL name is `Foo`).
 pub fn render_loadable_impl(
+    funcs: &CommonFunctions,
     t: &FullType,
     graphql_name_override: Option<&str>,
 ) -> Option<rust::Tokens> {
@@ -80,7 +82,7 @@ pub fn render_loadable_impl(
     let session_proc = rust::import("crate::core::cli_session", "DaggerSessionProc");
     let graphql_client = rust::import("crate::core::graphql_client", "DynGraphQLClient");
     let arc = rust::import("std::sync", "Arc");
-    let name = t.name.pipe(|s| format_name(s));
+    let name = t.name.pipe(|s| type_name(funcs.names(), s));
     let graphql_name =
         graphql_name_override.unwrap_or_else(|| t.name.as_deref().unwrap_or_default());
 
@@ -105,7 +107,7 @@ pub fn render_loadable_impl(
     })
 }
 
-fn render_into_id_impl(t: &FullType) -> Option<rust::Tokens> {
+fn render_into_id_impl(funcs: &CommonFunctions, t: &FullType) -> Option<rust::Tokens> {
     let has_id_field = t.fields.as_ref().map_or(false, |fields| {
         fields.iter().any(|f| f.name.as_deref() == Some("id"))
     });
@@ -115,7 +117,7 @@ fn render_into_id_impl(t: &FullType) -> Option<rust::Tokens> {
     }
 
     let into_id = rust::import("crate::id", "IntoID");
-    let name = t.name.pipe(|s| format_name(s));
+    let name = t.name.pipe(|s| type_name(funcs.names(), s));
 
     Some(quote! {
         impl $into_id<Id> for $name {
@@ -145,13 +147,22 @@ fn render_optional_args(
 }
 
 fn render_optional_arg(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
-    let output_type = field_options_struct_name(field);
+    let output_type = field_options_struct_name(funcs, field);
     let fields = format_optional_args(funcs, field);
 
     let builder = rust::import("derive_builder", "Builder");
     let _phantom_data = rust::import("std::marker", "PhantomData");
 
     if let Some((fields, contains_lifetime)) = fields {
+        // Keep the name the struct had before identifier words as a
+        // deprecated alias.
+        let legacy_alias = legacy_field_options_struct_name(funcs, field).map(|legacy| {
+            let note = format!("use {}", output_type.as_deref().unwrap_or_default());
+            quote! {
+                #[deprecated(note = $(quoted(note)))]
+                pub type $legacy$(if contains_lifetime => <'a>) = $(output_type.clone())$(if contains_lifetime => <'a>);
+            }
+        });
         Some(quote! {
             #[derive($builder, Debug, PartialEq)]
             pub struct $output_type$(if contains_lifetime => <'a>) {
@@ -159,6 +170,7 @@ fn render_optional_arg(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
                 //pub marker: $(phantom_data)<&'a ()>,
                 $fields
             }
+            $legacy_alias
         })
     } else {
         None
@@ -181,7 +193,7 @@ pub fn render_optional_field_args(
         quote! {
             $(a.description.pipe(|d| format_struct_comment(d)))
             #[builder(setter(into, strip_option), default)]
-            pub $(format_struct_name(&a.name)): Option<$(type_)>,
+            pub $(member_name(funcs.names(), &a.name)): Option<$(type_)>,
         }
     });
 
