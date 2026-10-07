@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  A manifest-v2 module at the root of a git repository now loads its whole source tree instead of only its manifest.
+time: 2026-10-07T08:00:00Z
+custom:
+  Author: eunomie
+  PR: 14529

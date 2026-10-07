@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  `currentFunctionCall` used outside a function now returns a clear `no current function call` error instead of an internal error.
+time: 2026-10-07T08:02:00Z
+custom:
+  Author: eunomie
+  PR: 14529
