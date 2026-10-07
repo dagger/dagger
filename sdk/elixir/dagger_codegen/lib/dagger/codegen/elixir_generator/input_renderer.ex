@@ -30,14 +30,17 @@ defmodule Dagger.Codegen.ElixirGenerator.InputRenderer do
       Enum.map_intersperse(
         type.input_fields,
         ",",
-        &(&1.name |> Formatter.format_var_name() |> Renderer.render_atom())
+        &(&1.name |> Formatter.legacy_var_name() |> Renderer.render_atom())
       ),
       "]"
     ]
   end
 
+  # The struct keys are sent to the API as the input object's field names
+  # (see `Dagger.Core.QueryBuilder`), so they keep the legacy conversion
+  # rather than following the schema's identifier words.
   def render_struct_field(input_field) do
-    var_name = Formatter.format_var_name(input_field.name)
+    var_name = Formatter.legacy_var_name(input_field.name)
     type = Formatter.format_type(input_field.type)
 
     [var_name, ": ", type]
