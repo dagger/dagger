@@ -292,7 +292,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Experimental("This API is highly experimental and may be removed or replaced entirely.").
 			Doc("Return this workspace with the given Git-compatible patch file applied, without mutating the source.",
-				"Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.").
+				"Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Sections for paths in a mount apply to the mounted content; a section cannot move a file across a mount boundary or delete a mount point.").
 			Args(
 				dagql.Arg("patch").Doc(`File containing the patch to apply`),
 				dagql.Arg("onConflict").
@@ -306,16 +306,16 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withMountedDirectory", s.withMountedDirectory).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a directory mounted read-only at the given path, without mutating the source.",
-				"Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.").
+			Doc("Return this workspace with a directory mounted at the given path, without mutating the source.",
+				"Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.").
 			Args(
 				dagql.Arg("path").Doc("Location of the mounted directory. Relative paths resolve from the workspace cwd."),
 				dagql.Arg("source").Doc("Directory to mount."),
 			),
 		dagql.NodeFunc("withMountedFile", s.withMountedFile).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a file mounted read-only at the given path, without mutating the source.",
-				"Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.").
+			Doc("Return this workspace with a file mounted at the given path, without mutating the source.",
+				"Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.").
 			Args(
 				dagql.Arg("path").Doc("Location of the mounted file. Relative paths resolve from the workspace cwd."),
 				dagql.Arg("source").Doc("File to mount."),
@@ -820,8 +820,8 @@ type workspaceDirectoryArgs struct {
 
 // resolveReadRootfs resolves a workspace read (Workspace.directory/file) with
 // mounted content visible:
-//   - Paths at or under a mount point resolve entirely against the read-only
-//     mounts tree — mounted content shadows the source.
+//   - Paths at or under a mount point resolve entirely against the mounts
+//     tree — mounted content shadows the source.
 //   - Paths with mount points beneath them get the mounted content overlaid on
 //     the source read, so listings include it. As with container mounts, the
 //     mount point's parents don't need to exist in the source.
@@ -1341,14 +1341,11 @@ func (s *workspaceSchema) withNewFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.pathEdit(ctx, parent, resolvedPath, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withNewFile",
@@ -1359,7 +1356,7 @@ func (s *workspaceSchema) withNewFile(
 			},
 		})
 		return updated, err
-	}, nil)
+	})
 }
 
 type workspaceWithFileArgs struct {
@@ -1377,9 +1374,6 @@ func (s *workspaceSchema) withFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -1388,7 +1382,7 @@ func (s *workspaceSchema) withFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.pathEdit(ctx, parent, resolvedPath, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		selectorArgs := []dagql.NamedInput{
 			{Name: "path", Value: dagql.NewString(resolvedPath)},
 			{Name: "source", Value: dagql.NewID[*core.File](sourceID)},
@@ -1402,7 +1396,7 @@ func (s *workspaceSchema) withFile(
 			Args:  selectorArgs,
 		})
 		return updated, err
-	}, nil)
+	})
 }
 
 type workspaceSearchArgs struct {
@@ -1845,9 +1839,6 @@ func (s *workspaceSchema) withNewDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -1856,7 +1847,7 @@ func (s *workspaceSchema) withNewDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.pathEdit(ctx, parent, resolvedPath, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		// Clearing first is what lets both overlay branches share this edit:
 		// an edit that ignores whatever the base holds at the path reads the
 		// same on a full read root as on a host overlay's delta root.
@@ -1873,7 +1864,7 @@ func (s *workspaceSchema) withNewDirectory(
 			},
 		})
 		return updated, err
-	}, nil)
+	})
 }
 
 func (s *workspaceSchema) withDirectory(
@@ -1883,9 +1874,6 @@ func (s *workspaceSchema) withDirectory(
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	resolvedPath, err := resolveWorkspacePath(args.Path, parent.Self().Cwd)
 	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -1898,7 +1886,7 @@ func (s *workspaceSchema) withDirectory(
 	}
 	// The edit layers onto what the path already holds, so the base has to
 	// carry it — see overlayEdit's readsExisting.
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.pathEdit(ctx, parent, resolvedPath, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withDirectory",
@@ -1908,7 +1896,7 @@ func (s *workspaceSchema) withDirectory(
 			},
 		})
 		return updated, err
-	}, nil)
+	})
 }
 
 // clearedForWrite returns base holding nothing at path, ready for a write that
@@ -1947,14 +1935,14 @@ func (s *workspaceSchema) withoutFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
+	if err := guardMountPointRemoval(parent.Self(), resolvedPath); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.pathEdit(ctx, parent, resolvedPath, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withoutFile",
@@ -1963,7 +1951,7 @@ func (s *workspaceSchema) withoutFile(
 			},
 		})
 		return updated, err
-	}, nil)
+	})
 }
 
 type workspaceWithoutFilesArgs struct {
@@ -1971,38 +1959,58 @@ type workspaceWithoutFilesArgs struct {
 }
 
 // withoutFiles is withoutFile for many paths in one step, as
-// Directory.withoutFiles is for a directory.
+// Directory.withoutFiles is for a directory. Paths in a mount are removed
+// from the mounts tree, the rest from the overlay.
 func (s *workspaceSchema) withoutFiles(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceWithoutFilesArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	resolvedPaths := make([]string, 0, len(args.Paths))
+	ws := parent.Self()
+	var rootPaths, mountPaths []string
 	for _, p := range args.Paths {
-		resolvedPath, err := resolveWorkspacePath(p, parent.Self().Cwd)
+		resolvedPath, err := resolveWorkspacePath(p, ws.Cwd)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
-		if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
+		if err := guardMountPointRemoval(ws, resolvedPath); err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
-		resolvedPaths = append(resolvedPaths, resolvedPath)
+		if ws.MountedPath(resolvedPath) {
+			mountPaths = append(mountPaths, resolvedPath)
+		} else {
+			rootPaths = append(rootPaths, resolvedPath)
+		}
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	pathInputs := dagql.ArrayInput[dagql.String](dagql.NewStringArray(resolvedPaths...))
-	return s.overlayEdit(ctx, parent, resolvedPaths, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
-		var updated dagql.ObjectResult[*core.Directory]
-		err := srv.Select(ctx, base, &updated, dagql.Selector{
-			Field: "withoutFiles",
-			Args: []dagql.NamedInput{
-				{Name: "paths", Value: pathInputs},
-			},
-		})
-		return updated, err
-	}, nil)
+	removeFiles := func(paths []string) func(dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		pathInputs := dagql.ArrayInput[dagql.String](dagql.NewStringArray(paths...))
+		return func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+			var updated dagql.ObjectResult[*core.Directory]
+			err := srv.Select(ctx, base, &updated, dagql.Selector{
+				Field: "withoutFiles",
+				Args: []dagql.NamedInput{
+					{Name: "paths", Value: pathInputs},
+				},
+			})
+			return updated, err
+		}
+	}
+	var mutate func(*core.Workspace)
+	if len(mountPaths) > 0 {
+		newMounts, err := editMounts(ws, removeFiles(mountPaths))
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		if len(rootPaths) == 0 {
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, ws.WithMountsDir(newMounts))
+		}
+		mutate = withMountsDirMutation(newMounts)
+	}
+	return s.overlayEdit(ctx, parent, rootPaths, nil, removeFiles(rootPaths), mutate)
 }
 
 type workspaceWithoutDirectoryArgs struct {
@@ -2019,14 +2027,14 @@ func (s *workspaceSchema) withoutDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
+	if err := guardMountPointRemoval(parent.Self(), resolvedPath); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.pathEdit(ctx, parent, resolvedPath, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withoutDirectory",
@@ -2035,7 +2043,7 @@ func (s *workspaceSchema) withoutDirectory(
 			},
 		})
 		return updated, err
-	}, nil)
+	})
 }
 
 func (s *workspaceSchema) withChanges(
@@ -2048,6 +2056,12 @@ func (s *workspaceSchema) withChanges(
 
 // applyChangeset overlays a changeset onto the workspace, optionally mutating
 // the resulting workspace value.
+//
+// What the changeset changes in a mount goes to the mounts tree, the rest to
+// the overlay. A changeset entirely within mounts applies to the mounts tree
+// as is. One spanning both is split by restricting both of its sides to, or
+// excluding them from, the mount points: copies of both trees, paid only by a
+// changeset that crosses the boundary.
 func (s *workspaceSchema) applyChangeset(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -2066,13 +2080,61 @@ func (s *workspaceSchema) applyChangeset(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	ws := parent.Self()
 	touched, err := changesetTouchedPaths(ctx, changesObj.Self())
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	for _, p := range touched {
-		if err := guardMountedPath(parent.Self(), p); err != nil {
+	if len(ws.MountPoints()) > 0 {
+		split, err := splitChangesetAtMounts(ctx, ws, changesObj.Self())
+		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		if split.inMounts {
+			mountChanges := changesObj
+			if split.inRoot {
+				mountChanges, err = filteredChangeset(ctx, srv, changesObj, core.CopyFilter{
+					Include: mountPointPatterns(ws.MountPoints()),
+				})
+				if err != nil {
+					return dagql.ObjectResult[*core.Workspace]{}, err
+				}
+			}
+			mountChangesID, err := mountChanges.ID()
+			if err != nil {
+				return dagql.ObjectResult[*core.Workspace]{}, err
+			}
+			newMounts, err := editMounts(ws, func(mounts dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+				var updated dagql.ObjectResult[*core.Directory]
+				err := srv.Select(ctx, mounts, &updated, dagql.Selector{
+					Field: "withChanges",
+					Args: []dagql.NamedInput{
+						{Name: "changes", Value: dagql.NewID[*core.Changeset](mountChangesID)},
+					},
+				})
+				return updated, err
+			})
+			if err != nil {
+				return dagql.ObjectResult[*core.Workspace]{}, err
+			}
+			if !split.inRoot {
+				newWS := ws.WithMountsDir(newMounts)
+				if mutate != nil {
+					mutate(newWS)
+				}
+				return dagql.NewObjectResultForCurrentCall(ctx, srv, newWS)
+			}
+			rootChanges, err := filteredChangeset(ctx, srv, changesObj, core.CopyFilter{
+				Exclude: mountPointPatterns(ws.MountPoints()),
+			})
+			if err != nil {
+				return dagql.ObjectResult[*core.Workspace]{}, err
+			}
+			if changesID, err = rootChanges.ID(); err != nil {
+				return dagql.ObjectResult[*core.Workspace]{}, err
+			}
+			touched = slices.DeleteFunc(touched, ws.MountedPath)
+			mutate = chainMutations(withMountsDirMutation(newMounts), mutate)
 		}
 	}
 	return s.overlayEdit(ctx, parent, touched, nil, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
@@ -2106,6 +2168,11 @@ type workspaceWithPatchFileArgs struct {
 // tree are made against the host instead: a path the patch creates must not
 // exist yet (refuseExistingCreates), and a directory the patch empties is
 // removed only if the host holds nothing else in it (restorePrunedParents).
+//
+// A patch section for a path in a mount applies to the mounts tree instead:
+// the patch is split by section, and each part applies to its own tree. A
+// section that renames or copies across a mount boundary, or deletes a mount
+// point itself, is refused.
 func (s *workspaceSchema) withPatchFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -2117,22 +2184,65 @@ func (s *workspaceSchema) withPatchFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	patch, err := args.Patch.Load(ctx, srv)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	var paths patchedWorkspacePaths
-	if host || len(ws.MountPoints()) > 0 {
-		// Mounted content is read-only. Otherwise an in-engine workspace
-		// needs no paths, so the patch is not read at all.
-		paths, err = patchWorkspacePaths(ctx, ws, patch)
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, err
-		}
-	}
 	patchID, err := args.Patch.ID()
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	var (
+		paths  patchedWorkspacePaths
+		mutate func(*core.Workspace)
+	)
+	if host || len(ws.MountPoints()) > 0 {
+		// Otherwise an in-engine workspace needs no paths, so the patch is
+		// not read at all.
+		patch, err := args.Patch.Load(ctx, srv)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		contents, err := patch.Self().Contents(ctx, patch, nil, nil)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("read patch: %w", err)
+		}
+		sections, err := core.ParsePatchSections(contents)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("parse patch: %w", err)
+		}
+		rootSections, mountSections, err := splitPatchAtMounts(ws, sections)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		if len(mountSections) > 0 {
+			mountPatchID := patchID
+			if len(rootSections) > 0 {
+				if mountPatchID, err = patchBlob(ctx, srv, mountSections); err != nil {
+					return dagql.ObjectResult[*core.Workspace]{}, err
+				}
+			}
+			newMounts, err := editMounts(ws, func(mounts dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+				var patched dagql.ObjectResult[*core.Directory]
+				err := srv.Select(ctx, mounts, &patched, dagql.Selector{
+					Field: "withPatchFile",
+					Args: []dagql.NamedInput{
+						{Name: "patch", Value: dagql.NewID[*core.File](mountPatchID)},
+						{Name: "onConflict", Value: args.OnConflict},
+					},
+				})
+				return patched, err
+			})
+			if err != nil {
+				return dagql.ObjectResult[*core.Workspace]{}, err
+			}
+			if len(rootSections) == 0 {
+				return dagql.NewObjectResultForCurrentCall(ctx, srv, ws.WithMountsDir(newMounts))
+			}
+			if patchID, err = patchBlob(ctx, srv, rootSections); err != nil {
+				return dagql.ObjectResult[*core.Workspace]{}, err
+			}
+			mutate = withMountsDirMutation(newMounts)
+		}
+		if host {
+			paths = patchWorkspacePaths(rootSections)
+		}
 	}
 	// Every path the overlay's delta root has the final say on once the
 	// patch is in.
@@ -2160,14 +2270,14 @@ func (s *workspaceSchema) withPatchFile(
 		restored, dirs, err := s.restorePrunedParents(ctx, srv, ws, touchedAll, base, hostBase, patched, paths.removed)
 		emptied = dirs
 		return restored, err
-	}, func(newWS *core.Workspace) {
+	}, chainMutations(mutate, func(newWS *core.Workspace) {
 		// The directories the patch emptied are the overlay's from now on:
 		// left untouched, the next edit would seed them back into the delta
 		// root as the parents of the removed files (seedDeltaRootParents).
 		if overlay, ok := newWS.Source().(*core.WorkspaceSourceOverlay); ok && len(emptied) > 0 {
 			overlay.TouchedPaths = unionPaths(overlay.TouchedPaths, emptied)
 		}
-	})
+	}))
 }
 
 // refuseExistingCreates fails, as `git apply` does, when a host-backed
@@ -2353,44 +2463,16 @@ type patchedWorkspacePaths struct {
 	created []string
 }
 
-// patchWorkspacePaths returns the paths a patch touches, refusing any at or
-// under a mount, or outside the workspace.
-func patchWorkspacePaths(ctx context.Context, ws *core.Workspace, patch dagql.ObjectResult[*core.File]) (patchedWorkspacePaths, error) {
+// patchWorkspacePaths returns the paths a patch's sections touch.
+func patchWorkspacePaths(sections []workspacePatchSection) patchedWorkspacePaths {
 	var out patchedWorkspacePaths
-	contents, err := patch.Self().Contents(ctx, patch, nil, nil)
-	if err != nil {
-		return out, fmt.Errorf("read patch: %w", err)
-	}
-	files, err := core.ParsePatchPaths(contents)
-	if err != nil {
-		return out, fmt.Errorf("parse patch: %w", err)
-	}
-	resolve := func(p string) (string, error) {
-		resolved, err := resolveWorkspacePath("/"+p, ".")
-		if err != nil {
-			return "", err
-		}
-		if resolved == "." {
-			return "", fmt.Errorf("patch names the workspace root")
-		}
-		if err := guardMountedPath(ws, resolved); err != nil {
-			return "", err
-		}
-		return resolved, nil
-	}
-	for _, f := range files {
-		var oldPath, newPath string
-		if f.Old != "" {
-			if oldPath, err = resolve(f.Old); err != nil {
-				return out, err
-			}
+	for _, f := range sections {
+		oldPath, newPath := f.oldPath, f.newPath
+		if oldPath != "" {
 			out.touched = append(out.touched, oldPath)
 			out.reads = append(out.reads, oldPath)
 		}
-		if f.New != "" {
-			if newPath, err = resolve(f.New); err != nil {
-				return out, err
-			}
+		if newPath != "" {
 			out.touched = append(out.touched, newPath)
 			if newPath != oldPath {
 				out.created = append(out.created, newPath)
@@ -2406,7 +2488,85 @@ func patchWorkspacePaths(ctx context.Context, ws *core.Workspace, patch dagql.Ob
 	out.created = slices.DeleteFunc(unionPaths(nil, out.created), func(p string) bool {
 		return slices.Contains(out.removed, p)
 	})
-	return out, nil
+	return out
+}
+
+// workspacePatchSection is one file section of a patch applied to a
+// workspace, with its paths resolved against the workspace root: "" where the
+// section names none.
+type workspacePatchSection struct {
+	core.PatchSection
+	oldPath, newPath string
+}
+
+// splitPatchAtMounts resolves each section of a patch applied at the
+// workspace root, refusing paths outside the workspace, and sorts the
+// sections by the tree they apply to: the overlay's, or the mounts tree's for
+// paths at or under a mount point. A section that renames or copies across a
+// mount boundary is refused, since neither tree holds both of its sides, as
+// is one that deletes or renames away a mount point itself: unmounting is
+// withoutMount's job.
+func splitPatchAtMounts(ws *core.Workspace, sections []core.PatchSection) (root, mounted []workspacePatchSection, _ error) {
+	resolve := func(p string) (string, error) {
+		if p == "" {
+			return "", nil
+		}
+		resolved, err := resolveWorkspacePath("/"+p, ".")
+		if err != nil {
+			return "", err
+		}
+		if resolved == "." {
+			return "", fmt.Errorf("patch names the workspace root")
+		}
+		return resolved, nil
+	}
+	for _, section := range sections {
+		oldPath, err := resolve(section.Old)
+		if err != nil {
+			return nil, nil, err
+		}
+		newPath, err := resolve(section.New)
+		if err != nil {
+			return nil, nil, err
+		}
+		resolved := workspacePatchSection{PatchSection: section, oldPath: oldPath, newPath: newPath}
+		oldMounted := oldPath != "" && ws.MountedPath(oldPath)
+		newMounted := newPath != "" && ws.MountedPath(newPath)
+		if oldPath != "" && newPath != "" && oldMounted != newMounted {
+			return nil, nil, fmt.Errorf("patch moves %q to %q across a workspace mount boundary", oldPath, newPath)
+		}
+		if oldPath != "" && oldPath != newPath && !section.Copy {
+			if err := guardMountPointRemoval(ws, oldPath); err != nil {
+				return nil, nil, err
+			}
+		}
+		if oldMounted || newMounted {
+			mounted = append(mounted, resolved)
+		} else {
+			root = append(root, resolved)
+		}
+	}
+	return root, mounted, nil
+}
+
+// patchBlob makes a patch file of the given sections, in order.
+func patchBlob(ctx context.Context, srv *dagql.Server, sections []workspacePatchSection) (*call.ID, error) {
+	var contents []byte
+	for _, section := range sections {
+		contents = append(contents, section.Patch...)
+	}
+	var blob dagql.ObjectResult[*core.File]
+	if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
+		Field: "blob",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString("workspace.patch")},
+			{Name: "contents", Value: dagql.Bytes(contents)},
+			{Name: "permissions", Value: dagql.NewInt(0o600)},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("split patch: %w", err)
+	}
+	return blob.ID()
 }
 
 func (s *workspaceSchema) withWorkdir(
@@ -2497,7 +2657,7 @@ func (s *workspaceSchema) withoutMount(
 
 // withMountedSource is the shared implementation of withMountedDirectory and
 // withMountedFile: it attaches the given source (a Directory or File) into the
-// workspace's read-only mounts tree at the resolved workspace path via the
+// workspace's mounts tree at the resolved workspace path via the
 // named Directory field ("withDirectory" or "withFile"), and records the mount
 // point.
 func withMountedSource[T dagql.Typed](
@@ -2542,14 +2702,158 @@ func withMountedSource[T dagql.Typed](
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
-// guardMountedPath rejects overlay edits that target a path at or under a
-// mount point, keeping mounted content read-only. It is a no-op when the
-// workspace has no mounts.
-func guardMountedPath(ws *core.Workspace, resolvedPath string) error {
-	if ws.MountedPath(resolvedPath) {
-		return fmt.Errorf("workspace path %q is a read-only mount and cannot be modified", resolvedPath)
+// pathEdit applies an edit at a single workspace path: to the mounts tree for
+// a path at or under a mount point, to the overlay otherwise (see overlayEdit
+// for readsExisting). The mounts tree is keyed by workspace-root-relative
+// path, like the overlay's trees, so the same edit applies to either.
+func (s *workspaceSchema) pathEdit(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	resolvedPath string,
+	readsExisting []string,
+	edit func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error),
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws := parent.Self()
+	if !ws.MountedPath(resolvedPath) {
+		return s.overlayEdit(ctx, parent, []string{resolvedPath}, readsExisting, edit, nil)
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	newMounts, err := editMounts(ws, edit)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws.WithMountsDir(newMounts))
+}
+
+// editMounts applies an edit to the workspace's mounts tree. Mounted content
+// lives only in that tree, never in the overlay, so the edit never reaches
+// the workspace's pending changes or the host: it is part of the workspace
+// value, carried by its recipe like any other edit.
+func editMounts(
+	ws *core.Workspace,
+	edit func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error),
+) (dagql.ObjectResult[*core.Directory], error) {
+	mounts, ok := ws.MountsDir()
+	if !ok {
+		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("workspace has no mounts")
+	}
+	return edit(mounts)
+}
+
+// withMountsDirMutation returns an overlayEdit mutation swapping in the given
+// mounts tree, for an edit whose mounted part is already applied.
+func withMountsDirMutation(mounts dagql.ObjectResult[*core.Directory]) func(*core.Workspace) {
+	return func(ws *core.Workspace) {
+		*ws = *ws.WithMountsDir(mounts)
+	}
+}
+
+// chainMutations runs each non-nil mutation in order.
+func chainMutations(mutations ...func(*core.Workspace)) func(*core.Workspace) {
+	return func(ws *core.Workspace) {
+		for _, mutate := range mutations {
+			if mutate != nil {
+				mutate(ws)
+			}
+		}
+	}
+}
+
+// guardMountPointRemoval refuses removing a mount point itself through a
+// content edit. Edits beneath a mount point land in the mounts tree, but the
+// mount point is the mount: deleting it there would leave a mount of nothing
+// shadowing the source, and dropping the mount instead would bring the source
+// content back, the opposite of a removal. Workspace.withoutMount unmounts.
+func guardMountPointRemoval(ws *core.Workspace, resolvedPath string) error {
+	if ws.IsMountPoint(resolvedPath) {
+		return fmt.Errorf("workspace path %q is a mount point and cannot be removed; use withoutMount to unmount it", resolvedPath)
 	}
 	return nil
+}
+
+// mountPointPatterns returns copy filter patterns matching each mount point
+// and everything beneath it.
+func mountPointPatterns(points []string) []string {
+	patterns := make([]string, 0, len(points)*2)
+	for _, p := range points {
+		patterns = append(patterns, p, p+"/**")
+	}
+	return patterns
+}
+
+// changesetMountSplit says which of a workspace's trees a changeset touches.
+type changesetMountSplit struct {
+	inMounts, inRoot bool
+}
+
+// splitChangesetAtMounts reports whether a changeset touches mounted paths,
+// other paths, or both. A directory above a mount point counts for neither:
+// both trees hold it, and a changeset of a workspace read carries it whenever
+// it carries a mount. A changeset that removes a mount point itself is
+// refused (see guardMountPointRemoval).
+func splitChangesetAtMounts(ctx context.Context, ws *core.Workspace, ch *core.Changeset) (changesetMountSplit, error) {
+	var split changesetMountSplit
+	paths, err := ch.ComputePaths(ctx)
+	if err != nil {
+		return split, err
+	}
+	for _, p := range paths.AllRemoved {
+		p = strings.TrimSuffix(p, "/")
+		if slices.Contains(paths.Added, p) || slices.Contains(paths.Added, p+"/") {
+			// Replaced, not removed.
+			continue
+		}
+		if err := guardMountPointRemoval(ws, p); err != nil {
+			return split, err
+		}
+	}
+	for _, p := range slices.Concat(paths.Added, paths.Modified, paths.AllRemoved) {
+		dir := strings.HasSuffix(p, "/")
+		p = strings.TrimSuffix(p, "/")
+		switch {
+		case ws.MountedPath(p):
+			split.inMounts = true
+		case dir && ws.HasMountsUnder(p):
+		default:
+			split.inRoot = true
+		}
+	}
+	return split, nil
+}
+
+// filteredChangeset returns the changeset between both sides of ch with the
+// filter applied to each.
+func filteredChangeset(
+	ctx context.Context,
+	srv *dagql.Server,
+	ch dagql.ObjectResult[*core.Changeset],
+	filter core.CopyFilter,
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var filtered dagql.ObjectResult[*core.Changeset]
+	filterDir := func(dir dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		var out dagql.ObjectResult[*core.Directory]
+		dirID, err := dir.ID()
+		if err != nil {
+			return out, err
+		}
+		err = srv.Select(ctx, srv.Root(), &out,
+			dagql.Selector{Field: "directory"},
+			dagql.Selector{Field: "withDirectory", Args: workspaceFilterWithDirectoryArgs(dirID, filter, false)},
+		)
+		return out, err
+	}
+	before, err := filterDir(ch.Self().Before)
+	if err != nil {
+		return filtered, fmt.Errorf("split changeset: %w", err)
+	}
+	after, err := filterDir(ch.Self().After)
+	if err != nil {
+		return filtered, fmt.Errorf("split changeset: %w", err)
+	}
+	return directoryChangesBetween(ctx, srv, before, after)
 }
 
 func (s *workspaceSchema) changes(
