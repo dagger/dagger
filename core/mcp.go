@@ -1420,6 +1420,19 @@ func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root d
 		sel.View = srv.View
 		return srv.Select(ctx, newWS, &newWS, sel)
 	}
+	if len(rendered.RemovedFiles) > 0 {
+		// Before the patch, which only writes: deletions are path-only.
+		removed := make([]string, len(rendered.RemovedFiles))
+		for i, p := range rendered.RemovedFiles {
+			removed[i] = "/" + p
+		}
+		if err := selectWS(dagql.Selector{
+			Field: "withoutFiles",
+			Args:  []dagql.NamedInput{{Name: "paths", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(removed...))}},
+		}); err != nil {
+			return "", err
+		}
+	}
 	if len(rendered.Patch) > 0 {
 		// No View: blob postdates some client views, and like
 		// checkpointOverlay's patch blob this is engine-internal plumbing.
@@ -1504,7 +1517,12 @@ func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root d
 	}
 	m.workspace = newWS
 	m.markStateChanged()
-	return m.summarizeAppliedPatch(ctx, changes, rendered.Patch), nil
+	shown := rendered.Patch
+	if len(rendered.RemovedFiles) > 0 {
+		// The patch does not show what was removed; the stats do.
+		shown = nil
+	}
+	return m.summarizeAppliedPatch(ctx, changes, shown), nil
 }
 
 // workspaceDirectory returns the bound workspace's root directory, for

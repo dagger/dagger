@@ -17,23 +17,32 @@ import (
 )
 
 // PatchOnto is a changeset rendered against a tree other than its own Before:
-// applying Patch to that tree with `git apply`, then creating NewDirectories
-// and removing RemovedDirectories, leaves every path the changeset declares as
-// Directory.withChanges would, without comparing the two trees.
+// removing RemovedFiles from that tree, applying Patch to it with `git apply`,
+// then removing RemovedDirectories and creating NewDirectories, in that order,
+// leaves every path the changeset declares as Directory.withChanges would,
+// without comparing the two trees.
+//
+// Deletions stay out of the patch, which only creates and modifies files: a
+// deletion needs no content, while a patch hunk would carry every deleted
+// byte, and a binary one would not be embeddable at all. Since the patch
+// deletes nothing, `git apply` prunes no directory either.
 type PatchOnto struct {
-	// Patch is a `git diff --binary` from the tree's content at the
-	// changeset's paths to the changeset's After content there. Empty when
+	// RemovedFiles are the paths to remove before the patch: the files the
+	// changeset removes outside RemovedDirectories, and the directories it
+	// replaces with a file, which the patch then creates. Sorted, and none
+	// beneath another.
+	RemovedFiles []string
+	// Patch is a `git diff --binary` from the tree's content at the files the
+	// changeset writes to the changeset's After content there. Empty when
 	// they already match.
 	Patch []byte
-	// NewDirectories are the directories the result must have that a patch
-	// cannot express: directories the changeset adds, and those of After's
-	// that `git apply` prunes once it deletes their last file. Parents come
-	// before their children.
-	NewDirectories []PatchOntoDirectory
-	// RemovedDirectories are the directories the changeset removes that the
-	// patch leaves behind: it deletes their files, and `git apply` removes
-	// the directories that leaves empty, but not, e.g., empty subdirectories.
+	// RemovedDirectories are the directories the changeset removes, whole,
+	// with whatever the tree holds in them that Before did not, e.g. ignored
+	// files.
 	RemovedDirectories []string
+	// NewDirectories are the empty directories the changeset adds, which a
+	// patch cannot express. Parents come before their children.
+	NewDirectories []PatchOntoDirectory
 }
 
 // PatchOntoDirectory is a directory to create, with its mode in After.
@@ -44,7 +53,7 @@ type PatchOntoDirectory struct {
 
 // IsEmpty reports whether applying p changes nothing.
 func (p *PatchOnto) IsEmpty() bool {
-	return len(p.Patch) == 0 && len(p.NewDirectories) == 0 && len(p.RemovedDirectories) == 0
+	return len(p.RemovedFiles) == 0 && len(p.Patch) == 0 && len(p.NewDirectories) == 0 && len(p.RemovedDirectories) == 0
 }
 
 var (
@@ -71,8 +80,9 @@ var (
 // It is meant to be embedded in a recipe, and a binary file's content does not
 // belong there: a build output such as a compiled binary is better rebuilt
 // from its producer than carried, base85-encoded, in every recipe and trace
-// that includes the patch. So a patch that adds, modifies or deletes a binary
-// file fails with ErrPatchBinary, as soon as git writes its first binary hunk.
+// that includes the patch. So a patch that adds or modifies a binary file
+// fails with ErrPatchBinary, as soon as git writes its first binary hunk.
+// Removing one is fine: removals are path-only (see PatchOnto).
 func (ch *Changeset) RenderPatchOnto(ctx context.Context, base dagql.ObjectResult[*Directory], prefix string, maxBytes int64) (*PatchOnto, error) {
 	paths, err := ch.ComputePaths(ctx)
 	if err != nil {
@@ -122,214 +132,184 @@ func renderPatchOntoDirs(ctx context.Context, baseDir, afterDir, prefix string, 
 		}
 	}
 
-	var baseFiles, afterFiles []string
-	for _, p := range slices.Concat(paths.Added, paths.Modified) {
-		if strings.HasSuffix(p, "/") {
-			continue
-		}
-		afterFiles = append(afterFiles, p)
-		// Whatever base holds there is replaced, including a directory
-		// where After has a file.
-		found, err := treeFiles(baseDir, rooted(p))
-		if err != nil {
-			return nil, err
-		}
-		baseFiles = append(baseFiles, found...)
+	plan, err := planPatchOnto(baseDir, afterDir, paths, rooted)
+	if err != nil {
+		return nil, err
 	}
-	for _, p := range paths.Removed {
-		found, err := treeFiles(baseDir, rooted(p))
-		if err != nil {
-			return nil, err
-		}
-		baseFiles = append(baseFiles, found...)
+	out := &PatchOnto{
+		RemovedFiles:       outermostPaths(plan.removed),
+		RemovedDirectories: plan.removedDirs,
 	}
-	slices.Sort(baseFiles)
-	baseFiles = slices.Compact(baseFiles)
 
-	if err := materializeDeltaFiles(ctx, baseDir, stagedBase, baseFiles); err != nil {
+	if err := materializeDeltaFiles(ctx, baseDir, stagedBase, plan.baseFiles); err != nil {
 		return nil, fmt.Errorf("stage base files: %w", err)
 	}
 	// After is rooted at prefix within base: stage its files there, so the
 	// patch's paths are base-relative.
-	if err := materializeDeltaFiles(ctx, afterDir, filepath.Join(stagedAfter, prefix), afterFiles); err != nil {
+	if err := materializeDeltaFiles(ctx, afterDir, filepath.Join(stagedAfter, prefix), plan.afterFiles); err != nil {
 		return nil, fmt.Errorf("stage after files: %w", err)
 	}
-
-	out := &PatchOnto{}
-	if len(baseFiles) > 0 || len(afterFiles) > 0 {
-		var patch bytes.Buffer
-		var stderr strings.Builder
-		budget := &patchBudgetWriter{w: &patch, remaining: maxBytes}
-		err := writeGitDiffPatch(ctx, stage, nil, budget, io.Discard, &stderr)
-		// Checked first: a small patch fits in the pipe, so git can exit
-		// as usual before it notices we stopped reading.
-		if budget.err != nil {
-			return nil, budget.err
+	if len(plan.baseFiles) > 0 || len(plan.afterFiles) > 0 {
+		if out.Patch, err = renderStagedPatch(ctx, stage, maxBytes); err != nil {
+			return nil, err
 		}
-		if err != nil {
-			return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
-		}
-		out.Patch = patch.Bytes()
 	}
 
-	prunes := newPatchPrunes(baseDir, baseFiles, afterFiles, prefix)
-	out.NewDirectories, err = patchOntoNewDirectories(baseDir, afterDir, prefix, paths, afterFiles, prunes)
+	newDirs, err := addedEmptyDirectories(afterDir, paths, plan.afterFiles, rooted)
 	if err != nil {
 		return nil, err
 	}
-	for _, p := range paths.Removed {
-		if !strings.HasSuffix(p, "/") {
-			continue
-		}
-		// A directory replaced by a file is removed by the patch; removing
-		// the path afterwards would take the file too.
-		if _, err := lstatInRoot(afterDir, p); err == nil {
-			continue
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			return nil, err
-		}
-		dir := rooted(p)
-		// Nothing to remove when base lacks it, or the patch's deletions
-		// already leave it empty, so `git apply` removes it.
-		if fi, err := lstatInRoot(baseDir, dir); errors.Is(err, fs.ErrNotExist) || (err == nil && !fi.IsDir()) {
-			continue
-		} else if err != nil {
-			return nil, err
-		}
-		gone, err := prunes.gone(dir)
-		if err != nil {
-			return nil, fmt.Errorf("inspect directory %q: %w", dir, err)
-		}
-		if !gone {
-			out.RemovedDirectories = append(out.RemovedDirectories, dir)
-		}
-	}
-	return out, nil
-}
-
-// patchPrunes models which directories of base `git apply` removes: after
-// deleting a file, it removes each parent the deletion leaves empty.
-type patchPrunes struct {
-	baseDir string
-	// deleted are the files the patch deletes: base has them, After has no
-	// file there.
-	deleted map[string]bool
-	memo    map[string]bool
-}
-
-func newPatchPrunes(baseDir string, baseFiles, afterFiles []string, prefix string) *patchPrunes {
-	written := make(map[string]bool, len(afterFiles))
-	for _, p := range afterFiles {
-		written[path.Join(prefix, p)] = true
-	}
-	deleted := map[string]bool{}
-	for _, p := range baseFiles {
-		if !written[p] {
-			deleted[p] = true
-		}
-	}
-	return &patchPrunes{baseDir: baseDir, deleted: deleted, memo: map[string]bool{}}
-}
-
-// gone reports whether `git apply` removes the base directory dir: it holds
-// something, and only deleted files and directories that go too. A directory
-// that holds nothing is never removed, since no deletion leads to it.
-func (p *patchPrunes) gone(dir string) (bool, error) {
-	if v, ok := p.memo[dir]; ok {
-		return v, nil
-	}
-	entries, err := os.ReadDir(filepath.Join(p.baseDir, dir))
-	if err != nil {
-		return false, err
-	}
-	result := len(entries) > 0
-	for _, ent := range entries {
-		rel := path.Join(dir, ent.Name())
-		if ent.IsDir() {
-			sub, err := p.gone(rel)
-			if err != nil {
-				return false, err
-			}
-			if !sub {
-				result = false
-				break
-			}
-		} else if !p.deleted[rel] {
-			result = false
-			break
-		}
-	}
-	p.memo[dir] = result
-	return result, nil
-}
-
-// patchOntoNewDirectories lists the directories a patch cannot leave as the
-// changeset would, with their modes: the empty directories the changeset adds,
-// and those `git apply` prunes once it deletes their last file but the
-// changeset keeps. A directory the changeset adds with files in it is left to
-// the patch, which creates it along with them: its mode is lost, but listing
-// every such directory would make each workspace read replay one more step per
-// directory. Paths are base-relative; After is rooted at prefix.
-func patchOntoNewDirectories(baseDir, afterDir, prefix string, paths *ChangesetPaths, afterFiles []string, prunes *patchPrunes) ([]PatchOntoDirectory, error) {
-	rooted := func(p string) string {
-		return path.Join(prefix, strings.TrimSuffix(p, "/"))
-	}
-	dirs, err := addedEmptyDirectories(afterDir, paths, afterFiles, rooted)
-	if err != nil {
-		return nil, err
-	}
-
-	parents := map[string]struct{}{}
-	for p := range prunes.deleted {
-		for dir := path.Dir(p); dir != "." && dir != "/"; dir = path.Dir(dir) {
-			parents[dir] = struct{}{}
-		}
-	}
-	for dir := range parents {
-		if _, ok := dirs[dir]; ok {
-			continue
-		}
-		gone, err := prunes.gone(dir)
-		if err != nil {
-			return nil, fmt.Errorf("inspect directory %q: %w", dir, err)
-		}
-		if !gone {
-			continue
-		}
-		var fi fs.FileInfo
-		if rel, inside := strings.CutPrefix(dir, prefix+"/"); inside || prefix == "." {
-			if prefix == "." {
-				rel = dir
-			}
-			// The changeset keeps it only if After has it.
-			fi, err = lstatInRoot(afterDir, rel)
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
-			}
-		} else {
-			// prefix itself or one of its parents: outside the changeset.
-			fi, err = lstatInRoot(baseDir, dir)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("stat directory %q: %w", dir, err)
-		}
-		if fi.IsDir() {
-			dirs[dir] = int(fi.Mode().Perm())
-		}
-	}
-
-	out := make([]PatchOntoDirectory, 0, len(dirs))
-	for dir, perm := range dirs {
-		out = append(out, PatchOntoDirectory{Path: dir, Permissions: perm})
+	for dir, perm := range newDirs {
+		out.NewDirectories = append(out.NewDirectories, PatchOntoDirectory{Path: dir, Permissions: perm})
 	}
 	// Parents sort before their children.
-	slices.SortFunc(out, func(a, b PatchOntoDirectory) int { return strings.Compare(a.Path, b.Path) })
+	slices.SortFunc(out.NewDirectories, func(a, b PatchOntoDirectory) int { return strings.Compare(a.Path, b.Path) })
 	return out, nil
+}
+
+// patchOntoPlan sorts a changeset's paths by how they reach base. baseFiles
+// are the files of base the patch modifies: those at a path After writes a
+// file to. Anything else base holds at the changeset's paths goes before the
+// patch (removed) or after it (removedDirs), by path alone. Paths are
+// base-relative, except afterFiles, which are After's own.
+type patchOntoPlan struct {
+	baseFiles, afterFiles, removed, removedDirs []string
+	written                                     map[string]bool
+}
+
+func planPatchOnto(baseDir, afterDir string, paths *ChangesetPaths, rooted func(string) string) (*patchOntoPlan, error) {
+	plan := &patchOntoPlan{written: map[string]bool{}}
+	for _, p := range slices.Concat(paths.Added, paths.Modified) {
+		if err := plan.addWrite(baseDir, p, rooted); err != nil {
+			return nil, err
+		}
+	}
+	for _, p := range paths.Removed {
+		if err := plan.addRemoval(baseDir, afterDir, p, rooted); err != nil {
+			return nil, err
+		}
+	}
+	slices.Sort(plan.baseFiles)
+	plan.baseFiles = slices.Compact(plan.baseFiles)
+	slices.Sort(plan.removedDirs)
+	return plan, nil
+}
+
+// addWrite plans a path the changeset adds or modifies.
+func (plan *patchOntoPlan) addWrite(baseDir, p string, rooted func(string) string) error {
+	if strings.HasSuffix(p, "/") {
+		return nil
+	}
+	plan.afterFiles = append(plan.afterFiles, p)
+	plan.written[rooted(p)] = true
+	fi, err := lstatInRoot(baseDir, rooted(p))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if fi.IsDir() {
+		// A directory After replaces with a file goes whole, before the
+		// patch creates the file: `git apply` can replace only an empty
+		// directory.
+		plan.removed = append(plan.removed, rooted(p))
+	} else {
+		plan.baseFiles = append(plan.baseFiles, rooted(p))
+	}
+	return nil
+}
+
+// addRemoval plans a path the changeset removes. Call it after every write is
+// planned.
+func (plan *patchOntoPlan) addRemoval(baseDir, afterDir, p string, rooted func(string) string) error {
+	dir := rooted(p)
+	baseFi, err := lstatInRoot(baseDir, dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		// Nothing to remove.
+		return nil
+	} else if err != nil {
+		return err
+	}
+	afterFi, err := lstatInRoot(afterDir, strings.TrimSuffix(p, "/"))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	switch {
+	case plan.written[dir] && !baseFi.IsDir():
+		// The patch modifies it.
+	case afterFi == nil && baseFi.IsDir():
+		// Removed whole, including what Before never had there.
+		plan.removedDirs = append(plan.removedDirs, dir)
+	case afterFi == nil || !baseFi.IsDir() || !afterFi.IsDir():
+		// A file, or one side's directory replaced by the other's file:
+		// removed before the patch writes there or beneath.
+		plan.removed = append(plan.removed, dir)
+	default:
+		// Both sides have a directory: what base holds there that After
+		// does not write goes, file by file.
+		found, err := treeFiles(baseDir, dir)
+		if err != nil {
+			return err
+		}
+		for _, f := range found {
+			if !plan.written[f] {
+				plan.removed = append(plan.removed, f)
+			}
+		}
+	}
+	return nil
+}
+
+// renderStagedPatch runs `git diff --binary` between the a/ and b/ trees
+// staged beneath stage, within the size budget and refusing binary hunks.
+func renderStagedPatch(ctx context.Context, stage string, maxBytes int64) ([]byte, error) {
+	var patch bytes.Buffer
+	var stderr strings.Builder
+	budget := &patchBudgetWriter{w: &patch, remaining: maxBytes}
+	err := writeGitDiffPatch(ctx, stage, nil, budget, io.Discard, &stderr)
+	// Checked first: a small patch fits in the pipe, so git can exit as
+	// usual before it notices we stopped reading.
+	if budget.err != nil {
+		return nil, budget.err
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return patch.Bytes(), nil
+}
+
+// outermostPaths returns paths sorted, without duplicates or any path beneath
+// another of them: removing that one removes it too.
+func outermostPaths(paths []string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		set[p] = true
+	}
+	out := make([]string, 0, len(set))
+	for p := range set {
+		beneath := false
+		for dir := path.Dir(p); dir != "." && dir != "/"; dir = path.Dir(dir) {
+			if set[dir] {
+				beneath = true
+				break
+			}
+		}
+		if !beneath {
+			out = append(out, p)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // addedEmptyDirectories returns the directories the changeset adds that no
 // file the patch writes lies beneath, by rooted path, with their modes in
-// After.
+// After. A directory the changeset adds with files in it is left to the patch,
+// which creates it along with them: its mode is lost, but listing every such
+// directory would make each workspace read replay one more step per directory.
 func addedEmptyDirectories(afterDir string, paths *ChangesetPaths, afterFiles []string, rooted func(string) string) (map[string]int, error) {
 	// The directories the patch creates, as parents of the files it writes.
 	holdsFiles := map[string]bool{}

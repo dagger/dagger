@@ -15,15 +15,23 @@ import (
 )
 
 // applyPatchOnto applies a rendered patch to dir the way MCP applies it to a
-// workspace: Workspace.withPatchFile, then the directories a patch cannot
-// express.
+// workspace: Workspace.withoutFiles, Workspace.withPatchFile, then the
+// directories a patch cannot express.
 func applyPatchOnto(t *testing.T, dir string, p *PatchOnto) {
 	t.Helper()
 	stdio := telemetry.SpanStreams{
 		Stdout: nopWriteCloser{io.Discard},
 		Stderr: nopWriteCloser{io.Discard},
 	}
-	require.NoError(t, applyGitPatch(t.Context(), dir, bytes.NewReader(p.Patch), stdio, PatchConflictFail))
+	for _, f := range p.RemovedFiles {
+		require.NoError(t, os.RemoveAll(filepath.Join(dir, f)))
+	}
+	if len(p.Patch) > 0 {
+		require.NoError(t, applyGitPatch(t.Context(), dir, bytes.NewReader(p.Patch), stdio, PatchConflictFail))
+	}
+	for _, d := range p.RemovedDirectories {
+		require.NoError(t, os.RemoveAll(filepath.Join(dir, d)))
+	}
 	for _, d := range p.NewDirectories {
 		target := filepath.Join(dir, d.Path)
 		if _, err := os.Stat(target); err == nil {
@@ -31,9 +39,6 @@ func applyPatchOnto(t *testing.T, dir string, p *PatchOnto) {
 		}
 		require.NoError(t, os.MkdirAll(target, 0o755))
 		require.NoError(t, os.Chmod(target, fs.FileMode(d.Permissions)))
-	}
-	for _, d := range p.RemovedDirectories {
-		require.NoError(t, os.RemoveAll(filepath.Join(dir, d)))
 	}
 }
 
@@ -115,7 +120,7 @@ func TestRenderPatchOnto(t *testing.T) {
 		require.Equal(t, map[string]string{"keep.txt": "keep\n", "new.txt": "new\n"}, readTree(t, base))
 	})
 
-	t.Run("a removed directory the patch empties is left to git apply", func(t *testing.T) {
+	t.Run("a removed directory is removed whole", func(t *testing.T) {
 		base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
 		for _, root := range []string{base, before} {
 			writeDeltaTestFile(t, root, "gone/sub/a.txt", "a\n")
@@ -124,7 +129,9 @@ func TestRenderPatchOnto(t *testing.T) {
 		writeDeltaTestFile(t, after, "keep.txt", "keep\n")
 
 		p := render(t, base, before, after, ".")
-		require.Empty(t, p.RemovedDirectories)
+		require.Empty(t, p.Patch)
+		require.Empty(t, p.RemovedFiles)
+		require.Equal(t, []string{"gone"}, p.RemovedDirectories)
 		require.Empty(t, p.NewDirectories)
 		applyPatchOnto(t, base, p)
 		require.Equal(t, map[string]string{"keep.txt": "keep\n"}, readTree(t, base))
@@ -143,6 +150,8 @@ func TestRenderPatchOnto(t *testing.T) {
 		writeDeltaTestFile(t, after, "keep.txt", "keep\n")
 
 		p := render(t, base, before, after, ".")
+		require.Empty(t, p.Patch)
+		require.Empty(t, p.RemovedFiles, "the directory goes whole: its files need no listing")
 		require.Equal(t, []string{"gone"}, p.RemovedDirectories)
 		applyPatchOnto(t, base, p)
 		require.Equal(t, map[string]string{"keep.txt": "keep\n"}, readTree(t, base))
@@ -166,10 +175,10 @@ func TestRenderPatchOnto(t *testing.T) {
 		p := render(t, base, before, after, ".")
 		require.Equal(t, []PatchOntoDirectory{
 			{Path: "added/empty", Permissions: 0o700},
-			{Path: "emptied", Permissions: 0o755},
 			{Path: "shell", Permissions: 0o755},
 			{Path: "shell/inner", Permissions: 0o755},
-		}, p.NewDirectories, "a new directory with files in it is left to the patch")
+		}, p.NewDirectories, "a new directory with files in it is left to the patch, and one losing its files stays")
+		require.Equal(t, []string{"emptied/only.txt"}, p.RemovedFiles)
 		require.Equal(t, []string{"removed"}, p.RemovedDirectories)
 		applyPatchOnto(t, base, p)
 		require.Equal(t, map[string]string{
@@ -198,8 +207,83 @@ func TestRenderPatchOnto(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Join(after, "dir"), 0o755))
 		p := render(t, base, before, after, ".")
 		require.Empty(t, p.NewDirectories)
+		require.Equal(t, []string{"dir/remove.txt"}, p.RemovedFiles)
+		require.Empty(t, p.Patch)
 		applyPatchOnto(t, base, p)
 		require.Equal(t, map[string]string{"dir/": "", "dir/ignored.log": "log\n"}, readTree(t, base))
+	})
+
+	t.Run("a deleted file's content stays out of the patch", func(t *testing.T) {
+		base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
+		big := string(bytes.Repeat([]byte("deleted line\n"), 1<<14))
+		for _, root := range []string{base, before} {
+			writeDeltaTestFile(t, root, "big.txt", big)
+			writeDeltaTestFile(t, root, "edit.txt", "old\n")
+		}
+		writeDeltaTestFile(t, after, "edit.txt", "new\n")
+
+		p := render(t, base, before, after, ".")
+		require.Equal(t, []string{"big.txt"}, p.RemovedFiles)
+		require.NotContains(t, string(p.Patch), "deleted line")
+		require.NotContains(t, string(p.Patch), "big.txt")
+		require.Less(t, len(p.Patch), 512)
+		applyPatchOnto(t, base, p)
+		require.Equal(t, map[string]string{"edit.txt": "new\n"}, readTree(t, base))
+	})
+
+	t.Run("a rename removes the old path and creates the new one", func(t *testing.T) {
+		base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
+		content := string(bytes.Repeat([]byte("moved line\n"), 20))
+		for _, root := range []string{base, before} {
+			writeDeltaTestFile(t, root, "dir/old.txt", content)
+		}
+		writeDeltaTestFile(t, after, "dir/new.txt", content)
+
+		p := render(t, base, before, after, ".")
+		require.Equal(t, []string{"dir/old.txt"}, p.RemovedFiles)
+		require.Contains(t, string(p.Patch), "new file")
+		require.NotContains(t, string(p.Patch), "deleted file")
+		require.Empty(t, p.RemovedDirectories)
+		require.Empty(t, p.NewDirectories)
+		applyPatchOnto(t, base, p)
+		require.Equal(t, map[string]string{"dir/": "", "dir/new.txt": content}, readTree(t, base))
+	})
+
+	t.Run("a directory replaced by a file goes before the patch", func(t *testing.T) {
+		base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
+		for _, root := range []string{base, before} {
+			writeDeltaTestFile(t, root, "node/a.txt", "a\n")
+			writeDeltaTestFile(t, root, "node/sub/b.txt", "b\n")
+		}
+		// What Before never had goes too, nested empty directories included,
+		// which `git apply` could not replace.
+		writeDeltaTestFile(t, base, "node/ignored.log", "log\n")
+		require.NoError(t, os.MkdirAll(filepath.Join(base, "node/empty/deeper"), 0o755))
+		writeDeltaTestFile(t, after, "node", "now a file\n")
+
+		p := render(t, base, before, after, ".")
+		require.Equal(t, []string{"node"}, p.RemovedFiles)
+		require.Empty(t, p.RemovedDirectories, "removing the path after the patch would take the file")
+		require.NotContains(t, string(p.Patch), "deleted file")
+		applyPatchOnto(t, base, p)
+		require.Equal(t, map[string]string{"node": "now a file\n"}, readTree(t, base))
+	})
+
+	t.Run("a file replaced by a directory goes before the patch", func(t *testing.T) {
+		base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
+		for _, root := range []string{base, before} {
+			writeDeltaTestFile(t, root, "node", "a file\n")
+			writeDeltaTestFile(t, root, "leaf", "a file\n")
+		}
+		writeDeltaTestFile(t, after, "node/a.txt", "a\n")
+		require.NoError(t, os.MkdirAll(filepath.Join(after, "leaf"), 0o700))
+
+		p := render(t, base, before, after, ".")
+		require.Equal(t, []string{"leaf", "node"}, p.RemovedFiles)
+		require.Equal(t, []PatchOntoDirectory{{Path: "leaf", Permissions: 0o700}}, p.NewDirectories)
+		require.NotContains(t, string(p.Patch), "deleted file")
+		applyPatchOnto(t, base, p)
+		require.Equal(t, map[string]string{"leaf/": "", "node/": "", "node/a.txt": "a\n"}, readTree(t, base))
 	})
 
 	t.Run("a changeset measured from a subdirectory applies there", func(t *testing.T) {
@@ -214,6 +298,7 @@ func TestRenderPatchOnto(t *testing.T) {
 
 		p := render(t, base, before, after, "sub")
 		require.Equal(t, []PatchOntoDirectory{{Path: "sub/made", Permissions: 0o755}}, p.NewDirectories)
+		require.Equal(t, []string{"sub/gone.txt"}, p.RemovedFiles)
 		applyPatchOnto(t, base, p)
 		require.Equal(t, map[string]string{
 			"a.txt":     "root\n",
@@ -221,6 +306,20 @@ func TestRenderPatchOnto(t *testing.T) {
 			"sub/a.txt": "new\n",
 			"sub/made/": "",
 		}, readTree(t, base))
+	})
+
+	t.Run("a subdirectory emptied of its files stays", func(t *testing.T) {
+		base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
+		writeDeltaTestFile(t, base, "sub/only.txt", "only\n")
+		writeDeltaTestFile(t, before, "only.txt", "only\n")
+
+		p := render(t, base, before, after, "sub")
+		require.Equal(t, []string{"sub/only.txt"}, p.RemovedFiles)
+		require.Empty(t, p.Patch)
+		require.Empty(t, p.NewDirectories)
+		require.Empty(t, p.RemovedDirectories)
+		applyPatchOnto(t, base, p)
+		require.Equal(t, map[string]string{"sub/": ""}, readTree(t, base))
 	})
 
 	t.Run("base content behind a symlink is not read", func(t *testing.T) {
@@ -245,16 +344,23 @@ func TestRenderPatchOnto(t *testing.T) {
 		require.ErrorIs(t, err, ErrPatchTooLarge)
 	})
 
-	t.Run("a binary file fails", func(t *testing.T) {
+	t.Run("a binary file", func(t *testing.T) {
 		bin := map[string]string{"bin": "\x00old"}
 		for _, tc := range []struct {
 			name                string
 			base, before, after map[string]string
+			want                map[string]string
 		}{
-			{name: "added", after: map[string]string{"text.txt": "text\n", "bin": "\x00elf"}},
-			{name: "modified", base: bin, before: bin, after: map[string]string{"bin": "\x00new"}},
-			// --binary carries a deleted file's content too, to be reversible.
-			{name: "deleted", base: bin, before: bin},
+			{name: "added fails", after: map[string]string{"text.txt": "text\n", "bin": "\x00elf"}},
+			{name: "modified fails", base: bin, before: bin, after: map[string]string{"bin": "\x00new"}},
+			// --binary would carry a deleted file's content, to be
+			// reversible; a removal needs none.
+			{
+				name: "deleted is a removal",
+				base: map[string]string{"bin": "\x00old", "text.txt": "old\n"}, before: bin,
+				after: map[string]string{"text.txt": "new\n"},
+				want:  map[string]string{"text.txt": "new\n"},
+			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
@@ -265,8 +371,16 @@ func TestRenderPatchOnto(t *testing.T) {
 				}
 				paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
 				require.NoError(t, err)
-				_, err = renderPatchOntoDirs(ctx, base, after, ".", paths, 1<<20)
-				require.ErrorIs(t, err, ErrPatchBinary)
+				p, err := renderPatchOntoDirs(ctx, base, after, ".", paths, 1<<20)
+				if tc.want == nil {
+					require.ErrorIs(t, err, ErrPatchBinary)
+					return
+				}
+				require.NoError(t, err)
+				require.Equal(t, []string{"bin"}, p.RemovedFiles)
+				require.NotContains(t, string(p.Patch), "GIT binary patch")
+				applyPatchOnto(t, base, p)
+				require.Equal(t, tc.want, readTree(t, base))
 			})
 		}
 	})
