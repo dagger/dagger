@@ -285,13 +285,21 @@ func watchCloudCheckListLoop(cmd *cobra.Command, address string, interval time.D
 	if interval <= 0 {
 		interval = cloudCheckWatchInterval
 	}
+	var prevState map[string]string
+	first := true
 	for {
 		grouped, err := fetch(ctx)
 		if err != nil {
 			return err
 		}
-		pending, failed := summarizeCloudCheckResults(grouped)
 
+		// Visual feedback on progress, written to stderr to keep the final
+		// result table on stdout clean: the full initial state on the first
+		// poll, then only state changes on subsequent polls.
+		prevState = reportCloudCheckWatchProgress(cmd.ErrOrStderr(), prevState, first, grouped)
+		first = false
+
+		pending, failed := summarizeCloudCheckResults(grouped)
 		if (cloudCheckListFailFast && failed) || !pending {
 			if outErr := outputCloudCheckList(cmd, grouped, address); outErr != nil {
 				return outErr
@@ -302,11 +310,6 @@ func watchCloudCheckListLoop(cmd *cobra.Command, address string, interval time.D
 			return nil
 		}
 
-		// Still waiting: print which checks are pending/queued/errored so the
-		// user gets visual feedback on progress. Written to stderr to keep the
-		// final result table on stdout clean.
-		printCloudCheckWatchProgress(cmd.ErrOrStderr(), grouped)
-
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -315,38 +318,69 @@ func watchCloudCheckListLoop(cmd *cobra.Command, address string, interval time.D
 	}
 }
 
-// printCloudCheckWatchProgress writes a one-line progress update listing the
-// checks that are still pending, queued, or have errored, grouped by state.
-func printCloudCheckWatchProgress(w io.Writer, rows []groupedCloudListRow) {
-	var queued, pending, errored []string
+// reportCloudCheckWatchProgress writes progress feedback and returns the new
+// per-check state map. On the first poll it prints the full initial state of
+// every check; on later polls it prints only the checks whose state changed
+// (including checks that appear for the first time). It stays quiet when
+// nothing changed.
+func reportCloudCheckWatchProgress(w io.Writer, prev map[string]string, first bool, rows []groupedCloudListRow) map[string]string {
+	cur := make(map[string]string, len(rows))
 	for _, row := range rows {
-		name := dash(row.Values["check"])
-		switch {
-		case row.Result == "green":
-			// finished successfully
-		case row.Result != "pending":
-			errored = append(errored, name)
-		case strings.EqualFold(row.Status, "queued"):
-			queued = append(queued, name)
-		default:
-			pending = append(pending, name)
-		}
+		cur[dash(row.Values["check"])] = cloudCheckStateLabel(row)
 	}
 
-	var parts []string
-	if len(pending) > 0 {
-		parts = append(parts, fmt.Sprintf("%s pending: %s", cloudResultEmoji("pending"), strings.Join(pending, ", ")))
+	if first {
+		if len(rows) > 0 {
+			noun := "check"
+			if len(rows) != 1 {
+				noun = "checks"
+			}
+			fmt.Fprintf(w, "Watching %d Cloud %s:\n", len(rows), noun)
+			for _, row := range rows {
+				fmt.Fprintf(w, "  %s %s: %s\n", cloudCheckStateEmoji(row), dash(row.Values["check"]), cloudCheckStateLabel(row))
+			}
+		}
+		return cur
 	}
-	if len(queued) > 0 {
-		parts = append(parts, fmt.Sprintf("⏳ queued: %s", strings.Join(queued, ", ")))
+
+	for _, row := range rows {
+		name := dash(row.Values["check"])
+		now := cur[name]
+		before, existed := prev[name]
+		switch {
+		case !existed:
+			fmt.Fprintf(w, "%s %s: %s\n", cloudCheckStateEmoji(row), name, now)
+		case before != now:
+			fmt.Fprintf(w, "%s %s: %s → %s\n", cloudCheckStateEmoji(row), name, before, now)
+		}
 	}
-	if len(errored) > 0 {
-		parts = append(parts, fmt.Sprintf("%s errored: %s", cloudResultEmoji("red"), strings.Join(errored, ", ")))
+	return cur
+}
+
+// cloudCheckStateLabel is a human-readable state for a check, preferring the
+// raw Cloud status (e.g. "queued", "running", "errored") and falling back to
+// the collapsed result.
+func cloudCheckStateLabel(row groupedCloudListRow) string {
+	if row.Status != "" {
+		return strings.ToLower(row.Status)
 	}
-	if len(parts) == 0 {
-		return
+	switch row.Result {
+	case "green":
+		return "success"
+	case "red":
+		return "errored"
+	default:
+		return "pending"
 	}
-	fmt.Fprintf(w, "Waiting for Cloud checks — %s\n", strings.Join(parts, "; "))
+}
+
+// cloudCheckStateEmoji picks a status emoji for a check, distinguishing queued
+// from other pending states.
+func cloudCheckStateEmoji(row groupedCloudListRow) string {
+	if row.Result == "pending" && strings.EqualFold(row.Status, "queued") {
+		return "⏳"
+	}
+	return cloudResultEmoji(row.Result)
 }
 
 // summarizeCloudCheckResults reports whether any check is still pending and
@@ -376,7 +410,7 @@ func cloudChecksFailedError(rows []groupedCloudListRow) error {
 	if len(names) == 0 {
 		return errors.New("one or more Cloud checks did not succeed")
 	}
-	return fmt.Errorf("Cloud checks did not succeed: %s", strings.Join(names, ", "))
+	return fmt.Errorf("cloud checks did not succeed: %s", strings.Join(names, ", "))
 }
 
 // loadGroupedCloudCheckRows fetches and groups (one row per check) the Cloud
@@ -434,6 +468,16 @@ func loadWorkspaceModuleCheckRows(ctx context.Context, remote workspaceRemoteAdd
 	client, _, err := cloudCLI.cloudClientWithLogin(ctx, false)
 	if err != nil {
 		return nil, err
+	}
+	// When --org is set, query just that org. Otherwise we'd probe every org
+	// the user belongs to with a serial request each, which is pathologically
+	// slow for accounts in thousands of orgs.
+	if cloudOrgFlag != "" {
+		commits, err := client.ModuleChecks(ctx, cloudOrgFlag, remote.BaseAddress, remote.Version)
+		if err != nil {
+			return nil, err
+		}
+		return cloudCheckRows(cloudOrgFlag, commits), nil
 	}
 	user, err := client.User(ctx)
 	if err != nil {

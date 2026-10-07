@@ -24,26 +24,60 @@ func groupedRowStatus(name, result, status string) groupedCloudListRow {
 	return row
 }
 
-func TestPrintCloudCheckWatchProgress(t *testing.T) {
+func TestReportCloudCheckWatchProgressInitialState(t *testing.T) {
 	var buf bytes.Buffer
-	printCloudCheckWatchProgress(&buf, []groupedCloudListRow{
+	rows := []groupedCloudListRow{
 		groupedRowStatus("lint", "green", "success"),
 		groupedRowStatus("test", "pending", "running"),
 		groupedRowStatus("build", "pending", "queued"),
-		groupedRowStatus("deploy", "red", "errored"),
-	})
+	}
+	state := reportCloudCheckWatchProgress(&buf, nil, true, rows)
 	out := buf.String()
-	require.Contains(t, out, "pending: test")
-	require.Contains(t, out, "queued: build")
-	require.Contains(t, out, "errored: deploy")
-	// finished checks are not reported as in-progress.
-	require.NotContains(t, out, "lint")
+	// first poll lists the full initial state of every check.
+	require.Contains(t, out, "Watching 3 Cloud checks:")
+	require.Contains(t, out, "lint: success")
+	require.Contains(t, out, "test: running")
+	require.Contains(t, out, "build: queued")
+	require.Equal(t, "success", state["lint"])
+	require.Equal(t, "running", state["test"])
+	require.Equal(t, "queued", state["build"])
 }
 
-func TestPrintCloudCheckWatchProgressAllDone(t *testing.T) {
+func TestReportCloudCheckWatchProgressOnlyChanges(t *testing.T) {
+	prev := map[string]string{"lint": "running", "test": "queued", "build": "running"}
 	var buf bytes.Buffer
-	printCloudCheckWatchProgress(&buf, []groupedCloudListRow{groupedRow("lint", "green")})
+	rows := []groupedCloudListRow{
+		groupedRowStatus("lint", "green", "success"),  // changed
+		groupedRowStatus("test", "pending", "queued"), // unchanged
+		groupedRowStatus("build", "red", "errored"),   // changed
+	}
+	state := reportCloudCheckWatchProgress(&buf, prev, false, rows)
+	out := buf.String()
+	require.Contains(t, out, "lint: running → success")
+	require.Contains(t, out, "build: running → errored")
+	// unchanged checks are not reported.
+	require.NotContains(t, out, "test:")
+	require.Equal(t, "errored", state["build"])
+}
+
+func TestReportCloudCheckWatchProgressNoChanges(t *testing.T) {
+	prev := map[string]string{"lint": "running"}
+	var buf bytes.Buffer
+	reportCloudCheckWatchProgress(&buf, prev, false, []groupedCloudListRow{groupedRowStatus("lint", "pending", "running")})
 	require.Empty(t, buf.String())
+}
+
+func TestReportCloudCheckWatchProgressNewCheck(t *testing.T) {
+	prev := map[string]string{"lint": "running"}
+	var buf bytes.Buffer
+	reportCloudCheckWatchProgress(&buf, prev, false, []groupedCloudListRow{
+		groupedRowStatus("lint", "pending", "running"),
+		groupedRowStatus("test", "pending", "queued"),
+	})
+	out := buf.String()
+	// a newly-appeared check is reported with just its current state.
+	require.Contains(t, out, "test: queued")
+	require.NotContains(t, out, "lint:")
 }
 
 func TestSummarizeCloudCheckResults(t *testing.T) {
@@ -73,7 +107,7 @@ func TestCloudChecksFailedError(t *testing.T) {
 		groupedRow("test", "red"),
 		groupedRow("build", "pending"),
 	})
-	require.ErrorContains(t, err, "Cloud checks did not succeed")
+	require.ErrorContains(t, err, "cloud checks did not succeed")
 	require.ErrorContains(t, err, "test")
 	require.NotContains(t, err.Error(), "lint")
 }
@@ -89,14 +123,11 @@ func TestRunCloudCheckListFailFastRequiresWatch(t *testing.T) {
 	require.ErrorContains(t, err, "--fail-fast requires --watch")
 }
 
-func newWatchTestCmd(t *testing.T) (*cobra.Command, *bytes.Buffer) {
+func newWatchTestCmd(t *testing.T) *cobra.Command {
 	t.Helper()
 	cmd := &cobra.Command{}
 	cmd.SetContext(t.Context())
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&bytes.Buffer{})
-	return cmd, &out
+	return cmd
 }
 
 // fetchSequence returns a fetch func that yields each state in order, repeating
@@ -124,16 +155,21 @@ func TestWatchCloudCheckListWaitsUntilFinishedSuccess(t *testing.T) {
 	cmd.SetErr(&errOut)
 	fetch := fetchSequence(
 		[]groupedCloudListRow{groupedRowStatus("lint", "pending", "queued"), groupedRowStatus("test", "pending", "running")},
-		[]groupedCloudListRow{groupedRow("lint", "green"), groupedRowStatus("test", "pending", "running")},
-		[]groupedCloudListRow{groupedRow("lint", "green"), groupedRow("test", "green")},
+		[]groupedCloudListRow{groupedRowStatus("lint", "green", "success"), groupedRowStatus("test", "pending", "running")},
+		[]groupedCloudListRow{groupedRowStatus("lint", "green", "success"), groupedRowStatus("test", "green", "success")},
 	)
 	err := watchCloudCheckListLoop(cmd, "github.com/example/project", time.Millisecond, fetch)
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "lint")
 	require.Contains(t, out.String(), "test")
-	// progress feedback is emitted to stderr while waiting.
-	require.Contains(t, errOut.String(), "queued: lint")
-	require.Contains(t, errOut.String(), "pending: test")
+	progress := errOut.String()
+	// first poll shows the full initial state.
+	require.Contains(t, progress, "Watching 2 Cloud checks:")
+	require.Contains(t, progress, "lint: queued")
+	require.Contains(t, progress, "test: running")
+	// subsequent polls show only transitions.
+	require.Contains(t, progress, "lint: queued → success")
+	require.Contains(t, progress, "test: running → success")
 }
 
 func TestWatchCloudCheckListWaitsUntilFinishedFailure(t *testing.T) {
@@ -141,13 +177,13 @@ func TestWatchCloudCheckListWaitsUntilFinishedFailure(t *testing.T) {
 	cloudCheckListFailed, cloudCheckListFailFast = false, false
 	t.Cleanup(func() { cloudCheckListFailed, cloudCheckListFailFast = oldFailed, oldFailFast })
 
-	cmd, _ := newWatchTestCmd(t)
+	cmd := newWatchTestCmd(t)
 	fetch := fetchSequence(
 		[]groupedCloudListRow{groupedRow("lint", "pending"), groupedRow("test", "red")},
 		[]groupedCloudListRow{groupedRow("lint", "green"), groupedRow("test", "red")},
 	)
 	err := watchCloudCheckListLoop(cmd, "github.com/example/project", time.Millisecond, fetch)
-	require.ErrorContains(t, err, "Cloud checks did not succeed")
+	require.ErrorContains(t, err, "cloud checks did not succeed")
 	require.ErrorContains(t, err, "test")
 }
 
@@ -162,9 +198,9 @@ func TestWatchCloudCheckListFailFastStopsEarly(t *testing.T) {
 		// test already failed while lint is still pending.
 		return []groupedCloudListRow{groupedRow("lint", "pending"), groupedRow("test", "red")}, nil
 	}
-	cmd, _ := newWatchTestCmd(t)
+	cmd := newWatchTestCmd(t)
 	err := watchCloudCheckListLoop(cmd, "github.com/example/project", time.Millisecond, fetch)
-	require.ErrorContains(t, err, "Cloud checks did not succeed")
+	require.ErrorContains(t, err, "cloud checks did not succeed")
 	// fail-fast must not keep polling while a check is still pending.
 	require.Equal(t, 1, calls)
 }

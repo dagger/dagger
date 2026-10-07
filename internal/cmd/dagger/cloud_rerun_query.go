@@ -257,8 +257,8 @@ func groupCloudListRows(rows []cloudCheckRow, columns []string) []groupedCloudLi
 }
 
 type groupedCloudListRow struct {
-	Values    map[string]string
-	Result    string
+	Values map[string]string
+	Result string
 	// Status is the raw Cloud check status (e.g. "queued", "running",
 	// "errored") backing Result, used for finer-grained watch progress output.
 	Status    string
