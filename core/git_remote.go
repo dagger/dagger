@@ -841,7 +841,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 	return fn(dir)
 }
 
-func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote) (_ *Directory, rerr error) {
+func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (_ *Directory, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -878,10 +878,19 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			// The clone URL is the remote itself, so it doubles as the
 			// checkout's origin; registered remotes overlay it.
 			checkoutRemotes := MergeGitRemotes(
-				[]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}},
+				[]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote(), Implicit: true}},
 				remotes,
 			)
-			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, discardGitDir)
+			if upstreamRemote != nil {
+				checkoutRemotes = MergeGitRemotes(nil, remotes)
+			}
+			if err := doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, discardGitDir); err != nil {
+				return err
+			}
+			if !discardGitDir && upstreamRemote != nil {
+				return writeGitRemoteSelection(ctx, checkoutGit, checkoutRemotes, *upstreamRemote)
+			}
+			return nil
 		})
 		if err != nil {
 			return fmt.Errorf("failed to checkout %s in %s: %w", ref.Name, ref.repo.URL.Remote(), err)

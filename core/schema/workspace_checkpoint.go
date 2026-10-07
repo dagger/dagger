@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -271,8 +272,32 @@ func (s *workspaceSchema) checkpointGitRef(
 		return inst, fmt.Errorf("workspace snapshot Git source has no resolved commit")
 	}
 
+	repo := ref.Repo
+	// Remote configuration and captured local selection are already fixed.
+	// Keep their recipe: native commits prove their base and retain their
+	// history source through it. Only a local checkout with uncaptured branch
+	// tracking needs a selection recorded before HEAD becomes detached.
+	if _, local := repo.Self().Backend.(*core.LocalGitRepository); local && repo.Self().UpstreamRemote == nil {
+		remotes, upstream, err := repo.Self().ConfiguredRemotes(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("read workspace Git remotes: %w", err)
+		}
+		data, err := json.Marshal(remotes)
+		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
+			Field: "__withRemoteSelection",
+			Args: []dagql.NamedInput{
+				{Name: "remotes", Value: dagql.String(data)},
+				{Name: "upstreamRemote", Value: dagql.String(upstream)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("record workspace Git remotes: %w", err)
+		}
+	}
 	var pinned dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, ref.Repo, &pinned, dagql.Selector{
+	if err := srv.Select(ctx, repo, &pinned, dagql.Selector{
 		Field: "ref",
 		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(ref.Ref.SHA)}},
 	}); err != nil {
@@ -413,17 +438,10 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 	}
 
 	nextPhase("checkpoint construct HEAD workspace")
-	if metadata.RemotePushUrl != "" {
-		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
-			Field: "withRemote",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.NewString("origin")},
-				{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)},
-				{Name: "pushUrl", Value: dagql.NewString(metadata.RemotePushUrl)},
-			},
-		}); err != nil {
-			return inst, fmt.Errorf("record workspace push destinations: %w", err)
-		}
+	var err error
+	repo, err = s.checkpointCapturedGitRemotes(ctx, srv, repo, metadata)
+	if err != nil {
+		return inst, err
 	}
 
 	var head dagql.ObjectResult[*core.GitRef]
@@ -494,6 +512,54 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 
 	nextPhase("checkpoint compose metadata")
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, captured, workspaceEnv)
+}
+
+// checkpointCapturedGitRemotes records captured routing, including the legacy
+// origin push destination when an older client omits named-remote metadata.
+func (s *workspaceSchema) checkpointCapturedGitRemotes(
+	ctx context.Context,
+	srv *dagql.Server,
+	repo dagql.ObjectResult[*core.GitRepository],
+	metadata *gitsession.CaptureGitMetadata,
+) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
+	if metadata.HasRemoteMetadata {
+		remotes := make([]core.GitRemote, 0, len(metadata.Remotes))
+		for _, remote := range metadata.Remotes {
+			entry := core.GitRemote{Name: remote.Name, URL: remote.Url, PushURL: remote.PushUrl}
+			if remote.Name == metadata.RemoteName && metadata.RemoteUrl != "" {
+				entry.URL, entry.PushURL = metadata.RemoteUrl, metadata.RemotePushUrl
+			}
+			remotes = append(remotes, entry)
+		}
+		data, err := json.Marshal(remotes)
+		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
+			Field: "__withRemoteSelection",
+			Args: []dagql.NamedInput{
+				{Name: "remotes", Value: dagql.String(data)},
+				{Name: "upstreamRemote", Value: dagql.String(metadata.UpstreamRemote)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("record captured remotes: %w", err)
+		}
+		return repo, nil
+	}
+	if metadata.RemotePushUrl != "" {
+		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
+			Field: "withRemote",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString("origin")},
+				{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)},
+				{Name: "pushUrl", Value: dagql.NewString(metadata.RemotePushUrl)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("record workspace push destinations: %w", err)
+		}
+	}
+
+	return repo, nil
 }
 
 func checkpointSSHAuthArgs(ctx context.Context, srv *dagql.Server) ([]dagql.NamedInput, error) {

@@ -10493,6 +10493,36 @@ class GitRef(Type):
         _ctx = self._select("commonAncestor", _args)
         return GitRef(_ctx)
 
+    async def contains(self, other: Self) -> bool:
+        """Return true when the other ref's commit equals this commit or is an
+        ancestor of it.
+
+        Compares commit history across branches, tags and detached refs.
+        Incomplete or unavailable history is an error.
+
+        Parameters
+        ----------
+        other:
+            The ref whose commit to look for in this ref's history.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("other", other),
+        ]
+        _ctx = self._select("contains", _args)
+        return await _ctx.execute(bool)
+
     async def id(self) -> str:
         """A unique identifier for this GitRef.
 
@@ -10756,6 +10786,72 @@ class GitRef(Type):
 
 
 @typecheck
+class GitRemote(Type):
+    """A named reference to a remote Git repository."""
+
+    async def id(self) -> str:
+        """A unique identifier for this GitRemote.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The remote's name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    def repository(self) -> "GitRepository":
+        """Access this remote's repository using its fetch URL and the caller's
+        credentials, or the source's existing capability for this exact
+        destination.
+
+        HEAD is the remote's HEAD, independent of the workspace's selected
+        commit. Remote registration alone does not grant credentials.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("repository", _args)
+        return GitRepository(_ctx)
+
+
+@typecheck
 class GitRepository(Type):
     """A git repository."""
 
@@ -10876,6 +10972,17 @@ class GitRepository(Type):
         _ctx = self._select("commit", _args)
         return GitCommit(_ctx)
 
+    async def default_remote(self) -> GitRemote | None:
+        """Return the sole remote, otherwise origin, otherwise the selected
+        branch's upstream remote, otherwise null.
+
+        Frozen workspaces retain their captured upstream selection. Does not
+        contact remote servers.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("defaultRemote", _args)
+        return await _ctx.execute_object(GitRemote)
+
     def head(self, *, no_lock: bool | None = False) -> GitRef:
         """Returns details for HEAD.
 
@@ -10984,6 +11091,28 @@ class GitRepository(Type):
         ]
         _ctx = self._select("ref", _args)
         return GitRef(_ctx)
+
+    def remote(self, name: str) -> GitRemote:
+        """Look up a remote by name. Fails when the remote does not exist.
+
+        Parameters
+        ----------
+        name:
+            The remote's name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("remote", _args)
+        return GitRemote(_ctx)
+
+    async def remotes(self) -> list[GitRemote]:
+        """List this repository's named remotes, with registered remotes
+        overriding configured ones. Does not contact remote servers.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("remotes", _args)
+        return await _ctx.execute_object_list(GitRemote)
 
     def tag(
         self,
@@ -20211,6 +20340,7 @@ __all__ = [
     "GitPushDisposition",
     "GitPushResult",
     "GitRef",
+    "GitRemote",
     "GitRepository",
     "HTTPState",
     "HealthcheckConfig",

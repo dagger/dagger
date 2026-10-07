@@ -42,6 +42,9 @@ type GitRepository struct {
 	// Remotes is registered routing metadata, not a credential grant: named
 	// remotes recorded in materialized checkouts and consulted by push.
 	Remotes []GitRemote
+	// UpstreamRemote records the source checkout's selected upstream at capture.
+	// A non-nil empty value denotes a captured detached or untracked branch.
+	UpstreamRemote *string
 }
 
 // GitRemote is a named remote registered on a repository: the remote's name,
@@ -53,6 +56,9 @@ type GitRemote struct {
 	Name    string `json:"name"`
 	URL     string `json:"url,omitempty"`
 	PushURL string `json:"pushURL,omitempty"`
+	// Implicit origin metadata describes the source without fixing a push
+	// route. The caller can still apply pushInsteadOf when choosing a target.
+	Implicit bool `json:"implicit,omitempty"`
 }
 
 func (remote GitRemote) Clone() GitRemote {
@@ -118,7 +124,7 @@ func MergeGitRemotes(base, overlay []GitRemote) []GitRemote {
 // RemoteConfig returns the registered remote with the given name, or nil.
 func (repo *GitRepository) RemoteConfig(name string) *GitRemote {
 	for i := range repo.Remotes {
-		if repo.Remotes[i].Name == name {
+		if repo.Remotes[i].Name == name && !repo.Remotes[i].Implicit {
 			return &repo.Remotes[i]
 		}
 	}
@@ -176,7 +182,7 @@ type GitCommitMetadata struct {
 }
 
 type GitRefBackend interface {
-	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int, includeTags bool, remotes []GitRemote) (checkout *Directory, err error)
+	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (checkout *Directory, err error)
 
 	mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error
 }
@@ -359,6 +365,16 @@ func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRe
 	if err != nil {
 		return nil, err
 	}
+	if local, ok := backend.(*LocalGitRepository); ok {
+		err := local.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+			var err error
+			repo.Remotes, repo.UpstreamRemote, err = readGitRemoteSelection(ctx, git)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	return repo, nil
 }
 
@@ -465,11 +481,12 @@ func (repo *GitRepository) CloneWithBackend(backend GitRepositoryBackend) *GitRe
 	defer repo.remoteMu.Unlock()
 
 	clone := &GitRepository{
-		URL:           repo.URL,
-		Remotes:       CloneGitRemotes(repo.Remotes),
-		Backend:       backend,
-		Remote:        &gitutil.Remote{},
-		DiscardGitDir: repo.DiscardGitDir,
+		URL:            repo.URL,
+		Remotes:        CloneGitRemotes(repo.Remotes),
+		UpstreamRemote: repo.UpstreamRemote,
+		Backend:        backend,
+		Remote:         &gitutil.Remote{},
+		DiscardGitDir:  repo.DiscardGitDir,
 	}
 	if repo.Remote != nil && repo.Remote.Head != nil {
 		head := *repo.Remote.Head
@@ -709,20 +726,22 @@ const (
 )
 
 type persistedGitRepositoryPayload struct {
-	Form          string                      `json:"form"`
-	URL           string                      `json:"url,omitempty"`
-	Remotes       []persistedGitRemotePayload `json:"remotes,omitempty"`
-	DiscardGitDir bool                        `json:"discardGitDir,omitempty"`
-	RemoteJSON    json.RawMessage             `json:"remoteJson,omitempty"`
+	Form           string                      `json:"form"`
+	URL            string                      `json:"url,omitempty"`
+	Remotes        []persistedGitRemotePayload `json:"remotes,omitempty"`
+	UpstreamRemote *string                     `json:"upstreamRemote,omitempty"`
+	DiscardGitDir  bool                        `json:"discardGitDir,omitempty"`
+	RemoteJSON     json.RawMessage             `json:"remoteJson,omitempty"`
 
 	Local  *persistedLocalGitRepositoryPayload  `json:"local,omitempty"`
 	Remote *persistedRemoteGitRepositoryPayload `json:"remote,omitempty"`
 }
 
 type persistedGitRemotePayload struct {
-	Name    string `json:"name"`
-	URL     string `json:"url,omitempty"`
-	PushURL string `json:"pushURL,omitempty"`
+	Name     string `json:"name"`
+	URL      string `json:"url,omitempty"`
+	PushURL  string `json:"pushURL,omitempty"`
+	Implicit bool   `json:"implicit,omitempty"`
 }
 
 type persistedLocalGitRepositoryPayload struct {
@@ -838,8 +857,9 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, enc *dagql
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted git repository remote: %w", err)
 	}
 	payload := persistedGitRepositoryPayload{
-		DiscardGitDir: repo.DiscardGitDir,
-		RemoteJSON:    remoteJSON,
+		DiscardGitDir:  repo.DiscardGitDir,
+		RemoteJSON:     remoteJSON,
+		UpstreamRemote: repo.UpstreamRemote,
 	}
 	for _, remote := range repo.Remotes {
 		payload.Remotes = append(payload.Remotes, persistedGitRemotePayload(remote))
@@ -924,8 +944,9 @@ func (*GitRepository) DecodePersistedObject(ctx context.Context, dec *dagql.Pers
 	}
 
 	repo := &GitRepository{
-		Remote:        &remote,
-		DiscardGitDir: persisted.DiscardGitDir,
+		Remote:         &remote,
+		DiscardGitDir:  persisted.DiscardGitDir,
+		UpstreamRemote: persisted.UpstreamRemote,
 	}
 	for _, persistedRemote := range persisted.Remotes {
 		repo.Remotes = append(repo.Remotes, GitRemote(persistedRemote))
@@ -1118,7 +1139,7 @@ func (*GitCommit) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 }
 
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
-	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags, ref.Repo.Self().Remotes)
+	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags, ref.Repo.Self().Remotes, ref.Repo.Self().UpstreamRemote)
 }
 
 func (commit *GitCommit) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
@@ -1136,7 +1157,7 @@ func (commit *GitCommit) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if err != nil {
 		return nil, err
 	}
-	return backend.Tree(ctx, srv, commit.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags, commit.Repo.Self().Remotes)
+	return backend.Tree(ctx, srv, commit.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags, commit.Repo.Self().Remotes, commit.Repo.Self().UpstreamRemote)
 }
 
 func (commit *GitCommit) Metadata(ctx context.Context) (*GitCommitMetadata, error) {
@@ -1479,7 +1500,7 @@ func writeGitCheckoutRemote(ctx context.Context, checkoutGit *gitutil.GitCLI, re
 		return nil
 	}
 	if remote.URL != "" {
-		if _, err := checkoutGit.Run(ctx, "remote", "add", remote.Name, remote.URL); err != nil {
+		if _, err := checkoutGit.Run(ctx, "remote", "add", "--", remote.Name, remote.URL); err != nil {
 			return fmt.Errorf("failed to add remote %s: %w", remote.Name, err)
 		}
 	}
@@ -1842,7 +1863,7 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 				if _, err := git.Run(egCtx, "remote", "add", remoteName, remoteURL); err != nil {
 					return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
 				}
-				if _, err := git.Run(egCtx, "fetch", "--no-tags", remoteName, ref.Ref.SHA); err != nil {
+				if _, err := git.Run(egCtx, "fetch", "--no-tags", "--update-shallow", remoteName, ref.Ref.SHA); err != nil {
 					return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
 				}
 				return nil
@@ -1976,7 +1997,7 @@ func gitRefTreeInto(ctx context.Context, dst *Directory, input *GitRef, srv *dag
 	var src *Directory
 	var err error
 	if keepGitDir {
-		src, err = input.Backend.Tree(ctx, srv, false, depth, includeTags, input.Repo.Self().Remotes)
+		src, err = input.Backend.Tree(ctx, srv, false, depth, includeTags, input.Repo.Self().Remotes, input.Repo.Self().UpstreamRemote)
 	} else {
 		src, err = input.Tree(ctx, srv, discardGitDir, depth, includeTags)
 	}

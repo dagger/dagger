@@ -510,6 +510,10 @@ var persistedGitRefVisitor = persistedStructVisitor("", func(p *persistedGitRefP
 	return w.child("repoResultID", &p.RepoResultID)
 })
 
+var persistedGitRemoteHandleVisitor = persistedStructVisitor("", func(p *persistedGitRemoteHandle, w *persistedRefWalker) error {
+	return w.child("sourceResultID", &p.SourceResultID)
+})
+
 var persistedGitCommitVisitor = persistedStructVisitor("", func(p *persistedGitCommitPayload, w *persistedRefWalker) error {
 	return w.child("repoResultID", &p.RepoResultID)
 })

@@ -63,6 +63,10 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 	if err != nil {
 		return nil, err
 	}
+	remotes, upstream, err := parent.Self().Repo.Self().ConfiguredRemotes(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var child bkcache.MutableRef
 	var result *Directory
 	defer func() {
@@ -78,7 +82,6 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 	if err != nil {
 		return nil, err
 	}
-	remotes := MergeGitRemotes([]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}}, parent.Self().Repo.Self().Remotes)
 	if pack != nil {
 		// A rejected donation returns no snapshot: fall through to the remote.
 		child, err = query.importApprovedHostCommitBase(ctx, pack, ref.SHA, remotes)
@@ -111,6 +114,13 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 		})
 	}
 	if err != nil {
+		return nil, err
+	}
+	// Both approved host donation and remote fetch produce owned storage.
+	// Preserve the captured selection regardless of which supplies history.
+	if err := MountRef(ctx, child, func(dest string, _ *mount.Mount) error {
+		return writeGitRemoteSelection(ctx, gitutil.NewGitCLI(gitutil.WithGitDir(dest)), remotes, upstream)
+	}); err != nil {
 		return nil, err
 	}
 	snap, err := child.Commit(ctx)

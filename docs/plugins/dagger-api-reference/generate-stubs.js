@@ -61,12 +61,12 @@ function removeGeneratedStubs(dir) {
   return removed;
 }
 
-function stub(name, index, slugPrefix) {
+function stub(name, sidebarPosition, slugPrefix) {
   const slug = typeSlug(name);
   return `---
 title: "${name}"
 description: "${name} API reference, generated from the Dagger GraphQL schema."
-sidebar_position: ${index + 2}
+sidebar_position: ${sidebarPosition}
 slug: /${slugPrefix}/${slug}
 ---
 
@@ -82,6 +82,17 @@ import ApiType from "@site/src/components/api/ApiType";
 
 function syncStubs(outDir, slugPrefix) {
   fs.mkdirSync(outDir, { recursive: true });
+  // The sidebars order API types explicitly. Keep existing positions so adding
+  // a type does not rewrite every generated page that follows it.
+  const positions = new Map();
+  for (const name of coreTypes) {
+    const file = path.join(outDir, `${typeSlug(name)}.mdx`);
+    if (!isGeneratedStub(file)) continue;
+    const match = fs
+      .readFileSync(file, "utf8")
+      .match(/^sidebar_position: (\d+)$/m);
+    if (match) positions.set(name, Number(match[1]));
+  }
   const removed = removeGeneratedStubs(outDir);
   let generated = 0;
   let skipped = 0;
@@ -91,7 +102,7 @@ function syncStubs(outDir, slugPrefix) {
       skipped++;
       return;
     }
-    fs.writeFileSync(file, stub(name, index, slugPrefix));
+    fs.writeFileSync(file, stub(name, positions.get(name) ?? index + 2, slugPrefix));
     generated++;
   });
   return { generated, removed, skipped };

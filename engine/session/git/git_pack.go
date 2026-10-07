@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -35,9 +36,9 @@ const (
 )
 
 // CheckoutState reports a digest identifying the current git state of a local
-// checkout: HEAD, the symbolic HEAD, the object format, and all branch and tag
-// refs. The engine uses it as a cache key: a checkout is only re-packed when
-// its refs actually move, not on every read.
+// checkout: HEAD, the symbolic HEAD, the object format, branch and tag refs,
+// named remotes and upstream selection. The engine uses it as a cache key:
+// a checkout is only re-packed when this state changes, not on every read.
 //
 // A checkout with no .git entry at its root reports NOT_A_REPO, which the
 // engine degrades to its "no git context" state; a .git that exists but is
@@ -136,9 +137,12 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 		return srv.Send(&PackCheckoutResponse{
 			Msg: &PackCheckoutResponse_Metadata{
 				Metadata: &PackCheckoutMetadata{
-					HeadRef:      state.headRef,
-					ObjectFormat: state.objectFormat,
-					StateDigest:  stateDigest,
+					HeadRef:           state.headRef,
+					ObjectFormat:      state.objectFormat,
+					StateDigest:       stateDigest,
+					Remotes:           state.remotes,
+					UpstreamRemote:    state.upstreamRemote,
+					HasRemoteMetadata: true,
 				},
 			},
 		})
@@ -174,10 +178,13 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 	if err := srv.Send(&PackCheckoutResponse{
 		Msg: &PackCheckoutResponse_Metadata{
 			Metadata: &PackCheckoutMetadata{
-				HeadSha:      state.headSHA,
-				HeadRef:      state.headRef,
-				ObjectFormat: state.objectFormat,
-				StateDigest:  stateDigest,
+				HeadSha:           state.headSHA,
+				HeadRef:           state.headRef,
+				ObjectFormat:      state.objectFormat,
+				StateDigest:       stateDigest,
+				Remotes:           state.remotes,
+				UpstreamRemote:    state.upstreamRemote,
+				HasRemoteMetadata: true,
 			},
 		},
 	}); err != nil {
@@ -212,18 +219,25 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 // checkoutState is the raw material of a checkout's state digest and pack
 // metadata.
 type checkoutState struct {
-	headSHA      string // empty on unborn HEAD
-	headRef      string // symbolic HEAD, empty when detached
-	objectFormat string
-	refs         string // all branch and tag refs with their targets
+	headSHA        string // empty on unborn HEAD
+	headRef        string // symbolic HEAD, empty when detached
+	objectFormat   string
+	refs           string // all branch and tag refs with their targets
+	remotes        []*CheckoutRemote
+	upstreamRemote string
+	remoteDigest   string
 }
 
 func (state checkoutState) digest() string {
+	remoteJSON, _ := json.Marshal(state.remotes)
 	sum := sha256.Sum256([]byte(strings.Join([]string{
 		state.headSHA,
 		state.headRef,
 		state.objectFormat,
 		state.refs,
+		string(remoteJSON),
+		state.upstreamRemote,
+		state.remoteDigest,
 	}, "\x00")))
 	return hex.EncodeToString(sum[:])
 }
@@ -254,6 +268,10 @@ func collectCheckoutState(ctx context.Context, checkout string) (checkoutState, 
 	// Not supported by ancient git; the engine defaults to sha1.
 	if out, err := runHostGit(ctx, checkout, "rev-parse", "--show-object-format"); err == nil {
 		state.objectFormat = strings.TrimSpace(out)
+	}
+	state.remotes, state.upstreamRemote, state.remoteDigest, err = checkoutRemoteMetadata(ctx, checkout, state.headRef)
+	if err != nil {
+		return state, err
 	}
 	return state, nil
 }

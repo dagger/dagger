@@ -115,6 +115,18 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return true when the other ref's commit equals this commit or is an ancestor of it.
+     *
+     * Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.
+     */
+    public function contains(GitRef $other): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contains');
+        $leafQueryBuilder->setArgument('other', $other);
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'contains');
+    }
+
+    /**
      * Find the best common ancestor between this ref and another ref.
      */
     public function commonAncestor(GitRef $other): GitRef

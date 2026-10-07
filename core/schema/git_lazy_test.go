@@ -257,7 +257,7 @@ type authScopedTreeBackend struct {
 	snapshot bkcache.ImmutableRef
 }
 
-func (b *authScopedTreeBackend) Tree(context.Context, *dagql.Server, bool, int, bool, []core.GitRemote) (*core.Directory, error) {
+func (b *authScopedTreeBackend) Tree(context.Context, *dagql.Server, bool, int, bool, []core.GitRemote, *string) (*core.Directory, error) {
 	b.calls++
 	if b.err != nil {
 		return nil, b.err

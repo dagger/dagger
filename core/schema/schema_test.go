@@ -87,6 +87,42 @@ func TestGitBundleSchema(t *testing.T) {
 	require.Equal(t, "GitBundle", schemaArgument(t, withBundleField, "bundle").Directives.ExpectedType())
 }
 
+func TestGitBranchFilteringSchema(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "branch-filtering", SessionID: "branch-filtering"})
+	srv := &currentTypeDefsTestServer{}
+	base, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	for _, view := range []call.View{baseSchemaView(), "v1.0.0"} {
+		dag, err := base.Fork(ctx, core.NewRoot(srv), view)
+		require.NoError(t, err)
+		data, err := getSchemaJSON(nil, nil, view, dag)
+		require.NoError(t, err)
+		schema := decodeSchemaResponse(t, data).Schema
+		if view == baseSchemaView() {
+			require.Nil(t, schema.Types.Get("GitRemote"))
+			require.Nil(t, schemaField(schema.Types.Get("GitRepository"), "defaultRemote"))
+			require.Nil(t, schemaField(schema.Types.Get("GitRef"), "contains"))
+			continue
+		}
+		remote := schema.Types.Get("GitRemote")
+		require.NotNil(t, remote)
+		for _, name := range []string{"id", "name", "repository"} {
+			require.NotNil(t, schemaField(remote, name), name)
+		}
+		for _, name := range []string{"remotes", "remote", "defaultRemote"} {
+			require.NotNil(t, schemaField(schema.Types.Get("GitRepository"), name), name)
+		}
+		contains := schemaField(schema.Types.Get("GitRef"), "contains")
+		require.NotNil(t, contains)
+		require.Equal(t, "GitRef", schemaArgument(t, contains, "other").Directives.ExpectedType())
+	}
+}
+
 func schemaArgument(t *testing.T, field *codegenintrospection.Field, name string) *codegenintrospection.InputValue {
 	t.Helper()
 	for i := range field.Args {

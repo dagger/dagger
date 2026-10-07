@@ -450,12 +450,13 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 	if err := copyGitShallowBoundary(filepath.Dir(parentObjects), meta); err != nil {
 		return err
 	}
-	remotes, err := readGitConfigRemotes(ctx, gitutil.NewGitCLI(gitutil.WithGitDir(gitDir)))
+	remotes, upstream, err := readGitRemoteSelectionForRef(ctx, gitutil.NewGitCLI(gitutil.WithGitDir(gitDir)), branchName)
 	if err != nil {
 		return err
 	}
+	metadataGit := gitutil.NewGitCLI(gitutil.WithGitDir(meta))
 	for _, remote := range remotes {
-		if err := writeGitCheckoutRemote(ctx, gitutil.NewGitCLI(gitutil.WithGitDir(meta)), remote); err != nil {
+		if err := writeGitCheckoutRemote(ctx, metadataGit, remote); err != nil {
 			return err
 		}
 	}
@@ -510,7 +511,12 @@ func withNativeCommitIndex(ctx context.Context, gitDir, parentObjects string, re
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return publishNativeCommit(gitDir, meta, branchName, sha, run)
+	if err := publishNativeCommit(gitDir, meta, branchName, sha, run); err != nil {
+		return err
+	}
+	// Publication installs the final HEAD and configuration. Capture their
+	// baseline now so the new commit keeps its parent's remote selection.
+	return writeGitRemoteSelection(ctx, gitutil.NewGitCLI(gitutil.WithGitDir(gitDir)), remotes, upstream)
 }
 
 func normalizeNativeCommitOpts(opts *GitCommitOpts) error {

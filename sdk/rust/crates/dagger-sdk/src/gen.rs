@@ -10853,6 +10853,23 @@ impl GitRef {
         let query = self.selection.select("ref");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Return true when the other ref's commit equals this commit or is an ancestor of it.
+    /// Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The ref whose commit to look for in this ref's history.
+    pub async fn contains(&self, other: impl IntoID<Id>) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("contains");
+        query = query.arg_lazy(
+            "other",
+            Box::new(move || {
+                let other = other.clone();
+                Box::pin(async move { other.into_id().await.unwrap().quote() })
+            }),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Find the best common ancestor between this ref and another ref.
     ///
     /// # Arguments
@@ -11060,6 +11077,64 @@ impl GitRef {
     }
 }
 impl Node for GitRef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct GitRemote {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for GitRemote {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for GitRemote {
+    fn graphql_type() -> &'static str {
+        "GitRemote"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl GitRemote {
+    /// A unique identifier for this GitRemote.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Access this remote's repository using its fetch URL and the caller's credentials, or the source's existing capability for this exact destination.
+    /// HEAD is the remote's HEAD, independent of the workspace's selected commit. Remote registration alone does not grant credentials.
+    pub fn repository(&self) -> GitRepository {
+        let query = self.selection.select("repository");
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The remote's name.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for GitRemote {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -11545,6 +11620,53 @@ impl GitRepository {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers.
+    pub async fn remotes(&self) -> Result<Vec<GitRemote>, DaggerError> {
+        let query = self.selection.select("remotes");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| GitRemote {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("GitRemote"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Look up a remote by name. Fails when the remote does not exist.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The remote's name.
+    pub fn remote(&self, name: impl Into<String>) -> GitRemote {
+        let mut query = self.selection.select("remote");
+        query = query.arg("name", name.into());
+        GitRemote {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.
+    /// Frozen workspaces retain their captured upstream selection. Does not contact remote servers.
+    pub async fn default_remote(&self) -> Result<Option<GitRemote>, DaggerError> {
+        let query = self.selection.select("defaultRemote");
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| GitRemote {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("GitRemote"),
+            graphql_client: self.graphql_client.clone(),
+        }))
     }
     /// Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
     /// Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
