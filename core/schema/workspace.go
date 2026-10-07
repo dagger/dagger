@@ -139,6 +139,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Select the config environment carried by this workspace.").
 			Args(dagql.Arg("name").Doc("Environment name, or empty to clear the selection.")),
+		dagql.NodeFunc("withUserConfig", s.withUserConfig).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Reads the calling client's user config").
+			Doc("Return this workspace with the calling client's user-level config re-read and applied.",
+				"User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.",
+				"The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config."),
+		dagql.Func("__withUserConfigOverlay", s.withUserConfigOverlay).
+			View(AfterVersion("v1.0.0-0")),
 		dagql.Func("__workspaceModule", s.workspaceModule).
 			View(AfterVersion("v1.0.0-0")),
 		dagql.NodeFunc("__workspaceSDK", s.workspaceSDK).

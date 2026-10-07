@@ -18657,6 +18657,17 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with the calling client's user-level config re-read and applied.
+    /// User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+    /// The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+    pub fn with_user_config(&self) -> Workspace {
+        let query = self.selection.select("withUserConfig");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Selected native workspace config file relative to the workspace cwd, if any.
     pub async fn config_file(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("configFile");

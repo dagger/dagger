@@ -20071,6 +20071,19 @@ func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) 
 	}
 }
 
+// Return this workspace with the calling client's user-level config re-read and applied.
+//
+// User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+//
+// The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+func (r *Workspace) WithUserConfig() *Workspace {
+	q := r.query.Select("withUserConfig")
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // Return this workspace with its working directory pointed at the given workspace-relative path.
 func (r *Workspace) WithWorkdir(path string) *Workspace {
 	q := r.query.Select("withWorkdir")

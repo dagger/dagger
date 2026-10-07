@@ -196,6 +196,19 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with the calling client's user-level config re-read and applied.
+     *
+     * User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+     *
+     * The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+     */
+    public function withUserConfig(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUserConfig');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Selected native workspace config file relative to the workspace cwd, if any.
      */
     public function configFile(): string
