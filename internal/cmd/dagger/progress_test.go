@@ -72,7 +72,7 @@ func TestApplyCommandProgressDefaults(t *testing.T) {
 func TestArtifactListProgressDefaults(t *testing.T) {
 	oldOpts, oldVerbose, oldQuiet := opts, verbose, quiet
 	t.Cleanup(func() { opts, verbose, quiet = oldOpts, oldVerbose, oldQuiet })
-	for _, cmd := range []*cobra.Command{checksCmd, upCmd, agentCmd} {
+	for _, cmd := range []*cobra.Command{checksCmd, startCmd, agentCmd} {
 		t.Run(cmd.Name(), func(t *testing.T) {
 			list := cmd.Flags().Lookup("list")
 			oldList := list.Value.String()
