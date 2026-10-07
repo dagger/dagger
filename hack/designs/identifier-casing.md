@@ -495,6 +495,51 @@ Runtime function dispatch is unaffected. SDKs register functions with their
 native names, and the engine dispatches by `OriginalName`, so nothing on the
 dispatch path depends on names round-tripping.
 
+### Schema JSON words
+
+Most SDK codegen runs offline from the introspection JSON the engine hands it
+(the .NET source generator, the Java Maven plugin, PHP, Python), so it can't
+call `formatIdentifiers`. Instead the engine writes each name's words into
+that JSON, next to `__schema` and `__schemaVersion`:
+
+```json
+"__identifiers": {
+  "httpClient": [
+    {"kind": "ACRONYM", "text": "HTTP", "suffix": "", "capitalized": "Http"},
+    {"kind": "WORD", "text": "client", "suffix": "", "capitalized": "Client"}
+  ]
+}
+```
+
+- **Keys:** every type, field, argument, input field and enum value name in
+  the JSON, except introspection names (`__` prefix) and names with no letters
+  or digits. Parsing is context-free, so each distinct name appears once.
+- **Words:** `kind`, `text` and `suffix` as in `IdentifierWord`; `capitalized`
+  is the word's `CAPITALIZED`-style form without the suffix (the entry's
+  `capitalized` for dictionary words, else the first letter capitalized and
+  the rest lowercase).
+
+An SDK formats the words itself, which needs no dictionary:
+
+- `SNAKE`, `KEBAB`, `FLAT`, and the first word of `CAMEL`: lowercase
+  `text + suffix`. `SCREAMING_SNAKE`: uppercase `text + suffix`.
+- Capitalized form (`PASCAL`, the other words of `CAMEL`): with `CAPITALIZED`,
+  or for a `WORD`, `capitalized`; otherwise `text` with its first letter
+  uppercased. Then the suffix.
+
+`engine/naming/testdata/vectors.json` lists inputs with their words and every
+format, for testing these formatters.
+
+The JSON comes from `__schemaJSONFile` (so module and client introspection
+JSON), `Schema.merge` (which adds the words of the names it merges in),
+`cmd/introspect`, and `codegen introspect`, which reads the words from
+`Query.identifier` since the GraphQL introspection query can't carry them.
+
+**Gate:** `__identifiers` appears only for schema views at `v1.0.0` and above,
+the identifier API's gate, parsed with the caller's dictionary. When it is
+absent, SDKs keep their current converters, so older modules regenerate
+unchanged.
+
 ## Versioning and Compatibility
 
 ### The gate
@@ -656,10 +701,11 @@ package, plus any SDK that keeps a local copy for offline use) must pass.
    added later without breaking anyone.
 2. **Renaming the 8 non-canonical core names** before 1.0, with deprecated
    aliases, or keeping them on an allowlist.
-3. **Offline codegen.** Some SDK codegen paths may run without an engine
-   session. If so, should they use the test-vector file plus a local
-   implementation, or should the engine ship formatted names in the
-   introspection JSON it already hands to codegen?
+3. **Offline codegen.** Some SDK codegen paths run without an engine session.
+   Resolved: the engine ships each name's words in the introspection JSON it
+   already hands to codegen (see [Schema JSON words](#schema-json-words)), and
+   SDKs only format them, which needs no dictionary, so SDKs don't need a
+   local parser.
 4. **Splitting all-caps input** (`E2EAPI`) by full dictionary cover, as for
    caps pieces. Resolved: each chunk of all-caps input splits only if
    dictionary entries (and digit runs) cover it completely; lowercase input
