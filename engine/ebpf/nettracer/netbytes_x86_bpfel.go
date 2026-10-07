@@ -103,6 +103,7 @@ type netbytesMapSpecs struct {
 	InternalV6             *ebpf.MapSpec `ebpf:"internal_v6"`
 	OperationByteCounters  *ebpf.MapSpec `ebpf:"operation_byte_counters"`
 	WorkloadByteCounters   *ebpf.MapSpec `ebpf:"workload_byte_counters"`
+	WorkloadNetnsCookies   *ebpf.MapSpec `ebpf:"workload_netns_cookies"`
 	WorkloadParentCgroupId *ebpf.MapSpec `ebpf:"workload_parent_cgroup_id"`
 }
 
@@ -140,6 +141,7 @@ type netbytesMaps struct {
 	InternalV6             *ebpf.Map `ebpf:"internal_v6"`
 	OperationByteCounters  *ebpf.Map `ebpf:"operation_byte_counters"`
 	WorkloadByteCounters   *ebpf.Map `ebpf:"workload_byte_counters"`
+	WorkloadNetnsCookies   *ebpf.Map `ebpf:"workload_netns_cookies"`
 	WorkloadParentCgroupId *ebpf.Map `ebpf:"workload_parent_cgroup_id"`
 }
 
@@ -153,6 +155,7 @@ func (m *netbytesMaps) Close() error {
 		m.InternalV6,
 		m.OperationByteCounters,
 		m.WorkloadByteCounters,
+		m.WorkloadNetnsCookies,
 		m.WorkloadParentCgroupId,
 	)
 }

@@ -43,10 +43,10 @@ func TestWorkloadAccounting(t *testing.T) {
 	if os.Getenv("DAGGER_TEST_EBPF") != "1" {
 		t.Skip("set DAGGER_TEST_EBPF=1 on a privileged Linux 6.15+ runner")
 	}
+	// The dev engine shares the test container's bridge, so it is internal.
 	peer := "daggerengine:6060"
-	if _, err := net.LookupHost("daggerengine"); err != nil {
-		t.Skipf("no dev engine to use as a network peer: %v", err)
-	}
+	_, err := net.LookupHost("daggerengine")
+	require.NoError(t, err, "the dev engine is the network peer")
 	tracer, err := New()
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, tracer.Close()) })
@@ -59,11 +59,13 @@ func TestWorkloadAccounting(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, os.Remove(parent)) })
 	require.Error(t, tracer.AttachWorkloads(parent), "attaching twice must fail")
 
-	_, err = tracer.Workload(filepath.Join(parent, "a", "b"))
+	cookie, err := CurrentNetnsCookie()
+	require.NoError(t, err)
+	_, err = tracer.Workload(filepath.Join(parent, "a", "b"), cookie)
 	require.Error(t, err, "only direct children of the parent are workloads")
 
 	path := filepath.Join(parent, "workload")
-	workload, err := tracer.Workload(path)
+	workload, err := tracer.Workload(path, cookie)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, workload.Close())
@@ -73,8 +75,8 @@ func TestWorkloadAccounting(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, Sample{}, before)
 
-	// A process in a cgroup nested below the workload, like a container
-	// started by a nested engine, counts toward the workload.
+	// A process in a cgroup nested below the workload, in the workload's
+	// network namespace (like a nested engine), counts toward the workload.
 	nested := filepath.Join(path, "nested")
 	require.NoError(t, os.Mkdir(nested, 0o755))
 	t.Cleanup(func() { require.NoError(t, removeWhenEmpty(nested)) })
@@ -90,8 +92,10 @@ func TestWorkloadAccounting(t *testing.T) {
 
 	sample, err := workload.Sample()
 	require.NoError(t, err)
-	require.Greater(t, sample.InternalTX+sample.ExternalTX, uint64(0))
-	require.Greater(t, sample.InternalRX+sample.ExternalRX, uint64(1024))
+	require.Greater(t, sample.InternalTX, uint64(0))
+	require.Greater(t, sample.InternalRX, uint64(1024))
+	require.Zero(t, sample.ExternalTX)
+	require.Zero(t, sample.ExternalRX)
 
 	require.NoError(t, workload.Close())
 	_, err = workload.Sample()

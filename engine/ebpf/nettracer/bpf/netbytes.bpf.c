@@ -8,8 +8,9 @@ char LICENSE[] SEC("license") = "GPL";
 #define ETH_P_IP 0x0800
 #define ETH_P_IPV6 0x86DD
 #define BPF_F_NO_PREALLOC (1U << 0)
-/* Deepest cgroup level searched for the workload parent. */
-#define MAX_WORKLOAD_PARENT_LEVEL 32
+/* Deepest absolute cgroup level searched for the workload parent. Levels
+ * count from the host's cgroup root, not from a cgroup namespace's. */
+#define MAX_WORKLOAD_PARENT_LEVEL 64
 /* Every network namespace numbers its loopback device 1. */
 #define LOOPBACK_IFINDEX 1
 
@@ -111,14 +112,26 @@ struct {
 } operation_byte_counters SEC(".maps");
 
 /* Keyed by a workload's own cgroup (a child of the workload parent), so
- * processes in nested cgroups below it count toward that workload. The engine
- * reserves each workload's keys; the programs never create entries. */
+ * processes in nested cgroups below it, in the workload's network namespace,
+ * count toward that workload. The engine reserves each workload's keys; the
+ * programs never create entries. */
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
     __uint(max_entries, 16384);
     __type(key, struct operation_counter_key);
     __type(value, __u64);
 } workload_byte_counters SEC(".maps");
+
+/* Each workload's own network namespace, keyed by its cgroup ID. Only
+ * sockets in it count: processes in nested cgroups that run in their own
+ * namespaces, such as a nested engine's containers, are on networks this
+ * engine does not manage, so their traffic cannot be classified. */
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 4096);
+    __type(key, __u64);
+    __type(value, __u64);
+} workload_netns_cookies SEC(".maps");
 
 /* The cgroup whose children are workloads (e.g. /exec), where the workload
  * programs are attached once. */
@@ -302,6 +315,9 @@ static __always_inline int add_workload_bytes(struct __sk_buff *skb,
         return 1;
     __u64 workload = workload_cgroup_id(skb);
     if (!workload)
+        return 1;
+    __u64 *netns_cookie = bpf_map_lookup_elem(&workload_netns_cookies, &workload);
+    if (!netns_cookie || bpf_get_netns_cookie(skb) != *netns_cookie)
         return 1;
     int scope = classify_l3(skb, direction);
     if (scope < 0)

@@ -44,7 +44,11 @@ func (*Tracer) AddInternalPrefixesForVeth(string) error {
 	return errUnsupported
 }
 
-func (*Tracer) Workload(string) (*Workload, error) {
+func CurrentNetnsCookie() (uint64, error) {
+	return 0, errUnsupported
+}
+
+func (*Tracer) Workload(string, uint64) (*Workload, error) {
 	return nil, errUnsupported
 }
 

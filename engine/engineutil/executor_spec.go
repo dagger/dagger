@@ -1475,7 +1475,13 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	var workloadNetwork *nettracer.Workload
 	if tracer := nettracer.Active(); tracer != nil && sampleCgroup {
 		path := filepath.Join(cgroupMountpoint, cgroupPath)
-		workload, err := tracer.Workload(path)
+		workload, err := func() (*nettracer.Workload, error) {
+			cookie, err := runInNetNS(ctx, state, nettracer.CurrentNetnsCookie)
+			if err != nil {
+				return nil, fmt.Errorf("network namespace cookie: %w", err)
+			}
+			return tracer.Workload(path, cookie)
+		}()
 		if err != nil {
 			bklog.G(ctx).Debugf("workload network accounting unavailable for %s: %s", state.id, err)
 		} else {

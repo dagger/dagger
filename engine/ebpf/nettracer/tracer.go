@@ -172,13 +172,7 @@ func (t *Tracer) configureEngineBoundary(cgroupPath string) error {
 	if err != nil {
 		return err
 	}
-	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
-	if err != nil {
-		return fmt.Errorf("opening engine netns socket: %w", err)
-	}
-	defer unix.Close(fd)
-
-	cookie, err := unix.GetsockoptUint64(fd, unix.SOL_SOCKET, unix.SO_NETNS_COOKIE)
+	cookie, err := CurrentNetnsCookie()
 	if err != nil {
 		return fmt.Errorf("getting engine netns cookie: %w", err)
 	}
@@ -198,6 +192,17 @@ func (t *Tracer) configureEngineBoundary(cgroupPath string) error {
 		return fmt.Errorf("setting engine loopback interface: %w", err)
 	}
 	return nil
+}
+
+// CurrentNetnsCookie returns the cookie of the calling thread's network
+// namespace, as bpf_get_netns_cookie reports it for that namespace's packets.
+func CurrentNetnsCookie() (uint64, error) {
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return 0, fmt.Errorf("opening netns socket: %w", err)
+	}
+	defer unix.Close(fd)
+	return unix.GetsockoptUint64(fd, unix.SOL_SOCKET, unix.SO_NETNS_COOKIE)
 }
 
 // addCurrentNetworkPrefixes discovers the bridge subnet containing the engine

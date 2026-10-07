@@ -94,10 +94,11 @@ type Workload struct {
 }
 
 // Workload reserves counters for the workload cgroup at path, which must be a
-// direct child of the attached workload parent. It creates the cgroup if the
-// runtime has not yet, so the counters exist before the workload's first
-// packet; the runtime adopts an existing, empty cgroup.
-func (t *Tracer) Workload(path string) (_ *Workload, rerr error) {
+// direct child of the attached workload parent, counting only sockets in the
+// network namespace with netnsCookie. It creates the cgroup if the runtime has
+// not yet, so the counters exist before the workload's first packet; the
+// runtime adopts an existing, empty cgroup.
+func (t *Tracer) Workload(path string, netnsCookie uint64) (_ *Workload, rerr error) {
 	t.workloadMu.Lock()
 	parent := t.workloadParent
 	t.workloadMu.Unlock()
@@ -108,7 +109,15 @@ func (t *Tracer) Workload(path string) (_ *Workload, rerr error) {
 	if filepath.Dir(path) != parent {
 		return nil, fmt.Errorf("workload cgroup %s is not a child of %s", path, parent)
 	}
-	if err := os.Mkdir(path, 0o755); err != nil && !os.IsExist(err) {
+	switch err := os.Mkdir(path, 0o755); {
+	case err == nil:
+		// Do not leave a cgroup behind that no runtime will remove.
+		defer func() {
+			if rerr != nil {
+				_ = os.Remove(path)
+			}
+		}()
+	case !os.IsExist(err):
 		return nil, fmt.Errorf("creating workload cgroup %s: %w", path, err)
 	}
 	id, err := cgroupID(path)
@@ -116,6 +125,14 @@ func (t *Tracer) Workload(path string) (_ *Workload, rerr error) {
 		return nil, err
 	}
 	w := &Workload{tracer: t, id: id}
+	if err := t.objs.WorkloadNetnsCookies.Update(id, netnsCookie, ebpf.UpdateNoExist); err != nil {
+		return nil, fmt.Errorf("reserving workload network namespace: %w", err)
+	}
+	defer func() {
+		if rerr != nil {
+			_ = t.objs.WorkloadNetnsCookies.Delete(id)
+		}
+	}()
 	values := make([]uint64, t.cpus)
 	var reserved []netbytesOperationCounterKey
 	for _, key := range w.keys() {
@@ -164,6 +181,7 @@ func (w *Workload) Close() error {
 		for _, key := range w.keys() {
 			errs = append(errs, w.tracer.objs.WorkloadByteCounters.Delete(key))
 		}
+		errs = append(errs, w.tracer.objs.WorkloadNetnsCookies.Delete(w.id))
 		w.closeErr = errors.Join(errs...)
 	})
 	return w.closeErr
