@@ -931,7 +931,12 @@ func (c *Cache) lookupCacheForRequestLocked(
 	now := time.Now()
 	nowUnix := now.Unix()
 	persistedEdgeExpiresAtUnix := candidateSharedResultExpiryUnix(nowUnix, req.TTL)
-	match := c.lookupMatchForCallLocked(req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
+	var match lookupMatch
+	if req.ListItem {
+		match = c.lookupMatchForListItemLocked(req, nowUnix)
+	} else {
+		match = c.lookupMatchForCallLocked(req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
+	}
 	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
 	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
 

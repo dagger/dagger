@@ -20,6 +20,9 @@ import (
 //     late explicit dependency can raise those without changing the recipe;
 //     a session that does not cover them registers its value beside the
 //     current entry, not indexed, and its lookups hit that value afterwards;
+//   - a list item read adopts only the item its list recorded for the
+//     position, and otherwise registers beside the current entry, not
+//     indexed (cache_list_items.go);
 //   - an entry whose dependency attachment is still open is waited on, then
 //     decided again;
 //   - an expired entry that nothing uses takes the new value in place: it
@@ -117,8 +120,10 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 		queue collectionQueue
 		rerr  error
 	)
-	// The stored parts, like the offers, belonged to the old value.
+	// The stored parts, like the offers, belonged to the old value, and so
+	// did its place in a list's items (cache_list_items.go).
 	cur.storedParts = nil
+	c.forgetListItemLocked(cur)
 	cur.storedRecordBytes = fresh.storedRecordBytes
 	for _, offer := range cur.partOffersLocked() {
 		more, err := c.retirePartOfferLocked(ctx, cur, offer.record.Address)
