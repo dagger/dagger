@@ -3672,7 +3672,7 @@ class Container(Type):
         _ctx = self._select("exitCode", _args)
         return await _ctx.execute(int)
 
-    def experimental_with_all_gp_us(self) -> Self:
+    def experimental_with_all_gpus(self) -> Self:
         """Configures all available GPUs on the host to be accessible to this
         container.
 
@@ -3682,13 +3682,26 @@ class Container(Type):
             Use "withGPU" instead.
         """
         warnings.warn(
-            'Method "experimental_with_all_gp_us" is deprecated: Use "withGPU" instead.',
+            'Method "experimental_with_all_gpus" is deprecated: Use "withGPU" instead.',
             DeprecationWarning,
             stacklevel=4,
         )
         _args: list[Arg] = []
         _ctx = self._select("experimentalWithAllGPUs", _args)
         return Container(_ctx)
+
+    def experimental_with_all_gp_us(self, *args, **kwargs):
+        """Deprecated alias for :py:meth:`experimental_with_all_gpus`.
+
+        .. deprecated::
+            Use :py:meth:`experimental_with_all_gpus` instead.
+        """
+        warnings.warn(
+            'Method "experimental_with_all_gp_us" is deprecated: use "experimental_with_all_gpus" instead.',
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.experimental_with_all_gpus(*args, **kwargs)
 
     def experimental_with_gpu(self, devices: list[str]) -> Self:
         """Configures the provided list of devices to be accessible to this
@@ -9820,7 +9833,7 @@ class GitBundle(Type):
         _ctx = self._select("objectFormat", _args)
         return await _ctx.execute(str)
 
-    async def prerequisite_sh_as(self) -> list[str]:
+    async def prerequisite_shas(self) -> list[str]:
         """Commits that must already exist wherever this bundle is applied.
 
         Returns
@@ -9840,6 +9853,19 @@ class GitBundle(Type):
         _args: list[Arg] = []
         _ctx = self._select("prerequisiteSHAs", _args)
         return await _ctx.execute(list[str])
+
+    def prerequisite_sh_as(self, *args, **kwargs):
+        """Deprecated alias for :py:meth:`prerequisite_shas`.
+
+        .. deprecated::
+            Use :py:meth:`prerequisite_shas` instead.
+        """
+        warnings.warn(
+            'Method "prerequisite_sh_as" is deprecated: use "prerequisite_shas" instead.',
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.prerequisite_shas(*args, **kwargs)
 
     async def refs(self) -> list["GitBundleRef"]:
         """Refs advertised by the bundle and the object IDs they resolve to."""
