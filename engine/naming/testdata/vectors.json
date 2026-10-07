@@ -1,0 +1,2726 @@
+[
+  {
+    "input": "HTTPClient",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "WORD",
+        "text": "client",
+        "suffix": "",
+        "capitalized": "Client"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpClient",
+      "CAMEL_CAPITALIZED": "httpClient",
+      "FLAT": "httpclient",
+      "KEBAB": "http-client",
+      "PASCAL": "HTTPClient",
+      "PASCAL_CAPITALIZED": "HttpClient",
+      "SCREAMING_SNAKE": "HTTP_CLIENT",
+      "SNAKE": "http_client"
+    }
+  },
+  {
+    "input": "httpClient",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "WORD",
+        "text": "client",
+        "suffix": "",
+        "capitalized": "Client"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpClient",
+      "CAMEL_CAPITALIZED": "httpClient",
+      "FLAT": "httpclient",
+      "KEBAB": "http-client",
+      "PASCAL": "HTTPClient",
+      "PASCAL_CAPITALIZED": "HttpClient",
+      "SCREAMING_SNAKE": "HTTP_CLIENT",
+      "SNAKE": "http_client"
+    }
+  },
+  {
+    "input": "HttpClient",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "WORD",
+        "text": "client",
+        "suffix": "",
+        "capitalized": "Client"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpClient",
+      "CAMEL_CAPITALIZED": "httpClient",
+      "FLAT": "httpclient",
+      "KEBAB": "http-client",
+      "PASCAL": "HTTPClient",
+      "PASCAL_CAPITALIZED": "HttpClient",
+      "SCREAMING_SNAKE": "HTTP_CLIENT",
+      "SNAKE": "http_client"
+    }
+  },
+  {
+    "input": "http_client",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "WORD",
+        "text": "client",
+        "suffix": "",
+        "capitalized": "Client"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpClient",
+      "CAMEL_CAPITALIZED": "httpClient",
+      "FLAT": "httpclient",
+      "KEBAB": "http-client",
+      "PASCAL": "HTTPClient",
+      "PASCAL_CAPITALIZED": "HttpClient",
+      "SCREAMING_SNAKE": "HTTP_CLIENT",
+      "SNAKE": "http_client"
+    }
+  },
+  {
+    "input": "HTTP_CLIENT",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "WORD",
+        "text": "client",
+        "suffix": "",
+        "capitalized": "Client"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpClient",
+      "CAMEL_CAPITALIZED": "httpClient",
+      "FLAT": "httpclient",
+      "KEBAB": "http-client",
+      "PASCAL": "HTTPClient",
+      "PASCAL_CAPITALIZED": "HttpClient",
+      "SCREAMING_SNAKE": "HTTP_CLIENT",
+      "SNAKE": "http_client"
+    }
+  },
+  {
+    "input": "HTTPAPIClient",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      },
+      {
+        "kind": "WORD",
+        "text": "client",
+        "suffix": "",
+        "capitalized": "Client"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpAPIClient",
+      "CAMEL_CAPITALIZED": "httpApiClient",
+      "FLAT": "httpapiclient",
+      "KEBAB": "http-api-client",
+      "PASCAL": "HTTPAPIClient",
+      "PASCAL_CAPITALIZED": "HttpApiClient",
+      "SCREAMING_SNAKE": "HTTP_API_CLIENT",
+      "SNAKE": "http_api_client"
+    }
+  },
+  {
+    "input": "LLMContentBlock",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "LLM",
+        "suffix": "",
+        "capitalized": "Llm"
+      },
+      {
+        "kind": "WORD",
+        "text": "content",
+        "suffix": "",
+        "capitalized": "Content"
+      },
+      {
+        "kind": "WORD",
+        "text": "block",
+        "suffix": "",
+        "capitalized": "Block"
+      }
+    ],
+    "formats": {
+      "CAMEL": "llmContentBlock",
+      "CAMEL_CAPITALIZED": "llmContentBlock",
+      "FLAT": "llmcontentblock",
+      "KEBAB": "llm-content-block",
+      "PASCAL": "LLMContentBlock",
+      "PASCAL_CAPITALIZED": "LlmContentBlock",
+      "SCREAMING_SNAKE": "LLM_CONTENT_BLOCK",
+      "SNAKE": "llm_content_block"
+    }
+  },
+  {
+    "input": "E2ETest",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "E2E",
+        "suffix": "",
+        "capitalized": "E2e"
+      },
+      {
+        "kind": "WORD",
+        "text": "test",
+        "suffix": "",
+        "capitalized": "Test"
+      }
+    ],
+    "formats": {
+      "CAMEL": "e2eTest",
+      "CAMEL_CAPITALIZED": "e2eTest",
+      "FLAT": "e2etest",
+      "KEBAB": "e2e-test",
+      "PASCAL": "E2ETest",
+      "PASCAL_CAPITALIZED": "E2eTest",
+      "SCREAMING_SNAKE": "E2E_TEST",
+      "SNAKE": "e2e_test"
+    }
+  },
+  {
+    "input": "e2e_test",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "E2E",
+        "suffix": "",
+        "capitalized": "E2e"
+      },
+      {
+        "kind": "WORD",
+        "text": "test",
+        "suffix": "",
+        "capitalized": "Test"
+      }
+    ],
+    "formats": {
+      "CAMEL": "e2eTest",
+      "CAMEL_CAPITALIZED": "e2eTest",
+      "FLAT": "e2etest",
+      "KEBAB": "e2e-test",
+      "PASCAL": "E2ETest",
+      "PASCAL_CAPITALIZED": "E2eTest",
+      "SCREAMING_SNAKE": "E2E_TEST",
+      "SNAKE": "e2e_test"
+    }
+  },
+  {
+    "input": "prerequisiteSHAs",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "prerequisite",
+        "suffix": "",
+        "capitalized": "Prerequisite"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "SHA",
+        "suffix": "s",
+        "capitalized": "Sha"
+      }
+    ],
+    "formats": {
+      "CAMEL": "prerequisiteSHAs",
+      "CAMEL_CAPITALIZED": "prerequisiteShas",
+      "FLAT": "prerequisiteshas",
+      "KEBAB": "prerequisite-shas",
+      "PASCAL": "PrerequisiteSHAs",
+      "PASCAL_CAPITALIZED": "PrerequisiteShas",
+      "SCREAMING_SNAKE": "PREREQUISITE_SHAS",
+      "SNAKE": "prerequisite_shas"
+    }
+  },
+  {
+    "input": "experimentalWithAllGPUs",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "experimental",
+        "suffix": "",
+        "capitalized": "Experimental"
+      },
+      {
+        "kind": "WORD",
+        "text": "with",
+        "suffix": "",
+        "capitalized": "With"
+      },
+      {
+        "kind": "WORD",
+        "text": "all",
+        "suffix": "",
+        "capitalized": "All"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "GPU",
+        "suffix": "s",
+        "capitalized": "Gpu"
+      }
+    ],
+    "formats": {
+      "CAMEL": "experimentalWithAllGPUs",
+      "CAMEL_CAPITALIZED": "experimentalWithAllGpus",
+      "FLAT": "experimentalwithallgpus",
+      "KEBAB": "experimental-with-all-gpus",
+      "PASCAL": "ExperimentalWithAllGPUs",
+      "PASCAL_CAPITALIZED": "ExperimentalWithAllGpus",
+      "SCREAMING_SNAKE": "EXPERIMENTAL_WITH_ALL_GPUS",
+      "SNAKE": "experimental_with_all_gpus"
+    }
+  },
+  {
+    "input": "userIds",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "user",
+        "suffix": "",
+        "capitalized": "User"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "ID",
+        "suffix": "s",
+        "capitalized": "Id"
+      }
+    ],
+    "formats": {
+      "CAMEL": "userIDs",
+      "CAMEL_CAPITALIZED": "userIds",
+      "FLAT": "userids",
+      "KEBAB": "user-ids",
+      "PASCAL": "UserIDs",
+      "PASCAL_CAPITALIZED": "UserIds",
+      "SCREAMING_SNAKE": "USER_IDS",
+      "SNAKE": "user_ids"
+    }
+  },
+  {
+    "input": "listPRs",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "list",
+        "suffix": "",
+        "capitalized": "List"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "PR",
+        "suffix": "s",
+        "capitalized": "Pr"
+      }
+    ],
+    "formats": {
+      "CAMEL": "listPRs",
+      "CAMEL_CAPITALIZED": "listPrs",
+      "FLAT": "listprs",
+      "KEBAB": "list-prs",
+      "PASCAL": "ListPRs",
+      "PASCAL_CAPITALIZED": "ListPrs",
+      "SCREAMING_SNAKE": "LIST_PRS",
+      "SNAKE": "list_prs"
+    }
+  },
+  {
+    "input": "IPv6Address",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "IPv6",
+        "suffix": "",
+        "capitalized": "Ipv6"
+      },
+      {
+        "kind": "WORD",
+        "text": "address",
+        "suffix": "",
+        "capitalized": "Address"
+      }
+    ],
+    "formats": {
+      "CAMEL": "ipv6Address",
+      "CAMEL_CAPITALIZED": "ipv6Address",
+      "FLAT": "ipv6address",
+      "KEBAB": "ipv6-address",
+      "PASCAL": "IPv6Address",
+      "PASCAL_CAPITALIZED": "Ipv6Address",
+      "SCREAMING_SNAKE": "IPV6_ADDRESS",
+      "SNAKE": "ipv6_address"
+    }
+  },
+  {
+    "input": "ipv6_address",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "IPv6",
+        "suffix": "",
+        "capitalized": "Ipv6"
+      },
+      {
+        "kind": "WORD",
+        "text": "address",
+        "suffix": "",
+        "capitalized": "Address"
+      }
+    ],
+    "formats": {
+      "CAMEL": "ipv6Address",
+      "CAMEL_CAPITALIZED": "ipv6Address",
+      "FLAT": "ipv6address",
+      "KEBAB": "ipv6-address",
+      "PASCAL": "IPv6Address",
+      "PASCAL_CAPITALIZED": "Ipv6Address",
+      "SCREAMING_SNAKE": "IPV6_ADDRESS",
+      "SNAKE": "ipv6_address"
+    }
+  },
+  {
+    "input": "OAuth2Token",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "OAuth",
+        "suffix": "2",
+        "capitalized": "Oauth"
+      },
+      {
+        "kind": "WORD",
+        "text": "token",
+        "suffix": "",
+        "capitalized": "Token"
+      }
+    ],
+    "formats": {
+      "CAMEL": "oauth2Token",
+      "CAMEL_CAPITALIZED": "oauth2Token",
+      "FLAT": "oauth2token",
+      "KEBAB": "oauth2-token",
+      "PASCAL": "OAuth2Token",
+      "PASCAL_CAPITALIZED": "Oauth2Token",
+      "SCREAMING_SNAKE": "OAUTH2_TOKEN",
+      "SNAKE": "oauth2_token"
+    }
+  },
+  {
+    "input": "oauth2_token",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "OAuth",
+        "suffix": "2",
+        "capitalized": "Oauth"
+      },
+      {
+        "kind": "WORD",
+        "text": "token",
+        "suffix": "",
+        "capitalized": "Token"
+      }
+    ],
+    "formats": {
+      "CAMEL": "oauth2Token",
+      "CAMEL_CAPITALIZED": "oauth2Token",
+      "FLAT": "oauth2token",
+      "KEBAB": "oauth2-token",
+      "PASCAL": "OAuth2Token",
+      "PASCAL_CAPITALIZED": "Oauth2Token",
+      "SCREAMING_SNAKE": "OAUTH2_TOKEN",
+      "SNAKE": "oauth2_token"
+    }
+  },
+  {
+    "input": "GitHubRepo",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "GitHub",
+        "suffix": "",
+        "capitalized": "GitHub"
+      },
+      {
+        "kind": "WORD",
+        "text": "repo",
+        "suffix": "",
+        "capitalized": "Repo"
+      }
+    ],
+    "formats": {
+      "CAMEL": "githubRepo",
+      "CAMEL_CAPITALIZED": "githubRepo",
+      "FLAT": "githubrepo",
+      "KEBAB": "github-repo",
+      "PASCAL": "GitHubRepo",
+      "PASCAL_CAPITALIZED": "GitHubRepo",
+      "SCREAMING_SNAKE": "GITHUB_REPO",
+      "SNAKE": "github_repo"
+    }
+  },
+  {
+    "input": "github_repo",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "GitHub",
+        "suffix": "",
+        "capitalized": "GitHub"
+      },
+      {
+        "kind": "WORD",
+        "text": "repo",
+        "suffix": "",
+        "capitalized": "Repo"
+      }
+    ],
+    "formats": {
+      "CAMEL": "githubRepo",
+      "CAMEL_CAPITALIZED": "githubRepo",
+      "FLAT": "githubrepo",
+      "KEBAB": "github-repo",
+      "PASCAL": "GitHubRepo",
+      "PASCAL_CAPITALIZED": "GitHubRepo",
+      "SCREAMING_SNAKE": "GITHUB_REPO",
+      "SNAKE": "github_repo"
+    }
+  },
+  {
+    "input": "iOSApp",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "iOS",
+        "suffix": "",
+        "capitalized": "Ios"
+      },
+      {
+        "kind": "WORD",
+        "text": "app",
+        "suffix": "",
+        "capitalized": "App"
+      }
+    ],
+    "formats": {
+      "CAMEL": "iosApp",
+      "CAMEL_CAPITALIZED": "iosApp",
+      "FLAT": "iosapp",
+      "KEBAB": "ios-app",
+      "PASCAL": "IOSApp",
+      "PASCAL_CAPITALIZED": "IosApp",
+      "SCREAMING_SNAKE": "IOS_APP",
+      "SNAKE": "ios_app"
+    }
+  },
+  {
+    "input": "macOSBuild",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "macOS",
+        "suffix": "",
+        "capitalized": "MacOS"
+      },
+      {
+        "kind": "WORD",
+        "text": "build",
+        "suffix": "",
+        "capitalized": "Build"
+      }
+    ],
+    "formats": {
+      "CAMEL": "macosBuild",
+      "CAMEL_CAPITALIZED": "macosBuild",
+      "FLAT": "macosbuild",
+      "KEBAB": "macos-build",
+      "PASCAL": "MacOSBuild",
+      "PASCAL_CAPITALIZED": "MacOSBuild",
+      "SCREAMING_SNAKE": "MACOS_BUILD",
+      "SNAKE": "macos_build"
+    }
+  },
+  {
+    "input": "gRPCServer",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "gRPC",
+        "suffix": "",
+        "capitalized": "Grpc"
+      },
+      {
+        "kind": "WORD",
+        "text": "server",
+        "suffix": "",
+        "capitalized": "Server"
+      }
+    ],
+    "formats": {
+      "CAMEL": "grpcServer",
+      "CAMEL_CAPITALIZED": "grpcServer",
+      "FLAT": "grpcserver",
+      "KEBAB": "grpc-server",
+      "PASCAL": "GRPCServer",
+      "PASCAL_CAPITALIZED": "GrpcServer",
+      "SCREAMING_SNAKE": "GRPC_SERVER",
+      "SNAKE": "grpc_server"
+    }
+  },
+  {
+    "input": "Get3DModel",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "get",
+        "suffix": "",
+        "capitalized": "Get"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "3D",
+        "suffix": "",
+        "capitalized": "3D"
+      },
+      {
+        "kind": "WORD",
+        "text": "model",
+        "suffix": "",
+        "capitalized": "Model"
+      }
+    ],
+    "formats": {
+      "CAMEL": "get3DModel",
+      "CAMEL_CAPITALIZED": "get3DModel",
+      "FLAT": "get3dmodel",
+      "KEBAB": "get-3d-model",
+      "PASCAL": "Get3DModel",
+      "PASCAL_CAPITALIZED": "Get3DModel",
+      "SCREAMING_SNAKE": "GET_3D_MODEL",
+      "SNAKE": "get_3d_model"
+    }
+  },
+  {
+    "input": "get3d_model",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "get",
+        "suffix": "",
+        "capitalized": "Get"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "3D",
+        "suffix": "",
+        "capitalized": "3D"
+      },
+      {
+        "kind": "WORD",
+        "text": "model",
+        "suffix": "",
+        "capitalized": "Model"
+      }
+    ],
+    "formats": {
+      "CAMEL": "get3DModel",
+      "CAMEL_CAPITALIZED": "get3DModel",
+      "FLAT": "get3dmodel",
+      "KEBAB": "get-3d-model",
+      "PASCAL": "Get3DModel",
+      "PASCAL_CAPITALIZED": "Get3DModel",
+      "SCREAMING_SNAKE": "GET_3D_MODEL",
+      "SNAKE": "get_3d_model"
+    }
+  },
+  {
+    "input": "Base64URLEncode",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "base64",
+        "suffix": "",
+        "capitalized": "Base64"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "URL",
+        "suffix": "",
+        "capitalized": "Url"
+      },
+      {
+        "kind": "WORD",
+        "text": "encode",
+        "suffix": "",
+        "capitalized": "Encode"
+      }
+    ],
+    "formats": {
+      "CAMEL": "base64URLEncode",
+      "CAMEL_CAPITALIZED": "base64UrlEncode",
+      "FLAT": "base64urlencode",
+      "KEBAB": "base64-url-encode",
+      "PASCAL": "Base64URLEncode",
+      "PASCAL_CAPITALIZED": "Base64UrlEncode",
+      "SCREAMING_SNAKE": "BASE64_URL_ENCODE",
+      "SNAKE": "base64_url_encode"
+    }
+  },
+  {
+    "input": "Win32API",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "win32",
+        "suffix": "",
+        "capitalized": "Win32"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      }
+    ],
+    "formats": {
+      "CAMEL": "win32API",
+      "CAMEL_CAPITALIZED": "win32Api",
+      "FLAT": "win32api",
+      "KEBAB": "win32-api",
+      "PASCAL": "Win32API",
+      "PASCAL_CAPITALIZED": "Win32Api",
+      "SCREAMING_SNAKE": "WIN32_API",
+      "SNAKE": "win32_api"
+    }
+  },
+  {
+    "input": "HTTP2Server",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "2",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "WORD",
+        "text": "server",
+        "suffix": "",
+        "capitalized": "Server"
+      }
+    ],
+    "formats": {
+      "CAMEL": "http2Server",
+      "CAMEL_CAPITALIZED": "http2Server",
+      "FLAT": "http2server",
+      "KEBAB": "http2-server",
+      "PASCAL": "HTTP2Server",
+      "PASCAL_CAPITALIZED": "Http2Server",
+      "SCREAMING_SNAKE": "HTTP2_SERVER",
+      "SNAKE": "http2_server"
+    }
+  },
+  {
+    "input": "Sha256Sum",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "SHA",
+        "suffix": "256",
+        "capitalized": "Sha"
+      },
+      {
+        "kind": "WORD",
+        "text": "sum",
+        "suffix": "",
+        "capitalized": "Sum"
+      }
+    ],
+    "formats": {
+      "CAMEL": "sha256Sum",
+      "CAMEL_CAPITALIZED": "sha256Sum",
+      "FLAT": "sha256sum",
+      "KEBAB": "sha256-sum",
+      "PASCAL": "SHA256Sum",
+      "PASCAL_CAPITALIZED": "Sha256Sum",
+      "SCREAMING_SNAKE": "SHA256_SUM",
+      "SNAKE": "sha256_sum"
+    }
+  },
+  {
+    "input": "md5sum",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "MD5",
+        "suffix": "",
+        "capitalized": "Md5"
+      },
+      {
+        "kind": "WORD",
+        "text": "sum",
+        "suffix": "",
+        "capitalized": "Sum"
+      }
+    ],
+    "formats": {
+      "CAMEL": "md5Sum",
+      "CAMEL_CAPITALIZED": "md5Sum",
+      "FLAT": "md5sum",
+      "KEBAB": "md5-sum",
+      "PASCAL": "MD5Sum",
+      "PASCAL_CAPITALIZED": "Md5Sum",
+      "SCREAMING_SNAKE": "MD5_SUM",
+      "SNAKE": "md5_sum"
+    }
+  },
+  {
+    "input": "S3Bucket",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "s3",
+        "suffix": "",
+        "capitalized": "S3"
+      },
+      {
+        "kind": "WORD",
+        "text": "bucket",
+        "suffix": "",
+        "capitalized": "Bucket"
+      }
+    ],
+    "formats": {
+      "CAMEL": "s3Bucket",
+      "CAMEL_CAPITALIZED": "s3Bucket",
+      "FLAT": "s3bucket",
+      "KEBAB": "s3-bucket",
+      "PASCAL": "S3Bucket",
+      "PASCAL_CAPITALIZED": "S3Bucket",
+      "SCREAMING_SNAKE": "S3_BUCKET",
+      "SNAKE": "s3_bucket"
+    }
+  },
+  {
+    "input": "V1Beta1Foo",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "v1",
+        "suffix": "",
+        "capitalized": "V1"
+      },
+      {
+        "kind": "WORD",
+        "text": "beta1",
+        "suffix": "",
+        "capitalized": "Beta1"
+      },
+      {
+        "kind": "WORD",
+        "text": "foo",
+        "suffix": "",
+        "capitalized": "Foo"
+      }
+    ],
+    "formats": {
+      "CAMEL": "v1Beta1Foo",
+      "CAMEL_CAPITALIZED": "v1Beta1Foo",
+      "FLAT": "v1beta1foo",
+      "KEBAB": "v1-beta1-foo",
+      "PASCAL": "V1Beta1Foo",
+      "PASCAL_CAPITALIZED": "V1Beta1Foo",
+      "SCREAMING_SNAKE": "V1_BETA1_FOO",
+      "SNAKE": "v1_beta1_foo"
+    }
+  },
+  {
+    "input": "ModuleAOverlay",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "module",
+        "suffix": "",
+        "capitalized": "Module"
+      },
+      {
+        "kind": "WORD",
+        "text": "a",
+        "suffix": "",
+        "capitalized": "A"
+      },
+      {
+        "kind": "WORD",
+        "text": "overlay",
+        "suffix": "",
+        "capitalized": "Overlay"
+      }
+    ],
+    "formats": {
+      "CAMEL": "moduleAOverlay",
+      "CAMEL_CAPITALIZED": "moduleAOverlay",
+      "FLAT": "moduleaoverlay",
+      "KEBAB": "module-a-overlay",
+      "PASCAL": "ModuleAOverlay",
+      "PASCAL_CAPITALIZED": "ModuleAOverlay",
+      "SCREAMING_SNAKE": "MODULE_A_OVERLAY",
+      "SNAKE": "module_a_overlay"
+    }
+  },
+  {
+    "input": "IOStream",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "IO",
+        "suffix": "",
+        "capitalized": "Io"
+      },
+      {
+        "kind": "WORD",
+        "text": "stream",
+        "suffix": "",
+        "capitalized": "Stream"
+      }
+    ],
+    "formats": {
+      "CAMEL": "ioStream",
+      "CAMEL_CAPITALIZED": "ioStream",
+      "FLAT": "iostream",
+      "KEBAB": "io-stream",
+      "PASCAL": "IOStream",
+      "PASCAL_CAPITALIZED": "IoStream",
+      "SCREAMING_SNAKE": "IO_STREAM",
+      "SNAKE": "io_stream"
+    }
+  },
+  {
+    "input": "Capital",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "capital",
+        "suffix": "",
+        "capitalized": "Capital"
+      }
+    ],
+    "formats": {
+      "CAMEL": "capital",
+      "CAMEL_CAPITALIZED": "capital",
+      "FLAT": "capital",
+      "KEBAB": "capital",
+      "PASCAL": "Capital",
+      "PASCAL_CAPITALIZED": "Capital",
+      "SCREAMING_SNAKE": "CAPITAL",
+      "SNAKE": "capital"
+    }
+  },
+  {
+    "input": "Identity",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "identity",
+        "suffix": "",
+        "capitalized": "Identity"
+      }
+    ],
+    "formats": {
+      "CAMEL": "identity",
+      "CAMEL_CAPITALIZED": "identity",
+      "FLAT": "identity",
+      "KEBAB": "identity",
+      "PASCAL": "Identity",
+      "PASCAL_CAPITALIZED": "Identity",
+      "SCREAMING_SNAKE": "IDENTITY",
+      "SNAKE": "identity"
+    }
+  },
+  {
+    "input": "HTTPXClient",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTPX",
+        "suffix": "",
+        "capitalized": "Httpx"
+      },
+      {
+        "kind": "WORD",
+        "text": "client",
+        "suffix": "",
+        "capitalized": "Client"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpxClient",
+      "CAMEL_CAPITALIZED": "httpxClient",
+      "FLAT": "httpxclient",
+      "KEBAB": "httpx-client",
+      "PASCAL": "HTTPXClient",
+      "PASCAL_CAPITALIZED": "HttpxClient",
+      "SCREAMING_SNAKE": "HTTPX_CLIENT",
+      "SNAKE": "httpx_client"
+    }
+  },
+  {
+    "input": "httpx_client",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "httpx",
+        "suffix": "",
+        "capitalized": "Httpx"
+      },
+      {
+        "kind": "WORD",
+        "text": "client",
+        "suffix": "",
+        "capitalized": "Client"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpxClient",
+      "CAMEL_CAPITALIZED": "httpxClient",
+      "FLAT": "httpxclient",
+      "KEBAB": "httpx-client",
+      "PASCAL": "HttpxClient",
+      "PASCAL_CAPITALIZED": "HttpxClient",
+      "SCREAMING_SNAKE": "HTTPX_CLIENT",
+      "SNAKE": "httpx_client"
+    }
+  },
+  {
+    "input": "E2EAPI",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "E2E",
+        "suffix": "",
+        "capitalized": "E2e"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      }
+    ],
+    "formats": {
+      "CAMEL": "e2eAPI",
+      "CAMEL_CAPITALIZED": "e2eApi",
+      "FLAT": "e2eapi",
+      "KEBAB": "e2e-api",
+      "PASCAL": "E2EAPI",
+      "PASCAL_CAPITALIZED": "E2eApi",
+      "SCREAMING_SNAKE": "E2E_API",
+      "SNAKE": "e2e_api"
+    }
+  },
+  {
+    "input": "JSONAPI",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "JSON",
+        "suffix": "",
+        "capitalized": "Json"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      }
+    ],
+    "formats": {
+      "CAMEL": "jsonAPI",
+      "CAMEL_CAPITALIZED": "jsonApi",
+      "FLAT": "jsonapi",
+      "KEBAB": "json-api",
+      "PASCAL": "JSONAPI",
+      "PASCAL_CAPITALIZED": "JsonApi",
+      "SCREAMING_SNAKE": "JSON_API",
+      "SNAKE": "json_api"
+    }
+  },
+  {
+    "input": "HTMLURL",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTML",
+        "suffix": "",
+        "capitalized": "Html"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "URL",
+        "suffix": "",
+        "capitalized": "Url"
+      }
+    ],
+    "formats": {
+      "CAMEL": "htmlURL",
+      "CAMEL_CAPITALIZED": "htmlUrl",
+      "FLAT": "htmlurl",
+      "KEBAB": "html-url",
+      "PASCAL": "HTMLURL",
+      "PASCAL_CAPITALIZED": "HtmlUrl",
+      "SCREAMING_SNAKE": "HTML_URL",
+      "SNAKE": "html_url"
+    }
+  },
+  {
+    "input": "HTTPX_CLIENT",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "httpx",
+        "suffix": "",
+        "capitalized": "Httpx"
+      },
+      {
+        "kind": "WORD",
+        "text": "client",
+        "suffix": "",
+        "capitalized": "Client"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpxClient",
+      "CAMEL_CAPITALIZED": "httpxClient",
+      "FLAT": "httpxclient",
+      "KEBAB": "httpx-client",
+      "PASCAL": "HttpxClient",
+      "PASCAL_CAPITALIZED": "HttpxClient",
+      "SCREAMING_SNAKE": "HTTPX_CLIENT",
+      "SNAKE": "httpx_client"
+    }
+  },
+  {
+    "input": "IDsFoo",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "ID",
+        "suffix": "s",
+        "capitalized": "Id"
+      },
+      {
+        "kind": "WORD",
+        "text": "foo",
+        "suffix": "",
+        "capitalized": "Foo"
+      }
+    ],
+    "formats": {
+      "CAMEL": "idsFoo",
+      "CAMEL_CAPITALIZED": "idsFoo",
+      "FLAT": "idsfoo",
+      "KEBAB": "ids-foo",
+      "PASCAL": "IDsFoo",
+      "PASCAL_CAPITALIZED": "IdsFoo",
+      "SCREAMING_SNAKE": "IDS_FOO",
+      "SNAKE": "ids_foo"
+    }
+  },
+  {
+    "input": "HTTPSettings",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "WORD",
+        "text": "settings",
+        "suffix": "",
+        "capitalized": "Settings"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpSettings",
+      "CAMEL_CAPITALIZED": "httpSettings",
+      "FLAT": "httpsettings",
+      "KEBAB": "http-settings",
+      "PASCAL": "HTTPSettings",
+      "PASCAL_CAPITALIZED": "HttpSettings",
+      "SCREAMING_SNAKE": "HTTP_SETTINGS",
+      "SNAKE": "http_settings"
+    }
+  },
+  {
+    "input": "HTTPSServer",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTPS",
+        "suffix": "",
+        "capitalized": "Https"
+      },
+      {
+        "kind": "WORD",
+        "text": "server",
+        "suffix": "",
+        "capitalized": "Server"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpsServer",
+      "CAMEL_CAPITALIZED": "httpsServer",
+      "FLAT": "httpsserver",
+      "KEBAB": "https-server",
+      "PASCAL": "HTTPSServer",
+      "PASCAL_CAPITALIZED": "HttpsServer",
+      "SCREAMING_SNAKE": "HTTPS_SERVER",
+      "SNAKE": "https_server"
+    }
+  },
+  {
+    "input": "GetAs",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "get",
+        "suffix": "",
+        "capitalized": "Get"
+      },
+      {
+        "kind": "WORD",
+        "text": "as",
+        "suffix": "",
+        "capitalized": "As"
+      }
+    ],
+    "formats": {
+      "CAMEL": "getAs",
+      "CAMEL_CAPITALIZED": "getAs",
+      "FLAT": "getas",
+      "KEBAB": "get-as",
+      "PASCAL": "GetAs",
+      "PASCAL_CAPITALIZED": "GetAs",
+      "SCREAMING_SNAKE": "GET_AS",
+      "SNAKE": "get_as"
+    }
+  },
+  {
+    "input": "MyAPIsList",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "my",
+        "suffix": "",
+        "capitalized": "My"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "s",
+        "capitalized": "Api"
+      },
+      {
+        "kind": "WORD",
+        "text": "list",
+        "suffix": "",
+        "capitalized": "List"
+      }
+    ],
+    "formats": {
+      "CAMEL": "myAPIsList",
+      "CAMEL_CAPITALIZED": "myApisList",
+      "FLAT": "myapislist",
+      "KEBAB": "my-apis-list",
+      "PASCAL": "MyAPIsList",
+      "PASCAL_CAPITALIZED": "MyApisList",
+      "SCREAMING_SNAKE": "MY_APIS_LIST",
+      "SNAKE": "my_apis_list"
+    }
+  },
+  {
+    "input": "ios",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "iOS",
+        "suffix": "",
+        "capitalized": "Ios"
+      }
+    ],
+    "formats": {
+      "CAMEL": "ios",
+      "CAMEL_CAPITALIZED": "ios",
+      "FLAT": "ios",
+      "KEBAB": "ios",
+      "PASCAL": "IOS",
+      "PASCAL_CAPITALIZED": "Ios",
+      "SCREAMING_SNAKE": "IOS",
+      "SNAKE": "ios"
+    }
+  },
+  {
+    "input": "https",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTPS",
+        "suffix": "",
+        "capitalized": "Https"
+      }
+    ],
+    "formats": {
+      "CAMEL": "https",
+      "CAMEL_CAPITALIZED": "https",
+      "FLAT": "https",
+      "KEBAB": "https",
+      "PASCAL": "HTTPS",
+      "PASCAL_CAPITALIZED": "Https",
+      "SCREAMING_SNAKE": "HTTPS",
+      "SNAKE": "https"
+    }
+  },
+  {
+    "input": "3D",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "3D",
+        "suffix": "",
+        "capitalized": "3D"
+      }
+    ],
+    "formats": {
+      "CAMEL": "3d",
+      "CAMEL_CAPITALIZED": "3d",
+      "FLAT": "3d",
+      "KEBAB": "3d",
+      "PASCAL": "3D",
+      "PASCAL_CAPITALIZED": "3D",
+      "SCREAMING_SNAKE": "3D",
+      "SNAKE": "3d"
+    }
+  },
+  {
+    "input": "123Foo",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "123",
+        "suffix": "",
+        "capitalized": "123"
+      },
+      {
+        "kind": "WORD",
+        "text": "foo",
+        "suffix": "",
+        "capitalized": "Foo"
+      }
+    ],
+    "formats": {
+      "CAMEL": "123Foo",
+      "CAMEL_CAPITALIZED": "123Foo",
+      "FLAT": "123foo",
+      "KEBAB": "123-foo",
+      "PASCAL": "123Foo",
+      "PASCAL_CAPITALIZED": "123Foo",
+      "SCREAMING_SNAKE": "123_FOO",
+      "SNAKE": "123_foo"
+    }
+  },
+  {
+    "input": "foo_2_bar",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "foo2",
+        "suffix": "",
+        "capitalized": "Foo2"
+      },
+      {
+        "kind": "WORD",
+        "text": "bar",
+        "suffix": "",
+        "capitalized": "Bar"
+      }
+    ],
+    "formats": {
+      "CAMEL": "foo2Bar",
+      "CAMEL_CAPITALIZED": "foo2Bar",
+      "FLAT": "foo2bar",
+      "KEBAB": "foo2-bar",
+      "PASCAL": "Foo2Bar",
+      "PASCAL_CAPITALIZED": "Foo2Bar",
+      "SCREAMING_SNAKE": "FOO2_BAR",
+      "SNAKE": "foo2_bar"
+    }
+  },
+  {
+    "input": "utf8_string",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "UTF8",
+        "suffix": "",
+        "capitalized": "Utf8"
+      },
+      {
+        "kind": "WORD",
+        "text": "string",
+        "suffix": "",
+        "capitalized": "String"
+      }
+    ],
+    "formats": {
+      "CAMEL": "utf8String",
+      "CAMEL_CAPITALIZED": "utf8String",
+      "FLAT": "utf8string",
+      "KEBAB": "utf8-string",
+      "PASCAL": "UTF8String",
+      "PASCAL_CAPITALIZED": "Utf8String",
+      "SCREAMING_SNAKE": "UTF8_STRING",
+      "SNAKE": "utf8_string"
+    }
+  },
+  {
+    "input": "runE2EAPITest",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "run",
+        "suffix": "",
+        "capitalized": "Run"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "E2E",
+        "suffix": "",
+        "capitalized": "E2e"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      },
+      {
+        "kind": "WORD",
+        "text": "test",
+        "suffix": "",
+        "capitalized": "Test"
+      }
+    ],
+    "formats": {
+      "CAMEL": "runE2EAPITest",
+      "CAMEL_CAPITALIZED": "runE2eApiTest",
+      "FLAT": "rune2eapitest",
+      "KEBAB": "run-e2e-api-test",
+      "PASCAL": "RunE2EAPITest",
+      "PASCAL_CAPITALIZED": "RunE2eApiTest",
+      "SCREAMING_SNAKE": "RUN_E2E_API_TEST",
+      "SNAKE": "run_e2e_api_test"
+    }
+  },
+  {
+    "input": "Get4KStream",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "get4",
+        "suffix": "",
+        "capitalized": "Get4"
+      },
+      {
+        "kind": "WORD",
+        "text": "k",
+        "suffix": "",
+        "capitalized": "K"
+      },
+      {
+        "kind": "WORD",
+        "text": "stream",
+        "suffix": "",
+        "capitalized": "Stream"
+      }
+    ],
+    "formats": {
+      "CAMEL": "get4KStream",
+      "CAMEL_CAPITALIZED": "get4KStream",
+      "FLAT": "get4kstream",
+      "KEBAB": "get4-k-stream",
+      "PASCAL": "Get4KStream",
+      "PASCAL_CAPITALIZED": "Get4KStream",
+      "SCREAMING_SNAKE": "GET4_K_STREAM",
+      "SNAKE": "get4_k_stream"
+    }
+  },
+  {
+    "input": "HTTPAPIS",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "s",
+        "capitalized": "Api"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpAPIs",
+      "CAMEL_CAPITALIZED": "httpApis",
+      "FLAT": "httpapis",
+      "KEBAB": "http-apis",
+      "PASCAL": "HTTPAPIs",
+      "PASCAL_CAPITALIZED": "HttpApis",
+      "SCREAMING_SNAKE": "HTTP_APIS",
+      "SNAKE": "http_apis"
+    }
+  },
+  {
+    "input": "MY_HTTPAPI_CLIENT",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "my",
+        "suffix": "",
+        "capitalized": "My"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      },
+      {
+        "kind": "WORD",
+        "text": "client",
+        "suffix": "",
+        "capitalized": "Client"
+      }
+    ],
+    "formats": {
+      "CAMEL": "myHTTPAPIClient",
+      "CAMEL_CAPITALIZED": "myHttpApiClient",
+      "FLAT": "myhttpapiclient",
+      "KEBAB": "my-http-api-client",
+      "PASCAL": "MyHTTPAPIClient",
+      "PASCAL_CAPITALIZED": "MyHttpApiClient",
+      "SCREAMING_SNAKE": "MY_HTTP_API_CLIENT",
+      "SNAKE": "my_http_api_client"
+    }
+  },
+  {
+    "input": "UTF8JSON",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "UTF8",
+        "suffix": "",
+        "capitalized": "Utf8"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "JSON",
+        "suffix": "",
+        "capitalized": "Json"
+      }
+    ],
+    "formats": {
+      "CAMEL": "utf8JSON",
+      "CAMEL_CAPITALIZED": "utf8Json",
+      "FLAT": "utf8json",
+      "KEBAB": "utf8-json",
+      "PASCAL": "UTF8JSON",
+      "PASCAL_CAPITALIZED": "Utf8Json",
+      "SCREAMING_SNAKE": "UTF8_JSON",
+      "SNAKE": "utf8_json"
+    }
+  },
+  {
+    "input": "HTTPXAPI",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "httpxapi",
+        "suffix": "",
+        "capitalized": "Httpxapi"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpxapi",
+      "CAMEL_CAPITALIZED": "httpxapi",
+      "FLAT": "httpxapi",
+      "KEBAB": "httpxapi",
+      "PASCAL": "Httpxapi",
+      "PASCAL_CAPITALIZED": "Httpxapi",
+      "SCREAMING_SNAKE": "HTTPXAPI",
+      "SNAKE": "httpxapi"
+    }
+  },
+  {
+    "input": "httpapi",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "httpapi",
+        "suffix": "",
+        "capitalized": "Httpapi"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpapi",
+      "CAMEL_CAPITALIZED": "httpapi",
+      "FLAT": "httpapi",
+      "KEBAB": "httpapi",
+      "PASCAL": "Httpapi",
+      "PASCAL_CAPITALIZED": "Httpapi",
+      "SCREAMING_SNAKE": "HTTPAPI",
+      "SNAKE": "httpapi"
+    }
+  },
+  {
+    "input": "HTTPXAPIClient",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTPXAPI",
+        "suffix": "",
+        "capitalized": "Httpxapi"
+      },
+      {
+        "kind": "WORD",
+        "text": "client",
+        "suffix": "",
+        "capitalized": "Client"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpxapiClient",
+      "CAMEL_CAPITALIZED": "httpxapiClient",
+      "FLAT": "httpxapiclient",
+      "KEBAB": "httpxapi-client",
+      "PASCAL": "HTTPXAPIClient",
+      "PASCAL_CAPITALIZED": "HttpxapiClient",
+      "SCREAMING_SNAKE": "HTTPXAPI_CLIENT",
+      "SNAKE": "httpxapi_client"
+    }
+  },
+  {
+    "input": "PostgreSQL",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "postgre",
+        "suffix": "",
+        "capitalized": "Postgre"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "SQL",
+        "suffix": "",
+        "capitalized": "Sql"
+      }
+    ],
+    "formats": {
+      "CAMEL": "postgreSQL",
+      "CAMEL_CAPITALIZED": "postgreSql",
+      "FLAT": "postgresql",
+      "KEBAB": "postgre-sql",
+      "PASCAL": "PostgreSQL",
+      "PASCAL_CAPITALIZED": "PostgreSql",
+      "SCREAMING_SNAKE": "POSTGRE_SQL",
+      "SNAKE": "postgre_sql"
+    }
+  },
+  {
+    "input": "gRPCAPI",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "g",
+        "suffix": "",
+        "capitalized": "G"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "RPC",
+        "suffix": "",
+        "capitalized": "Rpc"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      }
+    ],
+    "formats": {
+      "CAMEL": "gRPCAPI",
+      "CAMEL_CAPITALIZED": "gRpcApi",
+      "FLAT": "grpcapi",
+      "KEBAB": "g-rpc-api",
+      "PASCAL": "GRPCAPI",
+      "PASCAL_CAPITALIZED": "GRpcApi",
+      "SCREAMING_SNAKE": "G_RPC_API",
+      "SNAKE": "g_rpc_api"
+    }
+  },
+  {
+    "input": "iOSSDK",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "i",
+        "suffix": "",
+        "capitalized": "I"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "OSSDK",
+        "suffix": "",
+        "capitalized": "Ossdk"
+      }
+    ],
+    "formats": {
+      "CAMEL": "iOSSDK",
+      "CAMEL_CAPITALIZED": "iOssdk",
+      "FLAT": "iossdk",
+      "KEBAB": "i-ossdk",
+      "PASCAL": "IOSSDK",
+      "PASCAL_CAPITALIZED": "IOssdk",
+      "SCREAMING_SNAKE": "I_OSSDK",
+      "SNAKE": "i_ossdk"
+    }
+  },
+  {
+    "input": "foo.bar-baz qux",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "foo",
+        "suffix": "",
+        "capitalized": "Foo"
+      },
+      {
+        "kind": "WORD",
+        "text": "bar",
+        "suffix": "",
+        "capitalized": "Bar"
+      },
+      {
+        "kind": "WORD",
+        "text": "baz",
+        "suffix": "",
+        "capitalized": "Baz"
+      },
+      {
+        "kind": "WORD",
+        "text": "qux",
+        "suffix": "",
+        "capitalized": "Qux"
+      }
+    ],
+    "formats": {
+      "CAMEL": "fooBarBazQux",
+      "CAMEL_CAPITALIZED": "fooBarBazQux",
+      "FLAT": "foobarbazqux",
+      "KEBAB": "foo-bar-baz-qux",
+      "PASCAL": "FooBarBazQux",
+      "PASCAL_CAPITALIZED": "FooBarBazQux",
+      "SCREAMING_SNAKE": "FOO_BAR_BAZ_QUX",
+      "SNAKE": "foo_bar_baz_qux"
+    }
+  },
+  {
+    "input": "__init__",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "init",
+        "suffix": "",
+        "capitalized": "Init"
+      }
+    ],
+    "formats": {
+      "CAMEL": "init",
+      "CAMEL_CAPITALIZED": "init",
+      "FLAT": "init",
+      "KEBAB": "init",
+      "PASCAL": "Init",
+      "PASCAL_CAPITALIZED": "Init",
+      "SCREAMING_SNAKE": "INIT",
+      "SNAKE": "init"
+    }
+  },
+  {
+    "input": "base64",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "base64",
+        "suffix": "",
+        "capitalized": "Base64"
+      }
+    ],
+    "formats": {
+      "CAMEL": "base64",
+      "CAMEL_CAPITALIZED": "base64",
+      "FLAT": "base64",
+      "KEBAB": "base64",
+      "PASCAL": "Base64",
+      "PASCAL_CAPITALIZED": "Base64",
+      "SCREAMING_SNAKE": "BASE64",
+      "SNAKE": "base64"
+    }
+  },
+  {
+    "input": "int32",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "int32",
+        "suffix": "",
+        "capitalized": "Int32"
+      }
+    ],
+    "formats": {
+      "CAMEL": "int32",
+      "CAMEL_CAPITALIZED": "int32",
+      "FLAT": "int32",
+      "KEBAB": "int32",
+      "PASCAL": "Int32",
+      "PASCAL_CAPITALIZED": "Int32",
+      "SCREAMING_SNAKE": "INT32",
+      "SNAKE": "int32"
+    }
+  },
+  {
+    "input": "e2eapi",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "e2eapi",
+        "suffix": "",
+        "capitalized": "E2eapi"
+      }
+    ],
+    "formats": {
+      "CAMEL": "e2eapi",
+      "CAMEL_CAPITALIZED": "e2eapi",
+      "FLAT": "e2eapi",
+      "KEBAB": "e2eapi",
+      "PASCAL": "E2eapi",
+      "PASCAL_CAPITALIZED": "E2eapi",
+      "SCREAMING_SNAKE": "E2EAPI",
+      "SNAKE": "e2eapi"
+    }
+  },
+  {
+    "input": "htmlURL",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTML",
+        "suffix": "",
+        "capitalized": "Html"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "URL",
+        "suffix": "",
+        "capitalized": "Url"
+      }
+    ],
+    "formats": {
+      "CAMEL": "htmlURL",
+      "CAMEL_CAPITALIZED": "htmlUrl",
+      "FLAT": "htmlurl",
+      "KEBAB": "html-url",
+      "PASCAL": "HTMLURL",
+      "PASCAL_CAPITALIZED": "HtmlUrl",
+      "SCREAMING_SNAKE": "HTML_URL",
+      "SNAKE": "html_url"
+    }
+  },
+  {
+    "input": "HTTPAPI",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpAPI",
+      "CAMEL_CAPITALIZED": "httpApi",
+      "FLAT": "httpapi",
+      "KEBAB": "http-api",
+      "PASCAL": "HTTPAPI",
+      "PASCAL_CAPITALIZED": "HttpApi",
+      "SCREAMING_SNAKE": "HTTP_API",
+      "SNAKE": "http_api"
+    }
+  },
+  {
+    "input": "GitHubAPI",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "GitHub",
+        "suffix": "",
+        "capitalized": "GitHub"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      }
+    ],
+    "formats": {
+      "CAMEL": "githubAPI",
+      "CAMEL_CAPITALIZED": "githubApi",
+      "FLAT": "githubapi",
+      "KEBAB": "github-api",
+      "PASCAL": "GitHubAPI",
+      "PASCAL_CAPITALIZED": "GitHubApi",
+      "SCREAMING_SNAKE": "GITHUB_API",
+      "SNAKE": "github_api"
+    }
+  },
+  {
+    "input": "IPv6URL",
+    "words": [
+      {
+        "kind": "TERM",
+        "text": "IPv6",
+        "suffix": "",
+        "capitalized": "Ipv6"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "URL",
+        "suffix": "",
+        "capitalized": "Url"
+      }
+    ],
+    "formats": {
+      "CAMEL": "ipv6URL",
+      "CAMEL_CAPITALIZED": "ipv6Url",
+      "FLAT": "ipv6url",
+      "KEBAB": "ipv6-url",
+      "PASCAL": "IPv6URL",
+      "PASCAL_CAPITALIZED": "Ipv6Url",
+      "SCREAMING_SNAKE": "IPV6_URL",
+      "SNAKE": "ipv6_url"
+    }
+  },
+  {
+    "input": "sha256URL",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "SHA",
+        "suffix": "256",
+        "capitalized": "Sha"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "URL",
+        "suffix": "",
+        "capitalized": "Url"
+      }
+    ],
+    "formats": {
+      "CAMEL": "sha256URL",
+      "CAMEL_CAPITALIZED": "sha256Url",
+      "FLAT": "sha256url",
+      "KEBAB": "sha256-url",
+      "PASCAL": "SHA256URL",
+      "PASCAL_CAPITALIZED": "Sha256Url",
+      "SCREAMING_SNAKE": "SHA256_URL",
+      "SNAKE": "sha256_url"
+    }
+  },
+  {
+    "input": "IDs",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "ID",
+        "suffix": "s",
+        "capitalized": "Id"
+      }
+    ],
+    "formats": {
+      "CAMEL": "ids",
+      "CAMEL_CAPITALIZED": "ids",
+      "FLAT": "ids",
+      "KEBAB": "ids",
+      "PASCAL": "IDs",
+      "PASCAL_CAPITALIZED": "Ids",
+      "SCREAMING_SNAKE": "IDS",
+      "SNAKE": "ids"
+    }
+  },
+  {
+    "input": "GPUsAPI",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "GPU",
+        "suffix": "s",
+        "capitalized": "Gpu"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      }
+    ],
+    "formats": {
+      "CAMEL": "gpusAPI",
+      "CAMEL_CAPITALIZED": "gpusApi",
+      "FLAT": "gpusapi",
+      "KEBAB": "gpus-api",
+      "PASCAL": "GPUsAPI",
+      "PASCAL_CAPITALIZED": "GpusApi",
+      "SCREAMING_SNAKE": "GPUS_API",
+      "SNAKE": "gpus_api"
+    }
+  },
+  {
+    "input": "JSONValue",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "JSON",
+        "suffix": "",
+        "capitalized": "Json"
+      },
+      {
+        "kind": "WORD",
+        "text": "value",
+        "suffix": "",
+        "capitalized": "Value"
+      }
+    ],
+    "formats": {
+      "CAMEL": "jsonValue",
+      "CAMEL_CAPITALIZED": "jsonValue",
+      "FLAT": "jsonvalue",
+      "KEBAB": "json-value",
+      "PASCAL": "JSONValue",
+      "PASCAL_CAPITALIZED": "JsonValue",
+      "SCREAMING_SNAKE": "JSON_VALUE",
+      "SNAKE": "json_value"
+    }
+  },
+  {
+    "input": "LLMTokenUsage",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "LLM",
+        "suffix": "",
+        "capitalized": "Llm"
+      },
+      {
+        "kind": "WORD",
+        "text": "token",
+        "suffix": "",
+        "capitalized": "Token"
+      },
+      {
+        "kind": "WORD",
+        "text": "usage",
+        "suffix": "",
+        "capitalized": "Usage"
+      }
+    ],
+    "formats": {
+      "CAMEL": "llmTokenUsage",
+      "CAMEL_CAPITALIZED": "llmTokenUsage",
+      "FLAT": "llmtokenusage",
+      "KEBAB": "llm-token-usage",
+      "PASCAL": "LLMTokenUsage",
+      "PASCAL_CAPITALIZED": "LlmTokenUsage",
+      "SCREAMING_SNAKE": "LLM_TOKEN_USAGE",
+      "SNAKE": "llm_token_usage"
+    }
+  },
+  {
+    "input": "LLMMessageRole",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "LLM",
+        "suffix": "",
+        "capitalized": "Llm"
+      },
+      {
+        "kind": "WORD",
+        "text": "message",
+        "suffix": "",
+        "capitalized": "Message"
+      },
+      {
+        "kind": "WORD",
+        "text": "role",
+        "suffix": "",
+        "capitalized": "Role"
+      }
+    ],
+    "formats": {
+      "CAMEL": "llmMessageRole",
+      "CAMEL_CAPITALIZED": "llmMessageRole",
+      "FLAT": "llmmessagerole",
+      "KEBAB": "llm-message-role",
+      "PASCAL": "LLMMessageRole",
+      "PASCAL_CAPITALIZED": "LlmMessageRole",
+      "SCREAMING_SNAKE": "LLM_MESSAGE_ROLE",
+      "SNAKE": "llm_message_role"
+    }
+  },
+  {
+    "input": "SDKConfig",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "SDK",
+        "suffix": "",
+        "capitalized": "Sdk"
+      },
+      {
+        "kind": "WORD",
+        "text": "config",
+        "suffix": "",
+        "capitalized": "Config"
+      }
+    ],
+    "formats": {
+      "CAMEL": "sdkConfig",
+      "CAMEL_CAPITALIZED": "sdkConfig",
+      "FLAT": "sdkconfig",
+      "KEBAB": "sdk-config",
+      "PASCAL": "SDKConfig",
+      "PASCAL_CAPITALIZED": "SdkConfig",
+      "SCREAMING_SNAKE": "SDK_CONFIG",
+      "SNAKE": "sdk_config"
+    }
+  },
+  {
+    "input": "HTTPState",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "",
+        "capitalized": "Http"
+      },
+      {
+        "kind": "WORD",
+        "text": "state",
+        "suffix": "",
+        "capitalized": "State"
+      }
+    ],
+    "formats": {
+      "CAMEL": "httpState",
+      "CAMEL_CAPITALIZED": "httpState",
+      "FLAT": "httpstate",
+      "KEBAB": "http-state",
+      "PASCAL": "HTTPState",
+      "PASCAL_CAPITALIZED": "HttpState",
+      "SCREAMING_SNAKE": "HTTP_STATE",
+      "SNAKE": "http_state"
+    }
+  },
+  {
+    "input": "GitRepository",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "git",
+        "suffix": "",
+        "capitalized": "Git"
+      },
+      {
+        "kind": "WORD",
+        "text": "repository",
+        "suffix": "",
+        "capitalized": "Repository"
+      }
+    ],
+    "formats": {
+      "CAMEL": "gitRepository",
+      "CAMEL_CAPITALIZED": "gitRepository",
+      "FLAT": "gitrepository",
+      "KEBAB": "git-repository",
+      "PASCAL": "GitRepository",
+      "PASCAL_CAPITALIZED": "GitRepository",
+      "SCREAMING_SNAKE": "GIT_REPOSITORY",
+      "SNAKE": "git_repository"
+    }
+  },
+  {
+    "input": "CacheSharingMode",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "cache",
+        "suffix": "",
+        "capitalized": "Cache"
+      },
+      {
+        "kind": "WORD",
+        "text": "sharing",
+        "suffix": "",
+        "capitalized": "Sharing"
+      },
+      {
+        "kind": "WORD",
+        "text": "mode",
+        "suffix": "",
+        "capitalized": "Mode"
+      }
+    ],
+    "formats": {
+      "CAMEL": "cacheSharingMode",
+      "CAMEL_CAPITALIZED": "cacheSharingMode",
+      "FLAT": "cachesharingmode",
+      "KEBAB": "cache-sharing-mode",
+      "PASCAL": "CacheSharingMode",
+      "PASCAL_CAPITALIZED": "CacheSharingMode",
+      "SCREAMING_SNAKE": "CACHE_SHARING_MODE",
+      "SNAKE": "cache_sharing_mode"
+    }
+  },
+  {
+    "input": "SHARED",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "shared",
+        "suffix": "",
+        "capitalized": "Shared"
+      }
+    ],
+    "formats": {
+      "CAMEL": "shared",
+      "CAMEL_CAPITALIZED": "shared",
+      "FLAT": "shared",
+      "KEBAB": "shared",
+      "PASCAL": "Shared",
+      "PASCAL_CAPITALIZED": "Shared",
+      "SCREAMING_SNAKE": "SHARED",
+      "SNAKE": "shared"
+    }
+  },
+  {
+    "input": "ImageMediaTypes",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "image",
+        "suffix": "",
+        "capitalized": "Image"
+      },
+      {
+        "kind": "WORD",
+        "text": "media",
+        "suffix": "",
+        "capitalized": "Media"
+      },
+      {
+        "kind": "WORD",
+        "text": "types",
+        "suffix": "",
+        "capitalized": "Types"
+      }
+    ],
+    "formats": {
+      "CAMEL": "imageMediaTypes",
+      "CAMEL_CAPITALIZED": "imageMediaTypes",
+      "FLAT": "imagemediatypes",
+      "KEBAB": "image-media-types",
+      "PASCAL": "ImageMediaTypes",
+      "PASCAL_CAPITALIZED": "ImageMediaTypes",
+      "SCREAMING_SNAKE": "IMAGE_MEDIA_TYPES",
+      "SNAKE": "image_media_types"
+    }
+  },
+  {
+    "input": "OCI",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "OCI",
+        "suffix": "",
+        "capitalized": "Oci"
+      }
+    ],
+    "formats": {
+      "CAMEL": "oci",
+      "CAMEL_CAPITALIZED": "oci",
+      "FLAT": "oci",
+      "KEBAB": "oci",
+      "PASCAL": "OCI",
+      "PASCAL_CAPITALIZED": "Oci",
+      "SCREAMING_SNAKE": "OCI",
+      "SNAKE": "oci"
+    }
+  },
+  {
+    "input": "withGPU",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "with",
+        "suffix": "",
+        "capitalized": "With"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "GPU",
+        "suffix": "",
+        "capitalized": "Gpu"
+      }
+    ],
+    "formats": {
+      "CAMEL": "withGPU",
+      "CAMEL_CAPITALIZED": "withGpu",
+      "FLAT": "withgpu",
+      "KEBAB": "with-gpu",
+      "PASCAL": "WithGPU",
+      "PASCAL_CAPITALIZED": "WithGpu",
+      "SCREAMING_SNAKE": "WITH_GPU",
+      "SNAKE": "with_gpu"
+    }
+  },
+  {
+    "input": "withMCPServer",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "with",
+        "suffix": "",
+        "capitalized": "With"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "MCP",
+        "suffix": "",
+        "capitalized": "Mcp"
+      },
+      {
+        "kind": "WORD",
+        "text": "server",
+        "suffix": "",
+        "capitalized": "Server"
+      }
+    ],
+    "formats": {
+      "CAMEL": "withMCPServer",
+      "CAMEL_CAPITALIZED": "withMcpServer",
+      "FLAT": "withmcpserver",
+      "KEBAB": "with-mcp-server",
+      "PASCAL": "WithMCPServer",
+      "PASCAL_CAPITALIZED": "WithMcpServer",
+      "SCREAMING_SNAKE": "WITH_MCP_SERVER",
+      "SNAKE": "with_mcp_server"
+    }
+  },
+  {
+    "input": "asJSON",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "as",
+        "suffix": "",
+        "capitalized": "As"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "JSON",
+        "suffix": "",
+        "capitalized": "Json"
+      }
+    ],
+    "formats": {
+      "CAMEL": "asJSON",
+      "CAMEL_CAPITALIZED": "asJson",
+      "FLAT": "asjson",
+      "KEBAB": "as-json",
+      "PASCAL": "AsJSON",
+      "PASCAL_CAPITALIZED": "AsJson",
+      "SCREAMING_SNAKE": "AS_JSON",
+      "SNAKE": "as_json"
+    }
+  },
+  {
+    "input": "traceURL",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "trace",
+        "suffix": "",
+        "capitalized": "Trace"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "URL",
+        "suffix": "",
+        "capitalized": "Url"
+      }
+    ],
+    "formats": {
+      "CAMEL": "traceURL",
+      "CAMEL_CAPITALIZED": "traceUrl",
+      "FLAT": "traceurl",
+      "KEBAB": "trace-url",
+      "PASCAL": "TraceURL",
+      "PASCAL_CAPITALIZED": "TraceUrl",
+      "SCREAMING_SNAKE": "TRACE_URL",
+      "SNAKE": "trace_url"
+    }
+  },
+  {
+    "input": "commitSHA",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "commit",
+        "suffix": "",
+        "capitalized": "Commit"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "SHA",
+        "suffix": "",
+        "capitalized": "Sha"
+      }
+    ],
+    "formats": {
+      "CAMEL": "commitSHA",
+      "CAMEL_CAPITALIZED": "commitSha",
+      "FLAT": "commitsha",
+      "KEBAB": "commit-sha",
+      "PASCAL": "CommitSHA",
+      "PASCAL_CAPITALIZED": "CommitSha",
+      "SCREAMING_SNAKE": "COMMIT_SHA",
+      "SNAKE": "commit_sha"
+    }
+  },
+  {
+    "input": "shortSha",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "short",
+        "suffix": "",
+        "capitalized": "Short"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "SHA",
+        "suffix": "",
+        "capitalized": "Sha"
+      }
+    ],
+    "formats": {
+      "CAMEL": "shortSHA",
+      "CAMEL_CAPITALIZED": "shortSha",
+      "FLAT": "shortsha",
+      "KEBAB": "short-sha",
+      "PASCAL": "ShortSHA",
+      "PASCAL_CAPITALIZED": "ShortSha",
+      "SCREAMING_SNAKE": "SHORT_SHA",
+      "SNAKE": "short_sha"
+    }
+  },
+  {
+    "input": "parentShas",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "parent",
+        "suffix": "",
+        "capitalized": "Parent"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "SHA",
+        "suffix": "s",
+        "capitalized": "Sha"
+      }
+    ],
+    "formats": {
+      "CAMEL": "parentSHAs",
+      "CAMEL_CAPITALIZED": "parentShas",
+      "FLAT": "parentshas",
+      "KEBAB": "parent-shas",
+      "PASCAL": "ParentSHAs",
+      "PASCAL_CAPITALIZED": "ParentShas",
+      "SCREAMING_SNAKE": "PARENT_SHAS",
+      "SNAKE": "parent_shas"
+    }
+  },
+  {
+    "input": "pushUrl",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "push",
+        "suffix": "",
+        "capitalized": "Push"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "URL",
+        "suffix": "",
+        "capitalized": "Url"
+      }
+    ],
+    "formats": {
+      "CAMEL": "pushURL",
+      "CAMEL_CAPITALIZED": "pushUrl",
+      "FLAT": "pushurl",
+      "KEBAB": "push-url",
+      "PASCAL": "PushURL",
+      "PASCAL_CAPITALIZED": "PushUrl",
+      "SCREAMING_SNAKE": "PUSH_URL",
+      "SNAKE": "push_url"
+    }
+  },
+  {
+    "input": "asSdkName",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "as",
+        "suffix": "",
+        "capitalized": "As"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "SDK",
+        "suffix": "",
+        "capitalized": "Sdk"
+      },
+      {
+        "kind": "WORD",
+        "text": "name",
+        "suffix": "",
+        "capitalized": "Name"
+      }
+    ],
+    "formats": {
+      "CAMEL": "asSDKName",
+      "CAMEL_CAPITALIZED": "asSdkName",
+      "FLAT": "assdkname",
+      "KEBAB": "as-sdk-name",
+      "PASCAL": "AsSDKName",
+      "PASCAL_CAPITALIZED": "AsSdkName",
+      "SCREAMING_SNAKE": "AS_SDK_NAME",
+      "SNAKE": "as_sdk_name"
+    }
+  },
+  {
+    "input": "withoutUri",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "without",
+        "suffix": "",
+        "capitalized": "Without"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "URI",
+        "suffix": "",
+        "capitalized": "Uri"
+      }
+    ],
+    "formats": {
+      "CAMEL": "withoutURI",
+      "CAMEL_CAPITALIZED": "withoutUri",
+      "FLAT": "withouturi",
+      "KEBAB": "without-uri",
+      "PASCAL": "WithoutURI",
+      "PASCAL_CAPITALIZED": "WithoutUri",
+      "SCREAMING_SNAKE": "WITHOUT_URI",
+      "SNAKE": "without_uri"
+    }
+  },
+  {
+    "input": "vcsGeneratedPaths",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "VCS",
+        "suffix": "",
+        "capitalized": "Vcs"
+      },
+      {
+        "kind": "WORD",
+        "text": "generated",
+        "suffix": "",
+        "capitalized": "Generated"
+      },
+      {
+        "kind": "WORD",
+        "text": "paths",
+        "suffix": "",
+        "capitalized": "Paths"
+      }
+    ],
+    "formats": {
+      "CAMEL": "vcsGeneratedPaths",
+      "CAMEL_CAPITALIZED": "vcsGeneratedPaths",
+      "FLAT": "vcsgeneratedpaths",
+      "KEBAB": "vcs-generated-paths",
+      "PASCAL": "VCSGeneratedPaths",
+      "PASCAL_CAPITALIZED": "VcsGeneratedPaths",
+      "SCREAMING_SNAKE": "VCS_GENERATED_PATHS",
+      "SNAKE": "vcs_generated_paths"
+    }
+  },
+  {
+    "input": "insecureSkipTLSVerify",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "insecure",
+        "suffix": "",
+        "capitalized": "Insecure"
+      },
+      {
+        "kind": "WORD",
+        "text": "skip",
+        "suffix": "",
+        "capitalized": "Skip"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "TLS",
+        "suffix": "",
+        "capitalized": "Tls"
+      },
+      {
+        "kind": "WORD",
+        "text": "verify",
+        "suffix": "",
+        "capitalized": "Verify"
+      }
+    ],
+    "formats": {
+      "CAMEL": "insecureSkipTLSVerify",
+      "CAMEL_CAPITALIZED": "insecureSkipTlsVerify",
+      "FLAT": "insecureskiptlsverify",
+      "KEBAB": "insecure-skip-tls-verify",
+      "PASCAL": "InsecureSkipTLSVerify",
+      "PASCAL_CAPITALIZED": "InsecureSkipTlsVerify",
+      "SCREAMING_SNAKE": "INSECURE_SKIP_TLS_VERIFY",
+      "SNAKE": "insecure_skip_tls_verify"
+    }
+  },
+  {
+    "input": "sshfsVolume",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "SSHFS",
+        "suffix": "",
+        "capitalized": "Sshfs"
+      },
+      {
+        "kind": "WORD",
+        "text": "volume",
+        "suffix": "",
+        "capitalized": "Volume"
+      }
+    ],
+    "formats": {
+      "CAMEL": "sshfsVolume",
+      "CAMEL_CAPITALIZED": "sshfsVolume",
+      "FLAT": "sshfsvolume",
+      "KEBAB": "sshfs-volume",
+      "PASCAL": "SSHFSVolume",
+      "PASCAL_CAPITALIZED": "SshfsVolume",
+      "SCREAMING_SNAKE": "SSHFS_VOLUME",
+      "SNAKE": "sshfs_volume"
+    }
+  }
+]
