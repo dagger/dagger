@@ -14,7 +14,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/iancoleman/strcase"
 )
 
 const (
@@ -230,7 +229,7 @@ func (provider *Provider) instantiate(ctx context.Context) (*instance, error) {
 
 	var object dagql.AnyObjectResult
 	if err := dag.Select(ctx, dag.Root(), &object, dagql.Selector{
-		Field: strcase.ToLowerCamel(provider.mod.Self().Name()),
+		Field: provider.mod.Self().ConstructorName(),
 	}); err != nil {
 		return nil, fmt.Errorf("construct SDK module %q: %w", provider.mod.Self().Name(), err)
 	}
@@ -336,7 +335,7 @@ func implementedFunctions(mod *core.Module) map[string]*core.Function {
 		return functions
 	}
 	for _, fn := range main.Functions {
-		name := strcase.ToLowerCamel(fn.Self().Name)
+		name := mod.Namer().FieldName(fn.Self().Name)
 		switch name {
 		case findClientRootFunction, generateScopeFunction, defaultModulePathFunction:
 			functions[name] = fn.Self()

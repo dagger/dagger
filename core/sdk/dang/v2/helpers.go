@@ -16,7 +16,6 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/iancoleman/strcase"
 
 	"github.com/dagger/dagger/core"
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
@@ -38,8 +37,9 @@ type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
 // to the namespaced names present in its runtime schema (e.g. "ModuleAOverlay")
 // when marshaling received values back into GraphQL queries.
 type dangModule struct {
-	name         string // installed, namespaced module name
-	originalName string // module name as written in source
+	name         string     // installed, namespaced module name
+	originalName string     // module name as written in source
+	namer        core.Namer // the naming rules of the module's engine version
 }
 
 func (r *runtime) eval(
@@ -67,7 +67,7 @@ func (r *runtime) eval(
 		}
 
 		self := moduleContext.Self()
-		module := dangModule{name: self.Name(), originalName: self.OriginalName}
+		module := dangModule{name: self.Name(), originalName: self.OriginalName, namer: self.Namer()}
 
 		result, err := callDangFunction(ctx, env, fnCall, module)
 		if err != nil {
@@ -94,6 +94,10 @@ func evalDangSource(
 	runSource dangSourceRunner,
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
+	if src := modSource.Self(); src != nil {
+		// Name the module's typedefs by the rules of its engine version.
+		ctx = dangshared.WithModuleNaming(ctx, src.EngineVersion)
+	}
 	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, inertAttachables, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		var intro introspection.Response
 		f, err := schemaFile.Self().Open(ctx, dagql.ObjectResult[*core.File]{Result: schemaFile})
@@ -305,8 +309,9 @@ func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource,
 		return
 	}
 
-	for _, localName := range moduleDeclaredTypeNames(modSrcDir, moduleName) {
-		schemaName := core.NamespaceObject(localName, moduleName, src.ModuleOriginalName)
+	namer := core.NamerForEngineVersion(src.EngineVersion)
+	for _, localName := range moduleDeclaredTypeNames(namer, modSrcDir, moduleName) {
+		schemaName := namer.NamespaceObject(localName, moduleName, src.ModuleOriginalName)
 		if schema.Types.Get(schemaName) != nil {
 			continue
 		}
@@ -337,7 +342,7 @@ func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource,
 // source can't be parsed, so the common case keeps working. Parsing here is
 // best-effort: it drives name resolution only, and any genuine syntax error
 // surfaces later when the source is actually declared/run.
-func moduleDeclaredTypeNames(modSrcDir, moduleName string) []string {
+func moduleDeclaredTypeNames(namer core.Namer, modSrcDir, moduleName string) []string {
 	seen := map[string]struct{}{}
 	var names []string
 	add := func(name string) {
@@ -355,7 +360,7 @@ func moduleDeclaredTypeNames(modSrcDir, moduleName string) []string {
 	// case); NamespaceObject collapses it to the module's final name. Seed it
 	// unconditionally so a self-call returning the main type resolves even if
 	// the rest of the source fails to parse.
-	add(strcase.ToCamel(moduleName))
+	add(namer.ObjectName(moduleName))
 
 	entries, err := os.ReadDir(modSrcDir)
 	if err != nil {
@@ -822,7 +827,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name
 		})
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create function: %w", err)
 	}
 
@@ -1077,7 +1082,7 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 		}
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create object typedef: %w", err)
 	}
 	if localTypes.contains(classMod) {
@@ -1185,7 +1190,7 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 		return res, fmt.Errorf("unknown type: %T: %s", dangType, dangType)
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to select typedef: %w", err)
 	}
 	if mod, ok := dangType.(*dang.Type); ok && localTypes.contains(mod) {
@@ -1220,7 +1225,7 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 		})
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create enum typedef: %w", err)
 	}
 	if mod, ok := enumMod.Mod.(*dang.Type); ok && localTypes.contains(mod) {
@@ -1292,7 +1297,7 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 		}
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create interface typedef: %w", err)
 	}
 	if localTypes.contains(mod) {
@@ -1438,7 +1443,7 @@ func (c dangConverter) schemaTypeName(schema *introspection.Schema, name string)
 	if schema != nil && schema.Types.Get(name) != nil {
 		return name
 	}
-	namespaced := core.NamespaceObject(name, c.module.name, c.module.originalName)
+	namespaced := c.module.namer.NamespaceObject(name, c.module.name, c.module.originalName)
 	if schema == nil || schema.Types.Get(namespaced) != nil {
 		return namespaced
 	}

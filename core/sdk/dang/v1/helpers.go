@@ -77,6 +77,10 @@ func evalDangSource(
 	runSource dangSourceRunner,
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
+	if src := modSource.Self(); src != nil {
+		// Name the module's typedefs by the rules of its engine version.
+		ctx = dangshared.WithModuleNaming(ctx, src.EngineVersion)
+	}
 	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, inertAttachables, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		var intro introspection.Response
 		f, err := schemaFile.Self().Open(ctx, dagql.ObjectResult[*core.File]{Result: schemaFile})
@@ -513,7 +517,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 		}
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, sels...)...); err != nil {
 		return res, err
 	}
 
@@ -606,7 +610,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name
 		})
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create function: %w", err)
 	}
 
@@ -833,7 +837,7 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 		}
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create object typedef: %w", err)
 	}
 	if localTypes.contains(classMod) {
@@ -939,7 +943,7 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 		return res, fmt.Errorf("unknown type: %T: %s", dangType, dangType)
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to select typedef: %w", err)
 	}
 	if mod, ok := dangType.(*dang.Type); ok && localTypes.contains(mod) {
@@ -974,7 +978,7 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 		})
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create enum typedef: %w", err)
 	}
 	if mod, ok := enumMod.Mod.(*dang.Type); ok && localTypes.contains(mod) {
@@ -1046,7 +1050,7 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 		}
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create interface typedef: %w", err)
 	}
 	if localTypes.contains(mod) {

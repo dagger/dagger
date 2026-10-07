@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core/dotenv"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/naming"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
@@ -198,7 +199,9 @@ func (ef *EnvFile) Namespace(ctx context.Context, prefix string) (*EnvFile, erro
 	return result, nil
 }
 
-// A flexible prefix check, for maximum user convenience
+// A flexible prefix check, for maximum user convenience. The prefix is
+// spelled by both the legacy and the latest naming rules, whichever the
+// module's engine version selects, so either spelling matches.
 func cutFlexPrefix(s, flexPrefix string) (after string, found bool) {
 	for _, toPrefix := range []func(string) string{
 		// lower camel case + underscore. Example: "myApp_"
@@ -211,6 +214,10 @@ func cutFlexPrefix(s, flexPrefix string) (after string, found bool) {
 			}
 			return ts
 		},
+		// The same by the latest naming rules: e2eTests_, e2e_tests_
+		// rather than e2ETests_, e_2_e_tests_.
+		func(s string) string { return LatestNamer.FieldName(s) + "_" },
+		func(s string) string { return LatestNamer.format(s, naming.Snake) + "_" },
 	} {
 		prefix := toPrefix(flexPrefix)
 		if len(s) < len(prefix) {

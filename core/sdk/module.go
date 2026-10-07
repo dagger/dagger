@@ -6,7 +6,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/iancoleman/strcase"
 )
 
 // module is an SDK implemented as module; i.e. every module besides the special case go sdk.
@@ -69,6 +68,14 @@ func (sdk *module) CloneForModuleSource(*core.ModuleSource) core.SDK {
 	return &cp
 }
 
+// argName is the schema name the SDK module gives an argument of one of the
+// SDK interface functions, by the naming rules of its engine version: the
+// introspectionJson argument is introspectionJSON in an SDK module at
+// core.IdentifierNamingVersion or later.
+func (sdk *module) argName(name string) string {
+	return sdk.mod.Self().Namer().ArgName(name)
+}
+
 // RuntimeTrustsCommittedFiles reports whether the SDK runtime can build the
 // module from committed generated files, without the introspection JSON. An
 // SDK declares it by making moduleRuntime's introspectionJson arg optional.
@@ -78,7 +85,7 @@ func (sdk *module) RuntimeTrustsCommittedFiles() bool {
 		return false
 	}
 	for _, arg := range fn.Args {
-		if arg.Self() == nil || arg.Self().Name != introspectionJSONArgName {
+		if arg.Self() == nil || arg.Self().Name != sdk.argName(introspectionJSONArgName) {
 			continue
 		}
 		typeDef := arg.Self().TypeDef
@@ -123,7 +130,7 @@ func (sdk *module) instantiate(ctx context.Context) (*moduleInstance, error) {
 
 	if err := dag.Select(ctx, dag.Root(), &sdkObj,
 		dagql.Selector{
-			Field: gqlFieldName(sdk.mod.Self().Name()),
+			Field: sdk.mod.Self().ConstructorName(),
 			Args:  constructorArgs,
 		},
 	); err != nil {
@@ -340,14 +347,10 @@ func (sdk *module) TargetRuntime(ctx context.Context) (string, error) {
 	return out.String(), nil
 }
 
-func gqlFieldName(name string) string {
-	// gql field name is uncapitalized camel case
-	return strcase.ToLowerCamel(name)
-}
-
 // Return a map of all the functions implemented by the given SDK module.
 func listImplementedFunctions(sdkMod *core.Module) map[string]*core.Function {
 	result := make(map[string]*core.Function)
+	namer := sdkMod.Namer()
 
 	for _, def := range sdkMod.ObjectDefs {
 		// Skip if the object isn't valid.
@@ -357,7 +360,7 @@ func listImplementedFunctions(sdkMod *core.Module) map[string]*core.Function {
 
 		// Skip if it's not the main object.
 		obj := def.Self().AsObject.Value.Self()
-		if gqlFieldName(obj.Name) != gqlFieldName(sdkMod.NameField) {
+		if namer.FieldName(obj.Name) != namer.FieldName(sdkMod.NameField) {
 			continue
 		}
 
@@ -366,7 +369,7 @@ func listImplementedFunctions(sdkMod *core.Module) map[string]*core.Function {
 		for _, fn := range obj.Functions {
 			fnSelf := fn.Self()
 			for _, name := range sdkFunctions {
-				if gqlFieldName(fnSelf.Name) == gqlFieldName(name) {
+				if namer.FieldName(fnSelf.Name) == namer.FieldName(name) {
 					result[name] = fnSelf
 				}
 			}

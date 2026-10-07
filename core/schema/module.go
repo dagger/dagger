@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
@@ -39,6 +40,18 @@ func introspectionDefaultToJSON(literal *string, argSpec dagql.InputSpec) (core.
 }
 
 type moduleSchema struct{}
+
+// typeDefNamingView is the view of the current typedef constructor call. It
+// selects the rules the constructor normalizes the name with: a module's
+// runtime calls with the engine version the module declares (see
+// core.NamerFromContext). Public constructors that delegate to an internal
+// one pass it on, so the internal call normalizes, and caches, the same way.
+func typeDefNamingView(ctx context.Context) call.View {
+	if cur := dagql.CurrentCall(ctx); cur != nil {
+		return cur.View
+	}
+	return ""
+}
 
 var _ SchemaResolvers = &moduleSchema{}
 
@@ -229,24 +242,28 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the input type.`),
 			),
 
+		// The typedef constructors that normalize a name record the caller's
+		// view in their call (View(AllVersion)): it selects the naming rules,
+		// so the cache must keep the results apart. See typeDefNamingView.
 		dagql.Func("__function", s.internalFunction),
-		dagql.Func("__functionArg", s.functionArg),
+		dagql.Func("__functionArg", s.functionArg).View(AllVersion),
 		dagql.Func("__functionArgExact", s.internalFunctionArg),
-		dagql.Func("__fieldTypeDef", s.fieldTypeDef),
+		dagql.Func("__fieldTypeDef", s.fieldTypeDef).View(AllVersion),
 		dagql.Func("__fieldTypeDefExact", s.internalFieldTypeDef),
-		dagql.Func("__enumMemberTypeDef", s.enumMemberTypeDef),
+		dagql.Func("__enumMemberTypeDef", s.enumMemberTypeDef).View(AllVersion),
 		dagql.Func("__enumValueTypeDef", s.enumValueTypeDef),
 		dagql.Func("__listTypeDef", s.listTypeDef),
-		dagql.Func("__objectTypeDef", s.objectTypeDef),
-		dagql.Func("__interfaceTypeDef", s.interfaceTypeDef),
+		dagql.Func("__objectTypeDef", s.objectTypeDef).View(AllVersion),
+		dagql.Func("__interfaceTypeDef", s.interfaceTypeDef).View(AllVersion),
 		dagql.Func("__inputTypeDef", s.inputTypeDef),
-		dagql.Func("__scalarTypeDef", s.scalarTypeDef),
-		dagql.Func("__enumTypeDef", s.enumTypeDef),
+		dagql.Func("__scalarTypeDef", s.scalarTypeDef).View(AllVersion),
+		dagql.Func("__enumTypeDef", s.enumTypeDef).View(AllVersion),
 
 		dagql.Func("generatedCode", s.generatedCode).
 			Doc(`Create a code generation result, given a directory containing the generated code.`),
 
 		dagql.Func("function", s.function).
+			View(AllVersion).
 			Doc(`Creates a function.`).
 			Args(
 				dagql.Arg("name").Doc(`Name of the function, in its original format from the implementation language.`),
@@ -471,6 +488,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 
 		dagql.Func("withArg", s.functionWithArg).
+			View(AllVersion).
 			Doc(`Returns the function with the provided argument`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the argument`),
@@ -528,6 +546,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Sets the kind of the type.`),
 
 		dagql.Func("withScalar", s.typeDefWithScalar).
+			View(AllVersion).
 			Doc(`Returns a TypeDef of kind Scalar with the provided name.`).
 			Args(
 				dagql.Arg("sourceModuleName").Doc(`The module owning this scalar type.`).Internal(),
@@ -537,6 +556,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Returns a TypeDef of kind List with the provided type for its elements.`),
 
 		dagql.Func("withObject", s.typeDefWithObject).
+			View(AllVersion).
 			Doc(`Returns a TypeDef of kind Object with the provided name.`,
 				`Note that an object's fields and functions may be omitted if the
 				intent is only to refer to an object. This is how functions are able to
@@ -546,12 +566,14 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 
 		dagql.Func("withInterface", s.typeDefWithInterface).
+			View(AllVersion).
 			Doc(`Returns a TypeDef of kind Interface with the provided name.`).
 			Args(
 				dagql.Arg("sourceModuleName").Doc(`The module owning this interface type.`).Internal(),
 			),
 
 		dagql.Func("withField", s.typeDefWithObjectField).
+			View(AllVersion).
 			Doc(`Adds a static field for an Object TypeDef, failing if the type is not an object.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the field in the object`),
@@ -568,6 +590,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.`),
 
 		dagql.Func("withEnum", s.typeDefWithEnum).
+			View(AllVersion).
 			Doc(`Returns a TypeDef of kind Enum with the provided name.`,
 				`Note that an enum's values may be omitted if the intent is only to refer to an enum.
 				This is how functions are able to return their own, or any other circular reference.`).
@@ -733,7 +756,7 @@ func (s *moduleSchema) functionArg(ctx context.Context, _ *core.Query, args stru
 			return nil, fmt.Errorf("failed to optionalize arg type: %w", err)
 		}
 	}
-	arg := core.NewFunctionArg(args.Name, typeDef, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultAddress, args.Ignore, args.Deprecated)
+	arg := core.NamerFromContext(ctx).NewFunctionArg(args.Name, typeDef, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultAddress, args.Ignore, args.Deprecated)
 	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
@@ -805,7 +828,7 @@ func (s *moduleSchema) fieldTypeDef(ctx context.Context, _ *core.Query, args str
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode field type: %w", err)
 	}
-	field := core.NewFieldTypeDef(args.Name, typeDef, args.Description, args.Deprecated)
+	field := core.NamerFromContext(ctx).NewFieldTypeDef(args.Name, typeDef, args.Description, args.Deprecated)
 	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
@@ -859,7 +882,7 @@ func (s *moduleSchema) enumMemberTypeDef(ctx context.Context, _ *core.Query, arg
 	if err != nil {
 		return nil, err
 	}
-	return core.NewEnumMemberTypeDef(args.Name, args.Value, args.Description, args.Deprecated, sourceMap), nil
+	return core.NamerFromContext(ctx).NewEnumMemberTypeDef(args.Name, args.Value, args.Description, args.Deprecated, sourceMap), nil
 }
 
 func (s *moduleSchema) enumValueTypeDef(ctx context.Context, _ *core.Query, args struct {
@@ -897,7 +920,7 @@ func (s *moduleSchema) objectTypeDef(ctx context.Context, _ *core.Query, args st
 	Deprecated       *string
 	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.ObjectTypeDef, error) {
-	obj := core.NewObjectTypeDef(args.Name, args.Description, args.Deprecated)
+	obj := core.NamerFromContext(ctx).NewObjectTypeDef(args.Name, args.Description, args.Deprecated)
 	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
@@ -917,7 +940,7 @@ func (s *moduleSchema) interfaceTypeDef(ctx context.Context, _ *core.Query, args
 	SourceMap        dagql.Optional[core.SourceMapID]
 	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.InterfaceTypeDef, error) {
-	iface := core.NewInterfaceTypeDef(args.Name, args.Description)
+	iface := core.NamerFromContext(ctx).NewInterfaceTypeDef(args.Name, args.Description)
 	sourceMap, err := s.loadSourceMapResult(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
@@ -956,7 +979,7 @@ func (s *moduleSchema) scalarTypeDef(ctx context.Context, _ *core.Query, args st
 	Description      string                       `default:""`
 	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.ScalarTypeDef, error) {
-	scalar := core.NewScalarTypeDef(args.Name, args.Description)
+	scalar := core.NamerFromContext(ctx).NewScalarTypeDef(args.Name, args.Description)
 	if args.SourceModuleName.Valid {
 		scalar.SourceModuleName = string(args.SourceModuleName.Value)
 	}
@@ -973,7 +996,7 @@ func (s *moduleSchema) enumTypeDef(ctx context.Context, _ *core.Query, args stru
 	if err != nil {
 		return nil, err
 	}
-	enum := core.NewEnumTypeDef(args.Name, args.Description, sourceMap)
+	enum := core.NamerFromContext(ctx).NewEnumTypeDef(args.Name, args.Description, sourceMap)
 	if args.SourceModuleName.Valid {
 		enum.SourceModuleName = string(args.SourceModuleName.Value)
 	}
@@ -1007,6 +1030,7 @@ func (s *moduleSchema) typeDefWithScalar(ctx context.Context, def *core.TypeDef,
 	var scalar dagql.ObjectResult[*core.ScalarTypeDef]
 	if err := dag.Select(ctx, dag.Root(), &scalar, dagql.Selector{
 		Field: "__scalarTypeDef",
+		View:  typeDefNamingView(ctx),
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(args.Name)},
 			{Name: "description", Value: dagql.String(args.Description)},
@@ -1067,6 +1091,7 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 	var obj dagql.ObjectResult[*core.ObjectTypeDef]
 	if err := dag.Select(ctx, dag.Root(), &obj, dagql.Selector{
 		Field: "__objectTypeDef",
+		View:  typeDefNamingView(ctx),
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(args.Name)},
 			{Name: "description", Value: dagql.String(args.Description)},
@@ -1101,6 +1126,7 @@ func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeD
 	var iface dagql.ObjectResult[*core.InterfaceTypeDef]
 	if err := dag.Select(ctx, dag.Root(), &iface, dagql.Selector{
 		Field: "__interfaceTypeDef",
+		View:  typeDefNamingView(ctx),
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(args.Name)},
 			{Name: "description", Value: dagql.String(args.Description)},
@@ -1140,6 +1166,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	var field dagql.ObjectResult[*core.FieldTypeDef]
 	if err := dag.Select(ctx, dag.Root(), &field, dagql.Selector{
 		Field: "__fieldTypeDef",
+		View:  typeDefNamingView(ctx),
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(args.Name)},
 			{Name: "typeDef", Value: dagql.NewID[*core.TypeDef](fieldTypeID)},
@@ -1244,6 +1271,7 @@ func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, a
 	var enum dagql.ObjectResult[*core.EnumTypeDef]
 	if err := dag.Select(ctx, dag.Root(), &enum, dagql.Selector{
 		Field: "__enumTypeDef",
+		View:  typeDefNamingView(ctx),
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(args.Name)},
 			{Name: "description", Value: dagql.String(args.Description)},
@@ -1339,6 +1367,7 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 	var member dagql.ObjectResult[*core.EnumMemberTypeDef]
 	if err := dag.Select(ctx, dag.Root(), &member, dagql.Selector{
 		Field: "__enumMemberTypeDef",
+		View:  typeDefNamingView(ctx),
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(args.Name)},
 			{Name: "value", Value: dagql.String(args.Value)},
@@ -1480,7 +1509,7 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode return type: %w", err)
 	}
-	fn := core.NewFunction(args.Name, returnType)
+	fn := core.NamerFromContext(ctx).NewFunction(args.Name, returnType)
 	if args.SourceModuleName.Valid {
 		fn.SourceModuleName = string(args.SourceModuleName.Value)
 	}
@@ -1654,6 +1683,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	var arg dagql.ObjectResult[*core.FunctionArg]
 	if err := dag.Select(ctx, dag.Root(), &arg, dagql.Selector{
 		Field: "__functionArg",
+		View:  typeDefNamingView(ctx),
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(args.Name)},
 			{Name: "typeDef", Value: dagql.NewID[*core.TypeDef](argTypeID)},

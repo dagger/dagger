@@ -661,7 +661,7 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	if include != nil {
 		result.Selector.Paths = make([]string, 0, len(include))
 		for _, pattern := range include {
-			result.Selector.Paths = append(result.Selector.Paths, core.IncludePattern(pattern))
+			result.Selector.Paths = append(result.Selector.Paths, core.IncludePatterns(pattern)...)
 		}
 	}
 	for i := range include {
@@ -720,9 +720,9 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		if !match {
 			continue
 		}
-		path := node.CommandPath().CliCase()
+		path := node.CommandCLIPath()
 		if len(path) == 0 {
-			path = node.Path().CliCase()
+			path = node.CLIPath()
 		}
 		result.Entries = append(result.Entries, &core.Artifact{
 			ModuleName: node.Path()[0], Path: path, DimensionKeys: []*core.ArtifactDimensionKey{},
