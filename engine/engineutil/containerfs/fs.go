@@ -242,7 +242,10 @@ func (ctrFS *ContainerFS) LookPath(cmd string) (string, error) {
 		execPath := filepath.Join(dir, cmd)
 		stat, err := ctrFS.Stat(execPath)
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
+			// PATH entries under a special mount (e.g. the dagger CLI under
+			// /dev) can't be read from here, so they can't hold cmd either.
+			var specialMountErr *specialMountPathError
+			if errors.Is(err, os.ErrNotExist) || errors.As(err, &specialMountErr) {
 				continue
 			}
 			return "", err
@@ -460,9 +463,19 @@ func (ctrFS *ContainerFS) hostPath(containerPath string) (string, error) {
 	}
 	if hostPath == "" {
 		// happens when the containerPath is under is a special mount (tmpfs, proc, etc.)
-		return "", fmt.Errorf("cannot resolve path %q", containerPath)
+		return "", &specialMountPathError{path: containerPath}
 	}
 	return hostPath, nil
+}
+
+// specialMountPathError is returned for a path under a special mount (tmpfs,
+// proc, etc.), which has no host path to access it through.
+type specialMountPathError struct {
+	path string
+}
+
+func (e *specialMountPathError) Error() string {
+	return fmt.Sprintf("cannot resolve path %q", e.path)
 }
 
 /*
