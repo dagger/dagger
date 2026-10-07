@@ -113,6 +113,15 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatOutputType":          commonFunc.FormatOutputType,
 		"FormatEnum":                funcs.formatEnum,
 		"FormatName":                funcs.formatName,
+		"FormatMethodName":          funcs.formatMethodName,
+		"LegacyMethodName":          funcs.legacyMethodName,
+		"ArgName":                   funcs.argName,
+		"FormatArgName":             funcs.formatArgName,
+		"RenamedArgs":               funcs.renamedArgs,
+		"OptsTypeName":              funcs.optsTypeName,
+		"LegacyOptsTypeName":        funcs.legacyOptsTypeName,
+		"OptsFields":                optsFieldList,
+		"InputFields":               inputFieldList,
 		"QueryToClient":             funcs.queryToClient,
 		"GetOptionalArgs":           funcs.getOptionalArgs,
 		"GetRequiredArgs":           funcs.getRequiredArgs,
@@ -315,16 +324,6 @@ func (funcs typescriptTemplateFuncs) fieldExpectedIDType(field introspection.Fie
 	return ""
 }
 
-// pascalCase converts a type name into PascalCase.
-//
-// We use a custom implementation instead of strcase.ToCamel because
-// strcase.ToCamel doesn't handle transitions between consecutive
-// uppercase letters correctly (e.g. "LLMContentBlockKind" becomes
-// "LlmcontentBlockKind" instead of "LLMContentBlockKind").
-func (funcs typescriptTemplateFuncs) pascalCase(name string) string {
-	return toPascalCase(name)
-}
-
 var (
 	reUpperToUpperLower = regexp.MustCompile(`([A-Z]+)([A-Z][a-z])`)
 	reLowerToUpper      = regexp.MustCompile(`([a-z0-9])([A-Z])`)
@@ -338,6 +337,13 @@ var pascalCaseAcronyms = map[string]string{
 	"LLM": "LLM",
 }
 
+// toPascalCase is the legacy PascalCase converter, used for schemas without
+// identifier words (see pascalCase).
+//
+// It is a custom implementation instead of strcase.ToCamel because
+// strcase.ToCamel doesn't handle transitions between consecutive uppercase
+// letters correctly (e.g. "LLMContentBlockKind" becomes "LlmcontentBlockKind"
+// instead of "LLMContentBlockKind").
 func toPascalCase(s string) string {
 	// Insert word boundaries: "LLMContent" -> "LLM_Content", "blockKind" -> "block_Kind"
 	s = reUpperToUpperLower.ReplaceAllString(s, `${1}_${2}`)
@@ -522,11 +528,6 @@ var jsKeywords = map[string]struct{}{
 	"namespace": {},
 }
 
-// formatEnum formats a GraphQL enum into a TS equivalent
-func (funcs typescriptTemplateFuncs) formatEnum(s string) string {
-	return toPascalCase(s)
-}
-
 // isArgOptional checks if some arg are optional.
 // They are, if all of there InputValues are optional.
 func (funcs typescriptTemplateFuncs) isArgOptional(values introspection.InputValues) bool {
@@ -595,11 +596,11 @@ func (funcs typescriptTemplateFuncs) sortEnumFields(s []introspection.EnumValue)
 	copy := slices.Clone(s)
 
 	slices.SortStableFunc(copy, func(x, y introspection.EnumValue) int {
-		return cmp.Compare(toPascalCase(x.Name), toPascalCase(y.Name))
+		return cmp.Compare(funcs.formatEnum(x.Name), funcs.formatEnum(y.Name))
 	})
 
 	copy = slices.CompactFunc(copy, func(x, y introspection.EnumValue) bool {
-		return toPascalCase(x.Name) == toPascalCase(y.Name)
+		return funcs.formatEnum(x.Name) == funcs.formatEnum(y.Name)
 	})
 
 	return copy
@@ -618,7 +619,7 @@ func (funcs typescriptTemplateFuncs) groupEnumByValue(s []introspection.EnumValu
 	for _, v := range s {
 		value := cmp.Or(v.Directives.EnumValue(), v.Name)
 		if !slices.ContainsFunc(m[value], func(other introspection.EnumValue) bool {
-			return toPascalCase(v.Name) == toPascalCase(other.Name)
+			return funcs.formatEnum(v.Name) == funcs.formatEnum(other.Name)
 		}) {
 			m[value] = append(m[value], v)
 		}
@@ -1113,14 +1114,16 @@ func (funcs typescriptTemplateFuncs) exportedTypeNames(
 
 		add(funcs.exportedTypeName(t))
 
-		// Per-method Opts struct types are exported alongside the object. The
-		// templates name them with the raw (QueryToClient-only) type name.
+		// Per-method Opts struct types are exported alongside the object, with
+		// their deprecated pre-identifier-words aliases.
 		if t.Kind == introspection.TypeKindObject {
 			for _, f := range t.Fields {
 				if len(funcs.getOptionalArgs(f.Args)) == 0 {
 					continue
 				}
-				add(funcs.queryToClient(t.Name) + funcs.pascalCase(f.Name) + "Opts")
+				parent := funcs.queryToClient(t.Name)
+				add(funcs.optsTypeName(parent, f.Name))
+				add(funcs.legacyOptsTypeName(parent, f.Name))
 			}
 		}
 	}

@@ -90,12 +90,13 @@ the `interface X { ... }` block. The dot is an introspection.Field. */ -}}
 	{{- $optionals := GetOptionalArgs .Args -}}
 	{{- $parentName := .ParentObject.Name -}}
 	{{- if eq $parentName "Query" }}{{ $parentName = "Client" }}{{ end -}}
-	{{ .Name | FormatName }}(
+	{{ .Name | FormatMethodName }}(
 		{{- if $required }}{{ template "args" . }}{{ end -}}
 		{{- if $optionals -}}
-			{{- if $required }}, {{ end }}opts?: {{ $parentName }}{{ .Name | PascalCase }}Opts
+			{{- if $required }}, {{ end }}opts?: {{ OptsTypeName $parentName .Name }}
 		{{- end -}}
 	): {{ if Solve . }}Promise<{{ if .TypeRef.IsVoid }}void{{ else }}{{ . | FormatFieldReturnType }}{{ end }}>{{ else }}{{ .TypeRef | FormatOutputType }}{{ end }}
+	{{- template "interface_method_alias" . }}
 {{- end }}
 
 {{- /* `augmentation_method` renders one prototype-assignment statement.
@@ -111,11 +112,11 @@ ESM cycle). The body is shared with the class-field methods. */ -}}
 	{{- $optionals := GetOptionalArgs $field.Args -}}
 	{{- $parentName := $field.ParentObject.Name -}}
 	{{- if eq $parentName "Query" }}{{ $parentName = "Client" }}{{ end -}}
-{{ $parent }}.prototype.{{ $field.Name | FormatName }} = {{ if Solve $field }}async {{ end }}function (this: any
+{{ $parent }}.prototype.{{ $field.Name | FormatMethodName }} = {{ if Solve $field }}async {{ end }}function (this: any
 	{{- /* `this: any` is always the first param, so required args and opts each
 	always need a leading comma. */ -}}
 	{{- if $required -}}, {{ template "args" $field }}{{- end -}}
-	{{- if $optionals -}}, opts?: {{ $parentName }}{{ $field.Name | PascalCase }}Opts{{- end -}}
+	{{- if $optionals -}}, opts?: {{ OptsTypeName $parentName $field.Name }}{{- end -}}
 ){{ if Solve $field }}: Promise<{{ if $field.TypeRef.IsVoid }}void{{ else }}{{ $field | FormatFieldReturnType }}{{ end }}>{{ else }}: {{ $field.TypeRef | FormatOutputType }}{{ end }} {
 	{{- if Solve $field }}
 	{{- template "method_solve_body" $field }}
@@ -123,4 +124,11 @@ ESM cycle). The body is shared with the class-field methods. */ -}}
 	{{- template "method_body" $field }}
 	{{- end }}
 }
+	{{- $name := $field.Name | FormatMethodName }}
+	{{- $legacy := $field.Name | LegacyMethodName }}
+	{{- if ne $name $legacy }}
+{{ $parent }}.prototype.{{ $legacy }} = function (this: any, ...args: any[]) {
+  return this.{{ $name }}(...args)
+}
+	{{- end }}
 {{- end }}
