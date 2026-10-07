@@ -27,7 +27,7 @@ package core
 		{{- end -}}
 		{{- range $arg := $field.Args -}}
 		{{- if not (IsArgOptional $arg) -}}
-		{{ $arg.Name | FormatParamName }},
+		{{ $arg.Name | FormatArgName }},
 		{{- end -}}
 		{{- end -}}
 		{{- if HasOptionals $field.Args -}}
@@ -35,6 +35,10 @@ package core
 		{{- end -}}
 	)
 }
+{{- with FieldLegacyWrapper $field true $supportsVoid "" }}
+
+{{ . }}
+{{- end }}
 
 {{ end }}
 {{- end }}

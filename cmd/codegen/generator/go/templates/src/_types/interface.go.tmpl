@@ -74,6 +74,11 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- end }}
 	{{- end }}
 }
+{{- with $field | LegacyFieldOptionsName }}
+
+// Deprecated: use {{ $field | FieldOptionsStructName }} instead.
+type {{ . }} = {{ $field | FieldOptionsStructName }}
+{{- end }}
 
 {{- end }}
 
@@ -89,7 +94,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- range $arg := $field.Args }}
 	    {{- if and (IsPointer $arg) (not (IsArgOptional $arg)) }}
-        assertNotNil("{{ $arg.Name}}", {{ $arg.Name | FormatParamName }})
+        assertNotNil("{{ $arg.Name}}", {{ $arg.Name | FormatArgName }})
         {{- end }}
     {{- end }}
 
@@ -119,7 +124,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 
 	{{- range $arg := $field.Args }}
 	{{- if not (IsArgOptional $arg) }}
-	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name | FormatParamName }})
+	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name | FormatArgName }})
 	{{- end }}
 	{{- end }}
 	{{- $typeName := $field.TypeRef | FormatOutputType }}
@@ -220,6 +225,10 @@ type {{ $field | FieldOptionsStructName }} struct {
 		{{- end }}
 	{{- end }}
 }
+{{- with InterfaceClientLegacyWrapper $.Name $field }}
+
+{{ . }}
+{{- end }}
 
 {{ if eq $field.Name "id" }}
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name

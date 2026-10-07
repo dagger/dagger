@@ -91,6 +91,11 @@ const (
 			{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- end }}
 	{{- end }}
+	{{- range $legacy := LegacyEnumValueNames $ (index $fields 0) }}
+
+		// Deprecated: use {{ $mainFieldName }} instead.
+		{{ $legacy }} {{ $enumName }} = {{ $mainFieldName }}
+	{{- end }}
 
 	{{ end }}
 )
