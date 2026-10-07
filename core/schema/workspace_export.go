@@ -166,7 +166,22 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 	if err != nil {
 		return err
 	}
-	composeCtx, composeSpan := core.Tracer(ctx).Start(ctx, "compose workspace export destination", telemetry.Internal())
+	composeCtx := ctx
+	if base.Self() == nil {
+		// Without an owned base, composition reconstructs the destination from
+		// its origin. Like a snapshot, capturing the caller's own checkout
+		// authorizes preparing an agent for an SSH origin when none is running;
+		// otherwise reconstruction fails without an SSH socket.
+		caller, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return err
+		}
+		composeCtx, err = withCapturedCheckoutSSHAuth(ctx, bk, caller, metadata.RemoteUrl)
+		if err != nil {
+			return fmt.Errorf("prepare workspace export SSH authentication: %w", err)
+		}
+	}
+	composeCtx, composeSpan := core.Tracer(composeCtx).Start(composeCtx, "compose workspace export destination", telemetry.Internal())
 	destination, err := s.checkpointCapturedGitCompositionWithBase(composeCtx, srv, captured, metadata, bundle, "", base)
 	telemetry.EndWithCause(composeSpan, &err)
 	if err != nil {

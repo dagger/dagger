@@ -1018,6 +1018,27 @@ sleep infinity
 			require.Contains(t, stderr, "SSH URLs are not supported without an SSH socket")
 		})
 	}
+
+	// Saving commits back to the checkout (ctrl+s in `dagger agent`) captures
+	// the checkout again as the export destination and reconstructs it from
+	// the same SSH origin, so that capture must prepare an agent from the
+	// identity file too.
+	t.Run("export with identity file", func(ctx context.Context, t *testctx.T) {
+		exported := checkout.
+			WithExec([]string{"git", "checkout", "--", "README.md"}).
+			With(daggerShellNoMod(`ws=$(current-workspace | snapshot | with-new-file exported.txt exported)
+$ws | with-commit --changes $($ws | git | uncommitted) --message "export over SSH" --date 2026-09-05T12:00:00Z | export
+`))
+		subject, err := exported.WithExec([]string{"git", "log", "-1", "--format=%s"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "export over SSH", strings.TrimSpace(subject))
+		parent, err := exported.WithExec([]string{"git", "rev-parse", "HEAD~1"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(localSHA), strings.TrimSpace(parent))
+		contents, err := exported.File("/checkout/exported.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "exported", contents)
+	})
 }
 
 // TestSSHAuthSockResumeFromCheckout resumes a session, as `dagger agent
