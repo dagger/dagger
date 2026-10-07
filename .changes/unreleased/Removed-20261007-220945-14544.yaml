@@ -1,0 +1,6 @@
+kind: Removed
+body: The engine no longer bundles QEMU emulators for mips64, mips64el and loongarch64. Only `linux/mips64` was reachable before; running it now needs binfmt_misc emulation registered on the host.
+time: 2026-10-07T22:09:45Z
+custom:
+    Author: sipsma
+    PR: "14544"

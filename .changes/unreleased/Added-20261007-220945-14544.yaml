@@ -1,0 +1,6 @@
+kind: Added
+body: Containers with Dagger-in-Dagger nesting enabled, the default, now have the engine's own `dagger` CLI available, mounted read-only at `/dev/.dagger/dagger` and appended to `PATH`. This also works in emulated containers of another architecture.
+time: 2026-10-07T22:09:45Z
+custom:
+    Author: sipsma
+    PR: "14544"
