@@ -36,7 +36,7 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 	dag, err := coreSchemaBase.Fork(ctx, root, "")
 	require.NoError(t, err)
 
-	gotBytes, err := getSchemaJSON(nil, nil, baseSchemaView(), dag)
+	gotBytes, err := getSchemaJSON(ctx, nil, nil, baseSchemaView(), dag)
 	require.NoError(t, err)
 	var got strings.Builder
 	sdl.Format(&got, decodeSchemaResponse(t, gotBytes).Schema)
@@ -63,7 +63,7 @@ func TestGitBundleSchema(t *testing.T) {
 	require.NoError(t, err)
 	dag, err := coreSchemaBase.Fork(ctx, root, "v1.0.0")
 	require.NoError(t, err)
-	fullJSON, err := getSchemaJSON(nil, nil, dag.View, dag)
+	fullJSON, err := getSchemaJSON(ctx, nil, nil, dag.View, dag)
 	require.NoError(t, err)
 	schema := decodeSchemaResponse(t, fullJSON).Schema
 
@@ -112,7 +112,7 @@ func TestWorkspaceSnapshotSchema(t *testing.T) {
 	for _, view := range []call.View{baseSchemaView(), "v1.0.0"} {
 		dag, err := base.Fork(ctx, core.NewRoot(srv), view)
 		require.NoError(t, err)
-		data, err := getSchemaJSON(nil, nil, view, dag)
+		data, err := getSchemaJSON(ctx, nil, nil, view, dag)
 		require.NoError(t, err)
 		ws := decodeSchemaResponse(t, data).Schema.Types.Get("Workspace")
 		if ws == nil {
@@ -150,7 +150,7 @@ func TestWorkspaceClientSDKSchema(t *testing.T) {
 	for _, view := range []call.View{baseSchemaView(), "v1.0.0"} {
 		dag, err := base.Fork(ctx, root, view)
 		require.NoError(t, err)
-		data, err := getSchemaJSON(nil, nil, view, dag)
+		data, err := getSchemaJSON(ctx, nil, nil, view, dag)
 		require.NoError(t, err)
 		ws := decodeSchemaResponse(t, data).Schema.Types.Get("Workspace")
 		if view == baseSchemaView() {
@@ -201,7 +201,7 @@ func TestSchemaJSONScrubbing(t *testing.T) {
 		}).Args(dagql.Arg("workspace")),
 	}.Install(dag)
 
-	fullJSON, err := getSchemaJSON(nil, nil, dag.View, dag)
+	fullJSON, err := getSchemaJSON(ctx, nil, nil, dag.View, dag)
 	require.NoError(t, err)
 	full := decodeSchemaResponse(t, fullJSON)
 	require.NotNil(t, schemaField(full.Schema.Query(), "currentWorkspace"))
@@ -217,6 +217,7 @@ func TestSchemaJSONScrubbing(t *testing.T) {
 			moduleHiddenTypes = append(moduleHiddenTypes, typed.Type().Name())
 		}
 		moduleJSON, err := getSchemaJSON(
+			ctx,
 			moduleHiddenTypes,
 			core.FieldsToIgnoreForModuleIntrospection,
 			dag.View,
@@ -241,7 +242,7 @@ func TestSchemaJSONScrubbing(t *testing.T) {
 	})
 
 	t.Run("individual field", func(t *testing.T) {
-		scrubbedJSON, err := getSchemaJSON(nil, []string{"Query.currentWorkspace"}, dag.View, dag)
+		scrubbedJSON, err := getSchemaJSON(ctx, nil, []string{"Query.currentWorkspace"}, dag.View, dag)
 		require.NoError(t, err)
 		require.NotEqual(t, fullJSON, scrubbedJSON)
 
@@ -253,9 +254,9 @@ func TestSchemaJSONScrubbing(t *testing.T) {
 	})
 
 	t.Run("different fields", func(t *testing.T) {
-		currentWorkspaceJSON, err := getSchemaJSON(nil, []string{"Query.currentWorkspace"}, dag.View, dag)
+		currentWorkspaceJSON, err := getSchemaJSON(ctx, nil, []string{"Query.currentWorkspace"}, dag.View, dag)
 		require.NoError(t, err)
-		versionJSON, err := getSchemaJSON(nil, []string{"Query.version"}, dag.View, dag)
+		versionJSON, err := getSchemaJSON(ctx, nil, []string{"Query.version"}, dag.View, dag)
 		require.NoError(t, err)
 		require.NotEqual(t, currentWorkspaceJSON, versionJSON)
 
@@ -265,7 +266,7 @@ func TestSchemaJSONScrubbing(t *testing.T) {
 	})
 
 	t.Run("whole type", func(t *testing.T) {
-		scrubbedJSON, err := getSchemaJSON([]string{"Host"}, nil, dag.View, dag)
+		scrubbedJSON, err := getSchemaJSON(ctx, []string{"Host"}, nil, dag.View, dag)
 		require.NoError(t, err)
 		scrubbed := decodeSchemaResponse(t, scrubbedJSON)
 
@@ -275,7 +276,7 @@ func TestSchemaJSONScrubbing(t *testing.T) {
 	})
 
 	t.Run("invalid field", func(t *testing.T) {
-		_, err := getSchemaJSON(nil, []string{"currentWorkspace"}, dag.View, dag)
+		_, err := getSchemaJSON(ctx, nil, []string{"currentWorkspace"}, dag.View, dag)
 		require.EqualError(t, err, `invalid hidden field "currentWorkspace": expected Type.field`)
 	})
 }
@@ -466,7 +467,7 @@ func TestVolumeConstructorsHiddenFromModuleSchema(t *testing.T) {
 	for _, typed := range core.TypesHiddenFromModuleSDKs {
 		hiddenTypes = append(hiddenTypes, typed.Type().Name())
 	}
-	moduleBytes, err := getSchemaJSON(hiddenTypes, core.FieldsToIgnoreForModuleIntrospection, "", dag)
+	moduleBytes, err := getSchemaJSON(ctx, hiddenTypes, core.FieldsToIgnoreForModuleIntrospection, "", dag)
 	require.NoError(t, err)
 	moduleSchema := decodeSchemaResponse(t, moduleBytes).Schema
 
@@ -476,7 +477,7 @@ func TestVolumeConstructorsHiddenFromModuleSchema(t *testing.T) {
 	require.Nil(t, schemaField(moduleSchema.Query(), "sshfsVolume"))
 	require.Nil(t, schemaField(moduleSchema.Types.Get("Address"), "volume"))
 
-	clientBytes, err := getSchemaJSON(nil, nil, "", dag)
+	clientBytes, err := getSchemaJSON(ctx, nil, nil, "", dag)
 	require.NoError(t, err)
 	clientSchema := decodeSchemaResponse(t, clientBytes).Schema
 	require.NotNil(t, clientSchema.Types.Get("Volume"))
@@ -503,7 +504,7 @@ func TestSchemaJSONRejectsInvalidHiddenFields(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, hiddenField := range []string{"NoDot", "Query.", ".sshfsVolume"} {
-		_, err := getSchemaJSON(nil, []string{hiddenField}, "", dag)
+		_, err := getSchemaJSON(ctx, nil, []string{hiddenField}, "", dag)
 		require.Error(t, err, hiddenField)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/engine/naming"
 )
 
 // Schema is a manipulable, in-memory GraphQL introspection schema. It wraps
@@ -110,6 +111,18 @@ func (s *Schema) Merge(moduleTypes JSON, moduleName string) (*Schema, error) {
 		return nil, err
 	}
 	return &Schema{Introspection: merged}, nil
+}
+
+// AddIdentifiers parses every name in the schema that has no identifier
+// words yet with dict, such as the names a Merge added. A schema without
+// identifier words (from an engine version before identifier words) is left
+// without them.
+func (s *Schema) AddIdentifiers(dict *naming.Dictionary) {
+	schema := s.Introspection.Schema
+	if schema.Identifiers == nil {
+		return
+	}
+	schema.Identifiers.AddSchema(dict, schema)
 }
 
 // isModuleDefinedType reports whether t is a type a module can contribute to a

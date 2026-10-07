@@ -224,6 +224,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		&llmSchema{},
 		&agentSchema{},
 		&jsonvalueSchema{},
+		&identifierSchema{},
 		&schemaToolsSchema{},
 		&envfileSchema{},
 		&addressSchema{},

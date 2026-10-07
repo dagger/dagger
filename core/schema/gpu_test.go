@@ -26,8 +26,8 @@ func TestGPUSchemaVersions(t *testing.T) {
 		{version: "v1.0.0", hasWithGPU: true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
-			_, dag := newNestingTestServer(t, call.View(engine.APIViewVersion(tc.version)))
-			data, err := getSchemaJSON(nil, nil, dag.View, dag)
+			ctx, dag := newNestingTestServer(t, call.View(engine.APIViewVersion(tc.version)))
+			data, err := getSchemaJSON(ctx, nil, nil, dag.View, dag)
 			require.NoError(t, err)
 			ctr := decodeSchemaResponse(t, data).Schema.Types.Get("Container")
 			require.NotNil(t, ctr)

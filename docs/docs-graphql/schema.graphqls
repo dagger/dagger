@@ -70,6 +70,15 @@ directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int
 """Indicates that this function returns a service for dagger up."""
 directive @up on FIELD_DEFINITION
 
+"""How acronyms and terms are written where a word starts with a capital."""
+enum AcronymStyle {
+  """HTTPClient, IPv6Address, GitHubRepo"""
+  UPPERCASE
+
+  """HttpClient, Ipv6Address, GitHubRepo"""
+  CAPITALIZED
+}
+
 """
 A standardized address to load containers, directories, secrets, and other
 object types. Address format depends on the type, and is validated at type
@@ -841,6 +850,27 @@ enum CacheSharingMode {
 type CacheVolume implements Node {
   """A unique identifier for this CacheVolume."""
   id: ID!
+}
+
+"""A convention for joining words into an identifier."""
+enum Casing {
+  """HTTPClient"""
+  PASCAL
+
+  """httpClient"""
+  CAMEL
+
+  """http_client"""
+  SNAKE
+
+  """HTTP_CLIENT"""
+  SCREAMING_SNAKE
+
+  """http-client"""
+  KEBAB
+
+  """httpclient (output only: drops word boundaries)"""
+  FLAT
 }
 
 """
@@ -4521,6 +4551,57 @@ type Host implements Node {
   ): Container!
 }
 
+"""A name parsed into words, which can be formatted in any casing."""
+type Identifier implements Node {
+  """A unique identifier for this Identifier."""
+  id: ID!
+
+  """Format the identifier in a casing."""
+  format(
+    """The casing to format the identifier in."""
+    casing: Casing!
+
+    """How to write acronyms and terms where a word starts with a capital."""
+    acronyms: AcronymStyle = UPPERCASE
+  ): String!
+
+  """The name as given."""
+  name: String!
+
+  """The words that make up the name, in order."""
+  words: [IdentifierWord!]!
+}
+
+"""One word of an identifier."""
+type IdentifierWord implements Node {
+  """A unique identifier for this IdentifierWord."""
+  id: ID!
+
+  """The dictionary entry this word matched, if any."""
+  term: NamingTerm
+
+  """Standard spelling: "client" (WORD), "HTTP" (ACRONYM), "GitHub" (TERM)."""
+  text: String!
+
+  """A plural "s" and/or trailing digits: SHA+"s", OAuth+"2"."""
+  suffix: String!
+
+  """The kind of word."""
+  kind: IdentifierWordKind!
+}
+
+"""The kind of a word in an identifier."""
+enum IdentifierWordKind {
+  """An ordinary word."""
+  WORD
+
+  """An acronym, from the dictionary or a run of capitals."""
+  ACRONYM
+
+  """A dictionary term with a fixed mixed-case spelling (GitHub, IPv6)."""
+  TERM
+}
+
 """Compression algorithm to use for image layers."""
 enum ImageLayerCompression {
   Gzip
@@ -5808,6 +5889,18 @@ enum ModuleSourceKind {
   DIR @enumValue(value: "DIR_SOURCE")
 }
 
+"""An entry in the naming dictionary."""
+type NamingTerm implements Node {
+  """A unique identifier for this NamingTerm."""
+  id: ID!
+
+  """Standard spelling: "HTTP", "IPv6", "GitHub", "iOS"."""
+  spelling: String!
+
+  """Spelling in the CAPITALIZED style: "Http", "Ipv6", "GitHub", "Ios"."""
+  capitalized: String!
+}
+
 """Transport layer network protocol associated to a port."""
 enum NetworkProtocol {
   TCP
@@ -6304,6 +6397,33 @@ type Query implements Node {
 
   """Initialize a JSON value"""
   json: JSONValue!
+
+  """
+  Parse a name in any casing into words.
+
+  Known acronyms and terms come from the naming dictionary; everything else
+  falls back to the case heuristic. Errors on non-ASCII input or input with no
+  letters or digits.
+  """
+  identifier(
+    """The name to parse."""
+    name: String!
+  ): Identifier! @experimental(reason: "Identifier casing APIs are likely to change.")
+
+  """Format many names at once, for codegen. Returns them in input order."""
+  formatIdentifiers(
+    """The names to format, in any casing."""
+    names: [String!]!
+
+    """The casing to format the names in."""
+    casing: Casing!
+
+    """How to write acronyms and terms where a word starts with a capital."""
+    acronyms: AcronymStyle = UPPERCASE
+  ): [String!]! @experimental(reason: "Identifier casing APIs are likely to change.")
+
+  """The acronyms and terms used to parse and format identifiers."""
+  namingDictionary: [NamingTerm!]! @experimental(reason: "Identifier casing APIs are likely to change.")
 
   """Load a GraphQL introspection schema for merging."""
   schema(
