@@ -39,7 +39,7 @@ func (WorkspaceSuite) TestDoctorCLI(ctx context.Context, t *testctx.T) {
 				ctr = ctr.WithNewFile("/work/dagger.lock", tc.lock)
 			}
 			out, err := ctr.WithExec(append([]string{"dagger", "--progress=plain"}, tc.command...), dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true, Expect: tc.expect,
+				Expect: tc.expect,
 			}).Stderr(ctx)
 			require.NoError(t, err)
 			out = ansi.Strip(out)
