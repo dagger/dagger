@@ -8,6 +8,7 @@ type ElixirClientDev {
     @ignorePatterns(patterns: [
       "*",
       "!sdk/elixir",
+      "!engine/naming/testdata/vectors.json",
     ])
 
   pub sourcePath: String! = "sdk/elixir"
@@ -184,6 +185,12 @@ type ElixirClientDev {
 
   let withCodegen(ctr: Container!): Container! {
     ctr
+      # Shared identifier test vectors, for the codegen tests.
+      .withMountedFile(
+        "/engine/naming/testdata/vectors.json",
+        workspaceDir.file("engine/naming/testdata/vectors.json"),
+      )
+      .withEnvVariable("DAGGER_NAMING_VECTORS", "/engine/naming/testdata/vectors.json")
       .withWorkdir("dagger_codegen")
       .withExec(["mix", "deps.get"])
   }
