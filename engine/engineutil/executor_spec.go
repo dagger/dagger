@@ -27,6 +27,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	"github.com/dagger/dagger/engine/engineutil/resources"
 	"github.com/dagger/dagger/engine/slog"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
@@ -1463,22 +1464,53 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	trace.SpanFromContext(ctx).AddEvent("Container created")
 
+	cgroupPath := state.spec.Linux.CgroupsPath
+	readWorkloads := enginetel.HasWorkloadReadings(ctx)
+	hasCallDigest := state.execMD != nil && state.execMD.CallDigest != ""
+	sampleCgroup := cgroupPath != "" && (hasCallDigest || readWorkloads)
+
+	// Reserve the workload's network counters before runc starts it, so its
+	// first packet counts. Cleanups run in reverse, so the release runs after
+	// the sampler's final sample and after runc deletes the container.
+	var workloadNetwork *nettracer.Workload
+	if tracer := nettracer.Active(); tracer != nil && sampleCgroup {
+		path := filepath.Join(cgroupMountpoint, cgroupPath)
+		workload, err := func() (*nettracer.Workload, error) {
+			cookie, err := workloadNetnsCookie(ctx, state)
+			if err != nil {
+				return nil, fmt.Errorf("network namespace cookie: %w", err)
+			}
+			return tracer.Workload(path, cookie)
+		}()
+		if err != nil {
+			bklog.G(ctx).Debugf("workload network accounting unavailable for %s: %s", state.id, err)
+		} else {
+			workloadNetwork = workload
+			state.cleanups.Add("release workload network accounting", func() error {
+				err := workload.Close()
+				// Workload created the cgroup; runc normally removes it, but
+				// not when the container never started.
+				if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) && !errors.Is(rmErr, unix.EBUSY) {
+					err = errors.Join(err, rmErr)
+				}
+				return err
+			})
+		}
+	}
+
 	state.cleanups.Add("runc delete container", func() error {
 		return deleteContainer(ctx, state.id, cgroups.IsCgroup2UnifiedMode(), c.Runc.Delete, func(recoveryCtx context.Context) error {
 			return killContainerCgroup(recoveryCtx, state.id, state.spec.Linux.CgroupsPath)
 		})
 	})
 
-	cgroupPath := state.spec.Linux.CgroupsPath
 	// Wake the existing sampler when runc starts. The cgroup may not exist at
 	// that point; the final cleanup sample also covers short executions.
 	var readingsStarted chan struct{}
-	readWorkloads := enginetel.HasWorkloadReadings(ctx)
 	if readWorkloads {
 		readingsStarted = make(chan struct{})
 	}
-	hasCallDigest := state.execMD != nil && state.execMD.CallDigest != ""
-	if cgroupPath != "" && (hasCallDigest || readWorkloads) {
+	if sampleCgroup {
 		meter := telemetry.Meter(ctx, InstrumentationLibrary)
 		if !hasCallDigest {
 			// Preserve the ordinary path's exclusion of unassociated execs.
@@ -1512,7 +1544,11 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			)
 			ctx = enginetel.WithWorkloadReadingAttributes(ctx, attribute.NewSet(workloadAttrs...))
 		}
-		cgroupSampler, err := resources.NewSampler(cgroupPath, state.networkNamespace, meter, attribute.NewSet(commonAttrs...))
+		var networkSampler resources.BKNetworkSampler = state.networkNamespace
+		if workloadNetwork != nil {
+			networkSampler = workloadNetworkSampler{netNS: state.networkNamespace, workload: workloadNetwork}
+		}
+		cgroupSampler, err := resources.NewSampler(cgroupPath, networkSampler, meter, attribute.NewSet(commonAttrs...))
 		if err != nil {
 			return fmt.Errorf("create cgroup sampler: %w", err)
 		}

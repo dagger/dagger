@@ -1,7 +1,7 @@
 //go:build linux && (386 || amd64 || arm64)
 
-// Package nettracer accounts for engine traffic at cgroup socket-buffer hooks
-// and container traffic at TCX hooks on host-side veths.
+// Package nettracer accounts for engine, subprocess and executor workload
+// traffic at cgroup socket-buffer hooks.
 package nettracer
 
 import (
@@ -37,13 +37,6 @@ const (
 	scopeExternal
 )
 
-type counterKey struct {
-	Ifindex   uint32
-	Direction uint8
-	Scope     uint8
-	Pad       uint16
-}
-
 type ipv4LPMKey struct {
 	PrefixLen uint32
 	Address   uint32
@@ -60,7 +53,7 @@ type cgroupCounterKey struct {
 	Pad       uint16
 }
 
-// Sample is a cumulative snapshot for one veth.
+// Sample is a cumulative snapshot for one workload or subprocess.
 type Sample struct {
 	InternalRX uint64
 	InternalTX uint64
@@ -76,11 +69,16 @@ type EngineSample struct {
 	ExternalTX uint64
 }
 
-// Tracer owns the programs and maps shared by the engine and CNI veths.
+// Tracer owns the programs and maps shared by the engine, its subprocesses
+// and executor workloads.
 type Tracer struct {
 	objs netbytesObjects
 	cpus int
 	mu   sync.Mutex
+
+	workloadMu     sync.Mutex
+	workloadParent string
+	workloadLinks  []link.Link
 
 	cgroupIngress link.Link
 	cgroupEgress  link.Link
@@ -98,8 +96,8 @@ func Active() *Tracer {
 }
 
 func New() (*Tracer, error) {
-	// This SCHED_CLS program does not use CO-RE, so unlike the diagnostic
-	// tracers it does not require kernel BTF.
+	// These cgroup_skb programs do not use CO-RE, so unlike the diagnostic
+	// tracers they do not require kernel BTF.
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return nil, fmt.Errorf("removing memlock limit: %w", err)
 	}
@@ -114,7 +112,7 @@ func New() (*Tracer, error) {
 	}
 	t := &Tracer{objs: objs, cpus: cpus}
 	// IPv6 neighbor discovery and other link-local control traffic never leaves
-	// the CNI link. Keeping these prefixes in the same trie avoids extra parsing
+	// the local link. Keeping these prefixes in the same trie avoids extra parsing
 	// in the packet hot path.
 	for _, prefix := range []netip.Prefix{
 		netip.MustParsePrefix("127.0.0.0/8"),
@@ -126,6 +124,12 @@ func New() (*Tracer, error) {
 		if err := t.AddInternalPrefix(prefix); err != nil {
 			objs.Close()
 			return nil, fmt.Errorf("registering link-local prefix %s: %w", prefix, err)
+		}
+	}
+	for _, entry := range nonPublicPrefixes {
+		if err := t.setNonPublicPrefix(entry.prefix, entry.public); err != nil {
+			objs.Close()
+			return nil, fmt.Errorf("registering non-public prefix %s: %w", entry.prefix, err)
 		}
 	}
 	finishUnavailable := func(err error) (*Tracer, error) {
@@ -174,13 +178,7 @@ func (t *Tracer) configureEngineBoundary(cgroupPath string) error {
 	if err != nil {
 		return err
 	}
-	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
-	if err != nil {
-		return fmt.Errorf("opening engine netns socket: %w", err)
-	}
-	defer unix.Close(fd)
-
-	cookie, err := unix.GetsockoptUint64(fd, unix.SOL_SOCKET, unix.SO_NETNS_COOKIE)
+	cookie, err := CurrentNetnsCookie()
 	if err != nil {
 		return fmt.Errorf("getting engine netns cookie: %w", err)
 	}
@@ -200,6 +198,17 @@ func (t *Tracer) configureEngineBoundary(cgroupPath string) error {
 		return fmt.Errorf("setting engine loopback interface: %w", err)
 	}
 	return nil
+}
+
+// CurrentNetnsCookie returns the cookie of the calling thread's network
+// namespace, as bpf_get_netns_cookie reports it for that namespace's packets.
+func CurrentNetnsCookie() (uint64, error) {
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return 0, fmt.Errorf("opening netns socket: %w", err)
+	}
+	defer unix.Close(fd)
+	return unix.GetsockoptUint64(fd, unix.SOL_SOCKET, unix.SO_NETNS_COOKIE)
 }
 
 // addCurrentNetworkPrefixes discovers the bridge subnet containing the engine
@@ -260,6 +269,7 @@ func (t *Tracer) addCurrentNetworkPrefixes() error {
 func (t *Tracer) Close() error {
 	activeTracer.CompareAndSwap(t, nil)
 	var errs []error
+	errs = append(errs, t.closeWorkloads())
 	if t.commands != nil {
 		errs = append(errs, t.commands.Close())
 	}
@@ -383,126 +393,81 @@ func (t *Tracer) AddInternalPrefix(prefix netip.Prefix) error {
 	return t.objs.InternalV6.Put(ipv6LPMKey{PrefixLen: uint32(prefix.Bits()), Address: addr}, one)
 }
 
-// Attachment accounts for one host-side veth.
-type Attachment struct {
-	tracer  *Tracer
-	ifindex int
-	ingress link.Link
-	egress  link.Link
+// nonPublicPrefixes are the addresses the IANA special-purpose registries
+// mark as not globally reachable, with their globally reachable exceptions
+// (public: true). Traffic from namespaces nested in a workload counts as
+// external only to addresses outside them. Multicast and broadcast are
+// never internet destinations either.
+// https://www.iana.org/assignments/iana-ipv4-special-registry/
+// https://www.iana.org/assignments/iana-ipv6-special-registry/
+var nonPublicPrefixes = []struct {
+	prefix netip.Prefix
+	public bool
+}{
+	{prefix: netip.MustParsePrefix("0.0.0.0/8")},
+	{prefix: netip.MustParsePrefix("10.0.0.0/8")},
+	{prefix: netip.MustParsePrefix("100.64.0.0/10")},
+	{prefix: netip.MustParsePrefix("127.0.0.0/8")},
+	{prefix: netip.MustParsePrefix("169.254.0.0/16")},
+	{prefix: netip.MustParsePrefix("172.16.0.0/12")},
+	{prefix: netip.MustParsePrefix("192.0.0.0/24")},
+	{prefix: netip.MustParsePrefix("192.0.0.9/32"), public: true},
+	{prefix: netip.MustParsePrefix("192.0.0.10/32"), public: true},
+	{prefix: netip.MustParsePrefix("192.0.2.0/24")},
+	{prefix: netip.MustParsePrefix("192.88.99.2/32")},
+	{prefix: netip.MustParsePrefix("192.168.0.0/16")},
+	{prefix: netip.MustParsePrefix("198.18.0.0/15")},
+	{prefix: netip.MustParsePrefix("198.51.100.0/24")},
+	{prefix: netip.MustParsePrefix("203.0.113.0/24")},
+	{prefix: netip.MustParsePrefix("224.0.0.0/4")},
+	{prefix: netip.MustParsePrefix("240.0.0.0/4")},
+	{prefix: netip.MustParsePrefix("::/128")},
+	{prefix: netip.MustParsePrefix("::1/128")},
+	{prefix: netip.MustParsePrefix("::ffff:0:0/96")},
+	{prefix: netip.MustParsePrefix("64:ff9b:1::/48")},
+	{prefix: netip.MustParsePrefix("100::/64")},
+	{prefix: netip.MustParsePrefix("100:0:0:1::/64")},
+	{prefix: netip.MustParsePrefix("2001::/23")},
+	{prefix: netip.MustParsePrefix("2001:1::1/128"), public: true},
+	{prefix: netip.MustParsePrefix("2001:1::2/128"), public: true},
+	{prefix: netip.MustParsePrefix("2001:1::3/128"), public: true},
+	{prefix: netip.MustParsePrefix("2001:3::/32"), public: true},
+	{prefix: netip.MustParsePrefix("2001:4:112::/48"), public: true},
+	{prefix: netip.MustParsePrefix("2001:20::/28"), public: true},
+	{prefix: netip.MustParsePrefix("2001:30::/28"), public: true},
+	{prefix: netip.MustParsePrefix("2001:db8::/32")},
+	{prefix: netip.MustParsePrefix("3fff::/20")},
+	{prefix: netip.MustParsePrefix("5f00::/16")},
+	{prefix: netip.MustParsePrefix("fc00::/7")},
+	{prefix: netip.MustParsePrefix("fe80::/10")},
+	{prefix: netip.MustParsePrefix("ff00::/8")},
 }
 
-func (t *Tracer) Attach(ifindex int) (_ *Attachment, rerr error) {
-	keys, err := t.reserveCounters(ifindex)
-	if err != nil {
-		return nil, fmt.Errorf("reserving counters for interface %d: %w", ifindex, err)
+// setNonPublicPrefix records prefix as not globally reachable, or as a
+// globally reachable exception inside a non-public prefix.
+func (t *Tracer) setNonPublicPrefix(prefix netip.Prefix, public bool) error {
+	value := uint8(1)
+	if public {
+		value = 0
 	}
-	defer func() {
-		if rerr != nil {
-			rerr = errors.Join(rerr, t.deleteCounters(keys))
-		}
-	}()
-
-	ingress, err := link.AttachTCX(link.TCXOptions{
-		Interface: ifindex,
-		Program:   t.objs.CountIngress,
-		Attach:    ebpf.AttachTCXIngress,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("attaching TCX ingress to interface %d: %w", ifindex, err)
+	if prefix.Addr().Is4() {
+		addr := prefix.Addr().As4()
+		key := ipv4LPMKey{PrefixLen: uint32(prefix.Bits()), Address: binary.NativeEndian.Uint32(addr[:])}
+		return t.objs.NonpublicV4.Put(key, value)
 	}
-	defer func() {
-		if rerr != nil {
-			_ = ingress.Close()
-		}
-	}()
-	egress, err := link.AttachTCX(link.TCXOptions{
-		Interface: ifindex,
-		Program:   t.objs.CountEgress,
-		Attach:    ebpf.AttachTCXEgress,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("attaching TCX egress to interface %d: %w", ifindex, err)
-	}
-	return &Attachment{
-		tracer: t, ifindex: ifindex, ingress: ingress, egress: egress,
-	}, nil
+	addr := prefix.Addr().As16()
+	return t.objs.NonpublicV6.Put(ipv6LPMKey{PrefixLen: uint32(prefix.Bits()), Address: addr}, value)
 }
 
-func (t *Tracer) reserveCounters(ifindex int) ([]counterKey, error) {
-	values := make([]uint64, t.cpus)
-	keys := make([]counterKey, 0, 4)
-	for direction := directionRX; direction <= directionTX; direction++ {
-		for scope := scopeInternal; scope <= scopeExternal; scope++ {
-			key := counterKey{
-				Ifindex: uint32(ifindex), Direction: direction, Scope: scope,
-			}
-			if err := t.objs.ByteCounters.Update(key, values, ebpf.UpdateNoExist); err != nil {
-				return nil, errors.Join(err, t.deleteCounters(keys))
-			}
-			keys = append(keys, key)
-		}
-	}
-	return keys, nil
-}
-
-func (t *Tracer) deleteCounters(keys []counterKey) error {
-	var errs []error
-	for _, key := range keys {
-		if err := t.objs.ByteCounters.Delete(key); err != nil &&
-			!errors.Is(err, ebpf.ErrKeyNotExist) {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
-// AttachInterface discovers the interface and its bridge prefixes before
-// attaching the accounting programs. It must be called in the network
-// namespace containing the host-side veth.
-func (t *Tracer) AttachInterface(name string) (*Attachment, error) {
+// AddInternalPrefixesForVeth classifies the addresses of the bridge that
+// the named host-side veth is attached to as internal. It must be called in
+// the network namespace containing the veth.
+func (t *Tracer) AddInternalPrefixesForVeth(name string) error {
 	dev, err := netlink.LinkByName(name)
 	if err != nil {
-		return nil, fmt.Errorf("looking up veth %s: %w", name, err)
+		return fmt.Errorf("looking up veth %s: %w", name, err)
 	}
-	if err := t.AddInternalPrefixesForInterface(dev.Attrs().Index); err != nil {
-		return nil, err
-	}
-	return t.Attach(dev.Attrs().Index)
-}
-
-func (a *Attachment) Sample() (Sample, error) {
-	a.tracer.mu.Lock()
-	defer a.tracer.mu.Unlock()
-	var sample Sample
-	for direction := directionRX; direction <= directionTX; direction++ {
-		for scope := scopeInternal; scope <= scopeExternal; scope++ {
-			key := counterKey{
-				Ifindex: uint32(a.ifindex), Direction: direction, Scope: scope,
-			}
-			values := make([]uint64, a.tracer.cpus)
-			if err := a.tracer.objs.ByteCounters.Lookup(key, &values); err != nil {
-				if errors.Is(err, ebpf.ErrKeyNotExist) {
-					continue
-				}
-				return Sample{}, err
-			}
-			var total uint64
-			for _, value := range values {
-				total += value
-			}
-			switch {
-			case direction == directionRX && scope == scopeInternal:
-				sample.InternalRX = total
-			case direction == directionTX && scope == scopeInternal:
-				sample.InternalTX = total
-			case direction == directionRX && scope == scopeExternal:
-				sample.ExternalRX = total
-			case direction == directionTX && scope == scopeExternal:
-				sample.ExternalTX = total
-			}
-		}
-	}
-	return sample, nil
+	return t.AddInternalPrefixesForInterface(dev.Attrs().Index)
 }
 
 func (t *Tracer) sampleEngine() (EngineSample, error) {
@@ -539,24 +504,4 @@ func (t *Tracer) sampleEngine() (EngineSample, error) {
 		}
 	}
 	return sample, nil
-}
-
-func (a *Attachment) Close() error {
-	var errs []error
-	if a.ingress != nil {
-		errs = append(errs, a.ingress.Close())
-	}
-	if a.egress != nil {
-		errs = append(errs, a.egress.Close())
-	}
-	keys := make([]counterKey, 0, 4)
-	for direction := directionRX; direction <= directionTX; direction++ {
-		for scope := scopeInternal; scope <= scopeExternal; scope++ {
-			keys = append(keys, counterKey{
-				Ifindex: uint32(a.ifindex), Direction: direction, Scope: scope,
-			})
-		}
-	}
-	errs = append(errs, a.tracer.deleteCounters(keys))
-	return errors.Join(errs...)
 }

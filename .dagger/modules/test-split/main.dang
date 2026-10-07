@@ -29,8 +29,12 @@ type TestSplit {
     race: Boolean,
     timeout: String,
     parallel: Int,
+    """
+    Run the privileged eBPF tests (Linux 6.15 or newer)
+    """
+    ebpf: Boolean,
   ): Void {
-    engineDev(ws: self.ws).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    engineDev(ws: self.ws).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   let testCliEngineSpecific(
@@ -327,5 +331,13 @@ type TestSplit {
   """
   pub testWorkspaces: Void @check {
     testSpecific(["TestWorkspace"])
+  }
+
+  """
+  Test eBPF network accounting of engine subprocesses and executor workloads
+  in a privileged test container
+  """
+  pub testEbpf: Void @check {
+    testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$"], pkg: "./engine/ebpf/nettracer", ebpf: true)
   }
 }
