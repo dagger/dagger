@@ -9,6 +9,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
@@ -334,6 +335,111 @@ func requireSpanCarriesCall(t *testing.T, started []sdktrace.ReadWriteSpan, dige
 	require.Len(t, found, 1, "exactly one span for %s", digest)
 	require.Equal(t, field, found[0].Field)
 	require.Equal(t, digest, found[0].Digest)
+}
+
+// blobCall is a Query.blob-shaped call whose frame inlines size bytes of
+// literal argument, the shape that once put a 129 MB attribute on one span.
+func blobCall(size int) *dagql.ResultCall {
+	blob := testResultCall("blob", &Void{}, nil)
+	blob.Args = []*dagql.ResultCallArg{{
+		Name:  "contents",
+		Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindString, StringValue: strings.Repeat("a", size)},
+	}}
+	return blob
+}
+
+// blobCallNear returns the blob call whose encoded span attribute is the
+// largest that is still at most limit bytes.
+func blobCallNear(ctx context.Context, t *testing.T, limit int) (*dagql.ResultCall, int) {
+	t.Helper()
+	encodedLen := func(size int) int {
+		callPB, err := blobCall(size).CallPB(ctx)
+		require.NoError(t, err)
+		encoded, err := callPB.Encode()
+		require.NoError(t, err)
+		return len(encoded)
+	}
+	// base64 makes the encoded length linear in the literal's size, in
+	// steps of 4 per 3 bytes, once the length varints stop growing.
+	size := limit * 3 / 4
+	for range 4 {
+		size += (limit - encodedLen(size)) * 3 / 4
+	}
+	for encodedLen(size) > limit {
+		size--
+	}
+	for encodedLen(size+1) <= limit {
+		size++
+	}
+	return blobCall(size), size
+}
+
+// A span is exported whole and must fit in one OTLP frame, so a frame too
+// large for its span attribute rides the payload log lane instead.
+func TestAroundFuncLogsFramesTooLargeForSpan(t *testing.T) {
+	recorder, ctx := payloadRecorderCtx(t)
+	spans := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(spans))
+	ctx, root := tp.Tracer("large-call-span-test").Start(ctx, "root")
+	t.Cleanup(func() {
+		root.End()
+		require.NoError(t, tp.Shutdown(context.Background()))
+	})
+	payloads := &testSeenKeys{}
+	ctx = ContextWithQuery(ctx, &Query{Server: &payloadRoutingTestServer{
+		mockServer:   &mockServer{},
+		payloadStore: payloads,
+		spanStore:    &testSpanSeenKeys{},
+	}})
+	run := func(call *dagql.ResultCall) string {
+		dgst, err := call.RecipeDigest(ctx)
+		require.NoError(t, err)
+		_, done := AroundFunc(ctx, &dagql.CallRequest{ResultCall: call})
+		var callErr error
+		done(nil, false, &callErr)
+		return dgst.String()
+	}
+
+	under, underSize := blobCallNear(ctx, t, maxSpanCallPayloadBytes)
+	underDigest := run(under)
+	requireSpanCarriesCall(t, spans.Started(), underDigest, "blob")
+	require.Nil(t, recorder.get(underDigest),
+		"a frame within the cap rides its span and must not also be logged")
+
+	overDigest := run(blobCall(underSize + 1))
+	var overSpans int
+	for _, span := range spans.Started() {
+		var spanDigest string
+		var hasCall bool
+		for _, attr := range span.Attributes() {
+			switch string(attr.Key) {
+			case telemetry.DagDigestAttr:
+				spanDigest = attr.Value.AsString()
+			case telemetry.DagCallAttr:
+				hasCall = true
+			}
+		}
+		if spanDigest == overDigest {
+			overSpans++
+			require.False(t, hasCall, "a frame over the cap must not ride its span")
+		}
+	}
+	require.Equal(t, 1, overSpans, "the large call still gets its span")
+
+	var logged []recordedPayload
+	for _, record := range recorder.snapshot() {
+		if record.digestAttr == overDigest {
+			logged = append(logged, record)
+		}
+	}
+	require.Len(t, logged, 1, "a frame over the cap must be logged exactly once")
+	require.NoError(t, logged[0].err)
+	require.Equal(t, otellog.KindBytes, logged[0].bodyKind)
+	require.Equal(t, telemetryattrs.CallPayloadContentType, logged[0].contentType)
+	require.Equal(t, overDigest, logged[0].digest)
+	require.Equal(t, "blob", logged[0].call.Field)
+	require.False(t, payloads.ClaimCallPayload(overDigest),
+		"the logged root stays claimed for the log exporter to settle")
 }
 
 func TestRecordCallPayloadsEmitsTransitiveClosure(t *testing.T) {

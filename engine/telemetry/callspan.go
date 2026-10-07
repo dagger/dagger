@@ -13,6 +13,8 @@ import (
 // copy is the only carrier of a spanned call's frame — the producer claims the
 // digest and skips its payload log — so losing the span loses a frame a
 // client, an archive seal or a Cloud restore may need to rebuild a recipe.
+// Frames too large for a span attribute never get here: the producer leaves
+// them off the span and sends them over the payload log lane instead.
 //
 // It exports both the live start snapshot (as otel.LiveSpanProcessor does,
 // so clients render a call's arguments while it runs) and the end snapshot,
