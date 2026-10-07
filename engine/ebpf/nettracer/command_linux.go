@@ -19,9 +19,8 @@ import (
 	"github.com/cilium/ebpf/link"
 )
 
-// commandAccounting owns sibling subtrees for engine subprocesses, never
-// executor workloads. Its hooks survive individual command cgroups, so late
-// socket traffic still contributes to the engine total after span completion.
+// commandAccounting owns sibling subtrees for engine subprocesses. Exec mount
+// helpers instead attach private hooks below their owning execution.
 type commandAccounting struct {
 	paths   map[string]string
 	links   []link.Link
@@ -77,7 +76,7 @@ func (t *Tracer) newCommandAccounting(parent string) (_ *commandAccounting, rerr
 			}
 		}
 	}()
-	for _, name := range []string{"git", "rg", "sshfs"} {
+	for _, name := range []string{"git", "rg"} {
 		path := filepath.Join(root, name)
 		// Do not attach to a category owned by another engine or left behind
 		// by a live helper. That could mix totals or count traffic twice.
@@ -174,7 +173,7 @@ func (a *commandAccounting) remove(path string) error {
 	defer a.mu.Unlock()
 	err := os.Remove(path)
 	if !a.closed && (errors.Is(err, syscall.EBUSY) || errors.Is(err, syscall.ENOTEMPTY)) {
-		// A helper may outlive its parent (e.g. sshfs). Never kill it just to
+		// A helper may outlive its parent. Never kill it just to
 		// remove an accounting cgroup. Retry after it exits.
 		a.pending[path] = struct{}{}
 		return nil
@@ -209,12 +208,28 @@ type Command struct {
 	id         uint64
 	closeOnce  sync.Once
 	closeErr   error
+	links      []link.Link
 }
 
 // PrepareCommand places a command in its own accounting cgroup at clone time.
 // Call before Start, and Close only after Wait (or after a daemon's lifetime).
 // An error leaves cmd unchanged; callers can run it without network metrics.
 func PrepareCommand(cmd *exec.Cmd) (_ *Command, rerr error) {
+	return prepareCommand(cmd, "", false)
+}
+
+// PrepareCommandIn keeps a mount helper beneath its owning exec. Attach to
+// the helper leaf, not the exec parent: container traffic is counted by TCX.
+func PrepareCommandIn(cmd *exec.Cmd, parent string) (*Command, error) {
+	command, err := prepareCommand(cmd, parent, false)
+	if err != nil {
+		// Preserve CPU/memory placement if loading the leaf BPF hooks fails.
+		return prepareCommand(cmd, parent, true)
+	}
+	return command, nil
+}
+
+func prepareCommand(cmd *exec.Cmd, parent string, withoutNetwork bool) (_ *Command, rerr error) {
 	t := Active()
 	a := fallbackCommands.Load()
 	if t != nil && t.commands != nil {
@@ -225,14 +240,25 @@ func PrepareCommand(cmd *exec.Cmd) (_ *Command, rerr error) {
 	if a == nil {
 		return nil, errors.New("subprocess accounting is unavailable")
 	}
+	if withoutNetwork {
+		t = nil
+	}
 	if cmd.Process != nil || (cmd.SysProcAttr != nil && cmd.SysProcAttr.UseCgroupFD) {
 		return nil, errors.New("command already started or has an assigned cgroup")
 	}
-	parent, ok := a.paths[filepath.Base(cmd.Path)]
-	if !ok {
-		return nil, fmt.Errorf("no accounting cgroup for command %q", cmd.Path)
+	privateParent := parent != ""
+	if !privateParent {
+		var ok bool
+		parent, ok = a.paths[filepath.Base(cmd.Path)]
+		if !ok {
+			return nil, fmt.Errorf("no accounting cgroup for command %q", cmd.Path)
+		}
 	}
-	path, err := os.MkdirTemp(parent, "operation-")
+	prefix := "operation-"
+	if privateParent {
+		prefix = ""
+	}
+	path, err := os.MkdirTemp(parent, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -266,6 +292,28 @@ func PrepareCommand(cmd *exec.Cmd) (_ *Command, rerr error) {
 				return nil, err
 			}
 			reserved = append(reserved, key)
+		}
+		if privateParent {
+			defer func() {
+				if rerr != nil {
+					for _, hook := range c.links {
+						_ = hook.Close()
+					}
+					for _, key := range reserved {
+						_ = t.objs.OperationByteCounters.Delete(key)
+					}
+				}
+			}()
+			for _, opts := range []link.CgroupOptions{
+				{Path: path, Attach: ebpf.AttachCGroupInetIngress, Program: t.objs.CountOperationIngress},
+				{Path: path, Attach: ebpf.AttachCGroupInetEgress, Program: t.objs.CountOperationEgress},
+			} {
+				hook, err := link.AttachCgroup(opts)
+				if err != nil {
+					return nil, err
+				}
+				c.links = append(c.links, hook)
+			}
 		}
 	}
 	attrs := new(syscall.SysProcAttr)
@@ -345,6 +393,9 @@ func (c *Command) WaitEmpty(ctx context.Context) error {
 func (c *Command) Close() error {
 	c.closeOnce.Do(func() {
 		var errs []error
+		for _, hook := range c.links {
+			errs = append(errs, hook.Close())
+		}
 		if c.tracer != nil {
 			for _, key := range c.keys() {
 				errs = append(errs, c.tracer.objs.OperationByteCounters.Delete(key))

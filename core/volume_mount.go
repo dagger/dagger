@@ -291,12 +291,15 @@ func mountSSHFSVolume(ctx context.Context, readonly bool, cfg *SSHFSVolumeConfig
 	var stderr bytes.Buffer
 	cmd := osexec.CommandContext(ctx, "sshfs", args...)
 	cmd.Stderr = &stderr
-	networkCtx, networkSpan := Tracer(ctx).Start(ctx, "sshfs")
-	finishNetwork := enginetelemetry.PrepareCommandNetwork(networkCtx, cmd)
+	finishNetwork, err := enginetelemetry.PrepareExecMountCommand(ctx, cmd)
+	if err != nil {
+		// Accounting is optional. The exec suppresses incomplete resource
+		// totals when its helper could not be placed in the shared cgroup.
+		slog.WarnContext(ctx, "sshfs exec accounting unavailable", "error", err)
+		finishNetwork = func() error { return nil }
+	}
 	release = joinCleanup(func() error {
-		finishNetwork()
-		networkSpan.End()
-		return nil
+		return finishNetwork()
 	}, release)
 	if err = runProcessGroup(ctx, cmd); err != nil {
 		_ = unmountWithDetachFallback(mountDir)()

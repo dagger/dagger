@@ -52,6 +52,15 @@ func TestCommandWaitEmpty(t *testing.T) {
 // Use engine-dev test --ebpf --pkg ./engine/ebpf/nettracer
 // to run the network eBPF tests in a privileged test container.
 func TestCommandAccounting(t *testing.T) {
+	testCommandAccounting(t, false)
+}
+
+func TestExecMountCommandAccounting(t *testing.T) {
+	testCommandAccounting(t, true)
+}
+
+func testCommandAccounting(t *testing.T, execMount bool) {
+	t.Helper()
 	if os.Getenv("DAGGER_TEST_EBPF") != "1" {
 		t.Skip("set DAGGER_TEST_EBPF=1 on a privileged Linux 6.15+ runner")
 	}
@@ -90,11 +99,26 @@ func TestCommandAccounting(t *testing.T) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
-	command, err := PrepareCommand(cmd)
-	require.NoError(t, err)
 	enginePath, err := currentCgroupPath()
 	require.NoError(t, err)
-	require.Equal(t, filepath.Join(filepath.Dir(enginePath), "git"), filepath.Dir(command.path))
+	var command *Command
+	if execMount {
+		root := filepath.Join(filepath.Dir(enginePath), "exec")
+		require.NoError(t, os.MkdirAll(root, 0o755))
+		parent, err := os.MkdirTemp(root, "test-mount-")
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, os.Remove(parent)) })
+		mounts := filepath.Join(parent, "sshfs")
+		require.NoError(t, os.Mkdir(mounts, 0o755))
+		t.Cleanup(func() { require.NoError(t, os.Remove(mounts)) })
+		command, err = PrepareCommandIn(cmd, mounts)
+		require.NoError(t, err)
+		require.Equal(t, mounts, filepath.Dir(command.path))
+	} else {
+		command, err = PrepareCommand(cmd)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(filepath.Dir(enginePath), "git"), filepath.Dir(command.path))
+	}
 	require.False(t, strings.HasPrefix(command.path, enginePath+"/"))
 	t.Cleanup(func() { require.NoError(t, command.Close()) })
 	require.True(t, cmd.SysProcAttr.Setpgid)
@@ -150,7 +174,7 @@ func TestCommandRoot(t *testing.T) {
 func TestCommandPlacementWithoutEBPF(t *testing.T) {
 	root := t.TempDir()
 	a := &commandAccounting{paths: map[string]string{}, pending: map[string]struct{}{}}
-	for _, name := range []string{"git", "rg", "sshfs"} {
+	for _, name := range []string{"git", "rg"} {
 		a.paths[name] = filepath.Join(root, name)
 		require.NoError(t, os.Mkdir(a.paths[name], 0o755))
 	}
@@ -164,7 +188,7 @@ func TestCommandPlacementWithoutEBPF(t *testing.T) {
 	})
 	require.True(t, EngineAccountingAvailable())
 	require.NoError(t, EngineAccountingError())
-	for _, name := range []string{"git", "rg", "sshfs"} {
+	for _, name := range []string{"git", "rg"} {
 		t.Run(name, func(t *testing.T) {
 			paths := map[string]bool{}
 			for range 2 {
@@ -190,6 +214,15 @@ func TestCommandPlacementWithoutEBPF(t *testing.T) {
 	_, err := PrepareCommand(cmd)
 	require.Error(t, err)
 	require.Nil(t, cmd.SysProcAttr, "shared infrastructure stays in the engine cgroup")
+	// SSHFS belongs to its owning exec, not a sibling helper category.
+	execPath := filepath.Join(root, "exec", "exec-id", "sshfs")
+	require.NoError(t, os.MkdirAll(execPath, 0o755))
+	sshfs := &exec.Cmd{Path: "/usr/bin/sshfs"}
+	mount, err := PrepareCommandIn(sshfs, execPath)
+	require.NoError(t, err)
+	require.Equal(t, execPath, filepath.Dir(mount.CgroupPath()))
+	require.True(t, sshfs.SysProcAttr.UseCgroupFD)
+	require.NoError(t, mount.Close())
 }
 
 func TestCommandNetworkHelper(t *testing.T) {

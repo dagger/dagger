@@ -8,8 +8,9 @@
 // user and system values are diagnostic components. Memory peak is for the cgroup
 // lifetime. Memory breakdown fields are diagnostic and can overlap. These
 // metrics do not imply attribution to a Dagger client or organization. In the
-// standard layout, /engine, /exec, /git, /rg, and /sshfs are siblings: accounted
-// commands and user executions are not included. A different layout (including
+// standard layout, /engine, /exec, /git, and /rg are siblings. SSHFS helpers
+// belong below their exec. These commands and executions are not included.
+// A different layout (including
 // an engine at the namespace root) can include user workloads. This package
 // observes that boundary; it does not enforce it.
 //

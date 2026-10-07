@@ -45,7 +45,7 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -98,7 +98,11 @@ type execState struct {
 	rootMount executor.Mount
 	mounts    []executor.Mount
 
-	cleanups *cleanups.Cleanups
+	cleanups             *cleanups.Cleanups
+	mountResources       enginetel.ExecMountResources
+	resourceCgroupPath   string
+	stopResourceSampler  func()
+	closeWorkloadNetwork func() error
 
 	spec             *specs.Spec
 	networkNamespace bknetwork.Namespace
@@ -399,6 +403,36 @@ func (c *Client) injectInit(_ context.Context, state *execState) error {
 
 func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	var extraOpts []ctdoci.SpecOpts
+	// Reverse cleanup order: delete the container, release its mounts, take
+	// the final parent sample, then release the retained helper counters.
+	state.cleanups.Add("release exec mount accounting", func() error {
+		var err error
+		if state.mountResources != nil {
+			err = state.mountResources.Close()
+		}
+		// runc removes the container leaf, not its accounting parent.
+		// Mount accounting may already have removed the parent.
+		if filepath.IsAbs(state.resourceCgroupPath) && !strings.Contains(state.resourceCgroupPath, ":") {
+			removeErr := os.Remove(filepath.Join("/sys/fs/cgroup", state.resourceCgroupPath))
+			if !errors.Is(removeErr, os.ErrNotExist) {
+				err = errors.Join(err, removeErr)
+			}
+		}
+		return err
+	})
+	state.cleanups.Add("release workload network accounting", func() error {
+		if state.closeWorkloadNetwork != nil {
+			return state.closeWorkloadNetwork()
+		}
+		return nil
+	})
+	state.cleanups.Add("finish exec mount resource sample", func() error {
+		if state.stopResourceSampler != nil {
+			state.stopResourceSampler()
+			return nil
+		}
+		return sampleFailedExecMountResources(ctx, state)
+	})
 	if state.procInfo.Meta.ReadonlyRootFS {
 		extraOpts = append(extraOpts, ctdoci.WithRootFSReadonly())
 	}
@@ -417,6 +451,14 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 		c.ApparmorProfile,
 		c.SELinux,
 		"",
+		func(ctx context.Context, spec *specs.Spec) context.Context {
+			state.resourceCgroupPath = spec.Linux.CgroupsPath
+			state.mountResources = enginetel.NewExecMountResources(spec.Linux.CgroupsPath)
+			if state.mountResources != nil {
+				return enginetel.WithExecMountResources(ctx, state.mountResources)
+			}
+			return ctx
+		},
 		extraOpts...,
 	)
 	if err != nil {
@@ -425,6 +467,10 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	state.cleanups.Add("base OCI spec cleanup", cleanups.Infallible(ociSpecCleanup))
 
 	state.spec = baseSpec
+	// Systemd uses a scope identifier, not a filesystem path. Preserve it.
+	if filepath.IsAbs(state.resourceCgroupPath) && !strings.Contains(state.resourceCgroupPath, ":") {
+		state.spec.Linux.CgroupsPath = filepath.Join(state.resourceCgroupPath, "container")
+	}
 	return nil
 }
 
@@ -1464,7 +1510,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	trace.SpanFromContext(ctx).AddEvent("Container created")
 
-	cgroupPath := state.spec.Linux.CgroupsPath
+	cgroupPath := state.resourceCgroupPath
 	readWorkloads := enginetel.HasWorkloadReadings(ctx)
 	hasCallDigest := state.execMD != nil && state.execMD.CallDigest != ""
 	sampleCgroup := cgroupPath != "" && (hasCallDigest || readWorkloads)
@@ -1486,15 +1532,9 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			bklog.G(ctx).Debugf("workload network accounting unavailable for %s: %s", state.id, err)
 		} else {
 			workloadNetwork = workload
-			state.cleanups.Add("release workload network accounting", func() error {
-				err := workload.Close()
-				// Workload created the cgroup; runc normally removes it, but
-				// not when the container never started.
-				if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) && !errors.Is(rmErr, unix.EBUSY) {
-					err = errors.Join(err, rmErr)
-				}
-				return err
-			})
+			// Keep these counters through mount teardown and the final
+			// parent sample. The exec cleanup removes the parent cgroup.
+			state.closeWorkloadNetwork = workload.Close
 		}
 	}
 
@@ -1511,55 +1551,33 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		readingsStarted = make(chan struct{})
 	}
 	if sampleCgroup {
-		meter := telemetry.Meter(ctx, InstrumentationLibrary)
-		if !hasCallDigest {
-			// Preserve the ordinary path's exclusion of unassociated execs.
-			meter = noop.NewMeterProvider().Meter(InstrumentationLibrary)
-		}
-		meter = enginetel.WorkloadReadingMeter(ctx, meter, InstrumentationLibrary)
+		var meter metric.Meter
+		var commonAttrs attribute.Set
+		ctx, meter, commonAttrs = execResourceTelemetry(ctx, state)
 		readingInterval := min(enginetel.WorkloadReadingInterval(ctx, cgroupSampleInterval), cgroupSampleInterval)
-
-		var commonAttrs []attribute.KeyValue
-		if hasCallDigest {
-			commonAttrs = append(commonAttrs, attribute.String(telemetry.DagDigestAttr, string(state.execMD.CallDigest)))
-		}
-		spanContext := trace.SpanContextFromContext(ctx)
-		if spanContext.HasSpanID() {
-			commonAttrs = append(commonAttrs,
-				attribute.String(telemetry.MetricsSpanIDAttr, spanContext.SpanID().String()),
-			)
-		}
-		if spanContext.HasTraceID() {
-			commonAttrs = append(commonAttrs,
-				attribute.String(telemetry.MetricsTraceIDAttr, spanContext.TraceID().String()),
-			)
-		}
-
-		if readWorkloads {
-			// Keep workload export dimensions out of the SDK gauge's series identity.
-			workloadAttrs := append(slices.Clone(commonAttrs),
-				attribute.String(enginetel.ExecutionIDAttr, state.id),
-				attribute.Bool(enginetel.ExecutionInternalAttr, state.execMD != nil && state.execMD.Internal),
-				attribute.Int64(enginetel.SampleIntervalAttr, readingInterval.Milliseconds()),
-			)
-			ctx = enginetel.WithWorkloadReadingAttributes(ctx, attribute.NewSet(workloadAttrs...))
-		}
 		var networkSampler resources.BKNetworkSampler = state.networkNamespace
 		if workloadNetwork != nil {
 			networkSampler = workloadNetworkSampler{netNS: state.networkNamespace, workload: workloadNetwork}
 		}
-		cgroupSampler, err := resources.NewSampler(cgroupPath, networkSampler, meter, attribute.NewSet(commonAttrs...))
+		cgroupSampler, err := resources.NewSampler(cgroupPath, networkSampler, meter, commonAttrs)
 		if err != nil {
 			return fmt.Errorf("create cgroup sampler: %w", err)
+		}
+		if state.mountResources != nil {
+			cgroupSampler.SetMountNetwork(state.mountResources)
+			if !state.mountResources.Available() {
+				cgroupSampler.DisableCgroupSamples()
+			}
 		}
 
 		cgroupSamplerCtx, cgroupSamplerCancel := context.WithCancelCause(context.WithoutCancel(ctx))
 		cgroupSamplerPool := pool.New()
 
-		state.cleanups.Add("cancel cgroup sampler", cleanups.Infallible(func() {
+		stopSampler := sync.OnceFunc(func() {
 			cgroupSamplerCancel(fmt.Errorf("container cleanup: %w", context.Canceled))
 			cgroupSamplerPool.Wait()
-		}))
+		})
+		state.stopResourceSampler = stopSampler
 
 		cgroupSamplerPool.Go(func() {
 			ticker := time.NewTicker(cgroupSampleInterval)

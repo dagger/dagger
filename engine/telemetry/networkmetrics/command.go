@@ -19,8 +19,9 @@ import (
 )
 
 // PrepareCommandNetwork attributes CPU, memory, and kernel network counters to
-// a dedicated child span per command. Call before starting cmd and finish after Wait. For daemons,
-// keep the accounting alive until the daemon is released, not just its parent.
+// a dedicated child span per command. Call before starting cmd and finish after
+// Wait. Exec mount daemons use ExecMountResources instead, so their final usage
+// is included in the execution before its span ends.
 // Finish records a snapshot and schedules bounded cleanup without waiting for
 // surviving helpers. The span ends at finish; late samples keep its ID and
 // require the session's telemetry to remain open.
@@ -146,8 +147,8 @@ func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exe
 		// so its completion is included in the caller's telemetry flush.
 		endSpan()
 		go func() {
-			// Lazy unmount can leave SSHFS alive. Do not hold up the operation
-			// or CLI while waiting for it, but bound cleanup for stuck helpers.
+			// Bound cleanup if a command left surviving descendants. Mount
+			// daemons use the executor's synchronous cleanup path instead.
 			waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 			waitErr := command.WaitEmpty(waitCtx)
