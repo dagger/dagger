@@ -280,7 +280,7 @@ export function AgentStateNameToValue(name: string): AgentState {
       return name as AgentState
   }
 }
-export type ArtifactUriOpts = {
+export type ArtifactURIOpts = {
   /**
    * Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address.
    */
@@ -296,6 +296,11 @@ export type ArtifactUriOpts = {
    */
   typeAssertion?: boolean
 }
+
+/**
+ * @deprecated use ArtifactURIOpts instead.
+ */
+export type ArtifactUriOpts = ArtifactURIOpts
 
 export type ArtifactValueOpts = {
   /**
@@ -2606,6 +2611,11 @@ export type GitRepositoryWithRemoteOpts = {
   /**
    * Push destination, when pushes go somewhere other than url. Empty uses url.
    */
+  pushURL?: string
+
+  /**
+   * @deprecated use pushURL instead.
+   */
   pushUrl?: string
 }
 
@@ -3597,7 +3607,7 @@ export type ClientGitOpts = {
   experimentalServiceHost?: Service
 }
 
-export type ClientHttpOpts = {
+export type ClientHTTPOpts = {
   /**
    * File name to use for the file. Defaults to the last part of the URL.
    */
@@ -3623,6 +3633,11 @@ export type ClientHttpOpts = {
    */
   experimentalServiceHost?: Service
 }
+
+/**
+ * @deprecated use ClientHTTPOpts instead.
+ */
+export type ClientHttpOpts = ClientHTTPOpts
 
 export type ClientLLMOpts = {
   /**
@@ -3681,7 +3696,7 @@ export type ClientServeModuleOpts = {
   refPin?: string
 }
 
-export type ClientSshfsVolumeOpts = {
+export type ClientSSHFSVolumeOpts = {
   /**
    * known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
    */
@@ -3702,6 +3717,11 @@ export type ClientSshfsVolumeOpts = {
    */
   experimentalServiceHost?: Service
 }
+
+/**
+ * @deprecated use ClientSSHFSVolumeOpts instead.
+ */
+export type ClientSshfsVolumeOpts = ClientSSHFSVolumeOpts
 
 /**
  * Transport protocol to use for registry operations.
@@ -4416,7 +4436,7 @@ export type WorkspaceWithResetOpts = {
   hard?: boolean
 }
 
-export type WorkspaceWithSdkOpts = {
+export type WorkspaceWithSDKOpts = {
   /**
    * Override name for the installed SDK entry.
    */
@@ -4430,8 +4450,18 @@ export type WorkspaceWithSdkOpts = {
   /**
    * Optional override for the SDK name conventionally derived from the installed module name.
    */
+  asSDKName?: string
+
+  /**
+   * @deprecated use asSDKName instead.
+   */
   asSdkName?: string
 }
+
+/**
+ * @deprecated use WorkspaceWithSDKOpts instead.
+ */
+export type WorkspaceWithSdkOpts = WorkspaceWithSDKOpts
 
 export type WorkspaceWithUpdatedClientsOpts = {
   /**
@@ -4502,12 +4532,17 @@ export type WorkspaceWithoutModuleOpts = {
   here?: boolean
 }
 
-export type WorkspaceWithoutSdkOpts = {
+export type WorkspaceWithoutSDKOpts = {
   /**
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
 }
+
+/**
+ * @deprecated use WorkspaceWithoutSDKOpts instead.
+ */
+export type WorkspaceWithoutSdkOpts = WorkspaceWithoutSDKOpts
 
 /**
  * Why a source commit cannot be pulled.
@@ -5357,7 +5392,7 @@ export class Artifact extends BaseClient {
    * @param opts.dimensionKeys Include the dimension keys as a query. Without them, the address is a path selector.
    * @param opts.typeAssertion Include the artifact type in the scheme: dag+container://.
    */
-  uri = async (opts?: ArtifactUriOpts): Promise<string> => {
+  uri = async (opts?: ArtifactURIOpts): Promise<string> => {
     if (this._uri) {
       return this._uri
     }
@@ -6058,10 +6093,15 @@ export class Artifacts extends BaseClient {
    * The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
    * @param uri A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]
    */
-  filterUri = (uri: string): Artifacts => {
+  filterURI = (uri: string): Artifacts => {
     const ctx = this._ctx.select("filterUri", { uri })
     return new Artifacts(ctx)
   }
+
+  /**
+   * @deprecated use filterURI instead.
+   */
+  filterUri: Artifacts["filterURI"] = (...args) => this.filterURI(...args)
 
   /**
    * Enumerate complete artifacts without evaluating their values.
@@ -6190,10 +6230,15 @@ export class Artifacts extends BaseClient {
   /**
    * Remove artifacts selected by a DAG address.
    */
-  withoutUri = (uri: string): Artifacts => {
+  withoutURI = (uri: string): Artifacts => {
     const ctx = this._ctx.select("withoutUri", { uri })
     return new Artifacts(ctx)
   }
+
+  /**
+   * @deprecated use withoutURI instead.
+   */
+  withoutUri: Artifacts["withoutURI"] = (...args) => this.withoutURI(...args)
 
   /**
    * Call the provided function with current Artifacts.
@@ -12044,13 +12089,18 @@ export class GitCommit extends BaseClient {
   /**
    * Parent commit SHAs.
    */
-  parentShas = async (): Promise<string[]> => {
+  parentSHAs = async (): Promise<string[]> => {
     const ctx = this._ctx.select("parentShas")
 
     const response: Awaited<string[]> = await ctx.execute()
 
     return response
   }
+
+  /**
+   * @deprecated use parentSHAs instead.
+   */
+  parentShas: GitCommit["parentSHAs"] = (...args) => this.parentSHAs(...args)
 
   /**
    * The latest semver release tag that points directly at this commit.
@@ -12087,7 +12137,7 @@ export class GitCommit extends BaseClient {
   /**
    * The abbreviated commit SHA.
    */
-  shortSha = async (): Promise<string> => {
+  shortSHA = async (): Promise<string> => {
     if (this._shortSha) {
       return this._shortSha
     }
@@ -12098,6 +12148,11 @@ export class GitCommit extends BaseClient {
 
     return response
   }
+
+  /**
+   * @deprecated use shortSHA instead.
+   */
+  shortSha: GitCommit["shortSHA"] = (...args) => this.shortSHA(...args)
 
   /**
    * The filesystem tree at this commit.
@@ -12778,14 +12833,20 @@ export class GitRepository extends BaseClient {
    * Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
    * @param name The remote's name, e.g. "origin" or "upstream".
    * @param url The remote's fetch URL.
-   * @param opts.pushUrl Push destination, when pushes go somewhere other than url. Empty uses url.
+   * @param opts.pushURL Push destination, when pushes go somewhere other than url. Empty uses url.
    */
   withRemote = (
     name: string,
     url: string,
     opts?: GitRepositoryWithRemoteOpts,
   ): GitRepository => {
-    const ctx = this._ctx.select("withRemote", { name, url, ...opts })
+    const ctx = this._ctx.select("withRemote", {
+      name,
+      url,
+      ...opts,
+      pushURL: undefined,
+      pushUrl: opts?.pushURL ?? opts?.pushUrl,
+    })
     return new GitRepository(ctx)
   }
 
@@ -14166,19 +14227,19 @@ export class LLM extends BaseClient {
 
   /**
    * Append the result of a tool call to the message history.
-   * @param callId The ID of the tool call this result responds to
+   * @param callID The ID of the tool call this result responds to
    * @param content Text returned by the tool, placed before blocks
    * @param errored Whether the tool call resulted in an error
    * @param opts.blocks Ordered text and media returned by the tool
    */
   withToolResult = (
-    callId: string,
+    callID: string,
     content: string,
     errored: boolean,
     opts?: LLMWithToolResultOpts,
   ): LLM => {
     const ctx = this._ctx.select("withToolResult", {
-      callId,
+      callId: callID,
       content,
       errored,
       ...opts,
@@ -14415,7 +14476,7 @@ export class LLMContentBlock extends BaseClient {
   /**
    * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
    */
-  callId = async (): Promise<string> => {
+  callID = async (): Promise<string> => {
     if (this._callId) {
       return this._callId
     }
@@ -14426,6 +14487,11 @@ export class LLMContentBlock extends BaseClient {
 
     return response
   }
+
+  /**
+   * @deprecated use callID instead.
+   */
+  callId: LLMContentBlock["callID"] = (...args) => this.callID(...args)
 
   /**
    * Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
@@ -16865,7 +16931,7 @@ export class Client extends BaseClient {
    * @param opts.authHeader Secret used to populate the Authorization HTTP header
    * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
    */
-  http = (url: string, opts?: ClientHttpOpts): File => {
+  http = (url: string, opts?: ClientHTTPOpts): File => {
     const ctx = this._ctx.select("http", { url, ...opts })
     return new File(ctx)
   }
@@ -17071,7 +17137,7 @@ export class Client extends BaseClient {
   sshfsVolume = (
     endpoint: string,
     privateKey: Secret,
-    opts?: ClientSshfsVolumeOpts,
+    opts?: ClientSSHFSVolumeOpts,
   ): Volume => {
     const ctx = this._ctx.select("sshfsVolume", {
       endpoint,
@@ -19365,10 +19431,15 @@ export class Workspace extends BaseClient {
    * @param ref SDK module reference to install.
    * @param opts.name Override name for the installed SDK entry.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
-   * @param opts.asSdkName Optional override for the SDK name conventionally derived from the installed module name.
+   * @param opts.asSDKName Optional override for the SDK name conventionally derived from the installed module name.
    */
-  withSDK = (ref: string, opts?: WorkspaceWithSdkOpts): Workspace => {
-    const ctx = this._ctx.select("withSDK", { ref, ...opts })
+  withSDK = (ref: string, opts?: WorkspaceWithSDKOpts): Workspace => {
+    const ctx = this._ctx.select("withSDK", {
+      ref,
+      ...opts,
+      asSDKName: undefined,
+      asSdkName: opts?.asSDKName ?? opts?.asSdkName,
+    })
     return new Workspace(ctx)
   }
 
@@ -19548,7 +19619,7 @@ export class Workspace extends BaseClient {
    * @param name Name of the installed SDK entry to remove.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
-  withoutSDK = (name: string, opts?: WorkspaceWithoutSdkOpts): Workspace => {
+  withoutSDK = (name: string, opts?: WorkspaceWithoutSDKOpts): Workspace => {
     const ctx = this._ctx.select("withoutSDK", { name, ...opts })
     return new Workspace(ctx)
   }
