@@ -37,8 +37,9 @@ func (s *Schema) DependencyNames() []string {
 // For example: `Binding.AsXXX` etc...
 func (s *Schema) Include(moduleNames ...string) *Schema {
 	filteredSchema := &Schema{
-		QueryType:  s.QueryType,
-		Directives: s.Directives,
+		QueryType:   s.QueryType,
+		Directives:  s.Directives,
+		Identifiers: s.Identifiers,
 	}
 
 	for _, i := range s.Types {
@@ -63,8 +64,9 @@ func (s *Schema) Include(moduleNames ...string) *Schema {
 // For example: `Binding.AsXXX` etc...
 func (s *Schema) Exclude(moduleNames ...string) *Schema {
 	filteredSchema := &Schema{
-		QueryType:  s.QueryType,
-		Directives: s.Directives,
+		QueryType:   s.QueryType,
+		Directives:  s.Directives,
+		Identifiers: s.Identifiers,
 	}
 
 	for _, i := range s.Types {

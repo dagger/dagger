@@ -11,7 +11,9 @@ import (
 //go:embed introspection.graphql
 var Query string
 
-// Response is the introspection query response
+// Response is the introspection query response. In JSON, the schema's
+// Identifiers are written next to __schema and __schemaVersion, under
+// "__identifiers" (see identifiers.go).
 type Response struct {
 	Schema        *Schema `json:"__schema"`
 	SchemaVersion string  `json:"__schemaVersion"`
@@ -30,6 +32,11 @@ type Schema struct {
 
 	Types      Types           `json:"types"`
 	Directives []*DirectiveDef `json:"directives"`
+
+	// Identifiers holds the words of the schema's names, from the
+	// top-level "__identifiers" key of the schema JSON (see Response). It is
+	// nil for schemas from engine versions before v1.0.0. Use Identifier.
+	Identifiers Identifiers `json:"-"`
 }
 
 func (s *Schema) Query() *Type {
