@@ -330,10 +330,16 @@ func (obj *ModuleObject) stateSetterField(srv *dagql.Server) (dagql.Field[*Modul
 }
 
 // WithModuleObjectFields records next's state as a chain of __withField
-// selects rooted at prev: prev!__withField(...)!__withField(...), one per
-// changed field in sorted name order; a field next lacks is set to null. It
-// returns a nil result when no field changed. Both must be module objects of
-// the same type.
+// selects: root!__withField(...)!__withField(...), one per field that differs
+// from root, in sorted name order; a field next lacks is set to null. It
+// returns a nil result when next has the same fields as prev, so an unchanged
+// return records nothing. Both must be module objects of the same type.
+//
+// The chain is rebuilt from prev's root (see stateRoot) rather than appended
+// to prev, so each field is set at most once, to its latest value: values a
+// later step overwrote drop out of the recipe, and with them their producers,
+// which a cold load would otherwise run again. Equal states recorded on the
+// same root also get the same recipe, however they were reached.
 func WithModuleObjectFields(ctx context.Context, srv *dagql.Server, prev, next dagql.AnyObjectResult) (dagql.AnyObjectResult, error) {
 	prevObj, ok := dagql.UnwrapAs[*ModuleObject](prev)
 	if !ok || prevObj == nil {
@@ -360,7 +366,17 @@ func WithModuleObjectFields(ctx context.Context, srv *dagql.Server, prev, next d
 	if len(changed) == 0 {
 		return nil, nil
 	}
-	cur := prev
+	root, rootObj, err := stateRoot(ctx, srv, prev)
+	if err != nil {
+		return nil, err
+	}
+	if rootObj != prevObj {
+		changed, err = changedStateFields(rootObj.Fields, nextObj.Fields)
+		if err != nil {
+			return nil, err
+		}
+	}
+	cur := root
 	for _, name := range changed {
 		value, err := stateValueInput(nextObj.Fields[name])
 		if err != nil {
@@ -380,4 +396,47 @@ func WithModuleObjectFields(ctx context.Context, srv *dagql.Server, prev, next d
 		cur = res
 	}
 	return cur, nil
+}
+
+// stateRoot returns the object prev's recorded state was derived from: prev's
+// recipe with the engine-owned state frames (__withField, and the
+// __rebindState of a tool reload) peeled off its end. It is in prev's own
+// receiver chain, so loading it is a cache hit wherever prev was loaded.
+//
+// Peeling __rebindState too drops the previous revision's state chain, carried
+// in its previous argument, from the recipe: the frames set every field that
+// differs from the new revision's initial object, which is the state the
+// rebind produced plus what changed since.
+//
+// prev itself is the root when it has no state frames, and the fallback when
+// the root is not a module object of the same type, which the frames above
+// should make impossible: rooting at prev is still correct, just not compact.
+func stateRoot(ctx context.Context, srv *dagql.Server, prev dagql.AnyObjectResult) (dagql.AnyObjectResult, *ModuleObject, error) {
+	prevObj, _ := dagql.UnwrapAs[*ModuleObject](prev)
+	id, err := prev.RecipeID(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("previous state recipe: %w", err)
+	}
+	rootID := id
+	for rootID != nil && (rootID.Field() == withModuleObjectFieldName || rootID.Field() == rebindModuleObjectStateField) {
+		rootID = rootID.Receiver()
+	}
+	if rootID == nil || rootID == id {
+		return prev, prevObj, nil
+	}
+	loaded, err := srv.Load(ctx, rootID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load state root: %w", err)
+	}
+	rootObj, ok := dagql.UnwrapAs[*ModuleObject](loaded)
+	if !ok || rootObj == nil || rootObj.TypeDef == nil || rootObj.TypeDef.OriginalName != prevObj.TypeDef.OriginalName {
+		return prev, prevObj, nil
+	}
+	// Keep prev's class: the bound object's class is authoritative, and the
+	// load may have wrapped the root in another same-named one.
+	root, err := prev.ObjectType().New(loaded)
+	if err != nil {
+		return nil, nil, fmt.Errorf("bind state root: %w", err)
+	}
+	return root, rootObj, nil
 }
