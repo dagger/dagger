@@ -68,6 +68,7 @@ from codegen.generator import (
 from codegen.generator import (
     Scalar as ScalarHandler,
 )
+from codegen.naming import Word, WordKind
 
 # Schema with @expectedType directive for testing unified ID behavior.
 _EXPECTED_TYPE_SCHEMA = build_schema("""
@@ -111,6 +112,114 @@ def ctx():
 )
 def test_format_name(graphql, expected):
     assert format_name(graphql) == expected
+
+
+def _words(*words: tuple[str, str, str]) -> list[Word]:
+    return [
+        Word(WordKind(kind), text, suffix, text[:1].upper() + text[1:].lower())
+        for kind, text, suffix in words
+    ]
+
+
+_IDENTIFIERS = {
+    "prerequisiteSHAs": _words(("WORD", "prerequisite", ""), ("ACRONYM", "SHA", "s")),
+    "experimentalWithAllGPUs": _words(
+        ("WORD", "experimental", ""),
+        ("WORD", "with", ""),
+        ("WORD", "all", ""),
+        ("ACRONYM", "GPU", "s"),
+    ),
+    "withFS": _words(("WORD", "with", ""), ("ACRONYM", "FS", "")),
+    "from": _words(("WORD", "from", "")),
+    "str": _words(("WORD", "str", "")),
+}
+
+
+@pytest.mark.parametrize(
+    ("graphql", "expected"),
+    [
+        ("prerequisiteSHAs", "prerequisite_shas"),
+        ("experimentalWithAllGPUs", "experimental_with_all_gpus"),
+        ("withFS", "with_fs"),
+        ("from", "from_"),  # reserved keyword, escaped after formatting
+        ("str", "str_"),  # builtin, escaped after formatting
+        ("envVariable", "env_variable"),  # not in the identifiers: fallback
+    ],
+)
+def test_context_format_name(graphql, expected):
+    assert Context(identifiers=_IDENTIFIERS).format_name(graphql) == expected
+
+
+def test_context_format_name_without_identifiers():
+    # Older engines don't send words: keep guessing, as before.
+    assert Context().format_name("prerequisiteSHAs") == "prerequisite_sh_as"
+
+
+def test_identifiers_legacy_alias():
+    parent = Object(
+        "GitRef",
+        lambda: {
+            "prerequisiteSHAs": Field(NonNull(List(NonNull(String)))),
+        },
+    )
+    handler = _ObjectField(
+        Context(identifiers=_IDENTIFIERS),
+        "prerequisiteSHAs",
+        parent.fields["prerequisiteSHAs"],
+        parent,
+    )
+    assert handler.func_signature() == (
+        "async def prerequisite_shas(self) -> list[str]:"
+    )
+    code = str(handler)
+    assert "def prerequisite_sh_as(self, *args, **kwargs):" in code
+    assert "return self.prerequisite_shas(*args, **kwargs)" in code
+    assert "DeprecationWarning" in code
+
+
+def test_no_legacy_alias_without_identifiers():
+    parent = Object(
+        "GitRef",
+        lambda: {
+            "prerequisiteSHAs": Field(NonNull(List(NonNull(String)))),
+        },
+    )
+    handler = _ObjectField(
+        Context(),
+        "prerequisiteSHAs",
+        parent.fields["prerequisiteSHAs"],
+        parent,
+    )
+    assert handler.legacy_name is None
+    assert "**kwargs" not in str(handler)
+
+
+def test_identifiers_deprecation_reference():
+    ctx = Context(identifiers=_IDENTIFIERS)
+    assert (
+        ctx.rewrite_notice("Use `prerequisiteSHAs` instead.", "", "")
+        == "Use prerequisite_shas instead."
+    )
+
+
+def test_generate_with_identifiers():
+    schema = build_schema(
+        """
+        type GitRef { prerequisiteSHAs: [String!]! }
+        type Query { gitRef: GitRef! }
+        """
+    )
+    identifiers = {
+        **_IDENTIFIERS,
+        "gitRef": _words(("WORD", "git", ""), ("WORD", "ref", "")),
+    }
+
+    code = generate(schema, identifiers=identifiers)
+
+    assert "async def prerequisite_shas(self) -> list[str]:" in code
+    assert "def prerequisite_sh_as(self, *args, **kwargs):" in code
+    assert "def git_ref(self) -> GitRef:" in code
+    assert "class GitRef(Type):" in code
 
 
 opts = InputObject(

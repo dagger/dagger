@@ -53,6 +53,8 @@ from graphql import (
 from graphql.pyutils import camel_to_snake
 from graphql.type.schema import TypeMap
 
+from codegen.naming import Casing, Identifiers, format_words
+
 ACRONYM_RE = re.compile(r"([A-Z\d]+)(?=[A-Z\d]|$)")
 """Pattern for grouping initialisms."""
 
@@ -126,6 +128,23 @@ class Context:
     remaining: set[str] = field(default_factory=set)
     """Remaining type names that haven't been defined yet."""
 
+    identifiers: Identifiers | None = None
+    """Words of every schema name, parsed by the engine (``__identifiers``).
+
+    Absent for engines older than v1.0.0, where names are converted with
+    :func:`format_name` instead.
+    """
+
+    def format_name(self, name: str) -> PythonName:
+        """Format a field or argument name into Python (snake_case)."""
+        if self.identifiers is None or not (words := self.identifiers.get(name)):
+            return format_name(name)
+        return escape_name(format_words(words, Casing.SNAKE))
+
+    def rewrite_notice(self, reason: str | None, prefix='"', suffix='"') -> str | None:
+        """Rewrite references in a deprecation or experimental notice."""
+        return rewrite_notice(reason, prefix, suffix, self.format_name)
+
     @property
     def legacy_sdk_compat(self) -> bool:
         """Generate the pre-v0.21 ID/load helper source facade."""
@@ -178,6 +197,10 @@ class Handler(ABC, Generic[_H]):
         return self.__class__.__name__
 
     def type_name(self, t: _H) -> str:
+        # Class names are the GraphQL type names, as is: the runtime selects
+        # a type by its class name (see `Object._graphql_name`). Engines that
+        # send `__identifiers` only produce canonical type names, which are
+        # already PASCAL/UPPERCASE (`JSONValue`, `LLMMessage`).
         return t.name
 
     @joiner
@@ -197,7 +220,11 @@ class Handler(ABC, Generic[_H]):
 
 
 @joiner
-def generate(schema: GraphQLSchema, schema_version: str = "") -> Iterator[str]:
+def generate(
+    schema: GraphQLSchema,
+    schema_version: str = "",
+    identifiers: Identifiers | None = None,
+) -> Iterator[str]:
     """Code generation main function."""
     yield textwrap.dedent(
         """\
@@ -220,7 +247,12 @@ def generate(schema: GraphQLSchema, schema_version: str = "") -> Iterator[str]:
     ids = frozenset(n for n, t in schema.type_map.items() if is_id_type(t))
 
     # shared state between all handler instances
-    ctx = Context(ids=ids, schema=schema, schema_version=schema_version)
+    ctx = Context(
+        ids=ids,
+        schema=schema,
+        schema_version=schema_version,
+        identifiers=identifiers,
+    )
 
     handlers: tuple[Handler, ...] = (
         Scalar(ctx),
@@ -486,25 +518,39 @@ _reserved_builtins = frozenset(
 )
 
 
-def rewrite_notice(reason: str | None, prefix='"', suffix='"') -> str | None:
+def rewrite_notice(
+    reason: str | None,
+    prefix='"',
+    suffix='"',
+    formatter: Callable[[str], str] | None = None,
+) -> str | None:
     """Normalize deprecation/experimental messages and rewrite references."""
     if reason is None:
         return None
 
     reason = reason.strip()
+    formatter = formatter or format_name
 
     def _format_name(match: re.Match[str]) -> str:
-        name = format_name(match.group(1))
+        name = formatter(match.group(1))
         return f"{prefix}{name}{suffix}"
 
     return DEPRECATION_RE.sub(_format_name, reason)
 
 
 def format_name(s: str) -> str:
-    """Format a GraphQL field or argument name into Python."""
+    """Format a GraphQL field or argument name into Python.
+
+    Guesses at word boundaries. Only used for schemas without engine-parsed
+    identifier words (see :meth:`Context.format_name`).
+    """
     # rewrite acronyms, initialisms and abbreviations
     s = ACRONYM_RE.sub(lambda m: m.group(0).title(), s)
-    s = camel_to_snake(s)
+    return escape_name(camel_to_snake(s))
+
+
+def escape_name(s: str) -> str:
+    """Avoid clashing with Python keywords and type builtins."""
     if iskeyword(s) or s in _reserved_builtins:
         s += "_"
     return s
@@ -602,7 +648,7 @@ class _InputField:
         self.graphql_name = name
         self.graphql = graphql
 
-        self.name = format_name(name)
+        self.name = ctx.format_name(name)
         self.named_type = get_named_type(graphql.type)
         self.parent_return_type: TypeName | None = (
             get_named_type(parent.graphql.type).name if parent else None
@@ -641,7 +687,7 @@ class _InputField:
         self.description = graphql.description
         self.has_default = graphql.default_value is not Undefined
         reason = getattr(graphql, "deprecation_reason", None)
-        self.deprecated = rewrite_notice(reason, prefix="", suffix="")
+        self.deprecated = ctx.rewrite_notice(reason, prefix="", suffix="")
 
         default_value = graphql.default_value
         self.default_is_mutable = isinstance(default_value, list)
@@ -727,9 +773,19 @@ class _ObjectField:
         self.graphql_name = name
         self.graphql = field
 
-        self.name = format_name(name)
+        self.name = ctx.format_name(name)
         self.named_type = get_named_type(field.type)
         self.parent_name = get_named_type(parent).name
+
+        # The name older engines, without identifier words, made us guess.
+        # When it differs, keep it as a deprecated alias.
+        self.legacy_name: PythonName | None = None
+        if ctx.identifiers is not None:
+            legacy_name = format_name(name)
+            if legacy_name != self.name and legacy_name not in {
+                ctx.format_name(n) for n in parent.fields
+            }:
+                self.legacy_name = legacy_name
 
         self.required_args = []
         self.default_args = []
@@ -807,6 +863,36 @@ class _ObjectField:
                 "def __await__(self):",
                 indent("return self.sync().__await__()"),
             )
+
+        if self.legacy_name:
+            yield from (
+                "",
+                self.legacy_alias(),
+            )
+
+    @joiner
+    def legacy_alias(self) -> Iterator[str]:
+        """A deprecated method under the name older SDK versions generated."""
+        msg = f'Method "{self.legacy_name}" is deprecated: use "{self.name}" instead.'
+        yield f"def {self.legacy_name}(self, *args, **kwargs):"
+        yield indent(
+            doc(
+                f"Deprecated alias for :py:meth:`{self.name}`.\n\n"
+                f".. deprecated::\n    Use :py:meth:`{self.name}` instead."
+            )
+        )
+        yield indent(
+            textwrap.dedent(
+                f"""\
+                warnings.warn(
+                    {msg!r},
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                return self.{self.name}(*args, **kwargs)\
+                """
+            )
+        )
 
     def func_signature(self) -> str:
         params = ", ".join(
@@ -952,7 +1038,7 @@ class _ObjectField:
         return "\n\n".join("\n".join(section) for section in _out())
 
     def deprecated(self, prefix='"', suffix='"') -> str | None:
-        return rewrite_notice(self.graphql.deprecation_reason, prefix, suffix)
+        return self.ctx.rewrite_notice(self.graphql.deprecation_reason, prefix, suffix)
 
     def experimental(self, prefix='"', suffix='"') -> str:
         reason = ""
@@ -962,7 +1048,7 @@ class _ObjectField:
             args = graphql.get_directive_values(directive, self.graphql.ast_node)
             if args:
                 reason = args["reason"]
-        return rewrite_notice(reason, prefix, suffix)
+        return self.ctx.rewrite_notice(reason, prefix, suffix)
 
 
 @dataclass
@@ -990,11 +1076,16 @@ class Enum(Handler[GraphQLEnumType]):
             yield ""
 
             for name in names:
+                # Member names are the GraphQL enum value names, as is: the
+                # runtime sends a member by its name (see
+                # `configure_converter_enum`). Values are SCREAMING_SNAKE in
+                # the schema, except legacy ones that have SCREAMING_SNAKE
+                # aliases next to them.
                 yield f"{name} = {val!r}"
 
                 member = t.values[name]
                 desc = member.description
-                reason = rewrite_notice(member.deprecation_reason)
+                reason = self.ctx.rewrite_notice(member.deprecation_reason)
 
                 doc_parts: list[str] = []
                 if desc:
