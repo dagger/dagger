@@ -102,19 +102,20 @@ type Workspace struct {
 	// directories lazily via per-call host.directory() instead.
 	rootfs dagql.ObjectResult[*Directory]
 
-	// mounts is an in-engine directory tree holding content attached read-only
-	// via Workspace.withMountedDirectory/withMountedFile, keyed by
+	// mounts is an in-engine directory tree holding content attached via
+	// Workspace.withMountedDirectory/withMountedFile, keyed by
 	// workspace-root-relative mount path. Internal only — not a GraphQL field,
 	// but persisted and dependency-tracked like rootfs. Nil when the workspace
 	// has no mounts. It is intentionally kept separate from the overlay
-	// changeset so mounted content is readable through the normal workspace
-	// file tools but is never treated as a pending change or exported.
+	// changeset so mounted content is readable and editable through the normal
+	// workspace file tools but is never treated as a pending change or
+	// exported.
 	mounts dagql.ObjectResult[*Directory]
 
 	// mountPoints lists the workspace-root-relative paths at which content is
 	// mounted, sorted and deduplicated. Reads at or under a mount point
-	// resolve from mounts (shadowing the source), and overlay edits there are
-	// rejected, keeping mounted content read-only.
+	// resolve from mounts (shadowing the source), and edits there apply to
+	// mounts instead of the overlay.
 	mountPoints []string
 
 	// compatWorkspace stores the originating compat-workspace projection when
@@ -535,9 +536,9 @@ func (ws *Workspace) SetModuleClients(clients map[string][]string) {
 	ws.moduleClients = clients
 }
 
-// MountsDir returns the read-only directory tree holding mounted content,
-// keyed by workspace-root-relative mount path, or false when the workspace has
-// no mounts.
+// MountsDir returns the directory tree holding mounted content, keyed by
+// workspace-root-relative mount path, or false when the workspace has no
+// mounts.
 func (ws *Workspace) MountsDir() (dagql.ObjectResult[*Directory], bool) {
 	if ws == nil || ws.mounts.Self() == nil {
 		return dagql.ObjectResult[*Directory]{}, false
@@ -545,9 +546,28 @@ func (ws *Workspace) MountsDir() (dagql.ObjectResult[*Directory], bool) {
 	return ws.mounts, true
 }
 
-// WithMounted returns a copy of the workspace with the given read-only
-// mounted content tree and the workspace-root-relative path recorded as a
-// mount point, keeping the mount point list sorted and deduplicated.
+// WithMountsDir returns a copy of the workspace with its mounts tree replaced
+// by newMounts and its mount points kept: an edit to content beneath the
+// existing mounts.
+func (ws *Workspace) WithMountsDir(newMounts dagql.ObjectResult[*Directory]) *Workspace {
+	cp := ws.Clone()
+	cp.mounts = newMounts
+	return cp
+}
+
+// IsMountPoint reports whether a workspace-root-relative path is exactly one
+// of the workspace's mount points.
+func (ws *Workspace) IsMountPoint(resolvedPath string) bool {
+	if ws == nil {
+		return false
+	}
+	_, found := slices.BinarySearch(ws.mountPoints, filepath.ToSlash(resolvedPath))
+	return found
+}
+
+// WithMounted returns a copy of the workspace with the given mounted content
+// tree and the workspace-root-relative path recorded as a mount point,
+// keeping the mount point list sorted and deduplicated.
 func (ws *Workspace) WithMounted(newMounts dagql.ObjectResult[*Directory], path string) *Workspace {
 	cp := ws.Clone()
 	cp.mounts = newMounts

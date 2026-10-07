@@ -20013,9 +20013,9 @@ func (r *Workspace) WithModule(ref string, opts ...WorkspaceWithModuleOpts) *Wor
 	}
 }
 
-// Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+// Return this workspace with a directory mounted at the given path, without mutating the source.
 //
-// Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+// Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.
 func (r *Workspace) WithMountedDirectory(path string, source *Directory) *Workspace {
 	assertNotNil("source", source)
 	q := r.query.Select("withMountedDirectory")
@@ -20027,9 +20027,9 @@ func (r *Workspace) WithMountedDirectory(path string, source *Directory) *Worksp
 	}
 }
 
-// Return this workspace with a file mounted read-only at the given path, without mutating the source.
+// Return this workspace with a file mounted at the given path, without mutating the source.
 //
-// Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+// Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.
 func (r *Workspace) WithMountedFile(path string, source *File) *Workspace {
 	assertNotNil("source", source)
 	q := r.query.Select("withMountedFile")
@@ -20090,7 +20090,7 @@ type WorkspaceWithPatchFileOpts struct {
 
 // Return this workspace with the given Git-compatible patch file applied, without mutating the source.
 //
-// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Sections for paths in a mount apply to the mounted content; a section cannot move a file across a mount boundary or delete a mount point.
 //
 // Experimental: This API is highly experimental and may be removed or replaced entirely.
 func (r *Workspace) WithPatchFile(patch *File, opts ...WorkspaceWithPatchFileOpts) *Workspace {

@@ -610,9 +610,10 @@ func (WorkspaceAPISuite) TestWorkspaceChangesFrom(ctx context.Context, t *testct
 }
 
 // TestWorkspaceMounts covers Workspace.withMountedDirectory/withMountedFile:
-// mounted content is readable through the normal workspace file tools (shadowing
-// the source at the mount path, visible in listings above it), but stays out of
-// the pending changeset, is never exported, and cannot be modified.
+// mounted content is readable and editable through the normal workspace file
+// tools (shadowing the source at the mount path, visible in listings above
+// it), but stays out of the pending changeset and is never exported, edits
+// included.
 func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) {
 	t.Run("mounted directory reads, listings and changes", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
@@ -677,17 +678,131 @@ func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) 
 		require.Equal(t, []string{"vendored.txt"}, entries)
 	})
 
-	t.Run("mounted content is read-only", func(ctx context.Context, t *testctx.T) {
+	t.Run("mounted content is writable but never pending", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		base := c.Directory().
+			WithNewFile("base.txt", "base").
+			AsWorkspace()
+		mounted := base.
+			WithMountedDirectory(".refs/deps", c.Directory().
+				WithNewFile("vendored.txt", "vendored").
+				WithNewFile("old.txt", "old").
+				WithNewFile("sub/nested.txt", "nested"))
+
+		ws := mounted.
+			WithNewFile(".refs/deps/new.txt", "new").
+			WithFile(".refs/deps/copied.txt", c.Directory().WithNewFile("f", "copied").File("f")).
+			WithDirectory(".refs/deps/merged", c.Directory().WithNewFile("m.txt", "merged")).
+			WithNewDirectory(".refs/deps/sub", c.Directory().WithNewFile("replaced.txt", "replaced")).
+			WithoutFile(".refs/deps/old.txt")
+
+		for name, want := range map[string]string{
+			".refs/deps/vendored.txt":     "vendored",
+			".refs/deps/new.txt":          "new",
+			".refs/deps/copied.txt":       "copied",
+			".refs/deps/merged/m.txt":     "merged",
+			".refs/deps/sub/replaced.txt": "replaced",
+		} {
+			got, err := ws.File(name).Contents(ctx)
+			require.NoError(t, err, name)
+			require.Equal(t, want, got, name)
+		}
+		for _, gone := range []string{".refs/deps/old.txt", ".refs/deps/sub/nested.txt"} {
+			_, err := ws.File(gone).Contents(ctx)
+			require.Error(t, err, gone)
+		}
+
+		// Mount edits are not pending changes, against either base.
+		for _, from := range []*dagger.Workspace{base, mounted} {
+			isEmpty, err := ws.Changes(dagger.WorkspaceChangesOpts{From: from}).IsEmpty(ctx)
+			require.NoError(t, err)
+			require.True(t, isEmpty)
+		}
+		isEmpty, err := ws.Changes().IsEmpty(ctx)
+		require.NoError(t, err)
+		require.True(t, isEmpty)
+
+		// Removing beneath the mount works; the mount point itself is
+		// withoutMount's job.
+		_, err = ws.WithoutDirectory(".refs/deps/merged").File(".refs/deps/merged/m.txt").Contents(ctx)
+		require.Error(t, err)
+		_, err = ws.WithoutDirectory(".refs/deps").File(".refs/deps/new.txt").Contents(ctx)
+		require.ErrorContains(t, err, "is a mount point and cannot be removed; use withoutMount")
+	})
+
+	t.Run("edits resolve into a mount from the cwd", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ws := c.Directory().
+			WithNewFile("src/main.txt", "main").
 			AsWorkspace().
-			WithMountedDirectory(".refs/deps", c.Directory().WithNewFile("vendored.txt", "vendored"))
+			WithMountedDirectory("deps", c.Directory().WithNewFile("lib.txt", "lib")).
+			WithWorkdir("src").
+			WithNewFile("../deps/from-src.txt", "from src").
+			WithWorkdir("deps").
+			WithNewFile("here.txt", "here").
+			WithoutFiles([]string{"lib.txt", "../src/main.txt"})
 
-		_, err := ws.WithNewFile(".refs/deps/hack.txt", "nope").Changes(dagger.WorkspaceChangesOpts{From: ws}).IsEmpty(ctx)
-		require.ErrorContains(t, err, "is a read-only mount and cannot be modified")
+		got, err := ws.File("/deps/from-src.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "from src", got)
+		got, err = ws.File("here.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "here", got)
+		_, err = ws.File("/deps/lib.txt").Contents(ctx)
+		require.Error(t, err)
 
-		_, err = ws.WithoutDirectory(".refs/deps").Changes(dagger.WorkspaceChangesOpts{From: ws}).IsEmpty(ctx)
-		require.ErrorContains(t, err, "is a read-only mount and cannot be modified")
+		// withoutFiles spanned both trees: only the root's removal is
+		// pending.
+		paths, err := ws.WithWorkdir(".").Changes().RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"src/main.txt"}, paths)
+		added, err := ws.WithWorkdir(".").Changes().AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, added)
+	})
+
+	t.Run("a changeset spanning a mount", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		base := c.Directory().
+			WithNewFile("base.txt", "base").
+			AsWorkspace().
+			WithMountedDirectory("deps", c.Directory().WithNewFile("lib.txt", "lib"))
+		before := base.Directory("/")
+		after := before.
+			WithNewFile("base.txt", "edited base").
+			WithNewFile("deps/lib.txt", "edited lib").
+			WithNewFile("deps/added.txt", "added")
+		ws := base.WithChanges(after.Changes(before))
+
+		for name, want := range map[string]string{
+			"base.txt":       "edited base",
+			"deps/lib.txt":   "edited lib",
+			"deps/added.txt": "added",
+		} {
+			got, err := ws.File(name).Contents(ctx)
+			require.NoError(t, err, name)
+			require.Equal(t, want, got, name)
+		}
+		modified, err := ws.Changes().ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"base.txt"}, modified)
+		added, err := ws.Changes().AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, added)
+
+		// Entirely within the mount: nothing pending at all.
+		inMount := before.WithNewFile("deps/only.txt", "only")
+		ws = base.WithChanges(inMount.Changes(before))
+		got, err := ws.File("deps/only.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "only", got)
+		isEmpty, err := ws.Changes().IsEmpty(ctx)
+		require.NoError(t, err)
+		require.True(t, isEmpty)
+
+		// Removing the mount point is refused.
+		_, err = base.WithChanges(before.WithoutDirectory("deps").Changes(before)).File("base.txt").Contents(ctx)
+		require.ErrorContains(t, err, "is a mount point and cannot be removed")
 	})
 
 	t.Run("mounting over the workspace root is rejected", func(ctx context.Context, t *testctx.T) {
@@ -718,18 +833,41 @@ func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) 
 		require.ErrorIs(t, err, os.ErrNotExist)
 	})
 
-	t.Run("export skips mounts", func(ctx context.Context, t *testctx.T) {
+	t.Run("export skips mounts and their edits", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
 
 		_, err := hostDaggerExec(ctx, t, workdir, "script", "-c",
-			`current-workspace | with-mounted-directory .refs/deps $(directory | with-new-file vendored.txt "vendored") | with-new-file staged.txt "staged" | export`)
+			`current-workspace | with-mounted-directory .refs/deps $(directory | with-new-file vendored.txt "vendored") | with-new-file .refs/deps/edited.txt "edited" | with-new-file staged.txt "staged" | export`)
 		require.NoError(t, err)
 
 		got, err := os.ReadFile(filepath.Join(workdir, "staged.txt"))
 		require.NoError(t, err)
 		require.Equal(t, "staged", string(got))
+		_, err = os.Stat(filepath.Join(workdir, ".refs"))
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
+
+	t.Run("host workspace edits mounted content in the engine", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
+
+		c := connect(ctx, t, dagger.WithWorkdir(workdir))
+		ws := c.CurrentWorkspace().
+			WithMountedDirectory(".refs/deps", c.Directory().WithNewFile("vendored.txt", "vendored")).
+			WithNewFile(".refs/deps/vendored.txt", "edited").
+			WithNewFile("base.txt", "edited base")
+		got, err := ws.File(".refs/deps/vendored.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "edited", got)
+		modified, err := ws.Changes().ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"base.txt"}, modified)
+		added, err := ws.Changes().AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, added)
 		_, err = os.Stat(filepath.Join(workdir, ".refs"))
 		require.ErrorIs(t, err, os.ErrNotExist)
 	})
@@ -769,8 +907,10 @@ func (WorkspaceAPISuite) TestWorkspaceWithoutMount(ctx context.Context, t *testc
 		contents, err = ws.File("deps-other/sibling.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "sibling", contents)
-		_, err = ws.WithNewFile("deps-other/new.txt", "no").File("deps-other/new.txt").Contents(ctx)
-		require.ErrorContains(t, err, "read-only mount")
+		// Writes under the remaining mount land in it.
+		contents, err = ws.WithNewFile("deps-other/new.txt", "mounted edit").File("deps-other/new.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "mounted edit", contents)
 		// Unmounting does not mutate the original workspace.
 		contents, err = mounted.File("deps/nested/nested.txt").Contents(ctx)
 		require.NoError(t, err)

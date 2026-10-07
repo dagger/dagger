@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -141,10 +142,34 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFile(ctx context.Context, t *testctx
 		require.Contains(t, got, "TWO")
 	})
 
-	t.Run("a mount is read-only", func(ctx context.Context, t *testctx.T) {
-		ws := source.AsWorkspace().WithMountedDirectory("/sub", c.Directory().WithNewFile("mod.txt", "one\ntwo\nthree\n"))
-		_, err := ws.WithPatchFile(patch).File("/keep.txt").Contents(ctx)
-		require.ErrorContains(t, err, "is a read-only mount")
+	t.Run("a patch spanning a mount", func(ctx context.Context, t *testctx.T) {
+		base := source.AsWorkspace()
+		mounted := base.WithMountedDirectory("/sub", c.Directory().WithNewFile("mod.txt", "one\ntwo\nthree\n"))
+		ws := mounted.WithPatchFile(patch)
+		// The mount's part lands in the mount; the rest in the workspace.
+		want := maps.Clone(patchTestWant)
+		delete(want, "sub/sibling.txt") // shadowed by the mount
+		requireWorkspaceFiles(ctx, t, ws, want, patchTestRemoved)
+
+		// Only the workspace's part is a pending change.
+		diff, err := ws.Changes(dagger.WorkspaceChangesOpts{From: mounted}).AsPatch().Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, diff, "new/added.txt")
+		require.NotContains(t, diff, "sub/mod.txt")
+
+		// Unmounting reveals the untouched source.
+		got, err := ws.WithoutMount("/sub").File("/sub/mod.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "one\ntwo\nthree\n", got)
+	})
+
+	t.Run("a patch cannot move across a mount boundary", func(ctx context.Context, t *testctx.T) {
+		ws := source.AsWorkspace().WithMountedDirectory("/ren", c.Directory().WithNewFile("from.txt", patchTestFiles["ren/from.txt"]))
+		across := c.Directory().WithNewFile("across.patch", gitPatch(ctx, t, patchTestFiles, func(dir string) {
+			require.NoError(t, os.Rename(filepath.Join(dir, "ren/from.txt"), filepath.Join(dir, "moved.txt")))
+		})).File("across.patch")
+		_, err := ws.WithPatchFile(across).File("/keep.txt").Contents(ctx)
+		require.ErrorContains(t, err, "across a workspace mount boundary")
 	})
 }
 
@@ -332,18 +357,39 @@ func (WorkspaceSuite) TestWorkspaceWithPatchFileCreatesExisting(ctx context.Cont
 	require.Equal(t, "host\n", string(got), "the host file must not be overwritten")
 }
 
-// TestWorkspaceWithPatchFileHostMount refuses a patch under a mount of a
-// host-backed workspace too.
+// TestWorkspaceWithPatchFileHostMount patches a host-backed workspace across a
+// mount: the mounted part lands in the mount, in the engine, and only the
+// rest is exported to the host.
 func (WorkspaceSuite) TestWorkspaceWithPatchFileHostMount(ctx context.Context, t *testctx.T) {
-	checkout, _ := workspaceExportCheckout(ctx, t)
+	checkout, git := workspaceExportCheckout(ctx, t)
+	writeTestFile(t, checkout, "root.txt", "root\n")
+	git("add", "-A")
+	git("commit", "-m", "root fixture")
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	patchText := gitPatch(ctx, t, map[string]string{"vendor/lib.txt": "lib\n"}, func(dir string) {
-		writeTestFile(t, dir, "vendor/lib.txt", "hacked\n")
+	patchText := gitPatch(ctx, t, map[string]string{"vendor/lib.txt": "lib\n", "root.txt": "root\n"}, func(dir string) {
+		writeTestFile(t, dir, "vendor/lib.txt", "patched\n")
+		writeTestFile(t, dir, "root.txt", "patched root\n")
 	})
 	patch := c.Directory().WithNewFile("change.patch", patchText).File("change.patch")
 	ws := c.CurrentWorkspace().
 		WithMountedDirectory("/vendor", c.Directory().WithNewFile("lib.txt", "lib\n")).
 		WithPatchFile(patch)
-	_, err := ws.File("/vendor/lib.txt").Contents(ctx)
-	require.ErrorContains(t, err, "is a read-only mount")
+	got, err := ws.File("/vendor/lib.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "patched\n", got)
+	got, err = ws.File("/root.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "patched root\n", got)
+
+	diff, err := ws.Changes().AsPatch().Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, diff, "root.txt")
+	require.NotContains(t, diff, "vendor")
+
+	require.NoError(t, ws.Export(ctx))
+	gotHost, err := os.ReadFile(filepath.Join(checkout, "root.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "patched root\n", string(gotHost))
+	_, err = os.Stat(filepath.Join(checkout, "vendor"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }

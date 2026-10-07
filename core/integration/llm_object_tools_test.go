@@ -871,27 +871,51 @@ func (LLMSuite) TestChangesetToolPatchesDirectories(ctx context.Context, t *test
 	check(ctx, t, dagger.Ref[*dagger.LLM](target, recipe).Workspace())
 }
 
-// TestChangesetToolRefusesMounts covers a changeset that writes under a
-// workspace mount: mounted content is read-only, so the tool call fails and
-// nothing of its changeset is applied, as with Workspace.withChanges.
-func (LLMSuite) TestChangesetToolRefusesMounts(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+// TestChangesetToolEditsMounts covers a changeset that writes both under a
+// workspace mount and outside it: each part lands in its own tree, the mount's
+// staying out of the pending changes, and both are recorded as patches, so
+// restoring the conversation brings the mount edit back without rerunning
+// the tool.
+func (LLMSuite) TestChangesetToolEditsMounts(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
 	source := generatorWorkspace(c, generatorDang(`ws.directory("/")`,
-		`echo ok > ok.txt; echo hacked > vendor/dep/hacked.txt`))
+		`echo ok > ok.txt; echo edited >> vendor/dep/lib.txt; echo added > vendor/dep/added.txt`))
 	ws := source.AsWorkspace().
 		WithMountedDirectory("/vendor/dep", c.Directory().WithNewFile("lib.txt", "lib\n"))
 	result := runToolTurns(ctx, t, c, ws, "generate", "mount")
 	transcript, err := result.Transcript(ctx)
 	require.NoError(t, err)
 	require.Contains(t, transcript, "mount done")
-	require.Contains(t, transcript, "is a read-only mount")
+	require.Contains(t, transcript, "+edited\n")
 
-	entries, err := result.Workspace().Directory("/").Entries(ctx)
-	require.NoError(t, err)
-	require.NotContains(t, entries, "ok.txt")
-	mounted, err := result.Workspace().Directory("vendor/dep").Entries(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"lib.txt"}, mounted)
+	check := func(ctx context.Context, t *testctx.T, ws *dagger.Workspace) {
+		t.Helper()
+		for name, want := range map[string]string{
+			"ok.txt":               "ok\n",
+			"vendor/dep/lib.txt":   "lib\nedited\n",
+			"vendor/dep/added.txt": "added\n",
+		} {
+			got, err := ws.File(name).Contents(ctx)
+			require.NoError(t, err, name)
+			require.Equal(t, want, got, name)
+		}
+		// Only the edit outside the mount is pending.
+		added, err := ws.Changes().AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"ok.txt"}, added)
+		modified, err := ws.Changes().ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, modified)
+	}
+	check(ctx, t, result.Workspace())
+
+	recipe, fields := recipeFields(ctx, t, c, sink, result)
+	require.False(t, fields["withExec"])
+	require.True(t, fields["withPatchFile"])
+
+	require.NoError(t, c.Close())
+	target := connect(ctx, t)
+	check(ctx, t, dagger.Ref[*dagger.LLM](target, recipe).Workspace())
 }
 
 // TestChangesetToolFailsUnappliablePatch covers a patch git refuses to apply
@@ -1451,12 +1475,12 @@ func (LLMSuite) TestWorkspaceMountSummary(ctx context.Context, t *testctx.T) {
 		{
 			name: "directory mount", workspace: "current-workspace",
 			edit:   `.withNewFile("/mnt/deps/shadowed.txt", "shadowed payload").withMountedDirectory("/mnt/deps", directory.withNewFile("attachment-only.txt", "mounted payload"))`,
-			notice: "Mounted (read-only): mnt/deps",
+			notice: "Mounted: mnt/deps",
 		},
 		{
 			name: "file mount", workspace: "current-workspace",
 			edit:   `.withNewFile("/mounted.txt", "shadowed payload").withMountedFile("/mounted.txt", directory.withNewFile("attachment-only.txt", "mounted payload").file("attachment-only.txt"))`,
-			notice: "Mounted (read-only): mounted.txt",
+			notice: "Mounted: mounted.txt",
 		},
 		{
 			name:      "unmount",
@@ -1467,6 +1491,15 @@ func (LLMSuite) TestWorkspaceMountSummary(ctx context.Context, t *testctx.T) {
 			name:      "replace mount",
 			workspace: `current-workspace | with-mounted-directory --path /mnt/deps --source $(directory | with-new-file attachment-only.txt "old mounted payload")`,
 			edit:      `.withMountedDirectory("/mnt/deps", directory.withNewFile("replacement-only.txt", "mounted payload"))`,
+			notice:    "Mounted content changed: mnt/deps",
+		},
+		{
+			// An edit beneath a mount lands in it, not in the pending
+			// changes: the model is told which mount changed, not its files.
+			name:      "edit in a mount",
+			workspace: `current-workspace | with-mounted-directory --path /mnt/deps --source $(directory | with-new-file kept.txt "kept") | with-mounted-directory --path /mnt/other --source $(directory | with-new-file kept.txt "kept")`,
+			edit:      `.withNewFile("/mnt/deps/attachment-only.txt", "mounted payload")`,
+			notice:    "Mounted content changed: mnt/deps",
 		},
 		{
 			name: "git metadata", workspace: "current-workspace | directory / | as-workspace",
@@ -1501,9 +1534,11 @@ llm --model="%s" | with-workspace --workspace $ws | with-tools $(swapper) | with
 			if tc.notice != "" {
 				require.Contains(t, out, tc.notice)
 			} else {
-				require.NotContains(t, out, "Mounted (read-only):")
+				require.NotContains(t, out, "Mounted:")
+				require.NotContains(t, out, "Mounted content changed:")
 				require.NotContains(t, out, "Unmounted:")
 			}
+			require.NotContains(t, out, "mnt/other")
 			require.NotContains(t, out, "attachment-only.txt")
 			require.NotContains(t, out, "replacement-only.txt")
 			require.NotContains(t, out, "mounted payload")
