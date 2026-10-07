@@ -607,7 +607,7 @@ func (f sshfsVolumeFixture) Volume(c *dagger.Client) *dagger.Volume {
 }
 
 func (f sshfsVolumeFixture) VolumeWithKnownHosts(c *dagger.Client, knownHosts *dagger.Secret) *dagger.Volume {
-	return c.SshfsVolume(f.endpoint, f.privateKey, dagger.SshfsVolumeOpts{
+	return c.SSHFSVolume(f.endpoint, f.privateKey, dagger.SSHFSVolumeOpts{
 		KnownHosts:              knownHosts,
 		ExperimentalServiceHost: f.service,
 	})

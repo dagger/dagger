@@ -236,7 +236,7 @@ git commit -m attributes
 	require.Equal(t, legacySHA, fastSHA, "%s: exact commit objects", tc.name)
 	require.NotEqual(t, baseSHA, fastSHA)
 	for _, result := range []*dagger.Workspace{fast, legacy} {
-		parents, err := result.Git().Head().TargetCommit().ParentShas(ctx)
+		parents, err := result.Git().Head().TargetCommit().ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{baseSHA}, parents, tc.name)
 		contents, err := result.File("pending.txt").Contents(ctx)
@@ -625,7 +625,7 @@ func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, 
 		message, err := ahead[0].Message(ctx)
 		require.NoError(t, err)
 		require.Equal(t, fmt.Sprintf("perf: edit %d", i), strings.TrimSpace(message))
-		parents, err := ahead[0].ParentShas(ctx)
+		parents, err := ahead[0].ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{beforeSHA}, parents)
 		behind, err := before.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 101})
