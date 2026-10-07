@@ -59,7 +59,9 @@ func (build *Builder) qemuBins() (*dagger.Directory, []string) {
 		}).
 		WithDirectory("/", dag.Container().From(consts.XxImage).Rootfs()).
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
-		WithExec([]string{"xx-apk", "add", "--no-cache",
+		// The target packages' install scripts would run target binaries;
+		// static linking doesn't need them.
+		WithExec([]string{"xx-apk", "add", "--no-cache", "--no-scripts",
 			"musl-dev", "gcc", "glib-dev", "glib-static", "linux-headers", "pcre2-dev", "pcre2-static", "zlib-static",
 		}).
 		WithMountedFile("/qemu.tar.xz", src).
