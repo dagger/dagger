@@ -54,8 +54,8 @@ defmodule Dagger.GitBundle do
   @doc """
   Commits that must already exist wherever this bundle is applied.
   """
-  @spec prerequisite_sh_as(t()) :: {:ok, [String.t()]} | {:error, term()}
-  def prerequisite_sh_as(%__MODULE__{} = git_bundle) do
+  @spec prerequisite_shas(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def prerequisite_shas(%__MODULE__{} = git_bundle) do
     query_builder =
       git_bundle.query_builder |> QB.select("prerequisiteSHAs")
 
@@ -108,6 +108,12 @@ defmodule Dagger.GitBundle do
       git_bundle.query_builder |> QB.select("version")
 
     Client.execute(git_bundle.client, query_builder)
+  end
+
+  @doc false
+  @deprecated "Use prerequisite_shas/1 instead"
+  def prerequisite_sh_as(%__MODULE__{} = git_bundle) do
+    prerequisite_shas(git_bundle)
   end
 end
 
