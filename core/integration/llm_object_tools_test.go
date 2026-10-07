@@ -480,6 +480,65 @@ type Builder {
 	require.Equal(t, "built\n", got)
 }
 
+// TestChangesetToolPatchLeavesConflictMarkers locks in how a changeset patch
+// is recorded: with onConflict LEAVE_CONFLICT_MARKERS. Applied in the session,
+// it fits by construction; on restore, a raw step before it replays its
+// producer, which may not be hermetic, and markers then let the patch degrade
+// rather than fail the whole restore.
+func (LLMSuite) TestChangesetToolPatchLeavesConflictMarkers(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	source := generatorWorkspace(c, generatorDang(`ws.directory("/")`, `echo generated >> unchanged.txt`)).
+		WithNewFile("unchanged.txt", "keep me\n")
+	result := runToolTurns(ctx, t, c, source.AsWorkspace(), "generate", "gen")
+	got, err := result.Workspace().File("unchanged.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "keep me\ngenerated\n", got)
+
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, result)
+	require.NoError(t, err)
+	id := new(call.ID)
+	require.NoError(t, id.Decode(string(recipe)))
+	onConflict := collectArgEnums(id, "withPatchFile", "onConflict", nil)
+	require.NotEmpty(t, onConflict, "the overlay must be the workspace plus a patch")
+	for _, v := range onConflict {
+		require.Equal(t, "LEAVE_CONFLICT_MARKERS", v)
+	}
+}
+
+// collectArgEnums returns the enum values of argument arg given to every
+// call of field in an ID, its receiver spine and the IDs nested in its
+// arguments.
+func collectArgEnums(id *call.ID, field, arg string, into []string) []string {
+	var walkLit func(lit call.Literal)
+	walkLit = func(lit call.Literal) {
+		switch v := lit.(type) {
+		case *call.LiteralID:
+			into = collectArgEnums(v.Value(), field, arg, into)
+		case *call.LiteralList:
+			for _, item := range v.Values() {
+				walkLit(item)
+			}
+		case *call.LiteralObject:
+			for _, f := range v.Args() {
+				if f != nil {
+					walkLit(f.Value())
+				}
+			}
+		}
+	}
+	for cur := id; cur != nil; cur = cur.Receiver() {
+		for _, a := range cur.Args() {
+			if cur.Field() == field && a.Name() == arg {
+				if enum, ok := a.Value().(*call.LiteralEnum); ok {
+					into = append(into, enum.Value())
+				}
+			}
+			walkLit(a.Value())
+		}
+	}
+	return into
+}
+
 // TestChangesetToolPrunesExecution covers commands such as `go test`: they
 // execute successfully but produce no file patch. No-ops and directory-only
 // changes must drop the execution, without mistaking file mode edits for no-ops.

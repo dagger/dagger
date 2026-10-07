@@ -1213,7 +1213,9 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 //     that records it, and a build output (`go build`, `go test -c`) would
 //     fill telemetry with megabytes of base85. Such a changeset is applied
 //     raw, so restoring the conversation reruns its producer instead,
-//     assuming it is hermetic.
+//     assuming it is hermetic. Should it not be, the patches recorded after
+//     it leave conflict markers where they no longer fit, rather than fail
+//     the restore (see applyChangesetPatch).
 //
 // Either way, a changeset that touches .git is refused
 // (refuseGitMetadataChanges).
@@ -1416,6 +1418,13 @@ func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes d
 // ErrPatchBinary, for the caller to apply it raw. Should git still refuse the
 // patch, e.g. a file it would create beyond a symbolic link, the call fails
 // and the bound workspace stays as it was.
+//
+// The patch is recorded with onConflict LEAVE_CONFLICT_MARKERS rather than
+// FAIL. Applied now, it fits by construction; it can only stop fitting when
+// the conversation is restored and an earlier step, applied raw (see
+// applyChangeset), replays a producer that is not hermetic. Hunks that no
+// longer fit then leave conflict markers instead of failing the whole
+// restore; a file git cannot patch at all still fails it.
 func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root dagql.ObjectResult[*Directory], prefix string, changes dagql.ObjectResult[*Changeset]) (string, error) {
 	paths, err := changes.Self().ComputePaths(ctx)
 	if err != nil {
@@ -1464,7 +1473,10 @@ func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root d
 		}
 		if err := selectWS(dagql.Selector{
 			Field: "withPatchFile",
-			Args:  []dagql.NamedInput{{Name: "patch", Value: dagql.NewID[*File](blobID)}},
+			Args: []dagql.NamedInput{
+				{Name: "patch", Value: dagql.NewID[*File](blobID)},
+				{Name: "onConflict", Value: PatchConflictLeaveMarkers},
+			},
 		}); err != nil {
 			return "", err
 		}
