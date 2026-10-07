@@ -2,6 +2,7 @@
 
 mod functions;
 mod generator;
+pub mod naming;
 pub mod rust;
 pub mod utility;
 mod visitor;
