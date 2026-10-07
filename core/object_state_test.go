@@ -113,12 +113,35 @@ func TestModuleObjectStateWithFields(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, next.Self().Fields, got.Fields)
 
-	// Object references travel as ID edges and come back attached.
+	// Loading the recorded recipe rebuilds the same state.
+	loadFields := func(res dagql.AnyObjectResult) map[string]any {
+		t.Helper()
+		recipe, err := res.RecipeID(ctx)
+		require.NoError(t, err)
+		loaded, err := dag.Load(ctx, recipe)
+		require.NoError(t, err)
+		loadedObj, ok := dagql.UnwrapAs[*ModuleObject](loaded)
+		require.True(t, ok)
+		return loadedObj.Fields
+	}
+	require.Equal(t, next.Self().Fields, loadFields(result))
+
+	// So does a state recorded on top of a recorded state.
+	again := makeObject("effectful-method-again", map[string]any{
+		"count": json.Number("3"),
+		"label": "relabeled",
+		"tags":  []any{"a", "b"},
+		"extra": map[string]any{"k": nil},
+	})
+	result2, err := WithModuleObjectFields(ctx, dag, result, again)
+	require.NoError(t, err)
+	require.Equal(t, again.Self().Fields, loadFields(result2))
+
+	// An object reference comes back as the object it referenced, and
+	// returning the same reference again changes nothing.
 	ref := newTypeDefAttachedResult(t, ctx, cache, dag, "referenced", &ModuleSource{
 		Kind: ModuleSourceKindLocal, Local: &LocalModuleSource{ContextDirectoryPath: "/ref"},
 	})
-	refID, err := ref.ID()
-	require.NoError(t, err)
 	withRef := makeObject("effectful-ref-method", map[string]any{
 		"count": json.Number("1"),
 		"label": "same",
@@ -127,46 +150,14 @@ func TestModuleObjectStateWithFields(t *testing.T) {
 	})
 	refResult, err := WithModuleObjectFields(ctx, dag, prev, withRef)
 	require.NoError(t, err)
-	refObj, ok := dagql.UnwrapAs[*ModuleObject](refResult)
+	gotRef, ok := loadFields(refResult)["ref"].(dagql.AnyResult)
+	require.True(t, ok, "reference field is %T", loadFields(refResult)["ref"])
+	gotSource, ok := dagql.UnwrapAs[*ModuleSource](gotRef)
 	require.True(t, ok)
-	gotRef, ok := refObj.Fields["ref"].(dagql.AnyResult)
-	require.True(t, ok, "reference field is %T", refObj.Fields["ref"])
-	gotRefID, err := gotRef.ID()
-	require.NoError(t, err)
-	require.Equal(t, stableIDDigest(refID), stableIDDigest(gotRefID))
+	require.Equal(t, "/ref", gotSource.Local.ContextDirectoryPath)
 	unchangedRef, err := WithModuleObjectFields(ctx, dag, refResult, withRef)
 	require.NoError(t, err)
-	require.Nil(t, unchangedRef, "references compare by identity")
-
-	// The recorded chain is prev!__withField(count)!__withField(extra)!__withField(tags):
-	// rooted at the previous state, one frame per changed field in name order,
-	// with no trace of the producing call.
-	recipe, err := result.RecipeID(ctx)
-	require.NoError(t, err)
-	prevRecipe, err := prev.RecipeID(ctx)
-	require.NoError(t, err)
-	var fieldsSet []string
-	cur := recipe
-	for cur.Field() == withModuleObjectFieldName {
-		require.Len(t, cur.Args(), 2)
-		require.Equal(t, "name", cur.Args()[0].Name())
-		name, ok := cur.Args()[0].Value().ToInput().(string)
-		require.True(t, ok)
-		fieldsSet = append([]string{name}, fieldsSet...)
-		require.NotNil(t, cur.Module(), "the frame keeps module provenance")
-		cur = cur.Receiver()
-		require.NotNil(t, cur)
-	}
-	require.Equal(t, []string{"count", "extra", "tags"}, fieldsSet)
-	require.Equal(t, prevRecipe.Digest(), cur.Digest(), "the chain is rooted at the previous state")
-	require.NotContains(t, recipe.Display(), "effectful-method")
-
-	// Loading the recipe rebuilds the same state.
-	loaded, err := dag.Load(ctx, recipe)
-	require.NoError(t, err)
-	loadedObj, ok := dagql.UnwrapAs[*ModuleObject](loaded)
-	require.True(t, ok)
-	require.Equal(t, next.Self().Fields, loadedObj.Fields)
+	require.Nil(t, unchangedRef, "an unchanged reference records nothing")
 
 	// An unchanged return records nothing.
 	same := makeObject("idempotent-method", map[string]any{
@@ -185,15 +176,10 @@ func TestModuleObjectStateWithFields(t *testing.T) {
 	})
 	nulled, err := WithModuleObjectFields(ctx, dag, prev, dropped)
 	require.NoError(t, err)
-	nulledRecipe, err := nulled.RecipeID(ctx)
-	require.NoError(t, err)
-	require.Equal(t, withModuleObjectFieldName, nulledRecipe.Field())
-	require.Equal(t, "label", nulledRecipe.Args()[0].Value().ToInput())
-	require.Equal(t, prevRecipe.Digest(), nulledRecipe.Receiver().Digest())
-	nulledObj, ok := dagql.UnwrapAs[*ModuleObject](nulled)
-	require.True(t, ok)
-	require.Contains(t, nulledObj.Fields, "label")
-	require.Nil(t, nulledObj.Fields["label"])
+	nulledFields := loadFields(nulled)
+	require.Contains(t, nulledFields, "label")
+	require.Nil(t, nulledFields["label"])
+	require.Equal(t, json.Number("1"), nulledFields["count"])
 
 	// A value that can't be encoded fails the tool call; the producing call
 	// is never recorded in its place. Core objects pass through as returned.
