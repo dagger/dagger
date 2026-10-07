@@ -261,6 +261,22 @@ fetch_version() {
   curl -sfL "${base}/${name}/versions/${DAGGER_VERSION}" || echo "${DAGGER_VERSION}"
 }
 
+resolve_head_commit() {
+  # every main publish overwrites the files in main/head one at a time, so
+  # the head archive and head checksums.txt can come from different commits.
+  # checksums.txt also lists the same build under its commit sha: resolve
+  # head to that commit, and download the commit's own artifacts instead.
+  os="$(uname_os)"
+  arch="$(uname_arch)"
+  checksums=$(http_copy "${base}/${name}/main/head/checksums.txt") || return 1
+  commit=$(echo "$checksums" | sed -n "s/^[0-9a-f]\{64\}  ${name}_\([0-9a-f]\{40\}\)_${os}_${arch}\..*$/\1/p" | head -n 1)
+  if [ -z "$commit" ]; then
+    log_err "resolve_head_commit unable to find a ${os}_${arch} commit build in ${base}/${name}/main/head/checksums.txt"
+    return 1
+  fi
+  echo "$commit"
+}
+
 base_url() {
   os="$(uname_os)"
   arch="$(uname_arch)"
@@ -350,6 +366,10 @@ clean_install_version() {
 
 execute() {
   clean_install_version
+  if [ "$DAGGER_COMMIT" = "head" ]; then
+    DAGGER_COMMIT="$(resolve_head_commit)"
+    log_debug "resolved head to commit ${DAGGER_COMMIT}"
+  fi
   base_url="$(base_url)"
   tarball="$(tarball)"
   tarball_url="${base_url}/${tarball}"
