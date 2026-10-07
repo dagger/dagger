@@ -89,6 +89,18 @@ func TestWorkspaceCommandAliases(t *testing.T) {
 	require.Equal(t, []string{"i"}, args)
 }
 
+func TestUpdateMovedToLockUpdate(t *testing.T) {
+	cmd, args, err := rootCmd.Find([]string{"update"})
+	require.NoError(t, err)
+	require.Same(t, updateAliasCmd, cmd)
+	require.Empty(t, args)
+	require.True(t, cmd.Hidden)
+	require.True(t, cmd.DisableFlagParsing)
+	for _, args := range [][]string{nil, {"--no-generate"}, {"hello", "--version", "v2"}} {
+		require.EqualError(t, cmd.RunE(cmd, args), "dagger update has moved to dagger lock update to refresh lockfile entries. To change an installed module's source or version, use dagger module update")
+	}
+}
+
 func TestWorkspaceUpdateMovedToLockUpdate(t *testing.T) {
 	for _, command := range []string{"workspace", "ws"} {
 		cmd, args, err := rootCmd.Find([]string{command, "update"})
@@ -324,7 +336,6 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"module",
 		"settings",
 		"uninstall",
-		"update",
 		"start",
 		"version",
 		"api",
@@ -357,6 +368,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"installed",
 		"search",
 		"activity",
+		"update",
 	} {
 		require.NotContains(t, names, name)
 	}

@@ -37,7 +37,6 @@ dagger [options] [subcommand | file...]
 * [dagger shell](#dagger-shell)	 - Open a terminal for a container or directory in your project
 * [dagger start](#dagger-start)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
-* [dagger update](#dagger-update)	 - Update installed module sources, versions and lockfile state
 * [dagger version](#dagger-version)	 - Print dagger version
 * [dagger workspace](#dagger-workspace)	 - Inspect workspace files and config
 
@@ -2635,53 +2634,6 @@ dagger module uninstall hello
 
 ```
       --here   Write workspace config at the selected workspace cwd
-```
-
-### Options inherited from parent commands
-
-```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
-```
-
-### SEE ALSO
-
-* [dagger](#dagger)	 - A tool to run composable workflows in containers
-
-## dagger update
-
-Update installed module sources, versions and lockfile state
-
-### Synopsis
-
-Update an installed module by name or source.
-
-Use --version VERSION or append @VERSION to set a new version request.
-Use --source SOURCE to change the source address. The new source can include
-a version. A local path is relative to the current directory, as with install.
-The module keeps its name and settings.
-Match an installed name first.
-Source matching ignores the version and must select exactly one installation.
-Without a new version or source, refresh the existing request.
-
-With no arguments, this refreshes all installed modules. It does not refresh
-client targets or runtime targets. If a client scope targets an updated module,
-the command regenerates that scope. Use dagger lock update to refresh all
-entries in dagger.lock.
-
-```
-dagger update [NAME|SOURCE...]
-```
-
-### Options
-
-```
-      --source string    New source address for one installed module
-      --version string   New version request for one installed module
 ```
 
 ### Options inherited from parent commands

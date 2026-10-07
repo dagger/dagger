@@ -181,7 +181,6 @@ func init() {
 	sdkCmd.GroupID = "workspace"
 	installAliasCmd.GroupID = "workspace"
 	uninstallAliasCmd.GroupID = "workspace"
-	updateAliasCmd.GroupID = "workspace"
 	settingsAliasCmd.GroupID = "workspace"
 
 	apiCmd.GroupID = "toolbox"
