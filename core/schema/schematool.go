@@ -53,5 +53,12 @@ func (s *schemaToolsSchema) merge(ctx context.Context, self *core.Schema, args s
 	ModuleTypes core.JSON
 	ModuleName  string
 }) (*core.Schema, error) {
-	return self.Merge(args.ModuleTypes, args.ModuleName)
+	merged, err := self.Merge(args.ModuleTypes, args.ModuleName)
+	if err != nil {
+		return nil, err
+	}
+	// The merged schema is handed to codegen like the schema JSON, so give
+	// the module's names words too, if the schema has them.
+	merged.AddIdentifiers(namingDictionaryFor(ctx))
+	return merged, nil
 }

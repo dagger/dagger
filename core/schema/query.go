@@ -31,8 +31,9 @@ func (s *querySchema) Install(srv *dagql.Server) {
 		// module SDKs and is thus hidden the same way the rest of introspection is hidden
 		// (via the magic __ prefix).
 		dagql.NodeFunc("__schemaJSONFile", s.schemaJSONFile).
-			// The JSON includes __schemaVersion, so keep results distinct per view
-			// even when the visible schema AST is otherwise identical.
+			// The JSON includes __schemaVersion, and __identifiers only from
+			// v1.0.0 on, so keep results distinct per view even when the
+			// visible schema AST is otherwise identical.
 			View(AllVersion).
 			IsPersistable().
 			WithInput(dagql.CurrentSchemaInput).
@@ -180,7 +181,7 @@ func (s *querySchema) clientFilesyncMirror(ctx context.Context, parent dagql.Obj
 	return dagql.NewResultForCurrentCall(ctx, mirror)
 }
 
-func getSchemaJSON(hiddenTypes, hiddenFields []string, view call.View, srv *dagql.Server) ([]byte, error) {
+func getSchemaJSON(ctx context.Context, hiddenTypes, hiddenFields []string, view call.View, srv *dagql.Server) ([]byte, error) {
 	dagqlSchema := introspection.WrapSchema(srv.SchemaForView(view))
 
 	introspectionResponse := codegenintrospection.Response{
@@ -220,6 +221,9 @@ func getSchemaJSON(hiddenTypes, hiddenFields []string, view call.View, srv *dagq
 		}
 		introspectionResponse.Schema.ScrubField(rawType, fieldName)
 	}
+	// Collected after scrubbing, so the words cover exactly the names in the
+	// JSON.
+	introspectionResponse.Schema.Identifiers = SchemaIdentifiers(ctx, view, introspectionResponse.Schema)
 
 	moduleSchemaJSON, err := json.Marshal(introspectionResponse)
 	if err != nil {
@@ -246,7 +250,7 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
-	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, args.HiddenFields, dag.View, dag)
+	moduleSchemaJSON, err := getSchemaJSON(ctx, args.HiddenTypes, args.HiddenFields, dag.View, dag)
 	if err != nil {
 		return inst, err
 	}

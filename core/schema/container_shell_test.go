@@ -67,8 +67,8 @@ func TestShellNestingCallView(t *testing.T) {
 func TestShellSchemaVersions(t *testing.T) {
 	for _, version := range []string{"v0.21.0", "v1.0.0-beta.15"} {
 		t.Run(version, func(t *testing.T) {
-			_, dag := newNestingTestServer(t, call.View(version))
-			data, err := getSchemaJSON(nil, nil, dag.View, dag)
+			ctx, dag := newNestingTestServer(t, call.View(version))
+			data, err := getSchemaJSON(ctx, nil, nil, dag.View, dag)
 			require.NoError(t, err)
 			schema := decodeSchemaResponse(t, data).Schema
 			if version == "v0.21.0" {

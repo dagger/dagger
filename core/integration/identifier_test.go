@@ -6,11 +6,16 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/engine/naming"
+	"github.com/dagger/dagger/internal/testutil"
 )
 
 type IdentifierSuite struct{}
@@ -143,4 +148,58 @@ func (IdentifierSuite) TestNamingDictionary(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "GitHub", capitalized["GitHub"])
 	require.Equal(t, "Grpc", capitalized["gRPC"])
 	require.Equal(t, "3D", capitalized["3D"])
+}
+
+// The schema JSON handed to SDK codegen carries every name's words from
+// v1.0.0 on, and the live introspection path fetches the same words; older
+// clients get neither, so their codegen keeps its own conversion.
+func (IdentifierSuite) TestSchemaJSONIdentifiers(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name string
+		opts []dagger.ClientOpt
+		want bool
+	}{
+		{name: "current", want: true},
+		{name: "v0.21.0", opts: []dagger.ClientOpt{dagger.WithVersionOverride("v0.21.0")}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			res, err := testutil.Query[struct {
+				File struct {
+					Contents string `json:"contents"`
+				} `json:"__schemaJSONFile"`
+			}](t, `{ __schemaJSONFile { contents } }`, nil, tc.opts...)
+			require.NoError(t, err)
+			var raw map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(res.File.Contents), &raw))
+			var resp introspection.Response
+			require.NoError(t, json.Unmarshal([]byte(res.File.Contents), &resp))
+
+			live, _, err := introspection.Introspect(ctx, connect(ctx, t, tc.opts...))
+			require.NoError(t, err)
+
+			if !tc.want {
+				require.NotContains(t, raw, "__identifiers")
+				require.Nil(t, resp.Schema.Identifiers)
+				require.Nil(t, live.Identifiers)
+				return
+			}
+
+			require.Contains(t, raw, "__identifiers")
+			require.Contains(t, resp.Schema.Identifiers, "Container")
+			id, ok := resp.Schema.Identifier("experimentalWithAllGPUs")
+			require.True(t, ok)
+			require.Equal(t, "experimental_with_all_gpus", id.Format(naming.Snake, naming.Uppercase))
+			id, ok = resp.Schema.Identifier("prerequisiteSHAs")
+			require.True(t, ok)
+			require.Equal(t, "PrerequisiteShas", id.Format(naming.Pascal, naming.Capitalized))
+
+			require.NotEmpty(t, live.Identifiers)
+			for name, words := range live.Identifiers {
+				if fromJSON, ok := resp.Schema.Identifiers[name]; ok {
+					require.Equal(t, fromJSON, words, name)
+				}
+			}
+			require.Equal(t, resp.Schema.Identifiers["prerequisiteSHAs"], live.Identifiers["prerequisiteSHAs"])
+		})
+	}
 }

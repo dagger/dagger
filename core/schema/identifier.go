@@ -3,8 +3,10 @@ package schema
 import (
 	"context"
 
+	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/naming"
 )
 
@@ -14,8 +16,12 @@ var _ SchemaResolvers = &identifierSchema{}
 
 const identifierExperimental = "Identifier casing APIs are likely to change."
 
+// identifierVersion is the first engine version with the identifier API, and
+// with identifier words in the schema JSON handed to SDK codegen.
+const identifierVersion = "v1.0.0-0"
+
 func (s identifierSchema) Install(srv *dagql.Server) {
-	view := AfterVersion("v1.0.0-0")
+	view := AfterVersion(identifierVersion)
 
 	core.IdentifierWordKinds.Install(srv, view)
 	core.Casings.Install(srv, view)
@@ -74,6 +80,23 @@ func (s identifierSchema) Install(srv *dagql.Server) {
 // dictionary so far; additions will be selected by engine version.
 func namingDictionaryFor(context.Context) *naming.Dictionary {
 	return naming.Latest
+}
+
+// SchemaIdentifiers returns the words of every type, field, argument, input
+// field and enum value name in schema, parsed with the caller's dictionary,
+// for the "__identifiers" key of the schema JSON. Codegen that runs offline
+// from that JSON formats these words instead of converting names itself.
+//
+// It returns nil for views before identifierVersion, which leaves the key
+// out: SDKs then keep their own converters, so older modules regenerate
+// unchanged.
+func SchemaIdentifiers(ctx context.Context, view call.View, schema *codegenintrospection.Schema) codegenintrospection.Identifiers {
+	if !AfterVersion(identifierVersion).Contains(view) {
+		return nil
+	}
+	ids := codegenintrospection.Identifiers{}
+	ids.AddSchema(namingDictionaryFor(ctx), schema)
+	return ids
 }
 
 func (s identifierSchema) identifier(ctx context.Context, _ *core.Query, args struct {
