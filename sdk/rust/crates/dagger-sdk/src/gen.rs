@@ -6118,13 +6118,17 @@ impl Container {
     }
     /// Configures all available GPUs on the host to be accessible to this container.
     /// This currently works for Nvidia devices only.
-    pub fn experimental_with_all_gp_us(&self) -> Container {
+    pub fn experimental_with_all_gpus(&self) -> Container {
         let query = self.selection.select("experimentalWithAllGPUs");
         Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    #[deprecated(note = "use experimental_with_all_gpus")]
+    pub fn experimental_with_all_gp_us(&self) -> Container {
+        self.experimental_with_all_gpus()
     }
     /// Turn the container into a Service.
     /// Be sure to set any exposed ports before this conversion.
@@ -10234,9 +10238,13 @@ impl GitBundle {
             .collect())
     }
     /// Commits that must already exist wherever this bundle is applied.
-    pub async fn prerequisite_sh_as(&self) -> Result<Vec<String>, DaggerError> {
+    pub async fn prerequisite_shas(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("prerequisiteSHAs");
         query.execute(self.graphql_client.clone()).await
+    }
+    #[deprecated(note = "use prerequisite_shas")]
+    pub async fn prerequisite_sh_as(&self) -> Result<Vec<String>, DaggerError> {
+        self.prerequisite_shas().await
     }
 }
 impl Node for GitBundle {
