@@ -15,7 +15,6 @@ import (
 	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/dagui"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/iancoleman/strcase"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -337,8 +336,9 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 		}
 		if obj := fn.ReturnType.AsObject; obj != nil {
 			// Detect module constructors: a Query field is a constructor
-			// when its SourceModuleName matches the field name.
-			if fn.SourceModuleName != "" && fn.Name == gqlFieldName(fn.SourceModuleName) {
+			// when its SourceModuleName matches the field name (spelled by
+			// the module's naming rules, current or legacy).
+			if fn.SourceModuleName != "" && slices.Contains(fieldNameCandidates(fn.SourceModuleName), fn.Name) {
 				obj.Constructor = fn
 			}
 		}
@@ -469,7 +469,7 @@ func (m *moduleDef) AsInputs() []*modInput {
 func (m *moduleDef) GetObject(name string) *modObject {
 	for _, obj := range m.AsObjects() {
 		// Normalize name in case an SDK uses a different convention for object names.
-		if gqlObjectName(obj.Name) == gqlObjectName(name) {
+		if sameObjectName(obj.Name, name) {
 			return obj
 		}
 	}
@@ -500,7 +500,7 @@ func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modF
 func (m *moduleDef) GetInterface(name string) *modInterface {
 	for _, iface := range m.AsInterfaces() {
 		// Normalize name in case an SDK uses a different convention for interface names.
-		if gqlObjectName(iface.Name) == gqlObjectName(name) {
+		if sameObjectName(iface.Name, name) {
 			return iface
 		}
 	}
@@ -511,7 +511,7 @@ func (m *moduleDef) GetInterface(name string) *modInterface {
 func (m *moduleDef) GetEnum(name string) *modEnum {
 	for _, enum := range m.AsEnums() {
 		// Normalize name in case an SDK uses a different convention for object names.
-		if gqlObjectName(enum.Name) == gqlObjectName(name) {
+		if sameObjectName(enum.Name, name) {
 			return enum
 		}
 	}
@@ -542,7 +542,7 @@ func (m *moduleDef) GetTypeDef(name string) *modTypeDef {
 func (m *moduleDef) GetInput(name string) *modInput {
 	for _, input := range m.AsInputs() {
 		// Normalize name in case an SDK uses a different convention for input names.
-		if gqlObjectName(input.Name) == gqlObjectName(name) {
+		if sameObjectName(input.Name, name) {
 			return input
 		}
 	}
@@ -1180,7 +1180,7 @@ func (r *modFunctionArg) IsWorkspace() bool {
 // FlagName returns the name of the argument using CLI naming conventions.
 func (r *modFunctionArg) FlagName() string {
 	r.once.Do(func() {
-		r.flagName = cliName(r.Name)
+		r.flagName = registerFlagName(r.Name)
 	})
 	return r.flagName
 }
@@ -1272,19 +1272,4 @@ func (r *modFunctionArg) defValue() string {
 		}
 	}
 	return ""
-}
-
-// gqlObjectName converts casing to a GraphQL object  name
-func gqlObjectName(name string) string {
-	return strcase.ToCamel(name)
-}
-
-// gqlFieldName converts casing to a GraphQL object field name
-func gqlFieldName(name string) string {
-	return strcase.ToLowerCamel(name)
-}
-
-// cliName converts casing to the CLI convention (kebab)
-func cliName(name string) string {
-	return strcase.ToKebab(name)
 }

@@ -283,9 +283,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		// to test its functions. For example, if a function argument is
 		// `dockerConfig` in code, the user can type `--dockerConfig` or even
 		// `--DockerConfig` as this normalization function rewrites to the
-		// equivalent `--docker-config` in kebab-case.
+		// equivalent `--docker-config` in kebab-case. The spelling older
+		// CLIs gave a flag (`--e-2-e-test` for `e2eTest`) works too.
 		fc.cmd.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
-			return pflag.NormalizedName(cliName(name))
+			return pflag.NormalizedName(normalizeFlagName(name))
 		})
 
 		fc.cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Save the result to a local file or directory")
@@ -931,6 +932,12 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 		// This is going to be executed in the "execution" vertex, when
 		// we have the final/leaf command.
 		RunE: fc.RunE(ctx, fn),
+	}
+
+	// Older CLIs spelled some command names differently (e-2-e-test for
+	// e2eTest); keep those working.
+	if legacy := legacyCLIName(fn.Name); legacy != newCmd.Name() {
+		newCmd.Aliases = append(newCmd.Aliases, legacy)
 	}
 
 	newCmd.Flags().SetInterspersed(false)
