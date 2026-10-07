@@ -257,19 +257,27 @@ func registerCheckpointHostHistory(ctx context.Context, query *core.Query, captu
 	return query.RegisterCapturedHostHistory(ctx, source.Ref.Self().Repo, captured.ClientID, captured.HostPath(), metadata.BaseSha, metadata.RemoteUrl)
 }
 
-// checkpointGitRef freezes a Git workspace. It is already pinned: Git refs
-// record their resolved commit (__resolvedRef) when selected, so even a
-// workspace on a branch never names the branch in its recipe, and its edits
-// are in-engine recipes over that commit. So it is kept as it is, except for
-// a local checkout whose remote selection was never recorded.
+// checkpointGitRef freezes a Git workspace: its base becomes a detached
+// commit, and its overlay is kept by reference.
 //
-// Such a checkout's branch tracking is read from its current branch, which
-// anything detaching HEAD (pinning, committing) loses. Its selection is
-// recorded first, so the frozen repository, and checkouts derived from it,
-// still name their upstream remote. That rebuilds the base, and the overlay is
-// reapplied onto it by reference: re-rendering it as one patch would inline
-// the edits again (tool edits are already patch blobs) and the outputs MCP
-// keeps out of the recipe as raw changesets (see MCP.applyChangeset).
+// The commit is already fixed: Git refs record their resolved commit
+// (__resolvedRef) when selected, so even a workspace on a branch never moves
+// with it. But a named ref still selects that name, and committing onto it
+// advances the name in the committed repository's own storage, where it would
+// then shadow the upstream's (see LocalGitRepository.Upstream). So a named ref
+// is re-selected by its SHA, detaching it. A ref already selected by SHA, from
+// a repository whose remote selection is fixed, is kept as it is.
+//
+// A local checkout whose remote selection was never recorded reads its branch
+// tracking from its current branch, which detaching HEAD loses. Its selection
+// is recorded first, so the frozen repository, and checkouts derived from it,
+// still name their upstream remote.
+//
+// Rebuilding the base reapplies the overlay onto it by reference, never as a
+// rendered patch: tool edits are already patch blobs, and MCP deliberately
+// keeps binary and oversized outputs out of the recipe as raw changesets (see
+// MCP.applyChangeset). Edits made through the API stay the recipes that made
+// them.
 func (s *workspaceSchema) checkpointGitRef(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -284,26 +292,31 @@ func (s *workspaceSchema) checkpointGitRef(
 	}
 
 	repo := ref.Repo
-	if _, local := repo.Self().Backend.(*core.LocalGitRepository); !local || repo.Self().UpstreamRemote != nil {
-		// Remote configuration, or a captured selection, is already fixed.
+	_, local := repo.Self().Backend.(*core.LocalGitRepository)
+	recordSelection := local && repo.Self().UpstreamRemote == nil
+	// The SHA resolvers keep the resolved SHA as the name: still detached.
+	detached := ref.Ref.Name == "" || ref.Ref.Name == ref.Ref.SHA
+	if detached && !recordSelection {
 		return parent, nil
 	}
-	remotes, upstream, err := repo.Self().ConfiguredRemotes(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("read workspace Git remotes: %w", err)
-	}
-	data, err := json.Marshal(remotes)
-	if err != nil {
-		return inst, err
-	}
-	if err := srv.Select(ctx, repo, &repo, dagql.Selector{
-		Field: "__withRemoteSelection",
-		Args: []dagql.NamedInput{
-			{Name: "remotes", Value: dagql.String(data)},
-			{Name: "upstreamRemote", Value: dagql.String(upstream)},
-		},
-	}); err != nil {
-		return inst, fmt.Errorf("record workspace Git remotes: %w", err)
+	if recordSelection {
+		remotes, upstream, err := repo.Self().ConfiguredRemotes(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("read workspace Git remotes: %w", err)
+		}
+		data, err := json.Marshal(remotes)
+		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
+			Field: "__withRemoteSelection",
+			Args: []dagql.NamedInput{
+				{Name: "remotes", Value: dagql.String(data)},
+				{Name: "upstreamRemote", Value: dagql.String(upstream)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("record workspace Git remotes: %w", err)
+		}
 	}
 	var pinned dagql.ObjectResult[*core.GitRef]
 	if err := srv.Select(ctx, repo, &pinned, dagql.Selector{

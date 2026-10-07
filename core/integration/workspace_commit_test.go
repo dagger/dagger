@@ -1365,9 +1365,9 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFilteredDirectoryDeletion(ctx conte
 // a `go test -c` binary in tmp/ (trace dfa26d7aa772715725e427efc5b65cdb).
 // Freezing the receiver used to re-record its whole pending overlay as one
 // inline patch blob; the binary made one span's call 129 MB, past what any
-// trace can hold. The overlay must stay by reference, whether freezing keeps
-// the workspace (a remote repository) or rebuilds its base to record a local
-// checkout's remote selection, and the uncommitted file must survive.
+// trace can hold. The overlay must stay by reference when freezing re-pins the
+// base by SHA, for a remote branch or a local checkout whose remote selection
+// it records, and the uncommitted file must survive.
 func (WorkspaceSuite) TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		name, path, build string
@@ -1407,6 +1407,16 @@ func (WorkspaceSuite) TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe(ctx co
 			require.Empty(t, got.Git.Uncommitted.ModifiedPaths)
 
 			committed := dagger.Ref[*dagger.Workspace](c, got.ID)
+			if !tc.local {
+				// The commit is detached: the remote branch the workspace was
+				// built from still resolves through the remote, to its
+				// original commit, not to the new one.
+				baseSHA, err := base.CommitSHA(ctx)
+				require.NoError(t, err)
+				mainSHA, err := committed.Git().Head().AsRepository().Ref("main").CommitSHA(ctx)
+				require.NoError(t, err)
+				require.Equal(t, baseSHA, mainSHA, "committing must not advance the branch")
+			}
 			head := committed.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
 			notes, err := head.File("notes.txt").Contents(ctx)
 			require.NoError(t, err)
