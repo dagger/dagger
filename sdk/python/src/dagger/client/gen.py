@@ -19267,6 +19267,21 @@ class Workspace(Type):
         _ctx = self._select("withoutFile", _args)
         return Workspace(_ctx)
 
+    def without_files(self, paths: list[str]) -> Self:
+        """Return this workspace with files removed, without mutating the source.
+
+        Parameters
+        ----------
+        paths:
+            Paths of the files to remove. Relative paths resolve from the
+            workspace cwd.
+        """
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withoutFiles", _args)
+        return Workspace(_ctx)
+
     def without_module(
         self,
         name: str,

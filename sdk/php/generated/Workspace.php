@@ -421,6 +421,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with files removed, without mutating the source.
+     */
+    public function withoutFiles(array $paths): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFiles');
+        $innerQueryBuilder->setArgument('paths', $paths);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a directory removed, without mutating the source.
      */
     public function withoutDirectory(string $path): Workspace

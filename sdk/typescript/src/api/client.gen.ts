@@ -18764,6 +18764,15 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with files removed, without mutating the source.
+   * @param paths Paths of the files to remove. Relative paths resolve from the workspace cwd.
+   */
+  withoutFiles = (paths: string[]): Workspace => {
+    const ctx = this._ctx.select("withoutFiles", { paths })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a module removed from its config.
    *
    * When the session selects an env, only that env's overlay entry is removed.

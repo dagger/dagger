@@ -20205,6 +20205,16 @@ func (r *Workspace) WithoutFile(path string) *Workspace {
 	}
 }
 
+// Return this workspace with files removed, without mutating the source.
+func (r *Workspace) WithoutFiles(paths []string) *Workspace {
+	q := r.query.Select("withoutFiles")
+	q = q.Arg("paths", paths)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithoutModuleOpts contains options for Workspace.WithoutModule
 type WorkspaceWithoutModuleOpts struct {
 	// Write to the workspace config directory at the workspace cwd.

@@ -7341,6 +7341,14 @@ type Workspace implements Node {
     path: String!
   ): Workspace!
 
+  """Return this workspace with files removed, without mutating the source."""
+  withoutFiles(
+    """
+    Paths of the files to remove. Relative paths resolve from the workspace cwd.
+    """
+    paths: [String!]!
+  ): Workspace!
+
   """
   Return this workspace with a directory removed, without mutating the source.
   """

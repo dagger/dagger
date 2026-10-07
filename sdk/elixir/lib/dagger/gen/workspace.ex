@@ -1173,6 +1173,20 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with files removed, without mutating the source.
+  """
+  @spec without_files(t(), [String.t()]) :: Dagger.Workspace.t()
+  def without_files(%__MODULE__{} = workspace, paths) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutFiles") |> QB.put_arg("paths", paths)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a module removed from its config.
 
   When the session selects an env, only that env's overlay entry is removed.

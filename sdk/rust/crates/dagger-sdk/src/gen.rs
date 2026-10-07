@@ -19073,6 +19073,23 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with files removed, without mutating the source.
+    ///
+    /// # Arguments
+    ///
+    /// * `paths` - Paths of the files to remove. Relative paths resolve from the workspace cwd.
+    pub fn without_files(&self, paths: Vec<impl Into<String>>) -> Workspace {
+        let mut query = self.selection.select("withoutFiles");
+        query = query.arg(
+            "paths",
+            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a directory removed, without mutating the source.
     ///
     /// # Arguments
