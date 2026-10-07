@@ -111,9 +111,10 @@ func TestCommandAccounting(t *testing.T) {
 	require.Zero(t, sample.ExternalRX)
 	after, err := SampleEngine()
 	require.NoError(t, err)
-	// The parent server only receives seven payload bytes. Without including
-	// the command subtree, the engine's RX total would miss the large reply.
-	require.GreaterOrEqual(t, after.InternalRX-before.InternalRX, sample.InternalRX)
+	// The engine-side server sends the large reply; the helper receives it.
+	// Its RX bytes must not be added back into the engine's counters.
+	require.GreaterOrEqual(t, after.InternalTX-before.InternalTX, uint64(1<<20))
+	require.Less(t, after.InternalRX-before.InternalRX, sample.InternalRX)
 	require.NoError(t, command.Close())
 	_, err = os.Stat(command.path)
 	require.True(t, os.IsNotExist(err), "command cgroup should be removed: %v", err)
@@ -153,18 +154,16 @@ func TestCommandPlacementWithoutEBPF(t *testing.T) {
 		a.paths[name] = filepath.Join(root, name)
 		require.NoError(t, os.Mkdir(a.paths[name], 0o755))
 	}
-	// Even if engine hooks loaded, missing helper hooks make the aggregate
-	// incomplete once commands are placed outside the engine cgroup.
+	// Helpers are outside engine totals, so unavailable helper hooks must not
+	// disable otherwise working engine accounting.
 	previousTracer := activeTracer.Swap(&Tracer{cgroupEnabled: true})
 	previousCommands := fallbackCommands.Swap(a)
 	t.Cleanup(func() {
 		activeTracer.Store(previousTracer)
 		fallbackCommands.Store(previousCommands)
 	})
-	require.False(t, EngineAccountingAvailable())
-	require.ErrorContains(t, EngineAccountingError(), "aggregate is incomplete")
-	_, err := SampleEngine()
-	require.Error(t, err)
+	require.True(t, EngineAccountingAvailable())
+	require.NoError(t, EngineAccountingError())
 	for _, name := range []string{"git", "rg", "sshfs"} {
 		t.Run(name, func(t *testing.T) {
 			paths := map[string]bool{}
@@ -188,7 +187,7 @@ func TestCommandPlacementWithoutEBPF(t *testing.T) {
 		})
 	}
 	cmd := &exec.Cmd{Path: "/usr/bin/dnsmasq"}
-	_, err = PrepareCommand(cmd)
+	_, err := PrepareCommand(cmd)
 	require.Error(t, err)
 	require.Nil(t, cmd.SysProcAttr, "shared infrastructure stays in the engine cgroup")
 }

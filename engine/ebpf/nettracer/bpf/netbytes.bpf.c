@@ -286,10 +286,10 @@ static __always_inline int add_cgroup_bytes(struct __sk_buff *skb,
         __u64 *bytes = bpf_map_lookup_elem(&operation_byte_counters, &key);
         if (bytes)
             *bytes += skb->len;
+        return 1;
     }
-    /* Both the engine's exact cgroup and the sibling operation subtrees
-     * contribute to this aggregate. Their hooks cover disjoint cgroups, so
-     * each packet is counted once. Workload cgroups remain excluded. */
+    /* Engine totals cover only the engine's own cgroup. Sibling helpers
+     * are attributed to their operation spans, just like executor workloads. */
     struct cgroup_counter_key key = {
         .direction = direction,
         .scope = scope,

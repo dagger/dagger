@@ -50,6 +50,12 @@ func WithWorkloadReadings(ctx context.Context, readings *WorkloadReadings) conte
 	return context.WithValue(ctx, workloadReadingsKey{}, readings)
 }
 
+// WithoutWorkloadReadings isolates sampling that is not part of the executor
+// workload export. Keep the session's ordinary metric provider unchanged.
+func WithoutWorkloadReadings(ctx context.Context) context.Context {
+	return context.WithValue(ctx, workloadReadingsKey{}, (*WorkloadReadings)(nil))
+}
+
 func HasWorkloadReadings(ctx context.Context) bool {
 	o, _ := ctx.Value(workloadReadingsKey{}).(*WorkloadReadings)
 	return o != nil

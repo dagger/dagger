@@ -9,6 +9,8 @@ import (
 
 type Command struct{}
 
+func (*Command) CgroupPath() string { return "" }
+
 func PrepareCommand(*exec.Cmd) (*Command, error)  { return nil, errUnsupported }
 func InitCommandPlacement() (func() error, error) { return nil, errUnsupported }
 func (*Command) Sample() (Sample, error)          { return Sample{}, errUnsupported }

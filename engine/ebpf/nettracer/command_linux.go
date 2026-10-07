@@ -288,6 +288,9 @@ func (c *Command) keys() []netbytesOperationCounterKey {
 	return keys
 }
 
+// CgroupPath is the operation's private cgroup, retained until Close.
+func (c *Command) CgroupPath() string { return c.path }
+
 func (c *Command) Sample() (Sample, error) {
 	if c.tracer == nil {
 		return Sample{}, errors.New("subprocess network accounting is unavailable")

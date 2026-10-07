@@ -245,7 +245,7 @@ func newInstruments(meter metric.Meter) (instruments, error) {
 	}
 	inst.cgroupDescendants, err = meter.Int64ObservableGauge(CgroupDescendantsName,
 		metric.WithUnit("1"),
-		metric.WithDescription("Live and dying cgroup descendants below the engine process cgroup, including subprocess network accounting cgroups but excluding executor workloads in the standard engine layout."),
+		metric.WithDescription("Live and dying cgroup descendants below the engine process cgroup, excluding sibling helper and executor cgroups in the standard engine layout."),
 	)
 	if err != nil {
 		return inst, err
