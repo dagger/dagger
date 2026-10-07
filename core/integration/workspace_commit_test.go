@@ -17,8 +17,10 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 const workspaceCommitDate = "2026-09-05T12:00:00Z"
@@ -1356,6 +1358,83 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFilteredDirectoryDeletion(ctx conte
 	exists, err = dagger.Ref[*dagger.Workspace](c, rest.ID).Git().Head().Tree().Exists(ctx, "src/b.txt")
 	require.NoError(t, err)
 	require.False(t, exists)
+}
+
+// TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe covers a commit scoped
+// to one file of a workspace that also holds an uncommitted build output, e.g.
+// a `go test -c` binary in tmp/ (trace dfa26d7aa772715725e427efc5b65cdb).
+// Freezing the receiver re-records its whole pending overlay; inlined as a
+// patch blob, the binary made one span's call 129 MB, past what any trace can
+// hold. A binary or oversized overlay must be applied raw instead, and the
+// uncommitted file must survive the commit.
+func (WorkspaceSuite) TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name, path, build string
+	}{
+		{name: "binary", path: "tmp/app.test", build: "head -c 4194304 /dev/urandom > tmp/app.test"},
+		{name: "oversized text", path: "tmp/build.log", build: "yes 'compiling a package' | head -c 17825792 > tmp/build.log"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c, sink := connectWithTrace(ctx, t)
+			daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("notes.txt", "base\n"))
+			outputs := c.Container().From(alpineImage).WithWorkdir("/out").
+				WithExec([]string{"sh", "-ec", "mkdir tmp; " + tc.build}).
+				Directory("/out")
+			size, err := outputs.File(tc.path).Size(ctx)
+			require.NoError(t, err)
+			ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
+				WithNewFile("notes.txt", "committed\n").
+				WithDirectory("/", outputs)
+
+			got, err := commitWorkspace(ctx, c, ws, "notes only", []string{"notes.txt"})
+			require.NoError(t, err)
+			require.Equal(t, []string{"tmp/", tc.path}, got.Git.Uncommitted.AddedPaths)
+			require.Empty(t, got.Git.Uncommitted.ModifiedPaths)
+
+			committed := dagger.Ref[*dagger.Workspace](c, got.ID)
+			head := committed.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+			notes, err := head.File("notes.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "committed\n", notes)
+			exists, err := head.Exists(ctx, tc.path)
+			require.NoError(t, err)
+			require.False(t, exists, "the excluded build output must not be committed")
+			kept, err := committed.File(tc.path).Size(ctx)
+			require.NoError(t, err)
+			require.Equal(t, size, kept, "the uncommitted build output must survive the commit")
+
+			// The next commit freezes an overlay that holds only the output.
+			rest, err := commitWorkspace(ctx, c, committed, "outputs", nil)
+			require.NoError(t, err)
+			require.Empty(t, rest.Git.Uncommitted.AddedPaths)
+			restored := dagger.Ref[*dagger.Workspace](c, rest.ID)
+			kept, err = restored.Git().Head().Tree().File(tc.path).Size(ctx)
+			require.NoError(t, err)
+			require.Equal(t, size, kept)
+
+			// The recorded recipe, and every call the session published,
+			// stays small: nothing inlined the output as a patch blob.
+			recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(restored))
+			require.NoError(t, err)
+			require.Less(t, len(recipe), 1<<20, "the build output must not be inlined in the recipe")
+			id := new(call.ID)
+			require.NoError(t, id.Decode(string(recipe)))
+			fields := map[string]bool{}
+			collectIDFieldNames(id, fields)
+			require.True(t, fields["__withCommitRepository"], "the recipe must hold the commits")
+			require.True(t, fields["withExec"], "the overlay must reference the output's producer")
+			require.False(t, fields["blob"], "the overlay must not be embedded as a patch blob")
+			var large []string
+			sink.read(func(db *dagui.DB) {
+				for dgst, published := range db.Calls {
+					if n := proto.Size(published); n > 1<<20 {
+						large = append(large, fmt.Sprintf("%s %s (%d bytes)", dgst, published.Field, n))
+					}
+				}
+			})
+			require.Empty(t, large, "no published call may inline the build output")
+		})
+	}
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitFileKindsAndMetadata(ctx context.Context, t *testctx.T) {

@@ -695,20 +695,20 @@ func checkpointApprovalSummary(candidates []*gitsession.CaptureGitCandidate) str
 
 // checkpointOverlay records only the already-approved engine edits as a patch.
 // Keeping the old Changeset ID would retain the live host receiver in the recipe.
+//
+// The overlay is everything pending against the frozen base, so it is the
+// workspace's whole uncommitted state, build outputs included. A patch that
+// core.EmbedPatch refuses (too large, or carrying a binary file) is not
+// inlined: the overlay is applied raw instead, as MCP.applyChangeset does,
+// so the recipe references the changeset's producer rather than carrying its
+// output. For a host-backed overlay that means the recipe re-reads the touched
+// host paths on replay, which beats a recipe no trace can record.
 func checkpointOverlay(
 	ctx context.Context,
 	srv *dagql.Server,
 	frozen dagql.ObjectResult[*core.Workspace],
 	changes dagql.ObjectResult[*core.Changeset],
 ) (out dagql.ObjectResult[*core.Workspace], err error) {
-	var patch dagql.ObjectResult[*core.File]
-	if err := srv.Select(ctx, changes, &patch, dagql.Selector{Field: "asPatch"}); err != nil {
-		return out, err
-	}
-	data, err := patch.Self().Contents(ctx, patch, nil, nil)
-	if err != nil {
-		return out, err
-	}
 	var before dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, frozen, &before, dagql.Selector{
 		Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString("/")}},
@@ -719,18 +719,29 @@ func checkpointOverlay(
 	if err != nil {
 		return out, err
 	}
-	after := before
-	if len(data) > 0 {
-		var blob dagql.ObjectResult[*core.File]
-		if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
-			Field: "blob", Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.NewString("workspace-overlay.patch")},
-				{Name: "contents", Value: dagql.Bytes(data)},
-				{Name: "permissions", Value: dagql.NewInt(0o600)},
-			},
-		}); err != nil {
+	// Rendered against the frozen tree itself, and bounded: git stops at the
+	// first binary hunk or past the budget, rather than writing out a build
+	// output's base85 only for it to be refused.
+	rendered, err := changes.Self().RenderPatchOnto(ctx, before, ".", core.EmbeddedPatchMaxBytes)
+	var blob dagql.ObjectResult[*core.File]
+	if err == nil && len(rendered.Patch) > 0 {
+		blob, err = core.EmbedPatch(ctx, srv, "workspace-overlay.patch", rendered.Patch)
+	}
+	if core.PatchNotEmbeddable(err) {
+		changesID, err := changes.ID()
+		if err != nil {
 			return out, err
 		}
+		err = srv.Select(ctx, frozen, &out, dagql.Selector{
+			Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+		})
+		return out, err
+	}
+	if err != nil {
+		return out, fmt.Errorf("render workspace overlay patch: %w", err)
+	}
+	after := before
+	if blob.Self() != nil {
 		blobID, err := blob.ID()
 		if err != nil {
 			return out, err

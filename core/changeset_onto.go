@@ -65,6 +65,72 @@ var (
 	ErrPatchBinary = errors.New("patch has binary content")
 )
 
+// EmbeddedPatchMaxBytes bounds a patch the engine embeds in a recipe with
+// EmbedPatch.
+const EmbeddedPatchMaxBytes = 16 << 20
+
+// PatchNotEmbeddable reports whether err means a patch must not be embedded in
+// a recipe (ErrPatchTooLarge or ErrPatchBinary), so the caller should keep a
+// by-reference representation, such as the raw changeset, instead.
+func PatchNotEmbeddable(err error) bool {
+	return errors.Is(err, ErrPatchTooLarge) || errors.Is(err, ErrPatchBinary)
+}
+
+// CheckEmbeddablePatch fails with ErrPatchTooLarge for a patch over
+// EmbeddedPatchMaxBytes, and with ErrPatchBinary for one that carries a binary
+// file's content (or names a binary file it cannot carry).
+func CheckEmbeddablePatch(patch []byte) error {
+	if int64(len(patch)) > EmbeddedPatchMaxBytes {
+		return ErrPatchTooLarge
+	}
+	if patchHasBinary(patch) {
+		return ErrPatchBinary
+	}
+	return nil
+}
+
+// patchHasBinary reports whether a `git diff` has a binary hunk ("GIT binary
+// patch", with --binary) or a binary file it left out ("Binary files ...
+// differ", without). Both are header lines: text hunk lines always start with
+// ' ', '+', '-' or '\', so content cannot be mistaken for them.
+func patchHasBinary(patch []byte) bool {
+	for line := range bytes.Lines(patch) {
+		if bytes.Equal(line, gitBinaryPatchLine) ||
+			(bytes.HasPrefix(line, []byte("Binary files ")) && bytes.HasSuffix(line, []byte(" differ\n"))) {
+			return true
+		}
+	}
+	return false
+}
+
+// EmbedPatch returns patch as a Query.blob file, to apply from a recipe.
+//
+// Every engine-built recipe that inlines a rendered patch must go through it.
+// A blob's contents are stored inline in its call ID, so the patch is carried
+// by every recipe built on it and recorded in every trace span that calls it,
+// and a span's call attribute must fit an OTLP frame for the trace to be
+// restorable at all. A build output such as `go test -c` is megabytes of
+// base85 there, and is better rebuilt from its producer. So a patch that fails
+// CheckEmbeddablePatch is refused with its error: the caller falls back to a
+// by-reference representation (PatchNotEmbeddable).
+func EmbedPatch(ctx context.Context, srv *dagql.Server, name string, patch []byte) (dagql.ObjectResult[*File], error) {
+	var blob dagql.ObjectResult[*File]
+	if err := CheckEmbeddablePatch(patch); err != nil {
+		return blob, err
+	}
+	// No View: blob postdates some client views, and this is engine-internal
+	// plumbing.
+	err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
+		Field: "blob",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(name)},
+			{Name: "contents", Value: dagql.Bytes(patch)},
+			{Name: "permissions", Value: dagql.NewInt(0o600)},
+		},
+	})
+	return blob, err
+}
+
 // RenderPatchOnto renders the changeset as a patch against base, a tree the
 // changeset is about to be applied to at prefix (a base-relative directory;
 // "." for its root). Paths in the result are base-relative.
