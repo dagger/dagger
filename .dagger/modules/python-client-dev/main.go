@@ -42,7 +42,8 @@ func New(
 	//   "!sdk/python/tests/**/*.py",
 	//   "!sdk/python/codegen/**/*.py",
 	//   "!sdk/python/README.md",
-	//   "!sdk/python/LICENSE"
+	//   "!sdk/python/LICENSE",
+	//   "!engine/naming/testdata/vectors.json"
 	// ]
 	workspaceDir *dagger.Directory,
 
@@ -70,6 +71,12 @@ func New(
 					With(toolsCache("uv", "ruff", "mypy")).
 					With(uvTool(workspaceDir)).
 					WithDirectory("/src/sdk/python", workspaceDir.Directory(sourcePath)).
+					// Shared identifier test vectors, for the codegen tests.
+					WithFile(
+						"/src/engine/naming/testdata/vectors.json",
+						workspaceDir.File("engine/naming/testdata/vectors.json"),
+					).
+					WithEnvVariable("DAGGER_NAMING_VECTORS", "/src/engine/naming/testdata/vectors.json").
 					WithWorkdir("/src/sdk/python").
 					WithExec(uv("sync")),
 			}),
