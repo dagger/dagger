@@ -45,7 +45,7 @@ func New(
 	clientDockerConfig *dagger.Secret,
 ) *RustClientDev {
 	rustSrc := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
-		Exclude: []string{"*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml"},
+		Exclude: []string{"*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml", "!engine/naming/testdata/vectors.json"},
 	})
 
 	baseContainer := dag.Container().
