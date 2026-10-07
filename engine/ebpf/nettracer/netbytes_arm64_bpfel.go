@@ -20,14 +20,6 @@ type netbytesCgroupCounterKey struct {
 	Pad       uint16
 }
 
-type netbytesCounterKey struct {
-	_         structs.HostLayout
-	Ifindex   uint32
-	Direction uint8
-	Scope     uint8
-	Pad       uint16
-}
-
 type netbytesIpv4LpmKey struct {
 	_         structs.HostLayout
 	Prefixlen uint32
@@ -93,24 +85,25 @@ type netbytesSpecs struct {
 type netbytesProgramSpecs struct {
 	CountCgroupEgress     *ebpf.ProgramSpec `ebpf:"count_cgroup_egress"`
 	CountCgroupIngress    *ebpf.ProgramSpec `ebpf:"count_cgroup_ingress"`
-	CountEgress           *ebpf.ProgramSpec `ebpf:"count_egress"`
-	CountIngress          *ebpf.ProgramSpec `ebpf:"count_ingress"`
 	CountOperationEgress  *ebpf.ProgramSpec `ebpf:"count_operation_egress"`
 	CountOperationIngress *ebpf.ProgramSpec `ebpf:"count_operation_ingress"`
+	CountWorkloadEgress   *ebpf.ProgramSpec `ebpf:"count_workload_egress"`
+	CountWorkloadIngress  *ebpf.ProgramSpec `ebpf:"count_workload_ingress"`
 }
 
 // netbytesMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type netbytesMapSpecs struct {
-	ByteCounters          *ebpf.MapSpec `ebpf:"byte_counters"`
-	CgroupByteCounters    *ebpf.MapSpec `ebpf:"cgroup_byte_counters"`
-	EngineCgroupId        *ebpf.MapSpec `ebpf:"engine_cgroup_id"`
-	EngineLoopbackIfindex *ebpf.MapSpec `ebpf:"engine_loopback_ifindex"`
-	EngineNetnsCookie     *ebpf.MapSpec `ebpf:"engine_netns_cookie"`
-	InternalV4            *ebpf.MapSpec `ebpf:"internal_v4"`
-	InternalV6            *ebpf.MapSpec `ebpf:"internal_v6"`
-	OperationByteCounters *ebpf.MapSpec `ebpf:"operation_byte_counters"`
+	CgroupByteCounters     *ebpf.MapSpec `ebpf:"cgroup_byte_counters"`
+	EngineCgroupId         *ebpf.MapSpec `ebpf:"engine_cgroup_id"`
+	EngineLoopbackIfindex  *ebpf.MapSpec `ebpf:"engine_loopback_ifindex"`
+	EngineNetnsCookie      *ebpf.MapSpec `ebpf:"engine_netns_cookie"`
+	InternalV4             *ebpf.MapSpec `ebpf:"internal_v4"`
+	InternalV6             *ebpf.MapSpec `ebpf:"internal_v6"`
+	OperationByteCounters  *ebpf.MapSpec `ebpf:"operation_byte_counters"`
+	WorkloadByteCounters   *ebpf.MapSpec `ebpf:"workload_byte_counters"`
+	WorkloadParentCgroupId *ebpf.MapSpec `ebpf:"workload_parent_cgroup_id"`
 }
 
 // netbytesVariableSpecs contains global variables before they are loaded into the kernel.
@@ -139,19 +132,19 @@ func (o *netbytesObjects) Close() error {
 //
 // It can be passed to loadNetbytesObjects or ebpf.CollectionSpec.LoadAndAssign.
 type netbytesMaps struct {
-	ByteCounters          *ebpf.Map `ebpf:"byte_counters"`
-	CgroupByteCounters    *ebpf.Map `ebpf:"cgroup_byte_counters"`
-	EngineCgroupId        *ebpf.Map `ebpf:"engine_cgroup_id"`
-	EngineLoopbackIfindex *ebpf.Map `ebpf:"engine_loopback_ifindex"`
-	EngineNetnsCookie     *ebpf.Map `ebpf:"engine_netns_cookie"`
-	InternalV4            *ebpf.Map `ebpf:"internal_v4"`
-	InternalV6            *ebpf.Map `ebpf:"internal_v6"`
-	OperationByteCounters *ebpf.Map `ebpf:"operation_byte_counters"`
+	CgroupByteCounters     *ebpf.Map `ebpf:"cgroup_byte_counters"`
+	EngineCgroupId         *ebpf.Map `ebpf:"engine_cgroup_id"`
+	EngineLoopbackIfindex  *ebpf.Map `ebpf:"engine_loopback_ifindex"`
+	EngineNetnsCookie      *ebpf.Map `ebpf:"engine_netns_cookie"`
+	InternalV4             *ebpf.Map `ebpf:"internal_v4"`
+	InternalV6             *ebpf.Map `ebpf:"internal_v6"`
+	OperationByteCounters  *ebpf.Map `ebpf:"operation_byte_counters"`
+	WorkloadByteCounters   *ebpf.Map `ebpf:"workload_byte_counters"`
+	WorkloadParentCgroupId *ebpf.Map `ebpf:"workload_parent_cgroup_id"`
 }
 
 func (m *netbytesMaps) Close() error {
 	return _NetbytesClose(
-		m.ByteCounters,
 		m.CgroupByteCounters,
 		m.EngineCgroupId,
 		m.EngineLoopbackIfindex,
@@ -159,6 +152,8 @@ func (m *netbytesMaps) Close() error {
 		m.InternalV4,
 		m.InternalV6,
 		m.OperationByteCounters,
+		m.WorkloadByteCounters,
+		m.WorkloadParentCgroupId,
 	)
 }
 
@@ -174,20 +169,20 @@ type netbytesVariables struct {
 type netbytesPrograms struct {
 	CountCgroupEgress     *ebpf.Program `ebpf:"count_cgroup_egress"`
 	CountCgroupIngress    *ebpf.Program `ebpf:"count_cgroup_ingress"`
-	CountEgress           *ebpf.Program `ebpf:"count_egress"`
-	CountIngress          *ebpf.Program `ebpf:"count_ingress"`
 	CountOperationEgress  *ebpf.Program `ebpf:"count_operation_egress"`
 	CountOperationIngress *ebpf.Program `ebpf:"count_operation_ingress"`
+	CountWorkloadEgress   *ebpf.Program `ebpf:"count_workload_egress"`
+	CountWorkloadIngress  *ebpf.Program `ebpf:"count_workload_ingress"`
 }
 
 func (p *netbytesPrograms) Close() error {
 	return _NetbytesClose(
 		p.CountCgroupEgress,
 		p.CountCgroupIngress,
-		p.CountEgress,
-		p.CountIngress,
 		p.CountOperationEgress,
 		p.CountOperationIngress,
+		p.CountWorkloadEgress,
+		p.CountWorkloadIngress,
 	)
 }
 

@@ -61,6 +61,7 @@ import (
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
@@ -411,6 +412,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network providers: %w", err)
 	}
+	attachWorkloadNetworkAccounting(srv.cgroupParent)
 
 	baseLabels := map[string]string{
 		wlabel.Executor:       "oci",
@@ -1096,6 +1098,23 @@ func (srv *Server) ListWorkers(context.Context, *controlapi.ListWorkersRequest) 
 		}},
 	}
 	return resp, nil
+}
+
+// attachWorkloadNetworkAccounting counts executor workloads' traffic with
+// programs attached once to the cgroup containing every workload's cgroup,
+// never per container.
+func attachWorkloadNetworkAccounting(cgroupParent string) {
+	tracer := nettracer.Active()
+	if tracer == nil {
+		return
+	}
+	parent, ok := nettracer.WorkloadParentPath(cgroupParent)
+	if !ok {
+		return
+	}
+	if err := tracer.AttachWorkloads(parent); err != nil {
+		slog.Warn("workload network accounting unavailable", "error", err)
+	}
 }
 
 func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {

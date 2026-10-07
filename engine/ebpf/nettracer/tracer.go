@@ -1,7 +1,7 @@
 //go:build linux && (386 || amd64 || arm64)
 
-// Package nettracer accounts for engine traffic at cgroup socket-buffer hooks
-// and container traffic at TCX hooks on host-side veths.
+// Package nettracer accounts for engine, subprocess and executor workload
+// traffic at cgroup socket-buffer hooks.
 package nettracer
 
 import (
@@ -37,13 +37,6 @@ const (
 	scopeExternal
 )
 
-type counterKey struct {
-	Ifindex   uint32
-	Direction uint8
-	Scope     uint8
-	Pad       uint16
-}
-
 type ipv4LPMKey struct {
 	PrefixLen uint32
 	Address   uint32
@@ -60,7 +53,7 @@ type cgroupCounterKey struct {
 	Pad       uint16
 }
 
-// Sample is a cumulative snapshot for one veth.
+// Sample is a cumulative snapshot for one workload or subprocess.
 type Sample struct {
 	InternalRX uint64
 	InternalTX uint64
@@ -76,11 +69,16 @@ type EngineSample struct {
 	ExternalTX uint64
 }
 
-// Tracer owns the programs and maps shared by the engine and CNI veths.
+// Tracer owns the programs and maps shared by the engine, its subprocesses
+// and executor workloads.
 type Tracer struct {
 	objs netbytesObjects
 	cpus int
 	mu   sync.Mutex
+
+	workloadMu     sync.Mutex
+	workloadParent string
+	workloadLinks  []link.Link
 
 	cgroupIngress link.Link
 	cgroupEgress  link.Link
@@ -98,8 +96,8 @@ func Active() *Tracer {
 }
 
 func New() (*Tracer, error) {
-	// This SCHED_CLS program does not use CO-RE, so unlike the diagnostic
-	// tracers it does not require kernel BTF.
+	// These cgroup_skb programs do not use CO-RE, so unlike the diagnostic
+	// tracers they do not require kernel BTF.
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return nil, fmt.Errorf("removing memlock limit: %w", err)
 	}
@@ -114,7 +112,7 @@ func New() (*Tracer, error) {
 	}
 	t := &Tracer{objs: objs, cpus: cpus}
 	// IPv6 neighbor discovery and other link-local control traffic never leaves
-	// the CNI link. Keeping these prefixes in the same trie avoids extra parsing
+	// the local link. Keeping these prefixes in the same trie avoids extra parsing
 	// in the packet hot path.
 	for _, prefix := range []netip.Prefix{
 		netip.MustParsePrefix("127.0.0.0/8"),
@@ -260,6 +258,7 @@ func (t *Tracer) addCurrentNetworkPrefixes() error {
 func (t *Tracer) Close() error {
 	activeTracer.CompareAndSwap(t, nil)
 	var errs []error
+	errs = append(errs, t.closeWorkloads())
 	if t.commands != nil {
 		errs = append(errs, t.commands.Close())
 	}
@@ -383,126 +382,15 @@ func (t *Tracer) AddInternalPrefix(prefix netip.Prefix) error {
 	return t.objs.InternalV6.Put(ipv6LPMKey{PrefixLen: uint32(prefix.Bits()), Address: addr}, one)
 }
 
-// Attachment accounts for one host-side veth.
-type Attachment struct {
-	tracer  *Tracer
-	ifindex int
-	ingress link.Link
-	egress  link.Link
-}
-
-func (t *Tracer) Attach(ifindex int) (_ *Attachment, rerr error) {
-	keys, err := t.reserveCounters(ifindex)
-	if err != nil {
-		return nil, fmt.Errorf("reserving counters for interface %d: %w", ifindex, err)
-	}
-	defer func() {
-		if rerr != nil {
-			rerr = errors.Join(rerr, t.deleteCounters(keys))
-		}
-	}()
-
-	ingress, err := link.AttachTCX(link.TCXOptions{
-		Interface: ifindex,
-		Program:   t.objs.CountIngress,
-		Attach:    ebpf.AttachTCXIngress,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("attaching TCX ingress to interface %d: %w", ifindex, err)
-	}
-	defer func() {
-		if rerr != nil {
-			_ = ingress.Close()
-		}
-	}()
-	egress, err := link.AttachTCX(link.TCXOptions{
-		Interface: ifindex,
-		Program:   t.objs.CountEgress,
-		Attach:    ebpf.AttachTCXEgress,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("attaching TCX egress to interface %d: %w", ifindex, err)
-	}
-	return &Attachment{
-		tracer: t, ifindex: ifindex, ingress: ingress, egress: egress,
-	}, nil
-}
-
-func (t *Tracer) reserveCounters(ifindex int) ([]counterKey, error) {
-	values := make([]uint64, t.cpus)
-	keys := make([]counterKey, 0, 4)
-	for direction := directionRX; direction <= directionTX; direction++ {
-		for scope := scopeInternal; scope <= scopeExternal; scope++ {
-			key := counterKey{
-				Ifindex: uint32(ifindex), Direction: direction, Scope: scope,
-			}
-			if err := t.objs.ByteCounters.Update(key, values, ebpf.UpdateNoExist); err != nil {
-				return nil, errors.Join(err, t.deleteCounters(keys))
-			}
-			keys = append(keys, key)
-		}
-	}
-	return keys, nil
-}
-
-func (t *Tracer) deleteCounters(keys []counterKey) error {
-	var errs []error
-	for _, key := range keys {
-		if err := t.objs.ByteCounters.Delete(key); err != nil &&
-			!errors.Is(err, ebpf.ErrKeyNotExist) {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
-// AttachInterface discovers the interface and its bridge prefixes before
-// attaching the accounting programs. It must be called in the network
-// namespace containing the host-side veth.
-func (t *Tracer) AttachInterface(name string) (*Attachment, error) {
+// AddInternalPrefixesForVeth classifies the addresses of the bridge that
+// the named host-side veth is attached to as internal. It must be called in
+// the network namespace containing the veth.
+func (t *Tracer) AddInternalPrefixesForVeth(name string) error {
 	dev, err := netlink.LinkByName(name)
 	if err != nil {
-		return nil, fmt.Errorf("looking up veth %s: %w", name, err)
+		return fmt.Errorf("looking up veth %s: %w", name, err)
 	}
-	if err := t.AddInternalPrefixesForInterface(dev.Attrs().Index); err != nil {
-		return nil, err
-	}
-	return t.Attach(dev.Attrs().Index)
-}
-
-func (a *Attachment) Sample() (Sample, error) {
-	a.tracer.mu.Lock()
-	defer a.tracer.mu.Unlock()
-	var sample Sample
-	for direction := directionRX; direction <= directionTX; direction++ {
-		for scope := scopeInternal; scope <= scopeExternal; scope++ {
-			key := counterKey{
-				Ifindex: uint32(a.ifindex), Direction: direction, Scope: scope,
-			}
-			values := make([]uint64, a.tracer.cpus)
-			if err := a.tracer.objs.ByteCounters.Lookup(key, &values); err != nil {
-				if errors.Is(err, ebpf.ErrKeyNotExist) {
-					continue
-				}
-				return Sample{}, err
-			}
-			var total uint64
-			for _, value := range values {
-				total += value
-			}
-			switch {
-			case direction == directionRX && scope == scopeInternal:
-				sample.InternalRX = total
-			case direction == directionTX && scope == scopeInternal:
-				sample.InternalTX = total
-			case direction == directionRX && scope == scopeExternal:
-				sample.ExternalRX = total
-			case direction == directionTX && scope == scopeExternal:
-				sample.ExternalTX = total
-			}
-		}
-	}
-	return sample, nil
+	return t.AddInternalPrefixesForInterface(dev.Attrs().Index)
 }
 
 func (t *Tracer) sampleEngine() (EngineSample, error) {
@@ -539,24 +427,4 @@ func (t *Tracer) sampleEngine() (EngineSample, error) {
 		}
 	}
 	return sample, nil
-}
-
-func (a *Attachment) Close() error {
-	var errs []error
-	if a.ingress != nil {
-		errs = append(errs, a.ingress.Close())
-	}
-	if a.egress != nil {
-		errs = append(errs, a.egress.Close())
-	}
-	keys := make([]counterKey, 0, 4)
-	for direction := directionRX; direction <= directionTX; direction++ {
-		for scope := scopeInternal; scope <= scopeExternal; scope++ {
-			keys = append(keys, counterKey{
-				Ifindex: uint32(a.ifindex), Direction: direction, Scope: scope,
-			})
-		}
-	}
-	errs = append(errs, a.tracer.deleteCounters(keys))
-	return errors.Join(errs...)
 }
