@@ -479,7 +479,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithObject("PhpClientDev")).
 							WithDescription("Develop the Dagger PHP SDK (experimental)").
 							WithSourceMap(dag.SourceMap("main.go", 28, 1)).
-							WithArg("workspaceDir", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A directory with all the files needed to develop the SDK", SourceMap: dag.SourceMap("main.go", 32, 2), DefaultPath: "/", Ignore: []string{"*", "!sdk/php", "sdk/php/.changes"}}).
+							WithArg("workspaceDir", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A directory with all the files needed to develop the SDK", SourceMap: dag.SourceMap("main.go", 32, 2), DefaultPath: "/", Ignore: []string{"*", "!sdk/php", "sdk/php/.changes", "!engine/naming/testdata/vectors.json"}}).
 							WithArg("sourcePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The path of the SDK source in the workspace", SourceMap: dag.SourceMap("main.go", 35, 2), DefaultValue: dagger.JSON("\"sdk/php\"")}).
 							WithArg("clientDockerConfig", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A docker config file with credentials to install on clients.", SourceMap: dag.SourceMap("main.go", 38, 2)}).
 							WithArg("ws", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{Description: "Workspace forwarded to engine-dev for VCS stamping. Auto-injected on a\ndirect call; dependencies don't inherit it, so callers must forward it.", SourceMap: dag.SourceMap("main.go", 41, 2)}))), nil
