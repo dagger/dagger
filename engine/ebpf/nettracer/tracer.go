@@ -126,6 +126,12 @@ func New() (*Tracer, error) {
 			return nil, fmt.Errorf("registering link-local prefix %s: %w", prefix, err)
 		}
 	}
+	for _, prefix := range nonPublicPrefixes {
+		if err := t.addNonPublicPrefix(prefix); err != nil {
+			objs.Close()
+			return nil, fmt.Errorf("registering non-public prefix %s: %w", prefix, err)
+		}
+	}
 	finishUnavailable := func(err error) (*Tracer, error) {
 		t.cgroupErr = err
 		activeTracer.Store(t)
@@ -385,6 +391,40 @@ func (t *Tracer) AddInternalPrefix(prefix netip.Prefix) error {
 	}
 	addr := prefix.Addr().As16()
 	return t.objs.InternalV6.Put(ipv6LPMKey{PrefixLen: uint32(prefix.Bits()), Address: addr}, one)
+}
+
+// nonPublicPrefixes are private and special-use ranges, never the public
+// internet. Traffic from namespaces nested in a workload counts as external
+// only to addresses outside them.
+var nonPublicPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("224.0.0.0/4"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/128"),
+	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("::ffff:0:0/96"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("ff00::/8"),
+}
+
+func (t *Tracer) addNonPublicPrefix(prefix netip.Prefix) error {
+	one := uint8(1)
+	if prefix.Addr().Is4() {
+		addr := prefix.Addr().As4()
+		key := ipv4LPMKey{PrefixLen: uint32(prefix.Bits()), Address: binary.NativeEndian.Uint32(addr[:])}
+		return t.objs.NonpublicV4.Put(key, one)
+	}
+	addr := prefix.Addr().As16()
+	return t.objs.NonpublicV6.Put(ipv6LPMKey{PrefixLen: uint32(prefix.Bits()), Address: addr}, one)
 }
 
 // AddInternalPrefixesForVeth classifies the addresses of the bridge that

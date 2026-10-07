@@ -97,6 +97,23 @@ struct {
     __type(value, __u8);
 } internal_v6 SEC(".maps");
 
+/* Private and special-use addresses: never the public internet. */
+struct {
+    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
+    __uint(max_entries, 32);
+    __type(key, struct ipv4_lpm_key);
+    __type(value, __u8);
+} nonpublic_v4 SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
+    __uint(max_entries, 32);
+    __type(key, struct ipv6_lpm_key);
+    __type(value, __u8);
+} nonpublic_v6 SEC(".maps");
+
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
     __uint(max_entries, 4);
@@ -122,10 +139,11 @@ struct {
     __type(value, __u64);
 } workload_byte_counters SEC(".maps");
 
-/* Each workload's own network namespace, keyed by its cgroup ID. Only
- * sockets in it count: processes in nested cgroups that run in their own
- * namespaces, such as a nested engine's containers, are on networks this
- * engine does not manage, so their traffic cannot be classified. */
+/* Each workload's own network namespace, keyed by its cgroup ID. Sockets in
+ * it are classified against this engine's networks. Processes in nested
+ * cgroups that run in their own namespaces, such as a nested engine's
+ * containers, are on networks this engine does not know, so only their
+ * traffic to public addresses counts, as external. */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, 4096);
@@ -174,10 +192,13 @@ struct {
     __type(value, __u32);
 } engine_loopback_ifindex SEC(".maps");
 
-/* Validate a complete IP header before using its remote address. Reading only
+/* remote_in reports whether a packet's remote address is in the given
+ * tries: 1 if it is, 0 if not, and -1 for non-IP or malformed packets.
+ * Validate a complete IP header before using its remote address. Reading only
  * the source address can succeed on a truncated receive-side header. */
-static __always_inline int classify_ip(struct __sk_buff *skb, __u8 direction,
-                                       __u16 proto, __u32 offset)
+static __always_inline int remote_in(struct __sk_buff *skb, __u8 direction,
+                                     __u16 proto, __u32 offset,
+                                     void *v4, void *v6)
 {
     if (proto == bpf_htons(ETH_P_IP)) {
         __u8 header[20];
@@ -193,8 +214,7 @@ static __always_inline int classify_ip(struct __sk_buff *skb, __u8 direction,
         struct ipv4_lpm_key key = {.prefixlen = 32};
         __builtin_memcpy(&key.addr, &header[direction == DIR_TX ? 16 : 12],
                          sizeof(key.addr));
-        return bpf_map_lookup_elem(&internal_v4, &key) ?
-            SCOPE_INTERNAL : SCOPE_EXTERNAL;
+        return bpf_map_lookup_elem(v4, &key) ? 1 : 0;
     }
 
     if (proto == bpf_htons(ETH_P_IPV6)) {
@@ -205,11 +225,20 @@ static __always_inline int classify_ip(struct __sk_buff *skb, __u8 direction,
         struct ipv6_lpm_key key = {.prefixlen = 128};
         __builtin_memcpy(key.addr, &header[direction == DIR_TX ? 24 : 8],
                          sizeof(key.addr));
-        return bpf_map_lookup_elem(&internal_v6, &key) ?
-            SCOPE_INTERNAL : SCOPE_EXTERNAL;
+        return bpf_map_lookup_elem(v6, &key) ? 1 : 0;
     }
 
     return -1;
+}
+
+static __always_inline int classify_ip(struct __sk_buff *skb, __u8 direction,
+                                       __u16 proto, __u32 offset)
+{
+    int internal = remote_in(skb, direction, proto, offset,
+                             &internal_v4, &internal_v6);
+    if (internal < 0)
+        return -1;
+    return internal ? SCOPE_INTERNAL : SCOPE_EXTERNAL;
 }
 
 /* cgroup_skb runs at the socket's L3 boundary, so there is no Ethernet
@@ -331,11 +360,23 @@ static __always_inline int add_workload_bytes(struct __sk_buff *skb,
     if (!workload)
         return 1;
     __u64 *netns_cookie = bpf_map_lookup_elem(&workload_netns_cookies, &workload);
-    if (!netns_cookie || bpf_get_netns_cookie(skb) != *netns_cookie)
+    if (!netns_cookie)
         return 1;
-    int scope = classify_l3(skb, direction);
-    if (scope < 0)
-        return 1;
+    int scope;
+    if (bpf_get_netns_cookie(skb) == *netns_cookie) {
+        scope = classify_l3(skb, direction);
+        if (scope < 0)
+            return 1;
+    } else {
+        /* A socket in a namespace nested in the workload, such as a nested
+         * engine's container, is on networks this engine does not know. Only
+         * traffic to the public internet is known to be external; skip the
+         * rest rather than misclassify it. */
+        if (remote_in(skb, direction, skb->protocol, 0,
+                      &nonpublic_v4, &nonpublic_v6) != 0)
+            return 1;
+        scope = SCOPE_EXTERNAL;
+    }
     struct operation_counter_key key = {
         .cgroup_id = workload,
         .direction = direction,

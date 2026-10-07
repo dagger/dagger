@@ -101,6 +101,8 @@ type netbytesMapSpecs struct {
 	EngineNetnsCookie      *ebpf.MapSpec `ebpf:"engine_netns_cookie"`
 	InternalV4             *ebpf.MapSpec `ebpf:"internal_v4"`
 	InternalV6             *ebpf.MapSpec `ebpf:"internal_v6"`
+	NonpublicV4            *ebpf.MapSpec `ebpf:"nonpublic_v4"`
+	NonpublicV6            *ebpf.MapSpec `ebpf:"nonpublic_v6"`
 	OperationByteCounters  *ebpf.MapSpec `ebpf:"operation_byte_counters"`
 	WorkloadByteCounters   *ebpf.MapSpec `ebpf:"workload_byte_counters"`
 	WorkloadNetnsCookies   *ebpf.MapSpec `ebpf:"workload_netns_cookies"`
@@ -140,6 +142,8 @@ type netbytesMaps struct {
 	EngineNetnsCookie      *ebpf.Map `ebpf:"engine_netns_cookie"`
 	InternalV4             *ebpf.Map `ebpf:"internal_v4"`
 	InternalV6             *ebpf.Map `ebpf:"internal_v6"`
+	NonpublicV4            *ebpf.Map `ebpf:"nonpublic_v4"`
+	NonpublicV6            *ebpf.Map `ebpf:"nonpublic_v6"`
 	OperationByteCounters  *ebpf.Map `ebpf:"operation_byte_counters"`
 	WorkloadByteCounters   *ebpf.Map `ebpf:"workload_byte_counters"`
 	WorkloadNetnsCookies   *ebpf.Map `ebpf:"workload_netns_cookies"`
@@ -155,6 +159,8 @@ func (m *netbytesMaps) Close() error {
 		m.EngineNetnsCookie,
 		m.InternalV4,
 		m.InternalV6,
+		m.NonpublicV4,
+		m.NonpublicV6,
 		m.OperationByteCounters,
 		m.WorkloadByteCounters,
 		m.WorkloadNetnsCookies,

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,35 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestNonPublicPrefixes(t *testing.T) {
+	v4, v6 := 0, 0
+	for _, prefix := range nonPublicPrefixes {
+		require.Equal(t, prefix.Masked(), prefix, "prefix %s must be masked", prefix)
+		if prefix.Addr().Is4() {
+			v4++
+		} else {
+			v6++
+		}
+	}
+	// Each family's trie holds at most 32 prefixes.
+	require.LessOrEqual(t, v4, 32)
+	require.LessOrEqual(t, v6, 32)
+	for _, public := range []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"} {
+		addr := netip.MustParseAddr(public)
+		for _, prefix := range nonPublicPrefixes {
+			require.False(t, prefix.Contains(addr), "%s is public but in %s", addr, prefix)
+		}
+	}
+	for _, private := range []string{"10.89.3.2", "172.17.0.2", "192.168.1.1", "100.64.0.1", "fd00::1", "fe80::1"} {
+		addr := netip.MustParseAddr(private)
+		found := false
+		for _, prefix := range nonPublicPrefixes {
+			found = found || prefix.Contains(addr)
+		}
+		require.True(t, found, "%s is not public", addr)
+	}
+}
 
 func TestWorkloadParentPath(t *testing.T) {
 	for _, tc := range []struct {
@@ -116,7 +146,21 @@ func TestWorkloadAccounting(t *testing.T) {
 	require.NoError(t, cmd.Run(), output.String())
 	otherSample, err := other.Sample()
 	require.NoError(t, err)
-	require.Equal(t, Sample{}, otherSample)
+	require.Equal(t, Sample{}, otherSample, "a nested namespace's private traffic is not counted")
+
+	// Its traffic to a public address counts as external. Sending a UDP
+	// datagram needs only a route, not a reply.
+	cmd = exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestWorkloadNetworkHelper$")
+	cmd.Env = append(os.Environ(), "NETTRACER_HELPER=public-udp")
+	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(otherFD.Fd())}
+	output.Reset()
+	cmd.Stdout, cmd.Stderr = &output, &output
+	require.NoError(t, cmd.Run(), output.String())
+	otherSample, err = other.Sample()
+	require.NoError(t, err)
+	require.Greater(t, otherSample.ExternalTX, uint64(0))
+	require.Zero(t, otherSample.InternalTX)
+	require.Zero(t, otherSample.InternalRX)
 
 	require.NoError(t, workload.Close())
 	_, err = workload.Sample()
@@ -124,7 +168,19 @@ func TestWorkloadAccounting(t *testing.T) {
 }
 
 func TestWorkloadNetworkHelper(t *testing.T) {
-	if os.Getenv("NETTRACER_HELPER") != "workload" {
+	switch os.Getenv("NETTRACER_HELPER") {
+	case "workload":
+	case "public-udp":
+		// 192.0.2.0/24 is reserved for documentation, so no reply comes
+		// back, but it is not in nonPublicPrefixes either: only the send
+		// counts.
+		conn, err := net.Dial("udp", "192.0.2.1:9")
+		require.NoError(t, err)
+		defer conn.Close()
+		_, err = conn.Write(make([]byte, 512))
+		require.NoError(t, err)
+		return
+	default:
 		t.Skip("subprocess fixture")
 	}
 	conn, err := net.Dial("tcp", os.Getenv("NETTRACER_PEER"))
