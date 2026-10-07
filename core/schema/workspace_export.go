@@ -145,7 +145,7 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 	// on the host; the writer checks them for obstructions before changing files.
 	var bundle []byte
 	captureCtx, captureSpan := core.Tracer(ctx).Start(ctx, "capture workspace export destination", telemetry.Internal())
-	metadata, err := bk.CaptureGit(captureCtx, args.Path, &gitsession.CaptureGitPolicy{DropUntracked: true, MaxTotalBytes: 256 << 20}, func(kind gitsession.CaptureGitChunk_Kind, data []byte) error {
+	metadata, err := bk.CaptureGit(captureCtx, args.Path, &gitsession.CaptureGitPolicy{DropUntracked: true, MaxTotalBytes: 256 << 20}, core.MaxCapturedGitBundleBytes, func(kind gitsession.CaptureGitChunk_Kind, data []byte) error {
 		if kind == gitsession.CAPTURE_CHUNK_BUNDLE {
 			bundle = append(bundle, data...)
 		}

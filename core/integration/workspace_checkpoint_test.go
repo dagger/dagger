@@ -5,6 +5,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -285,6 +286,38 @@ func (WorkspaceSuite) TestWorkspaceSnapshotFreezesLocalCheckout(ctx context.Cont
 	recipe, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(localRemote))
 	require.NoError(t, err)
 	requireWorkspaceRecipeUsesHostGit(t, recipe)
+}
+
+// TestWorkspaceSnapshotRejectsOversizedBundle covers the capture bundle limit
+// (core.MaxCapturedGitBundleBytes): the bundle is inlined in the snapshot's
+// recipe, so one too large for a trace to carry fails the capture, with a
+// message naming the limit, rather than producing an unrestorable recipe.
+func (WorkspaceSuite) TestWorkspaceSnapshotRejectsOversizedBundle(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = workdir
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+	}
+	git("init", "-b", "main")
+	git("config", "user.name", "Snapshot")
+	git("config", "user.email", "snapshot@example.com")
+	filename := filepath.Join(workdir, "data.bin")
+	require.NoError(t, os.WriteFile(filename, []byte("small"), 0o644))
+	git("add", ".")
+	git("commit", "-m", "base")
+	// A pending edit git cannot compress below the limit.
+	data := make([]byte, 40<<20)
+	_, err := rand.Read(data)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filename, data, 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	_, err = c.CurrentWorkspace().Snapshot().ID(ctx)
+	require.ErrorContains(t, err, "too large to capture")
+	require.ErrorContains(t, err, "32.0 MiB limit")
 }
 
 func (WorkspaceSuite) TestWorkspaceSnapshotWithoutGitBaseline(ctx context.Context, t *testctx.T) {

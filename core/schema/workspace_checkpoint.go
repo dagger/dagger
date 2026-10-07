@@ -167,7 +167,7 @@ func (s *workspaceSchema) checkpointClientLocal(
 	capture := func() (*gitsession.CaptureGitMetadata, error) {
 		// Each attempt (an approval retry included) streams the whole bundle.
 		bundle = nil
-		return bk.CaptureGit(clientCtx, ws.HostPath(), policy, func(_ gitsession.CaptureGitChunk_Kind, data []byte) error {
+		return bk.CaptureGit(clientCtx, ws.HostPath(), policy, core.MaxCapturedGitBundleBytes, func(_ gitsession.CaptureGitChunk_Kind, data []byte) error {
 			bundle = append(bundle, data...)
 			return nil
 		})
