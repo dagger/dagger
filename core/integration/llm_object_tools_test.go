@@ -2112,6 +2112,42 @@ git checkout main
 	}
 }
 
+func privateGitSSHRemote(ctx context.Context, t *testctx.T, c *dagger.Client) privateGitRemote {
+	t.Helper()
+	keys := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "openssh"}).
+		WithExec([]string{"ssh-keygen", "-t", "ed25519", "-f", "/root/.ssh/host_key", "-N", ""}).
+		WithExec([]string{"ssh-keygen", "-t", "ed25519", "-f", "/root/.ssh/id_ed25519", "-N", ""}).
+		WithExec([]string{"cp", "/root/.ssh/id_ed25519.pub", "/root/.ssh/authorized_keys"})
+	privateKey, err := keys.File("/root/.ssh/id_ed25519").Contents(ctx)
+	require.NoError(t, err)
+	const port = 2222
+	svc := keys.
+		WithNewFile("/root/start.sh", `#!/bin/sh
+set -eux
+git init -b main /root/repo
+cd /root/repo
+echo private > README
+git add README
+git -c user.email=root@localhost -c user.name=Test commit -m init
+chmod 0600 /root/.ssh/host_key
+exec $(which sshd) -D -e -h /root/.ssh/host_key -p 2222
+`).
+		WithExposedPort(port).
+		WithDefaultArgs([]string{"sh", "/root/start.sh"}).
+		AsService()
+	return privateGitRemote{
+		url: fmt.Sprintf("ssh://root@%s:%d/root/repo", startedServiceIP(ctx, t, c, svc), port),
+		// An identity file but no agent: the CLI prepares one on demand.
+		cli: func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithExec([]string{"apk", "add", "openssh-client"}).
+				WithEnvVariable("SSH_AUTH_SOCK", "").
+				WithNewFile("/root/.ssh/id_ed25519", privateKey, dagger.ContainerWithNewFileOpts{Permissions: 0o600})
+		},
+	}
+}
+
 // startedServiceIP starts svc for the rest of the test and returns its IP.
 func startedServiceIP(ctx context.Context, t *testctx.T, c *dagger.Client, svc *dagger.Service) string {
 	t.Helper()
