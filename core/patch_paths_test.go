@@ -12,8 +12,8 @@ import (
 func TestParsePatchPaths(t *testing.T) {
 	t.Run("hand-written", func(t *testing.T) {
 		for _, tc := range []struct {
-			name, patch string
-			want        []PatchFilePaths
+			name, patch, wantErr string
+			want                 []PatchFilePaths
 		}{
 			{
 				name: "modify",
@@ -91,14 +91,57 @@ new mode 100755
 				},
 			},
 			{
-				name:  "plain unified diff with timestamps",
-				patch: "--- a/x.txt\t2020-01-01 00:00:00\n+++ b/x.txt\t2020-01-02 00:00:00\n@@ -1 +1 @@\n-a\n+b\n",
-				want:  []PatchFilePaths{{Old: "x.txt", New: "x.txt"}},
+				name: "headerless section after a git section",
+				patch: `diff --git a/a.txt b/a.txt
+--- a/a.txt
++++ b/a.txt
+@@ -1 +1 @@
+-a
++b
+--- a/other.txt
++++ b/other.txt
+@@ -1 +1 @@
+-c
++d
+`,
+				wantErr: `patch section for "other.txt" has no "diff --git" header`,
+			},
+			{
+				name: "headerless section after a mode-only git section",
+				patch: `diff --git a/a.txt b/a.txt
+old mode 100644
+new mode 100755
+--- a/other.txt
++++ b/other.txt
+@@ -1 +1 @@
+-c
++d
+`,
+				wantErr: `names "other.txt", but its "diff --git" header names "a.txt"`,
+			},
+			{
+				name:    "plain unified diff with timestamps",
+				patch:   "--- a/x.txt\t2020-01-01 00:00:00\n+++ b/x.txt\t2020-01-02 00:00:00\n@@ -1 +1 @@\n-a\n+b\n",
+				wantErr: `patch section for "x.txt" has no "diff --git" header; only Git-format patches are supported`,
+			},
+			{
+				name:    "plain unified diff creating with an epoch timestamp",
+				patch:   "--- a/x\t1970-01-01 00:00:00 +0000\n+++ b/x\t2020-01-02 00:00:00 +0000\n@@ -0,0 +1 @@\n+b\n",
+				wantErr: `patch section for "x" has no "diff --git" header`,
+			},
+			{
+				name:    "plain unified diff from /dev/null",
+				patch:   "--- /dev/null\n+++ b/x\n@@ -0,0 +1 @@\n+b\n",
+				wantErr: `patch section for "/dev/null" has no "diff --git" header`,
 			},
 			{name: "empty", patch: "", want: nil},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				got, err := ParsePatchPaths([]byte(tc.patch))
+				if tc.wantErr != "" {
+					require.ErrorContains(t, err, tc.wantErr)
+					return
+				}
 				require.NoError(t, err)
 				require.Equal(t, tc.want, got)
 			})

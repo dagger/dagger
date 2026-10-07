@@ -20,9 +20,15 @@ type PatchFilePaths struct {
 
 // ParsePatchPaths returns the paths each file section of a patch touches, in
 // order, from its headers: git's extended headers (`diff --git`, `rename
-// from/to`, `copy from/to`, `new file`, `deleted file`) and the `---`/`+++`
-// lines of any unified diff, git's C-quoted paths and /dev/null included.
-// Hunk bodies and binary payloads are skipped, never read as headers.
+// from/to`, `copy from/to`, `new file`, `deleted file`) and each section's
+// `---`/`+++` lines, git's C-quoted paths and /dev/null included. Hunk bodies
+// and binary payloads are skipped, never read as headers.
+//
+// Only Git-format patches are accepted: a file section without a `diff --git`
+// header is an error. git reads a traditional unified diff's paths by rules
+// of its own (an epoch timestamp marks a creation; differing ---/+++ names
+// are one file, not a rename), and callers rely on these paths agreeing with
+// what `git apply` touches.
 func ParsePatchPaths(patch []byte) ([]PatchFilePaths, error) {
 	var p patchPathParser
 	sc := bufio.NewScanner(bytes.NewReader(patch))
@@ -44,6 +50,9 @@ type patchPathParser struct {
 	cur   *PatchFilePaths
 	// created and deleted are what the headers said about cur.
 	created, deleted bool
+	// body is set once cur has had its +++ line or a hunk: a --- line after
+	// that opens another section.
+	body bool
 	// hunkOld and hunkNew are the lines left in the current hunk.
 	hunkOld, hunkNew int
 }
@@ -61,7 +70,7 @@ func (p *patchPathParser) flush() {
 	if p.cur.Old != "" || p.cur.New != "" {
 		p.files = append(p.files, *p.cur)
 	}
-	p.cur, p.created, p.deleted = nil, false, false
+	p.cur, p.created, p.deleted, p.body = nil, false, false, false
 }
 
 func (p *patchPathParser) line(line string) error {
@@ -91,6 +100,7 @@ func (p *patchPathParser) line(line string) error {
 		err = p.unifiedPath(line)
 	case strings.HasPrefix(line, "@@ "):
 		p.hunkOld, p.hunkNew, err = parseHunkHeader(line)
+		p.body = true
 	case p.cur != nil:
 		err = p.extendedHeader(line)
 	}
@@ -103,14 +113,33 @@ func (p *patchPathParser) unifiedPath(line string) error {
 	if err != nil {
 		return err
 	}
-	if p.cur == nil {
-		// A plain unified diff: no `diff --git` line opens it.
-		p.cur = &PatchFilePaths{}
+	old := strings.HasPrefix(line, "--- ")
+	// A section opens with its `diff --git` line. A ---/+++ line outside one,
+	// or a --- line after the current one's +++ line or hunks, opens a
+	// traditional unified diff section: refuse it (see ParsePatchPaths).
+	if p.cur == nil || p.body {
+		name := path
+		if name == "" {
+			name = "/dev/null"
+		}
+		return fmt.Errorf("patch section for %q has no \"diff --git\" header; only Git-format patches are supported", name)
+	}
+	if !old {
+		p.body = true
+	}
+	// git refuses ---/+++ names that differ from the section's own, so
+	// neither may a headerless section's lines take over one with no hunks.
+	known := p.cur.New
+	if old {
+		known = p.cur.Old
+	}
+	if path != "" && known != "" && path != known {
+		return fmt.Errorf("patch line %q names %q, but its \"diff --git\" header names %q", line, path, known)
 	}
 	switch {
-	case strings.HasPrefix(line, "--- ") && path == "":
+	case old && path == "":
 		p.created = true
-	case strings.HasPrefix(line, "--- "):
+	case old:
 		p.cur.Old = path
 	case path == "":
 		p.deleted = true
