@@ -1215,6 +1215,9 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 //     raw, so restoring the conversation reruns its producer instead,
 //     assuming it is hermetic.
 //
+// Either way, a changeset that touches .git is refused
+// (refuseGitMetadataChanges).
+//
 // A tool may measure its changeset from the workspace cwd rather than its
 // root: vito/editor's tools read the workspace at ".", which resolves from the
 // cwd. Workspace.withChanges applies at the root, so such a changeset is first
@@ -1232,6 +1235,9 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	// check distinguishes directory-only edits from an actual no-op.
 	if changed, err := changes.Self().PathCountExceeds(ctx, 0); err == nil && !changed {
 		return "", nil
+	}
+	if err := refuseGitMetadataChanges(ctx, changes); err != nil {
+		return "", err
 	}
 	ws := m.workspace.Self()
 	root, inEngine := ws.SourceDirectory()
@@ -1255,6 +1261,36 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 		return "", err
 	}
 	return m.summarizePatch(ctx, srv, changes), nil
+}
+
+// refuseGitMetadataChanges fails for a changeset that touches a .git path, at
+// the workspace root or nested (a vendored checkout's .git). Tools must not
+// change git state through a changeset: as a patch `git apply` refuses such
+// paths, while one carrying binary objects would be applied raw, so the
+// outcome would hinge on the content. A tool that means to change git state
+// returns a Workspace instead.
+func refuseGitMetadataChanges(ctx context.Context, changes dagql.ObjectResult[*Changeset]) error {
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return fmt.Errorf("compute changeset paths: %w", err)
+	}
+	for _, p := range slices.Concat(paths.Added, paths.Modified, paths.AllRemoved) {
+		if isGitMetadataPath(p) {
+			return fmt.Errorf("changeset touches %q: tools must not modify .git; to change git state, return a Workspace instead (e.g. one built from a GitRepository with withContents)", strings.TrimSuffix(p, "/"))
+		}
+	}
+	return nil
+}
+
+// isGitMetadataPath reports whether a changeset path is, or is beneath, a
+// .git entry. A trailing slash (a directory) is ignored.
+func isGitMetadataPath(p string) bool {
+	for part := range strings.SplitSeq(strings.Trim(p, "/"), "/") {
+		if part == ".git" {
+			return true
+		}
+	}
+	return false
 }
 
 // workspaceState returns the recipe digests of the bound workspace's own

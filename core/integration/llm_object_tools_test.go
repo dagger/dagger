@@ -869,6 +869,43 @@ type Codegen {
 	require.Equal(t, dagger.FileTypeSymlink, kind)
 }
 
+// TestChangesetToolRefusesGitMetadata covers a changeset that touches .git,
+// at the workspace root or in a nested checkout: tools must not change git
+// state that way (one that means to returns a Workspace), so the tool call
+// fails and nothing of its changeset is applied.
+func (LLMSuite) TestChangesetToolRefusesGitMetadata(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := generatorWorkspace(c, `
+type Codegen {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  write(label: String!): Changeset! {
+    directory.withNewFile(label, "ref: refs/heads/evil\n").withNewFile("ok.txt", "ok\n").changes(directory)
+  }
+}
+`).
+		WithNewFile(".git/HEAD", "ref: refs/heads/main\n")
+	result := runToolTurns(ctx, t, c, source.AsWorkspace(), "write", ".git/HEAD", "vendor/x/.git/HEAD")
+	transcript, err := result.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "vendor/x/.git/HEAD done")
+	// The first offending path is named: the .git directory the changeset
+	// adds comes before the file in it.
+	for _, p := range []string{".git", "vendor/x/.git"} {
+		require.Contains(t, transcript, fmt.Sprintf(`changeset touches %q: tools must not modify .git; to change git state, return a Workspace instead`, p))
+	}
+
+	entries, err := result.Workspace().Directory("/").Entries(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, entries, "ok.txt")
+	require.NotContains(t, entries, "vendor/")
+	head, err := result.Workspace().File(".git/HEAD").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ref: refs/heads/main\n", head)
+}
+
 // TestChangesetToolKeepsEmptyDirectories locks in that a Changeset-returning
 // tool's empty directory survives being recorded on a snapshot workspace,
 // beside the file it scaffolds: the overlay must not reduce the changeset to
