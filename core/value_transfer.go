@@ -292,14 +292,45 @@ func capturedSnapshotID(v dagql.PersistedPayloadVisit, role string) (string, err
 	return "", fmt.Errorf("completed output missing snapshot role %q", role)
 }
 func (family foreignFamilyCodec) MapSnapshotParts(v dagql.PersistedPayloadVisit) ([]dagql.CapturedCodecOutput, error) {
+	payload, err := family.decodePartPayload(v)
+	if err != nil {
+		return nil, err
+	}
+	return family.mapSnapshotParts(v, payload)
+}
+
+// partPayload is the decoded payload of a family with snapshot parts.
+type partPayload struct {
+	directory persistedDirectoryPayload
+	file      persistedFilePayload
+	container persistedContainerPayload
+}
+
+// decodePartPayload strictly decodes v's payload for its family. A family
+// without snapshot parts decodes nothing.
+func (family foreignFamilyCodec) decodePartPayload(v dagql.PersistedPayloadVisit) (*partPayload, error) {
+	payload := &partPayload{}
+	var err error
+	switch family {
+	case "File":
+		err = readForeignPayload(v.Payload, &payload.file)
+	case "Directory":
+		err = readForeignPayload(v.Payload, &payload.directory)
+	case "Container":
+		err = readForeignPayload(v.Payload, &payload.container)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (family foreignFamilyCodec) mapSnapshotParts(v dagql.PersistedPayloadVisit, payload *partPayload) ([]dagql.CapturedCodecOutput, error) {
 	out := dagql.CapturedCodecOutput{Address: dagql.PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, State: "pending", Role: "snapshot"}
 	switch family {
 	case "File":
 		out.ValueKind = "file"
-		var p persistedFilePayload
-		if err := readForeignPayload(v.Payload, &p); err != nil {
-			return nil, err
-		}
+		p := &payload.file
 		if p.Form == persistedFileFormSnapshot || p.ValueKnown {
 			out.Value = transferSnapshotValue("file", p.File, &p.Platform, p.Services)
 		}
@@ -308,10 +339,7 @@ func (family foreignFamilyCodec) MapSnapshotParts(v dagql.PersistedPayloadVisit)
 		}
 	case "Directory":
 		out.ValueKind = "directory"
-		var p persistedDirectoryPayload
-		if err := readForeignPayload(v.Payload, &p); err != nil {
-			return nil, err
-		}
+		p := &payload.directory
 		if p.Form == persistedDirectoryFormSnapshot || p.ValueKnown {
 			out.Value = transferSnapshotValue("directory", p.Dir, &p.Platform, p.Services)
 		}
@@ -319,11 +347,7 @@ func (family foreignFamilyCodec) MapSnapshotParts(v dagql.PersistedPayloadVisit)
 			out.State = "completed"
 		}
 	case "Container":
-		var p persistedContainerPayload
-		if err := readForeignPayload(v.Payload, &p); err != nil {
-			return nil, err
-		}
-		return mapContainerTransferParts(v, p)
+		return mapContainerTransferParts(v, payload.container)
 	default:
 		return nil, nil
 	}
