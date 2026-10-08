@@ -524,6 +524,12 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			}
 			skipped = append(skipped, "incremental="+reason)
 		}
+		dir, supported, reason, err := ref.contentsCheckoutTree(ctx, srv)
+		if err != nil || supported {
+			path, detail = "checkout", reason
+			return dir, err
+		}
+		skipped = append(skipped, "checkout="+reason)
 	}
 	if !discardGitDir && depth <= 0 {
 		dir, supported, err := ref.cowTree(ctx, remotes, upstreamRemote)

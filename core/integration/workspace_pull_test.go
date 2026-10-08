@@ -299,6 +299,74 @@ git -C /root/srv/repo.git config uploadpack.allowAnySHA1InWant true
 	require.Empty(t, replayed["full"], "replayed local HEADs must not need a full source checkout")
 }
 
+// Sessions recorded before checkout bases were retained replay repositories
+// opened with GitRepository.withContents over a retained checkout, over its
+// .git, or over a pull's scratch repository. Their source-only trees must come
+// from those checkouts, not from another full checkout, and match the trees
+// of the same commits built incrementally.
+func (WorkspaceSuite) TestWorkspaceRetainedCheckoutTrees(ctx context.Context, t *testctx.T) {
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture, inspector := gitIncrementalCheckoutFixture(c)
+	repo := fixture.AsGit()
+	discard := dagger.GitRefTreeOpts{DiscardGitDir: true}
+	before := repo.Head().Tree(discard)
+	head := repo.Head().WithCommit(before.WithNewFile("selected.txt", "committed\n").Changes(before), "receiver", workspaceCommitDate, "Oracle", "oracle@example.com")
+	headTree := head.Tree(discard)
+	source := head.WithCommit(headTree.WithNewFile("added/deep.txt", "added\n").WithoutFile("delete.txt").WithNewFile("selected.txt", "source\n").Changes(headTree), "source", workspaceCommitDate, "Oracle", "oracle@example.com")
+	headID, err := head.ID(ctx)
+	require.NoError(t, err)
+	headSHA, err := head.CommitSHA(ctx)
+	require.NoError(t, err)
+	sourceSHA, err := source.CommitSHA(ctx)
+	require.NoError(t, err)
+	asWorkspace := dagger.GitRefAsWorkspaceOpts{Cwd: "/"}
+	sourceID, err := source.AsWorkspace(asWorkspace).ID(ctx)
+	require.NoError(t, err)
+	receiverID, err := head.AsWorkspace(asWorkspace).ID(ctx)
+	require.NoError(t, err)
+	var fullCheckout struct {
+		Node struct{ FullCheckout struct{ ID dagger.ID } `json:"__fullCheckout"` }
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { __fullCheckout { id } } } }`,
+		Variables: map[string]any{"id": headID},
+	}, &dagger.Response{Data: &fullCheckout}))
+	full := dagger.Ref[*dagger.Directory](c, fullCheckout.Node.FullCheckout.ID)
+	pulled := dagger.Ref[*dagger.Directory](c, selectHidden(ctx, t, c, receiverID, "Workspace", "__pullDirectory", map[string]any{
+		"source":         sourceID,
+		"committerName":  "Committer",
+		"committerEmail": "committer@example.com",
+	}))
+	pulledSHA, err := pulled.AsGit().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sourceSHA, pulledSHA, "fast-forward")
+	for _, tc := range []struct {
+		name     string
+		contents *dagger.Directory
+		sha      string
+		want     *dagger.Directory
+	}{
+		{"checkout", full, headSHA, headTree},
+		{"checkout .git", full.Directory(".git"), headSHA, headTree},
+		{"pull", pulled, pulledSHA, source.Tree(discard)},
+	} {
+		ref := repo.WithContents(tc.contents).Ref(tc.sha)
+		tree := ref.Tree(discard)
+		require.Equal(t, workspaceCommitManifest(ctx, t, inspector, tc.want), workspaceCommitManifest(ctx, t, inspector, tree), tc.name)
+		requireGitCheckoutTimes(ctx, t, inspector, tree)
+		// Replayed workspaces reach the same tree through asWorkspace.
+		exists, err := ref.AsWorkspace(asWorkspace).Directory("/").Exists(ctx, "selected.txt")
+		require.NoError(t, err, tc.name)
+		require.True(t, exists, tc.name)
+	}
+	require.NoError(t, c.Close()) // Drain finished spans.
+	paths := gitSourceTreePaths(t, sink)
+	require.NotEmpty(t, paths["checkout:checkout/strip"])
+	require.NotEmpty(t, paths["checkout:checkout-git-dir/strip"])
+	require.NotEmpty(t, paths["checkout:pull-receiver/delta"])
+}
+
 // gitSourceTreePaths groups the source-only trees a session materialized by
 // the path they took (span "git source tree: <path>"), and by path:detail,
 // logging each.

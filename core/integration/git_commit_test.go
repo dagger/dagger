@@ -362,8 +362,11 @@ printf 'dirty untracked\n' > untracked.txt
 
 // Reopen plain metadata instead of obscuring changes.Before: withCommit can
 // attach checkout provenance to both native and legacy transaction results.
+// The metadata is rewritten (an inert .git/description) so that its recipe is
+// no longer recognizably a retained checkout's .git, whose worktree the tree
+// would otherwise be built from: the oracle must take the full checkout.
 func gitFullCheckoutOracle(ref *core.GitRef) *core.Directory {
-	return ref.AsWorkspace().Git().Directory().AsGit().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})
+	return ref.AsWorkspace().Git().Directory().WithNewFile("description", "oracle\n").AsGit().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 }
 
 // Manifests intentionally exclude times. Source-only Git checkouts normalize
