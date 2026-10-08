@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +35,7 @@ func (WorkspaceSuite) TestWorkspaceCommitMergeBreakdown(ctx context.Context, t *
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	const files = 16000
-	fixture := c.Container().From(alpineImage).
+	fixture := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"awk", fmt.Sprintf(`BEGIN {
 	for (i = 0; i < %d; i++) {
 		d = sprintf("/src/tree/d%%03d", int(i / 100))
@@ -49,17 +50,17 @@ func (WorkspaceSuite) TestWorkspaceCommitMergeBreakdown(ctx context.Context, t *
 		WithNewFile("edit.txt", "one\ntwo\nthree\n")
 	service, url := gitService(ctx, t, c, fixture)
 	started := time.Now()
-	base := snapshotWorkspace(ctx, t, c, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Head().AsWorkspace())
+	base := snapshotWorkspace(ctx, t, c, core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service}).Head().AsWorkspace())
 	t.Logf("BREAKDOWN capture=%s", time.Since(started))
 
-	commit := func(name string, ws *dagger.Workspace, include ...string) *dagger.Workspace {
+	commit := func(name string, ws *core.Workspace, include ...string) *core.Workspace {
 		t.Helper()
 		started := time.Now()
-		id, err := ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: include}), name, workspaceCommitDate, dagger.WorkspaceWithCommitOpts{
+		id, err := ws.WithCommit(ws.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Include: include}), name, workspaceCommitDate, core.WorkspaceWithCommitOpts{
 			AuthorName: "Agent", AuthorEmail: "agent@example.com",
 		}).ID(ctx)
 		require.NoError(t, err, name)
-		committed := dagger.Ref[*dagger.Workspace](c, id)
+		committed := core.Ref[*core.Workspace](core.NewQuery(c), id)
 		_, err = committed.Git().Head().CommitSHA(ctx)
 		require.NoError(t, err, name)
 		paths, err := committed.Git().Uncommitted().ModifiedPaths(ctx)

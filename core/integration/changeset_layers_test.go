@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
@@ -50,8 +51,8 @@ ln -s keep.txt link
 	edit := func(script string) []string {
 		return []string{"sh", "-c", "set -e\ncd /src\nput() { mkdir -p \"$(dirname \"$1\")\"; printf '%s\\n' \"$1 $2\" > \"$1\"; }\n" + script}
 	}
-	base := func(c *dagger.Client) *dagger.Container {
-		return c.Container().From(alpineImage).
+	base := func(c *dagger.Client) *core.Container {
+		return core.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"sh", "-c", baseScript}).
 			// Nothing computed for these trees may come from an earlier run.
 			WithNewFile("/src/nonce.txt", identity.NewID())
@@ -181,7 +182,7 @@ put upper-added/y.txt new
 
 	t.Run("directory operations", func(ctx context.Context, t *testctx.T) {
 		c, walks := connectRecordingWalks(ctx, t)
-		before := c.Directory().
+		before := core.NewQuery(c).Directory().
 			WithNewFile("keep.txt", "keep").
 			WithNewFile("mod.txt", "mod base").
 			WithNewFile("olddir/a.txt", "olddir a").
@@ -211,10 +212,10 @@ put upper-added/y.txt new
 
 type layerWalkCase struct {
 	// before and after are the trees compared.
-	before, after *dagger.Directory
+	before, after *core.Directory
 	// beforeRoot and afterRoot are their snapshots' roots, which
 	// Directory.diff compares, with the trees at rootPrefix.
-	beforeRoot, afterRoot *dagger.Directory
+	beforeRoot, afterRoot *core.Directory
 	rootPrefix            string
 
 	added, modified, removed []string
@@ -265,9 +266,9 @@ func requireLayerWalkCase(ctx context.Context, t *testctx.T, c *dagger.Client, l
 
 // treeListing lists dir's entries with their type, permissions, and content
 // or link target: what a changeset's application must reproduce.
-func treeListing(ctx context.Context, t *testctx.T, c *dagger.Client, dir *dagger.Directory) string {
+func treeListing(ctx context.Context, t *testctx.T, c *dagger.Client, dir *core.Directory) string {
 	t.Helper()
-	out, err := c.Container().From(alpineImage).
+	out, err := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedDirectory("/m", dir).
 		WithWorkdir("/m").
 		WithExec([]string{"sh", "-c", `find . -mindepth 1 | sort | while IFS= read -r p; do
