@@ -2413,6 +2413,7 @@ func (v *TestSpanChildrenView) sync() bool {
 	}
 
 	children := make([]tuist.Component, 0, len(rowsView.Body))
+	v.scope.treeSync.begin()
 	for i, tree := range rowsView.Body {
 		st := v.fe.getOrCreateSpanTreeInScope(tree.Span.ID, &v.scope)
 		st.parent = nil
@@ -2420,6 +2421,7 @@ func (v *TestSpanChildrenView) sync() bool {
 		v.fe.syncTreeNodeInScope(st, treePrefix{}, &v.scope)
 		children = append(children, st)
 	}
+	pruneSpanTrees(v.scope.spanTrees, &v.scope.treeSync, nil)
 
 	if !sameComponents(v.container.Children, children) {
 		v.container.Children = children

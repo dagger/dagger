@@ -1169,6 +1169,96 @@ func TestLiveTestViewsCoalesceBatches(t *testing.T) {
 	}
 }
 
+// TestSpanTreesPrunedWhenRowsLeaveView verifies that the span trees of rows
+// that leave the view -- zoomed away from, or collapsed -- are dropped, and
+// that their rows render whatever changed in the meantime when they return.
+func TestSpanTreesPrunedWhenRowsLeaveView(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	id := prettyTestSpanID
+	rootID, checkAID, checkBID, liveID, groupID, innerID := id(1), id(2), id(3), id(4), id(5), id(6)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	failing := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id(n), TraceID: prettyTestTraceID(), ParentID: parent, Name: name,
+			StartTime: start, EndTime: end, TestCaseName: name,
+			TestStatus: dagui.TestStatusFailure, Final: true,
+		}
+	}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start},
+		{
+			ID: checkAID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check a",
+			StartTime: start, EndTime: end, CheckName: "a", Final: true,
+		},
+		failing(10, checkAID, "TestA1"),
+		{
+			ID: checkBID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check b",
+			StartTime: start, EndTime: end, CheckName: "b", Final: true,
+		},
+		{ID: liveID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "live exec", StartTime: start},
+		{ID: groupID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "group", StartTime: start},
+		{
+			ID: innerID, TraceID: prettyTestTraceID(), ParentID: groupID, Name: "check inner",
+			StartTime: start, EndTime: end, CheckName: "inner", Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 60))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.SetPrimary(rootID)
+	fe.tui.Step()
+	for _, id := range []dagui.SpanID{checkAID, checkBID, liveID, groupID, innerID} {
+		require.NotNil(t, fe.spanTrees[id], "row %s has no span tree", id)
+	}
+	require.NotNil(t, fe.testOwnerTrees[checkBID])
+	require.NotNil(t, fe.testOwnerTrees[innerID])
+
+	requireLines := func(lines []string, wants ...string) {
+		t.Helper()
+		for _, want := range wants {
+			if _, ok := findPrettyTestLine(lines, want); !ok {
+				t.Fatalf("render missing %q:\n%s", want, strings.Join(lines, "\n"))
+			}
+		}
+	}
+
+	// Zoomed into check a, the rest of the session leaves the view.
+	fe.ZoomToSpan(checkAID)
+	fe.tui.Step()
+	for _, id := range []dagui.SpanID{checkBID, liveID, groupID, innerID} {
+		require.Nil(t, fe.spanTrees[id], "span tree for %s outlived its row", id)
+		require.Nil(t, fe.testOwnerTrees[id], "test owner tree for %s outlived its row", id)
+	}
+	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(11, checkBID, "TestB1")})
+	require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
+		frontendTestLogRecord(liveID.SpanID, otellog.StringValue("zoomed away\n")),
+	}))
+	fe.tui.Step()
+	fe.ZoomToSpan(rootID)
+	requireLines(fe.tui.Step(), "TestA1", "TestB1", "zoomed away", "check inner")
+
+	// Collapsed, the group's child leaves the view.
+	fe.autoFocus = false
+	fe.FocusedSpan = groupID
+	fe.closeOrGoOut()
+	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(12, checkBID, "TestB2")})
+	fe.tui.Step()
+	require.Nil(t, fe.spanTrees[innerID], "span tree for collapsed row outlived it")
+	require.Nil(t, fe.testOwnerTrees[innerID], "test owner tree for collapsed row outlived it")
+	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(13, innerID, "TestInner1")})
+	fe.tui.Step()
+	fe.FocusedSpan = groupID
+	fe.openOrGoIn()
+	requireLines(fe.tui.Step(), "TestB2", "check inner", "TestInner1")
+	require.Same(t, fe.spanTrees[groupID].childMap[innerID], fe.spanTrees[innerID],
+		"re-expanded row's span tree is not the one rendered")
+	require.Same(t, fe.spanTrees[innerID], fe.testOwnerTrees[innerID])
+}
+
 // TestShellToolInlineTestsAlignWithToolDot verifies a shell transcript's tool
 // call hangs its inline TESTS rollup off a pipe in the same column as the faint
 // dot in front of the tool name (where its log gutter sits too), with the

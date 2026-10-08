@@ -351,6 +351,8 @@ type frontendPretty struct {
 	// TESTS rollup (checks and LLM tool calls), which test updates re-render.
 	// Kept alongside spanTrees so they don't have to scan the whole session.
 	testOwnerTrees map[dagui.SpanID]*SpanTreeView
+	// treeSync tracks which of spanTrees the last syncSpanTreeState reached.
+	treeSync treeSync
 
 	// per-span inline log components. A LogsView owns the fetch (on mount) and
 	// the render of a span's inline logs, so the expensive Vterm.View() is
@@ -530,6 +532,19 @@ type spanTreeScope struct {
 	rows      *dagui.Rows
 	opts      dagui.FrontendOpts
 	spanTrees map[dagui.SpanID]*SpanTreeView
+	treeSync  treeSync
+}
+
+// treeSync tracks which SpanTreeViews in a set of span trees the last sync
+// pass reached, so pruneSpanTrees can drop the rest.
+type treeSync struct {
+	epoch  uint64 // bumped at the start of each pass
+	synced int    // trees the pass reached
+}
+
+func (ts *treeSync) begin() {
+	ts.epoch++
+	ts.synced = 0
 }
 
 type SpanTreeView struct {
@@ -537,6 +552,11 @@ type SpanTreeView struct {
 	fe     *frontendPretty
 	spanID dagui.SpanID
 	scope  *spanTreeScope
+
+	// syncEpoch is the treeSync epoch of the last pass that reached this
+	// tree; a tree a pass didn't reach is no longer mounted (see
+	// pruneSpanTrees).
+	syncEpoch uint64
 
 	// finalRender and renderVersion are synced from frontendPretty before
 	// rendering. Render reads these instead of relying on hidden frontend state
@@ -5500,6 +5520,7 @@ func (fe *frontendPretty) syncSpanTreeState() {
 	if fe.spanTrees == nil {
 		fe.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
 	}
+	fe.treeSync.begin()
 
 	// A zoomed subtree renders at the margin: its root is split off as a header
 	// (see Render), so the content below isn't indented under it.
@@ -5538,6 +5559,34 @@ func (fe *frontendPretty) syncSpanTreeState() {
 		}
 	}
 	fe.topTrees = newTops
+	pruneSpanTrees(fe.spanTrees, &fe.treeSync, fe.testOwnerTrees)
+}
+
+// pruneSpanTrees drops the trees that the sync pass tracked by ts didn't
+// reach: rows that left the view (a zoom, a filter, a collapsed parent), whose
+// components are no longer mounted. Nothing renders them anymore, but keeping
+// them would grow the maps with the whole session, and passes over the trees
+// (updateTestViews) would keep paying for rows nobody can see. A pruned tree
+// is also dropped from its parent's childMap, so a row that comes back gets a
+// fresh tree rather than one whose cached render missed updates while it was
+// gone. When the pass reached as many trees as there are, none are stale and
+// this costs nothing.
+func pruneSpanTrees(trees map[dagui.SpanID]*SpanTreeView, ts *treeSync, owners map[dagui.SpanID]*SpanTreeView) {
+	if ts.synced >= len(trees) {
+		return
+	}
+	for id, st := range trees {
+		if st.syncEpoch == ts.epoch {
+			continue
+		}
+		delete(trees, id)
+		if owners[id] == st {
+			delete(owners, id)
+		}
+		if p := st.parent; p != nil && p.childMap[id] == st {
+			delete(p.childMap, id)
+		}
+	}
 }
 
 // syncTreeNode recursively syncs a SpanTreeView and its children with
@@ -5549,6 +5598,13 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 
 func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePrefix, scope *spanTreeScope) {
 	changed := false
+
+	ts := &fe.treeSync
+	if scope != nil {
+		ts = &scope.treeSync
+	}
+	st.syncEpoch = ts.epoch
+	ts.synced++
 
 	// Sync scope
 	if st.scope != scope {
