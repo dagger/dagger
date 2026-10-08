@@ -5,7 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
+
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 )
@@ -93,7 +94,7 @@ func (index artifactNameIndex) short(dimension, key string, filters []dagaddress
 
 // Resolve short type keys as sets. Apply them through the API so an empty
 // match stays an empty filter, which a link query cannot represent.
-func filterArtifactTypeKeys(artifacts *dagger.Artifacts, paths []artifactListPath, filter *dagaddress.Address) (*dagger.Artifacts, error) {
+func filterArtifactTypeKeys(artifacts *core.Artifacts, paths []artifactListPath, filter *dagaddress.Address) (*core.Artifacts, error) {
 	index, err := newArtifactNameIndex(paths)
 	if err != nil {
 		return nil, err

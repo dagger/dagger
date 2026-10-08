@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -69,7 +71,7 @@ func (WorkspaceSuite) TestSyntheticWorkspaceSourceIsPrivateInSchema(ctx context.
 // host workspace.
 func (WorkspaceSuite) TestDirectoryBackedSyntheticWorkspaceUsesSourceContent(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := syntheticWorkspaceSource(c).AsWorkspace(dagger.DirectoryAsWorkspaceOpts{
+	ws := syntheticWorkspaceSource(c).AsWorkspace(core.DirectoryAsWorkspaceOpts{
 		Cwd: "/app/nested",
 	})
 
@@ -89,7 +91,7 @@ func (WorkspaceSuite) TestDirectoryBackedSyntheticWorkspaceUsesSourceContent(ctx
 	require.NoError(t, err)
 	require.Equal(t, "/workspace.marker", found)
 
-	filtered, err := ws.Directory("/app", dagger.WorkspaceDirectoryOpts{Gitignore: true}).Entries(ctx)
+	filtered, err := ws.Directory("/app", core.WorkspaceDirectoryOpts{Gitignore: true}).Entries(ctx)
 	require.NoError(t, err)
 	requireEntry(t, filtered, "main.txt")
 	requireEntry(t, filtered, "nested")
@@ -111,11 +113,11 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx cont
 	refID, err := ref.ID(ctx)
 	require.NoError(t, err)
 
-	loadedRef := dagger.Ref[*dagger.GitRef](c, refID)
+	loadedRef := core.Ref[*core.GitRef](core.NewQuery(c), refID)
 	commit, err := loadedRef.CommitSHA(ctx)
 	require.NoError(t, err)
 
-	ws := loadedRef.AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "/app"})
+	ws := loadedRef.AsWorkspace(core.GitRefAsWorkspaceOpts{Cwd: "/app"})
 
 	cwd, err := ws.Cwd(ctx)
 	require.NoError(t, err)
@@ -129,7 +131,7 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx cont
 	require.NoError(t, err)
 	require.Equal(t, "root readme", root)
 
-	filtered, err := ws.Directory(".", dagger.WorkspaceDirectoryOpts{Gitignore: true}).Entries(ctx)
+	filtered, err := ws.Directory(".", core.WorkspaceDirectoryOpts{Gitignore: true}).Entries(ctx)
 	require.NoError(t, err)
 	requireEntry(t, filtered, "main.txt")
 	requireNoEntry(t, filtered, "debug.log")
@@ -151,7 +153,7 @@ func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.C
 	c := connect(ctx, t)
 
 	const gitAgentDoc = "Agent loaded from the GitRef workspace tree."
-	source := c.Directory().
+	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.git-agent]\nsource = \"./modules/git-agent\"\n").
 		WithNewFile("modules/git-agent/dagger.json", `{"name":"git-agent","engineVersion":"v1.0.0","sdk":"dang"}`).
 		WithNewFile("modules/git-agent/main.dang", `type GitAgent {
@@ -184,10 +186,10 @@ func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.C
 	gitDaemon, repoURL := gitService(ctx, t, c, source)
 	for _, tc := range []struct {
 		name string
-		ws   *dagger.Workspace
+		ws   *core.Workspace
 	}{
 		{"directory", source.AsWorkspace()},
-		{"git", c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).Head().AsWorkspace()},
+		{"git", core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).Head().AsWorkspace()},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			ws := tc.ws
@@ -230,7 +232,7 @@ func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.C
 			require.NoError(t, err)
 			require.NotEmpty(t, terminals)
 
-			passed, err := artifactValue[*dagger.Check](ctx, t, c, &checks[0]).Pass(ctx)
+			passed, err := artifactValue[*core.Check](ctx, t, c, &checks[0]).Pass(ctx)
 			require.NoError(t, err)
 			require.True(t, passed)
 		})
@@ -240,7 +242,7 @@ func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.C
 func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceGeneratorLoadingIsBestEffort(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	source := c.Directory().
+	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.good]
 source = "./modules/good"
 
@@ -257,7 +259,7 @@ source = "./modules/bad"
 		WithNewFile("modules/bad/dagger.json", `{"name":"bad","engineVersion":"v1.0.0","sdk":"dang"}`).
 		WithNewFile("modules/bad/main.dang", "this is not valid Dang")
 	gitDaemon, repoURL := gitService(ctx, t, c, source)
-	ws := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	ws := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Head().
 		AsWorkspace()
 
@@ -294,7 +296,7 @@ source = "./modules/bad"
 	}
 	require.Contains(t, checkNames, "dag://?check=bad/load")
 
-	selected, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"good"}}).FilterTypes([]string{"Generator"}).Items(ctx)
+	selected, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{"good"}}).FilterTypes([]string{"Generator"}).Items(ctx)
 	require.NoError(t, err)
 	require.Len(t, selected, 1)
 }
@@ -311,13 +313,13 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceRoundTripsFromID(ctx con
 	controlCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
 	defer cancel()
 
-	loadedRef := dagger.Ref[*dagger.GitRef](c, refID)
+	loadedRef := core.Ref[*core.GitRef](core.NewQuery(c), refID)
 
 	commit, err := loadedRef.CommitSHA(controlCtx)
 	require.NoError(t, err)
 
 	directMain, err := loadedRef.
-		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+		Tree(core.GitRefTreeOpts{DiscardGitDir: true}).
 		File("app/main.txt").
 		Contents(controlCtx)
 	require.NoError(t, err, "direct GitRef.tree read should work before GitRef.asWorkspace ID round-trip")
@@ -327,11 +329,11 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceRoundTripsFromID(ctx con
 	defer cancel()
 
 	workspaceID, err := loadedRef.
-		AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "/app"}).
+		AsWorkspace(core.GitRefAsWorkspaceOpts{Cwd: "/app"}).
 		ID(queryCtx)
 	require.NoError(t, err)
 
-	loaded := dagger.Ref[*dagger.Workspace](c, workspaceID)
+	loaded := core.Ref[*core.Workspace](core.NewQuery(c), workspaceID)
 
 	cwd, err := loaded.Cwd(queryCtx)
 	require.NoError(t, err)
@@ -360,9 +362,9 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceRoundTripsFromID(ctx con
 func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ws := c.Directory().
+	ws := core.NewQuery(c).Directory().
 		WithNewFile("app/base.txt", "base").
-		AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
+		AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "/app"})
 
 	before, err := ws.File("base.txt").Contents(ctx)
 	require.NoError(t, err)
@@ -406,11 +408,11 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource(
 func (WorkspaceSuite) TestOverlayWorkspaceFunctionalRemovesDoNotMutateBaseSource(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ws := c.Directory().
+	ws := core.NewQuery(c).Directory().
 		WithNewFile("app/keep.txt", "keep").
 		WithNewFile("app/drop.txt", "drop").
 		WithNewFile("app/sub/inner.txt", "inner").
-		AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
+		AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "/app"})
 
 	withoutFile := ws.WithoutFile("drop.txt")
 	fileEntries, err := withoutFile.Directory(".").Entries(ctx)
@@ -418,7 +420,7 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalRemovesDoNotMutateBaseSource
 	requireEntry(t, fileEntries, "keep.txt")
 	requireNoEntry(t, fileEntries, "drop.txt")
 
-	removed, err := withoutFile.Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+	removed, err := withoutFile.Changes(core.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
 	require.NoError(t, err)
 	require.Contains(t, removed, "drop.txt")
 
@@ -442,12 +444,12 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalRemovesDoNotMutateBaseSource
 func (WorkspaceSuite) TestOverlayWorkspaceWithoutFiles(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ws := c.Directory().
+	ws := core.NewQuery(c).Directory().
 		WithNewFile("app/keep.txt", "keep").
 		WithNewFile("app/drop.txt", "drop").
 		WithNewFile("app/sub/inner.txt", "inner").
 		WithNewFile("top.txt", "top").
-		AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
+		AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "/app"})
 
 	t.Run("cwd-relative and absolute paths", func(ctx context.Context, t *testctx.T) {
 		removed := ws.WithoutFiles([]string{"drop.txt", "sub/inner.txt", "/top.txt", "missing.txt"})
@@ -464,7 +466,7 @@ func (WorkspaceSuite) TestOverlayWorkspaceWithoutFiles(ctx context.Context, t *t
 		require.NoError(t, err)
 		requireNoEntry(t, rootEntries, "top.txt")
 
-		paths, err := removed.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+		paths, err := removed.WithWorkdir(".").Changes(core.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{"app/drop.txt", "app/sub/inner.txt", "top.txt"}, paths)
 
@@ -475,9 +477,9 @@ func (WorkspaceSuite) TestOverlayWorkspaceWithoutFiles(ctx context.Context, t *t
 	})
 
 	t.Run("a mount is read-only", func(ctx context.Context, t *testctx.T) {
-		mounted := ws.WithMountedDirectory("vendor", c.Directory().WithNewFile("lib.txt", "lib"))
+		mounted := ws.WithMountedDirectory("vendor", core.NewQuery(c).Directory().WithNewFile("lib.txt", "lib"))
 		_, err := mounted.WithoutFiles([]string{"drop.txt", "vendor/lib.txt"}).
-			Changes(dagger.WorkspaceChangesOpts{From: mounted}).IsEmpty(ctx)
+			Changes(core.WorkspaceChangesOpts{From: mounted}).IsEmpty(ctx)
 		require.ErrorContains(t, err, "is a read-only mount and cannot be modified")
 	})
 }
@@ -488,21 +490,21 @@ func (WorkspaceSuite) TestOverlayWorkspaceWithoutFiles(ctx context.Context, t *t
 func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesRoundTripFromID(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	baseDir := c.Directory().WithNewFile("base.txt", "base")
+	baseDir := core.NewQuery(c).Directory().WithNewFile("base.txt", "base")
 	baseWorkspace := baseDir.AsWorkspace()
-	sourceDir := c.Directory().WithNewFile("nested.txt", "nested")
+	sourceDir := core.NewQuery(c).Directory().WithNewFile("nested.txt", "nested")
 	changedDir := baseDir.WithNewFile("patched.txt", "patched")
 	changes := changedDir.Changes(baseDir)
 
 	for _, tc := range []struct {
 		name  string
-		apply func(*dagger.Workspace) *dagger.Workspace
+		apply func(*core.Workspace) *core.Workspace
 		path  string
 		want  string
 	}{
 		{
 			name: "withNewFile",
-			apply: func(ws *dagger.Workspace) *dagger.Workspace {
+			apply: func(ws *core.Workspace) *core.Workspace {
 				return ws.WithNewFile("file.txt", "file")
 			},
 			path: "file.txt",
@@ -510,7 +512,7 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesRoundTripFromID(ctx co
 		},
 		{
 			name: "withNewDirectory",
-			apply: func(ws *dagger.Workspace) *dagger.Workspace {
+			apply: func(ws *core.Workspace) *core.Workspace {
 				return ws.WithNewDirectory("dir", sourceDir)
 			},
 			path: "dir/nested.txt",
@@ -518,7 +520,7 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesRoundTripFromID(ctx co
 		},
 		{
 			name: "withChanges",
-			apply: func(ws *dagger.Workspace) *dagger.Workspace {
+			apply: func(ws *core.Workspace) *core.Workspace {
 				return ws.WithChanges(changes)
 			},
 			path: "patched.txt",
@@ -535,7 +537,7 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesRoundTripFromID(ctx co
 			loadCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
 			defer cancel()
 
-			got, err := dagger.Ref[*dagger.Workspace](c, workspaceID).
+			got, err := core.Ref[*core.Workspace](core.NewQuery(c), workspaceID).
 				File(tc.path).
 				Contents(loadCtx)
 			require.NoError(t, err)
@@ -553,12 +555,12 @@ func (WorkspaceSuite) TestOverlayGitRefWorkspaceReportsOverlayAsUncommitted(ctx 
 	refID, err := ref.ID(ctx)
 	require.NoError(t, err)
 
-	loadedRef := dagger.Ref[*dagger.GitRef](c, refID)
+	loadedRef := core.Ref[*core.GitRef](core.NewQuery(c), refID)
 	commit, err := loadedRef.CommitSHA(ctx)
 	require.NoError(t, err)
 	baseCommit := strings.TrimSpace(commit)
 
-	ws := loadedRef.AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "/app"})
+	ws := loadedRef.AsWorkspace(core.GitRefAsWorkspaceOpts{Cwd: "/app"})
 
 	cleanHead, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
@@ -595,8 +597,8 @@ func (WorkspaceSuite) TestChainedOverlayGitRefWorkspaceReportsAllOverlayChanges(
 	queryCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
 	defer cancel()
 
-	changed := dagger.Ref[*dagger.GitRef](c, refID).
-		AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "/app"}).
+	changed := core.Ref[*core.GitRef](core.NewQuery(c), refID).
+		AsWorkspace(core.GitRefAsWorkspaceOpts{Cwd: "/app"}).
 		WithNewFile("a.txt", "a").
 		WithNewFile("b.txt", "b")
 
@@ -623,7 +625,7 @@ func (WorkspaceSuite) TestSyntheticWorkspaceManagementAPIsDoNotDependOnHostState
 	assertSyntheticWorkspaceListsAreEmpty(ctx, t, ws)
 
 	updated := ws.WithModule("github.com/dagger/dagger/modules/wolfi@v0.20.2")
-	added, err := updated.Changes(dagger.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
+	added, err := updated.Changes(core.WorkspaceChangesOpts{From: ws}).AddedPaths(ctx)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"dagger.lock", "dagger.toml"}, added)
 
@@ -649,7 +651,7 @@ func (WorkspaceSuite) TestSyntheticWorkspaceManagementAPIsDoNotDependOnHostState
 // current-directory sentinel used by existing SDK code.
 func (WorkspaceSuite) TestSyntheticWorkspaceFindUpValidatesNames(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := syntheticWorkspaceSource(c).AsWorkspace(dagger.DirectoryAsWorkspaceOpts{
+	ws := syntheticWorkspaceSource(c).AsWorkspace(core.DirectoryAsWorkspaceOpts{
 		Cwd: "/app/nested",
 	})
 
@@ -665,8 +667,8 @@ func (WorkspaceSuite) TestSyntheticWorkspaceFindUpValidatesNames(ctx context.Con
 	}
 }
 
-func syntheticWorkspaceSource(c *dagger.Client) *dagger.Directory {
-	return c.Directory().
+func syntheticWorkspaceSource(c *dagger.Client) *core.Directory {
+	return core.NewQuery(c).Directory().
 		WithNewFile(".gitignore", "*.log\nbuild/\n").
 		WithNewFile("README.md", "root readme").
 		WithNewFile("workspace.marker", "root marker").
@@ -677,13 +679,13 @@ func syntheticWorkspaceSource(c *dagger.Client) *dagger.Directory {
 		WithNewFile("app/nested/leaf.txt", "leaf")
 }
 
-func syntheticWorkspaceGitRef(ctx context.Context, t *testctx.T, c *dagger.Client) *dagger.GitRef {
+func syntheticWorkspaceGitRef(ctx context.Context, t *testctx.T, c *dagger.Client) *core.GitRef {
 	t.Helper()
 	gitDaemon, repoURL := gitService(ctx, t, c, syntheticWorkspaceSource(c))
-	return c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).Head()
+	return core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).Head()
 }
 
-func assertSyntheticWorkspaceListsAreEmpty(ctx context.Context, t *testctx.T, ws *dagger.Workspace) {
+func assertSyntheticWorkspaceListsAreEmpty(ctx context.Context, t *testctx.T, ws *core.Workspace) {
 	t.Helper()
 
 	checks, err := ws.Artifacts().FilterTypes([]string{"Check"}).Items(ctx)

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/charmbracelet/x/ansi"
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
@@ -167,7 +168,7 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 				return unsetUserConfigValue(ctx, userScopedConfigKey(workspaceSettingConfigKey(setting.Module, setting.Key)))
 			}
 			return state.Workspace.
-				WithoutConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), dagger.WorkspaceWithoutConfigValueOpts{Here: workspaceHere}).
+				WithoutConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), core.WorkspaceWithoutConfigValueOpts{Here: workspaceHere}).
 				Export(ctx)
 		}
 
@@ -218,7 +219,7 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 				}
 			}
 			if err := target.
-				WithConfigValue(key, value, dagger.WorkspaceWithConfigValueOpts{Values: values, Here: workspaceHere}).
+				WithConfigValue(key, value, core.WorkspaceWithConfigValueOpts{Values: values, Here: workspaceHere}).
 				Export(ctx); err != nil {
 				return err
 			}
@@ -348,7 +349,7 @@ func workspaceSettingWriteValue(setting workspaceSetting, args []string) (string
 }
 
 type workspaceSettingsState struct {
-	Workspace *dagger.Workspace
+	Workspace *core.Workspace
 	Module    string
 	Settings  []workspaceSetting
 }
@@ -398,7 +399,7 @@ func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleN
 	}
 
 	return &workspaceSettingsState{
-		Workspace: dag.CurrentWorkspace(),
+		Workspace: core.NewQuery(dag).CurrentWorkspace(),
 		Module:    moduleName,
 		Settings:  settings,
 	}, nil

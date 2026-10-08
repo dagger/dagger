@@ -2,19 +2,26 @@ package dagger
 
 import (
 	"context"
+	"errors"
 	"io"
+	"os"
+	"sync"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"dagger.io/dagger/engineconn"
-	"github.com/dagger/querybuilder"
 )
 
-// Client is the Dagger Engine Client
+// Client is a connection to a Dagger Engine.
+//
+// This type is transport-only: it holds the engine connection and the raw
+// GraphQL client. The generated API bindings (Container, Directory, and so
+// on) live in dagger.io/dagger/core, which builds its own query root on top
+// of a *Client via core.NewQuery. That split avoids an import cycle: core
+// needs to import dagger.io/dagger, so dagger.io/dagger cannot import core
+// back.
 type Client struct {
-	*Query
-
 	conn   engineconn.EngineConn
 	client graphql.Client
 }
@@ -130,9 +137,6 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	gql := errorWrappedClient{graphql.NewClient("http://"+conn.Host()+"/query", conn)}
 
 	c := &Client{
-		Query: &Query{
-			query: querybuilder.Query().Client(gql),
-		},
 		client: gql,
 		conn:   conn,
 	}
@@ -144,17 +148,50 @@ func (c *Client) GraphQLClient() graphql.Client {
 	return c.client
 }
 
-// QueryBuilder returns the underlying query builder.
-func (c *Client) QueryBuilder() *querybuilder.Selection {
-	return c.Query.query
-}
-
 // Close the engine connection
 func (c *Client) Close() error {
 	if c.conn != nil {
 		return c.conn.Close()
 	}
 	return nil
+}
+
+var (
+	defaultClient   *Client
+	defaultClientMu sync.Mutex
+)
+
+// Default returns a process-wide shared engine connection, connecting lazily
+// on first use. Every caller that doesn't need a distinct, explicitly
+// configured connection should go through Default, so that (outside of an
+// inherited session) they all end up sharing the same engine session rather
+// than each provisioning their own.
+func Default(ctx context.Context) (*Client, error) {
+	defaultClientMu.Lock()
+	defer defaultClientMu.Unlock()
+
+	if defaultClient == nil {
+		c, err := Connect(ctx, WithLogOutput(os.Stdout))
+		if err != nil {
+			return nil, err
+		}
+		defaultClient = c
+	}
+	return defaultClient, nil
+}
+
+// Close closes the default engine connection returned by Default, if one has
+// been established.
+func Close() error {
+	defaultClientMu.Lock()
+	defer defaultClientMu.Unlock()
+
+	var err error
+	if defaultClient != nil {
+		err = defaultClient.Close()
+		defaultClient = nil
+	}
+	return err
 }
 
 // Do sends a GraphQL request to the engine
@@ -209,6 +246,12 @@ type Response struct {
 	Errors     gqlerror.List          `json:"errors,omitempty"`
 }
 
+// errorWrappedClient classifies GraphQL errors into more specific error
+// types (see getCustomError) as they come back from the engine. It lives
+// here, rather than in dagger.io/dagger/core alongside the generated types,
+// because dagger.io/dagger/core needs to import dagger.io/dagger, and
+// classifying a transport-level error doesn't need any generated type
+// anyway.
 type errorWrappedClient struct {
 	graphql.Client
 }
@@ -222,4 +265,98 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 		return err
 	}
 	return nil
+}
+
+type gqlExtendedError struct {
+	inner *gqlerror.Error
+}
+
+// Same as telemetry.ExtendedError, but without the dependency, to simplify
+// client generation.
+type extendedError interface {
+	error
+	Extensions() map[string]any
+}
+
+func (e gqlExtendedError) Unwrap() error {
+	return e.inner
+}
+
+var _ extendedError = gqlExtendedError{}
+
+func (e gqlExtendedError) Error() string {
+	return e.inner.Message
+}
+
+func (e gqlExtendedError) Extensions() map[string]any {
+	return e.inner.Extensions
+}
+
+// getCustomError parses a GraphQL error into a more specific error type.
+func getCustomError(err error) error {
+	var gqlErr *gqlerror.Error
+	if !errors.As(err, &gqlErr) {
+		return nil
+	}
+
+	ext := gqlErr.Extensions
+
+	lessNoisyErr := gqlExtendedError{gqlErr}
+
+	typ, ok := ext["_type"].(string)
+	if !ok {
+		return lessNoisyErr
+	}
+
+	if typ == "EXEC_ERROR" {
+		e := &ExecError{
+			original: lessNoisyErr,
+		}
+		if code, ok := ext["exitCode"].(float64); ok {
+			e.ExitCode = int(code)
+		}
+		if args, ok := ext["cmd"].([]interface{}); ok {
+			cmd := make([]string, len(args))
+			for i, v := range args {
+				cmd[i] = v.(string)
+			}
+			e.Cmd = cmd
+		}
+		if stdout, ok := ext["stdout"].(string); ok {
+			e.Stdout = stdout
+		}
+		if stderr, ok := ext["stderr"].(string); ok {
+			e.Stderr = stderr
+		}
+		return e
+	}
+
+	return lessNoisyErr
+}
+
+// ExecError is an API error from an exec operation.
+type ExecError struct {
+	original extendedError
+	Cmd      []string
+	ExitCode int
+	Stdout   string
+	Stderr   string
+}
+
+var _ extendedError = (*ExecError)(nil)
+
+func (e *ExecError) Error() string {
+	return e.Message()
+}
+
+func (e *ExecError) Extensions() map[string]any {
+	return e.original.Extensions()
+}
+
+func (e *ExecError) Message() string {
+	return e.original.Error()
+}
+
+func (e *ExecError) Unwrap() error {
+	return e.original
 }

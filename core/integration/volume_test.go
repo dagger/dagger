@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
@@ -30,11 +31,11 @@ func TestVolume(t *testing.T) {
 
 func (VolumeSuite) TestEngineVolumeLiveMount(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	engineState := c.CacheVolume("engine-volume-state-" + identity.NewID())
-	groupData := c.CacheVolume("engine-volume-group-" + identity.NewID())
-	nestedData := c.CacheVolume("engine-volume-nested-" + identity.NewID())
+	engineState := core.NewQuery(c).CacheVolume("engine-volume-state-" + identity.NewID())
+	groupData := core.NewQuery(c).CacheVolume("engine-volume-group-" + identity.NewID())
+	nestedData := core.NewQuery(c).CacheVolume("engine-volume-nested-" + identity.NewID())
 
-	_, err := c.Container().From(alpineImage).
+	_, err := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/state", engineState).
 		WithExec([]string{"sh", "-ec", `
 mkdir -p /state/volumes/v1/outside/fs
@@ -42,7 +43,7 @@ printf clamped-name > /state/volumes/v1/outside/fs/hello.txt
 `}).
 		Sync(ctx)
 	require.NoError(t, err)
-	_, err = c.Container().From(alpineImage).
+	_, err = core.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/data", groupData).
 		WithExec([]string{"sh", "-ec", `
 mkdir -p /data/models/fs/sub/dir /data/models/fs/outside-subdir /data/cache/fs
@@ -59,7 +60,7 @@ ln -s /outside /data/link
 `}).
 		Sync(ctx)
 	require.NoError(t, err)
-	_, err = c.Container().From(alpineImage).
+	_, err = core.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/data", nestedData).
 		WithExec([]string{"sh", "-ec", "printf nested-v1 > /data/nested.txt"}).
 		Sync(ctx)
@@ -76,7 +77,7 @@ ln -s /outside /data/link
 			cfg.Root = engineRoot
 			return cfg
 		}),
-		func(ctr *dagger.Container) *dagger.Container {
+		func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithMountedCache(engineRoot, engineState).
 				WithMountedCache(groupRoot, groupData).
@@ -86,7 +87,7 @@ ln -s /outside /data/link
 		},
 	)
 	engineService := devEngineContainerAsService(devEngine)
-	tunneledEngine, err := c.Host().Tunnel(engineService).Start(ctx)
+	tunneledEngine, err := core.NewQuery(c).Host().Tunnel(engineService).Start(ctx)
 	require.NoError(t, err)
 	engineStopped := false
 	t.Cleanup(func() {
@@ -95,7 +96,7 @@ ln -s /outside /data/link
 		}
 	})
 
-	endpoint, err := tunneledEngine.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := tunneledEngine.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 	nestedClient, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost(endpoint),
@@ -121,9 +122,9 @@ ln -s /outside /data/link
 		}
 	})
 
-	volumeID, err := nestedClient.EngineVolume(modelsVolName).ID(ctx)
+	volumeID, err := core.NewQuery(nestedClient).EngineVolume(modelsVolName).ID(ctx)
 	require.NoError(t, err)
-	secondVolumeID, err := secondClient.EngineVolume(modelsVolName).ID(ctx)
+	secondVolumeID, err := core.NewQuery(secondClient).EngineVolume(modelsVolName).ID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, volumeID, secondVolumeID)
 
@@ -133,13 +134,13 @@ ln -s /outside /data/link
 	require.NoError(t, err)
 	require.Equal(t, "root-v1nested-v1operator-subdir", out)
 
-	groupedVolumeID, err := nestedClient.EngineVolume("team-a/cache").ID(ctx)
+	groupedVolumeID, err := core.NewQuery(nestedClient).EngineVolume("team-a/cache").ID(ctx)
 	require.NoError(t, err)
 	out, err = execWithEngineVolume(ctx, nestedClient, groupedVolumeID, false, []string{"cat", "/mnt/hello.txt"})
 	require.NoError(t, err)
 	require.Equal(t, "grouped-cache", out)
 
-	subdirVolumeID, err := nestedClient.EngineVolume(modelsVolName, dagger.EngineVolumeOpts{Subdir: "sub/dir"}).ID(ctx)
+	subdirVolumeID, err := core.NewQuery(nestedClient).EngineVolume(modelsVolName, core.EngineVolumeOpts{Subdir: "sub/dir"}).ID(ctx)
 	require.NoError(t, err)
 	out, err = execWithEngineVolume(ctx, nestedClient, subdirVolumeID, false, []string{"cat", "/mnt/hello.txt"})
 	require.NoError(t, err)
@@ -376,19 +377,19 @@ ln -s /outside /data/link
 	require.NoError(t, err)
 	engineStopped = true
 
-	rootContents, err := c.Container().From(alpineImage).
+	rootContents, err := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/data", groupData).
 		WithExec([]string{"sh", "-ec", "cat /data/models/fs/root.txt; cat /data/models/fs/shared.txt"}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "root-v2shared-v2", rootContents)
-	nestedContents, err := c.Container().From(alpineImage).
+	nestedContents, err := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/data", nestedData).
 		WithExec([]string{"cat", "/data/nested.txt"}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "nested-v2", nestedContents)
-	createdContents, err := c.Container().From(alpineImage).
+	createdContents, err := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/state", engineState).
 		WithExec([]string{"sh", "-ec", "printf '%s:' \"$(stat -c %a /state/volumes/v1/created/new/fs)\"; cat /state/volumes/v1/created/new/fs/hello.txt"}).
 		Stdout(ctx)
@@ -396,10 +397,10 @@ ln -s /outside /data/link
 	require.Equal(t, "755:created", createdContents)
 }
 
-func queryEngineVolumeID(ctx context.Context, client *dagger.Client, name string, subdir ...string) (dagger.ID, error) {
+func queryEngineVolumeID(ctx context.Context, client *dagger.Client, name string, subdir ...string) (core.ID, error) {
 	var response struct {
 		EngineVolume struct {
-			ID dagger.ID
+			ID core.ID
 		}
 	}
 	var subdirValue any
@@ -416,11 +417,11 @@ func queryEngineVolumeID(ctx context.Context, client *dagger.Client, name string
 	return response.EngineVolume.ID, err
 }
 
-func execWithEngineVolume(ctx context.Context, client *dagger.Client, volumeID dagger.ID, readonly bool, args []string) (string, error) {
+func execWithEngineVolume(ctx context.Context, client *dagger.Client, volumeID core.ID, readonly bool, args []string) (string, error) {
 	return execWithEngineVolumeCached(ctx, client, volumeID, readonly, args, identity.NewID())
 }
 
-func execWithEngineVolumeCached(ctx context.Context, client *dagger.Client, volumeID dagger.ID, readonly bool, args []string, cacheBuster string) (string, error) {
+func execWithEngineVolumeCached(ctx context.Context, client *dagger.Client, volumeID core.ID, readonly bool, args []string, cacheBuster string) (string, error) {
 	var response struct {
 		Container struct {
 			From struct {
@@ -456,7 +457,7 @@ func execWithEngineVolumeCached(ctx context.Context, client *dagger.Client, volu
 	return response.Container.From.WithEnvVariable.WithMountedVolume.WithExec.Stdout, err
 }
 
-func waitForEngineVolumeFile(ctx context.Context, t *testctx.T, client *dagger.Client, volumeID dagger.ID, path string) {
+func waitForEngineVolumeFile(ctx context.Context, t *testctx.T, client *dagger.Client, volumeID core.ID, path string) {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
 	for {
@@ -475,9 +476,9 @@ func (VolumeSuite) TestSSHFSVolumeMount(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	fixture := newSSHFSVolumeFixture(ctx, t, c, "hello from sshfs\n")
 
-	out, err := c.Container().
+	out, err := core.NewQuery(c).Container().
 		From(alpineImage).
-		WithMountedVolume("/mnt", fixture.Volume(c), dagger.ContainerWithMountedVolumeOpts{ReadOnly: true}).
+		WithMountedVolume("/mnt", fixture.Volume(c), core.ContainerWithMountedVolumeOpts{ReadOnly: true}).
 		WithExec([]string{"cat", "/mnt/hello.txt"}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -490,17 +491,17 @@ func (VolumeSuite) TestSSHFSVolumeRejectsWrongKnownHosts(ctx context.Context, t 
 
 	// Control the fixture first, so the failure below is attributable to
 	// host-key verification instead of a broken SSH service.
-	out, err := c.Container().
+	out, err := core.NewQuery(c).Container().
 		From(alpineImage).
-		WithMountedVolume("/mnt", fixture.Volume(c), dagger.ContainerWithMountedVolumeOpts{ReadOnly: true}).
+		WithMountedVolume("/mnt", fixture.Volume(c), core.ContainerWithMountedVolumeOpts{ReadOnly: true}).
 		WithExec([]string{"cat", "/mnt/hello.txt"}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, fixture.contents, out)
 
-	_, err = c.Container().
+	_, err = core.NewQuery(c).Container().
 		From(alpineImage).
-		WithMountedVolume("/mnt", fixture.VolumeWithKnownHosts(c, c.SetSecret(
+		WithMountedVolume("/mnt", fixture.VolumeWithKnownHosts(c, core.NewQuery(c).SetSecret(
 			"sshfs-test-wrong-known-hosts-"+identity.NewID(),
 			fixture.wrongKnownHosts,
 		))).
@@ -518,9 +519,9 @@ func (VolumeSuite) TestSSHFSVolumeCachedExecDoesNotRereadRemoteContents(ctx cont
 	// remote write. It should return the cached result, while a cache-busted read
 	// proves the remote contents did change.
 	readCached := func() string {
-		out, err := c.Container().
+		out, err := core.NewQuery(c).Container().
 			From(alpineImage).
-			WithMountedVolume("/mnt", vol, dagger.ContainerWithMountedVolumeOpts{ReadOnly: true}).
+			WithMountedVolume("/mnt", vol, core.ContainerWithMountedVolumeOpts{ReadOnly: true}).
 			WithExec([]string{"cat", "/mnt/hello.txt"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -529,17 +530,17 @@ func (VolumeSuite) TestSSHFSVolumeCachedExecDoesNotRereadRemoteContents(ctx cont
 
 	require.Equal(t, "v1\n", readCached())
 
-	_, err := c.Container().
+	_, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedVolume("/mnt", vol).
 		WithExec([]string{"sh", "-c", "printf 'v2\n' > /mnt/hello.txt"}).
 		Sync(ctx)
 	require.NoError(t, err)
 
-	freshRead, err := c.Container().
+	freshRead, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
-		WithMountedVolume("/mnt", vol, dagger.ContainerWithMountedVolumeOpts{ReadOnly: true}).
+		WithMountedVolume("/mnt", vol, core.ContainerWithMountedVolumeOpts{ReadOnly: true}).
 		WithExec([]string{"cat", "/mnt/hello.txt"}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -556,7 +557,7 @@ func (VolumeSuite) TestModuleAcceptsAndMountsVolume(ctx context.Context, t *test
 
 	modDir := t.TempDir()
 	copyTestdataFixture(ctx, t, modDir, "modules", "go", "call-volume")
-	err = c.ModuleSource(modDir).AsModule().Serve(ctx)
+	err = core.NewQuery(c).ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
 
 	res, err := testutil.QueryWithClient[struct {
@@ -594,20 +595,20 @@ func (VolumeSuite) TestModuleCannotConstructEngineVolume(ctx context.Context, t 
 
 type sshfsVolumeFixture struct {
 	endpoint   string
-	privateKey *dagger.Secret
-	knownHosts *dagger.Secret
-	service    *dagger.Service
+	privateKey *core.Secret
+	knownHosts *core.Secret
+	service    *core.Service
 	contents   string
 
 	wrongKnownHosts string
 }
 
-func (f sshfsVolumeFixture) Volume(c *dagger.Client) *dagger.Volume {
+func (f sshfsVolumeFixture) Volume(c *dagger.Client) *core.Volume {
 	return f.VolumeWithKnownHosts(c, f.knownHosts)
 }
 
-func (f sshfsVolumeFixture) VolumeWithKnownHosts(c *dagger.Client, knownHosts *dagger.Secret) *dagger.Volume {
-	return c.SshfsVolume(f.endpoint, f.privateKey, dagger.SshfsVolumeOpts{
+func (f sshfsVolumeFixture) VolumeWithKnownHosts(c *dagger.Client, knownHosts *core.Secret) *core.Volume {
+	return core.NewQuery(c).SshfsVolume(f.endpoint, f.privateKey, core.SshfsVolumeOpts{
 		KnownHosts:              knownHosts,
 		ExperimentalServiceHost: f.service,
 	})
@@ -621,7 +622,7 @@ func newSSHFSVolumeFixture(ctx context.Context, t *testctx.T, c *dagger.Client, 
 		logicalHost = "example.com"
 	)
 
-	sshBase := c.Container().
+	sshBase := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "openssh"})
 
@@ -640,7 +641,7 @@ ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
 	userPubKey, err := keygen.File("/root/.ssh/id_ed25519.pub").Contents(ctx)
 	require.NoError(t, err)
 
-	setupScript := c.Directory().
+	setupScript := core.NewQuery(c).Directory().
 		WithNewFile("start.sh", `#!/bin/sh
 set -eu
 
@@ -666,14 +667,14 @@ Subsystem sftp internal-sftp
 EOF
 
 exec "$(which sshd)" -D -e -f /etc/ssh/sshd_config
-`, dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).
+`, core.DirectoryWithNewFileOpts{Permissions: 0o755}).
 		File("start.sh")
 
 	service := keygen.
 		WithNewFile("/seed/hello.txt", contents).
 		// Keep remote writes across service restarts; use a unique key so
 		// parallel tests and prior runs cannot inherit each other's contents.
-		WithMountedCache("/data", c.CacheVolume("sshfs-test-data-"+identity.NewID())).
+		WithMountedCache("/data", core.NewQuery(c).CacheVolume("sshfs-test-data-"+identity.NewID())).
 		WithMountedFile("/root/start.sh", setupScript).
 		WithExposedPort(sshPort).
 		WithDefaultArgs([]string{"sh", "/root/start.sh"}).
@@ -681,8 +682,8 @@ exec "$(which sshd)" -D -e -f /etc/ssh/sshd_config
 
 	return sshfsVolumeFixture{
 		endpoint:   fmt.Sprintf("sshfs://root@%s:%d/data", logicalHost, sshPort),
-		privateKey: c.SetSecret("sshfs-test-private-key-"+identity.NewID(), userPrivateKey),
-		knownHosts: c.SetSecret(
+		privateKey: core.NewQuery(c).SetSecret("sshfs-test-private-key-"+identity.NewID(), userPrivateKey),
+		knownHosts: core.NewQuery(c).SetSecret(
 			"sshfs-test-known-hosts-"+identity.NewID(),
 			fmt.Sprintf("[%s]:%d %s", logicalHost, sshPort, strings.TrimSpace(hostPubKey)),
 		),

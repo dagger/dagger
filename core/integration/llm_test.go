@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/dag"
+	"dagger.io/dagger/core"
 	"dagger.io/dagger/engineconn"
 	"github.com/creack/pty"
 	"github.com/dagger/dagger/dagql/call"
@@ -50,7 +50,7 @@ type LLMTestCase struct {
 	Flags []LLMTestCaseFlag
 	// Conversation constructs the canned message history this case consumes,
 	// through the LLM API itself (no live provider).
-	Conversation func(*dagger.Client) *dagger.LLM
+	Conversation func(*dagger.Client) *core.LLM
 }
 
 type LLMTestCaseFlag struct {
@@ -146,7 +146,7 @@ func recordMessages(t *testctx.T, c *dagger.Client, query string, vars map[strin
 // live provider involved. The recording round-trips through the same messages
 // export a real conversation would use, so its shape cannot drift from what
 // the recording decoder expects: both come from the engine under test.
-func cannedRecordingModel(ctx context.Context, t *testctx.T, c *dagger.Client, llm *dagger.LLM) string {
+func cannedRecordingModel(ctx context.Context, t *testctx.T, c *dagger.Client, llm *core.LLM) string {
 	t.Helper()
 	llmID, err := llm.ID(ctx)
 	require.NoError(t, err)
@@ -184,32 +184,32 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 			// byte (the recorded-response provider diffs TEXT blocks), while tool
 			// results are placeholders — the real read/write/build tools run while
 			// consuming the recording and their live results flow through.
-			Conversation: func(c *dagger.Client) *dagger.LLM {
-				return c.LLM().
+			Conversation: func(c *dagger.Client) *core.LLM {
+				return core.NewQuery(c).LLM().
 					WithPrompt("You are an expert go programmer. You have access to a workspace.\n"+
 						"Use the read, write, build tools to complete the following assignment.\n"+
 						"Do not try to access the container directly.\n"+
 						"Don't stop until your code builds.\n"+
 						"\n"+
 						"Assignment: write a hello world program\n").
-					WithResponse([]dagger.LLMContentBlockInput{
-						{Kind: dagger.LLMContentBlockKindText, Text: "Let me check the current main.go first."},
-						{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read"},
+					WithResponse([]core.LLMContentBlockInput{
+						{Kind: core.LLMContentBlockKindText, Text: "Let me check the current main.go first."},
+						{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read"},
 					}).
 					WithToolResult("call_1", `workspace file "main.go": stat main.go: no such file or directory`, true).
-					WithResponse([]dagger.LLMContentBlockInput{
-						{Kind: dagger.LLMContentBlockKindText, Text: "No main.go yet, so I'll write a hello world program."},
-						{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "write",
-							Arguments: dagger.JSON(`{"content":"package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n"}`)},
+					WithResponse([]core.LLMContentBlockInput{
+						{Kind: core.LLMContentBlockKindText, Text: "No main.go yet, so I'll write a hello world program."},
+						{Kind: core.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "write",
+							Arguments: core.JSON(`{"content":"package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n"}`)},
 					}).
 					WithToolResult("call_2", "", false).
-					WithResponse([]dagger.LLMContentBlockInput{
-						{Kind: dagger.LLMContentBlockKindText, Text: "Now let me build it to make sure it compiles."},
-						{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "build"},
+					WithResponse([]core.LLMContentBlockInput{
+						{Kind: core.LLMContentBlockKindText, Text: "Now let me build it to make sure it compiles."},
+						{Kind: core.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "build"},
 					}).
 					WithToolResult("call_3", "", false).
-					WithResponse([]dagger.LLMContentBlockInput{
-						{Kind: dagger.LLMContentBlockKindText, Text: "Done: main.go builds and prints Hello, World!"},
+					WithResponse([]core.LLMContentBlockInput{
+						{Kind: core.LLMContentBlockKindText, Text: "Done: main.go builds and prints Hello, World!"},
 					})
 			},
 		},
@@ -222,7 +222,7 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			ctr := goGitBase(t, c).
 				WithWorkdir("/work").
-				WithMountedDirectory(".", c.Host().Directory(srcPath))
+				WithMountedDirectory(".", core.NewQuery(c).Host().Directory(srcPath))
 
 			var flags []string
 			for _, flag := range tc.Flags {
@@ -238,7 +238,7 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 				cmd = append(cmd, flags...)
 				out, err := ctr.With(daggerCallAt(".", cmd...)).Stdout(ctx)
 				require.NoError(t, err)
-				testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
+				testGoProgram(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
 			})
 
 			t.Run("shell", func(ctx context.Context, t *testctx.T) {
@@ -250,7 +250,7 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 					With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | run %s`, model, strings.Join(flags, " ")))).
 					Stdout(ctx)
 				require.NoError(t, err)
-				testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
+				testGoProgram(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
 			})
 		})
 	}
@@ -282,7 +282,7 @@ func (LLMSuite) TestGeneratorSeesOverlayEdits(ctx context.Context, t *testctx.T)
 	// succeeds.
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work").
-		WithDirectory(".", c.Host().Directory(srcPath)).
+		WithDirectory(".", core.NewQuery(c).Host().Directory(srcPath)).
 		WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "initial"})
 
@@ -291,24 +291,24 @@ func (LLMSuite) TestGeneratorSeesOverlayEdits(ctx context.Context, t *testctx.T)
 	// overlay. The tool results are placeholders — the real write/generate
 	// tools run while the recording is consumed and their live results flow
 	// through.
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("You are an agent operating on a workspace.\n"+
 			"Use the write tool to edit input.txt, then the generate tool to run the workspace generators.\n"+
 			"\n"+
 			"Assignment: set input.txt to B-OVERLAY and regenerate\n").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Editing input.txt."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "write",
-				Arguments: dagger.JSON(`{"content":"B-OVERLAY"}`)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Editing input.txt."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "write",
+				Arguments: core.JSON(`{"content":"B-OVERLAY"}`)},
 		}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Now running the generators."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "generate"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Now running the generators."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "generate"},
 		}).
 		WithToolResult("call_2", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Done: regenerated output.txt from the edited input.txt."},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Done: regenerated output.txt from the edited input.txt."},
 		}))
 
 	out, err := ctr.
@@ -331,7 +331,7 @@ func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work").
-		WithMountedDirectory(".", c.Host().Directory(srcPath))
+		WithMountedDirectory(".", core.NewQuery(c).Host().Directory(srcPath))
 
 	// Mirrors GoProgrammer.drive's conversation (the first user message must
 	// match its withPrompt byte for byte): write main.go, then build it. Tool
@@ -342,26 +342,26 @@ func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
 	source := fmt.Sprintf("package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n\n// cache-buster: %s\n", identity.NewID())
 	writeArgs, err := json.Marshal(map[string]string{"content": source})
 	require.NoError(t, err)
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("You are an expert go programmer. You have access to a workspace.\n"+
 			"Use the read, write, build tools to complete the following assignment.\n"+
 			"Do not try to access the container directly.\n"+
 			"Don't stop until your code builds.\n"+
 			"\n"+
 			"Assignment: write a hello world program\n").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Writing main.go."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "write",
-				Arguments: dagger.JSON(writeArgs)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Writing main.go."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "write",
+				Arguments: core.JSON(writeArgs)},
 		}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Building."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "build"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Building."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "build"},
 		}).
 		WithToolResult("call_2", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Done."},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Done."},
 		}))
 
 	out, err := ctr.
@@ -392,29 +392,29 @@ func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work").
-		WithMountedDirectory(".", c.Host().Directory(srcPath))
+		WithMountedDirectory(".", core.NewQuery(c).Host().Directory(srcPath))
 
 	// Mirrors SvcAgent.drive's conversation (the first user message must
 	// match its withPrompt byte for byte): start the noisy service, then
 	// stop it. Tool results are placeholders — the real tools run during
 	// the recording-driven run.
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("You are an agent that manages a service.\n"+
 			"Use the start tool to start the service, then the stop tool to stop it.\n"+
 			"\n"+
 			"Assignment: start and stop the service\n").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Starting the service."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "start"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Starting the service."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "start"},
 		}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Now stopping the service."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "stop"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Now stopping the service."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "stop"},
 		}).
 		WithToolResult("call_2", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Done: service started and stopped."},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Done: service started and stopped."},
 		}))
 
 	out, err := ctr.
@@ -455,26 +455,26 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work").
-		WithMountedDirectory(".", c.Host().Directory(srcPath))
+		WithMountedDirectory(".", core.NewQuery(c).Host().Directory(srcPath))
 
 	// Mirrors ReportAgent.drive's conversation (the first user message must
 	// match its withPrompt text byte for byte). Tool results are placeholders —
 	// the real tool runs while consuming the recording. Give its nested exec a
 	// fresh cache key: a shared-cache hit has no live stdout for the tool result
 	// to abridge.
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
 			"Use the report tool to do the work and write the report.\n"+
 			"\n"+
 			"Assignment: do the work and write the report\n").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
-				Arguments: dagger.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, identity.NewID()))},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
+				Arguments: core.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, identity.NewID()))},
 		}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Done: the report is written."},
 		}))
 
 	out, err := ctr.
@@ -510,26 +510,26 @@ func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work").
-		WithMountedDirectory(".", c.Host().Directory(srcPath))
+		WithMountedDirectory(".", core.NewQuery(c).Host().Directory(srcPath))
 
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
 			"Use the report tool to do the work and write the report.\n"+
 			"\n"+
 			"Assignment: do the work and write the report\n").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report"},
 		}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Looking at the trace."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "ReadTrace",
-				Arguments: dagger.JSON(`{"span":"ffffffffffffffff"}`)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Looking at the trace."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "ReadTrace",
+				Arguments: core.JSON(`{"span":"ffffffffffffffff"}`)},
 		}).
 		WithToolResult("call_2", "", true).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Done: the report is written."},
 		}))
 
 	out, err := ctr.
@@ -554,32 +554,32 @@ func (LLMSuite) TestToolFindSpans(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work").
-		WithMountedDirectory(".", c.Host().Directory(srcPath))
+		WithMountedDirectory(".", core.NewQuery(c).Host().Directory(srcPath))
 
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
 			"Use the report tool to do the work and write the report.\n"+
 			"\n"+
 			"Assignment: do the work and write the report\n").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
-				Arguments: dagger.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, identity.NewID()))},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
+				Arguments: core.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, identity.NewID()))},
 		}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Looking for spans."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "FindSpans",
-				Arguments: dagger.JSON(`{"query":"no such span anywhere"}`)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Looking for spans."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "FindSpans",
+				Arguments: core.JSON(`{"query":"no such span anywhere"}`)},
 		}).
 		WithToolResult("call_2", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "FindSpans",
-				Arguments: dagger.JSON(`{"query":"ReportAgent.report"}`)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "FindSpans",
+				Arguments: core.JSON(`{"query":"ReportAgent.report"}`)},
 		}).
 		WithToolResult("call_3", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Done: the report is written."},
 		}))
 
 	out, err := ctr.
@@ -609,33 +609,33 @@ func (LLMSuite) TestToolInspectCall(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work").
-		WithMountedDirectory(".", c.Host().Directory(srcPath))
+		WithMountedDirectory(".", core.NewQuery(c).Host().Directory(srcPath))
 
 	buster := identity.NewID()
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
 			"Use the report tool to do the work and write the report.\n"+
 			"\n"+
 			"Assignment: do the work and write the report\n").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
-				Arguments: dagger.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, buster))},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
+				Arguments: core.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, buster))},
 		}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Looking for the call."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "FindCalls",
-				Arguments: dagger.JSON(fmt.Sprintf(`{"query":%q}`, buster))},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Looking for the call."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "FindCalls",
+				Arguments: core.JSON(fmt.Sprintf(`{"query":%q}`, buster))},
 		}).
 		WithToolResult("call_2", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "InspectCall",
-				Arguments: dagger.JSON(`{"digest":"xxh3:0000000000000000"}`)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "InspectCall",
+				Arguments: core.JSON(`{"digest":"xxh3:0000000000000000"}`)},
 		}).
 		WithToolResult("call_3", "", true).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Done: the report is written."},
 		}))
 
 	out, err := ctr.
@@ -656,7 +656,7 @@ func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	// rather than the LLM as a whole. Binding a container's methods as tools
 	// gives the recorded conversation a tool call, so the loop needs a second
 	// API call and trips the limit.
-	ctrFn := func(llmFlags, loopFlags string) dagger.WithContainerFunc {
+	ctrFn := func(llmFlags, loopFlags string) core.WithContainerFunc {
 		return daggerShell(fmt.Sprintf(`llm %s | with-tools $(container | from alpine) | with-prompt "tell me the value of PATH" | loop %s | with-prompt "now tell me the value of TERM" | transcript`, llmFlags, loopFlags))
 	}
 
@@ -664,16 +664,16 @@ func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	// really dispatches against the bound alpine container), leaving its
 	// result pending, so a --max-steps=1 loop trips the limit before the
 	// closing text turn.
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("tell me the value of PATH").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindThinking, Text: "Retrieving the PATH environment variable."},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "envVariable",
-				Arguments: dagger.JSON(`{"name":"PATH"}`)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindThinking, Text: "Retrieving the PATH environment variable."},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "envVariable",
+				Arguments: core.JSON(`{"name":"PATH"}`)},
 		}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "The value of PATH is /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin."},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "The value of PATH is /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin."},
 		}))
 	llmFlags := fmt.Sprintf("--model=%q", model)
 
@@ -688,10 +688,10 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 	// A canned conversation shared amongst subtests: they all drive the same
 	// "greet me" prompt through the llm/direct module.
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("greet me").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "Hello! How can I help you today?"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "Hello! How can I help you today?"},
 		}))
 	modelFlag := "--model=" + model
 
@@ -755,7 +755,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 	t.Run("shell allow all", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
-			WithExec([]string{"dagger", "script", "-m", indirectModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "script", "-m", indirectModuleRef, "--allow-llm=all"}, core.ContainerWithExecOpts{
 				Stdin: fmt.Sprintf(`. %s | prompt "greet me" %q`, modelFlag, identity.NewID()),
 			}).
 			Stdout(ctx)
@@ -764,7 +764,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 	t.Run("shell interactive module loads", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
-			WithExec([]string{"dagger", "script", "--allow-llm", directModuleSymbolic}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "script", "--allow-llm", directModuleSymbolic}, core.ContainerWithExecOpts{
 				Stdin: fmt.Sprintf(`%s %s | prompt "greet me" %q`, indirectModuleRef, modelFlag, identity.NewID()),
 			}).
 			Stdout(ctx)
@@ -865,7 +865,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program *dagger.File, re any) {
+func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program *core.File, re any) {
 	name, err := program.Name(ctx)
 	require.NoError(t, err)
 	out, err := goGitBase(t, c).
@@ -881,7 +881,7 @@ func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program 
 // digest and complete call-payload closure after its source session has closed.
 func (LLMSuite) TestTraceRecipe(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	llm := c.LLM().
+	llm := core.NewQuery(c).LLM().
 		WithModel("openai/gpt-4o").
 		WithSystemPrompt("you are a helpful assistant").
 		WithPrompt("hello")
@@ -897,7 +897,7 @@ func (LLMSuite) TestTraceRecipe(ctx context.Context, t *testctx.T) {
 	require.NoError(t, c.Close())
 
 	dst, _ := connectWithTrace(ctx, t)
-	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	model, err := reloaded.Model(ctx)
 	require.NoError(t, err)
 	require.Equal(t, origModel, model)
@@ -911,12 +911,12 @@ func (LLMSuite) TestTraceRecipe(ctx context.Context, t *testctx.T) {
 // being reconstructed, with a missing required input field "arguments" error.
 func (LLMSuite) TestTraceRecipeWithResponse(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	llm := c.LLM().
+	llm := core.NewQuery(c).LLM().
 		WithModel("openai/gpt-4o").
 		WithPrompt("hello").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read", Arguments: dagger.JSON(`{"path":"/x"}`)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "hello world"},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read", Arguments: core.JSON(`{"path":"/x"}`)},
 		})
 	origHist, err := llm.Transcript(ctx)
 	require.NoError(t, err)
@@ -925,7 +925,7 @@ func (LLMSuite) TestTraceRecipeWithResponse(ctx context.Context, t *testctx.T) {
 	require.NoError(t, c.Close())
 
 	dst, _ := connectWithTrace(ctx, t)
-	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	reply, err := reloaded.LastReply(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello world", reply)
@@ -937,13 +937,13 @@ func (LLMSuite) TestTraceRecipeWithResponse(ctx context.Context, t *testctx.T) {
 // An unknown model name cannot recover its explicit provider by inference.
 func (LLMSuite) TestTraceRecipeCarriesProvider(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	llm := c.LLM(dagger.LLMOpts{
+	llm := core.NewQuery(c).LLM(core.LLMOpts{
 		Model:    "my-custom-finetune",
 		Provider: "openai",
 	}).
 		WithPrompt("hello").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "hello world"},
 		})
 	origProvider, err := llm.Provider(ctx)
 	require.NoError(t, err)
@@ -953,7 +953,7 @@ func (LLMSuite) TestTraceRecipeCarriesProvider(ctx context.Context, t *testctx.T
 	require.NoError(t, c.Close())
 
 	dst, _ := connectWithTrace(ctx, t)
-	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	provider, err := reloaded.Provider(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "openai", provider, "the trace must retain the explicit provider")
@@ -969,14 +969,14 @@ func (LLMSuite) TestDefaultModelPinnedInTrace(ctx context.Context, t *testctx.T)
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{
 		ExtraEnv: []string{"OPENAI_MODEL=gpt-4o-test"},
 	})
-	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM())
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM())
 	require.NoError(t, err)
 	require.NoError(t, c.Close())
 
 	dst, _ := connectWithTrace(ctx, t, engineconn.Config{
 		ExtraEnv: []string{"OPENAI_MODEL=different-default"},
 	})
-	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	model, err := reloaded.Model(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "gpt-4o-test", model)
@@ -989,14 +989,14 @@ func (LLMSuite) TestSmallModelPinnedInTrace(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{
 		ExtraEnv: []string{"OPENAI_MODEL=gpt-main-model-test", "OPENAI_SMALL_MODEL=small-model-test"},
 	})
-	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithSmallModel())
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithSmallModel())
 	require.NoError(t, err)
 	require.NoError(t, c.Close())
 
 	dst, _ := connectWithTrace(ctx, t, engineconn.Config{
 		ExtraEnv: []string{"OPENAI_MODEL=different-main", "OPENAI_SMALL_MODEL=different-small"},
 	})
-	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	model, err := reloaded.Model(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "small-model-test", model)
@@ -1014,23 +1014,23 @@ func (LLMSuite) TestTraceRecipeAfterChangesExport(ctx context.Context, t *testct
 	git("commit", "-m", "initial editable file")
 	publishCheckpointRemote(ctx, t, workdir)
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
-	current := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
-	llm := c.LLM().
+	current := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
+	llm := core.NewQuery(c).LLM().
 		WithWorkspace(current).
 		WithModel("openai/gpt-4o").
 		WithSystemPrompt("be helpful").
 		WithPrompt("hello").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
-			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read", Arguments: dagger.JSON(`{"path":"/x"}`)},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "hello world"},
+			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read", Arguments: core.JSON(`{"path":"/x"}`)},
 		}).
 		WithToolResult("call_1", "file contents", false)
 
-	base := c.Directory().WithNewFile("a.txt", "before")
+	base := core.NewQuery(c).Directory().WithNewFile("a.txt", "before")
 	edited := base.WithNewFile("a.txt", "after")
 	llmEdited := llm.WithWorkspace(llm.Workspace().WithChanges(edited.Changes(base)))
-	require.NoError(t, llmEdited.Workspace().Export(ctx, dagger.WorkspaceExportOpts{Path: workdir}))
-	rebound := llmEdited.WithWorkspace(snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()))
+	require.NoError(t, llmEdited.Workspace().Export(ctx, core.WorkspaceExportOpts{Path: workdir}))
+	rebound := llmEdited.WithWorkspace(snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace()))
 	origHist, err := llmEdited.Transcript(ctx)
 	require.NoError(t, err)
 	reboundHist, err := rebound.Transcript(ctx)
@@ -1043,8 +1043,8 @@ func (LLMSuite) TestTraceRecipeAfterChangesExport(ctx context.Context, t *testct
 	// A new session must reconstruct the current binding, irrespective of
 	// whether the producer prunes superseded immutable recipe dependencies.
 	dst, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
-	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
-	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, dst.CurrentWorkspace())}).IsEmpty(ctx)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
+	reloadedEmpty, err := reloaded.Workspace().Changes(core.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, core.NewQuery(dst).CurrentWorkspace())}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, reloadedEmpty, "resume must not reapply already-exported workspace edits")
 	contents, err := reloaded.Workspace().File("a.txt").Contents(ctx)
@@ -1065,28 +1065,28 @@ func (LLMSuite) TestTraceRecipeAfterFileExport(ctx context.Context, t *testctx.T
 	workdir, git := workspaceExportCheckout(ctx, t)
 	publishCheckpointRemote(ctx, t, workdir)
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
-	current := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
-	llm := c.LLM().
+	current := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
+	llm := core.NewQuery(c).LLM().
 		WithWorkspace(current).
 		WithModel("openai/gpt-4o").
 		WithSystemPrompt("be helpful").
 		WithPrompt("hello").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "hello world"},
 		})
 	edited := llm.WithWorkspace(
 		llm.Workspace().
 			WithNewFile("added.txt", "one").
 			WithNewFile("another.txt", "two"),
 	)
-	editedEmpty, err := edited.Workspace().Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
+	editedEmpty, err := edited.Workspace().Changes(core.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.False(t, editedEmpty, "overlaid workspace should report pending changes")
-	require.NoError(t, edited.Workspace().Export(ctx, dagger.WorkspaceExportOpts{Path: workdir}))
+	require.NoError(t, edited.Workspace().Export(ctx, core.WorkspaceExportOpts{Path: workdir}))
 	git("add", "added.txt", "another.txt")
-	fresh := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	fresh := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
 	rebound := edited.WithWorkspace(fresh)
-	reboundEmpty, err := rebound.Workspace().Changes(dagger.WorkspaceChangesOpts{From: fresh}).IsEmpty(ctx)
+	reboundEmpty, err := rebound.Workspace().Changes(core.WorkspaceChangesOpts{From: fresh}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, reboundEmpty, "rebinding the exported snapshot must drop the overlay edits")
 	origHist, err := edited.Transcript(ctx)
@@ -1096,8 +1096,8 @@ func (LLMSuite) TestTraceRecipeAfterFileExport(ctx context.Context, t *testctx.T
 	require.NoError(t, c.Close())
 
 	dst, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
-	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
-	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, dst.CurrentWorkspace())}).IsEmpty(ctx)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
+	reloadedEmpty, err := reloaded.Workspace().Changes(core.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, core.NewQuery(dst).CurrentWorkspace())}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, reloadedEmpty, "resume must not reapply already-exported workspace edits")
 	for path, expected := range map[string]string{"added.txt": "one", "another.txt": "two"} {
@@ -1117,13 +1117,13 @@ func (LLMSuite) TestTraceRecipePreservesPendingEdits(ctx context.Context, t *tes
 	publishCheckpointRemote(ctx, t, workdir)
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("SOURCE"), 0o644))
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
-	current := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
-	llm := c.LLM().
+	current := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
+	llm := core.NewQuery(c).LLM().
 		WithWorkspace(current).
 		WithModel("openai/gpt-4o").
 		WithPrompt("hello").
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: "hello world"},
 		})
 	edited := llm.WithWorkspace(llm.Workspace().WithNewFile("pending.txt", "PENDING"))
 	origHist, err := edited.Transcript(ctx)
@@ -1134,14 +1134,14 @@ func (LLMSuite) TestTraceRecipePreservesPendingEdits(ctx context.Context, t *tes
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("DESTINATION"), 0o644))
 
 	dst, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
-	reloaded := dagger.Ref[*dagger.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	contents, err := reloaded.Workspace().File("pending.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "PENDING", contents)
 	base, err := reloaded.Workspace().File("base.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "SOURCE", base, "the trace, not the client checkout, owns the workspace")
-	reloadedEmpty, err := reloaded.Workspace().Changes(dagger.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, dst.CurrentWorkspace())}).IsEmpty(ctx)
+	reloadedEmpty, err := reloaded.Workspace().Changes(core.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, core.NewQuery(dst).CurrentWorkspace())}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.False(t, reloadedEmpty, "un-exported edits must survive trace reconstruction")
 	reloadedHist, err := reloaded.Transcript(ctx)
@@ -1167,16 +1167,16 @@ func (LLMSuite) TestWorkspaceSnapshotRefreshesBinding(ctx context.Context, t *te
 			out, err = cmd.CombinedOutput()
 			require.NoError(t, err, "%s", out)
 			c := connect(ctx, t, dagger.WithWorkdir(workdir))
-			before, err := c.CurrentWorkspace().File("x.txt").Contents(ctx)
+			before, err := core.NewQuery(c).CurrentWorkspace().File("x.txt").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "OLD", before)
-			original := c.LLM().WithWorkspace(snapshotWorkspace(ctx, t, c, c.CurrentWorkspace()))
+			original := core.NewQuery(c).LLM().WithWorkspace(snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace()))
 			if export {
-				require.NoError(t, c.CurrentWorkspace().WithNewFile("x.txt", "NEW").Export(ctx))
+				require.NoError(t, core.NewQuery(c).CurrentWorkspace().WithNewFile("x.txt", "NEW").Export(ctx))
 			} else {
 				require.NoError(t, os.WriteFile(filename, []byte("NEW"), 0o644))
 			}
-			fresh := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+			fresh := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
 			after, err := original.WithWorkspace(fresh).Workspace().File("x.txt").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "NEW", after)

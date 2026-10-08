@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -52,19 +54,19 @@ func (m *Caller) Nonce(ctx context.Context, address string) string {
 func serveGitTrustPrivateRepo(ctx context.Context, t *testctx.T, c *dagger.Client) string {
 	t.Helper()
 
-	content := c.Directory().
+	content := core.NewQuery(c).Directory().
 		WithNewFile("hello/dagger-module.toml", serveModuleHelloManifest).
 		WithNewFile("hello/main.dang", serveModuleHelloSource).
 		WithNewFile("other/dagger-module.toml", strings.ReplaceAll(serveModuleHelloManifest, `"hello"`, `"other"`)).
 		WithNewFile("other/main.dang", strings.ReplaceAll(serveModuleHelloSource, "Hello", "Other"))
-	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", makeGitDir(c, content, "main"), "", c.SetSecret("serve-git-trust", serveGitTrustToken))
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", makeGitDir(c, content, "main"), "", core.NewQuery(c).SetSecret("serve-git-trust", serveGitTrustToken))
 	gitSrv, err := gitSrv.Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = gitSrv.Stop(ctx) })
 
 	host, err := gitSrv.Hostname(ctx)
 	require.NoError(t, err)
-	out, err := c.Container().From(alpineImage).WithExec([]string{"getent", "hosts", host}).Stdout(ctx)
+	out, err := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"getent", "hosts", host}).Stdout(ctx)
 	require.NoError(t, err)
 	fields := strings.Fields(out)
 	require.NotEmpty(t, fields, "unexpected getent output: %q", out)
@@ -73,7 +75,7 @@ func serveGitTrustPrivateRepo(ctx context.Context, t *testctx.T, c *dagger.Clien
 
 // serveGitTrustBase is a CLI container whose git credential helper answers
 // for the private repository's host.
-func serveGitTrustBase(t *testctx.T, c *dagger.Client, repoURL string) *dagger.Container {
+func serveGitTrustBase(t *testctx.T, c *dagger.Client, repoURL string) *core.Container {
 	t.Helper()
 
 	host := strings.TrimSuffix(repoURL, "/repo.git")
@@ -108,7 +110,7 @@ func (ModuleLoadingSuite) TestServeModuleDeclaredGitClient(ctx context.Context, 
 	repoURL := serveGitTrustPrivateRepo(ctx, t, c)
 	hello := repoURL + "/hello"
 
-	hostCaller := func(client string) *dagger.Container {
+	hostCaller := func(client string) *core.Container {
 		return serveGitTrustBase(t, c, repoURL).
 			WithNewFile("dagger.toml", serveGitTrustWorkspaceConfig(client)).
 			WithNewFile("modules/caller/dagger.json", serveTreeCallerManifest).
@@ -144,7 +146,7 @@ func (ModuleLoadingSuite) TestServeModuleDeclaredGitClient(ctx context.Context, 
 	t.Run("a removed declaration misses the cache", func(ctx context.Context, t *testctx.T) {
 		// The declaration sits above the module's source root, outside the
 		// module's implementation digest, which the test checks stays put.
-		run := func(ctr *dagger.Container, n string, with dagger.WithContainerFunc) string {
+		run := func(ctr *core.Container, n string, with core.WithContainerFunc) string {
 			out, err := ctr.WithEnvVariable("SERVE_MODULE_RUN", n).With(with).Stdout(ctx)
 			require.NoError(t, err)
 			return out
@@ -164,7 +166,7 @@ func (ModuleLoadingSuite) TestServeModuleDeclaredGitClient(ctx context.Context, 
 	})
 
 	t.Run("another session without credentials misses the cache", func(ctx context.Context, t *testctx.T) {
-		withNonce := func(ctr *dagger.Container) *dagger.Container {
+		withNonce := func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithNewFile("dagger.toml", serveGitTrustWorkspaceConfig(hello)).
 				WithNewFile("modules/caller/dagger.json", serveTreeCallerManifest).
@@ -192,7 +194,7 @@ func (ModuleLoadingSuite) TestServeModuleDeclaredGitClient(ctx context.Context, 
 	t.Run("module loaded from git serves a client its own config declares", func(ctx context.Context, t *testctx.T) {
 		// The caller's repository holds the declaration, not the workspace
 		// calling it, which declares nothing.
-		callerRepo := c.Directory().
+		callerRepo := core.NewQuery(c).Directory().
 			WithNewFile("dagger.toml", serveGitTrustWorkspaceConfig(hello)).
 			WithNewFile("modules/caller/dagger.json", serveTreeCallerManifest).
 			WithNewFile("modules/caller/main.go", serveTreeCallerSource)

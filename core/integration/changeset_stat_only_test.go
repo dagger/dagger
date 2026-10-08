@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -15,7 +15,7 @@ import (
 // declare changed, even when its structural diff contains metadata-only entries.
 func (ChangesetSuite) TestWithChangesPreservesStatOnlyPaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	before := c.Directory().WithNewFile("target/keep.txt", "keep").WithTimestamps(1700000000)
+	before := core.NewQuery(c).Directory().WithNewFile("target/keep.txt", "keep").WithTimestamps(1700000000)
 	after := before.WithTimestamps(1700000010).WithNewFile("target/new.txt", "new")
 	changes := after.Changes(before)
 
@@ -37,7 +37,7 @@ func (ChangesetSuite) TestWithChangesPreservesStatOnlyPaths(ctx context.Context,
 	workdir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "target"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "target", "keep.txt"), []byte("edited on disk"), 0o644))
-	target := c.Host().Directory(workdir, dagger.HostDirectoryOpts{NoCache: true})
+	target := core.NewQuery(c).Host().Directory(workdir, core.HostDirectoryOpts{NoCache: true})
 	contents, err := target.File("target/keep.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "edited on disk", contents)

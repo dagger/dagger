@@ -11,6 +11,7 @@ package core
 import (
 	"context"
 
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -20,7 +21,7 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 	t.Run("standalone", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		work := c.Container().From(golangImage).
+		work := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work")
 		out, err := work.
@@ -34,7 +35,7 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 	t.Run("standalone explicit", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		work := c.Container().From(golangImage).
+		work := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0").
 			WithWorkdir("/work")
@@ -48,7 +49,7 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 	t.Run("standalone explicit dev", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		work := c.Container().From(golangImage).
+		work := core.NewQuery(c).Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0-dev-123").
 			WithWorkdir("/work")

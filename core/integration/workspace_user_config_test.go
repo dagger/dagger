@@ -16,6 +16,8 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -288,9 +290,9 @@ profile = %q
 	c := connect(ctx, t,
 		dagger.WithWorkdir(workdir),
 		dagger.WithEnvironmentVariable("DAGGER_CONFIG", userConfigPath))
-	profile := func(ws *dagger.Workspace) string {
+	profile := func(ws *core.Workspace) string {
 		t.Helper()
-		out, err := ws.ConfigRead(ctx, dagger.WorkspaceConfigReadOpts{
+		out, err := ws.ConfigRead(ctx, core.WorkspaceConfigReadOpts{
 			Key:       "modules.aws.settings.profile",
 			Effective: true,
 		})
@@ -298,7 +300,7 @@ profile = %q
 		return out
 	}
 
-	frozen := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	frozen := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
 	require.Equal(t, "alice-dev", profile(frozen))
 
 	// Edits made mid-session leave the snapshot as captured until it is
@@ -458,17 +460,17 @@ entrypoint = true
 [modules.aws.settings]
 region = "us-east-1"
 `)
-	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Host().Directory(hostDir))
+	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, core.NewQuery(c).Host().Directory(hostDir))
 
-	userConfigDaggerExec := func(ctr *dagger.Container, args ...string) *dagger.Container {
-		return ctr.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+	userConfigDaggerExec := func(ctr *core.Container, args ...string) *core.Container {
+		return ctr.WithExec(append([]string{"dagger"}, args...), core.ContainerWithExecOpts{
 			UseEntrypoint: true,
 		})
 	}
 
-	ctr := c.Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithDirectory("/cfg", c.Directory()).
+		WithDirectory("/cfg", core.NewQuery(c).Directory()).
 		WithEnvVariable("DAGGER_CONFIG", "/cfg/config.toml").
 		WithWorkdir("/empty")
 

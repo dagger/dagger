@@ -8,7 +8,7 @@ import (
 	"context"
 	"testing"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/otel-go/oteltestctx"
 	"github.com/dagger/testctx"
 	"github.com/google/uuid"
@@ -29,13 +29,13 @@ func TestSequential(t *testing.T) {
 func (SequentialSuite) TestInsecureRootNetNSIsolation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	opts := dagger.ContainerWithExecOpts{InsecureRootCapabilities: true}
-	baseContainer := c.Container().
+	opts := core.ContainerWithExecOpts{InsecureRootCapabilities: true}
+	baseContainer := core.NewQuery(c).Container().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "iputils", "iptables"}).
 		WithEnvVariable("CACHE_BUST", uuid.NewString())
 
-	listNATRules := func(ctr *dagger.Container) (string, error) {
+	listNATRules := func(ctr *core.Container) (string, error) {
 		return ctr.
 			WithExec([]string{"sh", "-c", "iptables -t nat -L -v -n"}, opts).
 			Stdout(ctx)

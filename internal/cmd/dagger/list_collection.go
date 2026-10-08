@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
@@ -18,11 +20,11 @@ func prepareArtifactOutput(ctx context.Context, dag *dagger.Client, cmd *cobra.C
 	}
 	// All naming queries must reuse this discovery result. currentWorkspace
 	// creates a new workspace on each call.
-	id, err := dag.CurrentWorkspace().Artifacts().ID(ctx)
+	id, err := core.NewQuery(dag).CurrentWorkspace().Artifacts().ID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	all := dagger.Ref[*dagger.Artifacts](dag, id)
+	all := core.Ref[*core.Artifacts](core.NewQuery(dag), id)
 	definitions, err := artifactDimensions(ctx, dag, all)
 	if err != nil {
 		return nil, err

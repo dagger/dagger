@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -68,7 +70,7 @@ func TestAssignAgentUsesSnapshotID(t *testing.T) {
 	handler := &shellCallHandler{shellEnv: newShellEnvironment()}
 	handler.state = NewStateStore(nil)
 
-	snapshotID := dagger.ID("portable-agent-id")
+	snapshotID := core.ID("portable-agent-id")
 	handler.assignAgent(snapshotID)
 
 	agentToken := handler.shellEnv.Get(agentVar).String()

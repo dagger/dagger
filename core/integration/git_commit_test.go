@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -23,7 +25,7 @@ import (
 func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) {
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
-	fixture := c.Container().From(alpineImage).
+	fixture := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/repo").
 		WithExec([]string{"sh", "-ec", `
@@ -38,7 +40,7 @@ func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) 
 	base := fixture.AsGit().Head()
 	baseSHA, err := base.CommitSHA(ctx)
 	require.NoError(t, err)
-	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	before := base.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 	changes := before.WithNewFile("file.txt", "edited\n").Changes(before)
 	_, err = changes.ModifiedPaths(ctx)
 	require.NoError(t, err)
@@ -46,7 +48,7 @@ func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) 
 	parents, err := result.TargetCommit().ParentShas(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{baseSHA}, parents)
-	contents, err := result.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("file.txt").Contents(ctx)
+	contents, err := result.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("file.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "edited\n", contents)
 	// Bypass the original ref's cached result to verify storage was untouched.
@@ -70,7 +72,7 @@ func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) 
 func (GitSuite) TestGitRefWithCommitGitDirSymlink(ctx context.Context, t *testctx.T) {
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
-	fixture := c.Container().From(alpineImage).
+	fixture := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/repo").
 		WithExec([]string{"sh", "-ec", `
@@ -88,7 +90,7 @@ func (GitSuite) TestGitRefWithCommitGitDirSymlink(ctx context.Context, t *testct
 	base := fixture.AsGit().Head()
 	baseSHA, err := base.CommitSHA(ctx)
 	require.NoError(t, err)
-	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	before := base.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 	changes := before.WithNewFile("file.txt", "edited\n").Changes(before)
 	_, err = changes.ModifiedPaths(ctx)
 	require.NoError(t, err)
@@ -96,7 +98,7 @@ func (GitSuite) TestGitRefWithCommitGitDirSymlink(ctx context.Context, t *testct
 	parents, err := result.TargetCommit().ParentShas(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{baseSHA}, parents)
-	contents, err := result.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("file.txt").Contents(ctx)
+	contents, err := result.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("file.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "edited\n", contents)
 	require.NoError(t, c.Close())
@@ -141,7 +143,7 @@ func (GitSuite) TestGitRefWithCommitNative(ctx context.Context, t *testctx.T) {
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	const date = "2026-09-05T12:00:00Z"
-	fixture := c.Container().From(alpineImage).
+	fixture := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/repo").
 		WithExec([]string{"sh", "-ec", `
@@ -164,7 +166,7 @@ func (GitSuite) TestGitRefWithCommitNative(ctx context.Context, t *testctx.T) {
 		`}).Directory("/repo")
 	packStat := func(stage string) string {
 		t.Helper()
-		out, err := c.Container().From(alpineImage).
+		out, err := core.NewQuery(c).Container().From(alpineImage).
 			WithMountedDirectory("/repo", fixture).
 			WithEnvVariable("INSPECTION_STAGE", stage).
 			WithExec([]string{"sh", "-ec", "stat -c '%n %Y %a' /repo/.git/objects/pack/*"}).Stdout(ctx)
@@ -173,30 +175,30 @@ func (GitSuite) TestGitRefWithCommitNative(ctx context.Context, t *testctx.T) {
 	}
 	packsBefore := packStat("before")
 	base := fixture.AsGit().Head()
-	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	before := base.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 	oracleBefore := before.WithNewFile(".oracle-provenance", "").WithoutFile(".oracle-provenance")
-	commit := func(changes *dagger.Changeset) *dagger.GitRef {
-		return base.WithCommit(changes, "native test\n\nKeep the body.\n", date, "Author", "author@example.com", dagger.GitRefWithCommitOpts{
+	commit := func(changes *core.Changeset) *core.GitRef {
+		return base.WithCommit(changes, "native test\n\nKeep the body.\n", date, "Author", "author@example.com", core.GitRefWithCommitOpts{
 			Signoff: true, CommitterName: "Committer", CommitterEmail: "committer@example.com",
 		})
 	}
 	for _, tc := range []struct {
 		name string
-		edit func(*dagger.Directory) *dagger.Directory
+		edit func(*core.Directory) *core.Directory
 	}{
-		{"ordinary", func(d *dagger.Directory) *dagger.Directory {
+		{"ordinary", func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("file.txt", "new\n")
 		}},
-		{"add delete and replace directory", func(d *dagger.Directory) *dagger.Directory {
+		{"add delete and replace directory", func(d *core.Directory) *core.Directory {
 			return d.WithoutFile("delete.txt").WithoutDirectory("nested").WithNewFile("nested", "now a file\n").WithNewFile("added", "new\n")
 		}},
-		{"executable", func(d *dagger.Directory) *dagger.Directory {
-			return d.WithNewFile("run", "#!/bin/sh\n", dagger.DirectoryWithNewFileOpts{Permissions: 0o755})
+		{"executable", func(d *core.Directory) *core.Directory {
+			return d.WithNewFile("run", "#!/bin/sh\n", core.DirectoryWithNewFileOpts{Permissions: 0o755})
 		}},
-		{"eol and ident", func(d *dagger.Directory) *dagger.Directory {
+		{"eol and ident", func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("nested/a.txt", "new\r\n").WithNewFile("identity.id", "$Id$\nnew\n")
 		}},
-		{"changed nested attributes", func(d *dagger.Directory) *dagger.Directory {
+		{"changed nested attributes", func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("nested/.gitattributes", "*.txt -text\n").WithNewFile("nested/a.txt", "new\r\n")
 		}},
 	} {
@@ -230,12 +232,12 @@ func (GitSuite) TestGitRefWithCommitNative(ctx context.Context, t *testctx.T) {
 			require.Equal(t, baseSHA, tag)
 			// A second transaction must read the first one's durable objects,
 			// after its temporary index/worktree and parent mount are gone.
-			nextBefore := fast.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+			nextBefore := fast.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 			nextChanges := nextBefore.WithNewFile("followup", tc.name).Changes(nextBefore)
 			_, err = nextChanges.AddedPaths(ctx)
 			require.NoError(t, err)
 			next := fast.WithCommit(nextChanges, "followup", date, "Author", "author@example.com")
-			contents, err := next.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("followup").Contents(ctx)
+			contents, err := next.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("followup").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.name, contents)
 			parents, err := next.TargetCommit().ParentShas(ctx)
@@ -249,8 +251,8 @@ func (GitSuite) TestGitRefWithCommitNative(ctx context.Context, t *testctx.T) {
 	baseSHA, err := base.CommitSHA(ctx)
 	require.NoError(t, err)
 	pinned := base.AsRepository().Ref(baseSHA)
-	pinnedTree := pinned.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
-	forks := make([]*dagger.GitRef, 2)
+	pinnedTree := pinned.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
+	forks := make([]*core.GitRef, 2)
 	for i, name := range []string{"fork-a", "fork-b"} {
 		changes := pinnedTree.WithNewFile(name, name).Changes(pinnedTree)
 		_, err := changes.AddedPaths(ctx)
@@ -275,7 +277,7 @@ func (GitSuite) TestGitRefWithCommitNative(ctx context.Context, t *testctx.T) {
 		branch, err := fork.AsRepository().Branch("main").CommitSHA(ctx)
 		require.NoError(t, err)
 		require.Equal(t, baseSHA, branch, "a detached transaction must not advance the source branch")
-		entries, err := fork.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).Entries(ctx)
+		entries, err := fork.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).Entries(ctx)
 		require.NoError(t, err)
 		if i == 0 {
 			require.Contains(t, entries, "fork-a")
@@ -326,8 +328,8 @@ func (GitSuite) TestGitRefWithCommitNative(ctx context.Context, t *testctx.T) {
 
 // The original storage deliberately has dirty tracked and untracked files.
 // It is not a valid seed for a committed checkout, even when its HEAD matches.
-func gitIncrementalCheckoutFixture(c *dagger.Client) (*dagger.Directory, *dagger.Container) {
-	inspector := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git", "python3"})
+func gitIncrementalCheckoutFixture(c *dagger.Client) (*core.Directory, *core.Container) {
+	inspector := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git", "python3"})
 	fixture := inspector.WithWorkdir("/repo").
 		WithEnvVariable("GIT_AUTHOR_DATE", workspaceCommitDate).
 		WithEnvVariable("GIT_COMMITTER_DATE", workspaceCommitDate).
@@ -360,15 +362,15 @@ printf 'dirty untracked\n' > untracked.txt
 
 // Reopen plain metadata instead of obscuring changes.Before: withCommit can
 // attach checkout provenance to both native and legacy transaction results.
-func gitFullCheckoutOracle(ref *dagger.GitRef) *dagger.Directory {
-	return ref.AsWorkspace().Git().Directory().AsGit().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+func gitFullCheckoutOracle(ref *core.GitRef) *core.Directory {
+	return ref.AsWorkspace().Git().Directory().AsGit().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 }
 
 // Manifests intentionally exclude times. Source-only Git checkouts normalize
 // every path to 1s. Container mounting/copying replaces the root's mtime even
 // for the legacy oracle, so inspect its descendants here; backend tests check
 // the snapshot root directly, before this consumer wrapper changes it.
-func requireGitCheckoutTimes(ctx context.Context, t *testctx.T, inspector *dagger.Container, dir *dagger.Directory) {
+func requireGitCheckoutTimes(ctx context.Context, t *testctx.T, inspector *core.Container, dir *core.Directory) {
 	t.Helper()
 	out, err := inspector.WithDirectory("/inspect", dir).
 		WithExec([]string{"python3", "-c", `
@@ -394,37 +396,37 @@ func (GitSuite) TestGitRefIncrementalCheckoutOracle(ctx context.Context, t *test
 	fixture, inspector := gitIncrementalCheckoutFixture(c)
 	original := workspaceCommitManifest(ctx, t, inspector, fixture)
 	base := fixture.AsGit().Branch("main")
-	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	before := base.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 	baseManifest := workspaceCommitManifest(ctx, t, inspector, before) // Warm canonical parent.
 	require.NotContains(t, baseManifest, "untracked.txt")
 	require.Equal(t, hex.EncodeToString([]byte("base pending\n")), baseManifest["pending.txt"].Contents)
 	for _, tc := range []struct {
 		name    string
-		edit    func(*dagger.Directory) *dagger.Directory
+		edit    func(*core.Directory) *core.Directory
 		include []string
 		check   func(map[string]workspaceCommitManifestEntry)
 	}{
-		{name: "selected edit excludes pending", edit: func(d *dagger.Directory) *dagger.Directory {
+		{name: "selected edit excludes pending", edit: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("selected.txt", "selected\n").WithNewFile("pending.txt", "must not leak\n").WithNewFile("pending-add", "must not leak\n")
 		}, include: []string{"selected.txt"}, check: func(m map[string]workspaceCommitManifestEntry) {
 			require.Equal(t, hex.EncodeToString([]byte("selected\n")), m["selected.txt"].Contents)
 			require.Equal(t, baseManifest["pending.txt"], m["pending.txt"])
 			require.NotContains(t, m, "pending-add")
 		}},
-		{name: "adds and deletes", edit: func(d *dagger.Directory) *dagger.Directory {
+		{name: "adds and deletes", edit: func(d *core.Directory) *core.Directory {
 			return d.WithoutFile("delete.txt").WithNewFile("new/deep/added.txt", "added\n")
 		}},
-		{name: "deep file directory and symlink replacements", edit: func(d *dagger.Directory) *dagger.Directory {
+		{name: "deep file directory and symlink replacements", edit: func(d *core.Directory) *core.Directory {
 			return d.WithoutDirectory("deep/dir").WithNewFile("deep/dir", "regular now\n").
 				WithoutFile("deep/file").WithNewFile("deep/file/sub/leaf", "replacement\n").
 				WithoutFile("deep/link").WithNewFile("deep/link/sub/leaf", "directory now\n").
 				WithoutFile("deep/to-link").WithSymlink("../selected.txt", "deep/to-link")
 		}},
-		{name: "executable bits", edit: func(d *dagger.Directory) *dagger.Directory {
-			return d.WithNewFile("run", "#!/bin/sh\n", dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).
-				WithNewFile("new-run", "#!/bin/sh\n", dagger.DirectoryWithNewFileOpts{Permissions: 0o755})
+		{name: "executable bits", edit: func(d *core.Directory) *core.Directory {
+			return d.WithNewFile("run", "#!/bin/sh\n", core.DirectoryWithNewFileOpts{Permissions: 0o755}).
+				WithNewFile("new-run", "#!/bin/sh\n", core.DirectoryWithNewFileOpts{Permissions: 0o755})
 		}},
-		{name: "static nested eol and ident", edit: func(d *dagger.Directory) *dagger.Directory {
+		{name: "static nested eol and ident", edit: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("nested/edit.txt", "new\n").WithNewFile("nested/identity.id", "$Id$\nnew\n")
 		}, check: func(m map[string]workspaceCommitManifestEntry) {
 			require.Equal(t, hex.EncodeToString([]byte("new\r\n")), m["nested/edit.txt"].Contents)
@@ -432,25 +434,25 @@ func (GitSuite) TestGitRefIncrementalCheckoutOracle(ctx context.Context, t *test
 			require.NoError(t, err)
 			require.Contains(t, string(contents), "$Id: ")
 		}},
-		{name: "changed attributes resmudge unchanged blob", edit: func(d *dagger.Directory) *dagger.Directory {
+		{name: "changed attributes resmudge unchanged blob", edit: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("nested/.gitattributes", "*.txt text eol=lf\n*.id ident\n")
 		}, check: func(m map[string]workspaceCommitManifestEntry) {
 			require.Equal(t, hex.EncodeToString([]byte("unchanged\r\n")), baseManifest["nested/unchanged.txt"].Contents)
 			require.Equal(t, hex.EncodeToString([]byte("unchanged\n")), m["nested/unchanged.txt"].Contents)
 		}},
-		{name: "same tree allow empty", edit: func(d *dagger.Directory) *dagger.Directory { return d }},
+		{name: "same tree allow empty", edit: func(d *core.Directory) *core.Directory { return d }},
 	} {
 		// Inline: testctx subtests run in parallel, which would race telemetry
 		// draining and client closure in related trace tests.
 		t.Logf("incremental checkout oracle: %s", tc.name)
 		changes := tc.edit(before).Changes(before)
 		if len(tc.include) > 0 {
-			changes = changes.Filter(dagger.ChangesetFilterOpts{Include: tc.include})
+			changes = changes.Filter(core.ChangesetFilterOpts{Include: tc.include})
 		}
 		_, err := changes.ModifiedPaths(ctx)
 		require.NoError(t, err)
-		committed := base.WithCommit(changes, tc.name, workspaceCommitDate, "Oracle", "oracle@example.com", dagger.GitRefWithCommitOpts{AllowEmpty: true})
-		fast := committed.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		committed := base.WithCommit(changes, tc.name, workspaceCommitDate, "Oracle", "oracle@example.com", core.GitRefWithCommitOpts{AllowEmpty: true})
+		fast := committed.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 		legacy := gitFullCheckoutOracle(committed)
 		got := workspaceCommitManifest(ctx, t, inspector, fast)
 		require.Equal(t, workspaceCommitManifest(ctx, t, inspector, legacy), got, tc.name)
@@ -481,14 +483,14 @@ func (GitSuite) TestGitRefIncrementalCheckoutOracle(ctx context.Context, t *test
 			// Legacy commit storage may prune unrelated branches; the current
 			// branch must use the new tip, while a reachable tag and parent SHA
 			// must not inherit that tip's incremental checkout.
-			require.Equal(t, got, workspaceCommitManifest(ctx, t, inspector, committed.AsRepository().Branch("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})))
-			for _, ref := range []*dagger.GitRef{
+			require.Equal(t, got, workspaceCommitManifest(ctx, t, inspector, committed.AsRepository().Branch("main").Tree(core.GitRefTreeOpts{DiscardGitDir: true})))
+			for _, ref := range []*core.GitRef{
 				committed.AsRepository().Tag("baseline"),
 				committed.AsRepository().Ref("refs/tags/baseline"),
 				committed.AsRepository().Ref(baseSHA),
 			} {
 				// Repository-level provenance must not seed another tip's tree.
-				require.Equal(t, baseManifest, workspaceCommitManifest(ctx, t, inspector, ref.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})))
+				require.Equal(t, baseManifest, workspaceCommitManifest(ctx, t, inspector, ref.Tree(core.GitRefTreeOpts{DiscardGitDir: true})))
 			}
 		}
 	}
@@ -502,13 +504,13 @@ func (GitSuite) TestGitRefIncrementalCheckoutTrace(ctx context.Context, t *testc
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture, inspector := gitIncrementalCheckoutFixture(c)
 	base := fixture.AsGit().Head()
-	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	before := base.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 	workspaceCommitManifest(ctx, t, inspector, before) // Materialize outside optimized span.
 	changes := before.WithNewFile("selected.txt", "trace selected\n").Changes(before)
 	_, err := changes.ModifiedPaths(ctx)
 	require.NoError(t, err)
 	committed := base.WithCommit(changes, "incremental trace", workspaceCommitDate, "Oracle", "oracle@example.com")
-	fast := committed.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	fast := committed.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 	require.Equal(t, workspaceCommitManifest(ctx, t, inspector, gitFullCheckoutOracle(committed)), workspaceCommitManifest(ctx, t, inspector, fast))
 	requireGitCheckoutTimes(ctx, t, inspector, fast)
 	require.NoError(t, c.Close()) // All cases above are inline; drain finished spans.
@@ -577,17 +579,17 @@ func (GitSuite) TestGitRefNativeCommitHistory(ctx context.Context, t *testctx.T)
 	base := fixture.AsGit().Head()
 	baseSHA, err := base.CommitSHA(ctx)
 	require.NoError(t, err)
-	baseTree := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	baseTree := base.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 	baseManifest := workspaceCommitManifest(ctx, t, inspector, baseTree)
 
 	type checkpoint struct {
-		ref      *dagger.GitRef
+		ref      *core.GitRef
 		manifest map[string]workspaceCommitManifestEntry
 	}
 	checkpoints := []checkpoint{{base, baseManifest}}
 	type history struct {
 		name string
-		ref  *dagger.GitRef
+		ref  *core.GitRef
 		shas []string // newest first, including the shared ancestry
 	}
 	// Exact-SHA refs exercise the detached representation used by snapshots.
@@ -606,7 +608,7 @@ func (GitSuite) TestGitRefNativeCommitHistory(ctx context.Context, t *testctx.T)
 		}
 		expected := make([]map[string]workspaceCommitManifestEntry, len(active))
 		for i, h := range active {
-			before := h.ref.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+			before := h.ref.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 			message := fmt.Sprintf("%s step %02d", h.name, round)
 			after := before.WithNewFile("selected.txt", message+"\n")
 			path := fmt.Sprintf("history/%02d/", round/4)
@@ -617,7 +619,7 @@ func (GitSuite) TestGitRefNativeCommitHistory(ctx context.Context, t *testctx.T)
 				// Rename rather than rewriting the contents: reuse the prior blob.
 				after = after.WithFile(path+"renamed", before.File(path+"original")).WithoutFile(path + "original")
 			case 2:
-				after = after.WithNewFile(path+"renamed", "#!/bin/sh\n# "+message+"\n", dagger.DirectoryWithNewFileOpts{Permissions: 0o755})
+				after = after.WithNewFile(path+"renamed", "#!/bin/sh\n# "+message+"\n", core.DirectoryWithNewFileOpts{Permissions: 0o755})
 			case 3:
 				after = after.WithoutDirectory("history")
 			}
@@ -637,13 +639,13 @@ func (GitSuite) TestGitRefNativeCommitHistory(ctx context.Context, t *testctx.T)
 					return fmt.Errorf("%s round %d commit: %w", h.name, round, err)
 				}
 				h.shas = append([]string{sha}, h.shas...)
-				_, err = h.ref.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).Sync(ctx)
+				_, err = h.ref.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).Sync(ctx)
 				return err
 			})
 		}
 		require.NoError(t, group.Wait())
 		for i, h := range active {
-			tree := h.ref.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+			tree := h.ref.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 			got := workspaceCommitManifest(ctx, t, inspector, tree)
 			// Git's checkout umask controls read/write bits, unlike raw
 			// Directory edits. Compare those bits with the full Git oracle
@@ -669,7 +671,7 @@ func (GitSuite) TestGitRefNativeCommitHistory(ctx context.Context, t *testctx.T)
 	// wrote objects or changed overlapping paths on concurrent branches.
 	finalInspector := inspector.WithEnvVariable("INSPECTION_STAGE", "after history")
 	for _, cp := range checkpoints {
-		tree := cp.ref.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		tree := cp.ref.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 		require.Equal(t, cp.manifest, workspaceCommitManifest(ctx, t, finalInspector, tree), "ancestor source mutated")
 		require.Equal(t, cp.manifest, workspaceCommitManifest(ctx, t, finalInspector, gitFullCheckoutOracle(cp.ref)), "incremental source differs from full checkout")
 		requireGitCheckoutTimes(ctx, t, finalInspector, tree)
@@ -770,7 +772,7 @@ func (GitSuite) TestGitRefRetainedCheckoutSurvivesSourceScope(ctx context.Contex
 	c := connect(ctx, t)
 	fixture, _ := gitIncrementalCheckoutFixture(c)
 	base := fixture.AsGit().Head()
-	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	before := base.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 	committed := base.WithCommit(before.WithNewFile("selected.txt", "retained\n").Changes(before), "retained", workspaceCommitDate, "Oracle", "oracle@example.com")
 	sha, err := committed.CommitSHA(ctx)
 	require.NoError(t, err)
@@ -780,7 +782,7 @@ func (GitSuite) TestGitRefRetainedCheckoutSurvivesSourceScope(ctx context.Contex
 	require.NoError(t, err)
 	var result struct {
 		Node struct {
-			Tree struct{ ID dagger.ID }
+			Tree struct{ ID core.ID }
 		}
 	}
 	// Explicit depth zero requests full retained history; the SDK omits zero.
@@ -789,15 +791,15 @@ func (GitSuite) TestGitRefRetainedCheckoutSurvivesSourceScope(ctx context.Contex
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &result}))
 	exported := filepath.Join(t.TempDir(), "retained")
-	_, err = dagger.Ref[*dagger.Directory](c, result.Node.Tree.ID).Export(ctx, exported)
+	_, err = core.Ref[*core.Directory](core.NewQuery(c), result.Node.Tree.ID).Export(ctx, exported)
 	require.NoError(t, err)
 	require.NoError(t, c.Close())
 
 	// A fresh client has only the exported filesystem, not the source scope's
 	// mounts. This catches borrowed alternates, gitfiles and temporary indexes.
 	consumer := connect(ctx, t)
-	out, err := consumer.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
-		WithMountedDirectory("/repo", consumer.Host().Directory(exported)).WithWorkdir("/repo").
+	out, err := core.NewQuery(consumer).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+		WithMountedDirectory("/repo", core.NewQuery(consumer).Host().Directory(exported)).WithWorkdir("/repo").
 		WithExec([]string{"sh", "-ec", `
 test -d .git
 test ! -s .git/objects/info/alternates
@@ -814,17 +816,17 @@ func (GitSuite) TestGitRefWithCommit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithLogOutput(io.Discard))
 	const date = "2026-09-05T12:00:00Z"
 	const baseText = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
-	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("file.txt", baseText).WithNewFile("delete.txt", "delete"))
-	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head()
-	before := base.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
-	commit := func(ref *dagger.GitRef, changes *dagger.Changeset, opts ...dagger.GitRefWithCommitOpts) *dagger.GitRef {
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("file.txt", baseText).WithNewFile("delete.txt", "delete"))
+	base := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Head()
+	before := base.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
+	commit := func(ref *core.GitRef, changes *core.Changeset, opts ...core.GitRefWithCommitOpts) *core.GitRef {
 		return ref.WithCommit(changes, "edit", date, "Author", "author@example.com", opts...)
 	}
 	oursText := strings.Replace(baseText, "one", "OURS", 1)
 	ours := commit(base, before.WithNewFile("file.txt", oursText).WithNewFile("ours.txt", "keep").Changes(before))
 	theirsText := strings.Replace(baseText, "ten", "THEIRS", 1)
 	changes := before.WithNewFile("file.txt", theirsText).WithoutFile("delete.txt").WithNewFile("added.txt", "new").Changes(before)
-	result := commit(ours, changes, dagger.GitRefWithCommitOpts{
+	result := commit(ours, changes, core.GitRefWithCommitOpts{
 		CommitterName: "Committer", CommitterEmail: "committer@example.com", CommitterDate: "2026-09-06T12:00:00Z",
 	})
 
@@ -883,7 +885,7 @@ func (GitSuite) TestGitRefWithCommit(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("signs off as author not committer", func(ctx context.Context, t *testctx.T) {
-		signed := commit(ours, changes, dagger.GitRefWithCommitOpts{
+		signed := commit(ours, changes, core.GitRefWithCommitOpts{
 			Signoff: true, CommitterName: "Committer", CommitterEmail: "committer@example.com",
 		})
 		message, err := signed.TargetCommit().Message(ctx)
@@ -908,13 +910,13 @@ func (GitSuite) TestGitRefWithCommit(ctx context.Context, t *testctx.T) {
 		require.ErrorContains(t, err, "nothing to commit")
 	})
 	t.Run("allows an explicitly empty commit", func(ctx context.Context, t *testctx.T) {
-		empty := commit(ours, alreadyApplied, dagger.GitRefWithCommitOpts{AllowEmpty: true})
+		empty := commit(ours, alreadyApplied, core.GitRefWithCommitOpts{AllowEmpty: true})
 		emptySHA, err := empty.CommitSHA(ctx)
 		require.NoError(t, err)
 		parentSHA, err := ours.CommitSHA(ctx)
 		require.NoError(t, err)
 		require.NotEqual(t, parentSHA, emptySHA)
-		unchanged, err := empty.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).Changes(ours.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})).IsEmpty(ctx)
+		unchanged, err := empty.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).Changes(ours.Tree(core.GitRefTreeOpts{DiscardGitDir: true})).IsEmpty(ctx)
 		require.NoError(t, err)
 		require.True(t, unchanged)
 	})

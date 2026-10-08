@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger/core"
+
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
@@ -111,7 +113,7 @@ func (GPUSuite) TestGPUAccess(ctx context.Context, t *testctx.T) {
 	for _, cudaImage := range cudaImageMatrix {
 		t.Run(cudaImage, func(ctx context.Context, t *testctx.T) {
 			// Query the same on the Dagger container and compare output:
-			ctr := c.Container().From(cudaImage)
+			ctr := core.NewQuery(c).Container().From(cudaImage)
 			contents, err := ctr.
 				WithGPU().
 				WithExec([]string{"nvidia-smi", "-L"}).
@@ -121,7 +123,7 @@ func (GPUSuite) TestGPUAccess(ctx context.Context, t *testctx.T) {
 
 			t.Run("deprecated experimentalWithAllGPUs alias", func(ctx context.Context, t *testctx.T) {
 				//nolint:staticcheck // deprecated alias kept for compatibility
-				contents, err := c.Container().From(cudaImage).
+				contents, err := core.NewQuery(c).Container().From(cudaImage).
 					ExperimentalWithAllGPUs().
 					WithExec([]string{"nvidia-smi", "-L"}).
 					Stdout(ctx)
@@ -147,7 +149,7 @@ func (GPUSuite) TestGPUAccess(ctx context.Context, t *testctx.T) {
 
 				// Pick first GPU and initialize a Dagger container for it.
 				// Device selection has no non-deprecated replacement yet.
-				ctr := c.Container().From(cudaImage)
+				ctr := core.NewQuery(c).Container().From(cudaImage)
 				//nolint:staticcheck // deprecated alias kept for compatibility
 				contents, err := ctr.
 					ExperimentalWithGPU([]string{gpus[0]}).
@@ -175,7 +177,7 @@ func (GPUSuite) TestGPUAccessWithPython(ctx context.Context, t *testctx.T) {
 	defer c.Close()
 
 	t.Run("pytorch CUDA availability check", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().From("pytorch/pytorch:latest")
+		ctr := core.NewQuery(c).Container().From("pytorch/pytorch:latest")
 		contents, err := ctr.
 			WithGPU().
 			WithExec([]string{"python3", "-c", "import torch; print(torch.cuda.is_available())"}).
@@ -185,7 +187,7 @@ func (GPUSuite) TestGPUAccessWithPython(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("pytorch tensors sample", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().From("pytorch/pytorch:latest")
+		ctr := core.NewQuery(c).Container().From("pytorch/pytorch:latest")
 		contents, err := ctr.
 			WithGPU().
 			WithNewFile("/tmp/tensors.py", torchTensorsSample).
@@ -209,7 +211,7 @@ func (GPUSuite) TestWithGPURequiresEngineSupport(ctx context.Context, t *testctx
 	}
 	c := connect(ctx, t)
 
-	_, err := c.Container().From(alpineImage).
+	_, err := core.NewQuery(c).Container().From(alpineImage).
 		WithGPU().
 		WithExec([]string{"true"}).
 		Sync(ctx)
@@ -221,13 +223,13 @@ func (GPUSuite) TestWithGPURequiresEngineSupport(ctx context.Context, t *testctx
 // to exercise the whole exec path on a host with no GPU.
 const gpuStubHookPath = "/usr/bin/nvidia-container-runtime-hook"
 
-func gpuDevEngine(c *dagger.Client, stubHook bool) *dagger.Service {
-	return devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+func gpuDevEngine(c *dagger.Client, stubHook bool) *core.Service {
+	return devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		ctr = ctr.WithEnvVariable("_EXPERIMENTAL_DAGGER_GPU_SUPPORT", "true")
 		if stubHook {
 			// A script, not a copy of /usr/bin/true: the engine image's
 			// coreutils is a multi-call binary that dispatches on argv[0].
-			ctr = ctr.WithNewFile(gpuStubHookPath, "#!/bin/sh\nexit 0\n", dagger.ContainerWithNewFileOpts{Permissions: 0o755})
+			ctr = ctr.WithNewFile(gpuStubHookPath, "#!/bin/sh\nexit 0\n", core.ContainerWithNewFileOpts{Permissions: 0o755})
 		}
 		return ctr
 	}))
@@ -255,7 +257,7 @@ func (GPUSuite) TestWithGPUDeviceEnv(ctx context.Context, t *testctx.T) {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := clientCtr.
 				WithNewFile("/query.graphql", gpuQuery(tc.field)).
-				WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+				WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Contains(t, out, fmt.Sprintf("%q", tc.want+"\n"))
@@ -271,7 +273,7 @@ func (GPUSuite) TestWithGPUInjectsHook(ctx context.Context, t *testctx.T) {
 
 	_, err := clientCtr.
 		WithNewFile("/query.graphql", gpuQuery("withGPU")).
-		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		Sync(ctx)
 	requireErrOut(t, err, "nvidia-container-runtime-hook")
 }

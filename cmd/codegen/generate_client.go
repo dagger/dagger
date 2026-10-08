@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/spf13/cobra"
 
@@ -64,7 +65,7 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 				Query:  loadModuleSourceDepsQuery,
 				OpName: "ModuleSourceDependencies",
 				Variables: map[string]any{
-					"source": dagger.ID(moduleSourceID),
+					"source": core.ID(moduleSourceID),
 				},
 			},
 			&dagger.Response{

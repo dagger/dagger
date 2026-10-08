@@ -196,6 +196,7 @@ func (g *GoGenerator) generatedClientState(overlay fs.FS, postCommands ...*exec.
 	staleBindings, err := findStaleDependencyBindings(
 		g.Config.OutputDir,
 		g.Config.ClientConfig.ClientDir,
+		ClientGenFile,
 		overlay,
 	)
 	if err != nil {

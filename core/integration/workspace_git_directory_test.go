@@ -7,18 +7,19 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 func (WorkspaceSuite) TestWorkspaceGitDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().
 		WithNewFile("base.txt", "base").WithNewFile("removed.txt", "remove me"))
 	const upstreamURL = "https://example.com/upstream/repo.git"
 	const upstreamPushURL = "ssh://git@example.com/upstream/repo.git"
-	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).
-		WithRemote("upstream", upstreamURL, dagger.GitRepositoryWithRemoteOpts{PushURL: upstreamPushURL}).
+	base := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).
+		WithRemote("upstream", upstreamURL, core.GitRepositoryWithRemoteOpts{PushURL: upstreamPushURL}).
 		Head().AsWorkspace()
 	baseSHA, err := base.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
@@ -38,7 +39,7 @@ func (WorkspaceSuite) TestWorkspaceGitDirectory(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	require.Equal(t, upstreamPushURL, strings.TrimSpace(out))
 
-	ws := base.WithNewFile("committed.txt", "agent commit").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	ws := base.WithNewFile("committed.txt", "agent commit").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "agent commit", workspaceCommitDate)
 	}).
 		WithNewFile("base.txt", "pending edit").
@@ -65,16 +66,16 @@ func (WorkspaceSuite) TestWorkspaceGitDirectory(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	var fullTree struct {
 		Node struct {
-			Tree struct{ ID dagger.ID }
+			Tree struct{ ID core.ID }
 		}
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{
 		Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { tree(depth: 0, discardGitDir: false) { id } } } }`,
 		Variables: map[string]any{"id": refID},
 	}, &dagger.Response{Data: &fullTree}))
-	publicCheckout := c.Container().From(alpineImage).
+	publicCheckout := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
-		WithMountedDirectory("/src", dagger.Ref[*dagger.Directory](c, fullTree.Node.Tree.ID)).WithWorkdir("/src")
+		WithMountedDirectory("/src", core.Ref[*core.Directory](core.NewQuery(c), fullTree.Node.Tree.ID)).WithWorkdir("/src")
 	out, err = publicCheckout.WithExec([]string{"git", "log", "--format=%H"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{head, baseSHA}, strings.Fields(out))
@@ -114,20 +115,20 @@ func (WorkspaceSuite) TestWorkspaceGitDirectory(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	require.Equal(t, head, again)
 
-	_, err = c.Directory().WithNewFile("file.txt", "no repository").AsWorkspace().Git().Directory().Entries(ctx)
+	_, err = core.NewQuery(c).Directory().WithNewFile("file.txt", "no repository").AsWorkspace().Git().Directory().Entries(ctx)
 	require.Error(t, err)
 }
 
 // Exercise the same internal result used by commits and saves. Selecting the
 // public metadata view must not change the cached full checkout's root.
-func assertWorkspaceFullCheckout(ctx context.Context, t *testctx.T, c *dagger.Client, ws *dagger.Workspace, history []string) {
+func assertWorkspaceFullCheckout(ctx context.Context, t *testctx.T, c *dagger.Client, ws *core.Workspace, history []string) {
 	t.Helper()
 	id, err := ws.ID(ctx)
 	require.NoError(t, err)
 	var result struct {
 		Node struct {
 			Git struct {
-				Checkout struct{ ID dagger.ID } `json:"__checkout"`
+				Checkout struct{ ID core.ID } `json:"__checkout"`
 			}
 		}
 	}
@@ -135,14 +136,14 @@ func assertWorkspaceFullCheckout(ctx context.Context, t *testctx.T, c *dagger.Cl
 		Query:     `query($id: ID!) { node(id: $id) { ... on Workspace { git { __checkout { id } } } } }`,
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &result}))
-	checkout := dagger.Ref[*dagger.Directory](c, result.Node.Git.Checkout.ID)
+	checkout := core.Ref[*core.Directory](core.NewQuery(c), result.Node.Git.Checkout.ID)
 	_, err = ws.Git().Directory().Entries(ctx)
 	require.NoError(t, err)
 	entries, err := checkout.Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, entries, ".git/")
 	require.NotContains(t, entries, "HEAD", "checkout is not rooted at its metadata directory")
-	ctr := c.Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithMountedDirectory("/src", checkout).WithWorkdir("/src")
 	out, err := ctr.WithExec([]string{"git", "log", "--format=%H"}).Stdout(ctx)
@@ -156,8 +157,8 @@ func assertWorkspaceFullCheckout(ctx context.Context, t *testctx.T, c *dagger.Cl
 	require.Empty(t, out, "checkout excludes pending workspace edits")
 }
 
-func workspaceGitDirectoryContainer(c *dagger.Client, ws *dagger.Workspace) *dagger.Container {
-	return c.Container().From(alpineImage).
+func workspaceGitDirectoryContainer(c *dagger.Client, ws *core.Workspace) *core.Container {
+	return core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithMountedDirectory("/src", ws.Directory("/")).
 		WithMountedDirectory("/src/.git", ws.Git().Directory()).
@@ -178,12 +179,12 @@ func (WorkspaceSuite) TestWorkspaceGitDirectoryWorktree(ctx context.Context, t *
 	require.NoError(t, os.WriteFile(filepath.Join(linked, "base.txt"), []byte("dirty"), 0o644))
 	git("-C", linked, "add", "base.txt")
 	c := connect(ctx, t, dagger.WithWorkdir(linked))
-	live := c.CurrentWorkspace()
+	live := core.NewQuery(c).CurrentWorkspace()
 	frozen := snapshotWorkspace(ctx, t, c, live)
 	assertWorkspaceFullCheckout(ctx, t, c, frozen, strings.Fields(git("-C", linked, "log", "--format=%H")))
 	for _, tc := range []struct {
 		name string
-		ws   *dagger.Workspace
+		ws   *core.Workspace
 	}{{"live", live}, {"snapshot", frozen}} {
 		t.Logf("checking %s workspace", tc.name)
 		ctr := workspaceGitDirectoryContainer(c, tc.ws)
@@ -237,7 +238,7 @@ func (WorkspaceSuite) TestWorkspaceGitDirectoryOriginCredentials(ctx context.Con
 			root, git := workspaceExportCheckout(ctx, t)
 			git("remote", "add", "origin", tc.origin)
 			c := connect(ctx, t, dagger.WithWorkdir(root))
-			config, err := c.CurrentWorkspace().Git().Directory().File("config").Contents(ctx)
+			config, err := core.NewQuery(c).CurrentWorkspace().Git().Directory().File("config").Contents(ctx)
 			require.NoError(t, err)
 			require.NotContains(t, config, "FAKE_REVIEW_TOKEN")
 			if tc.keep {

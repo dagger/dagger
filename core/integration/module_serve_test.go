@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -72,26 +73,26 @@ func requireServedHello(t *testctx.T, c *dagger.Client) {
 func (ModuleLoadingSuite) TestServeModuleLocalAddress(ctx context.Context, t *testctx.T) {
 	t.Run("absolute path resolves from the workspace root", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithWorkdir(serveModuleWorkdir(ctx, t)))
-		require.NoError(t, c.ServeModule(ctx, "/.dagger/modules/hello"))
+		require.NoError(t, core.NewQuery(c).ServeModule(ctx, "/.dagger/modules/hello"))
 		requireServedHello(t, c)
 	})
 
 	t.Run("relative path resolves from the workspace cwd", func(ctx context.Context, t *testctx.T) {
 		workdir := serveModuleWorkdir(ctx, t)
 		c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(workdir, "nested")))
-		require.NoError(t, c.ServeModule(ctx, "../.dagger/modules/hello"))
+		require.NoError(t, core.NewQuery(c).ServeModule(ctx, "../.dagger/modules/hello"))
 		requireServedHello(t, c)
 	})
 
 	t.Run("path without a module errors", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithWorkdir(serveModuleWorkdir(ctx, t)))
-		err := c.ServeModule(ctx, "/nested")
+		err := core.NewQuery(c).ServeModule(ctx, "/nested")
 		require.ErrorContains(t, err, "does not contain a dagger config file")
 	})
 
 	t.Run("installed module name is rejected", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithWorkdir(serveModuleWorkdir(ctx, t)))
-		err := c.ServeModule(ctx, "hello")
+		err := core.NewQuery(c).ServeModule(ctx, "hello")
 		require.ErrorContains(t, err, "installed module names are not accepted")
 	})
 }
@@ -100,7 +101,7 @@ func (ModuleLoadingSuite) TestServeModuleLocalAddress(ctx context.Context, t *te
 // workspace APIs are absent from a module's schema, so the module cannot
 // resolve a local address itself.
 func (ModuleLoadingSuite) TestServeModuleFromModule(ctx context.Context, t *testctx.T) {
-	callerModule := func(ctr *dagger.Container) *dagger.Container {
+	callerModule := func(ctr *core.Container) *core.Container {
 		return ctr.
 			WithNewFile("dagger.toml", `[modules.caller]
 source = ".dagger/modules/caller"
@@ -144,7 +145,7 @@ func (m *Caller) Message(ctx context.Context, address string) (string, error) {
 	t.Run("remote address resolves without a workspace lookup", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		served := c.Directory().
+		served := core.NewQuery(c).Directory().
 			WithNewFile("dagger-module.toml", serveModuleHelloManifest).
 			WithNewFile("main.dang", serveModuleHelloSource)
 		gitDaemon, repoURL := gitService(ctx, t, c, served)
@@ -169,7 +170,7 @@ func (m *Caller) Message(ctx context.Context, address string) (string, error) {
 func (ModuleLoadingSuite) TestServeModulePinnedVersionQuery(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	repo := c.Container().From(alpineImage).
+	repo := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
 		WithWorkdir("/src").
@@ -184,15 +185,15 @@ func (ModuleLoadingSuite) TestServeModulePinnedVersionQuery(ctx context.Context,
 		WithExec([]string{"git", "commit", "-m", "v1.0.1"}).
 		WithExec([]string{"git", "tag", "v1.0.1"})
 	remote := newRemoteWorkspace(ctx, t, c, repo.Directory("/src"))
-	pinned, err := c.Git(remote.repoURL).Tag("v1.0.0").CommitSHA(ctx)
+	pinned, err := core.NewQuery(c).Git(remote.repoURL).Tag("v1.0.0").CommitSHA(ctx)
 	require.NoError(t, err)
-	latest, err := c.Git(remote.repoURL).Tag("v1.0.1").CommitSHA(ctx)
+	latest, err := core.NewQuery(c).Git(remote.repoURL).Tag("v1.0.1").CommitSHA(ctx)
 	require.NoError(t, err)
 	address := remote.repoURL + "@v1"
 
 	t.Run("serveModule loads the pinned commit", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithWorkdir(t.TempDir()))
-		require.NoError(t, c.ServeModule(ctx, address, dagger.ServeModuleOpts{RefPin: pinned}))
+		require.NoError(t, core.NewQuery(c).ServeModule(ctx, address, core.ServeModuleOpts{RefPin: pinned}))
 
 		res, err := testutil.QueryWithClient[struct {
 			Hello struct {
@@ -205,7 +206,7 @@ func (ModuleLoadingSuite) TestServeModulePinnedVersionQuery(ctx context.Context,
 
 	t.Run("moduleSource still requires the query and the pin to agree", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithWorkdir(t.TempDir()))
-		_, err := c.ModuleSource(address, dagger.ModuleSourceOpts{RefPin: pinned}).Digest(ctx)
+		_, err := core.NewQuery(c).ModuleSource(address, core.ModuleSourceOpts{RefPin: pinned}).Digest(ctx)
 		require.ErrorContains(t, err, `version query "v1" resolved to Git ref`)
 		require.ErrorContains(t, err, fmt.Sprintf("at commit %q, but the requested pin is %q", latest, pinned))
 	})
@@ -219,7 +220,7 @@ func (ModuleLoadingSuite) TestServeModuleDeclaredClientCache(ctx context.Context
 	// Each result carries the time the function ran, so an unchanged output
 	// proves a cache hit. Each subtest gets its own caller, so parallel
 	// subtests never hit each other's results.
-	workdir := func(t *testctx.T) *dagger.Container {
+	workdir := func(t *testctx.T) *core.Container {
 		return goGitBase(t, connect(ctx, t)).
 			WithNewFile("dagger.toml", `[modules.caller]
 source = ".dagger/modules/caller"
@@ -267,7 +268,7 @@ func (m *Caller) Plain() string {
 	}
 	// run names each CLI invocation, so the exec running it is never itself
 	// a cache hit.
-	call := func(ctr *dagger.Container, run string, args ...string) (string, error) {
+	call := func(ctr *core.Container, run string, args ...string) (string, error) {
 		return ctr.
 			WithEnvVariable("SERVE_MODULE_RUN", run).
 			With(daggerCallAt("caller", args...)).
@@ -350,7 +351,7 @@ func (m *Caller) Plain() string {
 	// A caller on a Dang entrypoint runs its module code in an exec the
 	// entrypoint starts. That exec is cached by its own recipe, so the call
 	// keys it through the callDigest argument its call declares.
-	entrypointWorkdir := func(t *testctx.T) *dagger.Container {
+	entrypointWorkdir := func(t *testctx.T) *core.Container {
 		return goGitBase(t, connect(ctx, t)).
 			WithNewFile("dagger.toml", `[modules.epcaller]
 source = ".dagger/modules/epcaller"
@@ -418,7 +419,7 @@ printf '"%s at %s"' "$message" "$(cat /proc/sys/kernel/random/uuid)" >/result.js
 			WithNewFile(".dagger/modules/hello/dagger-module.toml", serveModuleHelloManifest).
 			WithNewFile(".dagger/modules/hello/main.dang", serveModuleHelloSource)
 	}
-	entrypointCall := func(ctr *dagger.Container, run string) (string, error) {
+	entrypointCall := func(ctr *core.Container, run string) (string, error) {
 		return ctr.
 			WithEnvVariable("SERVE_MODULE_RUN", run).
 			With(daggerCallAt("epcaller", "message")).
@@ -463,7 +464,7 @@ func (ModuleLoadingSuite) TestServeModuleGitCommitCache(ctx context.Context, t *
 	// which here is a checkout of the caller's own commit. Each result carries
 	// the time the function ran, so an unchanged output proves a cache hit, and
 	// each subtest passes its own loader so parallel subtests never share one.
-	v1 := c.Container().From(alpineImage).
+	v1 := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
 		WithWorkdir("/src").
@@ -504,9 +505,9 @@ func (m *Caller) Message(ctx context.Context, loader string) (string, error) {
 	remote := newRemoteWorkspace(ctx, t, c, v2.Directory("/src"))
 	address := remote.repoURL + "/modules/caller"
 	commits := map[string]string{}
-	checkouts := map[string]*dagger.Directory{"v1": v1.Directory("/src"), "v2": v2.Directory("/src")}
+	checkouts := map[string]*core.Directory{"v1": v1.Directory("/src"), "v2": v2.Directory("/src")}
 	for tag := range checkouts {
-		commit, err := c.Git(remote.repoURL).Tag(tag).CommitSHA(ctx)
+		commit, err := core.NewQuery(c).Git(remote.repoURL).Tag(tag).CommitSHA(ctx)
 		require.NoError(t, err)
 		commits[tag] = commit
 	}
@@ -535,7 +536,7 @@ func (m *Caller) Message(ctx context.Context, loader string) (string, error) {
 			name: "serveModule with a pin",
 			call: func(ctx context.Context, t *testctx.T, tag string) string {
 				return queryCaller(ctx, t, tag, "serveModule", func(c *dagger.Client) error {
-					return c.ServeModule(ctx, address, dagger.ServeModuleOpts{RefPin: commits[tag]})
+					return core.NewQuery(c).ServeModule(ctx, address, core.ServeModuleOpts{RefPin: commits[tag]})
 				})
 			},
 		},
@@ -543,7 +544,7 @@ func (m *Caller) Message(ctx context.Context, loader string) (string, error) {
 			name: "moduleSource with a pin",
 			call: func(ctx context.Context, t *testctx.T, tag string) string {
 				return queryCaller(ctx, t, tag, "moduleSource", func(c *dagger.Client) error {
-					return c.ModuleSource(address, dagger.ModuleSourceOpts{RefPin: commits[tag]}).AsModule().Serve(ctx)
+					return core.NewQuery(c).ModuleSource(address, core.ModuleSourceOpts{RefPin: commits[tag]}).AsModule().Serve(ctx)
 				})
 			},
 		},

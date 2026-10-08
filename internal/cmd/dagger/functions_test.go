@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/querybuilder"
 	"github.com/spf13/cobra"
@@ -28,7 +28,7 @@ func TestPrintSyncedObjectIDs(t *testing.T) {
 		want     string
 	}{
 		{"single", check, map[string]any{"id": map[string]any{"id": id}}, expected.String()},
-		{"list", &modTypeDef{Kind: dagger.TypeDefKindListKind, AsList: &modList{ElementTypeDef: check}},
+		{"list", &modTypeDef{Kind: core.TypeDefKindListKind, AsList: &modList{ElementTypeDef: check}},
 			[]any{map[string]any{"id": map[string]any{"id": id}}}, "- " + expected.String()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -114,7 +114,7 @@ func TestFunctionArgNamedWorkspaceIgnoresInheritedGlobalWorkspaceFlag(t *testing
 			typeDefsByName: map[string]*modTypeDef{
 				Directory: {
 					TypeName: Directory,
-					Kind:     dagger.TypeDefKindObjectKind,
+					Kind:     core.TypeDefKindObjectKind,
 					AsObject: &modObject{Name: Directory},
 				},
 			},
@@ -204,12 +204,12 @@ func TestHandleResponseNullableObject(t *testing.T) {
 }
 
 func testStringTypeDef() *modTypeDef {
-	return &modTypeDef{Kind: dagger.TypeDefKindStringKind}
+	return &modTypeDef{Kind: core.TypeDefKindStringKind}
 }
 
 func testObjectTypeDef(name, sourceModuleName, description string) *modTypeDef {
 	return &modTypeDef{
-		Kind: dagger.TypeDefKindObjectKind,
+		Kind: core.TypeDefKindObjectKind,
 		AsObject: &modObject{
 			Name:             name,
 			Description:      description,

@@ -22,6 +22,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger/core"
+
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -41,8 +43,8 @@ func TestGit(t *testing.T) {
 }
 
 // verify directory is a git checkout with specified clean/dirty status
-func requireDirIsGitCheckout(ctx context.Context, t *testctx.T, checkout *dagger.Directory, clean bool, c *dagger.Client) {
-	out, err := c.Container().From(alpineImage).
+func requireDirIsGitCheckout(ctx context.Context, t *testctx.T, checkout *core.Directory, clean bool, c *dagger.Client) {
+	out, err := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/src").
 		WithMountedDirectory(".", checkout).
@@ -63,7 +65,7 @@ func requireIsCommitSHA(ctx context.Context, t *testctx.T, actual string) {
 }
 
 // verify git ref has expected commit hash
-func requireGitRefCommitEqual(ctx context.Context, t *testctx.T, expectedCommit string, ref *dagger.GitRef) {
+func requireGitRefCommitEqual(ctx context.Context, t *testctx.T, expectedCommit string, ref *core.GitRef) {
 	commit, err := ref.CommitSHA(ctx)
 	require.NoError(t, err)
 	if expectedCommit != "" {
@@ -72,7 +74,7 @@ func requireGitRefCommitEqual(ctx context.Context, t *testctx.T, expectedCommit 
 }
 
 // verify all git refs have the same commit hash
-func requireGitRefCommitsEqual(ctx context.Context, t *testctx.T, refs ...*dagger.GitRef) {
+func requireGitRefCommitsEqual(ctx context.Context, t *testctx.T, refs ...*core.GitRef) {
 	var first string
 	for i, ref := range refs {
 		if i == 0 {
@@ -86,35 +88,35 @@ func requireGitRefCommitsEqual(ctx context.Context, t *testctx.T, refs ...*dagge
 }
 
 // verify git ref has expected name
-func requireGitRefNameEqual(ctx context.Context, t *testctx.T, expected string, ref *dagger.GitRef) {
+func requireGitRefNameEqual(ctx context.Context, t *testctx.T, expected string, ref *core.GitRef) {
 	name, err := ref.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expected, name)
 }
 
 // verify git ref name matches pattern
-func requireGitRefNameRegexp(ctx context.Context, t *testctx.T, pattern string, ref *dagger.GitRef) {
+func requireGitRefNameRegexp(ctx context.Context, t *testctx.T, pattern string, ref *core.GitRef) {
 	name, err := ref.Name(ctx)
 	require.NoError(t, err)
 	require.Regexp(t, pattern, name)
 }
 
 // verify file contains expected string
-func requireFileContains(ctx context.Context, t *testctx.T, expected string, file *dagger.File) {
+func requireFileContains(ctx context.Context, t *testctx.T, expected string, file *core.File) {
 	contents, err := file.Contents(ctx)
 	require.NoError(t, err)
 	require.Contains(t, contents, expected)
 }
 
 // verify file contents pass validation function
-func requireFileIsValid(ctx context.Context, t *testctx.T, validate func(context.Context, *testctx.T, string), file *dagger.File) {
+func requireFileIsValid(ctx context.Context, t *testctx.T, validate func(context.Context, *testctx.T, string), file *core.File) {
 	contents, err := file.Contents(ctx)
 	require.NoError(t, err)
 	validate(ctx, t, contents)
 }
 
 // verify git ref is a tag with expected name pattern and commit
-func requireGitRefIsTag(ctx context.Context, t *testctx.T, c *dagger.Client, namePattern, expectedCommit string, ref *dagger.GitRef) {
+func requireGitRefIsTag(ctx context.Context, t *testctx.T, c *dagger.Client, namePattern, expectedCommit string, ref *core.GitRef) {
 	requireGitRefCommitEqual(ctx, t, expectedCommit, ref)
 	requireGitRefNameRegexp(ctx, t, namePattern, ref)
 	tree := ref.Tree()
@@ -129,7 +131,7 @@ func requireGitRefIsTag(ctx context.Context, t *testctx.T, c *dagger.Client, nam
 }
 
 // verify git ref is a commit with expected hash
-func requireGitRefIsCommit(ctx context.Context, t *testctx.T, expectedCommit string, ref *dagger.GitRef, c *dagger.Client) {
+func requireGitRefIsCommit(ctx context.Context, t *testctx.T, expectedCommit string, ref *core.GitRef, c *dagger.Client) {
 	requireGitRefCommitEqual(ctx, t, expectedCommit, ref)
 	requireGitRefNameEqual(ctx, t, expectedCommit, ref)
 	tree := ref.Tree()
@@ -144,7 +146,7 @@ func requireGitRefIsCommit(ctx context.Context, t *testctx.T, expectedCommit str
 }
 
 // verify git ref is a branch with expected name and commit
-func requireGitRefIsBranch(ctx context.Context, t *testctx.T, expectedName, expectedCommit string, ref *dagger.GitRef, c *dagger.Client) {
+func requireGitRefIsBranch(ctx context.Context, t *testctx.T, expectedName, expectedCommit string, ref *core.GitRef, c *dagger.Client) {
 	requireGitRefCommitEqual(ctx, t, expectedCommit, ref)
 	requireGitRefNameEqual(ctx, t, expectedName, ref)
 	tree := ref.Tree()
@@ -153,57 +155,57 @@ func requireGitRefIsBranch(ctx context.Context, t *testctx.T, expectedName, expe
 }
 
 // verify directory is a sample checkout with clean status and contains "Dagger" in README.md
-func requireSampleGitRootDir(ctx context.Context, t *testctx.T, c *dagger.Client, dir *dagger.Directory) {
+func requireSampleGitRootDir(ctx context.Context, t *testctx.T, c *dagger.Client, dir *core.Directory) {
 	requireDirIsGitCheckout(ctx, t, dir, true, c)
 	requireFileContains(ctx, t, "Dagger", dir.File("README.md"))
 }
 
-func requireSampleGitSubDir(ctx context.Context, t *testctx.T, _ *dagger.Client, dir *dagger.Directory) {
+func requireSampleGitSubDir(ctx context.Context, t *testctx.T, _ *dagger.Client, dir *core.Directory) {
 	requireFileContains(ctx, t, "package main", dir.File("main.go"))
 }
 
-func requireSampleGitFile(ctx context.Context, t *testctx.T, _ *dagger.Client, file *dagger.File) {
+func requireSampleGitFile(ctx context.Context, t *testctx.T, _ *dagger.Client, file *core.File) {
 	requireFileContains(ctx, t, "package main", file)
 }
 
 // verify ref is the sample main branch with expected commit
-func requireSampleGitBranch(ctx context.Context, t *testctx.T, c *dagger.Client, ref *dagger.GitRef) {
+func requireSampleGitBranch(ctx context.Context, t *testctx.T, c *dagger.Client, ref *core.GitRef) {
 	requireSampleGitRootDir(ctx, t, c, ref.Tree())
 	requireGitRefIsBranch(ctx, t, `refs/heads/main`, "", ref, c)
 }
 
 // verify ref is the sample v0.9.5 tag
-func requireSampleGitTag(ctx context.Context, t *testctx.T, c *dagger.Client, ref *dagger.GitRef) {
+func requireSampleGitTag(ctx context.Context, t *testctx.T, c *dagger.Client, ref *core.GitRef) {
 	requireSampleGitRootDir(ctx, t, c, ref.Tree())
 	requireGitRefIsTag(ctx, t, c, `^refs/tags/v0.9.5$`, "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb", ref)
 }
 
 // verify ref is the sample v0.6.1 annotated tag
-func requireGitRefIsSampleAnnotatedTag(ctx context.Context, t *testctx.T, c *dagger.Client, ref *dagger.GitRef) {
+func requireGitRefIsSampleAnnotatedTag(ctx context.Context, t *testctx.T, c *dagger.Client, ref *core.GitRef) {
 	requireSampleGitRootDir(ctx, t, c, ref.Tree())
 	requireGitRefIsTag(ctx, t, c, `^refs/tags/v0.6.1$`, "6ed6264f1c4efbf84d310a104b57ef1bc57d57b0", ref)
 }
 
 // verify ref is the sample commit
-func requireSampleGitCommit(ctx context.Context, t *testctx.T, c *dagger.Client, ref *dagger.GitRef) {
+func requireSampleGitCommit(ctx context.Context, t *testctx.T, c *dagger.Client, ref *core.GitRef) {
 	requireSampleGitRootDir(ctx, t, c, ref.Tree())
 	requireGitRefIsCommit(ctx, t, "c80ac2c13df7d573a069938e01ca13f7a81f0345", ref, c)
 }
 
 // verify ref is the sample hidden commit (from pull request)
-func requireSampleGitHiddenCommit(ctx context.Context, t *testctx.T, c *dagger.Client, ref *dagger.GitRef) {
+func requireSampleGitHiddenCommit(ctx context.Context, t *testctx.T, c *dagger.Client, ref *core.GitRef) {
 	requireSampleGitRootDir(ctx, t, c, ref.Tree())
 	requireGitRefIsCommit(ctx, t, "318970484f692d7a76cfa533c5d47458631c9654", ref, c)
 }
 
-func requireStrictCommit(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
+func requireStrictCommit(ctx context.Context, t *testctx.T, repo *core.GitRepository, refStr string) {
 	ref := repo.Commit(refStr)
 	_, err := ref.Sha(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "invalid commit SHA")
 }
 
-func requireStrictTag(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
+func requireStrictTag(ctx context.Context, t *testctx.T, repo *core.GitRepository, refStr string) {
 	ref := repo.Tag(refStr)
 	_, err := ref.CommitSHA(ctx)
 	require.Error(t, err)
@@ -212,7 +214,7 @@ func requireStrictTag(ctx context.Context, t *testctx.T, repo *dagger.GitReposit
 	requireErrOut(t, err, refStr)
 }
 
-func requireStrictBranch(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
+func requireStrictBranch(ctx context.Context, t *testctx.T, repo *core.GitRepository, refStr string) {
 	ref := repo.Branch(refStr)
 	_, err := ref.CommitSHA(ctx)
 	require.Error(t, err)
@@ -222,9 +224,9 @@ func requireStrictBranch(ctx context.Context, t *testctx.T, repo *dagger.GitRepo
 }
 
 // verify repository has expected branches, tags, and commits
-func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, repo *dagger.GitRepository) {
+func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, repo *core.GitRepository) {
 	// 1. TEST BRANCH REFS
-	mainBranches := []*dagger.GitRef{repo.Head(), repo.Branch("main"), repo.Branch("refs/heads/main")}
+	mainBranches := []*core.GitRef{repo.Head(), repo.Branch("main"), repo.Branch("refs/heads/main")}
 	for _, branch := range mainBranches {
 		requireSampleGitBranch(ctx, t, c, branch)
 	}
@@ -271,7 +273,7 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 
 func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	repo := c.Git("https://github.com/dagger/dagger")
+	repo := core.NewQuery(c).Git("https://github.com/dagger/dagger")
 	sha := "c80ac2c13df7d573a069938e01ca13f7a81f0345"
 
 	commit := repo.Commit(sha)
@@ -304,7 +306,7 @@ func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 
 func (GitSuite) TestGitCommitChanges(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	repo := c.Container().From(alpineImage).
+	repo := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/repo").
 		WithExec([]string{"sh", "-ec", `
@@ -338,7 +340,7 @@ git add . && git commit -m unrelated
 	ordinary := repo.Tag("ordinary").TargetCommit()
 	merge := repo.Tag("merge").TargetCommit()
 
-	assertPaths := func(t *testctx.T, changes *dagger.Changeset, added, modified, removed []string) {
+	assertPaths := func(t *testctx.T, changes *core.Changeset, added, modified, removed []string) {
 		t.Helper()
 		got, err := changes.AddedPaths(ctx)
 		require.NoError(t, err)
@@ -349,7 +351,7 @@ git add . && git commit -m unrelated
 		got, err = changes.RemovedPaths(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, removed, got)
-		for _, tree := range []*dagger.Directory{changes.Before(), changes.After()} {
+		for _, tree := range []*core.Directory{changes.Before(), changes.After()} {
 			entries, err := tree.Entries(ctx)
 			require.NoError(t, err)
 			require.NotContains(t, entries, ".git/")
@@ -368,7 +370,7 @@ git add . && git commit -m unrelated
 		changes := ordinary.Changes()
 		assertPaths(t, changes, []string{"added", "link"}, []string{"edited", "executable"}, []string{"deleted"})
 		// Applying the structured delta preserves deletion, executable bits and symlinks.
-		out, err := c.Container().From(alpineImage).
+		out, err := core.NewQuery(c).Container().From(alpineImage).
 			WithDirectory("/tree", changes.Before().WithChanges(changes)).
 			WithWorkdir("/tree").
 			WithExec([]string{"sh", "-ec", "test ! -e deleted; test -x executable; test -L link; readlink link; cat edited"}).Stdout(ctx)
@@ -380,28 +382,28 @@ git add . && git commit -m unrelated
 		parents, err := merge.ParentShas(ctx)
 		require.NoError(t, err)
 		require.Len(t, parents, 2)
-		assertPaths(t, merge.Changes(dagger.GitCommitChangesOpts{Against: repo.Commit(parents[1])}), []string{"main"}, nil, nil)
+		assertPaths(t, merge.Changes(core.GitCommitChangesOpts{Against: repo.Commit(parents[1])}), []string{"main"}, nil, nil)
 	})
 	t.Run("explicit comparison", func(ctx context.Context, t *testctx.T) {
-		assertPaths(t, merge.Changes(dagger.GitCommitChangesOpts{Against: root}),
+		assertPaths(t, merge.Changes(core.GitCommitChangesOpts{Against: root}),
 			[]string{"added", "link", "main", "topic"}, []string{"edited", "executable"}, []string{"deleted"})
 		// An explicit comparison overrides even the root commit's empty base.
-		assertPaths(t, root.Changes(dagger.GitCommitChangesOpts{Against: ordinary}),
+		assertPaths(t, root.Changes(core.GitCommitChangesOpts{Against: ordinary}),
 			[]string{"deleted"}, []string{"edited", "executable"}, []string{"added", "link"})
 	})
 	t.Run("self comparison", func(ctx context.Context, t *testctx.T) {
-		changes := ordinary.Changes(dagger.GitCommitChangesOpts{Against: ordinary})
+		changes := ordinary.Changes(core.GitCommitChangesOpts{Against: ordinary})
 		assertPaths(t, changes, nil, nil, nil)
 		empty, err := changes.IsEmpty(ctx)
 		require.NoError(t, err)
 		require.True(t, empty)
 	})
 	t.Run("unrelated history", func(ctx context.Context, t *testctx.T) {
-		assertPaths(t, root.Changes(dagger.GitCommitChangesOpts{Against: repo.Head().TargetCommit()}),
+		assertPaths(t, root.Changes(core.GitCommitChangesOpts{Against: repo.Head().TargetCommit()}),
 			[]string{"deleted", "edited", "executable"}, nil, []string{"unrelated"})
 	})
 	t.Run("different repository", func(ctx context.Context, t *testctx.T) {
-		other := c.Container().From(alpineImage).
+		other := core.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).WithWorkdir("/other").
 			WithExec([]string{"sh", "-ec", `
 git init
@@ -410,7 +412,7 @@ git config user.email other@example.com
 printf 'other\n' > other
 git add . && git commit -m other
 `}).Directory("/other").AsGit().Head().TargetCommit()
-		assertPaths(t, root.Changes(dagger.GitCommitChangesOpts{Against: other}),
+		assertPaths(t, root.Changes(core.GitCommitChangesOpts{Against: other}),
 			[]string{"deleted", "edited", "executable"}, nil, []string{"other"})
 	})
 	t.Run("stable recipe", func(ctx context.Context, t *testctx.T) {
@@ -428,14 +430,14 @@ func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("remote repo", func(ctx context.Context, t *testctx.T) {
-		requireSampleGitRepo(ctx, t, c, c.Git("https://github.com/dagger/dagger"))
+		requireSampleGitRepo(ctx, t, c, core.NewQuery(c).Git("https://github.com/dagger/dagger"))
 	})
 
-	clone := func(opts ...string) *dagger.Directory {
-		return c.Container().
+	clone := func(opts ...string) *core.Directory {
+		return core.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
-			WithDirectory("/src", c.Directory()).
+			WithDirectory("/src", core.NewQuery(c).Directory()).
 			WithWorkdir("/src").
 			WithExec(append([]string{"git", "clone", "https://github.com/dagger/dagger", "."}, opts...)).
 			WithExec([]string{"git", "fetch", "origin", "318970484f692d7a76cfa533c5d47458631c9654"}).
@@ -452,7 +454,7 @@ func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
 		requireSampleGitRepo(ctx, t, c, clone("--bare").AsGit())
 	})
 	t.Run("local empty", func(ctx context.Context, t *testctx.T) {
-		repo := c.Directory().AsGit()
+		repo := core.NewQuery(c).Directory().AsGit()
 		_, err := repo.Head().CommitSHA(ctx)
 		require.ErrorContains(t, err, "not a git repository")
 		_, err = repo.Tags(ctx)
@@ -464,17 +466,17 @@ func (GitSuite) TestGitURL(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	input := "https://github.com/dagger/dagger.git"
-	url, err := c.Git(input).URL(ctx)
+	url, err := core.NewQuery(c).Git(input).URL(ctx)
 	require.NoError(t, err)
 	require.Equal(t, input, url)
 
 	input = "github.com/dagger/dagger.git"
-	url, err = c.Git(input).URL(ctx)
+	url, err = core.NewQuery(c).Git(input).URL(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "https://"+input, url)
 
 	input = "https://github.com/dagger/dagger.git"
-	url, err = c.Git(input).Head().Tree().AsGit().URL(ctx)
+	url, err = core.NewQuery(c).Git(input).Head().Tree().AsGit().URL(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "", url)
 }
@@ -483,14 +485,14 @@ func (GitSuite) TestDiscardGitDir(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("git dir is present", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
+		dir := core.NewQuery(c).Git("https://github.com/dagger/dagger").Branch("main").Tree()
 		ent, err := dir.Entries(ctx)
 		require.NoError(t, err)
 		require.Contains(t, ent, ".git/")
 	})
 
 	t.Run("git dir is not present", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		dir := core.NewQuery(c).Git("https://github.com/dagger/dagger").Branch("main").Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 		ent, err := dir.Entries(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, ent, ".git/")
@@ -500,9 +502,9 @@ func (GitSuite) TestDiscardGitDir(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestRemoteGitTreeNormalizesTimestamps(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	file := c.Git("https://github.com/dagger/dagger").
+	file := core.NewQuery(c).Git("https://github.com/dagger/dagger").
 		Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").
-		Tree(dagger.GitCommitTreeOpts{DiscardGitDir: true}).
+		Tree(core.GitCommitTreeOpts{DiscardGitDir: true}).
 		File("README.md")
 
 	require.Equal(t, 1, getFileTimestamp(ctx, t, c, file))
@@ -512,14 +514,14 @@ func (GitSuite) TestKeepGitDir(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("git dir is present", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Branch("main").Tree()
+		dir := core.NewQuery(c).Git("https://github.com/dagger/dagger", core.GitOpts{KeepGitDir: true}).Branch("main").Tree()
 		ent, err := dir.Entries(ctx)
 		require.NoError(t, err)
 		require.Contains(t, ent, ".git/")
 	})
 
 	t.Run("git dir is not present", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Branch("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		dir := core.NewQuery(c).Git("https://github.com/dagger/dagger", core.GitOpts{KeepGitDir: true}).Branch("main").Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 		ent, err := dir.Entries(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, ent, ".git/")
@@ -529,24 +531,24 @@ func (GitSuite) TestKeepGitDir(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestCheckoutOrigin(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	getOrigin := func(ctx context.Context, t *testctx.T, checkout *dagger.Directory) string {
-		out, err := c.Container().From(alpineImage).
+	getOrigin := func(ctx context.Context, t *testctx.T, checkout *core.Directory) string {
+		out, err := core.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", checkout).
-			WithExec([]string{"git", "remote", "get-url", "origin"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
+			WithExec([]string{"git", "remote", "get-url", "origin"}, core.ContainerWithExecOpts{Expect: core.ReturnTypeAny}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		return strings.TrimSpace(out)
 	}
 
 	t.Run("remote", func(ctx context.Context, t *testctx.T) {
-		checkout := c.Git("https://github.com/dagger/dagger").Head().Tree()
+		checkout := core.NewQuery(c).Git("https://github.com/dagger/dagger").Head().Tree()
 		require.Equal(t, "https://github.com/dagger/dagger", getOrigin(ctx, t, checkout))
 	})
 
 	t.Run("local", func(ctx context.Context, t *testctx.T) {
-		clone := c.Container().From(alpineImage).
+		clone := core.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
 			WithExec([]string{"git", "clone", "https://github.com/dagger/dagger", ".", "--depth=1"}).
@@ -558,7 +560,7 @@ func (GitSuite) TestCheckoutOrigin(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("local without origin", func(ctx context.Context, t *testctx.T) {
-		repo := c.Container().From(alpineImage).
+		repo := core.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
 			WithExec([]string{"git", "init"}).
@@ -573,12 +575,12 @@ func (GitSuite) TestCheckoutOrigin(ctx context.Context, t *testctx.T) {
 
 func (GitSuite) TestWithRemote(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base"))
 	serviceID, err := gitDaemon.ID(ctx)
 	require.NoError(t, err)
 
-	remoteURLs := func(ctx context.Context, t *testctx.T, checkout *dagger.Directory, args ...string) string {
-		out, err := c.Container().From(alpineImage).
+	remoteURLs := func(ctx context.Context, t *testctx.T, checkout *core.Directory, args ...string) string {
+		out, err := core.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", checkout).
@@ -589,7 +591,7 @@ func (GitSuite) TestWithRemote(ctx context.Context, t *testctx.T) {
 	}
 	// Prime the checkout cache without any registered remotes. A later tree
 	// of the same ref must include its own .git/config, not reuse this one.
-	repo := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+	repo := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon})
 	require.Equal(t, repoURL, remoteURLs(ctx, t, repo.Head().Tree(), "origin"))
 	require.Equal(t, repoURL, remoteURLs(ctx, t, repo.Head().TargetCommit().Tree(), "origin"))
 
@@ -599,7 +601,7 @@ func (GitSuite) TestWithRemote(ctx context.Context, t *testctx.T) {
 		Git struct {
 			WithRemote struct {
 				Head struct {
-					Tree struct{ ID dagger.ID }
+					Tree struct{ ID core.ID }
 				}
 			}
 		}
@@ -617,7 +619,7 @@ func (GitSuite) TestWithRemote(ctx context.Context, t *testctx.T) {
 			"upstream": upstreamURL, "push": upstreamPushURL,
 		},
 	}, &dagger.Response{Data: &result}))
-	checkout := dagger.Ref[*dagger.Directory](c, result.Git.WithRemote.Head.Tree.ID)
+	checkout := core.Ref[*core.Directory](core.NewQuery(c), result.Git.WithRemote.Head.Tree.ID)
 
 	// The registered remote lands in the materialized checkout beside the
 	// clone URL's origin.
@@ -632,8 +634,8 @@ func (GitSuite) TestWithRemote(ctx context.Context, t *testctx.T) {
 		{"https://example.com/other/repo.git", upstreamPushURL},
 		{"https://example.com/other/repo.git", "ssh://git@example.com/other/repo.git"},
 	} {
-		configured := repo.WithRemote("upstream", urls[0], dagger.GitRepositoryWithRemoteOpts{PushURL: urls[1]})
-		for _, tree := range []*dagger.Directory{configured.Head().Tree(), configured.Head().TargetCommit().Tree()} {
+		configured := repo.WithRemote("upstream", urls[0], core.GitRepositoryWithRemoteOpts{PushURL: urls[1]})
+		for _, tree := range []*core.Directory{configured.Head().Tree(), configured.Head().TargetCommit().Tree()} {
 			require.Equal(t, urls[0], remoteURLs(ctx, t, tree, "upstream"))
 			require.Equal(t, urls[1], remoteURLs(ctx, t, tree, "--push", "upstream"))
 		}
@@ -685,7 +687,7 @@ func (GitSuite) TestGitDepth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	const commitCount = 30
-	repoDir := c.Container().
+	repoDir := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -701,10 +703,10 @@ done
 `, commitCount)}).
 		Directory(".")
 	gitSvc, repoURL := gitService(ctx, t, c, repoDir)
-	repo := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitSvc})
+	repo := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitSvc})
 
-	log := func(ctx context.Context, dir *dagger.Directory) []string {
-		res, err := c.Container().From(alpineImage).
+	log := func(ctx context.Context, dir *core.Directory) []string {
+		res, err := core.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", dir).
@@ -720,23 +722,23 @@ done
 	require.Len(t, lines, 1)
 
 	// depth = 5
-	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 5})
+	dir = repo.Branch("main").Tree(core.GitRefTreeOpts{Depth: 5})
 	lines = log(ctx, dir)
 	require.Len(t, lines, 5)
 
 	// depth greater than the full history
-	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 1000})
+	dir = repo.Branch("main").Tree(core.GitRefTreeOpts{Depth: 1000})
 	lines = log(ctx, dir)
 	require.Len(t, lines, commitCount)
 	require.Contains(t, lines[len(lines)-1], "commit 1")
 
 	// depth = 20 (back down)
-	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 20})
+	dir = repo.Branch("main").Tree(core.GitRefTreeOpts{Depth: 20})
 	lines = log(ctx, dir)
 	require.Len(t, lines, 20)
 
 	// depth = -1 (max depth)
-	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: -1})
+	dir = repo.Branch("main").Tree(core.GitRefTreeOpts{Depth: -1})
 	lines = log(ctx, dir)
 	require.Len(t, lines, commitCount)
 	require.Contains(t, lines[len(lines)-1], "commit 1")
@@ -745,7 +747,7 @@ done
 func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 
-	gitSSH := c.Container().
+	gitSSH := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "openssh", "openssl"})
 
@@ -766,7 +768,7 @@ func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {
 	userPrivateKey, err := hostKeyGen.File("/root/.ssh/id_rsa").Contents(ctx)
 	require.NoError(t, err)
 
-	setupScript := c.Directory().
+	setupScript := core.NewQuery(c).Directory().
 		WithNewFile("setup.sh", `#!/bin/sh
 
 set -e -u -x
@@ -846,19 +848,19 @@ sleep infinity
 	require.NoError(t, err)
 
 	repoURL := fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort)
-	repo := c.Git(repoURL, dagger.GitOpts{
+	repo := core.NewQuery(c).Git(repoURL, core.GitOpts{
 		ExperimentalServiceHost: sshSvc,
 		SSHKnownHosts:           fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
-		SSHAuthSocket:           c.Host().UnixSocket(sock),
+		SSHAuthSocket:           core.NewQuery(c).Host().UnixSocket(sock),
 	})
 	entries, err := repo.Branch("main").
-		Tree(dagger.GitRefTreeOpts{
+		Tree(core.GitRefTreeOpts{
 			DiscardGitDir: true,
 		}).
 		Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"README.md"}, entries)
-	committed := repo.Branch("main").AsWorkspace().WithNewFile("pushed.txt", "SSH push").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	committed := repo.Branch("main").AsWorkspace().WithNewFile("pushed.txt", "SSH push").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "SSH push", workspaceCommitDate)
 	})
 	t.Run("branch filtering snapshot", func(ctx context.Context, t *testctx.T) {
@@ -866,7 +868,7 @@ sleep infinity
 		remote, err := frozen.Git().Head().AsRepository().DefaultRemote(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, remote)
-		head := remote.Repository().Head(dagger.GitRepositoryHeadOpts{NoLock: true})
+		head := remote.Repository().Head(core.GitRepositoryHeadOpts{NoLock: true})
 		contains, err := head.Contains(ctx, repo.Branch("main"))
 		require.NoError(t, err)
 		require.True(t, contains)
@@ -883,7 +885,7 @@ sleep infinity
 	// is already frozen in the engine; only agent signing requests reach the CLI.
 	sourceID, err := committed.Git().Head().ID(ctx)
 	require.NoError(t, err)
-	destinationID, err := c.Git(repoURL, dagger.GitOpts{
+	destinationID, err := core.NewQuery(c).Git(repoURL, core.GitOpts{
 		ExperimentalServiceHost: sshSvc,
 		SSHKnownHosts:           fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
 	}).ID(ctx)
@@ -891,7 +893,7 @@ sleep infinity
 	cli := daggerCliBase(t, c).
 		WithExec([]string{"apk", "add", "openssh-client"}).
 		WithEnvVariable("SSH_AUTH_SOCK", "").
-		WithNewFile("/root/.ssh/id_rsa", userPrivateKey, dagger.ContainerWithNewFileOpts{Permissions: 0600})
+		WithNewFile("/root/.ssh/id_rsa", userPrivateKey, core.ContainerWithNewFileOpts{Permissions: 0600})
 	out, err := cli.With(daggerQuery(`{ node(id: %q) { ... on GitRef { push(to: %q, branch: "auto-agent-push") { disposition sha } } } }`, sourceID, destinationID)).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "CREATED")
@@ -938,7 +940,7 @@ sleep infinity
 			if existingAgent {
 				client = client.
 					WithoutFile("/root/.ssh/id_rsa").
-					WithUnixSocket("/tmp/snapshot-agent.sock", c.Host().UnixSocket(sock)).
+					WithUnixSocket("/tmp/snapshot-agent.sock", core.NewQuery(c).Host().UnixSocket(sock)).
 					WithEnvVariable("SSH_AUTH_SOCK", "/tmp/snapshot-agent.sock")
 			}
 			out, err := client.With(daggerQuery(`{
@@ -1011,9 +1013,9 @@ sleep infinity
   direct(url: String!, name: String!): String! { git(url).ref(name: name).commitSHA }
 }`)
 			script := func(script string) (string, string, int) {
-				ran := resolver.WithExec([]string{"dagger", "script", "-m", "/resolver"}, dagger.ContainerWithExecOpts{
+				ran := resolver.WithExec([]string{"dagger", "script", "-m", "/resolver"}, core.ContainerWithExecOpts{
 					Stdin:  script,
-					Expect: dagger.ReturnTypeAny,
+					Expect: core.ReturnTypeAny,
 				})
 				code, err := ran.ExitCode(ctx)
 				require.NoError(t, err)
@@ -1042,7 +1044,7 @@ func (GitSuite) TestSSHAuthSockResumeFromCheckout(ctx context.Context, t *testct
 	c, sink := connectWithTrace(ctx, t)
 	// Addressed by IP, which a separate session can still reach.
 	remote := privateGitSSHRemote(ctx, t, c)
-	checkout := func(c *dagger.Client) *dagger.Container {
+	checkout := func(c *dagger.Client) *core.Container {
 		return daggerCliBase(t, c).
 			With(remote.cli).
 			WithExec([]string{"apk", "add", "git"}).
@@ -1072,7 +1074,7 @@ func (GitSuite) TestSSHAuthSockResumeFromCheckout(ctx context.Context, t *testct
 func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	testTags := func(t *testctx.T, repo *dagger.GitRepository) {
+	testTags := func(t *testctx.T, repo *core.GitRepository) {
 		t.Run("all tags", func(ctx context.Context, t *testctx.T) {
 			tags, err := repo.Tags(ctx)
 			require.NoError(t, err)
@@ -1081,7 +1083,7 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("tag pattern", func(ctx context.Context, t *testctx.T) {
-			tags, err := repo.Tags(ctx, dagger.GitRepositoryTagsOpts{
+			tags, err := repo.Tags(ctx, core.GitRepositoryTagsOpts{
 				Patterns: []string{"v*"},
 			})
 			require.NoError(t, err)
@@ -1090,7 +1092,7 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("ref-qualified tag pattern", func(ctx context.Context, t *testctx.T) {
-			tags, err := repo.Tags(ctx, dagger.GitRepositoryTagsOpts{
+			tags, err := repo.Tags(ctx, core.GitRepositoryTagsOpts{
 				Patterns: []string{"refs/tags/v*"},
 			})
 			require.NoError(t, err)
@@ -1099,7 +1101,7 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("prefix-qualified tag pattern", func(ctx context.Context, t *testctx.T) {
-			tags, err := repo.Tags(ctx, dagger.GitRepositoryTagsOpts{
+			tags, err := repo.Tags(ctx, core.GitRepositoryTagsOpts{
 				Patterns: []string{"sdk/go/v*"},
 			})
 			require.NoError(t, err)
@@ -1108,7 +1110,7 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 		})
 	}
 
-	testBranches := func(t *testctx.T, repo *dagger.GitRepository) {
+	testBranches := func(t *testctx.T, repo *core.GitRepository) {
 		t.Run("all branches", func(ctx context.Context, t *testctx.T) {
 			branches, err := repo.Branches(ctx)
 			require.NoError(t, err)
@@ -1116,7 +1118,7 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("branches pattern", func(ctx context.Context, t *testctx.T) {
-			branches, err := repo.Branches(ctx, dagger.GitRepositoryBranchesOpts{
+			branches, err := repo.Branches(ctx, core.GitRepositoryBranchesOpts{
 				Patterns: []string{"ma*"},
 			})
 			require.NoError(t, err)
@@ -1125,17 +1127,17 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 	}
 
 	t.Run("remote", func(ctx context.Context, t *testctx.T) {
-		git := c.Git("https://github.com/dagger/dagger.git")
+		git := core.NewQuery(c).Git("https://github.com/dagger/dagger.git")
 		testTags(t, git)
 		testBranches(t, git)
 	})
 	t.Run("remote (short)", func(ctx context.Context, t *testctx.T) {
-		git := c.Git("github.com/dagger/dagger")
+		git := core.NewQuery(c).Git("github.com/dagger/dagger")
 		testTags(t, git)
 		testBranches(t, git)
 	})
 
-	localClone := c.Container().
+	localClone := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/src").
@@ -1156,12 +1158,12 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	requireGitTagsExist := func(ctx context.Context, t *testctx.T, git *dagger.GitRef) {
-		ctr := c.Container().
+	requireGitTagsExist := func(ctx context.Context, t *testctx.T, git *core.GitRef) {
+		ctr := core.NewQuery(c).Container().
 			From("alpine").
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
-			WithMountedDirectory(".", git.Tree(dagger.GitRefTreeOpts{Depth: -1, IncludeTags: true}))
+			WithMountedDirectory(".", git.Tree(core.GitRefTreeOpts{Depth: -1, IncludeTags: true}))
 
 			// check tag existence
 		out, err := ctr.WithExec([]string{"git", "tag", "-l"}).Stdout(ctx)
@@ -1177,7 +1179,7 @@ func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, out, "dagger.tmp")
 	}
 
-	runCheckedTags := func(t *testctx.T, git *dagger.GitRepository) {
+	runCheckedTags := func(t *testctx.T, git *core.GitRepository) {
 		t.Run("branch", func(ctx context.Context, t *testctx.T) {
 			requireGitTagsExist(ctx, t, git.Branch("main"))
 		})
@@ -1198,11 +1200,11 @@ func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 
 	t.Run("remote default excludes tags", func(ctx context.Context, t *testctx.T) {
 		// Use .git URL form so this assertion runs against an isolated shared bare remote cache key.
-		ctr := c.Container().
+		ctr := core.NewQuery(c).Container().
 			From("alpine").
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
-			WithMountedDirectory(".", c.Git("https://github.com/dagger/dagger.git").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: -1}))
+			WithMountedDirectory(".", core.NewQuery(c).Git("https://github.com/dagger/dagger.git").Branch("main").Tree(core.GitRefTreeOpts{Depth: -1}))
 
 		out, err := ctr.WithExec([]string{"git", "tag", "-l"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -1210,10 +1212,10 @@ func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("remote", func(ctx context.Context, t *testctx.T) {
-		runCheckedTags(t, c.Git("https://github.com/dagger/dagger"))
+		runCheckedTags(t, core.NewQuery(c).Git("https://github.com/dagger/dagger"))
 	})
 	t.Run("local", func(ctx context.Context, t *testctx.T) {
-		localClone := c.Container().
+		localClone := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
@@ -1233,15 +1235,15 @@ func (GitSuite) TestGitTagsSSH(ctx context.Context, t *testctx.T) {
 		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
 		defer cleanup()
 
-		tags, err := c.Git(repoURL, dagger.GitOpts{
-			SSHAuthSocket: c.Host().UnixSocket(sockPath),
+		tags, err := core.NewQuery(c).Git(repoURL, core.GitOpts{
+			SSHAuthSocket: core.NewQuery(c).Host().UnixSocket(sockPath),
 		}).Tags(ctx)
 		require.NoError(t, err)
 		require.Subset(t, tags, []string{"cool-sdk/v0.1", "v0.1.1"})
 	})
 
 	t.Run("without SSH auth", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Git(repoURL).Tags(ctx)
+		_, err := core.NewQuery(c).Git(repoURL).Tags(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "SSH URLs are not supported without an SSH socket")
 	})
@@ -1257,8 +1259,8 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
-		_, err = c.Git("https://github.com/grouville/daggerverse-private.git", dagger.GitOpts{
-			HTTPAuthToken: c.SetSecret("github_pat", token),
+		_, err = core.NewQuery(c).Git("https://github.com/grouville/daggerverse-private.git", core.GitOpts{
+			HTTPAuthToken: core.NewQuery(c).SetSecret("github_pat", token),
 		}).
 			Branch("main").
 			Tree().
@@ -1273,8 +1275,8 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 	// 	token, err := decodeAndTrimPAT(pat)
 	// 	require.NoError(t, err)
 
-	// 	_, err = c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git", dagger.GitOpts{
-	// 		HTTPAuthToken: c.SetSecret("bitbucket_pat", token),
+	// 	_, err = core.NewQuery(c).Git("https://bitbucket.org/dagger-modules/private-modules-test.git", core.GitOpts{
+	// 		HTTPAuthToken: core.NewQuery(c).SetSecret("bitbucket_pat", token),
 	// 	}).
 	// 		Branch("main").
 	// 		Tree().
@@ -1286,9 +1288,9 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 	t.Run("GitLab auth", func(ctx context.Context, t *testctx.T) {
 		tc := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
 
-		_, err := c.Git(tc.gitTestRepoRef, dagger.GitOpts{
+		_, err := core.NewQuery(c).Git(tc.gitTestRepoRef, core.GitOpts{
 			HTTPAuthUsername: tc.httpAuthUsername,
-			HTTPAuthToken:    c.SetSecret("gitlab_deploy_token", tc.token()),
+			HTTPAuthToken:    core.NewQuery(c).SetSecret("gitlab_deploy_token", tc.token()),
 		}).
 			Branch("main").
 			Tree().
@@ -1299,7 +1301,7 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 
 	// TODO: Implement Azure DevOps auth when PAT expiration is configurable
 	// t.Run("Azure auth", func(ctx context.Context, t *testctx.T) {
-	// 	_, err = c.Git("https://dev.azure.com/daggere2e/private/_git/dagger-test-modules").
+	// 	_, err = core.NewQuery(c).Git("https://dev.azure.com/daggere2e/private/_git/dagger-test-modules").
 	// 		Branch("main").
 	// 		Tree().
 	// 		File("README.md").
@@ -1308,7 +1310,7 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 	// })
 
 	t.Run("authentication error", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git").
+		_, err := core.NewQuery(c).Git("https://bitbucket.org/dagger-modules/private-modules-test.git").
 			Branch("main").
 			Tree().
 			File("README.md").
@@ -1321,10 +1323,10 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 
 func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, "", c.Directory().WithNewFile("README.md", "Hello, world!"), "main", "", c.SetSecret("target", "foobar"))
+	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, "", core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, world!"), "main", "", core.NewQuery(c).SetSecret("target", "foobar"))
 
 	t.Run("no auth", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+		_, err := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 			Branch("main").
 			Tree().
 			File("README.md").
@@ -1334,9 +1336,9 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("incorrect auth", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Git(repoURL, dagger.GitOpts{
+		_, err := core.NewQuery(c).Git(repoURL, core.GitOpts{
 			ExperimentalServiceHost: gitDaemon,
-			HTTPAuthToken:           c.SetSecret("token-wrong", "wrong"),
+			HTTPAuthToken:           core.NewQuery(c).SetSecret("token-wrong", "wrong"),
 		}).
 			Branch("main").
 			Tree().
@@ -1347,9 +1349,9 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("token auth", func(ctx context.Context, t *testctx.T) {
-		dt, err := c.Git(repoURL, dagger.GitOpts{
+		dt, err := core.NewQuery(c).Git(repoURL, core.GitOpts{
 			ExperimentalServiceHost: gitDaemon,
-			HTTPAuthToken:           c.SetSecret("token", "foobar"),
+			HTTPAuthToken:           core.NewQuery(c).SetSecret("token", "foobar"),
 		}).
 			Branch("main").
 			Tree().
@@ -1360,9 +1362,9 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("header auth", func(ctx context.Context, t *testctx.T) {
-		dt, err := c.Git(repoURL, dagger.GitOpts{
+		dt, err := core.NewQuery(c).Git(repoURL, core.GitOpts{
 			ExperimentalServiceHost: gitDaemon,
-			HTTPAuthHeader:          c.SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar"))),
+			HTTPAuthHeader:          core.NewQuery(c).SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar"))),
 		}).
 			Branch("main").
 			Tree().
@@ -1376,16 +1378,13 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestAuthUsername(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	gitDaemonCustom, repoURLCustom := gitServiceHTTPWithBranch(ctx, t, c, "",
-		c.Directory().WithNewFile("README.md", "Hello, custom user!"),
-		"main",
-		"customuser",
-		c.SetSecret("custom-pass", "secretpass"))
+	gitDaemonCustom, repoURLCustom := gitServiceHTTPWithBranch(ctx, t, c, "", core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, custom user!"), "main",
+		"customuser", core.NewQuery(c).SetSecret("custom-pass", "secretpass"))
 
 	t.Run("custom username with token", func(ctx context.Context, t *testctx.T) {
-		git := c.Git(repoURLCustom, dagger.GitOpts{
+		git := core.NewQuery(c).Git(repoURLCustom, core.GitOpts{
 			ExperimentalServiceHost: gitDaemonCustom,
-			HTTPAuthToken:           c.SetSecret("custom-token", "secretpass"),
+			HTTPAuthToken:           core.NewQuery(c).SetSecret("custom-token", "secretpass"),
 			HTTPAuthUsername:        "customuser",
 		})
 
@@ -1399,9 +1398,9 @@ func (GitSuite) TestAuthUsername(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("wrong username with correct token", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Git(repoURLCustom, dagger.GitOpts{
+		_, err := core.NewQuery(c).Git(repoURLCustom, core.GitOpts{
 			ExperimentalServiceHost: gitDaemonCustom,
-			HTTPAuthToken:           c.SetSecret("wrong-token", "secretpass"),
+			HTTPAuthToken:           core.NewQuery(c).SetSecret("wrong-token", "secretpass"),
 			HTTPAuthUsername:        "wronguser",
 		}).
 			Branch("main").
@@ -1412,16 +1411,13 @@ func (GitSuite) TestAuthUsername(ctx context.Context, t *testctx.T) {
 		requireErrOut(t, err, "authentication failed")
 	})
 
-	gitDaemonDefault, repoURLDefault := gitServiceHTTPWithBranch(ctx, t, c, "",
-		c.Directory().WithNewFile("README.md", "Hello, default user!"),
-		"main",
-		"",
-		c.SetSecret("default-pass", "foobar"))
+	gitDaemonDefault, repoURLDefault := gitServiceHTTPWithBranch(ctx, t, c, "", core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, default user!"), "main",
+		"", core.NewQuery(c).SetSecret("default-pass", "foobar"))
 
 	t.Run("default username (x-access-token)", func(ctx context.Context, t *testctx.T) {
-		dt, err := c.Git(repoURLDefault, dagger.GitOpts{
+		dt, err := core.NewQuery(c).Git(repoURLDefault, core.GitOpts{
 			ExperimentalServiceHost: gitDaemonDefault,
-			HTTPAuthToken:           c.SetSecret("default-token", "foobar"),
+			HTTPAuthToken:           core.NewQuery(c).SetSecret("default-token", "foobar"),
 			// No HTTPAuthUsername specified - should use default
 		}).
 			Branch("main").
@@ -1446,14 +1442,11 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
-		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname,
-			c.Directory().WithNewFile("README.md", "Hello, user!"),
-			"main",
-			username,
-			c.SetSecret("secret"+identity.NewID(), password),
+		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, user!"), "main",
+			username, core.NewQuery(c).SetSecret("secret"+identity.NewID(), password),
 		)
 
-		dt, err := c.Git(gitServiceURL, dagger.GitOpts{
+		dt, err := core.NewQuery(c).Git(gitServiceURL, core.GitOpts{
 			ExperimentalServiceHost: gitService,
 		}).
 			Branch("main").
@@ -1473,14 +1466,11 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
-		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname,
-			c.Directory().WithNewFile("README.md", "Hello, bad username!"),
-			"main",
-			username+"XXX",
-			c.SetSecret("secret"+identity.NewID(), password),
+		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, bad username!"), "main",
+			username+"XXX", core.NewQuery(c).SetSecret("secret"+identity.NewID(), password),
 		)
 
-		_, err = c.Git(gitServiceURL, dagger.GitOpts{
+		_, err = core.NewQuery(c).Git(gitServiceURL, core.GitOpts{
 			ExperimentalServiceHost: gitService,
 		}).
 			Branch("main").
@@ -1500,14 +1490,11 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
-		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname,
-			c.Directory().WithNewFile("README.md", "Hello, bad password!"),
-			"main",
-			username,
-			c.SetSecret("secret"+identity.NewID(), password+"XXX"),
+		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, bad password!"), "main",
+			username, core.NewQuery(c).SetSecret("secret"+identity.NewID(), password+"XXX"),
 		)
 
-		_, err = c.Git(gitServiceURL, dagger.GitOpts{
+		_, err = core.NewQuery(c).Git(gitServiceURL, core.GitOpts{
 			ExperimentalServiceHost: gitService,
 		}).
 			Branch("main").
@@ -1523,14 +1510,14 @@ func (GitSuite) TestSubmoduleAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Cleanup(func() { _ = c.Close() })
 
-	authToken := c.SetSecret("submodule-test-token", "test-token-"+identity.NewID())
+	authToken := core.NewQuery(c).SetSecret("submodule-test-token", "test-token-"+identity.NewID())
 
-	submoduleContent := c.Directory().WithNewFile("submodule.txt", "This is the submodule content")
-	parentContent := c.Directory().WithNewFile("parent.txt", "This is the parent content")
+	submoduleContent := core.NewQuery(c).Directory().WithNewFile("submodule.txt", "This is the submodule content")
+	parentContent := core.NewQuery(c).Directory().WithNewFile("parent.txt", "This is the parent content")
 
 	// Create bare parent + submodule repos in /srv
 	// Git dance below is necessary: https://github.com/dagger/dagger/pull/10855#discussion_r2264174757
-	gitReposCtr := c.Container().
+	gitReposCtr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -1571,7 +1558,7 @@ git --git-dir=/srv/parent.git    update-server-info
 		parentURL := base + "/parent.git"
 
 		t.Run("with auth", func(ctx context.Context, t *testctx.T) {
-			tree := c.Git(parentURL, dagger.GitOpts{
+			tree := core.NewQuery(c).Git(parentURL, core.GitOpts{
 				ExperimentalServiceHost: gitSrv,
 				HTTPAuthToken:           authToken,
 			}).Branch("main").Tree()
@@ -1586,7 +1573,7 @@ git --git-dir=/srv/parent.git    update-server-info
 		})
 
 		t.Run("without auth fails", func(ctx context.Context, t *testctx.T) {
-			_, err := c.Git(parentURL, dagger.GitOpts{
+			_, err := core.NewQuery(c).Git(parentURL, core.GitOpts{
 				ExperimentalServiceHost: gitSrv,
 			}).Branch("main").Tree().File("parent.txt").Contents(ctx)
 			require.Error(t, err)
@@ -1600,7 +1587,7 @@ git --git-dir=/srv/parent.git    update-server-info
 		parentURL := base + "/parent.git"
 
 		t.Run("with auth fallback", func(ctx context.Context, t *testctx.T) {
-			tree := c.Git(parentURL, dagger.GitOpts{
+			tree := core.NewQuery(c).Git(parentURL, core.GitOpts{
 				ExperimentalServiceHost: httpSrv,
 				HTTPAuthToken:           authToken,
 			}).Branch("main").Tree()
@@ -1615,7 +1602,7 @@ git --git-dir=/srv/parent.git    update-server-info
 		})
 
 		t.Run("without auth fails", func(ctx context.Context, t *testctx.T) {
-			_, err := c.Git(parentURL, dagger.GitOpts{
+			_, err := core.NewQuery(c).Git(parentURL, core.GitOpts{
 				ExperimentalServiceHost: httpSrv,
 			}).Branch("main").Tree().File("parent.txt").Contents(ctx)
 			require.Error(t, err)
@@ -1630,7 +1617,7 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
@@ -1639,7 +1626,7 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 	})
 
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -1650,7 +1637,7 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	commit = strings.TrimSpace(commit)
 
-	ref := c.Git(url).Commit(commit)
+	ref := core.NewQuery(c).Git(url).Commit(commit)
 	entries, err := ref.Tree().Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, entries, "xyz")
@@ -1662,7 +1649,7 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 	commit = strings.TrimSpace(commit)
 
 	// in the original case, this failed, because we failed to update our tags
-	ref = c.Git(url).Commit(commit)
+	ref = core.NewQuery(c).Git(url).Commit(commit)
 	entries, err = ref.Tree().Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, entries, "abc")
@@ -1674,7 +1661,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
@@ -1683,7 +1670,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 	})
 
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -1695,7 +1682,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 	commit = strings.TrimSpace(commit)
 
 	// resolve the commit now (by syncing it), but don't clone it
-	ref := c.Git(url).Tag("v1.0")
+	ref := core.NewQuery(c).Git(url).Tag("v1.0")
 	result, err := ref.CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commit, result)
@@ -1723,7 +1710,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestRemoteUpdatesNoLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -1731,13 +1718,13 @@ func (GitSuite) TestRemoteUpdatesNoLock(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 	})
 
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
 		WithWorkdir("/src").
 		WithExec([]string{"git", "clone", url, "."})
-	revParse := func(ctr *dagger.Container) string {
+	revParse := func(ctr *core.Container) string {
 		t.Helper()
 		out, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -1748,18 +1735,18 @@ func (GitSuite) TestRemoteUpdatesNoLock(ctx context.Context, t *testctx.T) {
 		ctr = ctr.WithExec([]string{"sh", "-c", "touch " + name + " && git add " + name + ` && git commit -m "` + name + `" && git push origin main`})
 		return revParse(ctr)
 	}
-	commitOf := func(ref *dagger.GitRef) string {
+	commitOf := func(ref *core.GitRef) string {
 		t.Helper()
 		sha, err := ref.CommitSHA(ctx)
 		require.NoError(t, err)
 		return sha
 	}
-	repo := func() *dagger.GitRepository { return c.Git(url) }
+	repo := func() *core.GitRepository { return core.NewQuery(c).Git(url) }
 	liveRef := func() string {
-		return commitOf(repo().Ref("main", dagger.GitRepositoryRefOpts{NoLock: true}))
+		return commitOf(repo().Ref("main", core.GitRepositoryRefOpts{NoLock: true}))
 	}
 	liveAddress := func() string {
-		return commitOf(c.Address(url + "#main").GitRef(dagger.AddressGitRefOpts{NoLock: true}))
+		return commitOf(core.NewQuery(c).Address(url + "#main").GitRef(core.AddressGitRefOpts{NoLock: true}))
 	}
 
 	initial := revParse(ctr)
@@ -1790,12 +1777,11 @@ func (GitSuite) TestRemoteUpdatesNoLock(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 	content := identity.NewID()
 	hostname := func(c *dagger.Client) string {
-		svc, url := gitService(ctx, t, c,
-			c.Directory().WithNewFile("content", content))
+		svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("content", content))
 
-		hn, err := c.Container().
+		hn, err := core.NewQuery(c).Container().
 			From(alpineImage).
-			WithMountedDirectory("/repo", c.Git(url, dagger.GitOpts{
+			WithMountedDirectory("/repo", core.NewQuery(c).Git(url, core.GitOpts{
 				ExperimentalServiceHost: svc,
 			}).Branch("main").Tree()).
 			WithDefaultArgs([]string{"sleep"}).
@@ -1814,7 +1800,7 @@ func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("local repository", func(ctx context.Context, t *testctx.T) {
-		ctr := c.Container().
+		ctr := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			With(gitUserConfig).
@@ -1855,8 +1841,8 @@ func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
-		svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
-		repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: svc})
+		svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+		repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: svc})
 
 		full, err := repo.Branch("main").CommitSHA(ctx)
 		require.NoError(t, err)
@@ -1882,7 +1868,7 @@ func (GitSuite) TestRefRevisionSuffixes(ctx context.Context, t *testctx.T) {
 	// root - a - b ------ merge - head   (main)
 	//         \          /
 	//          side1 - side2              (side)
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -1916,7 +1902,7 @@ echo head > f && git commit -qam head
 	require.NoError(t, err)
 	shortWant = strings.TrimSpace(shortWant)
 
-	check := func(ctx context.Context, t *testctx.T, repo *dagger.GitRepository) {
+	check := func(ctx context.Context, t *testctx.T, repo *core.GitRepository) {
 		for i, expr := range exprs {
 			ref := repo.Ref(expr)
 			sha, err := ref.CommitSHA(ctx)
@@ -1959,13 +1945,13 @@ echo head > f && git commit -qam head
 
 	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
 		svc, url := gitService(ctx, t, c, ctr.Directory("."))
-		check(ctx, t, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: svc}))
+		check(ctx, t, core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: svc}))
 	})
 }
 
 func (GitSuite) TestGitLatest(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -1989,7 +1975,7 @@ func (GitSuite) TestGitLatest(ctx context.Context, t *testctx.T) {
 
 func (GitSuite) TestGitLatestFallsBackToHead(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -2017,7 +2003,7 @@ func (GitSuite) TestGitLatestFallsBackToHead(ctx context.Context, t *testctx.T) 
 
 func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -2051,7 +2037,7 @@ func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "refs/tags/v2.0.0", ancestorStable)
 
 	ancestorPreReleaseRef, err := git.Head().TargetCommit().AncestorReleaseTag(ctx,
-		dagger.GitCommitAncestorReleaseTagOpts{IncludePreRelease: true})
+		core.GitCommitAncestorReleaseTagOpts{IncludePreRelease: true})
 	require.NoError(t, err)
 	require.NotNil(t, ancestorPreReleaseRef)
 	ancestorPreRelease, err := ancestorPreReleaseRef.Name(ctx)
@@ -2066,7 +2052,7 @@ func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "refs/tags/v2.0.0", directStable)
 
 	directPreReleaseRef, err := git.Commit(rcSHA).ReleaseTag(ctx,
-		dagger.GitCommitReleaseTagOpts{IncludePreRelease: true})
+		core.GitCommitReleaseTagOpts{IncludePreRelease: true})
 	require.NoError(t, err)
 	require.NotNil(t, directPreReleaseRef)
 	directPreRelease, err := directPreReleaseRef.Name(ctx)
@@ -2101,7 +2087,7 @@ func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx
 	lookup := func(ctx context.Context, t *testctx.T, c *dagger.Client) (sha string, advertised []string, tag string) {
 		t.Helper()
 
-		repo := c.Git(repoURL)
+		repo := core.NewQuery(c).Git(repoURL)
 		advertised, err := repo.Tags(ctx)
 		require.NoError(t, err)
 		commit := repo.Head().TargetCommit()
@@ -2137,7 +2123,7 @@ func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx
 // the setup exec is a cache hit.
 func serveGitDaemon(ctx context.Context, t *testctx.T, c *dagger.Client, hostname, setup string) {
 	t.Helper()
-	_, err := c.Container().
+	_, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		With(gitUserConfig).
@@ -2173,10 +2159,10 @@ func (GitSuite) TestGitTagsFreshnessWithOpenSession(ctx context.Context, t *test
 
 	c1 := connect(ctx, t)
 	serveGitDaemon(ctx, t, c1, hostname, taggedRepoScript("v1.0.0"))
-	tags1, err := c1.Git(repoURL).Tags(ctx)
+	tags1, err := core.NewQuery(c1).Git(repoURL).Tags(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"v1.0.0"}, tags1)
-	branches1, err := c1.Git(repoURL).Branches(ctx)
+	branches1, err := core.NewQuery(c1).Git(repoURL).Branches(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"main"}, branches1)
 
@@ -2184,15 +2170,15 @@ func (GitSuite) TestGitTagsFreshnessWithOpenSession(ctx context.Context, t *test
 	// the same URL, which now advertises more refs.
 	c2 := connect(ctx, t)
 	serveGitDaemon(ctx, t, c2, hostname, taggedRepoScript("v1.0.0", "v2.0.0")+" && git branch feature")
-	tags2, err := c2.Git(repoURL).Tags(ctx)
+	tags2, err := core.NewQuery(c2).Git(repoURL).Tags(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"v1.0.0", "v2.0.0"}, tags2)
-	branches2, err := c2.Git(repoURL).Branches(ctx)
+	branches2, err := core.NewQuery(c2).Git(repoURL).Branches(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"feature", "main"}, branches2)
 
 	// The first session keeps the answer it already resolved.
-	tags1Again, err := c1.Git(repoURL).Tags(ctx)
+	tags1Again, err := core.NewQuery(c1).Git(repoURL).Tags(ctx)
 	require.NoError(t, err)
 	require.Equal(t, tags1, tags1Again)
 }
@@ -2207,7 +2193,7 @@ func (GitSuite) TestGitBundleRefFreshness(ctx context.Context, t *testctx.T) {
 
 	bundleMain := func(ctx context.Context, t *testctx.T, c *dagger.Client) (sha string) {
 		t.Helper()
-		refs, err := c.Git(repoURL).Bundle([]string{"main"}).Refs(ctx)
+		refs, err := core.NewQuery(c).Git(repoURL).Bundle([]string{"main"}).Refs(ctx)
 		require.NoError(t, err)
 		require.Len(t, refs, 1)
 		name, err := refs[0].Name(ctx)
@@ -2215,7 +2201,7 @@ func (GitSuite) TestGitBundleRefFreshness(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "refs/heads/main", name)
 		sha, err = refs[0].Sha(ctx)
 		require.NoError(t, err)
-		head, err := c.Git(repoURL).Branch("main").CommitSHA(ctx)
+		head, err := core.NewQuery(c).Git(repoURL).Branch("main").CommitSHA(ctx)
 		require.NoError(t, err)
 		require.Equal(t, head, sha, "bundle must carry the branch as this session resolves it")
 		return sha
@@ -2240,7 +2226,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 	// feature:            \-> D -> E
 	//
 	// B and E touch sub/, the rest only touch file.txt.
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -2268,7 +2254,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 	shaD := revParse("feature~1")
 	shaE := revParse("feature")
 
-	shas := func(commits []dagger.GitCommit) []string {
+	shas := func(commits []core.GitCommit) []string {
 		t.Helper()
 		out := make([]string, 0, len(commits))
 		for _, commit := range commits {
@@ -2319,30 +2305,30 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("limit", func(ctx context.Context, t *testctx.T) {
-		log, err := git.Branch("main").Log(ctx, dagger.GitRefLogOpts{Limit: 2})
+		log, err := git.Branch("main").Log(ctx, core.GitRefLogOpts{Limit: 2})
 		require.NoError(t, err)
 		require.Equal(t, []string{shaC, shaB}, shas(log))
 
-		_, err = git.Branch("main").Log(ctx, dagger.GitRefLogOpts{Limit: -1})
+		_, err = git.Branch("main").Log(ctx, core.GitRefLogOpts{Limit: -1})
 		require.ErrorContains(t, err, "limit must be at least 1")
 	})
 
 	t.Run("paths", func(ctx context.Context, t *testctx.T) {
-		log, err := git.Branch("main").Log(ctx, dagger.GitRefLogOpts{Paths: []string{"sub"}})
+		log, err := git.Branch("main").Log(ctx, core.GitRefLogOpts{Paths: []string{"sub"}})
 		require.NoError(t, err)
 		require.Equal(t, []string{shaB}, shas(log))
 
-		log, err = git.Branch("feature").Log(ctx, dagger.GitRefLogOpts{Paths: []string{"sub"}})
+		log, err = git.Branch("feature").Log(ctx, core.GitRefLogOpts{Paths: []string{"sub"}})
 		require.NoError(t, err)
 		require.Equal(t, []string{shaE, shaB}, shas(log))
 	})
 
 	t.Run("base", func(ctx context.Context, t *testctx.T) {
-		log, err := git.Branch("feature").Log(ctx, dagger.GitRefLogOpts{Base: git.Branch("main")})
+		log, err := git.Branch("feature").Log(ctx, core.GitRefLogOpts{Base: git.Branch("main")})
 		require.NoError(t, err)
 		require.Equal(t, []string{shaE, shaD}, shas(log))
 
-		log, err = git.Branch("main").Log(ctx, dagger.GitRefLogOpts{Base: git.Branch("main")})
+		log, err = git.Branch("main").Log(ctx, core.GitRefLogOpts{Base: git.Branch("main")})
 		require.NoError(t, err)
 		require.Empty(t, log)
 	})
@@ -2354,7 +2340,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"sh", "-c", `echo F >> file.txt && git add -A && git commit -m F`}).
 			Directory(".").AsGit()
 
-		log, err := git.Branch("feature").Log(ctx, dagger.GitRefLogOpts{Base: other.Branch("main")})
+		log, err := git.Branch("feature").Log(ctx, core.GitRefLogOpts{Base: other.Branch("main")})
 		require.NoError(t, err)
 		require.Equal(t, []string{shaE, shaD}, shas(log))
 	})
@@ -2362,8 +2348,8 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
 		// a small repo: unlike a tree checkout, a log fetches the full history
 		sha := vcsTestCaseCommit
-		log, err := c.Git("https://github.com/dagger/dagger-test-modules").Ref(sha).
-			Log(ctx, dagger.GitRefLogOpts{Limit: 3})
+		log, err := core.NewQuery(c).Git("https://github.com/dagger/dagger-test-modules").Ref(sha).
+			Log(ctx, core.GitRefLogOpts{Limit: 3})
 		require.NoError(t, err)
 		require.Len(t, log, 3)
 
@@ -2395,7 +2381,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 
 		c2 := connect(ctx, t)
-		reloadedSHA, err := dagger.Ref[*dagger.GitCommit](c2, id).Sha(ctx)
+		reloadedSHA, err := core.Ref[*core.GitCommit](core.NewQuery(c2), id).Sha(ctx)
 		require.NoError(t, err)
 		require.Equal(t, logSHAs[1], reloadedSHA)
 	})
@@ -2403,7 +2389,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 
 func (GitSuite) TestGitLogBoundedRemoteHistory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := c.Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		With(gitUserConfig).
 		WithWorkdir("/repos/log").
@@ -2425,9 +2411,9 @@ func (GitSuite) TestGitLogBoundedRemoteHistory(ctx context.Context, t *testctx.T
 	_, err = svc.Start(ctx)
 	require.NoError(t, err)
 	defer svc.Stop(ctx)
-	repo := c.Git("git://"+host+"/log", dagger.GitOpts{ExperimentalServiceHost: svc})
+	repo := core.NewQuery(c).Git("git://"+host+"/log", core.GitOpts{ExperimentalServiceHost: svc})
 
-	commits, err := repo.Head().Log(ctx, dagger.GitRefLogOpts{Limit: 3})
+	commits, err := repo.Head().Log(ctx, core.GitRefLogOpts{Limit: 3})
 	require.NoError(t, err)
 	require.Len(t, commits, 3)
 	for i, commit := range commits {
@@ -2437,7 +2423,7 @@ func (GitSuite) TestGitLogBoundedRemoteHistory(ctx context.Context, t *testctx.T
 	}
 	// Filtering must deepen past the bounded log: only the root touched this
 	// path. Returning an empty list from the shallow mirror would be wrong.
-	commits, err = repo.Head().Log(ctx, dagger.GitRefLogOpts{Limit: 3, Paths: []string{"old.txt"}})
+	commits, err = repo.Head().Log(ctx, core.GitRefLogOpts{Limit: 3, Paths: []string{"old.txt"}})
 	require.NoError(t, err)
 	require.Len(t, commits, 1)
 	sha, err := commits[0].Sha(ctx)
@@ -2447,12 +2433,12 @@ func (GitSuite) TestGitLogBoundedRemoteHistory(ctx context.Context, t *testctx.T
 	// A separate cold mirror exercises base exclusions without relying on the
 	// filtered call's full fetch. The excluded ref is five generations ahead:
 	// depth-three fetches would miss their ancestry and return extra commits.
-	baseRepo := c.Git("git://"+host+"/base", dagger.GitOpts{ExperimentalServiceHost: svc})
-	commits, err = baseRepo.Branch("base").Log(ctx, dagger.GitRefLogOpts{Limit: 3, Base: baseRepo.Head()})
+	baseRepo := core.NewQuery(c).Git("git://"+host+"/base", core.GitOpts{ExperimentalServiceHost: svc})
+	commits, err = baseRepo.Branch("base").Log(ctx, core.GitRefLogOpts{Limit: 3, Base: baseRepo.Head()})
 	require.NoError(t, err)
 	require.Empty(t, commits)
 
-	commits, err = baseRepo.Head().Log(ctx, dagger.GitRefLogOpts{Limit: 20, Base: baseRepo.Branch("base")})
+	commits, err = baseRepo.Head().Log(ctx, core.GitRefLogOpts{Limit: 20, Base: baseRepo.Branch("base")})
 	require.NoError(t, err)
 	require.Len(t, commits, 5)
 	message, err := commits[4].Message(ctx)
@@ -2463,7 +2449,7 @@ func (GitSuite) TestGitLogBoundedRemoteHistory(ctx context.Context, t *testctx.T
 func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/src").
 		WithExec([]string{"git", "init"}).
@@ -2508,7 +2494,7 @@ func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	checkAccess := func(ctx context.Context, repo *dagger.GitRepository) error {
+	checkAccess := func(ctx context.Context, repo *core.GitRepository) error {
 		_, err := repo.
 			Branch("main").
 			Tree().
@@ -2518,7 +2504,7 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 	}
 
 	t.Run("public https", func(ctx context.Context, t *testctx.T) {
-		repo := c.Git("github.com/dagger/dagger")
+		repo := core.NewQuery(c).Git("github.com/dagger/dagger")
 		require.NoError(t, checkAccess(ctx, repo))
 
 		url, err := repo.URL(ctx)
@@ -2531,8 +2517,8 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
-		repo := c.Git("github.com/grouville/daggerverse-private.git", dagger.GitOpts{
-			HTTPAuthToken: c.SetSecret("github_pat", token),
+		repo := core.NewQuery(c).Git("github.com/grouville/daggerverse-private.git", core.GitOpts{
+			HTTPAuthToken: core.NewQuery(c).SetSecret("github_pat", token),
 		})
 		require.NoError(t, checkAccess(ctx, repo))
 
@@ -2545,8 +2531,8 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
 		defer cleanup()
 
-		repo := c.Git("gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git", dagger.GitOpts{
-			SSHAuthSocket: c.Host().UnixSocket(sockPath),
+		repo := core.NewQuery(c).Git("gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git", core.GitOpts{
+			SSHAuthSocket: core.NewQuery(c).Host().UnixSocket(sockPath),
 		})
 		require.NoError(t, checkAccess(ctx, repo))
 
@@ -2556,7 +2542,7 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("private no auth fails", func(ctx context.Context, t *testctx.T) {
-		repo := c.Git("github.com/grouville/daggerverse-private.git")
+		repo := core.NewQuery(c).Git("github.com/grouville/daggerverse-private.git")
 		err := checkAccess(ctx, repo)
 		require.Error(t, err)
 		requireErrOut(t, err, "cannot access Git repository")
@@ -2613,7 +2599,7 @@ func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
 	}()
 
 	const repoURL = "https://github.com/dagger/dagger-test-modules"
-	repo := c.Git(repoURL)
+	repo := core.NewQuery(c).Git(repoURL)
 
 	commit, err := repo.Head().CommitSHA(ctx)
 	require.NoError(t, err)
@@ -2625,7 +2611,7 @@ func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
 
 	// Resolve the same ref through a fresh Git node so the second call exercises the
 	// per-session ls-remote cache (the first one warmed it).
-	repo2 := c.Git(repoURL, dagger.GitOpts{KeepGitDir: true})
+	repo2 := core.NewQuery(c).Git(repoURL, core.GitOpts{KeepGitDir: true})
 	commit2, err := repo2.Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commit, commit2)
@@ -2634,7 +2620,7 @@ func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestGitUncommittedRemote(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	git := c.Git("https://github.com/dagger/dagger")
+	git := core.NewQuery(c).Git("https://github.com/dagger/dagger")
 	changes := git.Uncommitted()
 	empty, err := changes.IsEmpty(ctx)
 	require.NoError(t, err)
@@ -2644,7 +2630,7 @@ func (GitSuite) TestGitUncommittedRemote(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestGitUncommittedLocal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().
+	ctr := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -2721,7 +2707,7 @@ func (GitSuite) TestGitUncommittedLocal(ctx context.Context, t *testctx.T) {
 	require.True(t, empty)
 }
 
-func gitUserConfig(ctr *dagger.Container) *dagger.Container {
+func gitUserConfig(ctr *core.Container) *core.Container {
 	return ctr.
 		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
 		WithExec([]string{"git", "config", "--global", "user.name", "Test User"}).
@@ -2735,7 +2721,7 @@ func gitUserConfig(ctr *dagger.Container) *dagger.Container {
 func (GitSuite) TestGitCredentialProto(ctx context.Context, t *testctx.T) {
 	tests := []struct {
 		name             string
-		setup            func(*dagger.Container) *dagger.Container
+		setup            func(*core.Container) *core.Container
 		request          *gitsession.GitCredentialRequest
 		expectedError    gitsession.ErrorInfo_ErrorType
 		expectedReason   string
@@ -2746,7 +2732,7 @@ func (GitSuite) TestGitCredentialProto(ctx context.Context, t *testctx.T) {
 		// they are correctly parsed and returned
 		{
 			name: "VALID_CREDENTIALS",
-			setup: func(c *dagger.Container) *dagger.Container {
+			setup: func(c *core.Container) *core.Container {
 				return c.WithNewFile("/usr/local/bin/git-credential-valid", `#!/bin/sh
 echo "protocol=https"
 echo "host=github.com"
@@ -2784,7 +2770,7 @@ echo "password=testpass"
 			// Verifies that the service properly handles cases where Git is not
 			// installed or not in PATH
 			name: "NOT_FOUND",
-			setup: func(c *dagger.Container) *dagger.Container {
+			setup: func(c *core.Container) *core.Container {
 				return c.WithExec([]string{"mv", "/usr/bin/git", "/usr/bin/git_temp"})
 			},
 			request: &gitsession.GitCredentialRequest{
@@ -2799,7 +2785,7 @@ echo "password=testpass"
 			// Verifies that invalid output format from credential helper
 			// is properly handled as a credential retrieval failure
 			name: "INVALID_FORMAT_FROM_HELPER",
-			setup: func(c *dagger.Container) *dagger.Container {
+			setup: func(c *core.Container) *core.Container {
 				return c.WithNewFile("/usr/local/bin/git-credential-invalid", `#!/bin/sh
 while read line; do
     case "$line" in
@@ -2826,7 +2812,7 @@ exit 1
 			// Verifies that when Git can't find credentials, it's handled as
 			// a credential retrieval failure (Git's standard behavior)
 			name: "MISSING_CREDENTIALS",
-			setup: func(c *dagger.Container) *dagger.Container {
+			setup: func(c *core.Container) *core.Container {
 				return c.WithNewFile("/usr/local/bin/git-credential-missing", `#!/bin/sh
 # Read input silently
 while read line; do
@@ -2855,7 +2841,7 @@ exit 128
 			// Verifies that the service properly handles credential helpers
 			// that take too long to respond
 			name: "TIMEOUT",
-			setup: func(c *dagger.Container) *dagger.Container {
+			setup: func(c *core.Container) *core.Container {
 				return c.WithNewFile("/usr/local/bin/git-credential-slow", `#!/bin/sh
 # Read all input first
 while read line; do
@@ -2878,7 +2864,7 @@ sleep 31
 		},
 		{
 			name: "netrc",
-			setup: func(c *dagger.Container) *dagger.Container {
+			setup: func(c *core.Container) *core.Container {
 				return c.WithNewFile("/root/.netrc", `
 machine github.com
 login netrcuser
@@ -2903,7 +2889,7 @@ password netrcpass
 			// This prevents unwanted GUI prompts in IDE environments.
 			// See: https://git-scm.com/docs/gitcredentials
 			name: "GIT_ASKPASS_IGNORED",
-			setup: func(c *dagger.Container) *dagger.Container {
+			setup: func(c *core.Container) *core.Container {
 				return c.
 					WithNewFile("/usr/local/bin/git-credential-valid", `#!/bin/sh
 echo "protocol=https"
@@ -2942,11 +2928,11 @@ exit 1
 
 	// Build against the real module graph, including local replacements. A
 	// partial source copy and a synthetic go.mod drift as Git gains imports.
-	baseContainer := client.Container().
+	baseContainer := core.NewQuery(client).Container().
 		From(golangImage).
 		With(goCache(client)).
 		WithExec([]string{"apk", "add", "--no-cache", "git"}).
-		WithMountedDirectory("/app", client.Host().Directory(filepath.Join(wd, "../.."), dagger.HostDirectoryOpts{
+		WithMountedDirectory("/app", core.NewQuery(client).Host().Directory(filepath.Join(wd, "../.."), core.HostDirectoryOpts{
 			Exclude: []string{".git"},
 		})).
 		WithWorkdir("/app").
@@ -3041,16 +3027,16 @@ func (GitSuite) TestCaching(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("same commit should cache", func(ctx context.Context, t *testctx.T) {
-		dir1 := c.Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
-		s1, err := c.Container().
+		dir1 := core.NewQuery(c).Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
+		s1, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithDirectory("/src", dir1).
 			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).
 			Stdout(ctx)
 		require.NoError(t, err)
 
-		dir2 := c.Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
-		s2, err := c.Container().
+		dir2 := core.NewQuery(c).Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
+		s2, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithDirectory("/src", dir2).
 			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).
@@ -3061,16 +3047,16 @@ func (GitSuite) TestCaching(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("different commit should bust", func(ctx context.Context, t *testctx.T) {
-		dir1 := c.Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
-		s1, err := c.Container().
+		dir1 := core.NewQuery(c).Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
+		s1, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithDirectory("/src", dir1).
 			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).
 			Stdout(ctx)
 		require.NoError(t, err)
 
-		dir2 := c.Git("https://github.com/dagger/dagger").Commit("36a3929f291bc03e2f48fd2687e5538a063c63ea").Tree()
-		s2, err := c.Container().
+		dir2 := core.NewQuery(c).Git("https://github.com/dagger/dagger").Commit("36a3929f291bc03e2f48fd2687e5538a063c63ea").Tree()
+		s2, err := core.NewQuery(c).Container().
 			From(alpineImage).
 			WithDirectory("/src", dir2).
 			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).

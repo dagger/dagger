@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
@@ -19,7 +21,7 @@ type artifactListPath struct {
 	Dimensions []string
 }
 
-func readArtifactListPaths(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts) ([]artifactListPath, error) {
+func readArtifactListPaths(ctx context.Context, dag *dagger.Client, selection *core.Artifacts) ([]artifactListPath, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err

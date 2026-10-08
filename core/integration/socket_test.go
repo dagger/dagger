@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 //go:embed testdata/socket-echo.go
@@ -58,10 +59,10 @@ func (ContainerSuite) TestWithUnixSocket(ctx context.Context, t *testctx.T) {
 		}
 	}()
 
-	echo := c.Directory().WithNewFile("main.go", echoSocketSrc).File("main.go")
+	echo := core.NewQuery(c).Directory().WithNewFile("main.go", echoSocketSrc).File("main.go")
 
-	ContainerSuite{}.withHostSocket(c, sock, func(hostSock *dagger.Socket) {
-		ctr := c.Container().
+	ContainerSuite{}.withHostSocket(c, sock, func(hostSock *core.Socket) {
+		ctr := core.NewQuery(c).Container().
 			From(golangImage).
 			WithMountedFile("/src/main.go", echo).
 			WithUnixSocket("/tmp/test.sock", hostSock).
@@ -108,26 +109,22 @@ func (ContainerSuite) TestWithUnixSocketOwner(ctx context.Context, t *testctx.T)
 		l.Close()
 	})
 
-	ContainerSuite{}.withHostSocket(c, sock, func(hostSock *dagger.Socket) {
-		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-			return ctr.WithUnixSocket(name, hostSock, dagger.ContainerWithUnixSocketOpts{
+	ContainerSuite{}.withHostSocket(c, sock, func(hostSock *core.Socket) {
+		testOwnership(t, c, func(ctr *core.Container, name string, owner string) *core.Container {
+			return ctr.WithUnixSocket(name, hostSock, core.ContainerWithUnixSocketOpts{
 				Owner: owner,
 			})
 		})
-		testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
-			return ctr.WithUnixSocket(name, hostSock, dagger.ContainerWithUnixSocketOpts{
+		testInheritOwnership(ctx, t, c, func(ctr *core.Container, name string) *core.Container {
+			return ctr.WithUnixSocket(name, hostSock, core.ContainerWithUnixSocketOpts{
 				InheritOwner: true,
 			})
 		})
 	})
 }
 
-func (ContainerSuite) withHostSocket(c *dagger.Client, path string, fn func(*dagger.Socket)) {
-	for _, socket := range []*dagger.Socket{
-		c.Host().UnixSocket(path),
-		c.Address(path).Socket(),
-		c.Address("unix://" + path).Socket(),
-	} {
+func (ContainerSuite) withHostSocket(c *dagger.Client, path string, fn func(*core.Socket)) {
+	for _, socket := range []*core.Socket{core.NewQuery(c).Host().UnixSocket(path), core.NewQuery(c).Address(path).Socket(), core.NewQuery(c).Address("unix://" + path).Socket()} {
 		fn(socket)
 	}
 }

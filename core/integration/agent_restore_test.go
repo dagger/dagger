@@ -34,6 +34,8 @@ import (
 	"testing"
 	"time"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -263,28 +265,28 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// point: it is only reachable from the first turn's history. A restore
 	// that opened an empty conversation would hand the replayer [prompt2]
 	// where it expects [prompt1] and fail the turn outright.
-	chiefModel := cannedRecordingModel(ctx, t, source, source.LLM().
+	chiefModel := cannedRecordingModel(ctx, t, source, core.NewQuery(source).LLM().
 		WithPrompt(chiefPrompt1).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: chiefReply1},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: chiefReply1},
 		}).
 		WithPrompt(chiefPrompt2).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: chiefReply2},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: chiefReply2},
 		}))
-	scoutModel := cannedRecordingModel(ctx, t, source, source.LLM().
+	scoutModel := cannedRecordingModel(ctx, t, source, core.NewQuery(source).LLM().
 		WithPrompt(scoutPrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: scoutReply},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: scoutReply},
 		}))
-	testsModel := cannedRecordingModel(ctx, t, source, source.LLM().
+	testsModel := cannedRecordingModel(ctx, t, source, core.NewQuery(source).LLM().
 		WithPrompt(testsPrompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: testsReply},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: testsReply},
 		}).
 		WithPrompt(testsPrompt2).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: testsReply2},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: testsReply2},
 		}))
 
 	chief := spawnAgent(ctx, t, source, spawnOpts{model: chiefModel, name: "chief"})
@@ -297,12 +299,12 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	// affected" as a question for this test. This is the shape that answers
 	// it: a chief's own conversation has exactly this frame, since binding a
 	// module object as its toolset is what makes it a chief.
-	toolID, err := source.Directory().
+	toolID, err := core.NewQuery(source).Directory().
 		WithNewFile("notes.md", "restore me "+run).
 		ID(ctx)
 	require.NoError(t, err)
 	tests := spawnAgent(ctx, t, source, spawnOpts{
-		model: testsModel, name: "tests", toolIDs: []dagger.ID{toolID},
+		model: testsModel, name: "tests", toolIDs: []core.ID{toolID},
 	})
 
 	for _, turn := range []struct {
@@ -427,10 +429,10 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 	sink := newAgentTraceSink(t)
 	source := connect(ctx, t, sink.clientOpts()...)
 
-	model := cannedRecordingModel(ctx, t, source, source.LLM().
+	model := cannedRecordingModel(ctx, t, source, core.NewQuery(source).LLM().
 		WithPrompt(prompt).
-		WithResponse([]dagger.LLMContentBlockInput{
-			{Kind: dagger.LLMContentBlockKindText, Text: answer},
+		WithResponse([]core.LLMContentBlockInput{
+			{Kind: core.LLMContentBlockKindText, Text: answer},
 		}))
 	h := spawnAgent(ctx, t, source, spawnOpts{model: model, name: "solo"})
 	_, reply, err := h.sendAndWait(ctx, t, prompt)
@@ -523,7 +525,7 @@ func (AgentRestoreSuite) TestRestoreWorkspaceAfterSourceDisappears(ctx context.C
 	publishCheckpointRemote(ctx, t, sourceDir)
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "base.txt"), []byte("source"), 0o644))
 	source, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: sourceDir})
-	frozen := snapshotWorkspace(ctx, t, source, source.CurrentWorkspace())
+	frozen := snapshotWorkspace(ctx, t, source, core.NewQuery(source).CurrentWorkspace())
 	wsID, err := frozen.WithNewFile("pending.txt", "unexported").ID(ctx)
 	require.NoError(t, err)
 	spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "frozen", wsID: wsID})
@@ -556,12 +558,12 @@ func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *te
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	source, sink := connectWithTrace(ctx, t)
-	workerModel := cannedRecordingModel(ctx, t, source, source.LLM().
-		WithPrompt("old task").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "old completion"}}).
-		WithPrompt("new task").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "new completion"}}))
-	chiefModel := cannedRecordingModel(ctx, t, source, source.LLM().
+	workerModel := cannedRecordingModel(ctx, t, source, core.NewQuery(source).LLM().
+		WithPrompt("old task").WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "old completion"}}).
+		WithPrompt("new task").WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "new completion"}}))
+	chiefModel := cannedRecordingModel(ctx, t, source, core.NewQuery(source).LLM().
 		WithPrompt(agentIdleEventText("worker", "new completion")).
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "new completion noted"}}))
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "new completion noted"}}))
 	chief := spawnAgent(ctx, t, source, spawnOpts{model: chiefModel, name: "chief"})
 	chiefID := chief.mustRun(ctx, t, "handle").Get("handle").String()
 	worker := spawnAgent(ctx, t, source, spawnOpts{model: workerModel, name: "worker", parentHandle: chiefID, handle: identity.NewID()})
@@ -650,15 +652,15 @@ func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *te
 // startArchiveEngine starts ctr as a dev engine service tunneled to the host and
 // returns the service, its tunnel and the tunnel's tcp endpoint. Both are
 // killed on cleanup; the archive tests restart the engine over its state volume.
-func startArchiveEngine(ctx context.Context, t *testctx.T, host *dagger.Client, ctr *dagger.Container) (*dagger.Service, *dagger.Service, string) {
+func startArchiveEngine(ctx context.Context, t *testctx.T, host *dagger.Client, ctr *core.Container) (*core.Service, *core.Service, string) {
 	t.Helper()
 	service, err := devEngineContainerAsService(ctr).Start(ctx)
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = service.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true}) })
-	tunnel, err := host.Host().Tunnel(service).Start(ctx)
+	t.Cleanup(func() { _, _ = service.Stop(context.WithoutCancel(ctx), core.ServiceStopOpts{Kill: true}) })
+	tunnel, err := core.NewQuery(host).Host().Tunnel(service).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = tunnel.Stop(context.WithoutCancel(ctx)) })
-	endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 	return service, tunnel, endpoint
 }
@@ -691,9 +693,9 @@ func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t
 	sourceCtx, sourceSpan := provider.Tracer("archive-acceptance").Start(ctx, "archive source", trace.WithNewRoot())
 	defer sourceSpan.End()
 	source, sourceSink := connectWithTrace(sourceCtx, t, engineconn.Config{RunnerHost: endpoint})
-	model := cannedRecordingModel(sourceCtx, t, source, source.LLM().
-		WithPrompt("before restart").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "remembered before restart"}}).
-		WithPrompt("after restart").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "continued after restart"}}))
+	model := cannedRecordingModel(sourceCtx, t, source, core.NewQuery(source).LLM().
+		WithPrompt("before restart").WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "remembered before restart"}}).
+		WithPrompt("after restart").WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "continued after restart"}}))
 	original := spawnAgent(sourceCtx, t, source, spawnOpts{model: model, name: "archive-worker"})
 	_, reply, err := original.sendAndWait(sourceCtx, t, "before restart")
 	require.NoError(t, err)
@@ -755,9 +757,9 @@ func (AgentRestoreSuite) TestArchiveUnsealedAfterEngineCrash(ctx context.Context
 	sourceCtx, sourceSpan := provider.Tracer("archive-acceptance").Start(ctx, "crashed source", trace.WithNewRoot())
 	defer sourceSpan.End()
 	source, sourceSink := connectWithTrace(sourceCtx, t, engineconn.Config{RunnerHost: endpoint})
-	model := cannedRecordingModel(sourceCtx, t, source, source.LLM().
-		WithPrompt("before crash").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "remembered before crash"}}).
-		WithPrompt("after crash").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "continued after crash"}}))
+	model := cannedRecordingModel(sourceCtx, t, source, core.NewQuery(source).LLM().
+		WithPrompt("before crash").WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "remembered before crash"}}).
+		WithPrompt("after crash").WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "continued after crash"}}))
 	original := spawnAgent(sourceCtx, t, source, spawnOpts{model: model, name: "crash-worker"})
 	_, reply, err := original.sendAndWait(sourceCtx, t, "before crash")
 	require.NoError(t, err)
@@ -767,7 +769,7 @@ func (AgentRestoreSuite) TestArchiveUnsealedAfterEngineCrash(ctx context.Context
 	traceID := node.Control.Trace
 	// No client close and no graceful engine stop: SIGKILL the engine while the
 	// session is still open, so finalization never runs.
-	_, err = first.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+	_, err = first.Stop(ctx, core.ServiceStopOpts{Kill: true})
 	require.NoError(t, err)
 	_, _ = tunnel.Stop(ctx)
 	_ = source.Close()
@@ -830,10 +832,10 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	sourceCtx, sourceSpan := provider.Tracer("archive-cli-acceptance").Start(ctx, "source", trace.WithNewRoot())
 	defer sourceSpan.End()
 	source, sink := connectWithTrace(sourceCtx, t)
-	model := cannedRecordingModel(sourceCtx, t, source, source.LLM().
-		WithPrompt("before CLI restore").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "source conversation retained"}}).
-		WithPrompt("after CLI restore").WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "RESTORED-PROMPT-TURN-SUCCEEDED"}}))
-	wsID, err := source.Directory().WithNewFile("authority.txt", "traced source").AsWorkspace().ID(sourceCtx)
+	model := cannedRecordingModel(sourceCtx, t, source, core.NewQuery(source).LLM().
+		WithPrompt("before CLI restore").WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "source conversation retained"}}).
+		WithPrompt("after CLI restore").WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "RESTORED-PROMPT-TURN-SUCCEEDED"}}))
+	wsID, err := core.NewQuery(source).Directory().WithNewFile("authority.txt", "traced source").AsWorkspace().ID(sourceCtx)
 	require.NoError(t, err)
 	// A dismissed failure remains in the graph with its original diagnostic.
 	// Restoring it as STOPPED must not pass that FAILED-only spawn argument.

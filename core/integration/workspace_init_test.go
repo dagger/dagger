@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -123,7 +124,7 @@ func (WorkspaceSuite) TestWorkspaceWithInitialized(ctx context.Context, t *testc
 		initGitRepo(ctx, t, root)
 		writeWorkspaceConfigFile(t, root, "# old config\n")
 		c := connect(ctx, t, dagger.WithWorkdir(root))
-		initialized := c.CurrentWorkspace().WithoutFile("dagger.toml").WithInitialized()
+		initialized := core.NewQuery(c).CurrentWorkspace().WithoutFile("dagger.toml").WithInitialized()
 		data, err := initialized.File("dagger.toml").Contents(ctx)
 		require.NoError(t, err)
 		require.Empty(t, data)
@@ -141,7 +142,7 @@ func (WorkspaceSuite) TestWorkspaceWithInitialized(ctx context.Context, t *testc
 		writeWorkspaceConfigFile(t, filepath.Join(root, "selected"), "# selected config\n")
 		writeWorkspaceConfigFile(t, filepath.Join(root, "other"), "# other config\n")
 		c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(root, "selected")))
-		moved := c.CurrentWorkspace().WithWorkdir("other")
+		moved := core.NewQuery(c).CurrentWorkspace().WithWorkdir("other")
 		initialized := moved.WithInitialized()
 		configPath, err := initialized.ConfigFile(ctx)
 		require.NoError(t, err)
@@ -149,7 +150,7 @@ func (WorkspaceSuite) TestWorkspaceWithInitialized(ctx context.Context, t *testc
 		data, err := initialized.File(configPath).Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "# selected config\n", data)
-		unchanged, err := initialized.Changes(dagger.WorkspaceChangesOpts{From: moved}).IsEmpty(ctx)
+		unchanged, err := initialized.Changes(core.WorkspaceChangesOpts{From: moved}).IsEmpty(ctx)
 		require.NoError(t, err)
 		require.True(t, unchanged)
 	})
@@ -159,8 +160,8 @@ func (WorkspaceSuite) TestWorkspaceWithInitialized(ctx context.Context, t *testc
 			initGitRepo(ctx, t, root)
 			c := connect(ctx, t, dagger.WithWorkdir(root))
 			const contents = "# preserve these bytes\n"
-			staged := c.CurrentWorkspace().
-				WithNewFile(configPath, contents, dagger.WorkspaceWithNewFileOpts{Permissions: 0o600}).
+			staged := core.NewQuery(c).CurrentWorkspace().
+				WithNewFile(configPath, contents, core.WorkspaceWithNewFileOpts{Permissions: 0o600}).
 				WithWorkdir(filepath.ToSlash(filepath.Dir(configPath)))
 			initialized := staged.WithInitialized()
 			selected, err := initialized.ConfigFile(ctx)
@@ -169,7 +170,7 @@ func (WorkspaceSuite) TestWorkspaceWithInitialized(ctx context.Context, t *testc
 			data, err := initialized.File("dagger.toml").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, contents, data)
-			unchanged, err := initialized.Changes(dagger.WorkspaceChangesOpts{From: staged}).IsEmpty(ctx)
+			unchanged, err := initialized.Changes(core.WorkspaceChangesOpts{From: staged}).IsEmpty(ctx)
 			require.NoError(t, err)
 			require.True(t, unchanged, "initialization must not rewrite a staged config")
 			require.NoError(t, initialized.Export(ctx))
@@ -188,8 +189,8 @@ func (WorkspaceSuite) TestWorkspaceWithInitialized(ctx context.Context, t *testc
 		root := t.TempDir()
 		initGitRepo(ctx, t, root)
 		c := connect(ctx, t, dagger.WithWorkdir(root))
-		mounted := c.Directory().WithNewFile("dagger.toml", "# mounted\n").File("dagger.toml")
-		_, err := c.CurrentWorkspace().WithMountedFile("dagger.toml", mounted).WithInitialized().ID(ctx)
+		mounted := core.NewQuery(c).Directory().WithNewFile("dagger.toml", "# mounted\n").File("dagger.toml")
+		_, err := core.NewQuery(c).CurrentWorkspace().WithMountedFile("dagger.toml", mounted).WithInitialized().ID(ctx)
 		require.ErrorContains(t, err, "is a read-only mount and cannot be modified")
 		require.NoFileExists(t, filepath.Join(root, "dagger.toml"))
 	})

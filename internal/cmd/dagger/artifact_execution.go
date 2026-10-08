@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
@@ -21,7 +23,7 @@ type artifactValueResult struct {
 		Path []string
 	}
 	Value *struct {
-		ID   dagger.ID
+		ID   core.ID
 		Type string `json:"__typename"`
 	}
 	Error *struct {
@@ -33,7 +35,7 @@ type artifactValueResult struct {
 
 // evaluateArtifacts evaluates the artifacts, at most maxConcurrency at once on
 // the engine. 0 means no limit.
-func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts, failFast bool, maxConcurrency int) ([]artifactValueResult, error) {
+func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.Artifacts, failFast bool, maxConcurrency int) ([]artifactValueResult, error) {
 	id, err := artifacts.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -99,8 +101,8 @@ func artifactResultErrorsWithOutput(results []artifactValueResult) error {
 	return errors.Join(failures...)
 }
 
-func artifactWorkspaceConfig(ctx context.Context, ws *dagger.Workspace) (*workspace.Config, error) {
-	config, err := ws.ConfigRead(ctx, dagger.WorkspaceConfigReadOpts{Effective: true})
+func artifactWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspace.Config, error) {
+	config, err := ws.ConfigRead(ctx, core.WorkspaceConfigReadOpts{Effective: true})
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +110,7 @@ func artifactWorkspaceConfig(ctx context.Context, ws *dagger.Workspace) (*worksp
 }
 
 // commandArtifacts keeps each address's filters scoped to its own path.
-func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace, cmd *cobra.Command, addresses []string, strict bool, keys ...dagaddress.Pair) (*dagger.Artifacts, error) {
+func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *core.Workspace, cmd *cobra.Command, addresses []string, strict bool, keys ...dagaddress.Pair) (*core.Artifacts, error) {
 	parsed, err := parseArtifactAddresses(addresses)
 	if err != nil {
 		return nil, err
@@ -119,8 +121,8 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 	if err != nil {
 		return nil, err
 	}
-	ws = dagger.Ref[*dagger.Workspace](dag, workspaceID)
-	all := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed, keys...)})
+	ws = core.Ref[*core.Workspace](core.NewQuery(dag), workspaceID)
+	all := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths(parsed, keys...)})
 	filtered := len(keys) > 0
 	for _, address := range parsed {
 		filtered = filtered || len(address.Types) > 0 || len(address.Query) > 0
@@ -133,9 +135,9 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 		}
 		return all, nil
 	}
-	var selected *dagger.Artifacts
+	var selected *core.Artifacts
 	for _, address := range parsed {
-		selection := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{address}, keys...)})
+		selection := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{address}, keys...)})
 		if len(address.Query) > 0 {
 			defs, err := artifactDimensions(ctx, dag, selection)
 			if err != nil {
@@ -175,7 +177,7 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *dagger.Worksp
 	return selected, nil
 }
 
-func requireArtifactModules(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, filters []dagaddress.DimensionFilter) error {
+func requireArtifactModules(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, filters []dagaddress.DimensionFilter) error {
 	// A failed module has no schema. Module selectors can exclude it; type
 	// and collection selectors cannot prove that it has no matching artifacts.
 	for _, filter := range filters {
@@ -199,7 +201,7 @@ func requireArtifactModules(ctx context.Context, dag *dagger.Client, selection *
 
 type artifactLoadFailure struct{ URI, LoadError string }
 
-func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *dagger.Artifacts) ([]artifactLoadFailure, error) {
+func artifactLoadFailures(ctx context.Context, dag *dagger.Client, artifacts *core.Artifacts) ([]artifactLoadFailure, error) {
 	// Read schema metadata so a collection's own load field stays deferred.
 	artifacts = artifacts.FilterPathPattern("*/load")
 	id, err := artifacts.ID(ctx)
@@ -234,14 +236,14 @@ func isArtifactCommand(cmd *cobra.Command) bool {
 	return len(commandArtifactTypes(cmd)) > 0
 }
 
-func commandArtifactsWithFlags(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace, cmd *cobra.Command, addresses []string, strict bool) (*dagger.Artifacts, error) {
+func commandArtifactsWithFlags(ctx context.Context, dag *dagger.Client, ws *core.Workspace, cmd *cobra.Command, addresses []string, strict bool) (*core.Artifacts, error) {
 	keys := artifactKeyFlags(cmd)
 	if len(keys) > 0 {
 		parsed, err := parseArtifactAddresses(addresses)
 		if err != nil {
 			return nil, err
 		}
-		defs, err := artifactDimensions(ctx, dag, ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: artifactPaths(parsed, keys...)}))
+		defs, err := artifactDimensions(ctx, dag, ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths(parsed, keys...)}))
 		if err != nil {
 			return nil, err
 		}
