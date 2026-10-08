@@ -29,6 +29,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
@@ -54,23 +55,14 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
-	lock := flock.New(netConf.Lockfile)
-	if err := lock.Lock(); err != nil {
-		return err
-	}
-	defer func() {
-		if err := lock.Unlock(); err != nil {
-			logrus.Errorf("unable to release lock for %q: %v", netConf.Hosts, err)
-		}
-	}()
-
 	aliases := netConf.RuntimeConfig.Aliases[netConf.Name]
-	if err := appendToFile(netConf.Hosts, podname, aliases, ips); err != nil {
-		return err
-	}
-	// Now we need to HUP
-	if err := hup(netConf.Pidfile); err != nil {
-		return err
+	// A container with no name and no aliases has nothing to resolve: its
+	// hosts entry would be a bare IP that only makes dnsmasq reload, and that
+	// removeFromFile can never match, so it would stay for the engine's life.
+	if podname != "" || len(aliases) > 0 {
+		if err := addHostsEntry(netConf, podname, aliases, ips); err != nil {
+			return err
+		}
 	}
 	nameservers, err := getInterfaceAddresses(result.Interfaces[0].Name)
 	if err != nil {
@@ -83,6 +75,26 @@ func cmdAdd(args *skel.CmdArgs) error {
 	result.DNS.Search = append(result.DNS.Search, netConf.DomainName)
 	// Pass through the previous result
 	return types.PrintResult(result, netConf.CNIVersion)
+}
+
+// addHostsEntry appends the container's entry to the dnsmasq hosts file and
+// makes dnsmasq reload it.
+func addHostsEntry(netConf *DNSNameConf, podname string, aliases []string, ips []*net.IPNet) error {
+	lock := flock.New(netConf.Lockfile)
+	if err := lock.Lock(); err != nil {
+		return err
+	}
+	defer func() {
+		if err := lock.Unlock(); err != nil {
+			logrus.Errorf("unable to release lock for %q: %v", netConf.Hosts, err)
+		}
+	}()
+
+	if err := appendToFile(netConf.Hosts, podname, aliases, ips); err != nil {
+		return err
+	}
+	// Now we need to HUP
+	return hup(netConf.Pidfile)
 }
 
 // Do not return an error, otherwise cni will stop
