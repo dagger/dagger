@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"dagger.io/dagger/core"
-	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 	toml "github.com/pelletier/go-toml"
