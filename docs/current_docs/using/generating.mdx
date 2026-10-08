@@ -27,7 +27,7 @@ go        *           generate   Run go generate in this package.
 # Use --all to expand collections and list each item.
 ```
 
-A `*` stands for every item in a [collection](./collections.mdx), such as every Go package. Use `--all` to list one row per item.
+A `*` stands for every item in a collection, such as every Go package. Use `--all` to list one row per item.
 
 ## Filter generators
 
@@ -37,7 +37,7 @@ dagger generate dag://changelog/generate  # a single generator
 dagger generate --go-package=version      # one Go package
 ```
 
-Generators accept the same module and collection filters as checks, and `--generator=NAME` selects generators by name. See [Filter checks](./checking.mdx#filter-checks) and [Collections](./collections.mdx#select-items).
+Generators accept the same module and collection filters as checks, and `--generator=NAME` selects generators by name. See [Filter checks](./checking.mdx#filter-checks).
 
 ## Apply without prompting
 

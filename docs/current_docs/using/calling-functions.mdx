@@ -59,7 +59,28 @@ dagger -m core api call container \
 
 ## Collections
 
-A function that discovers the units of a project, such as Go packages or test files, returns a collection. Every collection has `keys`, `list`, `get`, `subset`, and `batch` functions. See [Call collection functions](./collections.mdx#call-collection-functions).
+A function that discovers the units of a project, such as Go packages or test files, returns a collection. Every collection has the same functions:
+
+| Function | Returns |
+| --- | --- |
+| `keys` | The keys, in the order the module discovered them |
+| `list` | Every item |
+| `get` | The item with the given key |
+| `subset` | A collection of the items with the given keys |
+| `batch` | Functions that run once over every item in the collection |
+
+Select an item with `get` and keep chaining from it. In [Dagger Shell](../reference/cli/index.mdx#dagger-shell), list the tests in one Go package:
+
+```shell
+dagger -c 'go | packages | get store | tests | keys'
+```
+
+```text
+TestFixture
+TestDatabase
+```
+
+`dagger check` and `dagger generate` select collection items with flags instead. See [Select collection items](./checking.mdx#select-collection-items).
 
 ## Output
 

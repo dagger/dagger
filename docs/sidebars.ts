@@ -83,7 +83,6 @@ module.exports = {
       items: [
         "using/checking",
         "using/generating",
-        "using/collections",
         "using/services",
         "using/calling-functions",
       ],

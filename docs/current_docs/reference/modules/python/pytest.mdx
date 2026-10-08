@@ -36,7 +36,7 @@ The module injects `pytest_otel` automatically, so individual Python tests appea
 | `--pytest-project` | `projects` | Project root, relative to the workspace root. The root is `.` |
 | `--pytest-test-file` | `tests`, on a project | Test file path, relative to the project |
 
-List the keys with `dagger list pytest-projects -a` and `dagger list pytest-test-files -a`. [Collections](../../../using/collections.mdx) describes how to select items.
+List the keys with `dagger list pytest-projects -a` and `dagger list pytest-test-files -a`. [Select collection items](../../../using/checking.mdx#select-collection-items) describes how to select items.
 
 A project is a directory holding `pytest.ini`, `pyproject.toml`, `tox.ini`, or
 `setup.cfg`, with at least one test file of its own. A test file is named

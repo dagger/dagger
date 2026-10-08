@@ -27,7 +27,37 @@ golangci-lint                       *                      lint   Run golangci-l
 # Use --all to expand collections and list each item.
 ```
 
-A `*` stands for every item in a [collection](./collections.mdx), such as every Go package or every test the module found. Use `--all` to list one row per item. `--format=cli` prints each row as the flags that select it, and `--format=link` prints its DAG link. Add `dagger check` before a row to run it.
+Most modules discover the units of a project at run time, such as Go packages, test files, or directories that hold a linter config. Each kind of unit is a collection, and each collection adds a column. A `*` stands for every item in the collection. Use `--all` to list one row per item:
+
+```shell
+dagger check -l --all
+```
+
+```text
+MODULE         GO-PACKAGE  GO-TEST       GOLANGCI-LINT-PROJECT  CHECK  DESCRIPTION
+dang-sdk                                                        stale  staleness check: re-generate modules and clients managed by the Dang SDK
+go             .                                                stale  staleness check: run go generate in this package
+go             store                                            stale  staleness check: run go generate in this package
+go             version                                          stale  staleness check: run go generate in this package
+go             .           TestHello                            test   Run this test.
+go             store       TestDatabase                         test   Run this test.
+go             store       TestFixture                          test   Run this test.
+golangci-lint                            .                      lint   Run golangci-lint in this project.
+```
+
+A row with `*` is listed even when the module found no items. If a module's rows disappear with `--all`, it found nothing to check, which usually means the project lacks the config file the module looks for, such as `.golangci.yml`.
+
+`--format=cli` prints each row as the flags that select it, and `--format=link` prints its DAG link. Add `dagger check` before a row to run it:
+
+```shell
+dagger check -l --all --format=cli --go-package=store
+```
+
+```text
+--go --go-package=store --check=stale            # staleness check: run go generate in this package
+--go --go-package=store --go-test=TestDatabase   # Run this test.
+--go --go-package=store --go-test=TestFixture    # Run this test.
+```
 
 ## Filter checks
 
@@ -51,13 +81,45 @@ dagger check 'dag://**/lint'               # every lint check
 
 ### Select collection items
 
-Each collection adds a flag that selects items by key:
+Each collection adds a flag named after its items, such as `--go-package` and `--go-test`. `dagger list` shows the keys:
 
 ```shell
-dagger check --go-package=store --go-test=TestFixture     # one Go test
+dagger list go-packages -a
 ```
 
-See [Collections](./collections.mdx) to list the keys and combine selections.
+```text
+MODULE  GO-PACKAGE  DESCRIPTION
+go      .           The package in this directory.
+go      store       The package in this directory.
+go      version     The package in this directory.
+```
+
+A nested collection lists the keys of every parent item. Narrow it with the parent's flag, as in `dagger list go-tests -a --go-package=store`.
+
+Pass a key to run only the checks for that item:
+
+```shell
+dagger check --go-package=store                           # every check for one package
+dagger check --go-package=store --go-test=TestFixture     # one test
+dagger check --go-test=TestHello --go-test=TestFixture    # two tests, in any package
+```
+
+- Repeat a flag to select several keys.
+- Different flags must all match.
+- A key in a nested collection is matched in every parent item, so `--go-test=TestConnect` selects `TestConnect` in each package that has one. Add `--go-package` to pick one.
+- A check that does not belong to the collection is not selected, so `--go-package=store` leaves out lint and other modules' checks.
+
+The same selection works as query parameters on a DAG link. Each parameter is a flag name without the dashes. Quote a link that contains `?` or `&`:
+
+```shell
+dagger check 'dag://go/packages/tests/test?go-package=store&go-test=TestFixture'
+```
+
+A module can run a selection together instead of one item at a time. The Go module runs the selected tests of one package with a single `go test` command, for example. The report names each run by a link that puts the path in a `check` parameter, followed by the keys it covered. Pass it to `dagger check` to run that selection again:
+
+```text
+✔ dag://?check=go/packages/tests/test&go-package=store&go-test=TestFixture&go-test=TestDatabase 5.3s OK
+```
 
 ### Select a workspace
 
