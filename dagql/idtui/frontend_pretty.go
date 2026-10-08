@@ -3142,9 +3142,11 @@ func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
 		sr.Update()
 	}
 	// The inline LogsView memoizes Vterm.View(); its content isn't an input the
-	// owner's sync() compares, so push an Update when logs arrive.
-	for key, lv := range fe.logsViews {
-		if key.spanID == spanID {
+	// owner's sync() compares, so push an Update when logs arrive. Look up the
+	// span's views directly: scanning every LogsView in the session, once per
+	// log record, grew with the session.
+	for _, toolArgs := range []bool{false, true} {
+		if lv, ok := fe.logsViews[logsViewKey{spanID: spanID, toolArgs: toolArgs}]; ok {
 			lv.Update()
 		}
 	}
