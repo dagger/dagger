@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/continuity/fs"
@@ -16,6 +18,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/errgroup"
 )
 
 // cowTree materializes the full retained checkout of a local ref (depth 0,
@@ -84,7 +87,17 @@ func (ref *LocalGitRef) cowTree(ctx context.Context, remotes []GitRemote, upstre
 		if err != nil {
 			return err
 		}
-		return cowGitCheckout(ctx, root, src, remotes, upstreamRemote, ref.Ref)
+		if err := cowGitCheckout(ctx, root, src, remotes, upstreamRemote, ref.Ref); err != nil {
+			return err
+		}
+		// The point of the exercise: the layer holds the worktree and fresh
+		// metadata, never a copy of inherited objects. Make that observable.
+		if total, objects, ok := overlayUpperBytes(m); ok {
+			span.SetAttributes(
+				attribute.Int64("dagger.git.checkout.cow.layer_bytes", total),
+				attribute.Int64("dagger.git.checkout.cow.layer_object_bytes", objects))
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, false, err
@@ -174,10 +187,7 @@ func cowGitCheckout(ctx context.Context, root, src string, remotes []GitRemote, 
 		return err
 	}
 
-	if err := removeAllExcept(root, ".git"); err != nil {
-		return err
-	}
-	if err := removeAllExcept(gitDir, "objects"); err != nil {
+	if err := wipeInheritedCheckout(ctx, root, gitDir); err != nil {
 		return err
 	}
 	checkoutGit := source.New(
@@ -249,20 +259,126 @@ func cowGitCheckoutTags(ctx context.Context, source *gitutil.GitCLI, sha string)
 	return tags, nil
 }
 
-// removeAllExcept empties dir but for one entry. Entries from lower snapshot
-// layers become whiteouts; nothing is copied up.
-func removeAllExcept(dir, keep string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
+// overlayUpperBytes measures the disk usage of an overlay mount's writable
+// layer, in total and below .git/objects. False for other snapshotters.
+func overlayUpperBytes(m *mount.Mount) (total, objects int64, ok bool) {
+	if m == nil {
+		return 0, 0, false
 	}
-	for _, entry := range entries {
-		if entry.Name() == keep {
-			continue
+	var upper string
+	for _, opt := range m.Options {
+		if dir, found := strings.CutPrefix(opt, "upperdir="); found {
+			upper = dir
 		}
-		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+	}
+	if upper == "" {
+		return 0, 0, false
+	}
+	objectsDir := filepath.Join(upper, ".git", "objects")
+	err := filepath.WalkDir(upper, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
 			return err
 		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		var used int64
+		if st, isStat := info.Sys().(*syscall.Stat_t); isStat {
+			used = st.Blocks * 512
+		}
+		total += used
+		if path == objectsDir || strings.HasPrefix(path, objectsDir+string(filepath.Separator)) {
+			objects += used
+		}
+		return nil
+	})
+	return total, objects, err == nil
+}
+
+// wipeInheritedCheckout removes everything but the object database.
+func wipeInheritedCheckout(ctx context.Context, root, gitDir string) (rerr error) {
+	_, span := Tracer(ctx).Start(ctx, "remove inherited checkout", telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
+	var paths []string
+	for _, dir := range []struct{ path, keep string }{{root, ".git"}, {gitDir, "objects"}} {
+		entries, err := os.ReadDir(dir.path)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if entry.Name() != dir.keep {
+				paths = append(paths, filepath.Join(dir.path, entry.Name()))
+			}
+		}
 	}
-	return nil
+	return removeAllParallel(paths)
+}
+
+// cowWipeWorkers bounds the goroutines removing an inherited checkout. Each
+// removal of a lower-layer file creates an overlay whiteout: metadata work
+// that parallelizes across directories.
+const cowWipeWorkers = 8
+
+// removeAllParallel is os.RemoveAll of every path, spreading directories over
+// a bounded number of goroutines. A goroutine waiting for its children never
+// blocks a slot it needs: children only take free slots, or run inline.
+func removeAllParallel(paths []string) error {
+	var slots errgroup.Group
+	slots.SetLimit(cowWipeWorkers - 1) // the caller's goroutine works too
+	var removeEach func(paths []string) error
+	remove := func(path string) error {
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			entries, err := os.ReadDir(path)
+			if err != nil {
+				return err
+			}
+			var dirs []string
+			for _, entry := range entries {
+				child := filepath.Join(path, entry.Name())
+				if entry.IsDir() {
+					dirs = append(dirs, child)
+				} else if err := os.Remove(child); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return err
+				}
+			}
+			if err := removeEach(dirs); err != nil {
+				return err
+			}
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	removeEach = func(paths []string) error {
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		var errs []error
+		for _, path := range paths {
+			wg.Add(1)
+			run := func() error {
+				defer wg.Done()
+				if err := remove(path); err != nil {
+					mu.Lock()
+					errs = append(errs, err)
+					mu.Unlock()
+				}
+				return nil
+			}
+			if !slots.TryGo(run) {
+				run()
+			}
+		}
+		wg.Wait()
+		return errors.Join(errs...)
+	}
+	return removeEach(paths)
 }

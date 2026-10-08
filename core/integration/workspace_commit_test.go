@@ -736,11 +736,28 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 	}
 	checkout, hostGit := workspaceExportCheckout(ctx, t)
 	hostGit("tag", "v1")
+	// Large history in several packs, with a worktree much smaller than it:
+	// copying any inherited pack up into the checkout's layer shows in its size.
+	big := make([]byte, 32<<20)
+	_, err := rand.New(rand.NewSource(1)).Read(big)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "big.bin"), big, 0o644))
+	hostGit("add", "big.bin")
+	hostGit("commit", "-q", "-m", "big")
+	hostGit("repack", "-d", "-q")
+	hostGit("rm", "-q", "big.bin")
+	hostGit("commit", "-q", "-m", "unbig")
+	for i := range 5000 {
+		require.NoError(t, os.MkdirAll(filepath.Join(checkout, "files", fmt.Sprint(i%100)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(checkout, "files", fmt.Sprint(i%100), fmt.Sprint(i)), []byte(fmt.Sprint(i)), 0o644))
+	}
+	hostGit("add", "files")
+	hostGit("commit", "-q", "-m", "files")
+	hostGit("repack", "-d", "-q")
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout))...)
 	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
-	baseSHA, err := base.Git().Head().CommitSHA(ctx)
-	require.NoError(t, err)
+	initialSHA := hostGit("rev-parse", "v1")
 	state, err := commitWorkspace(ctx, c, base.WithNewFile("base.txt", "next"), "next", []string{"base.txt"})
 	require.NoError(t, err)
 	next := dagger.Ref[*dagger.Workspace](c, state.ID)
@@ -770,15 +787,36 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 	}
 	git("fsck", "--strict", "--no-dangling")
 	require.Equal(t, state.Git.Head.Commit, git("rev-parse", "HEAD"))
-	require.Equal(t, "next\ninitial", git("log", "--format=%s"))
-	require.Equal(t, baseSHA, git("rev-parse", "v1^{commit}"), "reachable tags are followed as by a fetch")
+	require.Equal(t, "next\nfiles\nunbig\nbig\ninitial", git("log", "--format=%s"))
+	require.Equal(t, initialSHA, git("rev-parse", "v1^{commit}"), "reachable tags are followed as by a fetch")
 	require.Empty(t, git("status", "--porcelain"))
 	require.Equal(t, "next", git("show", "HEAD:base.txt"))
+	// Again from storage with a worktree to replace (the full checkout
+	// itself), to a named ref with a different tree.
+	var tagTree struct {
+		Node struct {
+			AsGit struct {
+				Ref struct {
+					Tree struct{ Entries []string }
+				}
+			}
+		}
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!) { node(id: $id) { ... on Directory { asGit { ref(name: "v1") { tree(depth: 0, discardGitDir: false) { entries } } } } } }`,
+		Variables: map[string]any{"id": fullTree.Node.Tree.ID},
+	}, &dagger.Response{Data: &tagTree}))
+	require.ElementsMatch(t, []string{".git/", "base.txt"}, tagTree.Node.AsGit.Ref.Tree.Entries)
 	require.NoError(t, c.Close()) // Drain telemetry before asserting absence.
 
+	type spanInfo struct {
+		name       string
+		start, end uint64
+	}
 	traces, _ := sink.capture()
-	parents, names := map[string]string{}, map[string]string{}
+	parents, spans := map[string]string{}, map[string]spanInfo{}
 	cow := map[string]bool{}
+	layerBytes, objectBytes := map[string]int64{}, map[string]int64{}
 	var fallbacks []string
 	for _, request := range traces {
 		for _, resource := range request.ResourceSpans {
@@ -788,7 +826,8 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 						continue
 					}
 					id := string(span.TraceId) + string(span.SpanId)
-					parents[id], names[id] = string(span.TraceId)+string(span.ParentSpanId), span.Name
+					parents[id] = string(span.TraceId) + string(span.ParentSpanId)
+					spans[id] = spanInfo{span.Name, span.StartTimeUnixNano, span.EndTimeUnixNano}
 					if span.Name != "materialize copy-on-write git checkout" {
 						continue
 					}
@@ -798,6 +837,10 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 							cow[id] = attr.Value.GetBoolValue()
 						case "dagger.git.checkout.cow.fallback":
 							fallbacks = append(fallbacks, attr.Value.GetStringValue())
+						case "dagger.git.checkout.cow.layer_bytes":
+							layerBytes[id] = attr.Value.GetIntValue()
+						case "dagger.git.checkout.cow.layer_object_bytes":
+							objectBytes[id] = attr.Value.GetIntValue()
 						}
 					}
 				}
@@ -805,13 +848,31 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 		}
 	}
 	var supported, checkouts int
-	for _, ok := range cow {
-		if ok {
-			supported++
+	for id, ok := range cow {
+		if !ok {
+			continue
 		}
+		supported++
+		root := spans[id]
+		t.Logf("copy-on-write checkout: %s, layer %d bytes (%d below .git/objects)", time.Duration(root.end-root.start), layerBytes[id], objectBytes[id])
+		var children []spanInfo
+		for child, parent := range parents {
+			if parent == id {
+				children = append(children, spans[child])
+			}
+		}
+		slices.SortFunc(children, func(a, b spanInfo) int { return int(int64(a.start) - int64(b.start)) })
+		for _, child := range children {
+			t.Logf("  +%s %s %s", time.Duration(child.start-root.start), time.Duration(child.end-child.start), child.name)
+		}
+		require.Contains(t, layerBytes, id, "overlay layer usage must be measured")
+		require.Less(t, objectBytes[id], int64(1<<20), "inherited objects were copied into the checkout's layer")
+		// The worktree takes ~20MiB of 4KiB blocks; the history's pack 32MiB.
+		require.Less(t, layerBytes[id], int64(30<<20), "the checkout's layer holds more than its worktree")
 	}
 	require.Positive(t, supported, "committed heads must check out copy-on-write; fallbacks: %v", fallbacks)
-	for id, name := range names {
+	for id, span := range spans {
+		name := span.name
 		for parent := parents[id]; parent != ""; parent = parents[parent] {
 			if !cow[parent] {
 				continue

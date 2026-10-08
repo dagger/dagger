@@ -15,8 +15,10 @@ import (
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
@@ -1397,7 +1399,8 @@ func doGitCheckout(
 // tmpref is set only when the caller fetched the objects into a temporary ref.
 // inheritedObjects means the object database was not written by this checkout
 // (see cowGitCheckout): its files keep their timestamps, since changing them
-// would copy every inherited pack up into a new snapshot layer.
+// would copy every inherited pack up into a new snapshot layer, and it
+// writes the worktree once, in parallel (see gitCheckoutOnce).
 func finishGitCheckout(
 	ctx context.Context,
 	checkoutGit *gitutil.GitCLI,
@@ -1412,7 +1415,11 @@ func finishGitCheckout(
 	if err != nil {
 		return fmt.Errorf("could not find git dir: %w", err)
 	}
-	if ref.Name == "" {
+	if inheritedObjects {
+		if err := gitCheckoutOnce(ctx, checkoutGit, ref); err != nil {
+			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
+		}
+	} else if ref.Name == "" {
 		_, err = checkoutGit.Run(ctx, "checkout", ref.SHA)
 		if err != nil {
 			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
@@ -1482,26 +1489,79 @@ func finishGitCheckout(
 	if err != nil {
 		return fmt.Errorf("could not find worktree: %w", err)
 	}
-	// Use a deterministic non-zero timestamp. Some build tools treat missing
-	// outputs as epoch and skip initial copies when sources are also epoch.
-	normalizedTime := []unix.Timespec{{Sec: 1}, {Sec: 1}}
 	inheritedObjectsDir := ""
 	if inheritedObjects && !discardGitDir {
 		inheritedObjectsDir = filepath.Join(checkoutDirGit, "objects")
 	}
-	if err := filepath.WalkDir(checkoutDir, func(path string, _ os.DirEntry, err error) error {
+	return normalizeGitCheckoutTimes(ctx, checkoutDir, inheritedObjectsDir)
+}
+
+// normalizeGitCheckoutTimes sets every timestamp below checkoutDir, except
+// below skip, to a deterministic non-zero time. Some build tools treat missing
+// outputs as epoch and skip initial copies when sources are also epoch.
+func normalizeGitCheckoutTimes(ctx context.Context, checkoutDir, skip string) (rerr error) {
+	_, span := Tracer(ctx).Start(ctx, "normalize checkout timestamps", telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
+	normalizedTime := []unix.Timespec{{Sec: 1}, {Sec: 1}}
+	var paths int
+	defer func() { span.SetAttributes(attribute.Int("dagger.git.checkout.normalized_paths", paths)) }()
+	// Identify the skipped directory by inode, not by spelling: a path
+	// mismatch here would silently copy every inherited pack up.
+	var skipInfo os.FileInfo
+	if skip != "" {
+		info, err := os.Lstat(skip)
 		if err != nil {
 			return err
 		}
-		if path == inheritedObjectsDir {
-			return filepath.SkipDir
+		skipInfo = info
+	}
+	if err := filepath.WalkDir(checkoutDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
+		if skipInfo != nil && entry.IsDir() && entry.Name() == skipInfo.Name() {
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if os.SameFile(info, skipInfo) {
+				return filepath.SkipDir
+			}
+		}
+		paths++
 		return unix.UtimesNanoAt(unix.AT_FDCWD, path, normalizedTime, unix.AT_SYMLINK_NOFOLLOW)
 	}); err != nil {
 		return fmt.Errorf("failed to normalize checkout timestamps: %w", err)
 	}
-
 	return nil
+}
+
+// gitCheckoutWorkers bounds Git's parallel checkout per process: concurrent
+// checkouts each spawn their own workers.
+const gitCheckoutWorkers = 4
+
+// gitCheckoutOnce leaves the same HEAD, refs, index and worktree as the
+// checkout and reset --hard of finishGitCheckout, but writes the worktree
+// only once, with parallel workers. The reset only matters when the checkout
+// finds HEAD already on the branch (the unborn default branch), where it
+// switches nothing and leaves the worktree empty; otherwise it rewrites, or
+// re-reads, every file just checked out. checkout -f populates the worktree
+// in both cases. The reset's one other trace is ORIG_HEAD, its previous HEAD:
+// already ref.SHA.
+func gitCheckoutOnce(ctx context.Context, checkoutGit *gitutil.GitCLI, ref *gitutil.Ref) error {
+	git := checkoutGit.New(gitutil.WithArgs("-c", fmt.Sprintf("checkout.workers=%d", gitCheckoutWorkers)))
+	if ref.Name == "" {
+		_, err := git.Run(ctx, "checkout", ref.SHA)
+		return err
+	}
+	if _, err := git.Run(ctx, "update-ref", ref.Name, ref.SHA); err != nil {
+		return err
+	}
+	if _, err := git.Run(ctx, "checkout", "-f", strings.TrimPrefix(ref.Name, "refs/heads/")); err != nil {
+		return err
+	}
+	_, err := git.Run(ctx, "update-ref", "--no-deref", "ORIG_HEAD", ref.SHA)
+	return err
 }
 
 // writeGitCheckoutRemote records one remote in a checkout's configuration:

@@ -31,6 +31,10 @@ func cowTestSource(t *testing.T) (dir, base, tip string) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "nested", "deeper", "file"), []byte("nested"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "executable"), []byte("#!/bin/sh\n"), 0755))
 	require.NoError(t, os.Symlink("file", filepath.Join(dir, "link")))
+	// Enough files for Git's parallel checkout to engage.
+	for i := range 150 {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "nested", fmt.Sprintf("many%d", i)), []byte(fmt.Sprint(i)), 0644))
+	}
 	gitMirrorTestRun(t, dir, "add", ".")
 	gitMirrorTestRun(t, dir, "commit", "-m", "modes")
 	gitMirrorTestRun(t, dir, "tag", "-a", "-m", "annotated", "v0.2")
@@ -127,6 +131,8 @@ func TestCowGitCheckout(t *testing.T) {
 		for _, ref := range []*gitutil.Ref{
 			{Name: "refs/heads/main", SHA: tip},
 			{SHA: base},
+			// Commit-ID resolvers keep the SHA as the name.
+			{Name: tip, SHA: tip},
 			{Name: "refs/tags/v0.2", SHA: gitMirrorTestRun(t, source, "rev-parse", "v0.2^{commit}")},
 			{Name: "refs/heads/side", SHA: gitMirrorTestRun(t, source, "rev-parse", "side")},
 		} {
