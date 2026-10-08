@@ -146,3 +146,33 @@ func TestRecipeCallsSkipsCoveredSubtrees(t *testing.T) {
 	require.Len(t, calls, 1, "skip is never asked about the root")
 	require.Equal(t, rootDigest.String(), calls[0].GetDigest())
 }
+
+// The one encoding difference from ToProto: a sensitive field nested in an
+// object literal is redacted, as the span copy of the call redacts it.
+func TestRecipeCallsRedactsSensitiveObjectFields(t *testing.T) {
+	t.Parallel()
+	ctx := ContextWithCache(context.Background(), nil)
+
+	hidden := &ResultCall{Kind: ResultCallKindField, Type: NewResultCallType(memoStrType), Field: "hidden"}
+	top := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(memoObjType),
+		Field: "top",
+		Args: []*ResultCallArg{{Name: "obj", Value: &ResultCallLiteral{
+			Kind: ResultCallLiteralKindObject,
+			ObjectFields: []*ResultCallArg{
+				{Name: "token", IsSensitive: true, Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "secret"}},
+				{Name: "ref", IsSensitive: true, Value: &ResultCallLiteral{Kind: ResultCallLiteralKindResultRef, ResultRef: &ResultCallRef{Call: hidden}}},
+			},
+		}}},
+	}
+
+	calls, err := top.RecipeCalls(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, calls, 1, "frames behind a sensitive field are not followed")
+	fields := calls[0].GetArgs()[0].GetValue().GetObject().GetValues()
+	require.Len(t, fields, 2)
+	for _, field := range fields {
+		require.Equal(t, "***", field.GetValue().GetString_(), "field %q must be redacted", field.GetName())
+	}
+}

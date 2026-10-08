@@ -558,6 +558,12 @@ func (frame *ResultCall) callPB(c *Cache) (*callpbv1.Call, error) {
 // so is whatever part of the DAG is reachable only through it. Skipped
 // subtrees are never visited, so a walk that skips what an earlier walk
 // covered costs only the frames that are new.
+//
+// Each call is encoded by callPB, so one shape differs from ToProto: a
+// sensitive field inside an object literal is redacted here, where the
+// recipe ID keeps its value. No caller builds such a field today (object
+// literals reach frames with every field non-sensitive), and redacting it is
+// what the span copy of the same call already does.
 func (frame *ResultCall) RecipeCalls(ctx context.Context, skip func(digest string) bool) ([]*callpbv1.Call, error) {
 	c, err := EngineCache(ctx)
 	if err != nil {
