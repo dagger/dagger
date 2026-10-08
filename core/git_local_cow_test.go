@@ -282,6 +282,21 @@ func TestCowGitCheckoutDelta(t *testing.T) {
 	})
 }
 
+// A copy-on-write checkout inherits its parent snapshot's root directory; a
+// fetched one writes into a fresh snapshot's. The root is made to match.
+func TestCowCheckoutSnapshotRoot(t *testing.T) {
+	fresh := t.TempDir()
+	require.NoError(t, os.Chmod(fresh, 0755))
+	want, err := readSnapshotRootInfo(fresh)
+	require.NoError(t, err)
+	inherited := t.TempDir()
+	require.NoError(t, os.Chmod(inherited, 0o2751))
+	require.NoError(t, setSnapshotRootInfo(inherited, want))
+	got, err := readSnapshotRootInfo(inherited)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
 // BenchmarkCowGitCheckout compares the full checkout's fetch into an empty
 // directory with the copy-on-write checkout, on a synthetic history:
 //

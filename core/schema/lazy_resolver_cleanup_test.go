@@ -148,6 +148,9 @@ type resolverOutputRef struct {
 	bkcache.ImmutableRef
 	root, id string
 	releases int
+	// uncommitted marks a New snapshot never committed: scratch work, such
+	// as the root probe of a copy-on-write checkout, rather than an output.
+	uncommitted bool
 }
 
 func (r *resolverOutputRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
@@ -170,6 +173,7 @@ func (r *resolverMutableRef) Mount(context.Context, bool) (bkcache.MountableRef,
 	return resolverInputMount(r.output.root), nil
 }
 func (r *resolverMutableRef) Commit(context.Context) (bkcache.ImmutableRef, error) {
+	r.output.uncommitted = false
 	return r.output, nil
 }
 func (r *resolverMutableRef) Release(ctx context.Context) error { return ctx.Err() }
@@ -240,9 +244,20 @@ func (m *resolverOutputManager) New(ctx context.Context, parent bkcache.Immutabl
 			return os.WriteFile(dst, data, info.Mode())
 		}))
 	}
-	ref := &resolverOutputRef{root: root, id: fmt.Sprintf("output-%d", len(m.outputs))}
+	ref := &resolverOutputRef{root: root, id: fmt.Sprintf("output-%d", len(m.outputs)), uncommitted: true}
 	m.outputs = append(m.outputs, ref)
 	return &resolverMutableRef{output: ref}, nil
+}
+
+// committedOutputs are the outputs that were not discarded uncommitted.
+func (m *resolverOutputManager) committedOutputs() []*resolverOutputRef {
+	var outputs []*resolverOutputRef
+	for _, ref := range m.outputs {
+		if !ref.uncommitted {
+			outputs = append(outputs, ref)
+		}
+	}
+	return outputs
 }
 func (m *resolverOutputManager) ImportImage(ctx context.Context, _ *bkcache.ImportedImage, _ bkcache.ImportImageOpts) (bkcache.ImmutableRef, error) {
 	if m.imageRef != nil {
@@ -366,16 +381,17 @@ func TestLazyOperationResolverCapture(t *testing.T) {
 				require.False(t, result.Self().Lazy.IsEvaluated())
 				require.NoError(t, result.Self().Lazy.Evaluate(ctx, result.Self()))
 			}
-			require.Len(t, server.manager.outputs, 1)
+			outputs := server.manager.committedOutputs()
+			require.Len(t, outputs, 1)
 			if kind == "gitFullCheckout" {
-				_, err := os.Stat(filepath.Join(server.manager.outputs[0].root, ".git"))
+				_, err := os.Stat(filepath.Join(outputs[0].root, ".git"))
 				require.NoError(t, err)
 			}
 			if kind == "gitCleaned" {
-				require.Zero(t, server.manager.outputs[0].releases)
+				require.Zero(t, outputs[0].releases)
 			} else {
 				require.NoError(t, result.Self().OnRelease(ctx))
-				require.Equal(t, 1, server.manager.outputs[0].releases)
+				require.Equal(t, 1, outputs[0].releases)
 			}
 		})
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -237,6 +238,12 @@ func cowCheckoutSnapshot(ctx context.Context, parent bkcache.ImmutableRef, ref *
 	if err != nil {
 		return nil, err
 	}
+	// The copy inherits its parent's root directory; a fetched checkout
+	// writes into a fresh snapshot's.
+	freshRoot, err := freshSnapshotRoot(ctx, query)
+	if err != nil {
+		return nil, err
+	}
 	child, err := query.SnapshotManager().New(ctx, parent,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("git local checkout (%s %s)", ref.Name, ref.SHA)))
@@ -253,6 +260,9 @@ func cowCheckoutSnapshot(ctx context.Context, parent bkcache.ImmutableRef, ref *
 			return err
 		}
 		if err := fn(root); err != nil {
+			return err
+		}
+		if err := setSnapshotRootInfo(root, freshRoot); err != nil {
 			return err
 		}
 		// The point of the exercise: the layer holds the changed worktree
@@ -282,6 +292,32 @@ func cowCheckoutSnapshot(ctx context.Context, parent bkcache.ImmutableRef, ref *
 	dir.SetPath("/")
 	dir.SetSnapshot(snap)
 	return dir, nil
+}
+
+// setSnapshotRootInfo gives root, the root of a copy-on-write child, the
+// ownership and mode of want, a fresh snapshot's root, as
+// finishRetainedCheckoutTree does for source trees. Extended attributes
+// cannot be reconciled that simply: differing ones are refused.
+func setSnapshotRootInfo(root string, want snapshotRootInfo) error {
+	got, err := readSnapshotRootInfo(root)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(got.xattrs, want.xattrs) {
+		return nativeCommitUnsupportedReason("root-xattrs")
+	}
+	if got.uid != want.uid || got.gid != want.gid {
+		if err := os.Lchown(root, int(want.uid), int(want.gid)); err != nil {
+			return err
+		}
+	}
+	// chown clears setuid/setgid bits, so the mode is set after it.
+	if got.mode != want.mode || got.uid != want.uid || got.gid != want.gid {
+		if err := os.Chmod(root, want.mode&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // cowCheckoutDelta selects cowGitCheckout's delta mode: root holds the clean
