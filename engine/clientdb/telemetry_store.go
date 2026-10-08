@@ -317,6 +317,27 @@ func (l *spanLookup) ancestorClosure(ids map[string]struct{}) map[string]struct{
 	return closure
 }
 
+// parentSubtree returns root plus every span beneath it over parent→child
+// edges alone -- no cause links, unlike logScope. Cycle-safe.
+func (l *spanLookup) parentSubtree(root string) map[string]struct{} {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	subtree := map[string]struct{}{root: {}}
+	queue := []string{root}
+	for len(queue) > 0 {
+		parent := queue[0]
+		queue = queue[1:]
+		for _, child := range l.children[parent] {
+			if _, seen := subtree[child]; seen {
+				continue
+			}
+			subtree[child] = struct{}{}
+			queue = append(queue, child)
+		}
+	}
+	return subtree
+}
+
 // latestRowIDs returns the newest snapshot row ID of every span in ids that
 // the index knows, in ascending row order — append order, which is the order
 // sequential processing would have delivered them in.
@@ -608,6 +629,14 @@ func (s *DB) SpanLogScope(spanID string) map[string]struct{} {
 	return s.lookup.logScope(spanID)
 }
 
+// SpanParentSubtree returns spanID plus every span beneath it over
+// parent→child edges alone, answered from the span index. Unlike SpanLogScope
+// it follows no cause links. The returned map is a fresh snapshot the caller
+// owns.
+func (s *DB) SpanParentSubtree(spanID string) map[string]struct{} {
+	return s.lookup.parentSubtree(spanID)
+}
+
 // HasDescendants reports whether any span is nested beneath spanID, following
 // the same edges as the log queries: parent→child plus cause-purpose links.
 //
@@ -661,19 +690,7 @@ func (s *DB) CheckTestSpanIDs() (checks, tests map[string]struct{}) {
 // reconstructs the state that full sequential processing would end with — this is
 // the span half of a scoped load, sized by the scope instead of the session.
 func (s *DB) SelectSpansLatest(ctx context.Context, ids map[string]struct{}) ([]Span, error) {
-	rowIDs := s.lookup.latestRowIDs(ids)
-	rows := make([]Span, 0, len(rowIDs))
-	for _, rowID := range rowIDs {
-		row, found, err := s.spans.readID(ctx, rowID)
-		if err != nil {
-			return nil, fmt.Errorf("read span row %d: %w", rowID, err)
-		}
-		if !found {
-			return nil, fmt.Errorf("indexed span row %d: %w", rowID, sql.ErrNoRows)
-		}
-		rows = append(rows, row)
-	}
-	return rows, nil
+	return readIndexedRows(ctx, s.spans, s.lookup.latestRowIDs(ids), func(row Span) int64 { return row.ID }, "span")
 }
 
 // SelectLogsForSpans returns the log rows attributed to any span in ids, in
@@ -682,17 +699,37 @@ func (s *DB) SelectSpansLatest(ctx context.Context, ids map[string]struct{}) ([]
 // output to a tail anyway, and the cap keeps one pathological span (e.g. a
 // service that streamed millions of lines) from ballooning the load.
 func (s *DB) SelectLogsForSpans(ctx context.Context, ids map[string]struct{}, perSpanTail int) ([]Log, error) {
-	rowIDs := s.logIdx.rowIDsForSpans(ids, perSpanTail)
-	rows := make([]Log, 0, len(rowIDs))
-	for _, rowID := range rowIDs {
-		row, found, err := s.logs.readID(ctx, rowID)
-		if err != nil {
-			return nil, fmt.Errorf("read log row %d: %w", rowID, err)
+	return s.SelectLogRows(ctx, s.logIdx.rowIDsForSpans(ids, perSpanTail))
+}
+
+// LogRowIDsForSpans returns the row IDs of every log row attributed to a span
+// in ids, ascending -- a snapshot of a capture's rows, answered from the log
+// index alone. A caller that pages through a large capture resolves its rows
+// once with this and reads them in batches with SelectLogRows, rather than
+// re-resolving the scope per page.
+func (s *DB) LogRowIDsForSpans(ids map[string]struct{}) []int64 {
+	return s.logIdx.rowIDsForSpans(ids, 0)
+}
+
+// SelectLogRows reads the given log rows, which must be ascending (as the
+// log index returns them), in that order.
+func (s *DB) SelectLogRows(ctx context.Context, rowIDs []int64) ([]Log, error) {
+	return readIndexedRows(ctx, s.logs, rowIDs, func(row Log) int64 { return row.ID }, "log")
+}
+
+// readIndexedRows reads rows the store's indexes vouched for, as one batch:
+// a row that cannot be read is an error, as for a single indexed read.
+func readIndexedRows[Row any](ctx context.Context, stream *logStream[Row], rowIDs []int64, getID func(Row) int64, kind string) ([]Row, error) {
+	rows, err := stream.readIDs(ctx, rowIDs)
+	if err != nil {
+		return nil, fmt.Errorf("read %s rows: %w", kind, err)
+	}
+	if len(rows) != len(rowIDs) {
+		for i, rowID := range rowIDs {
+			if i >= len(rows) || getID(rows[i]) != rowID {
+				return nil, fmt.Errorf("indexed %s row %d: %w", kind, rowID, sql.ErrNoRows)
+			}
 		}
-		if !found {
-			return nil, fmt.Errorf("indexed log row %d: %w", rowID, sql.ErrNoRows)
-		}
-		rows = append(rows, row)
 	}
 	return rows, nil
 }
@@ -784,18 +821,7 @@ func (s *DB) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpa
 	if len(rowIDs) > limit {
 		rowIDs = rowIDs[:limit]
 	}
-	logs := make([]Log, 0, len(rowIDs))
-	for _, rowID := range rowIDs {
-		row, found, err := s.logs.readID(ctx, rowID)
-		if err != nil {
-			return nil, fmt.Errorf("read log row %d: %w", rowID, err)
-		}
-		if !found {
-			return nil, fmt.Errorf("indexed log row %d: %w", rowID, sql.ErrNoRows)
-		}
-		logs = append(logs, row)
-	}
-	return logs, nil
+	return s.SelectLogRows(ctx, rowIDs)
 }
 
 func (s *DB) closeStreams() error {

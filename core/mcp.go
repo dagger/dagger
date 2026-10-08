@@ -2348,38 +2348,24 @@ type capturedOutput struct {
 
 // logCaptureScope narrows the legacy causal scope to own or raw-descendant
 // producers. A nil set leaves the causal capture unrestricted.
-func logCaptureScope(ctx context.Context, db *clientdb.DB, spanID string, scope ...string) (map[string]bool, error) {
+func logCaptureScope(db *clientdb.DB, spanID string, scope ...string) map[string]struct{} {
 	if len(scope) == 0 || scope[0] == "causal" {
-		return nil, nil
+		return nil
 	}
-	allowed := map[string]bool{spanID: true}
 	if scope[0] != "descendants" {
-		return allowed, nil
+		return map[string]struct{}{spanID: {}}
 	}
-	rows, err := db.SelectSpansLatest(ctx, db.SpanLogScope(spanID))
-	if err != nil {
-		return nil, err
-	}
-	children := map[string][]string{}
-	for _, row := range rows {
-		children[row.ParentSpanID.String] = append(children[row.ParentSpanID.String], row.SpanID)
-	}
-	queue := []string{spanID}
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
-		for _, child := range children[id] {
-			if !allowed[child] {
-				allowed[child] = true
-				queue = append(queue, child)
-			}
-		}
-	}
-	return allowed, nil
+	return db.SpanParentSubtree(spanID)
 }
 
 // captureLogLines assembles logs with producer and direct/nested provenance.
 // excludeServiceLogs keeps long-lived service output out of tool results.
+//
+// The capture is a snapshot: its spans and log rows are resolved from the
+// store's indexes once, up front, and the rows are then read in batches. Re-
+// resolving the scope per batch made a capture quadratic in its size -- a CI
+// trace's root (~220k spans, ~410k log rows) spent minutes re-walking its
+// subtree and re-sorting its row IDs for every 1000-row page.
 func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs, ownOnly bool, scope ...string) (capturedOutput, error) {
 	out := capturedOutput{directSpans: map[string]bool{}}
 	root, err := CurrentQuery(ctx)
@@ -2396,10 +2382,23 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 	}
 	defer q.Close()
 	q = inspectionStoreForSpan(q, spanID)
-	allowed, err := logCaptureScope(ctx, q, spanID, scope...)
-	if err != nil {
-		return out, err
+
+	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
+	// roll-up behavior. Its subtree is the capture's full log scope, even
+	// when the producers are narrowed below: internal-ness is judged along
+	// the same containment either way.
+	logScope := q.SpanLogScope(spanID)
+	internalSpans := newInternalSpanFilterInScope(q, spanID, excludeServiceLogs, logScope)
+	producers := logScope
+	if allowed := logCaptureScope(q, spanID, scope...); allowed != nil {
+		producers = make(map[string]struct{}, len(allowed))
+		for id := range allowed {
+			if _, ok := logScope[id]; ok {
+				producers[id] = struct{}{}
+			}
+		}
 	}
+	rowIDs := q.LogRowIDsForSpans(producers)
 
 	// segments accumulates log bodies in database record order, retaining the
 	// producer across batch boundaries. Records are NOT coalesced here:
@@ -2407,34 +2406,13 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 	// assembleLines merges same-producer fragments across records anyway.
 	var segments []capturedSegment
 
-	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
-	// roll-up behavior.
-	internalSpans := newInternalSpanFilter(q, spanID, excludeServiceLogs)
-
-	var lastLogID int64
-
-	for {
-		logs, err := q.Read().SelectLogsBeneathSpan(ctx, clientdb.SelectLogsBeneathSpanParams{
-			ID:     lastLogID,
-			SpanID: sql.NullString{Valid: true, String: spanID},
-			Limit:  llmLogsBatchSize,
-		})
+	for start := 0; start < len(rowIDs); start += llmLogsBatchSize {
+		logs, err := q.Read().SelectLogRows(ctx, rowIDs[start:min(start+llmLogsBatchSize, len(rowIDs))])
 		if err != nil {
 			return out, err
 		}
-		if len(logs) == 0 {
-			break
-		}
-		// The batch was selected against the subtree as of a moment ago; make
-		// sure the filter classifies against a set at least that fresh.
-		internalSpans.refresh()
 
 		for _, log := range logs {
-			lastLogID = log.ID
-			if allowed != nil && !allowed[log.SpanID.String] {
-				continue
-			}
-
 			var logAttrs []*otlpcommonv1.KeyValue
 			if err := clientdb.UnmarshalProtoJSONs(log.Attributes, &otlpcommonv1.KeyValue{}, &logAttrs); err != nil {
 				slog.Warn("failed to unmarshal log attributes", "error", err)
@@ -2619,15 +2597,30 @@ type internalSpanFilter struct {
 	// subtree without ever passing through the root, and internal-ness out
 	// there is not between the log and the capture root.
 	subtree map[string]struct{}
+	// classified memoizes classifyLogSpan per span: a capture asks about the
+	// same span once per log record, and each answer costs a span read plus
+	// an attribute decode.
+	classified map[logSpanKey]logSpanClass
 }
 
+type logSpanKey struct{ traceID, spanID string }
+
+type logSpanClass struct{ hidden, direct bool }
+
 func newInternalSpanFilter(db *clientdb.DB, rootSpanID string, skipServices bool) *internalSpanFilter {
+	return newInternalSpanFilterInScope(db, rootSpanID, skipServices, db.SpanLogScope(rootSpanID))
+}
+
+// newInternalSpanFilterInScope is newInternalSpanFilter over a log scope the
+// caller already resolved.
+func newInternalSpanFilterInScope(db *clientdb.DB, rootSpanID string, skipServices bool, subtree map[string]struct{}) *internalSpanFilter {
 	return &internalSpanFilter{
 		db:           db,
 		root:         rootSpanID,
 		skipServices: skipServices,
 		memo:         map[string]bool{},
-		subtree:      db.SpanLogScope(rootSpanID),
+		subtree:      subtree,
+		classified:   map[logSpanKey]logSpanClass{},
 	}
 }
 
@@ -2645,6 +2638,7 @@ func (f *internalSpanFilter) refresh() {
 	}
 	f.subtree = subtree
 	f.memo = map[string]bool{}
+	f.classified = map[logSpanKey]logSpanClass{}
 }
 
 // classifyLogSpan locates a log record's span and decides how the capture
@@ -2652,8 +2646,21 @@ func (f *internalSpanFilter) refresh() {
 // or a span beneath one hidden as internal), or kept — and, when kept,
 // whether the record counts as the captured root's direct output (the root
 // itself or one of its direct children, where a tool function's own print
-// output lands).
+// output lands). Answers are memoized per span.
 func (f *internalSpanFilter) classifyLogSpan(ctx context.Context, traceID, spanID string) (hidden, direct bool, err error) {
+	key := logSpanKey{traceID: traceID, spanID: spanID}
+	if class, ok := f.classified[key]; ok {
+		return class.hidden, class.direct, nil
+	}
+	hidden, direct, err = f.classifyLogSpanUncached(ctx, traceID, spanID)
+	if err != nil {
+		return false, false, err
+	}
+	f.classified[key] = logSpanClass{hidden: hidden, direct: direct}
+	return hidden, direct, nil
+}
+
+func (f *internalSpanFilter) classifyLogSpanUncached(ctx context.Context, traceID, spanID string) (hidden, direct bool, err error) {
 	span, err := f.db.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
 		TraceID: traceID,
 		SpanID:  spanID,

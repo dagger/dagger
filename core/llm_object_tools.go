@@ -1489,7 +1489,17 @@ func (m *MCP) spanResult(ctx context.Context, spanID string, opts traceReportOpt
 // report is available. ReadTrace must never present partial telemetry as a
 // successful inspection; spanResult deliberately keeps the best-effort text.
 func (m *MCP) inspectSpanResult(ctx context.Context, spanID string, opts traceReportOpts) (string, error) {
-	captured, captureErr := m.captureLogLines(ctx, spanID, true, opts.OwnOutputOnly)
+	// OUTPUT carries only the direct lines (see directLogs), and with
+	// OwnOutputOnly those are the root's own, so the capture need not read
+	// the subtree's logs at all -- for a CI run's root that is hundreds of
+	// thousands of rows the report renders from its own tails anyway. The
+	// flat fallback below still wants the whole capture.
+	ownCapture := opts.OwnOutputOnly
+	var captureScope []string
+	if ownCapture {
+		captureScope = []string{"own"}
+	}
+	captured, captureErr := m.captureLogLines(ctx, spanID, true, opts.OwnOutputOnly, captureScope...)
 	opts.HideLogSpans = captured.directSpans
 	report, reportErr := renderTraceReport(ctx, spanID, opts)
 	if captureErr != nil {
@@ -1498,10 +1508,16 @@ func (m *MCP) inspectSpanResult(ctx context.Context, spanID string, opts traceRe
 	if reportErr != nil {
 		reportErr = fmt.Errorf("render report for span %s: %w", spanID, reportErr)
 	}
-	err := errors.Join(captureErr, reportErr)
 	if strings.TrimSpace(report.body) == "" && report.failures == "" {
-		return flatLogs(spanID, captured.lines), err
+		if ownCapture && captureErr == nil {
+			captured, captureErr = m.captureLogLines(ctx, spanID, true, opts.OwnOutputOnly)
+			if captureErr != nil {
+				captureErr = fmt.Errorf("capture logs for span %s: %w", spanID, captureErr)
+			}
+		}
+		return flatLogs(spanID, captured.lines), errors.Join(captureErr, reportErr)
 	}
+	err := errors.Join(captureErr, reportErr)
 	own := directLogs(captured.lines)
 	if opts.FocusFailures && report.failures != "" {
 		own = guardText(own, textGuard{
