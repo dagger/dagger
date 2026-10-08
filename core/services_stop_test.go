@@ -354,8 +354,11 @@ func TestServicesStaleDetachKeepsRestartedInstance(t *testing.T) {
 		newerSvc.noRequest(t, 2*TerminateGracePeriod)
 
 		services.l.Lock()
-		defer services.l.Unlock()
-		require.Same(t, restarted, services.running[key])
-		require.Equal(t, 2, services.bindings[key])
+		current, bindings := services.running[key], services.bindings[key]
+		services.l.Unlock()
+		require.Same(t, restarted, current)
+		require.Equal(t, 2, bindings)
+
+		newerSvc.exit(false)
 	})
 }
