@@ -1,0 +1,6 @@
+kind: Changed
+body: Reading a file from a directory or container output, such as `Container.file("/stamp")`, no longer walks the whole container filesystem to compute the file's content digest. On a build that reads one root-level file per exec, this cut the engine time spent reading those files from 190 s to 11 s.
+time: 2026-10-08T04:19:14.000000000Z
+custom:
+    Author: sipsma
+    PR: "14555"
