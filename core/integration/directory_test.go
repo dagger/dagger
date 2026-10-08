@@ -838,6 +838,44 @@ func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 		require.Contains(t, stdout2, "rw-r--r--")
 	})
 
+	// sameAsChain checks that withFiles gives the same directory as the
+	// equivalent withFile chain, and returns that directory's listing.
+	sameAsChain := func(ctx context.Context, t *testctx.T, base *dagger.Directory, dest string, files []*dagger.File, mode *int) string {
+		var opts dagger.DirectoryWithFilesOpts
+		var fileOpts dagger.DirectoryWithFileOpts
+		if mode != nil {
+			opts.Permissions = *mode
+			fileOpts.Permissions = *mode
+		}
+		bulk := base.WithFiles(dest, files, opts)
+		chain := base
+		for _, f := range files {
+			name, err := f.Name(ctx)
+			require.NoError(t, err)
+			chain = chain.WithFile(filepath.Join(dest, name), f, fileOpts)
+		}
+
+		bulkDigest, err := bulk.Digest(ctx)
+		require.NoError(t, err)
+		chainDigest, err := chain.Digest(ctx)
+		require.NoError(t, err)
+		require.Equal(t, chainDigest, bulkDigest)
+
+		listing := func(dir *dagger.Directory) string {
+			out, err := c.Container().From(alpineImage).
+				WithMountedDirectory("/m", dir).
+				WithWorkdir("/m").
+				WithExec([]string{"sh", "-c", `find . -exec stat -c '%n %F %a %u:%g %s' {} + | sort; find . -type f | sort | xargs cat`}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return out
+		}
+		want := listing(chain)
+		require.Equal(t, want, listing(bulk))
+		return want
+	}
+	perms := 0o640
+
 	t.Run("same result as a withFile chain", func(ctx context.Context, t *testctx.T) {
 		src := c.Directory().
 			WithNewFile("one", "one").
@@ -862,47 +900,34 @@ func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 			WithNewFile("outside", "not in the receiver").
 			Directory("root")
 
-		listing := func(ctx context.Context, t *testctx.T, dir *dagger.Directory) string {
-			out, err := c.Container().From(alpineImage).
-				WithMountedDirectory("/m", dir).
-				WithWorkdir("/m").
-				WithExec([]string{"sh", "-c", `find . -exec stat -c '%n %F %a %u:%g %s' {} + | sort; find . -type f | sort | xargs cat`}).
-				Stdout(ctx)
-			require.NoError(t, err)
-			return out
-		}
-
-		perms := 0o640
 		for _, dest := range []string{"dest", "/dest/", ".", "a/b/c"} {
 			for _, mode := range []*int{nil, &perms} {
 				t.Run(fmt.Sprintf("%s permissions=%v", dest, mode != nil), func(ctx context.Context, t *testctx.T) {
-					var opts dagger.DirectoryWithFilesOpts
-					var fileOpts dagger.DirectoryWithFileOpts
-					if mode != nil {
-						opts.Permissions = *mode
-						fileOpts.Permissions = *mode
-					}
-					bulk := base.WithFiles(dest, files, opts)
-					chain := base
-					for _, f := range files {
-						name, err := f.Name(ctx)
-						require.NoError(t, err)
-						chain = chain.WithFile(filepath.Join(dest, name), f, fileOpts)
-					}
-
-					bulkDigest, err := bulk.Digest(ctx)
-					require.NoError(t, err)
-					chainDigest, err := chain.Digest(ctx)
-					require.NoError(t, err)
-					require.Equal(t, chainDigest, bulkDigest)
-
-					want := listing(ctx, t, chain)
-					require.Contains(t, want, "one again")
-					require.NotContains(t, want, "not in the receiver")
+					got := sameAsChain(ctx, t, base, dest, files, mode)
+					require.Contains(t, got, "one again")
+					require.NotContains(t, got, "not in the receiver")
 					if strings.Contains(dest, "dest") {
-						require.NotContains(t, want, "replaced")
+						require.NotContains(t, got, "replaced")
 					}
-					require.Equal(t, want, listing(ctx, t, bulk))
+				})
+			}
+		}
+	})
+
+	t.Run("repeated and hardlinked sources", func(ctx context.Context, t *testctx.T) {
+		// A/a and A/b are one inode; B/a has the same name as A/a.
+		ctr := c.Container().From(alpineImage).
+			WithExec([]string{"sh", "-c", "mkdir /A /B && echo A > /A/a && ln /A/a /A/b && echo B > /B/a"})
+		for name, files := range map[string][]*dagger.File{
+			"same file twice": {ctr.File("/A/a"), ctr.File("/A/a")},
+			"replaced link":   {ctr.File("/A/a"), ctr.File("/B/a"), ctr.File("/A/b")},
+		} {
+			for _, mode := range []*int{nil, &perms} {
+				t.Run(fmt.Sprintf("%s permissions=%v", name, mode != nil), func(ctx context.Context, t *testctx.T) {
+					got := sameAsChain(ctx, t, c.Directory(), "dest", files, mode)
+					if name == "replaced link" {
+						require.Contains(t, got, "B\nA\n")
+					}
 				})
 			}
 		}

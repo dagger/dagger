@@ -3092,6 +3092,9 @@ func (dir *Directory) copyFiles(
 		defer copier.Close()
 
 		for i := range srcs {
+			// Copy each file as its own withFile would: a later copy may
+			// replace an earlier destination, so do not link to it.
+			copier.ForgetSourceLinks()
 			srcPath, destPath := srcPaths[i], copyDestPaths[i]
 			opts := layercopy.CopyOptions{
 				Chown:             layercopyOwnership(ownership),
