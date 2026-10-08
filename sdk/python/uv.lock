@@ -415,7 +415,7 @@ requires-dist = [
     { name = "cattrs", specifier = ">=25.1.0" },
     { name = "exceptiongroup", specifier = ">=1.3.0" },
     { name = "gql", extras = ["httpx"], specifier = ">=4.0" },
-    { name = "httpcore", specifier = ">=1.0.8" },
+    { name = "httpcore", specifier = ">=1.0.9" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.23.0" },
     { name = "opentelemetry-instrumentation-logging", specifier = ">=0.54b1" },
     { name = "opentelemetry-sdk", specifier = ">=1.23.0" },
