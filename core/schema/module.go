@@ -2425,41 +2425,46 @@ func expandTypeDefClosure(
 			if !typeDefSelf.AsObject.Valid || typeDefSelf.AsObject.Value.Self() == nil {
 				continue
 			}
-			obj := typeDefSelf.AsObject.Value.Self()
-			for _, field := range obj.Fields {
-				if field.Self() == nil {
-					continue
-				}
-				if err := enqueue(field.Self().TypeDef); err != nil {
-					return nil, err
-				}
+			objs, err := objectsToExpand(ctx, dag, typeDefSelf.AsObject.Value)
+			if err != nil {
+				return nil, err
 			}
-			for _, fn := range obj.Functions {
-				if fn.Self() == nil {
-					continue
-				}
-				if err := enqueue(fn.Self().ReturnType); err != nil {
-					return nil, err
-				}
-				for _, arg := range fn.Self().Args {
-					if arg.Self() == nil {
+			for _, obj := range objs {
+				for _, field := range obj.Fields {
+					if field.Self() == nil {
 						continue
 					}
-					if err := enqueue(arg.Self().TypeDef); err != nil {
+					if err := enqueue(field.Self().TypeDef); err != nil {
 						return nil, err
 					}
 				}
-			}
-			if obj.Constructor.Valid && obj.Constructor.Value.Self() != nil {
-				if err := enqueue(obj.Constructor.Value.Self().ReturnType); err != nil {
-					return nil, err
-				}
-				for _, arg := range obj.Constructor.Value.Self().Args {
-					if arg.Self() == nil {
+				for _, fn := range obj.Functions {
+					if fn.Self() == nil {
 						continue
 					}
-					if err := enqueue(arg.Self().TypeDef); err != nil {
+					if err := enqueue(fn.Self().ReturnType); err != nil {
 						return nil, err
+					}
+					for _, arg := range fn.Self().Args {
+						if arg.Self() == nil {
+							continue
+						}
+						if err := enqueue(arg.Self().TypeDef); err != nil {
+							return nil, err
+						}
+					}
+				}
+				if obj.Constructor.Valid && obj.Constructor.Value.Self() != nil {
+					if err := enqueue(obj.Constructor.Value.Self().ReturnType); err != nil {
+						return nil, err
+					}
+					for _, arg := range obj.Constructor.Value.Self().Args {
+						if arg.Self() == nil {
+							continue
+						}
+						if err := enqueue(arg.Self().TypeDef); err != nil {
+							return nil, err
+						}
 					}
 				}
 			}
@@ -2505,6 +2510,31 @@ func expandTypeDefClosure(
 		ordered = append(ordered, canonicalByName[name])
 	}
 	return ordered, nil
+}
+
+// objectsToExpand returns every shape of an object the closure has to cover.
+//
+// For a collection that is two: the author definition and its projection.
+// TypeDef.asObject projects a collection on read, so what a consumer walks is
+// the projection — and the synthesized list field carries an element type no
+// author member mentions, which would otherwise be missing from the closure.
+// The author definition stays in because the projection hides the author's own
+// functions, whose types a consumer still reaches through the batch type.
+func objectsToExpand(
+	ctx context.Context,
+	dag *dagql.Server,
+	obj dagql.ObjectResult[*core.ObjectTypeDef],
+) ([]*core.ObjectTypeDef, error) {
+	self := obj.Self()
+	objs := []*core.ObjectTypeDef{self}
+	if self.Collection == nil || !self.Collection.Enabled {
+		return objs, nil
+	}
+	projected, err := core.CollectionPublicObject(ctx, dag, obj)
+	if err != nil {
+		return nil, fmt.Errorf("project collection %q for type closure: %w", self.Name, err)
+	}
+	return append(objs, projected), nil
 }
 
 func normalizeReturnAllTypesTypeDef(
