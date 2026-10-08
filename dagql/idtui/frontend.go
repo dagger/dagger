@@ -75,7 +75,7 @@ var SkipLoggedOutTraceMsgEnvs = []string{
 }
 
 // NOTE: keep this to one line, and 80 characters max
-var loggedOutTraceMsg = fmt.Sprintf("Setup tracing at %%s. To hide set %s=1", SkipLoggedOutTraceMsgEnvs[0])
+var loggedOutTraceMsg = fmt.Sprintf(`Setup tracing by running "dagger cloud signup". To hide set %s=1`, SkipLoggedOutTraceMsgEnvs[0])
 
 //go:generate go run github.com/matryer/moq -out frontend_mock.go . Frontend
 

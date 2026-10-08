@@ -176,7 +176,7 @@ func (fe *frontendLogs) SetCloudURL(ctx context.Context, url string, msg string,
 		if logged {
 			fe.out.Write([]byte(traceMessage(fe.profile, url, msg) + "\n"))
 		} else if !skipLoggedOutTraceMsg() {
-			fmt.Fprintf(fe.out, loggedOutTraceMsg+"\n", url)
+			fmt.Fprintln(fe.out, loggedOutTraceMsg)
 		}
 	}
 }

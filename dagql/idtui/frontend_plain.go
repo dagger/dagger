@@ -159,7 +159,7 @@ func (fe *frontendPlain) SetCloudURL(ctx context.Context, url string, msg string
 		if logged {
 			fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg))
 		} else if !skipLoggedOutTraceMsg() {
-			fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
+			fe.msgPreFinalRender.WriteString(loggedOutTraceMsg)
 		}
 	}
 }

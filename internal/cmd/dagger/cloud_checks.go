@@ -388,13 +388,49 @@ func cloudDimensionMatches(dim, got string, values []string) bool {
 	return false
 }
 
+// normalizeGitHubRepo reduces the many ways a GitHub repo can be spelled to a
+// bare "owner/name". It accepts https/http/ssh/git URLs, the scp-like
+// git@github.com:owner/name form (with or without a port), optional userinfo
+// (e.g. git@), and a trailing .git, as well as an already-bare owner/name.
 func normalizeGitHubRepo(repo string) string {
 	repo = strings.TrimSpace(repo)
-	repo = strings.TrimPrefix(repo, "https://")
-	repo = strings.TrimPrefix(repo, "http://")
+	repo = strings.TrimSuffix(repo, "/")
+	// Strip any URL scheme (https://, http://, ssh://, git://, ...).
+	if i := strings.Index(repo, "://"); i != -1 {
+		repo = repo[i+len("://"):]
+	}
+	// Strip userinfo that precedes the host (e.g. "git@" in git@github.com/...).
+	// Only when the '@' comes before the first path separator, so an '@' inside
+	// the path is left alone.
+	if at := strings.IndexByte(repo, '@'); at != -1 {
+		if slash := strings.IndexByte(repo, '/'); slash == -1 || at < slash {
+			repo = repo[at+1:]
+		}
+	}
+	// Normalize the scp-like "github.com:owner/name" separator (and drop an
+	// optional "github.com:port/") to the regular "github.com/owner/name" form.
+	if rest, ok := strings.CutPrefix(repo, "github.com:"); ok {
+		if slash := strings.IndexByte(rest, '/'); slash != -1 && isAllDigits(rest[:slash]) {
+			repo = "github.com" + rest[slash:] // github.com:port/owner/name -> github.com/owner/name
+		} else {
+			repo = "github.com/" + rest // github.com:owner/name -> github.com/owner/name
+		}
+	}
 	repo = strings.TrimPrefix(repo, "github.com/")
 	repo = strings.TrimSuffix(repo, ".git")
 	return repo
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func cloudResultForStatus(status string) string {

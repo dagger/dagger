@@ -83,7 +83,8 @@ func TestInitConsoleShowsCommands(t *testing.T) {
 	require.Contains(t, first, "Find and install suitable modules?")
 	require.NotContains(t, first, "Enable cloud checks?")
 	t.Logf("First prompt:\n%s", first)
-	send("/key", "enter") // Skip module recommendations.
+	// Run is preselected, so move right to Skip before confirming.
+	send("/key", "right enter") // Skip module recommendations.
 	var second string
 	defer func() {
 		if t.Failed() {
@@ -95,7 +96,7 @@ func TestInitConsoleShowsCommands(t *testing.T) {
 		return strings.Contains(second, "Enable cloud checks?")
 	}, 5*time.Second, 100*time.Millisecond)
 	require.Contains(t, second, "cloud checks on")
-	send("/key", "enter") // Skip Cloud checks.
+	send("/key", "right enter") // Skip Cloud checks.
 	// The console deliberately stays open after the command completes.
 	// Wait for the last form to close, then stop the console with SIGINT.
 	require.Eventually(t, func() bool {

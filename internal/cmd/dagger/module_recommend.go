@@ -123,7 +123,7 @@ func selectRecommendedModules(ctx context.Context, recs []recommendation) ([]rec
 		Filterable(false)
 	form := huh.NewForm(
 		huh.NewGroup(
-			idtui.NewFlowMultiSelect(multiSelect, recs[len(recs)-1].Module.Repo),
+			idtui.NewFlowMultiSelect(multiSelect, recs[len(recs)-1].Module.Repo).StartFocusAfter(),
 			idtui.NewExplicitConfirm("Install selected", "Skip", &install).
 				Inline(true),
 		),
