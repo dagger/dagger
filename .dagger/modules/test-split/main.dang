@@ -72,7 +72,6 @@ type TestSplit {
         "^TestCLI$",
         "^TestCachePersistence$",
         "^TestCall$",
-        "^TestClientGenerator$",
         "^TestContainer$",
         "^TestDaggerCMD$",
         "^TestDockerfile$",
@@ -190,7 +189,6 @@ type TestSplit {
         "^TestCLI$",
         "^TestCachePersistence$",
         "^TestCall$",
-        "^TestClientGenerator$",
         "^TestContainer$",
         "^TestDaggerCMD$",
         "^TestDockerfile$",
@@ -274,13 +272,6 @@ type TestSplit {
   """
   pub testLocalCache: Void @check {
     testCliEngineSpecific(["TestLocalCache"])
-  }
-
-  """
-  Test Client Generator
-  """
-  pub testClientGenerator: Void @check {
-    testSpecific(["TestClientGenerator"])
   }
 
   """
