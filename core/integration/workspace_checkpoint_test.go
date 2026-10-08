@@ -439,13 +439,13 @@ func (*Probe) Frozen() error { return nil }
 // the commit rather than the branch, before anything freezes it.
 func (WorkspaceSuite) TestWorkspaceFromBranchIsPinned(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "original"))
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "original"))
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
 		WithNewFile("base.txt", "overlay")
 	contents, err := ws.File("base.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "overlay", contents)
-	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(ws))
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(ws))
 	require.NoError(t, err)
 	id := new(call.ID)
 	require.NoError(t, id.Decode(string(recipe)))
@@ -552,14 +552,14 @@ func (WorkspaceSuite) TestWorkspaceSnapshotHostOverlay(ctx context.Context, t *t
 	git("commit", "-m", "base")
 
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
-	live := c.CurrentWorkspace()
+	live := core.NewQuery(c).CurrentWorkspace()
 	frozen := snapshotWorkspace(ctx, t, c, live.
 		WithNewFile("keep.txt", "edited\n").
 		WithoutFile("drop.txt").
 		WithoutDirectory("replaced").
 		WithNewFile("replaced", "now a file\n").
 		WithoutDirectory("gone").
-		WithDirectory("empty", c.Directory()))
+		WithDirectory("empty", core.NewQuery(c).Directory()))
 	contents, err := frozen.File("keep.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "edited\n", contents)
@@ -574,7 +574,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotHostOverlay(ctx context.Context, t *t
 	entries, err := frozen.Directory("empty").Entries(ctx)
 	require.NoError(t, err)
 	require.Empty(t, entries)
-	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(frozen))
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(frozen))
 	require.NoError(t, err)
 	fields := workspaceRecipeFields(t, string(recipe))
 	require.Contains(t, fields, "withPatchFile", "the overlay must be recorded as a patch")
@@ -586,7 +586,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotHostOverlay(ctx context.Context, t *t
 	contents, err = binary.File("app.bin").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "ELF\x00\x01", contents)
-	recipe, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(binary))
+	recipe, err = sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(binary))
 	require.NoError(t, err)
 	fields = workspaceRecipeFields(t, string(recipe))
 	require.NotContains(t, fields, "withPatchFile", "a binary must not be embedded as a patch")

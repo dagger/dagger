@@ -4239,7 +4239,7 @@ type registryOptions struct {
 func publishAndRead(ctx context.Context, registry *core.Service, ref string, opts registryOptions) (string, error) {
 	_, err := dag.Container().
 		WithNewFile("/hello.txt", "hello").
-		Publish(ctx, ref, sdkcore.ContainerPublishOpts{
+		Publish(ctx, ref, core.ContainerPublishOpts{
 			RegistryService:       registry,
 			Protocol:              opts.protocol,
 			InsecureSkipTLSVerify: opts.insecureSkipTLSVerify,
@@ -4249,7 +4249,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 	}
 
 	return dag.Container().
-		From(ref, sdkcore.ContainerFromOpts{
+		From(ref, core.ContainerFromOpts{
 			RegistryService:       registry,
 			Protocol:              opts.protocol,
 			InsecureSkipTLSVerify: opts.insecureSkipTLSVerify,
@@ -5338,8 +5338,8 @@ const nestedMainClientCheck = `isMain() {
 }`
 
 func (ContainerSuite) TestNestedExecNewSession(ctx context.Context, t *testctx.T) {
-	base := func(c *dagger.Client) *dagger.Container {
-		return c.Container().From(alpineImage).
+	base := func(c *dagger.Client) *sdkcore.Container {
+		return sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithNewFile("/clients.graphql", `{ engine { clients } }`)
 	}
@@ -5348,7 +5348,7 @@ func (ContainerSuite) TestNestedExecNewSession(ctx context.Context, t *testctx.T
 		c := connect(ctx, t)
 		out, err := base(c).
 			WithExec([]string{"sh", "-c", `echo "engine=${DAGGER_ENGINE%%:*} port=${DAGGER_SESSION_PORT:-} token=${DAGGER_SESSION_TOKEN:+set} nested=${_DAGGER_NESTED_CLIENT_ID:-}"`},
-				dagger.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).
+				sdkcore.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "engine=tcp port= token= nested=\n", out)
@@ -5371,7 +5371,7 @@ func (ContainerSuite) TestNestedExecNewSession(ctx context.Context, t *testctx.T
 			isMain "$ID4" & b=$!
 			wait "$a"
 			wait "$b"
-		`}, dagger.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).Sync(ctx)
+		`}, sdkcore.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).Sync(ctx)
 		require.NoError(t, err)
 
 		// By default the same CLI joins the caller's session as a nested
@@ -5385,8 +5385,8 @@ func (ContainerSuite) TestNestedExecNewSession(ctx context.Context, t *testctx.T
 
 	t.Run("conflicts with disableDaggerInDagger", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		_, err := c.Container().From(alpineImage).
-			WithExec([]string{"true"}, dagger.ContainerWithExecOpts{
+		_, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"true"}, sdkcore.ContainerWithExecOpts{
 				DisableDaggerInDagger:    true,
 				DaggerInDaggerNewSession: true,
 			}).
@@ -6306,7 +6306,7 @@ func (ContainerSuite) TestSaveHostContainerd(ctx context.Context, t *testctx.T) 
 		// Increase GC pressure so content the export writes without a lease
 		// is likely to be deleted before the image record that references it
 		// is created.
-		middleware: func(ctr *dagger.Container) *dagger.Container {
+		middleware: func(ctr *sdkcore.Container) *sdkcore.Container {
 			return ctr.WithExec([]string{"sh", "-c", `cat >> /etc/containerd/config.toml <<'EOF'
 
 [plugins."io.containerd.gc.v1.scheduler"]

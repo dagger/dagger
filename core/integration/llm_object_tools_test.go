@@ -495,7 +495,7 @@ type Builder {
 func (LLMSuite) TestTextChangesetToolSurvivesCommit(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	const marker = "reformat-marker"
-	source := c.Directory().
+	source := core.NewQuery(c).Directory().
 		WithNewFile("main.go", "package main\nfunc main(){}\n").
 		WithNewFile("dagger.toml", "[modules.formatter]\nsource = \"modules/formatter\"\n").
 		WithNewFile("modules/formatter/dagger.json", `{"name":"formatter","engineVersion":"v1.0.0-0","sdk":"dang"}`).
@@ -519,15 +519,15 @@ type Formatter {
 }
 `)
 	daemon, url := gitService(ctx, t, c, source)
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("format it").
-		WithResponse([]dagger.LLMContentBlockInput{{
-			Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "format",
+		WithResponse([]core.LLMContentBlockInput{{
+			Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "format",
 		}}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
-	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "done"}}))
+	base := core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws)
 	composed, err := composeArtifactAgents(ctx, c, ws, nil, base)
 	require.NoError(t, err)
 	result := composed.WithPrompt("format it").Loop()
@@ -539,7 +539,7 @@ type Formatter {
 	require.Equal(t, "package main\n\nfunc main() {}\n", formatted)
 
 	// requireNoTool fails for a recipe that would re-run the tool.
-	requireNoTool := func(recipe dagger.ID) map[string]bool {
+	requireNoTool := func(recipe core.ID) map[string]bool {
 		t.Helper()
 		id := new(call.ID)
 		require.NoError(t, id.Decode(string(recipe)))
@@ -564,11 +564,11 @@ type Formatter {
 	got, err := commitWorkspace(ctx, c, result.Workspace(), "format", []string{"main.go"})
 	require.NoError(t, err)
 	require.Empty(t, got.Git.Uncommitted.ModifiedPaths)
-	committed := dagger.Ref[*dagger.Workspace](c, got.ID)
-	contents, err := committed.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("main.go").Contents(ctx)
+	committed := core.Ref[*core.Workspace](core.NewQuery(c), got.ID)
+	contents, err := committed.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("main.go").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, formatted, contents)
-	recipe, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(committed))
+	recipe, err = sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(committed))
 	require.NoError(t, err)
 	fields = requireNoTool(recipe)
 	require.True(t, fields["__withCommitRepository"], "the recipe must hold the commit")

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	sdkcore "dagger.io/dagger/core"
 	"strings"
 	"time"
 
@@ -10,15 +11,13 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
-
-	"dagger.io/dagger"
 )
 
 func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("mounted read-only and appended to PATH", func(ctx context.Context, t *testctx.T) {
-		out, err := c.Container().
+		out, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", `command -v dagger; echo "$PATH"; touch /dev/.dagger/dagger 2>&1 || true`}).
 			Stdout(ctx)
@@ -29,7 +28,7 @@ func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("connects to the engine", func(ctx context.Context, t *testctx.T) {
-		out, err := c.Container().
+		out, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"dagger", "core", "version"}).
 			Stdout(ctx)
@@ -38,7 +37,7 @@ func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("container without a shell or libc", func(ctx context.Context, t *testctx.T) {
-		out, err := c.Container().
+		out, err := sdkcore.NewQuery(c).Container().
 			WithExec([]string{"dagger", "core", "version"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -46,14 +45,14 @@ func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("emulated container", func(ctx context.Context, t *testctx.T) {
-		native, err := c.DefaultPlatform(ctx)
+		native, err := sdkcore.NewQuery(c).DefaultPlatform(ctx)
 		require.NoError(t, err)
-		other := dagger.Platform("linux/arm64")
+		other := sdkcore.Platform("linux/arm64")
 		if platforms.MustParse(string(native)).Architecture == "arm64" {
 			other = "linux/amd64"
 		}
 
-		ctr := c.Container(dagger.ContainerOpts{Platform: other}).From(alpineImage)
+		ctr := sdkcore.NewQuery(c).Container(sdkcore.ContainerOpts{Platform: other}).From(alpineImage)
 
 		// dagger as the exec's own command
 		out, err := ctr.WithExec([]string{"dagger", "core", "version"}).Stdout(ctx)
@@ -63,14 +62,14 @@ func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 		// dagger started by an emulated shell
 		out, err = ctr.WithExec([]string{"sh", "-c", "uname -m; dagger core version >/dev/null && echo ok"}).Stdout(ctx)
 		require.NoError(t, err)
-		uname := map[dagger.Platform]string{"linux/arm64": "aarch64", "linux/amd64": "x86_64"}[other]
+		uname := map[sdkcore.Platform]string{"linux/arm64": "aarch64", "linux/amd64": "x86_64"}[other]
 		require.Equal(t, uname+"\nok\n", out)
 	})
 
 	t.Run("new session", func(ctx context.Context, t *testctx.T) {
 		// The CLI connects through DAGGER_ENGINE as the main client of its own
 		// session.
-		out, err := c.Container().
+		out, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithNewFile("/clients.graphql", `{ engine { clients } }`).
 			WithEnvVariable("ID", identity.NewID()).
@@ -78,7 +77,7 @@ func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 				command -v dagger
 				echo "$PATH"
 				isMain "$ID" && echo ok
-			`}, dagger.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).
+			`}, sdkcore.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/dev/.dagger/dagger\n"+
@@ -110,10 +109,10 @@ func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("not mounted without nesting", func(ctx context.Context, t *testctx.T) {
-		out, err := c.Container().
+		out, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", `echo "$PATH"; test -e /dev/.dagger || echo absent`},
-				dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+				sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nabsent\n", out)
