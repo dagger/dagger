@@ -261,6 +261,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	defer func() {
 		if rerr != nil {
 			c.internalCancel(errors.New("Connect failed"))
+			if closer, ok := c.connector.(io.Closer); ok {
+				rerr = errors.Join(rerr, closer.Close())
+			}
 		}
 	}()
 
@@ -335,15 +338,14 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	if err := c.startEngine(connectCtx, params); err != nil {
 		return nil, fmt.Errorf("start engine: %w", err)
 	}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, c.bkClient.Close())
+		}
+	}()
 	if !engine.CheckVersionCompatibility(engine.NormalizeVersion(c.bkVersion), engine.MinimumEngineVersion) {
 		return nil, fmt.Errorf("incompatible engine version %s", engine.NormalizeVersion(c.bkVersion))
 	}
-
-	defer func() {
-		if rerr != nil {
-			c.bkClient.Close()
-		}
-	}()
 
 	if err := c.startSession(connectCtx); err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
@@ -429,6 +431,9 @@ func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ 
 	defer func() {
 		if rerr != nil {
 			c.internalCancel(errors.New("Connect failed"))
+			if closer, ok := c.connector.(io.Closer); ok {
+				rerr = errors.Join(rerr, closer.Close())
+			}
 		}
 	}()
 
@@ -449,15 +454,14 @@ func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ 
 	if err := c.startEngine(connectCtx, params.Params); err != nil {
 		return nil, fmt.Errorf("start engine: %w", err)
 	}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, c.bkClient.Close())
+		}
+	}()
 	if !engine.CheckVersionCompatibility(engine.NormalizeVersion(c.bkVersion), engine.MinimumEngineVersion) {
 		return nil, fmt.Errorf("incompatible engine version %s", engine.NormalizeVersion(c.bkVersion))
 	}
-
-	defer func() {
-		if rerr != nil {
-			c.bkClient.Close()
-		}
-	}()
 
 	if err := c.startE2ESession(connectCtx, params.CallerSessionConn); err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
@@ -535,6 +539,11 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 	if err != nil {
 		return fmt.Errorf("new client: %w", err)
 	}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, bkClient.Close())
+		}
+	}()
 	c.bkClient = bkClient
 	c.bkVersion = bkInfo.BuildkitVersion.Version
 	c.bkName = bkInfo.BuildkitVersion.Revision
@@ -934,6 +943,9 @@ func (c *Client) Close() (rerr error) {
 	}
 	if c.bkClient != nil {
 		c.eg.Go(c.bkClient.Close)
+	}
+	if closer, ok := c.connector.(io.Closer); ok {
+		c.eg.Go(closer.Close)
 	}
 	if err := c.eg.Wait(); err != nil {
 		rerr = errors.Join(rerr, err)

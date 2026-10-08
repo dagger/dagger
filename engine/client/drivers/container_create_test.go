@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"context"
+	"errors"
 	"net"
 	"slices"
 	"strings"
@@ -46,7 +47,8 @@ func TestImageDriverCreateStartsExistingEngineWithoutListing(t *testing.T) {
 	t.Parallel()
 
 	backend := &existingEngineBackend{
-		containers: []string{"dagger-engine-v0.20.0", "dagger-engine-v0.21.0", "unrelated"},
+		containers:      []string{"dagger-engine-v0.20.0", "dagger-engine-v0.21.0", "unrelated"},
+		cleanupDeadline: make(chan time.Time, 1),
 	}
 	driver := &imageDriver{backend: backend}
 
@@ -57,8 +59,16 @@ func TestImageDriverCreateStartsExistingEngineWithoutListing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "dagger-engine-v0.21.0", target.Host)
 
-	// The command connected on the strength of the lookup and the start alone.
-	require.Equal(t, []string{"exists dagger-engine-v0.21.0", "start dagger-engine-v0.21.0"}, backend.callsBefore("ls"))
+	// Starting the known name is the existence check; no inspect or list is on
+	// the connection's critical path.
+	require.Equal(t, []string{"start dagger-engine-v0.21.0"}, backend.callsBefore("ls"))
+	select {
+	case deadline := <-backend.cleanupDeadline:
+		require.LessOrEqual(t, time.Until(deadline), leftoverEngineCleanupTimeout)
+		require.Greater(t, time.Until(deadline), time.Duration(0))
+	case <-time.After(5 * time.Second):
+		t.Fatal("background cleanup did not start")
+	}
 
 	require.Eventually(t, func() bool {
 		return slices.Contains(backend.calls(), "remove dagger-engine-v0.20.0")
@@ -68,11 +78,61 @@ func TestImageDriverCreateStartsExistingEngineWithoutListing(t *testing.T) {
 	require.Empty(t, backend.runName, "no new engine should have been run")
 }
 
+func TestImageDriverCreatePreservesExistingEngineStartFailure(t *testing.T) {
+	t.Parallel()
+
+	startErr := errors.New("start denied")
+	backend := &existingEngineBackend{
+		containers: []string{"dagger-engine-v0.21.0"},
+		startErr:   startErr,
+	}
+	driver := &imageDriver{backend: backend}
+
+	_, err := driver.create(t.Context(), containerCreateOpts{
+		imageRef: "registry.example.com/dagger-engine:v0.21.0",
+	}, &DriverOpts{})
+	require.ErrorIs(t, err, startErr)
+	require.Equal(t, []string{
+		"start dagger-engine-v0.21.0",
+		"exists dagger-engine-v0.21.0",
+		"start dagger-engine-v0.21.0",
+	}, backend.calls())
+	require.Empty(t, backend.runName, "a failed start must not fall through to creating the existing engine")
+}
+
+func TestImageDriverCreateRetriesEngineCreatedConcurrently(t *testing.T) {
+	t.Parallel()
+
+	backend := &existingEngineBackend{
+		containers: []string{"dagger-engine-v0.21.0"},
+		startErrs: []error{
+			errors.New("no such container"),
+			nil,
+		},
+	}
+	driver := &imageDriver{backend: backend}
+
+	target, err := driver.create(t.Context(), containerCreateOpts{
+		imageRef: "registry.example.com/dagger-engine:v0.21.0",
+	}, &DriverOpts{})
+	require.NoError(t, err)
+	require.Equal(t, "dagger-engine-v0.21.0", target.Host)
+	require.Equal(t, []string{
+		"start dagger-engine-v0.21.0",
+		"exists dagger-engine-v0.21.0",
+		"start dagger-engine-v0.21.0",
+	}, backend.calls())
+	require.Empty(t, backend.runName, "the concurrently created engine should be reused")
+}
+
 // existingEngineBackend is a host on which the engine already exists. It
 // records the backend calls, in order.
 type existingEngineBackend struct {
 	captureContainerBackend
-	containers []string
+	containers      []string
+	cleanupDeadline chan time.Time
+	startErr        error
+	startErrs       []error
 
 	mu  sync.Mutex
 	log []string
@@ -108,12 +168,22 @@ func (b *existingEngineBackend) ContainerExists(_ context.Context, name string) 
 }
 
 func (b *existingEngineBackend) ContainerStart(_ context.Context, name string) error {
-	b.record("start " + name)
-	return nil
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.log = append(b.log, "start "+name)
+	if len(b.startErrs) > 0 {
+		err := b.startErrs[0]
+		b.startErrs = b.startErrs[1:]
+		return err
+	}
+	return b.startErr
 }
 
-func (b *existingEngineBackend) ContainerLs(context.Context) ([]string, error) {
+func (b *existingEngineBackend) ContainerLs(ctx context.Context) ([]string, error) {
 	b.record("ls")
+	if deadline, ok := ctx.Deadline(); ok && b.cleanupDeadline != nil {
+		b.cleanupDeadline <- deadline
+	}
 	return b.containers, nil
 }
 
@@ -166,7 +236,7 @@ func (b *captureContainerBackend) ContainerRemove(context.Context, string) error
 }
 
 func (b *captureContainerBackend) ContainerStart(context.Context, string) error {
-	return nil
+	return errors.New("no such container")
 }
 
 func (b *captureContainerBackend) ContainerExists(context.Context, string) (bool, error) {
