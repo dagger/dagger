@@ -807,6 +807,23 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 		Variables: map[string]any{"id": fullTree.Node.Tree.ID},
 	}, &dagger.Response{Data: &tagTree}))
 	require.ElementsMatch(t, []string{".git/", "base.txt"}, tagTree.Node.AsGit.Ref.Tree.Entries)
+	// A repository opened over the retained checkout has no checkout base,
+	// as replayed recipes do: its HEAD's checkout starts from the checkout
+	// itself rather than over again.
+	var headTree struct {
+		Node struct {
+			AsGit struct {
+				Head struct {
+					Tree struct{ Entries []string }
+				}
+			}
+		}
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!) { node(id: $id) { ... on Directory { asGit { head { tree(depth: 0, discardGitDir: false) { entries } } } } } }`,
+		Variables: map[string]any{"id": fullTree.Node.Tree.ID},
+	}, &dagger.Response{Data: &headTree}))
+	require.ElementsMatch(t, []string{".git/", "base.txt", "files/"}, headTree.Node.AsGit.Head.Tree.Entries)
 	require.NoError(t, c.Close()) // Drain telemetry before asserting absence.
 
 	type spanInfo struct {
@@ -881,9 +898,10 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 		}
 	}
 	t.Logf("copy-on-write checkouts by path: %v; skipped: %v", byPath, fallbacks)
-	// The committed head moves its base's checkout by its delta; the base
-	// (host storage, no checkout base) and the tag checkout start over.
-	require.Positive(t, byPath["delta"], "committed heads must check out by delta")
+	// The committed head moves its base's checkout by its delta, and so does
+	// the repository opened over that checkout; the base (host storage, no
+	// checkout base) and the tag checkout (not a descendant) start over.
+	require.GreaterOrEqual(t, byPath["delta"], 2, "committed heads and retained checkouts must check out by delta")
 	require.Positive(t, byPath["wipe"], "storage without a checkout base must check out copy-on-write")
 	for id, span := range spans {
 		name := span.name
@@ -903,6 +921,127 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 	}
 	// Without Git spans beneath the checkouts, the fetch check above is vacuous.
 	require.Positive(t, checkouts, "must observe git commands beneath copy-on-write checkouts")
+}
+
+// Sessions recorded before checkout bases were retained replay repositories
+// opened with GitRepository.withContents over a retained checkout, over its
+// .git, or over a pull's scratch repository. Their full checkouts must start
+// from those checkouts (a pull's from the receiver's, which its edits do not
+// touch) by delta, and match full checkouts of the same commits.
+func (WorkspaceSuite) TestWorkspaceRetainedCheckoutFullCheckouts(ctx context.Context, t *testctx.T) {
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture, inspector := gitIncrementalCheckoutFixture(c)
+	repo := fixture.AsGit()
+	discard := dagger.GitRefTreeOpts{DiscardGitDir: true}
+	before := repo.Head().Tree(discard)
+	head := repo.Head().WithCommit(before.WithNewFile("selected.txt", "committed\n").Changes(before), "receiver", workspaceCommitDate, "Oracle", "oracle@example.com")
+	headTree := head.Tree(discard)
+	source := head.WithCommit(headTree.WithNewFile("added/deep.txt", "added\n").WithoutFile("delete.txt").WithNewFile("selected.txt", "source\n").Changes(headTree), "source", workspaceCommitDate, "Oracle", "oracle@example.com")
+	headID, err := head.ID(ctx)
+	require.NoError(t, err)
+	headSHA, err := head.CommitSHA(ctx)
+	require.NoError(t, err)
+	sourceSHA, err := source.CommitSHA(ctx)
+	require.NoError(t, err)
+	asWorkspace := dagger.GitRefAsWorkspaceOpts{Cwd: "/"}
+	sourceID, err := source.AsWorkspace(asWorkspace).ID(ctx)
+	require.NoError(t, err)
+	// The receiver's edits ride along in the pull's directory.
+	receiverID, err := head.AsWorkspace(asWorkspace).WithNewFile("pending.txt", "receiver edit\n").ID(ctx)
+	require.NoError(t, err)
+	fullCheckout := func(id dagger.ID) *dagger.Directory {
+		var out struct {
+			Node struct{ FullCheckout struct{ ID dagger.ID } `json:"__fullCheckout"` }
+		}
+		require.NoError(t, c.Do(ctx, &dagger.Request{
+			Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { __fullCheckout { id } } } }`,
+			Variables: map[string]any{"id": id},
+		}, &dagger.Response{Data: &out}))
+		return dagger.Ref[*dagger.Directory](c, out.Node.FullCheckout.ID)
+	}
+	full := fullCheckout(headID)
+	pulled := dagger.Ref[*dagger.Directory](c, selectHidden(ctx, t, c, receiverID, "Workspace", "__pullDirectory", map[string]any{
+		"source":         sourceID,
+		"committerName":  "Committer",
+		"committerEmail": "committer@example.com",
+	}))
+	// Git's view of a checkout: everything a fresh one determines.
+	gitState := func(dir *dagger.Directory) string {
+		out, err := inspector.WithMountedDirectory("/inspect", dir).WithWorkdir("/inspect").
+			WithExec([]string{"sh", "-ec", `
+git rev-parse HEAD
+git symbolic-ref -q HEAD || echo detached
+git for-each-ref --format='%(objectname) %(refname)'
+git config --local --list
+git status --porcelain --ignored
+git ls-files --stage --debug | grep -v -e ctime -e mtime -e dev: -e uid:
+git fsck --no-dangling
+`}).Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	for _, tc := range []struct {
+		name     string
+		contents *dagger.Directory
+		sha      string
+	}{
+		{"checkout", full, headSHA},
+		{"checkout .git", full.Directory(".git"), headSHA},
+		{"pull", pulled, sourceSHA},
+	} {
+		ref := repo.WithContents(tc.contents).Ref(tc.sha)
+		refID, err := ref.ID(ctx)
+		require.NoError(t, err)
+		got := fullCheckout(refID)
+		// The oracle's metadata is rewritten so that it is not recognized
+		// as a retained checkout: it takes the full checkout.
+		oracleID, err := tc.contents.WithNewFile(".git/description", "oracle\n").AsGit().Ref(tc.sha).ID(ctx)
+		if tc.name == "checkout .git" {
+			oracleID, err = tc.contents.WithNewFile("description", "oracle\n").AsGit().Ref(tc.sha).ID(ctx)
+		}
+		require.NoError(t, err)
+		want := fullCheckout(oracleID)
+		require.Equal(t,
+			workspaceCommitManifest(ctx, t, inspector, want.WithoutDirectory(".git")),
+			workspaceCommitManifest(ctx, t, inspector, got.WithoutDirectory(".git")), tc.name)
+		requireGitCheckoutTimes(ctx, t, inspector, got.WithoutDirectory(".git"))
+		require.Equal(t, gitState(want), gitState(got), tc.name)
+	}
+	require.NoError(t, c.Close()) // Drain finished spans.
+
+	traces, _ := sink.capture()
+	details := map[string]int{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.Name != "materialize copy-on-write git checkout" || span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					var path, detail string
+					var skipped []string
+					for _, attr := range span.Attributes {
+						switch attr.Key {
+						case "dagger.git.checkout.cow.path":
+							path = attr.Value.GetStringValue()
+						case "dagger.git.checkout.cow.detail":
+							detail = attr.Value.GetStringValue()
+						case "dagger.git.checkout.cow.skipped":
+							for _, v := range attr.Value.GetArrayValue().GetValues() {
+								skipped = append(skipped, v.GetStringValue())
+							}
+						}
+					}
+					t.Logf("full checkout path=%s detail=%q skipped=%v", path, detail, skipped)
+					details[path+":"+detail]++
+				}
+			}
+		}
+	}
+	require.Positive(t, details["delta:base=checkout"], "a repository opened over a retained checkout")
+	require.Positive(t, details["delta:base=checkout-git-dir"], "a repository opened over a retained checkout's .git")
+	require.Positive(t, details["delta:base=pull-receiver"], "a repository opened over a pull's directory")
 }
 
 // TestWorkspaceScopedCommitPerformance is a deterministic, non-LLM latency

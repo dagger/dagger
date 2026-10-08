@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -119,17 +120,41 @@ func recordCowCheckoutPath(profCtx context.Context, span trace.Span, path, detai
 	wcprof.RecordOp(profCtx, wcprof.OpKindIO, class, wcprof.OpOpts{Ident: why}, now, now, outcome)
 }
 
-// cowDeltaTree is the delta path of cowTree. A nil Directory means it does not
-// apply, and reason says why; base says whether the base checkout was already
-// materialized ("parent-checkout") or had to be evaluated first
-// ("cold-parent-checkout"). Failures fall back too (see nativeFallback): only
-// the caller's cancellation surfaces.
+// cowDeltaTree is the delta path of cowTree. Its base is a retained checkout
+// (GitRef.__fullCheckout), clean by construction:
+//
+//   - the ref's checkout base's own checkout (withCommit and pulls record the
+//     base, see LocalGitRef.incrementalCheckoutIneligible), materialized cold
+//     only at the top level (see incrementalParentTree): detail
+//     "parent-checkout" or "cold-parent-checkout";
+//   - otherwise, the retained checkout the repository's contents were
+//     produced from, as source-only trees infer it for replayed recipes
+//     opened with withContents (see gitContentsCheckoutBase): detail
+//     "checkout", "checkout-git-dir" or "pull-receiver" (a pull's directory
+//     carries the receiver's edits, so its base is the receiver's checkout).
+//     A cold one is not evaluated: that costs as much as this checkout.
+//
+// A nil Directory means it does not apply, and reason says why. Failures fall
+// back too (see nativeFallback): only the caller's cancellation surfaces.
 func (ref *LocalGitRef) cowDeltaTree(ctx context.Context, srv *dagql.Server, remotes []GitRemote, upstreamRemote *string) (_ *Directory, base, reason string, rerr error) {
-	if reason := ref.incrementalCheckoutIneligible(); reason != "" {
-		return nil, "", reason, nil
-	}
 	if !gitCheckoutRefsSupported(ref.Ref) {
 		return nil, "", "ref-name", nil
+	}
+	var contents dagql.ObjectResult[*Directory]
+	if ineligible := ref.incrementalCheckoutIneligible(); ineligible != "" {
+		checkout, worktree, kind, err := gitContentsCheckoutBase(ctx, srv, ref.repo.Directory)
+		if err != nil {
+			return nil, "", "", err
+		}
+		switch {
+		case checkout.Self() == nil:
+			return nil, "", ineligible + "+" + kind, nil
+		case dagql.HasPendingLazyComputation(checkout):
+			return nil, "", ineligible + "+cold-" + kind, nil
+		case path.Clean(worktree) != "/":
+			return nil, "", ineligible + "+" + kind + "-layout", nil
+		}
+		contents, base = checkout, kind
 	}
 	outer := trace.SpanFromContext(ctx)
 	ctx, span := Tracer(ctx).Start(ctx, "materialize delta git checkout", telemetry.Internal())
@@ -144,18 +169,8 @@ func (ref *LocalGitRef) cowDeltaTree(ctx context.Context, srv *dagql.Server, rem
 		}
 		telemetry.EndWithCause(span, &rerr)
 	}()
-	baseRef := ref.repo.CheckoutBase.Parent
 	err := ref.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
 		if _, err := ref.repo.nativeGitDir(ctx, source.Dir()); err != nil {
-			return err
-		}
-		// Gate on the delta before selecting or evaluating the base: these
-		// are the same conditions under which the source-only tree applies
-		// a delta to its base, and they hold for the retained worktree too.
-		var plan *incrementalGitCheckoutPlan
-		var err error
-		plan, reason, err = planIncrementalGitCheckout(ctx, source, baseRef.Self().Ref.SHA, ref.SHA, false)
-		if err != nil || reason != "" {
 			return err
 		}
 		// The retained checkout also initializes submodules into .git, which
@@ -168,34 +183,69 @@ func (ref *LocalGitRef) cowDeltaTree(ctx context.Context, srv *dagql.Server, rem
 			reason = "submodules"
 			return nil
 		}
-		var checkout dagql.ObjectResult[*Directory]
-		if err := srv.Select(ctx, baseRef, &checkout, dagql.Selector{Field: "__fullCheckout"}); err != nil {
-			return err
+		var snapshot bkcache.ImmutableRef
+		var plan *incrementalGitCheckoutPlan
+		if contents.Self() != nil {
+			// The base's HEAD is only known once mounted.
+			snapshot, err = contents.Self().Snapshot.GetOrEval(ctx, contents.Result)
+			if err != nil {
+				return err
+			}
+		} else {
+			// Gate on the delta before selecting or evaluating the base:
+			// these are the same conditions under which the source-only
+			// tree applies a delta to its base, and they hold for the
+			// retained worktree too.
+			baseRef := ref.repo.CheckoutBase.Parent
+			plan, reason, err = planIncrementalGitCheckout(ctx, source, baseRef.Self().Ref.SHA, ref.SHA, false)
+			if err != nil || reason != "" {
+				return err
+			}
+			var checkout dagql.ObjectResult[*Directory]
+			if err := srv.Select(ctx, baseRef, &checkout, dagql.Selector{Field: "__fullCheckout"}); err != nil {
+				return err
+			}
+			cold := dagql.HasPendingLazyComputation(checkout)
+			var selector string
+			var ok bool
+			snapshot, selector, ok, err = incrementalParentTree(ctx, checkout)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				reason = "cold-parent"
+				return nil
+			}
+			if filepath.Clean(selector) != "/" {
+				reason = "parent-layout"
+				return nil
+			}
+			base = "parent-checkout"
+			if cold {
+				base = "cold-parent-checkout"
+			}
 		}
-		cold := dagql.HasPendingLazyComputation(checkout)
-		snapshot, selector, ok, err := incrementalParentTree(ctx, checkout)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			reason = "cold-parent"
-			return nil
-		}
-		if filepath.Clean(selector) != "/" {
-			reason = "parent-layout"
-			return nil
-		}
-		base = "parent-checkout"
-		if cold {
-			base = "cold-parent-checkout"
-		}
-		span.SetAttributes(
-			attribute.Int("dagger.git.checkout.delta.changed_paths", len(plan.changed)),
-			attribute.String("dagger.git.checkout.delta.base", base),
-		)
+		span.SetAttributes(attribute.String("dagger.git.checkout.delta.base", base))
 		result, err = cowCheckoutSnapshot(ctx, snapshot, ref.Ref, func(root string) error {
+			// Verify what the recipe implies: a checkout at the root, with
+			// no submodules, whose HEAD the planner accepts as a base.
+			head, err := retainedCheckoutHead(ctx, root)
+			if err != nil {
+				return err
+			}
+			if plan == nil {
+				var refused string
+				plan, refused, err = planIncrementalGitCheckout(ctx, source, head, ref.SHA, false)
+				if err != nil {
+					return err
+				}
+				if refused != "" {
+					return nativeCommitUnsupportedReason(refused)
+				}
+			}
+			span.SetAttributes(attribute.Int("dagger.git.checkout.delta.changed_paths", len(plan.changed)))
 			return cowGitCheckout(ctx, root, source, remotes, upstreamRemote, ref.Ref, &cowCheckoutDelta{
-				base: baseRef.Self().Ref.SHA,
+				base: head,
 				plan: plan,
 			})
 		}, span, outer)
