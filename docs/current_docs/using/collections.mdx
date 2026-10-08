@@ -107,9 +107,17 @@ dagger check 'dag://go/packages/tests/test?go-package=store&go-test=TestFixture'
 
 Keys that contain `/`, such as `cmd/greet`, need no escaping.
 
+Links that Dagger prints put the path in a parameter named after the artifact type, such as `check`, followed by the keys:
+
+```text
+dag://?check=go/packages/tests/test&go-package=store&go-test=TestFixture
+```
+
+Both forms select the same items. Only the path form accepts wildcards such as `go/**`.
+
 ### Reuse a listed selection
 
-`-f cli` prints each row as the flags that select it, and `-f link` prints its DAG link. Add `dagger check` before a row to run it:
+`-f cli` prints each row as the flags that select it, and `-f link` prints its DAG link, such as `dag+check://?check=go/packages/tests/test&go-package=store&go-test=TestFixture`. Add `dagger check` before a row to run it:
 
 ```shell
 dagger check -l --all -f cli --go-package=store
@@ -128,8 +136,8 @@ A module decides how to run a selection. Some run each item on its own. Others r
 The report names each run by its DAG link, with the keys it covered:
 
 ```text
-✔ dag://go/packages/tests/test?go-package=.&go-test=TestHello 5.3s OK
-✔ dag://go/packages/tests/test?go-package=store&go-test=TestFixture&go-test=TestDatabase 5.3s OK
+✔ dag://?check=go/packages/tests/test&go-package=.&go-test=TestHello 5.3s OK
+✔ dag://?check=go/packages/tests/test&go-package=store&go-test=TestFixture&go-test=TestDatabase 5.3s OK
 ```
 
 Pass a link from the report to `dagger check` to run that selection again.

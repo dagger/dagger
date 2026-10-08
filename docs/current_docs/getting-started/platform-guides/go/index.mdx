@@ -63,7 +63,7 @@ dagger check --go-package=store --go-test=TestFixture
 A test that skips itself because a service is unavailable is not a failure. The Check passes, and the report adds a `skipped` count for the package:
 
 ```text
-✔ dag://go/packages/tests/test?go-package=store&go-test=TestFixture&go-test=TestDatabase 5.3s OK
+✔ dag://?check=go/packages/tests/test&go-package=store&go-test=TestFixture&go-test=TestDatabase 5.3s OK
   == TESTS ==
     ∅ example.com/greetings/store › TestDatabase SKIP
               store_test.go:18: DATABASE_URL not set
@@ -353,19 +353,19 @@ dagger check
 
 ```text
 == CHECKS ==  ✔ 5 passed
-✔ dag://dang-sdk/generate/stale 4.0s OK
-✔ dag://go/packages/generate/stale?go-package=.&go-package=store&go-package=version 11.3s OK
-✔ dag://go/packages/tests/test?go-package=.&go-test=TestHello 11.3s OK
+✔ dag://?check=dang-sdk/generate/stale 4.0s OK
+✔ dag://?check=go/packages/generate/stale&go-package=.&go-package=store&go-package=version 11.3s OK
+✔ dag://?check=go/packages/tests/test&go-package=.&go-test=TestHello 11.3s OK
   == TESTS ==
     ✔ example.com/greetings  1 passed
 
     ✔ 1 passed
-✔ dag://go/packages/tests/test?go-package=store&go-test=TestFixture&go-test=TestDatabase 11.3s OK
+✔ dag://?check=go/packages/tests/test&go-package=store&go-test=TestFixture&go-test=TestDatabase 11.3s OK
   == TESTS ==
     ✔ example.com/greetings/store  2 passed
 
     ✔ 2 passed
-✔ dag://golangci-lint/projects/lint?golangci-lint-project=. 2.2s OK
+✔ dag://?check=golangci-lint/projects/lint&golangci-lint-project=. 2.2s OK
 
 == SERVICES ==
 ✔ ...dagger.local exec docker-entrypoint.sh postgres 1.5s EXITED
