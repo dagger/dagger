@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/adrg/xdg"
 	telemetry "github.com/dagger/otel-go"
@@ -294,9 +295,10 @@ func (d containerConnector) EngineID() string {
 
 const (
 	// trim image digests to 16 characters to makeoutput more readable
-	hashLen                     = 16
-	containerNamePrefix         = "dagger-engine-"
-	defaultDebugListenerAddress = "127.0.0.1:6060"
+	hashLen                      = 16
+	containerNamePrefix          = "dagger-engine-"
+	defaultDebugListenerAddress  = "127.0.0.1:6060"
+	leftoverEngineCleanupTimeout = 10 * time.Minute
 )
 
 const InstrumentationLibrary = "dagger.io/client.drivers"
@@ -337,20 +339,38 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		containerName = containerNamePrefix + id
 	}
 
-	// The common case is an engine that already exists: look it up by name
-	// and start it (a no-op when it already runs), instead of listing every
-	// container on the host first. The listing grows with the host and was
-	// most of a command's connect time. Leftovers from older versions are
-	// still swept, in the background. Only when the engine is missing does
-	// the command list before running a new one.
-	if exists, err := d.backend.ContainerExists(ctx, containerName); err == nil && exists {
+	// Starting an existing engine is a no-op when it is already running, so
+	// use start itself as the fast existence check. Only when it fails does
+	// the command list containers before creating a new engine.
+	startErr := d.backend.ContainerStart(ctx, containerName)
+	if startErr == nil {
+		if opts.cleanup {
+			go d.sweepLeftoverEngines(ctx, containerName)
+		}
+		return &url.URL{Host: containerName}, nil
+	}
+	if errors.Is(startErr, context.Canceled) || errors.Is(startErr, context.DeadlineExceeded) {
+		return nil, startErr
+	}
+
+	// A failed start is the expected signal that the named container is absent,
+	// but preserve operational failures for containers that do exist. This
+	// named inspection is only on the slow path.
+	containerExists, existsErr := d.backend.ContainerExists(ctx, containerName)
+	if existsErr != nil {
+		return nil, fmt.Errorf("failed to start or inspect container: %w", errors.Join(startErr, existsErr))
+	}
+	if containerExists {
+		// Another process may have created the engine after our first start.
+		// Retry now that its existence is confirmed; persistent operational
+		// failures are returned from this attempt.
 		if err := d.backend.ContainerStart(ctx, containerName); err != nil {
 			return nil, fmt.Errorf("failed to start container: %w", err)
 		}
-		go d.sweepLeftoverEngines(context.WithoutCancel(ctx), opts.cleanup, containerName)
+		if opts.cleanup {
+			go d.sweepLeftoverEngines(ctx, containerName)
+		}
 		return &url.URL{Host: containerName}, nil
-	} else if errors.Is(err, context.Canceled) {
-		return nil, err
 	}
 
 	leftoverEngines, err := d.collectLeftoverEngines(ctx, containerName)
@@ -445,16 +465,15 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 // It runs in the background once the engine is known to exist, so a command
 // does not wait for the listing; a sweep cut short by the process exiting
 // is finished by a later command.
-func (d *imageDriver) sweepLeftoverEngines(ctx context.Context, cleanup bool, current string) {
-	if !cleanup {
-		return
-	}
+func (d *imageDriver) sweepLeftoverEngines(ctx context.Context, current string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), leftoverEngineCleanupTimeout)
+	defer cancel()
 	leftoverEngines, err := d.collectLeftoverEngines(ctx)
 	if err != nil {
 		slog.SpanLogger(ctx, InstrumentationLibrary).Warn("failed to list containers", "error", err)
 		return
 	}
-	d.garbageCollectEngines(ctx, cleanup, []string{current}, leftoverEngines)
+	d.garbageCollectEngines(ctx, true, []string{current}, leftoverEngines)
 }
 
 func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, preserveNames, engines []string) {

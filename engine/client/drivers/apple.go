@@ -131,7 +131,11 @@ func (a apple) ContainerStart(ctx context.Context, name string) error {
 	// will fail to start it. That's expected as the container is already running.
 	// But when an error occurs, apple container will stop and remove the container.
 	// That way, to 'container start' an already running container will stop and remove it.
-	if running, err := a.ContainerIsRunning(ctx, name); err == nil && running {
+	running, err := a.ContainerIsRunning(ctx, name)
+	if err != nil {
+		return err
+	}
+	if running {
 		return nil
 	}
 	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "start", name), telemetry.Encapsulated())
@@ -139,33 +143,69 @@ func (a apple) ContainerStart(ctx context.Context, name string) error {
 
 func (apple) ContainerExists(ctx context.Context, name string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "container", "inspect", name)
-	err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
-	return err == nil, nil
+	_, stderr, err := traceexec.ExecOutput(ctx, cmd, telemetry.Encapsulated())
+	if err == nil {
+		return true, nil
+	}
+	if isAppleContainerNotFoundOutput(stderr) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (apple) ContainerIsRunning(ctx context.Context, name string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "container", "ls", "-a", "--format", "json")
-	stdout, _, err := traceexec.ExecOutput(ctx, cmd)
+	cmd := exec.CommandContext(ctx, "container", "inspect", name)
+	stdout, stderr, err := traceexec.ExecOutput(ctx, cmd)
 	if err != nil {
+		if isAppleContainerNotFoundOutput(stderr) {
+			return false, nil
+		}
 		return false, err
+	}
+	return appleContainerRunning(stdout)
+}
+
+func isAppleContainerNotFoundOutput(output string) bool {
+	output = strings.ToLower(output)
+	return strings.Contains(output, "container not found") ||
+		(strings.Contains(output, "container with id") && strings.Contains(output, "not found"))
+}
+
+func appleContainerRunning(stdout string) (bool, error) {
+	var result []struct {
+		Status json.RawMessage `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		return false, err
+	}
+	if len(result) != 1 {
+		return false, fmt.Errorf("expected one container from inspect, got %d", len(result))
 	}
 
-	var result []struct {
-		Status        string `json:"status"`
-		Configuration struct {
-			ID string `json:"id"`
-		} `json:"configuration"`
+	// Apple container before 1.0 encoded status as a string. Newer versions
+	// encode it as an object with a state field.
+	var status string
+	if err := json.Unmarshal(result[0].Status, &status); err == nil {
+		return appleContainerStatusRunning(status)
 	}
-	err = json.Unmarshal([]byte(stdout), &result)
-	if err != nil {
+	var statusObject struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(result[0].Status, &statusObject); err != nil {
 		return false, err
 	}
-	for _, res := range result {
-		if res.Configuration.ID == name && res.Status == "running" {
-			return true, nil
-		}
+	return appleContainerStatusRunning(statusObject.State)
+}
+
+func appleContainerStatusRunning(status string) (bool, error) {
+	switch status {
+	case "running":
+		return true, nil
+	case "stopped":
+		return false, nil
+	default:
+		return false, fmt.Errorf("unexpected container status %q", status)
 	}
-	return false, nil
 }
 
 func (apple) ContainerLs(ctx context.Context) ([]string, error) {
