@@ -163,6 +163,11 @@ func (imp *TraceImporter) noteLocked(resource *tracepb.ResourceSpans, scope *tra
 		// real root never reached Cloud), and each is a second root as far as
 		// the live DB is concerned.
 		setBoolAttr(span, telemetry.UIPassthroughAttr, true)
+		// And marked as imported, so the live DB never takes it for its
+		// own root: when the live CLI runs nested (TRACEPARENT inherited)
+		// its root has a parent, and an ended imported root would
+		// otherwise become db.RootSpan and cancel every live span.
+		setBoolAttr(span, telemetryattrs.UIImportedRootAttr, true)
 	}
 	if start := span.GetStartTimeUnixNano(); start > imp.newest {
 		imp.newest = start

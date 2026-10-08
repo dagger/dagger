@@ -278,6 +278,11 @@ type SpanSnapshot struct {
 	Passthrough  bool `json:",omitempty"`
 	Ignore       bool `json:",omitempty"`
 
+	// ImportedRoot marks a parentless span folded in from ANOTHER session's
+	// trace (telemetryattrs.UIImportedRootAttr). It is never taken as the
+	// DB's RootSpan or PrimarySpan; see DB.integrateSpan.
+	ImportedRoot bool `json:",omitempty"`
+
 	// Test attributes
 	TestCaseName  string     `json:",omitempty"`
 	TestSuiteName string     `json:",omitempty"`
@@ -510,6 +515,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.UIPassthroughAttr:
 		snapshot.Passthrough = val.(bool)
+
+	case telemetryattrs.UIImportedRootAttr:
+		snapshot.ImportedRoot = val.(bool)
 
 	case telemetry.UIActorEmojiAttr:
 		snapshot.ActorEmoji = val.(string)
