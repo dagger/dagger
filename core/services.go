@@ -906,8 +906,8 @@ func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) e
 	return err
 }
 
-// Detach detaches from the given service. If the service is not running, it is
-// a no-op. If the service is running, it is stopped if there are no other
+// Detach detaches from the given service. If the service is not running, or a
+// later instance has replaced it, it is a no-op. If the service is running, it is stopped if there are no other
 // clients using it.
 func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	ss.l.Lock()
@@ -919,6 +919,12 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 		ss.l.Unlock()
 		slog.Trace("detach: service not running")
 		// not even running; ignore
+		return
+	}
+	if running != svc {
+		ss.l.Unlock()
+		slog.Debug("detach: service replaced")
+		// a later instance under the same key has its own bindings
 		return
 	}
 
