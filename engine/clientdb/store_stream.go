@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -265,6 +266,34 @@ func (s *logStream[Row]) readID(ctx context.Context, id int64) (Row, bool, error
 	}
 	s.mu.Unlock()
 	return s.spill.readID(ctx, id)
+}
+
+// readIDs reads the rows with the given IDs, which must be ascending, in
+// that order, skipping IDs the stream does not hold. Spilled rows are read
+// with one scanner pass (see spillFile.readIDs); the rest come from the tail.
+func (s *logStream[Row]) readIDs(ctx context.Context, ids []int64) ([]Row, error) {
+	rows := make([]Row, 0, len(ids))
+	s.mu.Lock()
+	tailBase := s.tailBase
+	s.mu.Unlock()
+	split := sort.Search(len(ids), func(i int) bool { return ids[i] >= tailBase })
+	if err := s.spill.readIDs(ctx, ids[:split], func(row Row) {
+		rows = append(rows, row)
+	}); err != nil {
+		return nil, err
+	}
+	// Rows spill from the tail's front, so IDs the tail no longer holds were
+	// spilled after tailBase was read: read those one at a time.
+	for _, id := range ids[split:] {
+		row, found, err := s.readID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			rows = append(rows, row)
+		}
+	}
+	return rows, nil
 }
 
 func (s *logStream[Row]) requestSpill() {
