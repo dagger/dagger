@@ -429,9 +429,12 @@ func (c *Client) injectDaggerCLI(_ context.Context, state *execState) error {
 }
 
 // hasDaggerCLI reports whether the container gets the dagger CLI, i.e. whether
-// it can connect back to Dagger as a nested client.
+// it can connect back to Dagger, as a nested client or as a new session.
 func (state *execState) hasDaggerCLI() bool {
-	return state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != ""
+	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
+		return true
+	}
+	return state.execMD != nil && state.execMD.DaggerInDaggerNewSession
 }
 
 // appendDaggerCLIToPath returns a copy of env with DaggerCLIDir appended to

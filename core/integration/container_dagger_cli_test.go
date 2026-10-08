@@ -7,6 +7,7 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/creack/pty"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
@@ -64,6 +65,25 @@ func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		uname := map[dagger.Platform]string{"linux/arm64": "aarch64", "linux/amd64": "x86_64"}[other]
 		require.Equal(t, uname+"\nok\n", out)
+	})
+
+	t.Run("new session", func(ctx context.Context, t *testctx.T) {
+		// The CLI connects through DAGGER_ENGINE as the main client of its own
+		// session.
+		out, err := c.Container().
+			From(alpineImage).
+			WithNewFile("/clients.graphql", `{ engine { clients } }`).
+			WithEnvVariable("ID", identity.NewID()).
+			WithExec([]string{"sh", "-ec", nestedMainClientCheck + `
+				command -v dagger
+				echo "$PATH"
+				isMain "$ID" && echo ok
+			`}, dagger.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/dev/.dagger/dagger\n"+
+			"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/dev/.dagger\n"+
+			"ok\n", out)
 	})
 
 	t.Run("service terminal", func(ctx context.Context, t *testctx.T) {
