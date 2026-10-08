@@ -3538,7 +3538,7 @@ func TestCallPayloadClosureCoverage(t *testing.T) {
 
 	epoch := store.CallPayloadReleaseEpoch()
 	require.True(t, store.ClaimCallPayload("xxh3:abc"))
-	store.CoverCallPayloadClosures([]string{"xxh3:abc", "xxh3:def"}, epoch)
+	require.True(t, store.CoverCallPayloadClosures([]string{"xxh3:abc", "xxh3:def"}, epoch))
 	require.True(t, store.CallPayloadClosureCovered("xxh3:abc"))
 	require.True(t, store.CallPayloadClosureCovered("xxh3:def"))
 
@@ -3554,7 +3554,8 @@ func TestCallPayloadClosureCoverage(t *testing.T) {
 	require.False(t, store.CallPayloadClosureCovered("xxh3:def"),
 		"a released claim must void every covered closure")
 
-	store.CoverCallPayloadClosures([]string{"xxh3:def"}, epoch)
+	require.False(t, store.CoverCallPayloadClosures([]string{"xxh3:def"}, epoch),
+		"a walk that started before a release must learn it raced one")
 	require.False(t, store.CallPayloadClosureCovered("xxh3:def"),
 		"a walk that started before a release must not record coverage")
 }

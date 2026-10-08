@@ -3853,12 +3853,12 @@ func (s *callPayloadDeliveryStore) CallPayloadClosureCovered(digest string) bool
 	return true
 }
 
-func (s *callPayloadDeliveryStore) CoverCallPayloadClosures(digests []string, epoch uint64) {
+func (s *callPayloadDeliveryStore) CoverCallPayloadClosures(digests []string, epoch uint64) bool {
 	sess := s.session
 	sess.callPayloadMu.Lock()
 	defer sess.callPayloadMu.Unlock()
 	if epoch != sess.callPayloadEpoch {
-		return
+		return false
 	}
 	if sess.callPayloadCovered == nil {
 		sess.callPayloadCovered = map[string]map[string]struct{}{}
@@ -3873,6 +3873,7 @@ func (s *callPayloadDeliveryStore) CoverCallPayloadClosures(digests []string, ep
 			covered[target] = struct{}{}
 		}
 	}
+	return true
 }
 
 // callPayloadState is one (digest, target) pair's position in the payload

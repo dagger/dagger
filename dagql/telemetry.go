@@ -110,6 +110,8 @@ type CallPayloadClosureStore interface {
 
 	// CoverCallPayloadClosures records that a walk that started at epoch has
 	// claimed every digest and its whole closure for every target of the
-	// route. It records nothing if a claim was released since epoch.
-	CoverCallPayloadClosures(digests []string, epoch uint64)
+	// route. It records nothing and returns false if a claim was released
+	// since epoch, so a walk that skipped covered closures knows to claim
+	// over them again.
+	CoverCallPayloadClosures(digests []string, epoch uint64) bool
 }

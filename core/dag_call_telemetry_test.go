@@ -648,15 +648,16 @@ func (s *testClosureKeys) CallPayloadClosureCovered(key string) bool {
 	return covered
 }
 
-func (s *testClosureKeys) CoverCallPayloadClosures(keys []string, epoch uint64) {
+func (s *testClosureKeys) CoverCallPayloadClosures(keys []string, epoch uint64) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if epoch != s.epoch {
-		return
+		return false
 	}
 	for _, key := range keys {
 		s.covered[key] = true
 	}
+	return true
 }
 
 // release mirrors a failed write: the claim is released and coverage reset.

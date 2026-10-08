@@ -190,9 +190,22 @@ func recordClaimedCallPayloads(
 		emit(callPB.GetDigest(), callPB)
 		digests = append(digests, callPB.GetDigest())
 	}
-	if closures != nil {
-		// Every frame of these closures is now claimed, by this walk or an
-		// earlier one; the skipped parts were covered already.
-		closures.CoverCallPayloadClosures(digests, epoch)
+	// Every frame of these closures is now claimed, by this walk or an
+	// earlier one; the skipped parts were covered already. Unless a claim was
+	// released while the walk ran: if it sat in a part the walk skipped,
+	// nothing would reach it again, since this call's root is claimed and a
+	// replay stops there. Then claim over the whole closure once more.
+	if closures == nil || closures.CoverCallPayloadClosures(digests, epoch) {
+		return
+	}
+	full, err := frame.RecipeCalls(ctx, nil)
+	if err != nil {
+		slog.DebugContext(ctx, "failed to rebuild recipe for call payloads", "digest", callDigest, "err", err)
+		return
+	}
+	for _, callPB := range full {
+		if callPB.GetDigest() != callDigest {
+			emit(callPB.GetDigest(), callPB)
+		}
 	}
 }
