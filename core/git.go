@@ -1390,11 +1390,14 @@ func doGitCheckout(
 	if err != nil {
 		return err
 	}
-	return finishGitCheckout(ctx, checkoutGit, remotes, cloneURL, ref, discardGitDir, tmpref)
+	return finishGitCheckout(ctx, checkoutGit, remotes, cloneURL, ref, discardGitDir, tmpref, false)
 }
 
 // finishGitCheckout materializes a ref whose objects are already available.
 // tmpref is set only when the caller fetched the objects into a temporary ref.
+// inheritedObjects means the object database was not written by this checkout
+// (see cowGitCheckout): its files keep their timestamps, since changing them
+// would copy every inherited pack up into a new snapshot layer.
 func finishGitCheckout(
 	ctx context.Context,
 	checkoutGit *gitutil.GitCLI,
@@ -1403,6 +1406,7 @@ func finishGitCheckout(
 	ref *gitutil.Ref,
 	discardGitDir bool,
 	tmpref string,
+	inheritedObjects bool,
 ) error {
 	checkoutDirGit, err := checkoutGit.GitDir(ctx)
 	if err != nil {
@@ -1481,9 +1485,16 @@ func finishGitCheckout(
 	// Use a deterministic non-zero timestamp. Some build tools treat missing
 	// outputs as epoch and skip initial copies when sources are also epoch.
 	normalizedTime := []unix.Timespec{{Sec: 1}, {Sec: 1}}
+	inheritedObjectsDir := ""
+	if inheritedObjects && !discardGitDir {
+		inheritedObjectsDir = filepath.Join(checkoutDirGit, "objects")
+	}
 	if err := filepath.WalkDir(checkoutDir, func(path string, _ os.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if path == inheritedObjectsDir {
+			return filepath.SkipDir
 		}
 		return unix.UtimesNanoAt(unix.AT_FDCWD, path, normalizedTime, unix.AT_SYMLINK_NOFOLLOW)
 	}); err != nil {

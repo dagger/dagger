@@ -515,6 +515,12 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return dir, err
 		}
 	}
+	if !discardGitDir && depth <= 0 {
+		dir, supported, err := ref.cowTree(ctx, remotes, upstreamRemote)
+		if err != nil || supported {
+			return dir, err
+		}
+	}
 	ctx, span := Tracer(ctx).Start(ctx, "materialize local git checkout", telemetry.Internal(), trace.WithAttributes(
 		attribute.Int("dagger.git.checkout.depth", depth),
 		attribute.Bool("dagger.git.checkout.discard_git_dir", discardGitDir),
@@ -548,26 +554,9 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return fmt.Errorf("could not find git url: %w", err)
 		}
 
-		// The checkout is rebuilt from scratch, which would drop the source
-		// repository's remotes. Carry its remote configuration over -- with
-		// any remotes registered on the repository object overlaid -- so
-		// remote-aware tooling (gh, git fetch) keeps resolving the repository
-		// from the result; the checkout itself still fetches from the local
-		// mount.
-		configRemotes, err := readGitConfigRemotes(ctx, git)
+		checkoutRemotes, upstream, err := localCheckoutRemotes(ctx, git, ref.Ref.Name, remotes, upstreamRemote)
 		if err != nil {
-			return fmt.Errorf("could not read remotes: %w", err)
-		}
-		checkoutRemotes := MergeGitRemotes(configRemotes, remotes)
-		var upstream string
-		if upstreamRemote != nil {
-			checkoutRemotes = MergeGitRemotes(nil, remotes)
-			upstream = *upstreamRemote
-		} else {
-			upstream, err = gitBranchUpstream(ctx, git, ref.Ref.Name)
-			if err != nil {
-				return err
-			}
+			return err
 		}
 
 		return MountRef(ctx, bkref, func(checkoutDir string, _ *mount.Mount) error {
@@ -608,6 +597,27 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 	return dir, nil
 }
 
+// localCheckoutRemotes selects the remote configuration a retained checkout
+// of the named ref carries. The checkout is rebuilt rather than copied, which
+// would drop the source repository's remotes. Carry its remote configuration
+// over -- with any remotes registered on the repository object overlaid -- so
+// remote-aware tooling (gh, git fetch) keeps resolving the repository from the
+// result; the checkout itself never fetches from those remotes.
+func localCheckoutRemotes(ctx context.Context, git *gitutil.GitCLI, name string, remotes []GitRemote, upstreamRemote *string) ([]GitRemote, string, error) {
+	if upstreamRemote != nil {
+		return MergeGitRemotes(nil, remotes), *upstreamRemote, nil
+	}
+	configRemotes, err := readGitConfigRemotes(ctx, git)
+	if err != nil {
+		return nil, "", fmt.Errorf("could not read remotes: %w", err)
+	}
+	upstream, err := gitBranchUpstream(ctx, git, name)
+	if err != nil {
+		return nil, "", err
+	}
+	return MergeGitRemotes(configRemotes, remotes), upstream, nil
+}
+
 // doLocalGitTreeCheckout borrows the mounted source's objects while creating a
 // tree without .git. No history is copied or fetched: depth and tag selection
 // cannot affect the resulting worktree. The source must remain mounted until
@@ -618,7 +628,7 @@ func doLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCL
 	if err := initLocalGitTreeCheckout(ctx, source, checkout); err != nil {
 		return err
 	}
-	return finishGitCheckout(ctx, checkout, remotes, cloneURL, ref, true, "")
+	return finishGitCheckout(ctx, checkout, remotes, cloneURL, ref, true, "", false)
 }
 
 func initLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCLI) error {

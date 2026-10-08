@@ -573,7 +573,8 @@ func (WorkspaceSuite) TestWorkspaceCommittedHistoryDoesNotFetch(ctx context.Cont
 		}
 	}
 	// Source-only trees created while committing also borrow local objects.
-	// Retained full checkouts still fetch to own their history independently.
+	// Retained full checkouts share them copy-on-write (see
+	// TestWorkspaceCommittedFullCheckoutCopyOnWrite).
 	require.NotEmpty(t, discardedCheckouts, "must exercise real local tree checkouts")
 	var checkoutGitCommands int
 	for id, name := range names {
@@ -603,6 +604,106 @@ func (WorkspaceSuite) TestWorkspaceCommittedHistoryDoesNotFetch(ctx context.Cont
 		}
 	}
 	require.GreaterOrEqual(t, walks, 7, "must observe the six real log walks and merge-base, not an empty trace")
+}
+
+// A committed head's repository snapshot already holds every object. Its
+// retained full checkout must share them copy-on-write, not fetch the whole
+// history into an empty snapshot, and still be a complete, ordinary checkout.
+func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.Context, t *testctx.T) {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs its own CLI session to inspect checkout spans")
+	}
+	checkout, hostGit := workspaceExportCheckout(ctx, t)
+	hostGit("tag", "v1")
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout))...)
+	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	baseSHA, err := base.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	state, err := commitWorkspace(ctx, c, base.WithNewFile("base.txt", "next"), "next", []string{"base.txt"})
+	require.NoError(t, err)
+	next := dagger.Ref[*dagger.Workspace](c, state.ID)
+	// The retained full checkout of the committed head (GitRef.__fullCheckout).
+	// The Go SDK omits zero-valued depth, so use GraphQL here.
+	refID, err := next.Git().Head().ID(ctx)
+	require.NoError(t, err)
+	var fullTree struct {
+		Node struct {
+			Tree struct{ ID dagger.ID }
+		}
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { tree(depth: 0, discardGitDir: false) { id } } } }`,
+		Variables: map[string]any{"id": refID},
+	}, &dagger.Response{Data: &fullTree}))
+	export := t.TempDir()
+	_, err = dagger.Ref[*dagger.Directory](c, fullTree.Node.Tree.ID).Export(ctx, export)
+	require.NoError(t, err)
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = export
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out))
+	}
+	git("fsck", "--strict", "--no-dangling")
+	require.Equal(t, state.Git.Head.Commit, git("rev-parse", "HEAD"))
+	require.Equal(t, "next\ninitial", git("log", "--format=%s"))
+	require.Equal(t, baseSHA, git("rev-parse", "v1^{commit}"), "reachable tags are followed as by a fetch")
+	require.Empty(t, git("status", "--porcelain"))
+	require.Equal(t, "next", git("show", "HEAD:base.txt"))
+	require.NoError(t, c.Close()) // Drain telemetry before asserting absence.
+
+	traces, _ := sink.capture()
+	parents, names := map[string]string{}, map[string]string{}
+	cow := map[string]bool{}
+	var fallbacks []string
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.EndTimeUnixNano < span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					parents[id], names[id] = string(span.TraceId)+string(span.ParentSpanId), span.Name
+					if span.Name != "materialize copy-on-write git checkout" {
+						continue
+					}
+					for _, attr := range span.Attributes {
+						switch attr.Key {
+						case "dagger.git.checkout.cow.supported":
+							cow[id] = attr.Value.GetBoolValue()
+						case "dagger.git.checkout.cow.fallback":
+							fallbacks = append(fallbacks, attr.Value.GetStringValue())
+						}
+					}
+				}
+			}
+		}
+	}
+	var supported, checkouts int
+	for _, ok := range cow {
+		if ok {
+			supported++
+		}
+	}
+	require.Positive(t, supported, "committed heads must check out copy-on-write; fallbacks: %v", fallbacks)
+	for id, name := range names {
+		for parent := parents[id]; parent != ""; parent = parents[parent] {
+			if !cow[parent] {
+				continue
+			}
+			require.False(t, strings.HasPrefix(name, "git fetch") || strings.HasPrefix(name, "fetching "), "copy-on-write checkout fetched objects: %s", name)
+			if strings.HasPrefix(name, "git checkout") {
+				checkouts++
+			}
+			break
+		}
+	}
+	// Without Git spans beneath the checkouts, the fetch check above is vacuous.
+	require.Positive(t, checkouts, "must observe git commands beneath copy-on-write checkouts")
 }
 
 // TestWorkspaceScopedCommitPerformance is a deterministic, non-LLM latency
