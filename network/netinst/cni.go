@@ -13,8 +13,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func InstallCNIConfig(ctx context.Context, name, subnet string) (string, error) {
-	cni, err := cniConfig(name, subnet)
+// InstallCNIConfig writes the engine's CNI config. firewallPlugin keeps the
+// CNI firewall plugin, for networks firewalld manages; otherwise
+// InstallSubnetRules accepts forwarded traffic for the whole subnet.
+func InstallCNIConfig(ctx context.Context, name, subnet string, firewallPlugin bool) (string, error) {
+	cni, err := cniConfig(name, subnet, firewallPlugin)
 	if err != nil {
 		return "", err
 	}
@@ -43,7 +46,7 @@ func detectIPMasqBackend() string {
 	return "iptables"
 }
 
-func cniConfig(name, subnet string) ([]byte, error) {
+func cniConfig(name, subnet string, firewallPlugin bool) ([]byte, error) {
 	bridgePlugin := map[string]any{
 		"type":             "bridge",
 		"bridge":           name + "0",
@@ -70,13 +73,16 @@ func cniConfig(name, subnet string) ([]byte, error) {
 		logrus.Warnf("could not detect mtu: %s", err)
 	}
 
+	plugins := []any{bridgePlugin}
+	if firewallPlugin {
+		plugins = append(plugins, map[string]any{
+			"type": "firewall",
+		})
+	}
 	return json.Marshal(map[string]any{
 		"cniVersion": "0.4.0",
 		"name":       name,
-		"plugins": []any{
-			// No firewall plugin: forwarding is accepted once for the whole
-			// subnet; see InstallSubnetRules.
-			bridgePlugin,
+		"plugins": append(plugins,
 			map[string]any{
 				"type":       "dnsname",
 				"domainName": name + ".local",
@@ -87,7 +93,7 @@ func cniConfig(name, subnet string) ([]byte, error) {
 					"aliases": true,
 				},
 			},
-		},
+		),
 	})
 }
 

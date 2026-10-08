@@ -420,10 +420,11 @@ func main() { //nolint:gocyclo
 			return err
 		}
 
-		// The generated CNI config leaves masquerading and forwarding to rules
-		// installed once for the whole subnet. A custom CNI config brings its own.
+		// The generated CNI config leaves masquerading, and forwarding unless
+		// firewalld manages the network, to rules installed once for the whole
+		// subnet. A custom CNI config brings its own.
 		if ociNet := bkcfg.Workers.OCI.NetworkConfig; ociNet.Mode != "host" && ociNet.CNIConfigPath == netConf.CNIConfigPath {
-			if err := netinst.InstallSubnetRules(networkContext, netConf.NetName, netConf.NetCIDR); err != nil {
+			if err := netinst.InstallSubnetRules(networkContext, netConf.NetName, netConf.NetCIDR, !netConf.FirewallPlugin); err != nil {
 				return fmt.Errorf("install subnet rules: %w", err)
 			}
 		}
@@ -1008,6 +1009,8 @@ type networkConfig struct {
 	NetCIDR       string
 	Bridge        net.IP
 	CNIConfigPath string
+	// FirewallPlugin is set when the CNI config keeps the firewall plugin.
+	FirewallPlugin bool
 }
 
 func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig, error) {
@@ -1032,15 +1035,26 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig,
 		return nil, fmt.Errorf("install dnsmasq: %w", err)
 	}
 
-	cniConfigPath, err := netinst.InstallCNIConfig(ctx, netName, netCIDR)
+	// Where firewalld manages the network, keep the CNI firewall plugin, which
+	// registers containers with firewalld; elsewhere InstallSubnetRules
+	// accepts their forwarded traffic.
+	firewalld := netinst.FirewalldRunning(ctx)
+	if firewalld {
+		bklog.G(ctx).Info("using firewall: firewalld, through the CNI firewall plugin")
+	} else {
+		bklog.G(ctx).Info("using firewall: subnet forward rules")
+	}
+
+	cniConfigPath, err := netinst.InstallCNIConfig(ctx, netName, netCIDR, firewalld)
 	if err != nil {
 		return nil, fmt.Errorf("install cni: %w", err)
 	}
 
 	return &networkConfig{
-		NetName:       netName,
-		NetCIDR:       netCIDR,
-		Bridge:        bridge,
-		CNIConfigPath: cniConfigPath,
+		NetName:        netName,
+		NetCIDR:        netCIDR,
+		Bridge:         bridge,
+		CNIConfigPath:  cniConfigPath,
+		FirewallPlugin: firewalld,
 	}, nil
 }
