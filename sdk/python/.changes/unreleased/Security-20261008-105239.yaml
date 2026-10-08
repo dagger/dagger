@@ -1,0 +1,6 @@
+kind: Security
+body: Require httpcore 1.0.9 or later so HTTP parsing uses h11 releases that address CVE-2025-43859.
+time: 2026-10-08T10:52:39.232906022-03:00
+custom:
+    Author: matipan
+    PR: "14571"
