@@ -570,6 +570,154 @@ type EngineLab {
     self
   }
 
+  """
+  Profile one `dagger` command and keep its wcprof recording as a capture:
+  the one-shot form of `start`, `wcprofEnable`, `wcprofCapture`, `dagger`,
+  `wcprofCapture`, for scripts.
+
+  Builds the engine and CLI from the workspace, runs a fresh engine that
+  records wcprof from startup, and runs `dagger <args>` against it with the
+  from-source CLI, in `workdir` (mounted at /work; default: the workspace
+  source). `warmup`, when given, runs first the same way and is left out of
+  the capture: use it to load the module so the capture holds only the
+  command. The capture is kept under `name`, like `wcprofCapture` keeps one:
+  slice it with `wcprofReport`, `compare` it, or get the file with
+  `wcprofDump`.
+
+  Independent of `start`: the engine lives only for this call. Use the
+  result in the same pipeline (e.g. `| wcprofDump | export ...`): a later
+  statement of a `dagger -c` script that refers to a stored result can run
+  the profile again. To report on one profile from several statements,
+  export its dump once and load it back with `wcprofLoad`.
+  """
+  wcprofProfile(
+    source: Workspace!,
+    """
+    Arguments to `dagger`, e.g. ["call", "my-mod", "build"].
+    """
+    args: [String!]!,
+    """
+    Directory the command runs in (default: the workspace source).
+    """
+    workdir: Directory = null,
+    """
+    Arguments to a `dagger` command run before recording starts.
+    """
+    warmup: [String!]! = [],
+    """
+    Name to keep the capture under, e.g. "before" or "after".
+    """
+    name: String! = "default",
+    """
+    Cache volume for the engine's state, reused across calls that pass the
+    same name ("" = a fresh volume, so the engine starts cold). Each volume
+    keeps its engine's pulled images and builds until pruned; never share
+    one between engines running at once.
+    """
+    stateVolume: String! = "",
+  ): EngineLab! @cache(policy: FunctionCachePolicy.PerSession) {
+    let volume = if (stateVolume == "") {
+      "engine-lab-profile-state-" + Random.string
+    } else {
+      stateVolume
+    }
+    let dev = engineDev(ws: source)
+    let svcDev = dev.incrementSubnet
+    let svc = svcDev
+      .container
+      .withExposedPort(1234)
+      .withEnvVariable("_DAGGER_WCPROF", "1")
+      .withMountedCache(
+        "/var/lib/dagger",
+        cacheVolume(volume),
+      )
+      .asService(
+        args: [
+          "--addr", "tcp://0.0.0.0:1234",
+          "--network-name", "dagger-lab",
+          "--network-cidr", svcDev.networkCidr,
+          "--debugaddr", "0.0.0.0:" + toString(debugPort),
+        ],
+        useEntrypoint: true,
+        insecureRootCapabilities: true,
+      )
+      .start
+    let base = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "curl"])
+    let dir = workdir ?? source.directory("/")
+    let run = ["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger"]
+    let client = withCredentials(
+      dev.installClient(client: base, service: svc).withFile("/usr/local/bin/dagger", cliDev(ws: source, source: source.directory("/")).binary),
+      cloudCredentials,
+      daggerConfig,
+    )
+      # bust Dagger's exec cache so each session's profile actually runs
+      .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
+      .withMountedDirectory("/work", dir)
+      .withWorkdir("/work")
+    let warmed = if (warmup.isEmpty) {
+      client
+    } else {
+      client.withExec(run + warmup)
+    }
+    let dump = warmed
+      # drop what the engine recorded before the command
+      .withExec(["curl", "-sSf", "--max-time", "300", "-o", "/dev/null", debugURL("/debug/wcprof/dump?flush=1")])
+      .withExec(run + args)
+      .withExec(["curl", "-sSf", "--max-time", "300", "-o", "/tmp/wcprof.dump", debugURL("/debug/wcprof/dump?flush=0")])
+      .file("/tmp/wcprof.dump")
+      .sync
+    svc.stop
+    let summary = wcprofRun(source, dump, ["-view", "summary", "-top", "8"])
+    let names = wcprofCaptureNames + [name]
+    self.wcprofCaptureNames = names
+    self.wcprofDumps = wcprofDumps + [dump]
+    print("capture \"" + name + "\" (captures: " + names.uniq.join(", ") + ")\n" + summary)
+    self
+  }
+
+  """
+  The dump of a wcprof capture (`capture`, default the latest), to export
+  and analyze elsewhere.
+  """
+  wcprofDump(
+    """
+    Name of the capture ("" = the latest).
+    """
+    capture: String! = "",
+  ): File {
+    let idx = wcprofIndex(capture)
+    if (idx < 0) {
+      return null
+    }
+    wcprofDumps[idx]
+  }
+
+  """
+  Keep a wcprof dump file (e.g. one exported from `wcprofDump`, or fetched
+  from an engine's /debug/wcprof/dump) as a capture under `name`, to slice
+  with `wcprofReport` or `compare`. Needs no engine.
+  """
+  wcprofLoad(
+    source: Workspace!,
+    """
+    The dump file.
+    """
+    dump: File!,
+    """
+    Name to keep the capture under, e.g. "before" or "after".
+    """
+    name: String! = "default",
+  ): EngineLab! {
+    let summary = wcprofRun(source, dump, ["-view", "summary", "-top", "8"])
+    let names = wcprofCaptureNames + [name]
+    self.wcprofCaptureNames = names
+    self.wcprofDumps = wcprofDumps + [dump]
+    print("capture \"" + name + "\" (captures: " + names.uniq.join(", ") + ")\n" + summary)
+    self
+  }
+
   # The index in wcprofDumps of the capture named `name` ("" = the latest),
   # or -1. A re-captured name was appended again, so the last match wins.
   let wcprofIndex(name: String!): Int! {
