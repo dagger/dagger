@@ -171,7 +171,7 @@ func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, 
 
 // withNonNestedDevEngine configures a Container to use the same dev engine
 // as the tests are running against but while avoiding use of a nested exec.
-// This is needed occasionally for tests like TestClientGenerator where we
+// This is needed occasionally for tests like TestGenerators where we
 // can't use nested execs.
 // It works because our integ test setup code in the dagger-dev module mount
 // in the engine service's unix sock to the test container.
