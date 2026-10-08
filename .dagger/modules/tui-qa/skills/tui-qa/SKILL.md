@@ -25,10 +25,13 @@ Workflow:
   names — "enter", "esc", single characters, "ctrl+s" style modifier combos
   (not "C-s") — and unknown tokens are rejected rather than typed literally.
 - `span(spanHex)` inspects one span in depth (status, error and origins,
-  timing, dagui flags like internal/passthrough/roll-up, the parent chain with
-  each ancestor's flags, and its loaded direct children) — use it to answer
-  "why is this span hidden / why didn't its logs roll up", or to walk the tree
-  from a span. Get ids from `spans`.
+  timing, dagui flags like internal/passthrough/roll-up, its OTel attributes,
+  the parent chain with each ancestor's flags, and its loaded direct
+  children) — use it to answer "why is this span hidden / why didn't its logs
+  roll up / what did it record", or to walk the tree from a span. Attribute
+  values are capped at `attrMax` bytes (0 = full). Get ids from `spans`;
+  `spans(attr: "key=text")` finds spans by attribute, e.g.
+  "dagger.git.checkout.cow.fallback=true".
 - Check for crashes explicitly: grep the screen for "panic:", "fatal error".
 - the tui-qa stop tool when done.
 
