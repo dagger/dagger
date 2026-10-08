@@ -71,6 +71,11 @@ import (
 type Server struct {
 	controlapi.UnimplementedControlServer
 	engineName string
+
+	// newSessionGRPC serves the control API on new session endpoints that
+	// execs get with daggerInDaggerNewSession; built on first use.
+	newSessionGRPCOnce sync.Once
+	newSessionGRPC     *grpc.Server
 	// engineInstanceID names this engine process: a random ID created once at
 	// startup, the service.instance.id of its telemetry.
 	engineInstanceID string

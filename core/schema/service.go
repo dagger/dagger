@@ -34,6 +34,7 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 				disableNestingArg,
 				legacyNestingArg,
 				deprecatedNestingArg,
+				newSessionNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 					running a command with "sudo" or executing "docker run" with the
@@ -78,6 +79,7 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 				disableNestingArg,
 				legacyNestingArg,
 				deprecatedNestingArg,
+				newSessionNestingArg,
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 					running a command with "sudo" or executing "docker run" with the
@@ -289,7 +291,11 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent dagql.ObjectResult[*core.Container], args core.ContainerAsServiceArgs) (*core.Service, error) {
 	if core.Supports(ctx, defaultNestingVersion) {
-		args.ExperimentalPrivilegedNesting = !args.DisableDaggerInDagger
+		var err error
+		args.ExperimentalPrivilegedNesting, err = v1Nesting(args.DisableDaggerInDagger, args.DaggerInDaggerNewSession)
+		if err != nil {
+			return nil, err
+		}
 	}
 	// A service needs only the container config. The service evaluates the
 	// filesystem when it starts.
@@ -337,6 +343,11 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 		inputs = append(inputs, dagql.NamedInput{
 			Name: "disableDaggerInDagger", Value: dagql.Boolean(args.DisableDaggerInDagger),
 		})
+		if args.DaggerInDaggerNewSession {
+			inputs = append(inputs, dagql.NamedInput{
+				Name: "daggerInDaggerNewSession", Value: dagql.Boolean(true),
+			})
+		}
 	} else if args.ExperimentalPrivilegedNesting {
 		inputs = append(inputs, dagql.NamedInput{
 			Name:  "experimentalPrivilegedNesting",

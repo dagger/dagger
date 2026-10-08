@@ -2214,6 +2214,22 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}).ServeHTTP(w, r)
 }
 
+// ServeHTTPToNewSession serves an exec's new session endpoint the same way the
+// engine's main listener serves clients: gRPC requests go to the control API
+// the client handshake uses, and every other request is a root client, so each
+// client that connects starts its own session.
+func (srv *Server) ServeHTTPToNewSession(w http.ResponseWriter, r *http.Request) {
+	if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
+		srv.newSessionGRPCOnce.Do(func() {
+			srv.newSessionGRPC = grpc.NewServer()
+			srv.Register(srv.newSessionGRPC)
+		})
+		srv.newSessionGRPC.ServeHTTP(w, r)
+		return
+	}
+	srv.ServeHTTP(w, r)
+}
+
 // ServeHTTPToNestedClient serves nested clients, including module function calls.
 func (srv *Server) ServeHTTPToNestedClient(
 	w http.ResponseWriter,
