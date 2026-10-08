@@ -420,6 +420,14 @@ func main() { //nolint:gocyclo
 			return err
 		}
 
+		// The generated CNI config leaves masquerading and forwarding to rules
+		// installed once for the whole subnet. A custom CNI config brings its own.
+		if ociNet := bkcfg.Workers.OCI.NetworkConfig; ociNet.Mode != "host" && ociNet.CNIConfigPath == netConf.CNIConfigPath {
+			if err := netinst.InstallSubnetRules(networkContext, netConf.NetName, netConf.NetCIDR); err != nil {
+				return fmt.Errorf("install subnet rules: %w", err)
+			}
+		}
+
 		logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
 
 		noiseReduceHook := &noiseReductionHook{

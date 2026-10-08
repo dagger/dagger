@@ -60,6 +60,7 @@ require (
 	github.com/containerd/typeurl/v2 v2.2.3
 	github.com/containernetworking/cni v1.3.0
 	github.com/containernetworking/plugins v1.9.0
+	github.com/coreos/go-iptables v0.8.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/creachadair/tomledit v0.0.29
 	github.com/creack/pty v1.1.24
@@ -208,6 +209,7 @@ require (
 	modernc.org/sqlite v1.48.1
 	mvdan.cc/sh/v3 v3.13.1
 	resenje.org/singleflight v0.4.3
+	sigs.k8s.io/knftables v0.0.18
 )
 
 require github.com/mattn/go-pointer v0.0.1 // indirect

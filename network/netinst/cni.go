@@ -9,13 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/jackpal/gateway"
 	"github.com/sirupsen/logrus"
 )
 
 func InstallCNIConfig(ctx context.Context, name, subnet string) (string, error) {
-	cni, err := cniConfig(ctx, name, subnet)
+	cni, err := cniConfig(name, subnet)
 	if err != nil {
 		return "", err
 	}
@@ -44,26 +43,20 @@ func detectIPMasqBackend() string {
 	return "iptables"
 }
 
-func cniConfig(ctx context.Context, name, subnet string) ([]byte, error) {
+func cniConfig(name, subnet string) ([]byte, error) {
 	bridgePlugin := map[string]any{
 		"type":             "bridge",
 		"bridge":           name + "0",
 		"isDefaultGateway": true,
-		"ipMasq":           true,
-		"hairpinMode":      true,
+		// Masquerading is set up once for the whole subnet; see InstallSubnetRules.
+		"ipMasq":      false,
+		"hairpinMode": true,
 		"ipam": map[string]any{
 			"type": "host-local",
 			"ranges": []any{
 				[]any{map[string]any{"subnet": subnet}},
 			},
 		},
-	}
-
-	// Detect if we need nftables backend for IP masquerading
-	// On kernels without CONFIG_NETFILTER_XTABLES_LEGACY (6.17+), legacy iptables fails
-	if ipMasqBackend := detectIPMasqBackend(); ipMasqBackend != "" {
-		bklog.G(ctx).Infof("using ipMasqBackend: %s", ipMasqBackend)
-		bridgePlugin["ipMasqBackend"] = ipMasqBackend
 	}
 
 	if ip, err := gateway.DiscoverInterface(); err == nil {
@@ -81,10 +74,9 @@ func cniConfig(ctx context.Context, name, subnet string) ([]byte, error) {
 		"cniVersion": "0.4.0",
 		"name":       name,
 		"plugins": []any{
+			// No firewall plugin: forwarding is accepted once for the whole
+			// subnet; see InstallSubnetRules.
 			bridgePlugin,
-			map[string]any{
-				"type": "firewall",
-			},
 			map[string]any{
 				"type":       "dnsname",
 				"domainName": name + ".local",
