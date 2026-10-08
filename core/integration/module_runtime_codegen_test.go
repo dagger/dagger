@@ -313,7 +313,9 @@ func (RuntimeCodegenSuite) TestPreSplitCommittedBindingsRun(ctx context.Context,
 			EngineVersion: modules.EngineVersionLatest,
 			SDK:           &modules.SDK{Source: "go"},
 		})).
-		With(daggerCall("message")).
+		// A standalone TOML module has no workspace entrypoint; select it
+		// explicitly without regenerating its committed bindings.
+		With(daggerCallAt(".", "message")).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "hello from blueprint")
