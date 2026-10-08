@@ -225,6 +225,21 @@ func IsOpaqueDir(path string) (bool, error) {
 	return false, nil
 }
 
+// IsRedirectDir reports whether the overlay layer directory at path redirects
+// to another path in the layers below, which hold its inherited contents.
+func IsRedirectDir(path string) (bool, error) {
+	for _, key := range []string{"trusted.overlay.redirect", "user.overlay.redirect"} {
+		n, err := unix.Lgetxattr(path, key, nil)
+		if err != nil && !errors.Is(err, unix.ENODATA) && !errors.Is(err, unix.ENOTSUP) {
+			return false, pkgerrors.Wrapf(err, "failed to retrieve %s attr", key)
+		}
+		if err == nil && n > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // lstatIfExists is os.Lstat, with a path that does not exist reported as a
 // nil FileInfo rather than an error.
 func lstatIfExists(path string) (os.FileInfo, error) {

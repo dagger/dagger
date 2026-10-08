@@ -468,9 +468,10 @@ func changesetLayers(beforeRoot, beforeDir string, beforeMnt *mount.Mount, after
 		return &delta, ""
 	}
 	// Walking a layer from the selected directory needs that directory in
-	// it, and neither it nor any parent opaque or replaced: an opaque
-	// directory hides the shared layers beneath it, which the layers alone
-	// don't list. Of several layers, one without the directory changed
+	// it, and neither it nor any parent opaque, replaced or redirected: an
+	// opaque directory hides the shared layers beneath it, and a redirected
+	// one inherits from another path in them, neither of which the layers
+	// alone list. Of several layers, one without the directory changed
 	// nothing under it and is left out; a single layer without it is left to
 	// the full walk, as it always was.
 	var components []string
@@ -496,6 +497,9 @@ func changesetLayers(beforeRoot, beforeDir string, beforeMnt *mount.Mount, after
 				if opaque, err := fsdiff.IsOpaqueDir(dir); err != nil || opaque {
 					return nil, false
 				}
+				if redirect, err := fsdiff.IsRedirectDir(dir); err != nil || redirect {
+					return nil, false
+				}
 				if i == len(components) {
 					break
 				}
@@ -507,11 +511,11 @@ func changesetLayers(beforeRoot, beforeDir string, beforeMnt *mount.Mount, after
 	}
 	lower, ok := selected(delta.Lower)
 	if !ok {
-		return nil, "selected directory replaced or opaque in a layer"
+		return nil, "selected directory replaced, opaque or redirected in a layer"
 	}
 	upper, ok := selected(delta.Upper)
 	if !ok {
-		return nil, "selected directory replaced or opaque in a layer"
+		return nil, "selected directory replaced, opaque or redirected in a layer"
 	}
 	layers := &fsdiff.LayerDelta{Lower: lower, Upper: upper}
 	if layers.Empty() {
