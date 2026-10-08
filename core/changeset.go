@@ -17,7 +17,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
@@ -27,7 +26,6 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
-	"github.com/dagger/dagger/engine/wcprof"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/fsutil"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
@@ -38,7 +36,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 )
 
@@ -243,7 +240,7 @@ func (ch *Changeset) PathCountExceeds(ctx context.Context, limit int) (bool, err
 
 	var exceeds bool
 	var deltaErr error
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string, layers *fsdiff.LayerDelta) error {
+	err = ch.withMountedDirs(ctx, func(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) error {
 		exceeds, deltaErr = changesetDeltaExceeds(ctx, beforeDir, afterDir, layers, limit)
 		return nil
 	})
@@ -276,31 +273,11 @@ func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, err
 	}
 
 	var result *ChangesetPaths
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string, layers *fsdiff.LayerDelta) (err error) {
-		// Record which walk the delta took: the overlay layers between the
-		// trees cost the size of the change, a double walk the size of both.
-		span := trace.SpanFromContext(ctx)
-		if layers != nil {
-			span.SetAttributes(
-				attribute.Int("dagger.changeset.paths.lower_layers", len(layers.Lower)),
-				attribute.Int("dagger.changeset.paths.upper_layers", len(layers.Upper)),
-			)
-		}
-		start := phaseNow()
+	err = ch.withMountedDirs(ctx, func(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) (err error) {
 		result, _, err = computeChangesetPathsDelta(ctx, beforeDir, afterDir, layers, false)
 		if err != nil {
-			slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
-			span.SetAttributes(attribute.String("dagger.changeset.paths.delta_error", err.Error()))
+			fallBackToContentDiff(ctx, err)
 			result, err = computeChangesetPaths(ctx, beforeDir, afterDir)
-		}
-		class := "changeset.paths[trees]"
-		if !layers.Empty() {
-			class = "changeset.paths[layers]"
-		}
-		span.SetAttributes(attribute.String("dagger.changeset.paths.walk", strings.TrimSuffix(strings.TrimPrefix(class, "changeset.paths["), "]")))
-		span.SetAttributes(attribute.Int64("dagger.changeset.paths.walk_ms", time.Since(start.wall).Milliseconds()))
-		if start.ns != 0 {
-			wcprof.RecordOp(ctx, wcprof.OpKindIO, class, wcprof.OpOpts{}, start.ns, wcprof.NowNS(), wcprof.OutcomeOK)
 		}
 		return err
 	})
@@ -406,8 +383,10 @@ func computeChangesetPaths(ctx context.Context, beforeDir, afterDir string) (*Ch
 
 // withMountedDirs mounts the before and after directories and calls fn with
 // their paths, and with the overlay layers separating them if there are any
-// (see changesetLayers).
-func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, afterDir string, layers *fsdiff.LayerDelta) error) error {
+// (see changesetLayers). fn runs in its own internal span, where the delta
+// walk records which walk it took (see recordChangesetWalk), so each
+// comparison's walk and reasons stay together.
+func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) error) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return err
@@ -441,17 +420,19 @@ func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, aft
 			return err
 		}
 
-		return MountRef(ctx, afterRef, func(afterMount string, afterMnt *mount.Mount) error {
+		return MountRef(ctx, afterRef, func(afterMount string, afterMnt *mount.Mount) (rerr error) {
 			afterDir, err := containerdfs.RootPath(afterMount, afterSelector)
 			if err != nil {
 				return err
 			}
 
+			ctx, span := Tracer(ctx).Start(ctx, "compare changeset trees", telemetry.Internal())
+			defer telemetry.EndWithCause(span, &rerr)
 			layers, reason := changesetLayers(beforeMount, beforeDir, beforeMnt, afterMount, afterDir, afterMnt)
 			if layers == nil {
-				trace.SpanFromContext(ctx).SetAttributes(attribute.String("dagger.changeset.layers_unavailable", reason))
+				span.SetAttributes(attribute.String("dagger.changeset.layers_unavailable", reason))
 			}
-			return fn(beforeDir, afterDir, layers)
+			return fn(ctx, beforeDir, afterDir, layers)
 		}, mountRefAsReadOnly)
 	}, mountRefAsReadOnly)
 }
@@ -793,13 +774,13 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 	}
 
 	var isEmpty bool
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string, layers *fsdiff.LayerDelta) error {
+	err = ch.withMountedDirs(ctx, func(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) error {
 		empty, err := changesetDeltaIsEmpty(ctx, beforeDir, afterDir, layers)
 		if err == nil {
 			isEmpty = empty
 			return nil
 		}
-		slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
+		fallBackToContentDiff(ctx, err)
 		identical, err := directoriesAreIdentical(ctx, beforeDir, afterDir)
 		if err != nil {
 			return err
@@ -816,10 +797,10 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 	var paths *ChangesetPaths
 	var statsByPath map[string]lineChanges
-	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string, layers *fsdiff.LayerDelta) error {
+	err := ch.withMountedDirs(ctx, func(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) error {
 		computedPaths, deltaStats, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, layers, true)
 		if err != nil {
-			slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
+			fallBackToContentDiff(ctx, err)
 			computedPaths, err = computeChangesetPaths(ctx, beforeDir, afterDir)
 			if err != nil {
 				return fmt.Errorf("compute paths: %w", err)

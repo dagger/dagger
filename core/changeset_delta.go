@@ -11,11 +11,15 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	continuityfs "github.com/containerd/continuity/fs"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // changesetDelta is the file-level delta between two mounted directory trees,
@@ -183,19 +187,23 @@ var errDeltaLimitExceeded = errors.New("changeset delta entry limit exceeded")
 // been collected, returning exceeded=true and no delta rather than finishing a
 // walk whose result the caller has already decided is too big. A negative
 // limit walks everything.
-func collectChangesetDeltaBounded(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta, limit int) (_ *changesetDelta, exceeded bool, _ error) {
+func collectChangesetDeltaBounded(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta, limit int) (_ *changesetDelta, exceeded bool, rerr error) {
 	comparison := fsdiff.CompareInodeThenContent
 	if limit >= 0 {
 		// Count distinct backing files conservatively, even when their stat
 		// matches. Reading content here would defeat the inspection budget.
 		comparison = fsdiff.CompareInodeOnly
 	}
+	walk := "trees"
+	start := phaseNow()
+	defer func() { recordChangesetWalk(ctx, walk, layers, start, rerr) }()
 	if !layers.Empty() {
 		// The layers separating the trees list every difference: the walk
 		// costs the size of the change, not of the trees. Whiteouts mark
 		// removals and opaque directories are diffed in full by the walker;
 		// anything it can't interpret (e.g. a redirect_dir) is an error, and
 		// the trees are walked instead.
+		walk = "layers"
 		delta, exceeded, err := walkChangesetDelta(beforeDir, limit, func(fn continuityfs.ChangeFunc) error {
 			return fsdiff.WalkLayerDeltaChanges(ctx, fn, *layers, afterDir, beforeDir, comparison)
 		})
@@ -203,10 +211,48 @@ func collectChangesetDeltaBounded(ctx context.Context, beforeDir, afterDir strin
 			return delta, exceeded, err
 		}
 		slog.Debug("changeset overlay delta failed; walking both trees", "error", err)
+		trace.SpanFromContext(ctx).SetAttributes(attribute.String("dagger.changeset.paths.layers_error", err.Error()))
+		walk = "trees"
 	}
 	return walkChangesetDelta(beforeDir, limit, func(fn continuityfs.ChangeFunc) error {
 		return fsdiff.WalkChanges(ctx, beforeDir, afterDir, comparison, fn)
 	})
+}
+
+// recordChangesetWalk records on the span which walk a changeset delta took
+// ("layers": the overlay layers between the trees, costing the size of the
+// change; "trees": a double walk, costing the size of both) and how long it
+// took, and as the wcprof io op changeset.paths[<walk>].
+func recordChangesetWalk(ctx context.Context, walk string, layers *fsdiff.LayerDelta, start phaseMark, err error) {
+	attrs := []attribute.KeyValue{
+		attribute.String("dagger.changeset.paths.walk", walk),
+		attribute.Int64("dagger.changeset.paths.walk_ms", time.Since(start.wall).Milliseconds()),
+	}
+	if layers != nil {
+		attrs = append(attrs,
+			attribute.Int("dagger.changeset.paths.lower_layers", len(layers.Lower)),
+			attribute.Int("dagger.changeset.paths.upper_layers", len(layers.Upper)),
+		)
+	}
+	trace.SpanFromContext(ctx).SetAttributes(attrs...)
+	if start.ns != 0 {
+		outcome := wcprof.OutcomeOK
+		if err != nil {
+			outcome = wcprof.OutcomeError
+		}
+		wcprof.RecordOp(ctx, wcprof.OpKindIO, "changeset.paths["+walk+"]", wcprof.OpOpts{}, start.ns, wcprof.NowNS(), outcome)
+	}
+}
+
+// fallBackToContentDiff reports that the metadata delta failed with err and
+// the caller is falling back to a full content diff, which walks both trees
+// whatever walk the delta took.
+func fallBackToContentDiff(ctx context.Context, err error) {
+	slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.String("dagger.changeset.paths.delta_error", err.Error()),
+		attribute.String("dagger.changeset.paths.walk", "trees"),
+	)
 }
 
 // walkChangesetDelta collects a changesetDelta from the changes walk reports

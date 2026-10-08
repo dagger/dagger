@@ -13,6 +13,7 @@ import (
 
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 )
 
@@ -634,5 +635,57 @@ func TestChangesetDeltaExceeds(t *testing.T) {
 		require.Equal(t, []string{"add.txt"}, delta.addedFiles)
 		require.Equal(t, []string{"mod.txt"}, delta.modifiedCandidates)
 		require.Equal(t, 2, delta.count())
+	})
+}
+
+// The span reports the walk a delta actually took: a layer walk that fails
+// and falls back to walking both trees must not claim the layers.
+func TestChangesetDeltaRecordsWalk(t *testing.T) {
+	walk := func(t *testing.T, layersFor func(upper string) *fsdiff.LayerDelta) (*changesetDelta, map[string]string) {
+		t.Helper()
+		before := t.TempDir()
+		after := t.TempDir()
+		upper := t.TempDir()
+		writeDeltaTestFile(t, before, "keep.txt", "keep\n")
+		writeDeltaTestFile(t, after, "keep.txt", "keep\n")
+		writeDeltaTestFile(t, after, "add.txt", "add\n")
+		writeDeltaTestFile(t, upper, "add.txt", "add\n")
+
+		sr, ctx := recordingTestRecorder(t)
+		delta, err := collectChangesetDelta(ctx, before, after, layersFor(upper))
+		require.NoError(t, err)
+		trace.SpanFromContext(ctx).End()
+		spans := sr.Ended()
+		require.Len(t, spans, 1)
+		attrs := map[string]string{}
+		for _, kv := range spans[0].Attributes() {
+			attrs[string(kv.Key)] = kv.Value.Emit()
+		}
+		return delta, attrs
+	}
+
+	t.Run("layers", func(t *testing.T) {
+		delta, attrs := walk(t, func(upper string) *fsdiff.LayerDelta {
+			return &fsdiff.LayerDelta{Upper: []string{upper}}
+		})
+		require.Equal(t, []string{"add.txt"}, delta.addedFiles)
+		require.Equal(t, "layers", attrs["dagger.changeset.paths.walk"])
+		require.NotContains(t, attrs, "dagger.changeset.paths.layers_error")
+	})
+
+	t.Run("trees", func(t *testing.T) {
+		delta, attrs := walk(t, func(string) *fsdiff.LayerDelta { return nil })
+		require.Equal(t, []string{"add.txt"}, delta.addedFiles)
+		require.Equal(t, "trees", attrs["dagger.changeset.paths.walk"])
+	})
+
+	t.Run("layers fall back to trees", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "missing")
+		delta, attrs := walk(t, func(string) *fsdiff.LayerDelta {
+			return &fsdiff.LayerDelta{Lower: []string{missing}, Upper: []string{missing}}
+		})
+		require.Equal(t, []string{"add.txt"}, delta.addedFiles)
+		require.Equal(t, "trees", attrs["dagger.changeset.paths.walk"])
+		require.Contains(t, attrs, "dagger.changeset.paths.layers_error")
 	})
 }
