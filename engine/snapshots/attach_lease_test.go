@@ -382,3 +382,145 @@ func TestAttachLeaseWriteFailure(t *testing.T) {
 		})
 	}
 }
+
+// A metadata transaction that fails to commit leaves the lease without the
+// rolled-back snapshot: it holds nothing of it, is not recorded as its owner,
+// so an export of the snapshot neither writes to the lease nor fails on it,
+// and a retry attaches it.
+func TestAttachLeaseCommitFailure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	held, heldOwner := buildSnapshot(t, store, nil, "a.txt", "held")
+	other, otherOwner := buildSnapshot(t, store, nil, "b.txt", "rolled back")
+	blob, _ := exportOnce(t, store, other.SnapshotID())
+
+	const owner = "dagql/result/commit-fails"
+	require.NoError(t, store.Manager.AttachLease(ctx, owner, held.SnapshotID()))
+	injected := errors.New("injected commit failure")
+	store.LeaseCommitErr = injected
+	err := store.Manager.AttachLease(ctx, owner, other.SnapshotID())
+	store.LeaseCommitErr = nil
+	require.ErrorIs(t, err, injected)
+	_, snapshots, contents := leaseResources(t, store, owner)
+	require.Equal(t, []string{held.SnapshotID()}, snapshots, "the rolled-back snapshot is not held")
+	require.NotContains(t, contents, blob.String())
+
+	store.BeforeAdd = func(_ context.Context, l leases.Lease, _ leases.Resource) error {
+		if l.ID == owner {
+			return injected
+		}
+		return nil
+	}
+	forced, err := other.ExportChain(ctx, config.RefConfig{Compression: compression.New(compression.Gzip).SetForce(true)})
+	require.NoError(t, err, "the export does not write to a lease whose attach rolled back")
+	require.NoError(t, forced.Release(ctx))
+	store.BeforeAdd = nil
+
+	require.NoError(t, store.Manager.AttachLease(ctx, owner, other.SnapshotID()), "the retry")
+	_, snapshots, _ = leaseResources(t, store, owner)
+	require.ElementsMatch(t, []string{held.SnapshotID(), other.SnapshotID()}, snapshots)
+
+	for _, ref := range []bkcache.ImmutableRef{held, other} {
+		require.NoError(t, ref.Release(ctx))
+	}
+	for _, id := range []string{heldOwner, otherOwner, owner} {
+		require.NoError(t, store.Manager.RemoveLease(ctx, id))
+	}
+}
+
+// When a write for a later snapshot of the chain fails, the snapshots whose
+// writes committed still get the owner recorded, including one whose blob
+// was recorded before the owner and had to be attached by the recheck: blobs
+// recorded later for them are attached to the owner, and none for the failed
+// snapshot.
+func TestAttachLeaseRecordsCommittedPrefixAfterLaterFailure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	base, baseOwner := buildSnapshot(t, store, nil, "g.txt", "base")
+	mid, midOwner := buildSnapshot(t, store, base, "p.txt", "middle")
+	top, topOwner := buildSnapshot(t, store, mid, "c.txt", "top")
+	layers := func(cfg config.RefConfig) []string {
+		chain, err := top.ExportChain(ctx, cfg)
+		require.NoError(t, err)
+		defer chain.Release(ctx)
+		require.Len(t, chain.Layers, 3)
+		var digests []string
+		for _, layer := range chain.Layers {
+			digests = append(digests, layer.Descriptor.Digest.String())
+		}
+		return digests // base, middle, top
+	}
+	recorded := layers(uncompressed)
+
+	// The walk lists top, middle, base; the base's snapshot write fails, so
+	// the top and middle writes commit.
+	const owner = "dagql/result/prefix"
+	injected := errors.New("injected base write failure")
+	store.BeforeAdd = func(_ context.Context, l leases.Lease, r leases.Resource) error {
+		if l.ID == owner && r.ID == base.SnapshotID() {
+			return injected
+		}
+		return nil
+	}
+	entered, release := blockAfterCommit(store)
+	defer release()
+	attachErr := make(chan error, 1)
+	go func() { attachErr <- store.Manager.AttachLease(ctx, owner, top.SnapshotID()) }()
+	waitFor(t, entered, "AttachLease to commit the top and middle writes")
+
+	// Before the owner is recorded, a forced export records a gzip variant
+	// for every snapshot of the chain.
+	gzipped := make(chan []string, 1)
+	go func() {
+		gzipped <- layers(config.RefConfig{Compression: compression.New(compression.Gzip).SetForce(true)})
+	}()
+	gz := waitFor(t, gzipped, "the forced gzip export")
+	release()
+	require.ErrorIs(t, waitFor(t, attachErr, "AttachLease"), injected)
+	store.BeforeAdd = nil
+
+	_, snapshots, contents := leaseResources(t, store, owner)
+	require.ElementsMatch(t, []string{top.SnapshotID(), mid.SnapshotID()}, snapshots)
+	require.ElementsMatch(t, []string{recorded[2], recorded[1], gz[2], gz[1]}, contents,
+		"the recheck attached the variants recorded before the owner, for the committed snapshots only")
+
+	// The owner is recorded for top and middle: a later variant reaches it.
+	zstd := layers(config.RefConfig{Compression: compression.New(compression.Zstd).SetForce(true)})
+	_, _, contents = leaseResources(t, store, owner)
+	require.Contains(t, contents, zstd[2])
+	require.Contains(t, contents, zstd[1], "the middle snapshot's owner was recorded")
+	require.NotContains(t, contents, zstd[0], "and not the failed base's")
+
+	for _, ref := range []bkcache.ImmutableRef{top, mid, base} {
+		require.NoError(t, ref.Release(ctx))
+	}
+	for _, id := range []string{topOwner, midOwner, baseOwner, owner} {
+		require.NoError(t, store.Manager.RemoveLease(ctx, id))
+	}
+}
+
+// A walk that misses the snapshot reports it missing, with the lease created;
+// a failure to create the lease is the error instead, so callers do not take
+// it for a missing snapshot.
+func TestAttachLeaseWalkMissAndCreateFailure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+
+	const missing = "dagql/result/missing"
+	err := store.Manager.AttachLease(ctx, missing, "no-such-snapshot")
+	require.True(t, bkcache.IsNotFound(err), "got %v", err)
+	all, err := store.Leases.List(ctx, "id=="+missing)
+	require.NoError(t, err)
+	require.Len(t, all, 1, "the lease is created")
+	require.NoError(t, store.Manager.RemoveLease(ctx, missing))
+
+	injected := errors.New("injected commit failure")
+	store.LeaseCommitErr = injected
+	err = store.Manager.AttachLease(ctx, "dagql/result/create-fails", "no-such-snapshot")
+	store.LeaseCommitErr = nil
+	require.ErrorIs(t, err, injected)
+	require.False(t, bkcache.IsNotFound(err), "a failed create is not a missing snapshot")
+}

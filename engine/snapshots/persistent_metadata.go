@@ -155,11 +155,15 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 			} else {
 				err = pkgerrors.Wrapf(err, "stat snapshot %s for owner lease %s", currentSnapshotID, leaseID)
 			}
-			// The lease is created even when the walk fails, as when it was
-			// created before the walk.
-			return stderrors.Join(cm.writeLease(ctx, func(ctx context.Context) error {
+			// The lease is created even when the walk fails, and a failure
+			// to create it is the error, as when it was created before the
+			// walk.
+			if _, createErr := cm.writeLease(ctx, func(ctx context.Context) error {
 				return cm.createOwnerLease(ctx, leaseID)
-			}), err)
+			}); createErr != nil {
+				return createErr
+			}
+			return err
 		}
 		snapshotIDs = append(snapshotIDs, currentSnapshotID)
 		if blob := info.Labels[snapshotBlobGCLabel]; blob != "" {
@@ -174,7 +178,7 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 	// meanwhile; see addSnapshotOwner.
 	blobs := cm.snapshotBlobs(snapshotIDs, labeledBlobs)
 	attachedSnapshots := 0
-	err := cm.writeLease(ctx, func(ctx context.Context) error {
+	committed, err := cm.writeLease(ctx, func(ctx context.Context) error {
 		if err := cm.createOwnerLease(ctx, leaseID); err != nil {
 			return err
 		}
@@ -195,9 +199,14 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 		}
 		return nil
 	})
+	if !committed {
+		attachedSnapshots = 0
+	}
 
-	// The snapshots attached before a failure get their owner recorded, as
-	// when each snapshot was attached and recorded in turn.
+	// Each snapshot whose writes committed gets its owner recorded, as when
+	// each snapshot was attached and recorded in turn, even after a later
+	// snapshot's write failed. A snapshot whose blobs recorded meanwhile fail
+	// to attach is left without the owner; the first error is returned.
 	for _, currentSnapshotID := range snapshotIDs[:attachedSnapshots] {
 		attached := make(map[digest.Digest]struct{}, len(blobs[currentSnapshotID]))
 		for _, dgst := range blobs[currentSnapshotID] {
@@ -208,18 +217,27 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 			if len(pending) == 0 {
 				break
 			}
-			if err != nil {
-				return err
-			}
-			err = cm.writeLease(ctx, func(ctx context.Context) error {
+			var added []digest.Digest
+			committed, attachErr := cm.writeLease(ctx, func(ctx context.Context) error {
 				for _, dgst := range pending {
 					if err := cm.attachOwnerContent(ctx, leaseID, currentSnapshotID, dgst); err != nil {
 						return err
 					}
-					attached[dgst] = struct{}{}
+					added = append(added, dgst)
 				}
 				return nil
 			})
+			if committed {
+				for _, dgst := range added {
+					attached[dgst] = struct{}{}
+				}
+			}
+			if attachErr != nil {
+				if err == nil {
+					err = attachErr
+				}
+				break
+			}
 		}
 	}
 	if err != nil {
@@ -243,12 +261,13 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 
 // writeLease runs the lease writes fn makes in one metadata transaction,
 // rather than one transaction per write, when the manager has the metadata
-// database. The writes made before fn fails are committed, as separate
-// writes would have been. fn must not take cm.mu: holders of cm.mu wait on
-// metadata writes.
-func (cm *snapshotManager) writeLease(ctx context.Context, fn func(context.Context) error) error {
+// database. The writes made before fn fails are committed, as separate writes
+// would have been. committed reports whether they were: false only when the
+// transaction itself failed and rolled back. fn must not take cm.mu: holders
+// of cm.mu wait on metadata writes.
+func (cm *snapshotManager) writeLease(ctx context.Context, fn func(context.Context) error) (committed bool, _ error) {
 	if cm.metadataDB == nil {
-		return fn(ctx)
+		return true, fn(ctx)
 	}
 	var fnErr error
 	err := cm.metadataDB.Update(func(tx *bolt.Tx) error {
@@ -256,9 +275,9 @@ func (cm *snapshotManager) writeLease(ctx context.Context, fn func(context.Conte
 		return nil
 	})
 	if err != nil {
-		return stderrors.Join(fnErr, pkgerrors.Wrap(err, "commit owner lease writes"))
+		return false, stderrors.Join(fnErr, pkgerrors.Wrap(err, "commit owner lease writes"))
 	}
-	return fnErr
+	return true, fnErr
 }
 
 func (cm *snapshotManager) createOwnerLease(ctx context.Context, leaseID string) error {
