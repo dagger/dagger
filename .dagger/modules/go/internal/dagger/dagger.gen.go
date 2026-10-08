@@ -187,8 +187,8 @@ type LLMContentBlockInput struct {
 	// Ordered TEXT or media blocks returned by a tool.
 	Content []LLMContentBlockInput `json:"content,omitempty"`
 
-	// Base64-encoded media bytes. Supply exactly one of data or file for media.
-	Data string `json:"data,omitempty"`
+	// Media bytes. Supply exactly one of data or file for media.
+	Data Bytes `json:"data"`
 
 	// Whether the tool call resulted in an error (for TOOL_RESULT kind).
 	Errored bool `json:"errored,omitempty"`
@@ -264,9 +264,23 @@ func (r *Address) WithGraphQLQuery(q *querybuilder.Selection) *Address {
 	}
 }
 
+// AddressContainerOpts contains options for Address.Container
+type AddressContainerOpts struct {
+	// Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
+}
+
 // Load a container from the address.
-func (r *Address) Container() *Container {
+func (r *Address) Container(opts ...AddressContainerOpts) *Container {
 	q := r.query.Select("container")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 
 	return &Container{
 		query: q,
@@ -282,6 +296,10 @@ type AddressDirectoryOpts struct {
 	Gitignore bool
 
 	NoCache bool
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
 }
 
 // Load a directory from the address.
@@ -304,6 +322,10 @@ func (r *Address) Directory(opts ...AddressDirectoryOpts) *Directory {
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
 		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
 	}
 
 	return &Directory{
@@ -320,6 +342,10 @@ type AddressFileOpts struct {
 	Gitignore bool
 
 	NoCache bool
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
 }
 
 // Load a file from the address.
@@ -342,6 +368,10 @@ func (r *Address) File(opts ...AddressFileOpts) *File {
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
 		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
 	}
 
 	return &File{
@@ -349,9 +379,23 @@ func (r *Address) File(opts ...AddressFileOpts) *File {
 	}
 }
 
+// AddressGitRefOpts contains options for Address.GitRef
+type AddressGitRefOpts struct {
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
+}
+
 // Load a git ref (branch, tag or commit) from the address.
-func (r *Address) GitRef() *GitRef {
+func (r *Address) GitRef(opts ...AddressGitRefOpts) *GitRef {
 	q := r.query.Select("gitRef")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 
 	return &GitRef{
 		query: q,
@@ -723,6 +767,21 @@ func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 	return &Agent{
 		query: selectNode(q.Root(), id, "Agent"),
 	}, nil
+}
+
+// The conversation the agent was spawned from: the tools, workspace and message history its loop started with.
+//
+// Fixed by the spawn; stepping does not move it (see snapshot for the latest committed step). Its workspace is the baseline the agent's own changes are measured from.
+//
+// For an agent restored under a handle, this is the conversation it was restored from.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Seed() *LLM {
+	q := r.query.Select("seed")
+
+	return &LLM{
+		query: q,
+	}
 }
 
 // AgentSendOpts contains options for Agent.Send
@@ -1172,7 +1231,7 @@ func (r *Artifact) Path(ctx context.Context) ([]string, error) {
 
 // ArtifactURIOpts contains options for Artifact.URI
 type ArtifactURIOpts struct {
-	// Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the workspace has no Git address.
+	// Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address.
 	Absolute bool
 	// Include the dimension keys as a query. Without them, the address is a path selector.
 	//
@@ -2416,6 +2475,8 @@ type ArtifactsValuesOpts struct {
 	//
 	// Default: "{}"
 	Arguments JSON
+	// Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
+	MaxConcurrency int
 }
 
 // Evaluate the selection in parallel, retaining each result and error.
@@ -2429,6 +2490,10 @@ func (r *Artifacts) Values(ctx context.Context, opts ...ArtifactsValuesOpts) ([]
 		// `arguments` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Arguments) {
 			q = q.Arg("arguments", opts[i].Arguments)
+		}
+		// `maxConcurrency` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxConcurrency) {
+			q = q.Arg("maxConcurrency", opts[i].MaxConcurrency)
 		}
 	}
 
@@ -3581,6 +3646,12 @@ type ContainerAsServiceOpts struct {
 
 	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
+	// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+	//
+	// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+	//
+	// Cannot be combined with "disableDaggerInDagger".
+	DaggerInDaggerNewSession bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -3612,6 +3683,10 @@ func (r *Container) AsService(opts ...ContainerAsServiceOpts) *Service {
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `daggerInDaggerNewSession` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DaggerInDaggerNewSession) {
+			q = q.Arg("daggerInDaggerNewSession", opts[i].DaggerInDaggerNewSession)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -4046,6 +4121,8 @@ type ContainerFromOpts struct {
 	Protocol RegistryProtocol
 	// Allow HTTPS registry communication without verifying the server certificate.
 	InsecureSkipTLSVerify bool
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
 }
 
 // Download a container image, and apply it to the container state. All previous state will be lost.
@@ -4067,6 +4144,10 @@ func (r *Container) From(address string, opts ...ContainerFromOpts) *Container {
 		// `insecureSkipTLSVerify` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
 			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
+		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
 		}
 	}
 	q = q.Arg("address", address)
@@ -4528,6 +4609,12 @@ type ContainerUpOpts struct {
 
 	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
+	// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+	//
+	// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+	//
+	// Cannot be combined with "disableDaggerInDagger".
+	DaggerInDaggerNewSession bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -4570,6 +4657,10 @@ func (r *Container) Up(ctx context.Context, opts ...ContainerUpOpts) error {
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `daggerInDaggerNewSession` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DaggerInDaggerNewSession) {
+			q = q.Arg("daggerInDaggerNewSession", opts[i].DaggerInDaggerNewSession)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -4849,9 +4940,9 @@ type ContainerWithExecOpts struct {
 	Stdin string
 	// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
 	RedirectStdin string
-	// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+	// Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
 	RedirectStdout string
-	// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+	// Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
 	RedirectStderr string
 	// Exit codes this command is allowed to exit with without error
 	//
@@ -4862,6 +4953,12 @@ type ContainerWithExecOpts struct {
 
 	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
+	// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+	//
+	// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+	//
+	// Cannot be combined with "disableDaggerInDagger".
+	DaggerInDaggerNewSession bool
 	// Execute the command with all root capabilities. Like --privileged in Docker
 	//
 	// DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
@@ -4909,6 +5006,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `daggerInDaggerNewSession` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DaggerInDaggerNewSession) {
+			q = q.Arg("daggerInDaggerNewSession", opts[i].DaggerInDaggerNewSession)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -10554,6 +10655,7 @@ type GitRef struct {
 
 	commit    *string
 	commitSHA *string
+	contains  *bool
 	id        *ID
 	name      *string
 	ref       *string
@@ -10644,6 +10746,23 @@ func (r *GitRef) CommonAncestor(other *GitRef) *GitRef {
 	return &GitRef{
 		query: q,
 	}
+}
+
+// Return true when the other ref's commit equals this commit or is an ancestor of it.
+//
+// Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.
+func (r *GitRef) Contains(ctx context.Context, other *GitRef) (bool, error) {
+	assertNotNil("other", other)
+	if r.contains != nil {
+		return *r.contains, nil
+	}
+	q := r.query.Select("contains")
+	q = q.Arg("other", other)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this GitRef.
@@ -10932,6 +11051,101 @@ func (r *GitRef) AsNode() Node {
 	}
 }
 
+// A named reference to a remote Git repository.
+type GitRemote struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	name *string
+}
+
+func (r *GitRemote) WithGraphQLQuery(q *querybuilder.Selection) *GitRemote {
+	return &GitRemote{
+		query: q,
+	}
+}
+
+// A unique identifier for this GitRemote.
+func (r *GitRemote) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitRemote) XXX_GraphQLType() string {
+	return "GitRemote"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitRemote) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitRemote) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitRemote) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GitRemote) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GitRemote{query: selectNode(dag.query, id, "GitRemote")}
+	return nil
+}
+
+// The remote's name.
+func (r *GitRemote) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Access this remote's repository using its fetch URL and the caller's credentials, or the source's existing capability for this exact destination.
+//
+// HEAD is the remote's HEAD, independent of the workspace's selected commit. Remote registration alone does not grant credentials.
+func (r *GitRemote) Repository() *GitRepository {
+	q := r.query.Select("repository")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// AsNode returns this GitRemote as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitRemote) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A git repository.
 type GitRepository struct {
 	query *querybuilder.Selection
@@ -10979,9 +11193,21 @@ func (r *GitRepository) AsWorkspace(opts ...GitRepositoryAsWorkspaceOpts) *Works
 	}
 }
 
+// GitRepositoryBranchOpts contains options for GitRepository.Branch
+type GitRepositoryBranchOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
 // Returns details of a branch.
-func (r *GitRepository) Branch(name string) *GitRef {
+func (r *GitRepository) Branch(name string, opts ...GitRepositoryBranchOpts) *GitRef {
 	q := r.query.Select("branch")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 	q = q.Arg("name", name)
 
 	return &GitRef{
@@ -11043,9 +11269,40 @@ func (r *GitRepository) Commit(id string) *GitCommit {
 	}
 }
 
+// Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.
+//
+// Frozen workspaces retain their captured upstream selection. Does not contact remote servers.
+func (r *GitRepository) DefaultRemote(ctx context.Context) (*GitRemote, error) {
+	q := r.query.Select("defaultRemote")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &GitRemote{
+		query: selectNode(q.Root(), *objectID, "GitRemote"),
+	}, nil
+}
+
+// GitRepositoryHeadOpts contains options for GitRepository.Head
+type GitRepositoryHeadOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
 // Returns details for HEAD.
-func (r *GitRepository) Head() *GitRef {
+func (r *GitRepository) Head(opts ...GitRepositoryHeadOpts) *GitRef {
 	q := r.query.Select("head")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 
 	return &GitRef{
 		query: q,
@@ -11105,17 +11362,23 @@ func (r *GitRepository) UnmarshalJSON(bs []byte) error {
 type GitRepositoryLatestOpts struct {
 	// Version query used to select the greatest matching release ref.
 	Version string
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
 }
 
 // Return the latest stable release tag, falling back to HEAD when no release exists.
 //
-// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned unless noLock is enabled.
 func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
 	q := r.query.Select("latest")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
+		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
 		}
 	}
 
@@ -11124,9 +11387,21 @@ func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
 	}
 }
 
+// GitRepositoryRefOpts contains options for GitRepository.Ref
+type GitRepositoryRefOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
 // Returns details of a ref.
-func (r *GitRepository) Ref(name string) *GitRef {
+func (r *GitRepository) Ref(name string, opts ...GitRepositoryRefOpts) *GitRef {
 	q := r.query.Select("ref")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 	q = q.Arg("name", name)
 
 	return &GitRef{
@@ -11134,9 +11409,64 @@ func (r *GitRepository) Ref(name string) *GitRef {
 	}
 }
 
+// Look up a remote by name. Fails when the remote does not exist.
+func (r *GitRepository) Remote(name string) *GitRemote {
+	q := r.query.Select("remote")
+	q = q.Arg("name", name)
+
+	return &GitRemote{
+		query: q,
+	}
+}
+
+// List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers.
+func (r *GitRepository) Remotes(ctx context.Context) ([]GitRemote, error) {
+	q := r.query.Select("remotes")
+
+	q = q.Select("id")
+
+	type remotes struct {
+		Id ID
+	}
+
+	convert := func(fields []remotes) []GitRemote {
+		out := []GitRemote{}
+
+		for i := range fields {
+			val := GitRemote{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GitRemote")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []remotes
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// GitRepositoryTagOpts contains options for GitRepository.Tag
+type GitRepositoryTagOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
 // Returns details of a tag.
-func (r *GitRepository) Tag(name string) *GitRef {
+func (r *GitRepository) Tag(name string, opts ...GitRepositoryTagOpts) *GitRef {
 	q := r.query.Select("tag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 	q = q.Arg("name", name)
 
 	return &GitRef{
@@ -11216,6 +11546,8 @@ func (r *GitRepository) WithBundle(bundle *GitBundle, opts ...GitRepositoryWithB
 // Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
 //
 // The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+//
+// When the receiver is a remote repository (or was derived from one), that remote is retained with its authentication: refs the supplied storage does not contain resolve through it.
 func (r *GitRepository) WithContents(directory *Directory) *GitRepository {
 	assertNotNil("directory", directory)
 	q := r.query.Select("withContents")
@@ -12082,6 +12414,35 @@ func (r *LLM) Agent(handle string, name string) *Agent {
 	}
 }
 
+// LLMArtifactsOpts contains options for LLM.Artifacts
+type LLMArtifactsOpts struct {
+	// Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.
+	Include []string
+}
+
+// Discover every artifact this conversation can address, as one selection, without evaluating their values.
+//
+// Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.
+//
+// The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.
+//
+// Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLM) Artifacts(opts ...LLMArtifactsOpts) *Artifacts {
+	q := r.query.Select("artifacts")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
 // Run expertise in list order, passing this conversation through each function. Retain existing contributions.
 func (r *LLM) Compose(expertise []*Expertise) *LLM {
 	q := r.query.Select("compose")
@@ -12792,13 +13153,170 @@ func (r *LLM) AsSyncer() Syncer {
 	}
 }
 
+// An ordered run of text and media content for a model to read, built outside any conversation.
+type LLMContent struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+type WithLLMContentFunc func(r *LLMContent) *LLMContent
+
+// With calls the provided function with current LLMContent.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *LLMContent) With(f WithLLMContentFunc) *LLMContent {
+	return f(r)
+}
+
+func (r *LLMContent) WithGraphQLQuery(q *querybuilder.Selection) *LLMContent {
+	return &LLMContent{
+		query: q,
+	}
+}
+
+// The ordered text and media blocks.
+func (r *LLMContent) Blocks(ctx context.Context) ([]LLMContentBlock, error) {
+	q := r.query.Select("blocks")
+
+	q = q.Select("id")
+
+	type blocks struct {
+		Id ID
+	}
+
+	convert := func(fields []blocks) []LLMContentBlock {
+		out := []LLMContentBlock{}
+
+		for i := range fields {
+			val := LLMContentBlock{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMContentBlock")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []blocks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this LLMContent.
+func (r *LLMContent) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMContent) XXX_GraphQLType() string {
+	return "LLMContent"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMContent) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMContent) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMContent) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *LLMContent) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = LLMContent{query: selectNode(dag.query, id, "LLMContent")}
+	return nil
+}
+
+// Append image, audio, or PDF bytes as an inline media block. The media kind follows the MIME type.
+//
+// Prefer withFile for anything but small payloads: the bytes become part of the content's identity, so they travel with every reference to it.
+func (r *LLMContent) WithData(data Bytes, mimeType string) *LLMContent {
+	q := r.query.Select("withData")
+	q = q.Arg("data", data)
+	q = q.Arg("mimeType", mimeType)
+
+	return &LLMContent{
+		query: q,
+	}
+}
+
+// LLMContentWithFileOpts contains options for LLMContent.WithFile
+type LLMContentWithFileOpts struct {
+	// The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.
+	MimeType string
+}
+
+// Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.
+func (r *LLMContent) WithFile(file *File, opts ...LLMContentWithFileOpts) *LLMContent {
+	assertNotNil("file", file)
+	q := r.query.Select("withFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `mimeType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MimeType) {
+			q = q.Arg("mimeType", opts[i].MimeType)
+		}
+	}
+	q = q.Arg("file", file)
+
+	return &LLMContent{
+		query: q,
+	}
+}
+
+// Append a block of text.
+func (r *LLMContent) WithText(text string) *LLMContent {
+	q := r.query.Select("withText")
+	q = q.Arg("text", text)
+
+	return &LLMContent{
+		query: q,
+	}
+}
+
+// AsNode returns this LLMContent as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMContent) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A single piece of content within an LLM message.
 type LLMContentBlock struct {
 	query *querybuilder.Selection
 
 	arguments *JSON
 	callId    *string
-	data      *string
+	data      *Bytes
 	errored   *bool
 	id        *ID
 	kind      *LLMContentBlockKind
@@ -12873,14 +13391,14 @@ func (r *LLMContentBlock) Content(ctx context.Context) ([]LLMContentBlock, error
 	return convert(response), nil
 }
 
-// Base64-encoded media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
-func (r *LLMContentBlock) Data(ctx context.Context) (string, error) {
+// The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+func (r *LLMContentBlock) Data(ctx context.Context) (Bytes, error) {
 	if r.data != nil {
 		return *r.data, nil
 	}
 	q := r.query.Select("data")
 
-	var response string
+	var response Bytes
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -15898,6 +16416,19 @@ func (r *Query) LLM(opts ...LLMOpts) *LLM {
 	}
 
 	return &LLM{
+		query: q,
+	}
+}
+
+// Start an empty run of text and media content, independent of any conversation.
+//
+// Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+//
+// Experimental: LLM support is not yet stabilized
+func (r *Query) LLMContent() *LLMContent {
+	q := r.query.Select("llmContent")
+
+	return &LLMContent{
 		query: q,
 	}
 }
@@ -19369,6 +19900,35 @@ func (r *Workspace) WithNewFile(path string, contents string, opts ...WorkspaceW
 	}
 }
 
+// WorkspaceWithPatchFileOpts contains options for Workspace.WithPatchFile
+type WorkspaceWithPatchFileOpts struct {
+	// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+	//
+	// Default: FAIL
+	OnConflict PatchConflict
+}
+
+// Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+//
+// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Workspace) WithPatchFile(patch *File, opts ...WorkspaceWithPatchFileOpts) *Workspace {
+	assertNotNil("patch", patch)
+	q := r.query.Select("withPatchFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+	q = q.Arg("patch", patch)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithResetOpts contains options for Workspace.WithReset
 type WorkspaceWithResetOpts struct {
 	// Discard uncommitted changes, resetting the working tree to the commit.
@@ -19497,9 +20057,11 @@ type WorkspaceWithUpdatedModulesOpts struct {
 	Names []string
 	// New version request for exactly one selected module. Cannot be combined with a version suffix.
 	Version string
+	// New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
+	Source string
 }
 
-// Return this workspace with updated module versions and lockfile state.
+// Return this workspace with updated module sources, versions and lockfile state.
 //
 // An SDK client scope is regenerated when it targets an updated module.
 func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) *Workspace {
@@ -19513,7 +20075,24 @@ func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) 
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
 		}
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
 	}
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with the calling client's user-level config re-read and applied.
+//
+// User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+//
+// The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+func (r *Workspace) WithUserConfig() *Workspace {
+	q := r.query.Select("withUserConfig")
 
 	return &Workspace{
 		query: q,
@@ -19627,6 +20206,16 @@ func (r *Workspace) WithoutEntrypoint() *Workspace {
 func (r *Workspace) WithoutFile(path string) *Workspace {
 	q := r.query.Select("withoutFile")
 	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with files removed, without mutating the source.
+func (r *Workspace) WithoutFiles(paths []string) *Workspace {
+	q := r.query.Select("withoutFiles")
+	q = q.Arg("paths", paths)
 
 	return &Workspace{
 		query: q,
