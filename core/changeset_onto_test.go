@@ -79,7 +79,7 @@ func TestRenderPatchOnto(t *testing.T) {
 	// prefix.
 	render := func(t *testing.T, base, before, after, prefix string) *PatchOnto {
 		t.Helper()
-		paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
+		paths, _, err := computeChangesetPathsDelta(ctx, before, after, nil, false)
 		require.NoError(t, err)
 		out, err := renderPatchOntoDirs(ctx, base, after, prefix, paths, 1<<20)
 		require.NoError(t, err)
@@ -330,7 +330,7 @@ func TestRenderPatchOnto(t *testing.T) {
 		base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
 		require.NoError(t, os.Symlink(outside, filepath.Join(base, "link")))
 		writeDeltaTestFile(t, after, "link/secret.txt", "mine\n")
-		paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
+		paths, _, err := computeChangesetPathsDelta(ctx, before, after, nil, false)
 		require.NoError(t, err)
 		p, err := renderPatchOntoDirs(ctx, base, after, ".", paths, 1<<20)
 		require.NoError(t, err)
@@ -340,7 +340,7 @@ func TestRenderPatchOnto(t *testing.T) {
 	t.Run("an oversized patch fails", func(t *testing.T) {
 		base, before, after := t.TempDir(), t.TempDir(), t.TempDir()
 		writeDeltaTestFile(t, after, "big.txt", string(bytes.Repeat([]byte("x\n"), 4096)))
-		paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
+		paths, _, err := computeChangesetPathsDelta(ctx, before, after, nil, false)
 		require.NoError(t, err)
 		_, err = renderPatchOntoDirs(ctx, base, after, ".", paths, 1024)
 		require.ErrorIs(t, err, ErrPatchTooLarge)
@@ -371,7 +371,7 @@ func TestRenderPatchOnto(t *testing.T) {
 						writeDeltaTestFile(t, dir, name, content)
 					}
 				}
-				paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
+				paths, _, err := computeChangesetPathsDelta(ctx, before, after, nil, false)
 				require.NoError(t, err)
 				p, err := renderPatchOntoDirs(ctx, base, after, ".", paths, 1<<20)
 				if tc.want == nil {

@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/fsutil"
@@ -33,6 +34,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"golang.org/x/sys/unix"
 )
@@ -238,8 +240,8 @@ func (ch *Changeset) PathCountExceeds(ctx context.Context, limit int) (bool, err
 
 	var exceeds bool
 	var deltaErr error
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
-		exceeds, deltaErr = changesetDeltaExceeds(ctx, beforeDir, afterDir, limit)
+	err = ch.withMountedDirs(ctx, func(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) error {
+		exceeds, deltaErr = changesetDeltaExceeds(ctx, beforeDir, afterDir, layers, limit)
 		return nil
 	})
 	if err != nil {
@@ -271,10 +273,10 @@ func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, err
 	}
 
 	var result *ChangesetPaths
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) (err error) {
-		result, _, err = computeChangesetPathsDelta(ctx, beforeDir, afterDir, false)
+	err = ch.withMountedDirs(ctx, func(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) (err error) {
+		result, _, err = computeChangesetPathsDelta(ctx, beforeDir, afterDir, layers, false)
 		if err != nil {
-			slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
+			fallBackToContentDiff(ctx, err)
 			result, err = computeChangesetPaths(ctx, beforeDir, afterDir)
 		}
 		return err
@@ -379,8 +381,12 @@ func computeChangesetPaths(ctx context.Context, beforeDir, afterDir string) (*Ch
 	}, nil
 }
 
-// withMountedDirs mounts the before and after directories and calls fn with their paths.
-func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, afterDir string) error) error {
+// withMountedDirs mounts the before and after directories and calls fn with
+// their paths, and with the overlay layers separating them if there are any
+// (see changesetLayers). fn runs in its own internal span, where the delta
+// walk records which walk it took (see recordChangesetWalk), so each
+// comparison's walk and reasons stay together.
+func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) error) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return err
@@ -408,21 +414,116 @@ func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, aft
 		return fmt.Errorf("evaluate after selector: %w", err)
 	}
 
-	return MountRef(ctx, beforeRef, func(beforeMount string, _ *mount.Mount) error {
+	return MountRef(ctx, beforeRef, func(beforeMount string, beforeMnt *mount.Mount) error {
 		beforeDir, err := containerdfs.RootPath(beforeMount, beforeSelector)
 		if err != nil {
 			return err
 		}
 
-		return MountRef(ctx, afterRef, func(afterMount string, _ *mount.Mount) error {
+		return MountRef(ctx, afterRef, func(afterMount string, afterMnt *mount.Mount) (rerr error) {
 			afterDir, err := containerdfs.RootPath(afterMount, afterSelector)
 			if err != nil {
 				return err
 			}
 
-			return fn(beforeDir, afterDir)
+			ctx, span := Tracer(ctx).Start(ctx, "compare changeset trees", telemetry.Internal())
+			defer telemetry.EndWithCause(span, &rerr)
+			layers, reason := changesetLayers(beforeMount, beforeDir, beforeMnt, afterMount, afterDir, afterMnt)
+			if layers == nil {
+				span.SetAttributes(attribute.String("dagger.changeset.layers_unavailable", reason))
+			}
+			return fn(ctx, beforeDir, afterDir, layers)
 		}, mountRefAsReadOnly)
 	}, mountRefAsReadOnly)
+}
+
+// changesetLayers returns the overlay layer directories separating Before
+// from After, when there are such layers: both are snapshots of one lineage,
+// After one or several Directory operations above Before (a workspace's tool
+// edits each add one) or both built on a common ancestor (two copy-on-write
+// children of one checkout), and they select the same directory of their
+// snapshots. Every difference between the trees is then recorded in those
+// layers, and walking them finds them without walking both trees in full.
+// Returns nil otherwise, with the reason.
+func changesetLayers(beforeRoot, beforeDir string, beforeMnt *mount.Mount, afterRoot, afterDir string, afterMnt *mount.Mount) (*fsdiff.LayerDelta, string) {
+	if beforeMnt == nil || afterMnt == nil {
+		return nil, "not mounted from snapshots"
+	}
+	// The selected directories, with symlinks resolved, must be the same
+	// path: the layers record changes under their real paths.
+	beforeRel, err := filepath.Rel(beforeRoot, beforeDir)
+	if err != nil {
+		return nil, err.Error()
+	}
+	afterRel, err := filepath.Rel(afterRoot, afterDir)
+	if err != nil || afterRel != beforeRel || strings.HasPrefix(beforeRel, "..") {
+		return nil, "different selected directories"
+	}
+	delta, err := fsdiff.GetLayerDelta([]mount.Mount{*beforeMnt}, []mount.Mount{*afterMnt})
+	if err != nil {
+		return nil, err.Error()
+	}
+	if delta.Same {
+		// One snapshot's layers, selected at the same directory.
+		return &delta, ""
+	}
+	// Walking a layer from the selected directory needs that directory in
+	// it, and neither it nor any parent opaque, replaced or redirected: an
+	// opaque directory hides the shared layers beneath it, and a redirected
+	// one inherits from another path in them, neither of which the layers
+	// alone list. Of several layers, one without the directory changed
+	// nothing under it and is left out; a single layer without it is left to
+	// the full walk, as it always was.
+	var components []string
+	if beforeRel != "." {
+		components = strings.Split(beforeRel, string(filepath.Separator))
+	}
+	several := len(delta.Lower)+len(delta.Upper) > 1
+	selected := func(layers []string) ([]string, bool) {
+		var dirs []string
+	layers:
+		for _, layer := range layers {
+			dir := layer
+			for i := 0; ; i++ {
+				fi, err := os.Lstat(dir)
+				if errors.Is(err, os.ErrNotExist) && several && i > 0 {
+					continue layers
+				}
+				if err != nil || !fi.IsDir() {
+					// Anything else, e.g. a whiteout, isn't a layer to
+					// walk from here.
+					return nil, false
+				}
+				if opaque, err := fsdiff.IsOpaqueDir(dir); err != nil || opaque {
+					return nil, false
+				}
+				if redirect, err := fsdiff.IsRedirectDir(dir); err != nil || redirect {
+					return nil, false
+				}
+				if i == len(components) {
+					break
+				}
+				dir = filepath.Join(dir, components[i])
+			}
+			dirs = append(dirs, dir)
+		}
+		return dirs, true
+	}
+	lower, ok := selected(delta.Lower)
+	if !ok {
+		return nil, "selected directory replaced, opaque or redirected in a layer"
+	}
+	upper, ok := selected(delta.Upper)
+	if !ok {
+		return nil, "selected directory replaced, opaque or redirected in a layer"
+	}
+	layers := &fsdiff.LayerDelta{Lower: lower, Upper: upper}
+	if layers.Empty() {
+		// No layer changed anything under the selected directory: a rare
+		// case, left to the full walk.
+		return nil, "no layer holds the selected directory"
+	}
+	return layers, ""
 }
 
 type Changeset struct {
@@ -677,13 +778,13 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 	}
 
 	var isEmpty bool
-	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
-		empty, err := changesetDeltaIsEmpty(ctx, beforeDir, afterDir)
+	err = ch.withMountedDirs(ctx, func(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) error {
+		empty, err := changesetDeltaIsEmpty(ctx, beforeDir, afterDir, layers)
 		if err == nil {
 			isEmpty = empty
 			return nil
 		}
-		slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
+		fallBackToContentDiff(ctx, err)
 		identical, err := directoriesAreIdentical(ctx, beforeDir, afterDir)
 		if err != nil {
 			return err
@@ -700,10 +801,10 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 	var paths *ChangesetPaths
 	var statsByPath map[string]lineChanges
-	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
-		computedPaths, deltaStats, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, true)
+	err := ch.withMountedDirs(ctx, func(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) error {
+		computedPaths, deltaStats, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, layers, true)
 		if err != nil {
-			slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
+			fallBackToContentDiff(ctx, err)
 			computedPaths, err = computeChangesetPaths(ctx, beforeDir, afterDir)
 			if err != nil {
 				return fmt.Errorf("compute paths: %w", err)
@@ -1343,13 +1444,21 @@ func (ch *Changeset) MergeWithChangeset(
 	ctx context.Context,
 	other *Changeset,
 	onConflictStrategy WithChangesetMergeConflict,
-) (*Directory, error) {
-	ourPaths, err := ch.ComputePaths(ctx)
-	if err != nil {
+) (_ *Directory, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "git changeset merge", telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
+	phases := newMergePhases(span, "git.merge")
+	var ourPaths, theirPaths *ChangesetPaths
+	if err := phases.run(ctx, "paths_ours", func(ctx context.Context) (err error) {
+		ourPaths, err = ch.ComputePaths(ctx)
+		return err
+	}); err != nil {
 		return nil, fmt.Errorf("compute our paths: %w", err)
 	}
-	theirPaths, err := other.ComputePaths(ctx)
-	if err != nil {
+	if err := phases.run(ctx, "paths_theirs", func(ctx context.Context) (err error) {
+		theirPaths, err = other.ComputePaths(ctx)
+		return err
+	}); err != nil {
 		return nil, fmt.Errorf("compute their paths: %w", err)
 	}
 
@@ -1364,12 +1473,17 @@ func (ch *Changeset) MergeWithChangeset(
 		return nil, err
 	}
 
-	ourContent, err := ch.content(ctx)
-	if err != nil {
+	var ourContent, theirContent *changesetContent
+	if err := phases.run(ctx, "content_ours", func(ctx context.Context) (err error) {
+		ourContent, err = ch.content(ctx)
+		return err
+	}); err != nil {
 		return nil, fmt.Errorf("materialize our changes: %w", err)
 	}
-	theirContent, err := other.content(ctx)
-	if err != nil {
+	if err := phases.run(ctx, "content_theirs", func(ctx context.Context) (err error) {
+		theirContent, err = other.content(ctx)
+		return err
+	}); err != nil {
 		return nil, fmt.Errorf("materialize their changes: %w", err)
 	}
 
@@ -1378,6 +1492,7 @@ func (ch *Changeset) MergeWithChangeset(
 		ourContent, theirContent,
 		conflicts,
 		onConflictStrategy,
+		phases,
 	)
 	if err != nil {
 		return nil, err
@@ -1991,21 +2106,33 @@ func gitMergeChangesets(
 	ours, theirs *changesetContent,
 	conflicts Conflicts,
 	strategy WithChangesetMergeConflict,
+	phases *mergePhases,
 ) (*Directory, error) {
-	return withGitMergeWorkspace(ctx, base, "Changeset.withChangeset git merge", func(ws *gitMergeWorkspace) error {
+	// workspace times evaluating, snapshotting and mounting base; commit
+	// times committing the result's snapshot.
+	start := phaseNow()
+	var end phaseMark
+	dir, err := withGitMergeWorkspace(ctx, base, "Changeset.withChangeset git merge", func(ws *gitMergeWorkspace) error {
+		defer func() { end = phaseNow() }()
+		start := phases.record(ctx, "workspace", start)
 		baseDirs, err := ws.listDirs()
 		if err != nil {
 			return err
 		}
+		start = phases.record(ctx, "base_dirs", start)
 		if err := initGitRepo(ctx, ws.workDir); err != nil {
 			return err
 		}
+		start = phases.record(ctx, "init", start)
 		if err := createBranchWithContent(ctx, ws, "ours", ours); err != nil {
 			return err
 		}
+		start = phases.record(ctx, "branch_ours", start)
 		if err := createBranchWithContent(ctx, ws, "theirs", theirs, "HEAD~1"); err != nil {
 			return err
 		}
+		start = phases.record(ctx, "branch_theirs", start)
+		defer func() { phases.record(ctx, "merge", start) }()
 		if err := runGit(ctx, ws.workDir, "checkout", "ours"); err != nil {
 			return err
 		}
@@ -2054,6 +2181,10 @@ func gitMergeChangesets(
 		}
 		return nil
 	})
+	if err == nil {
+		phases.record(ctx, "commit", end)
+	}
+	return dir, err
 }
 
 func gitOctopusMergeChangesets(

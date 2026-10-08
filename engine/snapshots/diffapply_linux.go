@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/mount"
@@ -15,12 +16,18 @@ import (
 	continuityfs "github.com/containerd/continuity/fs"
 	"github.com/containerd/continuity/sysx"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 )
+
+const instrumentationLibrary = "dagger.io/engine.snapshots"
 
 // diffApply applies the provided diffs to the dest MountableRef and returns the correctly calculated disk usage
 // that accounts for any hardlinks made from existing snapshots. ctx is expected to have a temporary lease
@@ -471,6 +478,15 @@ type differ struct {
 	upperOverlayDirs []string
 
 	upperdir string
+	// layers, when lower and upper are overlay snapshots of one lineage
+	// separated by more than one layer above lower: those layers list every
+	// difference, as upperdir does for one.
+	layers fsdiff.LayerDelta
+	// layersErr is why no layers separate the snapshots, if none do.
+	layersErr error
+	// handled reports whether a change was handed on, after which a
+	// failed walk cannot be retried another way.
+	handled bool
 
 	visited    map[string]struct{}
 	inodes     map[inode]string
@@ -541,21 +557,73 @@ func differFor(lowerMntable, upperMntable MountableRef, comparison fsdiff.Compar
 	if len(lowerMnts) > 0 {
 		if upperdir, err := fsdiff.GetUpperdir(lowerMnts, upperMnts); err == nil {
 			d.upperdir = upperdir
+		} else if layers, err := fsdiff.GetLayerDelta(lowerMnts, upperMnts); err == nil {
+			d.layers = layers
+		} else {
+			d.layersErr = err
 		}
 	}
 
 	return d, nil
 }
 
-func (d *differ) HandleChanges(ctx context.Context, handle func(context.Context, *change) error) error {
+func (d *differ) HandleChanges(ctx context.Context, handle func(context.Context, *change) error) (rerr error) {
+	// Record which walk the diff took: overlay layers cost the size of the
+	// change, a double walk the size of both trees. Each diff gets its own
+	// span: a merge applies several, which would overwrite each other's
+	// attributes on a shared one.
+	ctx, span := trace.SpanFromContext(ctx).TracerProvider().Tracer(instrumentationLibrary).
+		Start(ctx, "snapshot diff", telemetry.Internal())
+	walk := "trees"
+	treesReason := d.layersErr
+	start := time.Now()
+	startNS := wcprof.NowNS()
+	defer func() {
+		span.SetAttributes(
+			attribute.String("dagger.snapshot.diff.walk", walk),
+			attribute.Int64("dagger.snapshot.diff.walk_ms", time.Since(start).Milliseconds()),
+		)
+		if walk == "trees" && treesReason != nil {
+			span.SetAttributes(attribute.String("dagger.snapshot.diff.trees_reason", treesReason.Error()))
+		}
+		if startNS != 0 {
+			outcome := wcprof.OutcomeOK
+			if rerr != nil {
+				outcome = wcprof.OutcomeError
+			}
+			wcprof.RecordOp(ctx, wcprof.OpKindIO, "snapshot.diff["+walk+"]", wcprof.OpOpts{}, startNS, wcprof.NowNS(), outcome)
+		}
+		telemetry.EndWithCause(span, &rerr)
+	}()
 	if d.upperdir != "" {
+		walk = "layer"
 		return d.overlayChanges(ctx, handle)
+	}
+	if !d.layers.Empty() {
+		// The layers separating the snapshots list every difference; each
+		// is resolved in the merged views, exactly as the double walk would
+		// see it.
+		walk = "layers"
+		err := fsdiff.WalkLayerDeltaChanges(ctx, d.mergedViewChange(ctx, handle), d.layers, d.upperRoot, d.lowerRoot, d.comparison)
+		if err == nil || ctx.Err() != nil || d.handled {
+			return err
+		}
+		// Nothing was applied yet (e.g. a redirect_dir the layer walk
+		// can't interpret): walk both trees instead.
+		walk = "trees"
+		treesReason = err
 	}
 	return d.doubleWalkingChanges(ctx, handle)
 }
 
 func (d *differ) doubleWalkingChanges(ctx context.Context, handle func(context.Context, *change) error) error {
-	return fsdiff.WalkChanges(ctx, d.lowerRoot, d.upperRoot, d.comparison, func(kind continuityfs.ChangeKind, subPath string, srcfi os.FileInfo, prevErr error) error {
+	return fsdiff.WalkChanges(ctx, d.lowerRoot, d.upperRoot, d.comparison, d.mergedViewChange(ctx, handle))
+}
+
+// mergedViewChange handles a change reported against the merged views of
+// lower and upper (WalkChanges, WalkUpperdirsChanges).
+func (d *differ) mergedViewChange(ctx context.Context, handle func(context.Context, *change) error) continuityfs.ChangeFunc {
+	return func(kind continuityfs.ChangeKind, subPath string, srcfi os.FileInfo, prevErr error) error {
 		if prevErr != nil {
 			return prevErr
 		}
@@ -569,6 +637,7 @@ func (d *differ) doubleWalkingChanges(ctx context.Context, handle func(context.C
 			return nil
 		}
 
+		d.handled = true
 		if err := d.checkParent(ctx, subPath, handle); err != nil {
 			return errors.Wrapf(err, "failed to check parent for %s", subPath)
 		}
@@ -637,7 +706,7 @@ func (d *differ) doubleWalkingChanges(ctx context.Context, handle func(context.C
 		}
 
 		return handle(ctx, c)
-	})
+	}
 }
 
 func (d *differ) overlayChanges(ctx context.Context, handle func(context.Context, *change) error) error {

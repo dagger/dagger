@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func writeDeltaTestFile(t *testing.T, root, rel, contents string) {
@@ -28,7 +30,7 @@ func requireSamePaths(t *testing.T, beforeDir, afterDir string) *ChangesetPaths 
 
 	gitPaths, err := computeChangesetPaths(ctx, beforeDir, afterDir)
 	require.NoError(t, err)
-	deltaPaths, _, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, true)
+	deltaPaths, _, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, nil, true)
 	require.NoError(t, err)
 
 	require.ElementsMatch(t, gitPaths.Added, deltaPaths.Added, "Added")
@@ -38,7 +40,7 @@ func requireSamePaths(t *testing.T, beforeDir, afterDir string) *ChangesetPaths 
 	require.Equal(t, gitPaths.Renamed, deltaPaths.Renamed, "Renamed")
 
 	// The stats-less variant stages fewer files but must report the same paths.
-	deltaPathsNoStats, _, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, false)
+	deltaPathsNoStats, _, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, deltaPaths, deltaPathsNoStats, "withStats=false paths")
 
@@ -48,7 +50,7 @@ func requireSamePaths(t *testing.T, beforeDir, afterDir string) *ChangesetPaths 
 	gitEmpty := len(gitPaths.Modified) == 0 &&
 		!slices.ContainsFunc(gitPaths.Added, isFile) &&
 		!slices.ContainsFunc(gitPaths.AllRemoved, isFile)
-	deltaEmpty, err := changesetDeltaIsEmpty(ctx, beforeDir, afterDir)
+	deltaEmpty, err := changesetDeltaIsEmpty(ctx, beforeDir, afterDir, nil)
 	require.NoError(t, err)
 	require.Equal(t, gitEmpty, deltaEmpty, "IsEmpty")
 
@@ -61,7 +63,7 @@ func requireSameNumStat(t *testing.T, beforeDir, afterDir string) {
 
 	gitStats, err := compareDirectoriesNumStat(ctx, beforeDir, afterDir)
 	require.NoError(t, err)
-	_, deltaStats, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, true)
+	_, deltaStats, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, nil, true)
 	require.NoError(t, err)
 	// git omits nothing; delta may omit zero-value entries. Compare as maps
 	// treating missing == zero.
@@ -263,18 +265,18 @@ func TestChangesetDeltaExceeds(t *testing.T) {
 		// No renames and no metadata-only changes, so the bound is exact:
 		// 3 added (add.txt, fresh/, fresh/c.txt), 1 modified, 5 removed
 		// (remove.txt, gone/, gone/a.txt, gone/sub/, gone/sub/b.txt).
-		paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
+		paths, _, err := computeChangesetPathsDelta(ctx, before, after, nil, false)
 		require.NoError(t, err)
 		full := changesetPathCount(paths)
 		require.Equal(t, 9, full)
 
 		for _, limit := range []int{0, 1, full - 1} {
-			exceeds, err := changesetDeltaExceeds(ctx, before, after, limit)
+			exceeds, err := changesetDeltaExceeds(ctx, before, after, nil, limit)
 			require.NoError(t, err)
 			require.True(t, exceeds, "limit %d", limit)
 		}
 		for _, limit := range []int{full, full + 1, 1000} {
-			exceeds, err := changesetDeltaExceeds(ctx, before, after, limit)
+			exceeds, err := changesetDeltaExceeds(ctx, before, after, nil, limit)
 			require.NoError(t, err)
 			require.False(t, exceeds, "limit %d", limit)
 		}
@@ -286,7 +288,7 @@ func TestChangesetDeltaExceeds(t *testing.T) {
 		writeDeltaTestFile(t, before, "a.txt", "same\n")
 		require.NoError(t, os.Link(filepath.Join(before, "a.txt"), filepath.Join(after, "a.txt")))
 
-		exceeds, err := changesetDeltaExceeds(ctx, before, after, 0)
+		exceeds, err := changesetDeltaExceeds(ctx, before, after, nil, 0)
 		require.NoError(t, err)
 		require.False(t, exceeds)
 	})
@@ -301,14 +303,14 @@ func TestChangesetDeltaExceeds(t *testing.T) {
 		past := time.Now().Add(-time.Hour)
 		require.NoError(t, os.Chtimes(filepath.Join(after, "f.txt"), past, past))
 
-		paths, _, err := computeChangesetPathsDelta(ctx, before, after, false)
+		paths, _, err := computeChangesetPathsDelta(ctx, before, after, nil, false)
 		require.NoError(t, err)
 		require.Equal(t, 0, changesetPathCount(paths))
 
-		exceeds, err := changesetDeltaExceeds(ctx, before, after, 0)
+		exceeds, err := changesetDeltaExceeds(ctx, before, after, nil, 0)
 		require.NoError(t, err)
 		require.True(t, exceeds, "metadata-differing paths count toward the bound")
-		exceeds, err = changesetDeltaExceeds(ctx, before, after, 1)
+		exceeds, err = changesetDeltaExceeds(ctx, before, after, nil, 1)
 		require.NoError(t, err)
 		require.False(t, exceeds)
 	})
@@ -323,7 +325,7 @@ func TestChangesetDeltaExceeds(t *testing.T) {
 		// Full path computation would stage both sides and invoke git to
 		// pair renames. The bounded walk must succeed without git at all.
 		t.Setenv("PATH", t.TempDir())
-		delta, exceeded, err := collectChangesetDeltaBounded(ctx, before, after, patchSummaryMaxPaths)
+		delta, exceeded, err := collectChangesetDeltaBounded(ctx, before, after, nil, patchSummaryMaxPaths)
 		require.NoError(t, err)
 		require.True(t, exceeded)
 		require.Nil(t, delta)
@@ -338,12 +340,12 @@ func TestChangesetDeltaExceeds(t *testing.T) {
 			writeDeltaTestFile(t, before, filepath.Join("gone", "sub", fmt.Sprintf("%d.txt", i)), "x\n")
 		}
 
-		delta, exceeded, err := collectChangesetDeltaBounded(ctx, before, after, 5)
+		delta, exceeded, err := collectChangesetDeltaBounded(ctx, before, after, nil, 5)
 		require.NoError(t, err)
 		require.True(t, exceeded)
 		require.Nil(t, delta, "no partial delta is handed back")
 
-		delta, exceeded, err = collectChangesetDeltaBounded(ctx, before, after, -1)
+		delta, exceeded, err = collectChangesetDeltaBounded(ctx, before, after, nil, -1)
 		require.NoError(t, err)
 		require.False(t, exceeded)
 		require.Equal(t, 52, delta.count())
@@ -356,10 +358,33 @@ func TestChangesetDeltaExceeds(t *testing.T) {
 		writeDeltaTestFile(t, after, "mod.txt", "new\n")
 		writeDeltaTestFile(t, after, "add.txt", "hi\n")
 
-		delta, err := collectChangesetDelta(ctx, before, after)
+		delta, err := collectChangesetDelta(ctx, before, after, nil)
 		require.NoError(t, err)
 		require.Equal(t, []string{"add.txt"}, delta.addedFiles)
 		require.Equal(t, []string{"mod.txt"}, delta.modifiedCandidates)
 		require.Equal(t, 2, delta.count())
 	})
+}
+
+// A layer walk that fails and falls back to walking both trees must say so:
+// TestChangeset/TestLayerWalks relies on the recorded walk to tell a layer
+// walk from that fallback, which no real overlay snapshot triggers.
+func TestChangesetDeltaRecordsFallback(t *testing.T) {
+	before := t.TempDir()
+	after := t.TempDir()
+	writeDeltaTestFile(t, after, "add.txt", "add\n")
+	missing := filepath.Join(t.TempDir(), "missing")
+
+	sr, ctx := recordingTestRecorder(t)
+	delta, err := collectChangesetDelta(ctx, before, after, &fsdiff.LayerDelta{Lower: []string{missing}, Upper: []string{missing}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"add.txt"}, delta.addedFiles)
+	trace.SpanFromContext(ctx).End()
+	spans := sr.Ended()
+	require.Len(t, spans, 1)
+	walk, ok := spanAttr(spans[0], "dagger.changeset.paths.walk")
+	require.True(t, ok)
+	require.Equal(t, "trees", walk.AsString())
+	_, ok = spanAttr(spans[0], "dagger.changeset.paths.layers_error")
+	require.True(t, ok)
 }

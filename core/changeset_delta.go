@@ -11,10 +11,15 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	continuityfs "github.com/containerd/continuity/fs"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // changesetDelta is the file-level delta between two mounted directory trees,
@@ -40,9 +45,11 @@ type changesetDelta struct {
 // instead of content-diffing both full trees like computeChangesetPaths.
 // Rename detection and line counts still come from git, but scoped to the
 // changed files only. When withStats is true it also returns per-path
-// line-change counts matching `git diff --numstat` semantics.
-func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string, withStats bool) (*ChangesetPaths, map[string]lineChanges, error) {
-	delta, err := collectChangesetDelta(ctx, beforeDir, afterDir)
+// line-change counts matching `git diff --numstat` semantics. Non-empty
+// layers are the overlay layers separating the trees (see changesetLayers),
+// which are walked instead of both trees.
+func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta, withStats bool) (*ChangesetPaths, map[string]lineChanges, error) {
+	delta, err := collectChangesetDelta(ctx, beforeDir, afterDir, layers)
 	if err != nil {
 		return nil, nil, fmt.Errorf("collect delta: %w", err)
 	}
@@ -164,9 +171,10 @@ func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string,
 // reading content only when metadata alone is inconclusive: files backed by
 // the same inode are unchanged (snapshots sharing a lineage resolve unchanged
 // files to the same backing file), and distinct files whose stat happens to
-// match are content-compared rather than trusted.
-func collectChangesetDelta(ctx context.Context, beforeDir, afterDir string) (*changesetDelta, error) {
-	delta, _, err := collectChangesetDeltaBounded(ctx, beforeDir, afterDir, -1)
+// match are content-compared rather than trusted. With non-empty layers,
+// only those overlay layers are walked (see changesetLayers).
+func collectChangesetDelta(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) (*changesetDelta, error) {
+	delta, _, err := collectChangesetDeltaBounded(ctx, beforeDir, afterDir, layers, -1)
 	return delta, err
 }
 
@@ -179,15 +187,79 @@ var errDeltaLimitExceeded = errors.New("changeset delta entry limit exceeded")
 // been collected, returning exceeded=true and no delta rather than finishing a
 // walk whose result the caller has already decided is too big. A negative
 // limit walks everything.
-func collectChangesetDeltaBounded(ctx context.Context, beforeDir, afterDir string, limit int) (_ *changesetDelta, exceeded bool, _ error) {
-	delta := &changesetDelta{limit: limit}
+func collectChangesetDeltaBounded(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta, limit int) (_ *changesetDelta, exceeded bool, rerr error) {
 	comparison := fsdiff.CompareInodeThenContent
 	if limit >= 0 {
 		// Count distinct backing files conservatively, even when their stat
 		// matches. Reading content here would defeat the inspection budget.
 		comparison = fsdiff.CompareInodeOnly
 	}
-	err := fsdiff.WalkChanges(ctx, beforeDir, afterDir, comparison, func(kind continuityfs.ChangeKind, path string, f os.FileInfo, prevErr error) error {
+	walk := "trees"
+	start := phaseNow()
+	defer func() { recordChangesetWalk(ctx, walk, layers, start, rerr) }()
+	if !layers.Empty() {
+		// The layers separating the trees list every difference: the walk
+		// costs the size of the change, not of the trees. Whiteouts mark
+		// removals and opaque directories are diffed in full by the walker;
+		// anything it can't interpret (e.g. a redirect_dir) is an error, and
+		// the trees are walked instead.
+		walk = "layers"
+		delta, exceeded, err := walkChangesetDelta(beforeDir, limit, func(fn continuityfs.ChangeFunc) error {
+			return fsdiff.WalkLayerDeltaChanges(ctx, fn, *layers, afterDir, beforeDir, comparison)
+		})
+		if err == nil || ctx.Err() != nil {
+			return delta, exceeded, err
+		}
+		slog.Debug("changeset overlay delta failed; walking both trees", "error", err)
+		trace.SpanFromContext(ctx).SetAttributes(attribute.String("dagger.changeset.paths.layers_error", err.Error()))
+		walk = "trees"
+	}
+	return walkChangesetDelta(beforeDir, limit, func(fn continuityfs.ChangeFunc) error {
+		return fsdiff.WalkChanges(ctx, beforeDir, afterDir, comparison, fn)
+	})
+}
+
+// recordChangesetWalk records on the span which walk a changeset delta took
+// ("layers": the overlay layers between the trees, costing the size of the
+// change; "trees": a double walk, costing the size of both) and how long it
+// took, and as the wcprof io op changeset.paths[<walk>].
+func recordChangesetWalk(ctx context.Context, walk string, layers *fsdiff.LayerDelta, start phaseMark, err error) {
+	attrs := []attribute.KeyValue{
+		attribute.String("dagger.changeset.paths.walk", walk),
+		attribute.Int64("dagger.changeset.paths.walk_ms", time.Since(start.wall).Milliseconds()),
+	}
+	if layers != nil {
+		attrs = append(attrs,
+			attribute.Int("dagger.changeset.paths.lower_layers", len(layers.Lower)),
+			attribute.Int("dagger.changeset.paths.upper_layers", len(layers.Upper)),
+		)
+	}
+	trace.SpanFromContext(ctx).SetAttributes(attrs...)
+	if start.ns != 0 {
+		outcome := wcprof.OutcomeOK
+		if err != nil {
+			outcome = wcprof.OutcomeError
+		}
+		wcprof.RecordOp(ctx, wcprof.OpKindIO, "changeset.paths["+walk+"]", wcprof.OpOpts{}, start.ns, wcprof.NowNS(), outcome)
+	}
+}
+
+// fallBackToContentDiff reports that the metadata delta failed with err and
+// the caller is falling back to a full content diff, which walks both trees
+// whatever walk the delta took.
+func fallBackToContentDiff(ctx context.Context, err error) {
+	slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.String("dagger.changeset.paths.delta_error", err.Error()),
+		attribute.String("dagger.changeset.paths.walk", "trees"),
+	)
+}
+
+// walkChangesetDelta collects a changesetDelta from the changes walk reports
+// against the before tree at beforeDir.
+func walkChangesetDelta(beforeDir string, limit int, walk func(continuityfs.ChangeFunc) error) (_ *changesetDelta, exceeded bool, _ error) {
+	delta := &changesetDelta{limit: limit}
+	err := walk(func(kind continuityfs.ChangeKind, path string, f os.FileInfo, prevErr error) error {
 		if prevErr != nil {
 			return prevErr
 		}
@@ -305,8 +377,8 @@ func (d *changesetDelta) appendRemovedTree(root, rel string) error {
 // report (see changesetDelta.count). Distinct backing files count even if
 // their contents match, so true means more than limit candidates; false
 // guarantees at most limit paths changed.
-func changesetDeltaExceeds(ctx context.Context, beforeDir, afterDir string, limit int) (bool, error) {
-	_, exceeded, err := collectChangesetDeltaBounded(ctx, beforeDir, afterDir, limit)
+func changesetDeltaExceeds(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta, limit int) (bool, error) {
+	_, exceeded, err := collectChangesetDeltaBounded(ctx, beforeDir, afterDir, layers, limit)
 	if err != nil {
 		return false, fmt.Errorf("collect delta: %w", err)
 	}
@@ -382,8 +454,8 @@ func modifiedFileDiffers(beforeDir, afterDir, rel string) (bool, error) {
 // non-empty regardless of how git would pair them into renames, and
 // metadata-suspect files are verified by content with an early exit on the
 // first real difference.
-func changesetDeltaIsEmpty(ctx context.Context, beforeDir, afterDir string) (bool, error) {
-	delta, err := collectChangesetDelta(ctx, beforeDir, afterDir)
+func changesetDeltaIsEmpty(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) (bool, error) {
+	delta, err := collectChangesetDelta(ctx, beforeDir, afterDir, layers)
 	if err != nil {
 		return false, fmt.Errorf("collect delta: %w", err)
 	}
