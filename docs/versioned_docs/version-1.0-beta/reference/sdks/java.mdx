@@ -879,7 +879,7 @@ dagger generate
 `dagger generate` discovers and runs every generator in the workspace. For modules registered under the Java SDK, that includes regenerating the vendored SDK and entrypoint. Generation runs Maven in containers Dagger controls. It builds the SDK against the engine's current schema, vendors the result under `sdk/`, and compiles your module once with the annotation processor enabled to produce `Entrypoint.java`. It never touches your local Maven installation.
 
 :::note
-Editing a function's body needs no regeneration. Changing the *shape* of your module does, and not only when dependencies change: a new `@Function`, a renamed argument, a new `@Object`. If you forget, the module still builds but the new function is not registered. `dagger check --generate` catches this drift.
+Editing a function's body needs no regeneration. Changing the *shape* of your module does, and not only when dependencies change: a new `@Function`, a renamed argument, a new `@Object`. If you forget, the module still builds but the new function is not registered. `dagger check --generated=true` catches this drift.
 :::
 
 Apply and commit the resulting changeset. This keeps the generated client in sync with the functions and dependencies available to your module.
@@ -909,13 +909,13 @@ Bumping the engine version usually means the generated client bindings should ch
 
 ## Checks, generators, services, directives, and ignore patterns
 
-A module worth reusing provides at least one of the three first-class function types, a check, a generator, or a service, so that the platform verbs (`dagger check`, `dagger generate`, `dagger up`) have something to run. These work the same in Java as in any SDK; see the [SDKs overview](./index.mdx) for the full treatment. In Java, you mark each one with an annotation next to `@Function`. Both annotations are required:
+A module worth reusing provides at least one of the three first-class function types, a check, a generator, or a service, so that the platform verbs (`dagger check`, `dagger generate`, `dagger start`) have something to run. These work the same in Java as in any SDK; see the [SDKs overview](./index.mdx) for the full treatment. In Java, you mark checks and generators with an annotation next to `@Function`. Both annotations are required. A service needs only `@Function`:
 
 | Annotation | Return type | Run by | Purpose |
 |---|---|---|---|
 | `@Check` | `void` (or `Container`) | `dagger check` | validate the project (test/lint/scan) |
 | `@Generate` | `Changeset` | `dagger generate` | produce a diff to apply to the workspace |
-| `@Up` | `Service` | `dagger up` | start a long-running service |
+| none | `Service` | `dagger start` | start a long-running service |
 
 The parts specific to Java follow.
 
@@ -934,7 +934,6 @@ Java modules use annotations from `io.dagger.module.annotation` to add Dagger me
 | `@Ignore({...})` | a `Directory` parameter | patterns to leave out when loading the directory |
 | `@Check` | a `@Function` method | mark the function as a [check](#checks) |
 | `@Generate` | a `@Function` method | mark the function as a [generator](#generators) |
-| `@Up` | a `@Function` method | mark the function as a [service](#up-services) |
 
 ### Ignore patterns {#ignore-patterns}
 
@@ -1020,18 +1019,17 @@ See [Generating code](../../using/generating.mdx).
 
 ### Services {#up-services}
 
-Annotate a function with `@Up` (in addition to `@Function`) to make it a service. It returns a `Service`. `dagger up` discovers and starts every service the module exposes and opens their ports on the host.
+A `@Function` that returns a `Service` and takes no required arguments is a service. `dagger start` discovers and starts every service the module exposes and opens their ports on the host.
 
 ```java
 /** Run the web server. */
 @Function
-@Up
 public Service web() {
   return dag().container().from("nginx:alpine").withExposedPort(80).asService();
 }
 ```
 
-Like checks, `@Up` services can live on custom object types so you can group related services, for example an `Infra` object with a `database` service, which `dagger up -l` lists as `infra:database`. This is the same `Service` type described under [Services](#services) above. The `@Up` annotation is what makes a service function runnable directly with `dagger up`.
+Like checks, services can live on custom object types so you can group related services, for example an `Infra` object with a `database` service, which `dagger start -l` lists as `infra:database`. This is the same `Service` type described under [Services](#services) above.
 
 ## Testing Java modules
 
@@ -1086,7 +1084,7 @@ dagger api call build
 dagger check
 
 # Run generators and confirm there's no drift
-dagger check --generate
+dagger check --generated=true
 ```
 
 ### In CI
@@ -1126,7 +1124,7 @@ Recommended release checklist:
 2. **Commit the generated files.** Run `dagger generate`, review the changes, and commit `sdk/` and `src/generated/` with your module.
 3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
 
-Before publishing, run `dagger check --generate` to confirm that the committed files are up to date.
+Before publishing, run `dagger check --generated=true` to confirm that the committed files are up to date.
 
 Consumers can install your module into a workspace with:
 

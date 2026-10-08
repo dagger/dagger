@@ -1,0 +1,28 @@
+query CurrentCommit {
+  currentWorkspace {
+    git {
+      head {
+        id
+      }
+    }
+  }
+}
+
+query InDefaultBranch($current: ID!) {
+  currentWorkspace {
+    git {
+      head {
+        asRepository {
+          defaultRemote {
+            name
+            repository {
+              head(noLock: true) {
+                contains(other: $current)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

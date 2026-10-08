@@ -623,8 +623,8 @@ Commit generated SDK files so consumers and CI can build the module. Run `dagger
 
 A useful, reusable module provides at least one first-class function type:
 a **check** (run by `dagger check`), a **generator** (run by `dagger generate`),
-or a **service** (started by `dagger up`). Each is a regular `@func()` annotated
-with an additional decorator.
+or a **service** (started by `dagger start`). Each is a regular `@func()`. Checks
+and generators also take an additional decorator.
 
 ### Checks {#checks}
 
@@ -731,11 +731,11 @@ project-specific output (API clients, config, scaffolding) and are run by
 ### Services {#up-services}
 
 A service is a long-running container, such as a database, web server, or other
-dependency. Mark a `@func()` with `@up()` and return a `Service`. `dagger up`
-starts every service in the module. See [Services](../../using/services.mdx).
+dependency. A `@func()` that returns a `Service` and takes no required arguments is
+a service. `dagger start` starts every service in the module. See [Services](../../using/services.mdx).
 
 ```typescript
-import { Service, dag, object, func, up } from "@dagger.io/dagger"
+import { Service, dag, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -743,7 +743,6 @@ class MyModule {
    * A web server service
    */
   @func()
-  @up()
   web(): Service {
     return dag.container().from("nginx:alpine").withExposedPort(80).asService()
   }
@@ -752,7 +751,6 @@ class MyModule {
    * A redis service
    */
   @func()
-  @up()
   redis(): Service {
     return dag.container().from("redis:alpine").withExposedPort(6379).asService()
   }
@@ -760,11 +758,10 @@ class MyModule {
 ```
 
 ```shell
-dagger up
+dagger start
 ```
 
-The `@up()` decorator goes below `@func()`, and the function returns a `Service`
-built from a container with `.asService()`.
+The function returns a `Service` built from a container with `.asService()`.
 
 ### Cache directive
 
@@ -812,7 +809,7 @@ dagger -m ./.dagger/modules/my-module api call build --src=.
 dagger check
 
 # Run generators and confirm there's no drift
-dagger check --generate
+dagger check --generated=true
 ```
 
 For richer behavioral tests, write a separate test module (in TypeScript or any
@@ -839,7 +836,7 @@ jobs:
 ```
 
 If your module keeps generated `sdk/` files in git, also gate on drift by
-running `dagger check --generate`.
+running `dagger check --generated=true`.
 
 ## IDE and package-manager setup
 
@@ -896,7 +893,7 @@ committed so consumers don't have to regenerate before using your module.
 Recommended release checklist:
 
 1. `dagger check` passes.
-2. `dagger check --generate` produces no drift.
+2. `dagger check --generated=true` produces no drift.
 3. `engineVersion` in `dagger-module.toml` matches the engine you support.
 4. Tag and push: `git tag vX.Y.Z && git push --tags`.
 
