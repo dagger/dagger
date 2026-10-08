@@ -2291,8 +2291,17 @@ func gitCmd(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	return cmd
 }
 
+// gitThrowawayConfig applies to the merge repositories runGit drives, whose
+// .git is deleted once the merge has landed in the worktree. Compressing
+// their objects is wasted work, and initGitRepo writes one for every file of
+// the base: storing them raw halves its cost on a large tree.
+var gitThrowawayConfig = []string{
+	"-c", "core.compression=0",
+	"-c", "core.looseCompression=0",
+}
+
 func runGit(ctx context.Context, dir string, args ...string) error {
-	cmd := gitCmd(ctx, dir, args...)
+	cmd := gitCmd(ctx, dir, slices.Concat(gitThrowawayConfig, args)...)
 	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
 	defer finish()
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -2303,7 +2312,7 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 
 // runGitOutput runs git and returns its stdout.
 func runGitOutput(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := gitCmd(ctx, dir, args...)
+	cmd := gitCmd(ctx, dir, slices.Concat(gitThrowawayConfig, args)...)
 	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
 	defer finish()
 	var stderr strings.Builder

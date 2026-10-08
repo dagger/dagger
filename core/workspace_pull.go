@@ -112,7 +112,10 @@ func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Director
 			if err != nil {
 				return err
 			}
-			_, err = runWorkspacePullGit(ctx, ws.workDir, nil, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", url, source.Ref.SHA)
+			// The base checkout has a detached HEAD and no refs, and fetch
+			// negotiates only from refs unless told otherwise: without the tip,
+			// it would claim to have nothing and receive the whole history.
+			_, err = runWorkspacePullGit(ctx, ws.workDir, nil, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--negotiation-tip=HEAD", url, source.Ref.SHA)
 			return err
 		})
 		if err != nil {

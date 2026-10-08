@@ -203,7 +203,10 @@ func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Direct
 					if err != nil {
 						return err
 					}
-					_, err = runWorkspacePullGit(ctx, ws.workDir, nil, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", url, head)
+					// Negotiate from HEAD: the checkout has no refs (see
+					// WorkspacePullCommits), so fetch would otherwise receive
+					// the whole history.
+					_, err = runWorkspacePullGit(ctx, ws.workDir, nil, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--negotiation-tip=HEAD", url, head)
 					return err
 				}); err != nil {
 					return "", err
