@@ -23431,7 +23431,7 @@ func Load[T Loadable[T]](ctx context.Context, root *Query, id ID) (T, error) {
 	return zero.WithGraphQLQuery(selectNode(root.query, id, expectedType)), nil
 }
 
-// initialize an address to load directories, containers, secrets or other object types.
+// Resolve external references only.
 func NewAddress(value string) *Address {
 	root := initRoot()
 	return root.Address(value)

@@ -10,6 +10,7 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -21,6 +22,7 @@ func main() {
 		fatal(err)
 	}
 	defer c.Close()
+	q := core.NewQuery(c)
 
 	mode, depthStr, svcURLs := os.Args[1], os.Args[2], os.Args[3:]
 

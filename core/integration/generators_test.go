@@ -417,7 +417,7 @@ type Consumer struct{}
 func (m *Consumer) SyncGenerators(ctx context.Context, workspace *core.Workspace) (string, error) {
 	items, err := workspace.Artifacts().FilterTypes([]string{"Generator"}).AsGenerators(ctx)
 	if err != nil { return "", err }
-	var changes []*dagger.Changeset
+	var changes []*core.Changeset
 	for _, generator := range items {
 		changes = append(changes, generator.Changeset())
 	}

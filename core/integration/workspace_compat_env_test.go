@@ -51,7 +51,7 @@ func (WorkspaceCompatSuite) TestLocalFile(ctx context.Context, t *testctx.T) {
 func (WorkspaceCompatSuite) TestLocalDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
-		WithDirectory("data", core.NewDirectory().WithNewFile("hello.txt", "well hello!")).
+		WithDirectory("data", core.NewQuery(c).Directory().WithNewFile("hello.txt", "well hello!")).
 		WithWorkdir("defaults").
 		WithNewFile(".env", `DEFAULTS_DIR=../data`).
 		WithExec(daggerCallCmd(".", "dir", "file", "--path=hello.txt", "contents")).
@@ -377,7 +377,7 @@ func (WorkspaceCompatSuite) TestDependencies(ctx context.Context, t *testctx.T) 
 
 func (WorkspaceCompatSuite) TestOptionalDirectoryWithIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	docs := core.NewDirectory().
+	docs := core.NewQuery(c).Directory().
 		WithNewFile("README.md", "Thank you for reading me. The end.").
 		WithNewFile("Makefile", "lol")
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
@@ -392,7 +392,7 @@ func (WorkspaceCompatSuite) TestOptionalDirectoryWithIgnore(ctx context.Context,
 
 func (WorkspaceCompatSuite) TestRequiredDirectoryWithIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	docs := core.NewDirectory().
+	docs := core.NewQuery(c).Directory().
 		WithNewFile("README.md", "Thank you for reading me. The end.").
 		WithNewFile("Makefile", "lol")
 	controlOutput, err := nestedDaggerContainer(t, c, "go", "defaults").
