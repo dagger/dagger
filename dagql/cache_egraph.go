@@ -271,17 +271,21 @@ func (c *Cache) findEqClassLocked(id eqClassID) eqClassID {
 	return root
 }
 
-func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) eqClassID {
+// mergeEqClassesNoRepairLocked unions the classes of a and b and returns the
+// surviving root. absorbedInputTerms reports whether the union moved input
+// terms from the losing root to the survivor; those terms are still keyed by
+// the losing root until the survivor is repaired.
+func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, absorbedInputTerms bool) {
 	ra := c.findEqClassLocked(a)
 	rb := c.findEqClassLocked(b)
 	if ra == 0 {
-		return rb
+		return rb, false
 	}
 	if rb == 0 {
-		return ra
+		return ra, false
 	}
 	if ra == rb {
-		return ra
+		return ra, false
 	}
 
 	// union by rank
@@ -332,6 +336,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) eqClassID {
 			dst[termID] = struct{}{}
 		}
 		delete(c.inputEqClassToTerms, rb)
+		absorbedInputTerms = true
 	}
 
 	// merge reverse output-term indexes
@@ -374,7 +379,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) eqClassID {
 	if joinsEntries {
 		c.noteJoinedEntriesLocked(ra)
 	}
-	return ra
+	return ra, absorbedInputTerms
 }
 
 func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqClassID {
@@ -387,10 +392,14 @@ func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqCl
 
 	root := c.findEqClassLocked(ids[0])
 	for _, id := range ids[1:] {
-		root = c.mergeEqClassesNoRepairLocked(root, id)
+		root, _ = c.mergeEqClassesNoRepairLocked(root, id)
 	}
 	c.traceEqClassMerged(ctx, ids, root)
 
+	// Repair until closure. A root is repaired again only after a union moves
+	// input terms into it, since those terms are still keyed by the losing
+	// root. Each such union removes a root for good, so a root is repaired at
+	// most once plus once per union that grew it, and the loop terminates.
 	toRepair := []eqClassID{root}
 	repaired := make(map[eqClassID]struct{})
 	for len(toRepair) > 0 {
@@ -404,10 +413,14 @@ func (c *Cache) mergeEqClassesLocked(ctx context.Context, ids ...eqClassID) eqCl
 		}
 		repaired[cur] = struct{}{}
 		for _, pair := range c.repairClassTermsLocked(ctx, cur) {
-			next := c.mergeEqClassesNoRepairLocked(pair.a, pair.b)
-			if next != 0 {
-				toRepair = append(toRepair, next)
+			next, absorbedInputTerms := c.mergeEqClassesNoRepairLocked(pair.a, pair.b)
+			if next == 0 {
+				continue
 			}
+			if absorbedInputTerms {
+				delete(repaired, next)
+			}
+			toRepair = append(toRepair, next)
 		}
 	}
 	return c.findEqClassLocked(ids[0])
