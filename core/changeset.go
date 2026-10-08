@@ -1741,6 +1741,47 @@ type changesetContent struct {
 	// changeset adds and modifies nothing.
 	diff  dagql.ObjectResult[*Directory]
 	paths *ChangesetPaths
+	// localDiff, set only by tests, is a plain directory holding the diff
+	// content in place of a materialized diff snapshot.
+	localDiff string
+}
+
+// withDiff mounts the changeset's materialized diff read-only and hands fn its
+// directory and mount (nil for localDiff). It does not call fn when the
+// changeset adds and modifies nothing.
+func (content *changesetContent) withDiff(ctx context.Context, fn func(dir string, mnt *mount.Mount) error) error {
+	if content.localDiff != "" {
+		return fn(content.localDiff, nil)
+	}
+	if content.diff.Self() == nil {
+		return nil
+	}
+	diffRef, err := content.diff.Self().Snapshot.GetOrEval(ctx, content.diff.Result)
+	if err != nil {
+		return fmt.Errorf("diff snapshot: %w", err)
+	}
+	diffPath, err := content.diff.Self().Dir.GetOrEval(ctx, content.diff.Result)
+	if err != nil {
+		return fmt.Errorf("diff path: %w", err)
+	}
+	if diffPath == "" {
+		diffPath = "/"
+	}
+	if diffRef == nil {
+		return nil
+	}
+	return MountRef(ctx, diffRef, func(srcRoot string, srcMnt *mount.Mount) error {
+		dir, err := containerdfs.RootPath(srcRoot, diffPath)
+		if err != nil {
+			return err
+		}
+		return fn(dir, srcMnt)
+	}, mountRefAsReadOnly)
+}
+
+// hasDiff reports whether the changeset materialized diff content.
+func (content *changesetContent) hasDiff() bool {
+	return content.localDiff != "" || content.diff.Self() != nil
 }
 
 // content reduces the changeset to its file-level content, independent of its
@@ -1855,7 +1896,28 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 	}
 	defer copier.Close()
 
-	if content.diff.Self() != nil {
+	copyOpts := layercopy.CopyOptions{
+		CopyDirContents: true,
+		ReplaceExisting: true,
+		// Linking from the diff snapshot into the mounted
+		// work tree crosses devices, so every attempt would
+		// just fail into the copy fallback.
+		DisableSourceHardlinks: true,
+		// The diff snapshot can carry .git entries that
+		// ComputePaths never reported: the stat-sensitive
+		// differ flags files whose content is identical but
+		// whose timestamps diverge across content-deduped
+		// snapshots. Overlaying those onto the temporary
+		// repository corrupts the merge.
+		Filter: layercopy.Filter{
+			Exclude: []string{".git"},
+		},
+	}
+	if content.localDiff != "" {
+		if err := copier.Copy(ctx, layercopy.Mount{Root: content.localDiff}, "/", ws.dir, copyOpts); err != nil {
+			return fmt.Errorf("copy changed paths: %w", err)
+		}
+	} else if content.diff.Self() != nil {
 		diffRef, err := content.diff.Self().Snapshot.GetOrEval(ctx, content.diff.Result)
 		if err != nil {
 			return fmt.Errorf("diff snapshot: %w", err)
@@ -1873,23 +1935,7 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 					layercopy.Mount{Root: srcRoot, Mount: srcMnt},
 					diffPath,
 					ws.dir,
-					layercopy.CopyOptions{
-						CopyDirContents: true,
-						ReplaceExisting: true,
-						// Linking from the diff snapshot into the mounted
-						// work tree crosses devices, so every attempt would
-						// just fail into the copy fallback.
-						DisableSourceHardlinks: true,
-						// The diff snapshot can carry .git entries that
-						// ComputePaths never reported: the stat-sensitive
-						// differ flags files whose content is identical but
-						// whose timestamps diverge across content-deduped
-						// snapshots. Overlaying those onto the temporary
-						// repository corrupts the merge.
-						Filter: layercopy.Filter{
-							Exclude: []string{".git"},
-						},
-					},
+					copyOpts,
 				)
 			}, mountRefAsReadOnly)
 			if err != nil {
@@ -2100,6 +2146,15 @@ func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directo
 	return dir, nil
 }
 
+// gitMergeChangesets merges two changesets' content on base in a temporary
+// repository. Its merge base must be a commit of the whole base tree: git's
+// directory rename detection decides from every path in a directory whether
+// the directory moved, so a base of only the touched paths would change the
+// result. Writing an object for every file of a large base dominates the merge,
+// though, so it first tries a scoped base (see initScopedGitRepo): the same
+// tree, with objects only where either changeset can write. Any failure of that
+// attempt, other than the merge's own conflict, redoes the merge with the full
+// `git add -A` base on a fresh copy of base.
 func gitMergeChangesets(
 	ctx context.Context,
 	base dagql.ObjectResult[*Directory],
@@ -2108,83 +2163,156 @@ func gitMergeChangesets(
 	strategy WithChangesetMergeConflict,
 	phases *mergePhases,
 ) (*Directory, error) {
+	const description = "Changeset.withChangeset git merge"
 	// workspace times evaluating, snapshotting and mounting base; commit
 	// times committing the result's snapshot.
+	run := func(ctx context.Context, scope *gitMergeScope, prefix string) (*Directory, error) {
+		start := phaseNow()
+		var end phaseMark
+		dir, err := withGitMergeWorkspace(ctx, base, description, func(ws *gitMergeWorkspace) error {
+			defer func() { end = phaseNow() }()
+			phases.record(ctx, prefix+"workspace", start)
+			return ws.mergeChangesets(ctx, scope, ours, theirs, conflicts, strategy, phases)
+		})
+		if err == nil {
+			phases.record(ctx, prefix+"commit", end)
+		}
+		return dir, err
+	}
+	dir, err := func() (_ *Directory, rerr error) {
+		ctx, span := Tracer(ctx).Start(ctx, "scoped git merge base", telemetry.Internal())
+		defer func() {
+			fallback := rerr != nil && ctx.Err() == nil && !errors.As(rerr, new(gitMergeConflictError))
+			if fallback {
+				span.SetAttributes(attribute.String("dagger.git.scoped_merge.fallback_reason", rerr.Error()))
+				rerr = errScopedMergeFallback
+			}
+			span.SetAttributes(attribute.Bool("dagger.git.scoped_merge.supported", !fallback))
+			if fallback {
+				span.End() // A fallback is not this merge's failure.
+			} else {
+				telemetry.EndWithCause(span, &rerr)
+			}
+		}()
+		var scope *gitMergeScope
+		if err := phases.run(ctx, "scope", func(ctx context.Context) (err error) {
+			scope, err = newGitMergeScope(ctx, ours, theirs)
+			return err
+		}); err != nil {
+			return nil, err
+		}
+		return run(ctx, scope, "")
+	}()
+	if !errors.Is(err, errScopedMergeFallback) {
+		return dir, err
+	}
+	return run(ctx, nil, "full_")
+}
+
+// errScopedMergeFallback asks gitMergeChangesets to redo a merge whose scoped
+// base attempt failed with the full base.
+var errScopedMergeFallback = errors.New("scoped merge base fallback")
+
+// gitMergeConflictError is a conflict reported by git merge itself, the
+// merge's answer for FAIL: a full merge base, with the identical tree, would
+// reach the same one.
+type gitMergeConflictError struct{ err error }
+
+func (e gitMergeConflictError) Error() string { return e.err.Error() }
+func (e gitMergeConflictError) Unwrap() error { return e.err }
+
+// mergeChangesets runs the merge in ws. A nil scope builds the full base with
+// `git add -A`; otherwise the scoped base, and then every failure other than
+// the merge's own conflict is returned for the caller to retry in full.
+func (ws *gitMergeWorkspace) mergeChangesets(ctx context.Context, scope *gitMergeScope, ours, theirs *changesetContent, conflicts Conflicts, strategy WithChangesetMergeConflict, phases *mergePhases) error {
+	scoped := scope != nil
+	prefix := ""
+	if !scoped {
+		prefix = "full_"
+	}
 	start := phaseNow()
-	var end phaseMark
-	dir, err := withGitMergeWorkspace(ctx, base, "Changeset.withChangeset git merge", func(ws *gitMergeWorkspace) error {
-		defer func() { end = phaseNow() }()
-		start := phases.record(ctx, "workspace", start)
-		baseDirs, err := ws.listDirs()
-		if err != nil {
+	baseDirs, err := ws.listDirs()
+	if err != nil {
+		return err
+	}
+	start = phases.record(ctx, prefix+"base_dirs", start)
+	if scoped {
+		if err := initScopedGitRepo(ctx, ws.workDir, scope); err != nil {
 			return err
 		}
-		start = phases.record(ctx, "base_dirs", start)
-		if err := initGitRepo(ctx, ws.workDir); err != nil {
-			return err
-		}
-		start = phases.record(ctx, "init", start)
-		if err := createBranchWithContent(ctx, ws, "ours", ours); err != nil {
-			return err
-		}
-		start = phases.record(ctx, "branch_ours", start)
-		if err := createBranchWithContent(ctx, ws, "theirs", theirs, "HEAD~1"); err != nil {
-			return err
-		}
-		start = phases.record(ctx, "branch_theirs", start)
-		defer func() { phases.record(ctx, "merge", start) }()
-		if err := runGit(ctx, ws.workDir, "checkout", "ours"); err != nil {
-			return err
-		}
+	} else if err := initGitRepo(ctx, ws.workDir); err != nil {
+		return err
+	}
+	start = phases.record(ctx, prefix+"init", start)
+	if err := createBranchWithContent(ctx, ws, "ours", ours, scoped); err != nil {
+		return err
+	}
+	start = phases.record(ctx, prefix+"branch_ours", start)
+	if err := createBranchWithContent(ctx, ws, "theirs", theirs, scoped, "HEAD~1"); err != nil {
+		return err
+	}
+	start = phases.record(ctx, prefix+"branch_theirs", start)
+	defer func() { phases.record(ctx, prefix+"merge", start) }()
+	if err := runGit(ctx, ws.workDir, "checkout", "ours"); err != nil {
+		return err
+	}
 
-		mergeArgs := []string{"merge", "--no-edit", "--no-commit"}
-		switch strategy {
-		case PreferOursOnConflict:
-			mergeArgs = append(mergeArgs, "-X", "ours")
-		case PreferTheirsOnConflict:
-			mergeArgs = append(mergeArgs, "-X", "theirs")
+	mergeArgs := []string{"merge", "--no-edit", "--no-commit"}
+	switch strategy {
+	case PreferOursOnConflict:
+		mergeArgs = append(mergeArgs, "-X", "ours")
+	case PreferTheirsOnConflict:
+		mergeArgs = append(mergeArgs, "-X", "theirs")
+	}
+	mergeArgs = append(mergeArgs, "theirs")
+
+	mergeOut, mergeErr := runGitCombined(ctx, ws.workDir, mergeArgs...)
+	if scoped {
+		// Only a plain conflict (exit 1) is the merge's answer. Anything else,
+		// or any sign of a missing object even in a conflict or a success,
+		// may be the scoped base's doing: fail, for the full-base retry. The
+		// non-FAIL strategies below would otherwise ignore such a failure.
+		if gitMissingObjectOutput(mergeOut) {
+			return fmt.Errorf("git merge read a missing object: %s", mergeOut)
 		}
-		mergeArgs = append(mergeArgs, "theirs")
-
-		mergeErr := runGit(ctx, ws.workDir, mergeArgs...)
-
-		switch strategy {
-		case FailOnConflict:
-			if mergeErr != nil {
-				return mergeErr
-			}
-		case LeaveConflictMarkers, PreferOursOnConflict, PreferTheirsOnConflict:
-			modifyDeleteConflicts := conflicts.ModifyDeletePaths()
-			if len(modifyDeleteConflicts) > 0 {
-				if err := resolveModifyDeleteConflicts(ctx, ws.workDir, modifyDeleteConflicts, strategy, ours.paths.AllRemoved, theirs.paths.AllRemoved); err != nil {
-					return err
-				}
-			}
-		default:
-			if mergeErr != nil {
-				return mergeErr
-			}
+		var exit *exec.ExitError
+		if mergeErr != nil && (!errors.As(mergeErr, &exit) || exit.ExitCode() != 1 || !strings.Contains(mergeOut, "CONFLICT")) {
+			return mergeErr
 		}
+	}
 
-		if err := ws.restorePrunedDirs(baseDirs, ours, theirs); err != nil {
-			return err
+	switch strategy {
+	case FailOnConflict:
+		if mergeErr != nil {
+			return gitMergeConflictError{mergeErr}
 		}
-
-		if mergeErr == nil && conflicts.IsEmpty() {
-			if err := ws.verifyMergedPaths(ours, theirs); err != nil {
+	case LeaveConflictMarkers, PreferOursOnConflict, PreferTheirsOnConflict:
+		modifyDeleteConflicts := conflicts.ModifyDeletePaths()
+		if len(modifyDeleteConflicts) > 0 {
+			if err := resolveModifyDeleteConflicts(ctx, ws.workDir, modifyDeleteConflicts, strategy, ours.paths.AllRemoved, theirs.paths.AllRemoved); err != nil {
 				return err
 			}
 		}
-
-		if err := os.RemoveAll(filepath.Join(ws.workDir, ".git")); err != nil {
-			return fmt.Errorf("remove temporary merge git repository: %w", err)
+	default:
+		if mergeErr != nil {
+			return gitMergeConflictError{mergeErr}
 		}
-		return nil
-	})
-	if err == nil {
-		phases.record(ctx, "commit", end)
 	}
-	return dir, err
+
+	if err := ws.restorePrunedDirs(baseDirs, ours, theirs); err != nil {
+		return err
+	}
+
+	if mergeErr == nil && conflicts.IsEmpty() {
+		if err := ws.verifyMergedPaths(ours, theirs); err != nil {
+			return err
+		}
+	}
+
+	if err := os.RemoveAll(filepath.Join(ws.workDir, ".git")); err != nil {
+		return fmt.Errorf("remove temporary merge git repository: %w", err)
+	}
+	return nil
 }
 
 func gitOctopusMergeChangesets(
@@ -2204,7 +2332,7 @@ func gitOctopusMergeChangesets(
 			return err
 		}
 		if err := enginetel.Task(ctx, "create branch for ours", func(ctx context.Context) error {
-			return createBranchWithContent(ctx, ws, "ours", ourContent)
+			return createBranchWithContent(ctx, ws, "ours", ourContent, false)
 		}); err != nil {
 			return err
 		}
@@ -2214,7 +2342,7 @@ func gitOctopusMergeChangesets(
 			branchName := fmt.Sprintf("branch_%d", i)
 			branchNames[i] = branchName
 			if err := enginetel.Task(ctx, "create branch "+branchName, func(ctx context.Context) error {
-				return createBranchWithContent(ctx, ws, branchName, content, "HEAD~1")
+				return createBranchWithContent(ctx, ws, branchName, content, false, "HEAD~1")
 			}); err != nil {
 				return err
 			}
@@ -2324,6 +2452,45 @@ func runGitOutput(ctx context.Context, dir string, args ...string) (string, erro
 	return string(out), nil
 }
 
+// runGitCombined runs git and returns its combined output, even on failure.
+func runGitCombined(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := gitCmd(ctx, dir, slices.Concat(gitThrowawayConfig, args)...)
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output), fmt.Errorf("git %v: %w: %s", args, err, output)
+	}
+	return string(output), nil
+}
+
+// runGitInput runs git with stdin.
+func runGitInput(ctx context.Context, dir string, stdin []byte, args ...string) error {
+	cmd := gitCmd(ctx, dir, slices.Concat(gitThrowawayConfig, args)...)
+	cmd.Stdin = bytes.NewReader(stdin)
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git %v: %w: %s", args, err, output)
+	}
+	return nil
+}
+
+// gitMissingObjectOutput reports git messages about objects it could not
+// read. A scoped merge base omits objects on purpose; git must never need one.
+// "invalid object ... for '<path>'" is deliberately not one of them: it is the
+// best-effort cache-tree refresh after a checkout or merge declining to record
+// a directory whose blobs are absent, which changes nothing but the index's
+// tree cache.
+func gitMissingObjectOutput(out string) bool {
+	for _, msg := range []string{"unable to read", "cannot read object", "bad object", "missing blob", "missing object", "not a valid object", "fatal:"} {
+		if strings.Contains(out, msg) {
+			return true
+		}
+	}
+	return false
+}
+
 func initGitRepo(ctx context.Context, dir string) error {
 	if err := runGit(ctx, dir, "init"); err != nil {
 		return err
@@ -2334,9 +2501,161 @@ func initGitRepo(ctx context.Context, dir string) error {
 	return runGit(ctx, dir, "commit", "--allow-empty", "-m", "base")
 }
 
+// gitMergeScope is every path a two-way changeset merge can make git read or
+// write. A merge only ever touches paths where the trees of its base and two
+// branches differ, and each branch only differs from the base where its
+// changeset wrote: the paths ComputePaths declares, and every entry of its
+// materialized diff, which applyContent overlays wholesale, including
+// metadata-only rewrites ComputePaths leaves out. Git also reads attribute,
+// ignore and submodule control files from the index when checking out.
+type gitMergeScope struct {
+	// exact paths (no trailing slash).
+	exact map[string]bool
+	// dirs whose whole base subtree is in scope: removed or added
+	// directories, and paths a file replaced.
+	dirs map[string]bool
+}
+
+// newGitMergeScope reads both changesets' declared paths and diff entries.
+func newGitMergeScope(ctx context.Context, contents ...*changesetContent) (*gitMergeScope, error) {
+	scope := &gitMergeScope{exact: map[string]bool{}, dirs: map[string]bool{}}
+	for _, content := range contents {
+		paths := content.paths.withoutGitMeta()
+		for _, p := range slices.Concat(paths.Added, paths.Modified, paths.Removed, paths.AllRemoved) {
+			clean := strings.TrimSuffix(path.Clean("/"+p), "/")
+			clean = strings.TrimPrefix(clean, "/")
+			if clean == "" {
+				// The whole tree: nothing to save.
+				return nil, fmt.Errorf("changeset touches the root directory")
+			}
+			scope.exact[clean] = true
+			if strings.HasSuffix(p, "/") {
+				scope.dirs[clean] = true
+			}
+		}
+		for newPath, oldPath := range paths.Renamed {
+			scope.exact[strings.TrimSuffix(newPath, "/")] = true
+			scope.exact[strings.TrimSuffix(oldPath, "/")] = true
+		}
+		err := content.withDiff(ctx, func(diffDir string, _ *mount.Mount) error {
+			return filepath.WalkDir(diffDir, func(name string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				rel, err := filepath.Rel(diffDir, name)
+				if err != nil {
+					return err
+				}
+				if rel == "." {
+					return nil
+				}
+				rel = filepath.ToSlash(rel)
+				if gitMetaPath(rel) {
+					// applyContent never copies it.
+					if entry.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				scope.exact[rel] = true
+				if !entry.IsDir() {
+					// A file may replace a base directory.
+					scope.dirs[rel] = true
+				}
+				return nil
+			})
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list changeset diff: %w", err)
+		}
+	}
+	return scope, nil
+}
+
+// inScope reports whether the base entry p needs a real object.
+func (scope *gitMergeScope) inScope(p string) bool {
+	switch path.Base(p) {
+	case ".gitattributes", ".gitignore", ".gitmodules":
+		return true
+	}
+	if scope.exact[p] {
+		return true
+	}
+	for dir := path.Dir(p); dir != "." && dir != "/"; dir = path.Dir(dir) {
+		if scope.dirs[dir] {
+			return true
+		}
+	}
+	return false
+}
+
+// initScopedGitRepo commits exactly the tree initGitRepo would, `git add -A`
+// over the whole base directory, but writes objects only for in-scope paths:
+// every other file is hashed into the index alone (update-index --info-only)
+// and the tree is written with --missing-ok. The file list comes from git's own
+// untracked-file walk with the standard excludes, the one add -A uses, so
+// ignore rules, symlinks, modes, attributes and empty directories (never
+// listed) are git's own. A nested repository, which add -A records as a
+// gitlink, fails here for the full-base retry. createBranchWithContent records
+// branch commits the same way, since `git commit` refuses missing objects.
+func initScopedGitRepo(ctx context.Context, dir string, scope *gitMergeScope) error {
+	if err := runGit(ctx, dir, "init"); err != nil {
+		return err
+	}
+	out, err := runGitOutput(ctx, dir, "ls-files", "-z", "--others", "--exclude-standard")
+	if err != nil {
+		return err
+	}
+	var real, hashed bytes.Buffer
+	for _, p := range splitOnNul([]byte(out)) {
+		if strings.HasSuffix(p, "/") {
+			return fmt.Errorf("embedded repository %q in merge base", p)
+		}
+		buf := &hashed
+		if scope.inScope(p) {
+			buf = &real
+		}
+		buf.WriteString(p)
+		buf.WriteByte(0)
+	}
+	if hashed.Len() > 0 {
+		if err := runGitInput(ctx, dir, hashed.Bytes(), "update-index", "--add", "--info-only", "-z", "--stdin"); err != nil {
+			return err
+		}
+	}
+	if real.Len() > 0 {
+		if err := runGitInput(ctx, dir, real.Bytes(), "update-index", "--add", "-z", "--stdin"); err != nil {
+			return err
+		}
+	}
+	return commitScopedGitIndex(ctx, dir, "base", false)
+}
+
+// commitScopedGitIndex commits the index of a scoped merge repository, whose
+// out-of-scope blobs are missing, and advances HEAD's branch to it.
+func commitScopedGitIndex(ctx context.Context, dir, message string, parent bool) error {
+	tree, err := runGitOutput(ctx, dir, "write-tree", "--missing-ok")
+	if err != nil {
+		return err
+	}
+	args := []string{"commit-tree", strings.TrimSpace(tree), "-m", message}
+	if parent {
+		args = append(args, "-p", "HEAD")
+	}
+	commit, err := runGitOutput(ctx, dir, args...)
+	if err != nil {
+		return err
+	}
+	return runGit(ctx, dir, "update-ref", "HEAD", strings.TrimSpace(commit))
+}
+
 // createBranchWithContent creates branchName from startPoint (default: the
 // current HEAD) and populates it with the changeset's file-level content.
-func createBranchWithContent(ctx context.Context, ws *gitMergeWorkspace, branchName string, content *changesetContent, startPoint ...string) error {
+// scoped commits a scoped merge repository's index (see initScopedGitRepo).
+func createBranchWithContent(ctx context.Context, ws *gitMergeWorkspace, branchName string, content *changesetContent, scoped bool, startPoint ...string) error {
 	checkoutArgs := []string{"checkout", "-b", branchName}
 	if len(startPoint) > 0 {
 		checkoutArgs = append(checkoutArgs, startPoint[0])
@@ -2367,6 +2686,9 @@ func createBranchWithContent(ctx context.Context, ws *gitMergeWorkspace, branchN
 			return fmt.Errorf("branch %s staged no changes: %w", branchName, err)
 		}
 		commitArgs = []string{"commit", "--allow-empty", "-m", branchName}
+	}
+	if scoped {
+		return commitScopedGitIndex(ctx, ws.workDir, branchName, true)
 	}
 	if err := runGit(ctx, ws.workDir, commitArgs...); err != nil {
 		return err
@@ -2431,7 +2753,7 @@ func (ws *gitMergeWorkspace) verifyBranchContentLanded(ctx context.Context, cont
 	if len(files) == 0 {
 		return nil
 	}
-	if content.diff.Self() == nil {
+	if !content.hasDiff() {
 		return fmt.Errorf("changeset declared file changes %v but materialized no diff content", files)
 	}
 	return ws.withDiffDir(ctx, content, func(diffDir string) error {
@@ -2518,6 +2840,9 @@ func (ws *gitMergeWorkspace) worktreeMatchesDiff(p, diffDir string) (bool, error
 // withDiffDir mounts the changeset's materialized diff snapshot read-only and
 // hands its directory to fn.
 func (ws *gitMergeWorkspace) withDiffDir(ctx context.Context, content *changesetContent, fn func(diffDir string) error) error {
+	if content.localDiff != "" {
+		return fn(content.localDiff)
+	}
 	diffRef, err := content.diff.Self().Snapshot.GetOrEval(ctx, content.diff.Result)
 	if err != nil {
 		return fmt.Errorf("diff snapshot: %w", err)
