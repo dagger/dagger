@@ -607,6 +607,10 @@ type testClosureKeys struct {
 	covered  map[string]bool
 	epoch    uint64
 	attempts int
+	// afterSkip, if set, runs once, right after the first walk is told a
+	// closure is covered: the moment an exporter's failed write could release
+	// a claim inside the closure that walk has just decided to skip.
+	afterSkip func()
 }
 
 func newTestClosureKeys() *testClosureKeys {
@@ -632,8 +636,16 @@ func (s *testClosureKeys) CallPayloadReleaseEpoch() uint64 {
 
 func (s *testClosureKeys) CallPayloadClosureCovered(key string) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.covered[key]
+	covered := s.covered[key]
+	after := s.afterSkip
+	if covered {
+		s.afterSkip = nil
+	}
+	s.mu.Unlock()
+	if covered && after != nil {
+		after()
+	}
+	return covered
 }
 
 func (s *testClosureKeys) CoverCallPayloadClosures(keys []string, epoch uint64) {
@@ -735,6 +747,41 @@ func TestRecordCallPayloadsClosureCoverageKeepsPayloads(t *testing.T) {
 	recordCallPayloads(ctx, keys, topDigest.String(), top)
 	require.Equal(t, 6, rec.emissionCount(),
 		"a released frame inside a covered closure must be emitted again")
+	var released int
+	for _, record := range rec.snapshot() {
+		if record.digest == digests[1] {
+			released++
+		}
+	}
+	require.Equal(t, 2, released)
+}
+
+// A claim released after a walk decided to skip the covered closure holding
+// it, but before the walk finished, must not be left unclaimed: the walk's
+// root is claimed by then, so no replay of that call would reach the frame.
+// The walk notices the release when it records its coverage and repeats a
+// full pass over its closure.
+func TestRecordCallPayloadsRewalksAfterReleaseDuringPrunedWalk(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	frames := chainCall(5)
+	digests := make([]string, len(frames))
+	for i, frame := range frames {
+		dgst, err := frame.RecipeDigest(ctx)
+		require.NoError(t, err)
+		digests[i] = dgst.String()
+	}
+
+	keys := newTestClosureKeys()
+	recordCallPayloads(ctx, keys, digests[3], frames[3])
+	require.Equal(t, 4, rec.emissionCount())
+
+	keys.afterSkip = func() { keys.release(digests[1]) }
+	recordCallPayloads(ctx, keys, digests[4], frames[4])
+	require.Nil(t, keys.afterSkip, "the walk must have skipped the covered closure")
+	require.Equal(t, 6, rec.emissionCount(),
+		"the frame released during the walk must be emitted again")
+	require.False(t, keys.ClaimCallPayload(digests[1]),
+		"the released frame must be claimed again")
 	var released int
 	for _, record := range rec.snapshot() {
 		if record.digest == digests[1] {
