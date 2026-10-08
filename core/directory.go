@@ -3439,21 +3439,26 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 	// structural Before.diff(After): the copy is filtered to the changeset's
 	// declared paths either way, and only descends into their parents, so it
 	// costs the size of the change. A structural diff instead walks both
-	// whole trees, and forces Before to be built just for that.
-	after := changes.Self().After
-	if err := cache.Evaluate(ctx, after); err != nil {
-		return fmt.Errorf("evaluate after: %w", err)
-	}
-	afterSnapshot, err := after.Self().Snapshot.GetOrEval(ctx, after.Result)
-	if err != nil {
-		return fmt.Errorf("after snapshot: %w", err)
-	}
-	afterPath, err := after.Self().Dir.GetOrEval(ctx, after.Result)
-	if err != nil {
-		return fmt.Errorf("after path: %w", err)
-	}
-	if afterPath == "" {
-		afterPath = "/"
+	// whole trees, and forces Before to be built just for that. A changeset
+	// that only removes paths copies nothing, so After isn't needed either.
+	var afterSnapshot bkcache.ImmutableRef
+	afterPath := "/"
+	if len(paths.Added) > 0 || len(paths.Modified) > 0 {
+		after := changes.Self().After
+		if err := cache.Evaluate(ctx, after); err != nil {
+			return fmt.Errorf("evaluate after: %w", err)
+		}
+		afterSnapshot, err = after.Self().Snapshot.GetOrEval(ctx, after.Result)
+		if err != nil {
+			return fmt.Errorf("after snapshot: %w", err)
+		}
+		afterPath, err = after.Self().Dir.GetOrEval(ctx, after.Result)
+		if err != nil {
+			return fmt.Errorf("after path: %w", err)
+		}
+		if afterPath == "" {
+			afterPath = "/"
+		}
 	}
 
 	currentSnapshot, err = dir.applyChangesToSnapshot(ctx, currentSnapshot, ourDir, afterSnapshot, afterPath, paths)
