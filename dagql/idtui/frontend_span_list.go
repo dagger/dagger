@@ -95,6 +95,7 @@ func (v *SpanListView) sync() bool {
 	v.scope.opts = opts
 
 	children := make([]tuist.Component, 0, len(rowsView.Body))
+	v.scope.treeSync.begin()
 	if v.include == nil {
 		ids = make([]dagui.SpanID, 0, len(rowsView.Body))
 		for _, tree := range rowsView.Body {
@@ -117,6 +118,7 @@ func (v *SpanListView) sync() bool {
 		v.fe.syncTreeNodeInScope(spanTree, treePrefix{}, &v.scope)
 		children = append(children, spanTree)
 	}
+	pruneSpanTrees(v.scope.spanTrees, &v.scope.treeSync, nil)
 
 	if !sameComponents(v.container.Children, children) {
 		v.container.Children = children

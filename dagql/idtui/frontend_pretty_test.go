@@ -943,6 +943,322 @@ func TestLiveInlineCheckTestsIndentedUnderTrace(t *testing.T) {
 	}
 }
 
+// TestLiveTestLogsReachInlineRollup verifies that output streamed for a failing
+// test case re-renders the inline TESTS rollup of the check it runs under --
+// log batches only re-render the test views above the spans they touch.
+func TestLiveTestLogsReachInlineRollup(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID, checkID, testID, otherID := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3), prettyTestSpanID(4)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start},
+		{
+			ID: checkID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check unit",
+			StartTime: start, EndTime: end, CheckName: "unit", Final: true,
+		},
+		{
+			ID: testID, TraceID: prettyTestTraceID(), ParentID: checkID, Name: "unit failure",
+			StartTime: start, EndTime: end, TestCaseName: "unit failure",
+			TestStatus: dagui.TestStatusFailure, Final: true,
+		},
+		{ID: otherID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "other exec", StartTime: start},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 40))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.SetPrimary(rootID)
+	lines := fe.tui.Step()
+	if _, ok := findPrettyTestLine(lines, "TESTS"); !ok {
+		t.Fatalf("check render did not include inline TESTS:\n%s", strings.Join(lines, "\n"))
+	}
+
+	export := func(spanID dagui.SpanID, body string) []string {
+		t.Helper()
+		require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
+			frontendTestLogRecord(spanID.SpanID, otellog.StringValue(body)),
+		}))
+		return fe.tui.Step()
+	}
+	export(otherID, "unrelated output\n")
+	lines = export(testID, "expected 1, got 2\n")
+	if _, ok := findPrettyTestLine(lines, "expected 1, got 2"); !ok {
+		t.Fatalf("failing test's streamed output missing from inline TESTS:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// TestLiveTestDetailChildLogs verifies that output streamed by a span running
+// beneath a test case reaches the case's child rows in the fullscreen tests
+// detail pane, which live in their own scope of span trees.
+func TestLiveTestDetailChildLogs(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID, checkID, testID, execID, otherID := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3), prettyTestSpanID(4), prettyTestSpanID(5)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start},
+		{
+			ID: checkID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check unit",
+			StartTime: start, CheckName: "unit",
+		},
+		{
+			ID: testID, TraceID: prettyTestTraceID(), ParentID: checkID, Name: "unit failure",
+			StartTime: start, EndTime: end, TestCaseName: "unit failure",
+			TestStatus: dagui.TestStatusFailure, Final: true,
+		},
+		{ID: execID, TraceID: prettyTestTraceID(), ParentID: testID, Name: "exec go test", StartTime: start},
+		{ID: otherID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "other exec", StartTime: start},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 40))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.SetPrimary(rootID)
+	fe.tui.Step()
+	fe.FocusedSpan = checkID
+	fe.toggleTestsMode()
+	require.True(t, fe.testsMode, "expected the check's tests to open fullscreen")
+	lines := fe.tui.Step()
+	if _, ok := findPrettyTestLine(lines, "exec go test"); !ok {
+		t.Fatalf("test detail did not show the case's child rows:\n%s", strings.Join(lines, "\n"))
+	}
+
+	export := func(spanID dagui.SpanID, body string) []string {
+		t.Helper()
+		require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
+			frontendTestLogRecord(spanID.SpanID, otellog.StringValue(body)),
+		}))
+		return fe.tui.Step()
+	}
+	export(otherID, "unrelated output\n")
+	lines = export(execID, "--- FAIL: unit failure\n")
+	if _, ok := findPrettyTestLine(lines, "--- FAIL: unit failure"); !ok {
+		t.Fatalf("child exec's streamed output missing from test detail:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// TestLiveTestsReachInlineRollups verifies that tests arriving after their
+// owners rendered show up in the owners' inline TESTS rollups: a top-level
+// check, a check nested under an expanded row, an LLM tool call, and a span
+// that only becomes a check on a later update.
+func TestLiveTestsReachInlineRollups(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	id := prettyTestSpanID
+	rootID, checkID, groupID, nestedID, toolID, lateID := id(1), id(2), id(3), id(4), id(5), id(6)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	late := dagui.SpanSnapshot{
+		ID: lateID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "late check",
+		StartTime: start, EndTime: end, Final: true,
+	}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start},
+		{
+			ID: checkID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check unit",
+			StartTime: start, EndTime: end, CheckName: "unit", Final: true,
+		},
+		{ID: groupID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "group", StartTime: start},
+		{
+			ID: nestedID, TraceID: prettyTestTraceID(), ParentID: groupID, Name: "check nested",
+			StartTime: start, EndTime: end, CheckName: "nested", Final: true,
+		},
+		{
+			ID: toolID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "RunTests",
+			LLMTool: "RunTests", StartTime: start, EndTime: end, Final: true,
+		},
+		late,
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 60))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.SetPrimary(rootID)
+	lines := fe.tui.Step()
+	for _, name := range []string{"check unit", "check nested", "RunTests", "late check"} {
+		if _, ok := findPrettyTestLine(lines, name); !ok {
+			t.Fatalf("render did not include %q:\n%s", name, strings.Join(lines, "\n"))
+		}
+	}
+
+	failing := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id(n), TraceID: prettyTestTraceID(), ParentID: parent, Name: name,
+			StartTime: start, EndTime: end, TestCaseName: name,
+			TestStatus: dagui.TestStatusFailure, Final: true,
+		}
+	}
+	late.CheckName = "late"
+	fe.ImportSnapshots([]dagui.SpanSnapshot{late})
+	fe.tui.Step()
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		failing(7, checkID, "TestUnitCase"),
+		failing(8, nestedID, "TestNestedCase"),
+		failing(9, toolID, "TestToolCase"),
+		failing(10, lateID, "TestLateCase"),
+	})
+	lines = fe.tui.Step()
+	for _, name := range []string{"TestUnitCase", "TestNestedCase", "TestToolCase", "TestLateCase"} {
+		if _, ok := findPrettyTestLine(lines, name); !ok {
+			t.Fatalf("inline TESTS missing %q:\n%s", name, strings.Join(lines, "\n"))
+		}
+	}
+}
+
+// TestLiveTestViewsCoalesceBatches verifies that test view updates deferred
+// from several span and log batches all land in the one frame rendered after
+// them.
+func TestLiveTestViewsCoalesceBatches(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	id := prettyTestSpanID
+	rootID, checkAID, checkBID, testA1ID := id(1), id(2), id(3), id(4)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	failing := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id(n), TraceID: prettyTestTraceID(), ParentID: parent, Name: name,
+			StartTime: start, EndTime: end, TestCaseName: name,
+			TestStatus: dagui.TestStatusFailure, Final: true,
+		}
+	}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start},
+		{
+			ID: checkAID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check a",
+			StartTime: start, EndTime: end, CheckName: "a", Final: true,
+		},
+		{
+			ID: checkBID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check b",
+			StartTime: start, EndTime: end, CheckName: "b", Final: true,
+		},
+		failing(4, checkAID, "TestA1"),
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 60))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.SetPrimary(rootID)
+	lines := fe.tui.Step()
+	if _, ok := findPrettyTestLine(lines, "TestA1"); !ok {
+		t.Fatalf("render did not include check a's inline TESTS:\n%s", strings.Join(lines, "\n"))
+	}
+
+	logTo := func(spanID dagui.SpanID, body string) {
+		t.Helper()
+		require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
+			frontendTestLogRecord(spanID.SpanID, otellog.StringValue(body)),
+		}))
+	}
+	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(5, checkBID, "TestB1")})
+	logTo(testA1ID, "boom a\n")
+	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(6, checkAID, "TestA2")})
+	logTo(id(5), "boom b\n")
+	lines = fe.tui.Step()
+	for _, want := range []string{"TestA1", "TestA2", "TestB1", "boom a", "boom b"} {
+		if _, ok := findPrettyTestLine(lines, want); !ok {
+			t.Fatalf("frame after batches missing %q:\n%s", want, strings.Join(lines, "\n"))
+		}
+	}
+}
+
+// TestSpanTreesPrunedWhenRowsLeaveView verifies that the span trees of rows
+// that leave the view -- zoomed away from, or collapsed -- are dropped, and
+// that their rows render whatever changed in the meantime when they return.
+func TestSpanTreesPrunedWhenRowsLeaveView(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	id := prettyTestSpanID
+	rootID, checkAID, checkBID, liveID, groupID, innerID := id(1), id(2), id(3), id(4), id(5), id(6)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	failing := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id(n), TraceID: prettyTestTraceID(), ParentID: parent, Name: name,
+			StartTime: start, EndTime: end, TestCaseName: name,
+			TestStatus: dagui.TestStatusFailure, Final: true,
+		}
+	}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start},
+		{
+			ID: checkAID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check a",
+			StartTime: start, EndTime: end, CheckName: "a", Final: true,
+		},
+		failing(10, checkAID, "TestA1"),
+		{
+			ID: checkBID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check b",
+			StartTime: start, EndTime: end, CheckName: "b", Final: true,
+		},
+		{ID: liveID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "live exec", StartTime: start},
+		{ID: groupID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "group", StartTime: start},
+		{
+			ID: innerID, TraceID: prettyTestTraceID(), ParentID: groupID, Name: "check inner",
+			StartTime: start, EndTime: end, CheckName: "inner", Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 60))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.SetPrimary(rootID)
+	fe.tui.Step()
+	for _, id := range []dagui.SpanID{checkAID, checkBID, liveID, groupID, innerID} {
+		require.NotNil(t, fe.spanTrees[id], "row %s has no span tree", id)
+	}
+	require.NotNil(t, fe.testOwnerTrees[checkBID])
+	require.NotNil(t, fe.testOwnerTrees[innerID])
+
+	requireLines := func(lines []string, wants ...string) {
+		t.Helper()
+		for _, want := range wants {
+			if _, ok := findPrettyTestLine(lines, want); !ok {
+				t.Fatalf("render missing %q:\n%s", want, strings.Join(lines, "\n"))
+			}
+		}
+	}
+
+	// Zoomed into check a, the rest of the session leaves the view.
+	fe.ZoomToSpan(checkAID)
+	fe.tui.Step()
+	for _, id := range []dagui.SpanID{checkBID, liveID, groupID, innerID} {
+		require.Nil(t, fe.spanTrees[id], "span tree for %s outlived its row", id)
+		require.Nil(t, fe.testOwnerTrees[id], "test owner tree for %s outlived its row", id)
+	}
+	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(11, checkBID, "TestB1")})
+	require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
+		frontendTestLogRecord(liveID.SpanID, otellog.StringValue("zoomed away\n")),
+	}))
+	fe.tui.Step()
+	fe.ZoomToSpan(rootID)
+	requireLines(fe.tui.Step(), "TestA1", "TestB1", "zoomed away", "check inner")
+
+	// Collapsed, the group's child leaves the view.
+	fe.autoFocus = false
+	fe.FocusedSpan = groupID
+	fe.closeOrGoOut()
+	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(12, checkBID, "TestB2")})
+	fe.tui.Step()
+	require.Nil(t, fe.spanTrees[innerID], "span tree for collapsed row outlived it")
+	require.Nil(t, fe.testOwnerTrees[innerID], "test owner tree for collapsed row outlived it")
+	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(13, innerID, "TestInner1")})
+	fe.tui.Step()
+	fe.FocusedSpan = groupID
+	fe.openOrGoIn()
+	requireLines(fe.tui.Step(), "TestB2", "check inner", "TestInner1")
+	require.Same(t, fe.spanTrees[groupID].childMap[innerID], fe.spanTrees[innerID],
+		"re-expanded row's span tree is not the one rendered")
+	require.Same(t, fe.spanTrees[innerID], fe.testOwnerTrees[innerID])
+}
+
 // TestShellToolInlineTestsAlignWithToolDot verifies a shell transcript's tool
 // call hangs its inline TESTS rollup off a pipe in the same column as the faint
 // dot in front of the tool name (where its log gutter sits too), with the
