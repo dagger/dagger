@@ -144,7 +144,7 @@ func TestNativeWorkspaceMergeMatchesCheckout(t *testing.T) {
 					run(oracle, "commit", "--allow-empty", "-m", "theirs")
 					run(oracle, "checkout", "ours")
 					oracleErr := runGit(ctx, oracle, "merge", "--no-edit", "--no-commit", "theirs")
-					err := nativeWorkspaceMerge(ctx, filepath.Join(source, ".git/objects"), parent, native, paths, apply)
+					err := nativeWorkspaceMerge(ctx, filepath.Join(source, ".git/objects"), parent, native, paths, apply, nil)
 					if scenario == "conflict" || scenario == "modify-delete" {
 						require.Error(t, oracleErr)
 						require.Error(t, err)
@@ -223,14 +223,14 @@ func TestNativeWorkspaceMergeFallbacksAndErrors(t *testing.T) {
 	parent = strings.TrimSpace(parent)
 	noop := func(string) error { return nil }
 	for _, paths := range []*ChangesetPaths{{Added: []string{"empty/"}}, {Added: []string{"nested/", "nested/empty/", "file"}}, {Modified: []string{".gitattributes"}}, {AllRemoved: []string{"nested/.gitignore"}}, {Added: []string{".gitmodules"}}} {
-		err := nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), parent, t.TempDir(), []*ChangesetPaths{paths, {}}, []func(string) error{noop, noop})
+		err := nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), parent, t.TempDir(), []*ChangesetPaths{paths, {}}, []func(string) error{noop, noop}, nil)
 		require.ErrorIs(t, err, errNativeCommitUnsupported)
 	}
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
-	err = nativeWorkspaceMerge(cancelled, filepath.Join(repo, ".git/objects"), parent, t.TempDir(), []*ChangesetPaths{{}, {}}, []func(string) error{noop, noop})
+	err = nativeWorkspaceMerge(cancelled, filepath.Join(repo, ".git/objects"), parent, t.TempDir(), []*ChangesetPaths{{}, {}}, []func(string) error{noop, noop}, nil)
 	require.ErrorIs(t, err, context.Canceled)
-	err = nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), strings.Repeat("f", 40), t.TempDir(), []*ChangesetPaths{{}, {}}, []func(string) error{noop, noop})
+	err = nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), strings.Repeat("f", 40), t.TempDir(), []*ChangesetPaths{{}, {}}, []func(string) error{noop, noop}, nil)
 	require.Error(t, err)
 	require.False(t, errors.Is(err, errNativeCommitUnsupported))
 }
@@ -279,7 +279,7 @@ func TestNativeWorkspaceMergeBaseEvidence(t *testing.T) {
 			apply := func(work string) error {
 				return os.WriteFile(filepath.Join(work, name), []byte("new\n"), 0644)
 			}
-			err := nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), parent, base, []*ChangesetPaths{paths, {}}, []func(string) error{apply, func(string) error { return nil }})
+			err := nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), parent, base, []*ChangesetPaths{paths, {}}, []func(string) error{apply, func(string) error { return nil }}, nil)
 			if scenario == "literal-path" {
 				require.NoError(t, err)
 			} else {
@@ -334,7 +334,7 @@ func TestNativeWorkspaceMergeRealBaseDirectoryRename(t *testing.T) {
 			return nil
 		},
 	}
-	require.NoError(t, nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), parent, base, paths, apply))
+	require.NoError(t, nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), parent, base, paths, apply, nil))
 	for p, want := range map[string]string{"new/a.txt": "a\n", "old/b.txt": "b\n", "old/keep.log": "tracked despite ignores\n"} {
 		got, err := os.ReadFile(filepath.Join(base, p))
 		require.NoError(t, err, p)
@@ -399,7 +399,7 @@ func TestNativeWorkspaceMergeGitlinks(t *testing.T) {
 					return nil
 				},
 			}
-			err := nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), parent, base, paths, apply)
+			err := nativeWorkspaceMerge(ctx, filepath.Join(repo, ".git/objects"), parent, base, paths, apply, nil)
 			if scenario == "inside" || scenario == "remove populated" {
 				require.ErrorIs(t, err, errNativeCommitUnsupported)
 				require.Equal(t, "gitlink-change", err.Error())
