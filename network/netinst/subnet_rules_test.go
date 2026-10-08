@@ -17,7 +17,8 @@ import (
 // does: "-P"/"-N" first, then "-A <chain> <args>", quoting arguments with
 // spaces.
 type fakeIPTables struct {
-	chains map[string][][]string // "table/chain" -> rules
+	chains  map[string][][]string // "table/chain" -> rules
+	listErr map[string]error      // "table/chain" -> error for the next List
 }
 
 func newFakeIPTables() *fakeIPTables {
@@ -86,6 +87,10 @@ func (f *fakeIPTables) Append(table, chain string, rulespec ...string) error {
 }
 
 func (f *fakeIPTables) List(table, chain string) ([]string, error) {
+	if err := f.listErr[table+"/"+chain]; err != nil {
+		delete(f.listErr, table+"/"+chain)
+		return nil, err
+	}
 	rules, err := f.rules(table, chain)
 	if err != nil {
 		return nil, err
@@ -202,22 +207,28 @@ func TestInstallSubnetRulesIPTables(t *testing.T) {
 	require.Equal(t, before, fmt.Sprint(ipt.chains))
 }
 
-// With the firewall plugin kept for firewalld, no forward rules are installed;
-// masquerading is still subnet-wide.
+// With the firewall plugin kept for firewalld, no forward rules are installed,
+// and ones installed before are removed; masquerading is still subnet-wide.
 func TestInstallSubnetRulesWithoutForward(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	n := testNetwork(t)
+
 	ipt := newFakeIPTables()
-
 	require.NoError(t, installSubnetRules(ctx, n, ipt, nil, noNFTSubnets, false, false))
-
 	require.Empty(t, ipt.dump(t, "filter", "FORWARD"))
 	exists, err := ipt.ChainExists("filter", cniForwardChain)
 	require.NoError(t, err)
 	require.False(t, exists)
 	require.Len(t, ipt.dump(t, "nat", "POSTROUTING"), 1)
 	require.Len(t, ipt.dump(t, "nat", n.masqChain()), 3)
+
+	// firewalld appeared after an engine installed subnet forward rules.
+	ipt = newFakeIPTables()
+	require.NoError(t, installSubnetRules(ctx, n, ipt, nil, noNFTSubnets, false, true))
+	require.NoError(t, installSubnetRules(ctx, n, ipt, nil, noNFTSubnets, false, false))
+	require.Equal(t, []string{wantForwardJump}, ipt.dump(t, "filter", "FORWARD"))
+	require.Equal(t, wantCNIForward[:1], ipt.dump(t, "filter", "CNI-FORWARD"))
 }
 
 // Rules an administrator put ahead of the CNI jumps stay ahead, and existing
@@ -324,6 +335,55 @@ func TestInstallSubnetRulesCleansUpPerContainerRules(t *testing.T) {
 		wantCNIForward[1],
 		wantCNIForward[2],
 	}, ipt.dump(t, "filter", "CNI-FORWARD"))
+}
+
+// If the subnets of leftover rules cannot be read, the leftovers stay, so the
+// firewall rules for those subnets can still be found on the next start.
+func TestInstallSubnetRulesRetriesCleanup(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	n := testNetwork(t)
+
+	t.Run("iptables", func(t *testing.T) {
+		t.Parallel()
+		ipt := newFakeIPTables()
+		addOldBridgeMasq(t, ipt, "dagger", "10.88.0.0/16", "10.88.0.3", "CNI-cccccccccccccccccccccccc")
+		addOldFirewallRules(t, ipt, "10.88.0.3")
+		ipt.listErr = map[string]error{"nat/CNI-cccccccccccccccccccccccc": fmt.Errorf("busy")}
+
+		require.NoError(t, installSubnetRules(ctx, n, ipt, nil, noNFTSubnets, false, true))
+		require.Len(t, ipt.dump(t, "nat", "POSTROUTING"), 2)
+		require.Contains(t, ipt.dump(t, "filter", "CNI-FORWARD"), `-A CNI-FORWARD -s 10.88.0.3/32 -j ACCEPT`)
+
+		require.NoError(t, installSubnetRules(ctx, n, ipt, nil, noNFTSubnets, false, true))
+		require.Len(t, ipt.dump(t, "nat", "POSTROUTING"), 1)
+		require.Equal(t, wantCNIForward, ipt.dump(t, "filter", "CNI-FORWARD"))
+	})
+
+	t.Run("nftables", func(t *testing.T) {
+		t.Parallel()
+		ipt := newFakeIPTables()
+		addOldFirewallRules(t, ipt, "10.88.0.2")
+		nft, handles := newCNINFT(t, cniNFTRuleComment("dagger", "eth0", "ctr-1"))
+		oldSubnet := &net.IPNet{IP: net.IPv4(10, 88, 0, 0).To4(), Mask: net.CIDRMask(16, 32)}
+		failing := func(context.Context) (map[int]*net.IPNet, error) { return nil, fmt.Errorf("nft unavailable") }
+		working := func(context.Context) (map[int]*net.IPNet, error) {
+			return map[int]*net.IPNet{handles[0]: oldSubnet}, nil
+		}
+
+		require.NoError(t, installSubnetRules(ctx, n, ipt, nft, failing, true, true))
+		rules, err := nft.ListRules(ctx, cniNFTMasqChain)
+		require.NoError(t, err)
+		require.Len(t, rules, 2) // the leftover and ours
+		require.Contains(t, ipt.dump(t, "filter", "CNI-FORWARD"), `-A CNI-FORWARD -s 10.88.0.2/32 -j ACCEPT`)
+
+		require.NoError(t, installSubnetRules(ctx, n, ipt, nft, working, true, true))
+		rules, err = nft.ListRules(ctx, cniNFTMasqChain)
+		require.NoError(t, err)
+		require.Len(t, rules, 1)
+		require.Equal(t, n.comment(), *rules[0].Comment)
+		require.Equal(t, wantCNIForward, ipt.dump(t, "filter", "CNI-FORWARD"))
+	})
 }
 
 // newCNINFT returns a fake of the bridge plugin's nftables masquerade table

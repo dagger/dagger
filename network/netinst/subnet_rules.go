@@ -144,7 +144,8 @@ func (n *subnetNetwork) nftMasqRule() string {
 
 // InstallSubnetRules installs the masquerade rules for the engine's container
 // network and, if forward is set, its forwarding rules. forward is unset when
-// the CNI firewall plugin is kept because firewalld manages the network.
+// the CNI firewall plugin is kept because firewalld manages the network; then
+// forwarding rules this network installed before are removed.
 // It also removes per-container rules left by older engines in the same
 // network namespace. It is idempotent.
 //
@@ -182,29 +183,14 @@ func InstallSubnetRules(ctx context.Context, name, cidr string, forward bool) er
 // iptables. cniNFT, if set, is also cleaned of the bridge plugin's
 // per-container rules for this network.
 func installSubnetRules(ctx context.Context, n *subnetNetwork, ipt iptablesClient, cniNFT knftables.Interface, nftSubnets nftRuleSubnets, nftMasq, forward bool) error {
-	// Subnets this network used, so leftover per-IP firewall rules are found
-	// even if the subnet changed since they were added.
-	subnets := []*net.IPNet{n.subnet}
-	old, err := cleanupPerContainerIPTablesMasq(ipt, n)
-	if err != nil {
-		bklog.G(ctx).WithError(err).Warn("failed to remove leftover per-container iptables masquerade rules")
-	}
-	subnets = append(subnets, old...)
-	if cniNFT != nil {
-		old, err := cleanupPerContainerNFTMasq(ctx, cniNFT, nftSubnets, n)
-		if err != nil {
-			bklog.G(ctx).WithError(err).Warn("failed to remove leftover per-container nftables masquerade rules")
-		}
-		subnets = append(subnets, old...)
-	}
-	if err := cleanupFirewallPluginRules(ipt, subnets); err != nil {
-		bklog.G(ctx).WithError(err).Warn("failed to remove leftover per-container firewall rules")
-	}
+	cleanupLeftovers(ctx, n, ipt, cniNFT, nftSubnets)
 
 	if forward {
 		if err := ensureForwardRules(ipt, n); err != nil {
 			return fmt.Errorf("install forward rules: %w", err)
 		}
+	} else if err := removeForwardRules(ipt, n); err != nil {
+		return fmt.Errorf("remove forward rules: %w", err)
 	}
 	if nftMasq {
 		if err := ensureNFTMasquerade(ctx, cniNFT, n); err != nil {
@@ -216,6 +202,32 @@ func installSubnetRules(ctx context.Context, n *subnetNetwork, ipt iptablesClien
 		return fmt.Errorf("install iptables masquerade: %w", err)
 	}
 	return nil
+}
+
+// cleanupLeftovers removes per-container rules older engines added for this
+// network: the bridge plugin's masquerade rules and the firewall plugin's
+// per-IP accepts. Deleting their network namespaces with the current CNI
+// config no longer removes them. Failures only warn.
+//
+// The firewall plugin's rules carry no owner, so they are found by address,
+// in the current subnet or in subnets the masquerade leftovers show the
+// network used before. Those masquerade rules are removed only once the
+// firewall rules are, so a failed run can be retried on the next start.
+func cleanupLeftovers(ctx context.Context, n *subnetNetwork, ipt iptablesClient, cniNFT knftables.Interface, nftSubnets nftRuleSubnets) {
+	l, readErr := findLeftovers(ctx, n, ipt, cniNFT, nftSubnets)
+	if readErr != nil {
+		bklog.G(ctx).WithError(readErr).Warn("failed to read leftover per-container masquerade rules; keeping them for the next start")
+	}
+	if err := cleanupFirewallPluginRules(ipt, append([]*net.IPNet{n.subnet}, l.subnets...)); err != nil {
+		bklog.G(ctx).WithError(err).Warn("failed to remove leftover per-container firewall rules; keeping masquerade leftovers for the next start")
+		return
+	}
+	if readErr != nil {
+		return
+	}
+	if err := l.remove(ctx, ipt, cniNFT); err != nil {
+		bklog.G(ctx).WithError(err).Warn("failed to remove leftover per-container masquerade rules")
+	}
 }
 
 func ensureChain(ipt iptablesClient, table, chain string) error {
@@ -268,6 +280,17 @@ func ensureForwardRules(ipt iptablesClient, n *subnetNetwork) error {
 		}
 	}
 	return nil
+}
+
+// removeForwardRules removes this network's forward rules, for when the CNI
+// firewall plugin manages forwarding instead. The shared CNI chains and any
+// administrator rules stay.
+func removeForwardRules(ipt iptablesClient, n *subnetNetwork) error {
+	exists, err := ipt.ChainExists("filter", cniForwardChain)
+	if err != nil || !exists {
+		return err
+	}
+	return deleteStaleOwnRules(ipt, "filter", cniForwardChain, n, nil)
 }
 
 func ensureIPTablesMasquerade(ipt iptablesClient, n *subnetNetwork) error {
@@ -354,91 +377,101 @@ func deleteStaleOwnRules(ipt iptablesClient, table, chain string, n *subnetNetwo
 	return deleteRulesByID(ipt, table, chain, stale)
 }
 
-// cleanupPerContainerIPTablesMasq removes rules the bridge plugin's ipMasq
-// added for this network's containers in older engines: POSTROUTING jumps to a
-// per-container chain, commented `name: "<network>" id: "<container>"`.
-// Deleting their network namespaces with the current CNI config no longer
-// removes them. It returns the subnets those chains excluded, which are the
-// subnets the network used.
-func cleanupPerContainerIPTablesMasq(ipt iptablesClient, n *subnetNetwork) ([]*net.IPNet, error) {
+// leftovers are per-container masquerade rules older engines added for this
+// network, and the subnets they covered.
+type leftovers struct {
+	iptIDs    []int    // positions in nat POSTROUTING
+	iptChains []string // the per-container chains they jump to
+	nftRules  []*knftables.Rule
+	subnets   []*net.IPNet
+}
+
+// findLeftovers finds, without changing anything, the rules the bridge
+// plugin's ipMasq added for this network's containers: POSTROUTING jumps to
+// per-container chains commented `name: "<network>" id: "<container>"`, and,
+// in cniNFT, masq_checks rules whose comments start with a hash of the
+// network name. The subnet each covered comes from the chain's
+// `-d <subnet> ... -j ACCEPT` rule, or from the nftables rule's excluded
+// destination.
+func findLeftovers(ctx context.Context, n *subnetNetwork, ipt iptablesClient, cniNFT knftables.Interface, nftSubnets nftRuleSubnets) (*leftovers, error) {
+	l := &leftovers{}
+	var errs []error
+
 	rules, err := listRules(ipt, "nat", "POSTROUTING")
 	if err != nil {
-		return nil, err
+		errs = append(errs, err)
 	}
 	prefix := fmt.Sprintf("name: %q id: ", n.name)
-	var ids []int
-	var chains []string
 	for i, rule := range rules {
 		if !strings.HasPrefix(ruleComment(rule), prefix) {
 			continue
 		}
-		ids = append(ids, i+1)
-		if target := ruleTarget(rule); strings.HasPrefix(target, "CNI-") {
-			chains = append(chains, target)
+		l.iptIDs = append(l.iptIDs, i+1)
+		target := ruleTarget(rule)
+		if !strings.HasPrefix(target, "CNI-") {
+			continue
 		}
-	}
-	var errs []error
-	var subnets []*net.IPNet
-	if err := deleteRulesByID(ipt, "nat", "POSTROUTING", ids); err != nil {
-		errs = append(errs, err)
-	}
-	for _, chain := range chains {
-		// The chain starts with `-d <subnet> ... -j ACCEPT`.
-		if rules, err := listRules(ipt, "nat", chain); err == nil {
-			for _, rule := range rules {
-				if len(rule) > 1 && rule[0] == "-d" && ruleTarget(rule) == "ACCEPT" {
-					if _, subnet, err := net.ParseCIDR(rule[1]); err == nil {
-						subnets = append(subnets, subnet)
-					}
+		l.iptChains = append(l.iptChains, target)
+		chainRules, err := listRules(ipt, "nat", target)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		for _, rule := range chainRules {
+			if len(rule) > 1 && rule[0] == "-d" && ruleTarget(rule) == "ACCEPT" {
+				if _, subnet, err := net.ParseCIDR(rule[1]); err == nil {
+					l.subnets = append(l.subnets, subnet)
 				}
 			}
 		}
+	}
+
+	if cniNFT != nil {
+		nftRules, err := cniNFT.ListRules(ctx, cniNFTMasqChain)
+		if err != nil && !knftables.IsNotFound(err) {
+			errs = append(errs, err)
+		}
+		hash := sha512Hex(n.name, 16) + "-"
+		for _, rule := range nftRules {
+			if rule.Comment != nil && strings.HasPrefix(*rule.Comment, hash) {
+				l.nftRules = append(l.nftRules, rule)
+			}
+		}
+		if len(l.nftRules) > 0 {
+			bySubnet, err := nftSubnets(ctx)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("read nftables masquerade subnets: %w", err))
+			}
+			for _, rule := range l.nftRules {
+				if rule.Handle != nil && bySubnet[*rule.Handle] != nil {
+					l.subnets = append(l.subnets, bySubnet[*rule.Handle])
+				}
+			}
+		}
+	}
+	return l, errors.Join(errs...)
+}
+
+func (l *leftovers) remove(ctx context.Context, ipt iptablesClient, cniNFT knftables.Interface) error {
+	var errs []error
+	if err := deleteRulesByID(ipt, "nat", "POSTROUTING", l.iptIDs); err != nil {
+		errs = append(errs, err)
+	}
+	for _, chain := range l.iptChains {
 		if err := ipt.ClearAndDeleteChain("nat", chain); err != nil {
 			errs = append(errs, err)
 		}
 	}
-	return subnets, errors.Join(errs...)
-}
-
-// cleanupPerContainerNFTMasq removes rules the bridge plugin's nftables
-// masquerade added for this network's containers in older engines. Their
-// comments start with a hash of the network name. It returns the subnets
-// those rules excluded.
-func cleanupPerContainerNFTMasq(ctx context.Context, nft knftables.Interface, nftSubnets nftRuleSubnets, n *subnetNetwork) ([]*net.IPNet, error) {
-	rules, err := nft.ListRules(ctx, cniNFTMasqChain)
-	if err != nil {
-		if knftables.IsNotFound(err) {
-			return nil, nil
+	if len(l.nftRules) > 0 {
+		tx := cniNFT.NewTransaction()
+		for _, rule := range l.nftRules {
+			tx.Delete(rule)
 		}
-		return nil, err
-	}
-	prefix := sha512Hex(n.name, 16) + "-"
-	var stale []*knftables.Rule
-	for _, rule := range rules {
-		if rule.Comment != nil && strings.HasPrefix(*rule.Comment, prefix) {
-			stale = append(stale, rule)
+		if err := cniNFT.Run(ctx, tx); err != nil {
+			errs = append(errs, err)
 		}
 	}
-	if len(stale) == 0 {
-		return nil, nil
-	}
-	var subnets []*net.IPNet
-	var errs []error
-	bySubnet, err := nftSubnets(ctx)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("read leftover nftables masquerade subnets: %w", err))
-	}
-	tx := nft.NewTransaction()
-	for _, rule := range stale {
-		if rule.Handle != nil && bySubnet[*rule.Handle] != nil {
-			subnets = append(subnets, bySubnet[*rule.Handle])
-		}
-		tx.Delete(rule)
-	}
-	if err := nft.Run(ctx, tx); err != nil {
-		errs = append(errs, err)
-	}
-	return subnets, errors.Join(errs...)
+	return errors.Join(errs...)
 }
 
 // listNFTMasqSubnets reads the bridge plugin's masq_checks rules, which look
