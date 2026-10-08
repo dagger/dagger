@@ -743,3 +743,38 @@ func TestRecordCallPayloadsClosureCoverageKeepsPayloads(t *testing.T) {
 	}
 	require.Equal(t, 2, released)
 }
+
+// A frame the cache stops holding, deep inside a closure an earlier walk
+// already emitted, must not cost a later call its own payloads. Rebuilding
+// the later call's whole recipe ID fails on such a frame, so a walk that
+// needed the full ID emitted nothing for it, and the claimed root was never
+// retried: a client could not rebuild that call, or any later call built on
+// it. A walk that stops at the covered closure never reaches the gap.
+func TestRecordCallPayloadsCoveredClosureHidesUnresolvableFrame(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	frames := chainCall(5)
+	digests := make([]string, len(frames))
+	for i, frame := range frames {
+		dgst, err := frame.RecipeDigest(ctx)
+		require.NoError(t, err)
+		digests[i] = dgst.String()
+	}
+
+	keys := newTestClosureKeys()
+	recordCallPayloads(ctx, keys, digests[4], frames[4])
+	require.Equal(t, 5, rec.emissionCount())
+
+	// The bottom frame is gone: frames[1] now reaches it only through a
+	// shared-result reference the cache cannot resolve. Digests are already
+	// derived, as they are for any frame an earlier walk visited.
+	frames[1].Receiver = &dagql.ResultCallRef{ResultID: 42}
+	top := testResultCall("top", &Void{}, frames[4])
+	topDigest, err := top.RecipeDigest(ctx)
+	require.NoError(t, err)
+	_, err = top.RecipeID(ctx)
+	require.Error(t, err, "the full recipe ID can no longer be rebuilt")
+
+	recordCallPayloads(ctx, keys, topDigest.String(), top)
+	require.Equal(t, 6, rec.emissionCount(), "the new call's payload is still emitted")
+	require.NotNil(t, rec.get(topDigest.String()))
+}
