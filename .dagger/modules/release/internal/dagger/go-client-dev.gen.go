@@ -35,7 +35,7 @@ func (r *GoClientDev) DevContainer() *Container { // go-client-dev (../../../../
 }
 
 // Go container with a Dagger CLI and a dev engine built from this checkout.
-// sdk/go/core selects it with //go:generate:container go-client:generate-env,
+// sdk/go/core selects it with //go:generate:container dag://go-client/generate-env,
 // so that the core bindings match the API of this checkout.
 func (r *GoClientDev) GenerateEnv() *Container { // go-client-dev (../../../../../:0:0)
 	q := r.query.Select("generateEnv")
