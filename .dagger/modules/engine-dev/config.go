@@ -19,7 +19,7 @@ const (
 	engineTOMLPath       = "/etc/dagger/engine.toml"
 	engineJSONPath       = "/etc/dagger/engine.json"
 	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
-	cliPath              = "/usr/local/bin/dagger"
+	cliPath              = consts.DaggerCLIPath
 )
 
 const engineEntrypointTmpl = `#!/bin/sh

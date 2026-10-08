@@ -1113,7 +1113,7 @@ func (ContainerSuite) TestWithEnvVariableExpand(ctx context.Context, t *testctx.
 
 		require.NoError(t, err)
 		require.Equal(t,
-			"/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n",
+			"/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/dev/.dagger\n",
 			out,
 		)
 	})
