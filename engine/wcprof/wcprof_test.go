@@ -223,19 +223,35 @@ func TestLockRecordsContendedWait(t *testing.T) {
 		t.Fatalf("wait interval inverted: %+v", w)
 	}
 
-	// Disabled: still locks, records nothing.
+	// Disabled: a contended Lock still locks, and records nothing.
 	globalOn.Store(false)
 	mu.Lock()
+	disabledDone := make(chan struct{})
 	go func() {
-		Lock(context.Background(), &mu, "test.mu")
+		Lock(context.Background(), &mu, "test.disabled")
 		mu.Unlock()
+		close(disabledDone)
 	}()
+	for !blockedInLock() {
+		runtime.Gosched()
+	}
 	mu.Unlock()
-	mu.Lock()
-	mu.Unlock()
+	<-disabledDone
 	if evs := drainEvents(r); len(evs) != 1 {
 		t.Fatalf("disabled lock recorded events: %+v", evs)
 	}
+}
+
+// blockedInLock reports whether a goroutine is blocked acquiring a mutex in
+// Lock.
+func blockedInLock() bool {
+	buf := make([]byte, 1<<20)
+	for _, stack := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
+		if strings.Contains(stack, "[sync.Mutex.Lock") && strings.Contains(stack, "wcprof.Lock(") {
+			return true
+		}
+	}
+	return false
 }
 
 // waitingOn reports whether a lock wait has begun: Lock interns its ident
