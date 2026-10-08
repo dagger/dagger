@@ -124,9 +124,41 @@ func WalkLayerDeltaChanges(
 	if len(delta.Lower) == 0 && len(delta.Upper) == 1 {
 		return WalkUpperdirChanges(ctx, changeFn, delta.Upper[0], upperView, lowerView, comparison)
 	}
+	paths, opaque, err := layerDeltaCandidates(ctx, slices.Concat(delta.Lower, delta.Upper))
+	if err != nil {
+		return err
+	}
+	// Descendants of a deleted, replaced or fully diffed directory sort right
+	// after it.
+	var skip string
+	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return context.Cause(ctx)
+		}
+		if skip != "" && strings.HasPrefix(path, skip) {
+			continue
+		}
+		skip = ""
+		_, isOpaque := opaque[path]
+		skipDescendants, err := diffLayerDeltaPath(ctx, changeFn, path, upperView, lowerView, isOpaque, comparison)
+		if err != nil {
+			return err
+		}
+		if skipDescendants {
+			skip = path + string(os.PathSeparator)
+		}
+	}
+	return nil
+}
+
+// layerDeltaCandidates lists every path any of layers holds an entry for,
+// sorted as a double walk visits them, and the paths whose directory hides
+// the layers beneath it: opaque ones, and those a layer replaced by a
+// whiteout or any other non-directory.
+func layerDeltaCandidates(ctx context.Context, layers []string) ([]string, map[string]struct{}, error) {
 	candidates := map[string]struct{}{}
 	opaque := map[string]struct{}{}
-	for _, layer := range slices.Concat(delta.Lower, delta.Upper) {
+	for _, layer := range layers {
 		err := filepath.Walk(layer, func(path string, f os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -154,23 +186,19 @@ func WalkLayerDeltaChanges(
 				// make it a directory again, that directory holds only
 				// what the layers above wrote, as an opaque one would.
 				opaque[path] = struct{}{}
+				return nil
 			}
-			if f.IsDir() {
-				for _, key := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
-					value := make([]byte, 1)
-					n, err := unix.Lgetxattr(filepath.Join(layer, path), key, value)
-					if err != nil && !errors.Is(err, unix.ENODATA) && !errors.Is(err, unix.ENOTSUP) {
-						return pkgerrors.Wrapf(err, "failed to retrieve %s attr", key)
-					}
-					if err == nil && n == 1 && value[0] == 'y' {
-						opaque[path] = struct{}{}
-					}
-				}
+			isOpaque, err := isOpaqueDir(filepath.Join(layer, path))
+			if err != nil {
+				return err
+			}
+			if isOpaque {
+				opaque[path] = struct{}{}
 			}
 			return nil
 		})
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 	}
 	paths := make([]string, 0, len(candidates))
@@ -178,95 +206,105 @@ func WalkLayerDeltaChanges(
 		paths = append(paths, path)
 	}
 	slices.SortFunc(paths, directoryCompare)
+	return paths, opaque, nil
+}
 
-	lstat := func(path string) (os.FileInfo, error) {
-		f, err := os.Lstat(path)
-		if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ENOTDIR) {
-			return nil, nil
+// isOpaqueDir reports whether the overlay layer directory at path is marked
+// opaque.
+func isOpaqueDir(path string) (bool, error) {
+	for _, key := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
+		value := make([]byte, 1)
+		n, err := unix.Lgetxattr(path, key, value)
+		if err != nil && !errors.Is(err, unix.ENODATA) && !errors.Is(err, unix.ENOTSUP) {
+			return false, pkgerrors.Wrapf(err, "failed to retrieve %s attr", key)
 		}
-		return f, err
-	}
-	// Descendants of a deleted, replaced or fully diffed directory sort right
-	// after it.
-	var skip string
-	for _, path := range paths {
-		if err := ctx.Err(); err != nil {
-			return context.Cause(ctx)
-		}
-		if skip != "" && strings.HasPrefix(path, skip) {
-			continue
-		}
-		skip = ""
-		upperPath, lowerPath := filepath.Join(upperView, path), filepath.Join(lowerView, path)
-		upperF, err := lstat(upperPath)
-		if err != nil {
-			return pkgerrors.Wrap(err, "failed to stat upper file during overlay diff")
-		}
-		lowerF, err := lstat(lowerPath)
-		if err != nil {
-			return pkgerrors.Wrap(err, "failed to stat lower file during overlay diff")
-		}
-		// A directory upper has where lower has none holds only additions,
-		// but not necessarily from the layers: with lower's own layers
-		// hiding a shared directory, upper's copy is the shared one. List
-		// it, as a double walk would.
-		addDir := func() error {
-			if err := addDirChanges(func(k continuityfs.ChangeKind, p string, f os.FileInfo, err error) error {
-				return changeFn(k, filepath.Join(path, p), f, err)
-			}, upperPath); err != nil {
-				return err
-			}
-			skip = path + string(os.PathSeparator)
-			return nil
-		}
-		switch {
-		case upperF == nil && lowerF == nil:
-			// Added by one layer, removed by another.
-		case upperF == nil:
-			if err := changeFn(continuityfs.ChangeKindDelete, path, nil, nil); err != nil {
-				return err
-			}
-			if lowerF.IsDir() {
-				skip = path + string(os.PathSeparator)
-			}
-		case lowerF == nil:
-			if err := changeFn(continuityfs.ChangeKindAdd, path, upperF, nil); err != nil {
-				return err
-			}
-			if upperF.IsDir() {
-				if err := addDir(); err != nil {
-					return err
-				}
-			}
-		default:
-			same, err := samePathInfo(lowerF, upperF, lowerPath, upperPath, comparison)
-			if err != nil {
-				return err
-			}
-			if !same {
-				if err := changeFn(continuityfs.ChangeKindModify, path, upperF, nil); err != nil {
-					return err
-				}
-			}
-			switch {
-			case lowerF.IsDir() && !upperF.IsDir():
-				skip = path + string(os.PathSeparator)
-			case !lowerF.IsDir() && upperF.IsDir():
-				if err := addDir(); err != nil {
-					return err
-				}
-			case lowerF.IsDir() && upperF.IsDir():
-				if _, ok := opaque[path]; !ok {
-					break
-				}
-				if err := WalkChanges(ctx, lowerPath, upperPath, comparison, func(k continuityfs.ChangeKind, p string, f os.FileInfo, err error) error {
-					return changeFn(k, filepath.Join(path, p), f, err)
-				}); err != nil {
-					return err
-				}
-				skip = path + string(os.PathSeparator)
-			}
+		if err == nil && n == 1 && value[0] == 'y' {
+			return true, nil
 		}
 	}
-	return nil
+	return false, nil
+}
+
+// lstatIfExists is os.Lstat, with a path that does not exist reported as a
+// nil FileInfo rather than an error.
+func lstatIfExists(path string) (os.FileInfo, error) {
+	f, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ENOTDIR) {
+		return nil, nil
+	}
+	return f, err
+}
+
+// diffLayerDeltaPath reports the changes at one candidate path of
+// WalkLayerDeltaChanges by comparing the two merged views, and whether the
+// path's descendants are covered already (deleted, replaced or listed in
+// full) and must be skipped.
+func diffLayerDeltaPath(
+	ctx context.Context,
+	changeFn continuityfs.ChangeFunc,
+	path, upperView, lowerView string,
+	opaque bool,
+	comparison Comparison,
+) (bool, error) {
+	upperPath, lowerPath := filepath.Join(upperView, path), filepath.Join(lowerView, path)
+	upperF, err := lstatIfExists(upperPath)
+	if err != nil {
+		return false, pkgerrors.Wrap(err, "failed to stat upper file during overlay diff")
+	}
+	lowerF, err := lstatIfExists(lowerPath)
+	if err != nil {
+		return false, pkgerrors.Wrap(err, "failed to stat lower file during overlay diff")
+	}
+	underPath := func(k continuityfs.ChangeKind, p string, f os.FileInfo, err error) error {
+		return changeFn(k, filepath.Join(path, p), f, err)
+	}
+	// A directory upper has where lower has none holds only additions, but
+	// not necessarily from the layers: with lower's own layers hiding a
+	// shared directory, upper's copy is the shared one. List it, as a double
+	// walk would.
+	addDir := func() (bool, error) {
+		if err := addDirChanges(underPath, upperPath); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	switch {
+	case upperF == nil && lowerF == nil:
+		// Added by one layer, removed by another.
+		return false, nil
+	case upperF == nil:
+		if err := changeFn(continuityfs.ChangeKindDelete, path, nil, nil); err != nil {
+			return false, err
+		}
+		return lowerF.IsDir(), nil
+	case lowerF == nil:
+		if err := changeFn(continuityfs.ChangeKindAdd, path, upperF, nil); err != nil {
+			return false, err
+		}
+		if upperF.IsDir() {
+			return addDir()
+		}
+		return false, nil
+	}
+	same, err := samePathInfo(lowerF, upperF, lowerPath, upperPath, comparison)
+	if err != nil {
+		return false, err
+	}
+	if !same {
+		if err := changeFn(continuityfs.ChangeKindModify, path, upperF, nil); err != nil {
+			return false, err
+		}
+	}
+	switch {
+	case lowerF.IsDir() && !upperF.IsDir():
+		return true, nil
+	case !lowerF.IsDir() && upperF.IsDir():
+		return addDir()
+	case lowerF.IsDir() && upperF.IsDir() && opaque:
+		if err := WalkChanges(ctx, lowerPath, upperPath, comparison, underPath); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }
