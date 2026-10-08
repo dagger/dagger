@@ -137,11 +137,12 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 		return stderrors.New("attach lease: empty snapshot ID")
 	}
 
+	// ownerLeaseLocker serializes AttachLease and RemoveLease for one lease.
+	// The containerd calls below run outside cm.mu: each is a metadata
+	// transaction, and holding the manager lock across them stalls every
+	// unrelated Get and GetBySnapshotID.
 	cm.ownerLeaseLocker.Lock(leaseID)
 	defer cm.ownerLeaseLocker.Unlock(leaseID)
-
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
 
 	_, err := cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
 		l.ID = leaseID
@@ -180,24 +181,8 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 			return pkgerrors.Wrapf(err, "attach snapshot %s to owner lease %s", currentSnapshotID, leaseID)
 		}
 
-		// The snapshot's blobs: those recorded in this process, and the one
-		// its label names, which survives a restart. The lease is flat, so
-		// the collector will not follow the label itself; the resource is
-		// what keeps the blob.
-		blobs := map[digest.Digest]struct{}{}
-		for dgst := range cm.snapshotContentDigests[currentSnapshotID] {
-			blobs[dgst] = struct{}{}
-		}
-		if dgst, ok := labeledBlobs[currentSnapshotID]; ok {
-			blobs[dgst] = struct{}{}
-			// Recorded again in memory, so SnapshotSize sees the blob after
-			// a restart as it does within the process that wrote it.
-			if cm.snapshotContentDigests[currentSnapshotID] == nil {
-				cm.snapshotContentDigests[currentSnapshotID] = make(map[digest.Digest]struct{})
-			}
-			cm.snapshotContentDigests[currentSnapshotID][dgst] = struct{}{}
-		}
-		for dgst := range blobs {
+		blobs := cm.addSnapshotOwner(currentSnapshotID, leaseID, labeledBlobs[currentSnapshotID])
+		for _, dgst := range blobs {
 			err = cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
 				ID:   dgst.String(),
 				Type: "content",
@@ -206,11 +191,6 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 				return pkgerrors.Wrapf(err, "attach content %s for snapshot %s to owner lease %s", dgst, currentSnapshotID, leaseID)
 			}
 		}
-
-		if cm.snapshotOwnerLeases[currentSnapshotID] == nil {
-			cm.snapshotOwnerLeases[currentSnapshotID] = make(map[string]struct{})
-		}
-		cm.snapshotOwnerLeases[currentSnapshotID][leaseID] = struct{}{}
 	}
 
 	// AddResource does not check whether a target still exists. GC can finish
@@ -226,6 +206,39 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 	}
 
 	return nil
+}
+
+// addSnapshotOwner records leaseID as an owner of snapshotID and returns the
+// snapshot's blobs for the caller to attach: those recorded in this process,
+// and labeledBlob, the one its label names, which survives a restart. The
+// lease is flat, so the collector will not follow the label itself; the
+// resource is what keeps the blob.
+//
+// Reading the blobs and recording the owner happen under one hold of cm.mu,
+// so a blob recordSnapshotContent records concurrently is either returned
+// here or attached by recordSnapshotContent to this lease.
+func (cm *snapshotManager) addSnapshotOwner(snapshotID, leaseID string, labeledBlob digest.Digest) []digest.Digest {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if labeledBlob != "" {
+		// Recorded again in memory, so SnapshotSize sees the blob after a
+		// restart as it does within the process that wrote it.
+		if cm.snapshotContentDigests[snapshotID] == nil {
+			cm.snapshotContentDigests[snapshotID] = make(map[digest.Digest]struct{})
+		}
+		cm.snapshotContentDigests[snapshotID][labeledBlob] = struct{}{}
+	}
+	blobs := make([]digest.Digest, 0, len(cm.snapshotContentDigests[snapshotID]))
+	for dgst := range cm.snapshotContentDigests[snapshotID] {
+		blobs = append(blobs, dgst)
+	}
+
+	if cm.snapshotOwnerLeases[snapshotID] == nil {
+		cm.snapshotOwnerLeases[snapshotID] = make(map[string]struct{})
+	}
+	cm.snapshotOwnerLeases[snapshotID][leaseID] = struct{}{}
+	return blobs
 }
 
 func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) error {
