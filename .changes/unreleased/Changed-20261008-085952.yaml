@@ -1,0 +1,6 @@
+kind: Changed
+body: The engine sets up container NAT and forwarding rules once for its whole container subnet instead of once per container, so many execs starting at once spend far less time on network setup. 1000 parallel execs went from about 36s to 17s. Where firewalld manages the engine's network, forwarding still goes through the CNI firewall plugin as before.
+time: 2026-10-08T08:59:52.000000000Z
+custom:
+    Author: sipsma
+    PR: "14563"
