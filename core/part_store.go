@@ -339,11 +339,11 @@ func (container *Container) PersistedSnapshotRefLinksChecked() ([]dagql.Persiste
 	return container.PersistedSnapshotRefLinks(), nil
 }
 
-func (container *Container) ReadSnapshotOwner() (dagql.OutputRevision, []dagql.PersistedSnapshotRefLink, error) {
+func (container *Container) ReadSnapshotOwner(ctx context.Context) (dagql.OutputRevision, []dagql.PersistedSnapshotRefLink, error) {
 	if view := container.acquiredOutput.Load(); view != nil {
 		return view.Revision, dagql.ClonePersistedSnapshotLinks(view.Links), nil
 	}
-	unlock, err := container.lockSnapshotOwnerRead()
+	unlock, err := container.lockSnapshotOwnerRead(ctx)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -361,7 +361,7 @@ func (container *Container) ReadSnapshotOwner() (dagql.OutputRevision, []dagql.P
 // Owner synchronization holds no graph lock. Readers may wait on one another,
 // but must drop the pointer/state latches before waiting for a group body: the
 // body can consult either latch. Each restart follows an actual body-latch wait.
-func (container *Container) lockSnapshotOwnerRead() (func(), error) {
+func (container *Container) lockSnapshotOwnerRead(ctx context.Context) (func(), error) {
 	for {
 		container.lazyOpMu.Lock()
 		if container.acquiredOutput.Load() != nil {
@@ -381,7 +381,7 @@ func (container *Container) lockSnapshotOwnerRead() (func(), error) {
 			// A whole body may need the graph lock while a diagnostic or
 			// encoder needs lazyOpMu. Wait without retaining that pointer hold.
 			container.lazyOpMu.Unlock()
-			state.awaitUnlocked()
+			state.awaitUnlocked(ctx)
 			continue
 		}
 		var held []*lazyGroupOnce
@@ -410,7 +410,7 @@ func (container *Container) lockSnapshotOwnerRead() (func(), error) {
 			return unlock, nil
 		}
 		unlock()
-		running.awaitUnlocked()
+		running.awaitUnlocked(ctx)
 	}
 }
 

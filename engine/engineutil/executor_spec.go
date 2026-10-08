@@ -144,6 +144,10 @@ type execState struct {
 	nestedClientModule       dagql.AnyObjectResult
 	nestedClientFunctionCall dagql.Typed
 
+	// profExecOpID is the wcprof exec.run op of this run (0 when not
+	// profiling): the op nested clients of this exec are linked to.
+	profExecOpID uint64
+
 	doneErr error
 	done    chan struct{}
 }
@@ -1257,6 +1261,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		state.nestedClientMetadata,
 		parentClientID,
 	)
+	transports.profExecOpID = state.profExecOpID
 	state.cleanups.Add("close nested client transports", cleanups.Infallible(transports.Close))
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
@@ -1370,6 +1375,8 @@ type nestedClientTransportManager struct {
 	sessionHandler  sessionHandler
 	baseMetadata    *engine.ClientMetadata
 	parentClientID  string
+	// profExecOpID is the wcprof op of the exec hosting these clients.
+	profExecOpID uint64
 
 	closed     bool
 	transports map[string]*nestedClientTransport
@@ -1476,7 +1483,11 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	}
 	if wcprof.Enabled(manager.registrationCtx) {
 		// The analyzer stitches each logical nested client's ops under this exec.
-		wcprof.Link(manager.registrationCtx, wcprof.LinkKindNestedClient, 0, 0, metadata.ClientID, 0)
+		// The link is from the exec op itself, not the setupNestedClient phase
+		// the registration context carries: that phase ends before the
+		// container starts, so ops hung under it would sit outside the exec's
+		// run.
+		wcprof.Link(manager.registrationCtx, wcprof.LinkKindNestedClient, manager.profExecOpID, 0, metadata.ClientID, 0)
 	}
 	return transport, &metadata, 0, nil
 }
@@ -1783,6 +1794,13 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		})
 	}
 
+	// With wcprof on, runc writes a pid file once the workload is released,
+	// which splits runc's container start-up from the user's process run.
+	var pidFile string
+	if wcprof.Enabled(ctx) {
+		pidFile = filepath.Join(bundle, "init.pid")
+	}
+
 	killer := newRunProcKiller(c.Runc, state.id)
 
 	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
@@ -1891,6 +1909,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 				Started:   started,
 				IO:        io,
 				ExtraArgs: []string{"--keep"},
+				PidFile:   pidFile,
 			})
 			return err
 		})
@@ -1917,7 +1936,13 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		}
 		if startedNS := profStartedNS.Load(); startedNS > 0 {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
-			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser, Argv: profArgv}, startedNS, endNS, outcome)
+			processStartNS := startedNS
+			if releasedNS := workloadReleasedNS(pidFile, startedNS, profStartedWall.Load()); releasedNS > startedNS && releasedNS <= endNS {
+				// runc creating the container, up to releasing the workload
+				wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, releasedNS, wcprof.OutcomeOK)
+				processStartNS = releasedNS
+			}
+			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser, Argv: profArgv}, processStartNS, endNS, outcome)
 		} else {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, endNS, outcome)
 		}

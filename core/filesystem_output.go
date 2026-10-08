@@ -109,7 +109,7 @@ func (out *filesystemOutput) tryPersistenceLocked(lazy any) (func(), error) {
 
 // Only ownership reads outside graph locks may wait. A body can publish through
 // outputMu, so release it before waiting on that body's latch and read anew.
-func (out *filesystemOutput) lockSnapshotOwnerRead(lazy func() any) (func(), error) {
+func (out *filesystemOutput) lockSnapshotOwnerRead(ctx context.Context, lazy func() any) (func(), error) {
 	for {
 		out.outputMu.Lock()
 		op := lazy()
@@ -126,12 +126,12 @@ func (out *filesystemOutput) lockSnapshotOwnerRead(lazy func() any) (func(), err
 			return func() { state.LazyMu.Unlock(); out.outputMu.Unlock() }, nil
 		}
 		out.outputMu.Unlock()
-		state.awaitUnlocked()
+		state.awaitUnlocked(ctx)
 	}
 }
 
-func (file *File) ReadSnapshotOwner() (dagql.OutputRevision, []dagql.PersistedSnapshotRefLink, error) {
-	unlock, err := file.lockSnapshotOwnerRead(func() any { return file.Lazy })
+func (file *File) ReadSnapshotOwner(ctx context.Context) (dagql.OutputRevision, []dagql.PersistedSnapshotRefLink, error) {
+	unlock, err := file.lockSnapshotOwnerRead(ctx, func() any { return file.Lazy })
 	if err != nil {
 		return 0, nil, err
 	}
@@ -143,8 +143,8 @@ func (file *File) ReadSnapshotOwner() (dagql.OutputRevision, []dagql.PersistedSn
 	return file.OutputRev, links, nil
 }
 
-func (dir *Directory) ReadSnapshotOwner() (dagql.OutputRevision, []dagql.PersistedSnapshotRefLink, error) {
-	unlock, err := dir.lockSnapshotOwnerRead(func() any { return dir.Lazy })
+func (dir *Directory) ReadSnapshotOwner(ctx context.Context) (dagql.OutputRevision, []dagql.PersistedSnapshotRefLink, error) {
+	unlock, err := dir.lockSnapshotOwnerRead(ctx, func() any { return dir.Lazy })
 	if err != nil {
 		return 0, nil, err
 	}

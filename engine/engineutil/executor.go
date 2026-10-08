@@ -200,6 +200,7 @@ func (c *Client) Run(
 			Ident:    execIdent,
 			ClientID: callerClientID,
 		})
+		state.profExecOpID = execOp.ID()
 	}
 	// OTel analog of execOp: exec.run nests the container run under
 	// the withExec call_exec span (or the service exec span) via the propagated

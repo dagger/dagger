@@ -3,6 +3,7 @@ package wcprof
 import (
 	"context"
 	"encoding/json"
+	"sync"
 )
 
 type opCtxKey struct{}
@@ -258,6 +259,20 @@ func beginWait(ctx context.Context, targetOpID uint64, ident string, reason Wait
 		reason:   reason,
 		startNS:  r.Now(),
 	}
+}
+
+// Lock acquires mu. When mu is held by someone else and work under ctx is
+// being recorded, the time spent blocked is recorded as a lock wait of the
+// current op on the resource named ident; otherwise it is mu.Lock with a
+// TryLock in front. Use it for engine-internal mutexes held across slow work,
+// whose waits would otherwise show up as the waiter's own time.
+func Lock(ctx context.Context, mu *sync.Mutex, ident string) {
+	if mu.TryLock() {
+		return
+	}
+	w := BeginWaitIdent(ctx, ident, WaitReasonLock)
+	mu.Lock()
+	w.End()
 }
 
 // SetTarget updates the awaited op (useful when the target becomes known

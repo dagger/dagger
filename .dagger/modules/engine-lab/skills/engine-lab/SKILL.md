@@ -107,7 +107,9 @@ The loop:
      view for "what would make this faster?". Walking back from the end,
      each step takes the child or wait that ran latest and recurses into it,
      following waits into shared work (singleflight joins, lazy results,
-     execs) rather than the waiter's own subtree. Per class it reports
+     execs) rather than the waiter's own subtree, and following a module
+     function's exec into the API requests its nested client made during
+     the process run. Per class it reports
      on-path own time, which sums to the roots' duration: concurrent work
      that never held anything up gets nothing, unlike summed self time.
      Roots are `op`, or every outermost op matching the filters (e.g.
@@ -144,6 +146,24 @@ is replaced), so:
    on either capture.
 
 Captures are lost when the module state resets (e.g. a new session).
+
+### Profiling one command
+
+`wcprofProfile(args, workdir, warmup, name)` is the whole loop in one call,
+for scripts: it builds a fresh engine that records from startup, runs
+`dagger <args>` in `workdir` (mounted at /work; default the workspace), and
+keeps the recording as a capture under `name`. `warmup`, if given, runs
+first and is left out of the capture (e.g. a small call that loads the
+module). No `start`/`wcprofEnable` needed, and the engine is gone afterwards. A
+failing command still yields its capture: check the reported exit code and
+output tail before trusting the numbers. Use the result in the same pipeline: a later statement of a `dagger -c`
+script that refers to a stored result can run the profile again. To report
+on one profile from several statements, export its dump with
+`wcprofDump(capture)` and load it back with `wcprofLoad(dump, name)`, which
+needs no engine:
+
+    engine-lab | wcprof-profile --args "call","my-mod","build" --name before | wcprof-dump | export /tmp/before.dump
+    engine-lab | wcprof-load --dump $(host | file /tmp/before.dump) --name before | wcprof-report --view critpath --class "^my-mod:" --kind call
 
 ### Profiling engine tests and benchmarks
 
