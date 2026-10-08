@@ -1,0 +1,6 @@
+kind: Fixed
+body: Reading outputs from many cached steps at once no longer queues snapshot re-opens behind lease bookkeeping, which held the snapshot manager's lock across containerd writes; each lease attach is now one metadata write instead of about 18 (reading a small file from each of 300 cached execs went from about 1.08 s to about 0.90 s).
+time: 2026-10-08T23:59:38+00:00
+custom:
+    Author: sipsma
+    PR: "14585"
