@@ -22,6 +22,21 @@ output, also read `version-gating.md`.
 Decide which surface you are editing before changing templates. Similar output
 files may be produced for different modes.
 
+## Generator Containers and Engine Sessions
+
+A `//go:generate:container` directive can select a container configured to use
+the dev engine. Nested execs still receive `DAGGER_SESSION_PORT` and
+`DAGGER_SESSION_TOKEN` for the outer engine when the process starts. The Go
+client prefers that session over the configured runner host, so generation can
+silently introspect the outer engine instead of the current checkout.
+
+Removing the variables from the container definition is insufficient: the
+engine injects them at process start. Unset both at the command's process
+boundary with `env -u DAGGER_SESSION_PORT -u DAGGER_SESSION_TOKEN`. This is the
+same mechanism as `withoutOuterSession` in
+`.dagger/modules/engine-dev/main.go`; `sdk/go/core/generate.go` uses it to generate
+bindings from this checkout's dev engine.
+
 ## Engine SDK Interfaces
 
 The engine-facing SDK interfaces are in `core/sdk.go`.
