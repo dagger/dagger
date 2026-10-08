@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/util/gitutil"
@@ -104,7 +103,7 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 			for i, content := range contents {
 				paths[i] = content.paths.withoutGitMeta()
 				if err := phases.run(ctx, "validate_"+nativeMergeLabels[i], func(ctx context.Context) error {
-					return validateNativeWorkspaceContent(ctx, ws.workDir, content)
+					return validateNativeWorkspaceContent(ctx, content)
 				}); err != nil {
 					return err
 				}
@@ -133,9 +132,8 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 }
 
 // validateNativeWorkspaceContent walks only the materialized delta, never the
-// baseline. File metadata changes omitted by ComputePaths and ancestor directory
-// metadata cannot safely be represented by Git trees; leave those to the oracle.
-func validateNativeWorkspaceContent(ctx context.Context, base string, content *changesetContent) error {
+// baseline: every file it holds must be one ComputePaths reported.
+func validateNativeWorkspaceContent(ctx context.Context, content *changesetContent) error {
 	if content.diff.Self() == nil {
 		return nil
 	}
@@ -155,20 +153,11 @@ func validateNativeWorkspaceContent(ctx context.Context, base string, content *c
 		if err != nil {
 			return err
 		}
-		return validateNativeWorkspaceDelta(ctx, base, dir, content.paths.withoutGitMeta())
+		return validateNativeWorkspaceDelta(ctx, dir, content.paths.withoutGitMeta())
 	}, mountRefAsReadOnly)
 }
 
-func validateNativeWorkspaceDelta(ctx context.Context, base, delta string, paths *ChangesetPaths) error {
-	root, err := os.OpenRoot(base)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	// WalkDir visits parents first. Once a delta directory replaces a
-	// non-directory (including a symlink), or is newly introduced, none of
-	// its descendants exist in Before. Do not look through the old ancestor.
-	introducedDirs := map[string]bool{}
+func validateNativeWorkspaceDelta(ctx context.Context, delta string, paths *ChangesetPaths) error {
 	declared := map[string]bool{}
 	for _, p := range slices.Concat(paths.Added, paths.Modified) {
 		declared[p] = true
@@ -191,51 +180,21 @@ func validateNativeWorkspaceDelta(ctx context.Context, base, delta string, paths
 			}
 			return nil
 		}
-		if !entry.IsDir() {
-			if !declared[rel] {
-				return nativeCommitUnsupportedReason("unreported-filesystem-change")
-			}
+		// Directories may carry any metadata: mode, owner, xattrs, the root's
+		// included, whether the delta introduces them or changes existing
+		// ones (a patch applied under the engine's umask 000 makes 0777 ones;
+		// a diff snapshot's root may differ from Before's). Git records none
+		// of it, and the replay applies the same raw deltas through the same
+		// checkout transitions as the legacy merge, so it ends with the same
+		// directories: Git's own where a transition recreates one, the raw
+		// delta's where none touches it (TestNativeWorkspaceMergeMatchesCheckout
+		// and the reconciliation oracle). Files are another matter: the legacy
+		// merge stages the whole worktree, so a file change ComputePaths does
+		// not report, such as a mode-only change, could reach its commits.
+		if entry.IsDir() || declared[rel] {
 			return nil
 		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		var before os.FileInfo
-		if !introducedDirs[path.Dir(rel)] {
-			before, err = root.Lstat(filepath.FromSlash(rel))
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-		}
-		if before == nil || !before.IsDir() {
-			introducedDirs[rel] = true
-		}
-		stat := info.Sys().(*syscall.Stat_t)
-		// A directory the delta introduces may carry any mode and owner (a
-		// patch applied under the engine's umask 000 makes 0777 ones). The
-		// replay applies the same raw delta and the same checkout transitions
-		// as the legacy merge, so it ends with the same directory: Git's own
-		// where a transition recreates it, the raw one where none touches it
-		// (TestNativeWorkspaceMergeMatchesCheckout, introduced-directory-modes).
-		// A delta that changes an existing directory's metadata still falls
-		// back.
-		if before != nil && before.IsDir() {
-			old := before.Sys().(*syscall.Stat_t)
-			if info.Mode() != before.Mode() || stat.Uid != old.Uid || stat.Gid != old.Gid {
-				return nativeCommitUnsupportedReason("directory-metadata")
-			}
-		}
-		// Git cannot reproduce directory xattrs. Even equal ones are uncommon;
-		// conservatively fall back rather than widening the metadata contract.
-		n, err := unix.Llistxattr(name, nil)
-		if err != nil && !errors.Is(err, unix.ENOTSUP) {
-			return err
-		}
-		if n != 0 {
-			return nativeCommitUnsupportedReason("directory-xattrs")
-		}
-		return nil
+		return nativeCommitUnsupportedReason("unreported-filesystem-change")
 	})
 }
 
@@ -367,7 +326,10 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 }
 
 // validateNativeMergePaths rejects deltas the native merge does not emulate:
-// changed Git controls and empty added directories.
+// changed Git controls. Empty added directories need nothing: Git never sees
+// them, in the scratch stages or the legacy merge, and the replay applies them
+// with the raw deltas, through the legacy merge's checkout transitions, which
+// prune a directory only where they remove the last file beneath it.
 func validateNativeMergePaths(paths []*ChangesetPaths) error {
 	for _, changes := range paths {
 		for _, p := range commitStagePaths(changes) {
@@ -376,24 +338,6 @@ func validateNativeMergePaths(paths []*ChangesetPaths) error {
 				// Changing controls can restage otherwise unchanged baseline
 				// files in the legacy whole-worktree add. Do not emulate that.
 				return nativeCommitUnsupportedReason("merge-controls-change")
-			}
-		}
-		// An added directory must be an ancestor of some added file.
-		filled := map[string]bool{}
-		for _, p := range changes.Added {
-			if strings.HasSuffix(p, "/") {
-				continue
-			}
-			for dir := path.Dir(p); dir != "." && dir != "/"; dir = path.Dir(dir) {
-				if filled[dir+"/"] {
-					break // its ancestors were recorded with it
-				}
-				filled[dir+"/"] = true
-			}
-		}
-		for _, p := range changes.Added {
-			if strings.HasSuffix(p, "/") && !filled[p] {
-				return nativeCommitUnsupportedReason("empty-directory")
 			}
 		}
 	}

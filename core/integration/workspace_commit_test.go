@@ -1,11 +1,13 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -380,6 +382,18 @@ with open('/work/file.txt', 'w') as f: f.write('selected\n')
 			require.Equal(t, uint32(0o2750), manifest["rich"].Mode&0o7777)
 			require.Equal(t, uint32(0o4751), manifest["rich/data"].Mode&0o7777)
 		}},
+		{name: "incoming directory metadata and empty directories", incoming: func(d *dagger.Directory) *dagger.Directory {
+			return inspector.WithMountedDirectory("/work", d).WithExec([]string{"python3", "-c", `
+import os
+os.makedirs('/work/made/empty')
+os.mkdir('/work/nested/empty')
+with open('/work/nested/a.txt', 'w') as f: f.write('nested incoming\n')
+for p in ['/work/nested', '/work/made']:
+    os.chown(p, 123, 456)
+    os.chmod(p, 0o2770)
+    os.setxattr(p, 'user.oracle', b'incoming')
+`}).Directory("/work")
+		}},
 	} {
 		// testctx subtests auto-parallelize. Inline cases keep fixture use and
 		// client lifetime sequential, and make the last log name the failure.
@@ -388,6 +402,25 @@ with open('/work/file.txt', 'w') as f: f.write('selected\n')
 	// Every case runs the identity-wrapped legacy merge, conflicts included.
 	require.NoError(t, c.Close())
 	requireScopedMergeBases(t, sink)
+	// Every unwrapped case reconciles natively, directory metadata and empty
+	// directories included; only changed Git controls, and the oracle's
+	// commits (whose workspace side the wrapped Before obscures), take the
+	// general merge.
+	var natives int
+	samples := slices.Collect(maps.Values(collectWorkspaceCommitTraceSamples(sink)))
+	slices.SortFunc(samples, func(a, b workspaceCommitTraceSample) int { return cmp.Compare(a.start, b.start) })
+	for _, s := range samples {
+		if s.name != "git native workspace merge" {
+			continue
+		}
+		t.Logf("native merge supported=%t fallback=%q", s.nativeSupported, s.fallbackReason)
+		if s.nativeSupported {
+			natives++
+			continue
+		}
+		require.Contains(t, []string{"working-before-not-git-tree", "merge-controls-change"}, s.fallbackReason)
+	}
+	require.Positive(t, natives)
 }
 
 func (WorkspaceSuite) TestWorkspaceRemoteFirstNativeCommit(ctx context.Context, t *testctx.T) {

@@ -85,10 +85,11 @@ The merge base is HEAD's real tree, while the legacy merge commits a synthetic b
 Eligibility is checked only on declared paths and the materialized deltas, with fixed reason codes on top of the storage, gitlink and `.gitmodules` gates above:
 
 - `merge-controls-change`: any `.gitattributes` or `.gitignore` change, which could restage unchanged baseline files in the legacy whole-worktree add
-- `empty-directory`: an added directory with no files, which Git cannot represent
 - `ignored-merge-path`, `noncanonical-merge-base` (`validateNativeWorkspaceBase`): a declared path ignored by the parent's rules, or a baseline file whose clean conversion differs from its index blob
-- `unreported-filesystem-change`, `directory-metadata`, `directory-xattrs` (`validateNativeWorkspaceContent`): a delta file the changeset does not declare, or a changed mode or ownership of an existing directory, or directory xattrs. Directories the delta introduces may have any mode and owner: the replay ends with the same directory as the legacy merge. Baseline metadata is read through `os.OpenRoot`, and never through an ancestor the delta replaced or introduced.
+- `unreported-filesystem-change` (`validateNativeWorkspaceContent`): a delta file the changeset does not declare, such as a mode-only change, which the legacy whole-worktree add could stage. Directories are not checked: the delta's directories may have any mode, owner and xattrs, the root's included, whether introduced or changed, and empty added directories need nothing, since Git never sees them. The replay applies the same raw deltas through the same checkout transitions as the legacy merge, so it ends with the same directories (`TestNativeWorkspaceMergeMatchesCheckout`, `TestWorkspaceWithCommitReconciliationOracle`).
 - `unsafe-write-path`: a checkout path through an existing non-directory
+
+Every fallback is also a zero-length wcprof io op, `git.native_merge.fallback[<reason>]`, and each git command a merge runs is a `git.<verb>` op under its phase (`stage_<side>`, `merge_tree`, `replay`).
 
 The span `git native workspace merge` records `dagger.git.native_merge.supported`, `dagger.git.native_merge.fallback_reason` and `dagger.git.native_merge.scoped_stage_paths`. Ineligible provenance is recorded too, as `workspace-` or `incoming-` followed by the failed check (`before-not-git-tree`, `before-commit-mismatch`, `before-repository-mismatch`, ...).
 
