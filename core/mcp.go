@@ -430,11 +430,6 @@ const (
 	// patchSummaryMaxLines is the longest patch shown verbatim to the model;
 	// anything longer becomes a diff-stat summary.
 	patchSummaryMaxLines = 100
-	// changesetPatchMaxBytes bounds the patch MCP inlines into a workspace's
-	// recipe for a tool's changeset (see applyChangeset). It ends up in
-	// every trace that records the recipe; past this, the changeset is
-	// applied raw and restoring reruns its producer instead.
-	changesetPatchMaxBytes = 16 << 20
 )
 
 // changesetTooLarge checks a metadata upper bound before any full path
@@ -1192,14 +1187,14 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 //     that recipe diffs Before and After, a full-tree diff the first read of
 //     the workspace would pay when Before is the whole root, while the patch
 //     is rendered for the tool result anyway.
-//   - Unless that patch is larger than changesetPatchMaxBytes or carries a
-//     binary file: the patch is inlined in the recipe, and so in every trace
-//     that records it, and a build output (`go build`, `go test -c`) would
-//     fill telemetry with megabytes of base85. Such a changeset is applied
-//     raw, so restoring the conversation reruns its producer instead,
-//     assuming it is hermetic. Should it not be, the patches recorded after
-//     it leave conflict markers where they no longer fit, rather than fail
-//     the restore (see applyChangesetPatch).
+//   - Unless that patch is larger than EmbeddedPatchMaxBytes or carries a
+//     binary file (see EmbedPatch): the patch is inlined in the recipe, and
+//     so in every trace that records it, and a build output (`go build`,
+//     `go test -c`) would fill telemetry with megabytes of base85. Such a
+//     changeset is applied raw, so restoring the conversation reruns its
+//     producer instead, assuming it is hermetic. Should it not be, the
+//     patches recorded after it leave conflict markers where they no longer
+//     fit, rather than fail the restore (see applyChangesetPatch).
 //
 // Either way, a changeset that touches .git is refused
 // (refuseGitMetadataChanges).
@@ -1232,11 +1227,11 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 
 	if inEngine {
 		out, err := m.applyChangesetPatch(ctx, srv, root, prefix, changes)
-		if !errors.Is(err, ErrPatchTooLarge) && !errors.Is(err, ErrPatchBinary) {
+		if !PatchNotEmbeddable(err) {
 			return out, err
 		}
 		slog.Debug("changeset patch not embeddable; applying the raw changeset",
-			"reason", err, "max", changesetPatchMaxBytes)
+			"reason", err, "max", EmbeddedPatchMaxBytes)
 	}
 	placed, err := changesetAt(ctx, srv, changes, prefix)
 	if err != nil {
@@ -1387,9 +1382,9 @@ func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root d
 			return "", fmt.Errorf("workspace path %q is a read-only mount and cannot be modified", p)
 		}
 	}
-	rendered, err := changes.Self().RenderPatchOnto(ctx, root, prefix, changesetPatchMaxBytes)
+	rendered, err := changes.Self().RenderPatchOnto(ctx, root, prefix, EmbeddedPatchMaxBytes)
 	if err != nil {
-		if errors.Is(err, ErrPatchTooLarge) || errors.Is(err, ErrPatchBinary) {
+		if PatchNotEmbeddable(err) {
 			return "", err
 		}
 		return "", fmt.Errorf("render changeset patch: %w", err)
@@ -1399,92 +1394,9 @@ func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root d
 		return "", nil
 	}
 
-	newWS := m.workspace
-	selectWS := func(sel dagql.Selector) error {
-		sel.View = srv.View
-		return srv.Select(ctx, newWS, &newWS, sel)
-	}
-	if len(rendered.RemovedFiles) > 0 {
-		// Before the patch, which only writes: deletions are path-only.
-		removed := make([]string, len(rendered.RemovedFiles))
-		for i, p := range rendered.RemovedFiles {
-			removed[i] = "/" + p
-		}
-		if err := selectWS(dagql.Selector{
-			Field: "withoutFiles",
-			Args:  []dagql.NamedInput{{Name: "paths", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(removed...))}},
-		}); err != nil {
-			return "", err
-		}
-	}
-	if len(rendered.Patch) > 0 {
-		// No View: blob postdates some client views, and like
-		// checkpointOverlay's patch blob this is engine-internal plumbing.
-		var blob dagql.ObjectResult[*File]
-		if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
-			Field: "blob",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.NewString("changeset.patch")},
-				{Name: "contents", Value: dagql.Bytes(rendered.Patch)},
-				{Name: "permissions", Value: dagql.NewInt(0o600)},
-			},
-		}); err != nil {
-			return "", fmt.Errorf("embed changeset patch: %w", err)
-		}
-		blobID, err := blob.ID()
-		if err != nil {
-			return "", err
-		}
-		if err := selectWS(dagql.Selector{
-			Field: "withPatchFile",
-			Args: []dagql.NamedInput{
-				{Name: "patch", Value: dagql.NewID[*File](blobID)},
-				{Name: "onConflict", Value: PatchConflictLeaveMarkers},
-			},
-		}); err != nil {
-			return "", err
-		}
-	}
-	// What a patch cannot express. Paths are absolute: the workspace
-	// resolves relative ones from its cwd.
-	for _, dir := range rendered.RemovedDirectories {
-		if err := selectWS(dagql.Selector{
-			Field: "withoutDirectory",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString("/" + dir)}},
-		}); err != nil {
-			return "", err
-		}
-	}
-	for _, dir := range rendered.NewDirectories {
-		// Merged in rather than replaced (withNewDirectory), which would drop
-		// what the workspace holds there and Before did not, e.g. ignored
-		// files. A directory created by the merge takes the source's mode.
-		var empty dagql.ObjectResult[*Directory]
-		if err := srv.Select(ctx, srv.Root(), &empty,
-			dagql.Selector{View: srv.View, Field: "directory"},
-			dagql.Selector{View: srv.View, Field: "withNewDirectory", Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("dir")},
-				{Name: "permissions", Value: dagql.NewInt(dir.Permissions)},
-			}},
-			dagql.Selector{View: srv.View, Field: "directory", Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("dir")},
-			}},
-		); err != nil {
-			return "", fmt.Errorf("directory %q: %w", dir.Path, err)
-		}
-		emptyID, err := empty.ID()
-		if err != nil {
-			return "", err
-		}
-		if err := selectWS(dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("/" + dir.Path)},
-				{Name: "source", Value: dagql.NewID[*Directory](emptyID)},
-			},
-		}); err != nil {
-			return "", err
-		}
+	newWS, err := ApplyPatchOnto(ctx, srv, m.workspace, rendered, "changeset.patch", PatchConflictLeaveMarkers)
+	if err != nil {
+		return "", err
 	}
 	// withPatchFile is lazy, and nothing else here runs it. Force the new
 	// root now, so a patch git cannot apply fails this call and leaves the

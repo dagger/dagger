@@ -3,6 +3,8 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -390,5 +392,52 @@ func TestRenderPatchOnto(t *testing.T) {
 		writeDeltaTestFile(t, after, "notes.txt", "GIT binary patch\n")
 		p := render(t, base, before, after, ".")
 		require.Contains(t, string(p.Patch), "+GIT binary patch\n")
+		require.NoError(t, CheckEmbeddablePatch(p.Patch))
 	})
+}
+
+// TestCheckEmbeddablePatch covers the guard every engine-embedded patch blob
+// goes through (EmbedPatch), for patches RenderPatchOnto did not bound, e.g.
+// Changeset.asPatch output.
+func TestCheckEmbeddablePatch(t *testing.T) {
+	const text = "diff --git a/a.txt b/a.txt\n" +
+		"new file mode 100644\n" +
+		"--- /dev/null\n" +
+		"+++ b/a.txt\n" +
+		"@@ -0,0 +1 @@\n" +
+		"+GIT binary patch\n"
+	require.NoError(t, CheckEmbeddablePatch(nil))
+	require.NoError(t, CheckEmbeddablePatch([]byte(text)))
+
+	t.Run("binary hunk", func(t *testing.T) {
+		patch := text + "diff --git a/bin b/bin\n" +
+			"new file mode 100644\n" +
+			"index 0000000000000000000000000000000000000000..0123456789abcdef0123456789abcdef01234567\n" +
+			"GIT binary patch\n" +
+			"literal 4\n" +
+			"LcmZQzWMT#Y01f~L\n\n" +
+			"literal 0\n" +
+			"HcmV?d00001\n\n"
+		require.ErrorIs(t, CheckEmbeddablePatch([]byte(patch)), ErrPatchBinary)
+		// First line too.
+		require.ErrorIs(t, CheckEmbeddablePatch([]byte("GIT binary patch\nliteral 0\n")), ErrPatchBinary)
+	})
+
+	t.Run("binary file left out", func(t *testing.T) {
+		patch := text + "diff --git a/bin b/bin\n" +
+			"index 1111111..2222222 100644\n" +
+			"Binary files a/bin and b/bin differ\n"
+		require.ErrorIs(t, CheckEmbeddablePatch([]byte(patch)), ErrPatchBinary)
+	})
+
+	t.Run("oversized", func(t *testing.T) {
+		patch := bytes.Repeat([]byte("+x\n"), EmbeddedPatchMaxBytes/3+1)
+		require.ErrorIs(t, CheckEmbeddablePatch(patch), ErrPatchTooLarge)
+		require.NoError(t, CheckEmbeddablePatch(patch[:EmbeddedPatchMaxBytes-EmbeddedPatchMaxBytes%3]))
+	})
+
+	require.True(t, PatchNotEmbeddable(fmt.Errorf("wrapped: %w", ErrPatchBinary)))
+	require.True(t, PatchNotEmbeddable(fmt.Errorf("wrapped: %w", ErrPatchTooLarge)))
+	require.False(t, PatchNotEmbeddable(nil))
+	require.False(t, PatchNotEmbeddable(errors.New("other")))
 }

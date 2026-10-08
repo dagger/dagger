@@ -484,6 +484,94 @@ type Builder {
 	require.Equal(t, "built\n", got)
 }
 
+// TestTextChangesetToolSurvivesCommit covers the shape of
+// .dagger/modules/go-cli: an uncached tool runs a command (`go fmt`) over a Git
+// workspace and returns its text changes. The changes are recorded as a patch,
+// and stay one through Workspace.withCommit: neither the conversation's
+// recipe nor the commit's ever names the tool or its exec, so resuming either
+// never re-runs the command.
+func (LLMSuite) TestTextChangesetToolSurvivesCommit(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	const marker = "reformat-marker"
+	source := c.Directory().
+		WithNewFile("main.go", "package main\nfunc main(){}\n").
+		WithNewFile("dagger.toml", "[modules.formatter]\nsource = \"modules/formatter\"\n").
+		WithNewFile("modules/formatter/dagger.json", `{"name":"formatter","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("modules/formatter/main.dang", `
+type Formatter {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  @cache(policy: FunctionCachePolicy.Never)
+  format(ws: Workspace!): Changeset! {
+    let before = container.from("alpine:3.22")
+      .withWorkdir("/workspace")
+      .withDirectory(".", ws.directory("/"))
+      .withEnvVariable("CACHEBUST", UUID.v7)
+    let after = before
+      .withExec(["sh", "-ec", "printf 'package main\\n\\nfunc main() {}\\n' > main.go # `+marker+`"])
+      .sync
+    after.directory(".").changes(before.directory("."))
+  }
+}
+`)
+	daemon, url := gitService(ctx, t, c, source)
+	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	model := cannedRecordingModel(ctx, t, c, c.LLM().
+		WithPrompt("format it").
+		WithResponse([]dagger.LLMContentBlockInput{{
+			Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "format",
+		}}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
+	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
+	composed, err := composeArtifactAgents(ctx, c, ws, nil, base)
+	require.NoError(t, err)
+	result := composed.WithPrompt("format it").Loop()
+	transcript, err := result.Transcript(ctx)
+	require.NoError(t, err)
+	require.Contains(t, transcript, "done")
+	formatted, err := result.Workspace().File("main.go").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "package main\n\nfunc main() {}\n", formatted)
+
+	// requireNoTool fails for a recipe that would re-run the tool.
+	requireNoTool := func(recipe dagger.ID) map[string]bool {
+		t.Helper()
+		id := new(call.ID)
+		require.NoError(t, id.Decode(string(recipe)))
+		fields := map[string]bool{}
+		collectIDFieldNames(id, fields)
+		require.False(t, fields["format"], "the recipe must not retain the tool call")
+		dag, err := id.ToProto()
+		require.NoError(t, err)
+		for _, frame := range dag.GetRecipe().CallsByDigest {
+			require.NotEqual(t, "format", frame.Field, "the recipe must not retain the tool call")
+			if frame.Field == "withExec" {
+				require.NotContains(t, frame.String(), marker, "the recipe must not retain the tool's exec")
+			}
+		}
+		return fields
+	}
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, result)
+	require.NoError(t, err)
+	fields := requireNoTool(recipe)
+	require.True(t, fields["withPatchFile"], "the tool's changes must be recorded as a patch")
+
+	got, err := commitWorkspace(ctx, c, result.Workspace(), "format", []string{"main.go"})
+	require.NoError(t, err)
+	require.Empty(t, got.Git.Uncommitted.ModifiedPaths)
+	committed := dagger.Ref[*dagger.Workspace](c, got.ID)
+	contents, err := committed.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("main.go").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, formatted, contents)
+	recipe, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(committed))
+	require.NoError(t, err)
+	fields = requireNoTool(recipe)
+	require.True(t, fields["__withCommitRepository"], "the recipe must hold the commit")
+}
+
 // TestChangesetToolPatchLeavesConflictMarkers locks in how a changeset patch
 // is recorded: with onConflict LEAVE_CONFLICT_MARKERS. Applied in the session,
 // it fits by construction; on restore, a raw step before it replays its
