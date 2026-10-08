@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -152,8 +153,9 @@ source = "dang"
 
 			out, err := hostDaggerExec(ctx, t, workdir, append([]string{"generate", "--no-apply"}, tc.filter...)...)
 			require.NoError(t, err)
-			require.Regexp(t, `(?m)^\s*out/deep/gen\.txt\s+-1$`, string(out))
-			require.NotRegexp(t, `(?m)^\s*out/\s+-`, string(out), "preview must not remove the whole out/ directory")
+			preview := ansi.Strip(string(out))
+			require.Regexp(t, `(?m)^\s*out/deep/gen\.txt\s+-1$`, preview)
+			require.NotRegexp(t, `(?m)^\s*out/\s+-`, preview, "preview must not remove the whole out/ directory")
 
 			_, err = hostDaggerExec(ctx, t, workdir, append([]string{"generate", "-y"}, tc.filter...)...)
 			require.NoError(t, err)
