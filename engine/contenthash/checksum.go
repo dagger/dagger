@@ -1032,6 +1032,21 @@ func (cc *cacheContext) scanPath(ctx context.Context, m *mount, p string, follow
 		return err
 	}
 
+	// A path that is not a directory needs only its own record. Walking its
+	// parent would cost a walk of the whole filesystem for a file at the root.
+	// Directory records are only added by walks, so a directory in the tree
+	// still has all of its contents.
+	if fi, err := os.Lstat(resolvedPath); err == nil && !fi.IsDir() {
+		if scanCounterEnable {
+			scanCounter.Add(1)
+		}
+		if err := insertScanRecord(n, txn, mp, resolvedPath, fi); err != nil {
+			return err
+		}
+		cc.tree = txn.Commit()
+		return nil
+	}
+
 	// Scan the parent directory of the path we resolved, unless we're at the
 	// root (in which case we scan the root).
 	scanPath := filepath.Dir(resolvedPath)
@@ -1050,40 +1065,47 @@ func (cc *cacheContext) scanPath(ctx context.Context, m *mount, p string, follow
 			}
 			return errors.Wrapf(err, "failed to walk %s", itemPath)
 		}
-		rel, err := filepath.Rel(mp, itemPath)
-		if err != nil {
-			return err
-		}
-		k := convertPathToKey(keyPath(rel))
-		if _, ok := n.Get(k); !ok {
-			cr := &CacheRecord{
-				Type: CacheRecordTypeFile,
-			}
-			if fi.Mode()&os.ModeSymlink != 0 {
-				cr.Type = CacheRecordTypeSymlink
-				link, err := os.Readlink(itemPath)
-				if err != nil {
-					return err
-				}
-				cr.Linkname = filepath.ToSlash(link)
-			}
-			if fi.IsDir() {
-				cr.Type = CacheRecordTypeDirHeader
-				cr2 := &CacheRecord{
-					Type: CacheRecordTypeDir,
-				}
-				txn.Insert(k, cr2)
-				k = append(k, 0)
-			}
-			txn.Insert(k, cr)
-		}
-		return nil
+		return insertScanRecord(n, txn, mp, itemPath, fi)
 	})
 	if err != nil {
 		return err
 	}
 
 	cc.tree = txn.Commit()
+	return nil
+}
+
+// insertScanRecord adds the record for itemPath, under the mount mp, unless
+// the tree n already has it.
+func insertScanRecord(n *iradix.Node[*CacheRecord], txn *iradix.Txn[*CacheRecord], mp, itemPath string, fi os.FileInfo) error {
+	rel, err := filepath.Rel(mp, itemPath)
+	if err != nil {
+		return err
+	}
+	k := convertPathToKey(keyPath(rel))
+	if _, ok := n.Get(k); ok {
+		return nil
+	}
+	cr := &CacheRecord{
+		Type: CacheRecordTypeFile,
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		cr.Type = CacheRecordTypeSymlink
+		link, err := os.Readlink(itemPath)
+		if err != nil {
+			return err
+		}
+		cr.Linkname = filepath.ToSlash(link)
+	}
+	if fi.IsDir() {
+		cr.Type = CacheRecordTypeDirHeader
+		cr2 := &CacheRecord{
+			Type: CacheRecordTypeDir,
+		}
+		txn.Insert(k, cr2)
+		k = append(k, 0)
+	}
+	txn.Insert(k, cr)
 	return nil
 }
 
