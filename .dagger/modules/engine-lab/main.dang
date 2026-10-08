@@ -942,6 +942,16 @@ type EngineLab {
       .stdout
   }
 
+  """
+  Test the wcprof-report helper, in the same tree it is built in.
+  """
+  wcprofReportTest(source: Workspace!): Void @check {
+    goEnvAt(wcprofReportTree(source))
+      .withExec(["go", "test", "-race", "-v", "./" + wcprofReportPkg])
+      .sync
+    null
+  }
+
   # A self-call (`engineLab`) yields the module's own type as it lives in the
   # runtime schema — a Dagger.EngineLab, which carries a GraphQL id and
   # implements Node. Declaring the return as Dagger.EngineLab! (rather than
@@ -1005,16 +1015,19 @@ type EngineLab {
   # build only re-runs when those or the helper change. Static, so it runs
   # in the alpine+jq runner.
   let wcprofReportBin(source: Workspace!): File! {
+    goEnvAt(wcprofReportTree(source))
+      .withEnvVariable("CGO_ENABLED", "0")
+      .withExec(["go", "build", "-o", "/out/wcprof-report", "./" + wcprofReportPkg])
+      .file("/out/wcprof-report")
+  }
+
+  let wcprofReportTree(source: Workspace!): Directory! {
     let ws = source.directory("/")
-    let tree = directory
+    directory
       .withFile("go.mod", ws.file("go.mod"))
       .withFile("go.sum", ws.file("go.sum"))
       .withDirectory("engine/wcprof", ws.directory("engine/wcprof"))
       .withDirectory(wcprofReportPkg, currentModule.source.directory("wcprof-report"))
-    goEnvAt(tree)
-      .withEnvVariable("CGO_ENABLED", "0")
-      .withExec(["go", "build", "-o", "/out/wcprof-report", "./" + wcprofReportPkg])
-      .file("/out/wcprof-report")
   }
 
   # A container with the helper, jq, and a dump at /tmp/wcprof.dump. Not
