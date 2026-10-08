@@ -1608,6 +1608,49 @@ func (fe *frontendPretty) updateTestViews() {
 	}
 }
 
+// updateTestViewsForLogs is updateTestViews for a log batch: logs never change
+// which tests exist, only the output shown for a case, and a span's logs only
+// show on its own row, on the ancestor they roll up into, and in test views
+// rooted above it (every case lives beneath its view's root). So only what
+// sits on the path from each logged span to the root needs re-rendering, plus
+// the global views. A batch then costs the depth of the spans it touched, not
+// the size of the session, and leaves every unrelated row's render cache
+// intact.
+func (fe *frontendPretty) updateTestViewsForLogs(spanIDs map[dagui.SpanID]struct{}) {
+	if fe.fullscreenTests != nil {
+		fe.fullscreenTests.Update()
+	}
+	if fe.orphanTests != nil {
+		fe.orphanTests.Update()
+	}
+	if tv := fe.testViews[dagui.SpanID{}]; tv != nil {
+		tv.Update()
+	}
+	var path []dagui.SpanID
+	for logID := range spanIDs {
+		path = path[:0]
+		for id := logID; id.IsValid(); {
+			path = append(path, id)
+			if tv := fe.testViews[id]; tv != nil {
+				tv.Update()
+			}
+			span := fe.db.Spans.Map[id]
+			if span == nil {
+				break
+			}
+			if span.CheckName != "" || span.LLMTool != "" {
+				if st := fe.spanTrees[id]; st != nil {
+					st.Update()
+				}
+			}
+			id = span.ParentID
+		}
+		for _, view := range fe.testSpanChildren {
+			view.updateForLogs(path)
+		}
+	}
+}
+
 func (fe *frontendPretty) closeTestsMode() {
 	fe.testsFocus.Restore()
 	fe.testsFocus = nil
@@ -2285,6 +2328,26 @@ func (v *TestSpanChildrenView) UpdateAll() {
 	}
 	for _, st := range v.scope.spanTrees {
 		st.Update()
+	}
+}
+
+// updateForLogs re-renders the rows in this view that can show the logs of
+// path[0], given its path to the root: its own row, and the ancestor its logs
+// roll up into. Rows usually sit beneath the view's root, but causal spans are
+// inlined from elsewhere in the trace, so the whole path is checked.
+func (v *TestSpanChildrenView) updateForLogs(path []dagui.SpanID) {
+	updated := false
+	for _, id := range path {
+		if st := v.scope.spanTrees[id]; st != nil {
+			st.Update()
+			updated = true
+		}
+	}
+	if updated {
+		v.Update()
+		if v.container != nil {
+			v.container.Update()
+		}
 	}
 }
 

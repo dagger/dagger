@@ -943,6 +943,105 @@ func TestLiveInlineCheckTestsIndentedUnderTrace(t *testing.T) {
 	}
 }
 
+// TestLiveTestLogsReachInlineRollup verifies that output streamed for a failing
+// test case re-renders the inline TESTS rollup of the check it runs under --
+// log batches only re-render the test views above the spans they touch.
+func TestLiveTestLogsReachInlineRollup(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID, checkID, testID, otherID := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3), prettyTestSpanID(4)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start},
+		{
+			ID: checkID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check unit",
+			StartTime: start, EndTime: end, CheckName: "unit", Final: true,
+		},
+		{
+			ID: testID, TraceID: prettyTestTraceID(), ParentID: checkID, Name: "unit failure",
+			StartTime: start, EndTime: end, TestCaseName: "unit failure",
+			TestStatus: dagui.TestStatusFailure, Final: true,
+		},
+		{ID: otherID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "other exec", StartTime: start},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 40))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.SetPrimary(rootID)
+	lines := fe.tui.Step()
+	if _, ok := findPrettyTestLine(lines, "TESTS"); !ok {
+		t.Fatalf("check render did not include inline TESTS:\n%s", strings.Join(lines, "\n"))
+	}
+
+	export := func(spanID dagui.SpanID, body string) []string {
+		t.Helper()
+		require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
+			frontendTestLogRecord(spanID.SpanID, otellog.StringValue(body)),
+		}))
+		return fe.tui.Step()
+	}
+	export(otherID, "unrelated output\n")
+	lines = export(testID, "expected 1, got 2\n")
+	if _, ok := findPrettyTestLine(lines, "expected 1, got 2"); !ok {
+		t.Fatalf("failing test's streamed output missing from inline TESTS:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// TestLiveTestDetailChildLogs verifies that output streamed by a span running
+// beneath a test case reaches the case's child rows in the fullscreen tests
+// detail pane, which live in their own scope of span trees.
+func TestLiveTestDetailChildLogs(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID, checkID, testID, execID, otherID := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3), prettyTestSpanID(4), prettyTestSpanID(5)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start},
+		{
+			ID: checkID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check unit",
+			StartTime: start, CheckName: "unit",
+		},
+		{
+			ID: testID, TraceID: prettyTestTraceID(), ParentID: checkID, Name: "unit failure",
+			StartTime: start, EndTime: end, TestCaseName: "unit failure",
+			TestStatus: dagui.TestStatusFailure, Final: true,
+		},
+		{ID: execID, TraceID: prettyTestTraceID(), ParentID: testID, Name: "exec go test", StartTime: start},
+		{ID: otherID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "other exec", StartTime: start},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 40))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.SetPrimary(rootID)
+	fe.tui.Step()
+	fe.FocusedSpan = checkID
+	fe.toggleTestsMode()
+	require.True(t, fe.testsMode, "expected the check's tests to open fullscreen")
+	lines := fe.tui.Step()
+	if _, ok := findPrettyTestLine(lines, "exec go test"); !ok {
+		t.Fatalf("test detail did not show the case's child rows:\n%s", strings.Join(lines, "\n"))
+	}
+
+	export := func(spanID dagui.SpanID, body string) []string {
+		t.Helper()
+		require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
+			frontendTestLogRecord(spanID.SpanID, otellog.StringValue(body)),
+		}))
+		return fe.tui.Step()
+	}
+	export(otherID, "unrelated output\n")
+	lines = export(execID, "--- FAIL: unit failure\n")
+	if _, ok := findPrettyTestLine(lines, "--- FAIL: unit failure"); !ok {
+		t.Fatalf("child exec's streamed output missing from test detail:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
 // TestShellToolInlineTestsAlignWithToolDot verifies a shell transcript's tool
 // call hangs its inline TESTS rollup off a pipe in the same column as the faint
 // dot in front of the tool name (where its log gutter sits too), with the

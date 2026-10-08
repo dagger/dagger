@@ -3148,7 +3148,7 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		for spanID := range logSpanIDs {
 			fe.updateLogPagerForLogs(spanID)
 		}
-		fe.updateTestViews()
+		fe.updateTestViewsForLogs(logSpanIDs)
 		for view := range fe.spanLists {
 			view.UpdateAll()
 		}
