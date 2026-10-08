@@ -41,6 +41,8 @@ type Store struct {
 	BeforeDiff  func(context.Context) error
 	// BeforeSnapshotUpdate runs before each snapshot label update.
 	BeforeSnapshotUpdate func(context.Context, ctdsnapshots.Info) error
+	// BeforeStat runs before each snapshot Stat the manager makes.
+	BeforeStat func(ctx context.Context, key string)
 	// Builtin, when set before the manager is (re)opened, plays the engine's
 	// builtin image store for chain imports.
 	Builtin     content.InfoReaderProvider
@@ -87,6 +89,7 @@ func (s *Store) openManager(t testing.TB) {
 		Differ:         &observedDiffer{Comparer: inPlaceDiffer{store: observed}, store: s},
 		MountPoolRoot:  filepath.Join(s.root, "mounts"),
 		BuiltinContent: s.Builtin,
+		MetadataDB:     s.DB,
 	})
 	require.NoError(t, err)
 }
@@ -185,6 +188,13 @@ func (p *Provider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (cont
 type observedSnapshotter struct {
 	bkcache.Snapshotter
 	store *Store
+}
+
+func (s *observedSnapshotter) Stat(ctx context.Context, key string) (ctdsnapshots.Info, error) {
+	if s.store.BeforeStat != nil {
+		s.store.BeforeStat(ctx, key)
+	}
+	return s.Snapshotter.Stat(ctx, key)
 }
 
 func (s *observedSnapshotter) Update(ctx context.Context, info ctdsnapshots.Info, fieldpaths ...string) (ctdsnapshots.Info, error) {

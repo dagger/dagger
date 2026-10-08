@@ -8,6 +8,7 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/leases"
+	"github.com/containerd/containerd/v2/core/metadata"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
@@ -37,6 +38,9 @@ type SnapshotManagerOpt struct {
 	// chain imports for a layer blob before the chain's provider. Nil means
 	// no such store.
 	BuiltinContent content.InfoReaderProvider
+	// MetadataDB is the containerd metadata database behind LeaseManager.
+	// When set, AttachLease makes its lease writes in one transaction.
+	MetadataDB metadata.Transactor
 }
 
 type ImportedImage struct {
@@ -121,6 +125,8 @@ type snapshotManager struct {
 	metadataStore *metadataStore
 	// builtinContent is SnapshotManagerOpt.BuiltinContent.
 	builtinContent content.InfoReaderProvider
+	// metadataDB is SnapshotManagerOpt.MetadataDB.
+	metadataDB metadata.Transactor
 
 	snapshotContentDigests map[string]map[digest.Digest]struct{}
 	importedLayerByBlob    map[ImportedLayerBlobKey]string
@@ -141,6 +147,7 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		Applier:                opt.Applier,
 		Differ:                 opt.Differ,
 		builtinContent:         opt.BuiltinContent,
+		metadataDB:             opt.MetadataDB,
 		metadataStore:          newMetadataStore(),
 		records:                make(map[string]*cacheRecord),
 		snapshotContentDigests: make(map[string]map[digest.Digest]struct{}),

@@ -344,18 +344,23 @@ func TestImportChainCandidateLostBeforePin(t *testing.T) {
 	const priorOwner = "prior-suffix-owner"
 	require.NoError(t, consumer.Manager.AttachLease(ctx, priorOwner, both.SnapshotID()))
 	require.NoError(t, both.Release(ctx))
-	var lost atomic.Bool
-	consumer.BeforeAdd = func(ctx context.Context, _ leases.Lease, resource leases.Resource) error {
-		if resource.Type != "snapshots/native" || resource.ID != both.SnapshotID() || !lost.CompareAndSwap(false, true) {
-			return nil
+	var walked, lost atomic.Bool
+	consumer.BeforeStat = func(ctx context.Context, key string) {
+		// The attachment walks the candidate's chain, top first, then
+		// writes. Lose the candidate after the walk has seen it and before
+		// the write: RemoveLease deletes from containerd outside the manager
+		// lock, and the collector runs outside the attachment's transaction.
+		if key == both.SnapshotID() {
+			walked.Store(true)
+			return
 		}
-		// RemoveLease deletes from containerd before taking the manager metadata
-		// lock. Reproduce that external metadata boundary during attachment.
+		if key != prefix.SnapshotID() || !walked.Load() || !lost.CompareAndSwap(false, true) {
+			return
+		}
 		require.NoError(t, consumer.Leases.Delete(ctx, leases.Lease{ID: priorOwner}))
 		consumer.GC(t)
 		_, err := consumer.Snapshots.Stat(ctx, both.SnapshotID())
 		require.True(t, cerrdefs.IsNotFound(err))
-		return nil
 	}
 	retry := importChain(t, consumer, supplied(chain, provider))
 	require.True(t, lost.Load())
@@ -546,21 +551,16 @@ func TestImportChainSnapshotWithLostHistoricalBlob(t *testing.T) {
 	owners, err := consumer.Leases.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, owners, 1)
-	var removed atomic.Bool
-	consumer.BeforeAdd = func(ctx context.Context, _ leases.Lease, resource leases.Resource) error {
-		if resource.Type != "content" || !removed.CompareAndSwap(false, true) {
-			return nil
-		}
-		require.NoError(t, consumer.Leases.Delete(ctx, owners[0]))
-		consumer.GC(t)
-		_, err := consumer.Content.Info(ctx, chain.Layers[0].Descriptor.Digest)
-		require.True(t, cerrdefs.IsNotFound(err), "blob is lost during partial attachment")
-		_, err = consumer.Snapshots.Stat(ctx, first.SnapshotID())
-		require.NoError(t, err)
-		return nil
-	}
+	// Keep the snapshot under a lease that names only it, and lose its blob.
+	keep := flatLeaseNamingOnly(t, consumer, "snapshot-only", first.SnapshotID())
+	require.NoError(t, consumer.Leases.Delete(ctx, owners[0]))
+	consumer.GC(t)
+	_, err = consumer.Content.Info(ctx, chain.Layers[0].Descriptor.Digest)
+	require.True(t, cerrdefs.IsNotFound(err), "the blob is lost")
+	_, err = consumer.Snapshots.Stat(ctx, first.SnapshotID())
+	require.NoError(t, err, "the snapshot survives")
 	second := importChain(t, consumer, supplied(chain, provider))
-	require.True(t, removed.Load())
+	require.NoError(t, consumer.Leases.Delete(ctx, keep))
 	require.Equal(t, first.SnapshotID(), second.SnapshotID())
 	require.NoError(t, first.Release(ctx))
 	testutil.CheckFile(t, second, "a.txt", "usable snapshot")
