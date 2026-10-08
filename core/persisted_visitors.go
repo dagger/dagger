@@ -246,6 +246,12 @@ var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
 	persistedDirectoryLazyKindWithFile: parentAndSource("sourceResultID",
 		func(p *persistedDirectoryWithFileLazy) *uint64 { return &p.ParentResultID },
 		func(p *persistedDirectoryWithFileLazy) *uint64 { return &p.SourceResultID }),
+	persistedDirectoryLazyKindWithFiles: persistedLazyStructVisitor(func(p *persistedDirectoryWithFilesLazy, w *persistedRefWalker) error {
+		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
+			return err
+		}
+		return w.children("sourceResultIDs", p.SourceResultIDs)
+	}),
 	persistedDirectoryLazyKindWithTimestamps:   parentOnly(func(p *persistedDirectoryWithTimestampsLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindWithNewDirectory: parentOnly(func(p *persistedDirectoryWithNewDirectoryLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindSubdirectory:     parentOnly(func(p *persistedDirectorySubdirectoryLazy) *uint64 { return &p.ParentResultID }),
@@ -485,6 +491,9 @@ var persistedGitRepositoryVisitor = persistedStructVisitor("", func(p *persisted
 		if err := w.at("local").child("historySourceResultID", &p.Local.HistorySourceResultID); err != nil {
 			return err
 		}
+		if err := w.at("local").child("upstreamResultID", &p.Local.UpstreamResultID); err != nil {
+			return err
+		}
 		if err := w.at("local").child("directoryResultID", &p.Local.DirectoryResultID); err != nil {
 			return err
 		}
@@ -505,6 +514,10 @@ var persistedGitRepositoryVisitor = persistedStructVisitor("", func(p *persisted
 
 var persistedGitRefVisitor = persistedStructVisitor("", func(p *persistedGitRefPayload, w *persistedRefWalker) error {
 	return w.child("repoResultID", &p.RepoResultID)
+})
+
+var persistedGitRemoteHandleVisitor = persistedStructVisitor("", func(p *persistedGitRemoteHandle, w *persistedRefWalker) error {
+	return w.child("sourceResultID", &p.SourceResultID)
 })
 
 var persistedGitCommitVisitor = persistedStructVisitor("", func(p *persistedGitCommitPayload, w *persistedRefWalker) error {

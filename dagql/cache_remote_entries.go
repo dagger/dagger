@@ -931,6 +931,53 @@ func (c *Cache) compactEqClassesAfterCollectionLocked(removed bool) {
 		"duration", time.Since(start))
 }
 
+// CompactEqClasses frees, now, every class slot that no term and no entry
+// uses: the forced form of the check CollectRemoteHoldings makes
+// (compactEqClassesAfterCollectionLocked). It runs whatever the time since the
+// last check, however few classes are dead, and frees every slot when no class
+// is live. It returns the class slots before and after. It counts as that
+// check, so the next collection checks again only after eqClassCheckInterval.
+//
+// Only a blob-backed cache answers, and never with snapshot sharing enabled,
+// whose pending queue keeps class IDs: then, or when ctx is done before the
+// compaction starts, it returns an error and changes nothing. A compaction
+// that has started is not interrupted.
+func (c *Cache) CompactEqClasses(ctx context.Context) (oldSlots, newSlots int, rerr error) {
+	if !c.blobBacked {
+		return 0, 0, errors.New("compact eq classes: the cache has no blob store")
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, 0, fmt.Errorf("compact eq classes: %w", err)
+	}
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	// The context can end while another operation holds the graph.
+	if err := ctx.Err(); err != nil {
+		return 0, 0, fmt.Errorf("compact eq classes: %w", err)
+	}
+	if c.shareAdmission != snapshotShareOff {
+		return 0, 0, errors.New("compact eq classes: snapshot sharing is enabled")
+	}
+	clock := c.eqClassClock
+	if clock == nil {
+		clock = time.Now
+	}
+	now := clock()
+	start := time.Now()
+	c.eqClassChecks++
+	compacted, oldSlots, newSlots := c.compactEqClassesModeLocked(true, true)
+	c.eqClassCheckedAt = now
+	c.eqClassCheckedSlots = c.eqClassSlotsLocked()
+	c.eqClassRemoved = false
+	slog.Debug("dagql collection checked eq classes",
+		"compacted", compacted,
+		"oldSlots", oldSlots,
+		"newSlots", newSlots,
+		"duration", time.Since(start),
+		"forced", true)
+	return oldSlots, newSlots, nil
+}
+
 // removeHoldingLocked takes a holding off its entry: out of holderEntries and
 // its cache's count, releasing its ownership of its holding dependencies,
 // whose keys it returns, and forgetting its unknown numbers. It releases the

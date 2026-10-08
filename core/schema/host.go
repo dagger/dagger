@@ -28,6 +28,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/filesync"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 type hostSchema struct{}
@@ -464,6 +465,40 @@ type hostSSHAuthSocketArgs struct {
 	Source dagql.Optional[core.SocketID] `name:"source"`
 }
 
+// checkoutSSHAuthSocketPath stands in for SSH_AUTH_SOCK when a client without
+// one replays a recipe that scoped its owner's SSH agent, e.g. a workspace
+// snapshot taken with an agent prepared from the owner's SSH identities. Live
+// calls never get here without a socket; recipes do, such as when resuming a
+// trace. As when a session snapshots the checkout, the client's own checkout
+// authorizes preparing an agent for its SSH origin. Module code never gets one
+// prepared on its behalf.
+func checkoutSSHAuthSocketPath(ctx context.Context, query *core.Query, caller *engine.ClientMetadata) (string, error) {
+	parent, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get non-module parent client metadata: %w", err)
+	}
+	if parent.ClientID != caller.ClientID {
+		return "", nil
+	}
+	ws, err := query.CurrentWorkspace(ctx)
+	if err != nil || ws == nil || ws.ClientID != caller.ClientID || ws.HostPath() == "" {
+		return "", nil //nolint:nilerr // no checkout of the caller's own to authorize an agent
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get engine client: %w", err)
+	}
+	origin := hostCheckoutOriginURL(ctx, bk, ws.HostPath())
+	if remote, err := gitutil.ParseURL(origin); err != nil || remote.Scheme != gitutil.SSHProtocol {
+		return "", nil //nolint:nilerr // not an SSH origin, so no agent to prepare
+	}
+	path, err := bk.PrepareGitSSHAuth(ctx, origin)
+	if err != nil {
+		return "", fmt.Errorf("SSH_AUTH_SOCK is not set; prepare SSH authentication for %s: %w", origin, err)
+	}
+	return path, nil
+}
+
 func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostSSHAuthSocketArgs) (inst dagql.Result[*core.Socket], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -501,12 +536,19 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 			return inst, errors.New("resolved source socket is nil")
 		}
 	} else {
-		if clientMetadata.SSHAuthSocketPath == "" {
+		sshAuthSocketPath := clientMetadata.SSHAuthSocketPath
+		if sshAuthSocketPath == "" {
+			sshAuthSocketPath, err = checkoutSSHAuthSocketPath(ctx, query, clientMetadata)
+			if err != nil {
+				return inst, err
+			}
+		}
+		if sshAuthSocketPath == "" {
 			return inst, errors.New("SSH_AUTH_SOCK is not set")
 		}
 		concreteVal := &core.Socket{
 			Kind:           core.SocketKindUnixOpaque,
-			URLVal:         (&url.URL{Scheme: "unix", Path: clientMetadata.SSHAuthSocketPath}).String(),
+			URLVal:         (&url.URL{Scheme: "unix", Path: sshAuthSocketPath}).String(),
 			SourceClientID: clientMetadata.ClientID,
 		}
 		concreteSelf = concreteVal

@@ -16,7 +16,7 @@ func (CollectionsSuite) TestGeneratorCheckNames(ctx context.Context, t *testctx.
 		flags                       []string
 	}{
 		{"module", "Collections", "", "", []string{"--collections"}},
-		{"collection", "Item", "items/", "?item=a", []string{"--collections", "--collections-items-item=a"}},
+		{"collection", "Item", "items/", "&collections-items-item=a", []string{"--collections", "--collections-items-item=a"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			source := collectionGoSource + fmt.Sprintf(`
@@ -40,7 +40,7 @@ func (*%s) Clients() *dagger.Changeset { panic("generator evaluated") }
 				for _, command := range [][]string{{"check", "-la", "-f=link"}, {"list", "checks", "-a", "-f=link"}} {
 					links, err := base.With(daggerExec(append(command, want...)...)).Stdout(ctx)
 					require.NoError(t, err)
-					require.Equal(t, "dag+check://"+tc.path+generator+"/stale"+tc.query+"\n", links)
+					require.Equal(t, "dag+check://?check="+tc.path+generator+"/stale"+tc.query+"\n", links)
 				}
 			}
 		})

@@ -125,7 +125,6 @@ func init() {
 	addWorkspaceHereFlag(uninstallAliasCmd)
 
 	setWorkspaceFlagPolicy(moduleUpdateCmd)
-	setWorkspaceFlagPolicy(updateAliasCmd)
 	setWorkspaceFlagPolicy(moduleRecommendCmd)
 	setWorkspaceFlagPolicy(moduleDepInstallCmd)
 	setWorkspaceFlagPolicy(installAliasCmd)
@@ -134,7 +133,15 @@ func init() {
 }
 
 var moduleUpdateCmd = newModuleUpdateCmd()
-var updateAliasCmd = newModuleUpdateCmd()
+
+var updateAliasCmd = &cobra.Command{
+	Use:                "update",
+	Hidden:             true,
+	DisableFlagParsing: true,
+	RunE: func(*cobra.Command, []string) error {
+		return fmt.Errorf("dagger update has moved to dagger lock update to refresh lockfile entries. To change an installed module's source or version, use dagger module update")
+	},
+}
 
 func newModuleUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{

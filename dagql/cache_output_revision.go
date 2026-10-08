@@ -1,6 +1,9 @@
 package dagql
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // OutputRevision identifies one typed output publication within this process.
 // It is never part of a persisted or transferred identity.
@@ -16,7 +19,7 @@ type PersistedOutputVersion interface {
 // the value's publication/body latches. Only owner synchronization, outside
 // graph locks, may use it. Capture, boot and import keep the nonblocking reads.
 type SnapshotOwnerReader interface {
-	ReadSnapshotOwner() (OutputRevision, []PersistedSnapshotRefLink, error)
+	ReadSnapshotOwner(context.Context) (OutputRevision, []PersistedSnapshotRefLink, error)
 }
 
 type capturedOutputVersionsKey struct{}

@@ -38,6 +38,35 @@ func ParseUserConfig(data []byte) (*UserConfig, error) {
 	return &cfg, nil
 }
 
+// EncodeUserWorkspaceOverlay serializes an overlay for carrying in a
+// workspace's recipe. TOML round-trips setting values with their types (a
+// JSON round trip would turn integers into floats), and keys are written in
+// sorted order, so equal overlays encode identically. A nil overlay encodes as
+// the empty string.
+func EncodeUserWorkspaceOverlay(overlay *UserWorkspaceOverlay) (string, error) {
+	if overlay == nil {
+		return "", nil
+	}
+	data, err := toml.Marshal(*overlay)
+	if err != nil {
+		return "", fmt.Errorf("encode user config overlay: %w", err)
+	}
+	return string(data), nil
+}
+
+// DecodeUserWorkspaceOverlay is the inverse of EncodeUserWorkspaceOverlay.
+// The empty string decodes to a nil overlay.
+func DecodeUserWorkspaceOverlay(encoded string) (*UserWorkspaceOverlay, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+	var overlay UserWorkspaceOverlay
+	if err := toml.Unmarshal([]byte(encoded), &overlay); err != nil {
+		return nil, fmt.Errorf("decode user config overlay: %w", err)
+	}
+	return &overlay, nil
+}
+
 // MatchWorkspaceOverlay returns the overlay whose key identifies the same
 // remote as workspaceKey, or nil when none matches. Both sides are normalized
 // before comparison so equivalent remote URL forms (https, ssh, scp-style,

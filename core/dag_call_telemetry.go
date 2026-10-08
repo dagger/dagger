@@ -27,13 +27,19 @@ import (
 // sub-selected.
 //
 // Calls that do get a recording span carry their frame there, as
-// dagger.io/dag.call (core/telemetry.go); that span copy is the frame's only
-// carrier. The engine exports such call spans on a protected lane with the
+// dagger.io/dag.call (core/telemetry.go); that span copy is then the frame's
+// only carrier. The exception is a frame whose base64 encoding exceeds
+// maxSpanCallPayloadBytes: a span is exported whole and must fit in one OTLP
+// frame (64 MiB), so a huge literal argument (a Query.blob of a large file)
+// would break the span's export. Such a span carries no frame, and its root is
+// logged here as raw proto bytes like any unspanned frame.
+//
+// The engine exports frame-carrying call spans on a protected lane with the
 // same guarantee as payload logs — never dropped on overflow, retried on
-// failure — and its span exporter settles the frame's claim per target just as
-// the log exporter settles a payload's. Both transports claim digests from the
-// same delivery-domain store, so the closure walk below publishes logs only
-// for frames no span or log has claimed.
+// failure — and its span exporter settles the frame's claim per target just
+// as the log exporter settles a payload's. Both transports claim digests from
+// the same delivery-domain store, so the closure walk below publishes logs
+// only for frames no span or log has claimed.
 //
 // The claim store is scoped per target — the client and its ancestors,
 // exactly the per-client DBs telemetry fans out to — NOT to the session. A

@@ -391,6 +391,7 @@ func main() { //nolint:gocyclo
 			bklog.G(ctx).Warnf("command cgroup placement unavailable: %s", placementErr)
 		}
 		enginetel.SetCommandNetworkHook(networkmetrics.PrepareCommandNetwork)
+		enginetel.SetExecMountResourcesHook(networkmetrics.NewExecMountResources)
 		if err != nil {
 			bklog.G(ctx).Warnf("network accounting unavailable: %s", err)
 		} else if err := nettracer.EngineAccountingError(); err != nil {

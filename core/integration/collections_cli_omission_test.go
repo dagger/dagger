@@ -52,7 +52,7 @@ func (*Part) Run() error { panic("check evaluated") }
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			ctr := base.WithNewFile("collections/main.go", source+tc.extra)
 			for _, command := range [][]string{{"check", "-l"}, {"list", "checks"}} {
-				out, err := ctr.With(daggerExec(append(command, "-a", "items/run?item=a", "-f=cli")...)).Stdout(ctx)
+				out, err := ctr.With(daggerExec(append(command, "-a", "items/run?collections-items-item=a", "-f=cli")...)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Contains(t, out, "--collections --collections-items-item=a")
 				require.Equal(t, !tc.omit, strings.Contains(out, "--check="), out)
@@ -60,7 +60,7 @@ func (*Part) Run() error { panic("check evaluated") }
 				replay = append(replay, strings.Fields(out)...)
 				links, err := ctr.With(daggerExec(replay...)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "dag+check://items/run?item=a\n", links)
+				require.Equal(t, "dag+check://?check=items/run&collections-items-item=a\n", links)
 			}
 			// The same proof works from schema metadata alone. The collection
 			// constructor and both check functions must remain deferred.

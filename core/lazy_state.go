@@ -11,6 +11,13 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/wcprof"
+)
+
+// Resource names of the lazy latches' wcprof lock waits.
+const (
+	lazyMuProfIdent      = "core.LazyState.LazyMu"
+	lazyGroupMuProfIdent = "core.lazyGroupOnce.mu"
 )
 
 type Lazy[T dagql.Typed] interface {
@@ -55,16 +62,16 @@ type lazyGroupOnce struct {
 // released it. Callers that must take LazyMu after another lock wait here
 // with nothing held and then retry their own lock sequence, instead of
 // holding LazyMu across it and inverting their lock order.
-func (lazy *LazyState) awaitUnlocked() {
-	lazy.LazyMu.Lock()
-	defer lazy.LazyMu.Unlock()
+func (lazy *LazyState) awaitUnlocked(ctx context.Context) {
+	wcprof.Lock(ctx, lazy.LazyMu, lazyMuProfIdent)
+	lazy.LazyMu.Unlock()
 }
 
 // awaitUnlocked returns once the group's running body, if any, has released
 // the group; see LazyState.awaitUnlocked.
-func (group *lazyGroupOnce) awaitUnlocked() {
-	group.mu.Lock()
-	defer group.mu.Unlock()
+func (group *lazyGroupOnce) awaitUnlocked(ctx context.Context) {
+	wcprof.Lock(ctx, &group.mu, lazyGroupMuProfIdent)
+	group.mu.Unlock()
 }
 
 func NewLazyState() LazyState {
@@ -152,7 +159,8 @@ func (lazy *LazyState) EvaluateGroup(ctx context.Context, typeName string, group
 	}
 	lazy.LazyMu.Unlock()
 
-	g.mu.Lock()
+	// Another runner of this group holds g.mu across its body.
+	wcprof.Lock(ctx, &g.mu, lazyGroupMuProfIdent)
 	defer g.mu.Unlock()
 	if g.done.Load() {
 		return nil

@@ -924,6 +924,30 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+
+  Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec with_patch_file(t(), Dagger.File.t(), [{:on_conflict, Dagger.PatchConflict.t() | nil}]) ::
+          Dagger.Workspace.t()
+  def with_patch_file(%__MODULE__{} = workspace, patch, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withPatchFile")
+      |> QB.put_arg("patch", Dagger.ID.id!(patch))
+      |> QB.maybe_put_arg("onConflict", optional_args[:on_conflict])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
 
   A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
@@ -1030,6 +1054,24 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("names", optional_args[:names])
       |> QB.maybe_put_arg("version", optional_args[:version])
       |> QB.maybe_put_arg("source", optional_args[:source])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with the calling client's user-level config re-read and applied.
+
+  User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+
+  The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+  """
+  @spec with_user_config(t()) :: Dagger.Workspace.t()
+  def with_user_config(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("withUserConfig")
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -1145,6 +1187,20 @@ defmodule Dagger.Workspace do
   def without_file(%__MODULE__{} = workspace, path) do
     query_builder =
       workspace.query_builder |> QB.select("withoutFile") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with files removed, without mutating the source.
+  """
+  @spec without_files(t(), [String.t()]) :: Dagger.Workspace.t()
+  def without_files(%__MODULE__{} = workspace, paths) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutFiles") |> QB.put_arg("paths", paths)
 
     %Dagger.Workspace{
       query_builder: query_builder,

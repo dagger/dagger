@@ -1599,6 +1599,54 @@ engineVersion = "latest"
 	require.Equal(t, "git-module", name)
 }
 
+func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePrivateSSH(ctx context.Context, t *testctx.T) {
+	const repoPath = "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private"
+	for _, cloneRef := range []string{
+		"git@gitlab.com:dagger-modules/private/test/more/dagger-test-modules-private.git",
+		"ssh://git@" + repoPath + ".git",
+	} {
+		t.Run(cloneRef, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			sockPath, cleanup := setupPrivateRepoSSHAgent(t)
+			defer cleanup()
+
+			ref := c.Git(cloneRef, dagger.GitOpts{
+				SSHAuthSocket: c.Host().UnixSocket(sockPath),
+			}).Head()
+			commit, err := ref.CommitSHA(ctx)
+			require.NoError(t, err)
+			ws := ref.AsWorkspace().WithNewFile("workspace-module/dagger-module.toml", `name = "workspace-module"
+engineVersion = "latest"
+
+[[dependencies]]
+name = "dep"
+source = "../workspace-dep"
+`).WithNewFile("workspace-dep/dagger-module.toml", `name = "dep"
+engineVersion = "latest"
+`)
+			src := ws.ModuleSource("workspace-module")
+			kind, err := src.Kind(ctx)
+			require.NoError(t, err)
+			require.Equal(t, dagger.ModuleSourceKindGitSource, kind)
+			gotClone, err := src.CloneRef(ctx)
+			require.NoError(t, err)
+			require.Equal(t, cloneRef, gotClone)
+			repoURL, err := src.HTMLRepoURL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "https://"+repoPath, repoURL)
+			link, err := src.HTMLURL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "https://"+repoPath+"/tree/"+commit+"/workspace-module", link)
+			deps, err := src.Dependencies(ctx)
+			require.NoError(t, err)
+			require.Len(t, deps, 1)
+			name, err := deps[0].ModuleOriginalName(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "dep", name)
+		})
+	}
+}
+
 func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePreservesGitContext(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	moduleDir := c.Directory().
@@ -2165,6 +2213,48 @@ func (WorkspaceAPISuite) TestHostWorkspaceFunctionalRemoves(ctx context.Context,
 			require.ElementsMatch(t, tc.wantRemoved, removed)
 		})
 	}
+}
+
+// TestHostWorkspaceWithoutFiles removes several host files in one step and
+// exports the removals, leaving the files beside them alone.
+func (WorkspaceAPISuite) TestHostWorkspaceWithoutFiles(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	for name, contents := range map[string]string{
+		"sub/drop.txt":   "drop",
+		"sub/keep.txt":   "keep",
+		"other/drop.txt": "drop",
+		"other/keep.txt": "keep",
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(checkout, name)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(checkout, name), []byte(contents), 0o644))
+	}
+	git("add", "-A")
+	git("commit", "-m", "fixture")
+
+	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(checkout, "sub")))
+	base := c.CurrentWorkspace()
+	ws := base.WithoutFiles([]string{"drop.txt", "/other/drop.txt"})
+
+	_, err := ws.File("drop.txt").Contents(ctx)
+	require.Error(t, err, "a removed file must not resurface from the host")
+	got, err := ws.File("/other/keep.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "keep", got)
+
+	require.NoError(t, ws.Export(ctx))
+	for _, name := range []string{"sub/drop.txt", "other/drop.txt"} {
+		_, err := os.Stat(filepath.Join(checkout, name))
+		require.ErrorIs(t, err, os.ErrNotExist, name)
+	}
+	for _, name := range []string{"base.txt", "sub/keep.txt", "other/keep.txt"} {
+		_, err := os.Stat(filepath.Join(checkout, name))
+		require.NoError(t, err, name)
+	}
+	var status []string
+	for line := range strings.SplitSeq(git("status", "--porcelain"), "\n") {
+		status = append(status, strings.Join(strings.Fields(line), " "))
+	}
+	require.ElementsMatch(t, []string{"D other/drop.txt", "D sub/drop.txt"}, status)
 }
 
 // TestHostWorkspaceOverlayReads verifies reads through a host overlay: the

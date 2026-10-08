@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
@@ -1008,11 +1009,15 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 			return inst, fmt.Errorf("workspace module source: Git workspace has no repository URL")
 		}
 		cloneRef := ref.Repo.Self().URL.Value.String()
+		repoURL, err := gitutil.ParseURL(cloneRef)
+		if err != nil {
+			return inst, fmt.Errorf("workspace module source repository URL: %w", err)
+		}
 		src.Kind = core.ModuleSourceKindGit
 		src.Git = &core.GitModuleSource{
 			CloneRef:         cloneRef,
 			ResolvedCloneRef: cloneRef,
-			HTMLRepoURL:      cloneRef,
+			HTMLRepoURL:      repoURL.HTMLURL(),
 			Version:          cmp.Or(ref.Ref.ShortName(), ref.Ref.SHA),
 			Commit:           ref.Ref.SHA,
 			Ref:              ref.Ref.Name,
@@ -1246,17 +1251,17 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		src.SourceRootSubpath + "/" + moduleSourceConfigFilename(src),
 	}
 
-	if src.SourceSubpath == "." {
-		// "." ends up matching nothing, so we convert it to "*"
-		fullIncludePaths = append(fullIncludePaths, "*")
-	} else if src.SourceSubpath != "" {
-		// load the source dir if set
-		fullIncludePaths = append(fullIncludePaths, src.SourceSubpath)
-	} else {
-		// otherwise load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
+	sourcePath := src.SourceSubpath
+	if sourcePath == "" {
+		// with no source dir, load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
 		// that's now going to be upgraded to using the python sdk and needs pyproject.toml to be loaded
-		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath)
+		sourcePath = src.SourceRootSubpath
 	}
+	if sourcePath == "." {
+		// "." ends up matching nothing, so we convert it to "*"
+		sourcePath = "*"
+	}
+	fullIncludePaths = append(fullIncludePaths, sourcePath)
 
 	if src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil {
 		// Directory sources already carry their complete in-engine context.
@@ -2605,9 +2610,9 @@ func (s *moduleSourceSchema) buildModuleConfig(
 	if src.SDK != nil {
 		modCfg.SDK = &modules.SDK{
 			Source:       src.SDK.Source,
-			Debug:        src.SDK.Debug,
-			Config:       src.SDK.Config,
-			Experimental: src.SDK.Experimental,
+			Debug:        src.SDK.Debug,        //nolint:staticcheck // deprecated; written back for legacy JSON config compat
+			Config:       src.SDK.Config,       //nolint:staticcheck // deprecated; written back for legacy JSON config compat
+			Experimental: src.SDK.Experimental, //nolint:staticcheck // deprecated; written back for legacy JSON config compat
 		}
 	}
 

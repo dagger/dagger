@@ -21,6 +21,26 @@ func TestRedactedRemote(t *testing.T) {
 	}
 }
 
+func TestGitURLHTMLURL(t *testing.T) {
+	for _, tc := range []struct{ remote, want string }{
+		{"git@github.com:dagger/dagger.io", "https://github.com/dagger/dagger.io"},
+		{"git@github.com:dagger/dagger.io.git", "https://github.com/dagger/dagger.io"},
+		{"ssh://git@github.com:2222/dagger/dagger.io.git", "https://github.com/dagger/dagger.io"},
+		{"git://git.example:9418/team/repo.git", "https://git.example/team/repo"},
+		{"https://user:password@git.example:8443/team/repo.git#main:module", "https://git.example:8443/team/repo"},
+		{"http://git.example:8080/team/repo", "http://git.example:8080/team/repo"},
+		{"ssh://git@[::1]:2222/team/repo.git", "https://[::1]/team/repo"},
+	} {
+		t.Run(tc.remote, func(t *testing.T) {
+			u, err := ParseURL(tc.remote)
+			require.NoError(t, err)
+			original := u.String()
+			require.Equal(t, tc.want, u.HTMLURL())
+			require.Equal(t, original, u.String(), "browser links must not change the clone transport")
+		})
+	}
+}
+
 func TestParseURL(t *testing.T) {
 	tests := []struct {
 		url    string
@@ -204,6 +224,61 @@ func TestParseURL(t *testing.T) {
 				require.Equal(t, test.result.Fragment, remote.Fragment)
 				require.Equal(t, test.result.User.String(), remote.User.String())
 			}
+		})
+	}
+}
+
+func TestSameRepository(t *testing.T) {
+	const repo = "git@github.com:dagger/dagger.io"
+	for _, tc := range []struct {
+		other string
+		same  bool
+	}{
+		{"git@github.com:dagger/dagger.io.git", true},
+		{"https://github.com/dagger/dagger.io", true},
+		{"https://GitHub.com/dagger/dagger.io/", true},
+		{"ssh://git@github.com/dagger/dagger.io.git", true},
+		{"ssh://git@github.com:22/dagger/dagger.io", true},
+		{"https://github.com/dagger/dagger.io#main:docs", true},
+		{"ssh://git@github.com:2222/dagger/dagger.io", false},
+		{"https://github.com/dagger/dagger", false},
+		{"https://github.com/vito/dagger.io", false},
+		{"https://gitlab.com/dagger/dagger.io", false},
+	} {
+		t.Run(tc.other, func(t *testing.T) {
+			a, err := ParseURL(repo)
+			require.NoError(t, err)
+			b, err := ParseURL(tc.other)
+			require.NoError(t, err)
+			require.Equal(t, tc.same, SameRepository(a, b))
+			require.Equal(t, tc.same, SameRepository(b, a))
+		})
+	}
+	require.False(t, SameRepository(nil, nil))
+}
+
+func TestSameRepositoryPathCase(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		same bool
+	}{
+		// GitHub and GitLab route paths case-insensitively.
+		{"https://github.com/dagger/dagger.io", "https://github.com/Dagger/Dagger.io.git", true},
+		{"git@github.com:dagger/dagger.io", "https://GitHub.com/DAGGER/dagger.io", true},
+		{"https://gitlab.com/group/project", "git@gitlab.com:Group/Project.git", true},
+		{"https://github.com/dagger/dagger.io", "https://github.com/Dagger/dagger", false},
+		// Elsewhere, differently cased paths may be different repositories.
+		{"https://git.example.com/org/repo", "https://git.example.com/Org/Repo", false},
+		{"https://bitbucket.org/org/repo", "https://bitbucket.org/Org/repo", false},
+		{"https://git.example.com/org/repo", "https://git.example.com/org/repo.git", true},
+	} {
+		t.Run(tc.a+" "+tc.b, func(t *testing.T) {
+			a, err := ParseURL(tc.a)
+			require.NoError(t, err)
+			b, err := ParseURL(tc.b)
+			require.NoError(t, err)
+			require.Equal(t, tc.same, SameRepository(a, b))
+			require.Equal(t, tc.same, SameRepository(b, a))
 		})
 	}
 }

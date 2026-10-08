@@ -105,6 +105,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 		dagql.NodeFunc("withFiles", s.withFiles).
+			IsPersistable().
 			Doc(`Retrieves this directory plus the contents of the given files copied to the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location where copied files should be placed (e.g., "/src").`),
@@ -706,6 +707,7 @@ type dirWithTimestampsArgs struct {
 	Timestamp int
 }
 
+//nolint:dupl // symmetric with fileSchema.chown; each builds its own lazy object type
 func (s *directorySchema) withTimestamps(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirWithTimestampsArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1008,22 +1010,27 @@ func (s *directorySchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return inst, err
 	}
+	if len(files) == 0 {
+		return parent, nil
+	}
 
 	paths, err := core.SourceFilePaths(ctx, files)
 	if err != nil {
 		return inst, err
 	}
+	destPaths := make([]string, len(paths))
+	for i, filePath := range paths {
+		destPaths[i] = path.Join(args.Path, path.Base(filePath))
+	}
 
-	inst = parent
-	for i, file := range files {
-		fileID, err := file.ID()
+	// One file is the same as withFile, so share its result.
+	if len(files) == 1 {
+		fileID, err := files[0].ID()
 		if err != nil {
 			return inst, err
 		}
-
-		filePath := paths[i]
 		withFileArgs := []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(path.Join(args.Path, path.Base(filePath)))},
+			{Name: "path", Value: dagql.String(destPaths[0])},
 			{Name: "source", Value: dagql.NewID[*core.File](fileID)},
 		}
 		if args.Permissions.Valid {
@@ -1032,35 +1039,28 @@ func (s *directorySchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 				Value: dagql.Opt(args.Permissions.Value),
 			})
 		}
-
-		err = srv.Select(ctx, inst, &inst, dagql.Selector{
+		err = srv.Select(ctx, parent, &inst, dagql.Selector{
 			Field: "withFile",
 			Args:  withFileArgs,
 		})
-		if err != nil {
-			return inst, err
-		}
-	}
-	return inst, nil
-}
-
-type withoutDirectoryArgs struct {
-	Path string
-}
-
-func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
 		return inst, err
+	}
+
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
 	}
 
 	dir := &core.Directory{
 		Platform: parent.Self().Platform,
 		Services: slices.Clone(parent.Self().Services),
-		Lazy: &core.DirectoryWithoutLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Paths:     []string{args.Path},
+		Lazy: &core.DirectoryWithFilesLazy{
+			LazyState:   core.NewLazyState(),
+			Parent:      parent,
+			DestPaths:   destPaths,
+			Sources:     files,
+			Permissions: perms,
 		},
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
@@ -1071,11 +1071,25 @@ func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
+type withoutDirectoryArgs struct {
+	Path string
+}
+
+func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	return s.withoutPath(ctx, parent, args.Path)
+}
+
 type withoutFileArgs struct {
 	Path string
 }
 
 func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	return s.withoutPath(ctx, parent, args.Path)
+}
+
+// withoutPath backs withoutDirectory and withoutFile, which only differ in
+// their API argument types.
+func (s *directorySchema) withoutPath(ctx context.Context, parent dagql.ObjectResult[*core.Directory], path string) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
@@ -1087,7 +1101,7 @@ func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		Lazy: &core.DirectoryWithoutLazy{
 			LazyState: core.NewLazyState(),
 			Parent:    parent,
-			Paths:     []string{args.Path},
+			Paths:     []string{path},
 		},
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),

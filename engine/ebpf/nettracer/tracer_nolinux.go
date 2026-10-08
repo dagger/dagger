@@ -18,7 +18,7 @@ type EngineSample = Sample
 
 type Tracer struct{}
 
-type Attachment struct{}
+type Workload struct{}
 
 func New() (*Tracer, error) {
 	return nil, errUnsupported
@@ -32,15 +32,31 @@ func (*Tracer) Close() error {
 	return nil
 }
 
-func (*Tracer) AttachInterface(string) (*Attachment, error) {
+func WorkloadParentPath(string) (string, bool) {
+	return "", false
+}
+
+func (*Tracer) AttachWorkloads(string) error {
+	return errUnsupported
+}
+
+func (*Tracer) AddInternalPrefixesForVeth(string) error {
+	return errUnsupported
+}
+
+func CurrentNetnsCookie() (uint64, error) {
+	return 0, errUnsupported
+}
+
+func (*Tracer) Workload(string, uint64) (*Workload, error) {
 	return nil, errUnsupported
 }
 
-func (*Attachment) Sample() (Sample, error) {
+func (*Workload) Sample() (Sample, error) {
 	return Sample{}, errUnsupported
 }
 
-func (*Attachment) Close() error {
+func (*Workload) Close() error {
 	return nil
 }
 

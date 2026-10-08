@@ -16,6 +16,7 @@ type BKNetworkSampler interface {
 
 type netNSSampler struct {
 	netNS            BKNetworkSampler
+	mounts           BKNetworkSampler
 	meter            metric.Meter
 	commonAttrs      attribute.Set
 	baselineSample   *resourcestypes.NetworkSample
@@ -108,13 +109,21 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 		return fmt.Errorf("failed to sample bk netNS: %w", err)
 	}
 	bkSample = normalizeNetworkSample(bkSample)
+	mountSample := &resourcestypes.NetworkSample{ScopeSupported: true}
+	if s.mounts != nil {
+		mountSample, err = s.mounts.Sample()
+		if err != nil {
+			return fmt.Errorf("sample exec mount network: %w", err)
+		}
+		mountSample = normalizeNetworkSample(mountSample)
+	}
 
-	if s.baselineSample.ScopeSupported && bkSample.ScopeSupported {
+	if s.baselineSample.ScopeSupported && bkSample.ScopeSupported && mountSample.ScopeSupported {
 		sample.networkAvailable.add(1)
-		internalRX := bkSample.InternalRxBytes - s.baselineSample.InternalRxBytes
-		internalTX := bkSample.InternalTxBytes - s.baselineSample.InternalTxBytes
-		externalRX := bkSample.ExternalRxBytes - s.baselineSample.ExternalRxBytes
-		externalTX := bkSample.ExternalTxBytes - s.baselineSample.ExternalTxBytes
+		internalRX := bkSample.InternalRxBytes - s.baselineSample.InternalRxBytes + mountSample.InternalRxBytes
+		internalTX := bkSample.InternalTxBytes - s.baselineSample.InternalTxBytes + mountSample.InternalTxBytes
+		externalRX := bkSample.ExternalRxBytes - s.baselineSample.ExternalRxBytes + mountSample.ExternalRxBytes
+		externalTX := bkSample.ExternalTxBytes - s.baselineSample.ExternalTxBytes + mountSample.ExternalTxBytes
 		sample.networkRxBytes.add(internalRX + externalRX)
 		sample.networkTxBytes.add(internalTX + externalTX)
 		sample.internalRxBytes.add(internalRX)

@@ -579,7 +579,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			return fmt.Errorf("hydrate snapshot metadata: %w", err)
 		}
 
-		desiredLeaseIDs, err := c.desiredImportedOwnerLeaseIDs()
+		desiredLeaseIDs, err := c.desiredImportedOwnerLeaseIDs(ctx)
 		if err != nil {
 			return err
 		}
@@ -592,7 +592,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		}
 		c.egraphMu.RUnlock()
 		for _, res := range results {
-			links, err := desiredSnapshotLinksForResult(res, false)
+			links, err := desiredSnapshotLinksForResult(ctx, res, false)
 			if err != nil {
 				return err
 			}

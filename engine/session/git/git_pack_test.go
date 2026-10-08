@@ -182,6 +182,8 @@ type fakePackCheckoutServer struct {
 	grpc.ServerStream
 	ctx       context.Context
 	responses []*PackCheckoutResponse
+	// onSend, if set, runs before each message is recorded.
+	onSend func(*PackCheckoutResponse)
 }
 
 var _ Git_PackCheckoutServer = (*fakePackCheckoutServer)(nil)
@@ -194,6 +196,9 @@ func (s *fakePackCheckoutServer) Context() context.Context {
 }
 
 func (s *fakePackCheckoutServer) Send(resp *PackCheckoutResponse) error {
+	if s.onSend != nil {
+		s.onSend(resp)
+	}
 	// The handler streams every chunk out of a single reused read buffer,
 	// exactly as a real gRPC stream tolerates (it serializes each message on
 	// Send). Copy the chunk so our recorded slice does not get clobbered by

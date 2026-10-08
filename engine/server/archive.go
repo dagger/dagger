@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -578,12 +580,17 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			message = &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: clientdb.MetricsToPB(rows)}
 		}
 		if size := proto.Size(message); size > maxPayloadSize {
-			if rowCount == 1 {
-				return fmt.Errorf("archive %s row %d is %d bytes (maximum %d)", signal, next, size, maxPayloadSize)
+			if rowCount > 1 {
+				// Retry a smaller prefix at the last written cursor.
+				batchLimit = max(1, rowCount/2)
+				continue
 			}
-			// Retry a smaller prefix at the last written cursor.
-			batchLimit = max(1, rowCount/2)
-			continue
+			// A single row cannot be split. Failing here would make the whole
+			// history unreadable on every attempt, so shrink it instead.
+			message, err = shrinkOversizedArchiveRow(r.Context(), m.TraceID, signal, next, message, maxPayloadSize)
+			if err != nil {
+				return err
+			}
 		}
 		payload, err := proto.Marshal(message)
 		if err != nil {
@@ -597,6 +604,60 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	}
 	return enginetel.WriteLiveTerminal(w, high)
 }
+
+// shrinkOversizedArchiveRow fits a single archive row that alone exceeds the
+// frame limit, as the live stream does, rather than failing the whole read.
+// A span keeps its identity and drops its largest attribute values, usually a
+// huge dagger.io/dag.call frame, until it fits; a span still too large, or any
+// other oversized record, is skipped. Readers already tolerate a missing frame:
+// a restore needing it reports it missing for that one agent's closure. Agent
+// control records are never dropped: a history without one would silently
+// misstate an agent's lifecycle, so they still fail the read.
+func shrinkOversizedArchiveRow(ctx context.Context, traceID, signal string, row int64, message proto.Message, maxPayloadSize int) (proto.Message, error) {
+	size := proto.Size(message)
+	switch msg := message.(type) {
+	case *coltracepb.ExportTraceServiceRequest:
+		for _, rs := range msg.GetResourceSpans() {
+			for _, ss := range rs.GetScopeSpans() {
+				for _, span := range ss.GetSpans() {
+					attrs := slices.Clone(span.GetAttributes())
+					slices.SortStableFunc(attrs, func(a, b *commonpb.KeyValue) int { return proto.Size(b) - proto.Size(a) })
+					var dropped []string
+					for _, attr := range attrs {
+						if proto.Size(msg) <= maxPayloadSize {
+							break
+						}
+						span.Attributes = slices.DeleteFunc(span.Attributes, func(kv *commonpb.KeyValue) bool { return kv == attr })
+						dropped = append(dropped, fmt.Sprintf("%s (%d bytes)", attr.GetKey(), proto.Size(attr)))
+					}
+					if len(dropped) > 0 {
+						slog.WarnContext(ctx, "dropping oversized archive span attributes",
+							"trace", traceID, "row", row, "span", hex.EncodeToString(span.GetSpanId()), "name", span.GetName(),
+							"bytes", size, "maxBytes", maxPayloadSize, "dropped", dropped)
+					}
+				}
+			}
+		}
+		if proto.Size(msg) <= maxPayloadSize {
+			return msg, nil
+		}
+	case *collogspb.ExportLogsServiceRequest:
+		for _, rl := range msg.GetResourceLogs() {
+			for _, sl := range rl.GetScopeLogs() {
+				for _, rec := range sl.GetLogRecords() {
+					for _, kv := range rec.GetAttributes() {
+						if kv.GetKey() == agentcontrol.VersionAttr {
+							return nil, fmt.Errorf("archive %s row %d is an agent control record of %d bytes (maximum %d)", signal, row, size, maxPayloadSize)
+						}
+					}
+				}
+			}
+		}
+	}
+	slog.WarnContext(ctx, "skipping oversized archive row", "trace", traceID, "signal", signal, "row", row, "bytes", size, "maxBytes", maxPayloadSize)
+	return message.ProtoReflect().New().Interface(), nil
+}
+
 func archiveHistoryLogs(rows []clientdb.Log, traceID string, includeControl bool) ([]clientdb.Log, error) {
 	var filtered []clientdb.Log
 	for _, row := range rows {

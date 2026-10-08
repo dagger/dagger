@@ -84,3 +84,51 @@ func TestAttributedNetworkMetrics(t *testing.T) {
 	available := data.ScopeMetrics[0].Metrics[0].Data.(metricdata.Gauge[int64])
 	require.EqualValues(t, 0, available.DataPoints[0].Value)
 }
+
+func TestExecNetworkIncludesMountSetupAndFinalTraffic(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(t.Context())) })
+	sampler, err := newNetNSSampler(&networkSamples{samples: []*resourcestypes.NetworkSample{
+		{ScopeSupported: true, ExternalTxBytes: 100},
+		{ScopeSupported: true, ExternalTxBytes: 110},
+		{ScopeSupported: true, ExternalTxBytes: 110},
+	}}, provider.Meter("test"), attribute.NewSet())
+	require.NoError(t, err)
+	// Mount setup has already sent 20 bytes when container sampling starts.
+	// It sends another 5 while unmounting, after the container exits.
+	sampler.mounts = &networkSamples{samples: []*resourcestypes.NetworkSample{
+		{ScopeSupported: true, ExternalTxBytes: 20},
+		{ScopeSupported: true, ExternalTxBytes: 25},
+	}}
+	for _, want := range []int64{30, 35} {
+		require.NoError(t, sampler.sample(t.Context()))
+		var data metricdata.ResourceMetrics
+		require.NoError(t, reader.Collect(t.Context(), &data))
+		got := map[string]int64{}
+		for _, current := range data.ScopeMetrics[0].Metrics {
+			got[current.Name] = current.Data.(metricdata.Gauge[int64]).DataPoints[0].Value
+		}
+		require.Equal(t, want, got[telemetryattrs.NetworkExternalTxBytes])
+		require.Equal(t, want, got[telemetryattrs.NetworkTxBytes])
+		require.EqualValues(t, 1, got[telemetryattrs.NetworkAvailable])
+	}
+}
+
+func TestExecNetworkUnavailableWhenMountAccountingFails(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(t.Context())) })
+	sampler, err := newNetNSSampler(&networkSamples{samples: []*resourcestypes.NetworkSample{
+		{ScopeSupported: true}, {ScopeSupported: true, ExternalTxBytes: 10},
+	}}, provider.Meter("test"), attribute.NewSet())
+	require.NoError(t, err)
+	sampler.mounts = &networkSamples{samples: []*resourcestypes.NetworkSample{{}}}
+	require.NoError(t, sampler.sample(t.Context()))
+	var data metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(t.Context(), &data))
+	require.Len(t, data.ScopeMetrics[0].Metrics, 1)
+	current := data.ScopeMetrics[0].Metrics[0]
+	require.Equal(t, telemetryattrs.NetworkAvailable, current.Name)
+	require.Zero(t, current.Data.(metricdata.Gauge[int64]).DataPoints[0].Value)
+}

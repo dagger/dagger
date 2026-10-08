@@ -2,14 +2,13 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"path"
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -75,8 +74,6 @@ func (s *workspaceSchema) freeze(
 	case *core.WorkspaceSourceGitRef:
 		return s.checkpointGitRef(ctx, srv, parent, src, nil)
 	case *core.WorkspaceSourceOverlay:
-		// Rootless workspaces deliberately ignore their host path and accumulate
-		// edits against an in-engine empty tree.
 		switch base := src.Base.(type) {
 		case *core.WorkspaceSourceDirectory:
 			return parent, nil
@@ -89,6 +86,8 @@ func (s *workspaceSchema) freeze(
 			}
 			return checkpointOverlay(ctx, srv, frozen, src.Changes)
 		case *core.WorkspaceSourceRootlessLocal:
+			// Rootless workspaces deliberately ignore their host path and
+			// accumulate edits against an in-engine empty tree.
 			return s.checkpointRootless(ctx, srv, parent)
 		default:
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace snapshot cannot normalize overlay base %T", src.Base)
@@ -229,10 +228,56 @@ func (s *workspaceSchema) checkpointClientLocal(
 	if err != nil {
 		return inst, fmt.Errorf("construct portable workspace snapshot: %w", err)
 	}
+	// A successful owning-client capture approves this checkout as a donor of
+	// the captured anchor's history; later ref moves do not change its closure.
+	// Retain only an optional session-local donor capability, not host objects
+	// or client routes in the portable recipe. Bundle-backed (dirty/unpushed)
+	// captures retain their existing local repository path; only a clean remote
+	// base can donate complete history lazily, when history is demanded. The
+	// donor is only an optimization: registering none never fails the snapshot.
+	registerCheckpointHostHistory(clientCtx, query, ws, inst.Self(), metadata, len(bundle) != 0)
 
 	return inst, nil
 }
 
+// registerCheckpointHostHistory reports whether the capture registered an
+// approved host history donor. It never fails; why it registered none is
+// recorded on the current span.
+func registerCheckpointHostHistory(ctx context.Context, query *core.Query, captured, frozen *core.Workspace, metadata *gitsession.CaptureGitMetadata, hasBundle bool) bool {
+	if hasBundle {
+		return core.SkipHostHistoryDonor(ctx, "bundle-backed capture", nil)
+	}
+	if metadata.RemoteUrl == "" {
+		return core.SkipHostHistoryDonor(ctx, "capture has no remote URL", nil)
+	}
+	source, ok := frozen.BaseSource().(*core.WorkspaceSourceGitRef)
+	if !ok || source.Ref.Self() == nil {
+		return core.SkipHostHistoryDonor(ctx, "snapshot base is not a Git ref", nil)
+	}
+	return query.RegisterCapturedHostHistory(ctx, source.Ref.Self().Repo, captured.ClientID, captured.HostPath(), metadata.BaseSha, metadata.RemoteUrl)
+}
+
+// checkpointGitRef freezes a Git workspace: its base becomes a detached
+// commit, and its overlay is kept by reference.
+//
+// The commit is already fixed: Git refs record their resolved commit
+// (__resolvedRef) when selected, so even a workspace on a branch never moves
+// with it. But a named ref still selects that name, and committing onto it
+// advances the name in the committed repository's own storage, where it would
+// then shadow the upstream's (see LocalGitRepository.Upstream). So a named ref
+// is re-selected by its SHA, detaching it. A ref already selected by SHA, from
+// a repository whose remote selection is fixed, is kept as it is.
+//
+// A local checkout whose remote selection was never recorded reads its branch
+// tracking from its current branch, which detaching HEAD loses. Its selection
+// is recorded first, so the frozen repository, and checkouts derived from it,
+// still name their upstream remote.
+//
+// Rebuilding the base reapplies the overlay onto it by reference, never as a
+// rendered patch: tool edits are already patch blobs, and MCP deliberately
+// keeps binary and oversized outputs out of the recipe as raw changesets (see
+// MCP.applyChangeset). Edits made through the API stay the recipes that made
+// them.
 func (s *workspaceSchema) checkpointGitRef(
 	ctx context.Context,
 	srv *dagql.Server,
@@ -246,8 +291,35 @@ func (s *workspaceSchema) checkpointGitRef(
 		return inst, fmt.Errorf("workspace snapshot Git source has no resolved commit")
 	}
 
+	repo := ref.Repo
+	_, local := repo.Self().Backend.(*core.LocalGitRepository)
+	recordSelection := local && repo.Self().UpstreamRemote == nil
+	// The SHA resolvers keep the resolved SHA as the name: still detached.
+	detached := ref.Ref.Name == "" || ref.Ref.Name == ref.Ref.SHA
+	if detached && !recordSelection {
+		return parent, nil
+	}
+	if recordSelection {
+		remotes, upstream, err := repo.Self().ConfiguredRemotes(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("read workspace Git remotes: %w", err)
+		}
+		data, err := json.Marshal(remotes)
+		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
+			Field: "__withRemoteSelection",
+			Args: []dagql.NamedInput{
+				{Name: "remotes", Value: dagql.String(data)},
+				{Name: "upstreamRemote", Value: dagql.String(upstream)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("record workspace Git remotes: %w", err)
+		}
+	}
 	var pinned dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, ref.Repo, &pinned, dagql.Selector{
+	if err := srv.Select(ctx, repo, &pinned, dagql.Selector{
 		Field: "ref",
 		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.NewString(ref.Ref.SHA)}},
 	}); err != nil {
@@ -261,9 +333,14 @@ func (s *workspaceSchema) checkpointGitRef(
 	}
 
 	if overlay != nil && overlay.Changes.Self() != nil {
-		var err error
-		inst, err = checkpointOverlay(ctx, srv, inst, overlay.Changes)
+		changesID, err := overlay.Changes.ID()
 		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, inst, &inst, dagql.Selector{
+			Field: "withChanges",
+			Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+		}); err != nil {
 			return inst, fmt.Errorf("reapply workspace Git overlay: %w", err)
 		}
 	}
@@ -388,17 +465,10 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 	}
 
 	nextPhase("checkpoint construct HEAD workspace")
-	if metadata.RemotePushUrl != "" {
-		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
-			Field: "withRemote",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.NewString("origin")},
-				{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)},
-				{Name: "pushUrl", Value: dagql.NewString(metadata.RemotePushUrl)},
-			},
-		}); err != nil {
-			return inst, fmt.Errorf("record workspace push destinations: %w", err)
-		}
+	var err error
+	repo, err = s.checkpointCapturedGitRemotes(ctx, srv, repo, metadata)
+	if err != nil {
+		return inst, err
 	}
 
 	var head dagql.ObjectResult[*core.GitRef]
@@ -471,6 +541,54 @@ func (s *workspaceSchema) checkpointCapturedGitCompositionWithBase(
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, captured, workspaceEnv)
 }
 
+// checkpointCapturedGitRemotes records captured routing, including the legacy
+// origin push destination when an older client omits named-remote metadata.
+func (s *workspaceSchema) checkpointCapturedGitRemotes(
+	ctx context.Context,
+	srv *dagql.Server,
+	repo dagql.ObjectResult[*core.GitRepository],
+	metadata *gitsession.CaptureGitMetadata,
+) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
+	if metadata.HasRemoteMetadata {
+		remotes := make([]core.GitRemote, 0, len(metadata.Remotes))
+		for _, remote := range metadata.Remotes {
+			entry := core.GitRemote{Name: remote.Name, URL: remote.Url, PushURL: remote.PushUrl}
+			if remote.Name == metadata.RemoteName && metadata.RemoteUrl != "" {
+				entry.URL, entry.PushURL = metadata.RemoteUrl, metadata.RemotePushUrl
+			}
+			remotes = append(remotes, entry)
+		}
+		data, err := json.Marshal(remotes)
+		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
+			Field: "__withRemoteSelection",
+			Args: []dagql.NamedInput{
+				{Name: "remotes", Value: dagql.String(data)},
+				{Name: "upstreamRemote", Value: dagql.String(metadata.UpstreamRemote)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("record captured remotes: %w", err)
+		}
+		return repo, nil
+	}
+	if metadata.RemotePushUrl != "" {
+		if err := srv.Select(ctx, repo, &repo, dagql.Selector{
+			Field: "withRemote",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString("origin")},
+				{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)},
+				{Name: "pushUrl", Value: dagql.NewString(metadata.RemotePushUrl)},
+			},
+		}); err != nil {
+			return inst, fmt.Errorf("record workspace push destinations: %w", err)
+		}
+	}
+
+	return repo, nil
+}
+
 func checkpointSSHAuthArgs(ctx context.Context, srv *dagql.Server) ([]dagql.NamedInput, error) {
 	caller, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -524,6 +642,16 @@ func checkpointWorkspaceMetadataComposition(
 		return inst, err
 	}
 	inst = withEnv
+	// The user-level overlay rides in the recipe, so the frozen workspace
+	// keeps the configuration it was captured with, even when rebuilt in
+	// another session; Workspace.withUserConfig refreshes it explicitly.
+	if overlay := metadata.UserConfigOverlay(); overlay != nil {
+		withOverlay, err := workspaceWithUserConfigOverlay(ctx, srv, inst, overlay)
+		if err != nil {
+			return inst, err
+		}
+		inst = withOverlay
+	}
 	if mounts, ok := metadata.MountsDir(); ok {
 		for _, mountPath := range metadata.MountPoints() {
 			stat, err := mounts.Self().Stat(ctx, mounts, srv, mountPath, true)
@@ -592,124 +720,56 @@ func checkpointApprovalSummary(candidates []*gitsession.CaptureGitCandidate) str
 	return summary.String()
 }
 
-// checkpointOverlay records only the already-approved engine edits as a patch.
-// Keeping the old Changeset ID would retain the live host receiver in the recipe.
+// checkpointOverlay records a host-backed workspace's engine edits on top of
+// its captured checkout, so the frozen recipe no longer reads the client's
+// filesystem. The overlay itself cannot be kept: it is diffed against a
+// sparse live host read (see overlayEditWithHost), and MCP applies tool edits
+// to a host-backed workspace raw. So it is rendered against the captured tree
+// and recorded as that patch (core.ApplyPatchOnto), as MCP records tool edits
+// on an in-engine workspace.
+//
+// A patch core.EmbedPatch refuses, too large or carrying a binary file, is not
+// recorded: binaries and large content stay out of recipes and traces. The
+// overlay is applied raw instead, as MCP.applyChangeset does, and that is the
+// one case where the frozen recipe still depends on the host: replaying it
+// re-reads the touched host paths, through the owning client.
 func checkpointOverlay(
 	ctx context.Context,
 	srv *dagql.Server,
 	frozen dagql.ObjectResult[*core.Workspace],
 	changes dagql.ObjectResult[*core.Changeset],
 ) (out dagql.ObjectResult[*core.Workspace], err error) {
-	var patch dagql.ObjectResult[*core.File]
-	if err := srv.Select(ctx, changes, &patch, dagql.Selector{Field: "asPatch"}); err != nil {
-		return out, err
-	}
-	data, err := patch.Self().Contents(ctx, patch, nil, nil)
-	if err != nil {
-		return out, err
-	}
 	var before dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, frozen, &before, dagql.Selector{
 		Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString("/")}},
 	}); err != nil {
 		return out, err
 	}
-	beforeID, err := before.ID()
-	if err != nil {
-		return out, err
-	}
-	after := before
-	if len(data) > 0 {
-		var blob dagql.ObjectResult[*core.File]
-		if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
-			Field: "blob", Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.NewString("workspace-overlay.patch")},
-				{Name: "contents", Value: dagql.Bytes(data)},
-				{Name: "permissions", Value: dagql.NewInt(0o600)},
-			},
-		}); err != nil {
-			return out, err
+	// Rendered against the frozen tree itself, and bounded: git stops at the
+	// first binary hunk or past the budget, rather than writing out a build
+	// output's base85 only for it to be refused.
+	rendered, err := changes.Self().RenderPatchOnto(ctx, before, ".", core.EmbeddedPatchMaxBytes)
+	if err == nil {
+		if rendered.IsEmpty() {
+			return frozen, nil
 		}
-		blobID, err := blob.ID()
+		// Rendered against this very tree, so it fits by construction.
+		out, err = core.ApplyPatchOnto(ctx, srv, frozen, rendered, "workspace-overlay.patch", core.PatchConflictFail)
+	}
+	if core.PatchNotEmbeddable(err) {
+		changesID, err := changes.ID()
 		if err != nil {
 			return out, err
 		}
-		if err := srv.Select(ctx, before, &after, dagql.Selector{
-			Field: "withPatchFile", Args: []dagql.NamedInput{{Name: "patch", Value: dagql.NewID[*core.File](blobID)}},
-		}); err != nil {
-			return out, fmt.Errorf("apply workspace overlay to checkpoint: %w", err)
-		}
-	}
-	after, err = checkpointOverlayDirectories(ctx, srv, after, changes.Self())
-	if err != nil {
+		err = srv.Select(ctx, frozen, &out, dagql.Selector{
+			Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+		})
 		return out, err
 	}
-	var delta dagql.ObjectResult[*core.Changeset]
-	if err := srv.Select(ctx, after, &delta,
-		dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}}},
-	); err != nil {
+	if err != nil {
 		return out, fmt.Errorf("apply workspace overlay to checkpoint: %w", err)
 	}
-	deltaID, err := delta.ID()
-	if err != nil {
-		return out, err
-	}
-	err = srv.Select(ctx, frozen, &out, dagql.Selector{
-		Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](deltaID)}},
-	})
-	return out, err
-}
-
-// Git patches cannot record empty directories. Restore directory edits with
-// literal paths and modes, without retaining the old (possibly live) recipe.
-// Include parents of deleted files: applying a patch can remove a directory
-// whose final file was deleted even when the overlay kept that directory.
-func checkpointOverlayDirectories(ctx context.Context, srv *dagql.Server, after dagql.ObjectResult[*core.Directory], changes *core.Changeset) (dagql.ObjectResult[*core.Directory], error) {
-	paths, err := changes.ComputePaths(ctx)
-	if err != nil {
-		return after, err
-	}
-	var candidates []string
-	for _, p := range slices.Concat(paths.Added, paths.AllRemoved) {
-		if strings.HasSuffix(p, "/") {
-			candidates = append(candidates, strings.TrimSuffix(p, "/"))
-		}
-	}
-	for _, p := range paths.AllRemoved {
-		for parent := path.Dir(strings.TrimSuffix(p, "/")); parent != "." && parent != "/"; parent = path.Dir(parent) {
-			candidates = append(candidates, parent)
-		}
-	}
-	slices.Sort(candidates)
-	for _, p := range slices.Compact(candidates) {
-		want, err := changes.After.Self().Stat(ctx, changes.After, srv, p, true)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
-			return after, err
-		}
-		actual, err := after.Self().Stat(ctx, after, srv, p, true)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
-			return after, err
-		}
-		selector := dagql.Selector{Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString(p)}}}
-		switch {
-		case want != nil && want.IsDir():
-			if actual != nil && actual.IsDir() && actual.Permissions == want.Permissions {
-				continue
-			}
-			selector.Field = "withNewDirectory"
-			selector.Args = append(selector.Args, dagql.NamedInput{Name: "permissions", Value: dagql.NewInt(want.Permissions)})
-		case want == nil && actual != nil && actual.IsDir():
-			selector.Field = "withoutDirectory"
-		default:
-			continue
-		}
-		var updated dagql.ObjectResult[*core.Directory]
-		if err := srv.Select(ctx, after, &updated, selector); err != nil {
-			return after, err
-		}
-		after = updated
-	}
-	return after, nil
+	return out, nil
 }
 
 func checkpointBundleChunks(chunks []capturedCheckpointChunk) (bundle [][]byte) {

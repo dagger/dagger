@@ -1113,7 +1113,7 @@ func (ContainerSuite) TestWithEnvVariableExpand(ctx context.Context, t *testctx.
 
 		require.NoError(t, err)
 		require.Equal(t,
-			"/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n",
+			"/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/dev/.dagger\n",
 			out,
 		)
 	})
@@ -5327,6 +5327,74 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// nestedMainClientCheck is a shell function that succeeds when a Dagger CLI
+// started with the given client ID is the main client of a session:
+// engine.clients lists exactly the main client of every session. A failed
+// query exits the shell, so it can never count as "not a main client".
+const nestedMainClientCheck = `isMain() {
+	clients=$(DAGGER_SESSION_CLIENT_ID="$1" dagger query --doc /clients.graphql) || exit 1
+	case "$clients" in *"\"$1\""*) return 0 ;; esac
+	return 1
+}`
+
+func (ContainerSuite) TestNestedExecNewSession(ctx context.Context, t *testctx.T) {
+	base := func(c *dagger.Client) *dagger.Container {
+		return c.Container().From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithNewFile("/clients.graphql", `{ engine { clients } }`)
+	}
+
+	t.Run("env", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := base(c).
+			WithExec([]string{"sh", "-c", `echo "engine=${DAGGER_ENGINE%%:*} port=${DAGGER_SESSION_PORT:-} token=${DAGGER_SESSION_TOKEN:+set} nested=${_DAGGER_NESTED_CLIENT_ID:-}"`},
+				dagger.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "engine=tcp port= token= nested=\n", out)
+	})
+
+	t.Run("each client is a new session", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := base(c).
+			WithEnvVariable("ID1", identity.NewID()).
+			WithEnvVariable("ID2", identity.NewID()).
+			WithEnvVariable("ID3", identity.NewID()).
+			WithEnvVariable("ID4", identity.NewID()).
+			WithEnvVariable("ID5", identity.NewID())
+
+		// Two clients one after the other, then two at once.
+		_, err := ctr.WithExec([]string{"sh", "-ec", nestedMainClientCheck + `
+			isMain "$ID1"
+			isMain "$ID2"
+			isMain "$ID3" & a=$!
+			isMain "$ID4" & b=$!
+			wait "$a"
+			wait "$b"
+		`}, dagger.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).Sync(ctx)
+		require.NoError(t, err)
+
+		// By default the same CLI joins the caller's session as a nested
+		// client, which is not a session's main client.
+		out, err := ctr.WithExec([]string{"sh", "-c", nestedMainClientCheck + `
+			if isMain "$ID5"; then echo main; else echo nested; fi
+		`}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "nested\n", out)
+	})
+
+	t.Run("conflicts with disableDaggerInDagger", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := c.Container().From(alpineImage).
+			WithExec([]string{"true"}, dagger.ContainerWithExecOpts{
+				DisableDaggerInDagger:    true,
+				DaggerInDaggerNewSession: true,
+			}).
+			Sync(ctx)
+		requireErrOut(t, err, `cannot set both "disableDaggerInDagger" and "daggerInDaggerNewSession"`)
+	})
+}
+
 func (ContainerSuite) TestEmptyExecDiff(ctx context.Context, t *testctx.T) {
 	// if an exec makes no changes, the diff should be empty, including of files
 	// mounted in by the engine like the init/resolv.conf/etc.
@@ -6244,7 +6312,23 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestSaveHostContainerd(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	nerdctl := nerdctlSetup(ctx, t, c, containerSetupOpts{name: "save-host-containerd", version: "v2.1.2"})
+	nerdctl := nerdctlSetup(ctx, t, c, containerSetupOpts{
+		name:    "save-host-containerd",
+		version: "v2.1.2",
+		// Increase GC pressure so content the export writes without a lease
+		// is likely to be deleted before the image record that references it
+		// is created.
+		middleware: func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithExec([]string{"sh", "-c", `cat >> /etc/containerd/config.toml <<'EOF'
+
+[plugins."io.containerd.gc.v1.scheduler"]
+  pause_threshold = 0.5
+  mutation_threshold = 1
+  schedule_delay = "0s"
+  startup_delay = "0s"
+EOF`})
+		},
+	})
 	nerdctl, err := nerdctlLoadEngine(ctx, c, nerdctl, "registry.dagger.io/engine:dev")
 	require.NoError(t, err)
 

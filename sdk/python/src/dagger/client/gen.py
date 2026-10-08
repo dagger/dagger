@@ -3331,6 +3331,7 @@ class Container(Type):
         use_entrypoint: bool | None = False,
         disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
+        dagger_in_dagger_new_session: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -3353,6 +3354,15 @@ class Container(Type):
         experimental_privileged_nesting:
             .. deprecated:: Commands can access Dagger by default. Use
             "disableDaggerInDagger" to opt out.
+        dagger_in_dagger_new_session:
+            Connect Dagger clients started by the command to the current
+            engine as new sessions, instead of as clients of the current
+            session. Each connection gets its own session, released when that
+            client closes.
+            The command reaches the engine through DAGGER_ENGINE, so SDKs run
+            a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the
+            container, or let the SDK download one.
+            Cannot be combined with "disableDaggerInDagger".
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -3376,6 +3386,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerInDaggerNewSession", dagger_in_dagger_new_session, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -4326,6 +4337,7 @@ class Container(Type):
         use_entrypoint: bool | None = False,
         disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
+        dagger_in_dagger_new_session: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -4355,6 +4367,15 @@ class Container(Type):
         experimental_privileged_nesting:
             .. deprecated:: Commands can access Dagger by default. Use
             "disableDaggerInDagger" to opt out.
+        dagger_in_dagger_new_session:
+            Connect Dagger clients started by the command to the current
+            engine as new sessions, instead of as clients of the current
+            session. Each connection gets its own session, released when that
+            client closes.
+            The command reaches the engine through DAGGER_ENGINE, so SDKs run
+            a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the
+            container, or let the SDK download one.
+            Cannot be combined with "disableDaggerInDagger".
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -4393,6 +4414,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerInDaggerNewSession", dagger_in_dagger_new_session, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -4699,6 +4721,7 @@ class Container(Type):
         expect: ReturnType | None = ReturnType.SUCCESS,
         disable_dagger_in_dagger: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
+        dagger_in_dagger_new_session: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -4738,6 +4761,15 @@ class Container(Type):
         experimental_privileged_nesting:
             .. deprecated:: Commands can access Dagger by default. Use
             "disableDaggerInDagger" to opt out.
+        dagger_in_dagger_new_session:
+            Connect Dagger clients started by the command to the current
+            engine as new sessions, instead of as clients of the current
+            session. Each connection gets its own session, released when that
+            client closes.
+            The command reaches the engine through DAGGER_ENGINE, so SDKs run
+            a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the
+            container, or let the SDK download one.
+            Cannot be combined with "disableDaggerInDagger".
         insecure_root_capabilities:
             Execute the command with all root capabilities. Like --privileged
             in Docker
@@ -4766,6 +4798,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("daggerInDaggerNewSession", dagger_in_dagger_new_session, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -10493,6 +10526,36 @@ class GitRef(Type):
         _ctx = self._select("commonAncestor", _args)
         return GitRef(_ctx)
 
+    async def contains(self, other: Self) -> bool:
+        """Return true when the other ref's commit equals this commit or is an
+        ancestor of it.
+
+        Compares commit history across branches, tags and detached refs.
+        Incomplete or unavailable history is an error.
+
+        Parameters
+        ----------
+        other:
+            The ref whose commit to look for in this ref's history.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("other", other),
+        ]
+        _ctx = self._select("contains", _args)
+        return await _ctx.execute(bool)
+
     async def id(self) -> str:
         """A unique identifier for this GitRef.
 
@@ -10756,6 +10819,72 @@ class GitRef(Type):
 
 
 @typecheck
+class GitRemote(Type):
+    """A named reference to a remote Git repository."""
+
+    async def id(self) -> str:
+        """A unique identifier for this GitRemote.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The remote's name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    def repository(self) -> "GitRepository":
+        """Access this remote's repository using its fetch URL and the caller's
+        credentials, or the source's existing capability for this exact
+        destination.
+
+        HEAD is the remote's HEAD, independent of the workspace's selected
+        commit. Remote registration alone does not grant credentials.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("repository", _args)
+        return GitRepository(_ctx)
+
+
+@typecheck
 class GitRepository(Type):
     """A git repository."""
 
@@ -10876,6 +11005,17 @@ class GitRepository(Type):
         _ctx = self._select("commit", _args)
         return GitCommit(_ctx)
 
+    async def default_remote(self) -> GitRemote | None:
+        """Return the sole remote, otherwise origin, otherwise the selected
+        branch's upstream remote, otherwise null.
+
+        Frozen workspaces retain their captured upstream selection. Does not
+        contact remote servers.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("defaultRemote", _args)
+        return await _ctx.execute_object(GitRemote)
+
     def head(self, *, no_lock: bool | None = False) -> GitRef:
         """Returns details for HEAD.
 
@@ -10971,6 +11111,10 @@ class GitRepository(Type):
             the resulting commit; remote repositories fetch the history the
             walk needs. Other git revision syntax (`^{...}`, `@{...}`,
             `:path`, ranges) is not supported.
+            A repository derived from a remote one (e.g. a workspace's history
+            after a snapshot or commit) resolves names and commits it does not
+            contain itself through that remote, with its authentication. Its
+            branches and tags listings include the remote's.
         no_lock:
             Ignore the workspace lockfile for this lookup.
         """
@@ -10980,6 +11124,28 @@ class GitRepository(Type):
         ]
         _ctx = self._select("ref", _args)
         return GitRef(_ctx)
+
+    def remote(self, name: str) -> GitRemote:
+        """Look up a remote by name. Fails when the remote does not exist.
+
+        Parameters
+        ----------
+        name:
+            The remote's name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("remote", _args)
+        return GitRemote(_ctx)
+
+    async def remotes(self) -> list[GitRemote]:
+        """List this repository's named remotes, with registered remotes
+        overriding configured ones. Does not contact remote servers.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("remotes", _args)
+        return await _ctx.execute_object_list(GitRemote)
 
     def tag(
         self,
@@ -11098,6 +11264,10 @@ class GitRepository(Type):
         configuration; that configuration is not rewritten. Use
         Directory.asGit to open the supplied repository without retaining the
         receiver's routing.
+
+        When the receiver is a remote repository (or was derived from one),
+        that remote is retained with its authentication: refs the supplied
+        storage does not contain resolve through it.
 
         Parameters
         ----------
@@ -18948,6 +19118,39 @@ class Workspace(Type):
         _ctx = self._select("withNewFile", _args)
         return Workspace(_ctx)
 
+    def with_patch_file(
+        self,
+        patch: File,
+        *,
+        on_conflict: PatchConflict | None = PatchConflict.FAIL,
+    ) -> Self:
+        """Return this workspace with the given Git-compatible patch file
+        applied, without mutating the source.
+
+        Paths in the patch are relative to the workspace root, whatever its
+        cwd, as `git diff` writes them. Patching a path at or under a mount is
+        an error.
+
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        patch:
+            File containing the patch to apply
+        on_conflict:
+            How to handle hunks that no longer apply to the target content:
+            fail (default), or apply what fits and leave git-style conflict
+            markers where it doesn't.
+        """
+        _args = [
+            Arg("patch", patch),
+            Arg("onConflict", on_conflict, PatchConflict.FAIL),
+        ]
+        _ctx = self._select("withPatchFile", _args)
+        return Workspace(_ctx)
+
     def with_reset(
         self,
         commit: str,
@@ -19110,6 +19313,22 @@ class Workspace(Type):
         _ctx = self._select("withUpdatedModules", _args)
         return Workspace(_ctx)
 
+    def with_user_config(self) -> Self:
+        """Return this workspace with the calling client's user-level config re-
+        read and applied.
+
+        User-level config (the [workspaces.*] section of the Dagger config
+        file) is read when a session loads its workspace, and snapshots keep
+        that configuration. Call this to pick up edits made since, for example
+        when an agent reloads its modules.
+
+        The entry is matched by the workspace's git origin remote. A workspace
+        without one, or without a matching entry, gets no user-level config.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withUserConfig", _args)
+        return Workspace(_ctx)
+
     def with_workdir(self, path: str) -> Self:
         """Return this workspace with its working directory pointed at the given
         workspace-relative path.
@@ -19239,6 +19458,21 @@ class Workspace(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withoutFile", _args)
+        return Workspace(_ctx)
+
+    def without_files(self, paths: list[str]) -> Self:
+        """Return this workspace with files removed, without mutating the source.
+
+        Parameters
+        ----------
+        paths:
+            Paths of the files to remove. Relative paths resolve from the
+            workspace cwd.
+        """
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withoutFiles", _args)
         return Workspace(_ctx)
 
     def without_module(
@@ -20139,6 +20373,7 @@ __all__ = [
     "GitPushDisposition",
     "GitPushResult",
     "GitRef",
+    "GitRemote",
     "GitRepository",
     "HTTPState",
     "HealthcheckConfig",

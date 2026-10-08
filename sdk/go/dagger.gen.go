@@ -3488,6 +3488,12 @@ type ContainerAsServiceOpts struct {
 
 	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
+	// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+	//
+	// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+	//
+	// Cannot be combined with "disableDaggerInDagger".
+	DaggerInDaggerNewSession bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -3519,6 +3525,10 @@ func (r *Container) AsService(opts ...ContainerAsServiceOpts) *Service {
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `daggerInDaggerNewSession` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DaggerInDaggerNewSession) {
+			q = q.Arg("daggerInDaggerNewSession", opts[i].DaggerInDaggerNewSession)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -4432,6 +4442,12 @@ type ContainerUpOpts struct {
 
 	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
+	// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+	//
+	// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+	//
+	// Cannot be combined with "disableDaggerInDagger".
+	DaggerInDaggerNewSession bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -4474,6 +4490,10 @@ func (r *Container) Up(ctx context.Context, opts ...ContainerUpOpts) error {
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `daggerInDaggerNewSession` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DaggerInDaggerNewSession) {
+			q = q.Arg("daggerInDaggerNewSession", opts[i].DaggerInDaggerNewSession)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -4766,6 +4786,12 @@ type ContainerWithExecOpts struct {
 
 	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
+	// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+	//
+	// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+	//
+	// Cannot be combined with "disableDaggerInDagger".
+	DaggerInDaggerNewSession bool
 	// Execute the command with all root capabilities. Like --privileged in Docker
 	//
 	// DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
@@ -4813,6 +4839,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `daggerInDaggerNewSession` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DaggerInDaggerNewSession) {
+			q = q.Arg("daggerInDaggerNewSession", opts[i].DaggerInDaggerNewSession)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -10841,6 +10871,7 @@ type GitRef struct {
 
 	commit    *string
 	commitSHA *string
+	contains  *bool
 	id        *ID
 	name      *string
 	ref       *string
@@ -10931,6 +10962,23 @@ func (r *GitRef) CommonAncestor(other *GitRef) *GitRef {
 	return &GitRef{
 		query: q,
 	}
+}
+
+// Return true when the other ref's commit equals this commit or is an ancestor of it.
+//
+// Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.
+func (r *GitRef) Contains(ctx context.Context, other *GitRef) (bool, error) {
+	assertNotNil("other", other)
+	if r.contains != nil {
+		return *r.contains, nil
+	}
+	q := r.query.Select("contains")
+	q = q.Arg("other", other)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this GitRef.
@@ -11210,6 +11258,92 @@ func (r *GitRef) AsNode() Node {
 	}
 }
 
+// A named reference to a remote Git repository.
+type GitRemote struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	name *string
+}
+
+func (r *GitRemote) WithGraphQLQuery(q *querybuilder.Selection) *GitRemote {
+	return &GitRemote{
+		query: q,
+	}
+}
+
+// A unique identifier for this GitRemote.
+func (r *GitRemote) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitRemote) XXX_GraphQLType() string {
+	return "GitRemote"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitRemote) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitRemote) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitRemote) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The remote's name.
+func (r *GitRemote) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Access this remote's repository using its fetch URL and the caller's credentials, or the source's existing capability for this exact destination.
+//
+// HEAD is the remote's HEAD, independent of the workspace's selected commit. Remote registration alone does not grant credentials.
+func (r *GitRemote) Repository() *GitRepository {
+	q := r.query.Select("repository")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// AsNode returns this GitRemote as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitRemote) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A git repository.
 type GitRepository struct {
 	query *querybuilder.Selection
@@ -11333,6 +11467,25 @@ func (r *GitRepository) Commit(id string) *GitCommit {
 	}
 }
 
+// Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.
+//
+// Frozen workspaces retain their captured upstream selection. Does not contact remote servers.
+func (r *GitRepository) DefaultRemote(ctx context.Context) (*GitRemote, error) {
+	q := r.query.Select("defaultRemote")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &GitRemote{
+		query: selectNode(q.Root(), *objectID, "GitRemote"),
+	}, nil
+}
+
 // GitRepositoryHeadOpts contains options for GitRepository.Head
 type GitRepositoryHeadOpts struct {
 	// Ignore the workspace lockfile for this lookup.
@@ -11445,6 +11598,49 @@ func (r *GitRepository) Ref(name string, opts ...GitRepositoryRefOpts) *GitRef {
 	}
 }
 
+// Look up a remote by name. Fails when the remote does not exist.
+func (r *GitRepository) Remote(name string) *GitRemote {
+	q := r.query.Select("remote")
+	q = q.Arg("name", name)
+
+	return &GitRemote{
+		query: q,
+	}
+}
+
+// List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers.
+func (r *GitRepository) Remotes(ctx context.Context) ([]GitRemote, error) {
+	q := r.query.Select("remotes")
+
+	q = q.Select("id")
+
+	type remotes struct {
+		Id ID
+	}
+
+	convert := func(fields []remotes) []GitRemote {
+		out := []GitRemote{}
+
+		for i := range fields {
+			val := GitRemote{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GitRemote")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []remotes
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // GitRepositoryTagOpts contains options for GitRepository.Tag
 type GitRepositoryTagOpts struct {
 	// Ignore the workspace lockfile for this lookup.
@@ -11539,6 +11735,8 @@ func (r *GitRepository) WithBundle(bundle *GitBundle, opts ...GitRepositoryWithB
 // Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
 //
 // The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+//
+// When the receiver is a remote repository (or was derived from one), that remote is retained with its authentication: refs the supplied storage does not contain resolve through it.
 func (r *GitRepository) WithContents(directory *Directory) *GitRepository {
 	assertNotNil("directory", directory)
 	q := r.query.Select("withContents")
@@ -19912,6 +20110,35 @@ func (r *Workspace) WithNewFile(path string, contents string, opts ...WorkspaceW
 	}
 }
 
+// WorkspaceWithPatchFileOpts contains options for Workspace.WithPatchFile
+type WorkspaceWithPatchFileOpts struct {
+	// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+	//
+	// Default: FAIL
+	OnConflict PatchConflict
+}
+
+// Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+//
+// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Workspace) WithPatchFile(patch *File, opts ...WorkspaceWithPatchFileOpts) *Workspace {
+	assertNotNil("patch", patch)
+	q := r.query.Select("withPatchFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+	q = q.Arg("patch", patch)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithResetOpts contains options for Workspace.WithReset
 type WorkspaceWithResetOpts struct {
 	// Discard uncommitted changes, resetting the working tree to the commit.
@@ -20069,6 +20296,19 @@ func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) 
 	}
 }
 
+// Return this workspace with the calling client's user-level config re-read and applied.
+//
+// User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+//
+// The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+func (r *Workspace) WithUserConfig() *Workspace {
+	q := r.query.Select("withUserConfig")
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // Return this workspace with its working directory pointed at the given workspace-relative path.
 func (r *Workspace) WithWorkdir(path string) *Workspace {
 	q := r.query.Select("withWorkdir")
@@ -20176,6 +20416,16 @@ func (r *Workspace) WithoutEntrypoint() *Workspace {
 func (r *Workspace) WithoutFile(path string) *Workspace {
 	q := r.query.Select("withoutFile")
 	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with files removed, without mutating the source.
+func (r *Workspace) WithoutFiles(paths []string) *Workspace {
+	q := r.query.Select("withoutFiles")
+	q = q.Arg("paths", paths)
 
 	return &Workspace{
 		query: q,

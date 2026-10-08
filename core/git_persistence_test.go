@@ -198,6 +198,67 @@ func TestGitCheckoutBaseContentEquivalentParentTree(t *testing.T) {
 	require.Zero(t, payload.Local.CheckoutBase.TreeResultID)
 }
 
+// Owned storage retains the exact remote it was derived from, authentication
+// included, so names it lacks can be resolved without asking the caller for
+// credentials again. Only a remote repository may be retained.
+func TestGitUpstreamPersistence(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "git-upstream")
+	ctx, cache, srv := env.open(t)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRef]{}))
+	url, err := gitutil.ParseURL("ssh://git@example.com/private/repo.git")
+	require.NoError(t, err)
+	remote := &RemoteGitRepository{URL: url, AuthUsername: "authorized-reader", Platform: Platform{OS: "linux", Architecture: "amd64"}}
+	upstream := env.attach(t, ctx, cache, srv, "remote-repo", &GitRepository{Backend: remote, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+	dir := env.directory(t, ctx, cache, srv, "owned", "owned-snapshot")
+	plain := env.attach(t, ctx, cache, srv, "plain-owned-repo", &GitRepository{Backend: &LocalGitRepository{Directory: dir}, Remote: &gitutil.Remote{}})
+	child := env.attach(t, ctx, cache, srv, "owned-repo", &GitRepository{Backend: &LocalGitRepository{Directory: dir, Upstream: upstream}, Remote: &gitutil.Remote{}})
+	childID, upstreamID, dirID, plainID := persistedRowID(t, cache, child), persistedRowID(t, cache, upstream), persistedRowID(t, cache, dir), persistedRowID(t, cache, plain)
+	require.Equal(t, map[string]uint64{
+		"objectJSON.local.directoryResultID": dirID,
+		"objectJSON.local.upstreamResultID":  upstreamID,
+	}, assertPersistedRefsMatchOwnership(t, ctx, cache, child))
+	encoding := persistedEncoding(t, ctx, cache, child)
+	frame, err := child.ResultCall()
+	require.NoError(t, err)
+	for range 2 {
+		ctx, cache, srv = env.restart(t, ctx, cache)
+		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRef]{}))
+		loaded, err := cache.LoadResultByResultID(ctx, env.session, srv, childID)
+		require.NoError(t, err)
+		local := loaded.Unwrap().(*GitRepository).Backend.(*LocalGitRepository)
+		require.Equal(t, upstreamID, persistedRowID(t, cache, local.Upstream))
+		require.Equal(t, "authorized-reader", local.Upstream.Self().Backend.(*RemoteGitRepository).AuthUsername)
+		require.Equal(t, encoding.Envelope, persistedEncoding(t, ctx, cache, loaded).Envelope)
+	}
+	// A retained upstream must be a remote: owned storage never resolves
+	// names through another owned repository or a directory.
+	for _, badUpstream := range []uint64{plainID, dirID, 999999} {
+		var payload persistedGitRepositoryPayload
+		require.NoError(t, json.Unmarshal(encoding.Envelope.ObjectJSON, &payload))
+		payload.Local.UpstreamResultID = badUpstream
+		data, err := json.Marshal(payload)
+		require.NoError(t, err)
+		_, err = (&GitRepository{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(srv, childID, frame), data)
+		require.Error(t, err)
+	}
+}
+
+func TestGitUpstreamOf(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "git-upstream-of")
+	ctx, cache, srv := env.open(t)
+	url, err := gitutil.ParseURL("https://example.com/repo.git")
+	require.NoError(t, err)
+	remote := env.attach(t, ctx, cache, srv, "remote", &GitRepository{Backend: &RemoteGitRepository{URL: url}, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+	dir := env.directory(t, ctx, cache, srv, "dir", "dir-snapshot")
+	plain := env.attach(t, ctx, cache, srv, "plain", &GitRepository{Backend: &LocalGitRepository{Directory: dir}, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+	derived := env.attach(t, ctx, cache, srv, "derived", &GitRepository{Backend: &LocalGitRepository{Directory: dir, Upstream: remote}, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+
+	require.Equal(t, persistedRowID(t, cache, remote), persistedRowID(t, cache, GitUpstream(remote)), "a remote is its own upstream")
+	require.Equal(t, persistedRowID(t, cache, remote), persistedRowID(t, cache, GitUpstream(derived)), "derived storage passes its upstream on")
+	require.Nil(t, GitUpstream(plain).Self(), "storage with no remote origin has no upstream")
+	require.Nil(t, GitUpstream(dagql.ObjectResult[*GitRepository]{}).Self())
+}
+
 func TestGitRepositoryRemotesPersistence(t *testing.T) {
 	ctx := t.Context()
 	cache, err := dagql.NewCache(ctx, "", nil, nil)
@@ -209,6 +270,7 @@ func TestGitRepositoryRemotesPersistence(t *testing.T) {
 	dir := volumeTestCachedObjectResult(t, ctx, cache, srv, "push-routing", "git-directory", &Directory{})
 	for _, remotes := range [][]GitRemote{
 		nil,
+		{{Name: "origin", URL: "https://fetch.test/repo", Implicit: true}},
 		{
 			{Name: "origin", URL: "https://fetch.test/repo", PushURL: "ssh://git@example.test/repo"},
 			{Name: "upstream", URL: "https://upstream.test/repo"},
@@ -228,4 +290,52 @@ func TestGitRepositoryRemotesPersistence(t *testing.T) {
 		require.Equal(t, repo.Remotes, restored.Remotes)
 		require.IsType(t, &LocalGitRepository{}, restored.Backend)
 	}
+}
+
+func TestGitRemoteHandleAndUpstreamPersistence(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "git-remotes")
+	ctx, cache, srv := env.open(t)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRemoteHandle]{}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRef]{}))
+	url, err := gitutil.ParseURL("https://example.com/source")
+	require.NoError(t, err)
+	upstream := env.attach(t, ctx, cache, srv, "upstream", &GitRepository{Backend: &RemoteGitRepository{URL: url, Platform: Platform{OS: "linux", Architecture: "amd64"}}, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+	anchor := &gitutil.Ref{SHA: strings.Repeat("a", 40)}
+	backend, err := upstream.Self().Backend.Get(ctx, anchor)
+	require.NoError(t, err)
+	history := env.attach(t, ctx, cache, srv, "history-source", &GitRef{Repo: upstream, Ref: anchor, Backend: backend}).(dagql.ObjectResult[*GitRef])
+	dir := env.directory(t, ctx, cache, srv, "storage", "git-storage")
+	selected := "trunk"
+	source := env.attach(t, ctx, cache, srv, "source", &GitRepository{
+		Backend:        &LocalGitRepository{Directory: dir, Upstream: upstream, HistorySource: history},
+		Remotes:        []GitRemote{{Name: "trunk", URL: url.String()}, {Name: "fork", URL: "https://example.com/fork"}},
+		UpstreamRemote: &selected,
+		Remote:         &gitutil.Remote{},
+	}).(dagql.ObjectResult[*GitRepository])
+	remote := env.attach(t, ctx, cache, srv, "remote", &GitRemoteHandle{Name: "trunk", URL: url.String(), Source: source})
+	remoteID, sourceID, upstreamID := persistedRowID(t, cache, remote), persistedRowID(t, cache, source), persistedRowID(t, cache, upstream)
+	require.Equal(t, map[string]uint64{"objectJSON.sourceResultID": sourceID}, assertPersistedRefsMatchOwnership(t, ctx, cache, remote))
+	historyID := persistedRowID(t, cache, history)
+	require.Equal(t, map[string]uint64{
+		"objectJSON.local.directoryResultID":     persistedRowID(t, cache, dir),
+		"objectJSON.local.upstreamResultID":      upstreamID,
+		"objectJSON.local.historySourceResultID": historyID,
+	}, assertPersistedRefsMatchOwnership(t, ctx, cache, source))
+	ctx, cache, srv = env.restart(t, ctx, cache)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRemoteHandle]{}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRef]{}))
+	loaded, err := cache.LoadResultByResultID(ctx, env.session, srv, remoteID)
+	require.NoError(t, err)
+	restored := loaded.Unwrap().(*GitRemoteHandle)
+	require.Equal(t, "trunk", restored.Name.String())
+	require.Equal(t, sourceID, persistedRowID(t, cache, restored.Source))
+	require.Equal(t, upstreamID, persistedRowID(t, cache, GitUpstream(restored.Source)))
+	local := restored.Source.Self().Backend.(*LocalGitRepository)
+	require.Equal(t, historyID, persistedRowID(t, cache, local.HistorySource))
+	require.NoError(t, local.validateHistorySource(ctx))
+	require.Equal(t, &selected, restored.Source.Self().UpstreamRemote)
+	remotes, selection, err := restored.Source.Self().ConfiguredRemotes(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "trunk", selection)
+	require.Equal(t, "trunk", SelectDefaultGitRemote(remotes, selection).Name)
 }

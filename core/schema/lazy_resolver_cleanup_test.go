@@ -50,7 +50,7 @@ type resolverCleanupTree struct {
 	output *core.Directory
 }
 
-func (r *resolverCleanupTree) Tree(context.Context, *dagql.Server, bool, int, bool, []core.GitRemote) (*core.Directory, error) {
+func (r *resolverCleanupTree) Tree(context.Context, *dagql.Server, bool, int, bool, []core.GitRemote, *string) (*core.Directory, error) {
 	return r.output, nil
 }
 

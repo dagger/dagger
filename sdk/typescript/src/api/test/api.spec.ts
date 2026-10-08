@@ -173,7 +173,6 @@ describe("TypeScript SDK api", function () {
       const image = await client
         .container()
         .from("alpine:3.16.2")
-        .withExec(["apk", "add", "yarn"])
         .withMountedCache("/root/.cache", cacheVolume)
         .withExec(["echo", "foo bar"])
         .stdout()

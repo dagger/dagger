@@ -89,6 +89,19 @@ defmodule Dagger.GitRef do
   end
 
   @doc """
+  Return true when the other ref's commit equals this commit or is an ancestor of it.
+
+  Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.
+  """
+  @spec contains(t(), Dagger.GitRef.t()) :: {:ok, boolean()} | {:error, term()}
+  def contains(%__MODULE__{} = git_ref, other) do
+    query_builder =
+      git_ref.query_builder |> QB.select("contains") |> QB.put_arg("other", Dagger.ID.id!(other))
+
+    Client.execute(git_ref.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this GitRef.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}

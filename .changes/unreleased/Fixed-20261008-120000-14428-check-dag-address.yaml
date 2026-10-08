@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  Check spans are now named with their `dag://` address in every path,
+  including CI, so `dagger trace`'s "RE-RUN IN CI" suggestion references the
+  real check name instead of the Go function name. `dagger cloud checks rerun
+  --check` also accepts the `dag://` prefix, so the suggested command works
+  as-is.
+time: 2026-10-08T12:00:00Z
+custom:
+  Author: marcosnils
+  PR: "14428"

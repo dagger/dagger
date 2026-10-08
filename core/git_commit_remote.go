@@ -63,6 +63,10 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 	if err != nil {
 		return nil, err
 	}
+	remotes, upstream, err := parent.Self().Repo.Self().ConfiguredRemotes(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var child bkcache.MutableRef
 	var result *Directory
 	defer func() {
@@ -74,29 +78,49 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 			rerr = errors.Join(rerr, result.OnRelease(context.WithoutCancel(ctx)))
 		}
 	}()
-	// Only explicit history consumers request depth zero. Ordinary commits
-	// own a single-commit source boundary, even if the mirror is already warm.
-	err = ref.mount(ctx, depth, false, func(_ *gitutil.GitCLI) error {
-		// mount holds both the mirror lock and its snapshot lease. Borrow an
-		// actual read-only mount so Git cannot freshen inherited pack mtimes.
-		// Reading Mirror.snapshot directly is only safe because ref.mount →
-		// initRemote → Mirror.acquire holds mirror.mu until this callback returns.
-		return MountRef(ctx, ref.repo.Mirror.Self().snapshot, func(source string, _ *mount.Mount) error {
-			if _, err := nativeCommitGitDirWithShallow(ctx, source, true); err != nil {
-				return err
-			}
-			child, err = query.SnapshotManager().New(ctx, nil,
-				bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
-				bkcache.WithDescription("owned remote commit closure"))
-			if err != nil {
-				return err
-			}
-			return MountRef(ctx, child, func(dest string, _ *mount.Mount) error {
-				return packRemoteCommitBaseDepth(ctx, source, dest, ref.SHA, MergeGitRemotes([]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}}, parent.Self().Repo.Self().Remotes), depth)
-			})
-		}, mountRefAsReadOnly)
-	})
+	pack, err := query.approvedHostCommitPack(ctx, parent, depth)
 	if err != nil {
+		return nil, err
+	}
+	if pack != nil {
+		// A rejected donation returns no snapshot: fall through to the remote.
+		child, err = query.importApprovedHostCommitBase(ctx, pack, ref.SHA, remotes)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if child == nil {
+		// Only explicit history consumers request depth zero. Ordinary commits
+		// own a single-commit source boundary, even if the mirror is already warm.
+		err = ref.mount(ctx, depth, false, func(_ *gitutil.GitCLI) error {
+			// mount holds both the mirror lock and its snapshot lease. Borrow an
+			// actual read-only mount so Git cannot freshen inherited pack mtimes.
+			// Reading Mirror.snapshot directly is only safe because ref.mount →
+			// initRemote → Mirror.acquire holds mirror.mu until this callback returns.
+			return MountRef(ctx, ref.repo.Mirror.Self().snapshot, func(source string, _ *mount.Mount) error {
+				if _, err := nativeCommitGitDirWithShallow(ctx, source, true); err != nil {
+					return err
+				}
+				child, err = query.SnapshotManager().New(ctx, nil,
+					bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
+					bkcache.WithDescription("owned remote commit closure"))
+				if err != nil {
+					return err
+				}
+				return MountRef(ctx, child, func(dest string, _ *mount.Mount) error {
+					return packRemoteCommitBaseDepth(ctx, source, dest, ref.SHA, remotes, depth)
+				})
+			}, mountRefAsReadOnly)
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	// Both approved host donation and remote fetch produce owned storage.
+	// Preserve the captured selection regardless of which supplies history.
+	if err := MountRef(ctx, child, func(dest string, _ *mount.Mount) error {
+		return writeGitRemoteSelection(ctx, gitutil.NewGitCLI(gitutil.WithGitDir(dest)), remotes, upstream)
+	}); err != nil {
 		return nil, err
 	}
 	snap, err := child.Commit(ctx)

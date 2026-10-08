@@ -35,9 +35,8 @@ dagger [options] [subcommand | file...]
 * [dagger sdk](#dagger-sdk)	 - Inspect and configure SDKs
 * [dagger settings](#dagger-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
 * [dagger shell](#dagger-shell)	 - Open a terminal for a container or directory in your project
+* [dagger start](#dagger-start)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
-* [dagger up](#dagger-up)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
-* [dagger update](#dagger-update)	 - Update installed module sources, versions and lockfile state
 * [dagger version](#dagger-version)	 - Print dagger version
 * [dagger workspace](#dagger-workspace)	 - Inspect workspace files and config
 
@@ -2570,56 +2569,12 @@ dagger shell [FILTERS] [OPTIONS]
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 
-## dagger uninstall
-
-Uninstall a module from your workspace
-
-### Synopsis
-
-Uninstall a module from the current workspace, removing it from dagger.toml.
-
-Match an installed name first, then a source without a version.
-The source must match exactly one installation. Version selectors are not accepted.
-
-With --env only the env's overlay entry is removed, never the base module.
-
-```
-dagger uninstall [options] NAME|SOURCE
-```
-
-### Examples
-
-```
-dagger module uninstall hello
-```
-
-### Options
-
-```
-      --here   Write workspace config at the selected workspace cwd
-```
-
-### Options inherited from parent commands
-
-```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
-```
-
-### SEE ALSO
-
-* [dagger](#dagger)	 - A tool to run composable workflows in containers
-
-## dagger up
+## dagger start
 
 Run your project's services for local development — databases, APIs, dev servers, etc.
 
 ```
-dagger up [FILTERS] [OPTIONS]
+dagger start [FILTERS] [OPTIONS]
 ```
 
 ### Options
@@ -2652,36 +2607,33 @@ dagger up [FILTERS] [OPTIONS]
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 
-## dagger update
+## dagger uninstall
 
-Update installed module sources, versions and lockfile state
+Uninstall a module from your workspace
 
 ### Synopsis
 
-Update an installed module by name or source.
+Uninstall a module from the current workspace, removing it from dagger.toml.
 
-Use --version VERSION or append @VERSION to set a new version request.
-Use --source SOURCE to change the source address. The new source can include
-a version. A local path is relative to the current directory, as with install.
-The module keeps its name and settings.
-Match an installed name first.
-Source matching ignores the version and must select exactly one installation.
-Without a new version or source, refresh the existing request.
+Match an installed name first, then a source without a version.
+The source must match exactly one installation. Version selectors are not accepted.
 
-With no arguments, this refreshes all installed modules. It does not refresh
-client targets or runtime targets. If a client scope targets an updated module,
-the command regenerates that scope. Use dagger lock update to refresh all
-entries in dagger.lock.
+With --env only the env's overlay entry is removed, never the base module.
 
 ```
-dagger update [NAME|SOURCE...]
+dagger uninstall [options] NAME|SOURCE
+```
+
+### Examples
+
+```
+dagger module uninstall hello
 ```
 
 ### Options
 
 ```
-      --source string    New source address for one installed module
-      --version string   New version request for one installed module
+      --here   Write workspace config at the selected workspace cwd
 ```
 
 ### Options inherited from parent commands

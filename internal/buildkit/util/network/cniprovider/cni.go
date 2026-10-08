@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cni "github.com/containerd/go-cni"
@@ -81,6 +82,9 @@ type cniProvider struct {
 	nsPool        *cniPool
 	release       func() error
 	netAccounting *nettracer.Tracer
+	// prefixesAdded records that the bridge's addresses are classified as
+	// internal; every namespace shares the same bridge.
+	prefixesAdded atomic.Bool
 }
 
 func (c *cniProvider) initNetwork(lock bool) error {
@@ -309,15 +313,14 @@ func (c *cniProvider) newNS(ctx context.Context, hostname string) (*cniNS, error
 		opts:     nsOpts,
 		vethName: vethName,
 	}
-	if c.netAccounting != nil && ns.vethName != "" {
-		accounting, err := c.netAccounting.AttachInterface(ns.vethName)
-		if err != nil {
+	if c.netAccounting != nil && ns.vethName != "" && !c.prefixesAdded.Load() {
+		if err := c.netAccounting.AddInternalPrefixesForVeth(ns.vethName); err != nil {
 			bklog.G(ctx).Debugf(
-				"attributed network accounting unavailable for %s: %s",
+				"classifying bridge addresses for %s as internal: %s",
 				ns.vethName, err,
 			)
 		} else {
-			ns.netAccounting = accounting
+			c.prefixesAdded.Store(true)
 		}
 	}
 
@@ -343,7 +346,6 @@ type cniNS struct {
 	canSample     bool
 	offsetSample  *resourcestypes.NetworkSample
 	prevSample    *resourcestypes.NetworkSample
-	netAccounting *nettracer.Attachment
 }
 
 func (ns *cniNS) Set(s *specs.Spec) error {
@@ -397,18 +399,7 @@ func (ns *cniNS) Sample() (*resourcestypes.NetworkSample, error) {
 
 func (ns *cniNS) release() error {
 	bklog.L.Tracef("releasing cni network namespace %s", ns.id)
-	var err error
-	if ns.netAccounting != nil {
-		err = withDetachedNetNSIfAny(context.TODO(), func(context.Context) error {
-			return ns.netAccounting.Close()
-		})
-		ns.netAccounting = nil
-	}
-	if err1 := ns.handle.Remove(
-		context.TODO(), ns.id, ns.nativeID, ns.opts...,
-	); err == nil {
-		err = err1
-	}
+	err := ns.handle.Remove(context.TODO(), ns.id, ns.nativeID, ns.opts...)
 	if err1 := unmountNetNS(ns.nativeID); err1 != nil && err == nil {
 		err = err1
 	}

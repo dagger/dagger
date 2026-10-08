@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -84,34 +85,141 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 		return nil, fmt.Errorf("git remote cache session metadata: %w", err)
 	}
 
-	cacheRes, err := cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(ctx context.Context) (any, error) {
-		remote, err := repo.runLsRemote(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		slog.Info("caching git remote metadata", "cache_key", cacheKey)
-		// Serialize to JSON so the cache can persist a plain string payload without
-		// requiring gitutil.Remote to satisfy dagql's typing interfaces. The decode
-		// step also hands each repo its own copy, so later tweaks (e.g. setting
-		// repo.Remote.Head) stay scoped to that caller
-		payload, err := json.Marshal(remote)
-		if err != nil {
-			return nil, err
-		}
-
-		return string(payload), nil
-	})
+	remote, hit, err := cachedGitRemote(ctx, cache, clientMetadata.SessionID, cacheKey, repo.runLsRemote)
 	if err != nil {
 		return nil, err
 	}
-	if cacheRes == nil {
-		return nil, fmt.Errorf("git remote cache returned nil result for key %q", cacheKey)
+	slog.Info("loaded git remote metadata", "cache_hit", hit, "cache_key", cacheKey)
+	return remote, nil
+}
+
+// gitRemoteListing is a session's cached ls-remote advertisement of one
+// remote. The arbitrary cache cannot replace an entry, so the entry is this
+// mutable box instead: a live lookup refreshes it in place, and later lookups
+// in the session see the newer refs.
+//
+// The listing is kept as JSON so that each read decodes its own copy: later
+// tweaks (e.g. setting GitRepository.Remote.Head) stay scoped to that caller.
+type gitRemoteListing struct {
+	mu      sync.Mutex
+	payload string
+}
+
+func newGitRemoteListing(remote *gitutil.Remote) (*gitRemoteListing, error) {
+	listing := &gitRemoteListing{}
+	if err := listing.set(remote); err != nil {
+		return nil, err
 	}
+	return listing, nil
+}
 
-	slog.Info("loaded git remote metadata", "cache_hit", cacheRes.HitCache(), "cache_key", cacheKey)
+func (listing *gitRemoteListing) set(remote *gitutil.Remote) error {
+	payload, err := json.Marshal(remote)
+	if err != nil {
+		return err
+	}
+	listing.mu.Lock()
+	listing.payload = string(payload)
+	listing.mu.Unlock()
+	return nil
+}
 
-	return remoteFromCacheResult(cacheRes.Value())
+func (listing *gitRemoteListing) get() string {
+	listing.mu.Lock()
+	defer listing.mu.Unlock()
+	return listing.payload
+}
+
+// cachedGitRemote returns the session's listing for cacheKey, running list
+// the first time. Under ContextWithLiveGitRemote, a listing that was already
+// cached is replaced by a fresh one (once per live lookup), so the caller and
+// every later lookup in the session see the remote's current refs.
+func cachedGitRemote(
+	ctx context.Context,
+	cache *dagql.Cache,
+	sessionID string,
+	cacheKey string,
+	list func(context.Context) (*gitutil.Remote, error),
+) (_ *gitutil.Remote, hit bool, _ error) {
+	cacheRes, err := cache.GetOrInitArbitrary(ctx, sessionID, cacheKey, func(ctx context.Context) (any, error) {
+		remote, err := list(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return newGitRemoteListing(remote)
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if cacheRes == nil {
+		return nil, false, fmt.Errorf("git remote cache returned nil result for key %q", cacheKey)
+	}
+	hit = cacheRes.HitCache()
+	if live := liveGitRemoteFromContext(ctx); live != nil {
+		// An earlier listing answered: list again, unless this live lookup
+		// already did (e.g. latest lists, then resolves the ref it picked).
+		// A listing this call ran (or joined in flight) is fresh already.
+		listing, ok := cacheRes.Value().(*gitRemoteListing)
+		if !ok {
+			return nil, false, fmt.Errorf("unexpected git remote cache value type %T", cacheRes.Value())
+		}
+		stale := hit
+		if err := live.refresh(cacheKey, func() error {
+			if !stale {
+				return nil
+			}
+			remote, err := list(ctx)
+			if err != nil {
+				return err
+			}
+			return listing.set(remote)
+		}); err != nil {
+			return nil, false, err
+		}
+	}
+	remote, err := remoteFromCacheResult(cacheRes.Value())
+	return remote, hit, err
+}
+
+// liveGitRemote marks lookups that must list remotes afresh rather than reuse
+// the session's listing, as noLock asks. It remembers which listings it
+// already refreshed, so one live lookup lists each remote once.
+type liveGitRemote struct {
+	mu        sync.Mutex
+	refreshed map[string]func() error
+}
+
+type liveGitRemoteKey struct{}
+
+// ContextWithLiveGitRemote makes remote git lookups made with ctx list the
+// remote's refs again instead of reusing the session's cached listing, which
+// they then replace. Nested calls inherit the same live lookup, which lists
+// each remote at most once.
+func ContextWithLiveGitRemote(ctx context.Context) context.Context {
+	if liveGitRemoteFromContext(ctx) != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, liveGitRemoteKey{}, &liveGitRemote{
+		refreshed: map[string]func() error{},
+	})
+}
+
+func liveGitRemoteFromContext(ctx context.Context) *liveGitRemote {
+	live, _ := ctx.Value(liveGitRemoteKey{}).(*liveGitRemote)
+	return live
+}
+
+// refresh runs fn once per key for this live lookup; concurrent and later
+// callers wait for and share its outcome.
+func (live *liveGitRemote) refresh(key string, fn func() error) error {
+	live.mu.Lock()
+	once, ok := live.refreshed[key]
+	if !ok {
+		once = sync.OnceValue(fn)
+		live.refreshed[key] = once
+	}
+	live.mu.Unlock()
+	return once()
 }
 
 // PrimePublicRemote reuses the anonymous visibility probe's advertisement in
@@ -138,15 +246,19 @@ func (repo *RemoteGitRepository) PrimePublicRemote(ctx context.Context, remote *
 		return err
 	}
 	_, err = cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(context.Context) (any, error) {
-		payload, err := json.Marshal(remote)
-		return string(payload), err
+		return newGitRemoteListing(remote)
 	})
 	return err
 }
 
 func remoteFromCacheResult(cacheRes any) (*gitutil.Remote, error) {
-	payload, ok := cacheRes.(string)
-	if !ok {
+	var payload string
+	switch v := cacheRes.(type) {
+	case *gitRemoteListing:
+		payload = v.get()
+	case string:
+		payload = v
+	default:
 		return nil, fmt.Errorf("unexpected cache value type %T", cacheRes)
 	}
 
@@ -729,7 +841,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 	return fn(dir)
 }
 
-func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote) (_ *Directory, rerr error) {
+func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (_ *Directory, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -766,10 +878,19 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			// The clone URL is the remote itself, so it doubles as the
 			// checkout's origin; registered remotes overlay it.
 			checkoutRemotes := MergeGitRemotes(
-				[]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote()}},
+				[]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote(), Implicit: true}},
 				remotes,
 			)
-			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, discardGitDir)
+			if upstreamRemote != nil {
+				checkoutRemotes = MergeGitRemotes(nil, remotes)
+			}
+			if err := doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, discardGitDir); err != nil {
+				return err
+			}
+			if !discardGitDir && upstreamRemote != nil {
+				return writeGitRemoteSelection(ctx, checkoutGit, checkoutRemotes, *upstreamRemote)
+			}
+			return nil
 		})
 		if err != nil {
 			return fmt.Errorf("failed to checkout %s in %s: %w", ref.Name, ref.repo.URL.Remote(), err)

@@ -84,9 +84,9 @@ func (*Probe) Run() error { panic("check evaluated") }
 		}
 		require.Equal(t, map[string]string{
 			"/tools/linux/modules":         "tools-module",
-			"/tools/linux/modules/cases":   "probe",
+			"/tools/linux/modules/cases":   "tools-probe",
 			"/tools/windows/modules":       "tools-module",
-			"/tools/windows/modules/cases": "probe",
+			"/tools/windows/modules/cases": "tools-probe",
 		}, dimensions)
 		paths := map[string][]string{}
 		for _, path := range selection.PathDefinitions {
@@ -94,11 +94,11 @@ func (*Probe) Run() error { panic("check evaluated") }
 		}
 		for _, platform := range []string{"linux", "windows"} {
 			prefix := "tools/" + platform + "/modules"
-			require.ElementsMatch(t, []string{"module", "/" + prefix, "type:Check"}, paths["dag://"+prefix+"/verify"])
-			require.ElementsMatch(t, []string{"module", "/" + prefix, "/" + prefix + "/cases", "type:Check"}, paths["dag://"+prefix+"/cases/run"])
+			require.ElementsMatch(t, []string{"module", "/" + prefix, "type:Check"}, paths["dag://?check="+prefix+"/verify"])
+			require.ElementsMatch(t, []string{"module", "/" + prefix, "/" + prefix + "/cases", "type:Check"}, paths["dag://?check="+prefix+"/cases/run"])
 			out, err := ctr.With(daggerExec("check", "-l", "--tools-"+platform+"-cases", "-f=link")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dag+check://"+prefix+"/cases/run\n", out)
+			require.Equal(t, "dag+check://?check="+prefix+"/cases/run\n", out)
 		}
 	})
 
@@ -116,9 +116,11 @@ func (*Probe) Run() error { panic("check evaluated") }
 			link := strings.TrimSpace(links)
 			path, query, ok := strings.Cut(link, "?")
 			require.True(t, ok, link)
-			require.Equal(t, "dag+check://tools/"+platform+"/modules/cases/run", path)
+			require.Equal(t, "dag+check://", path)
 			keys, err := url.ParseQuery(query)
 			require.NoError(t, err)
+			require.Equal(t, "tools/"+platform+"/modules/cases/run", keys.Get("check"))
+			keys.Del("check")
 			var values []string
 			for _, keys := range keys {
 				values = append(values, keys...)

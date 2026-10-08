@@ -50,16 +50,74 @@ func containerPartDelegation(v dagql.PersistedPayloadVisit, p persistedContainer
 // RouteParts describes the saved operation without resolving references or
 // constructing an operational lazy state. Mount keys are always target paths.
 func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, demand dagql.PartKey) (dagql.LazyOperationRoute, error) {
-	route := dagql.LazyOperationRoute{Group: dagql.LazyGroupAddress{OutputPath: slices.Clone(v.Path)}}
-	add := func(part dagql.PartKey) {
-		route.WriteSet = append(route.WriteSet, dagql.PersistedPartAddress{OutputPath: slices.Clone(v.Path), Part: part})
+	router, err := family.newPartRouter(v)
+	if err != nil {
+		return dagql.LazyOperationRoute{Group: dagql.LazyGroupAddress{OutputPath: slices.Clone(v.Path)}}, err
 	}
+	return router.route(demand, true)
+}
+
+// partRouter routes demands on one decoded payload. A probe routes every
+// output of its payload, so the payload is decoded once, and the Container
+// routing metadata and each part's groups are derived once, not per demand.
+// Every derived value is a pure function of the payload, so a route is the
+// same whether or not other demands were routed before it.
+type partRouter struct {
+	family  foreignFamilyCodec
+	v       dagql.PersistedPayloadVisit
+	payload *partPayload
+
+	routing *containerRouting
+	groups  map[dagql.PartKey]containerPartGroups
+	// writeSetErr is the first error mapping any part to its groups, in part
+	// order: the error a write-set enumeration returns.
+	writeSetErr     error
+	writeSetChecked bool
+}
+
+type containerRouting struct {
+	ctr   *Container
+	parts []dagql.PartKey
+	err   error
+}
+
+type containerPartGroups struct {
+	groups []dagql.LazyGroupKey
+	err    error
+}
+
+func (family foreignFamilyCodec) newPartRouter(v dagql.PersistedPayloadVisit) (*partRouter, error) {
+	payload := &partPayload{}
+	var err error
 	switch family {
 	case "Directory":
-		var p persistedDirectoryPayload
-		if err := json.Unmarshal(v.Payload, &p); err != nil {
-			return route, err
+		err = json.Unmarshal(v.Payload, &payload.directory)
+	case "File":
+		err = json.Unmarshal(v.Payload, &payload.file)
+	case "Container":
+		err = json.Unmarshal(v.Payload, &payload.container)
+	default:
+		err = fmt.Errorf("no part operation for %s", family)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &partRouter{family: family, v: v, payload: payload}, nil
+}
+
+// route routes demand. Without withWriteSet the route's write set is left
+// empty, but every error enumerating it is still returned.
+func (router *partRouter) route(demand dagql.PartKey, withWriteSet bool) (dagql.LazyOperationRoute, error) {
+	v := router.v
+	route := dagql.LazyOperationRoute{Group: dagql.LazyGroupAddress{OutputPath: slices.Clone(v.Path)}}
+	add := func(part dagql.PartKey) {
+		if withWriteSet {
+			route.WriteSet = append(route.WriteSet, dagql.PersistedPartAddress{OutputPath: slices.Clone(v.Path), Part: part})
 		}
+	}
+	switch router.family {
+	case "Directory":
+		p := &router.payload.directory
 		if p.LazyKind == "" {
 			return route, nil
 		}
@@ -73,10 +131,7 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 		route.Group.Group = dagql.LazyGroupWhole
 		add("snapshot")
 	case "File":
-		var p persistedFilePayload
-		if err := json.Unmarshal(v.Payload, &p); err != nil {
-			return route, err
-		}
+		p := &router.payload.file
 		if p.LazyKind == "" {
 			return route, nil
 		}
@@ -90,12 +145,9 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 		route.Group.Group = dagql.LazyGroupWhole
 		add("snapshot")
 	case "Container":
-		var p persistedContainerPayload
-		if err := json.Unmarshal(v.Payload, &p); err != nil {
-			return route, err
-		}
+		p := &router.payload.container
 		if len(p.LazyJSON) == 0 {
-			delegation, err := containerPartDelegation(v, p, demand)
+			delegation, err := containerPartDelegation(v, *p, demand)
 			route.Delegation = delegation
 			return route, err
 		}
@@ -107,14 +159,13 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 			return route, fmt.Errorf("unknown Container operation %q", field)
 		}
 		route.HasLazyOperation = true
-		ctr, err := containerRoutingMetadata(p.Metadata.Value)
-		if err != nil {
-			return route, err
+		routing := router.containerRouting()
+		if routing.err != nil {
+			return route, routing.err
 		}
-		parts := append([]dagql.PartKey{ContainerPartMetadata}, containerSnapshotParts(ctr)...)
 		if field == "_builtinContainer" || field == "import" {
 			route.Group.Group = dagql.LazyGroupWhole
-			for _, part := range parts {
+			for _, part := range routing.parts {
 				add(part)
 			}
 			return route, nil
@@ -123,31 +174,78 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 			route.NeedsMetadata = true
 			return route, nil
 		}
-		groups, err := rawContainerGroups(field, p.LazyJSON, ctr, []dagql.PartKey{demand})
-		if err != nil {
-			return route, err
+		demanded := router.partGroups(demand)
+		if demanded.err != nil {
+			return route, demanded.err
 		}
-		if len(groups) != 1 {
-			return route, fmt.Errorf("Container lazy: part maps to %d groups", len(groups))
+		if len(demanded.groups) != 1 {
+			return route, fmt.Errorf("Container lazy: part maps to %d groups", len(demanded.groups))
 		}
-		route.Group.Group = groups[0]
+		route.Group.Group = demanded.groups[0]
 		if demand == ContainerPartMetadata {
 			add(demand)
 			return route, nil
 		}
-		for _, part := range parts {
-			groups, err := rawContainerGroups(field, p.LazyJSON, ctr, []dagql.PartKey{part})
-			if err != nil {
-				return route, err
+		if !withWriteSet {
+			return route, router.writeSetError()
+		}
+		for _, part := range routing.parts {
+			mapped := router.partGroups(part)
+			if mapped.err != nil {
+				return route, mapped.err
 			}
-			if slices.Contains(groups, route.Group.Group) {
+			if slices.Contains(mapped.groups, route.Group.Group) {
 				add(part)
 			}
 		}
 	default:
-		return route, fmt.Errorf("no part operation for %s", family)
+		return route, fmt.Errorf("no part operation for %s", router.family)
 	}
 	return route, nil
+}
+
+// containerRouting returns the Container's routing metadata and its parts,
+// metadata first.
+func (router *partRouter) containerRouting() *containerRouting {
+	if router.routing == nil {
+		routing := &containerRouting{}
+		routing.ctr, routing.err = containerRoutingMetadata(router.payload.container.Metadata.Value)
+		if routing.err == nil {
+			routing.parts = append([]dagql.PartKey{ContainerPartMetadata}, containerSnapshotParts(routing.ctr)...)
+		}
+		router.routing = routing
+	}
+	return router.routing
+}
+
+// partGroups returns the groups part maps to under the Container's recorded
+// operation. The returned groups are shared and must not be modified.
+func (router *partRouter) partGroups(part dagql.PartKey) containerPartGroups {
+	if mapped, ok := router.groups[part]; ok {
+		return mapped
+	}
+	if router.groups == nil {
+		router.groups = make(map[dagql.PartKey]containerPartGroups)
+	}
+	var mapped containerPartGroups
+	mapped.groups, mapped.err = rawContainerGroups(router.v.Call.Field, router.payload.container.LazyJSON, router.containerRouting().ctr, []dagql.PartKey{part})
+	router.groups[part] = mapped
+	return mapped
+}
+
+// writeSetError returns the first error mapping a Container part to its
+// groups, in part order: what enumerating any demand's write set returns.
+func (router *partRouter) writeSetError() error {
+	if !router.writeSetChecked {
+		for _, part := range router.containerRouting().parts {
+			if mapped := router.partGroups(part); mapped.err != nil {
+				router.writeSetErr = mapped.err
+				break
+			}
+		}
+		router.writeSetChecked = true
+	}
+	return router.writeSetErr
 }
 
 // Only scalar topology is materialized; handles and services remain encoded.

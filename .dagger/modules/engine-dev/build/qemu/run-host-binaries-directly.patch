@@ -1,0 +1,124 @@
+linux-user: run host binaries directly instead of emulating them
+
+Applies on top of tonistiigi/binfmt's buildkit-direct-execve patches, which
+make execve in an emulated process re-run QEMU on the new program so emulation
+works without binfmt_misc registration. Those patches also send binaries built
+for the host through QEMU, which rejects them with "Invalid ELF image for this
+architecture".
+
+When the program being started (by a guest execve, or as QEMU's own program
+argument) is an ELF executable for the host's class, byte order and machine,
+execute it directly with its original argv. This lets the engine mount its
+own host-architecture dagger CLI into emulated containers.
+
+Programs started by such a host binary are not intercepted, so a host binary
+cannot itself start guest-architecture programs without binfmt_misc.
+
+diff --git a/linux-user/main.c b/linux-user/main.c
+index 85ae298..2487c5b 100644
+--- a/linux-user/main.c
++++ b/linux-user/main.c
+@@ -781,6 +781,20 @@ int main(int argc, char **argv, char **envp)
+ 
+     optind = parse_args(argc, argv);
+ 
++    /*
++     * A host binary needs no emulation: run it directly, honoring -0 for
++     * its argv[0].
++     */
++    if (is_host_native_elf(exec_path)) {
++        char **host_argv = argv + optind;
++        if (argv0 != NULL) {
++            host_argv[0] = (char *)argv0;
++        }
++        execve(exec_path, host_argv, environ);
++        fprintf(stderr, "qemu: %s: %s\n", exec_path, strerror(errno));
++        exit(EXIT_FAILURE);
++    }
++
+     qemu_set_log_filename_flags(last_log_filename,
+                                 last_log_mask | (enable_strace * LOG_STRACE),
+                                 &error_fatal);
+diff --git a/linux-user/syscall.c b/linux-user/syscall.c
+index b617d2b..998fe08 100644
+--- a/linux-user/syscall.c
++++ b/linux-user/syscall.c
+@@ -8944,6 +8944,42 @@ ssize_t do_guest_readlink(const char *pathname, char *buf, size_t bufsiz)
+     return ret;
+ }
+ 
++/*
++ * Return true if path is an ELF executable built for the host, which the
++ * kernel can run without emulation.
++ */
++bool is_host_native_elf(const char *path)
++{
++#if defined(__x86_64__)
++    const uint16_t host_machine = EM_X86_64;
++#elif defined(__aarch64__)
++    const uint16_t host_machine = EM_AARCH64;
++#elif defined(__riscv) && __riscv_xlen == 64
++    const uint16_t host_machine = EM_RISCV;
++#elif defined(__s390x__)
++    const uint16_t host_machine = EM_S390;
++#elif defined(__powerpc64__)
++    const uint16_t host_machine = EM_PPC64;
++#else
++    return false;
++#endif
++    unsigned char hdr[20];
++    uint16_t machine;
++    int fd = open(path, O_RDONLY | O_CLOEXEC);
++    if (fd < 0) {
++        return false;
++    }
++    ssize_t n = pread(fd, hdr, sizeof(hdr), 0);
++    close(fd);
++    if (n != sizeof(hdr) || memcmp(hdr, ELFMAG, SELFMAG) != 0 ||
++        hdr[EI_CLASS] != (sizeof(void *) == 8 ? ELFCLASS64 : ELFCLASS32) ||
++        hdr[EI_DATA] != (HOST_BIG_ENDIAN ? ELFDATA2MSB : ELFDATA2LSB)) {
++        return false;
++    }
++    memcpy(&machine, hdr + 18, sizeof(machine));
++    return machine == host_machine;
++}
++
+ static int do_execv(CPUArchState *cpu_env, int dirfd,
+                     abi_long pathname, abi_long guest_argp,
+                     abi_long guest_envp, int flags, bool is_execveat)
+@@ -9068,9 +9104,20 @@ static int do_execv(CPUArchState *cpu_env, int dirfd,
+      * before the execve completes and makes it the other
+      * program's problem.
+      */
+-    ret = is_execveat
+-        ? safe_execveat(dirfd, "/proc/self/exe", argp, envp, flags)
+-        : safe_execve("/proc/self/exe", argp, envp);
++    if (is_host_native_elf(argp[3])) {
++        /*
++         * A host binary needs no emulation: run it directly with the
++         * guest's original argv, i.e. [argv0, argv1, ...].
++         */
++        char *path = argp[3];
++        argp[3] = argp[2];
++        ret = safe_execve(path, argp + 3, envp);
++        argp[3] = path;
++    } else {
++        ret = is_execveat
++            ? safe_execveat(dirfd, "/proc/self/exe", argp, envp, flags)
++            : safe_execve("/proc/self/exe", argp, envp);
++    }
+     ret = get_errno(ret);
+ 
+     unlock_user(p, pathname, 0);
+diff --git a/linux-user/user-internals.h b/linux-user/user-internals.h
+index 7730444..f320033 100644
+--- a/linux-user/user-internals.h
++++ b/linux-user/user-internals.h
+@@ -61,6 +61,7 @@ int info_is_fdpic(struct image_info *info);
+ 
+ void target_set_brk(abi_ulong new_brk);
+ void syscall_init(void);
++bool is_host_native_elf(const char *path);
+ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
+                     abi_long arg2, abi_long arg3, abi_long arg4,
+                     abi_long arg5, abi_long arg6, abi_long arg7,

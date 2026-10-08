@@ -210,21 +210,21 @@ func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.C
 			require.Len(t, checks, 1)
 			checkName, err := checks[0].URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dag://git-agent/verify", checkName)
+			require.Equal(t, "dag://?check=git-agent/verify", checkName)
 
 			generators, err := ws.Artifacts().FilterTypes([]string{"Generator"}).Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, generators, 1)
 			generatorName, err := generators[0].URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dag://git-agent/generate", generatorName)
+			require.Equal(t, "dag://?generator=git-agent/generate", generatorName)
 
 			services, err := ws.Artifacts().FilterTypes([]string{"Service"}).Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, services, 1)
 			serviceName, err := services[0].URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dag://git-agent/web", serviceName)
+			require.Equal(t, "dag://?service=git-agent/web", serviceName)
 
 			terminals, err := ws.Artifacts().FilterTypes([]string{"Container", "Directory"}).Items(ctx)
 			require.NoError(t, err)
@@ -277,7 +277,7 @@ source = "./modules/bad"
 		require.NoError(t, err)
 		generators = append(generators, uri)
 	}
-	require.Equal(t, []string{"dag://good/generate"}, generators)
+	require.Equal(t, []string{"dag://?generator=good/generate"}, generators)
 	require.Len(t, loadFailures, 1)
 	require.Contains(t, loadFailures[0], `module "bad"`)
 
@@ -292,7 +292,7 @@ source = "./modules/bad"
 		require.NoError(t, err)
 		checkNames = append(checkNames, checkName)
 	}
-	require.Contains(t, checkNames, "dag://bad/load")
+	require.Contains(t, checkNames, "dag://?check=bad/load")
 
 	selected, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"good"}}).FilterTypes([]string{"Generator"}).Items(ctx)
 	require.NoError(t, err)
@@ -434,6 +434,52 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalRemovesDoNotMutateBaseSource
 	requireEntry(t, baseEntries, "keep.txt")
 	requireEntry(t, baseEntries, "drop.txt")
 	requireEntry(t, baseEntries, "sub")
+}
+
+// TestOverlayWorkspaceWithoutFiles removes several files in one step, as
+// Directory.withoutFiles does: relative paths resolve from the cwd, absolute
+// ones from the root, and the parents they empty stay.
+func (WorkspaceSuite) TestOverlayWorkspaceWithoutFiles(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ws := c.Directory().
+		WithNewFile("app/keep.txt", "keep").
+		WithNewFile("app/drop.txt", "drop").
+		WithNewFile("app/sub/inner.txt", "inner").
+		WithNewFile("top.txt", "top").
+		AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
+
+	t.Run("cwd-relative and absolute paths", func(ctx context.Context, t *testctx.T) {
+		removed := ws.WithoutFiles([]string{"drop.txt", "sub/inner.txt", "/top.txt", "missing.txt"})
+		entries, err := removed.Directory(".").Entries(ctx)
+		require.NoError(t, err)
+		requireEntry(t, entries, "keep.txt")
+		requireNoEntry(t, entries, "drop.txt")
+		// Emptying a directory keeps it, as with Directory.withoutFiles.
+		requireEntry(t, entries, "sub")
+		subEntries, err := removed.Directory("sub").Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, subEntries)
+		rootEntries, err := removed.Directory("/").Entries(ctx)
+		require.NoError(t, err)
+		requireNoEntry(t, rootEntries, "top.txt")
+
+		paths, err := removed.WithWorkdir(".").Changes(dagger.WorkspaceChangesOpts{From: ws}).RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"app/drop.txt", "app/sub/inner.txt", "top.txt"}, paths)
+
+		// The base source is untouched.
+		baseEntries, err := ws.Directory(".").Entries(ctx)
+		require.NoError(t, err)
+		requireEntry(t, baseEntries, "drop.txt")
+	})
+
+	t.Run("a mount is read-only", func(ctx context.Context, t *testctx.T) {
+		mounted := ws.WithMountedDirectory("vendor", c.Directory().WithNewFile("lib.txt", "lib"))
+		_, err := mounted.WithoutFiles([]string{"drop.txt", "vendor/lib.txt"}).
+			Changes(dagger.WorkspaceChangesOpts{From: mounted}).IsEmpty(ctx)
+		require.ErrorContains(t, err, "is a read-only mount and cannot be modified")
+	})
 }
 
 // TestOverlayWorkspaceFunctionalWritesRoundTripFromID asserts that each

@@ -92,6 +92,14 @@ func (c *Copier) Close() error {
 	return c.dest.flush()
 }
 
+// ForgetSourceLinks makes later copies independent of earlier ones, as with a
+// new Copier for the same destination: a source file copied before is linked
+// or copied from its source again, not linked to its earlier destination, which
+// a later copy may have replaced. Usage accounting is kept.
+func (c *Copier) ForgetSourceLinks() {
+	c.dest.sourceLinks = map[inode]string{}
+}
+
 func (c *Copier) Usage() (snapshots.Usage, error) {
 	if err := c.dest.flush(); err != nil {
 		return snapshots.Usage{}, err

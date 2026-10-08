@@ -1,0 +1,3 @@
+kind: Added
+body: Add GitRepository.remotes, remote, and defaultRemote, and GitRef.contains for filtering commits by branch ancestry. Workspace snapshots retain named remotes and upstream selection, and access to their source remote.
+time: 2026-10-05T19:00:00Z

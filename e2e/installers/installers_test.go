@@ -1,6 +1,7 @@
 // Package installers contains e2e contract tests for installer scripts.
 //
 //go:test:include ../../install.sh
+//go:test:include ../../install.ps1
 package installers
 
 import (
@@ -111,6 +112,117 @@ func TestBashScript(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Every main publish overwrites the files in main/head one at a time. An
+// install that runs in between can get the new head archive with the old head
+// checksums.txt. Both installers must still install a consistent build.
+func TestInstallHeadDuringPublish(t *testing.T) {
+	ctx := t.Context()
+
+	client, err := dagger.Connect(ctx)
+	if err != nil {
+		t.Fatalf("connect to dagger: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close dagger client: %v", err)
+		}
+	})
+
+	const (
+		oldCommit = "1111111111111111111111111111111111111111"
+		newCommit = "2222222222222222222222222222222222222222"
+		dlURL     = "http://dl:8000"
+	)
+	dl := client.Container().
+		From("alpine").
+		WithExec([]string{"apk", "add", "--no-cache", "python3", "zip"}).
+		WithEnvVariable("OLD_COMMIT", oldCommit).
+		WithEnvVariable("NEW_COMMIT", newCommit).
+		WithExec([]string{"sh", "-ec", `
+for commit in "$OLD_COMMIT" "$NEW_COMMIT"; do
+	mkdir -p "/build/$commit" "/dist/$commit" "/srv/dagger/main/$commit"
+	printf '#!/bin/sh\necho %s\n' "$commit" > "/build/$commit/dagger"
+	chmod +x "/build/$commit/dagger"
+	cp "/build/$commit/dagger" "/build/$commit/dagger.exe"
+	for label in "$commit" head; do
+		for arch in amd64 arm64 armv7; do
+			tar -czf "/dist/$commit/dagger_${label}_linux_${arch}.tar.gz" -C "/build/$commit" dagger
+		done
+		(cd "/build/$commit" && zip -q "/dist/$commit/dagger_${label}_windows_amd64.zip" dagger.exe)
+	done
+	(cd "/dist/$commit" && sha256sum dagger_* > checksums.txt)
+	cp "/dist/$commit/dagger_${commit}_"* "/dist/$commit/checksums.txt" "/srv/dagger/main/$commit/"
+done
+# a publish of NEW_COMMIT has replaced the head archives, but not yet the head checksums.txt
+mkdir -p /srv/dagger/main/head
+cp "/dist/$NEW_COMMIT/dagger_head_"* "/srv/dagger/main/head/"
+cp "/dist/$OLD_COMMIT/checksums.txt" "/srv/dagger/main/head/"
+echo 0.0.0 > /srv/dagger/latest_version
+`}).
+		WithWorkdir("/srv").
+		WithExposedPort(8000).
+		AsService(dagger.ContainerAsServiceOpts{Args: []string{"python3", "-m", "http.server", "8000"}})
+
+	// The installers download from dl.dagger.io; point them at the fake server.
+	localScript := func(t *testing.T, path string) *dagger.File {
+		t.Helper()
+		contents, err := client.CurrentWorkspace().
+			Directory("/", dagger.WorkspaceDirectoryOpts{Include: []string{path}}).
+			File(path).
+			Contents(ctx)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if !strings.Contains(contents, "https://dl.dagger.io") {
+			t.Fatalf("%s does not download from https://dl.dagger.io", path)
+		}
+		contents = strings.ReplaceAll(contents, "https://dl.dagger.io", dlURL)
+		return client.Directory().WithNewFile(path, contents).File(path)
+	}
+
+	t.Run("install.sh", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := client.Container().
+			From("alpine").
+			WithExec([]string{"apk", "add", "--no-cache", "curl"}).
+			WithServiceBinding("dl", dl).
+			WithWorkdir("/opt/dagger").
+			WithFile("/usr/local/bin/install.sh", localScript(t, "install.sh"), dagger.ContainerWithFileOpts{
+				Permissions: 0755,
+			}).
+			WithEnvVariable("DAGGER_COMMIT", "head").
+			WithExec([]string{"install.sh"}).
+			WithExec([]string{"./bin/dagger"}).
+			Stdout(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.TrimSpace(out); got != oldCommit {
+			t.Fatalf("expected the build of %s, got %q", oldCommit, got)
+		}
+	})
+
+	t.Run("install.ps1", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := client.Container().
+			From("mcr.microsoft.com/powershell:7.5-alpine-3.20").
+			WithServiceBinding("dl", dl).
+			WithFile("/install.ps1", localScript(t, "install.ps1")).
+			WithEnvVariable("PROCESSOR_ARCHITECTURE", "AMD64").
+			WithExec([]string{"pwsh", "-NoProfile", "-File", "/install.ps1", "-DaggerCommit", "head", "-InstallPath", "/opt/dagger"}).
+			WithExec([]string{"cat", "/opt/dagger/dagger.exe"}).
+			Stdout(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, "echo "+oldCommit) {
+			t.Fatalf("expected the build of %s, got %q", oldCommit, out)
+		}
+	})
 }
 
 func matchExactVersion(target string) func(string) error {

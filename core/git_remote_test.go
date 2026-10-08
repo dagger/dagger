@@ -380,6 +380,65 @@ func TestPrimePublicRemoteScope(t *testing.T) {
 	}
 }
 
+func TestCachedGitRemoteLiveRefresh(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+	ctx = engine.ContextWithClientMetadata(dagql.ContextWithCache(ctx, cache), &engine.ClientMetadata{ClientID: "cli", SessionID: "session"})
+
+	const key = "git-remote-live-refresh"
+	head := strings.Repeat("a", 40)
+	lists := 0
+	list := func(context.Context) (*gitutil.Remote, error) { //nolint:unparam // signature fixed by cachedGitRemote
+		lists++
+		return &gitutil.Remote{Refs: []*gitutil.Ref{{Name: "refs/heads/main", SHA: head}}}, nil
+	}
+	get := func(ctx context.Context) string {
+		t.Helper()
+		remote, _, err := cachedGitRemote(ctx, cache, "session", key, list)
+		require.NoError(t, err)
+		require.Len(t, remote.Refs, 1)
+		return remote.Refs[0].SHA
+	}
+
+	require.Equal(t, head, get(ctx))
+	require.Equal(t, 1, lists)
+
+	// The remote moves: ordinary lookups keep the session's listing.
+	old := head
+	head = strings.Repeat("b", 40)
+	require.Equal(t, old, get(ctx))
+	require.Equal(t, 1, lists)
+
+	// A live lookup lists again, once, however many times it reads.
+	live := ContextWithLiveGitRemote(ctx)
+	require.Same(t, liveGitRemoteFromContext(live), liveGitRemoteFromContext(ContextWithLiveGitRemote(live)),
+		"nested live lookups share one refresh")
+	require.Equal(t, head, get(live))
+	require.Equal(t, head, get(live))
+	require.Equal(t, 2, lists)
+
+	// The refreshed listing replaced the session's: ordinary lookups see it.
+	require.Equal(t, head, get(ctx))
+	require.Equal(t, 2, lists)
+
+	// Each live lookup lists again.
+	head = strings.Repeat("c", 40)
+	require.Equal(t, head, get(ContextWithLiveGitRemote(ctx)))
+	require.Equal(t, 3, lists)
+
+	// A live lookup whose own read populated the listing does not list twice.
+	freshKey := key + "-fresh"
+	live = ContextWithLiveGitRemote(ctx)
+	for range 2 {
+		remote, _, err := cachedGitRemote(live, cache, "session", freshKey, list)
+		require.NoError(t, err)
+		require.Equal(t, head, remote.Refs[0].SHA)
+	}
+	require.Equal(t, 4, lists)
+}
+
 func TestNamedFetchRefSpecs(t *testing.T) {
 	commitSHA := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	refs := []*RemoteGitRef{

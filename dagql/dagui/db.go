@@ -220,11 +220,15 @@ type DB struct {
 
 	// The agent roster is session-wide rather than zoom-relative (see
 	// DB.Agents: an agent born inside a module call is precisely what the
-	// roster exists to surface), so unlike the surfacing memos above it
-	// keys on db.mutations alone.
+	// roster exists to surface). Unlike the surfacing memos above it does
+	// not key on db.mutations: it keys on agentsGen, which only bumps when
+	// something the roster is built from changes, plus the live trace ID.
 	agents          []*AgentNode
 	agentsAt        uint64
+	agentsLive      TraceID
 	agentsInit      bool
+	agentsGen       uint64
+	agentSpans      agentSpanIndex
 	agentControl    agentcontrol.Index
 	agentControlErr error
 
@@ -1292,6 +1296,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	db.Spans.Add(span)
 	db.mutations++
 	db.noteTestSpanUpdated(span)
+
+	// Last, so the index only ever holds spans the DB itself holds.
+	db.indexAgentSpan(span)
 }
 
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {
@@ -1460,7 +1467,7 @@ func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
 	// to claim parked lines. The record's own span is the service's
 	// long-lived exec span: attach the stream there, keeping it beneath the
 	// service instance — and, via log roll-up, in whatever row displays it,
-	// e.g. `dagger up`'s per-service display span — instead of parking it
+	// e.g. `dagger start`'s per-service display span — instead of parking it
 	// forever. (On a cold trace a record can win a race against the creator
 	// span's arrival and land here too; it stays in the same subtree.)
 	if span, ok := db.Spans.Map[fallback]; ok && span.Service {

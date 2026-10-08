@@ -912,10 +912,11 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 		return err
 	}
 
-	parentCtr := parent.Self()
-	if parentCtr == nil {
+	if parent.Self() == nil {
 		return fmt.Errorf("delegate container part %q: nil parent container", part)
 	}
+	parent = containerPartSource(ctx, parent, part)
+	parentCtr := parent.Self()
 
 	switch {
 	case part == ContainerPartFS:
@@ -982,6 +983,44 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 
 	default:
 		return fmt.Errorf("delegate container part %q: unknown part", part)
+	}
+}
+
+// containerPartSource returns the result that delegation copies part
+// from: parent, or the nearest result below it that does not pass the part
+// through. A refined op passes a part through when it maps the part to its
+// delegation group, whose body copies the same part from the op's parent,
+// so every result in between would copy the same value. Copying from the
+// first result that does not pass it through skips evaluating them; through
+// a chain of n mounts that is one evaluation per part instead of n. The walk
+// reads only settled metadata and stops at any result it cannot prove passes
+// the part through.
+func containerPartSource(ctx context.Context, parent dagql.ObjectResult[*Container], part dagql.PartKey) dagql.ObjectResult[*Container] {
+	group := containerDelegationGroup(part)
+	for {
+		ctr := parent.Self()
+		if ctr.acquiredOutput.Load() != nil {
+			return parent
+		}
+		op, ok := ctr.lazyOpForRouting().(LazyContainerParts)
+		if !ok {
+			return parent
+		}
+		// Mappings read settled metadata. A consumed delegation already holds
+		// its copy.
+		state := op.ContainerLazyState()
+		if !state.GroupConsumed(ContainerLazyGroupMetadata) || state.GroupConsumed(group) {
+			return parent
+		}
+		groups, err := op.ContainerLazyGroups(ctx, ctr, []dagql.PartKey{part})
+		if err != nil || len(groups) != 1 || groups[0] != group {
+			return parent
+		}
+		next := op.ContainerLazyParent()
+		if next.Self() == nil {
+			return parent
+		}
+		parent = next
 	}
 }
 

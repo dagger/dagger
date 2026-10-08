@@ -21,12 +21,12 @@ $ viztest: Viztest! X.Xs CACHED
   │
   ├╴✔ withExec /bin/sh -c 'echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X' (disableDaggerInDagger: true) X.Xs
   │ ┃ the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-  ├╴✔ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs
-  ├╴✔ withWorkdir / X.Xs
+  ├╴○ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs
+  ├╴○ withWorkdir / X.Xs
   ├╴✔ withExec /bin/sh -c 'echo hello, world!' (disableDaggerInDagger: true) X.Xs
   │ ┃ hello, world!
-  ├╴✔ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs
-  ├╴✔ withWorkdir / X.Xs
+  ├╴○ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs
+  ├╴○ withWorkdir / X.Xs
   ├╴✘ withExec /bin/sh -c 'echo im failing && false' (disableDaggerInDagger: true) X.Xs ERROR
   │ ┃ im failing
   │ ! exit code: 1

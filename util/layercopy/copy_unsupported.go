@@ -35,6 +35,8 @@ func (c *Copier) Close() error {
 	return nil
 }
 
+func (c *Copier) ForgetSourceLinks() {}
+
 func (c *Copier) Usage() (snapshots.Usage, error) {
 	return snapshots.Usage{}, errors.New("layercopy is only implemented on linux")
 }

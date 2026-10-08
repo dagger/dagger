@@ -1,0 +1,6 @@
+kind: Changed
+body: Exec cleanup no longer reads the engine's whole mount table for each bind mount it removes, so many execs running at once finish faster. 500 parallel execs went from about 21s to 11s.
+time: 2026-10-08T05:21:16.000000000Z
+custom:
+    Author: sipsma
+    PR: "14558"

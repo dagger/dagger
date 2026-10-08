@@ -10,8 +10,9 @@ import (
 
 // Encode and Decode carry the base64 wire form of a call used by the
 // dagger.io/dag.call span attribute, which carries a spanned call's own frame
-// (core/telemetry.go). Frames without a span of their own travel as raw
-// deterministic protobuf log bodies instead (core/dag_call_telemetry.go).
+// (core/telemetry.go). Frames without a span of their own, and frames too
+// large to ride one, travel as raw deterministic protobuf log bodies instead
+// (core/dag_call_telemetry.go).
 
 func (call *Call) Encode() (string, error) {
 	// Deterministic is strictly needed so the CallsByDigest map is sorted in the serialized proto

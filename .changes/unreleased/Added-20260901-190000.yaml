@@ -14,7 +14,7 @@ body: |
   Successful resolutions are recorded as `vanity-url` entries in the workspace
   lockfile (keyed by the https source URL, shared by schemeless and explicit
   refs) and are re-used from the lock thereafter; a server-side redirect change
-  takes effect on `dagger update`, which refreshes the entries and fails if a
+  takes effect on `dagger lock update`, which refreshes the entries and fails if a
   locked vanity URL no longer returns a valid redirect. Without a lock entry,
   results are cached per session. Resolution runs only when session
   infrastructure is available; git-protocol, ssh, and http refs are untouched.

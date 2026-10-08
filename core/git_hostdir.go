@@ -364,11 +364,21 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		}
 	}
 
-	// Record where the checkout's repository was loaded from, so consumers
-	// mounting the reconstruction (Workspace.git.directory) keep working with
-	// remote-aware tooling like gh, which resolves the repository from the
-	// origin remote.
-	if originURL != "" {
+	// Preserve named routing and captured selection for consumers mounting
+	// Workspace.git.directory. Older clients supply only an origin URL.
+	if pack.HasRemoteMetadata {
+		remotes := make([]GitRemote, 0, len(pack.Remotes))
+		for _, remote := range pack.Remotes {
+			entry := GitRemote{Name: remote.Name, URL: remote.Url, PushURL: remote.PushUrl}
+			remotes = append(remotes, entry)
+			if err := writeGitCheckoutRemote(ctx, gitutil.NewGitCLI(gitutil.WithDir(root)), entry); err != nil {
+				return err
+			}
+		}
+		if err := writeGitRemoteSelection(ctx, gitutil.NewGitCLI(gitutil.WithDir(root)), remotes, pack.UpstreamRemote); err != nil {
+			return err
+		}
+	} else if originURL != "" {
 		if _, err := runGitEnv(ctx, root, "remote", "add", "origin", originURL); err != nil {
 			return fmt.Errorf("set origin remote: %w", err)
 		}

@@ -2,12 +2,18 @@ package dagui
 
 import (
 	"context"
+	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/engine/agentcontrol"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -132,8 +138,9 @@ func TestAgentsGroupsLoopSpansByInstance(t *testing.T) {
 }
 
 // TestAgentControlInvalidatesRosterMemo guards the memoization: Agents()
-// caches per DB mutation, so a control record that did not count as a
-// mutation would leave every reader of the roster looking at a frozen state.
+// caches until something it is built from changes, so a control record that
+// did not invalidate it would leave every reader of the roster looking at a
+// frozen state.
 func TestAgentControlInvalidatesRosterMemo(t *testing.T) {
 	const (
 		rootID byte = iota + 1
@@ -379,6 +386,205 @@ func TestRestorePlanIsANoOpOnceRestored(t *testing.T) {
 	}
 	if plan := db.RestorePlan(); len(plan) != 0 {
 		t.Fatalf("restoring twice must be a no-op, not a second re-hydration: %+v", plan)
+	}
+}
+
+// TestAgentsIndexesLateAgentAttributes: a loop span can be exported before
+// its agent attributes are stamped, and a later export of the SAME span then
+// carries them. The roster must pick the agent up from that later export, not
+// only from a span's first appearance.
+func TestAgentsIndexesLateAgentAttributes(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		loopID
+	)
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{agentTestSpan(rootID, "root", SpanID{})})
+
+	start := time.Unix(int64(loopID), 0)
+	loopCtx := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  spanID(loopID).SpanID,
+	})
+	export := func(attrs ...attribute.KeyValue) {
+		t.Helper()
+		stub := tracetest.SpanStub{
+			Name:        "agent loop",
+			SpanContext: loopCtx,
+			Parent: trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID: trace.TraceID{1},
+				SpanID:  spanID(rootID).SpanID,
+			}),
+			StartTime:  start,
+			EndTime:    start.Add(-time.Second), // in flight
+			Attributes: attrs,
+		}.Snapshot()
+		if err := db.ExportSpans(context.Background(), []sdktrace.ReadOnlySpan{stub}); err != nil {
+			t.Fatalf("export: %v", err)
+		}
+	}
+
+	export()
+	if agents := db.Agents(); len(agents) != 0 {
+		t.Fatalf("a span without agent attributes is not an agent: %v", agentNames(agents))
+	}
+
+	export(
+		attribute.Bool(telemetryattrs.AgentAttr, true),
+		attribute.String(telemetryattrs.AgentIDAttr, "agent-late"),
+		attribute.String(telemetryattrs.AgentNameAttr, "late"),
+		attribute.String(telemetryattrs.AgentCallDigestAttr, "sha256:late"),
+	)
+	agents := db.Agents()
+	if len(agents) != 1 {
+		t.Fatalf("agent attributes on a later export were missed: %v", agentNames(agents))
+	}
+	if agents[0].ID != "agent-late" || agents[0].Name != "late" || agents[0].CallDigest != "sha256:late" {
+		t.Fatalf("late-stamped identity = %+v", agents[0])
+	}
+	if got := agents[0].Span(); got != db.Spans.Map[spanID(loopID)] {
+		t.Fatalf("roster points at %v, not the DB's span", got)
+	}
+
+	// A snapshot import replaces the span's fields wholesale; one that no
+	// longer marks it an agent takes it back off the roster.
+	db.ImportSnapshots([]SpanSnapshot{agentTestSpan(loopID, "agent loop", spanID(rootID))})
+	if agents := db.Agents(); len(agents) != 0 {
+		t.Fatalf("a span no longer marked as an agent stayed on the roster: %v", agentNames(agents))
+	}
+}
+
+// TestAgentsNewestStampWins: a relaunched loop re-stamps the agent's identity,
+// and the newest non-empty value wins, whatever order the spans arrive in.
+func TestAgentsNewestStampWins(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		firstLoopID
+		secondLoopID
+	)
+	db := NewDB()
+	first := agentLoopSnapshot(firstLoopID, "agent-a", "old", spanID(rootID))
+	first.EndTime = first.StartTime.Add(time.Second)
+	second := agentLoopSnapshot(secondLoopID, "agent-a", "new", spanID(rootID))
+	second.AgentCallDigest = ""
+	db.ImportSnapshots([]SpanSnapshot{agentTestSpan(rootID, "root", SpanID{}), second, first})
+
+	agents := db.Agents()
+	if len(agents) != 1 {
+		t.Fatalf("expected one agent, got %v", agentNames(agents))
+	}
+	if agents[0].Name != "new" {
+		t.Errorf("name = %q, want the newest loop span's", agents[0].Name)
+	}
+	if agents[0].CallDigest != "sha256:agent-a" {
+		t.Errorf("call digest = %q, want the older span's since the newest is unstamped", agents[0].CallDigest)
+	}
+	if agents[0].Span().ID != spanID(secondLoopID) {
+		t.Errorf("Span() = %v, want the newest loop span", agents[0].Span().ID)
+	}
+}
+
+// TestAgentsMemoSurvivesNonAgentSpans guards the roster's cost on a large
+// trace: the TUI reads Agents() after every ingested span and log batch, so a
+// batch with no agent spans in it must not rebuild the roster (which used to
+// rescan every span in the DB).
+func TestAgentsMemoSurvivesNonAgentSpans(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		loopID
+	)
+	db := NewDB()
+	loop := agentLoopSnapshot(loopID, "agent-a", "worker", spanID(rootID))
+	db.ImportSnapshots([]SpanSnapshot{agentTestSpan(rootID, "root", SpanID{}), loop})
+	agents := db.Agents()
+	if len(agents) != 1 {
+		t.Fatalf("fixture: expected one agent, got %v", agentNames(agents))
+	}
+
+	for batch := range 10 {
+		db.ImportSnapshots(nonAgentBatch(uint64(1000+batch*100), 100, spanID(rootID)))
+		if again := db.Agents(); &again[0] != &agents[0] {
+			t.Fatalf("batch %d without agent spans rebuilt the roster", batch)
+		}
+	}
+
+	// Re-exporting the loop span with nothing the roster reads changed (a
+	// heartbeat, or its end) leaves it alone too; the node reads liveness
+	// off the span itself.
+	loop.EndTime = loop.StartTime.Add(time.Minute)
+	db.ImportSnapshots([]SpanSnapshot{loop})
+	if again := db.Agents(); &again[0] != &agents[0] {
+		t.Fatal("re-exporting an unchanged loop span rebuilt the roster")
+	}
+	if agents[0].Live() {
+		t.Fatal("ended loop span still reads as live")
+	}
+
+	// A change the roster does read rebuilds it.
+	loop.AgentName = "renamed"
+	db.ImportSnapshots([]SpanSnapshot{loop})
+	if got := db.Agents()[0].Name; got != "renamed" {
+		t.Fatalf("roster served a stale memo after a rename: %q", got)
+	}
+}
+
+// nonAgentBatch builds n plain spans with IDs from first, under parent.
+func nonAgentBatch(first uint64, n int, parent SpanID) []SpanSnapshot {
+	batch := make([]SpanSnapshot, n)
+	for i := range batch {
+		var id trace.SpanID
+		binary.BigEndian.PutUint64(id[:], first+uint64(i))
+		start := time.Unix(int64(first)+int64(i), 0)
+		batch[i] = SpanSnapshot{
+			ID:        SpanID{SpanID: id},
+			TraceID:   TraceID{TraceID: trace.TraceID{1}},
+			Name:      "span",
+			StartTime: start,
+			EndTime:   start.Add(time.Second),
+			ParentID:  parent,
+		}
+	}
+	return batch
+}
+
+// BenchmarkAgentsAfterSpanBatch measures what the TUI pays for its roster
+// read after each span batch it ingests on a large trace (only the read is
+// timed). "rebuild" re-stamps a loop span in every batch, forcing a rebuild,
+// which must cost O(agent spans) rather than O(spans in the DB).
+func BenchmarkAgentsAfterSpanBatch(b *testing.B) {
+	const (
+		rootID byte = iota + 1
+		loopID
+		existing  = 200_000
+		batchSize = 10
+	)
+	for _, rebuild := range []bool{false, true} {
+		name := "cached"
+		if rebuild {
+			name = "rebuild"
+		}
+		b.Run(name, func(b *testing.B) {
+			db := NewDB()
+			loop := agentLoopSnapshot(loopID, "agent-a", "worker", spanID(rootID))
+			db.ImportSnapshots([]SpanSnapshot{agentTestSpan(rootID, "root", SpanID{}), loop})
+			db.ImportSnapshots(nonAgentBatch(1000, existing, spanID(rootID)))
+			next := uint64(1000 + existing)
+			b.ResetTimer()
+			for i := range b.N {
+				b.StopTimer()
+				batch := nonAgentBatch(next, batchSize, spanID(rootID))
+				next += batchSize
+				if rebuild {
+					loop.AgentName = fmt.Sprintf("worker-%d", i)
+					batch = append(batch, loop)
+				}
+				db.ImportSnapshots(batch)
+				b.StartTimer()
+				if len(db.Agents()) != 1 {
+					b.Fatal("lost the agent")
+				}
+			}
+		})
 	}
 }
 

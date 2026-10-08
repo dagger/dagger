@@ -28,6 +28,39 @@ type LocalGitRepository struct {
 	// HistorySource is the exact authorized remote anchor of owned shallow
 	// storage. Descendant commits retain one capability, not an ancestry chain.
 	HistorySource dagql.ObjectResult[*GitRef]
+	// Upstream is the remote repository this storage was derived from, with
+	// the authentication and service bindings it was constructed with. Owned
+	// storage only carries the history it was built from; names it does not
+	// contain resolve (and fetch) through Upstream instead. Upstream never
+	// contributes objects to this storage and is never a donor: it is the
+	// same capability the caller already held, retained for name resolution.
+	Upstream dagql.ObjectResult[*GitRepository]
+}
+
+// GitUpstream returns the remote repository that storage derived from repo
+// should retain as its Upstream: repo itself when it is remote, the retained
+// Upstream when it is owned storage, and nothing otherwise.
+func GitUpstream(repo dagql.ObjectResult[*GitRepository]) dagql.ObjectResult[*GitRepository] {
+	if repo.Self() == nil {
+		return dagql.ObjectResult[*GitRepository]{}
+	}
+	switch backend := repo.Self().Backend.(type) {
+	case *RemoteGitRepository:
+		return repo
+	case *LocalGitRepository:
+		return backend.Upstream
+	}
+	return dagql.ObjectResult[*GitRepository]{}
+}
+
+func (repo *LocalGitRepository) validateUpstream() error {
+	if repo.Upstream.Self() == nil {
+		return nil
+	}
+	if _, ok := repo.Upstream.Self().Backend.(*RemoteGitRepository); !ok {
+		return fmt.Errorf("git repository upstream must be a remote repository, got %T", repo.Upstream.Self().Backend)
+	}
+	return nil
 }
 
 // GitCheckoutBase retains the exact canonical parent recipe of a checked commit.
@@ -164,6 +197,22 @@ func (repo *LocalGitRepository) resolveShortSHA(ctx context.Context, prefix stri
 		return "", err
 	}
 	return sha, nil
+}
+
+// HasCommit reports whether the repository's raw storage contains the commit.
+// It never hydrates: a commit beyond an owned shallow boundary is absent.
+func (repo *LocalGitRepository) HasCommit(ctx context.Context, sha string) (bool, error) {
+	var has bool
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		// --quiet: a missing commit is an answer, not an error worth logging.
+		out, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", "--quiet", sha+"^{commit}")
+		if err != nil {
+			return err
+		}
+		has = strings.EqualFold(strings.TrimSpace(string(out)), sha)
+		return nil
+	})
+	return has, err
 }
 
 func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*File, error) {
@@ -380,10 +429,9 @@ func (ref *LocalGitRef) mount(ctx context.Context, depth int, includeTags bool, 
 	return ref.mountHistory(ctx, depth, includeTags, fn)
 }
 
-// readGitConfigRemotes reads the remotes configured on the repository the
-// CLI is positioned in: every remote.<name>.url and remote.<name>.pushurl,
-// in configuration order. A repository with no remotes (or no readable
-// config) reports none.
+// readGitConfigRemotes reads configured names in configuration order, then
+// asks Git for their effective fetch and push URLs. Git applies URL rewrites
+// and selects the first URL when a remote has several destinations.
 func readGitConfigRemotes(ctx context.Context, git *gitutil.GitCLI) ([]GitRemote, error) {
 	out, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "config", "-z", "--get-regexp", `^remote\.`)
 	if err != nil {
@@ -420,7 +468,6 @@ func readGitConfigRemotes(ctx context.Context, git *gitutil.GitCLI) ([]GitRemote
 		}
 		switch attr {
 		case "url":
-			// Later values shadow earlier ones, like `git config --get`.
 			remote.URL = value
 		case "pushurl":
 			// Git pushes to every configured pushurl; only the first one is
@@ -432,12 +479,35 @@ func readGitConfigRemotes(ctx context.Context, git *gitutil.GitCLI) ([]GitRemote
 	}
 	remotes := make([]GitRemote, 0, len(order))
 	for _, name := range order {
-		remotes = append(remotes, *byName[name])
+		remote, err := resolveGitConfigRemote(ctx, git, *byName[name])
+		if err != nil {
+			return nil, err
+		}
+		remotes = append(remotes, remote)
 	}
 	return remotes, nil
 }
 
-func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote) (_ *Directory, rerr error) {
+func resolveGitConfigRemote(ctx context.Context, git *gitutil.GitCLI, remote GitRemote) (GitRemote, error) {
+	if remote.URL != "" {
+		out, err := git.Run(ctx, "remote", "get-url", "--", remote.Name)
+		if err != nil {
+			return GitRemote{}, fmt.Errorf("read remote %q fetch URL: %w", remote.Name, err)
+		}
+		remote.URL = strings.TrimSuffix(string(out), "\n")
+	}
+	out, err := git.Run(ctx, "remote", "get-url", "--push", "--", remote.Name)
+	if err != nil {
+		return GitRemote{}, fmt.Errorf("read remote %q push URL: %w", remote.Name, err)
+	}
+	pushURL := strings.TrimSuffix(string(out), "\n")
+	if remote.PushURL != "" || pushURL != remote.URL {
+		remote.PushURL = pushURL
+	}
+	return remote, nil
+}
+
+func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (_ *Directory, rerr error) {
 	if discardGitDir && ref.incrementalCheckoutEligible() {
 		dir, supported, err := ref.incrementalTree(ctx, srv)
 		if err != nil || supported {
@@ -488,6 +558,16 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return fmt.Errorf("could not read remotes: %w", err)
 		}
 		checkoutRemotes := MergeGitRemotes(configRemotes, remotes)
+		var upstream string
+		if upstreamRemote != nil {
+			checkoutRemotes = MergeGitRemotes(nil, remotes)
+			upstream = *upstreamRemote
+		} else {
+			upstream, err = gitBranchUpstream(ctx, git, ref.Ref.Name)
+			if err != nil {
+				return err
+			}
+		}
 
 		return MountRef(ctx, bkref, func(checkoutDir string, _ *mount.Mount) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
@@ -502,7 +582,10 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			if discardGitDir {
 				return doLocalGitTreeCheckout(ctx, git, checkoutGit, checkoutRemotes, gitURL, ref.Ref)
 			}
-			return doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, false)
+			if err := doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, false); err != nil {
+				return err
+			}
+			return writeGitRemoteSelection(ctx, checkoutGit, checkoutRemotes, upstream)
 		})
 	})
 	if err != nil {

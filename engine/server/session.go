@@ -124,6 +124,12 @@ type daggerSession struct {
 	cancelClosing    context.CancelCauseFunc
 	closeClosingOnce sync.Once
 
+	// mainAttachablesCtx ends the main client's attachables. They outlive
+	// closingCtx: the main client's shutdown refreshes the Cloud token through
+	// them until its final Cloud flush, and ends them after it.
+	mainAttachablesCtx context.Context
+	endMainAttachables context.CancelCauseFunc
+
 	// wcprofTraceID / wcprofRootSpanID are this session's trace and its session-root
 	// (POST /query) span, captured once on the first traced main-client query (when
 	// the propagated ids are in hand). At teardown removeDaggerSession stamps the
@@ -205,6 +211,7 @@ type daggerSession struct {
 	allowedLLMModules []string
 
 	gitPushApprovals gitPushApprovals
+	gitReadApprovals gitReadApprovals
 
 	lockFiles  map[workspaceLockKey]*workspaceLockState
 	lockFileMu sync.RWMutex
@@ -984,6 +991,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
+	sess.mainAttachablesCtx, sess.endMainAttachables = context.WithCancelCause(context.Background())
 	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
 	sess.agents = core.NewAgentRuntimes()
@@ -1046,11 +1054,34 @@ func (sess *daggerSession) beginClosing() {
 }
 
 func (sess *daggerSession) withClosingCancel(ctx context.Context) context.Context {
+	return withCancelFrom(ctx, sess.closingCtx)
+}
+
+// endMainClientAttachables ends the main client's attachables. The main
+// client's shutdown calls it once no refresh may reach through them any more,
+// and session removal calls it in case that shutdown never came.
+func (sess *daggerSession) endMainClientAttachables() {
+	if sess.endMainAttachables != nil {
+		sess.endMainAttachables(errSessionClosing)
+	}
+}
+
+// withAttachablesCancel returns the context that a client's attachables live
+// on. The main client's outlive the session's closing; see mainAttachablesCtx.
+func (sess *daggerSession) withAttachablesCancel(ctx context.Context, clientID string) context.Context {
+	if clientID == sess.mainClientCallerID && sess.mainAttachablesCtx != nil {
+		return withCancelFrom(ctx, sess.mainAttachablesCtx)
+	}
+	return sess.withClosingCancel(ctx)
+}
+
+// withCancelFrom returns ctx, also canceled when src is done.
+func withCancelFrom(ctx, src context.Context) context.Context {
 	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		select {
-		case <-sess.closingCtx.Done():
-			cancel(context.Cause(sess.closingCtx))
+		case <-src.Done():
+			cancel(context.Cause(src))
 		case <-ctx.Done():
 		}
 	}()
@@ -1078,6 +1109,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	sess.markSessionRemoved()
 	sess.beginClientScopeTeardown()
 	sess.beginClosing()
+	sess.endMainClientAttachables()
 
 	// check if the local cache needs pruning after session is removed, prune if so
 	defer func() {
@@ -2182,6 +2214,22 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}).ServeHTTP(w, r)
 }
 
+// ServeHTTPToNewSession serves an exec's new session endpoint the same way the
+// engine's main listener serves clients: gRPC requests go to the control API
+// the client handshake uses, and every other request is a root client, so each
+// client that connects starts its own session.
+func (srv *Server) ServeHTTPToNewSession(w http.ResponseWriter, r *http.Request) {
+	if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
+		srv.newSessionGRPCOnce.Do(func() {
+			srv.newSessionGRPC = grpc.NewServer()
+			srv.Register(srv.newSessionGRPC)
+		})
+		srv.newSessionGRPC.ServeHTTP(w, r)
+		return
+	}
+	srv.ServeHTTP(w, r)
+}
+
 // ServeHTTPToNestedClient serves nested clients, including module function calls.
 func (srv *Server) ServeHTTPToNestedClient(
 	w http.ResponseWriter,
@@ -2503,7 +2551,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 		panic(fmt.Errorf("failed to read ack: %w", err))
 	}
 
-	ctx = record.daggerSession.withClosingCancel(ctx)
+	ctx = record.daggerSession.withAttachablesCancel(ctx, record.clientID)
 
 	// Disable collecting otel metrics on these grpc connections for now. We don't use them and
 	// they add noticeable memory allocation overhead, especially for heavy filesync use cases.
@@ -2884,7 +2932,8 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			return nil
 		})
 
-		// this must be done after lockfile flushing (since lockfiles make use of attachables to write data to host)
+		// this must be done after lockfile flushing (since lockfiles make use of attachables to write data to host).
+		// The main client's attachables outlive it, for the final Cloud flush below.
 		sess.beginClosing()
 
 		// Stop services, since the main client is going away, and we
@@ -2947,6 +2996,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			sess.stopCloudTokenRefresh(ctx)
 			return nil
 		})
+		sess.endMainClientAttachables()
 	}
 
 	client.closeShutdownOnce.Do(func() {
@@ -3498,6 +3548,9 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 	}
 	if client.clientID == client.daggerSession.mainClientCallerID {
 		return nil, fmt.Errorf("%w: main client caller has no current module", core.ErrNoCurrentModule)
+	}
+	if client.fnCall == nil {
+		return nil, core.ErrNoCurrentFunctionCall
 	}
 	return client.fnCall, nil
 }

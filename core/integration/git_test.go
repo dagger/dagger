@@ -861,6 +861,19 @@ sleep infinity
 	committed := repo.Branch("main").AsWorkspace().WithNewFile("pushed.txt", "SSH push").With(func(ws *dagger.Workspace) *dagger.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "SSH push", workspaceCommitDate)
 	})
+	t.Run("branch filtering snapshot", func(ctx context.Context, t *testctx.T) {
+		frozen := committed.Snapshot()
+		remote, err := frozen.Git().Head().AsRepository().DefaultRemote(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, remote)
+		head := remote.Repository().Head(dagger.GitRepositoryHeadOpts{NoLock: true})
+		contains, err := head.Contains(ctx, repo.Branch("main"))
+		require.NoError(t, err)
+		require.True(t, contains)
+		contains, err = head.Contains(ctx, frozen.Git().Head())
+		require.NoError(t, err)
+		require.False(t, contains)
+	})
 	result, err := pushGitRef(ctx, c, committed.Git().Head(), repo, "ssh-push", nil)
 	require.NoError(t, err)
 	require.Equal(t, "CREATED", result.Disposition)
@@ -908,6 +921,12 @@ sleep infinity
 	remoteSHA, err := repo.Branch("main").CommitSHA(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, remoteSHA, strings.TrimSpace(localSHA))
+	// A capture carries only its checkpoint refs, so the snapshot's own storage
+	// can resolve another branch only through the SSH remote it came from.
+	// (Read it from the clone: this session's listing predates the push.)
+	remoteOnlySHA, err := checkout.WithExec([]string{"git", "rev-parse", "origin/ssh-push"}).Stdout(ctx)
+	require.NoError(t, err)
+	remoteOnlySHA = strings.TrimSpace(remoteOnlySHA)
 
 	for _, existingAgent := range []bool{false, true} {
 		name := "snapshot with identity file"
@@ -929,7 +948,15 @@ sleep infinity
 						tracked: file(path: "README.md") { contents }
 						local: file(path: "local.txt") { contents }
 						git {
-							head { commitSHA }
+							head {
+								commitSHA
+								asRepository {
+									ref(name: "ssh-push") {
+										commitSHA
+										tree(discardGitDir: true) { entries }
+									}
+								}
+							}
 							uncommitted { modifiedPaths }
 						}
 					}
@@ -958,14 +985,88 @@ sleep infinity
 						"tracked": {"contents": "test\ndirty tracked file\n"},
 						"local": {"contents": "local commit\n"},
 						"git": {
-							"head": {"commitSHA": %q},
+							"head": {
+								"commitSHA": %q,
+								"asRepository": {
+									"ref": {
+										"commitSHA": %q,
+										"tree": {"entries": ["README.md", "pushed.txt"]}
+									}
+								}
+							},
 							"uncommitted": {"modifiedPaths": ["README.md"]}
 						}
 					}
 				}
-			}`, id, strings.TrimSpace(localSHA)), out)
+			}`, id, strings.TrimSpace(localSHA), remoteOnlySHA), out)
+
+			// Agent tools are module code, which is never offered the owner's
+			// credentials implicitly: git(url) cannot read this remote there.
+			// The snapshot handed to the module still resolves it, through the
+			// remote it was captured from.
+			resolver := client.
+				WithNewFile("/resolver/dagger.json", `{"name":"resolver","engineVersion":"latest","sdk":{"source":"dang"}}`).
+				WithNewFile("/resolver/main.dang", `type Resolver {
+  resolve(ws: Workspace!, name: String!): String! { ws.git.head.asRepository.ref(name: name).commitSHA }
+  direct(url: String!, name: String!): String! { git(url).ref(name: name).commitSHA }
+}`)
+			script := func(script string) (string, string, int) {
+				ran := resolver.WithExec([]string{"dagger", "script", "-m", "/resolver"}, dagger.ContainerWithExecOpts{
+					Stdin:  script,
+					Expect: dagger.ReturnTypeAny,
+				})
+				code, err := ran.ExitCode(ctx)
+				require.NoError(t, err)
+				stdout, err := ran.Stdout(ctx)
+				require.NoError(t, err)
+				stderr, err := ran.Stderr(ctx)
+				require.NoError(t, err)
+				return stdout, stderr, code
+			}
+			stdout, stderr, code := script(`resolve --ws $(current-workspace | snapshot) ssh-push`)
+			require.Zero(t, code, stderr)
+			require.Equal(t, remoteOnlySHA, strings.TrimSpace(stdout))
+			_, stderr, code = script(fmt.Sprintf(`direct %q ssh-push`, repoURL))
+			require.NotZero(t, code)
+			require.Contains(t, stderr, "SSH URLs are not supported without an SSH socket")
 		})
 	}
+}
+
+// TestSSHAuthSockResumeFromCheckout resumes a session, as `dagger agent
+// --resume` does, from the checkout of a private SSH repository it started in,
+// with no SSH agent running either time. Capturing the checkout prepared an
+// agent from its identity file; the resuming CLI, in a session of its own,
+// prepares one for its checkout's origin to replay the snapshot's recipe.
+func (GitSuite) TestSSHAuthSockResumeFromCheckout(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	// Addressed by IP, which a separate session can still reach.
+	remote := privateGitSSHRemote(ctx, t, c)
+	checkout := func(c *dagger.Client) *dagger.Container {
+		return daggerCliBase(t, c).
+			With(remote.cli).
+			WithExec([]string{"apk", "add", "git"}).
+			WithEnvVariable("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=no").
+			WithExec([]string{"git", "clone", remote.url, "/checkout"}).
+			WithWorkdir("/checkout").
+			WithNewFile("README", "dirty tracked file\n")
+	}
+
+	recipe, err := sink.captureShellRecipe(ctx, t, checkout(c), `llm | with-workspace --workspace $(current-workspace | snapshot)`)
+	require.NoError(t, err)
+	fields := workspaceRecipeFields(t, recipe)
+	require.Contains(t, fields, "_sshAuthSocket", "the snapshot reconstructs from the SSH remote")
+	require.NotContains(t, fields, "__gitDir")
+
+	// A fresh session caches nothing the capture produced, so replaying the
+	// recipe scopes an SSH agent again, and none is running.
+	resumed := "resumed-" + identity.NewID()
+	_, err = checkout(connect(ctx, t)).
+		With(daggerQuery(`{ node(id: %q) { ... on LLM {
+			spawn(handle: %q, name: %q, state: IDLE, error: "", parentHandle: "")
+		} } }`, recipe, resumed, resumed)).
+		Sync(ctx)
+	require.NoError(t, err)
 }
 
 func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
@@ -1613,6 +1714,77 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 	head, err := ref.Tree().File(".git/HEAD").Contents(ctx)
 	require.NoError(t, err)
 	require.Contains(t, commit, strings.TrimSpace(head))
+}
+
+// noLock asks a lookup to resolve the ref live, so a remote that moves
+// mid-session is seen by the next noLock lookup, rather than answered from
+// the session's first resolution. Lookups without noLock keep today's
+// behavior: a lookup the client already made returns its earlier result.
+func (GitSuite) TestRemoteUpdatesNoLock(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	svc, err := svc.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := svc.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", url, "."})
+	revParse := func(ctr *dagger.Container) string {
+		t.Helper()
+		out, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	push := func(name string) string {
+		t.Helper()
+		ctr = ctr.WithExec([]string{"sh", "-c", "touch " + name + " && git add " + name + ` && git commit -m "` + name + `" && git push origin main`})
+		return revParse(ctr)
+	}
+	commitOf := func(ref *dagger.GitRef) string {
+		t.Helper()
+		sha, err := ref.CommitSHA(ctx)
+		require.NoError(t, err)
+		return sha
+	}
+	repo := func() *dagger.GitRepository { return c.Git(url) }
+	liveRef := func() string {
+		return commitOf(repo().Ref("main", dagger.GitRepositoryRefOpts{NoLock: true}))
+	}
+	liveAddress := func() string {
+		return commitOf(c.Address(url + "#main").GitRef(dagger.AddressGitRefOpts{NoLock: true}))
+	}
+
+	initial := revParse(ctr)
+	require.Equal(t, initial, liveRef())
+	require.Equal(t, initial, liveAddress())
+	// A plain lookup in the same session agrees with the live one.
+	require.Equal(t, initial, commitOf(repo().Ref("main")))
+
+	second := push("second")
+	require.NotEqual(t, initial, second)
+	require.Equal(t, second, liveRef(), "a noLock ref lookup must list the remote again")
+	require.Equal(t, second, liveAddress(), "a noLock address lookup must list the remote again")
+
+	// A plain lookup the client already made is answered from its cache, as
+	// before: plain lookups are stable for the session.
+	require.Equal(t, initial, commitOf(repo().Ref("main")))
+	// A plain lookup the client has not made yet resolves from the session's
+	// listing, which the live lookup refreshed.
+	require.Equal(t, second, commitOf(repo().Branch("main")))
+
+	third := push("third")
+	require.Equal(t, third, liveAddress())
+	require.Equal(t, third, liveRef())
+	require.Equal(t, initial, commitOf(repo().Ref("main")))
+	require.Equal(t, second, commitOf(repo().Branch("main")))
 }
 
 func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {

@@ -509,6 +509,59 @@ func TestCritpath(t *testing.T) {
 	}
 }
 
+// nestedClientDump builds a module function call whose exec hosts a nested
+// client, with the nested_client link recorded from hostOp: the exec (3), or
+// its setupNestedClient phase (4) as engines before the link moved recorded
+// it.
+func nestedClientDump(t *testing.T, hostOp uint64) *Graph {
+	t.Helper()
+	b := newDump(t)
+	b.call(1, 0, "mod:Mod.fn", "c", 0, 100) // exec op 2
+	b.op(3, 2, "exec", "exec.run", "c", "ok", 5, 100)
+	b.op(4, 3, "exec_phase", "exec.setupNestedClient", "", "ok", 5, 6)
+	b.op(5, 3, "exec_phase", "exec.runContainer", "", "ok", 6, 100)
+	b.op(6, 5, "exec_phase", "exec.containerStart", "", "ok", 6, 10)
+	b.op(7, 5, "exec_phase", "exec.processRun", "", "ok", 10, 100)
+	b.events = append(b.events, wcprof.DumpEvent{Type: "link", LinkKind: "nested_client", ParentID: hostOp, IdentID: b.id("nested"), StartNS: 15 * msNS, EndNS: 15 * msNS})
+	b.op(8, 0, "session_phase", "session.serveQuery", "nested", "ok", 20, 80)
+	b.call(9, 8, "Container.withExec", "nested", 21, 79) // exec op 10
+	return b.graph()
+}
+
+func TestCritpathNestedClient(t *testing.T) {
+	for _, host := range []uint64{3, 4} {
+		g := nestedClientDump(t, host)
+		if p := g.ByID[8].Parent; p == nil || p.ID != 7 || !g.ByID[8].Reparented {
+			t.Errorf("host %d: the nested client's root should be under the exec's processRun, got parent %v", host, p)
+		}
+		// 90ms of process run minus the 60ms request.
+		if got, want := g.ByID[7].Self, 30*msNS; got != want {
+			t.Errorf("host %d: self of processRun: got %s, want %s", host, fmtDur(got), fmtDur(want))
+		}
+		out := report(t, g, Options{View: "critpath", Op: 1})
+		assertContains(t, out,
+			"     58.00ms  58.0%        1  call Container.withExec\n",
+			"     30.00ms  30.0%        1  exec_phase exec.processRun\n",
+		)
+		want := []string{
+			"\n      +10.00ms dur 90.00ms own 30.00ms  7 exec_phase exec.processRun [ok]\n",
+			"\n        +20.00ms dur 60.00ms own 2.00ms  8 session_phase session.serveQuery [ok]\n",
+			"\n          +21.00ms dur 58.00ms own 58.00ms  9 call Container.withExec [executed] (exec 10)\n",
+		}
+		pos := -1
+		for _, w := range want {
+			i := strings.Index(out, w)
+			if i < 0 {
+				t.Fatalf("host %d: output missing %q:\n%s", host, w, out)
+			}
+			if i < pos {
+				t.Errorf("host %d: %q is out of order:\n%s", host, w, out)
+			}
+			pos = i
+		}
+	}
+}
+
 func TestCritpathShortSegments(t *testing.T) {
 	// The threshold is 1% of the 10s path: 100ms.
 	b := newDump(t)
