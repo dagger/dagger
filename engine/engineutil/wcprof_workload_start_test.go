@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // writePidFile writes a pid file the way runc's createPidFile does: a
@@ -20,29 +18,28 @@ func writePidFile(t *testing.T, path string) {
 	require.NoError(t, os.Rename(tmp, path))
 }
 
-func TestWorkloadStartWatchSeesPidFileRename(t *testing.T) {
-	wcprof.EnsureRecorder()
-	dir := t.TempDir()
-	pidFile := filepath.Join(dir, "init.pid")
-
-	w, err := watchWorkloadStart(pidFile)
-	require.NoError(t, err)
-	// Other files in the bundle are not the boundary.
-	writePidFile(t, filepath.Join(dir, "other.pid"))
-	before := wcprof.NowNS()
+func TestWorkloadReleasedFromPidFile(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "init.pid")
+	// The started callback's paired wcprof and wall-clock times.
+	const startedNS = int64(5 * time.Second)
+	startedWall := time.Now()
+	time.Sleep(50 * time.Millisecond)
+	before := time.Now()
 	writePidFile(t, pidFile)
-	// stop may run before the watcher reads the event; wait for it.
-	require.Eventually(t, func() bool { return w.atNS.Load() != 0 }, 5*time.Second, time.Millisecond)
-	at := w.stop()
-	require.GreaterOrEqual(t, at, before)
-	require.LessOrEqual(t, at, wcprof.NowNS())
+	after := time.Now()
+
+	released := workloadReleasedNS(pidFile, startedNS, startedWall.UnixNano())
+	// File times come from the coarse clock: allow it to be a tick early.
+	const tick = 20 * time.Millisecond
+	require.GreaterOrEqual(t, released, startedNS+int64(before.Sub(startedWall)-tick))
+	require.LessOrEqual(t, released, startedNS+int64(after.Sub(startedWall)))
+	require.Greater(t, released, startedNS, "the release is after the started callback")
 }
 
-func TestWorkloadStartWatchWithoutPidFile(t *testing.T) {
-	wcprof.EnsureRecorder()
-	w, err := watchWorkloadStart(filepath.Join(t.TempDir(), "init.pid"))
-	require.NoError(t, err)
-	require.Zero(t, w.stop(), "a run that never released its workload has no boundary")
-	var nilWatch *workloadStartWatch
-	require.Zero(t, nilWatch.stop())
+func TestWorkloadReleasedUnknown(t *testing.T) {
+	now := time.Now().UnixNano()
+	missing := filepath.Join(t.TempDir(), "init.pid")
+	require.Zero(t, workloadReleasedNS(missing, 1, now), "runc never wrote the pid file")
+	require.Zero(t, workloadReleasedNS("", 1, now), "not profiling: no pid file was requested")
+	require.Zero(t, workloadReleasedNS(missing, 0, now), "the container never started")
 }

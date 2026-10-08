@@ -1796,15 +1796,9 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	// With wcprof on, runc writes a pid file once the workload is released,
 	// which splits runc's container start-up from the user's process run.
-	var workloadStart *workloadStartWatch
 	var pidFile string
 	if wcprof.Enabled(ctx) {
 		pidFile = filepath.Join(bundle, "init.pid")
-		workloadStart, err = watchWorkloadStart(pidFile)
-		if err != nil {
-			bklog.G(ctx).WithError(err).Debug("wcprof: not splitting runtime start-up from the process run")
-			pidFile = ""
-		}
 	}
 
 	killer := newRunProcKiller(c.Runc, state.id)
@@ -1924,7 +1918,6 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	runErr := c.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall)
 	endWall := time.Now()
-	workloadStartNS := workloadStart.stop()
 	// Scrub + bound the captured user command ONCE, only when a profile source is
 	// active, and feed the SAME slice to both sinks below so native and OTel carry
 	// a byte-identical argv. It rides only on the user processRun phase (where the
@@ -1944,10 +1937,10 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		if startedNS := profStartedNS.Load(); startedNS > 0 {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
 			processStartNS := startedNS
-			if workloadStartNS > startedNS && workloadStartNS <= endNS {
+			if releasedNS := workloadReleasedNS(pidFile, startedNS, profStartedWall.Load()); releasedNS > startedNS && releasedNS <= endNS {
 				// runc creating the container, up to releasing the workload
-				wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, workloadStartNS, wcprof.OutcomeOK)
-				processStartNS = workloadStartNS
+				wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, releasedNS, wcprof.OutcomeOK)
+				processStartNS = releasedNS
 			}
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser, Argv: profArgv}, processStartNS, endNS, outcome)
 		} else {
