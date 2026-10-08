@@ -1859,6 +1859,10 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 	eg, egCtx := errgroup.WithContext(ctx)
 	mu := sync.Mutex{} // cannot simultaneously add+fetch remotes
 	commits := make([]string, len(refs))
+	// Fetching a commit ID writes no ref, and fetch negotiates only from refs
+	// unless told otherwise: without these tips, every fetch after the first
+	// would claim to have nothing and receive the whole shared history again.
+	var fetched []string
 
 	for i, ref := range refs {
 		eg.Go(func() error {
@@ -1874,9 +1878,14 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 				if _, err := git.Run(egCtx, "remote", "add", remoteName, remoteURL); err != nil {
 					return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
 				}
-				if _, err := git.Run(egCtx, "fetch", "--no-tags", "--update-shallow", remoteName, ref.Ref.SHA); err != nil {
+				args := []string{"fetch", "--no-tags", "--update-shallow"}
+				for _, sha := range fetched {
+					args = append(args, "--negotiation-tip="+sha)
+				}
+				if _, err := git.Run(egCtx, append(args, remoteName, ref.Ref.SHA)...); err != nil {
 					return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
 				}
+				fetched = append(fetched, ref.Ref.SHA)
 				return nil
 			})
 		})

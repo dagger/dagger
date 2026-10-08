@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -284,4 +286,36 @@ func TestGitLogSingleRefWithoutRecipe(t *testing.T) {
 	require.Len(t, commits, 1)
 	require.Equal(t, base, commits[0].SHA)
 	require.False(t, ref.Backend.(*historyTestRef).held)
+}
+
+// refJoin fetches commit IDs, which write no refs into the joined repository.
+// Every fetch after the first must still negotiate from the commits already
+// joined, not receive their shared history again.
+func TestRefJoinNegotiatesSharedHistory(t *testing.T) {
+	ctx := context.Background()
+	source := historyRepo(t, "sha1")
+	for i := range 60 {
+		historyCommit(t, source, fmt.Sprintf("file%d", i), fmt.Sprintf("shared %d", i))
+	}
+	fork := t.TempDir()
+	gitMirrorTestRun(t, fork, "clone", "--quiet", "--no-hardlinks", source, ".")
+	gitMirrorTestRun(t, fork, "config", "user.name", "History Author")
+	gitMirrorTestRun(t, fork, "config", "user.email", "history@example.com")
+	// Both tips diverge, so whichever is fetched second needs a transfer.
+	left := historyCommit(t, source, "left", "left")
+	right := historyCommit(t, fork, "right", "right")
+	git, shas, cleanup, err := refJoin(ctx, []*GitRef{historyRef(source, left), historyRef(fork, right)})
+	require.NoError(t, err)
+	defer cleanup()
+	require.Equal(t, []string{left, right}, shas)
+	stored := 0
+	for line := range strings.SplitSeq(gitMirrorTestRun(t, git.Dir(), "count-objects", "-v"), "\n") {
+		if key, value, ok := strings.Cut(line, ": "); ok && (key == "count" || key == "in-pack") {
+			n, err := strconv.Atoi(value)
+			require.NoError(t, err)
+			stored += n
+		}
+	}
+	distinct := strings.Count(gitMirrorTestRun(t, git.Dir(), "cat-file", "--batch-all-objects", "--batch-check"), "\n") + 1
+	require.Equal(t, distinct, stored, "the shared history was transferred twice")
 }
