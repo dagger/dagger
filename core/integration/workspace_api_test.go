@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -1597,6 +1598,15 @@ engineVersion = "latest"
 	name, err := src.ModuleOriginalName(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "git-module", name)
+	// Nested clients reload this string. It must retain the known repository
+	// boundary rather than turn a local module into an import-path lookup.
+	ref, err := src.AsString(ctx)
+	require.NoError(t, err)
+	parsed, err := gitref.Parse(ctx, ref)
+	require.NoError(t, err)
+	require.Equal(t, repoURL, parsed.CloneRef)
+	require.Equal(t, "module", parsed.RepoRootSubdir)
+	require.Equal(t, gitref.GitRefSelector, parsed.Selector)
 }
 
 func (WorkspaceAPISuite) TestGitWorkspaceModuleSourcePrivateSSH(ctx context.Context, t *testctx.T) {

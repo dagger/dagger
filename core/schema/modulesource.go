@@ -1022,6 +1022,12 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 			Commit:           ref.Ref.SHA,
 			Ref:              ref.Ref.Name,
 		}
+		// A Git workspace already knows its repository boundary. Preserve
+		// that boundary when a nested client reloads the source's AsString.
+		// SCP-style refs keep their legacy syntax: # requires a protocol.
+		if gitref.Scheme(cloneRef).Prefix() != "" {
+			src.Git.Selector = gitref.GitRefSelector
+		}
 		src.Git.Symbolic = cloneRef
 		if sourceRootPath != "." {
 			src.Git.Symbolic += "/" + filepath.ToSlash(sourceRootPath)
