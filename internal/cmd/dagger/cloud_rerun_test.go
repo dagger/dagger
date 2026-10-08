@@ -54,9 +54,21 @@ func TestCloudRerunTargetsByDAGAddress(t *testing.T) {
 	require.Equal(t, []string{"test"}, cloudCheckNames(targets))
 }
 
+func TestCloudRerunTargetsByDAGAddressCheckKey(t *testing.T) {
+	// Check addresses carry the check name as the "check" key, which is what
+	// the trace suggests on current engines.
+	setCloudRerunFlags(t, []string{"dag://?check=ci:bootstrap", "dag+check://?check=test"}, false)
+	targets, err := cloudRerunTargets(cloudRerunCheckList())
+	require.NoError(t, err)
+	require.Equal(t, []string{"ci:bootstrap", "test"}, cloudCheckNames(targets))
+}
+
 func TestStripDAGScheme(t *testing.T) {
 	require.Equal(t, "test-split/test-cache-persistence", stripDAGScheme("dag://test-split/test-cache-persistence"))
 	require.Equal(t, "golang/generate-all/stale", stripDAGScheme("dag://golang/generate-all/stale"))
+	// A path-less address names the check by its "check" key.
+	require.Equal(t, "golang/test-all", stripDAGScheme("dag://?check=golang/test-all"))
+	require.Equal(t, "golang/test-all", stripDAGScheme("dag+check://?check=golang/test-all"))
 	// A scheme-less Cloud name is returned unchanged.
 	require.Equal(t, "ci:bootstrap", stripDAGScheme("ci:bootstrap"))
 }
