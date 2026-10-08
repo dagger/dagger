@@ -815,7 +815,7 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 	}
 	traces, _ := sink.capture()
 	parents, spans := map[string]string{}, map[string]spanInfo{}
-	cow := map[string]bool{}
+	cow, paths := map[string]bool{}, map[string]string{}
 	layerBytes, objectBytes := map[string]int64{}, map[string]int64{}
 	var fallbacks []string
 	for _, request := range traces {
@@ -835,8 +835,12 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 						switch attr.Key {
 						case "dagger.git.checkout.cow.supported":
 							cow[id] = attr.Value.GetBoolValue()
-						case "dagger.git.checkout.cow.fallback":
-							fallbacks = append(fallbacks, attr.Value.GetStringValue())
+						case "dagger.git.checkout.cow.path":
+							paths[id] = attr.Value.GetStringValue()
+						case "dagger.git.checkout.cow.skipped":
+							for _, v := range attr.Value.GetArrayValue().GetValues() {
+								fallbacks = append(fallbacks, v.GetStringValue())
+							}
 						case "dagger.git.checkout.cow.layer_bytes":
 							layerBytes[id] = attr.Value.GetIntValue()
 						case "dagger.git.checkout.cow.layer_object_bytes":
@@ -847,14 +851,15 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 			}
 		}
 	}
-	var supported, checkouts int
+	var checkouts int
+	byPath := map[string]int{}
 	for id, ok := range cow {
 		if !ok {
 			continue
 		}
-		supported++
+		byPath[paths[id]]++
 		root := spans[id]
-		t.Logf("copy-on-write checkout: %s, layer %d bytes (%d below .git/objects)", time.Duration(root.end-root.start), layerBytes[id], objectBytes[id])
+		t.Logf("copy-on-write checkout (%s): %s, layer %d bytes (%d below .git/objects)", paths[id], time.Duration(root.end-root.start), layerBytes[id], objectBytes[id])
 		var children []spanInfo
 		for child, parent := range parents {
 			if parent == id {
@@ -867,17 +872,29 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 		}
 		require.Contains(t, layerBytes, id, "overlay layer usage must be measured")
 		require.Less(t, objectBytes[id], int64(1<<20), "inherited objects were copied into the checkout's layer")
-		// The worktree takes ~20MiB of 4KiB blocks; the history's pack 32MiB.
-		require.Less(t, layerBytes[id], int64(30<<20), "the checkout's layer holds more than its worktree")
+		if paths[id] == "delta" {
+			// One changed file: the index and metadata, not the worktree.
+			require.Less(t, layerBytes[id], int64(4<<20), "a delta checkout's layer holds more than its delta")
+		} else {
+			// The worktree takes ~20MiB of 4KiB blocks; the history's pack 32MiB.
+			require.Less(t, layerBytes[id], int64(30<<20), "the checkout's layer holds more than its worktree")
+		}
 	}
-	require.Positive(t, supported, "committed heads must check out copy-on-write; fallbacks: %v", fallbacks)
+	t.Logf("copy-on-write checkouts by path: %v; skipped: %v", byPath, fallbacks)
+	// The committed head moves its base's checkout by its delta; the base
+	// (host storage, no checkout base) and the tag checkout start over.
+	require.Positive(t, byPath["delta"], "committed heads must check out by delta")
+	require.Positive(t, byPath["wipe"], "storage without a checkout base must check out copy-on-write")
 	for id, span := range spans {
 		name := span.name
 		for parent := parents[id]; parent != ""; parent = parents[parent] {
 			if !cow[parent] {
 				continue
 			}
-			require.False(t, strings.HasPrefix(name, "git fetch") || strings.HasPrefix(name, "fetching "), "copy-on-write checkout fetched objects: %s", name)
+			// Only the delta path fetches, and only the delta's objects.
+			if paths[parent] != "delta" {
+				require.False(t, strings.HasPrefix(name, "git fetch") || strings.HasPrefix(name, "fetching "), "copy-on-write checkout fetched objects: %s", name)
+			}
 			if strings.HasPrefix(name, "git checkout") {
 				checkouts++
 			}

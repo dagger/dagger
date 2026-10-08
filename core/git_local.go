@@ -532,7 +532,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		skipped = append(skipped, "checkout="+reason)
 	}
 	if !discardGitDir && depth <= 0 {
-		dir, supported, err := ref.cowTree(ctx, remotes, upstreamRemote)
+		dir, supported, err := ref.cowTree(ctx, srv, remotes, upstreamRemote)
 		if err != nil || supported {
 			return dir, err
 		}
@@ -644,7 +644,7 @@ func doLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCL
 	if err := initLocalGitTreeCheckout(ctx, source, checkout); err != nil {
 		return err
 	}
-	return finishGitCheckout(ctx, checkout, remotes, cloneURL, ref, true, "", false)
+	return finishGitCheckout(ctx, checkout, remotes, cloneURL, ref, true, "", gitCheckoutFresh)
 }
 
 func initLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCLI) error {

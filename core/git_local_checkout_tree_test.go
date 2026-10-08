@@ -55,7 +55,7 @@ func TestRetainedCheckoutTree(t *testing.T) {
 		"fetched": func(ref *gitutil.Ref) string { return freshRetainedCheckout(t, source, ref) },
 		"copy-on-write": func(ref *gitutil.Ref) string {
 			dest := cowCopy(t, source)
-			require.NoError(t, cowGitCheckout(ctx, dest, dest, nil, nil, ref))
+			require.NoError(t, cowWipeCheckout(ctx, dest, dest, ref))
 			return dest
 		},
 	}

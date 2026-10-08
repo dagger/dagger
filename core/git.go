@@ -1392,15 +1392,32 @@ func doGitCheckout(
 	if err != nil {
 		return err
 	}
-	return finishGitCheckout(ctx, checkoutGit, remotes, cloneURL, ref, discardGitDir, tmpref, false)
+	return finishGitCheckout(ctx, checkoutGit, remotes, cloneURL, ref, discardGitDir, tmpref, gitCheckoutFresh)
 }
+
+// gitCheckoutReuse says what a checkout inherits rather than writes itself.
+type gitCheckoutReuse int
+
+const (
+	// gitCheckoutFresh: the caller fetched the objects into an empty
+	// repository; finishGitCheckout writes everything else.
+	gitCheckoutFresh gitCheckoutReuse = iota
+	// gitCheckoutInheritedObjects: the object database was not written by
+	// this checkout (see cowGitCheckout). Its files keep their timestamps,
+	// since changing them would copy every inherited pack up into a new
+	// snapshot layer, and the worktree is written once, in parallel (see
+	// gitCheckoutOnce).
+	gitCheckoutInheritedObjects
+	// gitCheckoutInheritedWorktree: the objects and the worktree are
+	// inherited, the worktree already holding exactly ref's tree with
+	// normalized timestamps (see cowGitCheckout's delta mode). Only the
+	// metadata is written: refs as the checkout would leave them (see
+	// gitCheckoutRefs), the index, and their timestamps.
+	gitCheckoutInheritedWorktree
+)
 
 // finishGitCheckout materializes a ref whose objects are already available.
 // tmpref is set only when the caller fetched the objects into a temporary ref.
-// inheritedObjects means the object database was not written by this checkout
-// (see cowGitCheckout): its files keep their timestamps, since changing them
-// would copy every inherited pack up into a new snapshot layer, and it
-// writes the worktree once, in parallel (see gitCheckoutOnce).
 func finishGitCheckout(
 	ctx context.Context,
 	checkoutGit *gitutil.GitCLI,
@@ -1409,22 +1426,27 @@ func finishGitCheckout(
 	ref *gitutil.Ref,
 	discardGitDir bool,
 	tmpref string,
-	inheritedObjects bool,
+	reuse gitCheckoutReuse,
 ) error {
 	checkoutDirGit, err := checkoutGit.GitDir(ctx)
 	if err != nil {
 		return fmt.Errorf("could not find git dir: %w", err)
 	}
-	if inheritedObjects {
+	switch {
+	case reuse == gitCheckoutInheritedWorktree:
+		if err := gitCheckoutRefs(ctx, checkoutGit, ref); err != nil {
+			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
+		}
+	case reuse == gitCheckoutInheritedObjects:
 		if err := gitCheckoutOnce(ctx, checkoutGit, ref); err != nil {
 			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
 		}
-	} else if ref.Name == "" {
+	case ref.Name == "":
 		_, err = checkoutGit.Run(ctx, "checkout", ref.SHA)
 		if err != nil {
 			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
 		}
-	} else {
+	default:
 		_, err = checkoutGit.Run(ctx, "update-ref", ref.Name, ref.SHA)
 		if err != nil {
 			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
@@ -1489,11 +1511,20 @@ func finishGitCheckout(
 	if err != nil {
 		return fmt.Errorf("could not find worktree: %w", err)
 	}
-	inheritedObjectsDir := ""
-	if inheritedObjects && !discardGitDir {
-		inheritedObjectsDir = filepath.Join(checkoutDirGit, "objects")
+	switch reuse {
+	case gitCheckoutInheritedObjects:
+		if !discardGitDir {
+			return normalizeGitCheckoutTimes(ctx, checkoutDir, filepath.Join(checkoutDirGit, "objects"))
+		}
+	case gitCheckoutInheritedWorktree:
+		// The worktree's timestamps are already normalized; only the
+		// metadata just written needs it.
+		if discardGitDir {
+			return nil
+		}
+		return normalizeGitCheckoutTimes(ctx, checkoutDirGit, filepath.Join(checkoutDirGit, "objects"))
 	}
-	return normalizeGitCheckoutTimes(ctx, checkoutDir, inheritedObjectsDir)
+	return normalizeGitCheckoutTimes(ctx, checkoutDir, "")
 }
 
 // normalizeGitCheckoutTimes sets every timestamp below checkoutDir, except
@@ -1558,6 +1589,43 @@ func gitCheckoutOnce(ctx context.Context, checkoutGit *gitutil.GitCLI, ref *gitu
 		return err
 	}
 	if _, err := git.Run(ctx, "checkout", "-f", strings.TrimPrefix(ref.Name, "refs/heads/")); err != nil {
+		return err
+	}
+	_, err := git.Run(ctx, "update-ref", "--no-deref", "ORIG_HEAD", ref.SHA)
+	return err
+}
+
+// gitCheckoutRefsSupported reports whether gitCheckoutRefs reproduces the
+// checkout of a ref with this name: detached commits, branches, tags, and
+// commit IDs kept as names. Anything else (HEAD, or a name the checkout
+// resolves some other way) needs the real checkout.
+func gitCheckoutRefsSupported(ref *gitutil.Ref) bool {
+	return ref.Name == "" || ref.Name == ref.SHA ||
+		strings.HasPrefix(ref.Name, "refs/heads/") || strings.HasPrefix(ref.Name, "refs/tags/")
+}
+
+// gitCheckoutRefs leaves HEAD and the refs as gitCheckoutOnce does, from an
+// unborn repository, without touching the index or worktree: the caller has
+// already put them in place. The checkout of a branch attaches HEAD to it,
+// of anything else detaches HEAD at the commit; with a name, the reset (or
+// its stand-in) also records ORIG_HEAD.
+func gitCheckoutRefs(ctx context.Context, git *gitutil.GitCLI, ref *gitutil.Ref) error {
+	if !gitCheckoutRefsSupported(ref) {
+		return fmt.Errorf("cannot reproduce the checkout of %q", ref.Name)
+	}
+	message := "checkout: moving from main to " + ref.SHA
+	if ref.Name == "" {
+		_, err := git.Run(ctx, "update-ref", "--no-deref", "-m", message, "HEAD", ref.SHA)
+		return err
+	}
+	if _, err := git.Run(ctx, "update-ref", ref.Name, ref.SHA); err != nil {
+		return err
+	}
+	if branch, ok := strings.CutPrefix(ref.Name, "refs/heads/"); ok {
+		if _, err := git.Run(ctx, "symbolic-ref", "-m", "checkout: moving from main to "+branch, "HEAD", ref.Name); err != nil {
+			return err
+		}
+	} else if _, err := git.Run(ctx, "update-ref", "--no-deref", "-m", message, "HEAD", ref.SHA); err != nil {
 		return err
 	}
 	_, err := git.Run(ctx, "update-ref", "--no-deref", "ORIG_HEAD", ref.SHA)

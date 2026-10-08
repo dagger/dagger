@@ -84,6 +84,25 @@ func cowCopy(t testing.TB, src string) string {
 	return dest
 }
 
+// cowWipeCheckout is the wipe path: root is a copy of the repository at src.
+func cowWipeCheckout(ctx context.Context, root, src string, ref *gitutil.Ref) error {
+	return cowGitCheckout(ctx, root, gitutil.NewGitCLI(gitutil.WithDir(src)), nil, nil, ref, nil)
+}
+
+// cowDeltaCheckout is the delta path: root is a copy of base's full checkout,
+// source the repository holding ref.
+func cowDeltaCheckout(ctx context.Context, root, source, base string, ref *gitutil.Ref) error {
+	git := gitutil.NewGitCLI(gitutil.WithDir(source))
+	plan, reason, err := planIncrementalGitCheckout(ctx, git, base, ref.SHA, false)
+	if err != nil {
+		return err
+	}
+	if reason != "" {
+		return nativeCommitUnsupportedReason(reason)
+	}
+	return cowGitCheckout(ctx, root, git, nil, nil, ref, &cowCheckoutDelta{base: base, plan: plan})
+}
+
 // objectFiles identifies each inherited object file by inode, size and
 // mtime: a copy-up or rewrite (e.g. Git freshening a pack) changes them.
 func objectFiles(t *testing.T, objects string) map[string]string {
@@ -141,7 +160,7 @@ func TestCowGitCheckout(t *testing.T) {
 				root := cowCopy(t, layout.root)
 				inherited := objectFiles(t, filepath.Join(root, ".git", "objects"))
 				historyForbidFetch(t)
-				require.NoError(t, cowGitCheckout(ctx, root, filepath.Join(root, layout.src), nil, nil, ref))
+				require.NoError(t, cowWipeCheckout(ctx, root, filepath.Join(root, layout.src), ref))
 
 				// Worktree content, modes and mtimes, and every metadata
 				// file byte for byte: HEAD, refs, config, normalized index.
@@ -166,6 +185,101 @@ func TestCowGitCheckout(t *testing.T) {
 	// The source's unreachable tags really exist, so the comparison above
 	// proved they are not followed.
 	require.NotEmpty(t, gitMirrorTestRun(t, source, "tag", "--list", "side-*"))
+}
+
+// The delta path moves a clean full checkout of an ancestor to the target by
+// its tree delta, fetching only the objects the ancestor lacks, and must end
+// exactly where a fresh checkout of the target does.
+func TestCowGitCheckoutDelta(t *testing.T) {
+	ctx := context.Background()
+	source, base, tip := cowTestSource(t)
+	modes := gitMirrorTestRun(t, source, "rev-parse", "v0.2^{commit}")
+	// Replace a directory by a file, a symlink by a file, delete and add
+	// nested paths, on top of the tip.
+	gitMirrorTestRun(t, source, "checkout", "--quiet", "--", "file")
+	require.NoError(t, os.Remove(filepath.Join(source, "untracked")))
+	gitMirrorTestRun(t, source, "rm", "-q", "-r", "nested/deeper", "link")
+	require.NoError(t, os.WriteFile(filepath.Join(source, "nested", "deeper"), []byte("now a file"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(source, "link"), []byte("no longer a link"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(source, "added", "deep"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(source, "added", "deep", "file"), []byte("added"), 0644))
+	gitMirrorTestRun(t, source, "add", "-A")
+	gitMirrorTestRun(t, source, "commit", "-q", "-m", "reshape")
+	reshaped := gitMirrorTestRun(t, source, "rev-parse", "HEAD")
+	gitMirrorTestRun(t, source, "tag", "-a", "-m", "reshaped", "v0.4")
+
+	for _, tc := range []struct {
+		name string
+		base string
+		ref  *gitutil.Ref
+	}{
+		{"branch", base, &gitutil.Ref{Name: "refs/heads/main", SHA: reshaped}},
+		{"detached", base, &gitutil.Ref{SHA: tip}},
+		{"commit name", modes, &gitutil.Ref{Name: reshaped, SHA: reshaped}},
+		{"tag", base, &gitutil.Ref{Name: "refs/tags/v0.2", SHA: modes}},
+		{"other branch", base, &gitutil.Ref{Name: "refs/heads/side", SHA: gitMirrorTestRun(t, source, "rev-parse", "side")}},
+		{"reverse shape", tip, &gitutil.Ref{SHA: reshaped}},
+		{"unchanged", reshaped, &gitutil.Ref{Name: "refs/heads/main", SHA: reshaped}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			baseCheckout := freshRetainedCheckout(t, source, &gitutil.Ref{SHA: tc.base})
+			want := freshRetainedCheckout(t, source, tc.ref)
+			root := cowCopy(t, baseCheckout)
+			inherited := objectFiles(t, filepath.Join(root, ".git", "objects"))
+			require.NoError(t, cowDeltaCheckout(ctx, root, source, tc.base, tc.ref))
+
+			require.Equal(t, withoutObjects(localTreeSnapshot(t, want)), withoutObjects(localTreeSnapshot(t, root)))
+			for _, args := range [][]string{
+				{"for-each-ref", "--format=%(objectname) %(refname) %(symref)"},
+				{"rev-parse", "HEAD"},
+				{"symbolic-ref", "-q", "HEAD"},
+				{"config", "--local", "--list"},
+				{"status", "--porcelain", "--ignored"},
+			} {
+				wantOut, _ := gitutil.NewGitCLI(gitutil.WithDir(want)).New(gitutil.WithIgnoreError()).Run(ctx, args...)
+				got, _ := gitutil.NewGitCLI(gitutil.WithDir(root)).New(gitutil.WithIgnoreError()).Run(ctx, args...)
+				require.Equal(t, string(wantOut), string(got), "git %v", args)
+			}
+			gitMirrorTestRun(t, root, "fsck", "--strict", "--no-dangling")
+			// Inherited objects stay untouched; the only new object files
+			// are the delta's pack, smaller than the history.
+			after := objectFiles(t, filepath.Join(root, ".git", "objects"))
+			for path, id := range inherited {
+				require.Equal(t, id, after[path], "inherited object file %s changed", path)
+			}
+			// Only what the base lacks crossed over: ref's new history and
+			// the new tags' objects (the base checkout's HEAD is detached).
+			delta := strings.Count(gitMirrorTestRun(t, source, "rev-list", "--objects", tc.ref.SHA, "--not", tc.base)+"\n", "\n")
+			received := 0
+			for path := range after {
+				if _, ok := inherited[path]; !ok {
+					require.Contains(t, path, string(filepath.Separator)+"pack"+string(filepath.Separator), "unpacked object %s", path)
+					if strings.HasSuffix(path, ".idx") {
+						idx, err := os.Open(path)
+						require.NoError(t, err)
+						cmd := exec.Command("git", "show-index")
+						cmd.Dir = root
+						cmd.Stdin = idx
+						out, err := cmd.Output()
+						idx.Close()
+						require.NoError(t, err)
+						received += strings.Count(string(out), "\n")
+					}
+				}
+			}
+			require.LessOrEqual(t, received, delta+4, "fetched more than the delta's objects")
+		})
+	}
+
+	t.Run("base mismatch", func(t *testing.T) {
+		root := cowCopy(t, freshRetainedCheckout(t, source, &gitutil.Ref{SHA: base}))
+		before := historySnapshot(t, root)
+		err := cowDeltaCheckout(ctx, root, source, tip, &gitutil.Ref{SHA: reshaped})
+		var reason nativeCommitUnsupportedReason
+		require.ErrorAs(t, err, &reason)
+		require.Equal(t, "base-head", string(reason))
+		require.Equal(t, before, historySnapshot(t, root))
+	})
 }
 
 // BenchmarkCowGitCheckout compares the full checkout's fetch into an empty
@@ -219,7 +333,7 @@ func BenchmarkCowGitCheckout(b *testing.B) {
 			b.StopTimer()
 			root := cowCopy(b, source)
 			b.StartTimer()
-			require.NoError(b, cowGitCheckout(b.Context(), root, root, nil, nil, ref))
+			require.NoError(b, cowWipeCheckout(b.Context(), root, root, ref))
 		}
 	})
 }
@@ -299,7 +413,7 @@ func TestCowGitCheckoutFallback(t *testing.T) {
 			}
 			before := historySnapshot(t, root)
 			historyForbidFetch(t)
-			err := cowGitCheckout(ctx, root, filepath.Join(root, tc.src), nil, nil, ref)
+			err := cowWipeCheckout(ctx, root, filepath.Join(root, tc.src), ref)
 			var reason nativeCommitUnsupportedReason
 			require.ErrorAs(t, err, &reason)
 			require.Equal(t, tc.reason, string(reason))
@@ -311,7 +425,7 @@ func TestCowGitCheckoutFallback(t *testing.T) {
 	t.Run("missing commit", func(t *testing.T) {
 		root := cowCopy(t, source)
 		before := historySnapshot(t, root)
-		err := cowGitCheckout(ctx, root, root, nil, nil, &gitutil.Ref{SHA: "1234567890123456789012345678901234567890"})
+		err := cowWipeCheckout(ctx, root, root, &gitutil.Ref{SHA: "1234567890123456789012345678901234567890"})
 		require.Error(t, err)
 		require.False(t, errors.Is(err, context.Canceled))
 		require.True(t, nativeFallback(ctx, trace.SpanFromContext(ctx), "fallback_reason", err))
