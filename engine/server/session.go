@@ -2905,6 +2905,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	defer func() {
 		if rerr != nil {
 			conn.Close()
+			rerr = hijackedError{rerr}
 		}
 	}()
 	if err := conn.SetDeadline(time.Time{}); err != nil {
@@ -4999,6 +5000,14 @@ func (e httpError) WriteTo(w http.ResponseWriter) {
 	http.Error(w, e.Error(), e.code)
 }
 
+// hijackedError is an error returned by a handler after it hijacked the
+// connection, which can no longer carry an HTTP error response.
+type hijackedError struct {
+	error
+}
+
+func (e hijackedError) Unwrap() error { return e.error }
+
 type gqlError struct {
 	error
 	httpCode int
@@ -5045,25 +5054,18 @@ func httpHandlerFunc[T any](fn func(http.ResponseWriter, *http.Request, T) error
 			WithField("path", r.URL.Path).
 			WithError(err).Error("failed to serve request")
 
+		// A hijacked connection can't carry an HTTP error response. Don't probe
+		// for one with w.Write(nil): that commits a 200 status, so the error
+		// below would go out as a 200 instead of its status code.
+		var hijacked hijackedError
 		var httpErr httpError
 		var gqlErr gqlError
-		isHTTPErr := errors.As(err, &httpErr)
-		isGQLErr := !isHTTPErr && errors.As(err, &gqlErr)
-		if isGQLErr {
-			// Label the GraphQL error body as JSON before the probe below:
-			// its empty Write commits the response headers.
-			w.Header().Set("Content-Type", "application/json")
-		}
-
-		// check whether this is a hijacked connection, if so we can't write any http errors to it
-		if _, testErr := w.Write(nil); testErr == http.ErrHijacked {
-			return
-		}
-
 		switch {
-		case isHTTPErr:
+		case errors.As(err, &hijacked):
+			return
+		case errors.As(err, &httpErr):
 			httpErr.WriteTo(w)
-		case isGQLErr:
+		case errors.As(err, &gqlErr):
 			gqlErr.WriteTo(w)
 		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
