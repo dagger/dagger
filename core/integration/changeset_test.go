@@ -2134,12 +2134,13 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 // directory.
 func (ChangesetSuite) TestMergeKeepsDirectoriesARemovalEmpties(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
+	q := core.NewQuery(c)
 
-	before := c.Directory().WithNewFile("a/b/gen.txt", "generated")
+	before := q.Directory().WithNewFile("a/b/gen.txt", "generated")
 	removal := before.WithoutFile("a/b/gen.txt").Changes(before)
 
 	t.Run("one changeset", func(ctx context.Context, t *testctx.T) {
-		merged := c.Changeset().WithChangesets([]*dagger.Changeset{removal})
+		merged := q.Changeset().WithChangesets([]*core.Changeset{removal})
 
 		removed, err := merged.RemovedPaths(ctx)
 		require.NoError(t, err)
@@ -2152,7 +2153,7 @@ func (ChangesetSuite) TestMergeKeepsDirectoriesARemovalEmpties(ctx context.Conte
 
 	t.Run("octopus merge", func(ctx context.Context, t *testctx.T) {
 		addition := before.WithNewFile("c.txt", "c").Changes(before)
-		merged := c.Changeset().WithChangesets([]*dagger.Changeset{removal, addition})
+		merged := q.Changeset().WithChangesets([]*core.Changeset{removal, addition})
 
 		removed, err := merged.RemovedPaths(ctx)
 		require.NoError(t, err)
@@ -2165,7 +2166,7 @@ func (ChangesetSuite) TestMergeKeepsDirectoriesARemovalEmpties(ctx context.Conte
 
 	t.Run("removed directory stays removed", func(ctx context.Context, t *testctx.T) {
 		dirRemoval := before.WithoutDirectory("a").Changes(before)
-		merged := c.Changeset().WithChangesets([]*dagger.Changeset{dirRemoval})
+		merged := q.Changeset().WithChangesets([]*core.Changeset{dirRemoval})
 
 		removed, err := merged.RemovedPaths(ctx)
 		require.NoError(t, err)
@@ -2178,7 +2179,7 @@ func (ChangesetSuite) TestMergeKeepsDirectoriesARemovalEmpties(ctx context.Conte
 
 	t.Run("directory replaced by a file stays a file", func(ctx context.Context, t *testctx.T) {
 		replacement := before.WithoutDirectory("a").WithNewFile("a", "file").Changes(before)
-		merged := c.Changeset().WithChangesets([]*dagger.Changeset{replacement})
+		merged := q.Changeset().WithChangesets([]*core.Changeset{replacement})
 
 		removed, err := merged.RemovedPaths(ctx)
 		require.NoError(t, err)
