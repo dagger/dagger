@@ -118,7 +118,7 @@ func (f *fakeIPTables) List(table, chain string) ([]string, error) {
 	return lines, nil
 }
 
-func (f *fakeIPTables) DeleteIfExists(table, chain string, rulespec ...string) error {
+func (f *fakeIPTables) DeleteRule(table, chain string, rulespec ...string) error {
 	rules, err := f.rules(table, chain)
 	if err != nil {
 		return err
@@ -409,7 +409,7 @@ func TestInstallSubnetRulesConcurrentChainChange(t *testing.T) {
 	// every later rule up by one: the listed positions of the leftovers now
 	// point at the second leftover and at the DROP.
 	ipt.afterList = map[string]func(){"filter/" + cniForwardChain: func() {
-		require.NoError(t, ipt.DeleteIfExists("filter", cniForwardChain, "-s", "10.99.0.2/32", "-j", "ACCEPT"))
+		require.NoError(t, ipt.DeleteRule("filter", cniForwardChain, "-s", "10.99.0.2/32", "-j", "ACCEPT"))
 	}}
 
 	require.NoError(t, installSubnetRules(ctx, n, ipt, nil, noNFTSubnets, false, true))
@@ -421,6 +421,22 @@ func TestInstallSubnetRulesConcurrentChainChange(t *testing.T) {
 		wantCNIForward[1],
 		wantCNIForward[2],
 	}, ipt.dump(t, "filter", "CNI-FORWARD"))
+}
+
+// A leftover another writer removes after the chain is listed is skipped, not
+// an error that would fail engine start.
+func TestInstallSubnetRulesLeftoverAlreadyGone(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	n := testNetwork(t)
+	ipt := newFakeIPTables()
+	addOldFirewallRules(t, ipt, "10.87.0.2")
+	ipt.afterList = map[string]func(){"filter/" + cniForwardChain: func() {
+		require.NoError(t, ipt.DeleteRule("filter", cniForwardChain, "-s", "10.87.0.2/32", "-j", "ACCEPT"))
+	}}
+
+	require.NoError(t, installSubnetRules(ctx, n, ipt, nil, noNFTSubnets, false, true))
+	require.Equal(t, wantCNIForward, ipt.dump(t, "filter", cniForwardChain))
 }
 
 // newCNINFT returns a fake of the bridge plugin's nftables masquerade table

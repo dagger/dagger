@@ -45,7 +45,7 @@ const (
 	cniNFTMasqChainComment = "Masquerade traffic from certain IPs to any (non-multicast) IP outside their subnet"
 )
 
-// iptablesClient is the subset of go-iptables used here.
+// iptablesClient is the subset of go-iptables used here, plus DeleteRule.
 type iptablesClient interface {
 	ChainExists(table, chain string) (bool, error)
 	NewChain(table, chain string) error
@@ -55,7 +55,27 @@ type iptablesClient interface {
 	Insert(table, chain string, pos int, rulespec ...string) error
 	Append(table, chain string, rulespec ...string) error
 	List(table, chain string) ([]string, error)
-	DeleteIfExists(table, chain string, rulespec ...string) error
+	// DeleteRule deletes a rule by specification. A rule that is not there is
+	// not an error.
+	DeleteRule(table, chain string, rulespec ...string) error
+}
+
+// goIPTables is the iptablesClient backed by go-iptables.
+type goIPTables struct {
+	*iptables.IPTables
+}
+
+// DeleteRule deletes the rule in one iptables command, which matches and
+// removes it under the xtables lock. A separate existence check could pass
+// just before another writer removes the rule, so a missing rule is instead
+// recognized from the deletion's error.
+func (ipt goIPTables) DeleteRule(table, chain string, rulespec ...string) error {
+	err := ipt.Delete(table, chain, rulespec...)
+	var ipErr *iptables.Error
+	if errors.As(err, &ipErr) && ipErr.IsNotExist() {
+		return nil
+	}
+	return err
 }
 
 // nftRuleSubnets returns, by rule handle, the destination subnet each rule in
@@ -157,10 +177,11 @@ func InstallSubnetRules(ctx context.Context, name, cidr string, forward bool) er
 	if err != nil {
 		return err
 	}
-	ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4)
+	rawIPT, err := iptables.NewWithProtocol(iptables.ProtocolIPv4)
 	if err != nil {
 		return fmt.Errorf("iptables: %w", err)
 	}
+	ipt := goIPTables{rawIPT}
 	backend := detectIPMasqBackend()
 	bklog.G(ctx).Infof("using ipMasqBackend: %s", backend)
 	cniNFT, err := knftables.New(knftables.InetFamily, cniNFTMasqTable)
@@ -607,7 +628,7 @@ func listRules(ipt iptablesClient, table, chain string) ([][]string, error) {
 // the listing and the deletion. A rule that is already gone is skipped.
 func deleteRules(ipt iptablesClient, table, chain string, rules [][]string) error {
 	for _, rule := range rules {
-		if err := ipt.DeleteIfExists(table, chain, rule...); err != nil {
+		if err := ipt.DeleteRule(table, chain, rule...); err != nil {
 			return err
 		}
 	}
