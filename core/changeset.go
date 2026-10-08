@@ -512,7 +512,7 @@ func changesetLayers(beforeRoot, beforeDir string, beforeMnt *mount.Mount, after
 					// walk from here.
 					return nil, false
 				}
-				if opaque, err := overlayDirIsOpaque(dir); err != nil || opaque {
+				if opaque, err := fsdiff.IsOpaqueDir(dir); err != nil || opaque {
 					return nil, false
 				}
 				if i == len(components) {

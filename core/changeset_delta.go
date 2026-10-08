@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	continuityfs "github.com/containerd/continuity/fs"
-	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
@@ -430,28 +429,6 @@ func changesetDeltaIsEmpty(ctx context.Context, beforeDir, afterDir string, laye
 		}
 	}
 	return true, nil
-}
-
-// overlayDirIsOpaque reports whether an overlay layer's directory is marked
-// opaque, hiding everything beneath it in the layers below.
-func overlayDirIsOpaque(dir string) (bool, error) {
-	for _, key := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
-		buf := make([]byte, 1)
-		n, err := unix.Lgetxattr(dir, key, buf)
-		switch {
-		case errors.Is(err, unix.ENODATA):
-			continue
-		case errors.Is(err, unix.ERANGE):
-			// Longer than "y": not the opaque marker overlayfs writes, so
-			// don't claim to understand it.
-			return false, fmt.Errorf("unexpected %s xattr on %s", key, dir)
-		case err != nil:
-			return false, fmt.Errorf("get %s xattr of %s: %w", key, dir, err)
-		case n == 1 && buf[0] == 'y':
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // gitFileMode maps a file's mode onto the modes git tracks: symlink, and

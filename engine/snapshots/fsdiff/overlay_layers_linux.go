@@ -188,7 +188,7 @@ func layerDeltaCandidates(ctx context.Context, layers []string) ([]string, map[s
 				opaque[path] = struct{}{}
 				return nil
 			}
-			isOpaque, err := isOpaqueDir(filepath.Join(layer, path))
+			isOpaque, err := IsOpaqueDir(filepath.Join(layer, path))
 			if err != nil {
 				return err
 			}
@@ -209,9 +209,9 @@ func layerDeltaCandidates(ctx context.Context, layers []string) ([]string, map[s
 	return paths, opaque, nil
 }
 
-// isOpaqueDir reports whether the overlay layer directory at path is marked
-// opaque.
-func isOpaqueDir(path string) (bool, error) {
+// IsOpaqueDir reports whether the overlay layer directory at path is marked
+// opaque, hiding everything beneath it in the layers below.
+func IsOpaqueDir(path string) (bool, error) {
 	for _, key := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
 		value := make([]byte, 1)
 		n, err := unix.Lgetxattr(path, key, value)
