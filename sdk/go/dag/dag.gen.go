@@ -217,9 +217,10 @@ func LLM(opts ...core.LLMOpts) *core.LLM {
 // Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
 //
 // Experimental: LLM support is not yet stabilized
-func LLMContent() *dagger.LLMContent {
-	client := initClient()
-	return client.LLMContent()
+//
+// Deprecated: use dagger.io/dagger/core.NewLLMContent instead.
+func LLMContent() *core.LLMContent {
+	return core.NewLLMContent()
 }
 
 // Create a new module.
@@ -280,9 +281,10 @@ func SetSecret(name string, plaintext string) *core.Secret {
 // The title renames the session wherever its telemetry is shown (the calling client's primary span, e.g. the CLI's command span) and labels its engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
 //
 // Experimental: Session APIs are likely to change.
+//
+// Deprecated: use dagger.io/dagger/core.SetSessionTitle instead.
 func SetSessionTitle(ctx context.Context, title string) error {
-	client := initClient()
-	return client.SetSessionTitle(ctx, title)
+	return core.SetSessionTitle(ctx, title)
 }
 
 // Creates source map metadata.
