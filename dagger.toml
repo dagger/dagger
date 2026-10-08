@@ -34,7 +34,8 @@ source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
-source = "dagger.io/go@main"
+# Keep the generator-container support without the workspace-wide collection scan.
+source = "dagger.io/go@3202b07da551a4d3936769a548305c2bf0ade6b5"
 legacy-default-path = true
 
 [modules.golang.settings]
