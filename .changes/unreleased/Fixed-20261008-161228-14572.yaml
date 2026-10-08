@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  `dagger generate` no longer deletes the whole directory of a file that a generator removes. A generator that removed one file below the workspace root made the export delete the file's top-level directory, with hand-written, untracked and ignored files in it.
+time: 2026-10-08T16:12:28Z
+custom:
+  Author: eunomie
+  PR: "14572"

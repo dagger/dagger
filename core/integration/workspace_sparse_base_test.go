@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -105,5 +106,66 @@ func (LockfileSuite) TestNestedEditKeepsDirectoryPermissions(ctx context.Context
 		info, err := os.Stat(dir)
 		require.NoError(t, err)
 		require.Equal(t, want, info.Mode().Perm(), "%s permissions", dir)
+	}
+}
+
+func (LockfileSuite) TestGenerateRemovalKeepsSiblings(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name    string
+		filter  []string
+		created []string
+	}{
+		{name: "one generator", filter: []string{"gen/remove-generated"}},
+		// Several generator results always go through the changeset merge.
+		{name: "two generators", created: []string{"other.txt"}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			workdir := t.TempDir()
+			hostGitInit(t, workdir)
+			files := map[string]string{
+				"dagger.toml": `[modules.gen]
+source = ".dagger/modules/gen"
+`,
+				".dagger/modules/gen/dagger-module.toml": `name = "gen"
+engineVersion = "latest"
+
+[runtime]
+source = "dang"
+`,
+				".dagger/modules/gen/main.dang": `type Gen {
+  pub removeGenerated(ws: Workspace!): Changeset! @generate {
+    ws.withoutFile("out/deep/gen.txt").changes(ws)
+  }
+  pub addOther(ws: Workspace!): Changeset! @generate {
+    ws.withNewFile("other.txt", "other").changes(ws)
+  }
+}
+`,
+				"out/deep/gen.txt":  "generated",
+				"out/deep/keep.txt": "keep",
+				"out/keep.txt":      "keep",
+			}
+			for p, contents := range files {
+				full := filepath.Join(workdir, p)
+				require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+				require.NoError(t, os.WriteFile(full, []byte(contents), 0o600))
+			}
+
+			out, err := hostDaggerExec(ctx, t, workdir, append([]string{"generate", "--no-apply"}, tc.filter...)...)
+			require.NoError(t, err)
+			preview := ansi.Strip(string(out))
+			require.Regexp(t, `(?m)^\s*out/deep/gen\.txt\s+-1$`, preview)
+			require.NotRegexp(t, `(?m)^\s*out/\s+-`, preview, "preview must not remove the whole out/ directory")
+
+			_, err = hostDaggerExec(ctx, t, workdir, append([]string{"generate", "-y"}, tc.filter...)...)
+			require.NoError(t, err)
+
+			_, err = os.Stat(filepath.Join(workdir, "out", "deep", "gen.txt"))
+			require.True(t, os.IsNotExist(err), "gen.txt should be removed")
+			for _, p := range append([]string{filepath.Join("out", "keep.txt"), filepath.Join("out", "deep", "keep.txt")}, tc.created...) {
+				_, err := os.Stat(filepath.Join(workdir, p))
+				require.NoError(t, err, "%s should exist after generate", p)
+			}
+		})
 	}
 }
