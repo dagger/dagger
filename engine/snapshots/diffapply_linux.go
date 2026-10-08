@@ -19,12 +19,15 @@ import (
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 )
+
+const instrumentationLibrary = "dagger.io/engine.snapshots"
 
 // diffApply applies the provided diffs to the dest MountableRef and returns the correctly calculated disk usage
 // that accounts for any hardlinks made from existing snapshots. ctx is expected to have a temporary lease
@@ -566,22 +569,31 @@ func differFor(lowerMntable, upperMntable MountableRef, comparison fsdiff.Compar
 
 func (d *differ) HandleChanges(ctx context.Context, handle func(context.Context, *change) error) (rerr error) {
 	// Record which walk the diff took: overlay layers cost the size of the
-	// change, a double walk the size of both trees.
+	// change, a double walk the size of both trees. Each diff gets its own
+	// span: a merge applies several, which would overwrite each other's
+	// attributes on a shared one.
+	ctx, span := trace.SpanFromContext(ctx).TracerProvider().Tracer(instrumentationLibrary).
+		Start(ctx, "snapshot diff", telemetry.Internal())
 	walk := "trees"
+	treesReason := d.layersErr
 	start := time.Now()
 	startNS := wcprof.NowNS()
 	defer func() {
-		span := trace.SpanFromContext(ctx)
 		span.SetAttributes(
 			attribute.String("dagger.snapshot.diff.walk", walk),
 			attribute.Int64("dagger.snapshot.diff.walk_ms", time.Since(start).Milliseconds()),
 		)
-		if walk == "trees" && d.layersErr != nil {
-			span.SetAttributes(attribute.String("dagger.snapshot.diff.trees_reason", d.layersErr.Error()))
+		if walk == "trees" && treesReason != nil {
+			span.SetAttributes(attribute.String("dagger.snapshot.diff.trees_reason", treesReason.Error()))
 		}
 		if startNS != 0 {
-			wcprof.RecordOp(ctx, wcprof.OpKindIO, "snapshot.diff["+walk+"]", wcprof.OpOpts{}, startNS, wcprof.NowNS(), wcprof.OutcomeOK)
+			outcome := wcprof.OutcomeOK
+			if rerr != nil {
+				outcome = wcprof.OutcomeError
+			}
+			wcprof.RecordOp(ctx, wcprof.OpKindIO, "snapshot.diff["+walk+"]", wcprof.OpOpts{}, startNS, wcprof.NowNS(), outcome)
 		}
+		telemetry.EndWithCause(span, &rerr)
 	}()
 	if d.upperdir != "" {
 		walk = "layer"
@@ -599,6 +611,7 @@ func (d *differ) HandleChanges(ctx context.Context, handle func(context.Context,
 		// Nothing was applied yet (e.g. a redirect_dir the layer walk
 		// can't interpret): walk both trees instead.
 		walk = "trees"
+		treesReason = err
 	}
 	return d.doubleWalkingChanges(ctx, handle)
 }
