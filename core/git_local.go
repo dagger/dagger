@@ -63,7 +63,8 @@ func (repo *LocalGitRepository) validateUpstream() error {
 	return nil
 }
 
-// GitCheckoutBase retains the exact canonical parent recipe of a checked commit.
+// GitCheckoutBase retains the exact canonical recipe of a checked commit's
+// parent (GitRef.withCommit) or, for a pull, of an ancestor it was built on.
 // It is a DAG dependency, never a mounted path or a dirty worktree baseline.
 type GitCheckoutBase struct {
 	Parent    dagql.ObjectResult[*GitRef]

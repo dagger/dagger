@@ -194,30 +194,24 @@ func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, par
 	if len(parent) != 40 || len(child) != 40 || !IsFullGitSHA(parent) || !IsFullGitSHA(child) {
 		return nil, "commit-format", nil
 	}
-	if _, err := nativeCommitGitDirWithShallow(ctx, source.Dir(), ownedShallow); err != nil {
+	gitDir, err := nativeCommitGitDirWithShallow(ctx, source.Dir(), ownedShallow)
+	if err != nil {
 		if nativeCommitFallback(err) {
 			return nil, "repository-layout", nil
 		}
 		return nil, "", err
 	}
-	// Do not trust annotation alone, nor accept merges: the retained recipe
-	// must be this commit's single actual parent in the current object database.
+	// Do not trust annotation alone: the retained recipe must be an actual
+	// ancestor of this commit in the current object database (see
+	// incrementalCheckoutAncestor). The tree delta itself holds for any pair
+	// of commits; ancestry keeps it to the history the annotation describes.
 	source = source.New(gitutil.WithArgs("--no-replace-objects"))
-	// Read the raw object, not revision traversal: info/grafts rewrites parents
-	// even when replace refs are disabled. Only top-level commit headers count.
-	commit, err := source.Run(ctx, "cat-file", "commit", child)
+	ancestor, err := incrementalCheckoutAncestor(ctx, source, gitDir, parent, child)
 	if err != nil {
 		return nil, "", err
 	}
-	headers, _, _ := strings.Cut(string(commit), "\n\n")
-	var parents []string
-	for _, line := range strings.Split(headers, "\n") {
-		if sha, ok := strings.CutPrefix(line, "parent "); ok {
-			parents = append(parents, sha)
-		}
-	}
-	if len(parents) != 1 || parents[0] != parent {
-		return nil, "parent-mismatch", nil
+	if !ancestor {
+		return nil, "not-ancestor", nil
 	}
 	// Only the delta is inspected, never either full tree. A full checkout's
 	// submodule step depends only on the gitlinks and .gitmodules, so when the
@@ -229,6 +223,49 @@ func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, par
 		return nil, "", err
 	}
 	return parseIncrementalGitCheckoutPlan(changes)
+}
+
+// incrementalCheckoutAncestor reports whether base is child itself or one of
+// its ancestors by the parents recorded in the commit objects. Replace refs
+// are disabled by the caller, and revision traversal in the source would also
+// honor info/grafts, which rewrite parents even then. The common case, a base
+// that is the child's sole parent (GitRef.withCommit), reads the child's raw
+// headers. Otherwise (several commits pulled on top of the base, or a
+// fast-forward through merges), the walk runs in a private view of the
+// object database: no refs, replace refs or grafts, only the exact shallow
+// boundary of owned storage, so a base beyond it is simply not an ancestor.
+func incrementalCheckoutAncestor(ctx context.Context, source *gitutil.GitCLI, gitDir, base, child string) (bool, error) {
+	commit, err := source.Run(ctx, "cat-file", "commit", child)
+	if err != nil {
+		return false, err
+	}
+	if base == child {
+		return true, nil
+	}
+	// Only top-level commit headers count.
+	headers, _, _ := strings.Cut(string(commit), "\n\n")
+	var parents []string
+	for _, line := range strings.Split(headers, "\n") {
+		if sha, ok := strings.CutPrefix(line, "parent "); ok {
+			parents = append(parents, sha)
+		}
+	}
+	if len(parents) == 1 && parents[0] == base {
+		return true, nil
+	}
+	if len(parents) == 0 {
+		return false, nil
+	}
+	ancestor := false
+	err = withGitObjectView(ctx, []string{filepath.Join(gitDir, "objects")}, "sha1", func(view *gitutil.GitCLI) error {
+		if err := copyGitShallowBoundary(gitDir, view.Dir()); err != nil {
+			return err
+		}
+		var err error
+		ancestor, err = gitIsAncestor(ctx, view.New(gitutil.WithArgs("--no-replace-objects")), base, child)
+		return err
+	})
+	return ancestor, err
 }
 
 // parseIncrementalGitCheckoutPlan reads `diff-tree --raw -z` output:

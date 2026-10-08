@@ -162,7 +162,7 @@ func TestIncrementalGitCheckoutGates(t *testing.T) {
 	cli := gitutil.NewGitCLI(gitutil.WithDir(source))
 	_, reason, err := planIncrementalGitCheckout(ctx, cli, child, parent, false)
 	require.NoError(t, err)
-	require.Equal(t, "parent-mismatch", reason)
+	require.Equal(t, "not-ancestor", reason)
 	_, _, err = planIncrementalGitCheckout(ctx, cli, parent, strings.Repeat("a", 40), false)
 	require.Error(t, err)
 	cancelled, cancel := context.WithCancel(ctx)
@@ -332,13 +332,137 @@ func TestIncrementalGitCheckoutActualParent(t *testing.T) {
 	require.Empty(t, reason)
 	_, reason, err = planIncrementalGitCheckout(ctx, cli, other, child, false)
 	require.NoError(t, err)
-	require.Equal(t, "parent-mismatch", reason)
+	require.Equal(t, "not-ancestor", reason)
 
 	require.NoError(t, os.Remove(filepath.Join(source, ".git/info/grafts")))
 	gitMirrorTestRun(t, source, "replace", child, other)
 	_, reason, err = planIncrementalGitCheckout(ctx, cli, parent, child, false)
 	require.NoError(t, err)
 	require.Empty(t, reason)
+	_, reason, err = planIncrementalGitCheckout(ctx, cli, other, child, false)
+	require.NoError(t, err)
+	require.Equal(t, "not-ancestor", reason, "a replacement must not make a descendant an ancestor")
+}
+
+// A pull cherry-picks several commits on top of the receiver's HEAD, or
+// fast-forwards it through merges: the retained base is then an ancestor, not
+// the sole parent. Its delta must still produce exactly the full checkout.
+func TestIncrementalGitCheckoutAncestor(t *testing.T) {
+	ctx := context.Background()
+	source := historyRepo(t, "sha1")
+	write := func(p, data string, mode os.FileMode) {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(source, p)), 0777))
+		require.NoError(t, os.WriteFile(filepath.Join(source, p), []byte(data), mode))
+	}
+	commit := func(message string) string {
+		gitMirrorTestRun(t, source, "add", "-A", ".")
+		gitMirrorTestRun(t, source, "commit", "-q", "-m", message)
+		return gitMirrorTestRun(t, source, "rev-parse", "HEAD")
+	}
+	full := func(sha string) string {
+		dest := t.TempDir()
+		require.NoError(t, doLocalGitTreeCheckout(ctx, gitutil.NewGitCLI(gitutil.WithDir(source)), localTreeCheckoutCLI(dest), nil, source, &gitutil.Ref{SHA: sha}))
+		return dest
+	}
+	write(".gitattributes", "*.txt text eol=crlf\n", 0644)
+	write("keep/unchanged", "untouched", 0644)
+	write("edit.txt", "base\n", 0644)
+	write("mode", "exec", 0644)
+	write("dir-to-link/deep/old", "old", 0644)
+	write("removed/later", "old", 0644)
+	require.NoError(t, os.Symlink("keep", filepath.Join(source, "link")))
+	base := commit("base")
+
+	// Several commits on top, a merged side branch, and changes that a later
+	// commit reverts: only the net delta from base to tip may be written.
+	write("edit.txt", "first\n", 0644)
+	require.NoError(t, os.Chmod(filepath.Join(source, "mode"), 0755))
+	write("transient", "gone again", 0644)
+	first := commit("first")
+	gitMirrorTestRun(t, source, "checkout", "-q", "-b", "side")
+	write("side/new.txt", "side\n", 0644)
+	require.NoError(t, os.Remove(filepath.Join(source, "link")))
+	require.NoError(t, os.Symlink("edit.txt", filepath.Join(source, "link")))
+	commit("side")
+	gitMirrorTestRun(t, source, "checkout", "-q", "main")
+	require.NoError(t, os.RemoveAll(filepath.Join(source, "dir-to-link")))
+	require.NoError(t, os.Symlink("keep", filepath.Join(source, "dir-to-link")))
+	require.NoError(t, os.Remove(filepath.Join(source, "transient")))
+	commit("main")
+	gitMirrorTestRun(t, source, "merge", "-q", "--no-ff", "-m", "merge", "side")
+	write("edit.txt", "tip\n", 0644)
+	require.NoError(t, os.RemoveAll(filepath.Join(source, "removed")))
+	tip := commit("tip")
+
+	cli := gitutil.NewGitCLI(gitutil.WithDir(source))
+	for _, from := range []string{base, first} {
+		dest := full(from)
+		plan, reason, err := planIncrementalGitCheckout(ctx, cli, from, tip, false)
+		require.NoError(t, err)
+		require.Empty(t, reason)
+		require.NotContains(t, plan.changed, "keep/unchanged")
+		if from == base {
+			require.NotContains(t, plan.changed, "transient", "added and removed again since the base")
+		}
+		require.NoError(t, applyIncrementalGitCheckout(ctx, cli, dest, tip, plan))
+		require.Equal(t, localTreeSnapshot(t, full(tip)), localTreeSnapshot(t, dest))
+	}
+	dest := full(base)
+	unchanged, err := os.Stat(filepath.Join(dest, "keep/unchanged"))
+	require.NoError(t, err)
+	plan, _, err := planIncrementalGitCheckout(ctx, cli, base, tip, false)
+	require.NoError(t, err)
+	require.NoError(t, applyIncrementalGitCheckout(ctx, cli, dest, tip, plan))
+	after, err := os.Stat(filepath.Join(dest, "keep/unchanged"))
+	require.NoError(t, err)
+	require.True(t, os.SameFile(unchanged, after), "unchanged file must not be rewritten")
+
+	// The base itself: nothing to write.
+	plan, reason, err := planIncrementalGitCheckout(ctx, cli, tip, tip, false)
+	require.NoError(t, err)
+	require.Empty(t, reason)
+	require.Empty(t, plan.changed)
+
+	// Descendants, siblings and unrelated commits are not bases.
+	gitMirrorTestRun(t, source, "checkout", "-q", "--detach", base)
+	sibling := historyCommit(t, source, "sibling", "sibling")
+	gitMirrorTestRun(t, source, "checkout", "-q", "--orphan", "unrelated")
+	unrelated := historyCommit(t, source, "unrelated", "unrelated")
+	for _, from := range []string{sibling, unrelated} {
+		_, reason, err := planIncrementalGitCheckout(ctx, cli, from, tip, false)
+		require.NoError(t, err)
+		require.Equal(t, "not-ancestor", reason)
+	}
+	_, reason, err = planIncrementalGitCheckout(ctx, cli, tip, base, false)
+	require.NoError(t, err)
+	require.Equal(t, "not-ancestor", reason)
+
+	// Ancestry comes from the commit objects, never info/grafts: a graft can
+	// neither forge an ancestor nor hide a real one.
+	grafts := filepath.Join(source, ".git/info/grafts")
+	require.NoError(t, os.MkdirAll(filepath.Dir(grafts), 0755))
+	require.NoError(t, os.WriteFile(grafts, []byte(tip+" "+sibling+"\n"), 0600))
+	require.Contains(t, gitMirrorTestRun(t, source, "rev-list", tip), sibling)
+	_, reason, err = planIncrementalGitCheckout(ctx, cli, sibling, tip, false)
+	require.NoError(t, err)
+	require.Equal(t, "not-ancestor", reason)
+	_, reason, err = planIncrementalGitCheckout(ctx, cli, base, tip, false)
+	require.NoError(t, err)
+	require.Empty(t, reason)
+	require.NoError(t, os.Remove(grafts))
+
+	// Owned shallow storage: a base beyond the boundary is not an ancestor,
+	// even when its objects happen to be present.
+	require.NoError(t, os.WriteFile(filepath.Join(source, ".git/shallow"), []byte(first+"\n"), 0600))
+	_, reason, err = planIncrementalGitCheckout(ctx, cli, base, tip, true)
+	require.NoError(t, err)
+	require.Equal(t, "not-ancestor", reason)
+	_, reason, err = planIncrementalGitCheckout(ctx, cli, first, tip, true)
+	require.NoError(t, err)
+	require.Empty(t, reason)
+	_, reason, err = planIncrementalGitCheckout(ctx, cli, first, tip, false)
+	require.NoError(t, err)
+	require.Equal(t, "repository-layout", reason, "only owned storage may be shallow")
 }
 
 func TestIncrementalGitCheckoutProvenance(t *testing.T) {
