@@ -209,13 +209,19 @@ func validateNativeWorkspaceDelta(ctx context.Context, base, delta string, paths
 			introducedDirs[rel] = true
 		}
 		stat := info.Sys().(*syscall.Stat_t)
+		// A directory the delta introduces may carry any mode and owner (a
+		// patch applied under the engine's umask 000 makes 0777 ones). The
+		// replay applies the same raw delta and the same checkout transitions
+		// as the legacy merge, so it ends with the same directory: Git's own
+		// where a transition recreates it, the raw one where none touches it
+		// (TestNativeWorkspaceMergeMatchesCheckout, introduced-directory-modes).
+		// A delta that changes an existing directory's metadata still falls
+		// back.
 		if before != nil && before.IsDir() {
 			old := before.Sys().(*syscall.Stat_t)
 			if info.Mode() != before.Mode() || stat.Uid != old.Uid || stat.Gid != old.Gid {
 				return nativeCommitUnsupportedReason("directory-metadata")
 			}
-		} else if info.Mode().Perm() != 0755 || stat.Uid != uint32(os.Geteuid()) || stat.Gid != uint32(os.Getegid()) {
-			return nativeCommitUnsupportedReason("directory-metadata")
 		}
 		// Git cannot reproduce directory xattrs. Even equal ones are uncommon;
 		// conservatively fall back rather than widening the metadata contract.

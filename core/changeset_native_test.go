@@ -22,7 +22,7 @@ func TestNativeWorkspaceMergeMatchesCheckout(t *testing.T) {
 		t.Run(fmt.Sprintf("umask%03o", mask), func(t *testing.T) {
 			old := syscall.Umask(mask)
 			defer syscall.Umask(old)
-			for _, scenario := range []string{"disjoint", "identical", "identical-metadata", "overlap", "rename-modify", "replacement", "attributes", "normalized-noop", "delete", "conflict", "modify-delete", "packed"} {
+			for _, scenario := range []string{"disjoint", "identical", "identical-metadata", "overlap", "rename-modify", "replacement", "attributes", "normalized-noop", "delete", "conflict", "modify-delete", "packed", "introduced-directory-modes"} {
 				t.Run(scenario, func(t *testing.T) {
 					ctx := t.Context()
 					source := t.TempDir()
@@ -96,11 +96,35 @@ func TestNativeWorkspaceMergeMatchesCheckout(t *testing.T) {
 							case "delete":
 								paths[0].AllRemoved = []string{"dir/file"}
 								require.NoError(t, os.RemoveAll(filepath.Join(work, "dir")))
+							case "introduced-directory-modes":
+								// Directories a delta introduces keep whatever mode
+								// their producer gave them: a patch applied under the
+								// engine's umask 000 creates 0777 ones.
+								paths[0].Added = []string{"fresh/", "fresh/deep/", "fresh/deep/ours", "shared/", "shared/same", "dir/sub/", "dir/sub/ours"}
+								write(work, "fresh/deep/ours", "ours", 0644)
+								write(work, "shared/same", "same", 0644)
+								write(work, "dir/sub/ours", "ours", 0644)
+								for dir, mode := range map[string]os.FileMode{"fresh": 0777, "fresh/deep": 0700, "shared": 0777, "dir/sub": 0777 | os.ModeSetgid} {
+									require.NoError(t, os.Chmod(filepath.Join(work, dir), mode))
+								}
+								if os.Geteuid() == 0 {
+									require.NoError(t, os.Chown(filepath.Join(work, "fresh"), 123, 456))
+								}
 							}
 							return nil
 						},
 						func(work string) error {
 							switch scenario {
+							case "introduced-directory-modes":
+								paths[1].Added = []string{"shared/", "shared/same", "theirs-dir/", "theirs-dir/theirs"}
+								write(work, "shared/same", "same", 0644)
+								write(work, "theirs-dir/theirs", "theirs", 0644)
+								for dir, mode := range map[string]os.FileMode{"shared": 0750, "theirs-dir": 0777} {
+									require.NoError(t, os.Chmod(filepath.Join(work, dir), mode))
+								}
+								if os.Geteuid() == 0 {
+									require.NoError(t, os.Chown(filepath.Join(work, "shared"), 123, 456))
+								}
 							case "identical", "identical-metadata":
 								paths[1].Added = []string{"new"}
 								write(work, "new", "same", 0640)
@@ -160,6 +184,13 @@ func TestNativeWorkspaceMergeMatchesCheckout(t *testing.T) {
 					require.NoError(t, err)
 					require.NoError(t, os.RemoveAll(filepath.Join(oracle, ".git")))
 					require.Equal(t, nativeWorkspaceFilesystem(t, oracle), nativeWorkspaceFilesystem(t, native))
+					if scenario == "introduced-directory-modes" {
+						// Not vacuous: the incoming delta's raw directory
+						// survives where both sides agree, as in the oracle.
+						info, err := os.Stat(filepath.Join(native, "shared"))
+						require.NoError(t, err)
+						require.Equal(t, os.FileMode(0750), info.Mode().Perm())
+					}
 					require.Equal(t, parent, run(source, "rev-parse", "HEAD"))
 				})
 			}

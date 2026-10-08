@@ -345,6 +345,18 @@ os.setxattr('/work/file.txt', 'user.oracle', b'selected\x00metadata')
 		{name: "unselected ignored file", pending: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("file.txt", "selected\n").WithNewFile("ignored-pending", "ignored but visible\n")
 		}, include: []string{"file.txt"}},
+		{name: "introduced directory modes", pending: func(d *core.Directory) *core.Directory {
+			return inspector.WithMountedDirectory("/work", d).WithExec([]string{"sh", "-ec", `
+mkdir -p /work/fresh/deep /work/nested/sub
+printf 'fresh\n' > /work/fresh/deep/file
+printf 'sub\n' > /work/nested/sub/file
+chmod 0777 /work/fresh /work/nested/sub
+chmod 0700 /work/fresh/deep
+`}).Directory("/work")
+		}, include: []string{"fresh/**", "nested/sub/**"}, checkInput: func(manifest map[string]workspaceCommitManifestEntry) {
+			require.Equal(t, uint32(0o777), manifest["fresh"].Mode&0o7777)
+			require.Equal(t, uint32(0o700), manifest["fresh/deep"].Mode&0o7777)
+		}},
 		{name: "rich metadata and empty directories", pending: func(d *core.Directory) *core.Directory {
 			return inspector.WithMountedDirectory("/work", d).WithExec([]string{"python3", "-c", `
 import os
@@ -494,6 +506,74 @@ func (WorkspaceSuite) TestWorkspaceWithCommitNativeReconciliationTrace(ctx conte
 	require.Positive(t, nativeMerges, "ordinary same-base local workspace must use native reconciliation")
 	require.Positive(t, mergeTrees, "must actually execute merge-tree, not only report eligibility")
 	require.Positive(t, legacyMerges, "identity-wrapped oracle must exercise the legacy merger")
+}
+
+// Agent commits select pending paths with Changeset.filter, on workspaces
+// checked out from a remote ref, with tool edits recorded as patches, and
+// after pulls of other workers' commits. Report every native reconciliation
+// decision for those shapes.
+func (WorkspaceSuite) TestWorkspaceCommitterShapesNativeReconciliation(ctx context.Context, t *testctx.T) {
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture := c.Directory().
+		WithNewFile("pending.txt", "base\n").
+		WithNewFile("other/o.txt", "o\n")
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		fixture = fixture.WithNewFile("sdk/php/src/"+name+".php", "<?php\n// "+name+"\n")
+	}
+	service, url := gitService(ctx, t, c, fixture)
+	base := snapshotWorkspace(ctx, t, c, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Head().AsWorkspace())
+	commit := func(name string, ws *dagger.Workspace, include ...string) *dagger.Workspace {
+		t.Helper()
+		id, err := ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: include}), name, workspaceCommitDate, dagger.WorkspaceWithCommitOpts{
+			AuthorName: "Agent", AuthorEmail: "agent@example.com",
+		}).ID(ctx)
+		require.NoError(t, err, name)
+		committed := dagger.Ref[*dagger.Workspace](c, id)
+		_, err = committed.Git().Head().CommitSHA(ctx)
+		require.NoError(t, err, name)
+		return committed
+	}
+	const patch = `diff --git a/sdk/php/src/a.php b/sdk/php/src/a.php
+--- a/sdk/php/src/a.php
++++ b/sdk/php/src/a.php
+@@ -1,2 +1,2 @@
+ <?php
+-// a
++// a changed
+diff --git a/sdk/php/src/new/x.php b/sdk/php/src/new/x.php
+new file mode 100644
+--- /dev/null
++++ b/sdk/php/src/new/x.php
+@@ -0,0 +1 @@
++x
+`
+	patched := base.WithPatchFile(c.Directory().WithNewFile("edit.patch", patch).File("edit.patch")).
+		WithNewFile("pending.txt", "keep pending\n")
+	first := commit("patched edits, filtered", patched, "sdk/php/src/**")
+	second := commit("tool edit, filtered", first.WithNewFile("sdk/php/src/b.php", "<?php\n// b changed\n"), "sdk/php/**")
+	source := commit("source", base.WithNewFile("other/o.txt", "o changed\n"), "other/**")
+	pulled, err := applyWorkspacePull(ctx, c, snapshotWorkspace(ctx, t, c, second), snapshotWorkspace(ctx, t, c, source), nil, 100)
+	require.NoError(t, err)
+	commit("after pull", pulled.WithNewFile("sdk/php/src/c.php", "<?php\n// c changed\n"), "sdk/php/src/c.php")
+	commit("after pull, broad", pulled.WithNewFile("sdk/php/src/d.php", "<?php\n// d changed\n"), "sdk/**")
+	require.NoError(t, c.Close())
+
+	var merges, fallbacks int
+	for _, s := range collectWorkspaceCommitTraceSamples(sink) {
+		switch s.name {
+		case "git native workspace merge":
+			merges++
+			if !s.nativeSupported {
+				fallbacks++
+			}
+			t.Logf("native merge supported=%t fallback=%q", s.nativeSupported, s.fallbackReason)
+		case "Changeset.__mergeWithChangeset":
+			t.Logf("general merge span")
+		}
+	}
+	require.Positive(t, merges)
+	require.Zero(t, fallbacks, "committer-shaped reconciliations must stay native")
 }
 
 // A commit retains both repositories in the engine. Reading their histories
