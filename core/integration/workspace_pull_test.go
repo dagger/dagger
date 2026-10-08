@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"dagger.io/dagger/core"
@@ -124,6 +125,70 @@ func (WorkspaceSuite) TestWorkspacePullFastForward(ctx context.Context, t *testc
 	name, err := next.Git().Head().TargetCommit().AuthorName(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "Dagger", name)
+}
+
+// A pulled HEAD is several commits ahead of the receiver's HEAD, whether the
+// pull fast-forwards or cherry-picks. Its source-only tree must still be a
+// delta on the receiver's canonical tree, identical to a full checkout.
+func (WorkspaceSuite) TestWorkspacePullIncrementalCheckout(ctx context.Context, t *testctx.T) {
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture, inspector := gitIncrementalCheckoutFixture(c)
+	commit := func(ws *dagger.Workspace, message string) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), message, workspaceCommitDate)
+	}
+	base := snapshotWorkspace(ctx, t, c, fixture.AsGit().Head().AsWorkspace())
+	source := commit(base.WithNewFile("selected.txt", "source\n"), "source one")
+	source = commit(source.WithNewFile("added/deep.txt", "added\n").WithoutFile("delete.txt"), "source two")
+	source = snapshotWorkspace(ctx, t, c, source)
+	for name, receiver := range map[string]*dagger.Workspace{
+		"fast-forward": base,
+		"cherry-pick":  snapshotWorkspace(ctx, t, c, commit(base.WithNewFile("local.txt", "local\n"), "local")),
+	} {
+		// The receiver's canonical tree is warm, as it is in a live session.
+		workspaceCommitManifest(ctx, t, inspector, receiver.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}))
+		pulled, err := applyWorkspacePull(ctx, c, receiver, source, nil, 100)
+		require.NoError(t, err, name)
+		head := pulled.Git().Head()
+		tree := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		require.Equal(t, workspaceCommitManifest(ctx, t, inspector, gitFullCheckoutOracle(head)), workspaceCommitManifest(ctx, t, inspector, tree), name)
+		requireGitCheckoutTimes(ctx, t, inspector, tree)
+	}
+	require.NoError(t, c.Close()) // Drain finished spans.
+
+	traces, _ := sink.capture()
+	pulls := map[string]bool{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.Name != "materialize incremental git checkout" || span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					var supported bool
+					var changed int64
+					var fallback string
+					for _, attr := range span.Attributes {
+						switch attr.Key {
+						case "dagger.git.checkout.incremental.supported":
+							supported = attr.Value.GetBoolValue()
+						case "dagger.git.checkout.incremental.changed_paths":
+							changed = attr.Value.GetIntValue()
+						case "dagger.git.checkout.incremental.fallback":
+							fallback = attr.Value.GetStringValue()
+						}
+					}
+					t.Logf("incremental checkout supported=%t changed_paths=%d fallback=%q", supported, changed, fallback)
+					// Single-commit deltas are withCommit's; the pulled
+					// HEADs are three paths away from their receivers.
+					if supported && changed == 3 {
+						pulls[string(span.TraceId)+string(span.SpanId)] = true
+					}
+				}
+			}
+		}
+	}
+	require.Len(t, pulls, 2, "each pulled HEAD must check out as a delta on its receiver")
 }
 
 func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testctx.T) {

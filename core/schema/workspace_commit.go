@@ -259,24 +259,6 @@ func workspaceGitCheckout(ctx context.Context, srv *dagql.Server, ws dagql.Objec
 	return inst, err
 }
 
-// workspaceRepositoryFromDirectory opens an engine-side directory while
-// preserving the workspace's logical origin and push routing.
-func workspaceRepositoryFromDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], directory dagql.Selector) (inst dagql.ObjectResult[*core.GitRepository], err error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
-	}
-	var dir dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, parent, &dir, directory); err != nil {
-		return inst, err
-	}
-	var head dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, parent, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
-		return inst, err
-	}
-	return gitRepositoryWithContents(ctx, srv, head.Self().Repo, dir)
-}
-
 func validateWorkspaceGitAuthor(name, email string) error {
 	if strings.ContainsAny(name, "\x00\r\n<>") || strings.ContainsAny(email, "\x00\r\n<>") {
 		return fmt.Errorf("git author name and email must not contain NUL, newlines, or angle brackets")

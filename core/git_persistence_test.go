@@ -339,3 +339,46 @@ func TestGitRemoteHandleAndUpstreamPersistence(t *testing.T) {
 	require.Equal(t, "trunk", selection)
 	require.Equal(t, "trunk", SelectDefaultGitRemote(remotes, selection).Name)
 }
+
+// Workspace.__pullRepository keeps the receiver's HEAD, a ref of another
+// (possibly owned shallow) storage, as the base of a descendant HEAD. The
+// complete pulled storage has no history source of its own, only the
+// receiver's Upstream.
+func TestPulledGitCheckoutBasePersistence(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "pulled-checkout-base")
+	ctx, cache, srv := env.open(t)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRef]{}))
+	url, err := gitutil.ParseURL("https://example.com/source")
+	require.NoError(t, err)
+	upstream := env.attach(t, ctx, cache, srv, "upstream", &GitRepository{Backend: &RemoteGitRepository{URL: url, Platform: Platform{OS: "linux", Architecture: "amd64"}}, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+	anchor := &gitutil.Ref{SHA: strings.Repeat("a", 40)}
+	anchorBackend, err := upstream.Self().Backend.Get(ctx, anchor)
+	require.NoError(t, err)
+	history := env.attach(t, ctx, cache, srv, "history-source", &GitRef{Repo: upstream, Ref: anchor, Backend: anchorBackend}).(dagql.ObjectResult[*GitRef])
+	receiverDir := env.directory(t, ctx, cache, srv, "receiver-dir", "receiver-snapshot")
+	receiverRepo := env.attach(t, ctx, cache, srv, "receiver-repo", &GitRepository{Backend: &LocalGitRepository{Directory: receiverDir, Upstream: upstream, HistorySource: history}, Remote: &gitutil.Remote{}}).(dagql.ObjectResult[*GitRepository])
+	receiverSHA := &gitutil.Ref{SHA: strings.Repeat("b", 40)}
+	receiver := env.attach(t, ctx, cache, srv, "receiver-head", &GitRef{Repo: receiverRepo, Ref: receiverSHA, Backend: &LocalGitRef{Ref: receiverSHA, repo: receiverRepo.Self().Backend.(*LocalGitRepository)}}).(dagql.ObjectResult[*GitRef])
+	pulledDir := env.directory(t, ctx, cache, srv, "pulled-dir", "pulled-snapshot")
+	sha := strings.Repeat("c", 40)
+	pulled := env.attach(t, ctx, cache, srv, "pulled-repo", &GitRepository{Backend: &LocalGitRepository{Directory: pulledDir, Upstream: upstream, CheckoutBase: &GitCheckoutBase{Parent: receiver, CommitSHA: sha}}, Remote: &gitutil.Remote{}})
+	pulledID, receiverID, upstreamID := persistedRowID(t, cache, pulled), persistedRowID(t, cache, receiver), persistedRowID(t, cache, upstream)
+	require.Equal(t, map[string]uint64{
+		"objectJSON.local.directoryResultID":           persistedRowID(t, cache, pulledDir),
+		"objectJSON.local.upstreamResultID":            upstreamID,
+		"objectJSON.local.checkoutBase.parentResultID": receiverID,
+	}, assertPersistedRefsMatchOwnership(t, ctx, cache, pulled))
+	for range 2 {
+		ctx, cache, srv = env.restart(t, ctx, cache)
+		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*GitRef]{}))
+		loaded, err := cache.LoadResultByResultID(ctx, env.session, srv, pulledID)
+		require.NoError(t, err)
+		restored := loaded.Unwrap().(*GitRepository).Backend.(*LocalGitRepository)
+		require.Equal(t, sha, restored.CheckoutBase.CommitSHA)
+		require.Equal(t, receiverID, persistedRowID(t, cache, restored.CheckoutBase.Parent))
+		require.Equal(t, upstreamID, persistedRowID(t, cache, restored.Upstream))
+		require.Nil(t, restored.HistorySource.Self())
+		require.NoError(t, restored.validateHistorySource(ctx))
+		require.True(t, (&LocalGitRef{Ref: &gitutil.Ref{SHA: sha}, repo: restored}).incrementalCheckoutEligible())
+	}
+}
