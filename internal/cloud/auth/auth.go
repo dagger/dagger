@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	authDomain = "https://dagger-dev.us.auth0.com"
+	authDomain = "https://auth.dagger.cloud"
 )
 
 var (
@@ -43,7 +43,7 @@ func init() {
 
 var authConfig = &oauth2.Config{
 	// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
-	ClientID: "5AmjFZaSw3wJDSR3x0suGV29RP9JWfrF",
+	ClientID: "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv",
 	Scopes:   []string{"openid", "offline_access"},
 	Endpoint: authEndpoint(authDomainFromEnv()),
 }
