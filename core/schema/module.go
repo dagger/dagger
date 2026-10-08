@@ -497,8 +497,11 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 	dagql.Fields[*core.Function]{
 		dagql.Func("args", s.functionArgs).
+			DoNotCache("simple field selection").
 			Doc(`Arguments accepted by the function, if any.`),
-		dagql.Func("returnType", s.functionReturnType).View(AllVersion).
+		dagql.Func("returnType", s.functionReturnType).
+			DoNotCache("simple field selection").
+			View(AllVersion).
 			Doc(`The type returned by the function.`),
 	}.Install(dag)
 
@@ -513,6 +516,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 	dagql.Fields[*core.FunctionArg]{
 		dagql.Func("typeDef", s.functionArgTypeDef).
+			DoNotCache("simple field selection").
 			Doc(`The type of the argument.`),
 	}.Install(dag)
 
@@ -607,25 +611,34 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	}.Install(dag)
 	dagql.Fields[*core.TypeDef]{
 		dagql.Func("asList", s.typeDefAsList).
+			DoNotCache("simple field selection").
 			Doc(`If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.`),
 		dagql.Func("asObject", s.typeDefAsObject).
+			DoNotCache("simple field selection").
 			Doc(`If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.`),
 		dagql.Func("asInterface", s.typeDefAsInterface).
+			DoNotCache("simple field selection").
 			Doc(`If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.`),
 		dagql.Func("asInput", s.typeDefAsInput).
+			DoNotCache("simple field selection").
 			Doc(`If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.`),
 		dagql.Func("asScalar", s.typeDefAsScalar).
+			DoNotCache("simple field selection").
 			Doc(`If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.`),
 		dagql.Func("asEnum", s.typeDefAsEnum).
+			DoNotCache("simple field selection").
 			Doc(`If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.ObjectTypeDef]{
 		dagql.Func("fields", s.objectTypeDefFields).
+			DoNotCache("simple field selection").
 			Doc(`Static fields defined on this object, if any.`),
 		dagql.Func("functions", s.objectTypeDefFunctions).
+			DoNotCache("simple field selection").
 			Doc(`Functions defined on this object, if any.`),
 		dagql.Func("constructor", s.objectTypeDefConstructor).
+			DoNotCache("simple field selection").
 			Doc(`The function used to construct new instances of this object, if any.`),
 		dagql.Func("__withName", s.objectTypeDefWithName),
 		dagql.Func("__withSourceMap", s.objectTypeDefWithSourceMap),
@@ -636,6 +649,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	}.Install(dag)
 	dagql.Fields[*core.InterfaceTypeDef]{
 		dagql.Func("functions", s.interfaceTypeDefFunctions).
+			DoNotCache("simple field selection").
 			Doc(`Functions defined on this interface, if any.`),
 		dagql.Func("__withName", s.interfaceTypeDefWithName),
 		dagql.Func("__withSourceMap", s.interfaceTypeDefWithSourceMap),
@@ -644,17 +658,20 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	}.Install(dag)
 	dagql.Fields[*core.InputTypeDef]{
 		dagql.Func("fields", s.inputTypeDefFields).
+			DoNotCache("simple field selection").
 			Doc(`Static fields defined on this input object, if any.`),
 		dagql.Func("__withField", s.inputTypeDefWithField),
 	}.Install(dag)
 	dagql.Fields[*core.FieldTypeDef]{
 		dagql.Func("typeDef", s.fieldTypeDefTypeDef).
+			DoNotCache("simple field selection").
 			Doc(`The type of the field.`),
 		dagql.Func("__withTypeDef", s.fieldTypeDefWithTypeDef),
 		dagql.Func("__withSourceMap", s.fieldTypeDefWithSourceMap),
 	}.Install(dag)
 	dagql.Fields[*core.ListTypeDef]{
 		dagql.Func("elementTypeDef", s.listElementTypeDef).
+			DoNotCache("simple field selection").
 			Doc(`The type of the elements in the list.`),
 		dagql.Func("__withElementTypeDef", s.listTypeDefWithElementTypeDef),
 	}.Install(dag)
@@ -663,9 +680,11 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	}.Install(dag)
 	dagql.Fields[*core.EnumTypeDef]{
 		dagql.Func("values", s.enumTypeDefValues).
+			DoNotCache("simple field selection").
 			Deprecated("use members instead").
 			Doc(`The members of the enum.`),
 		dagql.Func("members", s.enumTypeDefMembers).
+			DoNotCache("simple field selection").
 			Doc(`The members of the enum.`),
 		dagql.Func("__withName", s.enumTypeDefWithName),
 		dagql.Func("__withSourceMap", s.enumTypeDefWithSourceMap),

@@ -31,7 +31,7 @@ type Function struct {
 
 	// SourceModuleName is set when the function is provided by a module (e.g. a module
 	// constructor or auto-alias on the Query root). Empty for core API functions.
-	SourceModuleName string `field:"true" doc:"If this function is provided by a module, the name of the module. Unset otherwise."`
+	SourceModuleName string `field:"true" doc:"If this function is provided by a module, the name of the module. Unset otherwise." doNotCache:"simple field selection"`
 
 	// Below are not in public API
 	CachePolicy     FunctionCachePolicy

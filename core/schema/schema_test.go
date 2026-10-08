@@ -1,8 +1,10 @@
 package schema
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -658,6 +660,151 @@ func TestCurrentTypeDefsReturnAllTypesAfterSessionRelease(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Greater(t, len(afterRelease), 0)
+}
+
+// typeDefAccessorFields are the typedef accessors that return a stored field.
+// The CLI selects them for every typedef on every start-up, so they must not
+// leave session-owned cache results that a new session has to rebuild.
+var typeDefAccessorFields = map[string][]string{
+	"Function":         {"args", "returnType", "sourceModuleName"},
+	"FunctionArg":      {"typeDef"},
+	"TypeDef":          {"asList", "asObject", "asInterface", "asInput", "asScalar", "asEnum"},
+	"ObjectTypeDef":    {"fields", "functions", "constructor"},
+	"InterfaceTypeDef": {"functions"},
+	"InputTypeDef":     {"fields"},
+	"FieldTypeDef":     {"typeDef"},
+	"ListTypeDef":      {"elementTypeDef"},
+	"EnumTypeDef":      {"values", "members"},
+}
+
+// typeDefAccessorsQuery selects every typedef accessor, in the shape of the
+// CLI's start-up query (internal/cmd/dagger/typedefs.graphql), plus IDs of an
+// object typedef and its function arguments so they can be loaded back.
+const typeDefAccessorsQuery = `
+fragment TypeDefRefParts on TypeDef { name optional }
+fragment FunctionParts on Function {
+	name
+	sourceModuleName
+	returnType { ...TypeDefRefParts }
+	args { id name typeDef { ...TypeDefRefParts } }
+}
+fragment FieldParts on FieldTypeDef { name typeDef { ...TypeDefRefParts } }
+{
+	typeDefs: currentTypeDefs(returnAllTypes: true) {
+		name
+		asObject {
+			id
+			name
+			constructor { ...FunctionParts }
+			functions { ...FunctionParts }
+			fields { ...FieldParts }
+		}
+		asScalar { name }
+		asEnum { name members { name } values { name } }
+		asInterface { name functions { ...FunctionParts } }
+		asInput { name fields { ...FieldParts } }
+		asList { elementTypeDef { ...TypeDefRefParts } }
+	}
+}`
+
+func TestCurrentTypeDefsAccessorsNotCached(t *testing.T) {
+	baseCtx := context.Background()
+	baseCache, err := dagql.NewCache(baseCtx, "", nil, nil)
+	require.NoError(t, err)
+	baseCtx = dagql.ContextWithCache(baseCtx, baseCache)
+
+	sessionCtx := func(name string) context.Context {
+		return engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+			ClientID:  "typedef-accessors-client-" + name,
+			SessionID: "typedef-accessors-session-" + name,
+		})
+	}
+	ctxA := sessionCtx("a")
+	srv := &currentTypeDefsTestServer{}
+	coreSchemaBase, err := NewCoreSchemaBase(ctxA, srv)
+	require.NoError(t, err)
+	coreMod := coreSchemaBase.CoreMod("")
+	root := core.NewRoot(srv)
+	srv.deps = core.NewSchemaBuilder(root, []core.Mod{coreMod})
+
+	// Each CLI invocation is a new session: query once, release the session,
+	// then query again from a fresh one.
+	dagA, err := coreSchemaBase.Fork(ctxA, root, "")
+	require.NoError(t, err)
+	_, err = dagA.Query(ctxA, typeDefAccessorsQuery, nil)
+	require.NoError(t, err)
+	require.NoError(t, baseCache.ReleaseSession(ctxA, "typedef-accessors-session-a"))
+
+	ctxB := sessionCtx("b")
+	dagB, err := coreSchemaBase.Fork(ctxB, root, "")
+	require.NoError(t, err)
+	res, err := dagB.Query(ctxB, typeDefAccessorsQuery, nil)
+	require.NoError(t, err)
+
+	var snapshotJSON bytes.Buffer
+	require.NoError(t, baseCache.WriteDebugCacheSnapshot(&snapshotJSON))
+	var snapshot dagql.CacheDebugSnapshot
+	require.NoError(t, json.Unmarshal(snapshotJSON.Bytes(), &snapshot))
+	typeNames := make(map[uint64]string, len(snapshot.Results))
+	for _, r := range snapshot.Results {
+		typeNames[r.SharedResultID] = r.TypeName
+	}
+	var cached []string
+	for _, r := range snapshot.Results {
+		if r.ResultCall == nil || r.ResultCall.Receiver == nil {
+			continue
+		}
+		receiver := typeNames[r.ResultCall.Receiver.ResultID]
+		if slices.Contains(typeDefAccessorFields[receiver], r.ResultCall.Field) {
+			cached = append(cached, receiver+"."+r.ResultCall.Field)
+		}
+	}
+	require.Empty(t, cached, "typedef accessor results were stored in the cache")
+
+	// IDs of typedefs and of list items returned by the accessors still load.
+	var out struct {
+		TypeDefs []struct {
+			AsObject *struct {
+				ID        string
+				Name      string
+				Functions []struct {
+					Args []struct {
+						ID   string
+						Name string
+					}
+				}
+			}
+		}
+	}
+	resJSON, err := json.Marshal(res)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(resJSON, &out))
+	var objID, objName, argID, argName string
+	for _, td := range out.TypeDefs {
+		if td.AsObject == nil {
+			continue
+		}
+		for _, fn := range td.AsObject.Functions {
+			if len(fn.Args) > 0 {
+				objID, objName = td.AsObject.ID, td.AsObject.Name
+				argID, argName = fn.Args[0].ID, fn.Args[0].Name
+				break
+			}
+		}
+		if argID != "" {
+			break
+		}
+	}
+	require.NotEmpty(t, argID)
+	loaded, err := dagB.Query(ctxB, `query($obj: ID!, $arg: ID!) {
+		obj: node(id: $obj) { ... on ObjectTypeDef { name } }
+		arg: node(id: $arg) { ... on FunctionArg { name } }
+	}`, map[string]any{"obj": objID, "arg": argID})
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{
+		"obj": map[string]any{"name": objName},
+		"arg": map[string]any{"name": argName},
+	}, loaded)
 }
 
 func TestWorkspaceAddressViews(t *testing.T) {
