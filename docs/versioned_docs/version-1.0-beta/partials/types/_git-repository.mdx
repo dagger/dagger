@@ -1,1 +1,7 @@
 The `GitRepository` type represents a Git repository.
+
+`remotes` lists named remotes. `remote(name)` looks up one by name. These operations read configuration without contacting remote servers. Registered remotes override configured remotes with the same name.
+
+`defaultRemote` selects the sole remote, otherwise `origin`, otherwise the selected branch's upstream remote. It returns `null` when none of these rules selects a remote. A workspace snapshot retains the upstream selection from capture, including when its HEAD is detached.
+
+Credentials configured on the source repository remain available for the same remote after snapshotting. Other configured remotes use the caller's authentication. An ancestry comparison fails if complete history cannot be obtained.

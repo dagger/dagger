@@ -87,7 +87,7 @@ engineVersion = "v{{ version }}"
 
 Setting `runtime.source` to `"dang"` tells Dagger to run this module with the Dang runtime. `engineVersion` declares the engine version the module requires. See [Engine version](#engine-version).
 
-The generated `main.dang` entry point is a working example of the things a module does. It has a private base container, a Check, a test environment that mounts workspace files and binds a service, a service that `dagger up` can start, and a generator that writes a test script:
+The generated `main.dang` entry point is a working example of the things a module does. It has a private base container, a Check, a test environment that mounts workspace files and binds a service, a service that `dagger start` can start, and a generator that writes a test script:
 
 ````dang title=".dagger/modules/my-ci/main.dang"
 """
@@ -133,7 +133,6 @@ type MyCi {
   """
   Start a small web backend.
   """
-  @up
   pub myBackend: Service! {
     backend
   }
@@ -179,7 +178,7 @@ my-ci:my-generate   # Did you "generate an example backend test"?
 ```
 
 ```shell
-dagger check my-ci:my-check
+dagger check dag://my-ci/my-check
 ```
 
 A module created with `--path` is not installed. Call it by pointing `-m` at its directory instead, or install it with `dagger module install <path>`.
@@ -193,7 +192,7 @@ Dang is small on purpose. The whole language fits in a short list:
 - **Functions.** A function is a type member that returns a value: `pub build: Container! { ... }`.
 - **Arguments.** They go in parentheses: `pub build(source: Directory!): Container! { ... }`.
 - **Non-null.** Mark it with `!`. Nullable is the default and has no marker.
-- **Directives.** They modify behavior: `@check`, `@generate`, `@up`, `@cache`.
+- **Directives.** They modify behavior: `@check`, `@generate`, `@cache`.
 - **Descriptions.** Put a triple-quoted string (`""" ... """`) above the thing it describes.
 - **Strings.** Double quotes process escapes, triple double quotes are raw, and backticks interpolate `${...}`. See [Strings](#strings).
 - **Comments.** Start them with `#`.
@@ -809,13 +808,13 @@ type Eslint {
 
 ## Checks, generators, services, directives
 
-Dang has three first-class function types. Each has a directive that marks it and a verb that runs it. A useful module provides at least one of them:
+Dang has three first-class function types, each run by a verb. Checks and generators are marked with a directive. A service needs no directive. A useful module provides at least one of them:
 
 | Directive | Returns | Run by | Purpose |
 |---|---|---|---|
 | `@check` | `Void` (or a value) | `dagger check` | Validate something, such as a lint, test, or scan. |
 | `@generate` | `Changeset` | `dagger generate` | Produce a diff of generated files for review. |
-| `@up` | `Service!` | `dagger up` | Start a long-running service. |
+| none | `Service!` | `dagger start` | Start a long-running service. |
 
 ### Checks {#checks}
 
@@ -877,10 +876,10 @@ pub generateProto: Changeset @generate {
 
 ### Services {#up-services}
 
-A service function returns a long-running `Service!`. Mark it with `@up` and `dagger up` starts it. Build the service from a container with `.asService`, and expose the ports it should listen on:
+A service function returns a long-running `Service!`. `dagger start` starts every public function that returns `Service!` and takes no required arguments. Build the service from a container with `.asService`, and expose the ports it should listen on:
 
 ```dang
-pub web: Service! @up {
+pub web: Service! {
   container
     .from("nginx:alpine")
     .withExposedPort(80)
@@ -888,7 +887,7 @@ pub web: Service! @up {
 }
 ```
 
-A module can expose several `@up` services, and `dagger up` starts each one. This differs from the private `let db: Service { ... }` pattern shown under [Services](#services) above. A `let` service is internal plumbing, such as a database wired into a check with `withServiceBinding`. An `@up` service is a public entry point that users start directly.
+A module can expose several services, and `dagger start` starts each one. This differs from the private `let db: Service { ... }` pattern shown under [Services](#services) above. A `let` service is internal plumbing, such as a database wired into a check with `withServiceBinding`. A `pub` service is a public entry point that users start directly.
 
 ### Caching directives
 
@@ -919,7 +918,7 @@ dagger api call build
 dagger check
 
 # Run generators and verify there's no drift
-dagger check --generate
+dagger check --generated=true
 ```
 
 For more thorough testing, write a separate test module (in any SDK) that depends on yours, exercises its functions, and asserts on the results.

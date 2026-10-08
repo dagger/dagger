@@ -29,7 +29,7 @@ uses the version declared in `package.json`, where a floating range like
 
 ```bash
 dagger check                  # run every check in the workspace
-dagger check playwright:test  # just the Playwright suite
+dagger check dag://playwright/test  # just the Playwright suite
 ```
 
 `playwright:test` finds the directory containing `playwright.config.*`,
@@ -45,11 +45,11 @@ duplicating that knowledge in `webServer`. Two steps:
 
 **1. Set the `service` setting to a module reference.** That is the install
 name of another module in your `dagger.toml`, and a function on it that returns
-a `Service`. Run `dagger up -l` to list the candidates in copyable form:
+a `Service`. Run `dagger artifact list --type Service` to list their DAG addresses:
 
 ```toml
 [modules.playwright.settings]
-service = "myapp:serve"
+service = "dag://myapp/serve"
 ```
 
 **2. Add `PLAYWRIGHT_BASE_URL` to your `playwright.config`.** The module
@@ -78,7 +78,7 @@ APIs, enable the localhost proxy:
 
 ```toml
 [modules.playwright.settings]
-service = "myapp:serve"
+service = "dag://myapp/serve"
 localhostProxy = true
 ```
 
@@ -118,14 +118,14 @@ under `[modules.playwright.settings]`:
 - `sourcePath` (default: discover) is the workspace path of the Playwright
   project. Set it when the workspace holds more than one
   `playwright.config.*`.
-- `service` is the module reference (`"module:function"`) of the service under
+- `service` is the DAG address (`"dag://module/function"`) of the service under
   test.
 - `serviceHostname` (default `frontend`) is the hostname the service is bound as
   inside the test container.
 - `baseImageAddress` (default: derive) overrides the derived
   `mcr.microsoft.com/playwright:v<version>-noble` image.
 - `baseCtr` is a full `Container` override. It is also wireable, e.g.
-  `baseCtr = "base-images:chromium"`.
+  `baseCtr = "dag://base-images/chromium"`.
 - `packageManager` (default `npm`) is the package manager used to install
   dependencies. Set it to `yarn`, `pnpm`, or `bun` to match your project.
 - `localhostProxy` (default `false`) enables the localhost proxy described
@@ -138,7 +138,7 @@ under `[modules.playwright.settings]`:
 
 ```toml
 [modules.playwright.settings]
-service = "myapp:serve"
+service = "dag://myapp/serve"
 shards = 4
 ```
 

@@ -292,7 +292,8 @@
           "collapsible": true,
           "collapsed": true,
           "items": [
-            "reference/config-files/dagger-toml"
+            "reference/config-files/dagger-toml",
+            "reference/config-files/engine-json"
           ]
         }
       ]

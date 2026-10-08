@@ -739,13 +739,13 @@ Bumping the engine version usually means the generated bindings should change to
 
 ## Checks, generators, services, directives, and ignore patterns
 
-A useful, reusable module provides at least one of the three first-class function types: a **check**, a **generator**, or a **service**. That gives the platform verbs (`dagger check`, `dagger generate`, `dagger up`) something to run. These work the same in Go as in any SDK; see the [SDKs overview](./index.mdx) for the full treatment. In Go, you mark each one with a doc-comment **pragma** on the function:
+A useful, reusable module provides at least one of the three first-class function types: a **check**, a **generator**, or a **service**. That gives the platform verbs (`dagger check`, `dagger generate`, `dagger start`) something to run. These work the same in Go as in any SDK; see the [SDKs overview](./index.mdx) for the full treatment. In Go, you mark checks and generators with a doc-comment **pragma** on the function. A service needs no pragma:
 
 | Pragma | Return type | Run by | Purpose |
 |---|---|---|---|
 | `// +check` | `error` (or `*dagger.Container`) | `dagger check` | validate the project (test/lint/scan) |
 | `// +generate` | `*dagger.Changeset` | `dagger generate` | produce a diff to apply to the workspace |
-| `// +up` | `*dagger.Service` | `dagger up` | start a long-running service |
+| none | `*dagger.Service` | `dagger start` | start a long-running service |
 
 The parts specific to Go are the `// +directive` comments and the `Exclude` option on workspace directories:
 
@@ -760,7 +760,6 @@ Go modules use `// +directive` comments to add Dagger metadata that Go's type sy
 | `// +private` | above a struct field | keep the field out of the API |
 | `// +check` | above a method | mark the function as a [check](#checks) |
 | `// +generate` | above a method | mark the function as a [generator](#generators) |
-| `// +up` | above a method | mark the function as a [service](#up-services) |
 
 ### Ignore patterns
 
@@ -831,12 +830,10 @@ See [Generating code](../../using/generating.mdx).
 
 ### Services {#up-services}
 
-Mark a function with the `// +up` pragma to make it a **service**. It returns a `*dagger.Service`, and `dagger up` discovers and starts every service the module exposes, exposing their ports on the host.
+A function that returns a `*dagger.Service` and takes no required arguments is a **service**. `dagger start` discovers and starts every service the module exposes, exposing their ports on the host.
 
 ```go
 // Run the web server.
-//
-// +up
 func (m *MyModule) Web() *dagger.Service {
 	return dag.Container().
 		From("nginx:alpine").
@@ -845,7 +842,7 @@ func (m *MyModule) Web() *dagger.Service {
 }
 ```
 
-Like checks, `// +up` services can also be declared on custom object types so you can group related services (for example an `Infra` object exposing a `Database` service). This is the same `*dagger.Service` type described under [Services](#services) above; the `// +up` pragma is what makes a service function runnable directly via `dagger up`.
+Like checks, services can also be declared on custom object types so you can group related services (for example an `Infra` object exposing a `Database` service). This is the same `*dagger.Service` type described under [Services](#services) above.
 
 ## Testing Go modules
 
@@ -892,7 +889,7 @@ dagger api call build
 dagger check
 
 # Run generators and confirm there's no drift
-dagger check --generate
+dagger check --generated=true
 ```
 
 ### In CI
@@ -950,7 +947,7 @@ Recommended release checklist:
 2. **Commit the generated bindings.** Run `dagger generate`, review the changes, and commit the generated files with your module.
 3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
 
-Before publishing, run `dagger check --generate` to confirm that the committed bindings are up to date.
+Before publishing, run `dagger check --generated=true` to confirm that the committed bindings are up to date.
 
 Consumers can install your module into a workspace with:
 
