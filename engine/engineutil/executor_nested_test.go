@@ -192,8 +192,9 @@ func TestContainerNestedClientLinkedToExecOp(t *testing.T) {
 	manager.profExecOpID = execOp.ID()
 	phaseOp.End(wcprof.OutcomeOK)
 
-	_, _, _, err := manager.transportForRequest(httptest.NewRequest(http.MethodGet, "/query", nil))
+	_, metadata, _, err := manager.transportForRequest(httptest.NewRequest(http.MethodGet, "/query", nil))
 	require.NoError(t, err)
+	require.Equal(t, clientID, metadata.ClientID)
 	manager.Close()
 	execOp.End(wcprof.OutcomeOK)
 
