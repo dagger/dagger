@@ -841,9 +841,9 @@ func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 
 	// sameAsChain checks that withFiles gives the same directory as the
 	// equivalent withFile chain, and returns that directory's listing.
-	sameAsChain := func(ctx context.Context, t *testctx.T, base *dagger.Directory, dest string, files []*dagger.File, mode *int) string {
-		var opts dagger.DirectoryWithFilesOpts
-		var fileOpts dagger.DirectoryWithFileOpts
+	sameAsChain := func(ctx context.Context, t *testctx.T, base *sdkcore.Directory, dest string, files []*sdkcore.File, mode *int) string {
+		var opts sdkcore.DirectoryWithFilesOpts
+		var fileOpts sdkcore.DirectoryWithFileOpts
 		if mode != nil {
 			opts.Permissions = *mode
 			fileOpts.Permissions = *mode
@@ -862,8 +862,8 @@ func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, chainDigest, bulkDigest)
 
-		listing := func(dir *dagger.Directory) string {
-			out, err := c.Container().From(alpineImage).
+		listing := func(dir *sdkcore.Directory) string {
+			out, err := sdkcore.NewQuery(c).Container().From(alpineImage).
 				WithMountedDirectory("/m", dir).
 				WithWorkdir("/m").
 				WithExec([]string{"sh", "-c", `find . -exec stat -c '%n %F %a %u:%g %s' {} + | sort; find . -type f | sort | xargs cat`}).
@@ -878,24 +878,24 @@ func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 	perms := 0o640
 
 	t.Run("same result as a withFile chain", func(ctx context.Context, t *testctx.T) {
-		src := c.Directory().
+		src := sdkcore.NewQuery(c).Directory().
 			WithNewFile("one", "one").
-			WithNewFile("nested/two", "two", dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).
+			WithNewFile("nested/two", "two", sdkcore.DirectoryWithNewFileOpts{Permissions: 0o755}).
 			WithNewFile("other/one", "one again")
-		owned := c.Container().From(alpineImage).
+		owned := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"sh", "-c", "echo owned > /owned && chown 1000:1000 /owned && chmod 0640 /owned"}).
 			File("/owned")
-		files := []*dagger.File{
+		files := []*sdkcore.File{
 			src.File("one"),
 			src.File("nested/two"),
-			c.Directory().WithNewFile("three", "three", dagger.DirectoryWithNewFileOpts{Permissions: 0o600}).File("three"),
+			sdkcore.NewQuery(c).Directory().WithNewFile("three", "three", sdkcore.DirectoryWithNewFileOpts{Permissions: 0o600}).File("three"),
 			owned,
 			// Same name as the first: the later copy wins.
 			src.File("other/one"),
-			c.Directory().WithNewFile("deep/four", "four").File("deep/four").WithName("renamed"),
+			sdkcore.NewQuery(c).Directory().WithNewFile("deep/four", "four").File("deep/four").WithName("renamed"),
 		}
 		// The receiver is a subdirectory and has a file that one copy replaces.
-		base := c.Directory().
+		base := sdkcore.NewQuery(c).Directory().
 			WithNewFile("root/keep", "keep").
 			WithNewFile("root/dest/three", "replaced").
 			WithNewFile("outside", "not in the receiver").
@@ -917,15 +917,15 @@ func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 
 	t.Run("repeated and hard-linked sources", func(ctx context.Context, t *testctx.T) {
 		// A/a and A/b are one inode; B/a has the same name as A/a.
-		ctr := c.Container().From(alpineImage).
+		ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"sh", "-c", "mkdir /A /B && echo A > /A/a && ln /A/a /A/b && echo B > /B/a"})
-		for name, files := range map[string][]*dagger.File{
+		for name, files := range map[string][]*sdkcore.File{
 			"same file twice": {ctr.File("/A/a"), ctr.File("/A/a")},
 			"replaced link":   {ctr.File("/A/a"), ctr.File("/B/a"), ctr.File("/A/b")},
 		} {
 			for _, mode := range []*int{nil, &perms} {
 				t.Run(fmt.Sprintf("%s permissions=%v", name, mode != nil), func(ctx context.Context, t *testctx.T) {
-					got := sameAsChain(ctx, t, c.Directory(), "dest", files, mode)
+					got := sameAsChain(ctx, t, sdkcore.NewQuery(c).Directory(), "dest", files, mode)
 					if name == "replaced link" {
 						require.Contains(t, got, "B\nA\n")
 					}
