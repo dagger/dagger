@@ -127,6 +127,14 @@ func missingGraphQLField(err error) bool {
 	if err == nil {
 		return false
 	}
+	var httpErr *graphql.HTTPError
+	if errors.As(err, &httpErr) {
+		for _, item := range httpErr.Response.Errors {
+			if missingFieldError(item) {
+				return true
+			}
+		}
+	}
 	var list gqlerror.List
 	if errors.As(err, &list) {
 		for _, item := range list {

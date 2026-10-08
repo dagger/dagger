@@ -2,7 +2,11 @@ package dagger
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -131,6 +135,47 @@ func TestModuleClientClassifiesOnlyMissingFieldValidation(t *testing.T) {
 			})}
 			err := ModuleGraphQLClient(client, "/hello", "").MakeRequest(t.Context(), &graphql.Request{}, &graphql.Response{})
 			require.ErrorIs(t, err, tc.err)
+			if tc.stale {
+				require.Contains(t, err.Error(), "regenerate")
+			} else {
+				require.NotContains(t, err.Error(), "regenerate")
+			}
+		})
+	}
+}
+
+func TestModuleClientClassifiesHTTPValidationErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		stale      bool
+	}{
+		{"missing binding", `{"errors":[{"message":"Cannot query field \"hi\" on type \"Hello\".","extensions":{"code":"GRAPHQL_VALIDATION_FAILED"}}]}`, true},
+		{"resolver quotes validator", `{"errors":[{"message":"Cannot query field \"hi\" on type \"Hello\".","path":["hello"],"extensions":{"code":"GRAPHQL_VALIDATION_FAILED"}}]}`, false},
+		{"other validation", `{"errors":[{"message":"Unknown argument","extensions":{"code":"GRAPHQL_VALIDATION_FAILED"}}]}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					OperationName string `json:"operationName"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if request.OperationName == "LoadModule" {
+					io.WriteString(w, `{"data":{"serveModule":true}}`)
+					return
+				}
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				io.WriteString(w, tc.body)
+			}))
+			defer server.Close()
+			client := &Client{client: errorWrappedClient{graphql.NewClient(server.URL, server.Client())}}
+			err := ModuleGraphQLClient(client, "/hello", "").MakeRequest(t.Context(), &graphql.Request{Query: `{hello{hi}}`}, &graphql.Response{})
+			var httpErr *graphql.HTTPError
+			require.ErrorAs(t, err, &httpErr)
+			require.Equal(t, http.StatusUnprocessableEntity, httpErr.StatusCode)
 			if tc.stale {
 				require.Contains(t, err.Error(), "regenerate")
 			} else {
