@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
+	"time"
 
 	"dagger.io/dagger/core"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 type workspacePullPlanEntry struct {
@@ -189,6 +192,160 @@ func (WorkspaceSuite) TestWorkspacePullIncrementalCheckout(ctx context.Context, 
 		}
 	}
 	require.Len(t, pulls, 2, "each pulled HEAD must check out as a delta on its receiver")
+}
+
+// An agent session replayed on a cold engine: a remote-backed workspace, a
+// few commits, a cherry-picking and a fast-forwarding pull from another
+// workspace, and the uncommitted changes of each, which compare HEAD's
+// source-only tree. Live, and replayed from recipes after pruning the cache,
+// every local HEAD's tree must be a delta: freezing a receiver for a commit
+// or a pull already materializes its HEAD's tree, so a parent is never cold.
+func (WorkspaceSuite) TestWorkspacePullColdTrees(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	content := c.Directory().
+		WithNewFile(".gitattributes", "*.txt text eol=lf\n").
+		WithNewFile("base.txt", "base\n").
+		WithNewFile("dir/keep.txt", "keep\n")
+	// A replay on a cold engine rebuilds this repository and fetches pinned
+	// commits by SHA, as from a hosted remote: keep the commit reproducible
+	// and allow SHA wants, which git daemon refuses by default.
+	service := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		WithEnvVariable("GIT_AUTHOR_DATE", workspaceCommitDate).
+		WithEnvVariable("GIT_COMMITTER_DATE", workspaceCommitDate).
+		WithDirectory("/root/repo", content).
+		WithExec([]string{"sh", "-ec", `
+cd /root/repo
+git init -q -b main
+git -c user.name=Test -c user.email=test@localhost add -A
+git -c user.name=Test -c user.email=test@localhost commit -q -m init
+mkdir /root/srv
+git clone -q --no-local --bare /root/repo /root/srv/repo.git
+git -C /root/srv/repo.git config uploadpack.allowAnySHA1InWant true
+`}).
+		WithExposedPort(9418).
+		WithDefaultArgs([]string{"sh", "-c", "git daemon --verbose --export-all --base-path=/root/srv"}).
+		AsService()
+	host, err := service.Hostname(ctx)
+	require.NoError(t, err)
+	url := fmt.Sprintf("git://%s/repo.git", host)
+	base := snapshotWorkspace(ctx, t, c, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace())
+	commit := func(ws *dagger.Workspace, message string) *dagger.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), message, workspaceCommitDate)
+	}
+	agent := base
+	for i := range 3 {
+		agent = commit(agent.WithNewFile(fmt.Sprintf("agent/%d.txt", i), fmt.Sprintf("agent %d\n", i)), fmt.Sprintf("agent %d", i))
+	}
+	agent = snapshotWorkspace(ctx, t, c, agent.WithNewFile("pending.txt", "work in progress\n"))
+	source := base
+	for i := range 2 {
+		source = commit(source.WithNewFile(fmt.Sprintf("worker/%d.txt", i), fmt.Sprintf("worker %d\n", i)).WithoutFile("dir/keep.txt"), fmt.Sprintf("worker %d", i))
+	}
+	source = snapshotWorkspace(ctx, t, c, source)
+	picked, err := applyWorkspacePull(ctx, c, agent, source, nil, 100)
+	require.NoError(t, err)
+	// Commit only the new file: the pulled-in pending edit stays pending.
+	picked = picked.WithNewFile("after-pick.txt", "picked\n")
+	picked = snapshotWorkspace(ctx, t, c, picked.WithCommit(picked.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Exclude: []string{"pending.txt"}}), "after pick", workspaceCommitDate))
+	forwarded, err := applyWorkspacePull(ctx, c, base, source, nil, 100)
+	require.NoError(t, err)
+	forwarded = snapshotWorkspace(ctx, t, c, commit(forwarded.WithNewFile("after-ff.txt", "forwarded\n"), "after fast-forward"))
+	requirePending := func(name string, ws *dagger.Workspace) {
+		pending, err := ws.Git().Uncommitted().AddedPaths(ctx)
+		require.NoError(t, err, name)
+		if name == "cherry-pick" {
+			require.Equal(t, []string{"pending.txt"}, pending)
+		} else {
+			require.Empty(t, pending, name)
+		}
+	}
+	ids := map[string]dagger.ID{}
+	for name, ws := range map[string]*dagger.Workspace{"cherry-pick": picked, "fast-forward": forwarded} {
+		requirePending(name, ws)
+		// A replayable recipe, as a resumed session's trace records it.
+		ids[name], err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(ws))
+		require.NoError(t, err)
+	}
+	require.NoError(t, c.Close()) // Drain finished spans.
+	live := gitSourceTreePaths(t, sink)
+	require.NotEmpty(t, live["incremental"])
+	require.Empty(t, live["full"], "local HEADs must not need a full source checkout")
+
+	// Replay both recipes on an engine that has forgotten everything, like a
+	// resumed session: concurrently, as restored agents are.
+	pruner := connect(ctx, t)
+	require.NoError(t, pruner.Engine().LocalCache().Prune(ctx))
+	require.NoError(t, pruner.Close())
+	cold, coldSink := connectWithTrace(ctx, t)
+	var eg errgroup.Group
+	replayedPending := make(map[string][]string, len(ids))
+	var mu sync.Mutex
+	for name, id := range ids {
+		eg.Go(func() error {
+			pending, err := dagger.Ref[*dagger.LLM](cold, id).Workspace().Git().Uncommitted().AddedPaths(ctx)
+			mu.Lock()
+			replayedPending[name] = pending
+			mu.Unlock()
+			return err
+		})
+	}
+	require.NoError(t, eg.Wait())
+	require.Equal(t, []string{"pending.txt"}, replayedPending["cherry-pick"])
+	require.Empty(t, replayedPending["fast-forward"])
+	require.NoError(t, cold.Close())
+	replayed := gitSourceTreePaths(t, coldSink)
+	require.NotEmpty(t, replayed["incremental"])
+	require.Empty(t, replayed["full"], "replayed local HEADs must not need a full source checkout")
+}
+
+// gitSourceTreePaths groups the source-only trees a session materialized by
+// the path they took (span "git source tree: <path>"), and by path:detail,
+// logging each.
+func gitSourceTreePaths(t *testctx.T, sink *agentTraceSink) map[string]map[string]bool {
+	traces, _ := sink.capture()
+	paths := map[string]map[string]bool{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if !strings.HasPrefix(span.Name, "git source tree") || span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					var path, detail string
+					var skipped []string
+					for _, attr := range span.Attributes {
+						switch attr.Key {
+						case "dagger.git.tree.path":
+							path = attr.Value.GetStringValue()
+						case "dagger.git.tree.detail":
+							detail = attr.Value.GetStringValue()
+						case "dagger.git.tree.skipped":
+							for _, v := range attr.Value.GetArrayValue().GetValues() {
+								skipped = append(skipped, v.GetStringValue())
+							}
+						}
+					}
+					if paths[path] == nil {
+						paths[path] = map[string]bool{}
+					}
+					if paths[path][id] {
+						continue
+					}
+					paths[path][id] = true
+					if detail != "" {
+						if paths[path+":"+detail] == nil {
+							paths[path+":"+detail] = map[string]bool{}
+						}
+						paths[path+":"+detail][id] = true
+					}
+					t.Logf("source tree path=%s detail=%q skipped=%v duration=%s", path, detail, skipped, time.Duration(span.EndTimeUnixNano-span.StartTimeUnixNano))
+				}
+			}
+		}
+	}
+	return paths
 }
 
 func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testctx.T) {

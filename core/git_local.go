@@ -509,10 +509,20 @@ func resolveGitConfigRemote(ctx context.Context, git *gitutil.GitCLI, remote Git
 }
 
 func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (_ *Directory, rerr error) {
-	if discardGitDir && ref.incrementalCheckoutEligible() {
-		dir, supported, err := ref.incrementalTree(ctx, srv)
-		if err != nil || supported {
-			return dir, err
+	if discardGitDir {
+		var finish func(path, detail string, skipped []string, err error)
+		ctx, finish = startGitSourceTree(ctx)
+		path, detail, skipped := "full", "", []string(nil)
+		defer func() { finish(path, detail, skipped, rerr) }()
+		if reason := ref.incrementalCheckoutIneligible(); reason != "" {
+			skipped = append(skipped, "incremental="+reason)
+		} else {
+			dir, supported, reason, err := ref.incrementalTree(ctx, srv)
+			if err != nil || supported {
+				path, detail = "incremental", "base="+reason
+				return dir, err
+			}
+			skipped = append(skipped, "incremental="+reason)
 		}
 	}
 	if !discardGitDir && depth <= 0 {

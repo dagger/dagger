@@ -842,6 +842,11 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 }
 
 func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (_ *Directory, rerr error) {
+	if discardGitDir {
+		var finish func(path, detail string, skipped []string, err error)
+		ctx, finish = startGitSourceTree(ctx)
+		defer func() { finish("remote", "", nil, rerr) }()
+	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err

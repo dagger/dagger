@@ -23,42 +23,60 @@ import (
 )
 
 func (ref *LocalGitRef) incrementalCheckoutEligible() bool {
+	return ref.incrementalCheckoutIneligible() == ""
+}
+
+// incrementalCheckoutIneligible names why the commit has no usable checkout
+// base, or returns "" when incrementalTree may be tried.
+func (ref *LocalGitRef) incrementalCheckoutIneligible() string {
 	base := ref.repo.CheckoutBase
-	if base == nil || ref.Ref == nil || ref.SHA != base.CommitSHA || len(ref.SHA) != 40 || !IsFullGitSHA(ref.SHA) {
-		return false
+	switch {
+	case base == nil:
+		return "no-checkout-base"
+	case ref.Ref == nil || ref.SHA != base.CommitSHA:
+		return "not-checkout-base-commit"
+	case len(ref.SHA) != 40 || !IsFullGitSHA(ref.SHA):
+		return "commit-format"
 	}
 	parent := base.Parent.Self()
 	if parent == nil || parent.Ref == nil || len(parent.Ref.SHA) != 40 || !IsFullGitSHA(parent.Ref.SHA) {
-		return false
+		return "parent-format"
 	}
-	_, local := parent.Backend.(*LocalGitRef)
-	if local {
-		return true
+	switch parent.Backend.(type) {
+	case *LocalGitRef:
+		return ""
+	case *RemoteGitRef:
+		if base.Tree.Self() == nil {
+			return "remote-parent-without-tree"
+		}
+		return ""
+	default:
+		return "parent-backend"
 	}
-	_, remote := parent.Backend.(*RemoteGitRef)
-	return remote && base.Tree.Self() != nil
 }
 
 // incrementalTree applies only the commit's delta to a COW child of the parent
 // tree. False means the caller must use the full checkout: unsupported inputs,
 // a cold parent it may not materialize (see incrementalParentTree), a snapshot
 // chain that is already too deep, an unusable parent tree, or any other failure
-// (see nativeFallback). Only the caller's cancellation surfaces.
-func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) (_ *Directory, supported bool, rerr error) {
+// (see nativeFallback); reason then names the cause. Only the caller's
+// cancellation surfaces.
+func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) (_ *Directory, supported bool, reason string, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "materialize incremental git checkout", telemetry.Internal())
 	defer func() {
 		if nativeFallback(ctx, span, "dagger.git.checkout.incremental.fallback", rerr) {
+			reason = gitTreeFallbackCode(rerr)
 			supported, rerr = false, nil
 		}
 		span.SetAttributes(attribute.Bool("dagger.git.checkout.incremental.supported", supported))
 		telemetry.EndWithCause(span, &rerr)
 	}()
 	if err := ref.repo.CheckoutBase.validateTree(ctx); err != nil {
-		return nil, false, err
+		return nil, false, "", err
 	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, false, "", err
 	}
 	var result *Directory
 	err = ref.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) (rerr error) {
@@ -67,7 +85,8 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		}
 		// These gates run before selecting/evaluating the parent tree. Unsupported
 		// controls must re-checkout every file, including otherwise unchanged blobs.
-		plan, reason, err := planIncrementalGitCheckout(ctx, source, ref.repo.CheckoutBase.Parent.Self().Ref.SHA, ref.SHA, ref.repo.HistorySource.Self() != nil)
+		var plan *incrementalGitCheckoutPlan
+		plan, reason, err = planIncrementalGitCheckout(ctx, source, ref.repo.CheckoutBase.Parent.Self().Ref.SHA, ref.SHA, ref.repo.HistorySource.Self() != nil)
 		if err != nil {
 			return err
 		}
@@ -84,16 +103,27 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 				return err
 			}
 		}
+		// The detail of a supported checkout: whether its parent tree was
+		// already materialized or had to be evaluated first.
+		cold := dagql.HasPendingLazyComputation(parent)
 		snapshot, parentPath, ok, err := incrementalParentTree(ctx, parent)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			span.SetAttributes(attribute.String("dagger.git.checkout.incremental.fallback", "cold-parent"))
+			reason = "cold-parent"
+			span.SetAttributes(attribute.String("dagger.git.checkout.incremental.fallback", reason))
 			return nil
 		}
+		reason = "parent-tree"
+		if cold {
+			reason = "cold-parent-tree"
+		}
 		supported = true
-		span.SetAttributes(attribute.Int("dagger.git.checkout.incremental.changed_paths", len(plan.changed)))
+		span.SetAttributes(
+			attribute.Int("dagger.git.checkout.incremental.changed_paths", len(plan.changed)),
+			attribute.String("dagger.git.checkout.incremental.base", reason),
+		)
 		child, err := query.SnapshotManager().New(ctx, snapshot, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription("incremental git source checkout"))
 		if err != nil {
 			return err
@@ -133,9 +163,9 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		if result != nil {
 			err = errors.Join(err, result.OnRelease(context.WithoutCancel(ctx)))
 		}
-		return nil, supported, err
+		return nil, supported, reason, err
 	}
-	return result, supported, nil
+	return result, supported, reason, nil
 }
 
 // incrementalColdParentKey marks a context that is materializing a cold parent
