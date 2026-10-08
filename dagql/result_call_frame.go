@@ -551,6 +551,170 @@ func (frame *ResultCall) callPB(c *Cache) (*callpbv1.Call, error) {
 	return pbCall, nil
 }
 
+// RecipeCalls returns the calls of the frame's recipe DAG, root first, as
+// ToProto gathers them from the frame's RecipeID: one call per recipe digest,
+// with the effect IDs and extra digests of every occurrence merged. skip is
+// asked about every digest but the root's; a skipped digest is left out, and
+// so is whatever part of the DAG is reachable only through it. Skipped
+// subtrees are never visited, so a walk that skips what an earlier walk
+// covered costs only the frames that are new.
+func (frame *ResultCall) RecipeCalls(ctx context.Context, skip func(digest string) bool) ([]*callpbv1.Call, error) {
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	walk := &recipeCallsWalk{
+		ctx:      ctx,
+		c:        c,
+		root:     frame,
+		skip:     skip,
+		byDigest: map[string]*callpbv1.Call{},
+		skipped:  map[string]struct{}{},
+	}
+	if err := walk.visit(frame); err != nil {
+		return nil, err
+	}
+	return walk.calls, nil
+}
+
+type recipeCallsWalk struct {
+	ctx      context.Context
+	c        *Cache
+	root     *ResultCall
+	skip     func(string) bool
+	byDigest map[string]*callpbv1.Call
+	skipped  map[string]struct{}
+	calls    []*callpbv1.Call
+}
+
+// visit follows recipeIDWithVisiting's order (receiver, module, arguments,
+// implicit inputs), which is also the order ID.gatherCalls merges repeated
+// digests in.
+func (walk *recipeCallsWalk) visit(frame *ResultCall) error {
+	if frame == nil {
+		return fmt.Errorf("rebuild recipe calls: nil frame")
+	}
+	dgst, err := frame.deriveRecipeDigest(walk.c)
+	if err != nil {
+		return err
+	}
+	key := dgst.String()
+	if existing, ok := walk.byDigest[key]; ok {
+		call.MergeGatheredCall(existing, &callpbv1.Call{
+			EffectIds:    frame.EffectIDs,
+			ExtraDigests: resultCallExtraDigestsPB(frame.ExtraDigests),
+		})
+		return nil
+	}
+	if _, ok := walk.skipped[key]; ok {
+		return nil
+	}
+	if frame != walk.root && walk.skip != nil && walk.skip(key) {
+		walk.skipped[key] = struct{}{}
+		return nil
+	}
+	pb, err := frame.callPB(walk.c)
+	if err != nil {
+		return err
+	}
+	call.NormalizeGatheredCall(pb)
+	walk.byDigest[key] = pb
+	walk.calls = append(walk.calls, pb)
+
+	if frame.Receiver != nil {
+		if err := walk.visitRef(frame, frame.Receiver); err != nil {
+			return fmt.Errorf("receiver: %w", err)
+		}
+	}
+	if frame.Module != nil {
+		if frame.Module.ResultRef == nil {
+			return fmt.Errorf("module: missing result ref")
+		}
+		if err := walk.visitRef(frame, frame.Module.ResultRef); err != nil {
+			return fmt.Errorf("module: %w", err)
+		}
+	}
+	// Like Argument.gatherCalls, sensitive arguments are not followed.
+	for _, arg := range frame.Args {
+		if arg == nil || arg.Value == nil || arg.IsSensitive {
+			continue
+		}
+		if err := walk.visitLiteral(frame, arg.Value); err != nil {
+			return fmt.Errorf("args: %w", err)
+		}
+	}
+	for _, input := range frame.ImplicitInputs {
+		if input == nil || input.Value == nil || input.IsSensitive {
+			continue
+		}
+		if err := walk.visitLiteral(frame, input.Value); err != nil {
+			return fmt.Errorf("implicit inputs: %w", err)
+		}
+	}
+	return nil
+}
+
+func (walk *recipeCallsWalk) visitRef(frame *ResultCall, ref *ResultCallRef) error {
+	if err := ref.Validate(); err != nil {
+		return err
+	}
+	if ref.Call != nil {
+		return walk.visit(ref.Call)
+	}
+	if walk.c == nil {
+		return fmt.Errorf("cannot resolve result ref %d without cache", ref.ResultID)
+	}
+	refFrame := ref.loadSharedCall()
+	if refFrame == nil {
+		refFrame = walk.c.resultCallByResultID(sharedResultID(ref.ResultID))
+	}
+	if refFrame == nil {
+		walk.c.traceRecipeIDRebuildFailed(walk.ctx, frame, ref, "missing_result_call_frame")
+		return fmt.Errorf("missing result call frame for shared result %d", ref.ResultID)
+	}
+	return walk.visit(refFrame)
+}
+
+func (walk *recipeCallsWalk) visitLiteral(frame *ResultCall, lit *ResultCallLiteral) error {
+	switch lit.Kind {
+	case ResultCallLiteralKindResultRef:
+		return walk.visitRef(frame, lit.ResultRef)
+	case ResultCallLiteralKindList:
+		for _, item := range lit.ListItems {
+			if item == nil {
+				continue
+			}
+			if err := walk.visitLiteral(frame, item); err != nil {
+				return err
+			}
+		}
+	case ResultCallLiteralKindObject:
+		for _, field := range lit.ObjectFields {
+			if field == nil || field.Value == nil || field.IsSensitive {
+				continue
+			}
+			if err := walk.visitLiteral(frame, field.Value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func resultCallExtraDigestsPB(extras []call.ExtraDigest) []*callpbv1.ExtraDigest {
+	var out []*callpbv1.ExtraDigest
+	for _, extra := range extras {
+		if extra.Digest == "" {
+			continue
+		}
+		out = append(out, &callpbv1.ExtraDigest{
+			Digest: extra.Digest.String(),
+			Label:  extra.Label,
+		})
+	}
+	return out
+}
+
 func resultCallTypePB(typ *ResultCallType) *callpbv1.Type {
 	if typ == nil {
 		return nil

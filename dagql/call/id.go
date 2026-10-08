@@ -715,11 +715,10 @@ func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	}
 
 	if existing, ok := callsByDigest[id.pb.Digest]; ok {
-		existing.EffectIds = mergeEffectIDs(existing.EffectIds, id.pb.EffectIds)
-		existing.ExtraDigests = mergeExtraDigests(existing.ExtraDigests, id.pb.ExtraDigests)
+		MergeGatheredCall(existing, id.pb)
 		return
 	}
-	id.pb.ExtraDigests = normalizedExtraDigests(id.pb.ExtraDigests)
+	NormalizeGatheredCall(id.pb)
 	callsByDigest[id.pb.Digest] = id.pb
 	id.receiver.gatherCalls(callsByDigest)
 	id.module.gatherCalls(callsByDigest)
@@ -729,6 +728,19 @@ func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	for _, input := range id.implicitInputs {
 		input.gatherCalls(callsByDigest)
 	}
+}
+
+// NormalizeGatheredCall puts the first occurrence of a recipe digest into the
+// form ToProto stores it in.
+func NormalizeGatheredCall(pb *callpbv1.Call) {
+	pb.ExtraDigests = normalizedExtraDigests(pb.ExtraDigests)
+}
+
+// MergeGatheredCall folds another occurrence of existing's recipe digest into
+// it, the way ToProto does when the digest is reachable more than once.
+func MergeGatheredCall(existing, other *callpbv1.Call) {
+	existing.EffectIds = mergeEffectIDs(existing.EffectIds, other.EffectIds)
+	existing.ExtraDigests = mergeExtraDigests(existing.ExtraDigests, other.ExtraDigests)
 }
 
 func (id *ID) Decode(str string) error {

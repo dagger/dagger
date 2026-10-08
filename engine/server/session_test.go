@@ -3525,6 +3525,40 @@ func TestCallPayloadWriteOwnershipAndRelease(t *testing.T) {
 		"a retry must write only the released target")
 }
 
+// Closure coverage lets a payload walk stop at a digest whose whole closure an
+// earlier walk claimed. It is per target like the claims themselves, and any
+// released claim voids it: the released frame may sit inside any covered
+// closure, and only a full walk would reach it again.
+func TestCallPayloadClosureCoverage(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"parent", "child"}}
+	require.False(t, store.CallPayloadClosureCovered("xxh3:abc"))
+
+	epoch := store.CallPayloadReleaseEpoch()
+	require.True(t, store.ClaimCallPayload("xxh3:abc"))
+	store.CoverCallPayloadClosures([]string{"xxh3:abc", "xxh3:def"}, epoch)
+	require.True(t, store.CallPayloadClosureCovered("xxh3:abc"))
+	require.True(t, store.CallPayloadClosureCovered("xxh3:def"))
+
+	sibling := &callPayloadDeliveryStore{session: sess, targets: []string{"parent", "sibling"}}
+	require.False(t, sibling.CallPayloadClosureCovered("xxh3:abc"),
+		"coverage for one route must not satisfy a target that never received the closure")
+
+	require.Equal(t, store.targets, sess.takeCallPayloadForWrite("xxh3:abc", store.targets))
+	sess.settleCallPayload("xxh3:abc", []string{"parent"}, true)
+	require.True(t, store.CallPayloadClosureCovered("xxh3:def"),
+		"a delivered write must not void coverage")
+	sess.settleCallPayload("xxh3:abc", []string{"child"}, false)
+	require.False(t, store.CallPayloadClosureCovered("xxh3:def"),
+		"a released claim must void every covered closure")
+
+	store.CoverCallPayloadClosures([]string{"xxh3:def"}, epoch)
+	require.False(t, store.CallPayloadClosureCovered("xxh3:def"),
+		"a walk that started before a release must not record coverage")
+}
+
 func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {
 	t.Parallel()
 
