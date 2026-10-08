@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -39,6 +40,11 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, connector drivers.C
 	if err != nil {
 		return nil, nil, fmt.Errorf("buildkit client: %w", err)
 	}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, c.Close())
+		}
+	}()
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()

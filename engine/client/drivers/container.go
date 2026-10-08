@@ -181,31 +181,114 @@ type containerConnector struct {
 // is a runc exec, ~40ms. So once the engine has answered on the first
 // tunnel, the connector dials this many more at once and hands them out
 // as clients ask: a later client waits for its own dial only, not for
-// the ones before it. Anything past them dials on demand. Tunnels no
-// client asked for end with the process.
+// the ones before it. Anything past them dials on demand. Closing the
+// connector closes tunnels no client claimed.
 const warmTunnelCount = 3
 
-// warmTunnels holds one channel per warm dial; a dial that failed delivers
-// nil. A client takes a channel to wait on, and gives it back if it stops
-// waiting, so the tunnel goes to the next client instead of leaking.
+// warmTunnels holds one result per warm dial. Each dial keeps ownership of
+// its connection until a client decides whether to keep it.
 type warmTunnels struct {
-	once    sync.Once
-	pending chan chan net.Conn
+	startOnce sync.Once
+	closeOnce sync.Once
+	pending   chan *warmTunnel
+	done      chan struct{}
+	dials     sync.WaitGroup
+}
+
+type warmTunnel struct {
+	conn chan net.Conn
+	keep chan bool
 }
 
 func newWarmTunnels() *warmTunnels {
-	return &warmTunnels{pending: make(chan chan net.Conn, warmTunnelCount)}
+	return &warmTunnels{
+		pending: make(chan *warmTunnel, warmTunnelCount),
+		done:    make(chan struct{}),
+	}
 }
 
 // start dials the warm tunnels in the background, the first time only.
 func (w *warmTunnels) start(dial func() net.Conn) {
-	w.once.Do(func() {
+	w.startOnce.Do(func() {
 		for range warmTunnelCount {
-			ch := make(chan net.Conn, 1)
-			w.pending <- ch
-			go func() { ch <- dial() }()
+			tunnel := &warmTunnel{
+				conn: make(chan net.Conn, 1),
+				keep: make(chan bool, 1),
+			}
+			w.pending <- tunnel
+			w.dials.Add(1)
+			go func() {
+				defer w.dials.Done()
+				conn := dial()
+				tunnel.conn <- conn
+				if keep := <-tunnel.keep; !keep {
+					closeWarmConn(conn)
+				}
+			}()
 		}
 	})
+}
+
+var errContainerConnectorClosed = errors.New("container connector closed")
+
+func (w *warmTunnels) tryTake(ctx context.Context) (net.Conn, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, true, err
+	}
+	select {
+	case <-w.done:
+		return nil, true, errContainerConnectorClosed
+	case tunnel := <-w.pending:
+		select {
+		case conn := <-tunnel.conn:
+			// The result and cancellation or closure can become ready together.
+			// Re-check both before handing ownership to the caller.
+			if err := ctx.Err(); err != nil {
+				tunnel.keep <- false
+				return nil, true, err
+			}
+			select {
+			case <-w.done:
+				tunnel.keep <- false
+				return nil, true, errContainerConnectorClosed
+			default:
+			}
+			tunnel.keep <- true
+			return conn, true, nil
+		case <-ctx.Done():
+			tunnel.keep <- false
+			return nil, true, ctx.Err()
+		case <-w.done:
+			tunnel.keep <- false
+			return nil, true, errContainerConnectorClosed
+		}
+	default:
+		return nil, false, nil
+	}
+}
+
+func (w *warmTunnels) close() error {
+	w.closeOnce.Do(func() {
+		// Either wait for start to finish or prevent it from starting later.
+		w.startOnce.Do(func() {})
+		close(w.done)
+		for {
+			select {
+			case tunnel := <-w.pending:
+				tunnel.keep <- false
+			default:
+				w.dials.Wait()
+				return
+			}
+		}
+	})
+	return nil
+}
+
+func closeWarmConn(conn net.Conn) {
+	if conn != nil {
+		_ = conn.Close()
+	}
 }
 
 // imageDriver connects to a container directly
@@ -231,21 +314,15 @@ func (d *containerDriver) ImageLoader(ctx context.Context) imageload.Backend {
 }
 
 func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
-	select {
-	case ch := <-d.warm.pending:
-		select {
-		case conn := <-ch:
-			if conn != nil {
-				return conn, nil
-			}
-			// the warm dial failed: dial fresh below, which reports its own error
-		case <-ctx.Done():
-			d.warm.pending <- ch
-			return nil, ctx.Err()
-		}
-	default:
+	conn, warm, err := d.warm.tryTake(ctx)
+	if err != nil {
+		return nil, err
 	}
-	conn, err := d.dial(ctx)
+	if warm && conn != nil {
+		return conn, nil
+	}
+	// The warm dial failed: dial fresh, which reports its own error.
+	conn, err = d.dial(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -259,6 +336,12 @@ func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
 			return conn
 		})
 	}}, nil
+}
+
+// Close releases tunnels dialed ahead of clients that never claimed them.
+// Connections already handed to clients remain owned by those clients.
+func (d containerConnector) Close() error {
+	return d.warm.close()
 }
 
 // answeredConn calls answered the first time a Read returns data.
