@@ -42,7 +42,7 @@
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-handler</artifactId>
-            <version>4.1.135.Final</version>
+            <version>4.1.137.Final</version>
         </dependency>
         <dependency>
             <groupId>net.minidev</groupId>
