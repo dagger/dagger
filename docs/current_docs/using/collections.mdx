@@ -1,0 +1,166 @@
+---
+title: "Collections"
+slug: /using/collections
+description: "List and select the packages, projects, and test files that modules discover in your workspace"
+---
+
+# Collections
+
+Most modules discover the units of a project when they run: the Go module finds packages and the tests in each one, ESLint finds every directory that holds an ESLint config, and Pytest finds Python projects and their test files. Each kind of unit is a collection. Every item in a collection has a key, such as a package directory or a test file path.
+
+Collections let one check cover a whole repository and still run on one item. `dagger check` runs every test in every package, and `dagger check --go-test=TestConnect` runs one.
+
+## List collections
+
+`dagger check -l` and `dagger generate -l` show one column for each collection. A `*` stands for every item in the collection:
+
+```shell
+dagger check -l
+```
+
+```text
+MODULE         GO-PACKAGE  GO-TEST  GOLANGCI-LINT-PROJECT  CHECK  DESCRIPTION
+dang-sdk                                                   stale  staleness check: re-generate modules and clients managed by the Dang SDK
+go             *                                           stale  staleness check: run go generate in this package
+go             *           *                               test   Run this test.
+golangci-lint                       *                      lint   Run golangci-lint in this project.
+# Use --all to expand collections and list each item.
+```
+
+Add `--all` to list one row per item:
+
+```shell
+dagger check -l --all
+```
+
+```text
+MODULE         GO-PACKAGE  GO-TEST       GOLANGCI-LINT-PROJECT  CHECK  DESCRIPTION
+dang-sdk                                                        stale  staleness check: re-generate modules and clients managed by the Dang SDK
+go             .                                                stale  staleness check: run go generate in this package
+go             store                                            stale  staleness check: run go generate in this package
+go             version                                          stale  staleness check: run go generate in this package
+go             .           TestHello                            test   Run this test.
+go             store       TestDatabase                         test   Run this test.
+go             store       TestFixture                          test   Run this test.
+golangci-lint                            .                      lint   Run golangci-lint in this project.
+```
+
+A row with `*` is listed even when the module found no items. If a module's rows disappear with `--all`, it found nothing to work on, which usually means the project lacks the config file the module looks for, such as `.golangci.yml`.
+
+### List keys
+
+`dagger list` names a command for each collection in the workspace. Each one lists that collection's keys:
+
+```shell
+dagger list go-packages -a
+```
+
+```text
+MODULE  GO-PACKAGE  DESCRIPTION
+go      .           The package in this directory.
+go      store       The package in this directory.
+go      version     The package in this directory.
+```
+
+A nested collection lists the keys of every parent item. Narrow it with the parent's flag:
+
+```shell
+dagger list go-tests -a --go-package=store
+```
+
+```text
+MODULE  GO-PACKAGE  GO-TEST       DESCRIPTION
+go      store       TestDatabase  The test function with this name.
+go      store       TestFixture   The test function with this name.
+```
+
+## Select items
+
+Each collection adds a flag named after its items, such as `--go-package` and `--go-test`. The flag takes a key, and `dagger check --help` lists the flags in the workspace. Pass one to run only the checks for that item:
+
+```shell
+dagger check --go-package=store                           # every check for one package
+dagger check --go-package=store --go-test=TestFixture     # one test
+dagger check --go-test=TestHello --go-test=TestFixture    # two tests, in any package
+```
+
+The flags combine the same way everywhere:
+
+- Repeat a flag to select several keys.
+- Different flags must all match.
+- A key in a nested collection is matched in every parent item, so `--go-test=TestConnect` selects `TestConnect` in each package that has one. Add `--go-package` to pick one.
+- A check that does not belong to the collection is not selected, so `--go-package=store` leaves out lint and other modules' checks.
+
+Generators take the same flags:
+
+```shell
+dagger generate --go-package=version
+```
+
+### Select items with a DAG link
+
+The same selection works as query parameters on a DAG link. Each parameter is a collection's flag name without the dashes. Quote a link that contains `?` or `&`:
+
+```shell
+dagger check 'dag://go/packages/tests/test?go-package=store&go-test=TestFixture'
+```
+
+Keys that contain `/`, such as `cmd/greet`, need no escaping.
+
+### Reuse a listed selection
+
+`-f cli` prints each row as the flags that select it, and `-f link` prints its DAG link. Add `dagger check` before a row to run it:
+
+```shell
+dagger check -l --all -f cli --go-package=store
+```
+
+```text
+--go --go-package=store --check=stale            # staleness check: run go generate in this package
+--go --go-package=store --go-test=TestDatabase   # Run this test.
+--go --go-package=store --go-test=TestFixture    # Run this test.
+```
+
+## How selected items run
+
+A module decides how to run a selection. Some run each item on its own. Others run the selected items of a collection together: the Go module runs the selected tests of one package with a single `go test` command, and Pytest runs the selected test files of one project with a single `pytest` command. Items from different parents never run together, so tests in two packages run as two commands.
+
+The report names each run by its DAG link, with the keys it covered:
+
+```text
+✔ dag://go/packages/tests/test?go-package=.&go-test=TestHello 5.3s OK
+✔ dag://go/packages/tests/test?go-package=store&go-test=TestFixture&go-test=TestDatabase 5.3s OK
+```
+
+Pass a link from the report to `dagger check` to run that selection again.
+
+## Call collection functions
+
+Every collection has the same functions:
+
+| Function | Returns |
+| --- | --- |
+| `keys` | The keys, in the order the module discovered them |
+| `list` | Every item |
+| `get` | The item with the given key |
+| `subset` | A collection of the items with the given keys |
+| `batch` | Functions that run once over every item in the collection |
+
+Select an item with `get` and keep chaining from it. In [Dagger Shell](../reference/cli/index.mdx#dagger-shell), list the tests in one Go package:
+
+```shell
+dagger -c 'go | packages | get store | tests | keys'
+```
+
+```text
+TestFixture
+TestDatabase
+```
+
+An item can have functions that are not checks or generators, such as the Go module's `binary`, which builds a `main` package:
+
+```shell
+dagger -c 'go | packages | get cmd/greet | binary | export ./greet'
+```
+
+Each [module reference](../reference/modules/index.mdx) lists its collections, their keys, and the functions on each item.

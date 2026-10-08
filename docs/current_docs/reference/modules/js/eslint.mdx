@@ -6,7 +6,7 @@ description: "Lint JavaScript and TypeScript source with ESLint."
 
 # ESLint
 
-The ESLint module checks JavaScript and TypeScript source with ESLint, running the same lint check locally and in CI so issues get caught before a PR lands. Reach for it when the repo already has ESLint config and you want linting to run as a Dagger check, with a repair workflow available for fixable issues.
+The ESLint module checks JavaScript and TypeScript source with ESLint, running the same lint check locally and in CI so issues get caught before a PR lands. Each ESLint config roots a project, and the module lints each project with its own config.
 
 ## Add it to your workspace
 
@@ -17,27 +17,67 @@ dagger module install dagger.io/js/eslint
 ## Run the check
 
 ```bash
-dagger check             # run every check in the workspace
-dagger check dag://eslint/lint # run ESLint against the workspace source
+dagger check --eslint                          # lint every project
+dagger check --eslint-project=packages/ui      # lint one project
 ```
 
-`eslint:lint` installs dependencies and runs `eslint .` over the whole workspace using the project's own ESLint configuration, so the result matches what developers see locally and fails on lint errors.
+The check is `eslint/projects/lint`. It installs dependencies and runs the
+project's own ESLint from the project directory, so the result matches what
+developers see locally. A check over several projects reports every project
+that fails.
+
+## Projects
+
+| Flag | Collection | Key |
+| --- | --- | --- |
+| `--eslint-project` | `projects` | Directory holding the ESLint config, relative to the workspace root. The root is `.` |
+
+List the keys with `dagger list eslint-projects -a`. [Collections](../../../using/collections.mdx) describes how to select items.
+
+A project is a directory holding a flat config (`eslint.config.js`, `.mjs`,
+`.cjs`, `.ts`, `.mts`, or `.cts`) or a legacy config (`.eslintrc`,
+`.eslintrc.js`, `.cjs`, `.json`, `.yaml`, or `.yml`). A nested project is
+linted on its own, and the project that encloses it skips its files. A config
+in a directory that the enclosing flat config ignores globally is not a
+project.
+
+Projects are found at or below the directory `dagger` runs from, plus the
+nearest project that encloses it.
+
+Dependencies install at the nearest workspace root (a `pnpm-workspace.yaml` or
+a `package.json` with `workspaces`), else the nearest lockfile, else the
+nearest `package.json`.
 
 ## Fix issues
 
-ESLint also exposes a `fix` function that runs `eslint . --fix` and returns the repaired source as a changeset (excluding `node_modules`). It is a regular function rather than a check, so it does not run during `dagger check`; call it with `dagger api call` (run `dagger api functions` to see available functions).
+Each project has a `fix` function that runs `eslint --fix` and returns the
+repaired source as a changeset. Problems ESLint cannot fix are left for the
+check to report. It is a regular function rather than a check, so it does not
+run during `dagger check`:
+
+```bash
+dagger -c 'eslint | projects | get packages/ui | fix | export .'
+```
 
 ## Configure it
 
-List the current settings and their values with `dagger module settings eslint`, then set one with `dagger module settings eslint <key> <value>`. Settings are stored in `dagger.toml` under `[modules.eslint.settings]`.
+List the current settings and their values with `dagger module settings eslint`, then set one with `dagger module settings eslint <key> <value>`. Settings are stored in `dagger.toml` under `[modules.eslint.settings]` and apply to every project:
 
-- `packageManager` (default `npm`) is the package manager used to install dependencies before linting. Set it to `yarn` or `pnpm` to match the project, so the same lockfile and dependency versions are used.
-- `baseImageAddress` (default `node:25-alpine`) is the Node base image ESLint runs in. Pin it to the project's Node version, for example `node:22-alpine`.
+- `packageManager` (default empty) is the package manager that installs
+  dependencies: `npm`, `pnpm`, `yarn`, or `bun`. Empty detects it from the
+  `packageManager` field of `package.json`, then from the lockfile, then uses
+  npm.
+- `baseImageAddress` (default `node:25-alpine`) is the Node base image ESLint
+  runs in. Pin it to the project's Node version, for example `node:22-alpine`.
+- `installFlags` (default empty) are extra arguments for the install command,
+  such as `["--ignore-scripts"]`.
+- `environment` (default empty) sets environment variables for ESLint, as
+  `KEY=VALUE`.
 
 ```toml
 [modules.eslint.settings]
-packageManager = "pnpm"
 baseImageAddress = "node:22-alpine"
+installFlags = ["--ignore-scripts"]
 ```
 
 ## Working with other modules

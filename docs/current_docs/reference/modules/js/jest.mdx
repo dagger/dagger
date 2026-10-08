@@ -6,7 +6,10 @@ description: "Run Jest tests for JavaScript and TypeScript workspaces."
 
 # Jest
 
-The Jest module runs Jest tests for JavaScript and TypeScript projects. Reach for it when Jest is already the test runner for the repo and you want those tests to become a Dagger check that runs in CI and Dagger Cloud, whether you're testing one app or package in a larger workspace or debugging which tests get discovered.
+The Jest module runs Jest tests for JavaScript and TypeScript projects as a
+Dagger check, locally, in CI, and in Dagger Cloud. Each Jest config roots a
+project, and each project's test files are a collection, so a check can run one
+project, one test file, or everything.
 
 ## Add it to your workspace
 
@@ -17,34 +20,76 @@ dagger module install dagger.io/js/jest
 ## Run the tests
 
 ```bash
-dagger check           # run every check in the workspace
-dagger check dag://jest/test # run the Jest suite
+dagger check --jest                                         # run every Jest project
+dagger check --jest-project=apps/api                        # run one project
+dagger check --jest-project=apps/api --jest-test-file=src/sub.test.js   # run one test file
 ```
 
-`jest:test` installs dependencies and runs the Jest suite over the workspace (excluding `node_modules`, `dist`, and `build`). It automatically registers an OpenTelemetry hook, so individual tests appear as spans in the Dagger TUI and Dagger Cloud without changing the project's Jest config.
+The check is `jest/projects/tests/test`. It installs dependencies and runs the
+project's own Jest once per project, over the selected test files. With every
+file in the project selected, it runs `jest` with the project's config. With
+some selected, it runs only those files.
 
-## Test options
+The module registers an OpenTelemetry hook, so individual tests appear as spans
+in the Dagger TUI and Dagger Cloud without changing the project's Jest config.
 
-The `jest:test` check runs with default options. Call the `test` function directly with `dagger api call` to override them:
+## Collections
 
-- `files` limits the run to specific test files.
-- `build` runs the project's build script before testing.
-- `useEnv` uses the project's own Jest environment instead of the module's automatic OpenTelemetry environment.
-- `flags` are extra flags passed through to `jest`.
+| Flag | Collection | Key |
+| --- | --- | --- |
+| `--jest-project` | `projects` | Directory holding the Jest config, relative to the workspace root. The root is `.` |
+| `--jest-test-file` | `tests`, on a project | Test file path, relative to the project |
 
-Use `list` to print the tests Jest discovers when test selection is unclear.
+List the keys with `dagger list jest-projects -a` and `dagger list jest-test-files -a`. [Collections](../../../using/collections.mdx) describes how to select items.
+
+A project is a directory holding `jest.config.js`, `.mjs`, `.cjs`, `.ts`,
+`.mts`, `.cts`, or `.json`. Projects are found at or below the directory
+`dagger` runs from, plus the nearest project that encloses it. When a root
+config lists other projects in its `projects` field, those projects are tested
+through the root project and are not keys of their own.
+
+Test files are found by reading the config's `testMatch`, `testRegex`,
+`testPathIgnorePatterns`, `roots`, and `rootDir` when they are literal values,
+and Jest's defaults otherwise. `node_modules`, `.git`, and files ignored by
+`.gitignore` are left out. A project with no test files has nothing to run.
+
+Dependencies install at the nearest workspace root (a `pnpm-workspace.yaml` or
+a `package.json` with `workspaces`), else the nearest lockfile, else the
+nearest `package.json`.
+
+To print the tests Jest discovers in a project, call its `list` function:
+
+```bash
+dagger -c 'jest | projects | get apps/api | list'
+```
 
 ## Configure it
 
-List the current settings and their values with `dagger module settings jest`, then set one with `dagger module settings jest <key> <value>`. Settings are stored in `dagger.toml` under `[modules.jest.settings]`:
+List the current settings and their values with `dagger module settings jest`,
+then set one with `dagger module settings jest <key> <value>`. Settings are
+stored in `dagger.toml` under `[modules.jest.settings]` and apply to every
+project:
 
-- `packageManager` (default `npm`) is the package manager used to install dependencies before testing. Set it to `yarn` or `pnpm` to match the project.
-- `baseImageAddress` (default `node:25-alpine`) is the Node base image tests run in. Pin it to the project's Node version, for example `node:22-alpine`.
+- `packageManager` (default empty) is the package manager that installs
+  dependencies: `npm`, `pnpm`, `yarn`, or `bun`. Empty detects it from the
+  `packageManager` field of `package.json`, then from the lockfile, then uses
+  npm.
+- `baseImageAddress` (default `node:25-alpine`) is the Node base image tests
+  run in. Pin it to the project's Node version, for example `node:22-alpine`.
+- `build` (default `false`) runs the package's build script before testing.
+- `useEnv` (default `false`) uses the project's own Jest environment instead of
+  injecting the module's OpenTelemetry hook.
+- `flags` (default empty) are extra flags passed to every `jest` run.
+- `installFlags` (default empty) are extra flags for the install command, such
+  as `["--ignore-scripts"]`.
+- `environment` (default empty) sets environment variables for the build and
+  test steps, as `KEY=VALUE`.
 
 ```toml
 [modules.jest.settings]
-packageManager = "pnpm"
 baseImageAddress = "node:22-alpine"
+build = true
+flags = ["--ci"]
 ```
 
 ## Working with other modules

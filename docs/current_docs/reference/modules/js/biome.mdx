@@ -1,12 +1,12 @@
 ---
 title: "Biome"
 slug: /reference/modules/js/biome
-description: "Lint and fix source with Biome."
+description: "Lint and format JavaScript and TypeScript with Biome."
 ---
 
 # Biome
 
-The Biome module runs Biome linting over your JavaScript and TypeScript source and can return a fixed version when Biome can repair issues. Reach for it when a project uses Biome as its main code quality tool, so a single combined tool handles both lint and format rules instead of a separate ESLint and Prettier pair.
+The Biome module runs Biome over your JavaScript and TypeScript source and can return a fixed version when Biome can repair issues. Reach for it when a project uses Biome as its main code quality tool, so a single combined tool handles both lint and format rules instead of a separate ESLint and Prettier pair. Each root Biome config roots a project.
 
 ## Add it to your workspace
 
@@ -14,24 +14,70 @@ The Biome module runs Biome linting over your JavaScript and TypeScript source a
 dagger module install dagger.io/js/biome
 ```
 
+The module is installed under the name `biomejs`.
+
 ## Run the check
 
 ```bash
-dagger check              # run every check in the workspace
-dagger check dag://biomejs/lint # run Biome against the workspace source
+dagger check --biomejs                                   # check every project
+dagger check --biomejs-biome-project=packages/ui         # check one project
 ```
 
-`biomejs:lint` installs dependencies and runs `biome check` over the whole workspace using the project's own `biome.json`. Biome's `check` covers both linting and formatting, which is why this single check replaces a separate ESLint and Prettier pair.
+The check is `biomejs/projects/lint`. It installs dependencies and runs the
+project's own Biome with `biome check` from the project directory. Biome's
+`check` covers both linting and formatting, which is why this single check
+replaces a separate ESLint and Prettier pair. A check over several projects
+reports every project that fails.
+
+## Projects
+
+| Flag | Collection | Key |
+| --- | --- | --- |
+| `--biomejs-biome-project` | `projects` | Directory holding the root Biome config, relative to the workspace root. The root is `.` |
+
+List the keys with `dagger list biomejs-biome-projects -a`. [Collections](../../../using/collections.mdx) describes how to select items.
+
+A project is a directory holding a root `biome.json` or `biome.jsonc`. A config
+with `"root": false` belongs to the nearest root config above it. Configs in
+directories ignored by `.gitignore` are left out.
+
+Projects are found at or below the directory `dagger` runs from, plus the
+nearest project that encloses it.
+
+The source is mounted without files ignored by `.gitignore`. Dependencies
+install at the nearest workspace root (a `pnpm-workspace.yaml` or a
+`package.json` with `workspaces`), else the nearest lockfile, else the nearest
+`package.json`.
 
 ## Fix issues
 
-Biome also exposes a `fix` function that runs `biome check --write` and returns the repaired source as a changeset (covering `.js`, `.ts`, `.jsx`, `.tsx`). It is a regular function rather than a check, so it does not run during `dagger check`; call it with `dagger api call` (run `dagger api functions` to see available functions).
+Each project has a `fix` function that runs `biome check --write` and returns
+the repaired source as a changeset. Fixes are returned even when diagnostics
+Biome cannot fix remain. It is a regular function rather than a check, so it
+does not run during `dagger check`:
+
+```bash
+dagger -c 'biomejs | projects | get packages/ui | fix | export .'
+```
+
+`fix` takes `files`, to fix only some files, and `fixFilter`, patterns of the
+files to include in the changeset. Both are relative to the project root.
 
 ## Configure it
 
-List the current settings and their values with `dagger module settings biomejs`, then set one with `dagger module settings biomejs <key> <value>`. Settings are stored in `dagger.toml` under `[modules.biomejs.settings]`:
+List the current settings and their values with `dagger module settings biomejs`, then set one with `dagger module settings biomejs <key> <value>`. Settings are stored in `dagger.toml` under `[modules.biomejs.settings]` and apply to every project:
 
-- `baseImageAddress` (default `node:25-alpine`) is the Node base image Biome runs in. Pin it to the project's Node version, for example `node:22-alpine`. Biome installs with npm, so unlike the ESLint and Prettier modules there is no package-manager setting.
+- `packageManager` (default empty) is the package manager that installs
+  dependencies: `npm`, `yarn`, `pnpm`, or `bun`. Empty detects it from the
+  `packageManager` field of `package.json`, then from the lockfile, then uses
+  npm.
+- `baseImageAddress` (default `node:25-alpine`, pinned by digest) is the Node
+  base image Biome runs in. It must provide Node.js and npm. Pin it to the
+  project's Node version, for example `node:22-alpine`.
+- `installFlags` (default empty) are extra arguments for the install command,
+  such as `["--ignore-scripts"]`.
+- `environment` (default empty) sets environment variables for Biome, as
+  `KEY=VALUE`.
 
 ```toml
 [modules.biomejs.settings]

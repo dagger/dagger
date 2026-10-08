@@ -9,7 +9,7 @@ description: "Call module functions directly and chain them into pipelines"
 `dagger check`, `dagger generate`, and `dagger up` are conveniences built on top of the underlying primitive: calling a module's functions. When you need something those verbs don't cover, call functions directly.
 
 ```shell
-dagger api call jest test
+dagger api call go module --path=. test
 ```
 
 ## Discover functions
@@ -23,13 +23,13 @@ dagger api functions
 List the functions on a specific module:
 
 ```shell
-dagger api functions jest
+dagger api functions go
 ```
 
 Every function and its arguments are also visible through `--help`:
 
 ```shell
-dagger api call jest --help
+dagger api call go --help
 ```
 
 ## Pass arguments
@@ -37,7 +37,7 @@ dagger api call jest --help
 Arguments are flags on the function that accepts them:
 
 ```shell
-dagger api call jest --package-manager=yarn test
+dagger api call go --version=1.25 module --path=. test
 ```
 
 Secrets are passed the same way, via provider URIs:
@@ -57,12 +57,16 @@ dagger -m core api call container \
   stdout
 ```
 
+## Collections
+
+A function that discovers the units of a project, such as Go packages or test files, returns a collection. Every collection has `keys`, `list`, `get`, `subset`, and `batch` functions. See [Call collection functions](./collections.mdx#call-collection-functions).
+
 ## Output
 
 By default the result is printed to your terminal. Format it as JSON:
 
 ```shell
-dagger api call jest test --json
+dagger api call go module --path=. generate-directories --json
 ```
 
 Or save a returned file or directory to the host:

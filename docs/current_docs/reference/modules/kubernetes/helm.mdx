@@ -22,7 +22,7 @@ dagger check dag://helm/lint             # lint every discovered chart
 dagger check dag://helm/assert-template  # render discovered values files and fail on errors
 ```
 
-The module discovers charts by finding every `Chart.yaml` in the workspace and treats the containing directory as the chart root, so templates, subcharts, CRDs, and files referenced through `.Files` are all available to Helm. You can see which charts the module finds with `charts`.
+The module discovers charts by finding every `Chart.yaml` at or below the directory `dagger` runs from and treats the containing directory as the chart root, so templates, subcharts, CRDs, and files referenced through `.Files` are all available to Helm. You can see which charts the module finds with `charts`.
 
 `lint` runs `helm lint` against each chart's default values, and once more for each discovered values file. `assert-template` renders each values file with `helm template --dry-run=client` and fails if templating breaks; it intentionally skips the bare chart, since some charts only render with one of their explicit values files.
 

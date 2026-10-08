@@ -1,17 +1,16 @@
 ---
 title: "Go"
 slug: /reference/modules/go
-description: "Run Go tests and generators across a workspace."
+description: "Test, build, and run go generate on the Go packages in a workspace."
 ---
 
 # Go
 
-The Go module gives a Go workspace one shared way to test and run
-`go generate`. It scans the workspace for `go.mod` files, treats each one as a Go
-module, and exposes workspace-level functions that run across all of them. That
-makes it a good fit for monorepos, service repos, and libraries with generated
-code. Each module runs on the Go toolchain its own `go.mod` asks for, and the
-same checks cover all of them.
+The Go module tests, builds, and runs `go generate` on the Go code in a
+workspace. It finds every Go module from its `go.mod`, and exposes the packages
+inside them as a collection keyed by directory. Each package's tests are a
+collection keyed by test name, so a check can run one package, one test, or
+everything. Each Go module runs on the Go toolchain its own `go.mod` asks for.
 
 ## Add it to your workspace
 
@@ -19,34 +18,91 @@ same checks cover all of them.
 dagger module install dagger.io/go
 ```
 
-## Run the checks
+## Checks and generators
+
+| Address | Kind | What it does |
+| --- | --- | --- |
+| `go/packages/tests/test` | Check | Runs the selected tests, one `go test` per package |
+| `go/packages/generate` | Generator | Runs `go generate` in the selected packages |
+| `go/packages/generate/stale` | Check | Fails when `go generate` would change a committed file |
 
 ```bash
-dagger check             # run every check in the workspace
-dagger check dag://go/test-all # run Go tests across every module
+dagger check --go                     # run every Go check
+dagger check --go --check=test        # run every Go test
+dagger generate --go                  # run go generate in every package
 ```
 
-`test-all` discovers every `go.mod` in the workspace, treats each as
-a Go module, and runs tests against all of them. Tests run through an
-OpenTelemetry-aware runner, so individual Go tests appear as spans in the Dagger
-TUI and Dagger Cloud.
+Tests run through an OpenTelemetry-aware runner, so individual Go tests appear
+as spans in the Dagger TUI and Dagger Cloud.
+
+## Collections
+
+| Flag | Collection | Key |
+| --- | --- | --- |
+| `--go-package` | `packages` | Package directory, relative to the workspace root, such as `sdk/go/cmd/dagger`. The root package is `.` |
+| `--go-test` | `tests`, on a package | Test, fuzz, or example function name, such as `TestConnect` |
+| `--go-platform` | `platforms`, on a package | `GOOS/GOARCH` pair, such as `linux/arm64` |
+
+List the keys with `dagger list go-packages -a`, `dagger list go-tests -a`, and
+`dagger list go-platforms -a`. Combine the flags to narrow a selection:
+
+```bash
+dagger check --go-package=sdk/go                          # every check in one package
+dagger check --go-test=TestConnect                        # TestConnect in every package that has one
+dagger check --go-package=sdk/go --go-test=TestConnect    # one test
+dagger generate --go-package=sdk/go/internal/gen          # one generator
+```
+
+A test name in two packages is two keys, so `--go-test` alone selects both and
+`--go-package` picks one. [Collections](../../using/collections.mdx) describes how to select items.
+
+### Packages
+
+A directory is a package key when it has work to do:
+
+- It has tests, and its Go module is selected by the `test` setting.
+- It is a `main` package selected by the `build` setting.
+- It has a `//go:generate` line and is selected by the `generate` setting.
+
+Go modules are not a collection of their own. They decide how a package is
+mounted and which Go toolchain it gets.
+
+### Tests
+
+Test names come from the package's `_test.go` files: every
+`func TestXxx(t *testing.T)`, `func FuzzXxx(f *testing.F)`, and
+`func ExampleXxx()`. Listing them runs no container. `TestMain`, `testdata`
+directories, and nested Go modules are left out. Build constraints are not
+evaluated, so a test excluded by one is still listed, and selecting it runs
+nothing.
+
+The selected tests of one package run together. With every test in the package
+selected, the check runs `go test` on the package. With some selected, it runs
+`go test -run` with their names. Each package runs as a separate command, never
+one `go test ./...` per Go module.
+
+### Platforms
+
+Every pair the Go toolchain supports is a platform key. Platforms select which
+binaries to cross-compile, and do not affect checks.
 
 ## Module discovery
 
-`test-all` and `generate-all` find Go modules by looking for `go.mod` files:
+The module finds Go modules by looking for `go.mod` files:
 
 - Every directory at or below the directory `dagger` runs from that holds a
   `go.mod` is a Go module. Run `dagger` from the workspace root to cover the
-  whole repository.
+  whole repository, or from a subdirectory to cover only the Go modules below
+  it.
 - When `dagger` runs from a directory inside a Go module, that enclosing module
   is included as well.
 - Every `go.mod` counts, including those under `vendor/`, `testdata/`,
   `examples/`, hidden directories, and directories listed in `.gitignore`.
-- A directory is a module when its `go.mod` parses and it holds at least one
-  Go file, so an empty module or a placeholder `go.mod` is left out.
+- A directory is a module when its `go.mod` declares a module path and the
+  directory holds at least one Go file of its own.
 
-Exclude a Go module from `test-all` with the `test` setting, which selects
-module roots by path from the workspace root:
+Exclude a Go module from testing with the `test` setting, which selects module
+roots by path from the workspace root:
 
 | Pattern | Selects |
 | --- | --- |
@@ -57,27 +113,51 @@ module roots by path from the workspace root:
 
 Exclusions always win, whatever the order. A list with only exclusions starts
 from every module, so `["!vendor", "!testdata"]` tests everything except those
-two trees, and `["!**"]` turns the workflow off.
+two trees, and `["!**"]` turns testing off. A module outside the selection
+offers no tests.
 
-`generate-all` is scoped by directory instead, with the `generate` setting. A
-literal path selects only that directory, `"internal/**"` selects `internal`
-and everything below it, and a `!` prefix excludes. `go generate` runs in a
-selected directory only when it contains a `//go:generate` directive.
+The `generate` setting selects directories instead, as Dagger globs from the
+workspace root. A literal path selects only that directory, `"internal/**"`
+selects `internal` and everything below it, and a `!` prefix excludes.
+
+The `build` setting selects `main` packages by directory relative to each Go
+module, with the same rules as `test`, and applies in every module:
+`["cmd/**", "!cmd/internal"]` keeps `cmd` and its subdirectories except
+`cmd/internal`.
 
 ## Generate code
 
-Run the generator when generated Go files are part of normal development, such
-as mocks, embedded assets, protobuf output, or anything produced by
-`go generate`:
+`go/packages/generate` runs `go generate .` in each selected package, and
+returns the result as a changeset to review before applying.
+
+The selected packages of one Go module run together, in lexical path order, and
+share a container, so a later command can use an earlier one's output. With
+every package selected, that is `go generate ./...` for each Go module. A
+package generated on its own runs against the committed source of the others.
+Go modules run independently.
+
+A directory can pick the container its generators run in with
+`//go:generate:container`, naming a workspace container such as
+`generate-env`, or an image reference such as
+`docker.io/library/golang:1.26.1-alpine`. Without the directive, the directory
+uses the module's own base container.
+
+## Build binaries
+
+`binary` is a function, not a check. It returns the binary for a `main` package
+selected by the `build` setting, built for the engine's platform. On the
+`platforms` collection, it cross-compiles for the selected platforms and
+returns one subdirectory per platform, such as `linux-amd64/` and
+`windows-arm64/`. With no platform selected, it builds for the engine's
+platform. Cross-compiling sets `GOOS` and `GOARCH` in the native container, and
+cgo is off unless `base` brings a C cross-toolchain.
 
 ```bash
-dagger generate dag://go/generate-all
+dagger -c 'go | packages | get cmd/app | binary | export ./app'
+dagger -c 'go | packages | get cmd/app | platforms | subset linux/amd64 darwin/arm64 | batch | binary | export ./dist'
 ```
 
-`generate-all` runs `go generate .` in each selected directory that contains a
-`//go:generate` command, and returns the result as a changeset to review before
-applying. Within a Go module, directories run in lexical path order and share a
-container, so a later command can use an earlier one's output.
+A binary is named the way `go build` names it.
 
 ## Configure it
 
@@ -86,9 +166,9 @@ List the current settings with `dagger module settings go`, then change one with
 `[modules.go.settings]`:
 
 - `version` sets one Go toolchain for every module, overriding the `go`
-  directive in each module's `go.mod`. Without it, each module is tested and
-  generated in `golang:<version>-alpine` for the version its own `go.mod` asks
-  for, and a module with no `go` directive uses `1.26`.
+  directive in each module's `go.mod`. Without it, each module is tested, built,
+  and generated in `golang:<version>-alpine` for the version its own `go.mod`
+  asks for, and a module with no `go` directive uses `1.26`.
 - `base` is an optional container to use instead of that image, for tests and
   generators that need system packages or bound services. It must carry a Go
   toolchain and any C/C++ dependencies the modules need, and the test runner
@@ -101,10 +181,15 @@ List the current settings with `dagger module settings go`, then change one with
   and `testdata/` directories are already included automatically; use this for
   inputs those patterns miss, such as embedded non-Go assets, generator inputs,
   or fixtures kept outside `testdata/`.
-- `test` (default `["**"]`) selects the module roots `test-all` covers. See
+- `test` (default `["**"]`) selects the module roots to test. See
   [Module discovery](#module-discovery) for the pattern rules.
-- `generate` (default `["**"]`) selects the directories `generate-all` runs
-  `go generate` in, as paths and globs from the workspace root.
+- `generate` (default `["**"]`) selects the directories to run `go generate`
+  in, as paths and globs from the workspace root.
+- `build` (default `["**"]`) selects the `main` packages to build, as paths
+  relative to each Go module.
+- `buildFlags` (default empty) are extra arguments for `go build` only, such as
+  `["-trimpath", "-ldflags=-s -w"]`. Each list item is one argument, so a value
+  may contain spaces. Tests and `go generate` do not receive them.
 - `goflags` sets the `GOFLAGS` environment variable in every Go container, which
   is how build tags are passed, as in `-tags=extended`. Flags that take a value
   use the `-flag=value` form. On the command line, put `--` before the value so
@@ -129,18 +214,16 @@ List-valued settings are edited directly in `dagger.toml`:
 version = "1.26"
 includeExtraFiles = ["Makefile", "tools/**"]
 test = ["**", "!legacy-service"] # Test all modules except legacy-service and modules below it
+build = ["cmd/**"]
+buildFlags = ["-trimpath"]
 ```
 
 ## Working with other modules
 
-Reach for this module whenever the repo contains one or more Go modules that
-should share the same CI checks. To exclude a single module from a workflow, add a `!`-prefixed module path to the corresponding
-selector array rather than splitting the repo into separate check systems.
-
 For Go lint checks, install [golangci-lint](./go/golangci-lint.mdx) or
 [Staticcheck](./go/staticcheck.mdx) alongside this module.
 
-When the tests need a service the module cannot start, such as a database, wire
+When the tests need a service, such as a database, wire
 a container with that service bound into the `base` setting.
 [Daggerize a Go Project](../../getting-started/platform-guides/go/index.mdx) walks through it.
 

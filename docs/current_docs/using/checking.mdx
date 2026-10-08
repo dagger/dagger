@@ -18,15 +18,48 @@ Runs all checks in your workspace in parallel. Exits non-zero if any check fails
 dagger check -l
 ```
 
-Each row contains arguments for `dagger check`. Add `dagger check` before the row to run it. Rows group collection items by path. Use `--all` to list each key combination.
+```text
+MODULE         GO-PACKAGE  GO-TEST  GOLANGCI-LINT-PROJECT  CHECK  DESCRIPTION
+dang-sdk                                                   stale  staleness check: re-generate modules and clients managed by the Dang SDK
+go             *                                           stale  staleness check: run go generate in this package
+go             *           *                               test   Run this test.
+golangci-lint                       *                      lint   Run golangci-lint in this project.
+# Use --all to expand collections and list each item.
+```
+
+A `*` stands for every item in a [collection](./collections.mdx), such as every Go package or every test the module found. Use `--all` to list one row per item. `--format=cli` prints each row as the flags that select it, and `--format=link` prints its DAG link. Add `dagger check` before a row to run it.
 
 ## Filter checks
 
+Select checks by module, by check name, or by both:
+
 ```shell
-dagger check 'dag://eslint/*'          # all checks from a module
-dagger check dag://vitest/test       # a single check
-dagger check 'dag://*/lint'            # pattern across modules
+dagger check --go                  # every check from the go module
+dagger check --check=lint          # every check named lint, from any module
+dagger check --go --check=test     # the go module's test check
 ```
+
+A DAG link selects a check by its path. A path selects everything below it, and `**` matches across path segments:
+
+```shell
+dagger check 'dag://eslint/*'              # all checks from a module
+dagger check dag://vitest/projects/tests/test  # a single check
+dagger check 'dag://**/lint'               # every lint check
+```
+
+`dagger check --help` lists every filter flag available in the workspace.
+
+### Select collection items
+
+Each collection adds a flag that selects items by key:
+
+```shell
+dagger check --go-package=store --go-test=TestFixture     # one Go test
+```
+
+See [Collections](./collections.mdx) to list the keys and combine selections.
+
+### Select a workspace
 
 Use an absolute address to select a Git workspace from any directory:
 
@@ -46,7 +79,7 @@ dagger check --failfast
 
 ## Checks and generators
 
-Each generator returns a `Changeset`. Its `stale` field is a `Check` that passes when the changeset is empty. For example, `dag://assets/generate/stale` checks `dag://assets/generate`.
+Each generator returns a `Changeset`. Its `stale` field is a `Check` that passes when the changeset is empty. For example, `dag://go/packages/generate/stale` checks `dag://go/packages/generate`.
 
 Generated-file checks run by default, together with annotated check functions. Use `--generated=false` to skip generated-file checks:
 

@@ -1,12 +1,12 @@
 ---
 title: "Pytest"
 slug: /reference/modules/python/pytest
-description: "Run Pytest as a Dagger workspace check."
+description: "Run Python tests with Pytest."
 ---
 
 # Pytest
 
-The Pytest module runs your Python tests with Pytest, the same way locally, in CI, and in Dagger Cloud. It discovers Python projects in your workspace. It can use a custom Python container when the default environment is not enough.
+The Pytest module runs your Python tests with Pytest, the same way locally, in CI, and in Dagger Cloud. Python projects and their test files are collections, so a check can run one project, one test file, or everything. It can use a custom Python container when the default environment is not enough.
 
 ## Add it to your workspace
 
@@ -17,35 +17,57 @@ dagger module install dagger.io/python/pytest
 ## Run the tests
 
 ```bash
-dagger check                 # run every check in the workspace
-dagger check dag://pytest/test-all # run Pytest against the selected projects
+dagger check --pytest                                                # run every project
+dagger check --pytest-project=svc                                    # run one project
+dagger check --pytest-project=svc --pytest-test-file=tests/test_add.py   # run one test file
 ```
 
-`pytest:test-all` injects `pytest_otel` automatically, so individual Python tests appear as spans in the Dagger TUI and Dagger Cloud with no project changes. The module uses uv to install the project dependencies, pytest, and `pytest_otel` together.
+The check is `pytest/projects/tests/test`. It runs once per project, over the
+selected test files. With every file in the project selected, it runs `pytest`
+on the whole project. With some selected, it runs only those files. A check
+over several projects reports every project that fails.
 
-## Test options
+The module injects `pytest_otel` automatically, so individual Python tests appear as spans in the Dagger TUI and Dagger Cloud with no project changes. The module uses uv to install the project dependencies, pytest, and `pytest_otel` together.
 
-The `pytest:test-all` check uses the module settings:
+## Collections
 
-- `version` (default `3.14`) is the Python version the default container provisions, such as `3.13` or `3.12`. It cannot be combined with a custom `base`.
-- `args` (default `["-v"]`) are arguments passed straight to `pytest`, such as `["-x", "--tb=short"]`.
+| Flag | Collection | Key |
+| --- | --- | --- |
+| `--pytest-project` | `projects` | Project root, relative to the workspace root. The root is `.` |
+| `--pytest-test-file` | `tests`, on a project | Test file path, relative to the project |
 
-Keep this module focused on tests; use separate modules for formatting, linting, shell scripts, or generated files.
+List the keys with `dagger list pytest-projects -a` and `dagger list pytest-test-files -a`. [Collections](../../../using/collections.mdx) describes how to select items.
+
+A project is a directory holding `pytest.ini`, `pyproject.toml`, `tox.ini`, or
+`setup.cfg`, with at least one test file of its own. A test file is named
+`test_*.py` or `*_test.py` and defines a `test` function or a `Test` class. A
+file belongs to the deepest project that contains it. A uv workspace member or
+path source inside the project that declares it is tested with that project.
+
+Projects are found at or below the directory `dagger` runs from, plus the
+nearest project that encloses it. Virtual environments, `site-packages`,
+`node_modules`, and caches are left out.
 
 ## Configure it
 
-List the current settings and their values with `dagger module settings pytest`, then set one with `dagger module settings pytest <key> <value>`. Settings are stored in `dagger.toml` under `[modules.pytest.settings]`:
+List the current settings and their values with `dagger module settings pytest`, then set one with `dagger module settings pytest <key> <value>`. Settings are stored in `dagger.toml` under `[modules.pytest.settings]` and apply to every project:
 
-- `scope` (default: `["**"]`) selects project roots to test. Paths are relative to the workspace root.
+- `version` (default `3.14`) is the Python version the default container provisions, such as `3.13` or `3.12`. It cannot be combined with a custom `base`.
 - `base` (default: none) is a custom container that already has Python and uv installed. Set it when tests need system packages, a private index, or other tools.
+- `args` (default `["-v"]`) are arguments passed straight to `pytest`, such as `["-x", "--tb=short"]`.
+- `scope` (default `["**"]`) selects project roots to test, as paths from the workspace root. A bare pattern selects, a `!`-prefixed pattern excludes, and an exclusion always wins whatever the order, so `["**", "!docs"]` tests everything but `docs`. A project outside the scope is still listed, and has no test files to run.
+- `defaultVersion` (default `9.1.1`) is the pytest version for a project that does not pin its own.
+- `tracing` (default `true`) loads the bundled OpenTelemetry plugin.
+- `nesting` (default `true`) lets tests talk to a nested Dagger engine. Turn it off for untrusted test code.
 
 ```toml
 [modules.pytest.settings]
-scope = ["service"]
+scope = ["**", "!docs"]
+args = ["-x", "--tb=short"]
 ```
 
 ## Working with other modules
 
-This module is a good first check for Python repos. Once it passes locally, it is a natural candidate for autocheck and PR validation.
+This module is a good first check for Python repos. Keep it focused on tests; use separate modules for formatting, linting, shell scripts, or generated files.
 
 [source code](https://github.com/dagger/python/tree/main/pytest)
