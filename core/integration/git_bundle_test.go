@@ -12,7 +12,8 @@ import (
 )
 
 func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, sink.clientOpts()...)
 	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base\n"))
 	remote := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon})
 	baseSHA, err := remote.Head().CommitSHA(ctx)
@@ -204,6 +205,30 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 	require.Error(t, err)
 	require.ErrorContains(t, err, "prerequisite")
 	require.ErrorContains(t, err, baseSHA)
+
+	// The import owns the prerequisite's history by packing it directly from
+	// the mirror, not by fetching it.
+	require.NoError(t, c.Close())
+	traces, _ := sink.capture()
+	var methods []string
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.Name != "git bundle import" || span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					for _, attr := range span.Attributes {
+						if attr.Key == "dagger.git.bundle.prerequisites.method" {
+							methods = append(methods, attr.Value.GetStringValue())
+						}
+					}
+				}
+			}
+		}
+	}
+	require.Contains(t, methods, "pack")
+	require.NotContains(t, methods, "fetch")
 }
 
 func (GitSuite) TestGitBundlePreservesAnnotatedTag(ctx context.Context, t *testctx.T) {
