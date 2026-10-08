@@ -8,7 +8,6 @@ package core
 // - secret_gcp_test.go: GCP-backed secret provider integration.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	_ "embed"
 	"encoding/base64"
@@ -18,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"

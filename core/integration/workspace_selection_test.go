@@ -10,13 +10,14 @@ package core
 // - module_loading_test.go: module loading after the workspace is chosen.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"

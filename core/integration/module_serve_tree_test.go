@@ -11,6 +11,8 @@ import (
 	"context"
 	"fmt"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -66,8 +68,8 @@ func (m *Caller) NestedMessage(ctx context.Context) (string, error) {
 
 // serveTreeModules is a tree holding a caller module and a sibling local
 // client that nothing declares.
-func serveTreeModules(c *dagger.Client) *dagger.Directory {
-	return c.Directory().
+func serveTreeModules(c *dagger.Client) *core.Directory {
+	return core.NewQuery(c).Directory().
 		WithNewFile("modules/caller/dagger.json", serveTreeCallerManifest).
 		WithNewFile("modules/caller/main.go", serveTreeCallerSource).
 		WithNewFile("modules/hello/dagger-module.toml", serveModuleHelloManifest).
@@ -95,7 +97,7 @@ func (ModuleLoadingSuite) TestServeModuleCallerTree(ctx context.Context, t *test
 	t.Run("directory module serves a sibling from its own directory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		require.NoError(t, serveTreeModules(c).
-			AsModuleSource(dagger.DirectoryAsModuleSourceOpts{SourceRootPath: "modules/caller"}).
+			AsModuleSource(core.DirectoryAsModuleSourceOpts{SourceRootPath: "modules/caller"}).
 			AsModule().
 			Serve(ctx))
 
@@ -111,7 +113,7 @@ func (ModuleLoadingSuite) TestServeModuleCallerTree(ctx context.Context, t *test
 	t.Run("path leaving the tree is refused", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		require.NoError(t, serveTreeModules(c).
-			AsModuleSource(dagger.DirectoryAsModuleSourceOpts{SourceRootPath: "modules/caller"}).
+			AsModuleSource(core.DirectoryAsModuleSourceOpts{SourceRootPath: "modules/caller"}).
 			AsModule().
 			Serve(ctx))
 

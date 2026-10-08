@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -82,8 +84,8 @@ func (*Parts) Get(key string) *Part { return &Part{Name: key} }
 type Part struct { Name string }
 `
 
-func collectionSource(c *dagger.Client) *dagger.Directory {
-	return c.Directory().
+func collectionSource(c *dagger.Client) *core.Directory {
+	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.collections]\nsource = \"./collections\"\nentrypoint = true\n").
 		WithNewFile("collections/dagger.json", `{"name":"collections","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("collections/main.go", collectionGoSource)
@@ -613,7 +615,7 @@ func (CollectionsSuite) TestArtifactUnion(ctx context.Context, t *testctx.T) {
 	left := all.FilterURI("items/file?collections-items-item=a&collections-items-item=b").WithoutURI("items/file?collections-items-item=b")
 	right := all.FilterURI("items/file?collections-items-item=b")
 	joined := left.WithArtifacts(right).WithArtifacts(right)
-	assertURIs := func(selection *dagger.Artifacts, want []string) {
+	assertURIs := func(selection *core.Artifacts, want []string) {
 		t.Helper()
 		items, err := selection.Items(ctx)
 		require.NoError(t, err)
@@ -890,7 +892,7 @@ func (CollectionsSuite) TestBatchReplacement(ctx context.Context, t *testctx.T) 
 		Value    json.RawMessage
 		Error    *struct{ Message string }
 	}
-	evaluate := func(t *testctx.T, selection *dagger.Artifacts) []evaluation {
+	evaluate := func(t *testctx.T, selection *core.Artifacts) []evaluation {
 		t.Helper()
 		id, err := selection.ID(ctx)
 		require.NoError(t, err)
@@ -905,7 +907,7 @@ func (CollectionsSuite) TestBatchReplacement(ctx context.Context, t *testctx.T) 
 	}
 	for _, tc := range []struct {
 		name      string
-		selection *dagger.Artifacts
+		selection *core.Artifacts
 		count     int
 	}{
 		{"selected checks", all.FilterURI("items/verify?collections-items-item=a&collections-items-item=b"), 1},
@@ -917,7 +919,7 @@ func (CollectionsSuite) TestBatchReplacement(ctx context.Context, t *testctx.T) 
 		{"no matches", all.FilterURI("items/verify?collections-items-item=missing"), 0},
 		{"empty filter", all.FilterURI("items/verify").FilterDimensionKeys("collections-items-item", []string{}), 0},
 		{"batch only", all.FilterURI("items/only-batch?collections-items-item=a&collections-items-item=b"), 1},
-		{"combined checks", all.FilterURI("items/*?collections-items-item=a&collections-items-item=b").FilterTypes([]string{"Check"}).FilterParentTypes([]string{"Generator"}, dagger.ArtifactsFilterParentTypesOpts{Exclude: true}), 4},
+		{"combined checks", all.FilterURI("items/*?collections-items-item=a&collections-items-item=b").FilterTypes([]string{"Check"}).FilterParentTypes([]string{"Generator"}, core.ArtifactsFilterParentTypesOpts{Exclude: true}), 4},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			results := evaluate(t, tc.selection)
@@ -987,7 +989,7 @@ func (CollectionsSuite) TestBatchReplacement(ctx context.Context, t *testctx.T) 
 func (CollectionsSuite) TestBatchScaleOut(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	target := devEngineContainerAsService(devEngineContainer(c))
-	source := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+	source := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding("scaleout-engine", target).
 			WithEnvVariable("_DAGGER_TESTS_CLOUD_RUNNER_HOST", "tcp://scaleout-engine:1234")
 	}))

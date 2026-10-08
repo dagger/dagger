@@ -9,7 +9,6 @@ package core
 //     --run 'TestLLM/TestObjectToolset' --pkg ./core/integration --test-verbose
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/creack/pty"
@@ -197,7 +198,7 @@ type Editor {
 		Variables: map[string]any{"model": model, "object": objectID},
 	}, &dagger.Response{Data: &res}))
 	require.Contains(t, res.LLM.WithTools.Tools, "## readMarker")
-	seed := core.Ref[*core.LLM](c, core.ID(res.LLM.WithTools.ID)).
+	seed := core.Ref[*core.LLM](core.NewQuery(c), core.ID(res.LLM.WithTools.ID)).
 		WithPrompt("before restore").
 		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "remembered"}})
 	snapshot, err := sink.captureLLMRecipe(ctx, t, c, seed)
@@ -476,7 +477,7 @@ type Builder {
 
 	require.NoError(t, c.Close())
 	target := connect(ctx, t)
-	restored := core.Ref[*core.LLM](target, recipe)
+	restored := core.Ref[*core.LLM](core.NewQuery(target), recipe)
 	got, err := restored.Workspace().File("main.bin").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "ELF\x00\x01", got)
@@ -494,7 +495,7 @@ type Builder {
 func (LLMSuite) TestTextChangesetToolSurvivesCommit(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	const marker = "reformat-marker"
-	source := c.Directory().
+	source := core.NewQuery(c).Directory().
 		WithNewFile("main.go", "package main\nfunc main(){}\n").
 		WithNewFile("dagger.toml", "[modules.formatter]\nsource = \"modules/formatter\"\n").
 		WithNewFile("modules/formatter/dagger.json", `{"name":"formatter","engineVersion":"v1.0.0-0","sdk":"dang"}`).
@@ -518,15 +519,15 @@ type Formatter {
 }
 `)
 	daemon, url := gitService(ctx, t, c, source)
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("format it").
-		WithResponse([]dagger.LLMContentBlockInput{{
-			Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "format",
+		WithResponse([]core.LLMContentBlockInput{{
+			Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "format",
 		}}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
-	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "done"}}))
+	base := core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws)
 	composed, err := composeArtifactAgents(ctx, c, ws, nil, base)
 	require.NoError(t, err)
 	result := composed.WithPrompt("format it").Loop()
@@ -538,7 +539,7 @@ type Formatter {
 	require.Equal(t, "package main\n\nfunc main() {}\n", formatted)
 
 	// requireNoTool fails for a recipe that would re-run the tool.
-	requireNoTool := func(recipe dagger.ID) map[string]bool {
+	requireNoTool := func(recipe core.ID) map[string]bool {
 		t.Helper()
 		id := new(call.ID)
 		require.NoError(t, id.Decode(string(recipe)))
@@ -563,11 +564,11 @@ type Formatter {
 	got, err := commitWorkspace(ctx, c, result.Workspace(), "format", []string{"main.go"})
 	require.NoError(t, err)
 	require.Empty(t, got.Git.Uncommitted.ModifiedPaths)
-	committed := dagger.Ref[*dagger.Workspace](c, got.ID)
-	contents, err := committed.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("main.go").Contents(ctx)
+	committed := core.Ref[*core.Workspace](core.NewQuery(c), got.ID)
+	contents, err := committed.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("main.go").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, formatted, contents)
-	recipe, err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(committed))
+	recipe, err = sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(committed))
 	require.NoError(t, err)
 	fields = requireNoTool(recipe)
 	require.True(t, fields["__withCommitRepository"], "the recipe must hold the commit")
@@ -716,7 +717,7 @@ type Runner {
 			// cache-mounted sentinel rejects an actual replay of either command.
 			require.NoError(t, c.Close())
 			target := connect(ctx, t)
-			restored := core.Ref[*core.LLM](target, recipe)
+			restored := core.Ref[*core.LLM](core.NewQuery(target), recipe)
 			got, err := restored.Workspace().File("unchanged.txt").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "keep me\n", got)
@@ -871,7 +872,7 @@ func (LLMSuite) TestChangesetToolPatchesWorkspace(ctx context.Context, t *testct
 			// sentinel fails the command if it replays.
 			require.NoError(t, c.Close())
 			target := connect(ctx, t)
-			restored := core.Ref[*core.LLM](target, recipe)
+			restored := core.Ref[*core.LLM](core.NewQuery(target), recipe)
 			got, err = restored.Workspace().File("unchanged.txt").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
@@ -908,7 +909,7 @@ func (LLMSuite) TestChangesetToolRegeneratesIgnoredFile(ctx context.Context, t *
 
 	require.NoError(t, c.Close())
 	target := connect(ctx, t)
-	got, err = core.Ref[*core.LLM](target, recipe).Workspace().File("gen.txt").Contents(ctx)
+	got, err = core.Ref[*core.LLM](core.NewQuery(target), recipe).Workspace().File("gen.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "second\n", got)
 }
@@ -957,7 +958,7 @@ func (LLMSuite) TestChangesetToolPatchesDirectories(ctx context.Context, t *test
 
 	require.NoError(t, c.Close())
 	target := connect(ctx, t)
-	check(ctx, t, core.Ref[*core.LLM](target, recipe).Workspace())
+	check(ctx, t, core.Ref[*core.LLM](core.NewQuery(target), recipe).Workspace())
 }
 
 // TestChangesetToolRefusesMounts covers a changeset that writes under a
@@ -1220,7 +1221,7 @@ func (LLMSuite) TestChangesetToolPatchesPureEdits(ctx context.Context, t *testct
 	}
 	require.Len(t, pathsComputed, 2, "each tool's changeset computes its paths once")
 
-	check(ctx, t, core.Ref[*core.LLM](connect(ctx, t), recipe).Workspace())
+	check(ctx, t, core.Ref[*core.LLM](core.NewQuery(connect(ctx, t)), recipe).Workspace())
 }
 
 // cwdDang has tools that measure their changesets from the workspace cwd, the
@@ -1323,7 +1324,7 @@ func (LLMSuite) TestChangesetToolAppliesAtCwd(ctx context.Context, t *testctx.T)
 			require.False(t, fields[tc.tool])
 			require.True(t, fields["withPatchFile"])
 			require.NoError(t, c.Close())
-			check(ctx, t, core.Ref[*core.LLM](connect(ctx, t), recipe).Workspace())
+			check(ctx, t, core.Ref[*core.LLM](core.NewQuery(connect(ctx, t)), recipe).Workspace())
 		})
 	}
 

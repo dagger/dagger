@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -22,8 +24,8 @@ import (
 // B must rebuild every part from its saved operation. check reads the
 // rebuilt values through B's client, by name. It returns the exported record
 // of each value, by name.
-func rebuildOnAnotherEngine(ctx context.Context, t *testctx.T, build func(*dagger.Client) map[string]dagger.ID, check func(*dagger.Client, map[string]string)) map[string]dagql.PersistedRecord {
-	return onAnotherEngine(ctx, t, true, func(a *dagger.Client, _ func() *dagger.Client) map[string]dagger.ID {
+func rebuildOnAnotherEngine(ctx context.Context, t *testctx.T, build func(*dagger.Client) map[string]core.ID, check func(*dagger.Client, map[string]string)) map[string]dagql.PersistedRecord {
+	return onAnotherEngine(ctx, t, true, func(a *dagger.Client, _ func() *dagger.Client) map[string]core.ID {
 		return build(a)
 	}, check)
 }
@@ -33,30 +35,30 @@ func rebuildOnAnotherEngine(ctx context.Context, t *testctx.T, build func(*dagge
 // is set. build can open more sessions on A with connectA. check gets B's
 // client and the imported handles, by name. It returns the exported record of
 // each value, by name.
-func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func(a *dagger.Client, connectA func() *dagger.Client) map[string]dagger.ID, check func(*dagger.Client, map[string]string)) map[string]dagql.PersistedRecord {
+func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func(a *dagger.Client, connectA func() *dagger.Client) map[string]core.ID, check func(*dagger.Client, map[string]string)) map[string]dagql.PersistedRecord {
 	outer := connect(ctx, t)
 	type running struct {
-		upstream, tunnel *dagger.Service
+		upstream, tunnel *core.Service
 		endpoint         string
 		client           *dagger.Client
 	}
-	start := func(state string, volume *dagger.CacheVolume) *running {
-		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *dagger.Container) *dagger.Container {
+	start := func(state string, volume *core.CacheVolume) *running {
+		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *core.Container) *core.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
 		})
 		e := &running{upstream: devEngineContainerAsService(ctr)}
-		tunnel, err := outer.Host().Tunnel(e.upstream).Start(ctx)
+		tunnel, err := core.NewQuery(outer).Host().Tunnel(e.upstream).Start(ctx)
 		require.NoError(t, err)
 		e.tunnel = tunnel
-		e.endpoint, err = tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		e.endpoint, err = tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 		e.client, err = dagger.Connect(ctx, dagger.WithRunnerHost(e.endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
 		require.NoError(t, err)
 		return e
 	}
 	id := identity.NewID()
-	aVolume := outer.CacheVolume("rebuild-a-" + id)
-	bVolume := outer.CacheVolume("rebuild-b-" + id)
+	aVolume := core.NewQuery(outer).CacheVolume("rebuild-a-" + id)
+	bVolume := core.NewQuery(outer).CacheVolume("rebuild-b-" + id)
 	a := start("rebuild-a-state-"+id, aVolume)
 	defer func() { require.NoError(t, discardNestedEngine(ctx, &a.client, &a.upstream, &a.tunnel)) }()
 	var sessionsA []*dagger.Client
@@ -80,13 +82,13 @@ func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func
 		require.NoError(t, transferFixtureSelected(ctx, a.client, "rebuild-"+name+".json", []string{string(root)}, []string{}, &exported), name)
 		require.NotEmpty(t, exported, name)
 	}
-	_, err := outer.Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
+	_, err := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
 		WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/rebuild-*.json /destination/bundles/"}).Sync(ctx)
 	require.NoError(t, err)
 	records := map[string]dagql.PersistedRecord{}
 	rootOrdinals := map[string]dagql.TransferOrdinal{}
 	for name := range roots {
-		raw, err := outer.Container().From(alpineImage).WithMountedCache("/source", aVolume).
+		raw, err := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).
 			WithEnvVariable("READ", identity.NewID()).WithExec([]string{"cat", "/source/bundles/rebuild-" + name + ".json"}).Stdout(ctx)
 		require.NoError(t, err, name)
 		var bundle dagql.ValueBundle
@@ -180,16 +182,16 @@ func engineResultID(t *testctx.T, raw string) uint64 {
 
 // selectHidden selects field(args) on the object with ID id, a field the SDK
 // does not generate, and returns the ID of its result.
-func selectHidden(ctx context.Context, t *testctx.T, c *dagger.Client, id dagger.ID, typ, field string, args map[string]any) dagger.ID {
+func selectHidden(ctx context.Context, t *testctx.T, c *dagger.Client, id core.ID, typ, field string, args map[string]any) core.ID {
 	t.Helper()
 	decls, params := []string{"$id: ID!"}, []string{}
 	vars := map[string]any{"id": id}
 	for _, name := range slices.Sorted(maps.Keys(args)) {
 		var argType string
 		switch args[name].(type) {
-		case dagger.ID:
+		case core.ID:
 			argType = "ID!"
-		case []dagger.ID:
+		case []core.ID:
 			argType = "[ID!]!"
 		case string:
 			argType = "String!"
@@ -201,7 +203,7 @@ func selectHidden(ctx context.Context, t *testctx.T, c *dagger.Client, id dagger
 		vars[name] = args[name]
 	}
 	var result struct {
-		Node map[string]struct{ ID dagger.ID }
+		Node map[string]struct{ ID core.ID }
 	}
 	query := fmt.Sprintf("query(%s) { node(id: $id) { ... on %s { %s(%s) { id } } } }", strings.Join(decls, ", "), typ, field, strings.Join(params, ", "))
 	require.NoError(t, c.Do(ctx, &dagger.Request{Query: query, Variables: vars}, &dagger.Response{Data: &result}), field)
@@ -211,7 +213,7 @@ func selectHidden(ctx context.Context, t *testctx.T, c *dagger.Client, id dagger
 
 // requirePending asserts whether each value still has work to run on the
 // engine c is connected to, without running it.
-func requirePending(ctx context.Context, t *testctx.T, c *dagger.Client, want bool, ids ...dagger.ID) {
+func requirePending(ctx context.Context, t *testctx.T, c *dagger.Client, want bool, ids ...core.ID) {
 	t.Helper()
 	handles := make([]string, len(ids))
 	for i, id := range ids {
@@ -228,8 +230,8 @@ func requirePending(ctx context.Context, t *testctx.T, c *dagger.Client, want bo
 // syncedID evaluates value and returns its ID.
 func syncedID[T interface {
 	Sync(context.Context) (T, error)
-	ID(context.Context) (dagger.ID, error)
-}](ctx context.Context, t *testctx.T, value T) dagger.ID {
+	ID(context.Context) (core.ID, error)
+}](ctx context.Context, t *testctx.T, value T) core.ID {
 	t.Helper()
 	value, err := value.Sync(ctx)
 	require.NoError(t, err)
@@ -242,8 +244,8 @@ func syncedID[T interface {
 // blobs are missing.
 func (RemoteCacheTransferSuite) TestRebuildContainerImageFiles(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
-	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
-		ctr := c.Container().From(alpineImage).WithNewFile("/data", "rebuilt "+seed)
+	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
+		ctr := core.NewQuery(c).Container().From(alpineImage).WithNewFile("/data", "rebuilt "+seed)
 		tarball, err := ctr.AsTarball().Sync(ctx)
 		require.NoError(t, err)
 		manifest, err := ctr.Manifest().Sync(ctx)
@@ -252,13 +254,13 @@ func (RemoteCacheTransferSuite) TestRebuildContainerImageFiles(ctx context.Conte
 		require.NoError(t, err)
 		manifestID, err := manifest.ID(ctx)
 		require.NoError(t, err)
-		return map[string]dagger.ID{"tarball": tarballID, "manifest": manifestID}
+		return map[string]core.ID{"tarball": tarballID, "manifest": manifestID}
 	}, func(c *dagger.Client, handles map[string]string) {
-		tarball := dagger.Ref[*dagger.File](c, dagger.ID(handles["tarball"]))
-		contents, err := c.Container().Import(tarball).File("/data").Contents(ctx)
+		tarball := core.Ref[*core.File](core.NewQuery(c), core.ID(handles["tarball"]))
+		contents, err := core.NewQuery(c).Container().Import(tarball).File("/data").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "rebuilt "+seed, contents)
-		manifest, err := dagger.Ref[*dagger.File](c, dagger.ID(handles["manifest"])).Contents(ctx)
+		manifest, err := core.Ref[*core.File](core.NewQuery(c), core.ID(handles["manifest"])).Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, manifest, `"layers"`)
 	})
@@ -267,17 +269,17 @@ func (RemoteCacheTransferSuite) TestRebuildContainerImageFiles(ctx context.Conte
 // A Docker build is rebuilt on another engine when its blob is missing.
 func (RemoteCacheTransferSuite) TestRebuildDockerBuild(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
-	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
-		built, err := c.Directory().
+	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
+		built, err := core.NewQuery(c).Directory().
 			WithNewFile("Dockerfile", "FROM "+alpineImage+"\nRUN echo "+seed+" > /built\n").
 			DockerBuild().
 			Sync(ctx)
 		require.NoError(t, err)
 		builtID, err := built.ID(ctx)
 		require.NoError(t, err)
-		return map[string]dagger.ID{"build": builtID}
+		return map[string]core.ID{"build": builtID}
 	}, func(c *dagger.Client, handles map[string]string) {
-		contents, err := dagger.Ref[*dagger.Container](c, dagger.ID(handles["build"])).File("/built").Contents(ctx)
+		contents, err := core.Ref[*core.Container](core.NewQuery(c), core.ID(handles["build"])).File("/built").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, seed+"\n", contents)
 	})
@@ -289,17 +291,17 @@ func (RemoteCacheTransferSuite) TestRebuildDockerBuild(ctx context.Context, t *t
 // available through layer.
 func (RemoteCacheTransferSuite) TestManifestStaysOnEngine(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
-	manifestOf := func(c *dagger.Client) (*dagger.Container, *dagger.File) {
-		ctr := c.Container().From(alpineImage).WithNewFile("/data", "per engine "+seed)
+	manifestOf := func(c *dagger.Client) (*core.Container, *core.File) {
+		ctr := core.NewQuery(c).Container().From(alpineImage).WithNewFile("/data", "per engine "+seed)
 		return ctr, ctr.Manifest()
 	}
-	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
+	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
 		_, manifest := manifestOf(c)
 		manifest, err := manifest.Sync(ctx)
 		require.NoError(t, err)
 		id, err := manifest.ID(ctx)
 		require.NoError(t, err)
-		return map[string]dagger.ID{"manifest": id}
+		return map[string]core.ID{"manifest": id}
 	}, func(c *dagger.Client, handles map[string]string) {
 		ctr, manifest := manifestOf(c)
 		id, err := manifest.ID(ctx)
@@ -328,14 +330,14 @@ func (RemoteCacheTransferSuite) TestManifestStaysOnEngine(ctx context.Context, t
 // Changeset.asPatch is rebuilt on another engine when its blob is missing.
 func (RemoteCacheTransferSuite) TestRebuildChangesetPatch(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
-	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
-		before := c.Directory().WithNewFile("data", "before\n")
+	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
+		before := core.NewQuery(c).Directory().WithNewFile("data", "before\n")
 		patch, err := before.WithNewFile("data", seed+"\n").Changes(before).AsPatch().ID(ctx)
 		require.NoError(t, err)
 		requirePending(ctx, t, c, false, patch) // the patch is written at the call
-		return map[string]dagger.ID{"patch": patch}
+		return map[string]core.ID{"patch": patch}
 	}, func(c *dagger.Client, handles map[string]string) {
-		contents, err := dagger.Ref[*dagger.File](c, dagger.ID(handles["patch"])).Contents(ctx)
+		contents, err := core.Ref[*core.File](core.NewQuery(c), core.ID(handles["patch"])).Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, contents, "+"+seed)
 	})
@@ -347,22 +349,22 @@ func (RemoteCacheTransferSuite) TestRebuildChangesetPatch(ctx context.Context, t
 // Changeset merges are rebuilt on another engine when their blob is missing.
 func (RemoteCacheTransferSuite) TestRebuildChangesetMerges(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
-	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
-		change := func(path string) dagger.ID {
-			before := c.Directory().WithNewFile(path, "0\n")
+	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
+		change := func(path string) core.ID {
+			before := core.NewQuery(c).Directory().WithNewFile(path, "0\n")
 			return syncedID(ctx, t, before.WithNewFile(path, seed+"\n").Changes(before))
 		}
 		ours, theirs, third := change("ours"), change("theirs"), change("third")
-		merge := func(field string, changes any) dagger.ID {
+		merge := func(field string, changes any) core.ID {
 			merged := selectHidden(ctx, t, c, ours, "Changeset", field, map[string]any{"changes": changes})
 			// The merge runs at the call. Check before the next merge, which
 			// may run this one.
 			requirePending(ctx, t, c, false, merged)
 			return merged
 		}
-		return map[string]dagger.ID{
+		return map[string]core.ID{
 			"__mergeWithChangeset":      merge("__mergeWithChangeset", theirs),
-			"__mergeWithChangesets":     merge("__mergeWithChangesets", []dagger.ID{theirs, third}),
+			"__mergeWithChangesets":     merge("__mergeWithChangesets", []core.ID{theirs, third}),
 			"__mergeForWorkspaceCommit": merge("__mergeForWorkspaceCommit", theirs),
 		}
 	}, func(c *dagger.Client, handles map[string]string) {
@@ -372,7 +374,7 @@ func (RemoteCacheTransferSuite) TestRebuildChangesetMerges(ctx context.Context, 
 				paths = append(paths, "third")
 			}
 			for _, path := range paths {
-				contents, err := dagger.Ref[*dagger.Directory](c, dagger.ID(handle)).File(path).Contents(ctx)
+				contents, err := core.Ref[*core.Directory](core.NewQuery(c), core.ID(handle)).File(path).Contents(ctx)
 				require.NoError(t, err, field)
 				require.Equal(t, seed+"\n", contents, field)
 			}
@@ -393,8 +395,8 @@ func (RemoteCacheTransferSuite) TestRebuildChangesetMerges(ctx context.Context, 
 func (RemoteCacheTransferSuite) TestChangesetMergeConflictAtCall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	seed := identity.NewID()
-	change := func(contents string) *dagger.Changeset {
-		before := c.Directory().WithNewFile("data", "base "+seed+"\n")
+	change := func(contents string) *core.Changeset {
+		before := core.NewQuery(c).Directory().WithNewFile("data", "base "+seed+"\n")
 		return before.WithNewFile("data", contents).Changes(before)
 	}
 	_, err := change("ours\n").WithChangeset(change("theirs\n")).ID(ctx)
@@ -403,8 +405,8 @@ func (RemoteCacheTransferSuite) TestChangesetMergeConflictAtCall(ctx context.Con
 
 // rebuildGitRepo is a repository with one commit of file.txt. Its dates are
 // fixed, so another engine that runs it again makes the same commit.
-func rebuildGitRepo(c *dagger.Client, seed string) *dagger.GitRef {
-	return c.Container().From(alpineImage).
+func rebuildGitRepo(c *dagger.Client, seed string) *core.GitRef {
+	return core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/repo").
 		WithEnvVariable("GIT_AUTHOR_DATE", workspaceCommitDate).
@@ -421,20 +423,20 @@ func rebuildGitRepo(c *dagger.Client, seed string) *dagger.GitRef {
 }
 
 // rebuildGitChanges replaces file.txt in head's tree with contents.
-func rebuildGitChanges(head *dagger.GitRef, contents string) *dagger.Changeset {
-	before := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+func rebuildGitChanges(head *core.GitRef, contents string) *core.Changeset {
+	before := head.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 	return before.WithNewFile("file.txt", contents).Changes(before)
 }
 
 // requireRebuiltCommit asserts that the Git storage in dir has HEAD sha and
 // file.txt contents.
-func requireRebuiltCommit(ctx context.Context, t *testctx.T, dir *dagger.Directory, sha, contents string) {
+func requireRebuiltCommit(ctx context.Context, t *testctx.T, dir *core.Directory, sha, contents string) {
 	t.Helper()
 	head := dir.AsGit().Head()
 	got, err := head.CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sha, got)
-	file, err := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).File("file.txt").Contents(ctx)
+	file, err := head.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("file.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, file)
 }
@@ -444,7 +446,7 @@ func requireRebuiltCommit(ctx context.Context, t *testctx.T, dir *dagger.Directo
 func (RemoteCacheTransferSuite) TestRebuildGitCommitDirectory(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
 	var sha string
-	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
+	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
 		head := rebuildGitRepo(c, seed)
 		headID, err := head.ID(ctx)
 		require.NoError(t, err)
@@ -456,11 +458,11 @@ func (RemoteCacheTransferSuite) TestRebuildGitCommitDirectory(ctx context.Contex
 			"authorEmail": "author@example.com",
 		})
 		requirePending(ctx, t, c, false, committed) // the commit is made at the call
-		sha, err = dagger.Ref[*dagger.Directory](c, committed).AsGit().Head().CommitSHA(ctx)
+		sha, err = core.Ref[*core.Directory](core.NewQuery(c), committed).AsGit().Head().CommitSHA(ctx)
 		require.NoError(t, err)
-		return map[string]dagger.ID{"commit": committed}
+		return map[string]core.ID{"commit": committed}
 	}, func(c *dagger.Client, handles map[string]string) {
-		requireRebuiltCommit(ctx, t, dagger.Ref[*dagger.Directory](c, dagger.ID(handles["commit"])), sha, "edited "+seed+"\n")
+		requireRebuiltCommit(ctx, t, core.Ref[*core.Directory](core.NewQuery(c), core.ID(handles["commit"])), sha, "edited "+seed+"\n")
 	})
 	kind, _ := savedOperation(t, records["commit"])
 	require.Equal(t, "gitCommit", kind)
@@ -472,9 +474,9 @@ func (RemoteCacheTransferSuite) TestRebuildGitCommitDirectory(ctx context.Contex
 func (RemoteCacheTransferSuite) TestRebuildWorkspacePullDirectory(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
 	var sha string
-	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
+	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
 		head := rebuildGitRepo(c, seed)
-		asWorkspace := dagger.GitRefAsWorkspaceOpts{Cwd: "/"}
+		asWorkspace := core.GitRefAsWorkspaceOpts{Cwd: "/"}
 		source := head.WithCommit(rebuildGitChanges(head, "pulled "+seed+"\n"), "pull me", workspaceCommitDate, "Author", "author@example.com").AsWorkspace(asWorkspace)
 		sourceID, err := source.ID(ctx)
 		require.NoError(t, err)
@@ -486,11 +488,11 @@ func (RemoteCacheTransferSuite) TestRebuildWorkspacePullDirectory(ctx context.Co
 			"committerEmail": "committer@example.com",
 		})
 		requirePending(ctx, t, c, false, pulled) // the pull runs at the call
-		sha, err = dagger.Ref[*dagger.Directory](c, pulled).AsGit().Head().CommitSHA(ctx)
+		sha, err = core.Ref[*core.Directory](core.NewQuery(c), pulled).AsGit().Head().CommitSHA(ctx)
 		require.NoError(t, err)
-		return map[string]dagger.ID{"pull": pulled}
+		return map[string]core.ID{"pull": pulled}
 	}, func(c *dagger.Client, handles map[string]string) {
-		requireRebuiltCommit(ctx, t, dagger.Ref[*dagger.Directory](c, dagger.ID(handles["pull"])), sha, "pulled "+seed+"\n")
+		requireRebuiltCommit(ctx, t, core.Ref[*core.Directory](core.NewQuery(c), core.ID(handles["pull"])), sha, "pulled "+seed+"\n")
 	})
 	kind, _ := savedOperation(t, records["pull"])
 	require.Equal(t, "workspace.pull", kind)
@@ -501,14 +503,14 @@ func (RemoteCacheTransferSuite) TestRebuildWorkspacePullDirectory(ctx context.Co
 // another engine when the written bytes are not available there.
 func (RemoteCacheTransferSuite) TestRebuildContainerMutations(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
-	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
-		written, err := c.Container().WithNewFile("/data", seed).Sync(ctx)
+	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
+		written, err := core.NewQuery(c).Container().WithNewFile("/data", seed).Sync(ctx)
 		require.NoError(t, err)
 		user, err := written.WithUser("app").Sync(ctx)
 		require.NoError(t, err)
-		return map[string]dagger.ID{"edited": syncedID(ctx, t, user.WithShell([]string{"/bin/ash"}))}
+		return map[string]core.ID{"edited": syncedID(ctx, t, user.WithShell([]string{"/bin/ash"}))}
 	}, func(c *dagger.Client, handles map[string]string) {
-		ctr := dagger.Ref[*dagger.Container](c, dagger.ID(handles["edited"]))
+		ctr := core.Ref[*core.Container](core.NewQuery(c), core.ID(handles["edited"]))
 		user, err := ctr.User(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "app", user)
@@ -533,24 +535,24 @@ func (RemoteCacheTransferSuite) TestRebuildContainerWritesOverEvaluatedParent(ct
 		"evaluated-__withMountedPathDockerfileCompat": "/m/source",
 		"pending-__withMountedPathDockerfileCompat":   "/m/source",
 	}
-	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]dagger.ID {
-		source := c.Directory().WithNewFile("source", seed)
+	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
+		source := core.NewQuery(c).Directory().WithNewFile("source", seed)
 		sourceID := syncedID(ctx, t, source)
 		// Distinct roots keep the evaluated parent from being the pending one.
-		evaluated, err := c.Container().WithRootfs(c.Directory().WithNewDirectory("evaluated")).Sync(ctx)
+		evaluated, err := core.NewQuery(c).Container().WithRootfs(core.NewQuery(c).Directory().WithNewDirectory("evaluated")).Sync(ctx)
 		require.NoError(t, err)
-		pending := c.Container().WithRootfs(c.Directory().WithNewDirectory("pending"))
-		mounted := func(parent *dagger.Container) dagger.ID {
+		pending := core.NewQuery(c).Container().WithRootfs(core.NewQuery(c).Directory().WithNewDirectory("pending"))
+		mounted := func(parent *core.Container) core.ID {
 			parentID, err := parent.ID(ctx)
 			require.NoError(t, err)
 			return selectHidden(ctx, t, c, parentID, "Container", "__withMountedPathDockerfileCompat", map[string]any{"path": "/m", "source": sourceID})
 		}
-		id := func(ctr *dagger.Container) dagger.ID {
+		id := func(ctr *core.Container) core.ID {
 			id, err := ctr.ID(ctx)
 			require.NoError(t, err)
 			return id
 		}
-		written := map[string]dagger.ID{
+		written := map[string]core.ID{
 			"evaluated-withDirectory":                     id(evaluated.WithDirectory("/d", source)),
 			"evaluated-withFile":                          id(evaluated.WithFile("/f", source.File("source"))),
 			"evaluated-withNewFile":                       id(evaluated.WithNewFile("/n", seed)),
@@ -562,14 +564,14 @@ func (RemoteCacheTransferSuite) TestRebuildContainerWritesOverEvaluatedParent(ct
 		for name, id := range written {
 			requirePending(ctx, t, c, strings.HasPrefix(name, "pending-"), id)
 			// Container.user settles the metadata only; no part is read.
-			_, err := dagger.Ref[*dagger.Container](c, id).User(ctx)
+			_, err := core.Ref[*core.Container](core.NewQuery(c), id).User(ctx)
 			require.NoError(t, err, name)
 		}
 		return written
 	}, func(c *dagger.Client, handles map[string]string) {
 		require.Len(t, handles, len(paths))
 		for name, handle := range handles {
-			contents, err := dagger.Ref[*dagger.Container](c, dagger.ID(handle)).File(paths[name]).Contents(ctx)
+			contents, err := core.Ref[*core.Container](core.NewQuery(c), core.ID(handle)).File(paths[name]).Contents(ctx)
 			require.NoError(t, err, name)
 			require.Equal(t, seed, contents, name)
 		}
@@ -589,20 +591,20 @@ func (RemoteCacheTransferSuite) TestRebuildContainerWritesOverEvaluatedParent(ct
 func (RemoteCacheTransferSuite) TestUnchangedFileFromChangedSourceHitsOnAnotherEngine(ctx context.Context, t *testctx.T) {
 	seed := identity.NewID()
 	// goModSource is evaluated first, as a host directory is.
-	goModSource := func(c *dagger.Client, variant string) *dagger.Directory {
-		src, err := c.Directory().
+	goModSource := func(c *dagger.Client, variant string) *core.Directory {
+		src, err := core.NewQuery(c).Directory().
 			WithNewFile("go.mod", "module "+seed+"\n").
 			WithNewFile("main.go", "package main // "+variant+"\n").
 			Sync(ctx)
 		require.NoError(t, err)
 		return src
 	}
-	withGoMod := func(c *dagger.Client, src *dagger.Directory) dagger.ID {
-		id, err := c.Directory().WithFile("go.mod", src.File("go.mod")).ID(ctx)
+	withGoMod := func(c *dagger.Client, src *core.Directory) core.ID {
+		id, err := core.NewQuery(c).Directory().WithFile("go.mod", src.File("go.mod")).ID(ctx)
 		require.NoError(t, err)
 		return id
 	}
-	onAnotherEngine(ctx, t, false, func(c *dagger.Client, connectA func() *dagger.Client) map[string]dagger.ID {
+	onAnotherEngine(ctx, t, false, func(c *dagger.Client, connectA func() *dagger.Client) map[string]core.ID {
 		src := goModSource(c, "v1")
 		var before transferFixtureReport
 		require.NoError(t, transferFixture(ctx, c, "report", "", []string{}, &before))
@@ -613,7 +615,7 @@ func (RemoteCacheTransferSuite) TestUnchangedFileFromChangedSourceHitsOnAnotherE
 		}
 		again := connectA()
 		require.Equal(t, engineResultID(t, string(first)), engineResultID(t, string(withGoMod(again, goModSource(again, "v2")))), "a second session on the same engine hits")
-		return map[string]dagger.ID{"go.mod": first}
+		return map[string]core.ID{"go.mod": first}
 	}, func(c *dagger.Client, handles map[string]string) {
 		require.Equal(t, engineResultID(t, handles["go.mod"]), engineResultID(t, string(withGoMod(c, goModSource(c, "v2")))), "the same call on the other engine after the merge")
 	})

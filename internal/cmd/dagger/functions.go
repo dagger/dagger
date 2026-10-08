@@ -1,7 +1,6 @@
 package daggercmd
 
 import (
-	"dagger.io/dagger/core"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,6 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"dagger.io/dagger/core"
 
 	"github.com/charmbracelet/huh"
 	"github.com/opencontainers/go-digest"

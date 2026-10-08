@@ -5,11 +5,12 @@ package core
 // coverage directly.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"

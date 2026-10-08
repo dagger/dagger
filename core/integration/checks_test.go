@@ -9,13 +9,14 @@ package core
 // - workspace_modules_test.go: installing modules into workspaces.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"

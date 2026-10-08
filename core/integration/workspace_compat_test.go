@@ -9,13 +9,14 @@ package core
 // - module_config_compat_test.go: legacy module config shapes, not workspace inference.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"

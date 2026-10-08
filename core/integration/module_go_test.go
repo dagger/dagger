@@ -8,7 +8,6 @@ package core
 // - module_type_test.go: cross-SDK custom type behavior.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"testing"
@@ -456,8 +455,8 @@ func (GoSuite) TestJSONField(ctx context.Context, t *testctx.T) {
 	require.JSONEq(t, `{"config":"{\"a\":1}"}`, out)
 }
 
-// A module cannot add methods to core types; the query against the extended
-// type fails.
+// A module cannot add methods to core types, which are aliases of the generated
+// core package. Go rejects the extension before the module can load.
 func (GoSuite) TestExtendCore(ctx context.Context, t *testctx.T) {
 	moreContents := `package dagger
 
@@ -482,9 +481,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
 
-		// The engine rejects the query when evaluating it against the engine GQL
-		// schema.
-		require.Contains(t, logs.String(), `Cannot query field \"echo\" on type \"Container\"`)
+		require.Contains(t, logs.String(), "cannot define new methods on non-local type Container")
 	})
 
 	t.Run("in same mod name", func(ctx context.Context, t *testctx.T) {
@@ -498,10 +495,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		// A module type shadowing a core type loads, but the core type wins
-		// in the client schema, so the extension method is absent — same
-		// engine-side validation error as the different-mod-name case.
-		require.Contains(t, logs.String(), `Cannot query field \"echo\" on type \"Container\"`)
+		require.Contains(t, logs.String(), "cannot define new methods on non-local type Container")
 	})
 }
 

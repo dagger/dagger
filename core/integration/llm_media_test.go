@@ -1,12 +1,13 @@
 package core
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"

@@ -1,12 +1,13 @@
 package core
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
@@ -531,7 +532,7 @@ func (WorkspaceSuite) TestWorkspaceExportIntegrationConflicts(ctx context.Contex
 	git("commit", "-am", "user")
 	head := git("rev-parse", "HEAD")
 	require.Error(t, saveWorkspaceTo(ctx, c, core.Ref[*core.Workspace](core.NewQuery(c), agentID), nil, checkout))
-	require.Error(t, core.Ref[*core.Workspace](c, agentID).Export(ctx), "omitting path must not bypass frozen-source conflict checks")
+	require.Error(t, core.Ref[*core.Workspace](core.NewQuery(c), agentID).Export(ctx), "omitting path must not bypass frozen-source conflict checks")
 	require.Equal(t, head, git("rev-parse", "HEAD"))
 	require.Empty(t, git("status", "--porcelain"))
 }
@@ -615,8 +616,8 @@ func (WorkspaceSuite) TestWorkspaceExportExplicitTargetAndCwd(ctx context.Contex
 	// The default destination belongs to the calling client, not the frozen
 	// source. Neither client's cwd may shift repository-root change paths.
 	destination := connect(ctx, t, dagger.WithWorkdir(filepath.Join(linked, "sub")))
-	require.NoError(t, core.Ref[*core.Workspace](destination, committed.ID).Export(ctx))
-	require.NoError(t, saveWorkspaceTo(ctx, destination, core.Ref[*core.Workspace](destination, committed.ID), nil, ".."))
+	require.NoError(t, core.Ref[*core.Workspace](core.NewQuery(destination), committed.ID).Export(ctx))
+	require.NoError(t, saveWorkspaceTo(ctx, destination, core.Ref[*core.Workspace](core.NewQuery(destination), committed.ID), nil, ".."))
 	for _, name := range []string{"a.txt", "b.txt"} {
 		data, err := os.ReadFile(filepath.Join(linked, "sub", name))
 		require.NoError(t, err)
@@ -646,7 +647,7 @@ func (WorkspaceSuite) TestWorkspaceExportCheckpointWithoutCommits(ctx context.Co
 			frozen := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace()).WithNewFile("/base.txt", "pending")
 			id, err := frozen.ID(ctx)
 			require.NoError(t, err)
-			frozen = core.Ref[*core.Workspace](c, id)
+			frozen = core.Ref[*core.Workspace](core.NewQuery(c), id)
 			head := git("rev-parse", "HEAD")
 			require.NoError(t, frozen.Export(ctx))
 			require.Equal(t, head, git("rev-parse", "HEAD"))
@@ -657,7 +658,7 @@ func (WorkspaceSuite) TestWorkspaceExportCheckpointWithoutCommits(ctx context.Co
 			committed := frozen.WithCommit(frozen.Git().Uncommitted(), "commit pending", workspaceCommitDate)
 			id, err = committed.ID(ctx)
 			require.NoError(t, err)
-			committed = core.Ref[*core.Workspace](c, id)
+			committed = core.Ref[*core.Workspace](core.NewQuery(c), id)
 			require.NoError(t, committed.Export(ctx, core.WorkspaceExportOpts{From: frozen}))
 			sha, err := committed.Git().Head().CommitSHA(ctx)
 			require.NoError(t, err)
@@ -687,7 +688,7 @@ func (WorkspaceSuite) TestWorkspaceExportRemoteDefaultsToCaller(ctx context.Cont
 		Directory("/repo").Export(ctx, checkout)
 	require.NoError(t, err)
 	caller := connect(ctx, t, dagger.WithWorkdir(filepath.Join(checkout, "caller")))
-	require.NoError(t, core.Ref[*core.Workspace](caller, id).Export(ctx))
+	require.NoError(t, core.Ref[*core.Workspace](core.NewQuery(caller), id).Export(ctx))
 	contents, err := os.ReadFile(filepath.Join(checkout, "source", "pending.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "remote pending", string(contents))

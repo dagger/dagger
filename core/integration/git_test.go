@@ -9,7 +9,6 @@ package core
 // - ref_test.go: module reference resolution for Git-shaped paths.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -22,6 +21,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"dagger.io/dagger/core"
 
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -1274,8 +1275,8 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 	// 	token, err := decodeAndTrimPAT(pat)
 	// 	require.NoError(t, err)
 
-	// 	_, err = c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git", core.GitOpts{
-	// 		HTTPAuthToken: c.SetSecret("bitbucket_pat", token),
+	// 	_, err = core.NewQuery(c).Git("https://bitbucket.org/dagger-modules/private-modules-test.git", core.GitOpts{
+	// 		HTTPAuthToken: core.NewQuery(c).SetSecret("bitbucket_pat", token),
 	// 	}).
 	// 		Branch("main").
 	// 		Tree().
@@ -1300,7 +1301,7 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 
 	// TODO: Implement Azure DevOps auth when PAT expiration is configurable
 	// t.Run("Azure auth", func(ctx context.Context, t *testctx.T) {
-	// 	_, err = c.Git("https://dev.azure.com/daggere2e/private/_git/dagger-test-modules").
+	// 	_, err = core.NewQuery(c).Git("https://dev.azure.com/daggere2e/private/_git/dagger-test-modules").
 	// 		Branch("main").
 	// 		Tree().
 	// 		File("README.md").

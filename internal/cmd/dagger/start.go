@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/client"
@@ -50,7 +52,7 @@ var startCmd = &cobra.Command{
 			params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
-				ws := dag.CurrentWorkspace()
+				ws := core.NewQuery(dag).CurrentWorkspace()
 				all, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, true)
 				if err != nil {
 					return err
@@ -68,7 +70,7 @@ var startCmd = &cobra.Command{
 	},
 }
 
-func runServices(ctx context.Context, dag *dagger.Client, services *dagger.Artifacts, _ *cobra.Command) (rerr error) {
+func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifacts, _ *cobra.Command) (rerr error) {
 	ctx, zoomSpan := Tracer().Start(ctx, "services", telemetry.Passthrough())
 	// The report uses this span's failure to include the cause and its logs.
 	defer telemetry.EndWithCause(zoomSpan, &rerr)
@@ -86,11 +88,11 @@ func runServices(ctx context.Context, dag *dagger.Client, services *dagger.Artif
 	if len(results) == 0 {
 		return fmt.Errorf("no services found")
 	}
-	cfg, err := artifactWorkspaceConfig(ctx, dag.CurrentWorkspace())
+	cfg, err := artifactWorkspaceConfig(ctx, core.NewQuery(dag).CurrentWorkspace())
 	if err != nil {
 		return err
 	}
-	mappings := make([][]dagger.PortForward, len(results))
+	mappings := make([][]core.PortForward, len(results))
 	ports := map[string]string{}
 	for i, result := range results {
 		if result.Value == nil || result.Value.Type != "Service" {
@@ -111,7 +113,7 @@ func runServices(ctx context.Context, dag *dagger.Client, services *dagger.Artif
 			if err != nil {
 				return err
 			}
-			mappings[i] = append(mappings[i], dagger.PortForward{Frontend: frontend, Backend: mapping.BackendPort, Protocol: dagger.NetworkProtocolTcp})
+			mappings[i] = append(mappings[i], core.PortForward{Frontend: frontend, Backend: mapping.BackendPort, Protocol: core.NetworkProtocolTcp})
 		}
 		var claimed []string
 		if len(mappings[i]) > 0 {
@@ -149,8 +151,8 @@ func runServices(ctx context.Context, dag *dagger.Client, services *dagger.Artif
 		jobs.Go(func() (err error) {
 			serviceCtx, span := Tracer().Start(runCtx, result.Artifact.URI, trace.WithAttributes(attribute.String(telemetryattrs.ServiceNameAttr, result.Artifact.URI), attribute.Bool(telemetry.UIRollUpLogsAttr, true)))
 			defer telemetry.EndWithCause(span, &err)
-			service := dagger.Ref[*dagger.Service](dag, result.Value.ID)
-			tunnel, err := dag.Host().Tunnel(service, dagger.HostTunnelOpts{Ports: mappings[i], Native: len(mappings[i]) == 0}).Start(serviceCtx)
+			service := core.Ref[*core.Service](core.NewQuery(dag), result.Value.ID)
+			tunnel, err := core.NewQuery(dag).Host().Tunnel(service, core.HostTunnelOpts{Ports: mappings[i], Native: len(mappings[i]) == 0}).Start(serviceCtx)
 			if err != nil {
 				return err
 			}

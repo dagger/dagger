@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -86,11 +88,11 @@ func TestTracedResetDoesNotRebindExportBaseline(t *testing.T) {
 
 	a := &sessionAgent{
 		session:     &LLMSession{dag: dag, plumbingCtx: t.Context()},
-		tracedReset: dagger.Ref[*dagger.LLM](dag, dagger.ID("traced-snapshot")).WithoutMessageHistory(),
+		tracedReset: core.Ref[*core.LLM](core.NewQuery(dag), core.ID("traced-snapshot")).WithoutMessageHistory(),
 		model:       "test-model",
 	}
 	// An export is allowed to move comparison bookkeeping, never the reset seed.
-	a.setLastSynced(dagger.Ref[*dagger.Workspace](dag, dagger.ID("exported-baseline")))
+	a.setLastSynced(core.Ref[*core.Workspace](core.NewQuery(dag), core.ID("exported-baseline")))
 	_, err = a.resetLLM().ID(t.Context())
 	require.NoError(t, err)
 	require.Len(t, queries, 1)
@@ -123,7 +125,7 @@ func (DaggerCMDSuite) TestTraceRestoreRuntimeQueries(ctx context.Context, t *tes
 	dag, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer dag.Close()
-	id, err := dag.LLM(dagger.LLMOpts{Model: "openai/gpt-4o"}).WithSystemPrompt("traced configuration").ID(ctx)
+	id, err := core.NewQuery(dag).LLM(core.LLMOpts{Model: "openai/gpt-4o"}).WithSystemPrompt("traced configuration").ID(ctx)
 	require.NoError(t, err)
 	target := &sessionRestore{dag: dag}
 	chief, err := target.Rehydrate(ctx, dagui.AgentRestore{ID: "cli-restore-chief", Name: "chief", State: "IDLE"}, string(id))
@@ -131,10 +133,10 @@ func (DaggerCMDSuite) TestTraceRestoreRuntimeQueries(ctx context.Context, t *tes
 	worker, err := target.Rehydrate(ctx, dagui.AgentRestore{ID: "cli-restore-worker", Name: "worker", ParentAgentID: "cli-restore-chief", State: "FAILED", Error: "original failure"}, string(id))
 	require.NoError(t, err)
 	require.NoError(t, target.Subscribe(ctx, worker, chief, []string{"FAILED", "IDLE"}))
-	chiefState, err := dagger.Ref[*dagger.Agent](dag, dagger.ID(chief)).State(ctx)
+	chiefState, err := core.Ref[*core.Agent](core.NewQuery(dag), core.ID(chief)).State(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.AgentStateIdle, chiefState, "notify on an inert restored agent must not wake a subscriber")
-	workerError, err := dagger.Ref[*dagger.Agent](dag, dagger.ID(worker)).Error(ctx)
+	require.Equal(t, core.AgentStateIdle, chiefState, "notify on an inert restored agent must not wake a subscriber")
+	workerError, err := core.Ref[*core.Agent](core.NewQuery(dag), core.ID(worker)).Error(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "original failure", workerError)
 }

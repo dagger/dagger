@@ -1,12 +1,13 @@
 package daggercmd
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"errors"
 	"fmt"
 	"path"
 	"strings"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/dagaddress"
@@ -136,7 +137,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *core.Art
 		if result.Value == nil || result.Value.Type != "Generator" {
 			return fmt.Errorf("%s did not return a Generator", result.Artifact.URI)
 		}
-		changes = append(changes, core.Ref[*core.Generator](dag, result.Value.ID).Changeset())
+		changes = append(changes, core.Ref[*core.Generator](core.NewQuery(dag), result.Value.ID).Changeset())
 	}
 	cwd, err := core.NewQuery(dag).CurrentWorkspace().Cwd(ctx)
 	if err != nil {

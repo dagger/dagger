@@ -3,7 +3,8 @@ package daggercmd
 import (
 	"context"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
+
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/jinzhu/inflection"
@@ -114,11 +115,11 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 		return err
 	}
 	return withDiscovery("Load "+cmd.Name()+" filters", params, func(ctx context.Context, ec *client.Client) error {
-		id, err := ec.Dagger().CurrentWorkspace().Artifacts().ID(ctx)
+		id, err := core.NewQuery(ec.Dagger()).CurrentWorkspace().Artifacts().ID(ctx)
 		if err != nil {
 			return err
 		}
-		all := dagger.Ref[*dagger.Artifacts](ec.Dagger(), id)
+		all := core.Ref[*core.Artifacts](core.NewQuery(ec.Dagger()), id)
 		definitions, err := artifactDimensions(ctx, ec.Dagger(), all)
 		if err != nil {
 			return err
@@ -147,11 +148,11 @@ func listHelp(cmd *cobra.Command, args []string) {
 
 func loadListCommands(ctx context.Context, ec *client.Client, requested string) error {
 	dag := ec.Dagger()
-	id, err := dag.CurrentWorkspace().Artifacts().ID(ctx)
+	id, err := core.NewQuery(dag).CurrentWorkspace().Artifacts().ID(ctx)
 	if err != nil {
 		return err
 	}
-	artifacts := dagger.Ref[*dagger.Artifacts](dag, id)
+	artifacts := core.Ref[*core.Artifacts](core.NewQuery(dag), id)
 	types, err := readArtifactTypes(ctx, dag, artifacts)
 	if err != nil {
 		return err
