@@ -1227,6 +1227,13 @@ type AgentRuntime struct {
 	// new subscriber the current state is news to THAT subscriber.
 	idleEventDue bool
 
+	// transitions is the entry's transition log, guarded by mu: one entry
+	// per projection edge, seq = index+1, seeded at create. It is the code
+	// sink for lifecycle (Subscription.agentEvents, Agent.events), beside
+	// the agent sink above (hack/designs/graphql-subscriptions.md §4.1).
+	// Unbounded: one small entry per state edge.
+	transitions []agentTransition
+
 	// stateChanged is closed and replaced on every fact transition, so
 	// WaitFor can block on transitions without polling.
 	stateChanged chan struct{}
@@ -1288,6 +1295,9 @@ func (rt *AgentRuntime) transitionLocked(mut func()) {
 	state := rt.stateLocked()
 	if state != rt.lastEventState {
 		rt.lastEventState = state
+		// The code sink (Subscription.agentEvents) logs every edge; it reads
+		// idleEventDue, so it must run before queueEventsLocked consumes it.
+		rt.recordTransitionLocked(state)
 		rt.queueEventsLocked(state)
 	}
 }
@@ -1764,6 +1774,9 @@ func (rt *AgentRuntime) create(ctx context.Context, state AgentState, loopErr st
 		rt.stopReason = AgentStopExplicit
 	}
 	rt.lastEventState = rt.stateLocked()
+	// Seq 1 of the transition log is the state the entry was created in,
+	// so a subscriber's subscribe-time level check always has an entry.
+	rt.recordTransitionLocked(rt.lastEventState)
 }
 
 // start launches an evaluation loop for a live entry, once. Subsequent calls

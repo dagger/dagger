@@ -23,6 +23,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 	// gates their generated ID/load fields.
 	srv.InstallObject(dagql.NewClass[*core.Agent](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.AgentMessage](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.AgentEvent](srv).View(AfterVersion("v1.0.0-0")))
 
 	dagql.Fields[*core.Agent]{
 		dagql.Func("name", s.name).
@@ -156,6 +157,45 @@ func (s agentSchema) Install(srv *dagql.Server) {
 				`Fails if the instance has no runtime entry in this session (only a spawned or re-hydrated instance holds a conversation to replace), if a step is in flight, or if the agent is stopped.`).
 			Args(
 				dagql.Arg("conversation").Doc(`The conversation that becomes the agent's committed history, replacing the current one.`),
+			),
+
+		// event is deliberately cached (no DoNotCache), like message: it is
+		// the lookup every AgentEvent's ID is pinned through, and an entry's
+		// log is append-only for the session — seq n always denotes the same
+		// transition, and the chain is per-session by construction.
+		dagql.NodeFunc("event", s.event).
+			Experimental("Agent APIs are likely to change.").
+			Doc(`Look up one lifecycle transition by its seq in this agent's transition log.`,
+				`This is the lookup every AgentEvent's ID is pinned through: …agent(handle:…).event(seq: n), addressable from any request in the session.`,
+				`Fails if the agent has no runtime entry in this session, or no transition with that seq.`).
+			Args(
+				dagql.Arg("seq").Doc(`The 1-based position in the transition log. Seq 1 is the state the runtime entry was created in.`),
+			),
+
+		dagql.NodeFunc("events", s.events).
+			Experimental("Agent APIs are likely to change.").
+			DoNotCache("Blocks on live runtime state.").
+			Doc(`Block until the agent has a lifecycle transition after the given seq, then return every transition after it, in order.`,
+				`This is the pull twin of the agentEvents subscription, for clients without subscription support: pass the last seq you handled to read on, edge-triggered and replayable. The log keeps every transition for the rest of the session.`,
+				`Refused from inside an agent turn: a turn never blocks on another agent — use notify instead.`).
+			Args(
+				dagql.Arg("after").Doc(`Return transitions with seq greater than this. 0 returns the whole log without blocking.`),
+			),
+	}.Install(srv)
+
+	// AgentEvent's fields come from its struct tags.
+	dagql.Fields[*core.AgentEvent]{}.Install(srv)
+
+	dagql.Subscriptions{
+		dagql.Subscribe("agentEvents", s.agentEvents).
+			View(AfterVersion("v1.0.0-0")).
+			Experimental("Agent APIs are likely to change.").
+			Doc(`The agent's lifecycle transitions, in order, as they happen.`,
+				`Without after, the stream starts with the transition into the agent's current state — so an agent that settled before you subscribed is not missed — then every later transition. With after, it replays every retained transition with a greater seq first.`,
+				`Each event is an AgentEvent node whose ID is the honest chain …agent(handle:…).event(seq: n). Resume after a disconnect by passing the last seq you handled as after. Refused from inside an agent turn: use notify instead.`).
+			Args(
+				dagql.Arg("agent").Doc(`The agent to watch. You must hold its ID: subscriptions are capability-based like everything else.`),
+				dagql.Arg("after").Doc(`Start after this seq instead of at the current state.`),
 			),
 	}.Install(srv)
 
@@ -480,4 +520,116 @@ func (s agentSchema) reseed(ctx context.Context, parent dagql.ObjectResult[*core
 		return res, err
 	}
 	return agentSelfID(ctx, parent)
+}
+
+func (s agentSchema) event(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
+	Seq int
+}) (*core.AgentEvent, error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rt, err := agents.Require(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	return rt.Event(args.Seq)
+}
+
+// selectAgentEvent pins one transition's identity by re-exec through the
+// cached event lookup — the same trick send uses for messages — so the
+// emitted value's ID is the honest chain …agent(handle:…).event(seq: n).
+func selectAgentEvent(ctx context.Context, srv *dagql.Server, agent dagql.ObjectResult[*core.Agent], seq int) (ev dagql.ObjectResult[*core.AgentEvent], _ error) {
+	err := srv.Select(ctx, agent, &ev, dagql.Selector{
+		Field: "event",
+		Args: []dagql.NamedInput{
+			{Name: "seq", Value: dagql.NewInt(seq)},
+		},
+	})
+	return ev, err
+}
+
+func (s agentSchema) events(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
+	After int `default:"0"`
+}) (dagql.ObjectResultArray[*core.AgentEvent], error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rt, err := agents.Require(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	if err := core.RefuseAgentTurnSubscription(ctx, rt, "block on the events of"); err != nil {
+		return nil, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	seqs, err := rt.EventsAfter(ctx, args.After)
+	if err != nil {
+		return nil, err
+	}
+	out := make(dagql.ObjectResultArray[*core.AgentEvent], 0, len(seqs))
+	for _, seq := range seqs {
+		ev, err := selectAgentEvent(ctx, srv, parent, seq)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ev)
+	}
+	return out, nil
+}
+
+// agentEvents is the Subscription.agentEvents resolver: notify with a
+// subscription as the sink (hack/designs/graphql-subscriptions.md §4.1). It
+// reads the runtime entry's transition log from the cursor and blocks on the
+// entry's stateChanged broadcast between reads, so it never misses an edge
+// and never re-fires one.
+func (s agentSchema) agentEvents(ctx context.Context, args struct {
+	Agent core.AgentID
+	After dagql.Optional[dagql.Int]
+}, emit func(dagql.ObjectResult[*core.AgentEvent]) error) error {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+	agent, err := args.Agent.Load(ctx, srv)
+	if err != nil {
+		return err
+	}
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return err
+	}
+	rt, err := agents.Require(ctx, agent)
+	if err != nil {
+		return err
+	}
+	if err := core.RefuseAgentTurnSubscription(ctx, rt, "subscribe to"); err != nil {
+		return err
+	}
+	// The level check: without a cursor, start at the transition into the
+	// current state, like notify's subscribe-time check.
+	after := rt.LatestEventSeq() - 1
+	if args.After.Valid {
+		after = int(args.After.Value)
+	}
+	for {
+		seqs, err := rt.EventsAfter(ctx, after)
+		if err != nil {
+			return err
+		}
+		for _, seq := range seqs {
+			ev, err := selectAgentEvent(ctx, srv, agent, seq)
+			if err != nil {
+				return err
+			}
+			if err := emit(ev); err != nil {
+				return err
+			}
+			after = seq
+		}
+	}
 }

@@ -183,7 +183,7 @@ source = ".dagger/modules/mcp-lab"
 cloudCredentials = "file://~/.config/dagger/credentials.json"
 
 [modules.editor]
-source = "github.com/vito/editor"
+source = "github.com/vito/editor@artifacts-targets"
 
 [modules.go-cli]
 source = ".dagger/modules/go-cli"
@@ -195,17 +195,17 @@ source = ".dagger/modules/sdl-diff"
 githubToken = "cmd://gh auth token"
 
 [modules.contributor]
-source = "github.com/vito/agents/contributor"
+source = "github.com/vito/agents/contributor@agent-refs-as-artifacts"
 
 [modules.contributor.settings]
 githubToken = "cmd://gh auth token"
 remote = "dagger/dagger"
 
 [modules.staff]
-source = "github.com/vito/agents/staff"
+source = "github.com/vito/agents/staff@agent-refs-as-artifacts"
 
 [modules.committer]
-source = "github.com/vito/agents/committer"
+source = "github.com/vito/agents/committer@agent-refs-as-artifacts"
 
 [sdks.dang]
 module = "dang-sdk"

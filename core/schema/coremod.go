@@ -547,6 +547,12 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 
 	typeDefs := make(dagql.ObjectResultArray[*core.TypeDef], 0, len(schema.Types))
 	for _, introspectionType := range schema.Types {
+		if introspectionType.Name == dagql.SubscriptionTypeName {
+			// The Subscription root is an operation type, not an object
+			// modules can return or call: its fields are streams, served
+			// only over graphql-sse (hack/designs/graphql-subscriptions.md).
+			continue
+		}
 		switch introspectionType.Kind {
 		case introspection.TypeKindObject:
 			typeDef, ok, err := buildCoreObjectLikeTypeDef[*core.ObjectTypeDef](

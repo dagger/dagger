@@ -66,6 +66,10 @@ func TestCoreSchemaObjectsHavePersistedFamilies(t *testing.T) {
 		if def.Kind != ast.Object || strings.HasPrefix(name, "__") {
 			continue
 		}
+		if def == dag.Schema().Subscription {
+			// An operation root with no class of its own (dagql.Subscribe).
+			continue
+		}
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -99,6 +103,7 @@ func TestCoreSchemaObjectsHavePersistedFamilies(t *testing.T) {
 var persistedSchemaExpectedWithoutCodec = []string{
 	// These runtime and middleware values have no persisted representation.
 	"Agent(*core.Agent encode=false decode=false family=false)",
+	"AgentEvent(*core.AgentEvent encode=false decode=false family=false)",
 	"AgentMessage(*core.AgentMessage encode=false decode=false family=false)",
 	// Artifact metadata and evaluation wrappers have no persisted representation.
 	"ArtifactDimension(*artifact.Dimension encode=false decode=false family=false)",
