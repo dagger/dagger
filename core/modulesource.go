@@ -2252,7 +2252,11 @@ func ResolveDepToSource(
 		case ModuleSourceKindGit:
 			// parent=git, dep=local
 			// load the dep relative to the parent's source root, from the parent source's git repo
-			refString := GitRefString(
+			refStringBuilder := GitRefString
+			if parentSrc.Git.Selector == gitref.GitRefSelector {
+				refStringBuilder = gitref.GitURLRefString
+			}
+			refString := refStringBuilder(
 				parentSrc.Git.CloneRef,
 				filepath.Join(parentSrc.SourceRootSubpath, depSrcRef),
 				parentSrc.Git.Version,
