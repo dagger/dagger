@@ -39,6 +39,9 @@ put replaced/keep.txt base
 put replaced/sub/x.txt base
 put remade/keep.txt base
 put remade/sub/y.txt base
+put refiled/keep.txt base
+put a/b base
+put a/c base
 put thing base
 put was/nested.txt base
 put run.sh base
@@ -99,6 +102,7 @@ rm refilled.txt
 put olddir/added.txt new
 rm -rf remade
 rm thing
+rm -rf refiled && put refiled first
 `)).
 			WithExec(edit(`
 put reverted.txt base
@@ -109,6 +113,7 @@ put thing/nested.txt new
 rm -rf was
 chmod +x run.sh
 ln -sfn twice.txt link
+put a-b new
 `)).
 			WithExec(edit(`
 put twice.txt second
@@ -117,19 +122,23 @@ put was new
 put fresh/a.txt new
 put fresh/sub/b.txt new
 put mod.txt new
+rm refiled && put refiled/new.txt new
+put a/c new
 `))
 		requireLayerWalkCase(ctx, t, c, layerWalkCase{
 			before: before.Directory("/src"), after: after.Directory("/src"),
 			beforeRoot: before.Rootfs(), afterRoot: after.Rootfs(), rootPrefix: "src",
 			added: []string{
-				"fresh/", "fresh/a.txt", "fresh/sub/", "fresh/sub/b.txt",
-				"remade/new.txt", "thing/", "thing/nested.txt", "was",
+				// a-b shares a prefix with a/ (changed too), not a parent.
+				"a-b", "fresh/", "fresh/a.txt", "fresh/sub/", "fresh/sub/b.txt",
+				"refiled/new.txt", "remade/new.txt", "thing/", "thing/nested.txt", "was",
 			},
-			modified: []string{"link", "mod.txt", "refilled.txt", "run.sh", "twice.txt"},
-			removed:  []string{"olddir/", "remade/keep.txt", "remade/sub/", "thing", "was/"},
-			// Rewritten with its original content: a new file to a diff,
-			// no change to a changeset.
-			diffOnly: []string{"reverted.txt"},
+			modified: []string{"a/c", "link", "mod.txt", "refilled.txt", "run.sh", "twice.txt"},
+			removed: []string{
+				"olddir/", "refiled/keep.txt", "remade/keep.txt", "remade/sub/", "thing", "was/",
+			},
+			// Changed, then changed back.
+			rewritten: []string{"reverted.txt"},
 		})
 		walks.requireLayers(t, c)
 	})
@@ -165,7 +174,7 @@ put upper-added/y.txt new
 			modified: []string{"mod.txt", "reverted.txt"},
 			removed:  []string{"lower-added/", "remade/", "replaced/l.txt", "thing/"},
 			// Written identically on both sides.
-			diffOnly: []string{"twice.txt"},
+			rewritten: []string{"twice.txt"},
 		})
 		walks.requireLayers(t, c)
 	})
@@ -209,9 +218,11 @@ type layerWalkCase struct {
 	rootPrefix            string
 
 	added, modified, removed []string
-	// diffOnly are files a diff reports but a changeset doesn't: rewritten
-	// with the content they had.
-	diffOnly []string
+	// rewritten are files a diff may report but a changeset doesn't:
+	// rewritten with the content they had. Whether a diff reports one depends
+	// on whether the rewrite moved its mtime, which the kernel's coarse clock
+	// may not.
+	rewritten []string
 }
 
 func requireLayerWalkCase(ctx context.Context, t *testctx.T, c *dagger.Client, lc layerWalkCase) {
@@ -241,12 +252,15 @@ func requireLayerWalkCase(ctx context.Context, t *testctx.T, c *dagger.Client, l
 	require.NoError(t, err)
 	isFile := func(p string) bool { return !strings.HasSuffix(p, "/") }
 	var wantFiles []string
-	for _, p := range slices.Concat(lc.added, lc.modified, lc.diffOnly) {
+	for _, p := range slices.Concat(lc.added, lc.modified) {
 		if isFile(p) {
 			wantFiles = append(wantFiles, p)
 		}
 	}
-	require.ElementsMatch(t, wantFiles, slices.DeleteFunc(entries, func(p string) bool { return !isFile(p) }), "diff")
+	files := slices.DeleteFunc(entries, func(p string) bool {
+		return !isFile(p) || slices.Contains(lc.rewritten, p)
+	})
+	require.ElementsMatch(t, wantFiles, files, "diff")
 }
 
 // treeListing lists dir's entries with their type, permissions, and content
