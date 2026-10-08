@@ -745,11 +745,12 @@ func TestRecordCallPayloadsClosureCoverageKeepsPayloads(t *testing.T) {
 }
 
 // A frame the cache stops holding, deep inside a closure an earlier walk
-// already emitted, must not cost a later call its own payloads. Rebuilding
+// already emitted, must not cost a later call its payload logs. Rebuilding
 // the later call's whole recipe ID fails on such a frame, so a walk that
-// needed the full ID emitted nothing for it, and the claimed root was never
-// retried: a client could not rebuild that call, or any later call built on
-// it. A walk that stops at the covered closure never reaches the gap.
+// needed the full ID logged nothing for it, and the claimed root was never
+// retried: only a root that rides its own span still reached the client, and
+// no other new frame of that call, or of any later call built on it, did. A
+// walk that stops at the covered closure never reaches the gap.
 func TestRecordCallPayloadsCoveredClosureHidesUnresolvableFrame(t *testing.T) {
 	rec, ctx := payloadRecorderCtx(t)
 	frames := chainCall(5)
