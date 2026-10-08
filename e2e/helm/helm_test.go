@@ -289,7 +289,7 @@ func runInstallAssertions(ctx context.Context, engineName string, engineKind str
 }
 
 func testDaggerQuery(ctx context.Context, command string, kubectl *dagger.Container) error {
-	stdout, err := kubectl.WithExec([]string{"sh", "-c", command}, dagger.ContainerWithExecOpts{
+	stdout, err := kubectl.WithExec(withoutOuterSession("sh", "-c", command), dagger.ContainerWithExecOpts{
 		Stdin: `{
 				container {
 					from(address:"alpine") {
@@ -305,4 +305,10 @@ func testDaggerQuery(ctx context.Context, command string, kubectl *dagger.Contai
 		return fmt.Errorf("expected to be a Linux container, got: %s", stdout)
 	}
 	return nil
+}
+
+// withoutOuterSession wraps a command whose Dagger client must reach the
+// Helm-installed engine configured by _EXPERIMENTAL_DAGGER_RUNNER_HOST.
+func withoutOuterSession(args ...string) []string {
+	return append([]string{"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN"}, args...)
 }
