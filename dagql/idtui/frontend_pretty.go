@@ -346,6 +346,10 @@ type frontendPretty struct {
 	topTrees       []*SpanTreeView // top-level tree views, ordered
 	statusSpinners map[dagui.SpanID]*tuist.Spinner
 	durationViews  map[dagui.SpanID]*DurationView
+	// testOwnerTrees is the subset of spanTrees whose spans own an inline
+	// TESTS rollup (checks and LLM tool calls), which test updates re-render.
+	// Kept alongside spanTrees so they don't have to scan the whole session.
+	testOwnerTrees map[dagui.SpanID]*SpanTreeView
 
 	// per-span inline log components. A LogsView owns the fetch (on mount) and
 	// the render of a span's inline logs, so the expensive Vterm.View() is
@@ -904,8 +908,29 @@ func (fe *frontendPretty) getOrCreateSpanTreeInScope(spanID dagui.SpanID, scope 
 			scope:  scope,
 		}
 		spanTrees[spanID] = st
+		if scope == nil {
+			fe.trackTestOwnerTree(spanID, st)
+		}
 	}
 	return st
+}
+
+// ownsInlineTests reports whether span's row renders an inline TESTS rollup of
+// the tests beneath it.
+func ownsInlineTests(span *dagui.Span) bool {
+	return span != nil && (span.CheckName != "" || span.LLMTool != "")
+}
+
+// trackTestOwnerTree records st, the main trace's SpanTreeView for id, in
+// testOwnerTrees if its span owns inline tests.
+func (fe *frontendPretty) trackTestOwnerTree(id dagui.SpanID, st *SpanTreeView) {
+	if fe.db == nil || !ownsInlineTests(fe.db.Spans.Map[id]) {
+		return
+	}
+	if fe.testOwnerTrees == nil {
+		fe.testOwnerTrees = make(map[dagui.SpanID]*SpanTreeView)
+	}
+	fe.testOwnerTrees[id] = st
 }
 
 type statusIconHost interface {
@@ -2613,6 +2638,8 @@ func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
 				fe.updateLogPagerForLogs(id)
 			}
 			if sr, ok := fe.spanTrees[id]; ok {
+				// An update can carry attributes the span didn't start with.
+				fe.trackTestOwnerTree(id, sr)
 				sr.Update()
 			}
 		}
@@ -3056,6 +3083,8 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 				fe.updateLogPagerForLogs(id)
 			}
 			if sr, ok := fe.spanTrees[id]; ok {
+				// An update can carry attributes the span didn't start with.
+				fe.trackTestOwnerTree(id, sr)
 				sr.Update()
 			}
 		}
@@ -5597,6 +5626,9 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 			}
 			st.childMap[id] = child
 			spanTrees[id] = child
+			if scope == nil {
+				fe.trackTestOwnerTree(id, child)
+			}
 		}
 		child.parent = st
 		child.indexInParent = i

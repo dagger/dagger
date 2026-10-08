@@ -1042,6 +1042,75 @@ func TestLiveTestDetailChildLogs(t *testing.T) {
 	}
 }
 
+// TestLiveTestsReachInlineRollups verifies that tests arriving after their
+// owners rendered show up in the owners' inline TESTS rollups: a top-level
+// check, a check nested under an expanded row, an LLM tool call, and a span
+// that only becomes a check on a later update.
+func TestLiveTestsReachInlineRollups(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	id := prettyTestSpanID
+	rootID, checkID, groupID, nestedID, toolID, lateID := id(1), id(2), id(3), id(4), id(5), id(6)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	late := dagui.SpanSnapshot{
+		ID: lateID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "late check",
+		StartTime: start, EndTime: end, Final: true,
+	}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start},
+		{
+			ID: checkID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check unit",
+			StartTime: start, EndTime: end, CheckName: "unit", Final: true,
+		},
+		{ID: groupID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "group", StartTime: start},
+		{
+			ID: nestedID, TraceID: prettyTestTraceID(), ParentID: groupID, Name: "check nested",
+			StartTime: start, EndTime: end, CheckName: "nested", Final: true,
+		},
+		{
+			ID: toolID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "RunTests",
+			LLMTool: "RunTests", StartTime: start, EndTime: end, Final: true,
+		},
+		late,
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 60))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.SetPrimary(rootID)
+	lines := fe.tui.Step()
+	for _, name := range []string{"check unit", "check nested", "RunTests", "late check"} {
+		if _, ok := findPrettyTestLine(lines, name); !ok {
+			t.Fatalf("render did not include %q:\n%s", name, strings.Join(lines, "\n"))
+		}
+	}
+
+	failing := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id(n), TraceID: prettyTestTraceID(), ParentID: parent, Name: name,
+			StartTime: start, EndTime: end, TestCaseName: name,
+			TestStatus: dagui.TestStatusFailure, Final: true,
+		}
+	}
+	late.CheckName = "late"
+	fe.ImportSnapshots([]dagui.SpanSnapshot{late})
+	fe.tui.Step()
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		failing(7, checkID, "TestUnitCase"),
+		failing(8, nestedID, "TestNestedCase"),
+		failing(9, toolID, "TestToolCase"),
+		failing(10, lateID, "TestLateCase"),
+	})
+	lines = fe.tui.Step()
+	for _, name := range []string{"TestUnitCase", "TestNestedCase", "TestToolCase", "TestLateCase"} {
+		if _, ok := findPrettyTestLine(lines, name); !ok {
+			t.Fatalf("inline TESTS missing %q:\n%s", name, strings.Join(lines, "\n"))
+		}
+	}
+}
+
 // TestShellToolInlineTestsAlignWithToolDot verifies a shell transcript's tool
 // call hangs its inline TESTS rollup off a pipe in the same column as the faint
 // dot in front of the tool name (where its log gutter sits too), with the

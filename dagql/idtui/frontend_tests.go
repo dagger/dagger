@@ -1600,11 +1600,8 @@ func (fe *frontendPretty) updateTestViews() {
 	for _, view := range fe.testSpanChildren {
 		view.UpdateAll()
 	}
-	for id, st := range fe.spanTrees {
-		span := fe.db.Spans.Map[id]
-		if span != nil && (span.CheckName != "" || span.LLMTool != "") {
-			st.Update()
-		}
+	for _, st := range fe.testOwnerTrees {
+		st.Update()
 	}
 }
 
@@ -1634,14 +1631,12 @@ func (fe *frontendPretty) updateTestViewsForLogs(spanIDs map[dagui.SpanID]struct
 			if tv := fe.testViews[id]; tv != nil {
 				tv.Update()
 			}
+			if st := fe.testOwnerTrees[id]; st != nil {
+				st.Update()
+			}
 			span := fe.db.Spans.Map[id]
 			if span == nil {
 				break
-			}
-			if span.CheckName != "" || span.LLMTool != "" {
-				if st := fe.spanTrees[id]; st != nil {
-					st.Update()
-				}
 			}
 			id = span.ParentID
 		}
