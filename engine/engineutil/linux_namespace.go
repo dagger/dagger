@@ -59,25 +59,24 @@ func runInNetNS[T any](
 	}
 	resultCh := make(chan result, 1)
 
-	var nsPath string
-
-	// need this to extract the namespace file
-	var tmpSpec specs.Spec
+	// Apply the provider to the same private-network default as the OCI spec.
+	// Host removes this entry; none leaves it intact, with no namespace path
+	// available until runc starts the container.
+	tmpSpec := specs.Spec{Linux: &specs.Linux{
+		Namespaces: []specs.LinuxNamespace{{Type: specs.NetworkNamespace}},
+	}}
 	if state.networkNamespace != nil {
 		if err := state.networkNamespace.Set(&tmpSpec); err != nil {
 			return zero, fmt.Errorf("failed to set network namespace: %w", err)
 		}
-		for _, ns := range tmpSpec.Linux.Namespaces {
-			if ns.Type == specs.NetworkNamespace {
-				nsPath = ns.Path
-			}
-		}
 	}
-	namespaces := []specs.LinuxNamespace{
-		{
-			Type: specs.NetworkNamespace,
-			Path: nsPath, // this known (and needed) ahead of time
-		},
+	// With host networking there is nothing to enter and no PID to look up.
+	// Still use the worker pool to preserve callback and cancellation handling.
+	var namespaces []specs.LinuxNamespace
+	for _, ns := range tmpSpec.Linux.Namespaces {
+		if ns.Type == specs.NetworkNamespace {
+			namespaces = append(namespaces, ns)
+		}
 	}
 
 	// Wrap the function to match the expected signature and capture result
@@ -88,6 +87,9 @@ func runInNetNS[T any](
 	}
 
 	// Submit job to global pool
+	if err := context.Cause(ctx); err != nil {
+		return zero, err
+	}
 	gwp := GetGlobalNamespaceWorkerPool()
 	if err := gwp.RunInNamespaces(ctx, state.id, namespaces, wrappedFn); err != nil {
 		return zero, err
