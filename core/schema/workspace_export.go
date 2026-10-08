@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/engineutil"
 	gitsession "github.com/dagger/dagger/engine/session/git"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -166,9 +167,7 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 	if err != nil {
 		return err
 	}
-	composeCtx, composeSpan := core.Tracer(ctx).Start(ctx, "compose workspace export destination", telemetry.Internal())
-	destination, err := s.checkpointCapturedGitCompositionWithBase(composeCtx, srv, captured, metadata, bundle, "", base)
-	telemetry.EndWithCause(composeSpan, &err)
+	destination, err := s.composeWorkspaceExportDestination(ctx, srv, bk, captured, metadata, bundle, base)
 	if err != nil {
 		return err
 	}
@@ -205,6 +204,34 @@ func (s *workspaceSchema) saveWorkspace(ctx context.Context, source dagql.Object
 		return fmt.Errorf("invalid workspace export transport")
 	}
 	return applyWorkspaceBundle(ctx, repo, metadata.HeadSha, commit.ParentSHAs[0], args.Path, metadata.CheckoutStateDigest)
+}
+
+func (s *workspaceSchema) composeWorkspaceExportDestination(
+	ctx context.Context,
+	srv *dagql.Server,
+	bk *engineutil.Client,
+	captured *core.Workspace,
+	metadata *gitsession.CaptureGitMetadata,
+	bundle []byte,
+	base dagql.ObjectResult[*core.GitRepository],
+) (destination dagql.ObjectResult[*core.Workspace], err error) {
+	if base.Self() == nil {
+		// Without an owned base, composition reconstructs the destination from
+		// its origin. Like a snapshot, capturing the caller's own checkout
+		// authorizes preparing an agent for an SSH origin when none is running;
+		// otherwise reconstruction fails without an SSH socket.
+		caller, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return destination, err
+		}
+		ctx, err = withCapturedCheckoutSSHAuth(ctx, bk, caller, metadata.RemoteUrl)
+		if err != nil {
+			return destination, fmt.Errorf("prepare workspace export SSH authentication: %w", err)
+		}
+	}
+	ctx, span := core.Tracer(ctx).Start(ctx, "compose workspace export destination", telemetry.Internal())
+	defer telemetry.EndWithCause(span, &err)
+	return s.checkpointCapturedGitCompositionWithBase(ctx, srv, captured, metadata, bundle, "", base)
 }
 
 func workspaceExportCommitter(entries []*gitsession.GitConfigEntry) (string, string, error) {

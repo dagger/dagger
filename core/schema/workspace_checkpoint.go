@@ -207,20 +207,9 @@ func (s *workspaceSchema) checkpointClientLocal(
 	if int64(len(bundle)) != metadata.BundleBytes {
 		return inst, fmt.Errorf("workspace snapshot bundle is %d bytes, capture reported %d", len(bundle), metadata.BundleBytes)
 	}
-	// Capturing the owning client's checkout also authorizes reconstructing its
-	// SSH origin. Reuse push's lazy host key discovery when no agent is running;
-	// ordinary Git reads must not start agents or unlock the owner's keys.
-	// Composition binds the prepared agent as a session socket scoped to its SSH
-	// identities, and the snapshot's recipe references it for the rest of the
-	// session, just as it would an agent from the owner's SSH_AUTH_SOCK.
-	if remote, err := gitutil.ParseURL(metadata.RemoteUrl); err == nil && remote.Scheme == gitutil.SSHProtocol && caller.SSHAuthSocketPath == "" {
-		socketPath, err := bk.PrepareGitSSHAuth(clientCtx, metadata.RemoteUrl)
-		if err != nil {
-			return inst, fmt.Errorf("prepare workspace snapshot SSH authentication: %w", err)
-		}
-		snapshotCaller := *caller
-		snapshotCaller.SSHAuthSocketPath = socketPath
-		clientCtx = engine.ContextWithClientMetadata(clientCtx, &snapshotCaller)
+	clientCtx, err = withCapturedCheckoutSSHAuth(clientCtx, bk, caller, metadata.RemoteUrl)
+	if err != nil {
+		return inst, fmt.Errorf("prepare workspace snapshot SSH authentication: %w", err)
 	}
 
 	workspaceEnv, _ := selectedWorkspaceEnv(clientCtx, ws)
@@ -238,6 +227,31 @@ func (s *workspaceSchema) checkpointClientLocal(
 	registerCheckpointHostHistory(clientCtx, query, ws, inst.Self(), metadata, len(bundle) != 0)
 
 	return inst, nil
+}
+
+// withCapturedCheckoutSSHAuth prepares SSH authentication for reconstructing
+// the SSH origin of a checkout the caller just captured. Capturing the owning
+// client's checkout also authorizes reconstructing its SSH origin. Reuse push's
+// lazy host key discovery when no agent is running; ordinary Git reads must not
+// start agents or unlock the owner's keys. Composition binds the prepared agent
+// as a session socket scoped to its SSH identities, and the resulting recipe
+// references it for the rest of the session, just as it would an agent from
+// the owner's SSH_AUTH_SOCK. Non-SSH origins, and callers that already have an
+// agent, keep ctx as is.
+func withCapturedCheckoutSSHAuth(ctx context.Context, bk *engineutil.Client, caller *engine.ClientMetadata, remoteURL string) (context.Context, error) {
+	if caller.SSHAuthSocketPath != "" {
+		return ctx, nil
+	}
+	if remote, err := gitutil.ParseURL(remoteURL); err != nil || remote.Scheme != gitutil.SSHProtocol {
+		return ctx, nil //nolint:nilerr // not an SSH origin, so no agent to prepare
+	}
+	socketPath, err := bk.PrepareGitSSHAuth(ctx, remoteURL)
+	if err != nil {
+		return ctx, err
+	}
+	prepared := *caller
+	prepared.SSHAuthSocketPath = socketPath
+	return engine.ContextWithClientMetadata(ctx, &prepared), nil
 }
 
 // registerCheckpointHostHistory reports whether the capture registered an
