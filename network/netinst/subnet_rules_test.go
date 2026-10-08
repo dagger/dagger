@@ -17,8 +17,9 @@ import (
 // does: "-P"/"-N" first, then "-A <chain> <args>", quoting arguments with
 // spaces.
 type fakeIPTables struct {
-	chains  map[string][][]string // "table/chain" -> rules
-	listErr map[string]error      // "table/chain" -> error for the next List
+	chains    map[string][][]string // "table/chain" -> rules
+	listErr   map[string]error      // "table/chain" -> error for the next List
+	afterList map[string]func()     // "table/chain" -> run once after the next List
 }
 
 func newFakeIPTables() *fakeIPTables {
@@ -95,6 +96,10 @@ func (f *fakeIPTables) List(table, chain string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if hook := f.afterList[table+"/"+chain]; hook != nil {
+		delete(f.afterList, table+"/"+chain)
+		defer hook()
+	}
 	head := "-N " + chain
 	if strings.ToUpper(chain) == chain && !strings.Contains(chain, "-") {
 		head = "-P " + chain + " ACCEPT"
@@ -113,12 +118,14 @@ func (f *fakeIPTables) List(table, chain string) ([]string, error) {
 	return lines, nil
 }
 
-func (f *fakeIPTables) DeleteById(table, chain string, id int) error { //nolint:staticcheck // go-iptables names it DeleteById
+func (f *fakeIPTables) DeleteIfExists(table, chain string, rulespec ...string) error {
 	rules, err := f.rules(table, chain)
 	if err != nil {
 		return err
 	}
-	f.chains[table+"/"+chain] = slices.Delete(rules, id-1, id)
+	if i := slices.IndexFunc(rules, func(r []string) bool { return slices.Equal(r, rulespec) }); i >= 0 {
+		f.chains[table+"/"+chain] = slices.Delete(rules, i, i+1)
+	}
 	return nil
 }
 
@@ -384,6 +391,36 @@ func TestInstallSubnetRulesRetriesCleanup(t *testing.T) {
 		require.Equal(t, n.comment(), *rules[0].Comment)
 		require.Equal(t, wantCNIForward, ipt.dump(t, "filter", "CNI-FORWARD"))
 	})
+}
+
+// Leftovers are deleted by specification: if another writer changes the
+// chain between listing and deleting, as other CNI plugins or administrators
+// can in a shared network namespace, unrelated rules must survive.
+func TestInstallSubnetRulesConcurrentChainChange(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	n := testNetwork(t)
+	ipt := newFakeIPTables()
+	addOldFirewallRules(t, ipt, "10.99.0.2") // another network's container
+	addOldFirewallRules(t, ipt, "10.87.0.2") // an older engine's container
+	adminDrop := []string{"-s", "10.50.0.9/32", "-j", "DROP"}
+	require.NoError(t, ipt.Append("filter", cniForwardChain, adminDrop...))
+	// Another writer removes a rule right after the chain is listed, shifting
+	// every later rule up by one: the listed positions of the leftovers now
+	// point at the second leftover and at the DROP.
+	ipt.afterList = map[string]func(){"filter/" + cniForwardChain: func() {
+		require.NoError(t, ipt.DeleteIfExists("filter", cniForwardChain, "-s", "10.99.0.2/32", "-j", "ACCEPT"))
+	}}
+
+	require.NoError(t, installSubnetRules(ctx, n, ipt, nil, noNFTSubnets, false, true))
+
+	require.Equal(t, []string{
+		wantCNIForward[0],
+		`-A CNI-FORWARD -d 10.99.0.2/32 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`,
+		`-A CNI-FORWARD -s 10.50.0.9/32 -j DROP`,
+		wantCNIForward[1],
+		wantCNIForward[2],
+	}, ipt.dump(t, "filter", "CNI-FORWARD"))
 }
 
 // newCNINFT returns a fake of the bridge plugin's nftables masquerade table

@@ -55,7 +55,7 @@ type iptablesClient interface {
 	Insert(table, chain string, pos int, rulespec ...string) error
 	Append(table, chain string, rulespec ...string) error
 	List(table, chain string) ([]string, error)
-	DeleteById(table, chain string, id int) error
+	DeleteIfExists(table, chain string, rulespec ...string) error
 }
 
 // nftRuleSubnets returns, by rule handle, the destination subnet each rule in
@@ -365,23 +365,23 @@ func deleteStaleOwnRules(ipt iptablesClient, table, chain string, n *subnetNetwo
 	if err != nil {
 		return err
 	}
-	var stale []int
-	for i, rule := range rules {
+	var stale [][]string
+	for _, rule := range rules {
 		if ruleComment(rule) != n.comment() {
 			continue
 		}
 		if !slices.ContainsFunc(want, func(w []string) bool { return slices.Equal(rule, w) }) {
-			stale = append(stale, i+1)
+			stale = append(stale, rule)
 		}
 	}
-	return deleteRulesByID(ipt, table, chain, stale)
+	return deleteRules(ipt, table, chain, stale)
 }
 
 // leftovers are per-container masquerade rules older engines added for this
 // network, and the subnets they covered.
 type leftovers struct {
-	iptIDs    []int    // positions in nat POSTROUTING
-	iptChains []string // the per-container chains they jump to
+	iptRules  [][]string // jumps in nat POSTROUTING
+	iptChains []string   // the per-container chains they jump to
 	nftRules  []*knftables.Rule
 	subnets   []*net.IPNet
 }
@@ -402,11 +402,11 @@ func findLeftovers(ctx context.Context, n *subnetNetwork, ipt iptablesClient, cn
 		errs = append(errs, err)
 	}
 	prefix := fmt.Sprintf("name: %q id: ", n.name)
-	for i, rule := range rules {
+	for _, rule := range rules {
 		if !strings.HasPrefix(ruleComment(rule), prefix) {
 			continue
 		}
-		l.iptIDs = append(l.iptIDs, i+1)
+		l.iptRules = append(l.iptRules, rule)
 		target := ruleTarget(rule)
 		if !strings.HasPrefix(target, "CNI-") {
 			continue
@@ -454,7 +454,7 @@ func findLeftovers(ctx context.Context, n *subnetNetwork, ipt iptablesClient, cn
 
 func (l *leftovers) remove(ctx context.Context, ipt iptablesClient, cniNFT knftables.Interface) error {
 	var errs []error
-	if err := deleteRulesByID(ipt, "nat", "POSTROUTING", l.iptIDs); err != nil {
+	if err := deleteRules(ipt, "nat", "POSTROUTING", l.iptRules); err != nil {
 		errs = append(errs, err)
 	}
 	for _, chain := range l.iptChains {
@@ -545,14 +545,14 @@ func cleanupFirewallPluginRules(ipt iptablesClient, subnets []*net.IPNet) error 
 	if err != nil {
 		return err
 	}
-	var ids []int
-	for i, rule := range rules {
+	var stale [][]string
+	for _, rule := range rules {
 		ip := firewallPluginRuleIP(rule)
 		if ip != nil && slices.ContainsFunc(subnets, func(s *net.IPNet) bool { return s.Contains(ip) }) {
-			ids = append(ids, i+1)
+			stale = append(stale, rule)
 		}
 	}
-	return deleteRulesByID(ipt, "filter", cniForwardChain, ids)
+	return deleteRules(ipt, "filter", cniForwardChain, stale)
 }
 
 // firewallPluginRuleIP returns the address of one of the CNI firewall
@@ -601,12 +601,13 @@ func listRules(ipt iptablesClient, table, chain string) ([][]string, error) {
 	return rules, nil
 }
 
-// deleteRulesByID deletes rules by their 1-based position, last first so
-// earlier positions stay valid.
-func deleteRulesByID(ipt iptablesClient, table, chain string, ids []int) error {
-	slices.Sort(ids)
-	for _, id := range slices.Backward(ids) {
-		if err := ipt.DeleteById(table, chain, id); err != nil {
+// deleteRules deletes rules, as listed, by their specification. Positions
+// from the listing could point at other rules by now: in a shared network
+// namespace, other CNI plugins or administrators may change the chain between
+// the listing and the deletion. A rule that is already gone is skipped.
+func deleteRules(ipt iptablesClient, table, chain string, rules [][]string) error {
+	for _, rule := range rules {
+		if err := ipt.DeleteIfExists(table, chain, rule...); err != nil {
 			return err
 		}
 	}
