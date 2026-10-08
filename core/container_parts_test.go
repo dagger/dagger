@@ -1545,3 +1545,199 @@ func TestContainerHasPendingFallbackRacesDirectCompletion(t *testing.T) {
 	require.Nil(t, base.LazyEvalFunc())
 	require.False(t, dagql.HasPendingLazyEvaluation(baseRes))
 }
+
+type containerPartsTestPathFileSourceOp struct {
+	LazyState
+	path string
+}
+
+func (op *containerPartsTestPathFileSourceOp) Evaluate(ctx context.Context, file *File) error {
+	return file.evaluateLazy(ctx, &op.LazyState, "test.pathFileSource", func(context.Context) error {
+		file.File.SetValue(op.path)
+		file.SetSnapshot(nil)
+		return nil
+	})
+}
+
+func (op *containerPartsTestPathFileSourceOp) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
+func (op *containerPartsTestPathFileSourceOp) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	return nil, nil
+}
+
+// containerPartsTestMountedFileChain attaches a base followed by one
+// withMountedFile layer per target, the shape of n chained
+// withMountedFile calls. The source file of the i-th layer has path
+// "/source/i".
+func containerPartsTestMountedFileChain(
+	t *testing.T,
+	ctx context.Context,
+	cache *dagql.Cache,
+	srv *dagql.Server,
+	sessionID, name string,
+	targets []string,
+) []dagql.ObjectResult[*Container] {
+	t.Helper()
+	baseOp := &containerPartsTestBaseOp{LazyState: NewLazyState(), workdir: "/"}
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Lazy:         baseOp,
+	}
+	layers := []dagql.ObjectResult[*Container]{
+		attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, name+"-base", base),
+	}
+	var mounts ContainerMounts
+	for i, target := range targets {
+		source := &File{
+			File:     new(LazyAccessor[string, *File]),
+			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+			Lazy:     &containerPartsTestPathFileSourceOp{LazyState: NewLazyState(), path: fmt.Sprintf("/source/%d", i)},
+		}
+		sourceRes := attachContainerPartsTestObject(t, ctx, cache, srv, sessionID, fmt.Sprintf("%s-source-%d", name, i), source)
+		shell := make(ContainerMounts, 0, len(mounts)+1)
+		for _, mnt := range mounts {
+			shell = append(shell, ContainerMount{Target: mnt.Target, FileSource: new(LazyAccessor[*File, *Container])})
+		}
+		mounts = shell.With(ContainerMount{Target: target, FileSource: new(LazyAccessor[*File, *Container])})
+		layer := &Container{
+			FS:           new(LazyAccessor[*Directory, *Container]),
+			MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+			Mounts:       mounts,
+			Lazy: &ContainerWithMountedFileLazy{
+				LazyState: NewLazyState(),
+				Parent:    layers[len(layers)-1],
+				Source:    sourceRes,
+				Target:    target,
+			},
+		}
+		layers = append(layers, attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, fmt.Sprintf("%s-layer-%d", name, i), layer))
+	}
+	return layers
+}
+
+func containerPartsTestMountedFilePath(t *testing.T, ctr dagql.ObjectResult[*Container], target string) string {
+	t.Helper()
+	mnt := ctr.Self().mountAt(target)
+	require.NotNil(t, mnt, target)
+	file, ok := mnt.FileSource.Peek()
+	require.True(t, ok, target)
+	path, ok := file.File.Peek()
+	require.True(t, ok, target)
+	return path
+}
+
+// containerPartsTestPassThroughCopies counts the delegation groups that
+// ran on the layers below the top: each is one copy of a part through a
+// layer that does not write it.
+func containerPartsTestPassThroughCopies(t *testing.T, layers []dagql.ObjectResult[*Container]) int {
+	t.Helper()
+	copies := 0
+	for _, layer := range layers[1 : len(layers)-1] {
+		ctr := layer.Self()
+		op := ctr.lazyOpForRouting().(LazyContainerParts)
+		for _, part := range containerSnapshotParts(ctr) {
+			if group := containerDelegationGroup(part); op.ContainerLazyState().GroupConsumed(group) {
+				groups, err := op.ContainerLazyGroups(t.Context(), ctr, []dagql.PartKey{part})
+				require.NoError(t, err)
+				if slices.Equal(groups, []dagql.LazyGroupKey{group}) {
+					copies++
+				}
+			}
+		}
+	}
+	return copies
+}
+
+// A chain of n withMountedFile layers must copy each mount into the top
+// from the layer that wrote it, not through every layer in between: the
+// layers below the top used to run one pass-through copy per mount below
+// them, n²/2 in all. Parts are demanded one at a time from the top mount
+// down, so no final-delegation sweep finds a written part below it to copy
+// and the count is deterministic.
+func TestContainerMountedFileChainCopiesFromWriter(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	const n = 64
+	targets := make([]string, n)
+	for i := range targets {
+		targets[i] = fmt.Sprintf("/m/%d", i)
+	}
+	layers := containerPartsTestMountedFileChain(t, ctx, cache, srv, sessionID, "mounted-file-chain", targets)
+	top := layers[len(layers)-1]
+
+	require.NoError(t, cache.EvaluateParts(ctx, top, ContainerPartFS))
+	for i := n - 1; i >= 0; i-- {
+		require.NoError(t, cache.EvaluateParts(ctx, top, ContainerPartMount(targets[i])))
+	}
+	for i, target := range targets {
+		require.Equal(t, fmt.Sprintf("/source/%d", i), containerPartsTestMountedFilePath(t, top, target))
+	}
+	copies := containerPartsTestPassThroughCopies(t, layers)
+	t.Logf("pass-through copies below the top for n=%d: %d", n, copies)
+	require.Less(t, copies, n)
+}
+
+// An exec demands every part of its parent at once; each mount still gets
+// the value of the layer that wrote it.
+func TestContainerMountedFileChainConcurrentDemand(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	const n = 64
+	targets := make([]string, n)
+	for i := range targets {
+		targets[i] = fmt.Sprintf("/m/%d", i)
+	}
+	layers := containerPartsTestMountedFileChain(t, ctx, cache, srv, sessionID, "mounted-file-chain-concurrent", targets)
+	top := layers[len(layers)-1]
+
+	parts := []dagql.PartKey{ContainerPartFS}
+	for _, target := range targets {
+		parts = append(parts, ContainerPartMount(target))
+	}
+	require.NoError(t, cache.EvaluateParts(ctx, top, parts...))
+	for i, target := range targets {
+		require.Equal(t, fmt.Sprintf("/source/%d", i), containerPartsTestMountedFilePath(t, top, target))
+	}
+	for i, layer := range layers[1:] {
+		require.NoError(t, cache.EvaluateParts(ctx, layer, ContainerPartMount(targets[0])))
+		require.Equal(t, "/source/0", containerPartsTestMountedFilePath(t, layer, targets[0]), "layer %d", i)
+	}
+}
+
+// Copying a part from the layer that wrote it must stop at the nearest
+// writer: a later mount at the same target replaces the earlier one for
+// every layer above it, and a layer in between still sees the earlier one.
+func TestContainerMountedFileChainCopiesFromNearestWriter(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	layers := containerPartsTestMountedFileChain(t, ctx, cache, srv, sessionID, "mounted-file-rewrite", []string{"/a", "/b", "/a"})
+	top := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Mounts: ContainerMounts{
+			{Target: "/b", FileSource: new(LazyAccessor[*File, *Container])},
+			{Target: "/a", FileSource: new(LazyAccessor[*File, *Container])},
+		},
+		Lazy: &ContainerWithEnvVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    layers[len(layers)-1],
+			Name:      "K",
+			Value:     "v",
+		},
+	}
+	topRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "mounted-file-rewrite-top", top)
+
+	require.NoError(t, cache.EvaluateParts(ctx, topRes, ContainerPartMount("/a"), ContainerPartMount("/b")))
+	require.Equal(t, "/source/2", containerPartsTestMountedFilePath(t, topRes, "/a"))
+	require.Equal(t, "/source/1", containerPartsTestMountedFilePath(t, topRes, "/b"))
+
+	middle := layers[2]
+	require.NoError(t, cache.EvaluateParts(ctx, middle, ContainerPartMount("/a")))
+	require.Equal(t, "/source/0", containerPartsTestMountedFilePath(t, middle, "/a"))
+}
