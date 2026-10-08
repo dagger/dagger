@@ -34,11 +34,13 @@ func (r *GoClientDev) DevContainer() *Container { // go-client-dev (../../../../
 	}
 }
 
-// Regenerate the Go SDK API
-func (r *GoClientDev) Generate() *Changeset { // go-client-dev (../../../../../:0:0)
-	q := r.query.Select("generate")
+// Go container with a Dagger CLI and a dev engine built from this checkout.
+// sdk/go/core selects it with //go:generate:container go-client:generate-env,
+// so that the core bindings match the API of this checkout.
+func (r *GoClientDev) GenerateEnv() *Container { // go-client-dev (../../../../../:0:0)
+	q := r.query.Select("generateEnv")
 
-	return &Changeset{
+	return &Container{
 		query: q,
 	}
 }
