@@ -87,10 +87,12 @@ Eligibility is checked only on declared paths and the materialized deltas, with 
 - `merge-controls-change`: any `.gitattributes` or `.gitignore` change, which could restage unchanged baseline files in the legacy whole-worktree add
 - `empty-directory`: an added directory with no files, which Git cannot represent
 - `ignored-merge-path`, `noncanonical-merge-base` (`validateNativeWorkspaceBase`): a declared path ignored by the parent's rules, or a baseline file whose clean conversion differs from its index blob
-- `unreported-filesystem-change`, `directory-metadata`, `directory-xattrs` (`validateNativeWorkspaceContent`): a delta file the changeset does not declare, or directory mode, ownership or xattrs Git cannot reproduce. Baseline metadata is read through `os.OpenRoot`, and never through an ancestor the delta replaced or introduced.
+- `unreported-filesystem-change`, `directory-metadata`, `directory-xattrs` (`validateNativeWorkspaceContent`): a delta file the changeset does not declare, or a changed mode or ownership of an existing directory, or directory xattrs. Directories the delta introduces may have any mode and owner: the replay ends with the same directory as the legacy merge. Baseline metadata is read through `os.OpenRoot`, and never through an ancestor the delta replaced or introduced.
 - `unsafe-write-path`: a checkout path through an existing non-directory
 
-The span `git native workspace merge` records `dagger.git.native_merge.supported`, `dagger.git.native_merge.fallback_reason` and `dagger.git.native_merge.scoped_stage_paths`.
+The span `git native workspace merge` records `dagger.git.native_merge.supported`, `dagger.git.native_merge.fallback_reason` and `dagger.git.native_merge.scoped_stage_paths`. Ineligible provenance is recorded too, as `workspace-` or `incoming-` followed by the failed check (`before-not-git-tree`, `before-commit-mismatch`, `before-repository-mismatch`, ...).
+
+The general merge it falls back to (`gitMergeChangesets`) commits the whole base tree as its merge base, since directory rename detection depends on every path, but first tries a scoped base (`initScopedGitRepo`): objects are written only for paths either changeset declares or its diff overlays, removed or replaced subtrees, and control files; every other file is only hashed into the index (`update-index --info-only`, `write-tree --missing-ok`). Any failure other than the merge's own conflict redoes the merge with the full `git add -A` base. The span `scoped git merge base` records `dagger.git.scoped_merge.supported` and `dagger.git.scoped_merge.fallback_reason`.
 
 ## Incremental Source Checkout
 
