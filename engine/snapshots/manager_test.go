@@ -491,7 +491,7 @@ func TestApplySnapshotDiffNilContract(t *testing.T) {
 		require.Empty(t, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls[0])
 	})
 
-	t.Run("uses content-aware comparison", func(t *testing.T) {
+	t.Run("uses content-aware comparison with the shared-inode shortcut", func(t *testing.T) {
 		cm := newApplySnapshotDiffTestManager(t)
 		lower := addApplySnapshotDiffTestImmutable(t, cm, "lower-snapshot")
 		upper := addApplySnapshotDiffTestImmutable(t, cm, "upper-snapshot")
@@ -503,7 +503,7 @@ func TestApplySnapshotDiffNilContract(t *testing.T) {
 		require.Equal(t, []Diff{{
 			Lower:      "lower-snapshot",
 			Upper:      "upper-snapshot",
-			Comparison: fsdiff.CompareContentOnMetadataMatch,
+			Comparison: fsdiff.CompareInodeThenContent,
 		}}, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls[0])
 	})
 }

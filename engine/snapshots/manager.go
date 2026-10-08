@@ -541,8 +541,12 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 	var diffs []Diff
 	if upper == nil || lower.SnapshotID() != upper.SnapshotID() {
 		diff := Diff{
-			Lower:      lower.SnapshotID(),
-			Comparison: fsdiff.CompareContentOnMetadataMatch,
+			Lower: lower.SnapshotID(),
+			// A file both views resolve to one backing inode (snapshots
+			// of one lineage share unchanged files) is unchanged: same
+			// content and metadata. Without that shortcut, a double walk
+			// reads every file of both trees whose stat matches.
+			Comparison: fsdiff.CompareInodeThenContent,
 		}
 		if upper != nil {
 			diff.Upper = upper.SnapshotID()
