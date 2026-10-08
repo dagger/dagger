@@ -3,6 +3,7 @@ package wcprof
 import (
 	"bytes"
 	"context"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -181,6 +182,69 @@ func TestOpWaitLinkRoundtrip(t *testing.T) {
 	if strs[parentEv.ClientID] != "client1" {
 		t.Fatalf("client = %q", strs[parentEv.ClientID])
 	}
+}
+
+func TestLockRecordsContendedWait(t *testing.T) {
+	r := withTestRecorder(t, 0)
+	ctx, op := BeginOp(context.Background(), OpKindLazy, "Container.withMountedFile", OpOpts{})
+
+	// Uncontended: no wait recorded.
+	var mu sync.Mutex
+	Lock(ctx, &mu, "test.mu")
+	if evs := drainEvents(r); len(evs) != 0 {
+		t.Fatalf("uncontended lock recorded %d events", len(evs))
+	}
+
+	// Contended: the time blocked is a lock wait of the current op.
+	locked := make(chan struct{})
+	go func() {
+		Lock(ctx, &mu, "test.mu")
+		close(locked)
+	}()
+	for !waitingOn(r) {
+		runtime.Gosched()
+	}
+	mu.Unlock()
+	<-locked
+	mu.Unlock()
+
+	evs := drainEvents(r)
+	if len(evs) != 1 {
+		t.Fatalf("expected 1 wait event, got %d: %+v", len(evs), evs)
+	}
+	w := evs[0]
+	if w.Type != EventTypeWait || w.Reason != WaitReasonLock || w.ParentID != op.ID() || w.TargetID != 0 {
+		t.Fatalf("unexpected wait event: %+v", w)
+	}
+	if got := r.strings.snapshot()[w.IdentID]; got != "test.mu" {
+		t.Fatalf("wait ident: got %q", got)
+	}
+	if w.EndNS < w.StartNS {
+		t.Fatalf("wait interval inverted: %+v", w)
+	}
+
+	// Disabled: still locks, records nothing.
+	globalOn.Store(false)
+	mu.Lock()
+	go func() {
+		Lock(context.Background(), &mu, "test.mu")
+		mu.Unlock()
+	}()
+	mu.Unlock()
+	mu.Lock()
+	mu.Unlock()
+	if evs := drainEvents(r); len(evs) != 1 {
+		t.Fatalf("disabled lock recorded events: %+v", evs)
+	}
+}
+
+// waitingOn reports whether a lock wait has begun: Lock interns its ident
+// right before blocking.
+func waitingOn(r *Recorder) bool {
+	r.strings.mu.RLock()
+	defer r.strings.mu.RUnlock()
+	_, ok := r.strings.byValue["test.mu"]
+	return ok
 }
 
 func TestConcurrentRecording(t *testing.T) {

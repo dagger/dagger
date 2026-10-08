@@ -116,7 +116,7 @@ func TestSnapshotOwnerWaitsForWholeContainer(t *testing.T) {
 	require.NoError(t, (<-ownerDone).err)
 	require.True(t, json.Valid(snapshot.Bytes()))
 	require.Contains(t, snapshot.String(), `"parts"`)
-	revision, links, err := ctr.ReadSnapshotOwner()
+	revision, links, err := ctr.ReadSnapshotOwner(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, dagql.OutputRevision(1), revision)
 	require.Equal(t, []dagql.PersistedSnapshotRefLink{{Role: "fs", RefKey: "owned"}}, links)
@@ -125,7 +125,7 @@ func TestSnapshotOwnerWaitsForWholeContainer(t *testing.T) {
 func startSnapshotOwnerRead(value dagql.SnapshotOwnerReader) <-chan snapshotOwnerReadResult {
 	done := make(chan snapshotOwnerReadResult, 1)
 	go func() {
-		revision, links, err := value.ReadSnapshotOwner()
+		revision, links, err := value.ReadSnapshotOwner(context.Background())
 		done <- snapshotOwnerReadResult{revision, links, err}
 	}()
 	return done
@@ -163,7 +163,8 @@ func TestSnapshotOwnerCompletedReaders(t *testing.T) {
 				ctr.Lazy = op
 				ctr.FS.setValue(containerPersistenceTestDirectory("owned", "/"))
 				require.NoError(t, op.LazyState.Evaluate(t.Context(), "completed", nil))
-				value, guard, nonblocking = ctr, ctr.lockSnapshotOwnerRead, ctr
+				value, nonblocking = ctr, ctr
+				guard = func() (func(), error) { return ctr.lockSnapshotOwnerRead(t.Context()) }
 			} else {
 				op := &FileBlobLazy{LazyState: NewLazyState()}
 				file := &File{Lazy: op, File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File])}
@@ -173,9 +174,11 @@ func TestSnapshotOwnerCompletedReaders(t *testing.T) {
 					return nil
 				}))
 				value, nonblocking = file, file
-				guard = func() (func(), error) { return file.lockSnapshotOwnerRead(func() any { return file.Lazy }) }
+				guard = func() (func(), error) {
+					return file.lockSnapshotOwnerRead(t.Context(), func() any { return file.Lazy })
+				}
 			}
-			before, links, err := value.ReadSnapshotOwner()
+			before, links, err := value.ReadSnapshotOwner(t.Context())
 			require.NoError(t, err)
 			require.Len(t, links, 1)
 			unlock, err := guard()
@@ -247,7 +250,7 @@ func TestSnapshotOwnerWaitsForBody(t *testing.T) {
 			require.NoError(t, result.err)
 			require.Len(t, result.links, 1)
 			require.Equal(t, "owned", result.links[0].RefKey)
-			again, links, err := value.ReadSnapshotOwner()
+			again, links, err := value.ReadSnapshotOwner(t.Context())
 			require.NoError(t, err)
 			require.Equal(t, result.revision, again)
 			require.Equal(t, result.links, links)
