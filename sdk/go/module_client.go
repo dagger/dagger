@@ -11,7 +11,7 @@ import (
 )
 
 // ErrClientClosed is returned when a query uses an explicitly closed connection.
-var ErrClientClosed = errors.New("Dagger client is closed")
+var ErrClientClosed = errors.New("dagger client is closed")
 
 type moduleSpec struct{ address, pin string }
 type moduleLoad struct {
