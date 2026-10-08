@@ -2,10 +2,10 @@ package core
 
 import (
 	"context"
-	sdkcore "dagger.io/dagger/core"
 	"strings"
 	"time"
 
+	sdkcore "dagger.io/dagger/core"
 	"github.com/containerd/platforms"
 	"github.com/creack/pty"
 	"github.com/dagger/dagger/internal/buildkit/identity"
