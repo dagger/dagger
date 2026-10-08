@@ -61,12 +61,12 @@ source = 'github.com/does/notexist/tools@v2'
 		{"uninstall suffix", []string{"uninstall", "github.com/does/notexist/tools@v1"}, "version selector is not allowed"},
 		{"missing installation", []string{"mod", "version", "missing"}, `module "missing" is not installed`},
 		{"local update", []string{"mod", "update", "local", "--version=v2"}, "local module source"},
-		{"update all version", []string{"update", "--version=v2"}, "--version requires exactly one"},
-		{"conflicting version", []string{"update", "tools@v2", "--version=v3"}, "use either a version suffix or --version"},
-		{"update all source", []string{"update", "--source=github.com/does/notexist/other"}, "--source requires exactly one"},
-		{"source and version", []string{"update", "tools", "--source=github.com/does/notexist/other", "--version=v2"}, "use either --source or --version"},
-		{"source and suffix", []string{"update", "tools@v2", "--source=github.com/does/notexist/other"}, "use either --source or a version suffix"},
-		{"source not a module", []string{"update", "tools", "--source=./missing"}, "does not point to an initialized module"},
+		{"update all version", []string{"module", "update", "--version=v2"}, "--version requires exactly one"},
+		{"conflicting version", []string{"module", "update", "tools@v2", "--version=v3"}, "use either a version suffix or --version"},
+		{"update all source", []string{"module", "update", "--source=github.com/does/notexist/other"}, "--source requires exactly one"},
+		{"source and version", []string{"module", "update", "tools", "--source=github.com/does/notexist/other", "--version=v2"}, "use either --source or --version"},
+		{"source and suffix", []string{"module", "update", "tools@v2", "--source=github.com/does/notexist/other"}, "use either --source or a version suffix"},
+		{"source not a module", []string{"module", "update", "tools", "--source=./missing"}, "does not point to an initialized module"},
 		{"reinstall version", []string{"install", "github.com/does/notexist/tools@v2", "--name=tools"}, "use dagger mod update tools --version VERSION"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
@@ -133,7 +133,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleVersionUpdate(ctx context.Contex
 		args []string
 	}{
 		{"name flag", []string{"mod", "update", "tools", "--version=v2"}},
-		{"name suffix", []string{"update", "tools@v2"}},
+		{"name suffix", []string{"module", "update", "tools@v2"}},
 		{"source flag", []string{"mod", "update", remote.repoURL, "--version=v2"}},
 		{"source suffix", []string{"mod", "update", remote.repoURL + "@v2"}},
 	} {
