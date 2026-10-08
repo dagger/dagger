@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -1812,6 +1813,80 @@ func (ws *gitMergeWorkspace) touchAppliedPaths(paths *ChangesetPaths) error {
 	return nil
 }
 
+type mergeDir struct {
+	path string
+	info os.FileInfo
+}
+
+func (ws *gitMergeWorkspace) listDirs() ([]mergeDir, error) {
+	var dirs []mergeDir
+	err := filepath.WalkDir(ws.workDir, func(p string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() || p == ws.workDir {
+			return nil
+		}
+		rel, err := filepath.Rel(ws.workDir, p)
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		dirs = append(dirs, mergeDir{path: filepath.ToSlash(rel), info: info})
+		return nil
+	})
+	if err != nil {
+		return nil, TrimErrPathPrefix(err, ws.root)
+	}
+	return dirs, nil
+}
+
+// restorePrunedDirs recreates the merge base directories that git removed
+// along with their last file and that no changeset removes. Otherwise the
+// merged changeset reports them as removed, and exporting it deletes the whole
+// directory on the host. A host workspace's changeset holds only the touched
+// files and their parent directories, so removing one file empties every
+// parent up to the workspace root.
+func (ws *gitMergeWorkspace) restorePrunedDirs(baseDirs []mergeDir, contents ...*changesetContent) error {
+	removed := make(map[string]struct{})
+	for _, content := range contents {
+		for _, p := range content.paths.AllRemoved {
+			if dir, ok := strings.CutSuffix(p, "/"); ok {
+				removed[dir] = struct{}{}
+			}
+		}
+	}
+	for _, dir := range baseDirs {
+		if _, ok := removed[dir.path]; ok {
+			continue
+		}
+		full, err := RootPathWithoutFinalSymlink(ws.root, path.Join(ws.dir, dir.path))
+		if err != nil {
+			return err
+		}
+		if _, err := os.Lstat(full); !errors.Is(err, os.ErrNotExist) {
+			if err != nil {
+				return TrimErrPathPrefix(err, ws.root)
+			}
+			continue
+		}
+		stat := dir.info.Sys().(*syscall.Stat_t)
+		if err := os.Mkdir(full, 0o700); err != nil {
+			return TrimErrPathPrefix(err, ws.root)
+		}
+		if err := os.Chmod(full, dir.info.Mode()); err != nil {
+			return TrimErrPathPrefix(err, ws.root)
+		}
+		if err := os.Lchown(full, int(stat.Uid), int(stat.Gid)); err != nil {
+			return TrimErrPathPrefix(err, ws.root)
+		}
+	}
+	return nil
+}
+
 // verifyMergedPaths confirms that every file-level path the given changesets
 // declared as added or modified exists in the merged worktree. A conflict-free
 // merge has no legitimate way to drop one; a missing path means the temporary
@@ -1918,6 +1993,10 @@ func gitMergeChangesets(
 	strategy WithChangesetMergeConflict,
 ) (*Directory, error) {
 	return withGitMergeWorkspace(ctx, base, "Changeset.withChangeset git merge", func(ws *gitMergeWorkspace) error {
+		baseDirs, err := ws.listDirs()
+		if err != nil {
+			return err
+		}
 		if err := initGitRepo(ctx, ws.workDir); err != nil {
 			return err
 		}
@@ -1960,6 +2039,10 @@ func gitMergeChangesets(
 			}
 		}
 
+		if err := ws.restorePrunedDirs(baseDirs, ours, theirs); err != nil {
+			return err
+		}
+
 		if mergeErr == nil && conflicts.IsEmpty() {
 			if err := ws.verifyMergedPaths(ours, theirs); err != nil {
 				return err
@@ -1980,6 +2063,10 @@ func gitOctopusMergeChangesets(
 	otherContents []*changesetContent,
 ) (*Directory, error) {
 	return withGitMergeWorkspace(ctx, base, "Changeset.withChangesets git octopus merge", func(ws *gitMergeWorkspace) error {
+		baseDirs, err := ws.listDirs()
+		if err != nil {
+			return err
+		}
 		if err := enginetel.Task(ctx, "init git", func(ctx context.Context) error {
 			return initGitRepo(ctx, ws.workDir)
 		}); err != nil {
@@ -2017,9 +2104,14 @@ func gitOctopusMergeChangesets(
 			return err
 		}
 
+		contents := append([]*changesetContent{ourContent}, otherContents...)
+		if err := ws.restorePrunedDirs(baseDirs, contents...); err != nil {
+			return err
+		}
+
 		// An octopus merge refuses to run with conflicts, so on success every
 		// declared path must have survived.
-		if err := ws.verifyMergedPaths(append([]*changesetContent{ourContent}, otherContents...)...); err != nil {
+		if err := ws.verifyMergedPaths(contents...); err != nil {
 			return err
 		}
 

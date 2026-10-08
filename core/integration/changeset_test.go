@@ -2128,6 +2128,74 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// A host workspace's changeset holds only the touched paths and their parent
+// directories. Removing such a file leaves its parents empty, and the merge
+// must keep them: a removed parent is exported as a removal of the whole host
+// directory.
+func (ChangesetSuite) TestMergeKeepsDirectoriesARemovalEmpties(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	before := c.Directory().WithNewFile("a/b/gen.txt", "generated")
+	removal := before.WithoutFile("a/b/gen.txt").Changes(before)
+
+	t.Run("one changeset", func(ctx context.Context, t *testctx.T) {
+		merged := c.Changeset().WithChangesets([]*dagger.Changeset{removal})
+
+		removed, err := merged.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a/b/gen.txt"}, removed)
+
+		entries, err := merged.After().Glob(ctx, "**")
+		require.NoError(t, err)
+		require.Equal(t, []string{"a/", "a/b/"}, entries)
+	})
+
+	t.Run("octopus merge", func(ctx context.Context, t *testctx.T) {
+		addition := before.WithNewFile("c.txt", "c").Changes(before)
+		merged := c.Changeset().WithChangesets([]*dagger.Changeset{removal, addition})
+
+		removed, err := merged.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a/b/gen.txt"}, removed)
+
+		entries, err := merged.After().Glob(ctx, "**")
+		require.NoError(t, err)
+		require.Equal(t, []string{"a/", "a/b/", "c.txt"}, entries)
+	})
+
+	t.Run("removed directory stays removed", func(ctx context.Context, t *testctx.T) {
+		dirRemoval := before.WithoutDirectory("a").Changes(before)
+		merged := c.Changeset().WithChangesets([]*dagger.Changeset{dirRemoval})
+
+		removed, err := merged.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a/"}, removed)
+
+		entries, err := merged.After().Glob(ctx, "**")
+		require.NoError(t, err)
+		require.Empty(t, entries)
+	})
+
+	t.Run("directory replaced by a file stays a file", func(ctx context.Context, t *testctx.T) {
+		replacement := before.WithoutDirectory("a").WithNewFile("a", "file").Changes(before)
+		merged := c.Changeset().WithChangesets([]*dagger.Changeset{replacement})
+
+		removed, err := merged.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a/"}, removed)
+		added, err := merged.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a"}, added)
+
+		entries, err := merged.After().Glob(ctx, "**")
+		require.NoError(t, err)
+		require.Equal(t, []string{"a"}, entries)
+		contents, err := merged.After().File("a").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file", contents)
+	})
+}
+
 // TestMergedDirectoryReplay restores the actual merge output embedded in a
 // conversation on a different engine. Replaying on the producing engine would
 // let its cache hide a directory with synthetic, non-replayable provenance.
