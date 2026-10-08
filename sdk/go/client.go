@@ -22,8 +22,11 @@ import (
 // needs to import dagger.io/dagger, so dagger.io/dagger cannot import core
 // back.
 type Client struct {
-	conn   engineconn.EngineConn
-	client graphql.Client
+	conn      engineconn.EngineConn
+	client    graphql.Client
+	modulesMu sync.Mutex
+	modules   map[moduleSpec]*moduleLoad
+	closed    bool
 }
 
 // ClientOpt holds a client option
@@ -145,11 +148,19 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 
 // GraphQLClient returns the underlying graphql.Client
 func (c *Client) GraphQLClient() graphql.Client {
-	return c.client
+	return connectionGraphQLClient{c}
 }
 
 // Close the engine connection
 func (c *Client) Close() error {
+	c.modulesMu.Lock()
+	if c.closed {
+		c.modulesMu.Unlock()
+		return nil
+	}
+	c.closed = true
+	c.modules = nil
+	c.modulesMu.Unlock()
 	if c.conn != nil {
 		return c.conn.Close()
 	}
@@ -170,8 +181,8 @@ func Default(ctx context.Context) (*Client, error) {
 	defaultClientMu.Lock()
 	defer defaultClientMu.Unlock()
 
-	if defaultClient == nil {
-		c, err := Connect(ctx, WithLogOutput(os.Stdout))
+	if defaultClient == nil || defaultClient.isClosed() {
+		c, err := Connect(ctx, WithLogOutput(os.Stderr))
 		if err != nil {
 			return nil, err
 		}
@@ -202,7 +213,7 @@ func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
 		r.Errors = resp.Errors
 		r.Extensions = resp.Extensions
 	}
-	return c.client.MakeRequest(ctx, &graphql.Request{
+	return c.GraphQLClient().MakeRequest(ctx, &graphql.Request{
 		Query:     req.Query,
 		Variables: req.Variables,
 		OpName:    req.OpName,
