@@ -286,7 +286,8 @@ git commit -m attributes
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitReconciliationOracle(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t, dagger.WithLogOutput(io.Discard))
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture, inspector := workspaceReconciliationFixture(c)
 	const text = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
 	for _, tc := range []workspaceReconciliationCase{
@@ -384,6 +385,9 @@ with open('/work/file.txt', 'w') as f: f.write('selected\n')
 		// client lifetime sequential, and make the last log name the failure.
 		checkWorkspaceReconciliation(ctx, t, c, fixture, inspector, tc)
 	}
+	// Every case runs the identity-wrapped legacy merge, conflicts included.
+	require.NoError(t, c.Close())
+	requireScopedMergeBases(t, sink)
 }
 
 func (WorkspaceSuite) TestWorkspaceRemoteFirstNativeCommit(ctx context.Context, t *testctx.T) {
@@ -452,6 +456,42 @@ func (WorkspaceSuite) TestWorkspaceRemoteFirstNativeCommit(ctx context.Context, 
 	require.Positive(t, incremental, "remote canonical parent must be reused")
 }
 
+// requireScopedMergeBases requires the general merges in sink's trace to have
+// built their merge base scoped, without falling back to a full `git add -A`
+// base.
+func requireScopedMergeBases(t *testctx.T, sink *agentTraceSink) {
+	t.Helper()
+	traces, _ := sink.capture()
+	scoped := map[string]string{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.Name != "scoped git merge base" || span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					scoped[id] = "no dagger.git.scoped_merge.supported"
+					for _, attr := range span.Attributes {
+						switch attr.Key {
+						case "dagger.git.scoped_merge.supported":
+							if attr.Value.GetBoolValue() {
+								scoped[id] = ""
+							}
+						case "dagger.git.scoped_merge.fallback_reason":
+							scoped[id] = attr.Value.GetStringValue()
+						}
+					}
+				}
+			}
+		}
+	}
+	require.NotEmpty(t, scoped, "must exercise the general merge")
+	for _, reason := range scoped {
+		require.Empty(t, reason, "scoped merge base fell back")
+	}
+}
+
 func (WorkspaceSuite) TestWorkspaceWithCommitNativeReconciliationTrace(ctx context.Context, t *testctx.T) {
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
@@ -481,6 +521,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitNativeReconciliationTrace(ctx conte
 			}
 		}
 	}
+	requireScopedMergeBases(t, sink)
 	var nativeMerges, mergeTrees, legacyMerges int
 	for id, name := range names {
 		if supported[id] {
