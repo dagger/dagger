@@ -255,7 +255,12 @@ func diffLayerDeltaPath(
 	if err != nil {
 		return false, pkgerrors.Wrap(err, "failed to stat lower file during overlay diff")
 	}
+	// Every walk beneath path reports through here, and addDirChanges checks
+	// no context of its own: an added tree can be large.
 	underPath := func(k continuityfs.ChangeKind, p string, f os.FileInfo, err error) error {
+		if err := ctx.Err(); err != nil {
+			return context.Cause(ctx)
+		}
 		return changeFn(k, filepath.Join(path, p), f, err)
 	}
 	// A directory upper has where lower has none holds only additions, but
