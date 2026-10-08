@@ -837,6 +837,76 @@ func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, stdout2, "rw-r--r--")
 	})
+
+	t.Run("same result as a withFile chain", func(ctx context.Context, t *testctx.T) {
+		src := c.Directory().
+			WithNewFile("one", "one").
+			WithNewFile("nested/two", "two", dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).
+			WithNewFile("other/one", "one again")
+		owned := c.Container().From(alpineImage).
+			WithExec([]string{"sh", "-c", "echo owned > /owned && chown 1000:1000 /owned && chmod 0640 /owned"}).
+			File("/owned")
+		files := []*dagger.File{
+			src.File("one"),
+			src.File("nested/two"),
+			c.Directory().WithNewFile("three", "three", dagger.DirectoryWithNewFileOpts{Permissions: 0o600}).File("three"),
+			owned,
+			// Same name as the first: the later copy wins.
+			src.File("other/one"),
+			c.Directory().WithNewFile("deep/four", "four").File("deep/four").WithName("renamed"),
+		}
+		// The receiver is a subdirectory and has a file that one copy replaces.
+		base := c.Directory().
+			WithNewFile("root/keep", "keep").
+			WithNewFile("root/dest/three", "replaced").
+			WithNewFile("outside", "not in the receiver").
+			Directory("root")
+
+		listing := func(ctx context.Context, t *testctx.T, dir *dagger.Directory) string {
+			out, err := c.Container().From(alpineImage).
+				WithMountedDirectory("/m", dir).
+				WithWorkdir("/m").
+				WithExec([]string{"sh", "-c", `find . -exec stat -c '%n %F %a %u:%g %s' {} + | sort; find . -type f | sort | xargs cat`}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return out
+		}
+
+		perms := 0o640
+		for _, dest := range []string{"dest", "/dest/", ".", "a/b/c"} {
+			for _, mode := range []*int{nil, &perms} {
+				t.Run(fmt.Sprintf("%s permissions=%v", dest, mode != nil), func(ctx context.Context, t *testctx.T) {
+					var opts dagger.DirectoryWithFilesOpts
+					var fileOpts dagger.DirectoryWithFileOpts
+					if mode != nil {
+						opts.Permissions = *mode
+						fileOpts.Permissions = *mode
+					}
+					bulk := base.WithFiles(dest, files, opts)
+					chain := base
+					for _, f := range files {
+						name, err := f.Name(ctx)
+						require.NoError(t, err)
+						chain = chain.WithFile(filepath.Join(dest, name), f, fileOpts)
+					}
+
+					bulkDigest, err := bulk.Digest(ctx)
+					require.NoError(t, err)
+					chainDigest, err := chain.Digest(ctx)
+					require.NoError(t, err)
+					require.Equal(t, chainDigest, bulkDigest)
+
+					want := listing(ctx, t, chain)
+					require.Contains(t, want, "one again")
+					require.NotContains(t, want, "not in the receiver")
+					if strings.Contains(dest, "dest") {
+						require.NotContains(t, want, "replaced")
+					}
+					require.Equal(t, want, listing(ctx, t, bulk))
+				})
+			}
+		}
+	})
 }
 
 func (DirectorySuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {

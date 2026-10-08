@@ -246,6 +246,12 @@ var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
 	persistedDirectoryLazyKindWithFile: parentAndSource("sourceResultID",
 		func(p *persistedDirectoryWithFileLazy) *uint64 { return &p.ParentResultID },
 		func(p *persistedDirectoryWithFileLazy) *uint64 { return &p.SourceResultID }),
+	persistedDirectoryLazyKindWithFiles: persistedLazyStructVisitor(func(p *persistedDirectoryWithFilesLazy, w *persistedRefWalker) error {
+		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
+			return err
+		}
+		return w.children("sourceResultIDs", p.SourceResultIDs)
+	}),
 	persistedDirectoryLazyKindWithTimestamps:   parentOnly(func(p *persistedDirectoryWithTimestampsLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindWithNewDirectory: parentOnly(func(p *persistedDirectoryWithNewDirectoryLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindSubdirectory:     parentOnly(func(p *persistedDirectorySubdirectoryLazy) *uint64 { return &p.ParentResultID }),
