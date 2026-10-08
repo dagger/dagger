@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	sdkcore "dagger.io/dagger/core"
 	"strings"
 	"time"
 

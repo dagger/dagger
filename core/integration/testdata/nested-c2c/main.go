@@ -7,8 +7,6 @@ import (
 	"os"
 	"strconv"
 
-	"dagger.io/dagger/core"
-
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"golang.org/x/sync/errgroup"
