@@ -622,7 +622,7 @@ CMD ["cat", "/copied.txt"]
 	})
 
 	t.Run("run-without-nesting", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
+		dir := sdkcore.NewQuery(c).Directory().WithNewFile("Dockerfile", fmt.Sprintf(`FROM %s
 RUN test -z "$DAGGER_SESSION_PORT" && test -z "$DAGGER_SESSION_TOKEN"
 `, alpineImage))
 

@@ -7,12 +7,13 @@ package core
 // - workspace_compat_test.go: detecting and running legacy compat workspaces.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"

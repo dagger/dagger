@@ -10,13 +10,14 @@ package core
 // - services_test.go: core service lifecycle and networking.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"

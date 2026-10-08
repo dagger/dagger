@@ -1,7 +1,6 @@
 package core
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
@@ -741,7 +742,7 @@ func transferBoundToolControl(ctx context.Context, t *testctx.T, client *dagger.
 	require.NoError(t, client.Do(ctx, &dagger.Request{Query: `query($id:ID!){llm{withTools(object:$id){id}}}`, Variables: map[string]any{"id": saved}}, &dagger.Response{Data: &binding}))
 	// The local handle only seeds an inert agent. Reconstruction uses the
 	// committed control digest and complete payload closure observed by the sink.
-	recipe, err := sink.captureLLMRecipe(ctx, t, client, core.Ref[*core.LLM](client, core.ID(binding.LLM.WithTools.ID)))
+	recipe, err := sink.captureLLMRecipe(ctx, t, client, core.Ref[*core.LLM](core.NewQuery(client), core.ID(binding.LLM.WithTools.ID)))
 	require.NoError(t, err)
 	bound := new(call.ID)
 	require.NoError(t, bound.Decode(string(recipe)))

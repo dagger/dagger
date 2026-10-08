@@ -19,7 +19,8 @@ import (
 	"sort"
 	"time"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
+
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
@@ -147,7 +148,7 @@ func (LLMSuite) TestBenchChangesetApply(ctx context.Context, t *testctx.T) {
 	scenarios := []string{"edit", "codegen", "codegenMerged", "vendor", "noop"}
 
 	setup := connect(ctx, t)
-	repo := setup.Container().From(alpineImage).
+	repo := core.NewQuery(setup).Container().From(alpineImage).
 		WithExec([]string{"sh", "-ec", benchRepoScript}).
 		Directory("/repo")
 	_, err := repo.Sync(ctx)
@@ -196,22 +197,22 @@ func (s benchSample) String() string {
 
 // runChangesetBench makes one tool call on a fresh workspace in its own
 // client, then reads the resulting workspace once.
-func runChangesetBench(ctx context.Context, t *testctx.T, repoID dagger.ID, scenario string, captureRecipe bool) benchSample {
+func runChangesetBench(ctx context.Context, t *testctx.T, repoID core.ID, scenario string, captureRecipe bool) benchSample {
 	c, sink := connectWithTrace(ctx, t)
-	ws := dagger.Ref[*dagger.Directory](c, repoID).
+	ws := core.Ref[*core.Directory](core.NewQuery(c), repoID).
 		WithNewFile("NONCE", identity.NewID()).
 		WithNewFile("dagger.toml", "[modules.bench]\nsource = \"modules/bench\"\n").
 		WithNewFile("modules/bench/dagger.json", `{"name":"bench","engineVersion":"v1.0.0-0","sdk":"dang"}`).
 		WithNewFile("modules/bench/main.dang", benchModule()).
 		AsWorkspace()
-	model := cannedRecordingModel(ctx, t, c, c.LLM().
+	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("go").
-		WithResponse([]dagger.LLMContentBlockInput{{
-			Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: scenario,
+		WithResponse([]core.LLMContentBlockInput{{
+			Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: scenario,
 		}}).
 		WithToolResult("call_1", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}}))
-	composed, err := composeArtifactAgents(ctx, c, ws, nil, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws))
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "done"}}))
+	composed, err := composeArtifactAgents(ctx, c, ws, nil, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws))
 	require.NoError(t, err)
 
 	var s benchSample

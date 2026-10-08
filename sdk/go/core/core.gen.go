@@ -23431,7 +23431,7 @@ func Load[T Loadable[T]](ctx context.Context, root *Query, id ID) (T, error) {
 	return zero.WithGraphQLQuery(selectNode(root.query, id, expectedType)), nil
 }
 
-// initialize an address to load directories, containers, secrets or other object types.
+// Resolve external references only.
 func NewAddress(value string) *Address {
 	root := initRoot()
 	return root.Address(value)
@@ -23601,6 +23601,16 @@ func NewLLM(opts ...LLMOpts) *LLM {
 	return root.LLM(opts...)
 }
 
+// Start an empty run of text and media content, independent of any conversation.
+//
+// Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+//
+// Experimental: LLM support is not yet stabilized
+func NewLLMContent() *LLMContent {
+	root := initRoot()
+	return root.LLMContent()
+}
+
 // Create a new module.
 func NewModule() *Module {
 	root := initRoot()
@@ -23645,6 +23655,16 @@ func ServeModule(ctx context.Context, address string, opts ...ServeModuleOpts) e
 func SetSecret(name string, plaintext string) *Secret {
 	root := initRoot()
 	return root.SetSecret(name, plaintext)
+}
+
+// Name the current session.
+//
+// The title renames the session wherever its telemetry is shown (the calling client's primary span, e.g. the CLI's command span) and labels its engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+//
+// Experimental: Session APIs are likely to change.
+func SetSessionTitle(ctx context.Context, title string) error {
+	root := initRoot()
+	return root.SetSessionTitle(ctx, title)
 }
 
 // Creates source map metadata.

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -16,10 +18,10 @@ import (
 
 func (GitSuite) TestGitBranchFiltering(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("base", "base"))
-	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	service, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base", "base"))
+	repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service})
 	checkout := repo.Head().Tree()
-	ctr := c.Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithDirectory("/src", checkout).WithWorkdir("/src").With(gitUserConfig).
 		WithExec([]string{"git", "checkout", "-b", "feature"}).
@@ -33,7 +35,7 @@ func (GitSuite) TestGitBranchFiltering(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	baseID, err := repo.Head().ID(ctx)
 	require.NoError(t, err)
-	query := func(refID dagger.ID) bool {
+	query := func(refID core.ID) bool {
 		var response struct {
 			Node struct {
 				DefaultRemote struct {
@@ -82,7 +84,7 @@ func (GitSuite) TestGitBranchFiltering(ctx context.Context, t *testctx.T) {
 
 func (GitSuite) TestGitBranchFilteringRemoteSelectionPersistence(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	fixture := c.Container().From(alpineImage).
+	fixture := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
 		WithWorkdir("/repo").WithExec([]string{"git", "init", "-b", "feature"}).
 		WithNewFile("base", "base").WithExec([]string{"git", "add", "."}).
@@ -95,15 +97,15 @@ func (GitSuite) TestGitBranchFilteringRemoteSelectionPersistence(ctx context.Con
 	assertGitRemoteSelection(ctx, t, c, repo, []string{"-fork", "team/trunk"}, "team/trunk")
 	frozen := repo.Head().AsWorkspace().Snapshot()
 	assertGitRemoteSelection(ctx, t, c, frozen.Git().Head().AsRepository(), []string{"-fork", "team/trunk"}, "team/trunk")
-	retained := frozen.Git().Head().Tree(dagger.GitRefTreeOpts{Depth: 0})
+	retained := frozen.Git().Head().Tree(core.GitRefTreeOpts{Depth: 0})
 	assertGitRemoteSelection(ctx, t, c, retained.AsGit(), []string{"-fork", "team/trunk"}, "team/trunk")
-	before := repo.Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	before := repo.Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 	changes := before.WithNewFile("authored", "authored").Changes(before)
 	headSHA, err := repo.Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	for _, derived := range []struct {
 		name string
-		repo *dagger.GitRepository
+		repo *core.GitRepository
 	}{
 		{"supplied storage", repo.WithContents(retained)},
 		{"bundle import", repo.WithBundle(repo.Bundle([]string{"HEAD"})).Ref(headSHA).AsRepository()},
@@ -111,7 +113,7 @@ func (GitSuite) TestGitBranchFilteringRemoteSelectionPersistence(ctx context.Con
 	} {
 		t.Run(derived.name, func(ctx context.Context, t *testctx.T) {
 			assertGitRemoteSelection(ctx, t, c, derived.repo, []string{"-fork", "team/trunk"}, "team/trunk")
-			assertGitRemoteSelection(ctx, t, c, derived.repo.Head().Tree(dagger.GitRefTreeOpts{Depth: 0}).AsGit(), []string{"-fork", "team/trunk"}, "team/trunk")
+			assertGitRemoteSelection(ctx, t, c, derived.repo.Head().Tree(core.GitRefTreeOpts{Depth: 0}).AsGit(), []string{"-fork", "team/trunk"}, "team/trunk")
 		})
 	}
 	detached := fixture.WithExec([]string{"git", "checkout", "--detach"}).Directory(".").AsGit()
@@ -120,11 +122,11 @@ func (GitSuite) TestGitBranchFilteringRemoteSelectionPersistence(ctx context.Con
 
 func (GitSuite) TestGitBranchFilteringRemoteURLRewrite(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("remote", "remote"))
-	source := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	service, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("remote", "remote"))
+	source := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service})
 	want, err := source.Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	local := c.Container().From(alpineImage).
+	local := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
 		WithWorkdir("/repo").WithExec([]string{"git", "init", "-b", "feature"}).
 		WithNewFile("base", "base").WithExec([]string{"git", "add", "."}).
@@ -134,14 +136,14 @@ func (GitSuite) TestGitBranchFilteringRemoteURLRewrite(ctx context.Context, t *t
 	remote, err := source.WithContents(local).DefaultRemote(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, remote)
-	got, err := remote.Repository().Head(dagger.GitRepositoryHeadOpts{NoLock: true}).CommitSHA(ctx)
+	got, err := remote.Repository().Head(core.GitRepositoryHeadOpts{NoLock: true}).CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, want, got, "the resolved URL must retain access to the source service")
 }
 
 func (GitSuite) TestGitBranchFilteringEditedCheckout(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	fixture := c.Container().From(alpineImage).
+	fixture := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
 		WithWorkdir("/repo").WithExec([]string{"git", "init", "-b", "feature"}).
 		WithNewFile("base", "base").WithExec([]string{"git", "add", "."}).
@@ -150,7 +152,7 @@ func (GitSuite) TestGitBranchFilteringEditedCheckout(ctx context.Context, t *tes
 		WithExec([]string{"git", "remote", "add", "fork", "https://invalid.example/fork"}).
 		WithExec([]string{"git", "config", "branch.feature.remote", "trunk"}).
 		WithExec([]string{"git", "config", "branch.feature.merge", "refs/heads/main"})
-	retained := fixture.Directory(".").AsGit().Head().Tree(dagger.GitRefTreeOpts{Depth: 0})
+	retained := fixture.Directory(".").AsGit().Head().Tree(core.GitRefTreeOpts{Depth: 0})
 	checkout := fixture.WithDirectory("/edited", retained).WithWorkdir("/edited")
 	assertGitRemoteSelection(ctx, t, c, retained.AsGit(), []string{"fork", "trunk"}, "trunk")
 	t.Run("rename", func(ctx context.Context, t *testctx.T) {
@@ -173,7 +175,7 @@ func (GitSuite) TestGitBranchFilteringEditedCheckout(ctx context.Context, t *tes
 
 func (GitSuite) TestGitBranchFilteringShallow(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	fixture := c.Container().From(alpineImage).
+	fixture := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
 		WithWorkdir("/repo").WithExec([]string{"git", "init", "-b", "main"}).
 		WithNewFile("base", "base").WithExec([]string{"git", "add", "."}).
@@ -182,7 +184,7 @@ func (GitSuite) TestGitBranchFilteringShallow(ctx context.Context, t *testctx.T)
 	fixture = fixture.WithNewFile("tip", "tip").WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "tip"})
 	service, url := gitService(ctx, t, c, fixture.Directory("."))
-	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service})
 	shallow := repo.Head().Tree()
 	boundaries, err := shallow.File(".git/shallow").Contents(ctx)
 	require.NoError(t, err)
@@ -201,9 +203,9 @@ func (GitSuite) TestGitBranchFilteringShallow(ctx context.Context, t *testctx.T)
 
 func (GitSuite) TestGitBranchFilteringShallowUnrelatedHistory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	fixture := c.Container().From(alpineImage).
+	fixture := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).With(gitUserConfig)
-	makeHistory := func(path string) *dagger.Container {
+	makeHistory := func(path string) *core.Container {
 		prefix := strings.TrimPrefix(path, "/")
 		return fixture.WithWorkdir(path).
 			WithExec([]string{"git", "init", "-b", "main"}).
@@ -217,7 +219,7 @@ func (GitSuite) TestGitBranchFilteringShallowUnrelatedHistory(ctx context.Contex
 	primary := makeHistory("/primary")
 	other := makeHistory("/other")
 	service, url := gitService(ctx, t, c, primary.Directory("."))
-	source := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	source := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service})
 	joined := fixture.WithDirectory("/primary", primary.Directory(".")).
 		WithDirectory("/other", other.Directory(".")).WithWorkdir("/joined").
 		WithExec([]string{"git", "init", "-b", "checkout"}).
@@ -245,7 +247,7 @@ func (GitSuite) TestGitBranchFilteringShallowUnrelatedHistory(ctx context.Contex
 	// Either supplied ref may retain the source that can fill a boundary.
 	// A failed attempt through main's source must not discard that access.
 	otherService, otherURL := gitService(ctx, t, c, other.Directory("."))
-	otherSource := c.Git(otherURL, dagger.GitOpts{ExperimentalServiceHost: otherService})
+	otherSource := core.NewQuery(c).Git(otherURL, core.GitOpts{ExperimentalServiceHost: otherService})
 	otherBase, err := other.WithExec([]string{"git", "rev-parse", "HEAD~2"}).Stdout(ctx)
 	require.NoError(t, err)
 	withOtherBase := joined.
@@ -264,7 +266,7 @@ func (GitSuite) TestGitBranchFilteringApprovedHostHistory(ctx context.Context, t
 	c := fixture.client
 	fixture.git("remote", "rename", "origin", "trunk")
 	fixture.git("remote", "add", "fork", "https://invalid.example/fork")
-	base := c.CurrentWorkspace().Snapshot()
+	base := core.NewQuery(c).CurrentWorkspace().Snapshot()
 	baseID, err := base.Git().Head().ID(ctx)
 	require.NoError(t, err)
 	head := fixture.commit(ctx, t)
@@ -275,7 +277,7 @@ func (GitSuite) TestGitBranchFilteringApprovedHostHistory(ctx context.Context, t
 	var response struct {
 		Node struct {
 			Base struct {
-				AsGit struct{ ID dagger.ID }
+				AsGit struct{ ID core.ID }
 			}
 		}
 	}
@@ -287,14 +289,14 @@ func (GitSuite) TestGitBranchFilteringApprovedHostHistory(ctx context.Context, t
 		}`,
 		Variables: map[string]any{"id": baseID},
 	}, &dagger.Response{Data: &response}))
-	promoted := dagger.Ref[*dagger.GitRepository](c, response.Node.Base.AsGit.ID)
+	promoted := core.Ref[*core.GitRepository](core.NewQuery(c), response.Node.Base.AsGit.ID)
 	assertGitRemoteSelection(ctx, t, c, promoted, []string{"fork", "trunk"}, "trunk")
-	commits, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 100})
+	commits, err := head.Log(ctx, core.GitRefLogOpts{Limit: 100})
 	require.NoError(t, err)
 	headSHA, err := head.CommitSHA(ctx)
 	require.NoError(t, err)
 	require.ElementsMatch(t, append([]string{headSHA}, fixture.shas...), workspaceRemoteHistorySHAs(ctx, t, commits))
-	retained := head.Tree(dagger.GitRefTreeOpts{Depth: -1})
+	retained := head.Tree(core.GitRefTreeOpts{Depth: -1})
 	assertGitRemoteSelection(ctx, t, c, retained.AsGit(), []string{"fork", "trunk"}, "trunk")
 	require.NoError(t, c.Close())
 	_, full := workspaceRemoteHistoryFetches(fixture.sink, "")
@@ -326,10 +328,10 @@ func (GitSuite) TestGitBranchFilteringNativeHistory(ctx context.Context, t *test
 	var response struct {
 		Node struct {
 			Selection struct {
-				ID   dagger.ID
+				ID   core.ID
 				Head struct {
 					Base struct {
-						AsGit struct{ ID dagger.ID }
+						AsGit struct{ ID core.ID }
 					}
 				}
 			}
@@ -345,8 +347,8 @@ func (GitSuite) TestGitBranchFilteringNativeHistory(ctx context.Context, t *test
 		}`,
 		Variables: map[string]any{"id": id, "remotes": string(remotes)},
 	}, &dagger.Response{Data: &response}))
-	repo := dagger.Ref[*dagger.GitRepository](c, response.Node.Selection.ID)
-	assertGitRemoteSelection(ctx, t, c, dagger.Ref[*dagger.GitRepository](c, response.Node.Selection.Head.Base.AsGit.ID), []string{"fork", "trunk"}, "trunk")
+	repo := core.Ref[*core.GitRepository](core.NewQuery(c), response.Node.Selection.ID)
+	assertGitRemoteSelection(ctx, t, c, core.Ref[*core.GitRepository](core.NewQuery(c), response.Node.Selection.Head.Base.AsGit.ID), []string{"fork", "trunk"}, "trunk")
 	anchor := repo.Head()
 	first := workspaceRemoteHistoryCommit(ctx, t, c, anchor.AsWorkspace(), 1)
 	second := workspaceRemoteHistoryCommit(ctx, t, c, first, 2)
@@ -374,7 +376,7 @@ func (GitSuite) TestGitBranchFilteringNativeHistory(ctx context.Context, t *test
 	require.Empty(t, full, "freezing, committing and comparing native workspace commits must not hydrate older history")
 }
 
-func assertGitRemoteSelection(ctx context.Context, t *testctx.T, c *dagger.Client, repo *dagger.GitRepository, names []string, selected string) {
+func assertGitRemoteSelection(ctx context.Context, t *testctx.T, c *dagger.Client, repo *core.GitRepository, names []string, selected string) {
 	t.Helper()
 	id, err := repo.ID(ctx)
 	require.NoError(t, err)
@@ -403,8 +405,8 @@ func assertGitRemoteSelection(ctx context.Context, t *testctx.T, c *dagger.Clien
 
 func (GitSuite) TestGitBranchFilteringPrivateSnapshot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	repos := makeGitDir(c, c.Directory().WithNewFile("base", "base"), "main")
-	service, _ := httpServiceDirAuth(ctx, t, c, "", repos.WithDirectory("other.git", repos.Directory("repo.git")), "", c.SetSecret("remote-password", "foobar"))
+	repos := makeGitDir(c, core.NewQuery(c).Directory().WithNewFile("base", "base"), "main")
+	service, _ := httpServiceDirAuth(ctx, t, c, "", repos.WithDirectory("other.git", repos.Directory("repo.git")), "", core.NewQuery(c).SetSecret("remote-password", "foobar"))
 	service, err := service.Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -415,25 +417,25 @@ func (GitSuite) TestGitBranchFilteringPrivateSnapshot(ctx context.Context, t *te
 	require.NoError(t, err)
 	baseURL := "http://" + resolveServiceIP(ctx, t, c, hostname)
 	url := baseURL + "/repo.git"
-	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service, HTTPAuthToken: c.SetSecret("source-token", "foobar")})
+	repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service, HTTPAuthToken: core.NewQuery(c).SetSecret("source-token", "foobar")})
 	current := repo.Head()
 	// Reconstruct storage and freeze the workspace before following the remote.
 	frozen := repo.WithContents(current.Tree()).Head().AsWorkspace().Snapshot()
 	remote, err := frozen.Git().Head().AsRepository().DefaultRemote(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, remote)
-	contains, err := remote.Repository().Head(dagger.GitRepositoryHeadOpts{NoLock: true}).Contains(ctx, current)
+	contains, err := remote.Repository().Head(core.GitRepositoryHeadOpts{NoLock: true}).Contains(ctx, current)
 	require.NoError(t, err)
 	require.True(t, contains)
 	remotes, err := frozen.Git().Head().AsRepository().Remotes(ctx)
 	require.NoError(t, err)
 	require.Len(t, remotes, 1)
-	contains, err = remotes[0].Repository().Head(dagger.GitRepositoryHeadOpts{NoLock: true}).Contains(ctx, current)
+	contains, err = remotes[0].Repository().Head(core.GitRepositoryHeadOpts{NoLock: true}).Contains(ctx, current)
 	require.NoError(t, err)
 	require.True(t, contains, "listed remotes must retain the source's authentication")
 	// Even on the same server, another repository does not inherit the token.
 	other := frozen.Git().Head().AsRepository().WithRemote("other", baseURL+"/other.git").Remote("other").Repository()
-	_, err = other.Head(dagger.GitRepositoryHeadOpts{NoLock: true}).CommitSHA(ctx)
+	_, err = other.Head(core.GitRepositoryHeadOpts{NoLock: true}).CommitSHA(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "authentication failed")
 }
@@ -461,7 +463,7 @@ func (WorkspaceSuite) TestWorkspaceGitRemoteSelectionCapture(ctx context.Context
 	git("config", "branch.feature.remote", "trunk")
 	git("config", "branch.feature.merge", "refs/heads/feature")
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	live := c.CurrentWorkspace()
+	live := core.NewQuery(c).CurrentWorkspace()
 	assertGitRemoteSelection(ctx, t, c, live.Git().Head().AsRepository(), []string{"fork", "trunk"}, "trunk")
 	frozen := snapshotWorkspace(ctx, t, c, live)
 	assertGitRemoteSelection(ctx, t, c, frozen.Git().Head().AsRepository(), []string{"fork", "trunk"}, "trunk")

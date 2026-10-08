@@ -8,7 +8,6 @@ package core
 // - platform_test.go: platform-aware container execution.
 
 import (
-	sdkcore "dagger.io/dagger/core"
 	"bytes"
 	"context"
 	"crypto/md5"
@@ -30,6 +29,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	sdkcore "dagger.io/dagger/core"
 
 	"github.com/containerd/platforms"
 	engineconfig "github.com/dagger/dagger/engine/config"
@@ -4957,7 +4958,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			ref := registryRef("testcontainerpublishforcecompression" + strings.ToLower(string(tc.compression)))
 			_, err := sdkcore.NewQuery(c).Container().
 				From(alpineImage).
-				Publish(ctx, ref, core.ContainerPublishOpts{
+				Publish(ctx, ref, sdkcore.ContainerPublishOpts{
 					ForcedCompression: tc.compression,
 				})
 			require.NoError(t, err)
@@ -5028,7 +5029,7 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			ref := registryRef("testcontainerpublishmediatypes" + strings.ToLower(string(tc.mediaTypes)))
 			_, err := sdkcore.NewQuery(c).Container().
 				From(alpineImage).
-				Publish(ctx, ref, core.ContainerPublishOpts{
+				Publish(ctx, ref, sdkcore.ContainerPublishOpts{
 					MediaTypes: tc.mediaTypes,
 				})
 			require.NoError(t, err)
@@ -5337,8 +5338,8 @@ const nestedMainClientCheck = `isMain() {
 }`
 
 func (ContainerSuite) TestNestedExecNewSession(ctx context.Context, t *testctx.T) {
-	base := func(c *dagger.Client) *dagger.Container {
-		return c.Container().From(alpineImage).
+	base := func(c *dagger.Client) *sdkcore.Container {
+		return sdkcore.NewQuery(c).Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithNewFile("/clients.graphql", `{ engine { clients } }`)
 	}
@@ -5347,7 +5348,7 @@ func (ContainerSuite) TestNestedExecNewSession(ctx context.Context, t *testctx.T
 		c := connect(ctx, t)
 		out, err := base(c).
 			WithExec([]string{"sh", "-c", `echo "engine=${DAGGER_ENGINE%%:*} port=${DAGGER_SESSION_PORT:-} token=${DAGGER_SESSION_TOKEN:+set} nested=${_DAGGER_NESTED_CLIENT_ID:-}"`},
-				dagger.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).
+				sdkcore.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "engine=tcp port= token= nested=\n", out)
@@ -5370,7 +5371,7 @@ func (ContainerSuite) TestNestedExecNewSession(ctx context.Context, t *testctx.T
 			isMain "$ID4" & b=$!
 			wait "$a"
 			wait "$b"
-		`}, dagger.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).Sync(ctx)
+		`}, sdkcore.ContainerWithExecOpts{DaggerInDaggerNewSession: true}).Sync(ctx)
 		require.NoError(t, err)
 
 		// By default the same CLI joins the caller's session as a nested
@@ -5384,8 +5385,8 @@ func (ContainerSuite) TestNestedExecNewSession(ctx context.Context, t *testctx.T
 
 	t.Run("conflicts with disableDaggerInDagger", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		_, err := c.Container().From(alpineImage).
-			WithExec([]string{"true"}, dagger.ContainerWithExecOpts{
+		_, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"true"}, sdkcore.ContainerWithExecOpts{
 				DisableDaggerInDagger:    true,
 				DaggerInDaggerNewSession: true,
 			}).
@@ -6305,7 +6306,7 @@ func (ContainerSuite) TestSaveHostContainerd(ctx context.Context, t *testctx.T) 
 		// Increase GC pressure so content the export writes without a lease
 		// is likely to be deleted before the image record that references it
 		// is created.
-		middleware: func(ctr *dagger.Container) *dagger.Container {
+		middleware: func(ctr *sdkcore.Container) *sdkcore.Container {
 			return ctr.WithExec([]string{"sh", "-c", `cat >> /etc/containerd/config.toml <<'EOF'
 
 [plugins."io.containerd.gc.v1.scheduler"]
@@ -6421,7 +6422,7 @@ func (ContainerSuite) TestLoadHostContainerd(ctx context.Context, t *testctx.T) 
 		_, err = alt.
 			// HACK: buildkit isn't distributed in the nerdctl image we use, so
 			// just tag the image instead of building it
-			// WithExec([]string{"nerdctl", "build", "-t", imageName, "-"}, core.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).
+			// WithExec([]string{"nerdctl", "build", "-t", imageName, "-"}, sdkcore.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).
 			WithExec([]string{"nerdctl", "pull", "alpine"}).
 			WithExec([]string{"nerdctl", "tag", "alpine", imageName}).
 			Sync(ctx)
@@ -6622,7 +6623,7 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 			// Keep each session open until test cleanup so automatic pruning can't
 			// evict the producer result between these cross-client cache checks.
 
-			// This is used to test selecting a file different way, e.g. c.Host().File() vs c.Host().Directory().File()
+			// This is used to test selecting a file different way, e.g. sdkcore.NewQuery(c).Host().File() vs sdkcore.NewQuery(c).Host().Directory().File()
 			// has no effect on the expected caching behavior
 			f := fileSelector(c, dir)
 

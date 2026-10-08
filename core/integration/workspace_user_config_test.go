@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger"
+
 	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"

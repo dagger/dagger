@@ -39,7 +39,6 @@ package core
 // crossed the wire.
 
 import (
-	sdkcore "dagger.io/dagger/core"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -49,6 +48,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	sdkcore "dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
@@ -829,7 +830,7 @@ func (AgentRuntimeSuite) TestSeed(ctx context.Context, t *testctx.T) {
 	// So does a reseed, even one that rebinds the workspace: the seed is
 	// where the instance started, not the base of its current conversation.
 	rebound, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: model}).
-		WithWorkspace(sdkcore.Ref[*sdkcore.Workspace](c, workspaceID("after a reseed"))).
+		WithWorkspace(sdkcore.Ref[*sdkcore.Workspace](sdkcore.NewQuery(c), workspaceID("after a reseed"))).
 		ID(ctx)
 	require.NoError(t, err)
 	require.NoError(t, h.reseedAgent(ctx, t, string(rebound)))

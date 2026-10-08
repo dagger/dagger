@@ -1,7 +1,6 @@
 package core
 
 import (
-	sdkcore "dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"slices"

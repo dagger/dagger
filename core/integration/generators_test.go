@@ -10,7 +10,6 @@ package core
 // - workspace_modules_test.go: installing modules into workspaces.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"encoding/json"
 	"path/filepath"
@@ -19,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
@@ -416,7 +417,7 @@ type Consumer struct{}
 func (m *Consumer) SyncGenerators(ctx context.Context, workspace *core.Workspace) (string, error) {
 	items, err := workspace.Artifacts().FilterTypes([]string{"Generator"}).AsGenerators(ctx)
 	if err != nil { return "", err }
-	var changes []*dagger.Changeset
+	var changes []*core.Changeset
 	for _, generator := range items {
 		changes = append(changes, generator.Changeset())
 	}

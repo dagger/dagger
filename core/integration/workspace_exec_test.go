@@ -1,10 +1,11 @@
 package core
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"strings"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/distconsts"

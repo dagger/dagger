@@ -5,13 +5,14 @@ package core
 // use from generated module bindings.
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/call"
@@ -2168,7 +2169,7 @@ func (ChangesetSuite) TestMergedDirectoryReplay(ctx context.Context, t *testctx.
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, target.Close()) })
 
-			restored := core.Ref[*core.LLM](target, portable).Workspace()
+			restored := core.Ref[*core.LLM](core.NewQuery(target), portable).Workspace()
 			content, err := restored.File("base.txt").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, wantBase, content)

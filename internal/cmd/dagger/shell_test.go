@@ -1,7 +1,6 @@
 package daggercmd
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"io"
 	"net"
@@ -12,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	uv "github.com/charmbracelet/ultraviolet"

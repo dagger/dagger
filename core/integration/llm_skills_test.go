@@ -118,7 +118,7 @@ func (LLMSuite) TestSkillsSurviveTraceCapture(ctx context.Context, t *testctx.T)
 	require.NoError(t, err)
 	require.NoError(t, c.Close())
 	target := connect(ctx, t)
-	reloaded := core.Ref[*core.LLM](target, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(target), recipe)
 	skills = skillIndex(ctx, t, reloaded)
 	require.Equal(t, "Installed deploy guidance.", skills["deploy"])
 }

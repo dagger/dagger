@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -114,11 +116,11 @@ func TestChangesetAutoApplyPaths(t *testing.T) {
 				changesetApplyTestReply{body: changesetApplyTestIDResponse},
 				changesetApplyTestReply{body: `{"data":{"changeset":` + test.paths + `}}`},
 			)
-			changeset := dagger.Ref[*dagger.Changeset](dag, dagger.ID(changesetApplyTestID))
+			changeset := core.Ref[*core.Changeset](core.NewQuery(dag), core.ID(changesetApplyTestID))
 			var preview bytes.Buffer
 			calls := 0
 			applied, err := handleChangesetResponseWithApply(t.Context(), dag, changeset, changesetDispositionApply, &preview,
-				func(ctx context.Context, got *dagger.Changeset) error {
+				func(ctx context.Context, got *core.Changeset) error {
 					calls++
 					require.Same(t, changeset, got, "retain the exact export object")
 					require.NoError(t, ctx.Err())
@@ -172,7 +174,7 @@ func TestChangesetPreviewDispositionsUnchanged(t *testing.T) {
 			}
 			formCalls := len(frontend.HandleFormCalls())
 			applied, err := handleChangesetResponseWithApply(t.Context(), dag, changesetApplyTestID, test.disposition, previewOut,
-				func(context.Context, *dagger.Changeset) error {
+				func(context.Context, *core.Changeset) error {
 					t.Fatal("must not apply in this fixture")
 					return nil
 				})

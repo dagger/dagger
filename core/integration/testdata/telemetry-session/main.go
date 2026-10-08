@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 func main() {
@@ -31,7 +32,7 @@ func run(ctx context.Context, marker string) error {
 }
 
 func session(ctx context.Context, c *dagger.Client, marker string) error {
-	if _, err := c.Container().From(os.Getenv("IMAGE")).WithExec([]string{"echo", marker}).Sync(ctx); err != nil {
+	if _, err := core.NewQuery(c).Container().From(os.Getenv("IMAGE")).WithExec([]string{"echo", marker}).Sync(ctx); err != nil {
 		return err
 	}
 	if done := os.Getenv("DONE"); done != "" {

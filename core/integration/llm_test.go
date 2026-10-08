@@ -897,7 +897,7 @@ func (LLMSuite) TestTraceRecipe(ctx context.Context, t *testctx.T) {
 	require.NoError(t, c.Close())
 
 	dst, _ := connectWithTrace(ctx, t)
-	reloaded := core.Ref[*core.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	model, err := reloaded.Model(ctx)
 	require.NoError(t, err)
 	require.Equal(t, origModel, model)
@@ -925,7 +925,7 @@ func (LLMSuite) TestTraceRecipeWithResponse(ctx context.Context, t *testctx.T) {
 	require.NoError(t, c.Close())
 
 	dst, _ := connectWithTrace(ctx, t)
-	reloaded := core.Ref[*core.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	reply, err := reloaded.LastReply(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello world", reply)
@@ -953,7 +953,7 @@ func (LLMSuite) TestTraceRecipeCarriesProvider(ctx context.Context, t *testctx.T
 	require.NoError(t, c.Close())
 
 	dst, _ := connectWithTrace(ctx, t)
-	reloaded := core.Ref[*core.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	provider, err := reloaded.Provider(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "openai", provider, "the trace must retain the explicit provider")
@@ -976,7 +976,7 @@ func (LLMSuite) TestDefaultModelPinnedInTrace(ctx context.Context, t *testctx.T)
 	dst, _ := connectWithTrace(ctx, t, engineconn.Config{
 		ExtraEnv: []string{"OPENAI_MODEL=different-default"},
 	})
-	reloaded := core.Ref[*core.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	model, err := reloaded.Model(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "gpt-4o-test", model)
@@ -996,7 +996,7 @@ func (LLMSuite) TestSmallModelPinnedInTrace(ctx context.Context, t *testctx.T) {
 	dst, _ := connectWithTrace(ctx, t, engineconn.Config{
 		ExtraEnv: []string{"OPENAI_MODEL=different-main", "OPENAI_SMALL_MODEL=different-small"},
 	})
-	reloaded := core.Ref[*core.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	model, err := reloaded.Model(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "small-model-test", model)
@@ -1043,8 +1043,8 @@ func (LLMSuite) TestTraceRecipeAfterChangesExport(ctx context.Context, t *testct
 	// A new session must reconstruct the current binding, irrespective of
 	// whether the producer prunes superseded immutable recipe dependencies.
 	dst, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
-	reloaded := core.Ref[*core.LLM](dst, recipe)
-	reloadedEmpty, err := reloaded.Workspace().Changes(core.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, dst.CurrentWorkspace())}).IsEmpty(ctx)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
+	reloadedEmpty, err := reloaded.Workspace().Changes(core.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, core.NewQuery(dst).CurrentWorkspace())}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, reloadedEmpty, "resume must not reapply already-exported workspace edits")
 	contents, err := reloaded.Workspace().File("a.txt").Contents(ctx)
@@ -1096,8 +1096,8 @@ func (LLMSuite) TestTraceRecipeAfterFileExport(ctx context.Context, t *testctx.T
 	require.NoError(t, c.Close())
 
 	dst, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
-	reloaded := core.Ref[*core.LLM](dst, recipe)
-	reloadedEmpty, err := reloaded.Workspace().Changes(core.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, dst.CurrentWorkspace())}).IsEmpty(ctx)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
+	reloadedEmpty, err := reloaded.Workspace().Changes(core.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, core.NewQuery(dst).CurrentWorkspace())}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, reloadedEmpty, "resume must not reapply already-exported workspace edits")
 	for path, expected := range map[string]string{"added.txt": "one", "another.txt": "two"} {
@@ -1134,14 +1134,14 @@ func (LLMSuite) TestTraceRecipePreservesPendingEdits(ctx context.Context, t *tes
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("DESTINATION"), 0o644))
 
 	dst, _ := connectWithTrace(ctx, t, engineconn.Config{Workdir: workdir})
-	reloaded := core.Ref[*core.LLM](dst, recipe)
+	reloaded := core.Ref[*core.LLM](core.NewQuery(dst), recipe)
 	contents, err := reloaded.Workspace().File("pending.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "PENDING", contents)
 	base, err := reloaded.Workspace().File("base.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "SOURCE", base, "the trace, not the client checkout, owns the workspace")
-	reloadedEmpty, err := reloaded.Workspace().Changes(core.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, dst.CurrentWorkspace())}).IsEmpty(ctx)
+	reloadedEmpty, err := reloaded.Workspace().Changes(core.WorkspaceChangesOpts{From: snapshotWorkspace(ctx, t, dst, core.NewQuery(dst).CurrentWorkspace())}).IsEmpty(ctx)
 	require.NoError(t, err)
 	require.False(t, reloadedEmpty, "un-exported edits must survive trace reconstruction")
 	reloadedHist, err := reloaded.Transcript(ctx)

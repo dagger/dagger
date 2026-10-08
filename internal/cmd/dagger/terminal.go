@@ -1,7 +1,6 @@
 package daggercmd
 
 import (
-	"dagger.io/dagger/core"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -10,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"dagger.io/dagger/core"
 
 	"github.com/spf13/cobra"
 
@@ -215,16 +216,16 @@ func shellArtifacts(ctx context.Context, dag *dagger.Client, selection *core.Art
 }
 
 func shellArtifactContainer(ctx context.Context, dag *dagger.Client, target shellArtifact) (*core.Container, error) {
-	id, err := core.Ref[*core.Artifact](dag, core.ID(target.ID)).Value().ID(ctx)
+	id, err := core.Ref[*core.Artifact](core.NewQuery(dag), core.ID(target.ID)).Value().ID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if target.Type == "Container" {
-		return core.Ref[*core.Container](dag, id), nil
+		return core.Ref[*core.Container](core.NewQuery(dag), id), nil
 	}
 	// Directory shells use the CLI's default image and the engine's default
 	// platform. The Directory API does not expose a source platform.
-	dir := core.Ref[*core.Directory](dag, id)
+	dir := core.Ref[*core.Directory](core.NewQuery(dag), id)
 	return core.NewQuery(dag).Container().From(distconsts.AlpineImage).
 		WithMountedDirectory("/src", dir).
 		WithWorkdir("/src"), nil
