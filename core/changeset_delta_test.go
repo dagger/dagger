@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sys/unix"
 )
 
 func writeDeltaTestFile(t *testing.T, root, rel, contents string) {
@@ -248,276 +246,6 @@ func TestChangesetDeltaMatchesGit(t *testing.T) {
 	})
 }
 
-func TestChangesetDeltaUpperdir(t *testing.T) {
-	ctx := context.Background()
-
-	// An overlay layer (upper) on top of before, alongside the merged view
-	// (after) it mounts as. Walking the layer must find what walking both
-	// trees does.
-	type layer struct{ before, upper, after string }
-	newLayer := func(t *testing.T) layer {
-		return layer{t.TempDir(), t.TempDir(), t.TempDir()}
-	}
-	write := func(t *testing.T, rel, contents string, roots ...string) {
-		t.Helper()
-		for _, root := range roots {
-			writeDeltaTestFile(t, root, rel, contents)
-		}
-	}
-	requireSameAsTrees := func(t *testing.T, l layer) {
-		t.Helper()
-		want := requireSamePaths(t, l.before, l.after)
-		got, gotStats, err := computeChangesetPathsDelta(ctx, l.before, l.after, &fsdiff.LayerDelta{Upper: []string{l.upper}}, true)
-		require.NoError(t, err)
-		require.Equal(t, want, got)
-		_, wantStats, err := computeChangesetPathsDelta(ctx, l.before, l.after, nil, true)
-		require.NoError(t, err)
-		require.Equal(t, wantStats, gotStats)
-
-		empty, err := changesetDeltaIsEmpty(ctx, l.before, l.after, &fsdiff.LayerDelta{Upper: []string{l.upper}})
-		require.NoError(t, err)
-		require.False(t, empty)
-		full := changesetPathCount(got)
-		for _, limit := range []int{0, full - 1, 1000} {
-			wantExceeds, err := changesetDeltaExceeds(ctx, l.before, l.after, nil, limit)
-			require.NoError(t, err)
-			gotExceeds, err := changesetDeltaExceeds(ctx, l.before, l.after, &fsdiff.LayerDelta{Upper: []string{l.upper}}, limit)
-			require.NoError(t, err)
-			require.Equal(t, wantExceeds, gotExceeds, "limit %d", limit)
-		}
-	}
-
-	t.Run("additions and modifications", func(t *testing.T) {
-		l := newLayer(t)
-		write(t, "keep.txt", "same\n", l.before, l.after)
-		write(t, "dir/keep.txt", "same\n", l.before, l.after)
-		// Modified, and copied up with its content unchanged.
-		write(t, "dir/mod.txt", "old\n", l.before)
-		write(t, "dir/mod.txt", "new\n", l.upper, l.after)
-		write(t, "touched.txt", "same\n", l.before, l.upper, l.after)
-		// Added, and replaced by the other kind.
-		write(t, "fresh/sub/a.txt", "a\n", l.upper, l.after)
-		write(t, "thing", "file\n", l.before)
-		write(t, "thing/nested.txt", "dir now\n", l.upper, l.after)
-		write(t, "was/nested.txt", "dir\n", l.before)
-		write(t, "was", "file now\n", l.upper, l.after)
-		// A retargeted symlink and an exec bit change.
-		write(t, "t1", "x\n", l.before, l.after)
-		require.NoError(t, os.Symlink("t1", filepath.Join(l.before, "link")))
-		require.NoError(t, os.Symlink("t2", filepath.Join(l.upper, "link")))
-		require.NoError(t, os.Symlink("t2", filepath.Join(l.after, "link")))
-		write(t, "run.sh", "#!/bin/sh\n", l.before, l.upper, l.after)
-		require.NoError(t, os.Chmod(filepath.Join(l.upper, "run.sh"), 0o755))
-		require.NoError(t, os.Chmod(filepath.Join(l.after, "run.sh"), 0o755))
-
-		requireSameAsTrees(t, l)
-	})
-
-	t.Run("removals", func(t *testing.T) {
-		l := newLayer(t)
-		whiteout := func(rel string) {
-			t.Helper()
-			err := unix.Mknod(filepath.Join(l.upper, rel), unix.S_IFCHR, 0)
-			if errors.Is(err, unix.EPERM) {
-				t.Skip("creating overlay whiteouts needs CAP_MKNOD")
-			}
-			require.NoError(t, err)
-		}
-		opaque := func(rel string) {
-			t.Helper()
-			dir := filepath.Join(l.upper, rel)
-			require.NoError(t, os.MkdirAll(dir, 0o755))
-			err := unix.Lsetxattr(dir, "trusted.overlay.opaque", []byte("y"), 0)
-			if err != nil {
-				err = unix.Lsetxattr(dir, "user.overlay.opaque", []byte("y"), 0)
-			}
-			if err != nil {
-				t.Skipf("setting overlay opaque xattrs: %v", err)
-			}
-		}
-
-		write(t, "keep.txt", "same\n", l.before, l.after)
-		// A file, and a directory with everything in it.
-		write(t, "gone.txt", "bye\n", l.before)
-		whiteout("gone.txt")
-		write(t, "olddir/a.txt", "a\n", l.before)
-		write(t, "olddir/sub/b.txt", "b\n", l.before)
-		whiteout("olddir")
-		// A directory replaced wholesale.
-		write(t, "opq/x.txt", "x\n", l.before)
-		write(t, "opq/y.txt", "y\n", l.before)
-		opaque("opq")
-		write(t, "opq/y.txt", "new y\n", l.upper, l.after)
-		write(t, "opq/z.txt", "z\n", l.upper, l.after)
-
-		requireSameAsTrees(t, l)
-	})
-
-	t.Run("only the layer is walked", func(t *testing.T) {
-		// The trees differ, but the layer says nothing changed: what the
-		// layer records is all that is consulted.
-		l := newLayer(t)
-		write(t, "f.txt", "old\n", l.before)
-		write(t, "f.txt", "new\n", l.after)
-		paths, _, err := computeChangesetPathsDelta(ctx, l.before, l.after, &fsdiff.LayerDelta{Upper: []string{l.upper}}, false)
-		require.NoError(t, err)
-		require.True(t, changesetPathsEmpty(paths))
-	})
-
-	// Several layers on top of before, as a workspace's successive edits
-	// stack them: each path any layer holds is classified against the merged
-	// view, so later layers can revert, refill or hide earlier ones.
-	t.Run("several layers", func(t *testing.T) {
-		before, after := t.TempDir(), t.TempDir()
-		upper := []string{t.TempDir(), t.TempDir(), t.TempDir()}
-		layers := upper
-		whiteout := func(layer, rel string) {
-			t.Helper()
-			require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(layer, rel)), 0o755))
-			err := unix.Mknod(filepath.Join(layer, rel), unix.S_IFCHR, 0)
-			if errors.Is(err, unix.EPERM) {
-				// Several layers are classified by the merged view, not
-				// by what a layer entry is: any entry marks the path.
-				err = os.WriteFile(filepath.Join(layer, rel), nil, 0o644)
-			}
-			require.NoError(t, err)
-		}
-		opaque := func(layer, rel string) {
-			t.Helper()
-			dir := filepath.Join(layer, rel)
-			require.NoError(t, os.MkdirAll(dir, 0o755))
-			err := unix.Lsetxattr(dir, "trusted.overlay.opaque", []byte("y"), 0)
-			if err != nil {
-				err = unix.Lsetxattr(dir, "user.overlay.opaque", []byte("y"), 0)
-			}
-			if err != nil {
-				t.Skipf("setting overlay opaque xattrs: %v", err)
-			}
-		}
-		write(t, "keep.txt", "same\n", before, after)
-		write(t, "deep/keep.txt", "same\n", before, after)
-		// Modified by one layer, modified again by another.
-		write(t, "twice.txt", "old\n", before)
-		write(t, "twice.txt", "first\n", layers[0])
-		write(t, "twice.txt", "second\n", layers[2], after)
-		// Modified by one layer, reverted by another: a copy-up with the
-		// original content is no change.
-		write(t, "reverted.txt", "orig\n", before, after)
-		write(t, "reverted.txt", "changed\n", layers[0])
-		write(t, "reverted.txt", "orig\n", layers[1])
-		// Added, then removed again.
-		write(t, "transient/x.txt", "x\n", layers[0])
-		whiteout(layers[1], "transient")
-		// Removed, then added back with new content.
-		write(t, "refilled.txt", "old\n", before)
-		whiteout(layers[0], "refilled.txt")
-		write(t, "refilled.txt", "new\n", layers[2], after)
-		// A directory with a file added inside, then removed wholesale.
-		write(t, "olddir/a.txt", "a\n", before)
-		write(t, "olddir/sub/b.txt", "b\n", before)
-		write(t, "olddir/added.txt", "added\n", layers[0])
-		whiteout(layers[1], "olddir")
-		// A directory replaced wholesale by a lower layer, and added to by
-		// a higher one.
-		write(t, "opq/x.txt", "x\n", before)
-		write(t, "opq/y.txt", "y\n", before)
-		opaque(layers[0], "opq")
-		write(t, "opq/y.txt", "new y\n", layers[0], after)
-		write(t, "opq/z.txt", "z\n", layers[2], after)
-		// Type changes across layers.
-		write(t, "thing", "file\n", before)
-		whiteout(layers[0], "thing")
-		write(t, "thing/nested.txt", "dir now\n", layers[1], after)
-		write(t, "was/nested.txt", "dir\n", before)
-		whiteout(layers[1], "was")
-		write(t, "was", "file now\n", layers[2], after)
-		// Added across layers into a fresh directory.
-		write(t, "fresh/a.txt", "a\n", layers[0], after)
-		write(t, "fresh/sub/b.txt", "b\n", layers[2], after)
-		// Exec bit and symlink changes in a middle layer.
-		write(t, "run.sh", "#!/bin/sh\n", before, layers[1], after)
-		require.NoError(t, os.Chmod(filepath.Join(layers[1], "run.sh"), 0o755))
-		require.NoError(t, os.Chmod(filepath.Join(after, "run.sh"), 0o755))
-		require.NoError(t, os.Symlink("keep.txt", filepath.Join(before, "link")))
-		require.NoError(t, os.Symlink("twice.txt", filepath.Join(layers[1], "link")))
-		require.NoError(t, os.Symlink("twice.txt", filepath.Join(after, "link")))
-
-		requireLayersSameAsTrees(t, before, after, &fsdiff.LayerDelta{Upper: upper})
-	})
-
-	// Two copy-on-write children of one snapshot (two checkouts of one
-	// commit, a merge result and the next commit's tree): each side's own
-	// layers hold its differences from the shared ones, and both sides'
-	// layers together hold every difference between them.
-	t.Run("sibling layers", func(t *testing.T) {
-		before, after := t.TempDir(), t.TempDir()
-		lower := []string{t.TempDir(), t.TempDir()}
-		upper := []string{t.TempDir(), t.TempDir()}
-		mark := func(layer, rel string) {
-			t.Helper()
-			require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(layer, rel)), 0o755))
-			require.NoError(t, os.WriteFile(filepath.Join(layer, rel), nil, 0o644))
-		}
-		// Shared and untouched.
-		write(t, "keep.txt", "same\n", before, after)
-		// Changed on one side or the other only: the other side keeps the
-		// shared content.
-		write(t, "lower-edit.txt", "shared\n", after)
-		write(t, "lower-edit.txt", "lower\n", lower[0], before)
-		write(t, "upper-edit.txt", "shared\n", before)
-		write(t, "upper-edit.txt", "upper\n", upper[1], after)
-		// Changed identically on both sides: no difference.
-		write(t, "both-same.txt", "both\n", lower[1], upper[0], before, after)
-		// Changed differently on both sides.
-		write(t, "both-differ.txt", "lower\n", lower[0], before)
-		write(t, "both-differ.txt", "upper\n", upper[0], after)
-		// Removed on the lower side: upper still has the shared file.
-		write(t, "lower-removed.txt", "shared\n", after)
-		mark(lower[1], "lower-removed.txt")
-		// A shared directory removed on the lower side: upper still has
-		// all of it, though no layer lists its contents.
-		write(t, "shareddir/a.txt", "a\n", after)
-		write(t, "shareddir/sub/b.txt", "b\n", after)
-		mark(lower[0], "shareddir")
-		// A shared directory removed on the upper side.
-		write(t, "gonedir/a.txt", "a\n", before)
-		mark(upper[0], "gonedir")
-		// Added on the lower side only: a removal from before to after.
-		write(t, "lower-added/x.txt", "x\n", lower[1], before)
-		// Added on the upper side.
-		write(t, "upper-added/y.txt", "y\n", upper[1], after)
-		// A shared file the lower side replaced by a directory.
-		write(t, "kind", "shared file\n", after)
-		write(t, "kind/inner.txt", "lower dir\n", lower[0], before)
-
-		requireLayersSameAsTrees(t, before, after, &fsdiff.LayerDelta{Lower: lower, Upper: upper})
-	})
-}
-
-// requireLayersSameAsTrees requires walking layers to find exactly what
-// walking both trees finds, and nothing a layer does not record.
-func requireLayersSameAsTrees(t *testing.T, before, after string, layers *fsdiff.LayerDelta) {
-	t.Helper()
-	ctx := t.Context()
-	want := requireSamePaths(t, before, after)
-	got, gotStats, err := computeChangesetPathsDelta(ctx, before, after, layers, true)
-	require.NoError(t, err)
-	require.Equal(t, want, got)
-	_, wantStats, err := computeChangesetPathsDelta(ctx, before, after, nil, true)
-	require.NoError(t, err)
-	require.Equal(t, wantStats, gotStats)
-	empty, err := changesetDeltaIsEmpty(ctx, before, after, layers)
-	require.NoError(t, err)
-	require.False(t, empty)
-
-	// Only the layers are consulted: a difference no layer records is not
-	// found, so the walk costs the size of the layers.
-	writeDeltaTestFile(t, after, "unlisted/keep.txt", "behind the layers' back\n")
-	got, _, err = computeChangesetPathsDelta(ctx, before, after, layers, false)
-	require.NoError(t, err)
-	require.NotContains(t, got.Added, "unlisted/keep.txt")
-}
-
 func TestChangesetDeltaExceeds(t *testing.T) {
 	ctx := context.Background()
 
@@ -638,54 +366,25 @@ func TestChangesetDeltaExceeds(t *testing.T) {
 	})
 }
 
-// The span reports the walk a delta actually took: a layer walk that fails
-// and falls back to walking both trees must not claim the layers.
-func TestChangesetDeltaRecordsWalk(t *testing.T) {
-	walk := func(t *testing.T, layersFor func(upper string) *fsdiff.LayerDelta) (*changesetDelta, map[string]string) {
-		t.Helper()
-		before := t.TempDir()
-		after := t.TempDir()
-		upper := t.TempDir()
-		writeDeltaTestFile(t, before, "keep.txt", "keep\n")
-		writeDeltaTestFile(t, after, "keep.txt", "keep\n")
-		writeDeltaTestFile(t, after, "add.txt", "add\n")
-		writeDeltaTestFile(t, upper, "add.txt", "add\n")
+// A layer walk that fails and falls back to walking both trees must say so:
+// TestChangeset/TestLayerWalks relies on the recorded walk to tell a layer
+// walk from that fallback, which no real overlay snapshot triggers.
+func TestChangesetDeltaRecordsFallback(t *testing.T) {
+	before := t.TempDir()
+	after := t.TempDir()
+	writeDeltaTestFile(t, after, "add.txt", "add\n")
+	missing := filepath.Join(t.TempDir(), "missing")
 
-		sr, ctx := recordingTestRecorder(t)
-		delta, err := collectChangesetDelta(ctx, before, after, layersFor(upper))
-		require.NoError(t, err)
-		trace.SpanFromContext(ctx).End()
-		spans := sr.Ended()
-		require.Len(t, spans, 1)
-		attrs := map[string]string{}
-		for _, kv := range spans[0].Attributes() {
-			attrs[string(kv.Key)] = kv.Value.Emit()
-		}
-		return delta, attrs
-	}
-
-	t.Run("layers", func(t *testing.T) {
-		delta, attrs := walk(t, func(upper string) *fsdiff.LayerDelta {
-			return &fsdiff.LayerDelta{Upper: []string{upper}}
-		})
-		require.Equal(t, []string{"add.txt"}, delta.addedFiles)
-		require.Equal(t, "layers", attrs["dagger.changeset.paths.walk"])
-		require.NotContains(t, attrs, "dagger.changeset.paths.layers_error")
-	})
-
-	t.Run("trees", func(t *testing.T) {
-		delta, attrs := walk(t, func(string) *fsdiff.LayerDelta { return nil })
-		require.Equal(t, []string{"add.txt"}, delta.addedFiles)
-		require.Equal(t, "trees", attrs["dagger.changeset.paths.walk"])
-	})
-
-	t.Run("layers fall back to trees", func(t *testing.T) {
-		missing := filepath.Join(t.TempDir(), "missing")
-		delta, attrs := walk(t, func(string) *fsdiff.LayerDelta {
-			return &fsdiff.LayerDelta{Lower: []string{missing}, Upper: []string{missing}}
-		})
-		require.Equal(t, []string{"add.txt"}, delta.addedFiles)
-		require.Equal(t, "trees", attrs["dagger.changeset.paths.walk"])
-		require.Contains(t, attrs, "dagger.changeset.paths.layers_error")
-	})
+	sr, ctx := recordingTestRecorder(t)
+	delta, err := collectChangesetDelta(ctx, before, after, &fsdiff.LayerDelta{Lower: []string{missing}, Upper: []string{missing}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"add.txt"}, delta.addedFiles)
+	trace.SpanFromContext(ctx).End()
+	spans := sr.Ended()
+	require.Len(t, spans, 1)
+	walk, ok := spanAttr(spans[0], "dagger.changeset.paths.walk")
+	require.True(t, ok)
+	require.Equal(t, "trees", walk.AsString())
+	_, ok = spanAttr(spans[0], "dagger.changeset.paths.layers_error")
+	require.True(t, ok)
 }
