@@ -547,6 +547,35 @@ func (c *Client) filterEnvs(_ context.Context, state *execState) error {
 	return nil
 }
 
+type rootfsUnmountOps struct {
+	unmount          func(target string, flags int) error
+	unmountRecursive func(target string, flags int) error
+	// unmountSyscall is the raw syscall: unlike unmount, it reports EINVAL.
+	unmountSyscall func(target string, flags int) error
+}
+
+var systemRootfsUnmountOps = rootfsUnmountOps{
+	unmount:          mount.Unmount,
+	unmountRecursive: mount.UnmountRecursive,
+	unmountSyscall:   unix.Unmount,
+}
+
+// unmountFromRootfs undoes a mount the executor made into a container rootfs.
+// A recursive bind is first detached with MNT_DETACH, which takes its whole
+// subtree in one syscall, as moby's mount.RecursiveUnmount does.
+// UnmountRecursive is only the fallback: it parses the entire mount table,
+// which is large when many containers are running, and every read of the
+// table holds the kernel's mount lock.
+func unmountFromRootfs(ops rootfsUnmountOps, dstPath string, recursive bool) error {
+	if !recursive {
+		return ops.unmount(dstPath, 0)
+	}
+	if err := ops.unmountSyscall(dstPath, unix.MNT_DETACH); err == nil {
+		return nil
+	}
+	return ops.unmountRecursive(dstPath, 0)
+}
+
 //nolint:gocyclo
 func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 	var err error
@@ -711,13 +740,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		overlayIncompatDir := overlay.VolatileIncompatDir(mnt)
 
 		state.cleanups.Add("unmount from rootfs "+mnt.Target, func() error {
-			var err error
-			if slices.Contains(mnt.Options, "rbind") {
-				err = mount.UnmountRecursive(dstPath, 0)
-			} else {
-				err = mount.Unmount(dstPath, 0)
-			}
-			if err != nil {
+			if err := unmountFromRootfs(systemRootfsUnmountOps, dstPath, slices.Contains(mnt.Options, "rbind")); err != nil {
 				return err
 			}
 			if overlayIncompatDir != "" {
