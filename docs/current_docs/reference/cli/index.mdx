@@ -491,7 +491,10 @@ dagger cloud checks list [version]
 ### Options
 
 ```
-      --failed   Only list failed checks
+      --fail-fast           When watching, stop as soon as a check is not successful
+      --failed              Only list failed checks
+      --interval duration   Polling interval used while watching (default 5s)
+      --watch               Wait until all checks have finished; exit non-zero if any check did not succeed
 ```
 
 ### Options inherited from parent commands
