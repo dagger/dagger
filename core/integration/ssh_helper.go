@@ -91,8 +91,9 @@ func setupPrivateRepoSSHAgent(t *testctx.T) (string, func()) {
 				go func() {
 					defer wg.Done()
 					defer conn.Close()
+					// ServeAgent only returns once the connection fails.
 					err := agent.ServeAgent(sshAgent, conn)
-					if err != nil && !errors.Is(err, io.EOF) {
+					if !errors.Is(err, io.EOF) {
 						t.Logf("SSH agent error: %v", err)
 					}
 				}()

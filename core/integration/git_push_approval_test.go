@@ -4,29 +4,30 @@ import (
 	"context"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 func (GitSuite) TestPushModuleRequiresApproval(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	service, url := gitService(ctx, t, c, c.Directory().WithNewFile("base", "base"))
+	service, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base", "base"))
 	_, err := service.Start(ctx)
 	require.NoError(t, err)
-	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service})
+	repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service})
 	source := repo.Branch("main")
 	sourceID, err := source.ID(ctx)
 	require.NoError(t, err)
-	mod := c.Directory().
+	mod := core.NewQuery(c).Directory().
 		WithNewFile("dagger.json", `{"name":"pusher","sdk":"go","engineVersion":"v1.0.0-0"}`).
 		WithNewFile("main.go", `package main
 import (
   "context"
-  "dagger/pusher/internal/dagger"
+  "dagger/pusher/internal/dagger/core"
 )
 type Pusher struct{}
-func (m *Pusher) Push(ctx context.Context, source *dagger.GitRef, remote string) (string, error) {
-  return source.Push(dagger.GitRefPushOpts{To: dag.Git(remote), Branch: "module-write"}).Sha(ctx)
+func (m *Pusher) Push(ctx context.Context, source *core.GitRef, remote string) (string, error) {
+  return source.Push(core.GitRefPushOpts{To: dag.Git(remote), Branch: "module-write"}).Sha(ctx)
 }
 `)
 	require.NoError(t, mod.AsModule().Serve(ctx))

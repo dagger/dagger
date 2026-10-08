@@ -238,7 +238,7 @@ func (p *ParsedGitRefString) GitRef(
 	}
 	if versionQuery != "" && pinIsSHA && gitRef.Self().Ref.SHA != pinCommitRef {
 		// A normal load must satisfy both the version resolution and the module
-		// pin. It cannot rewrite either value. In contrast, dagger update is an
+		// pin. It cannot rewrite either value. In contrast, dagger lock update is an
 		// explicit request to refresh the lock, so it accepts a moved tag after
 		// it warns the user.
 		return inst, fmt.Errorf(

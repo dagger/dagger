@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
+
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ func (EngineSuite) TestExecutionDigestMatchesCacheHits(ctx context.Context, t *t
 	for range 2 {
 		out, err := telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
-			WithExec([]string{"/bin/dagger", "script", "-M", "-c", script}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+			WithExec([]string{"/bin/dagger", "script", "-M", "-c", script}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, marker)

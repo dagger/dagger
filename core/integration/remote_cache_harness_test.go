@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 )
 
@@ -35,17 +37,17 @@ func closeClientBounded(ctx context.Context, client *dagger.Client) error {
 // stopNestedEngine attempts every shutdown step under its own deadline and
 // reports each failed step by name. Services are forgotten only after a
 // successful stop, so cleanup can retry; a client's Close is called only once.
-func stopNestedEngine(ctx context.Context, client **dagger.Client, upstream, tunnel **dagger.Service) error {
+func stopNestedEngine(ctx context.Context, client **dagger.Client, upstream, tunnel **core.Service) error {
 	return shutDownNestedEngine(ctx, client, upstream, tunnel, false)
 }
 
 // discardNestedEngine is stopNestedEngine for an engine whose state is never
 // read again: it kills the engine instead of waiting for a clean shutdown.
-func discardNestedEngine(ctx context.Context, client **dagger.Client, upstream, tunnel **dagger.Service) error {
+func discardNestedEngine(ctx context.Context, client **dagger.Client, upstream, tunnel **core.Service) error {
 	return shutDownNestedEngine(ctx, client, upstream, tunnel, true)
 }
 
-func shutDownNestedEngine(ctx context.Context, client **dagger.Client, upstream, tunnel **dagger.Service, kill bool) error {
+func shutDownNestedEngine(ctx context.Context, client **dagger.Client, upstream, tunnel **core.Service, kill bool) error {
 	step := func(name string, run func(context.Context) error) error {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fixtureEngineStopTimeout)
 		defer cancel()
@@ -63,7 +65,7 @@ func shutDownNestedEngine(ctx context.Context, client **dagger.Client, upstream,
 	if upstream != nil && *upstream != nil {
 		svc := *upstream
 		err := step("nested engine stop", func(ctx context.Context) error {
-			_, err := svc.Stop(ctx, dagger.ServiceStopOpts{Kill: kill})
+			_, err := svc.Stop(ctx, core.ServiceStopOpts{Kill: kill})
 			return err
 		})
 		if err == nil {
@@ -74,7 +76,7 @@ func shutDownNestedEngine(ctx context.Context, client **dagger.Client, upstream,
 	if tunnel != nil && *tunnel != nil {
 		svc := *tunnel
 		err := step("nested tunnel stop", func(ctx context.Context) error {
-			_, err := svc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+			_, err := svc.Stop(ctx, core.ServiceStopOpts{Kill: true})
 			return err
 		})
 		if err == nil {

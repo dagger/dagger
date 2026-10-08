@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
@@ -44,7 +46,7 @@ func listedArtifactKeys(items []listedArtifact) []dagaddress.Pair {
 	return keys
 }
 
-func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, cmd *cobra.Command) error {
+func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, cmd *cobra.Command) error {
 	ctx, span := Tracer().Start(ctx, "list artifacts", telemetry.Encapsulate())
 	defer span.End()
 	absolute, _ := cmd.Flags().GetBool("absolute")
@@ -83,7 +85,11 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 		if err != nil {
 			return err
 		}
+		typeKey, ok := addr.TypeKey(addr.Types...)
 		addr.Query = nil
+		if ok {
+			addr.Query = []dagaddress.Pair{typeKey}
+		}
 		path := addr.String()
 		groups[path] = append(groups[path], item)
 	}
@@ -127,7 +133,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *d
 	return err
 }
 
-func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts, absolute bool, dimension string) ([]listedArtifact, error) {
+func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute bool, dimension string) ([]listedArtifact, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -161,7 +167,7 @@ func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection 
 			if dim == artifact.ModuleDimension {
 				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{dim, path.ModuleName})
 			} else if strings.HasPrefix(dim, "type:") {
-				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{dim, addr.Path})
+				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{dim, addr.ArtifactPath(addr.Types...)})
 			} else {
 				item.Presence = append(item.Presence, dim)
 			}

@@ -128,8 +128,9 @@ type Workspace struct {
 	userConfigKey string
 
 	// userConfigOverlay is the user-level config overlay matched for this
-	// workspace by userConfigKey. Internal only — user config can carry
-	// personal values that must not surface through GraphQL or IDs.
+	// workspace by userConfigKey. Not a GraphQL field: a live workspace reads
+	// it once at session load, and value workspaces carry it in their recipe
+	// via Workspace.__withUserConfigOverlay (see Workspace.withUserConfig).
 	userConfigOverlay *workspacepkg.UserWorkspaceOverlay
 
 	// selectedEnv is the dagger.toml environment selected when this workspace
@@ -137,6 +138,10 @@ type Workspace struct {
 	// an SDK, whose nested client does not inherit the parent client's ambient
 	// workspace selection.
 	selectedEnv string
+
+	// moduleClients maps a module scope path to the local client targets its
+	// config declares, as read when this workspace was loaded. Internal only.
+	moduleClients map[string][]string
 
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
@@ -517,6 +522,19 @@ func (ws *Workspace) SetSelectedEnv(name string) {
 	ws.selectedEnv = name
 }
 
+// ModuleClients returns the local client targets the workspace config declares
+// for the module scope at modulePath, both workspace-root-relative.
+func (ws *Workspace) ModuleClients(modulePath string) []string {
+	if ws == nil {
+		return nil
+	}
+	return ws.moduleClients[modulePath]
+}
+
+func (ws *Workspace) SetModuleClients(clients map[string][]string) {
+	ws.moduleClients = clients
+}
+
 // MountsDir returns the read-only directory tree holding mounted content,
 // keyed by workspace-root-relative mount path, or false when the workspace has
 // no mounts.
@@ -635,6 +653,7 @@ type persistedWorkspacePayload struct {
 	ClientID        string                        `json:"clientID,omitempty"`
 	HostPath        string                        `json:"hostPath,omitempty"`
 	SelectedEnv     string                        `json:"selectedEnv,omitempty"`
+	ModuleClients   map[string][]string           `json:"moduleClients,omitempty"`
 
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
@@ -785,6 +804,7 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, enc *dagql.Persi
 		ClientID:        ws.ClientID,
 		HostPath:        ws.hostPath,
 		SelectedEnv:     ws.selectedEnv,
+		ModuleClients:   ws.moduleClients,
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(enc, ws.rootfs, "workspace rootfs")
@@ -866,6 +886,7 @@ func (*Workspace) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		ClientID:        persisted.ClientID,
 		hostPath:        persisted.HostPath,
 		selectedEnv:     persisted.SelectedEnv,
+		moduleClients:   persisted.ModuleClients,
 	}
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dec, persisted.Source, rootfs, persisted.HostPath)

@@ -24,6 +24,7 @@ import (
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/errgroup"
 )
 
 type LoadedImportedImage struct {
@@ -495,4 +496,129 @@ func hydrateImportedDescriptor(
 		hydrated.Size = info.Size
 	}
 	return hydrated, nil
+}
+
+const persistedFileLazyKindContainerImage = "container.image"
+
+// FileContainerImageLazy writes a container's image as one file: the OCI
+// tarball (Container.asTarball) or the image manifest (Container.manifest).
+// A rebuild writes the same image content; its bytes can differ, because
+// layers without a recorded compressed blob are compressed again.
+type FileContainerImageLazy struct {
+	LazyState
+	Parent            dagql.ObjectResult[*Container]
+	PlatformVariants  []dagql.ObjectResult[*Container]
+	ForcedCompression ImageLayerCompression
+	MediaTypes        ImageMediaTypes
+	Manifest          bool
+}
+
+type persistedFileContainerImageLazy struct {
+	ParentResultID           uint64                `json:"parentResultID"`
+	PlatformVariantResultIDs []uint64              `json:"platformVariantResultIDs,omitempty"`
+	ForcedCompression        ImageLayerCompression `json:"forcedCompression,omitempty"`
+	MediaTypes               ImageMediaTypes       `json:"mediaTypes,omitempty"`
+	Manifest                 bool                  `json:"manifest,omitempty"`
+}
+
+func (lazy *FileContainerImageLazy) Evaluate(ctx context.Context, file *File) error {
+	op := "Container.asTarball"
+	if lazy.Manifest {
+		op = "Container.manifest"
+	}
+	return evaluateFileOutput(ctx, &lazy.LazyState, op, file, func(ctx context.Context) (*File, error) {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return nil, err
+		}
+		containers := append([]dagql.ObjectResult[*Container]{lazy.Parent}, lazy.PlatformVariants...)
+		eg, egctx := errgroup.WithContext(ctx)
+		for _, ctr := range containers {
+			eg.Go(func() error {
+				return cache.EvaluateParts(egctx, ctr, ContainerPartMetadata, ContainerPartFS)
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+		if lazy.Manifest {
+			parentDigest, err := lazy.Parent.RecipeDigest(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return lazy.Parent.Self().Manifest(ctx, parentDigest, lazy.ForcedCompression, lazy.MediaTypes)
+		}
+		variants := make([]*Container, 0, len(lazy.PlatformVariants))
+		for _, variant := range lazy.PlatformVariants {
+			variants = append(variants, variant.Self())
+		}
+		return lazy.Parent.Self().AsTarball(ctx, variants, lazy.ForcedCompression, lazy.MediaTypes, "container.tar")
+	})
+}
+
+func (lazy *FileContainerImageLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachLazyInput(attach, lazy.Parent, "FileContainerImageLazy.Parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	deps := []dagql.AnyResult{parent}
+	for i, variant := range lazy.PlatformVariants {
+		attached, err := attachLazyInput(attach, variant, "FileContainerImageLazy.PlatformVariants")
+		if err != nil {
+			return nil, err
+		}
+		lazy.PlatformVariants[i] = attached
+		deps = append(deps, attached)
+	}
+	return deps, nil
+}
+
+func (lazy *FileContainerImageLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "container image parent")
+	if err != nil {
+		return nil, err
+	}
+	variantIDs := make([]uint64, 0, len(lazy.PlatformVariants))
+	for _, variant := range lazy.PlatformVariants {
+		id, err := encodePersistedObjectRef(enc, variant, "container image platform variant")
+		if err != nil {
+			return nil, err
+		}
+		variantIDs = append(variantIDs, id)
+	}
+	return json.Marshal(persistedFileContainerImageLazy{
+		ParentResultID:           parentID,
+		PlatformVariantResultIDs: variantIDs,
+		ForcedCompression:        lazy.ForcedCompression,
+		MediaTypes:               lazy.MediaTypes,
+		Manifest:                 lazy.Manifest,
+	})
+}
+
+func decodeFileContainerImageLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*File], error) {
+	var persisted persistedFileContainerImageLazy
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted container image lazy: %w", err)
+	}
+	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, persisted.ParentResultID, "container image parent")
+	if err != nil {
+		return nil, err
+	}
+	variants := make([]dagql.ObjectResult[*Container], 0, len(persisted.PlatformVariantResultIDs))
+	for _, id := range persisted.PlatformVariantResultIDs {
+		variant, err := loadPersistedObjectResultByResultID[*Container](ctx, dec, id, "container image platform variant")
+		if err != nil {
+			return nil, err
+		}
+		variants = append(variants, variant)
+	}
+	return &FileContainerImageLazy{
+		LazyState:         NewLazyState(),
+		Parent:            parent,
+		PlatformVariants:  variants,
+		ForcedCompression: persisted.ForcedCompression,
+		MediaTypes:        persisted.MediaTypes,
+		Manifest:          persisted.Manifest,
+	}, nil
 }

@@ -1,6 +1,9 @@
 package dagql
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // walkInlineValues reads only held values and declared list/nullable structure.
 // Separately attached items are ownership boundaries, not inline values.
@@ -67,7 +70,7 @@ func inlineValueAt(res AnyResult, frame *ResultCall, path PersistedRefPath) (Any
 
 // The sync mode is only used outside graph locks. Capture, boot and import
 // use the nonblocking mode.
-func collectSnapshotOwnerLinks(self Typed, frame *ResultCall, forSync bool) ([]PersistedSnapshotRefLink, error) {
+func collectSnapshotOwnerLinks(ctx context.Context, self Typed, frame *ResultCall, forSync bool) ([]PersistedSnapshotRefLink, error) {
 	if self == nil {
 		return nil, nil
 	}
@@ -76,7 +79,7 @@ func collectSnapshotOwnerLinks(self Typed, frame *ResultCall, forSync bool) ([]P
 	err := walkInlineValues(newDetachedResult(frame, self), frame, nil, true, func(value AnyResult, path PersistedRefPath) error {
 		self := value.Unwrap()
 		if reader, ok := self.(SnapshotOwnerReader); forSync && ok {
-			_, local, err := reader.ReadSnapshotOwner()
+			_, local, err := reader.ReadSnapshotOwner(ctx)
 			if err != nil {
 				return err
 			}

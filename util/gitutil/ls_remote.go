@@ -25,6 +25,16 @@ type Ref struct {
 	SHA string
 }
 
+// RefNotFoundError reports that a repository advertises no ref matching a
+// name, as opposed to a failure to list the repository's refs at all.
+type RefNotFoundError struct {
+	Target string
+}
+
+func (err *RefNotFoundError) Error() string {
+	return fmt.Sprintf("repository does not contain ref %q", err.Target)
+}
+
 func (r *Ref) ShortName() string {
 	if IsCommitSHA(r.Name) {
 		return r.Name
@@ -167,6 +177,7 @@ func (remote *Remote) Get(name string) (result *Ref) {
 
 // Lookup looks up a ref by name, simulating git-checkout semantics.
 // It handles full refs, partial refs, commits, symrefs, HEAD resolution, etc.
+// A name matching no ref reports a *RefNotFoundError.
 func (remote *Remote) Lookup(target string) (result *Ref, _ error) {
 	isHead := target == "HEAD"
 	if isHead && remote.Head != nil && remote.Head.Name != "" {
@@ -214,7 +225,7 @@ func (remote *Remote) Lookup(target string) (result *Ref, _ error) {
 		match = tagMatch
 	}
 	if match == nil {
-		return nil, fmt.Errorf("repository does not contain ref %q", target)
+		return nil, &RefNotFoundError{Target: target}
 	}
 	if !IsCommitSHA(match.SHA) {
 		return nil, fmt.Errorf("invalid commit sha %q for %q", match.SHA, match.Name)

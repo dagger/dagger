@@ -14,17 +14,21 @@ import (
 	"strings"
 	"time"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 const workspaceCommitDate = "2026-09-05T12:00:00Z"
 
 type workspaceCommitState struct {
-	ID  dagger.ID
+	ID  core.ID
 	Git struct {
 		Repository struct{ URL *string }
 		Head       struct {
@@ -35,14 +39,14 @@ type workspaceCommitState struct {
 	}
 }
 
-func commitWorkspace(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, message string, include []string) (got workspaceCommitState, err error) {
-	got.ID, err = ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: include}), message, workspaceCommitDate).ID(ctx)
+func commitWorkspace(ctx context.Context, c *dagger.Client, ws *core.Workspace, message string, include []string) (got workspaceCommitState, err error) {
+	got.ID, err = ws.WithCommit(ws.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Include: include}), message, workspaceCommitDate).ID(ctx)
 	if err != nil {
 		return got, err
 	}
 	// Resolve the result once before reading its fields: metadata reads must
 	// not repeat the workspace's host capture or commit operation.
-	committed := dagger.Ref[*dagger.Workspace](c, got.ID)
+	committed := core.Ref[*core.Workspace](core.NewQuery(c), got.ID)
 	head := committed.Git().Head()
 	meta := head.TargetCommit()
 	for _, field := range []struct {
@@ -90,7 +94,7 @@ func commitWorkspace(ctx context.Context, c *dagger.Client, ws *dagger.Workspace
 // Inspect the tree as a consumer sees it, including the root directory. Times
 // and inode numbers are fresh checkout artifacts, not stable between even two
 // legacy runs; all xattrs except OverlayFS's origin bookkeeping are compared.
-func workspaceCommitManifest(ctx context.Context, t *testctx.T, inspector *dagger.Container, dir *dagger.Directory) map[string]workspaceCommitManifestEntry {
+func workspaceCommitManifest(ctx context.Context, t *testctx.T, inspector *core.Container, dir *core.Directory) map[string]workspaceCommitManifestEntry {
 	t.Helper()
 	out, err := inspector.WithMountedDirectory("/inspect", dir).
 		WithExec([]string{"python3", "-c", `
@@ -135,8 +139,8 @@ type workspaceCommitManifestEntry struct {
 // This is a complete local SHA-1 repository, not a git daemon or remote clone.
 // Source workspaces use its direct Git tree; only the oracle obscures that
 // provenance. Keep this small correctness fixture separate from the perf test.
-func workspaceReconciliationFixture(c *dagger.Client) (*dagger.Container, *dagger.Container) {
-	inspector := c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git", "python3"})
+func workspaceReconciliationFixture(c *dagger.Client) (*core.Container, *core.Container) {
+	inspector := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git", "python3"})
 	fixture := inspector.WithWorkdir("/repo").
 		WithEnvVariable("GIT_AUTHOR_DATE", workspaceCommitDate).
 		WithEnvVariable("GIT_COMMITTER_DATE", workspaceCommitDate).
@@ -165,17 +169,19 @@ git gc --prune=now
 }
 
 type workspaceReconciliationCase struct {
-	name       string
-	attributes bool
-	pending    func(*dagger.Directory) *dagger.Directory
-	incoming   func(*dagger.Directory) *dagger.Directory
-	include    []string
-	conflict   bool
-	wantFile   string
-	checkInput func(map[string]workspaceCommitManifestEntry)
+	base        *core.Workspace
+	name        string
+	attributes  bool
+	pending     func(*core.Directory) *core.Directory
+	incoming    func(*core.Directory) *core.Directory
+	include     []string
+	conflict    bool
+	wantFile    string
+	checkInput  func(map[string]workspaceCommitManifestEntry)
+	checkResult func(*core.Workspace)
 }
 
-func checkWorkspaceReconciliation(ctx context.Context, t *testctx.T, c *dagger.Client, fixture, inspector *dagger.Container, tc workspaceReconciliationCase) {
+func checkWorkspaceReconciliation(ctx context.Context, t *testctx.T, c *dagger.Client, fixture, inspector *core.Container, tc workspaceReconciliationCase) {
 	t.Helper()
 	t.Logf("reconciliation oracle: %s", tc.name)
 	if tc.attributes {
@@ -186,8 +192,11 @@ git add .
 git commit -m attributes
 `})
 	}
-	base := fixture.Directory("/repo").AsGit().Head().AsWorkspace()
-	before := base.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	base := tc.base
+	if base == nil {
+		base = fixture.Directory("/repo").AsGit().Head().AsWorkspace()
+	}
+	before := base.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 	pending := before.WithNewFile("pending.txt", "keep pending\n")
 	if tc.pending != nil {
 		pending = tc.pending(pending)
@@ -196,12 +205,12 @@ git commit -m attributes
 	// captured or reconstructed receivers whose inputs might differ.
 	id, err := base.WithChanges(pending.Changes(before)).ID(ctx)
 	require.NoError(t, err, tc.name)
-	working := dagger.Ref[*dagger.Workspace](c, id)
+	working := core.Ref[*core.Workspace](core.NewQuery(c), id)
 	original := workspaceCommitManifest(ctx, t, inspector, working.Directory("/"))
 	if tc.checkInput != nil {
 		tc.checkInput(original)
 	}
-	changes := working.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: tc.include})
+	changes := working.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Include: tc.include})
 	if tc.incoming != nil {
 		changes = tc.incoming(before).Changes(before)
 	}
@@ -209,11 +218,11 @@ git commit -m attributes
 	require.NoError(t, err, tc.name)
 	wrappedBefore := changes.Before().WithNewFile(".oracle-provenance", "").WithoutFile(".oracle-provenance")
 	oracle := changes.After().Changes(wrappedBefore)
-	commit := func(delta *dagger.Changeset) (*dagger.Workspace, error) {
-		id, err := working.WithCommit(delta, "reconcile "+tc.name, workspaceCommitDate, dagger.WorkspaceWithCommitOpts{
+	commit := func(delta *core.Changeset) (*core.Workspace, error) {
+		id, err := working.WithCommit(delta, "reconcile "+tc.name, workspaceCommitDate, core.WorkspaceWithCommitOpts{
 			AuthorName: "Oracle", AuthorEmail: "oracle@example.com",
 		}).ID(ctx)
-		return dagger.Ref[*dagger.Workspace](c, id), err
+		return core.Ref[*core.Workspace](core.NewQuery(c), id), err
 	}
 	fast, fastErr := commit(changes)
 	legacy, legacyErr := commit(oracle)
@@ -235,7 +244,10 @@ git commit -m attributes
 	require.NoError(t, err)
 	require.Equal(t, legacySHA, fastSHA, "%s: exact commit objects", tc.name)
 	require.NotEqual(t, baseSHA, fastSHA)
-	for _, result := range []*dagger.Workspace{fast, legacy} {
+	for _, result := range []*core.Workspace{fast, legacy} {
+		if tc.checkResult != nil {
+			tc.checkResult(result)
+		}
 		parents, err := result.Git().Head().TargetCommit().ParentShas(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{baseSHA}, parents, tc.name)
@@ -269,7 +281,7 @@ git commit -m attributes
 		}
 	}
 	require.Equal(t, workspaceCommitManifest(ctx, t, inspector, legacy.Directory("/")), workspaceCommitManifest(ctx, t, inspector, fast.Directory("/")), "%s: consumer filesystem", tc.name)
-	require.Equal(t, workspaceCommitManifest(ctx, t, inspector, legacy.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})), workspaceCommitManifest(ctx, t, inspector, fast.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})), "%s: committed checkout", tc.name)
+	require.Equal(t, workspaceCommitManifest(ctx, t, inspector, legacy.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})), workspaceCommitManifest(ctx, t, inspector, fast.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})), "%s: committed checkout", tc.name)
 	require.Equal(t, original, workspaceCommitManifest(ctx, t, inspector, working.Directory("/")), "%s: receiver must remain immutable", tc.name)
 }
 
@@ -278,10 +290,10 @@ func (WorkspaceSuite) TestWorkspaceWithCommitReconciliationOracle(ctx context.Co
 	fixture, inspector := workspaceReconciliationFixture(c)
 	const text = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
 	for _, tc := range []workspaceReconciliationCase{
-		{name: "ordinary", pending: func(d *dagger.Directory) *dagger.Directory {
+		{name: "ordinary", pending: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("file.txt", "selected\n")
 		}, include: []string{"file.txt"}, wantFile: "selected\n"},
-		{name: "identical selected overlap with raw metadata", pending: func(d *dagger.Directory) *dagger.Directory {
+		{name: "identical selected overlap with raw metadata", pending: func(d *core.Directory) *core.Directory {
 			return inspector.WithMountedDirectory("/work", d).WithExec([]string{"python3", "-c", `
 import os
 with open('/work/file.txt', 'w') as f: f.write('selected raw metadata\n')
@@ -296,17 +308,17 @@ os.setxattr('/work/file.txt', 'user.oracle', b'selected\x00metadata')
 			require.Equal(t, uint32(456), file.GID)
 			require.Equal(t, hex.EncodeToString([]byte("selected\x00metadata")), file.Xattrs["user.oracle"])
 		}},
-		{name: "compatible overlapping same file", pending: func(d *dagger.Directory) *dagger.Directory {
+		{name: "compatible overlapping same file", pending: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("file.txt", strings.Replace(text, "one", "OURS", 1))
-		}, incoming: func(d *dagger.Directory) *dagger.Directory {
+		}, incoming: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("file.txt", strings.Replace(text, "ten", "THEIRS", 1))
 		}, wantFile: strings.Replace(strings.Replace(text, "one", "OURS", 1), "ten", "THEIRS", 1)},
-		{name: "conflicting same file", pending: func(d *dagger.Directory) *dagger.Directory {
+		{name: "conflicting same file", pending: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("file.txt", "ours\n")
-		}, incoming: func(d *dagger.Directory) *dagger.Directory {
+		}, incoming: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("file.txt", "theirs\n")
 		}, conflict: true},
-		{name: "add delete type changes and symlinks", pending: func(d *dagger.Directory) *dagger.Directory {
+		{name: "add delete type changes and symlinks", pending: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("added.txt", "added\n").WithoutFile("delete.txt").
 				WithoutDirectory("nested").WithNewFile("nested", "directory became file\n").
 				WithoutFile("file-to-dir").WithNewFile("file-to-dir/sub/child", "file became nested directory\n").
@@ -314,26 +326,26 @@ os.setxattr('/work/file.txt', 'user.oracle', b'selected\x00metadata')
 				WithoutFile("link").WithNewFile("link", "symlink became file\n").
 				WithNewFile("pending-add", "not selected\n").WithoutFile("run")
 		}, include: []string{"added.txt", "delete.txt", "nested", "nested/**", "file-to-dir", "file-to-dir/**", "file-to-link", "link"}},
-		{name: "executable", pending: func(d *dagger.Directory) *dagger.Directory {
+		{name: "executable", pending: func(d *core.Directory) *core.Directory {
 			return inspector.WithMountedDirectory("/work", d).
 				WithExec([]string{"sh", "-ec", "chmod 755 /work/run; printf '#!/bin/sh\\necho new\\n' > /work/new-run; chmod 755 /work/new-run"}).Directory("/work")
 		}, include: []string{"run", "new-run"}, checkInput: func(manifest map[string]workspaceCommitManifestEntry) {
 			require.Equal(t, uint32(0o755), manifest["run"].Mode&0o7777)
 			require.Equal(t, uint32(0o755), manifest["new-run"].Mode&0o7777)
 		}},
-		{name: "static root and nested attributes", attributes: true, pending: func(d *dagger.Directory) *dagger.Directory {
+		{name: "static root and nested attributes", attributes: true, pending: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("file.txt", "selected\r\n").WithNewFile("nested/a.txt", "nested\r\nnew\r\n").WithNewFile("identity.id", "$Id$\nnew\n")
 		}, include: []string{"file.txt", "nested/a.txt", "identity.id"}},
-		{name: "changed root attributes", attributes: true, pending: func(d *dagger.Directory) *dagger.Directory {
+		{name: "changed root attributes", attributes: true, pending: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile(".gitattributes", "*.txt -text\n*.id -ident\n").WithNewFile("file.txt", "selected\r\n").WithNewFile("identity.id", "$Id$\nnew\n")
 		}, include: []string{".gitattributes", "file.txt", "identity.id"}},
-		{name: "changed nested attributes", attributes: true, pending: func(d *dagger.Directory) *dagger.Directory {
+		{name: "changed nested attributes", attributes: true, pending: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("nested/.gitattributes", "*.txt -text\n").WithNewFile("nested/a.txt", "nested\r\nnew\r\n")
 		}, include: []string{"nested/**"}},
-		{name: "unselected ignored file", pending: func(d *dagger.Directory) *dagger.Directory {
+		{name: "unselected ignored file", pending: func(d *core.Directory) *core.Directory {
 			return d.WithNewFile("file.txt", "selected\n").WithNewFile("ignored-pending", "ignored but visible\n")
 		}, include: []string{"file.txt"}},
-		{name: "rich metadata and empty directories", pending: func(d *dagger.Directory) *dagger.Directory {
+		{name: "rich metadata and empty directories", pending: func(d *core.Directory) *core.Directory {
 			return inspector.WithMountedDirectory("/work", d).WithExec([]string{"python3", "-c", `
 import os
 os.mkdir('/work/rich')
@@ -362,13 +374,79 @@ with open('/work/file.txt', 'w') as f: f.write('selected\n')
 	}
 }
 
+func (WorkspaceSuite) TestWorkspaceRemoteFirstNativeCommit(ctx context.Context, t *testctx.T) {
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture, inspector := workspaceReconciliationFixture(c)
+	service, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("file.txt", "base\n").WithNewFile("pending.txt", "base\n"))
+	const pushURL = "ssh://git@push.example.test/repo"
+	base := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service}).WithRemote("origin", url, core.GitRepositoryWithRemoteOpts{PushURL: pushURL}).Head().AsWorkspace()
+	checkWorkspaceReconciliation(ctx, t, c, fixture, inspector, workspaceReconciliationCase{
+		base: base, name: "remote first commit", include: []string{"file.txt"}, wantFile: "selected\n",
+		pending: func(d *core.Directory) *core.Directory { return d.WithNewFile("file.txt", "selected\n") },
+		checkResult: func(result *core.Workspace) {
+			gotURL, err := result.Git().Head().AsRepository().URL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, url, gotURL)
+			routing, err := inspector.WithMountedDirectory("/committed", result.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: false})).WithWorkdir("/committed").WithExec([]string{"git", "remote", "get-url", "--push", "origin"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, pushURL, strings.TrimSpace(routing))
+		},
+	})
+	require.NoError(t, c.Close())
+	traces, _ := sink.capture()
+	parents, names, native := map[string]string{}, map[string]string{}, map[string]bool{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					parents[id], names[id] = string(span.TraceId)+string(span.ParentSpanId), span.Name
+					for _, attr := range span.Attributes {
+						if span.Name == "git native commit transaction" && attr.Key == "dagger.git.native.supported" {
+							native[id] = attr.Value.GetBoolValue()
+						}
+					}
+				}
+			}
+		}
+	}
+	var promotions, writes, incremental int
+	for id, name := range names {
+		if names[parents[id]] == name {
+			continue
+		}
+		if name == "git promote remote commit base" {
+			promotions++
+		}
+		if name == "materialize incremental git checkout" {
+			incremental++
+		}
+		if name != "git commit-tree" {
+			continue
+		}
+		for parent := parents[id]; parent != ""; parent = parents[parent] {
+			if native[parent] {
+				writes++
+				break
+			}
+		}
+	}
+	require.Equal(t, 1, promotions, "merge and commit reuse one exact-recipe owned promotion")
+	require.Positive(t, writes, "remote first commit must really execute native commit-tree, not merely pass eligibility")
+	require.Positive(t, incremental, "remote canonical parent must be reused")
+}
+
 func (WorkspaceSuite) TestWorkspaceWithCommitNativeReconciliationTrace(ctx context.Context, t *testctx.T) {
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture, inspector := workspaceReconciliationFixture(c)
 	checkWorkspaceReconciliation(ctx, t, c, fixture, inspector, workspaceReconciliationCase{
 		name: "ordinary native trace", include: []string{"file.txt"}, wantFile: "selected\n",
-		pending: func(d *dagger.Directory) *dagger.Directory { return d.WithNewFile("file.txt", "selected\n") },
+		pending: func(d *core.Directory) *core.Directory { return d.WithNewFile("file.txt", "selected\n") },
 	})
 	require.NoError(t, c.Close()) // Drain telemetry, after all inline cases.
 	traces, _ := sink.capture()
@@ -427,30 +505,30 @@ func (WorkspaceSuite) TestWorkspaceCommittedHistoryDoesNotFetch(ctx context.Cont
 	checkout, hostGit := workspaceExportCheckout(ctx, t)
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout))...)
-	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	base := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
 	baseSHA, err := base.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	commit := func(message string) *dagger.Workspace {
+	commit := func(message string) *core.Workspace {
 		t.Helper()
 		state, err := commitWorkspace(ctx, c, base.WithNewFile("base.txt", message).
 			WithNewFile("pending.txt", "keep pending"), message, []string{"base.txt"})
 		require.NoError(t, err)
 		require.Equal(t, []string{"pending.txt"}, state.Git.Uncommitted.AddedPaths)
-		return dagger.Ref[*dagger.Workspace](c, state.ID)
+		return core.Ref[*core.Workspace](core.NewQuery(c), state.ID)
 	}
 	next, side := commit("next"), commit("side")
 	for _, tc := range []struct {
 		name string
-		head *dagger.GitRef
-		opts dagger.GitRefLogOpts
+		head *core.GitRef
+		opts core.GitRefLogOpts
 		want []string
 	}{
-		{name: "ahead", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Base: base.Git().Head(), Limit: 101}, want: []string{"next"}},
-		{name: "behind", head: base.Git().Head(), opts: dagger.GitRefLogOpts{Base: next.Git().Head(), Limit: 101}},
-		{name: "divergent", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Base: side.Git().Head()}, want: []string{"next"}},
-		{name: "reverse divergent", head: side.Git().Head(), opts: dagger.GitRefLogOpts{Base: next.Git().Head()}, want: []string{"side"}},
-		{name: "path filter", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Base: base.Git().Head(), Paths: []string{"base.txt"}}, want: []string{"next"}},
-		{name: "pending is not history", head: next.Git().Head(), opts: dagger.GitRefLogOpts{Paths: []string{"pending.txt"}}},
+		{name: "ahead", head: next.Git().Head(), opts: core.GitRefLogOpts{Base: base.Git().Head(), Limit: 101}, want: []string{"next"}},
+		{name: "behind", head: base.Git().Head(), opts: core.GitRefLogOpts{Base: next.Git().Head(), Limit: 101}},
+		{name: "divergent", head: next.Git().Head(), opts: core.GitRefLogOpts{Base: side.Git().Head()}, want: []string{"next"}},
+		{name: "reverse divergent", head: side.Git().Head(), opts: core.GitRefLogOpts{Base: next.Git().Head()}, want: []string{"side"}},
+		{name: "path filter", head: next.Git().Head(), opts: core.GitRefLogOpts{Base: base.Git().Head(), Paths: []string{"base.txt"}}, want: []string{"next"}},
+		{name: "pending is not history", head: next.Git().Head(), opts: core.GitRefLogOpts{Paths: []string{"pending.txt"}}},
 	} {
 		commits, err := tc.head.Log(ctx, tc.opts)
 		require.NoError(t, err, tc.name)
@@ -577,7 +655,7 @@ func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, 
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout), dagger.WithLogOutput(io.Discard))...)
 	t.Logf("PERF connect=%s", time.Since(started))
 	started = time.Now()
-	ws := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	ws := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
 	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, hostSHA, baseSHA)
@@ -590,7 +668,7 @@ func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, 
 		paths, err := ws.Git().Uncommitted().ModifiedPaths(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{"selected.txt", "pending.txt"}, paths)
-		selectedID, err := ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: []string{"selected.txt"}}).ID(ctx)
+		selectedID, err := ws.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Include: []string{"selected.txt"}}).ID(ctx)
 		require.NoError(t, err)
 		before := ws.Git().Head()
 		beforeSHA, err := before.CommitSHA(ctx)
@@ -598,11 +676,11 @@ func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, 
 		preStatus := time.Since(started)
 
 		started = time.Now()
-		id, err := ws.WithCommit(dagger.Ref[*dagger.Changeset](c, selectedID), fmt.Sprintf("perf: edit %d", i), workspaceCommitDate,
-			dagger.WorkspaceWithCommitOpts{AuthorName: "Performance Fixture", AuthorEmail: "performance@example.com"}).ID(ctx)
+		id, err := ws.WithCommit(core.Ref[*core.Changeset](core.NewQuery(c), selectedID), fmt.Sprintf("perf: edit %d", i), workspaceCommitDate,
+			core.WorkspaceWithCommitOpts{AuthorName: "Performance Fixture", AuthorEmail: "performance@example.com"}).ID(ctx)
 		require.NoError(t, err)
 		commitTime := time.Since(started)
-		next := dagger.Ref[*dagger.Workspace](c, id)
+		next := core.Ref[*core.Workspace](core.NewQuery(c), id)
 
 		started = time.Now()
 		pending := next.Git().Uncommitted()
@@ -619,7 +697,7 @@ func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, 
 
 		started = time.Now()
 		head := next.Git().Head()
-		ahead, err := head.Log(ctx, dagger.GitRefLogOpts{Base: before, Limit: 101})
+		ahead, err := head.Log(ctx, core.GitRefLogOpts{Base: before, Limit: 101})
 		require.NoError(t, err)
 		require.Len(t, ahead, 1)
 		message, err := ahead[0].Message(ctx)
@@ -628,10 +706,10 @@ func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, 
 		parents, err := ahead[0].ParentShas(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{beforeSHA}, parents)
-		behind, err := before.Log(ctx, dagger.GitRefLogOpts{Base: head, Limit: 101})
+		behind, err := before.Log(ctx, core.GitRefLogOpts{Base: head, Limit: 101})
 		require.NoError(t, err)
 		require.Empty(t, behind)
-		recent, err := head.Log(ctx, dagger.GitRefLogOpts{Limit: 2})
+		recent, err := head.Log(ctx, core.GitRefLogOpts{Limit: 2})
 		require.NoError(t, err)
 		require.Len(t, recent, 2)
 		history := time.Since(started)
@@ -639,8 +717,8 @@ func (WorkspaceSuite) TestWorkspaceScopedCommitPerformance(ctx context.Context, 
 		started = time.Now()
 		// Consume the committed tree as well as the overlaid workspace: an ID
 		// alone could hide deferred filesystem materialization.
-		tree := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
-		delta := tree.Changes(before.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}))
+		tree := head.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
+		delta := tree.Changes(before.Tree(core.GitRefTreeOpts{DiscardGitDir: true}))
 		paths, err = delta.ModifiedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"selected.txt"}, paths)
@@ -842,11 +920,11 @@ func logWorkspaceCommitPerformanceTrace(t *testctx.T, sink *agentTraceSink, iter
 
 func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().
 		WithNewFile("src/a.txt", "old-a").WithNewFile("src/b.txt", "old-b").
 		WithNewFile("keep.txt", "untouched"))
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).
-		Branch("main").AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "src"}).
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).
+		Branch("main").AsWorkspace(core.GitRefAsWorkspaceOpts{Cwd: "src"}).
 		WithNewFile("a.txt", "new-a").WithNewFile("b.txt", "new-b")
 	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
@@ -860,7 +938,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, 
 	require.Equal(t, workspaceCommitDate, first.Git.Head.TargetCommit.CommittedDate)
 	require.NotNil(t, first.Git.Repository.URL)
 	require.Equal(t, url, *first.Git.Repository.URL)
-	frozen := dagger.Ref[*dagger.Workspace](c, first.ID)
+	frozen := core.Ref[*core.Workspace](core.NewQuery(c), first.ID)
 	for file, expected := range map[string]string{"a.txt": "new-a", "b.txt": "new-b", "/keep.txt": "untouched"} {
 		contents, err := frozen.File(file).Contents(ctx)
 		require.NoError(t, err)
@@ -874,7 +952,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, 
 	equivalent, err := commitWorkspace(ctx, c, ws.WithConfigEnvironment(""), "same message", []string{"src/a.txt"})
 	require.NoError(t, err)
 	require.Equal(t, first.Git.Head.Commit, equivalent.Git.Head.Commit)
-	laterSHA, err := ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: []string{"src/a.txt"}}), "same message", "2026-09-05T12:00:01Z").Git().Head().CommitSHA(ctx)
+	laterSHA, err := ws.WithCommit(ws.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Include: []string{"src/a.txt"}}), "same message", "2026-09-05T12:00:01Z").Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, first.Git.Head.Commit, laterSHA)
 	second, err := commitWorkspace(ctx, c, frozen, "same message", nil)
@@ -885,17 +963,17 @@ func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, 
 	require.Empty(t, second.Git.Uncommitted.ModifiedPaths)
 	require.Empty(t, second.Git.Uncommitted.AddedPaths)
 	require.Empty(t, second.Git.Uncommitted.RemovedPaths)
-	log, err := dagger.Ref[*dagger.Workspace](c, second.ID).Git().Head().Log(ctx)
+	log, err := core.Ref[*core.Workspace](core.NewQuery(c), second.ID).Git().Head().Log(ctx)
 	require.NoError(t, err)
 	require.Len(t, log, 3)
-	_, err = commitWorkspace(ctx, c, dagger.Ref[*dagger.Workspace](c, second.ID), "same message", nil)
+	_, err = commitWorkspace(ctx, c, core.Ref[*core.Workspace](core.NewQuery(c), second.ID), "same message", nil)
 	require.ErrorContains(t, err, "nothing to commit")
 	// Input values are immutable, even after a path-scoped and a full commit.
 	oldSHA, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, baseSHA, oldSHA)
 
-	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(dagger.Ref[*dagger.Workspace](c, second.ID)))
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(core.Ref[*core.Workspace](core.NewQuery(c), second.ID)))
 	require.NoError(t, err)
 	id := new(call.ID)
 	require.NoError(t, id.Decode(string(recipe)))
@@ -904,7 +982,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitScopedHistory(ctx context.Context, 
 	for _, vertex := range dag.GetRecipe().CallsByDigest {
 		require.NotContains(t, []string{"currentWorkspace", "checkpoint", "withCommit", "branch"}, vertex.Field)
 	}
-	restored := dagger.Ref[*dagger.LLM](c, recipe).Workspace()
+	restored := core.Ref[*core.LLM](core.NewQuery(c), recipe).Workspace()
 	restoredSHA, err := restored.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, second.Git.Head.Commit, restoredSHA)
@@ -928,7 +1006,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFreezesHostAndAuthor(ctx context.Co
 	git("commit", "-m", "initial")
 	require.NoError(t, os.WriteFile(filepath.Join(checkout, "a.txt"), []byte("new"), 0o644))
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{Workdir: checkout})
-	ws := c.CurrentWorkspace()
+	ws := core.NewQuery(c).CurrentWorkspace()
 	_, err := ws.ID(ctx)
 	require.NoError(t, err)
 	// Commit authorship is sampled at commit time, even if the workspace
@@ -938,7 +1016,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFreezesHostAndAuthor(ctx context.Co
 	headBefore, statusBefore := git("rev-parse", "HEAD"), git("status", "--porcelain")
 	committed, err := commitWorkspace(ctx, c, ws, "engine commit", nil)
 	require.NoError(t, err)
-	recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(dagger.Ref[*dagger.Workspace](c, committed.ID)))
+	recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(core.Ref[*core.Workspace](core.NewQuery(c), committed.ID)))
 	require.NoError(t, err)
 	requireWorkspaceRecipeUsesHostGit(t, recipe)
 	require.NotEqual(t, headBefore, committed.Git.Head.Commit)
@@ -963,7 +1041,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitSignoff(ctx context.Context, t *tes
 	git("config", "user.name", "Inherited Author")
 	git("config", "user.email", "inherited@example.com")
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))
-	ws := c.CurrentWorkspace().WithNewFile("base.txt", "changed")
+	ws := core.NewQuery(c).CurrentWorkspace().WithNewFile("base.txt", "changed")
 	const message = "subject\n\nCommit body."
 
 	t.Run("does not sign off by default", func(ctx context.Context, t *testctx.T) {
@@ -974,35 +1052,35 @@ func (WorkspaceSuite) TestWorkspaceWithCommitSignoff(ctx context.Context, t *tes
 
 	for _, tc := range []struct {
 		name        string
-		opts        dagger.WorkspaceWithCommitOpts
+		opts        core.WorkspaceWithCommitOpts
 		authorName  string
 		authorEmail string
 	}{
 		{
 			name:       "inherited identity",
-			opts:       dagger.WorkspaceWithCommitOpts{Signoff: true},
+			opts:       core.WorkspaceWithCommitOpts{Signoff: true},
 			authorName: "Inherited Author", authorEmail: "inherited@example.com",
 		},
 		{
 			name:       "explicit identity",
-			opts:       dagger.WorkspaceWithCommitOpts{Signoff: true, AuthorName: "Explicit Author", AuthorEmail: "explicit@example.com"},
+			opts:       core.WorkspaceWithCommitOpts{Signoff: true, AuthorName: "Explicit Author", AuthorEmail: "explicit@example.com"},
 			authorName: "Explicit Author", authorEmail: "explicit@example.com",
 		},
 		{
 			name:       "explicit name with inherited email",
-			opts:       dagger.WorkspaceWithCommitOpts{Signoff: true, AuthorName: "Explicit Author"},
+			opts:       core.WorkspaceWithCommitOpts{Signoff: true, AuthorName: "Explicit Author"},
 			authorName: "Explicit Author", authorEmail: "inherited@example.com",
 		},
 		{
 			name:       "inherited name with explicit email",
-			opts:       dagger.WorkspaceWithCommitOpts{Signoff: true, AuthorEmail: "explicit@example.com"},
+			opts:       core.WorkspaceWithCommitOpts{Signoff: true, AuthorEmail: "explicit@example.com"},
 			authorName: "Inherited Author", authorEmail: "explicit@example.com",
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			id, err := ws.WithCommit(ws.Git().Uncommitted(), message, workspaceCommitDate, tc.opts).ID(ctx)
 			require.NoError(t, err)
-			meta := dagger.Ref[*dagger.Workspace](c, id).Git().Head().TargetCommit()
+			meta := core.Ref[*core.Workspace](core.NewQuery(c), id).Git().Head().TargetCommit()
 			got, err := meta.Message(ctx)
 			require.NoError(t, err)
 			require.Equal(t, message+"\n\nSigned-off-by: "+tc.authorName+" <"+tc.authorEmail+">", strings.TrimSpace(got))
@@ -1018,15 +1096,15 @@ func (WorkspaceSuite) TestWorkspaceWithCommitSignoff(ctx context.Context, t *tes
 
 func (WorkspaceSuite) TestWorkspaceWithResetAmendsHistory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base"))
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
 	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 
 	committed := ws.
 		WithNewFile("feature.txt", "feature").
-		WithNewFile("pending.txt", "pending").With(func(ws *dagger.Workspace) *dagger.Workspace {
-		return ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: []string{"feature.txt"}}), "draft mesage", workspaceCommitDate)
+		WithNewFile("pending.txt", "pending").With(func(ws *core.Workspace) *core.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Include: []string{"feature.txt"}}), "draft mesage", workspaceCommitDate)
 	})
 	draftSHA, err := committed.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
@@ -1053,15 +1131,15 @@ func (WorkspaceSuite) TestWorkspaceWithResetAmendsHistory(ctx context.Context, t
 	require.Equal(t, []string{"pending.txt"}, amended.Git.Uncommitted.AddedPaths)
 	require.NotNil(t, amended.Git.Repository.URL)
 	require.Equal(t, url, *amended.Git.Repository.URL)
-	log, err := dagger.Ref[*dagger.Workspace](c, amended.ID).Git().Head().Log(ctx)
+	log, err := core.Ref[*core.Workspace](core.NewQuery(c), amended.ID).Git().Head().Log(ctx)
 	require.NoError(t, err)
 	require.Len(t, log, 2)
-	feature, err := dagger.Ref[*dagger.Workspace](c, amended.ID).Git().Head().Tree().File("feature.txt").Contents(ctx)
+	feature, err := core.Ref[*core.Workspace](core.NewQuery(c), amended.ID).Git().Head().Tree().File("feature.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "feature", feature)
 
 	// A hard reset discards everything since the commit, pending edits included.
-	hard := committed.WithReset(baseSHA, dagger.WorkspaceWithResetOpts{Hard: true})
+	hard := committed.WithReset(baseSHA, core.WorkspaceWithResetOpts{Hard: true})
 	hardSHA, err := hard.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, baseSHA, hardSHA)
@@ -1093,16 +1171,16 @@ func (WorkspaceSuite) TestWorkspaceWithResetAmendsHistory(ctx context.Context, t
 
 func (WorkspaceSuite) TestWorkspaceWithResetRevisions(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base"))
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
 	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	first := ws.WithNewFile("first.txt", "first").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	first := ws.WithNewFile("first.txt", "first").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "first", workspaceCommitDate)
 	})
 	firstSHA, err := first.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
-	second := first.WithNewFile("second.txt", "second").With(func(ws *dagger.Workspace) *dagger.Workspace {
+	second := first.WithNewFile("second.txt", "second").With(func(ws *core.Workspace) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), "second", workspaceCommitDate)
 	})
 	secondSHA, err := second.Git().Head().CommitSHA(ctx)
@@ -1138,7 +1216,7 @@ func (WorkspaceSuite) TestWorkspaceWithResetRevisions(ctx context.Context, t *te
 		})
 	}
 
-	hard := second.WithReset("HEAD~2", dagger.WorkspaceWithResetOpts{Hard: true})
+	hard := second.WithReset("HEAD~2", core.WorkspaceWithResetOpts{Hard: true})
 	hardSHA, err := hard.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, baseSHA, hardSHA)
@@ -1164,34 +1242,34 @@ func (WorkspaceSuite) TestWorkspaceWithResetRevisions(ctx context.Context, t *te
 
 func (WorkspaceSuite) TestWorkspaceWithResetPreservesTree(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().
 		WithNewFile("keep.txt", "unchanged").
 		WithNewFile("src/change.txt", "before").
 		WithNewFile("removed.txt", "removed in draft"))
-	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	base := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
 	baseSHA, err := base.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	draft := base.WithNewFile("src/change.txt", "after").
 		WithNewFile("added.txt", "added in draft").WithoutFile("removed.txt").
-		With(func(ws *dagger.Workspace) *dagger.Workspace {
+		With(func(ws *core.Workspace) *core.Workspace {
 			return ws.WithCommit(ws.Git().Uncommitted(), "draft", workspaceCommitDate)
 		}).Git().Head()
 
 	for _, tc := range []struct {
 		name string
-		ws   *dagger.Workspace
+		ws   *core.Workspace
 	}{
 		{"clean Git ref", draft.AsWorkspace()},
 		{"directory with Git metadata", draft.AsWorkspace().Directory("/").WithDirectory(".git", draft.AsWorkspace().Git().Directory()).AsWorkspace()},
 		{"pending overlay", draft.AsWorkspace().WithNewFile("pending.txt", "pending")},
-		{"mounted directory", draft.AsWorkspace().WithMountedDirectory("/mounted", c.Directory().WithNewFile("data.txt", "read-only"))},
+		{"mounted directory", draft.AsWorkspace().WithMountedDirectory("/mounted", core.NewQuery(c).Directory().WithNewFile("data.txt", "read-only"))},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			// Use a nested cwd so preservation must address the boundary root.
 			ws := tc.ws.WithWorkdir("src")
 			id, err := ws.WithReset(baseSHA).ID(ctx)
 			require.NoError(t, err)
-			reset := dagger.Ref[*dagger.Workspace](c, id)
+			reset := core.Ref[*core.Workspace](core.NewQuery(c), id)
 			sha, err := reset.Git().Head().CommitSHA(ctx)
 			require.NoError(t, err)
 			require.Equal(t, baseSHA, sha)
@@ -1225,14 +1303,14 @@ func (WorkspaceSuite) TestWorkspaceWithResetPreservesTree(ctx context.Context, t
 
 func (WorkspaceSuite) TestWorkspaceWithCommitValidation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("old.txt", strings.Repeat("rename me\n", 20)))
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("old.txt", strings.Repeat("rename me\n", 20)))
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
 		WithoutFile("old.txt").WithNewFile("new.txt", strings.Repeat("rename me\n", 20))
 	// A filtered changeset, not Workspace, decides which rename sides to keep.
 	addition, err := commitWorkspace(ctx, c, ws, "new side only", []string{"new.txt"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"old.txt"}, addition.Git.Uncommitted.RemovedPaths)
-	additionTree := dagger.Ref[*dagger.Workspace](c, addition.ID).Git().Head().Tree()
+	additionTree := core.Ref[*core.Workspace](core.NewQuery(c), addition.ID).Git().Head().Tree()
 	for _, path := range []string{"old.txt", "new.txt"} {
 		exists, err := additionTree.Exists(ctx, path)
 		require.NoError(t, err)
@@ -1253,17 +1331,17 @@ func (WorkspaceSuite) TestWorkspaceWithCommitValidation(ctx context.Context, t *
 		err := c.Do(ctx, &dagger.Request{Query: `{ currentWorkspace { withCommit(` + args + `) { id } } }`}, &dagger.Response{Data: &response})
 		require.Error(t, err)
 	}
-	_, err = commitWorkspace(ctx, c, c.Directory().WithNewFile("a", "no Git").AsWorkspace(), "no repo", nil)
+	_, err = commitWorkspace(ctx, c, core.NewQuery(c).Directory().WithNewFile("a", "no Git").AsWorkspace(), "no repo", nil)
 	require.ErrorContains(t, err, "not in a git repository")
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitFilteredDirectoryDeletion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b"))
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().WithoutDirectory("src")
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("src/a.txt", "a").WithNewFile("src/b.txt", "b"))
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().WithoutDirectory("src")
 	partial, err := commitWorkspace(ctx, c, ws, "delete only a", []string{"src/a.txt"})
 	require.NoError(t, err)
-	committed := dagger.Ref[*dagger.Workspace](c, partial.ID)
+	committed := core.Ref[*core.Workspace](core.NewQuery(c), partial.ID)
 	tree := committed.Git().Head().Tree()
 	exists, err := tree.Exists(ctx, "src/a.txt")
 	require.NoError(t, err)
@@ -1279,35 +1357,137 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFilteredDirectoryDeletion(ctx conte
 	rest, err := commitWorkspace(ctx, c, committed, "delete b", nil)
 	require.NoError(t, err)
 	require.Empty(t, rest.Git.Uncommitted.RemovedPaths)
-	exists, err = dagger.Ref[*dagger.Workspace](c, rest.ID).Git().Head().Tree().Exists(ctx, "src/b.txt")
+	exists, err = core.Ref[*core.Workspace](core.NewQuery(c), rest.ID).Git().Head().Tree().Exists(ctx, "src/b.txt")
 	require.NoError(t, err)
 	require.False(t, exists)
 }
 
+// TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe covers a commit scoped
+// to one file of a workspace that also holds an uncommitted build output, e.g.
+// a `go test -c` binary in tmp/ (trace dfa26d7aa772715725e427efc5b65cdb).
+// Freezing the receiver used to re-record its whole pending overlay as one
+// inline patch blob; the binary made one span's call 129 MB, past what any
+// trace can hold. The overlay must stay by reference when freezing re-pins the
+// base by SHA, for a remote branch or a local checkout whose remote selection
+// it records, and the uncommitted file must survive.
+func (WorkspaceSuite) TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name, path, build string
+		local             bool
+	}{
+		{name: "binary", path: "tmp/app.test", build: "head -c 4194304 /dev/urandom > tmp/app.test"},
+		{name: "oversized text", path: "tmp/build.log", build: "yes 'compiling a package' | head -c 17825792 > tmp/build.log"},
+		{name: "binary in a local checkout", path: "tmp/app.test", build: "head -c 4194304 /dev/urandom > tmp/app.test", local: true},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c, sink := connectWithTrace(ctx, t)
+			outputs := core.NewQuery(c).Container().From(alpineImage).WithWorkdir("/out").
+				WithExec([]string{"sh", "-ec", "mkdir tmp; " + tc.build}).
+				Directory("/out")
+			size, err := outputs.File(tc.path).Size(ctx)
+			require.NoError(t, err)
+			var base *core.GitRef
+			if tc.local {
+				base = core.NewQuery(c).Container().From(alpineImage).
+					WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
+					WithWorkdir("/repo").WithExec([]string{"git", "init", "-b", "main"}).
+					WithNewFile("notes.txt", "base\n").
+					WithExec([]string{"git", "add", "."}).
+					WithExec([]string{"git", "commit", "-m", "base"}).
+					Directory(".").AsGit().Head()
+			} else {
+				daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("notes.txt", "base\n"))
+				base = core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main")
+			}
+			ws := base.AsWorkspace().
+				WithNewFile("notes.txt", "committed\n").
+				WithDirectory("/", outputs)
+
+			got, err := commitWorkspace(ctx, c, ws, "notes only", []string{"notes.txt"})
+			require.NoError(t, err)
+			require.Equal(t, []string{"tmp/", tc.path}, got.Git.Uncommitted.AddedPaths)
+			require.Empty(t, got.Git.Uncommitted.ModifiedPaths)
+
+			committed := core.Ref[*core.Workspace](core.NewQuery(c), got.ID)
+			if !tc.local {
+				// The commit is detached: the remote branch the workspace was
+				// built from still resolves through the remote, to its
+				// original commit, not to the new one.
+				baseSHA, err := base.CommitSHA(ctx)
+				require.NoError(t, err)
+				mainSHA, err := committed.Git().Head().AsRepository().Ref("main").CommitSHA(ctx)
+				require.NoError(t, err)
+				require.Equal(t, baseSHA, mainSHA, "committing must not advance the branch")
+			}
+			head := committed.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})
+			notes, err := head.File("notes.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "committed\n", notes)
+			exists, err := head.Exists(ctx, tc.path)
+			require.NoError(t, err)
+			require.False(t, exists, "the excluded build output must not be committed")
+			kept, err := committed.File(tc.path).Size(ctx)
+			require.NoError(t, err)
+			require.Equal(t, size, kept, "the uncommitted build output must survive the commit")
+
+			// The next commit freezes an overlay that holds only the output.
+			rest, err := commitWorkspace(ctx, c, committed, "outputs", nil)
+			require.NoError(t, err)
+			require.Empty(t, rest.Git.Uncommitted.AddedPaths)
+			restored := core.Ref[*core.Workspace](core.NewQuery(c), rest.ID)
+			kept, err = restored.Git().Head().Tree().File(tc.path).Size(ctx)
+			require.NoError(t, err)
+			require.Equal(t, size, kept)
+
+			// The recorded recipe, and every call the session published,
+			// stays small: nothing inlined the output as a patch blob.
+			recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(restored))
+			require.NoError(t, err)
+			require.Less(t, len(recipe), 1<<20, "the build output must not be inlined in the recipe")
+			id := new(call.ID)
+			require.NoError(t, id.Decode(string(recipe)))
+			fields := map[string]bool{}
+			collectIDFieldNames(id, fields)
+			require.True(t, fields["__withCommitRepository"], "the recipe must hold the commits")
+			require.True(t, fields["withExec"], "the overlay must reference the output's producer")
+			require.False(t, fields["blob"], "the overlay must not be embedded as a patch blob")
+			var large []string
+			sink.read(func(db *dagui.DB) {
+				for dgst, published := range db.Calls {
+					if n := proto.Size(published); n > 1<<20 {
+						large = append(large, fmt.Sprintf("%s %s (%d bytes)", dgst, published.Field, n))
+					}
+				}
+			})
+			require.Empty(t, large, "no published call may inline the build output")
+		})
+	}
+}
+
 func (WorkspaceSuite) TestWorkspaceWithCommitFileKindsAndMetadata(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().
 		WithNewFile("delete/a", "a").WithNewFile("delete/b", "b").
 		WithNewFile("binary", "before\x00binary"))
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
 		WithoutDirectory("delete").
 		WithNewFile("binary", "after\x00binary").
-		WithNewFile("run", "#!/bin/sh\n", dagger.WorkspaceWithNewFileOpts{Permissions: 0o755}).
-		WithDirectory("/", c.Directory().WithSymlink("binary", "link")).
+		WithNewFile("run", "#!/bin/sh\n", core.WorkspaceWithNewFileOpts{Permissions: 0o755}).
+		WithDirectory("/", core.NewQuery(c).Directory().WithSymlink("binary", "link")).
 		WithNewFile(":literal", "pathspecs are literal").
 		WithConfigEnvironment("testing").
-		WithMountedDirectory("/mounted", c.Directory().WithNewFile("readme", "read-only"))
+		WithMountedDirectory("/mounted", core.NewQuery(c).Directory().WithNewFile("readme", "read-only"))
 	partial, err := commitWorkspace(ctx, c, ws, "literal path", []string{":literal"})
 	require.NoError(t, err)
-	committed, err := commitWorkspace(ctx, c, dagger.Ref[*dagger.Workspace](c, partial.ID), "file kinds", nil)
+	committed, err := commitWorkspace(ctx, c, core.Ref[*core.Workspace](core.NewQuery(c), partial.ID), "file kinds", nil)
 	require.NoError(t, err)
 	require.Equal(t, "Dagger", committed.Git.Head.TargetCommit.AuthorName)
 	require.Empty(t, committed.Git.Uncommitted.AddedPaths)
 	require.Empty(t, committed.Git.Uncommitted.ModifiedPaths)
 	require.Empty(t, committed.Git.Uncommitted.RemovedPaths)
-	frozen := dagger.Ref[*dagger.Workspace](c, committed.ID)
-	tree := frozen.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
-	out, err := c.Container().From(alpineImage).WithDirectory("/tree", tree).WithWorkdir("/tree").
+	frozen := core.Ref[*core.Workspace](core.NewQuery(c), committed.ID)
+	tree := frozen.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})
+	out, err := core.NewQuery(c).Container().From(alpineImage).WithDirectory("/tree", tree).WithWorkdir("/tree").
 		WithExec([]string{"sh", "-ec", "test -x run; test ! -e delete; test ! -e mounted; test -L link; readlink link"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "binary\n", out)
@@ -1324,13 +1504,13 @@ func (WorkspaceSuite) TestWorkspaceWithCommitFileKindsAndMetadata(ctx context.Co
 
 func (WorkspaceSuite) TestWorkspaceWithCommitDirectoryRepository(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
-	directory := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base"))
+	directory := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).
 		Branch("main").Tree().WithNewFile("base.txt", "changed")
 	committed, err := commitWorkspace(ctx, c, directory.AsWorkspace(), "directory repo", nil)
 	require.NoError(t, err)
 	require.Empty(t, committed.Git.Uncommitted.ModifiedPaths)
-	frozen := dagger.Ref[*dagger.Workspace](c, committed.ID)
+	frozen := core.Ref[*core.Workspace](core.NewQuery(c), committed.ID)
 	contents, err := frozen.File("base.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "changed", contents)
@@ -1341,11 +1521,11 @@ func (WorkspaceSuite) TestWorkspaceWithCommitDirectoryRepository(ctx context.Con
 
 func (WorkspaceSuite) TestWorkspaceWithCommitLoadsCommittedModules(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"modules/probe\"\n").
 		WithNewFile("modules/probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
 		WithNewFile("modules/probe/main.go", "package main\ntype Probe struct{}\n"))
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace().
 		WithNewFile("modules/probe/main.go", `package main
 type Probe struct{}
 // +check
@@ -1353,19 +1533,19 @@ func (*Probe) Committed() error { return nil }
 `)
 	committed, err := commitWorkspace(ctx, c, ws, "add module", nil)
 	require.NoError(t, err)
-	checks, err := dagger.Ref[*dagger.Workspace](c, committed.ID).Artifacts().FilterTypes([]string{"Check"}).WithoutURI("**/stale").Items(ctx)
+	checks, err := core.Ref[*core.Workspace](core.NewQuery(c), committed.ID).Artifacts().FilterTypes([]string{"Check"}).WithoutURI("**/stale").Items(ctx)
 	require.NoError(t, err)
 	require.Len(t, checks, 1)
 	name, err := checks[0].URI(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag://probe/committed", name)
+	require.Equal(t, "dag://?check=probe/committed", name)
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	before := c.Directory().WithNewFile("base.txt", "base\n").WithNewFile("keep.txt", "keep\n")
+	before := core.NewQuery(c).Directory().WithNewFile("base.txt", "base\n").WithNewFile("keep.txt", "keep\n")
 	daemon, url := gitService(ctx, t, c, before)
-	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
+	base := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
 	// This baseline is deliberately not HEAD: unchanged foreign content must
 	// not be imported, while the actual incoming delta must survive in both trees.
 	foreign := before.WithNewFile("foreign.txt", "not a change\n")
@@ -1380,8 +1560,8 @@ func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context
 		t.Run(name, func(ctx context.Context, t *testctx.T) {
 			id, err := ws.WithCommit(incoming, "incoming delta", workspaceCommitDate).ID(ctx)
 			require.NoError(t, err)
-			got := dagger.Ref[*dagger.Workspace](c, id)
-			for _, tree := range []*dagger.Directory{got.Directory("/"), got.Git().Head().Tree()} {
+			got := core.Ref[*core.Workspace](core.NewQuery(c), id)
+			for _, tree := range []*core.Directory{got.Directory("/"), got.Git().Head().Tree()} {
 				for file, want := range map[string]string{"base.txt": "incoming\n", "new.txt": "new\n"} {
 					content, err := tree.File(file).Contents(ctx)
 					require.NoError(t, err)
@@ -1407,7 +1587,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context
 			}
 			// External before/after trees are retained in a stable recipe too;
 			// replay must neither sample host state nor rerun the commit boundary.
-			recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(got))
+			recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(got))
 			require.NoError(t, err)
 			recipeID := new(call.ID)
 			require.NoError(t, recipeID.Decode(string(recipe)))
@@ -1416,7 +1596,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context
 			for _, vertex := range dag.GetRecipe().CallsByDigest {
 				require.NotContains(t, []string{"currentWorkspace", "checkpoint", "withCommit", "branch"}, vertex.Field)
 			}
-			restored := dagger.Ref[*dagger.LLM](c, recipe).Workspace()
+			restored := core.Ref[*core.LLM](core.NewQuery(c), recipe).Workspace()
 			content, err := restored.File("base.txt").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "incoming\n", content)
@@ -1438,16 +1618,16 @@ func (WorkspaceSuite) TestWorkspaceWithCommitIncomingChanges(ctx context.Context
 
 func (WorkspaceSuite) TestWorkspaceWithCommitIgnoresGitMetadata(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	before := c.Directory().WithNewFile("base.txt", "base")
+	before := core.NewQuery(c).Directory().WithNewFile("base.txt", "base")
 	daemon, url := gitService(ctx, t, c, before)
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
 	metadata := before.WithNewFile(".git/HEAD", "ref: refs/heads/injected\n").
 		WithNewFile(".git/config", "[remote \"origin\"]\nurl = file:///injected\n")
 	_, err := ws.WithCommit(metadata.Changes(before), "metadata only", workspaceCommitDate).ID(ctx)
 	require.ErrorContains(t, err, "nothing to commit")
 	id, err := ws.WithCommit(metadata.WithNewFile("base.txt", "changed").Changes(before), "mixed input", workspaceCommitDate).ID(ctx)
 	require.NoError(t, err)
-	got := dagger.Ref[*dagger.Workspace](c, id)
+	got := core.Ref[*core.Workspace](core.NewQuery(c), id)
 	content, err := got.File("base.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "changed", content)
@@ -1460,7 +1640,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitIgnoresGitMetadata(ctx context.Cont
 	origin, err := got.Git().Head().AsRepository().URL(ctx)
 	require.NoError(t, err)
 	require.Equal(t, url, origin)
-	for _, tree := range []*dagger.Directory{got.Directory("/"), got.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})} {
+	for _, tree := range []*core.Directory{got.Directory("/"), got.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})} {
 		exists, err := tree.Exists(ctx, ".git")
 		require.NoError(t, err)
 		require.False(t, exists)
@@ -1472,9 +1652,9 @@ func (WorkspaceSuite) TestWorkspaceWithCommitIgnoresGitMetadata(ctx context.Cont
 
 func (WorkspaceSuite) TestWorkspaceWithCommitMergeConflicts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	before := c.Directory().WithNewFile("base.txt", "base\n")
+	before := core.NewQuery(c).Directory().WithNewFile("base.txt", "base\n")
 	daemon, url := gitService(ctx, t, c, before)
-	base := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
+	base := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
 	incoming := before.WithNewFile("base.txt", "incoming\n").Changes(before)
 	t.Run("working tree conflict", func(ctx context.Context, t *testctx.T) {
 		ws := base.WithNewFile("base.txt", "pending\n")
@@ -1501,7 +1681,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitMergeConflicts(ctx context.Context,
 		text := "first\n" + strings.Repeat("context\n", 10) + "last\n"
 		ours := base.WithNewFile("base.txt", text)
 		ours = ours.WithCommit(ours.Git().Uncommitted(), "multiline base", workspaceCommitDate)
-		baseline := ours.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		baseline := ours.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 		selected := baseline.WithNewFile("base.txt", strings.Replace(text, "first", "selected", 1)).Changes(baseline)
 		ws := ours.WithNewFile("base.txt", strings.Replace(text, "last", "pending", 1))
 		committed := ws.WithCommit(selected, "partial file", workspaceCommitDate)
@@ -1516,10 +1696,10 @@ func (WorkspaceSuite) TestWorkspaceWithCommitMergeConflicts(ctx context.Context,
 
 func (WorkspaceSuite) TestWorkspaceWithCommitLiteralPaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("a*.txt", "old").WithNewFile("abc.txt", "old").WithNewFile("dir[1]/file", "old"))
-	ws := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace().
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("a*.txt", "old").WithNewFile("abc.txt", "old").WithNewFile("dir[1]/file", "old"))
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace().
 		WithNewFile("a*.txt", "literal").WithNewFile("abc.txt", "unselected").WithNewFile("dir[1]/file", "selected directory")
-	result := ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: []string{`a\*.txt`, `dir\[1]`}}), "literal paths", workspaceCommitDate)
+	result := ws.WithCommit(ws.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Include: []string{`a\*.txt`, `dir\[1]`}}), "literal paths", workspaceCommitDate)
 	for file, want := range map[string]string{"a*.txt": "literal", "abc.txt": "old", "dir[1]/file": "selected directory"} {
 		got, err := result.Git().Head().Tree().File(file).Contents(ctx)
 		require.NoError(t, err)

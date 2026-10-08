@@ -14,6 +14,7 @@ import (
 	"context"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/testctx"
@@ -345,7 +346,7 @@ func (JavaSuite) TestGitRef(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "container-echo")
 }
 
-func javaModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
+func javaModule(t *testctx.T, c *dagger.Client, moduleName string) *core.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/java", moduleName))
 	require.NoError(t, err)
@@ -354,7 +355,7 @@ func javaModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Conta
 	require.NoError(t, err)
 
 	return goGitBase(t, c).
-		WithDirectory("modules/"+moduleName, c.Host().Directory(modSrc)).
-		WithDirectory("sdk/java", c.Host().Directory(sdkSrc)).
+		WithDirectory("modules/"+moduleName, core.NewQuery(c).Host().Directory(modSrc)).
+		WithDirectory("sdk/java", core.NewQuery(c).Host().Directory(sdkSrc)).
 		WithWorkdir("/work/modules/" + moduleName)
 }

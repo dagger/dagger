@@ -280,6 +280,24 @@ function Get-Checksum {
     return $checksum
 }
 
+# Every main publish overwrites the files in main/head one at a time, so the
+# head zip and head checksums.txt can come from different commits.
+# checksums.txt also lists the same build under its commit SHA: resolve head to
+# that commit, and download the commit's own artifacts instead.
+function Resolve-HeadCommit {
+    $arch = Get-ProcessorArchitecture
+    $checksumUrl = "https://dl.dagger.io/dagger/main/head/checksums.txt"
+    $response = Invoke-RestMethod -Uri $checksumUrl -UserAgent "PowerShell"
+
+    foreach ($line in $response -split "`n") {
+        if ($line -match "^[0-9a-f]{64}  dagger_([0-9a-f]{40})_windows_${arch}\.zip$") {
+            return $Matches[1]
+        }
+    }
+
+    throw "Unable to find a windows_${arch} commit build in $checksumUrl"
+}
+
 function Compare-Checksum {
     Param (
         [Parameter(Mandatory = $true)]
@@ -398,6 +416,11 @@ Please check the option and try again.
 "@
             exit 1
         }
+    }
+
+    if ($DaggerCommit -eq "head") {
+        $DaggerCommit = Resolve-HeadCommit
+        Write-Output "Resolved head to commit $DaggerCommit"
     }
 
     $zipUrl = Get-DownloadUrl

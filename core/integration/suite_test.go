@@ -18,6 +18,8 @@ import (
 	"sync"
 	"testing"
 
+	sdkcore "dagger.io/dagger/core"
+
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -78,7 +80,11 @@ func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagge
 	}, opts...)
 	client, err := dagger.Connect(ctx, opts...)
 	require.NoError(t, err)
-	t.Cleanup(func() { client.Close() })
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Logf("client close: %v", err)
+		}
+	})
 	return client
 }
 
@@ -258,29 +264,29 @@ func daggerLinuxCliPath(t testing.TB) string {
 	return cliPath
 }
 
-func daggerCliFile(t testing.TB, c *dagger.Client) *dagger.File {
+func daggerCliFile(t testing.TB, c *dagger.Client) *sdkcore.File {
 	// This loads the dagger-cli binary from the host into the container, that
 	// was set up by the test caller. This is used to communicate with the dev
 	// engine.
 	t.Helper()
-	return c.Host().File(daggerLinuxCliPath(t))
+	return sdkcore.NewQuery(c).Host().File(daggerLinuxCliPath(t))
 }
 
-func daggerCliBase(t testing.TB, c *dagger.Client) *dagger.Container {
+func daggerCliBase(t testing.TB, c *dagger.Client) *sdkcore.Container {
 	t.Helper()
-	return c.Container().From(golangImage).
+	return sdkcore.NewQuery(c).Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work")
 }
 
 const testCLIBinPath = "/bin/dagger"
 
-func goCache(c *dagger.Client) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
+func goCache(c *dagger.Client) sdkcore.WithContainerFunc {
+	return func(ctr *sdkcore.Container) *sdkcore.Container {
 		return ctr.
-			WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+			WithMountedCache("/go/pkg/mod", sdkcore.NewQuery(c).CacheVolume("go-mod")).
 			WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-			WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
+			WithMountedCache("/go/build-cache", sdkcore.NewQuery(c).CacheVolume("go-build")).
 			WithEnvVariable("GOCACHE", "/go/build-cache").
 			With(withRepoGoModules(c))
 	}
@@ -305,9 +311,9 @@ func (s *safeBuffer) String() string {
 
 // ensure the cache mount doesn't get pruned in the middle of the test by having a container
 // run throughout with the cache mounted as a service dependency
-func preventCacheMountPrune(c *dagger.Client, t *testctx.T, cache *dagger.CacheVolume, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
+func preventCacheMountPrune(c *dagger.Client, t *testctx.T, cache *sdkcore.CacheVolume, opts ...sdkcore.ContainerWithMountedCacheOpts) sdkcore.WithContainerFunc {
 	t.Helper()
-	svc, err := c.Container().
+	svc, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "socat"}).
 		WithMountedCache("/cache", cache, opts...).
@@ -317,7 +323,7 @@ func preventCacheMountPrune(c *dagger.Client, t *testctx.T, cache *dagger.CacheV
 		Start(t.Context())
 	require.NoError(t, err)
 
-	return func(ctr *dagger.Container) *dagger.Container {
+	return func(ctr *sdkcore.Container) *sdkcore.Container {
 		return ctr.WithServiceBinding("cachemountsaver", svc)
 	}
 }
@@ -333,7 +339,7 @@ func requireErrOut(t *testctx.T, err error, out string, msgAndInterface ...any) 
 	if err == nil {
 		require.Fail(t, "expected error, got nil")
 	}
-	var execErr *dagger.ExecError
+	var execErr *sdkcore.ExecError
 	if errors.As(err, &execErr) {
 		require.Contains(
 			t,
@@ -357,7 +363,7 @@ func requireErrRegexp(t *testctx.T, err error, re string) {
 	if err == nil {
 		require.Fail(t, "expected error, got nil")
 	}
-	var execErr *dagger.ExecError
+	var execErr *sdkcore.ExecError
 	if errors.As(err, &execErr) {
 		require.Regexp(
 			t,

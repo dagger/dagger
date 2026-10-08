@@ -2,9 +2,11 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -12,10 +14,13 @@ import (
 
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -27,6 +32,17 @@ const (
 	MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
 	MinFunctionCacheTTLSeconds = 1
 )
+
+// declaredClientsInput puts a module's declared local clients into the cache
+// identity of its function calls. The module serves them at run time, after
+// the cache lookup, so nothing else in the key changes when they do.
+const declaredClientsInput = "declaredClients"
+
+// declaredGitClientsInput puts the git clients a module's governing config
+// declares into the cache identity of its function calls. They decide whether
+// its code may borrow the session's git credentials, and the config can sit
+// outside the module's source.
+const declaredGitClientsInput = "declaredGitClients"
 
 type ModuleFunction struct {
 	mod    dagql.ObjectResult[*Module]
@@ -808,15 +824,160 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		}
 	}
 
-	return nil
+	clientsDigest, err := fn.declaredClientsDigest(ctx)
+	if err != nil {
+		return err
+	}
+	if clientsDigest != "" {
+		if err := req.SetImplicitInput(ctx, declaredClientsInput, dagql.NewString(clientsDigest)); err != nil {
+			return err
+		}
+	}
+	gitClientsDigest, err := fn.declaredGitClientsDigest(ctx)
+	if err != nil || gitClientsDigest == "" {
+		return err
+	}
+	if err := req.SetImplicitInput(ctx, declaredGitClientsInput, dagql.NewString(gitClientsDigest)); err != nil {
+		return err
+	}
+	// The result may come from credentials this session lent, which another
+	// session may lack.
+	session, err := dagql.PerSessionInput.Resolver(ctx, nil)
+	if err != nil {
+		return err
+	}
+	return req.SetImplicitInput(ctx, dagql.PerSessionInput.Name, session)
+}
+
+// declaredGitClientsDigest digests the git clients that the config governing
+// the function's module declares, which its code may serve with the session's
+// git credentials. It is empty when there are none.
+func (fn *ModuleFunction) declaredGitClientsDigest(ctx context.Context) (string, error) {
+	mod := fn.mod.Self()
+	if !mod.Source.Valid || mod.Source.Value.Self() == nil {
+		return "", nil
+	}
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", err
+	}
+	declared, err := ModuleDeclaredGitClients(ctx, dag, mod.Source.Value.Self())
+	if err != nil {
+		// A declaration that cannot be read must not fail calls that never
+		// serve a git client, nor let a result computed meanwhile be reused.
+		return "unreadable:" + rand.Text(), nil //nolint:nilerr // deliberate: no failure and no reuse
+	}
+	if len(declared) == 0 {
+		return "", nil
+	}
+	keys := make([]string, 0, len(declared))
+	for _, ref := range declared {
+		keys = append(keys, workspace.GitClientKey(ref))
+	}
+	slices.Sort(keys)
+	return hashutil.HashStrings(append([]string{declaredGitClientsInput}, slices.Compact(keys)...)...).String(), nil
+}
+
+// declaredClientsDigest digests the local clients the current workspace
+// declares for the function's module, and theirs in turn. It is empty when
+// there are none.
+func (fn *ModuleFunction) declaredClientsDigest(ctx context.Context) (string, error) {
+	mod := fn.mod.Self()
+	if !mod.Source.Valid || mod.Source.Value.Self() == nil {
+		return "", nil
+	}
+	src := mod.Source.Value.Self()
+	if src.Kind != ModuleSourceKindLocal || src.Local == nil {
+		return "", nil
+	}
+
+	var ws *Workspace
+	if bound, ok := WorkspaceFromContext(ctx); ok {
+		ws = bound.Self()
+	} else {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return "", err
+		}
+		ws, err = query.Server.CurrentWorkspace(ctx)
+		if errors.Is(err, ErrNoCurrentWorkspace) {
+			return "", nil
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	if ws.HostPath() == "" {
+		return "", nil
+	}
+	modulePath, err := filepath.Rel(ws.HostPath(), filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath))
+	if err != nil {
+		return "", err
+	}
+
+	targets := map[string]bool{}
+	pending := slices.Clone(ws.ModuleClients(filepath.ToSlash(modulePath)))
+	for len(pending) > 0 {
+		target := pending[0]
+		pending = pending[1:]
+		if targets[target] {
+			continue
+		}
+		targets[target] = true
+		pending = append(pending, ws.ModuleClients(target)...)
+	}
+	if len(targets) == 0 {
+		return "", nil
+	}
+
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", err
+	}
+	var wsRes dagql.ObjectResult[*Workspace]
+	if err := dag.Select(ctx, dag.Root(), &wsRes, dagql.Selector{Field: "currentWorkspace"}); err != nil {
+		return "", err
+	}
+	inputs := []string{declaredClientsInput}
+	for _, target := range slices.Sorted(maps.Keys(targets)) {
+		var targetDigest string
+		if err := dag.Select(ctx, wsRes, &targetDigest,
+			dagql.Selector{
+				Field: "moduleSource",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/" + target)}},
+			},
+			dagql.Selector{Field: "digest"},
+		); err != nil {
+			// A target that does not resolve must not fail calls that never
+			// serve it. Its error stands in for its digest: a call that serves
+			// it fails uncached, and one that keeps the error sees it change.
+			targetDigest = "unresolved:" + StripErrorOrigins(err.Error())
+		}
+		inputs = append(inputs, target, targetDigest)
+	}
+	return hashutil.HashStrings(inputs...).String(), nil
+}
+
+// runtimeLessSDK is implemented by SDKs that call a module without loading a
+// runtime, such as a module entrypoint evaluated in the engine.
+type runtimeLessSDK interface {
+	HasNoRuntime() bool
 }
 
 func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRuntime, rerr error) {
-	// hide all this internal plumbing making up the call
-	ctx, hideSpan := Tracer(ctx).Start(ctx, "load sdk runtime", telemetry.Internal())
-	defer telemetry.EndWithCause(hideSpan, &rerr)
-
 	mod := fn.mod.Self()
+	var noRuntime bool
+	if !mod.Runtime.Valid && mod.Source.Valid {
+		sdk, ok := mod.Source.Value.Self().SDKImpl.(runtimeLessSDK)
+		noRuntime = ok && sdk.HasNoRuntime()
+	}
+	if !noRuntime {
+		// hide all this internal plumbing making up the call
+		var hideSpan trace.Span
+		ctx, hideSpan = Tracer(ctx).Start(ctx, "load sdk runtime", telemetry.Internal())
+		defer telemetry.EndWithCause(hideSpan, &rerr)
+	}
+
 	if mod.Runtime.Valid {
 		return &ContainerRuntime{Container: mod.Runtime.Value}, nil
 	}
@@ -1231,21 +1392,22 @@ func (fn *ModuleFunction) loadContextualGitArg(
 // function body. It keys off an active function call, not merely a module in
 // context: a direct client (CLI/SDK) and schema-walking flows like `dagger
 // generate` load a module but run no function, and must still be allowed to
-// auto-inject a Workspace. ErrNoCurrentModule is the direct-client signal and is
-// swallowed; any other error is a real lookup failure.
+// auto-inject a Workspace. ErrNoCurrentModule and ErrNoCurrentFunctionCall are
+// the direct-client signals and are swallowed; any other error is a real lookup
+// failure.
 func callerInModuleFunction(ctx context.Context) (bool, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return false, fmt.Errorf("get current query: %w", err)
 	}
-	fnCall, err := query.CurrentFunctionCall(ctx)
-	if errors.Is(err, ErrNoCurrentModule) {
+	_, err = query.CurrentFunctionCall(ctx)
+	if errors.Is(err, ErrNoCurrentModule) || errors.Is(err, ErrNoCurrentFunctionCall) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("get current function call: %w", err)
 	}
-	return fnCall != nil, nil
+	return true, nil
 }
 
 // loadWorkspaceArg loads a workspace argument by resolving it through the

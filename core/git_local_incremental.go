@@ -32,14 +32,18 @@ func (ref *LocalGitRef) incrementalCheckoutEligible() bool {
 		return false
 	}
 	_, local := parent.Backend.(*LocalGitRef)
-	return local
+	if local {
+		return true
+	}
+	_, remote := parent.Backend.(*RemoteGitRef)
+	return remote && base.Tree.Self() != nil
 }
 
 // incrementalTree applies only the commit's delta to a COW child of the parent
 // tree. False means the caller must use the full checkout: unsupported inputs,
 // a cold parent it may not materialize (see incrementalParentTree), a snapshot
-// chain that is already too deep, or any other failure (see nativeFallback).
-// Only the caller's cancellation surfaces.
+// chain that is already too deep, an unusable parent tree, or any other failure
+// (see nativeFallback). Only the caller's cancellation surfaces.
 func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) (_ *Directory, supported bool, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "materialize incremental git checkout", telemetry.Internal())
 	defer func() {
@@ -49,15 +53,21 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		span.SetAttributes(attribute.Bool("dagger.git.checkout.incremental.supported", supported))
 		telemetry.EndWithCause(span, &rerr)
 	}()
+	if err := ref.repo.CheckoutBase.validateTree(ctx); err != nil {
+		return nil, false, err
+	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 	var result *Directory
-	err = ref.mount(ctx, 0, false, func(source *gitutil.GitCLI) (rerr error) {
+	err = ref.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) (rerr error) {
+		if _, err := ref.repo.nativeGitDir(ctx, source.Dir()); err != nil {
+			return err
+		}
 		// These gates run before selecting/evaluating the parent tree. Unsupported
 		// controls must re-checkout every file, including otherwise unchanged blobs.
-		plan, reason, err := planIncrementalGitCheckout(ctx, source, ref.repo.CheckoutBase.Parent.Self().Ref.SHA, ref.SHA)
+		plan, reason, err := planIncrementalGitCheckout(ctx, source, ref.repo.CheckoutBase.Parent.Self().Ref.SHA, ref.SHA, ref.repo.HistorySource.Self() != nil)
 		if err != nil {
 			return err
 		}
@@ -66,10 +76,13 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 			return nil
 		}
 		// Selecting the tree is cheap: it returns the canonical lazy result
-		// without materializing it.
-		var parent dagql.ObjectResult[*Directory]
-		if err := srv.Select(ctx, ref.repo.CheckoutBase.Parent, &parent, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}); err != nil {
-			return err
+		// without materializing it. A remote parent's tree is pinned instead,
+		// so its checkout never needs another fetch.
+		parent := ref.repo.CheckoutBase.Tree
+		if parent.Self() == nil {
+			if err := srv.Select(ctx, ref.repo.CheckoutBase.Parent, &parent, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}); err != nil {
+				return err
+			}
 		}
 		snapshot, parentPath, ok, err := incrementalParentTree(ctx, parent)
 		if err != nil {
@@ -174,14 +187,14 @@ type incrementalGitCheckoutEntry struct {
 
 // No baseline filesystem traversal: tree/index scans are Git metadata only.
 // A supported result is immutable evidence for the immediately following apply.
-func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, parent, child string) (*incrementalGitCheckoutPlan, string, error) {
+func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, parent, child string, ownedShallow bool) (*incrementalGitCheckoutPlan, string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
 	if len(parent) != 40 || len(child) != 40 || !IsFullGitSHA(parent) || !IsFullGitSHA(child) {
 		return nil, "commit-format", nil
 	}
-	if _, err := nativeCommitGitDir(ctx, source.Dir()); err != nil {
+	if _, err := nativeCommitGitDirWithShallow(ctx, source.Dir(), ownedShallow); err != nil {
 		if nativeCommitFallback(err) {
 			return nil, "repository-layout", nil
 		}

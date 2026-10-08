@@ -57,6 +57,7 @@
 ["","oci-latest",["docker.io/tmknom/markdownlint"],"latest"]
 ["","oci-latest",["ghcr.io/miniscruff/changie"],"v1.26.0"]
 ["","oci-sha",["cgr.dev/chainguard/wolfi-base:latest"],"sha256:65e1acb87a2bf356b92c5f70f3980f03b4bb51dfd483c834e01557525f15c1d9"]
+["","oci-sha",["docker.io/golangci/golangci-lint:v2.14.0-alpine"],"sha256:25925c95ebdc7aee39ecc0e6f4f33ac27b9a91718bc65fdf18a1a5c4c9325ee4"]
 ["","oci-sha",["docker.io/library/alpine:3.20"],"sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"]
 ["","oci-sha",["docker.io/library/alpine:3.22.1"],"sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1"]
 ["","oci-sha",["docker.io/library/busybox:1.38.0"],"sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616"]

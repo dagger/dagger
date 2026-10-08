@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/util/lockfile"
@@ -32,7 +34,7 @@ func TestGenerators(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(GeneratorsSuite{})
 }
 
-func generatorsTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
+func generatorsTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
 	return specificTestEnv(t, c, "generators")
 }
 
@@ -118,8 +120,8 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 
 			t.Run("error", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.
-					WithExec([]string{"dagger", "generate", "changeset-failure", "-y", "--progress=plain"}, dagger.ContainerWithExecOpts{
-						Expect: dagger.ReturnTypeAny,
+					WithExec([]string{"dagger", "generate", "changeset-failure", "-y", "--progress=plain"}, core.ContainerWithExecOpts{
+						Expect: core.ReturnTypeAny,
 					}).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
@@ -239,8 +241,8 @@ func (GeneratorsSuite) TestGeneratorLazyExecFailureSurfacesStderr(ctx context.Co
 	modGen = modGen.WithWorkdir("hello-with-generators")
 
 	out, err := modGen.
-		WithExec([]string{"dagger", "generate", "lazy-exec-failure", "-y", "--progress=plain"}, dagger.ContainerWithExecOpts{
-			Expect: dagger.ReturnTypeAny,
+		WithExec([]string{"dagger", "generate", "lazy-exec-failure", "-y", "--progress=plain"}, core.ContainerWithExecOpts{
+			Expect: core.ReturnTypeAny,
 		}).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
@@ -326,8 +328,8 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 					With(daggerExec("generate", "-l", "-f=link")).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
-				require.Contains(t, out, "dag+generator://"+tc.path+"/generate-files")
-				require.Contains(t, out, "dag+generator://"+tc.path+"/generate-other-files")
+				require.Contains(t, out, "dag+generator://?generator="+tc.path+"/generate-files")
+				require.Contains(t, out, "dag+generator://?generator="+tc.path+"/generate-other-files")
 			})
 
 			t.Run("generate", func(ctx context.Context, t *testctx.T) {
@@ -365,7 +367,7 @@ func (GeneratorsSuite) TestGeneratorArtifactsSyncWithNestedSDKCodegen(ctx contex
 	modGen := goGitBase(t, c).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
 		With(nonNestedDevEngine(c)).
-		WithDirectory(".dagger/modules/module-max-lifecycle", c.Host().Directory(sdkModulePath)).
+		WithDirectory(".dagger/modules/module-max-lifecycle", core.NewQuery(c).Host().Directory(sdkModulePath)).
 		WithNewFile("dagger.toml", `[modules.consumer]
 source = ".dagger/modules/consumer"
 entrypoint = true
@@ -407,15 +409,15 @@ name = "leaf"
 import (
 	"context"
 
-	"dagger/consumer/internal/dagger"
+	"dagger/consumer/internal/dagger/core"
 )
 
 type Consumer struct{}
 
-func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspace) (string, error) {
+func (m *Consumer) SyncGenerators(ctx context.Context, workspace *core.Workspace) (string, error) {
 	items, err := workspace.Artifacts().FilterTypes([]string{"Generator"}).AsGenerators(ctx)
 	if err != nil { return "", err }
-	var changes []*dagger.Changeset
+	var changes []*core.Changeset
 	for _, generator := range items {
 		changes = append(changes, generator.Changeset())
 	}
@@ -511,7 +513,7 @@ func (GeneratorsSuite) TestSDKModuleClientAddAfterInit(ctx context.Context, t *t
 	base := goGitBase(t, c).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
 		With(nonNestedDevEngine(c)).
-		WithDirectory("go-sdk", c.Host().Directory(sdkModulePath)).
+		WithDirectory("go-sdk", core.NewQuery(c).Host().Directory(sdkModulePath)).
 		WithNewFile("dep/dagger-module.toml", `name = "dep"
 engineVersion = "latest"
 
@@ -529,7 +531,7 @@ source = "go-sdk"
 module = "go-sdk"
 `)
 
-	requireScopeClients := func(ctx context.Context, t *testctx.T, ctr *dagger.Container, scope string, clients []string) {
+	requireScopeClients := func(ctx context.Context, t *testctx.T, ctr *core.Container, scope string, clients []string) {
 		t.Helper()
 		contents, err := ctr.File("/work/dagger.toml").Contents(ctx)
 		require.NoError(t, err)
@@ -588,7 +590,7 @@ func (GeneratorsSuite) TestSDKModuleClientUpdateRefreshesLockAndRegenerates(ctx 
 
 	// Both updates must resolve the same branch tip. Public main can advance
 	// between them, so serve a repository owned by this test instead.
-	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().
+	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().
 		WithNewFile("dagger-module.toml", `name = "wolfi"
 
 [runtime]
@@ -603,7 +605,7 @@ source = "dang"
 	t.Cleanup(func() {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		_, err := gitDaemon.Stop(stopCtx, dagger.ServiceStopOpts{Kill: true})
+		_, err := gitDaemon.Stop(stopCtx, core.ServiceStopOpts{Kill: true})
 		require.NoError(t, err, "stop client-update git fixture")
 	})
 	gitHost, err := gitDaemon.Hostname(ctx)
@@ -616,7 +618,7 @@ source = "dang"
 		WithServiceBinding(gitHost, gitDaemon).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
 		With(nonNestedDevEngine(c)).
-		WithDirectory(".dagger/modules/module-max-lifecycle", c.Host().Directory(sdkModulePath)).
+		WithDirectory(".dagger/modules/module-max-lifecycle", core.NewQuery(c).Host().Directory(sdkModulePath)).
 		WithNewFile("dagger.toml", `[modules.go-sdk]
 source = ".dagger/modules/module-max-lifecycle"
 
@@ -691,7 +693,7 @@ module = "go-sdk"
 `
 
 	base := goGitBase(t, c).
-		WithDirectory("/work/apps/shop/.dagger/modules/module-max-lifecycle", c.Host().Directory(sdkModulePath)).
+		WithDirectory("/work/apps/shop/.dagger/modules/module-max-lifecycle", core.NewQuery(c).Host().Directory(sdkModulePath)).
 		WithNewFile("/work/apps/shop/dagger.toml", config).
 		WithNewFile("/work/apps/shop/target/dagger-module.toml", `name = "target"
 engineVersion = "latest"
@@ -841,7 +843,7 @@ func (GeneratorsSuite) TestSDKModuleCanWriteAboveScope(ctx context.Context, t *t
 	require.NoError(t, err)
 
 	workspace := goGitBase(t, c).
-		WithDirectory("/work/sdk", c.Host().Directory(sdkModulePath)).
+		WithDirectory("/work/sdk", core.NewQuery(c).Host().Directory(sdkModulePath)).
 		WithNewFile("/work/app/dagger.toml", `[modules.workspace-writer]
 source = "../sdk"
 
@@ -945,7 +947,7 @@ func (GeneratorsSuite) TestSDKModuleDefaultModulePath(ctx context.Context, t *te
 	require.NoError(t, err)
 
 	workspace := goGitBase(t, c).
-		WithDirectory("/work/sdk", c.Host().Directory(sdkModulePath)).
+		WithDirectory("/work/sdk", core.NewQuery(c).Host().Directory(sdkModulePath)).
 		WithNewFile("/work/app/dagger.toml", `[modules.workspace-writer]
 source = "../sdk"
 
@@ -998,7 +1000,7 @@ module = "workspace-writer"
 	require.Contains(t, config, `[sdks.test.scopes.custom]`)
 
 	t.Run("inferred names survive generation with the same SDK-selected path", func(ctx context.Context, t *testctx.T) {
-		source, err := c.Host().File(filepath.Join(sdkModulePath, "main.dang")).Contents(ctx)
+		source, err := core.NewQuery(c).Host().File(filepath.Join(sdkModulePath, "main.dang")).Contents(ctx)
 		require.NoError(t, err)
 		fixedPath := workspace.WithNewFile("/work/sdk/main.dang", strings.Replace(source, `"generated/" + name`, `"generated/api"`, 1))
 		for _, test := range []struct {
@@ -1381,9 +1383,9 @@ func (GeneratorsSuite) TestWorkspaceCheckNarrowsToRequestedModule(ctx context.Co
 }
 
 // TestWorkspaceUpNarrowsToRequestedModule mirrors
-// TestWorkspaceGenerateNarrowsToRequestedModule for `dagger up`: an unrelated
+// TestWorkspaceGenerateNarrowsToRequestedModule for `dagger start`: an unrelated
 // broken/stale workspace module must not be loaded just to enumerate a healthy
-// module's services. `dagger up` starts services and blocks, so the assertions
+// module's services. `dagger start` starts services and blocks, so the assertions
 // use list mode (-l), which still loads workspace modules to enumerate services
 // and thus exercises the same narrowing.
 func (GeneratorsSuite) TestWorkspaceUpNarrowsToRequestedModule(ctx context.Context, t *testctx.T) {
@@ -1393,7 +1395,7 @@ func (GeneratorsSuite) TestWorkspaceUpNarrowsToRequestedModule(ctx context.Conte
 
 	t.Run("listing only the healthy module skips the broken one", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerExec("up", "-l", "good")).
+			With(daggerExec("start", "-l", "good")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, out, "intentionally invalid")
@@ -1401,7 +1403,7 @@ func (GeneratorsSuite) TestWorkspaceUpNarrowsToRequestedModule(ctx context.Conte
 
 	t.Run("listing across all modules still loads the broken module", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerExecFail("up", "-l")).
+			With(daggerExecFail("start", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "bad")
@@ -1617,7 +1619,7 @@ func (GeneratorsSuite) TestClientSchemaIntrospectionJSON(ctx context.Context, t 
 // introspectModuleSourceSchema selects the named introspection-schema field on
 // the module source at ".", returning the schema's type names and its Query
 // root field names.
-func introspectModuleSourceSchema(ctx context.Context, t *testctx.T, ctr *dagger.Container, field string) (typeNames, queryFields []string) {
+func introspectModuleSourceSchema(ctx context.Context, t *testctx.T, ctr *core.Container, field string) (typeNames, queryFields []string) {
 	t.Helper()
 	out, err := ctr.
 		With(daggerQuery(`{moduleSource(refString:"."){%s{contents}}}`, field)).
@@ -1680,7 +1682,7 @@ func (GeneratorsSuite) TestGenerateFromModuleDirectoryExportPaths(ctx context.Co
 	require.NoError(t, err)
 	moduleDir := "/work/.dagger/modules/foo"
 	workspace := goGitBase(t, c).
-		WithDirectory("/work/sdk", c.Host().Directory(sdkModulePath)).
+		WithDirectory("/work/sdk", core.NewQuery(c).Host().Directory(sdkModulePath)).
 		WithNewFile("/work/dagger.toml", `[modules.workspace-writer]
 source = "./sdk"
 

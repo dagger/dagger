@@ -131,6 +131,27 @@ func RequestedCacheInput(argName string) ImplicitInput {
 	}
 }
 
+// PerCallWhen wraps input so that a call passing argName: true gets a fresh
+// per-call key, like PerCallInput. The input keeps its name, and its value
+// when argName is false or absent, so ordinary calls keep their digests. Use
+// it for an argument that asks a lookup to resolve live (e.g. noLock): the
+// call itself must not be answered from an earlier one.
+func PerCallWhen(argName string, input ImplicitInput) ImplicitInput {
+	return ImplicitInput{
+		Name: input.Name,
+		Resolver: func(ctx context.Context, args map[string]Input) (Input, error) {
+			perCall, err := inputBoolArg(args, argName)
+			if err != nil {
+				return nil, err
+			}
+			if perCall {
+				return PerCallInput.Resolver(ctx, args)
+			}
+			return input.Resolver(ctx, args)
+		},
+	}
+}
+
 func inputBoolArg(args map[string]Input, argName string) (bool, error) {
 	raw, ok := args[argName]
 	if !ok || raw == nil {
@@ -150,10 +171,31 @@ func inputBoolArg(args map[string]Input, argName string) (bool, error) {
 		}
 		booleanVal, ok := val.Value.(Boolean)
 		if !ok {
-			return false, fmt.Errorf("cacheAsRequested input %q must wrap Boolean, got %T", argName, val.Value)
+			return false, fmt.Errorf("cache input argument %q must wrap Boolean, got %T", argName, val.Value)
 		}
 		return booleanVal.Bool(), nil
 	default:
-		return false, fmt.Errorf("cacheAsRequested input %q must be Boolean, got %T", argName, raw)
+		return false, fmt.Errorf("cache input argument %q must be Boolean, got %T", argName, raw)
 	}
+}
+
+// PerEngineCacheInput scopes a call ID to the engine's cache, so a result is
+// reused only by the cache that computed it, including after a clean restart.
+// Another engine's copy never matches. It is the cache's identity ID, or,
+// for a cache without a persistence database, the engine instance's ID.
+var PerEngineCacheInput = ImplicitInput{
+	Name: "cachePerEngineCache",
+	Resolver: func(ctx context.Context, _ map[string]Input) (Input, error) {
+		cache, err := EngineCache(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if id := cache.Identity().ID; id != "" {
+			return NewString(id), nil
+		}
+		if cache.engineInstanceID != "" {
+			return NewString(cache.engineInstanceID), nil
+		}
+		return nil, fmt.Errorf("engine cache has no identity")
+	},
 }

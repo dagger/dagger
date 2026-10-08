@@ -6,7 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
@@ -93,6 +96,96 @@ func (WorkspaceSuite) TestWorkspaceGitUncommittedUsesPackedHostDelta(ctx context
 	for _, path := range []string{"skip.ignored", "unsupported.ignored", "nested/inner.txt"} {
 		require.NotContains(t, changes.paths(), path, "unexpected %s in %s", path, mustJSON(t, changes))
 	}
+}
+
+// TestWithGitUncommittedIsPerClient checks that Directory.__withGitUncommitted
+// is cached per client. The field reads the calling client's checkout, so two
+// clients selecting it with the same receiver, path and HEAD must each get
+// their own uncommitted changes. Clients can select this internal field
+// directly. The receiver is built in a container, without any per-client
+// input, so only the field's own cache key can separate the two clients.
+func (WorkspaceSuite) TestWithGitUncommittedIsPerClient(ctx context.Context, t *testctx.T) {
+	// A fixed identity and dates make the host commit and the container commit
+	// below the same SHA. The order is fixed so that both clients build the
+	// same receiver recipe.
+	gitEnv := [][2]string{
+		{"GIT_AUTHOR_NAME", "Dagger Tests"},
+		{"GIT_AUTHOR_EMAIL", "dagger@example.com"},
+		{"GIT_AUTHOR_DATE", "2024-01-01T00:00:00Z"},
+		{"GIT_COMMITTER_NAME", "Dagger Tests"},
+		{"GIT_COMMITTER_EMAIL", "dagger@example.com"},
+		{"GIT_COMMITTER_DATE", "2024-01-01T00:00:00Z"},
+	}
+
+	repo := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "HOME="+t.TempDir())
+		for _, kv := range gitEnv {
+			cmd.Env = append(cmd.Env, kv[0]+"="+kv[1])
+		}
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+		return string(out)
+	}
+	git("init", "-b", "main")
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("base\n"), 0o644))
+	git("add", ".")
+	git("commit", "-m", "initial")
+	head := strings.TrimSpace(git("rev-parse", "HEAD"))
+
+	note := filepath.Join(repo, "note.txt")
+	read := func(c *dagger.Client) string {
+		t.Helper()
+		ctr := core.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithNewFile("/repo/tracked.txt", "base\n").
+			WithWorkdir("/repo")
+		for _, kv := range gitEnv {
+			ctr = ctr.WithEnvVariable(kv[0], kv[1])
+		}
+		ctr = ctr.
+			WithExec([]string{"git", "init", "-b", "main"}).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "initial"})
+		ctrHead, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, head, strings.TrimSpace(ctrHead), "the receiver must be a checkout of the host HEAD")
+		receiver, err := ctr.Directory("/repo").ID(ctx)
+		require.NoError(t, err)
+
+		got, err := testutil.QueryWithClient[struct {
+			Node struct {
+				WithGitUncommitted struct {
+					File struct {
+						Contents string
+					}
+				} `json:"__withGitUncommitted"`
+			}
+		}](c, t, `query($receiver: ID!, $path: String!, $head: String!) {
+  node(id: $receiver) {
+    ... on Directory {
+      __withGitUncommitted(checkoutPath: $path, expectedHeadSHA: $head) {
+        file(path: "note.txt") { contents }
+      }
+    }
+  }
+}`, &testutil.QueryOptions{Variables: map[string]any{
+			"receiver": receiver,
+			"path":     repo,
+			"head":     head,
+		}})
+		require.NoError(t, err)
+		return got.Node.WithGitUncommitted.File.Contents
+	}
+
+	// Client A stays connected, so its result stays cached while client B
+	// reads the same path at the same HEAD with different uncommitted changes.
+	require.NoError(t, os.WriteFile(note, []byte("from client A\n"), 0o644))
+	require.Equal(t, "from client A\n", read(connect(ctx, t)))
+	require.NoError(t, os.WriteFile(note, []byte("from client B\n"), 0o644))
+	require.Equal(t, "from client B\n", read(connect(ctx, t)), "client B must not see client A's uncommitted changes")
 }
 
 func mustJSON(t testing.TB, v any) string {

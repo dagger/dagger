@@ -2,16 +2,17 @@
 // Dagger engine process.
 //
 // CPU usage and memory accounting include processes in descendant cgroups.
-// The standard engine layout expects the engine cgroup to have no cgroup
-// descendants. CPU usage values are cumulative since cgroup creation, and the
-// total value reported by the kernel is the accounting source; user and system
-// values are diagnostic components. Memory peak is the peak for the cgroup
+// The standard layout places accounted commands in sibling cgroups, not
+// descendants of the engine. CPU usage values are cumulative since cgroup
+// creation, and the total reported by the kernel is the accounting source;
+// user and system values are diagnostic components. Memory peak is for the cgroup
 // lifetime. Memory breakdown fields are diagnostic and can overlap. These
 // metrics do not imply attribution to a Dagger client or organization. In the
-// standard layout, /init and /buildkit are siblings: user execution cgroups are
-// not included. A different layout (including an engine at the namespace root)
-// can include user workloads. This package observes that boundary; it does not
-// enforce it.
+// standard layout, /engine, /exec, /git, and /rg are siblings. SSHFS helpers
+// belong below their exec. These commands and executions are not included.
+// A different layout (including
+// an engine at the namespace root) can include user workloads. This package
+// observes that boundary; it does not enforce it.
 //
 // CPU quota enforcement counters report only this cgroup's own quota. They
 // exclude throttling caused by ancestor cgroups. Zero does not mean that the
@@ -245,7 +246,7 @@ func newInstruments(meter metric.Meter) (instruments, error) {
 	}
 	inst.cgroupDescendants, err = meter.Int64ObservableGauge(CgroupDescendantsName,
 		metric.WithUnit("1"),
-		metric.WithDescription("Live and dying cgroup descendants below the engine process cgroup; the standard engine layout expects zero live descendants."),
+		metric.WithDescription("Live and dying cgroup descendants below the engine process cgroup, excluding sibling helper and executor cgroups in the standard engine layout."),
 	)
 	if err != nil {
 		return inst, err

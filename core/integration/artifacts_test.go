@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/internal/testutil"
@@ -22,8 +24,8 @@ func TestArtifacts(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ArtifactsSuite{})
 }
 
-func artifactSource(c *dagger.Client) *dagger.Directory {
-	return c.Directory().
+func artifactSource(c *dagger.Client) *core.Directory {
+	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.provider]
 source = "./provider"
 entrypoint = true
@@ -106,18 +108,18 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
   "types":[{"name":"Artifact"},{"name":"Artifacts"},{"name":"Container"},{"name":"Directory"},{"name":"File"},{"name":"ProviderDocs"}],
   "uri":"dag://",
   "containers":{"types":[{"name":"Container"}],"uri":"dag+container://","items":[
-    {"path":["base"],"dimensionKeys":[{"dimension":"module","key":"provider"},{"dimension":"type:Container","key":"base"}],"uri":"dag://base"},
-    {"path":["broken"],"dimensionKeys":[{"dimension":"module","key":"provider"},{"dimension":"type:Container","key":"broken"}],"uri":"dag://broken"},
-    {"path":["consumer","base"],"dimensionKeys":[{"dimension":"module","key":"consumer"},{"dimension":"type:Container","key":"consumer/base"}],"uri":"dag://consumer/base"}
+    {"path":["base"],"dimensionKeys":[{"dimension":"module","key":"provider"},{"dimension":"type:Container","key":"base"}],"uri":"dag://?container=base"},
+    {"path":["broken"],"dimensionKeys":[{"dimension":"module","key":"provider"},{"dimension":"type:Container","key":"broken"}],"uri":"dag://?container=broken"},
+    {"path":["consumer","base"],"dimensionKeys":[{"dimension":"module","key":"consumer"},{"dimension":"type:Container","key":"consumer/base"}],"uri":"dag://?container=consumer/base"}
   ]},
-  "nested":{"uri":"dag://docs/source","items":[{"uri":"dag://docs/source"}]},
-  "sibling":{"items":[{"uri":"dag://other-docs/source"}]},
+  "nested":{"uri":"dag://docs/source","items":[{"uri":"dag://?directory=docs/source"}]},
+  "sibling":{"items":[{"uri":"dag://?directory=other-docs/source"}]},
   "optional":{"items":[]},"list":{"items":[]},"cycle":{"items":[]},
   "noType":{"types":[],"uri":"dag://{}","items":[]},"unknown":{"items":[]},
   "noDimension":{"uri":"dag://?missing","items":[]},"noKey":{"uri":"dag://?missing=anything","items":[]},
-  "exact":{"items":[]},"colon":{"items":[]},"slash":{"items":[]},"order":{"items":[]},"prefix":{"items":[{"uri":"dag://docs"}]},
-  "first":{"filterPath":{"uri":"dag+container+directory://base","items":[{"uri":"dag://base"}]}},
-  "second":{"filterTypes":{"uri":"dag+container+directory://base","items":[{"uri":"dag://base"}]}},
+  "exact":{"items":[]},"colon":{"items":[]},"slash":{"items":[]},"order":{"items":[]},"prefix":{"items":[{"uri":"dag://?provider-docs=docs"}]},
+  "first":{"filterPath":{"uri":"dag+container+directory://base","items":[{"uri":"dag://?container=base"}]}},
+  "second":{"filterTypes":{"uri":"dag+container+directory://base","items":[{"uri":"dag://?container=base"}]}},
   "contradiction":{"filterTypes":{"uri":"dag://{}","items":[]}},"dimensions":["module","type:Artifact","type:Artifacts","type:Container","type:Directory","type:File","type:ProviderDocs"],"dimensionKeys":[]
 }}}`, string(*got))
 	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
@@ -127,7 +129,7 @@ func (ArtifactsSuite) TestMetadataAndFilters(ctx context.Context, t *testctx.T) 
 	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts { filterTypes(types: ["Container"]) { one { uri } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
-	require.ErrorContains(t, err, "dag+container:// matches 3 artifacts:\ndag://base\ndag://broken\ndag://consumer/base")
+	require.ErrorContains(t, err, "dag+container:// matches 3 artifacts:\ndag://?container=base\ndag://?container=broken\ndag://?container=consumer/base")
 }
 
 func (ArtifactsSuite) TestURI(ctx context.Context, t *testctx.T) {
@@ -146,8 +148,8 @@ func (ArtifactsSuite) TestURI(ctx context.Context, t *testctx.T) {
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"artifacts":{
-  "container":{"one":{"uri":"dag://base","typed":"dag+container://base","pathOnly":"dag://base"}},
-  "docs":{"one":{"typed":"dag+provider-docs://docs/again"}}
+  "container":{"one":{"uri":"dag://?container=base","typed":"dag+container://?container=base","pathOnly":"dag://?container=base"}},
+  "docs":{"one":{"typed":"dag+provider-docs://?provider-docs=docs/again"}}
 }}}`, string(*got))
 	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts { filterPath(path: ["base"]) { one { uri(absolute: true) } } } } }
@@ -182,11 +184,11 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	uri := got.CurrentWorkspace.Artifacts.FilterPath.One.URI
 	// http://<host>/repo.git@main becomes <host>/repo at the resolved commit.
 	host := strings.TrimSuffix(strings.TrimPrefix(ref, "http://"), "/repo.git@main")
-	require.Regexp(t, regexp.MustCompile(`^dag://`+regexp.QuoteMeta(host)+`/repo@[0-9a-f]{40}:base$`), uri)
+	require.Regexp(t, regexp.MustCompile(`^dag://`+regexp.QuoteMeta(host)+`/repo@[0-9a-f]{40}:\?container=base$`), uri)
 
 	out, err = base.With(workspaceSelectionDaggerExec("list", "-a", "-f=link", "dag://"+ref+":base")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag+container://base\n", out)
+	require.Equal(t, "dag+container://?container=base\n", out)
 	out, err = base.With(workspaceSelectionDaggerExec("check", "-l", "-f=cli", "dag://"+ref+":verify")).Stdout(ctx)
 	require.NoError(t, err)
 	// The provider's generate/stale check remains in the full workspace schema.
@@ -196,7 +198,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	for _, typ := range []string{"Expertise", "expertise"} {
 		out, err := base.With(workspaceSelectionDaggerExec("-W", ref, "list", "-a", "-f=link", "--type", typ)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+expertise://assistant\n", out)
+		require.Equal(t, "dag+expertise://?expertise=assistant\n", out)
 	}
 
 	for _, tc := range []struct {
@@ -206,7 +208,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 		{[]string{"list", "-a", "-f=link", "base"}, []string{"base"}},
 		{[]string{"check", "-l", "-f=link", "verify"}, []string{"verify"}},
 		{[]string{"generate", "-l", "-f=link", "generate"}, []string{"generate"}},
-		{[]string{"up", "-l", "-f=link", "web"}, []string{"web"}},
+		{[]string{"start", "-l", "-f=link", "web"}, []string{"web"}},
 		{[]string{"agent", "-l", "-f=link", "assistant"}, []string{"assistant"}},
 		{[]string{"shell", "-l", "-f=link", "base"}, []string{"base"}},
 		{[]string{"list", "containers", "-f=link"}, []string{"base", "broken", "consumer/base"}},
@@ -218,9 +220,9 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 				out, err := base.With(workspaceSelectionDaggerExec(args...)).Stdout(ctx)
 				require.NoError(t, err)
 				var want []string
-				typ := map[string]string{"list": "container", "check": "check", "generate": "generator", "up": "service", "agent": "expertise", "shell": "container"}[tc.args[0]]
+				typ := map[string]string{"list": "container", "check": "check", "generate": "generator", "start": "service", "agent": "expertise", "shell": "container"}[tc.args[0]]
 				for _, path := range tc.paths {
-					address := strings.Replace(strings.TrimSuffix(uri, "base")+path, "dag://", "dag+"+typ+"://", 1)
+					address := strings.Replace(strings.TrimSuffix(uri, "?container=base")+"?"+typ+"="+path, "dag://", "dag+"+typ+"://", 1)
 					want = append(want, address)
 				}
 				require.Equal(t, strings.Join(want, "\n")+"\n", out)
@@ -235,7 +237,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 } }`, uri, uri), "-W", ref, "-m", "core")).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"currentWorkspace":{
-  "artifacts":{"filterUri":{"items":[{"uri":"dag://base"}]}},
+  "artifacts":{"filterUri":{"items":[{"uri":"dag://?container=base"}]}},
   "resolve":{"container":{"file":{"contents":"configured:original"}}}
 }}`, out)
 	_, err = base.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
@@ -264,17 +266,17 @@ func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
 		uri  string
 		want []string
 	}{
-		{"base", []string{"dag://base"}},
-		{"dag://base", []string{"dag://base"}},
-		{"provider/base", []string{"dag://base"}},
-		{"provider:base", []string{"dag://base"}},
-		{"dag://provider:docs:source", []string{"dag://docs/source"}},
-		{"docs", []string{"dag://docs"}},
-		{"docs/**", []string{"dag://docs", "dag://docs/again", "dag://docs/source"}},
-		{"**/source", []string{"dag://docs/source", "dag://other-docs/source"}},
-		{"{base,consumer/base}", []string{"dag://base", "dag://consumer/base"}},
-		{"dag+container://", []string{"dag://base", "dag://broken", "dag://consumer/base"}},
-		{"dag+container+file://consumer/**", []string{"dag://consumer/base", "dag://consumer/input"}},
+		{"base", []string{"dag://?container=base"}},
+		{"dag://base", []string{"dag://?container=base"}},
+		{"provider/base", []string{"dag://?container=base"}},
+		{"provider:base", []string{"dag://?container=base"}},
+		{"dag://provider:docs:source", []string{"dag://?directory=docs/source"}},
+		{"docs", []string{"dag://?provider-docs=docs"}},
+		{"docs/**", []string{"dag://?provider-docs=docs", "dag://?provider-docs=docs/again", "dag://?directory=docs/source"}},
+		{"**/source", []string{"dag://?directory=docs/source", "dag://?directory=other-docs/source"}},
+		{"{base,consumer/base}", []string{"dag://?container=base", "dag://?container=consumer/base"}},
+		{"dag+container://", []string{"dag://?container=base", "dag://?container=broken", "dag://?container=consumer/base"}},
+		{"dag+container+file://consumer/**", []string{"dag://?container=consumer/base", "dag://?file=consumer/input"}},
 		{"dag+directory://base", nil},
 		{"dag://base?missing=anything", nil},
 		{"dag://?missing", nil},
@@ -413,7 +415,7 @@ func (ArtifactsSuite) TestValueAfterDiscoveringSessionEnds(ctx context.Context, 
 	discovered, err := testutil.QueryWithClient[struct {
 		Node struct {
 			Artifacts struct {
-				FilterPath struct{ One struct{ ID dagger.ID } }
+				FilterPath struct{ One struct{ ID core.ID } }
 			}
 		}
 	}](discoverer, t, `query($ws: ID!) {
@@ -427,7 +429,7 @@ func (ArtifactsSuite) TestValueAfterDiscoveringSessionEnds(ctx context.Context, 
   node(id: $id) { ... on Artifact { uri } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"id": artifactID}})
 	require.NoError(t, err)
-	require.Contains(t, string(*got), `"uri":"dag://base"`)
+	require.Contains(t, string(*got), `"uri":"dag://?container=base"`)
 	require.NoError(t, discoverer.Close())
 
 	got, err = testutil.QueryWithClient[json.RawMessage](consumer, t, `query($id: ID!) {
@@ -444,14 +446,14 @@ func (ArtifactsSuite) TestInclude(ctx context.Context, t *testctx.T) {
 		patterns []string
 		want     []string
 	}{
-		{[]string{"docs"}, []string{"dag://docs", "dag://docs/again", "dag://docs/source"}},
-		{[]string{"provider/docs"}, []string{"dag://docs", "dag://docs/again", "dag://docs/source"}},
-		{[]string{"provider:docs"}, []string{"dag://docs", "dag://docs/again", "dag://docs/source"}},
-		{[]string{"**/source"}, []string{"dag://docs/source", "dag://other-docs/source"}},
-		{[]string{"**:source"}, []string{"dag://docs/source", "dag://other-docs/source"}},
-		{[]string{"base", "consumer/base"}, []string{"dag://base", "dag://consumer/base"}},
+		{[]string{"docs"}, []string{"dag://?provider-docs=docs", "dag://?provider-docs=docs/again", "dag://?directory=docs/source"}},
+		{[]string{"provider/docs"}, []string{"dag://?provider-docs=docs", "dag://?provider-docs=docs/again", "dag://?directory=docs/source"}},
+		{[]string{"provider:docs"}, []string{"dag://?provider-docs=docs", "dag://?provider-docs=docs/again", "dag://?directory=docs/source"}},
+		{[]string{"**/source"}, []string{"dag://?directory=docs/source", "dag://?directory=other-docs/source"}},
+		{[]string{"**:source"}, []string{"dag://?directory=docs/source", "dag://?directory=other-docs/source"}},
+		{[]string{"base", "consumer/base"}, []string{"dag://?container=base", "dag://?container=consumer/base"}},
 	} {
-		items, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: tc.patterns}).Items(ctx)
+		items, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: tc.patterns}).Items(ctx)
 		require.NoError(t, err)
 		got := []string{}
 		for i := range items {
@@ -467,14 +469,14 @@ func (ArtifactsSuite) TestWorkspaceBindingAndIDs(ctx context.Context, t *testctx
 	c := connect(ctx, t)
 	for _, address := range []string{"base", "consumer/base"} {
 		t.Run(address, func(ctx context.Context, t *testctx.T) {
-			var ids []dagger.ID
+			var ids []core.ID
 			for _, contents := range []string{"first", "second"} {
 				wsID, err := artifactSource(c).WithNewFile("marker.txt", contents).AsWorkspace().ID(ctx)
 				require.NoError(t, err)
 				res, err := testutil.QueryWithClient[struct {
 					Node struct {
 						Artifacts struct {
-							Selected struct{ Items []struct{ ID dagger.ID } }
+							Selected struct{ Items []struct{ ID core.ID } }
 						}
 					}
 				}](c, t, `query($ws: ID!, $path: [String!]!) {
@@ -507,7 +509,7 @@ func (ArtifactsSuite) TestModuleBoundary(ctx context.Context, t *testctx.T) {
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", artifactSource(c))
 	out, err := base.With(daggerCall("consumer", "selected", "one", "uri")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag://base", strings.TrimSpace(out))
+	require.Equal(t, "dag://?container=base", strings.TrimSpace(out))
 	out, err = base.With(daggerCall("consumer", "resolve", "--address=dag://provider/base", "container", "file", "--path=/marker", "contents")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "configured:original")
@@ -538,11 +540,11 @@ func (ArtifactsSuite) TestLegacyAddress(ctx context.Context, t *testctx.T) {
 
 func (ArtifactsSuite) TestAddressHints(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ws := c.Directory().AsWorkspace()
+	ws := core.NewQuery(c).Directory().AsWorkspace()
 	_, err := ws.Resolve("missing:serve").Service().ID(ctx)
 	require.ErrorContains(t, err, "write it as a DAG address: dag://missing/serve")
 
-	_, err = c.Address("missing:serve").Service().ID(ctx)
+	_, err = core.NewQuery(c).Address("missing:serve").Service().ID(ctx)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "write it as a DAG address")
 	require.NotContains(t, err.Error(), "no installed module matches")
@@ -556,7 +558,7 @@ func (ArtifactsSuite) TestWorkspaceHelpDiscoveryFailures(ctx context.Context, t 
 	base := nativeWorkspaceBase(t, c).With(nonNestedDevEngine(c))
 	for _, fixture := range []struct {
 		name string
-		ctr  *dagger.Container
+		ctr  *core.Container
 		err  string
 	}{
 		{name: "engine unavailable", ctr: base.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "invalid://"), err: `no driver for scheme "invalid"`},
@@ -593,7 +595,7 @@ func (ArtifactsSuite) TestHelpProgress(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", artifactSource(c)).
 		WithEnvVariable("DAGGER_PROGRESS", "report")
-	for _, command := range []string{"check", "generate", "up", "shell", "agent", "list"} {
+	for _, command := range []string{"check", "generate", "start", "shell", "agent", "list"} {
 		t.Run(command, func(ctx context.Context, t *testctx.T) {
 			action := "Load " + command + " filters"
 			if command == "list" {
@@ -637,7 +639,7 @@ func (ArtifactsSuite) TestHelpProgress(ctx context.Context, t *testctx.T) {
 		result := base.With(daggerExec("-v", "list", "containers", "--by-provider", "-f=link"))
 		out, err := result.Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "dag+container://base")
+		require.Contains(t, out, "dag+container://?container=base")
 		progress, err := result.Stderr(ctx)
 		require.NoError(t, err)
 		require.Contains(t, progress, "Load available types")
@@ -726,21 +728,21 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 		args []string
 		want string
 	}{
-		{[]string{"list", "-a", "--type", "Container"}, "dag+container://base\ndag+container://broken\ndag+container://consumer/base\n"},
-		{[]string{"list", "-a", "--type", "container"}, "dag+container://base\ndag+container://broken\ndag+container://consumer/base\n"},
-		{[]string{"list", "-a", "--type", "ProviderDocs"}, "dag+provider-docs://docs\ndag+provider-docs://docs/again\ndag+provider-docs://other-docs\ndag+provider-docs://other-docs/again\n"},
-		{[]string{"list", "-a", "--type", "provider-docs"}, "dag+provider-docs://docs\ndag+provider-docs://docs/again\ndag+provider-docs://other-docs\ndag+provider-docs://other-docs/again\n"},
+		{[]string{"list", "-a", "--type", "Container"}, "dag+container://?container=base\ndag+container://?container=broken\ndag+container://?container=consumer/base\n"},
+		{[]string{"list", "-a", "--type", "container"}, "dag+container://?container=base\ndag+container://?container=broken\ndag+container://?container=consumer/base\n"},
+		{[]string{"list", "-a", "--type", "ProviderDocs"}, "dag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\ndag+provider-docs://?provider-docs=other-docs\ndag+provider-docs://?provider-docs=other-docs/again\n"},
+		{[]string{"list", "-a", "--type", "provider-docs"}, "dag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\ndag+provider-docs://?provider-docs=other-docs\ndag+provider-docs://?provider-docs=other-docs/again\n"},
 		{[]string{"list", "-a", "--type="}, ""},
-		{[]string{"list", "-a", "--type=", "--type=container"}, "dag+container://base\ndag+container://broken\ndag+container://consumer/base\n"},
-		{[]string{"list", "-a", "consumer", "--type", "Container", "--type", "File"}, "dag+container://consumer/base\ndag+file://consumer/input\n"},
-		{[]string{"list", "-a", "consumer", "--type", "container", "--type", "File"}, "dag+container://consumer/base\ndag+file://consumer/input\n"},
-		{[]string{"list", "-a", "docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
-		{[]string{"list", "-a", "dag://docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
-		{[]string{"list", "-a", "provider/docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
-		{[]string{"list", "-a", "provider:docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
-		{[]string{"list", "-a", "**/source"}, "dag+directory://docs/source\ndag+directory://other-docs/source\n"},
-		{[]string{"list", "-a", "base", "consumer/base"}, "dag+container://base\ndag+container://consumer/base\n"},
-		{[]string{"list", "-a", "dag+container://consumer"}, "dag+container://consumer/base\n"},
+		{[]string{"list", "-a", "--type=", "--type=container"}, "dag+container://?container=base\ndag+container://?container=broken\ndag+container://?container=consumer/base\n"},
+		{[]string{"list", "-a", "consumer", "--type", "Container", "--type", "File"}, "dag+container://?container=consumer/base\ndag+file://?file=consumer/input\n"},
+		{[]string{"list", "-a", "consumer", "--type", "container", "--type", "File"}, "dag+container://?container=consumer/base\ndag+file://?file=consumer/input\n"},
+		{[]string{"list", "-a", "docs"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n"},
+		{[]string{"list", "-a", "dag://docs"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n"},
+		{[]string{"list", "-a", "provider/docs"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n"},
+		{[]string{"list", "-a", "provider:docs"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n"},
+		{[]string{"list", "-a", "**/source"}, "dag+directory://?directory=docs/source\ndag+directory://?directory=other-docs/source\n"},
+		{[]string{"list", "-a", "base", "consumer/base"}, "dag+container://?container=base\ndag+container://?container=consumer/base\n"},
+		{[]string{"list", "-a", "dag+container://consumer"}, "dag+container://?container=consumer/base\n"},
 		{[]string{"list", "-a", "dag://consumer?missing=anything"}, ""},
 		{[]string{"list", "-a", "dag://?go-module=sdk/go"}, ""},
 	} {
@@ -773,7 +775,7 @@ entrypoint = true
 }`)
 	out, err := reserved.With(workspaceSelectionDaggerExec("-W", "/work/selected", "list", "-a", "types", "-f=link")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag+directory://types\n", out)
+	require.Equal(t, "dag+directory://?directory=types\n", out)
 }
 
 func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T) {
@@ -784,10 +786,10 @@ func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T
 		want string
 	}{
 		{[]string{"list", "-a", "dag+container://docs", "dag+directory://consumer"}, ""},
-		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer"}, "dag+container://consumer/base\ndag+directory://docs/source\n"},
-		{[]string{"list", "-a", "dag://docs?missing=value", "consumer/base"}, "dag+container://consumer/base\n"},
-		{[]string{"list", "-a", "docs", "docs/source"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
-		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer", "--type", "Directory"}, "dag+directory://docs/source\n"},
+		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer"}, "dag+container://?container=consumer/base\ndag+directory://?directory=docs/source\n"},
+		{[]string{"list", "-a", "dag://docs?missing=value", "consumer/base"}, "dag+container://?container=consumer/base\n"},
+		{[]string{"list", "-a", "docs", "docs/source"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n"},
+		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer", "--type", "Directory"}, "dag+directory://?directory=docs/source\n"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"-W", "/work/selected"}, tc.args...)
@@ -812,7 +814,7 @@ source = "./does-not-exist"
 		args []string
 		want string
 	}{
-		{[]string{"list", "-a", "provider/docs", "--type", "Directory"}, "dag+directory://provider/docs/source\n"},
+		{[]string{"list", "-a", "provider/docs", "--type", "Directory"}, "dag+directory://?directory=provider/docs/source\n"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"-W", "/work/selected"}, tc.args...)
@@ -853,9 +855,9 @@ func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {
 		{"dag://provider/needs-argument", "no artifact matches"},
 		{"dag://provider:missing", "no artifact matches"},
 		{"dag://broken", "artifact function was evaluated"},
-		{"dag+container://docs/source", "dag://docs/source is a Directory, not container"},
+		{"dag+container://docs/source", "dag://?directory=docs/source is a Directory, not container"},
 		{"dag+directory://docs/source", "artifact is a Directory, not a Container"},
-		{"dag://**/source", "matches 2 artifacts:\ndag://docs/source\ndag://other-docs/source"},
+		{"dag://**/source", "matches 2 artifacts:\ndag://?directory=docs/source\ndag://?directory=other-docs/source"},
 		{"dag://", "matches 13 artifacts:\n"},
 		{"dag://github.com/dagger/dagger@main:base", "address selects another workspace; filters cannot change workspace"},
 	} {
@@ -885,12 +887,12 @@ func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {
 
 func (ArtifactsSuite) TestAddressIDs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	var ids []dagger.ID
+	var ids []core.ID
 	for _, contents := range []string{"first", "second"} {
 		wsID, err := artifactSource(c).WithNewFile("marker.txt", contents).AsWorkspace().ID(ctx)
 		require.NoError(t, err)
 		got, err := testutil.QueryWithClient[struct {
-			Node struct{ Resolve struct{ ID dagger.ID } }
+			Node struct{ Resolve struct{ ID core.ID } }
 		}](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { resolve(value: "dag://consumer/base") { id } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
@@ -1007,7 +1009,7 @@ func (ArtifactsSuite) TestCheckReturnTypes(ctx context.Context, t *testctx.T) {
 		{name: "string list", returnType: "[String!]!", body: `["ok"]`, invalid: true},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			src := c.Directory().WithNewFile("dagger.toml", `[modules.example]
+			src := core.NewQuery(c).Directory().WithNewFile("dagger.toml", `[modules.example]
 source = "./example"
 entrypoint = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
@@ -1023,7 +1025,7 @@ source = "dang"
 				return
 			}
 			require.Empty(t, loadError)
-			check := artifactValue[*dagger.Check](ctx, t, c, checkArtifact)
+			check := artifactValue[*core.Check](ctx, t, c, checkArtifact)
 			pass, err := check.Pass(ctx)
 			require.NoError(t, err)
 			require.Equal(t, !tc.fails, pass)
@@ -1041,7 +1043,7 @@ source = "dang"
 
 func (ArtifactsSuite) TestCheckProjection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	src := c.Directory().WithNewFile("dagger.toml", `[modules.example]
+	src := core.NewQuery(c).Directory().WithNewFile("dagger.toml", `[modules.example]
 source = "./example"
 entrypoint = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
@@ -1077,12 +1079,12 @@ More details."""
 }`, opts)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"artifacts":{"filterDirectives":{"items":[
- {"uri":"dag://clean/stale","directives":["check"]},
- {"uri":"dag://dirty/stale","directives":["check"]},
- {"uri":"dag://failing","directives":["check"]},
- {"uri":"dag://passing","directives":["check"]}
+ {"uri":"dag://?check=clean/stale","directives":["check"]},
+ {"uri":"dag://?check=dirty/stale","directives":["check"]},
+ {"uri":"dag://?check=failing","directives":["check"]},
+ {"uri":"dag://?check=passing","directives":["check"]}
  ]}}}}`, string(*metadata))
-	selected := dagger.Ref[*dagger.Workspace](c, wsID).Artifacts().FilterTypes([]string{"Check"})
+	selected := core.Ref[*core.Workspace](core.NewQuery(c), wsID).Artifacts().FilterTypes([]string{"Check"})
 	selectionID, err := selected.ID(ctx)
 	require.NoError(t, err)
 	opts = &testutil.QueryOptions{Variables: map[string]any{"selection": selectionID}}
@@ -1093,10 +1095,10 @@ More details."""
 }`, opts)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"items":[
- {"uri":"dag://clean/stale","value":{"pass":true,"error":null}},
- {"uri":"dag://dirty/stale","value":{"pass":false,"error":{"message":"generated files are not up to date"}}},
- {"uri":"dag://failing","value":{"pass":false,"error":{"message":"check failed"}}},
- {"uri":"dag://passing","value":{"pass":true,"error":null}}
+ {"uri":"dag://?check=clean/stale","value":{"pass":true,"error":null}},
+ {"uri":"dag://?check=dirty/stale","value":{"pass":false,"error":{"message":"generated files are not up to date"}}},
+ {"uri":"dag://?check=failing","value":{"pass":false,"error":{"message":"check failed"}}},
+ {"uri":"dag://?check=passing","value":{"pass":true,"error":null}}
  ]}}`, string(*results))
 	values, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($selection: ID!) {
  node(id: $selection) { ... on Artifacts {
@@ -1105,10 +1107,10 @@ More details."""
 }`, opts)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"values":[
- {"artifact":{"uri":"dag://clean/stale"},"value":{"pass":true},"error":null},
- {"artifact":{"uri":"dag://dirty/stale"},"value":null,"error":{"message":"generated files are not up to date"}},
- {"artifact":{"uri":"dag://failing"},"value":null,"error":{"message":"check failed"}},
- {"artifact":{"uri":"dag://passing"},"value":{"pass":true},"error":null}
+ {"artifact":{"uri":"dag://?check=clean/stale"},"value":{"pass":true},"error":null},
+ {"artifact":{"uri":"dag://?check=dirty/stale"},"value":null,"error":{"message":"generated files are not up to date"}},
+ {"artifact":{"uri":"dag://?check=failing"},"value":null,"error":{"message":"check failed"}},
+ {"artifact":{"uri":"dag://?check=passing"},"value":{"pass":true},"error":null}
  ]}}`, string(*values))
 
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", src).With(nonNestedDevEngine(c))
@@ -1127,7 +1129,7 @@ More details."""
 	}
 
 	// Generator objects are lazy. Explicit generation executes the stored function.
-	generators, err := dagger.Ref[*dagger.Workspace](c, wsID).Artifacts().FilterTypes([]string{"Generator"}).AsGenerators(ctx)
+	generators, err := core.Ref[*core.Workspace](core.NewQuery(c), wsID).Artifacts().FilterTypes([]string{"Generator"}).AsGenerators(ctx)
 	require.NoError(t, err)
 	require.Len(t, generators, 2)
 	clean, err := generators[0].Stale().Pass(ctx)
@@ -1158,7 +1160,7 @@ check.skip = ["skipped", "scan?"]
 generate.skip = ["skipped-generate"]
 up.skip = ["skipped-service", "skipped-unmarked-service"]
 `
-	source := c.Directory().
+	source := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", config).
 		WithNewFile("probe/dagger-module.toml", "name = \"probe\"\nengineVersion = \"latest\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("probe/main.dang", `type Probe {
@@ -1188,9 +1190,9 @@ up.skip = ["skipped-service", "skipped-unmarked-service"]
 	require.NoError(t, err)
 	// Raw directive filters do not apply workspace settings.
 	raw := map[string][]string{
-		"rawChecks":     {"dag://gen/stale", "dag://scana", "dag://scanb", "dag://skipped", "dag://skipped-generate/stale", "dag://verify"},
-		"rawGenerators": {"dag://gen", "dag://skipped-generate"},
-		"rawServices":   {"dag://serve", "dag://skipped-service"},
+		"rawChecks":     {"dag://?check=gen/stale", "dag://?check=scana", "dag://?check=scanb", "dag://?check=skipped", "dag://?check=skipped-generate/stale", "dag://?check=verify"},
+		"rawGenerators": {"dag://?generator=gen", "dag://?generator=skipped-generate"},
+		"rawServices":   {"dag://?service=serve", "dag://?service=skipped-service"},
 	}
 	for name, want := range raw {
 		var names []string
@@ -1201,12 +1203,12 @@ up.skip = ["skipped-service", "skipped-unmarked-service"]
 	}
 	// Commands apply the workspace settings.
 	expected := map[string][]string{
-		"checks":           {"dag://verify"},
-		"withGenerated":    {"dag://gen/stale", "dag://verify"},
-		"withoutGenerated": {"dag://verify"},
-		"generators":       {"dag://gen"},
-		"services":         {"dag://serve", "dag://unmarked-service"},
-		"agents":           {"dag://assistant"},
+		"checks":           {"dag://?check=verify"},
+		"withGenerated":    {"dag://?check=gen/stale", "dag://?check=verify"},
+		"withoutGenerated": {"dag://?check=verify"},
+		"generators":       {"dag://?generator=gen"},
+		"services":         {"dag://?service=serve", "dag://?service=unmarked-service"},
+		"agents":           {"dag://?expertise=assistant"},
 	}
 	base := nativeWorkspaceBase(t, c).WithDirectory(".", source).With(nonNestedDevEngine(c))
 	for _, tc := range []struct{ command, flag, expected, scheme string }{
@@ -1214,7 +1216,7 @@ up.skip = ["skipped-service", "skipped-unmarked-service"]
 		{"check", "--generated=true", "withGenerated", "check"},
 		{"check", "--generated=false", "withoutGenerated", "check"},
 		{"generate", "", "generators", "generator"},
-		{"up", "", "services", "service"},
+		{"start", "", "services", "service"},
 		{"agent", "", "agents", "expertise"},
 	} {
 		t.Run(tc.command+tc.flag, func(ctx context.Context, t *testctx.T) {
@@ -1246,7 +1248,7 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 	description, err := all.FilterURI("dag://gen/stale").One().Description(ctx)
 	require.NoError(t, err)
 	require.Equal(t, `staleness check: generate assets`, description)
-	uris := func(ctx context.Context, t *testctx.T, selection *dagger.Artifacts) []string {
+	uris := func(ctx context.Context, t *testctx.T, selection *core.Artifacts) []string {
 		id, err := selection.ID(ctx)
 		require.NoError(t, err)
 		got, err := testutil.QueryWithClient[struct {
@@ -1263,22 +1265,22 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 	allURIs := uris(ctx, t, all)
 	for _, tc := range []struct {
 		name   string
-		filter func([]string, bool) *dagger.Artifacts
+		filter func([]string, bool) *core.Artifacts
 		match  string
 		want   []string
 	}{
-		{"types", func(names []string, exclude bool) *dagger.Artifacts {
-			return all.FilterTypes(names, dagger.ArtifactsFilterTypesOpts{Exclude: exclude})
-		}, "Changeset", []string{"dag://edit"}},
-		{"directives", func(names []string, exclude bool) *dagger.Artifacts {
-			return all.FilterDirectives(names, dagger.ArtifactsFilterDirectivesOpts{Exclude: exclude})
-		}, "check", []string{"dag://gen/stale"}},
-		{"parent types", func(names []string, exclude bool) *dagger.Artifacts {
-			return all.FilterParentTypes(names, dagger.ArtifactsFilterParentTypesOpts{Exclude: exclude})
-		}, "Generator", []string{"dag://gen/stale"}},
-		{"parent directives", func(names []string, exclude bool) *dagger.Artifacts {
-			return all.FilterParentDirectives(names, dagger.ArtifactsFilterParentDirectivesOpts{Exclude: exclude})
-		}, "generate", []string{"dag://gen/stale"}},
+		{"types", func(names []string, exclude bool) *core.Artifacts {
+			return all.FilterTypes(names, core.ArtifactsFilterTypesOpts{Exclude: exclude})
+		}, "Changeset", []string{"dag://?changeset=edit"}},
+		{"directives", func(names []string, exclude bool) *core.Artifacts {
+			return all.FilterDirectives(names, core.ArtifactsFilterDirectivesOpts{Exclude: exclude})
+		}, "check", []string{"dag://?check=gen/stale"}},
+		{"parent types", func(names []string, exclude bool) *core.Artifacts {
+			return all.FilterParentTypes(names, core.ArtifactsFilterParentTypesOpts{Exclude: exclude})
+		}, "Generator", []string{"dag://?check=gen/stale"}},
+		{"parent directives", func(names []string, exclude bool) *core.Artifacts {
+			return all.FilterParentDirectives(names, core.ArtifactsFilterParentDirectivesOpts{Exclude: exclude})
+		}, "generate", []string{"dag://?check=gen/stale"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			included := tc.filter([]string{tc.match}, false)
@@ -1315,7 +1317,7 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 		require.NoError(t, err)
 		require.Len(t, items, 2)
 		for i, want := range []string{"configured:original", "configured:other"} {
-			out, err := artifactValue[*dagger.Container](ctx, t, c, &items[i]).File("/marker").Contents(ctx)
+			out, err := artifactValue[*core.Container](ctx, t, c, &items[i]).File("/marker").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, want, out)
 		}
@@ -1324,14 +1326,14 @@ func (ArtifactsSuite) TestParentFiltersAndUnion(ctx context.Context, t *testctx.
 	})
 }
 
-func artifactValue[T dagger.Loadable[T]](ctx context.Context, t *testctx.T, c *dagger.Client, artifact *dagger.Artifact) T {
+func artifactValue[T core.Loadable[T]](ctx context.Context, t *testctx.T, c *dagger.Client, artifact *core.Artifact) T {
 	t.Helper()
 	id, err := artifact.Value().ID(ctx)
 	require.NoError(t, err)
-	return dagger.Ref[T](c, id)
+	return core.Ref[T](core.NewQuery(c), id)
 }
 
-func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, artifacts *dagger.Artifacts, base ...*dagger.LLM) (*dagger.LLM, error) {
+func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *core.Workspace, artifacts *core.Artifacts, base ...*core.LLM) (*core.LLM, error) {
 	if artifacts == nil {
 		artifacts = ws.Artifacts()
 	}
@@ -1352,11 +1354,11 @@ func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *dagger.Wor
 	if err != nil {
 		return nil, err
 	}
-	refs := make([]*dagger.Expertise, len(agents))
+	refs := make([]*core.Expertise, len(agents))
 	for i := range agents {
 		refs[i] = &agents[i]
 	}
-	llm := c.LLM().WithWorkspace(ws)
+	llm := core.NewQuery(c).LLM().WithWorkspace(ws)
 	if len(base) > 0 {
 		llm = base[0]
 	}
@@ -1365,7 +1367,7 @@ func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *dagger.Wor
 	if err != nil {
 		return nil, err
 	}
-	return dagger.Ref[*dagger.LLM](c, id), nil
+	return core.Ref[*core.LLM](core.NewQuery(c), id), nil
 }
 
 func (ArtifactsSuite) TestCheckCachePolicy(ctx context.Context, t *testctx.T) {
@@ -1467,9 +1469,11 @@ func (ArtifactsSuite) TestLazyValueFailures(ctx context.Context, t *testctx.T) {
 
 func (ArtifactsSuite) TestCheckScaleOut(ctx context.Context, t *testctx.T) {
 	sink := newAgentTraceSink(t)
-	c := connect(ctx, t, sink.clientOpts()...)
+	c := connect(ctx, t, append(sink.clientOpts(),
+		dagger.WithEnvironmentVariable("_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT", "60s"),
+	)...)
 	target := devEngineContainerAsService(devEngineContainer(c))
-	source := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+	source := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding("scaleout-engine", target).
 			WithEnvVariable("_DAGGER_TESTS_CLOUD_RUNNER_HOST", "tcp://scaleout-engine:1234")
 	}))
@@ -1514,7 +1518,7 @@ entrypoint = true
 		WithNewFile("bad/main.dang", "invalid source")
 	out, err := base.With(daggerNonNestedExec("check", "--scale-out", "dag://good/verify")).CombinedOutput(ctx)
 	require.NoError(t, err, out)
-	require.Contains(t, out, "dag://good/verify")
+	require.Contains(t, out, "dag://?check=good/verify")
 	out, err = base.With(daggerNonNestedExecFail("check", "--scale-out", "dag://good/fail")).CombinedOutput(ctx)
 	require.NoError(t, err, out)
 	require.Contains(t, out, "remote assertion")
@@ -1523,7 +1527,7 @@ entrypoint = true
 		WithNewFile("marker", "default").
 		With(daggerNonNestedExec("-m", "./good", "check", "--scale-out", "dag://verify")).CombinedOutput(ctx)
 	require.NoError(t, err, out)
-	require.Contains(t, out, "dag://verify")
+	require.Contains(t, out, "dag://?check=verify")
 	// The remote query must preserve explicit arguments and the selected overlay.
 	out, err = base.WithEnvVariable("_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT", "1").
 		WithNewFile("scaleout.graphql", `{
@@ -1589,7 +1593,7 @@ func (ArtifactsSuite) TestUnknownEnvironment(ctx context.Context, t *testctx.T) 
 		WithDirectory(".", artifactSource(c))
 	for _, command := range [][]string{
 		{"list", "-a", "--type=Check"}, {"check", "-l"}, {"generate", "-l"},
-		{"up", "-l"}, {"shell", "-l"}, {"agent", "-l"},
+		{"start", "-l"}, {"shell", "-l"}, {"agent", "-l"},
 	} {
 		t.Run(strings.Join(command, " "), func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"--env", "missing"}, command...)

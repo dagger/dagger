@@ -91,6 +91,9 @@ type SnapshotManager interface {
 	PinSnapshot(context.Context, string) (ImmutableRef, error)
 	LeaseExistingSnapshot(context.Context, string) (ImmutableRef, error)
 	SnapshotSize(ctx context.Context, snapshotID string) (int64, error)
+	// SnapshotParent returns the snapshot's parent ID, or "" for a base
+	// snapshot. Owner leases retain the whole parent chain.
+	SnapshotParent(ctx context.Context, snapshotID string) (string, error)
 	SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error)
 	AttachLease(ctx context.Context, leaseID, snapshotID string) error
 	RemoveLease(ctx context.Context, leaseID string) error
@@ -240,6 +243,20 @@ func (cm *snapshotManager) SnapshotSize(ctx context.Context, snapshotID string) 
 	}
 
 	return usage.Size, nil
+}
+
+func (cm *snapshotManager) SnapshotParent(ctx context.Context, snapshotID string) (string, error) {
+	if snapshotID == "" {
+		return "", errors.New("snapshot parent: empty snapshot ID")
+	}
+	info, err := cm.Snapshotter.Stat(ctx, snapshotID)
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return "", errors.Wrap(errNotFound, snapshotID)
+		}
+		return "", errors.Wrapf(err, "stat snapshot %s", snapshotID)
+	}
+	return info.Parent, nil
 }
 
 func (cm *snapshotManager) SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error) {

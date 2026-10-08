@@ -16,6 +16,16 @@ type Runner {
   }
 
   """
+  Run a command in every sandbox container and return their stdouts.
+
+  A list of an address-liftable type lifts element-wise: each element may be
+  an image ref or a Container ID from a prior tool result.
+  """
+  execAll(cmd: [String!]!, sandboxes: [Container!]!): [String!]! {
+    sandboxes.map { sandbox => sandbox.withExec(cmd).stdout }
+  }
+
+  """
   List a directory's entries.
 
   Directory is address-liftable too, so this function is a tool.
@@ -31,6 +41,29 @@ type Runner {
   """
   commitOf(ref: GitRef!): String! {
     "commit: " + ref.commitSHA
+  }
+
+  """
+  Run a conversation over this module's own tools.
+
+  Its tool calls then run under this module rather than the CLI, as a worker
+  agent spawned by a module does: the delegated case for address lifting.
+  """
+  delegate(model: String!, prompt: String!): String! {
+    llm(model: model).withTools(currentNode).withPrompt(prompt).loop.transcript
+  }
+
+  """
+  Like delegate, with the conversation bound to a checkout of source, as an
+  agent working in a checked-out repository is.
+  """
+  delegateIn(model: String!, prompt: String!, source: GitRef!): String! {
+    llm(model: model)
+      .withWorkspace(source.asWorkspace)
+      .withTools(currentNode)
+      .withPrompt(prompt)
+      .loop
+      .transcript
   }
 
   """

@@ -11,7 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
+
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -38,16 +39,16 @@ func (EngineResourceMetricsSuite) TestExport(ctx context.Context, t *testctx.T) 
 	sink := newEngineMetricSink(t, ctx)
 	clientSink := newEngineMetricSink(t, ctx)
 	const otlpPort = 4318
-	otlpService := c.Host().Service([]dagger.PortForward{{
+	otlpService := core.NewQuery(c).Host().Service([]core.PortForward{{
 		Backend:  sink.port,
 		Frontend: otlpPort,
 	}})
-	clientOTLPService := c.Host().Service([]dagger.PortForward{{
+	clientOTLPService := core.NewQuery(c).Host().Service([]core.PortForward{{
 		Backend:  clientSink.port,
 		Frontend: otlpPort,
 	}})
 	// Keep both receivers available through engine shutdown and restart.
-	for _, service := range []*dagger.Service{otlpService, clientOTLPService} {
+	for _, service := range []*core.Service{otlpService, clientOTLPService} {
 		_, err := service.Start(ctx)
 		require.NoError(t, err)
 		t.Cleanup(func() { _, _ = service.Stop(context.WithoutCancel(ctx)) })
@@ -59,7 +60,7 @@ func (EngineResourceMetricsSuite) TestExport(ctx context.Context, t *testctx.T) 
 			cfg.Telemetry.ResourceMetrics = true
 			return cfg
 		}),
-		func(ctr *dagger.Container) *dagger.Container {
+		func(ctr *core.Container) *core.Container {
 			return ctr.
 				WithServiceBinding("otel-metrics", otlpService).
 				WithEnvVariable(engine.DaggerNameEnv, engineName).
@@ -73,7 +74,7 @@ export OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf
 exec /usr/local/bin/dagger-entrypoint.sh "$@"
 `, "engine-metrics"})
 		})
-	engineService := engineContainer.AsService(dagger.ContainerAsServiceOpts{
+	engineService := engineContainer.AsService(core.ContainerAsServiceOpts{
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
 		NoInit:                   true, // Use the image's tini, as Docker does.
@@ -83,7 +84,7 @@ exec /usr/local/bin/dagger-entrypoint.sh "$@"
 	engineRunning := true
 	t.Cleanup(func() {
 		if engineRunning {
-			_, _ = engineService.Stop(context.WithoutCancel(ctx), dagger.ServiceStopOpts{Kill: true})
+			_, _ = engineService.Stop(context.WithoutCancel(ctx), core.ServiceStopOpts{Kill: true})
 		}
 	})
 
@@ -107,7 +108,7 @@ exec /usr/local/bin/dagger-entrypoint.sh "$@"
 export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="$TEST_CLIENT_METRICS_ENDPOINT"
 export OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf
 exec dagger query
-`}, dagger.ContainerWithExecOpts{
+`}, core.ContainerWithExecOpts{
 				Stdin: `{container{from(address:"` + alpineImage + `"){withExec(args:["sleep","12"]){stdout}}}}`,
 			})
 		clients.Go(func() error {
@@ -123,12 +124,14 @@ exec dagger query
 	})
 	assertEngineMemory(t, second)
 	// Check collections during the client executions too, not just after the
-	// workload cgroups have been removed.
+	// workload cgroups have been removed. Command and withExec cgroups are
+	// siblings of the engine, so neither adds engine descendants.
 	previousCPU := int64(0)
 	for _, snapshot := range sink.collectedSnapshots() {
 		require.Equal(t, first.instanceID, snapshot.instanceID)
 		require.GreaterOrEqual(t, snapshot.cpuTotal, previousCPU)
-		require.Equal(t, int64(0), snapshot.liveDescendants)
+		require.Zero(t, snapshot.liveDescendants,
+			"command and exec cgroups must remain outside the engine cgroup")
 		previousCPU = snapshot.cpuTotal
 	}
 

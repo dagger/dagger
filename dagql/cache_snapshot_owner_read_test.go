@@ -21,7 +21,7 @@ func (*syncSnapshotOwnerValue) PersistedOutputRevision() (OutputRevision, error)
 	return 0, ErrPersistStateNotReady
 }
 
-func (v *syncSnapshotOwnerValue) ReadSnapshotOwner() (OutputRevision, []PersistedSnapshotRefLink, error) {
+func (v *syncSnapshotOwnerValue) ReadSnapshotOwner(context.Context) (OutputRevision, []PersistedSnapshotRefLink, error) {
 	v.reads++
 	return 1, v.PersistedSnapshotRefLinks(), v.err
 }
@@ -38,7 +38,7 @@ func TestSnapshotOwnerSyncReadSelection(t *testing.T) {
 	})
 	require.NoError(t, err, "fresh publication uses the blocking read")
 	require.Equal(t, 1, value.reads, "links are coherent under the reader's publication guard")
-	_, err = desiredSnapshotLinksForResult(res.cacheSharedResult(), false)
+	_, err = desiredSnapshotLinksForResult(t.Context(), res.cacheSharedResult(), false)
 	require.ErrorIs(t, err, ErrPersistStateNotReady, "boot/import retain the nonblocking collector")
 	require.Equal(t, 1, value.reads)
 	require.NoError(t, c.SyncResultSnapshotOwnerLeases(ctx, res))
@@ -54,9 +54,9 @@ func TestSnapshotOwnerSyncInlineRead(t *testing.T) {
 	value := &syncSnapshotOwnerValue{persistSnapshotValue: persistSnapshotValue{SnapshotID: "owned"}}
 	self := DynamicResultArrayOutput{Elem: value, Values: []AnyResult{newDetachedResult(nil, value)}}
 	frame := persistCodecFrame("inline", self)
-	_, err := collectSnapshotOwnerLinks(self, frame, false)
+	_, err := collectSnapshotOwnerLinks(t.Context(), self, frame, false)
 	require.ErrorIs(t, err, ErrPersistStateNotReady)
-	links, err := collectSnapshotOwnerLinks(self, frame, true)
+	links, err := collectSnapshotOwnerLinks(t.Context(), self, frame, true)
 	require.NoError(t, err)
 	require.Len(t, links, 1)
 	require.Equal(t, PersistedRefPath{}.Field("items").Index(0), links[0].OutputPath)
@@ -83,7 +83,7 @@ func (v *changingSnapshotOwnerValue) PersistedOutputRevision() (OutputRevision, 
 	return v.revision, nil
 }
 
-func (v *changingSnapshotOwnerValue) ReadSnapshotOwner() (OutputRevision, []PersistedSnapshotRefLink, error) {
+func (v *changingSnapshotOwnerValue) ReadSnapshotOwner(context.Context) (OutputRevision, []PersistedSnapshotRefLink, error) {
 	v.mu.Lock()
 	revision := v.revision
 	links := v.persistSnapshotValue.PersistedSnapshotRefLinks()
@@ -201,11 +201,11 @@ func TestSnapshotOwnerSyncInlinePublication(t *testing.T) {
 	self := DynamicResultArrayOutput{Elem: value, Values: []AnyResult{newDetachedResult(nil, value)}}
 	frame := persistCodecFrame("inline", self)
 	joinWriter := startSnapshotOwnerWriter(t, t.Context(), value, nil)
-	links, err := collectSnapshotOwnerLinks(self, frame, true)
+	links, err := collectSnapshotOwnerLinks(t.Context(), self, frame, true)
 	require.NoError(t, joinWriter())
 	require.NoError(t, err)
 	require.Equal(t, []PersistedSnapshotRefLink{{RefKey: "before", Role: "snapshot", OutputPath: PersistedRefPath{}.Field("items").Index(0)}}, links)
-	links, err = collectSnapshotOwnerLinks(self, frame, true)
+	links, err = collectSnapshotOwnerLinks(t.Context(), self, frame, true)
 	require.NoError(t, err)
 	require.Equal(t, "after", links[0].RefKey)
 }

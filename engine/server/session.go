@@ -124,6 +124,12 @@ type daggerSession struct {
 	cancelClosing    context.CancelCauseFunc
 	closeClosingOnce sync.Once
 
+	// mainAttachablesCtx ends the main client's attachables. They outlive
+	// closingCtx: the main client's shutdown refreshes the Cloud token through
+	// them until its final Cloud flush, and ends them after it.
+	mainAttachablesCtx context.Context
+	endMainAttachables context.CancelCauseFunc
+
 	// wcprofTraceID / wcprofRootSpanID are this session's trace and its session-root
 	// (POST /query) span, captured once on the first traced main-client query (when
 	// the propagated ids are in hand). At teardown removeDaggerSession stamps the
@@ -156,10 +162,10 @@ type daggerSession struct {
 	// Dagger Cloud publishing, set up when the main client asked the engine
 	// to publish the session's telemetry. cloudForwarder publishes the spans
 	// and logs from the main client's store and owns their exporters; the
-	// metric exporter is shared by every client's periodic reader, so the
+	// metric queue is shared by every client's periodic reader, so the
 	// session shuts it down itself.
 	cloudForwarder *cloudForwarder
-	cloudMetrics   sdkmetric.Exporter
+	cloudMetrics   *cloudMetricQueue
 	// cloudBound bounds every flush, shutdown and metric export of the Cloud
 	// exporters; cloudFlushers publish what the session has sent so far.
 	cloudBound    cloudFlushBound
@@ -205,6 +211,7 @@ type daggerSession struct {
 	allowedLLMModules []string
 
 	gitPushApprovals gitPushApprovals
+	gitReadApprovals gitReadApprovals
 
 	lockFiles  map[workspaceLockKey]*workspaceLockState
 	lockFileMu sync.RWMutex
@@ -707,7 +714,8 @@ func (client *clientRuntime) shutdownMetrics(ctx context.Context) error {
 		errs = errors.Join(errs, client.workloadMeterProvider.Shutdown(ctx))
 		client.workloadMeterProvider = nil
 	}
-	errs = errors.Join(errs, client.meterProvider.ForceFlush(ctx))
+	// MeterProvider.Shutdown performs each reader's final collection before it
+	// stops the reader. A preceding ForceFlush would collect every reader twice.
 	errs = errors.Join(errs, client.meterProvider.Shutdown(ctx))
 	client.meterProvider = nil
 	client.metricExporter = nil
@@ -983,6 +991,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
+	sess.mainAttachablesCtx, sess.endMainAttachables = context.WithCancelCause(context.Background())
 	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
 	sess.agents = core.NewAgentRuntimes()
@@ -1045,11 +1054,34 @@ func (sess *daggerSession) beginClosing() {
 }
 
 func (sess *daggerSession) withClosingCancel(ctx context.Context) context.Context {
+	return withCancelFrom(ctx, sess.closingCtx)
+}
+
+// endMainClientAttachables ends the main client's attachables. The main
+// client's shutdown calls it once no refresh may reach through them any more,
+// and session removal calls it in case that shutdown never came.
+func (sess *daggerSession) endMainClientAttachables() {
+	if sess.endMainAttachables != nil {
+		sess.endMainAttachables(errSessionClosing)
+	}
+}
+
+// withAttachablesCancel returns the context that a client's attachables live
+// on. The main client's outlive the session's closing; see mainAttachablesCtx.
+func (sess *daggerSession) withAttachablesCancel(ctx context.Context, clientID string) context.Context {
+	if clientID == sess.mainClientCallerID && sess.mainAttachablesCtx != nil {
+		return withCancelFrom(ctx, sess.mainAttachablesCtx)
+	}
+	return sess.withClosingCancel(ctx)
+}
+
+// withCancelFrom returns ctx, also canceled when src is done.
+func withCancelFrom(ctx, src context.Context) context.Context {
 	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		select {
-		case <-sess.closingCtx.Done():
-			cancel(context.Cause(sess.closingCtx))
+		case <-src.Done():
+			cancel(context.Cause(src))
 		case <-ctx.Done():
 		}
 	}()
@@ -1077,6 +1109,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	sess.markSessionRemoved()
 	sess.beginClientScopeTeardown()
 	sess.beginClosing()
+	sess.endMainClientAttachables()
 
 	// check if the local cache needs pruning after session is removed, prune if so
 	defer func() {
@@ -2181,6 +2214,22 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}).ServeHTTP(w, r)
 }
 
+// ServeHTTPToNewSession serves an exec's new session endpoint the same way the
+// engine's main listener serves clients: gRPC requests go to the control API
+// the client handshake uses, and every other request is a root client, so each
+// client that connects starts its own session.
+func (srv *Server) ServeHTTPToNewSession(w http.ResponseWriter, r *http.Request) {
+	if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
+		srv.newSessionGRPCOnce.Do(func() {
+			srv.newSessionGRPC = grpc.NewServer()
+			srv.Register(srv.newSessionGRPC)
+		})
+		srv.newSessionGRPC.ServeHTTP(w, r)
+		return
+	}
+	srv.ServeHTTP(w, r)
+}
+
 // ServeHTTPToNestedClient serves nested clients, including module function calls.
 func (srv *Server) ServeHTTPToNestedClient(
 	w http.ResponseWriter,
@@ -2502,7 +2551,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 		panic(fmt.Errorf("failed to read ack: %w", err))
 	}
 
-	ctx = record.daggerSession.withClosingCancel(ctx)
+	ctx = record.daggerSession.withAttachablesCancel(ctx, record.clientID)
 
 	// Disable collecting otel metrics on these grpc connections for now. We don't use them and
 	// they add noticeable memory allocation overhead, especially for heavy filesync use cases.
@@ -2600,6 +2649,16 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 			trace.WithAttributes(attrs...),
 		)
 		defer telemetry.EndWithCause(span, &rerr)
+
+		// A module process is the direct child of the client its function call
+		// runs under; that call's plumbing span takes its dependency loading.
+		if len(client.parentClientIDs) > 0 {
+			if parents, err := sess.ancestorRuntimes(client.clientRecord); err == nil {
+				if plumbing := parents[len(parents)-1].fnCall.PlumbingSpanContext(); plumbing.IsValid() {
+					ctx = core.WithModuleProcessRequest(ctx, plumbing)
+				}
+			}
+		}
 
 		// wcprof completeness checksum: record this trace and its
 		// session-root span once, from the OUTERMOST query (a main client has no
@@ -2811,8 +2870,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	var shutdownErr error
 
 	sess := client.daggerSession
+	isMainClient := client.clientID == sess.mainClientCallerID
 	slog := slog.With(
-		"isMainClient", client.clientID == sess.mainClientCallerID,
+		"isMainClient", isMainClient,
 		"sessionID", sess.sessionID,
 		"clientID", client.clientID,
 		"mainClientID", sess.mainClientCallerID)
@@ -2850,10 +2910,10 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		return err
 	}
 
-	if client.clientID == sess.mainClientCallerID {
+	if isMainClient {
 		slog.Info("main client is shutting down")
-		// Every wait on Cloud from here until the request returns shares
-		// one deadline, well within the client's own shutdown limit.
+		// Every wait on Cloud from here until the request returns shares one
+		// deadline, well within the client's own shutdown limit.
 		defer sess.startCloudShutdownBudget()()
 		err := drainPhase("flush workspace locks", func() error {
 			return srv.flushWorkspaceLocks(context.WithoutCancel(ctx), client)
@@ -2863,19 +2923,17 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
 
-		// Publish what the session has sent to Cloud so far. A token that may
-		// need a refresh is used while the client's attachables are still
-		// open, since refreshing reads the client's credentials file through
-		// them; otherwise the engine finishes after the client has gone.
-		_ = drainPhase("flush session Cloud telemetry", func() error {
+		// Preserve the pre-closing drain point for tokens that cannot safely
+		// outlive the client. Cloud checks can begin dependent work as soon as the
+		// load result is published; refresh remains enabled until the final metric
+		// collection and conditional drain below.
+		_ = drainPhase("flush session Cloud telemetry before closing", func() error {
 			sess.flushSessionCloudTelemetryForShutdown(ctx)
-			// No token refresh reaches through the client's attachables
-			// once they start closing; see cloudRefreshGate.
-			sess.stopCloudTokenRefresh(ctx)
 			return nil
 		})
 
-		// this must be done after lockfile flushing (since lockfiles make use of attachables to write data to host)
+		// this must be done after lockfile flushing (since lockfiles make use of attachables to write data to host).
+		// The main client's attachables outlive it, for the final Cloud flush below.
 		sess.beginClosing()
 
 		// Stop services, since the main client is going away, and we
@@ -2885,6 +2943,18 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			sess.services.StopSessionServices(ctx, sess.sessionID)
 			return nil
 		})
+
+		// Stop every periodic metric reader after the last metric-producing
+		// shutdown work. Reader shutdown performs one final collection, so no
+		// Cloud metric can be enqueued after the later queue barrier.
+		metricsErr := drainPhase("shutdown session metrics", func() error {
+			clients := sess.clientMetricRuntimes()
+			return runClientMetricOp(ctx, clients, "shutdown metrics", (*clientRuntime).shutdownMetrics)
+		})
+		if metricsErr != nil {
+			slog.Error("failed to shutdown session metrics", "error", metricsErr)
+			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("shutdown session metrics: %w", metricsErr))
+		}
 
 		defer func() {
 			// Signal shutdown at the very end, _after_ flushing telemetry/etc.,
@@ -2913,6 +2983,20 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	if flushErr != nil {
 		slog.Error("failed to flush telemetry", "error", flushErr)
 		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush telemetry: %w", flushErr))
+	}
+
+	if isMainClient {
+		// All metric readers are stopped and the session providers have completed
+		// their final flush. If the token cannot safely outlive the client, drain
+		// the three Cloud signals while its attachables can still refresh OAuth.
+		// Otherwise the existing forwarder and metric queue finish in the
+		// background. No later refresh may reach through those attachables.
+		_ = drainPhase("flush final session Cloud telemetry", func() error {
+			sess.flushSessionCloudTelemetryForShutdown(ctx)
+			sess.stopCloudTokenRefresh(ctx)
+			return nil
+		})
+		sess.endMainClientAttachables()
 	}
 
 	client.closeShutdownOnce.Do(func() {
@@ -3465,6 +3549,9 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 	if client.clientID == client.daggerSession.mainClientCallerID {
 		return nil, fmt.Errorf("%w: main client caller has no current module", core.ErrNoCurrentModule)
 	}
+	if client.fnCall == nil {
+		return nil, core.ErrNoCurrentFunctionCall
+	}
 	return client.fnCall, nil
 }
 
@@ -3637,6 +3724,34 @@ func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.C
 		return nil, err
 	}
 	return client.daggerSession.clientMetadataSnapshot(client.clientRecord)
+}
+
+// The nearest non-module client above the module ModuleParent returns: the
+// client whose host that module was loaded from. Unlike
+// NonModuleParentClientMetadata, a nested exec under the module is skipped.
+func (srv *Server) ModuleParentHostClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
+	client, err := srv.executableClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ancestors, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
+	if err != nil {
+		return nil, fmt.Errorf("resolve module parent host ancestry: %w", err)
+	}
+	chain := append(slices.Clone(ancestors), client)
+	foundModule := false
+	for i := len(chain) - 1; i >= 0; i-- {
+		switch {
+		case chain[i].mod.Self() != nil:
+			foundModule = true
+		case foundModule:
+			return client.daggerSession.clientMetadataSnapshot(chain[i].clientRecord)
+		}
+	}
+	if !foundModule {
+		return nil, core.ErrNoCurrentModule
+	}
+	return nil, fmt.Errorf("no non-module parent found")
 }
 
 // The default deps of every user module (currently just core)

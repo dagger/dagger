@@ -107,6 +107,12 @@ func TestMergeValuesReplacesAnExpiredEntryNothingUses(t *testing.T) {
 	require.NotNil(t, envelope)
 	require.Equal(t, uint64(1), replacements)
 	require.Same(t, row, current)
+	b.egraphMu.RLock()
+	payloadBytes := row.payloadBytes
+	b.egraphMu.RUnlock()
+	require.Equal(t, persistedEnvelopePayloadBytes(envelope), payloadBytes, "the row counts the record's envelope")
+	total, sum := cacheTestPayloadTotalConsistent(b)
+	require.Equal(t, sum, total)
 }
 
 // An expired entry that a session still uses is retired: it leaves the
@@ -2274,4 +2280,152 @@ func TestMergeValuesInstalledRecordNamesItsEntry(t *testing.T) {
 			require.NoError(t, err, "the entry exports")
 		})
 	}
+}
+
+// mergeTestReadList reads every item of list, one position at a time.
+func mergeTestReadList(t *testing.T, ctx context.Context, list AnyResult) []string {
+	t.Helper()
+	var got []string
+	for nth := 1; nth <= list.Unwrap().(Enumerable).Len(); nth++ {
+		item, err := list.NthValue(ctx, nth)
+		require.NoError(t, err)
+		got = append(got, item.Unwrap().(String).String())
+	}
+	return got
+}
+
+// A merge keeps the cache's own value for a list recipe and moves the
+// bundle's references to it, so an item read from the bundle's list value
+// comes to name the cache's list. Reads of that list must still return its
+// own items, and the imported item still loads as the value it was.
+func TestMergeValuesKeptListReadsItsOwnItems(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	source := persistedListTestResult(t, actx, a, asrv, "merge-kept-list", NewStringArray("a", "b", "c"))
+	sourceItem, err := source.NthValue(actx, 1)
+	require.NoError(t, err)
+	bundle := exportTestBundle(t, actx, a, sourceItem)
+
+	bctx, b, bsrv := transferTestCache(t)
+	local := persistedListTestResult(t, bctx, b, bsrv, "merge-kept-list", NewStringArray("c", "a", "b"))
+	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	imported, err := b.LoadResultByResultID(bctx, "test-session", bsrv, reply.Imported()[0].ResultID)
+	require.NoError(t, err)
+	frame, err := imported.ResultCall()
+	require.NoError(t, err)
+	require.Equal(t, uint64(local.cacheSharedResult().id), frame.Receiver.ResultID)
+	require.Equal(t, "a", imported.Unwrap().(String).String())
+
+	require.Equal(t, []string{"c", "a", "b"}, mergeTestReadList(t, bctx, local))
+}
+
+// A bundle can carry a list and an item read from another value of the list's
+// recipe: the cache that exported it had merged the item beside its own
+// list, as above. A cache that takes both reads the list's own items.
+func TestMergeValuesTransferredItemOfAnotherValueIsNotRead(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	source := persistedListTestResult(t, actx, a, asrv, "merge-mixed-list", NewStringArray("a", "b", "c"))
+	sourceItem, err := source.NthValue(actx, 1)
+	require.NoError(t, err)
+
+	bctx, b, bsrv := transferTestCache(t)
+	persistedListTestResult(t, bctx, b, bsrv, "merge-mixed-list", NewStringArray("c", "a", "b"))
+	reply, err := b.MergeValues(bctx, cloudCacheID, exportTestBundle(t, actx, a, sourceItem))
+	require.NoError(t, err)
+	mixedItem, err := b.LoadResultByResultID(bctx, "test-session", bsrv, reply.Imported()[0].ResultID)
+	require.NoError(t, err)
+	mixed := exportTestBundle(t, bctx, b, mixedItem)
+
+	cctx, c, csrv := transferTestCache(t)
+	reply, err = c.MergeValues(cctx, cloudCacheID, mixed)
+	require.NoError(t, err)
+	item, err := c.LoadResultByResultID(cctx, "test-session", csrv, reply.Imported()[0].ResultID)
+	require.NoError(t, err)
+	frame, err := item.ResultCall()
+	require.NoError(t, err)
+	list, err := c.LoadResultByResultID(cctx, "test-session", csrv, frame.Receiver.ResultID)
+	require.NoError(t, err)
+	require.Equal(t, "a", item.Unwrap().(String).String())
+
+	require.Equal(t, []string{"c", "a", "b"}, mergeTestReadList(t, cctx, list))
+}
+
+// A recorded item can be retained past its reading session by a field that
+// returns it, and gain that field's expiry. Once it has expired and nothing
+// uses it, a merge replaces its value in place with an item of another value
+// of the list's recipe. The list it was read from must not read that value.
+func TestMergeValuesReplacedItemLeavesItsList(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	source := persistedListTestResult(t, actx, a, asrv, "merge-replaced-item", NewStringArray("a", "b", "c"))
+	sourceItem, err := source.NthValue(actx, 1)
+	require.NoError(t, err)
+	bundle := exportTestBundle(t, actx, a, sourceItem)
+
+	bctx, b, bsrv := transferTestCache(t)
+	local := persistedListTestResult(t, bctx, b, bsrv, "merge-replaced-item", NewStringArray("c", "a", "b"))
+	item, err := local.NthValue(bctx, 1)
+	require.NoError(t, err)
+	retain := NodeFunc("mergeReplacedItem", func(context.Context, ObjectResult[*persistCodecRoot], struct{}) (Result[String], error) {
+		return Result[String]{shared: item.cacheSharedResult()}, nil
+	})
+	retain.Spec.TTL = 3600
+	retain.Spec.IsPersistable = true
+	Fields[*persistCodecRoot]{retain}.Install(bsrv)
+	retained, err := bsrv.Root().Select(bctx, bsrv, Selector{Field: "mergeReplacedItem"})
+	require.NoError(t, err)
+	row := item.cacheSharedResult()
+	require.Same(t, row, retained.cacheSharedResult())
+
+	reader := srvToContext(currentEntryTestSession(bctx, b, "reader"), bsrv)
+	local, err = b.LoadResultByResultID(reader, "reader", bsrv, uint64(local.cacheSharedResult().id))
+	require.NoError(t, err)
+	require.NoError(t, b.ReleaseSession(bctx, "test-session"))
+	mergeTestExpire(b, row)
+	reply, err := b.MergeValues(reader, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Equal(t, uint64(row.id), reply.Imported()[0].ResultID)
+	b.egraphMu.RLock()
+	replacements := row.replacements
+	b.egraphMu.RUnlock()
+	require.Equal(t, uint64(1), replacements)
+
+	require.Equal(t, []string{"c", "a", "b"}, mergeTestReadList(t, reader, local))
+}
+
+// The Cloud keeps its own value for a list recipe when an engine's export of
+// an item of another value arrives, so the item comes to name the Cloud's
+// list. An engine that takes both from the Cloud reads the list's own items.
+func TestMergeValuesItemThroughTheCloudIsNotRead(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	source := persistedListTestResult(t, actx, a, asrv, "merge-cloud-item", NewStringArray("a", "b", "c"))
+	sourceItem, err := source.NthValue(actx, 1)
+	require.NoError(t, err)
+	bctx, b, bsrv := transferTestCache(t)
+	local := persistedListTestResult(t, bctx, b, bsrv, "merge-cloud-item", NewStringArray("c", "a", "b"))
+
+	cloudCtx, cloud := storedPartTestCache(t, WithBlobStore())
+	_, err = cloud.MergeValues(cloudCtx, "cache-b", exportTestBundle(t, bctx, b, local))
+	require.NoError(t, err)
+	reply, err := cloud.MergeValues(cloudCtx, "cache-a", exportTestBundle(t, actx, a, sourceItem))
+	require.NoError(t, err)
+	cloud.egraphMu.RLock()
+	cloudItem := cloud.resultsByID[sharedResultID(reply.Imported()[0].ResultID)]
+	cloud.egraphMu.RUnlock()
+
+	cctx, c, csrv := transferTestCache(t)
+	reply, err = c.MergeValues(cctx, cloudCacheID, exportTestBundle(t, cloudCtx, cloud, Result[Typed]{shared: cloudItem}))
+	require.NoError(t, err)
+	item, err := c.LoadResultByResultID(cctx, "test-session", csrv, reply.Imported()[0].ResultID)
+	require.NoError(t, err)
+	frame, err := item.ResultCall()
+	require.NoError(t, err)
+	list, err := c.LoadResultByResultID(cctx, "test-session", csrv, frame.Receiver.ResultID)
+	require.NoError(t, err)
+	require.Equal(t, "a", item.Unwrap().(String).String())
+
+	require.Equal(t, []string{"c", "a", "b"}, mergeTestReadList(t, cctx, list))
 }

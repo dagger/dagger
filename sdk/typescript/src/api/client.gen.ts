@@ -608,6 +608,15 @@ export type ContainerAsServiceOpts = {
   experimentalPrivilegedNesting?: boolean
 
   /**
+   * Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
+   */
+  daggerInDaggerNewSession?: boolean
+
+  /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
@@ -910,6 +919,15 @@ export type ContainerUpOpts = {
   experimentalPrivilegedNesting?: boolean
 
   /**
+   * Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
+   */
+  daggerInDaggerNewSession?: boolean
+
+  /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
@@ -1044,12 +1062,12 @@ export type ContainerWithExecOpts = {
   redirectStdin?: string
 
   /**
-   * Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+   * Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
    */
   redirectStdout?: string
 
   /**
-   * Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+   * Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
    */
   redirectStderr?: string
 
@@ -1067,6 +1085,15 @@ export type ContainerWithExecOpts = {
    * @deprecated Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
    */
   experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
+   */
+  daggerInDaggerNewSession?: boolean
 
   /**
    * Execute the command with all root capabilities. Like --privileged in Docker
@@ -4175,6 +4202,13 @@ export type WorkspaceWithNewFileOpts = {
   permissions?: number
 }
 
+export type WorkspaceWithPatchFileOpts = {
+  /**
+   * How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+   */
+  onConflict?: PatchConflict
+}
+
 export type WorkspaceWithResetOpts = {
   /**
    * Discard uncommitted changes, resetting the working tree to the commit.
@@ -4233,6 +4267,11 @@ export type WorkspaceWithUpdatedModulesOpts = {
    * New version request for exactly one selected module. Cannot be combined with a version suffix.
    */
   version?: string
+
+  /**
+   * New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
+   */
+  source?: string
 }
 
 export type WorkspaceWithoutClientOpts = {
@@ -6742,6 +6781,11 @@ export class Container extends BaseClient {
    * If empty, the container's default command is used.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
    * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   * @param opts.daggerInDaggerNewSession Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
@@ -7370,6 +7414,11 @@ export class Container extends BaseClient {
    * If empty, the container's default command is used.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
    * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   * @param opts.daggerInDaggerNewSession Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
@@ -7533,10 +7582,15 @@ export class Container extends BaseClient {
    * @param opts.useEntrypoint Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
    * @param opts.stdin Content to write to the command's standard input. Example: "Hello world")
    * @param opts.redirectStdin Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+   * @param opts.redirectStdout Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
+   * @param opts.redirectStderr Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
    * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.disableDaggerInDagger Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+   * @param opts.daggerInDaggerNewSession Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+   *
+   * The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+   *
+   * Cannot be combined with "disableDaggerInDagger".
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
    *
    * DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
@@ -11937,6 +11991,7 @@ export class GitRef extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _commit?: string = undefined
   private readonly _commitSHA?: string = undefined
+  private readonly _contains?: boolean = undefined
   private readonly _name?: string = undefined
   private readonly _ref?: string = undefined
 
@@ -11948,6 +12003,7 @@ export class GitRef extends BaseClient {
     _id?: ID,
     _commit?: string,
     _commitSHA?: string,
+    _contains?: boolean,
     _name?: string,
     _ref?: string,
   ) {
@@ -11956,6 +12012,7 @@ export class GitRef extends BaseClient {
     this._id = _id
     this._commit = _commit
     this._commitSHA = _commitSHA
+    this._contains = _contains
     this._name = _name
     this._ref = _ref
   }
@@ -12032,6 +12089,24 @@ export class GitRef extends BaseClient {
   commonAncestor = (other: GitRef): GitRef => {
     const ctx = this._ctx.select("commonAncestor", { other })
     return new GitRef(ctx)
+  }
+
+  /**
+   * Return true when the other ref's commit equals this commit or is an ancestor of it.
+   *
+   * Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.
+   * @param other The ref whose commit to look for in this ref's history.
+   */
+  contains = async (other: GitRef): Promise<boolean> => {
+    if (this._contains) {
+      return this._contains
+    }
+
+    const ctx = this._ctx.select("contains", { other })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -12167,6 +12242,64 @@ export class GitRef extends BaseClient {
 }
 
 /**
+ * A named reference to a remote Git repository.
+ */
+export class GitRemote extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this GitRemote.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The remote's name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Access this remote's repository using its fetch URL and the caller's credentials, or the source's existing capability for this exact destination.
+   *
+   * HEAD is the remote's HEAD, independent of the workspace's selected commit. Remote registration alone does not grant credentials.
+   */
+  repository = (): GitRepository => {
+    const ctx = this._ctx.select("repository")
+    return new GitRepository(ctx)
+  }
+}
+
+/**
  * A git repository.
  */
 export class GitRepository extends BaseClient {
@@ -12253,6 +12386,22 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.
+   *
+   * Frozen workspaces retain their captured upstream selection. Does not contact remote servers.
+   */
+  defaultRemote = async (): Promise<GitRemote | null> => {
+    const ctx = this._ctx.select("defaultRemote").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new GitRemote(ctx.copy().selectNode(response, "GitRemote"))
+  }
+
+  /**
    * Returns details for HEAD.
    * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */
@@ -12280,11 +12429,39 @@ export class GitRepository extends BaseClient {
    * Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
    *
    * The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
+   *
+   * A repository derived from a remote one (e.g. a workspace's history after a snapshot or commit) resolves names and commits it does not contain itself through that remote, with its authentication. Its branches and tags listings include the remote's.
    * @param opts.noLock Ignore the workspace lockfile for this lookup.
    */
   ref = (name: string, opts?: GitRepositoryRefOpts): GitRef => {
     const ctx = this._ctx.select("ref", { name, ...opts })
     return new GitRef(ctx)
+  }
+
+  /**
+   * Look up a remote by name. Fails when the remote does not exist.
+   * @param name The remote's name.
+   */
+  remote = (name: string): GitRemote => {
+    const ctx = this._ctx.select("remote", { name })
+    return new GitRemote(ctx)
+  }
+
+  /**
+   * List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers.
+   */
+  remotes = async (): Promise<GitRemote[]> => {
+    type remotes = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("remotes").select("id")
+
+    const response: Awaited<remotes[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new GitRemote(ctx.copy().selectNode(r.id, "GitRemote")),
+    )
   }
 
   /**
@@ -12351,6 +12528,8 @@ export class GitRepository extends BaseClient {
    * Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
    *
    * The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+   *
+   * When the receiver is a remote repository (or was derived from one), that remote is retained with its authentication: refs the supplied storage does not contain resolve through it.
    * @param directory Existing Git storage to open. Git metadata and object dependencies must be contained in this directory.
    */
   withContents = (directory: Directory): GitRepository => {
@@ -18582,6 +18761,30 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+   *
+   * Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+   * @param patch File containing the patch to apply
+   * @param opts.onConflict How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+   * @experimental
+   */
+  withPatchFile = (
+    patch: File,
+    opts?: WorkspaceWithPatchFileOpts,
+  ): Workspace => {
+    const metadata = {
+      onConflict: { is_enum: true, value_to_name: PatchConflictValueToName },
+    }
+
+    const ctx = this._ctx.select("withPatchFile", {
+      patch,
+      ...opts,
+      __metadata: metadata,
+    })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
    *
    * A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
@@ -18636,14 +18839,27 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with updated module versions and lockfile state.
+   * Return this workspace with updated module sources, versions and lockfile state.
    *
    * An SDK client scope is regenerated when it targets an updated module.
    * @param opts.names Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
    * @param opts.version New version request for exactly one selected module. Cannot be combined with a version suffix.
+   * @param opts.source New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
    */
   withUpdatedModules = (opts?: WorkspaceWithUpdatedModulesOpts): Workspace => {
     const ctx = this._ctx.select("withUpdatedModules", { ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with the calling client's user-level config re-read and applied.
+   *
+   * User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+   *
+   * The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+   */
+  withUserConfig = (): Workspace => {
+    const ctx = this._ctx.select("withUserConfig")
     return new Workspace(ctx)
   }
 
@@ -18729,6 +18945,15 @@ export class Workspace extends BaseClient {
    */
   withoutFile = (path: string): Workspace => {
     const ctx = this._ctx.select("withoutFile", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with files removed, without mutating the source.
+   * @param paths Paths of the files to remove. Relative paths resolve from the workspace cwd.
+   */
+  withoutFiles = (paths: string[]): Workspace => {
+    const ctx = this._ctx.select("withoutFiles", { paths })
     return new Workspace(ctx)
   }
 

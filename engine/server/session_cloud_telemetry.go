@@ -230,13 +230,13 @@ func (sess *daggerSession) publishesToCloud() bool {
 
 var errCloudRefreshSessionClosing = errors.New("refresh cloud token: the main client is shutting down")
 
-// cloudRefreshGate admits a refresh's file operations until the main
-// client's shutdown has flushed Cloud. A refresh reads and writes the
-// client's credentials file through its attachables; when they close under
-// one, the gateway's lookup waits out its own 10s whatever the refresh's
-// deadline. So after the Cloud flush, and before the attachables close,
-// shutdown stops new file operations and waits, within the Cloud budget,
-// for one in flight. A nil gate admits everything.
+// cloudRefreshGate admits a refresh's file operations until the main client's
+// shutdown has stopped metric readers and flushed Cloud. A refresh reads and
+// writes the client's credentials file through its attachables; when they
+// close under one, the gateway's lookup waits out its own 10s whatever the
+// refresh's deadline. So after the final Cloud flush, and before the
+// attachables close, shutdown stops new file operations and waits for one in
+// flight. A nil gate admits everything.
 type cloudRefreshGate struct {
 	mu       sync.Mutex
 	closed   bool
@@ -299,11 +299,11 @@ func (g *cloudRefreshGate) wait(ctx context.Context) error {
 }
 
 // stopCloudTokenRefresh ends the refreshes' file operations for the rest of
-// the session: the main client's shutdown calls it after the Cloud flush and
-// before the attachables close. A refresh already exchanging its token keeps
-// the new token without writing it back; exports with an expired token fail
-// at once, costing telemetry at the very end of a session, never its
-// shutdown.
+// the session: the main client's shutdown calls it after stopping metric
+// readers and flushing Cloud, and before the attachables close. A refresh
+// already exchanging its token keeps the new token without writing it back;
+// exports with an expired token fail at once, costing telemetry at the very
+// end of a session, never its shutdown.
 func (sess *daggerSession) stopCloudTokenRefresh(ctx context.Context) {
 	if sess.cloudRefresh == nil {
 		return
@@ -350,12 +350,12 @@ func (srv *Server) refreshSessionCloudToken(ctx context.Context, sess *daggerSes
 		return nil, fmt.Errorf("refresh cloud token: session gateway not initialized")
 	}
 	ctx = engine.ContextWithClientMetadata(ctx, md)
-	// attachable fails at once once the client's attachables close or are
-	// gone: waiting for them ignores every deadline (see cloudRefreshGate).
+	// The session enters its closing state before services stop and their final
+	// telemetry is collected, but the main client's attachables remain available
+	// to this accepted shutdown request: they live on mainAttachablesCtx, which
+	// the shutdown ends after the final Cloud flush. Only their actual removal
+	// closes this path; cloudRefreshGate closes it deliberately just before.
 	attachable := func() error {
-		if sess.closingCtx != nil && sess.closingCtx.Err() != nil {
-			return errCloudRefreshSessionClosing
-		}
 		if sess.attachables != nil {
 			if _, ok := sess.attachables.Lookup(record.clientID); !ok {
 				return errCloudRefreshSessionClosing
@@ -532,13 +532,19 @@ type cloudMetricQueue struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu       sync.Mutex
-	queue    []*otlpmetricsv1.ResourceMetrics
-	dropped  int
-	closed   bool
-	wake     chan struct{}
-	drained  chan struct{}
-	shutdown sync.Once
+	mu            sync.Mutex
+	queue         []cloudMetricQueueEntry
+	queuedMetrics int
+	dropped       int
+	closed        bool
+	wake          chan struct{}
+	drained       chan struct{}
+	shutdown      sync.Once
+}
+
+type cloudMetricQueueEntry struct {
+	metrics *otlpmetricsv1.ResourceMetrics
+	barrier chan struct{}
 }
 
 func newCloudMetricQueue(next sdkmetric.Exporter, bound cloudFlushBound) *cloudMetricQueue {
@@ -581,11 +587,21 @@ func (q *cloudMetricQueue) Export(_ context.Context, metrics *metricdata.Resourc
 		q.mu.Unlock()
 		return nil
 	}
-	if len(q.queue) >= cloudMetricQueueSize {
-		q.queue = q.queue[1:]
+	if q.queuedMetrics >= cloudMetricQueueSize {
+		// Barriers do not consume queue capacity and must not be dropped: they
+		// separate work accepted before a flush from work accepted after it.
+		for i, entry := range q.queue {
+			if entry.metrics == nil {
+				continue
+			}
+			q.queue = append(q.queue[:i], q.queue[i+1:]...)
+			q.queuedMetrics--
+			break
+		}
 		q.dropped++
 	}
-	q.queue = append(q.queue, copied)
+	q.queue = append(q.queue, cloudMetricQueueEntry{metrics: copied})
+	q.queuedMetrics++
 	q.mu.Unlock()
 	select {
 	case q.wake <- struct{}{}:
@@ -595,6 +611,35 @@ func (q *cloudMetricQueue) Export(_ context.Context, metrics *metricdata.Resourc
 }
 
 func (q *cloudMetricQueue) ForceFlush(context.Context) error { return nil }
+
+// flush places an ordered barrier after every collection accepted so far and
+// waits for the worker to reach it. Collections accepted later sit after the
+// barrier and cannot extend this wait. It is separate from ForceFlush because
+// a client's metric reader must never wait on Cloud; only the main client's
+// dedicated shutdown flush calls it while OAuth refresh and the client's
+// attachables are still available.
+func (q *cloudMetricQueue) flush(ctx context.Context) {
+	q.mu.Lock()
+	if q.closed {
+		q.mu.Unlock()
+		return
+	}
+	barrier := make(chan struct{})
+	q.queue = append(q.queue, cloudMetricQueueEntry{barrier: barrier})
+	q.mu.Unlock()
+	select {
+	case q.wake <- struct{}{}:
+	default:
+	}
+	q.bound.bounded(ctx, "flush metrics", func(ctx context.Context) error {
+		select {
+		case <-barrier:
+			return nil
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	})
+}
 
 // Shutdown drains the queue, lets the export in flight finish and releases
 // the exporter, all by one deadline: the bound, or ctx's deadline if
@@ -622,8 +667,14 @@ func (q *cloudMetricQueue) Shutdown(ctx context.Context) error {
 		q.cancel()
 		<-q.drained
 		q.mu.Lock()
-		dropped := q.dropped + len(q.queue)
+		dropped := q.dropped + q.queuedMetrics
+		for _, entry := range q.queue {
+			if entry.barrier != nil {
+				close(entry.barrier)
+			}
+		}
 		q.queue = nil
+		q.queuedMetrics = 0
 		q.mu.Unlock()
 		if dropped > 0 {
 			slog.Warn("session metrics not fully published to Cloud", "session", q.bound.sessionID, "dropped", dropped)
@@ -655,16 +706,27 @@ func (q *cloudMetricQueue) run() {
 		}
 		next := q.queue[0]
 		q.queue = q.queue[1:]
+		if next.metrics != nil {
+			q.queuedMetrics--
+		}
 		q.mu.Unlock()
-		metrics, err := telemetry.ResourceMetricsFromPB(next)
-		if err != nil {
+		if next.barrier != nil {
+			close(next.barrier)
 			continue
 		}
-		ctx, cancel := context.WithTimeout(q.ctx, q.bound.timeout)
-		err = q.next.Export(ctx, metrics)
-		cancel()
-		if err != nil && q.ctx.Err() == nil {
-			slog.Warn("session telemetry not fully published to Cloud", "session", q.bound.sessionID, "op", "export metrics", "error", err)
+		metrics, err := telemetry.ResourceMetricsFromPB(next.metrics)
+		if err == nil {
+			ctx, cancel := context.WithTimeout(q.ctx, q.bound.timeout)
+			err = q.next.Export(ctx, metrics)
+			cancel()
+			if err != nil && q.ctx.Err() == nil {
+				slog.Warn("session telemetry not fully published to Cloud", "session", q.bound.sessionID, "op", "export metrics", "error", err)
+			}
+		}
+		if err != nil {
+			q.mu.Lock()
+			q.dropped++
+			q.mu.Unlock()
 		}
 	}
 }
@@ -701,12 +763,16 @@ func (sess *daggerSession) flushSessionCloudTelemetryForShutdown(ctx context.Con
 	}
 }
 
-// flushSessionCloudTelemetry publishes what the session has sent so far to
-// Cloud, within the bound.
+// flushSessionCloudTelemetry drains spans and logs from the store-to-Cloud
+// forwarder and waits for the metric queue's ordered barrier, within the
+// shared Cloud bound.
 func (sess *daggerSession) flushSessionCloudTelemetry(ctx context.Context) {
 	var wg sync.WaitGroup
 	for _, flush := range sess.cloudFlushers {
 		wg.Go(func() { flush(ctx) })
+	}
+	if sess.cloudMetrics != nil {
+		wg.Go(func() { sess.cloudMetrics.flush(ctx) })
 	}
 	wg.Wait()
 }

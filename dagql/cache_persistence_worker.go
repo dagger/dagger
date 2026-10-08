@@ -12,6 +12,29 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+// Checkpoint saves a blob-backed cache, the Cloud's, without closing it: the
+// same save as Close's, the closure of the stored roots in one transaction,
+// with each value's stored parts. A crash during a save keeps the previous
+// one, and a blob-backed cache restores the last save whatever ended the
+// process (NewCache). Only a blob-backed cache checkpoints while it runs: it
+// never decodes a value, so its save copies stored records as they are.
+func (c *Cache) Checkpoint(ctx context.Context) error {
+	if !c.blobBacked {
+		return errors.New("checkpoint: the cache has no blob store")
+	}
+	op, err := c.beginCacheOperation()
+	if err != nil {
+		return err
+	}
+	defer op.finish(false)
+	if c.sqlDB == nil || c.pdb == nil {
+		return errors.New("checkpoint: the cache has no persistence database")
+	}
+	c.checkpointMu.Lock()
+	defer c.checkpointMu.Unlock()
+	return c.persistCurrentState(ctx)
+}
+
 func (c *Cache) persistCurrentState(ctx context.Context) error {
 	if c.sqlDB == nil || c.pdb == nil {
 		return nil
@@ -30,6 +53,10 @@ func (c *Cache) persistCurrentState(ctx context.Context) error {
 	return nil
 }
 
+// snapshotPersistState copies, under egraphMu for reading, what the save
+// writes. A Checkpoint runs it beside other readers, so it reads class roots
+// without compressing their paths, which writes.
+//
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot, error) {
 	var snapshot persistStateSnapshot
@@ -39,7 +66,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 	selectedResultIDs, persistedRootIDs := c.snapshotPersistedRootClosureLocked()
 
 	addEqClassID := func(eqClassIDs map[eqClassID]struct{}, eqID eqClassID) {
-		eqID = c.findEqClassLocked(eqID)
+		eqID = c.eqClassRootLocked(eqID)
 		if eqID == 0 {
 			return
 		}
@@ -77,10 +104,10 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			})
 		}
 
-		outputEqClasses := c.outputEqClassesForResultLocked(resultID)
+		outputEqClasses := c.outputEqClassRootsLocked(resultID)
 		outputEqIDs := make([]eqClassID, 0, len(outputEqClasses))
 		for outputEqID := range outputEqClasses {
-			outputEqID = c.findEqClassLocked(outputEqID)
+			outputEqID = c.eqClassRootLocked(outputEqID)
 			if outputEqID == 0 {
 				continue
 			}
@@ -116,6 +143,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			resultID:              resultID,
 			imported:              res.imported,
 			pendingOffers:         offers,
+			storedParts:           res.storedPartsLocked(),
 			frame:                 res.loadResultCall().clone(),
 			self:                  payload.self,
 			isObject:              payload.isObject,
@@ -150,7 +178,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		if term == nil {
 			continue
 		}
-		outputEqID := c.findEqClassLocked(term.outputEqID)
+		outputEqID := c.eqClassRootLocked(term.outputEqID)
 		if _, retained := retainedOutputEqClassIDs[outputEqID]; !retained {
 			continue
 		}
@@ -163,7 +191,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		inputEqIDs := make([]eqClassID, len(term.inputEqIDs))
 		copy(inputEqIDs, term.inputEqIDs)
 		for i, inputEqID := range inputEqIDs {
-			inputEqID = c.findEqClassLocked(inputEqID)
+			inputEqID = c.eqClassRootLocked(inputEqID)
 			inputEqIDs[i] = inputEqID
 			addEqClassID(eqClassIDs, inputEqID)
 			snapshot.termInputs = append(snapshot.termInputs, persistdb.MirrorTermInput{
@@ -509,6 +537,7 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 		if rerr == nil && snapshot != nil {
 			encoding.Envelope.Imported = snapshot.imported
 			encoding.Envelope.PendingOffers, rerr = clonePartOffers(snapshot.pendingOffers)
+			encoding.Envelope.StoredParts = snapshot.storedParts
 		}
 	}()
 	if snapshot != nil && snapshot.persistedEnvelope != nil {

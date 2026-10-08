@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -38,6 +39,7 @@ import (
 	"golang.org/x/term"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
@@ -347,6 +349,12 @@ type frontendPretty struct {
 	topTrees       []*SpanTreeView // top-level tree views, ordered
 	statusSpinners map[dagui.SpanID]*tuist.Spinner
 	durationViews  map[dagui.SpanID]*DurationView
+	// testOwnerTrees is the subset of spanTrees whose spans own an inline
+	// TESTS rollup (checks and LLM tool calls), which test updates re-render.
+	// Kept alongside spanTrees so they don't have to scan the whole session.
+	testOwnerTrees map[dagui.SpanID]*SpanTreeView
+	// treeSync tracks which of spanTrees the last syncSpanTreeState reached.
+	treeSync treeSync
 
 	// per-span inline log components. A LogsView owns the fetch (on mount) and
 	// the render of a span's inline logs, so the expensive Vterm.View() is
@@ -368,6 +376,14 @@ type frontendPretty struct {
 	// cleared by recalculateViewLocked in Render. This coalesces multiple
 	// data updates into a single recalculate per render frame.
 	viewDirty bool
+
+	// testsDirty and testLogSpans defer test view updates to the next frame
+	// the way viewDirty defers recalculation: testsDirty when span batches or
+	// a resize may have changed any test view (updateTestViews), testLogSpans
+	// when log batches only touched the views above those spans
+	// (updateTestViewsForLogs). See flushTestViews.
+	testsDirty   bool
+	testLogSpans map[dagui.SpanID]struct{}
 
 	// search state (Vim-style "/" search)
 	searchQuery          string           // confirmed search string
@@ -518,6 +534,19 @@ type spanTreeScope struct {
 	rows      *dagui.Rows
 	opts      dagui.FrontendOpts
 	spanTrees map[dagui.SpanID]*SpanTreeView
+	treeSync  treeSync
+}
+
+// treeSync tracks which SpanTreeViews in a set of span trees the last sync
+// pass reached, so pruneSpanTrees can drop the rest.
+type treeSync struct {
+	epoch  uint64 // bumped at the start of each pass
+	synced int    // trees the pass reached
+}
+
+func (ts *treeSync) begin() {
+	ts.epoch++
+	ts.synced = 0
 }
 
 type SpanTreeView struct {
@@ -525,6 +554,11 @@ type SpanTreeView struct {
 	fe     *frontendPretty
 	spanID dagui.SpanID
 	scope  *spanTreeScope
+
+	// syncEpoch is the treeSync epoch of the last pass that reached this
+	// tree; a tree a pass didn't reach is no longer mounted (see
+	// pruneSpanTrees).
+	syncEpoch uint64
 
 	// finalRender and renderVersion are synced from frontendPretty before
 	// rendering. Render reads these instead of relying on hidden frontend state
@@ -905,8 +939,29 @@ func (fe *frontendPretty) getOrCreateSpanTreeInScope(spanID dagui.SpanID, scope 
 			scope:  scope,
 		}
 		spanTrees[spanID] = st
+		if scope == nil {
+			fe.trackTestOwnerTree(spanID, st)
+		}
 	}
 	return st
+}
+
+// ownsInlineTests reports whether span's row renders an inline TESTS rollup of
+// the tests beneath it.
+func ownsInlineTests(span *dagui.Span) bool {
+	return span != nil && (span.CheckName != "" || span.LLMTool != "")
+}
+
+// trackTestOwnerTree records st, the main trace's SpanTreeView for id, in
+// testOwnerTrees if its span owns inline tests.
+func (fe *frontendPretty) trackTestOwnerTree(id dagui.SpanID, st *SpanTreeView) {
+	if fe.db == nil || !ownsInlineTests(fe.db.Spans.Map[id]) {
+		return
+	}
+	if fe.testOwnerTrees == nil {
+		fe.testOwnerTrees = make(map[dagui.SpanID]*SpanTreeView)
+	}
+	fe.testOwnerTrees[id] = st
 }
 
 type statusIconHost interface {
@@ -2614,10 +2669,12 @@ func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
 				fe.updateLogPagerForLogs(id)
 			}
 			if sr, ok := fe.spanTrees[id]; ok {
+				// An update can carry attributes the span didn't start with.
+				fe.trackTestOwnerTree(id, sr)
 				sr.Update()
 			}
 		}
-		fe.updateTestViews()
+		fe.testsDirty = true
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple batches into one recalculate per frame.
 		fe.viewDirty = true
@@ -3001,7 +3058,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 			// Keep the failed command's exit code (e.g. a shell script's failed
 			// exec must exit with the exec's own code) instead of flattening
 			// every rendered error to 1.
-			var execErr *dagger.ExecError
+			var execErr *core.ExecError
 			if errors.As(fe.err, &execErr) {
 				return ExitError{OriginalCode: execErr.ExitCode, Original: fe.err}
 			}
@@ -3057,10 +3114,12 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 				fe.updateLogPagerForLogs(id)
 			}
 			if sr, ok := fe.spanTrees[id]; ok {
+				// An update can carry attributes the span didn't start with.
+				fe.trackTestOwnerTree(id, sr)
 				sr.Update()
 			}
 		}
-		fe.updateTestViews()
+		fe.testsDirty = true
 		for view := range fe.spanLists {
 			view.UpdateAll()
 		}
@@ -3085,9 +3144,11 @@ func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
 		sr.Update()
 	}
 	// The inline LogsView memoizes Vterm.View(); its content isn't an input the
-	// owner's sync() compares, so push an Update when logs arrive.
-	for key, lv := range fe.logsViews {
-		if key.spanID == spanID {
+	// owner's sync() compares, so push an Update when logs arrive. Look up the
+	// span's views directly: scanning every LogsView in the session, once per
+	// log record, grew with the session.
+	for _, toolArgs := range []bool{false, true} {
+		if lv, ok := fe.logsViews[logsViewKey{spanID: spanID, toolArgs: toolArgs}]; ok {
 			lv.Update()
 		}
 	}
@@ -3103,7 +3164,7 @@ func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
 				}
 				// The rolled-up lines land in the roll-up span's own Vterm, so
 				// its memoized LogsView must be invalidated too — an *expanded*
-				// roll-up row (a promoted `dagger up` service) renders through
+				// roll-up row (a promoted `dagger start` service) renders through
 				// it and would otherwise freeze at its first-paint content.
 				if lv, ok := fe.logsViews[logsViewKey{spanID: id}]; ok {
 					lv.Update()
@@ -3149,7 +3210,10 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		for spanID := range logSpanIDs {
 			fe.updateLogPagerForLogs(spanID)
 		}
-		fe.updateTestViews()
+		if fe.testLogSpans == nil {
+			fe.testLogSpans = make(map[dagui.SpanID]struct{})
+		}
+		maps.Copy(fe.testLogSpans, logSpanIDs)
 		for view := range fe.spanLists {
 			view.UpdateAll()
 		}
@@ -3578,6 +3642,9 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		// so the renderer doesn't truncate (maxLiteralLen = 0).
 		fe.contentWidth = 0
 	}
+	// Coalesce the test view updates of every batch since the last frame,
+	// before any view (command-owned ones included) renders.
+	fe.flushTestViews()
 	if fe.commandView != nil {
 		fe.RenderChild(ctx, fe.commandView)
 		return
@@ -5482,6 +5549,7 @@ func (fe *frontendPretty) syncSpanTreeState() {
 	if fe.spanTrees == nil {
 		fe.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
 	}
+	fe.treeSync.begin()
 
 	// A zoomed subtree renders at the margin: its root is split off as a header
 	// (see Render), so the content below isn't indented under it.
@@ -5520,6 +5588,34 @@ func (fe *frontendPretty) syncSpanTreeState() {
 		}
 	}
 	fe.topTrees = newTops
+	pruneSpanTrees(fe.spanTrees, &fe.treeSync, fe.testOwnerTrees)
+}
+
+// pruneSpanTrees drops the trees that the sync pass tracked by ts didn't
+// reach: rows that left the view (a zoom, a filter, a collapsed parent), whose
+// components are no longer mounted. Nothing renders them anymore, but keeping
+// them would grow the maps with the whole session, and passes over the trees
+// (updateTestViews) would keep paying for rows nobody can see. A pruned tree
+// is also dropped from its parent's childMap, so a row that comes back gets a
+// fresh tree rather than one whose cached render missed updates while it was
+// gone. When the pass reached as many trees as there are, none are stale and
+// this costs nothing.
+func pruneSpanTrees(trees map[dagui.SpanID]*SpanTreeView, ts *treeSync, owners map[dagui.SpanID]*SpanTreeView) {
+	if ts.synced >= len(trees) {
+		return
+	}
+	for id, st := range trees {
+		if st.syncEpoch == ts.epoch {
+			continue
+		}
+		delete(trees, id)
+		if owners[id] == st {
+			delete(owners, id)
+		}
+		if p := st.parent; p != nil && p.childMap[id] == st {
+			delete(p.childMap, id)
+		}
+	}
 }
 
 // syncTreeNode recursively syncs a SpanTreeView and its children with
@@ -5531,6 +5627,13 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 
 func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePrefix, scope *spanTreeScope) {
 	changed := false
+
+	ts := &fe.treeSync
+	if scope != nil {
+		ts = &scope.treeSync
+	}
+	st.syncEpoch = ts.epoch
+	ts.synced++
 
 	// Sync scope
 	if st.scope != scope {
@@ -5623,6 +5726,9 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 			}
 			st.childMap[id] = child
 			spanTrees[id] = child
+			if scope == nil {
+				fe.trackTestOwnerTree(id, child)
+			}
 		}
 		child.parent = st
 		child.indexInParent = i
@@ -7105,7 +7211,7 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 			if err != nil {
 				return err
 			}
-			_, err = dagger.Ref[*dagger.Container](fe.dag, dagger.ID(id)).Terminal().Sync(fe.runCtx)
+			_, err = core.Ref[*core.Container](core.NewQuery(fe.dag), core.ID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	case "Directory":
@@ -7117,7 +7223,7 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 			if err != nil {
 				return err
 			}
-			_, err = dagger.Ref[*dagger.Directory](fe.dag, dagger.ID(id)).Terminal().Sync(fe.runCtx)
+			_, err = core.Ref[*core.Directory](core.NewQuery(fe.dag), core.ID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	case "Service":
@@ -7126,7 +7232,7 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 			if err != nil {
 				return err
 			}
-			_, err = dagger.Ref[*dagger.Service](fe.dag, dagger.ID(id)).Terminal().Sync(fe.runCtx)
+			_, err = core.Ref[*core.Service](core.NewQuery(fe.dag), core.ID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	}
@@ -7571,7 +7677,7 @@ func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
 	fe.contentWidth = msg.Width
 	fe.logs.SetWidth(fe.contentWidth)
 	if old != msg {
-		fe.updateTestViews()
+		fe.testsDirty = true
 	}
 	if old.Width != msg.Width {
 		fe.syncHUDWidth()
@@ -8370,7 +8476,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 }
 
 func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Span) {
-	if !isToolCallDisplay(span) || !toolNameIs(span.LLMTool, "grep") {
+	if !isToolCallDisplay(span) || !dagui.ToolNameIs(span.LLMTool, "grep") {
 		return
 	}
 	logs := fe.logs.Logs[span.ID]
@@ -8380,7 +8486,7 @@ func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Sp
 	if logs == nil {
 		return
 	}
-	summary := sanitizeSummary(strings.TrimSpace(ansi.Strip(logs.LastLine())))
+	summary := dagui.SanitizeInline(strings.TrimSpace(ansi.Strip(logs.LastLine())))
 	if summary != "" {
 		fmt.Fprint(out, out.String(" - "+summary).Faint())
 	}

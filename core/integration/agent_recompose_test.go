@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -44,29 +46,29 @@ type Swapper {
 }
 `
 
-func recomposeFixture(c *dagger.Client, source string) *dagger.Directory {
-	return c.Directory().
+func recomposeFixture(c *dagger.Client, source string) *core.Directory {
+	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.swapper]\nsource = \".dagger/modules/swapper\"\n").
 		WithNewFile(".dagger/modules/swapper/dagger.json", `{"name":"swapper","engineVersion":"v1.0.0-0","sdk":"dang"}`).
 		WithNewFile(recomposeModulePath, source)
 }
 
 // Use the live schema so these regressions do not depend on SDK regeneration.
-func composeRecomposeFixture(ctx context.Context, t *testctx.T, c *dagger.Client, ws *dagger.Workspace, base *dagger.LLM, include ...string) *dagger.LLM {
+func composeRecomposeFixture(ctx context.Context, t *testctx.T, c *dagger.Client, ws *core.Workspace, base *core.LLM, include ...string) *core.LLM {
 	t.Helper()
 	if base == nil {
-		base = c.LLM().WithWorkspace(ws)
+		base = core.NewQuery(c).LLM().WithWorkspace(ws)
 	}
 	result, err := applyExpertise(ctx, c, ws, base, "compose", include...)
 	require.NoError(t, err)
 	return result
 }
 
-func recomposeLLM(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, base *dagger.LLM, include ...string) (*dagger.LLM, error) {
+func recomposeLLM(ctx context.Context, c *dagger.Client, ws *core.Workspace, base *core.LLM, include ...string) (*core.LLM, error) {
 	return applyExpertise(ctx, c, ws, base.WithWorkspace(ws), "recompose", include...)
 }
 
-func applyExpertise(ctx context.Context, c *dagger.Client, ws *dagger.Workspace, base *dagger.LLM, operation string, include ...string) (*dagger.LLM, error) {
+func applyExpertise(ctx context.Context, c *dagger.Client, ws *core.Workspace, base *core.LLM, operation string, include ...string) (*core.LLM, error) {
 	wsID, err := ws.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -74,7 +76,7 @@ func applyExpertise(ctx context.Context, c *dagger.Client, ws *dagger.Workspace,
 	var selected struct {
 		Node struct {
 			Artifacts struct {
-				FilterTypes struct{ AsExpertise []struct{ ID dagger.ID } }
+				FilterTypes struct{ AsExpertise []struct{ ID core.ID } }
 			}
 		}
 	}
@@ -87,7 +89,7 @@ func applyExpertise(ctx context.Context, c *dagger.Client, ws *dagger.Workspace,
 	if err != nil {
 		return nil, err
 	}
-	agents := make([]dagger.ID, 0, len(selected.Node.Artifacts.FilterTypes.AsExpertise))
+	agents := make([]core.ID, 0, len(selected.Node.Artifacts.FilterTypes.AsExpertise))
 	for _, agent := range selected.Node.Artifacts.FilterTypes.AsExpertise {
 		agents = append(agents, agent.ID)
 	}
@@ -96,7 +98,7 @@ func applyExpertise(ctx context.Context, c *dagger.Client, ws *dagger.Workspace,
 		return nil, err
 	}
 	var result struct {
-		Node struct{ Result struct{ ID dagger.ID } }
+		Node struct{ Result struct{ ID core.ID } }
 	}
 	err = c.Do(ctx, &dagger.Request{
 		Query: fmt.Sprintf(`query($base: ID!, $expertise: [ID!]!) {
@@ -107,20 +109,20 @@ func applyExpertise(ctx context.Context, c *dagger.Client, ws *dagger.Workspace,
 	if err != nil {
 		return nil, err
 	}
-	return dagger.Ref[*dagger.LLM](c, result.Node.Result.ID), nil
+	return core.Ref[*core.LLM](core.NewQuery(c), result.Node.Result.ID), nil
 }
 
-func recomposeTool(id, name string) dagger.LLMContentBlockInput {
-	return dagger.LLMContentBlockInput{Kind: dagger.LLMContentBlockKindToolCall, CallID: id, ToolName: name}
+func recomposeTool(id, name string) core.LLMContentBlockInput {
+	return core.LLMContentBlockInput{Kind: core.LLMContentBlockKindToolCall, CallID: id, ToolName: name}
 }
 
-func recomposeRecordingTurn(llm *dagger.LLM, prompt string, tools ...string) *dagger.LLM {
+func recomposeRecordingTurn(llm *core.LLM, prompt string, tools ...string) *core.LLM {
 	llm = llm.WithPrompt(prompt)
 	for i, tool := range tools {
 		call := recomposeTool(fmt.Sprintf("%s_%d", prompt, i), tool)
-		llm = llm.WithResponse([]dagger.LLMContentBlockInput{call}).WithToolResult(call.CallID, "", false)
+		llm = llm.WithResponse([]core.LLMContentBlockInput{call}).WithToolResult(call.CallID, "", false)
 	}
-	return llm.WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: prompt + " done"}})
+	return llm.WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: prompt + " done"}})
 }
 
 func (LLMSuite) TestRecomposePrivateStateAndReplay(ctx context.Context, t *testctx.T) {
@@ -136,14 +138,14 @@ func (LLMSuite) TestRecomposePrivateStateAndReplay(ctx context.Context, t *testc
 `), "Read the original private state.", "Read the updated private state.")
 	fixture := recomposeFixture(c, initial)
 	ws := fixture.AsWorkspace()
-	script := recomposeRecordingTurn(c.LLM(), "mutate", "advance", "readState")
+	script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "mutate", "advance", "readState")
 	script = recomposeRecordingTurn(script, "unchanged", "readState")
 	script = recomposeRecordingTurn(script, "edited", "added", "advance", "added", "readState")
 	script = recomposeRecordingTurn(script, "restored", "advance", "added", "readState")
 	script = recomposeRecordingTurn(script, "installed", "added", "extraTool", "readState")
 	model := cannedRecordingModel(ctx, t, c, script)
 	mapPattern := regexp.MustCompile(`"memo"\s*:\s*"kept"`)
-	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)).
+	llm := composeRecomposeFixture(ctx, t, c, ws, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws)).
 		WithPrompt("mutate").Loop()
 	transcript, err := llm.Transcript(ctx)
 	require.NoError(t, err)
@@ -186,7 +188,7 @@ func (LLMSuite) TestRecomposePrivateStateAndReplay(ctx context.Context, t *testc
 	portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	target := connect(ctx, t)
-	llm = dagger.Ref[*dagger.LLM](target, portable).WithPrompt("restored").Loop()
+	llm = core.Ref[*core.LLM](core.NewQuery(target), portable).WithPrompt("restored").Loop()
 	transcript, err = llm.Transcript(ctx)
 	require.NoError(t, err)
 	require.Contains(t, transcript, "new field default; updated counter: 3")
@@ -235,8 +237,8 @@ func (LLMSuite) TestRecomposeRemoteToLocalStateAndReplay(ctx context.Context, t 
 	// Replacing its installation must not make source identity part of state
 	// compatibility or ownership of the expertise's tools and prompts.
 	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, recomposeFixture(c, initial).Directory(".dagger/modules/swapper"))
-	ws := c.Directory().WithNewFile("dagger.toml", fmt.Sprintf("[modules.swapper]\nsource = %q\n", remoteRef)).AsWorkspace()
-	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM().WithWorkspace(ws).WithSystemPrompt(remotePrompt))
+	ws := core.NewQuery(c).Directory().WithNewFile("dagger.toml", fmt.Sprintf("[modules.swapper]\nsource = %q\n", remoteRef)).AsWorkspace()
+	llm := composeRecomposeFixture(ctx, t, c, ws, core.NewQuery(c).LLM().WithWorkspace(ws).WithSystemPrompt(remotePrompt))
 	require.ElementsMatch(t, []string{remotePrompt, remotePrompt}, recomposeSystemPrompts(ctx, t, c, llm))
 	model := cannedRecordingModel(ctx, t, c, recomposeRecordingTurn(llm, "mutate remote", "advance", "readState"))
 	llm = llm.WithModel(model).WithPrompt("mutate remote").Loop()
@@ -283,7 +285,7 @@ func (LLMSuite) TestRecomposeRemoteToLocalStateAndReplay(ctx context.Context, t 
 	portable, err := sink.captureLLMRecipe(ctx, t, c, llm.WithModel(model))
 	require.NoError(t, err)
 	target := connect(ctx, t)
-	llm = dagger.Ref[*dagger.LLM](target, portable)
+	llm = core.Ref[*core.LLM](core.NewQuery(target), portable)
 	require.ElementsMatch(t, expectedPrompts, recomposeSystemPrompts(ctx, t, target, llm))
 	transcript, err = llm.WithPrompt("replay local").Loop().Transcript(ctx)
 	require.NoError(t, err)
@@ -302,7 +304,7 @@ func (LLMSuite) TestRecomposeOverlayLockRepinsRemoteModule(ctx context.Context, 
 
 	// A remote module with two commits on main, without depending on an
 	// external repository: A, then B at the branch head.
-	repo := c.Container().From(alpineImage).
+	repo := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithDirectory("/repo", recomposeFixture(c, initial).Directory(".dagger/modules/swapper")).
 		WithWorkdir("/repo").
@@ -324,7 +326,7 @@ git -c user.email=root@localhost -c user.name=Test commit -q -m A`}).
 	// touch, on top of the modules the session serves from disk.
 	base := workspaceBase(t, c).WithNewFile("dagger.toml", config)
 	const selectCommit = `artifacts(include: ["swapper"]) { filterTypes(types: ["Expertise"]) { asExpertise { originalModule { source { commit } } } } }`
-	commitOf := func(ctx context.Context, t *testctx.T, ctr *dagger.Container, query string, args ...any) string {
+	commitOf := func(ctx context.Context, t *testctx.T, ctr *core.Container, query string, args ...any) string {
 		t.Helper()
 		out, err := ctr.With(daggerQuery(query, args...)).Stdout(ctx)
 		require.NoError(t, err)
@@ -378,10 +380,10 @@ func (LLMSuite) TestRecomposeFailureKeepsOldState(ctx context.Context, t *testct
 			c := connect(ctx, t)
 			fixture := recomposeFixture(c, fmt.Sprintf(recomposeSource, ""))
 			ws := fixture.AsWorkspace()
-			script := recomposeRecordingTurn(c.LLM(), "mutate", "advance")
+			script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "mutate", "advance")
 			script = recomposeRecordingTurn(script, "still usable", "advance", "readState")
 			model := cannedRecordingModel(ctx, t, c, script)
-			llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)).
+			llm := composeRecomposeFixture(ctx, t, c, ws, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws)).
 				WithPrompt("mutate").Loop()
 			_, err := llm.Sync(ctx)
 			require.NoError(t, err)
@@ -420,11 +422,11 @@ func (LLMSuite) TestRecomposeStateVersion(ctx context.Context, t *testctx.T) {
 `)))
 	fixture := recomposeFixture(c, fmt.Sprintf(recomposeSource, ""))
 	ws := fixture.AsWorkspace()
-	script := recomposeRecordingTurn(c.LLM(), "mutate", "advance", "readState")
+	script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "mutate", "advance", "readState")
 	script = recomposeRecordingTurn(script, "reset", "readState", "advance")
 	script = recomposeRecordingTurn(script, "carried", "added", "readState")
 	model := cannedRecordingModel(ctx, t, c, script)
-	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)).
+	llm := composeRecomposeFixture(ctx, t, c, ws, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws)).
 		WithPrompt("mutate").Loop()
 	transcript, err := llm.Transcript(ctx)
 	require.NoError(t, err)
@@ -502,8 +504,8 @@ func (s *Swapper) ReadState() string {
 %s
 `
 
-func recomposeGoFixture(c *dagger.Client, source string) *dagger.Directory {
-	return c.Directory().
+func recomposeGoFixture(c *dagger.Client, source string) *core.Directory {
+	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.swapper]\nsource = \".dagger/modules/swapper\"\n").
 		WithNewFile(".dagger/modules/swapper/dagger.json", `{"name":"swapper","engineVersion":"v1.0.0-0","sdk":"go"}`).
 		WithNewFile(recomposeGoModulePath, source)
@@ -522,11 +524,11 @@ func (s *Swapper) Added() string {
 	versioned := strings.ReplaceAll(extended, "base.WithTools(dag.CurrentNode())", "base.WithTools(dag.CurrentNode(), dagger.LLMWithToolsOpts{Version: 2})")
 	fixture := recomposeGoFixture(c, initial)
 	ws := fixture.AsWorkspace()
-	script := recomposeRecordingTurn(c.LLM(), "mutate", "advance", "readState")
+	script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "mutate", "advance", "readState")
 	script = recomposeRecordingTurn(script, "edited", "added", "advance", "readState")
 	script = recomposeRecordingTurn(script, "reset", "readState")
 	model := cannedRecordingModel(ctx, t, c, script)
-	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)).
+	llm := composeRecomposeFixture(ctx, t, c, ws, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws)).
 		WithPrompt("mutate").Loop()
 	transcript, err := llm.Transcript(ctx)
 	require.NoError(t, err)
@@ -572,14 +574,15 @@ func (LLMSuite) TestRecomposeSameBatchStateReturn(ctx context.Context, t *testct
 	base := workspaceFixture(t, c, "workspace-tool-return").
 		WithNewFile(recomposeModulePath, initial).
 		WithNewFile("next-source.txt", updated)
-	// Deliberately emit reload first. Continuations run last and must see both
-	// the source edit and same-type receiver returned by the other calls.
-	script := c.LLM().WithPrompt("update and reload").WithResponse([]dagger.LLMContentBlockInput{
-		recomposeTool("reload", "reload"), recomposeTool("advance", "advance"), recomposeTool("edit", "updateSource"),
+	// Continuations run in their written position, on the state the calls
+	// before them produced: reload must see both the source edit and the
+	// same-type receiver returned by the calls emitted before it.
+	script := core.NewQuery(c).LLM().WithPrompt("update and reload").WithResponse([]core.LLMContentBlockInput{
+		recomposeTool("advance", "advance"), recomposeTool("edit", "updateSource"), recomposeTool("reload", "reload"),
 	}).WithToolResult("advance", "", false).WithToolResult("edit", "", false).WithToolResult("reload", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{recomposeTool("added", "added")}).WithToolResult("added", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{recomposeTool("read", "readState")}).WithToolResult("read", "", false).
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "done"}})
+		WithResponse([]core.LLMContentBlockInput{recomposeTool("added", "added")}).WithToolResult("added", "", false).
+		WithResponse([]core.LLMContentBlockInput{recomposeTool("read", "readState")}).WithToolResult("read", "", false).
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "done"}})
 	model := cannedRecordingModel(ctx, t, c, script)
 	out, err := base.With(daggerShell(fmt.Sprintf(`
 base=$(llm --model=%q | with-workspace --workspace $(current-workspace))
@@ -594,10 +597,10 @@ $base | compose --expertise $(current-workspace | artifacts | filter-types Exper
 
 func (LLMSuite) TestRecomposeLivePrivateRoster(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	workerScript := c.LLM().WithPrompt("opening").
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "worker opened"}}).
+	workerScript := core.NewQuery(c).LLM().WithPrompt("opening").
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "worker opened"}}).
 		WithPrompt("after reload").
-		WithResponse([]dagger.LLMContentBlockInput{{Kind: dagger.LLMContentBlockKindText, Text: "same worker answered"}})
+		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "same worker answered"}})
 	workerModel := cannedRecordingModel(ctx, t, c, workerScript)
 	roster := fmt.Sprintf(`
   let workers: Map[Agent!]! = [:]
@@ -632,11 +635,11 @@ func (LLMSuite) TestRecomposeLivePrivateRoster(ctx context.Context, t *testctx.T
 	initial := fmt.Sprintf(recomposeSource, roster)
 	updated := strings.ReplaceAll(initial, "Read the original private state.", "Read the updated private state.")
 	fixture := recomposeFixture(c, initial)
-	script := recomposeRecordingTurn(c.LLM(), "hire once", "hire", "workerHandle")
+	script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "hire once", "hire", "workerHandle")
 	script = recomposeRecordingTurn(script, "use roster", "workerHandle", "askWorker", "harvest")
 	model := cannedRecordingModel(ctx, t, c, script)
 	ws := fixture.AsWorkspace()
-	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)).
+	llm := composeRecomposeFixture(ctx, t, c, ws, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws)).
 		WithPrompt("hire once").Loop()
 	before, err := llm.Transcript(ctx)
 	require.NoError(t, err)
@@ -657,7 +660,7 @@ func (LLMSuite) TestRecomposeLivePrivateRoster(ctx context.Context, t *testctx.T
 
 // Read stored system-message blocks, not Transcript: text shared with a user
 // message or a tool result must not accidentally satisfy prompt assertions.
-func recomposeSystemPrompts(ctx context.Context, t *testctx.T, c *dagger.Client, llm *dagger.LLM) []string {
+func recomposeSystemPrompts(ctx context.Context, t *testctx.T, c *dagger.Client, llm *core.LLM) []string {
 	t.Helper()
 	id, err := llm.ID(ctx)
 	require.NoError(t, err)
@@ -704,7 +707,7 @@ type Other {
 `
 	fixture = fixture.WithNewFile("modules/other/main.dang", otherSource)
 	ws := fixture.AsWorkspace()
-	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM().WithWorkspace(ws).WithSystemPrompt(shared)).WithSystemPrompt(callerTail)
+	llm := composeRecomposeFixture(ctx, t, c, ws, core.NewQuery(c).LLM().WithWorkspace(ws).WithSystemPrompt(shared)).WithSystemPrompt(callerTail)
 	require.ElementsMatch(t, []string{shared, shared, callerTail, "The unrelated expertise prompt."},
 		recomposeSystemPrompts(ctx, t, c, llm))
 
@@ -744,7 +747,7 @@ type Other {
 	portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	target := connect(ctx, t)
-	llm = dagger.Ref[*dagger.LLM](target, portable)
+	llm = core.Ref[*core.LLM](core.NewQuery(target), portable)
 	require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, target, llm))
 	for range 2 {
 		llm, err = recomposeLLM(ctx, target, llm.Workspace(), llm, "swapper")
@@ -759,7 +762,7 @@ type Other {
 
 func (LLMSuite) TestRecomposeNestedCompositionPrompts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	fixture := c.Directory().
+	fixture := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.outer]\nsource = \"outer\"\n[modules.inner]\nsource = \"inner\"\n").
 		WithNewFile("outer/dagger.json", `{"name":"outer","engineVersion":"v1.0.0-0","sdk":"dang"}`).
 		WithNewFile("outer/main.dang", `
@@ -799,8 +802,8 @@ func (LLMSuite) TestRecomposePreservesManualContributions(ctx context.Context, t
 		"base.withTools(currentNode)", fmt.Sprintf("base.withSystemPrompt(%q).withTools(currentNode)", prompt))
 	fixture := recomposeFixture(c, source)
 	ws := fixture.AsWorkspace()
-	file := c.Directory().WithNewFile("marker.txt", "manual file contents survived reload").File("marker.txt")
-	manual := c.LLM().WithWorkspace(ws).WithSystemPrompt(prompt).WithTools(file)
+	file := core.NewQuery(c).Directory().WithNewFile("marker.txt", "manual file contents survived reload").File("marker.txt")
+	manual := core.NewQuery(c).LLM().WithWorkspace(ws).WithSystemPrompt(prompt).WithTools(file)
 	// Ordinary withTools does not retroactively claim a caller's prompts.
 	require.Equal(t, []string{prompt}, recomposeSystemPrompts(ctx, t, c, manual))
 	tools, err := manual.Tools(ctx)
@@ -815,7 +818,7 @@ func (LLMSuite) TestRecomposePreservesManualContributions(ctx context.Context, t
 
 	const replacement = "Replacement owned prompt, never the caller's."
 	ws = ws.WithNewFile(recomposeModulePath, strings.ReplaceAll(source, prompt, replacement))
-	for _, seed := range []*dagger.LLM{manual, composed} {
+	for _, seed := range []*core.LLM{manual, composed} {
 		// The legacy/manual seed has no ownership metadata to infer. Preserve
 		// its prompt and capability while installing the new owned expertise.
 		llm, err := recomposeLLM(ctx, c, ws, seed)
@@ -855,11 +858,11 @@ type Outer {
 		WithNewFile("outer/dagger.json", `{"name":"outer","engineVersion":"v1.0.0-0","sdk":"dang"}`).
 		WithNewFile("outer/main.dang", outerSource)
 	ws := fixture.AsWorkspace()
-	script := recomposeRecordingTurn(c.LLM(), "mutate nested", "advance", "readState")
+	script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "mutate nested", "advance", "readState")
 	script = recomposeRecordingTurn(script, "updated nested", "added")
 	script = recomposeRecordingTurn(script, "reset nested", "added")
 	model := cannedRecordingModel(ctx, t, c, script)
-	llm := composeRecomposeFixture(ctx, t, c, ws, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws), "outer").
+	llm := composeRecomposeFixture(ctx, t, c, ws, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws), "outer").
 		WithPrompt("mutate nested").Loop()
 	transcript, err := llm.Transcript(ctx)
 	require.NoError(t, err)
@@ -884,7 +887,7 @@ type Outer {
 	portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	c = connect(ctx, t)
-	llm = dagger.Ref[*dagger.LLM](c, portable)
+	llm = core.Ref[*core.LLM](core.NewQuery(c), portable)
 	ws = llm.Workspace().WithNewFile(recomposeModulePath,
 		strings.ReplaceAll(updated, "base.withTools(currentNode)", "base.withTools(currentNode, version: 2)"))
 	llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
@@ -919,14 +922,14 @@ type Inner {
   agent(base: LLM!): LLM! @agent { base.withSystemPrompt("inner original") }
 }
 `
-	fixture := c.Directory().
+	fixture := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.outer]\nsource = \"outer\"\n[modules.inner]\nsource = \"inner\"\n").
 		WithNewFile("outer/dagger.json", `{"name":"outer","engineVersion":"v1.0.0-0","sdk":"dang"}`).
 		WithNewFile("outer/main.dang", outerSource).
 		WithNewFile("inner/dagger.json", `{"name":"inner","engineVersion":"v1.0.0-0","sdk":"dang"}`).
 		WithNewFile("inner/main.dang", innerSource)
 	ws := fixture.AsWorkspace()
-	llm := c.LLM().WithWorkspace(ws).WithSystemPrompt("inner original")
+	llm := core.NewQuery(c).LLM().WithWorkspace(ws).WithSystemPrompt("inner original")
 	// The same Inner is composed both independently and through Outer. Normal
 	// compose must append in both contexts, even when every prompt is identical.
 	for _, name := range []string{"inner", "inner", "outer", "outer"} {
@@ -950,7 +953,7 @@ type Inner {
 		portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
 		require.NoError(t, err)
 		c, sink = connectWithTrace(ctx, t)
-		llm = dagger.Ref[*dagger.LLM](c, portable)
+		llm = core.Ref[*core.LLM](core.NewQuery(c), portable)
 		ws = llm.Workspace()
 		llm, err = recomposeLLM(ctx, c, ws, llm, "outer")
 		require.NoError(t, err)
@@ -987,7 +990,7 @@ func (LLMSuite) TestRecomposeDirectCallerSkills(ctx context.Context, t *testctx.
     base.withSystemPrompt("Identical caller prompt.").withSkills(skills)
   }
 `
-	fixture := c.Directory().WithNewFile("dagger.toml", "[modules.owner]\nsource = \"owner\"\n[modules.owner-extra]\nsource = \"owner-extra\"\n")
+	fixture := core.NewQuery(c).Directory().WithNewFile("dagger.toml", "[modules.owner]\nsource = \"owner\"\n[modules.owner-extra]\nsource = \"owner-extra\"\n")
 	for _, module := range []struct{ name, typ string }{{"owner", "Owner"}, {"owner-extra", "OwnerExtra"}} {
 		fixture = fixture.
 			WithNewFile(module.name+"/dagger.json", fmt.Sprintf(`{"name":%q,"engineVersion":"v1.0.0-0","sdk":"dang"}`, module.name)).
@@ -997,14 +1000,14 @@ func (LLMSuite) TestRecomposeDirectCallerSkills(ctx context.Context, t *testctx.
 	for _, name := range []string{"owner", "owner-extra"} {
 		require.NoError(t, ws.ModuleSource(name).AsModule().Serve(ctx))
 	}
-	manual := c.Directory().WithNewFile("manual/SKILL.md", "---\ndescription: Main client skill.\n---\nmanual")
-	oldSkills := c.Directory().WithNewFile("old-owned/SKILL.md", "---\ndescription: Old module skill.\n---\nold")
-	base := c.LLM().WithWorkspace(ws).WithSystemPrompt(shared).WithSkills(manual)
+	manual := core.NewQuery(c).Directory().WithNewFile("manual/SKILL.md", "---\ndescription: Main client skill.\n---\nmanual")
+	oldSkills := core.NewQuery(c).Directory().WithNewFile("old-owned/SKILL.md", "---\ndescription: Old module skill.\n---\nold")
+	base := core.NewQuery(c).LLM().WithWorkspace(ws).WithSystemPrompt(shared).WithSkills(manual)
 	baseID, err := base.ID(ctx)
 	require.NoError(t, err)
 	skillsID, err := oldSkills.ID(ctx)
 	require.NoError(t, err)
-	seeds := map[string]*dagger.LLM{}
+	seeds := map[string]*core.LLM{}
 	for _, caller := range []string{"owner", "ownerExtra"} {
 		var res struct {
 			Caller struct{ Contribute struct{ ID string } }
@@ -1017,7 +1020,7 @@ func (LLMSuite) TestRecomposeDirectCallerSkills(ctx context.Context, t *testctx.
 			}`, caller),
 			Variables: map[string]any{"base": baseID, "skills": skillsID},
 		}, &dagger.Response{Data: &res}))
-		seeds[caller] = dagger.Ref[*dagger.LLM](c, dagger.ID(res.Caller.Contribute.ID))
+		seeds[caller] = core.Ref[*core.LLM](core.NewQuery(c), core.ID(res.Caller.Contribute.ID))
 		require.ElementsMatch(t, []string{shared, shared}, recomposeSystemPrompts(ctx, t, c, seeds[caller]))
 		require.Contains(t, skillIndex(ctx, t, seeds[caller]), "old-owned")
 	}
@@ -1073,7 +1076,7 @@ type Owner {
 			portable, err := captureSink.captureLLMRecipe(ctx, t, client, llm)
 			require.NoError(t, err)
 			client, captureSink = connectWithTrace(ctx, t)
-			llm = dagger.Ref[*dagger.LLM](client, portable)
+			llm = core.Ref[*core.LLM](core.NewQuery(client), portable)
 			require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, client, llm))
 			require.Equal(t, skills, skillIndex(ctx, t, llm))
 			refreshedWS = llm.Workspace().WithNewFile("owner/main.dang", strings.ReplaceAll(updated, "current/SKILL.md", "next/SKILL.md"))
@@ -1083,7 +1086,7 @@ type Owner {
 
 func (LLMSuite) TestRecomposeDirectCallerOwnsForeignTools(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	fixture := c.Directory().
+	fixture := core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.owner]\nsource = \"owner\"\n[modules.donor]\nsource = \"owner/donor\"\n").
 		WithNewFile("owner/dagger.json", `{"name":"owner","engineVersion":"v1.0.0-0","sdk":"dang","dependencies":[{"name":"donor","source":"donor"}]}`).
 		WithNewFile("owner/main.dang", `
@@ -1100,7 +1103,7 @@ type Donor {
 `)
 	ws := fixture.AsWorkspace()
 	require.NoError(t, ws.ModuleSource("owner").AsModule().Serve(ctx))
-	baseID, err := c.LLM().WithWorkspace(ws).ID(ctx)
+	baseID, err := core.NewQuery(c).LLM().WithWorkspace(ws).ID(ctx)
 	require.NoError(t, err)
 	var res struct {
 		Owner struct{ Contribute struct{ ID string } }
@@ -1109,7 +1112,7 @@ type Donor {
 		Query:     `query($base: ID!) { owner { contribute(base: $base) { id } } }`,
 		Variables: map[string]any{"base": baseID},
 	}, &dagger.Response{Data: &res}))
-	llm := dagger.Ref[*dagger.LLM](c, dagger.ID(res.Owner.Contribute.ID))
+	llm := core.Ref[*core.LLM](core.NewQuery(c), core.ID(res.Owner.Contribute.ID))
 	tools, err := llm.Tools(ctx)
 	require.NoError(t, err)
 	require.Contains(t, tools, "## ping\n")
@@ -1124,7 +1127,7 @@ type Donor {
 	portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
 	require.NoError(t, err)
 	c = connect(ctx, t)
-	llm = dagger.Ref[*dagger.LLM](c, portable)
+	llm = core.Ref[*core.LLM](core.NewQuery(c), portable)
 
 	// Owner did not need an @agent function when it installed the binding.
 	// Once selected for refresh, dropping its foreign tool must be rejected

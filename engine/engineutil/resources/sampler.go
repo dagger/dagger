@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/sync/errgroup"
@@ -27,7 +29,8 @@ type Sampler struct {
 	memoryCurrent *memoryCurrentSampler
 	memoryPeak    *memoryPeakSampler
 
-	netNS *netNSSampler
+	netNS             *netNSSampler
+	cgroupUnavailable bool
 }
 
 func NewSampler(
@@ -94,9 +97,24 @@ func (s *Sampler) Sample(ctx context.Context) error {
 	return eg.Wait()
 }
 
+// Mount counters start at zero for this exec; unlike a pooled veth, they must
+// not be baselined after mount setup has already transferred data.
+func (s *Sampler) SetMountNetwork(mounts BKNetworkSampler) {
+	s.netNS.mounts = mounts
+}
+
+// Do not present container-only usage as an inclusive exec total if a mount
+// helper could not join the execution's cgroup.
+func (s *Sampler) DisableCgroupSamples() { s.cgroupUnavailable = true }
+
 // SampleUsage reads total CPU and current memory, the readings workload
 // export copies.
 func (s *Sampler) SampleUsage(ctx context.Context) error {
+	if s.cgroupUnavailable {
+		enginetel.RecordResourceAvailability(ctx, "cpu.stat", false)
+		enginetel.RecordResourceAvailability(ctx, "memory.current", false)
+		return nil
+	}
 	var eg errgroup.Group
 
 	eg.Go(func() error {
@@ -112,6 +130,9 @@ func (s *Sampler) SampleUsage(ctx context.Context) error {
 
 // SampleOther reads every sampler not read by SampleUsage.
 func (s *Sampler) SampleOther(ctx context.Context) error {
+	if s.cgroupUnavailable {
+		return s.netNS.sample(ctx)
+	}
 	var eg errgroup.Group
 
 	eg.Go(func() error {

@@ -7,14 +7,15 @@ import (
 	"context"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 func (GitSuite) TestGitRefAsRepository(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("base.txt", "base"))
-	original := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon})
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base"))
+	original := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon})
 	first := original.Head()
 	checkout := first.Tree()
 	ctr := gitCheckoutContainer(c, checkout).
@@ -43,8 +44,8 @@ func (GitSuite) TestGitRefAsRepository(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "base", remoteHead)
 }
 
-func gitCheckoutContainer(c *dagger.Client, dir *dagger.Directory) *dagger.Container {
-	return c.Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
+func gitCheckoutContainer(c *dagger.Client, dir *core.Directory) *core.Container {
+	return core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
 		WithDirectory("/src", dir).WithWorkdir("/src").
 		WithExec([]string{"git", "config", "user.name", "Test"}).
 		WithExec([]string{"git", "config", "user.email", "test@example.com"})
@@ -52,13 +53,13 @@ func gitCheckoutContainer(c *dagger.Client, dir *dagger.Directory) *dagger.Conta
 
 func (GitSuite) TestGitRepositoryWithContents(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().
 		WithNewFile("sub/staged.txt", "old staged").WithNewFile("sub/unstaged.txt", "old unstaged").WithNewFile("removed.txt", "removed"))
-	original := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon})
+	original := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon})
 	ctr := gitCheckoutContainer(c, original.Head().Tree()).
 		WithExec([]string{"sh", "-ec", "echo staged > sub/staged.txt; git add sub/staged.txt; echo unstaged > sub/unstaged.txt; rm removed.txt; echo added > added.txt; git remote set-url origin https://different.invalid/repo"})
 	repo := original.WithContents(ctr.Directory("/src"))
-	ws := repo.AsWorkspace(dagger.GitRepositoryAsWorkspaceOpts{Cwd: "sub"})
+	ws := repo.AsWorkspace(core.GitRepositoryAsWorkspaceOpts{Cwd: "sub"})
 	for file, want := range map[string]string{"staged.txt": "staged\n", "unstaged.txt": "unstaged\n", "/added.txt": "added\n"} {
 		got, err := ws.File(file).Contents(ctx)
 		require.NoError(t, err)
@@ -79,7 +80,7 @@ func (GitSuite) TestGitRepositoryWithContents(ctx context.Context, t *testctx.T)
 	require.Contains(t, config, "different.invalid")
 	for _, tc := range []struct {
 		name      string
-		directory *dagger.Directory
+		directory *core.Directory
 	}{
 		{"git metadata", ctr.Directory("/src/.git")},
 		{"bare repository", ctr.WithExec([]string{"git", "clone", "--bare", ".", "/bare.git"}).Directory("/bare.git")},
@@ -97,14 +98,14 @@ func (GitSuite) TestGitRepositoryWithContents(ctx context.Context, t *testctx.T)
 	originalFile, err := original.AsWorkspace().File("sub/staged.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "old staged", originalFile)
-	_, err = original.WithContents(c.Directory().WithNewFile("plain.txt", "not git")).Head().CommitSHA(ctx)
+	_, err = original.WithContents(core.NewQuery(c).Directory().WithNewFile("plain.txt", "not git")).Head().CommitSHA(ctx)
 	require.Error(t, err)
 }
 
 func (GitSuite) TestGitRepositoryWithContentsRejectsExternalStorage(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("file.txt", "base"))
-	repo := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon})
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("file.txt", "base"))
+	repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon})
 	source := gitCheckoutContainer(c, repo.Head().Tree()).
 		WithExec([]string{"git", "worktree", "add", "-b", "linked", "/linked"})
 	_, err := repo.WithContents(source.Directory("/linked")).Head().CommitSHA(ctx)

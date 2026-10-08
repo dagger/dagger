@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql/dagui"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
@@ -72,7 +73,7 @@ func initializeModule(
 	ctx context.Context,
 	dag *dagger.Client,
 	modRef string,
-	modSrc *dagger.ModuleSource,
+	modSrc *core.ModuleSource,
 	opts ...initModuleOpts,
 ) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module: "+modRef)
@@ -90,7 +91,7 @@ func initializeModule(
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
-	serveOpts := dagger.ModuleServeOpts{IncludeDependencies: true}
+	serveOpts := core.ModuleServeOpts{IncludeDependencies: true}
 	for _, o := range opts {
 		if o.entrypoint {
 			serveOpts.Entrypoint = true
@@ -130,8 +131,8 @@ type moduleDef struct {
 
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
-	Source            *dagger.ModuleSource
-	SourceKind        dagger.ModuleSourceKind
+	Source            *core.ModuleSource
+	SourceKind        core.ModuleSourceKind
 	SourceRoot        string
 	SourceRootSubpath string
 	SourceDigest      string
@@ -156,7 +157,7 @@ var loadModConfQuery string
 //go:embed typedefs.graphql
 var loadTypeDefsQuery string
 
-func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.ModuleSource) (rdef *moduleDef, rerr error) {
+func inspectModule(ctx context.Context, dag *dagger.Client, source *core.ModuleSource) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "inspecting module metadata", telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -168,7 +169,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 
 	var res struct {
 		Source struct {
-			Kind              dagger.ModuleSourceKind
+			Kind              core.ModuleSourceKind
 			Digest            string
 			AsString          string
 			SourceRootSubpath string
@@ -182,7 +183,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 					Name        string
 					Description string
 					Source      struct {
-						ID       dagger.ID
+						ID       core.ID
 						AsString string
 						Digest   string
 					}
@@ -216,7 +217,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 			SourceRoot:   dep.Source.AsString,
 			SourceDigest: dep.Source.Digest,
 			// Note: this should preserve the correct pin if it exists
-			Source: dagger.Ref[*dagger.ModuleSource](dag, dep.Source.ID),
+			Source: core.Ref[*core.ModuleSource](core.NewQuery(dag), dep.Source.ID),
 		})
 	}
 
@@ -242,7 +243,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 	span.SetAttributes(attribute.String(telemetry.ModuleKindAttr, string(def.SourceKind)))
 	span.SetAttributes(attribute.String(telemetry.ModuleSubpathAttr, def.SourceRootSubpath))
 
-	if def.SourceKind == dagger.ModuleSourceKindGitSource {
+	if def.SourceKind == core.ModuleSourceKindGitSource {
 		span.SetAttributes(attribute.String(telemetry.ModuleHTMLRepoURLAttr, def.HTMLRepoURL))
 		if def.SourceCommit != "" {
 			span.SetAttributes(attribute.String(telemetry.ModuleCommitAttr, def.SourceCommit))
@@ -306,21 +307,21 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 		m.typeDefsByName[typeDef.TypeName] = typeDef
 		typeDef.owner = m
 		switch typeDef.Kind {
-		case dagger.TypeDefKindObjectKind:
+		case core.TypeDefKindObjectKind:
 			m.Objects = append(m.Objects, typeDef)
 			if typeDef.AsObject != nil {
 				typeDef.AsObject.owner = m
 				typeDef.AsObject.typeDef = typeDef
 			}
-		case dagger.TypeDefKindInterfaceKind:
+		case core.TypeDefKindInterfaceKind:
 			m.Interfaces = append(m.Interfaces, typeDef)
 			if typeDef.AsInterface != nil {
 				typeDef.AsInterface.owner = m
 				typeDef.AsInterface.typeDef = typeDef
 			}
-		case dagger.TypeDefKindEnumKind:
+		case core.TypeDefKindEnumKind:
 			m.Enums = append(m.Enums, typeDef)
-		case dagger.TypeDefKindInputKind:
+		case core.TypeDefKindInputKind:
 			m.Inputs = append(m.Inputs, typeDef)
 		}
 	}
@@ -640,28 +641,28 @@ func (m *moduleDef) loadTypeDef(typeDef *modTypeDef) error {
 	typeDef.AsEnum = canonical.AsEnum
 
 	switch typeDef.Kind {
-	case dagger.TypeDefKindStringKind,
-		dagger.TypeDefKindIntegerKind,
-		dagger.TypeDefKindFloatKind,
-		dagger.TypeDefKindBooleanKind,
-		dagger.TypeDefKindVoidKind,
-		dagger.TypeDefKindInputKind,
-		dagger.TypeDefKindEnumKind,
-		dagger.TypeDefKindScalarKind:
+	case core.TypeDefKindStringKind,
+		core.TypeDefKindIntegerKind,
+		core.TypeDefKindFloatKind,
+		core.TypeDefKindBooleanKind,
+		core.TypeDefKindVoidKind,
+		core.TypeDefKindInputKind,
+		core.TypeDefKindEnumKind,
+		core.TypeDefKindScalarKind:
 		return nil
-	case dagger.TypeDefKindListKind:
+	case core.TypeDefKindListKind:
 		if typeDef.AsList == nil || typeDef.AsList.ElementTypeDef == nil {
 			return fmt.Errorf("list typedef %q missing element type", typeDef.TypeName)
 		}
 		return m.LoadTypeDef(typeDef.AsList.ElementTypeDef)
-	case dagger.TypeDefKindObjectKind:
+	case core.TypeDefKindObjectKind:
 		if typeDef.AsObject == nil {
 			return fmt.Errorf("object typedef %q missing object payload", typeDef.TypeName)
 		}
 		typeDef.AsObject.owner = m
 		typeDef.AsObject.typeDef = typeDef
 		return nil
-	case dagger.TypeDefKindInterfaceKind:
+	case core.TypeDefKindInterfaceKind:
 		if typeDef.AsInterface == nil {
 			return fmt.Errorf("interface typedef %q missing interface payload", typeDef.TypeName)
 		}
@@ -689,10 +690,10 @@ func (m *moduleDef) LoadFunctionTypeDefs(fn *modFunction) error {
 	return nil
 }
 
-// modTypeDef is a representation of dagger.TypeDef.
+// modTypeDef is a representation of core.TypeDef.
 type modTypeDef struct {
 	TypeName    string `json:"name"`
-	Kind        dagger.TypeDefKind
+	Kind        core.TypeDefKind
 	Optional    bool
 	AsObject    *modObject
 	AsInterface *modInterface
@@ -710,27 +711,27 @@ type modTypeDef struct {
 
 func (t *modTypeDef) String() string {
 	switch t.Kind {
-	case dagger.TypeDefKindStringKind:
+	case core.TypeDefKindStringKind:
 		return "string"
-	case dagger.TypeDefKindIntegerKind:
+	case core.TypeDefKindIntegerKind:
 		return "int"
-	case dagger.TypeDefKindFloatKind:
+	case core.TypeDefKindFloatKind:
 		return "float"
-	case dagger.TypeDefKindBooleanKind:
+	case core.TypeDefKindBooleanKind:
 		return "bool"
-	case dagger.TypeDefKindVoidKind:
+	case core.TypeDefKindVoidKind:
 		return "void"
-	case dagger.TypeDefKindScalarKind:
+	case core.TypeDefKindScalarKind:
 		return t.AsScalar.Name
-	case dagger.TypeDefKindEnumKind:
+	case core.TypeDefKindEnumKind:
 		return t.AsEnum.Name
-	case dagger.TypeDefKindInputKind:
+	case core.TypeDefKindInputKind:
 		return t.AsInput.Name
-	case dagger.TypeDefKindObjectKind:
+	case core.TypeDefKindObjectKind:
 		return t.AsObject.Name
-	case dagger.TypeDefKindInterfaceKind:
+	case core.TypeDefKindInterfaceKind:
 		return t.AsInterface.Name
-	case dagger.TypeDefKindListKind:
+	case core.TypeDefKindListKind:
 		return "[]" + t.AsList.ElementTypeDef.String()
 	default:
 		// this should never happen because all values for kind are covered,
@@ -741,23 +742,23 @@ func (t *modTypeDef) String() string {
 
 func (t *modTypeDef) KindDisplay() string {
 	switch t.Kind {
-	case dagger.TypeDefKindStringKind,
-		dagger.TypeDefKindIntegerKind,
-		dagger.TypeDefKindFloatKind,
-		dagger.TypeDefKindBooleanKind:
+	case core.TypeDefKindStringKind,
+		core.TypeDefKindIntegerKind,
+		core.TypeDefKindFloatKind,
+		core.TypeDefKindBooleanKind:
 		return "Scalar"
-	case dagger.TypeDefKindScalarKind,
-		dagger.TypeDefKindVoidKind:
+	case core.TypeDefKindScalarKind,
+		core.TypeDefKindVoidKind:
 		return "Custom scalar"
-	case dagger.TypeDefKindEnumKind:
+	case core.TypeDefKindEnumKind:
 		return "Enum"
-	case dagger.TypeDefKindInputKind:
+	case core.TypeDefKindInputKind:
 		return "Input"
-	case dagger.TypeDefKindObjectKind:
+	case core.TypeDefKindObjectKind:
 		return "Object"
-	case dagger.TypeDefKindInterfaceKind:
+	case core.TypeDefKindInterfaceKind:
 		return "Interface"
-	case dagger.TypeDefKindListKind:
+	case core.TypeDefKindListKind:
 		return "List of " + strings.ToLower(t.AsList.ElementTypeDef.KindDisplay()) + "s"
 	default:
 		return ""
@@ -766,24 +767,24 @@ func (t *modTypeDef) KindDisplay() string {
 
 func (t *modTypeDef) Description() string {
 	switch t.Kind {
-	case dagger.TypeDefKindStringKind,
-		dagger.TypeDefKindIntegerKind,
-		dagger.TypeDefKindFloatKind,
-		dagger.TypeDefKindBooleanKind:
+	case core.TypeDefKindStringKind,
+		core.TypeDefKindIntegerKind,
+		core.TypeDefKindFloatKind,
+		core.TypeDefKindBooleanKind:
 		return "Primitive type."
-	case dagger.TypeDefKindVoidKind:
+	case core.TypeDefKindVoidKind:
 		return ""
-	case dagger.TypeDefKindScalarKind:
+	case core.TypeDefKindScalarKind:
 		return t.AsScalar.Description
-	case dagger.TypeDefKindEnumKind:
+	case core.TypeDefKindEnumKind:
 		return t.AsEnum.Description
-	case dagger.TypeDefKindInputKind:
+	case core.TypeDefKindInputKind:
 		return t.AsInput.Description
-	case dagger.TypeDefKindObjectKind:
+	case core.TypeDefKindObjectKind:
 		return t.AsObject.Description
-	case dagger.TypeDefKindInterfaceKind:
+	case core.TypeDefKindInterfaceKind:
 		return t.AsInterface.Description
-	case dagger.TypeDefKindListKind:
+	case core.TypeDefKindListKind:
 		return t.AsList.ElementTypeDef.Description()
 	default:
 		// this should never happen because all values for kind are covered,
@@ -878,7 +879,7 @@ func (t *modTypeDef) AsFunctionProvider() functionProvider {
 	return nil
 }
 
-// modObject is a representation of dagger.ObjectTypeDef.
+// modObject is a representation of core.ObjectTypeDef.
 type modObject struct {
 	Name             string
 	Description      string
@@ -1003,12 +1004,12 @@ type modInput struct {
 	Fields      []*modField
 }
 
-// modList is a representation of dagger.ListTypeDef.
+// modList is a representation of core.ListTypeDef.
 type modList struct {
 	ElementTypeDef *modTypeDef
 }
 
-// modField is a representation of dagger.FieldTypeDef.
+// modField is a representation of core.FieldTypeDef.
 type modField struct {
 	Name        string
 	Description string
@@ -1031,7 +1032,7 @@ func shortDescription(desc string) string {
 	return s
 }
 
-// modFunction is a representation of dagger.Function.
+// modFunction is a representation of core.Function.
 type modFunction struct {
 	Name             string
 	Description      string
@@ -1118,12 +1119,12 @@ func (f *modFunction) ReturnsCoreObject() bool {
 	return false
 }
 
-// modFunctionArg is a representation of dagger.FunctionArg.
+// modFunctionArg is a representation of core.FunctionArg.
 type modFunctionArg struct {
 	Name         string
 	Description  string
 	TypeDef      *modTypeDef
-	DefaultValue dagger.JSON
+	DefaultValue core.JSON
 	DefaultPath  string
 	Ignore       []string
 	flagName     string
@@ -1135,7 +1136,7 @@ type modFunctionArg struct {
 // `dagger call` on a function that declares one stays a plain call.
 func (r *modFunctionArg) IsWorkspace() bool {
 	typeDef := r.TypeDef
-	if typeDef == nil || typeDef.Kind != dagger.TypeDefKindObjectKind || typeDef.AsObject == nil {
+	if typeDef == nil || typeDef.Kind != core.TypeDefKindObjectKind || typeDef.AsObject == nil {
 		return false
 	}
 	return typeDef.AsObject.Name == "Workspace" && typeDef.AsObject.SourceModuleName == ""
@@ -1174,7 +1175,7 @@ func (r *modFunctionArg) Long() string {
 		fmt.Fprintf(sb, "(default: %s)", defVal)
 	}
 
-	if r.TypeDef.Kind == dagger.TypeDefKindEnumKind {
+	if r.TypeDef.Kind == core.TypeDefKindEnumKind {
 		names := strings.Join(r.TypeDef.AsEnum.ValueNames(), ", ")
 		if multiline {
 			sb.WriteString("\n\n")
@@ -1224,7 +1225,7 @@ func (r *modFunctionArg) defValue() string {
 	}
 	t := r.TypeDef
 	switch t.Kind {
-	case dagger.TypeDefKindStringKind:
+	case core.TypeDefKindStringKind:
 		v, err := getDefaultValue[string](r)
 		if err == nil {
 			return fmt.Sprintf("%q", v)

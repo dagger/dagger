@@ -1,6 +1,6 @@
 package core
 
-// These tests cover top-level `dagger up`, which starts services declared by a
+// These tests cover top-level `dagger start`, which starts services declared by a
 // workspace or SDK. They verify direct SDK use, env services, port collisions,
 // service binding, partial startup failures, workspace skip/port config, and
 // toolchain use.
@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -28,13 +30,13 @@ func TestUp(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(UpSuite{})
 }
 
-func upTestEnv(t *testctx.T, c *dagger.Client) (*dagger.Container, error) {
+func upTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
 	return specificTestEnv(t, c, "services")
 }
 
 // daggerUpVerify prepares module definitions before timing service readiness.
-func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs int) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
+func daggerUpVerify(upArgs, url, expectBodyContains, okMsg string, timeoutSecs int) core.WithContainerFunc {
+	return func(c *core.Container) *core.Container {
 		return c.WithExec([]string{"sh", "-c", upVerifyScript(upArgs, url, expectBodyContains, okMsg, upVerifyBounds{
 			prepare: 300, ready: timeoutSecs, probe: 5, shutdown: 30,
 		})})
@@ -60,7 +62,7 @@ func (UpSuite) TestUpDirectSDK(ctx context.Context, t *testctx.T) {
 				WithWorkdir(tc.path)
 			// list services
 			out, err := modGen.
-				With(daggerExec("up", "-l", "-f=link")).
+				With(daggerExec("start", "-l", "-f=link")).
 				CombinedOutput(ctx)
 			require.NoError(t, err)
 			require.Contains(t, out, "web")
@@ -99,7 +101,7 @@ func (UpSuite) TestUpNoServices(ctx context.Context, t *testctx.T) {
 	out, err := modGen.
 		WithWorkdir("/empty").
 		WithNewFile("dagger.toml", "").
-		With(daggerExecFail("up")).
+		With(daggerExecFail("start")).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "no services found")
@@ -113,7 +115,7 @@ func (UpSuite) TestUpPortCollision(ctx context.Context, t *testctx.T) {
 
 	// Try to run all services — should fail with port collision error
 	out, err := modGen.
-		With(daggerExecFail("up")).
+		With(daggerExecFail("start")).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "port collision")
@@ -129,7 +131,7 @@ func (UpSuite) TestUpValidationRejectsBadSignature(ctx context.Context, t *testc
 
 		// badup-return's @up returns Container!, which must be rejected at module load.
 		out, err := modGen.WithWorkdir("badup-return").
-			With(daggerExecFail("up", "-l")).
+			With(daggerExecFail("start", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "@up functions must return the core Service! type")
@@ -142,7 +144,7 @@ func (UpSuite) TestUpValidationRejectsBadSignature(ctx context.Context, t *testc
 		// badup-arg's @up declares a required `image: String!`, which must be
 		// rejected at module load.
 		out, err := modGen.WithWorkdir("badup-arg").
-			With(daggerExecFail("up", "-l")).
+			With(daggerExecFail("start", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "@up functions must be callable with no arguments")
@@ -157,14 +159,14 @@ func (UpSuite) TestUpServiceBinding(ctx context.Context, t *testctx.T) {
 
 	// Verify both services are listed
 	out, err := modGen.
-		With(daggerExec("up", "-l")).
+		With(daggerExec("start", "-l")).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "backend")
 	require.Contains(t, out, "frontend")
 
 	t.Run("single service with binding", func(ctx context.Context, t *testctx.T) {
-		// Run "dagger up frontend" — frontend (nginx:80) depends on backend
+		// Run "dagger start frontend" — frontend (nginx:80) depends on backend
 		// (redis:6379) via withServiceBinding. Backend starts as an internal
 		// service binding. Only frontend gets a host tunnel on port 80.
 		out, err := modGen.
@@ -176,7 +178,7 @@ func (UpSuite) TestUpServiceBinding(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("all services with dedup", func(ctx context.Context, t *testctx.T) {
-		// Run "dagger up" (all services). Backend (redis:6379) is both a
+		// Run "dagger start" (all services). Backend (redis:6379) is both a
 		// standalone +up service AND a service binding inside frontend
 		// (nginx:80). Dagql dedup ensures only one backend instance runs.
 		out, err := modGen.
@@ -552,7 +554,7 @@ settings.base = "git:2.40"
 			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
 			Sync(ctx)
 		require.Error(t, err)
-		var execErr *dagger.ExecError
+		var execErr *core.ExecError
 		combined := err.Error()
 		if errors.As(err, &execErr) {
 			combined = fmt.Sprintf("%s\n%s\n%s", err, execErr.Stdout, execErr.Stderr)
@@ -644,10 +646,10 @@ func (UpSuite) TestUpPartialStartupFailure(ctx context.Context, t *testctx.T) {
 	modGen = modGen.WithWorkdir("partial-failure")
 
 	// Run all services. The "broken" service fails on startup while "healthy"
-	// is already running. dagger up must cancel the healthy service and exit
+	// is already running. dagger start must cancel the healthy service and exit
 	// with the startup error — not hang forever.
 	out, err := modGen.
-		With(daggerExecFail("up")).
+		With(daggerExecFail("start")).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "startup failed")
@@ -659,7 +661,7 @@ func (UpSuite) TestUpRunService(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	modGen = modGen.WithWorkdir("hello-with-services")
 
-	// Run "dagger up web" in the background, wait for the tunneled port to
+	// Run "dagger start web" in the background, wait for the tunneled port to
 	// respond, verify the nginx welcome page, then stop.
 	out, err := modGen.
 		With(daggerUpVerify("web", "http://localhost:80", "nginx",
@@ -679,7 +681,7 @@ source = "hello-with-services"
 up.skip = ["redis"]
 `)
 
-	out, err := ctr.With(daggerExec("up", "-l", "-f=link")).CombinedOutput(ctx)
+	out, err := ctr.With(daggerExec("start", "-l", "-f=link")).CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "hello-with-services/web")
 	require.NotContains(t, out, "hello-with-services/redis")
@@ -731,12 +733,12 @@ source = "../%s"
 `, tc.path, tc.path))
 			// list services
 			out, err := modGen.
-				With(daggerExec("up", "-l", "-f=link")).
+				With(daggerExec("start", "-l", "-f=link")).
 				CombinedOutput(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "dag+service://"+tc.path+"/web")
-			require.Contains(t, out, "dag+service://"+tc.path+"/redis")
-			require.Contains(t, out, "dag+service://"+tc.path+"/infra/database")
+			require.Contains(t, out, "dag+service://?service="+tc.path+"/web")
+			require.Contains(t, out, "dag+service://?service="+tc.path+"/redis")
+			require.Contains(t, out, "dag+service://?service="+tc.path+"/infra/database")
 		})
 	}
 }

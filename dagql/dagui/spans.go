@@ -312,7 +312,7 @@ type SpanSnapshot struct {
 	ServiceName string `json:",omitempty"`
 
 	// ServiceURLs marks a service-readiness marker span: the local URLs at
-	// which a just-started service is reachable (`dagger up`'s `ready <url>`
+	// which a just-started service is reachable (`dagger start`'s `ready <url>`
 	// span). Also stamped on the service's display span itself, so its
 	// collapsed row can show where to point a browser (see idtui's
 	// renderServiceURLs).
@@ -1175,6 +1175,23 @@ func (span *Span) HasParent(parent *Span) bool {
 
 func (span *Span) IsInternal() bool {
 	return span.Internal
+}
+
+// IsSurfacedKind reports whether the span is of a kind dagui surfaces on
+// its own, wherever it sits in the tree, rather than through reveal: LLM
+// conversation messages (SurfacedConversation), agent loop spans (Agents),
+// checks (SurfacedChecks), generators (SurfacedGenerators), test cases and
+// suites (TestView), service instances (SurfacedServices), and `dagger up`
+// service display spans (ServiceDisplaySpans).
+func (span *Span) IsSurfacedKind() bool {
+	return span.LLMRole != "" ||
+		span.Agent ||
+		span.CheckName != "" ||
+		span.GeneratorName != "" ||
+		span.TestCaseName != "" ||
+		span.TestSuiteName != "" ||
+		isServiceInstanceSpan(span) ||
+		isServiceDisplaySpan(span)
 }
 
 func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {

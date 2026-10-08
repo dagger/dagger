@@ -205,15 +205,8 @@ var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
 		return nil
 	}),
 
-	persistedDirectoryLazyKindGitTree: persistedLazyStructVisitor(func(p *persistedDirectoryGitTreeLazy, w *persistedRefWalker) error {
-		if err := p.validate(); err != nil {
-			return err
-		}
-		if err := w.child("refResultID", &p.RefResultID); err != nil {
-			return err
-		}
-		return nil
-	}),
+	persistedDirectoryLazyKindGitTree:         persistedLazyStructVisitor(visitPersistedDirectoryGitTreeLazy),
+	persistedDirectoryLazyKindGitFullCheckout: persistedLazyStructVisitor(visitPersistedDirectoryGitTreeLazy),
 
 	persistedDirectoryLazyKindGitBundleImport: persistedLazyStructVisitor(func(p *persistedDirectoryGitBundleImportLazy, w *persistedRefWalker) error {
 		if err := p.validate(); err != nil {
@@ -253,6 +246,12 @@ var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
 	persistedDirectoryLazyKindWithFile: parentAndSource("sourceResultID",
 		func(p *persistedDirectoryWithFileLazy) *uint64 { return &p.ParentResultID },
 		func(p *persistedDirectoryWithFileLazy) *uint64 { return &p.SourceResultID }),
+	persistedDirectoryLazyKindWithFiles: persistedLazyStructVisitor(func(p *persistedDirectoryWithFilesLazy, w *persistedRefWalker) error {
+		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
+			return err
+		}
+		return w.children("sourceResultIDs", p.SourceResultIDs)
+	}),
 	persistedDirectoryLazyKindWithTimestamps:   parentOnly(func(p *persistedDirectoryWithTimestampsLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindWithNewDirectory: parentOnly(func(p *persistedDirectoryWithNewDirectoryLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindSubdirectory:     parentOnly(func(p *persistedDirectorySubdirectoryLazy) *uint64 { return &p.ParentResultID }),
@@ -265,6 +264,18 @@ var persistedDirectoryLazyVisitors = map[string]persistedLazyVisitor{
 	persistedDirectoryLazyKindWithout:     parentOnly(func(p *persistedDirectoryWithoutLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindWithSymlink: parentOnly(func(p *persistedDirectoryWithSymlinkLazy) *uint64 { return &p.ParentResultID }),
 	persistedDirectoryLazyKindChown:       parentOnly(func(p *persistedDirectoryChownLazy) *uint64 { return &p.ParentResultID }),
+	persistedDirectoryLazyKindMergeChangesets: persistedLazyStructVisitor(func(p *persistedDirectoryMergeChangesetsLazy, w *persistedRefWalker) error {
+		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
+			return err
+		}
+		return w.children("changesResultIDs", p.ChangesResultIDs)
+	}),
+	persistedDirectoryLazyKindGitCommit: parentAndSource("changesResultID",
+		func(p *persistedDirectoryGitCommitLazy) *uint64 { return &p.ParentResultID },
+		func(p *persistedDirectoryGitCommitLazy) *uint64 { return &p.ChangesResultID }),
+	persistedDirectoryLazyKindWorkspacePull: parentAndSource("sourceResultID",
+		func(p *persistedDirectoryWorkspacePullLazy) *uint64 { return &p.ParentResultID },
+		func(p *persistedDirectoryWorkspacePullLazy) *uint64 { return &p.SourceResultID }),
 }
 
 // persistedFileLazyVisitors declares the references of every File lazy kind,
@@ -279,6 +290,15 @@ var persistedFileLazyVisitors = map[string]persistedLazyVisitor{
 	persistedFileLazyKindWithReplaced:   parentOnly(func(p *persistedFileWithReplacedLazy) *uint64 { return &p.ParentResultID }),
 	persistedFileLazyKindWithTimestamps: parentOnly(func(p *persistedFileWithTimestampsLazy) *uint64 { return &p.ParentResultID }),
 	persistedFileLazyKindChown:          parentOnly(func(p *persistedFileChownLazy) *uint64 { return &p.ParentResultID }),
+	persistedFileLazyKindContainerImage: persistedLazyStructVisitor(func(p *persistedFileContainerImageLazy, w *persistedRefWalker) error {
+		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
+			return err
+		}
+		return w.children("platformVariantResultIDs", p.PlatformVariantResultIDs)
+	}),
+	persistedFileLazyKindChangesetPatch: persistedLazyStructVisitor(func(p *persistedFileChangesetPatchLazy, w *persistedRefWalker) error {
+		return w.child("changesetResultID", &p.ChangesetResultID)
+	}),
 }
 
 // persistedContainerRecipeVisitors declares the references of every Container
@@ -317,6 +337,7 @@ var persistedContainerRecipeVisitors = map[string]persistedLazyVisitor{
 	"withExposedPort":           parentOnly(func(p *persistedContainerWithExposedPortLazy) *uint64 { return &p.ParentResultID }),
 	"withoutExposedPort":        parentOnly(func(p *persistedContainerWithoutExposedPortLazy) *uint64 { return &p.ParentResultID }),
 	"withDefaultTerminalCmd":    parentOnly(func(p *persistedContainerWithDefaultTerminalCmdLazy) *uint64 { return &p.ParentResultID }),
+	"withShell":                 parentOnly(func(p *persistedContainerWithDefaultTerminalCmdLazy) *uint64 { return &p.ParentResultID }),
 	"from": persistedLazyStructVisitor(func(p *persistedContainerFromLazy, w *persistedRefWalker) error {
 		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
 			return err
@@ -467,11 +488,20 @@ var persistedHTTPStateVisitor = persistedStructVisitor(dagql.PersistedRefLocalBa
 
 var persistedGitRepositoryVisitor = persistedStructVisitor("", func(p *persistedGitRepositoryPayload, w *persistedRefWalker) error {
 	if p.Local != nil {
+		if err := w.at("local").child("historySourceResultID", &p.Local.HistorySourceResultID); err != nil {
+			return err
+		}
+		if err := w.at("local").child("upstreamResultID", &p.Local.UpstreamResultID); err != nil {
+			return err
+		}
 		if err := w.at("local").child("directoryResultID", &p.Local.DirectoryResultID); err != nil {
 			return err
 		}
 		if p.Local.CheckoutBase != nil {
 			if err := w.at("local").at("checkoutBase").child("parentResultID", &p.Local.CheckoutBase.ParentResultID); err != nil {
+				return err
+			}
+			if err := w.at("local").at("checkoutBase").child("treeResultID", &p.Local.CheckoutBase.TreeResultID); err != nil {
 				return err
 			}
 		}
@@ -484,6 +514,10 @@ var persistedGitRepositoryVisitor = persistedStructVisitor("", func(p *persisted
 
 var persistedGitRefVisitor = persistedStructVisitor("", func(p *persistedGitRefPayload, w *persistedRefWalker) error {
 	return w.child("repoResultID", &p.RepoResultID)
+})
+
+var persistedGitRemoteHandleVisitor = persistedStructVisitor("", func(p *persistedGitRemoteHandle, w *persistedRefWalker) error {
+	return w.child("sourceResultID", &p.SourceResultID)
 })
 
 var persistedGitCommitVisitor = persistedStructVisitor("", func(p *persistedGitCommitPayload, w *persistedRefWalker) error {
@@ -760,3 +794,10 @@ var persistedCollectionTypeDefVisitor = persistedStructVisitor("", func(p *uint6
 	w.note(changed)
 	return err
 })
+
+func visitPersistedDirectoryGitTreeLazy(p *persistedDirectoryGitTreeLazy, w *persistedRefWalker) error {
+	if err := p.validate(); err != nil {
+		return err
+	}
+	return w.child("refResultID", &p.RefResultID)
+}

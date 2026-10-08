@@ -61,6 +61,39 @@ func (gitURL *GitURL) Remote() string {
 	return gitURLCopy.String()
 }
 
+// RedactedRemote is Remote without any userinfo, safe to record in logs and
+// profiles: HTTP(S) userinfo may carry credentials (user:token@host).
+func (gitURL *GitURL) RedactedRemote() string {
+	gitURLCopy := *gitURL
+	gitURLCopy.Fragment = nil
+	gitURLCopy.User = nil
+	if gitURLCopy.scpStyle {
+		// SCPStyleURL.String always renders the "user@" separator.
+		return gitURLCopy.Host + ":" + gitURLCopy.Path
+	}
+	return gitURLCopy.String()
+}
+
+// HTMLURL returns a best-effort browser URL for the repository, without clone
+// credentials or revision selectors. SSH and Git transport ports are not web
+// ports, so only HTTP(S) ports are retained.
+func (gitURL *GitURL) HTMLURL() string {
+	u := &url.URL{
+		Scheme: gitURL.Scheme,
+		Host:   gitURL.Host,
+		Path:   "/" + strings.TrimPrefix(strings.TrimSuffix(gitURL.Path, ".git"), "/"),
+	}
+	if u.Scheme != HTTPProtocol && u.Scheme != HTTPSProtocol {
+		host := u.Hostname()
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+		u.Scheme = HTTPSProtocol
+		u.Host = host
+	}
+	return u.String()
+}
+
 func (gitURL *GitURL) String() string {
 	if gitURL.scpStyle {
 		result := sshutil.SCPStyleURL{
@@ -80,6 +113,62 @@ func (gitURL *GitURL) String() string {
 		Fragment: gitURL.Fragment.String(),
 	}
 	return result.String()
+}
+
+// SameRepository reports whether a and b name the same repository on the same
+// host, whichever transport or user each reaches it with: e.g.
+// https://github.com/org/repo, git@github.com:org/repo.git and
+// ssh://git@github.com/org/repo. Ports only distinguish URLs of the same
+// scheme, since each transport listens on its own. A path relative to an SSH
+// user's home (scp-style) is compared as written, as forges serve it. Paths
+// are case-sensitive, except on forges known to route them case-insensitively
+// (caseInsensitivePathHosts).
+func SameRepository(a, b *GitURL) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	aHost, bHost := (&url.URL{Host: a.Host}), (&url.URL{Host: b.Host})
+	if !strings.EqualFold(aHost.Hostname(), bHost.Hostname()) {
+		return false
+	}
+	if a.Scheme == b.Scheme && effectivePort(a.Scheme, aHost.Port()) != effectivePort(b.Scheme, bHost.Port()) {
+		return false
+	}
+	aPath, bPath := repositoryPath(a.Path), repositoryPath(b.Path)
+	if caseInsensitivePathHosts[strings.ToLower(aHost.Hostname())] {
+		return strings.EqualFold(aPath, bPath)
+	}
+	return aPath == bPath
+}
+
+// caseInsensitivePathHosts are forges whose repository paths are
+// case-insensitive: github.com/Org/Repo and github.com/org/repo are one
+// repository. Anywhere else, differently cased paths may be distinct
+// repositories.
+var caseInsensitivePathHosts = map[string]bool{
+	"github.com": true,
+	"gitlab.com": true,
+}
+
+func effectivePort(scheme, port string) string {
+	if port != "" {
+		return port
+	}
+	switch scheme {
+	case SSHProtocol:
+		return "22"
+	case HTTPSProtocol:
+		return "443"
+	case HTTPProtocol:
+		return "80"
+	case GitProtocol:
+		return "9418"
+	}
+	return ""
+}
+
+func repositoryPath(path string) string {
+	return strings.TrimSuffix(strings.Trim(path, "/"), ".git")
 }
 
 // GitURLFragment is the buildkit-specific metadata extracted from the fragment

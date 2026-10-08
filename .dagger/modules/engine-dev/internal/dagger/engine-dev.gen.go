@@ -366,6 +366,8 @@ type EngineDevTestOpts struct {
 	Update bool
 	// Enable the given ebpf progs in the engine during tests
 	EbpfProgs []string
+	// Enable privileged eBPF tests (Linux 6.15 or newer)
+	Ebpf bool
 	// Elapsed times after the test runner starts at which to dump engine goroutines
 	DumpAfter []string
 }
@@ -425,6 +427,10 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
 			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
 		}
+		// `ebpf` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ebpf) {
+			q = q.Arg("ebpf", opts[i].Ebpf)
+		}
 		// `dumpAfter` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DumpAfter) {
 			q = q.Arg("dumpAfter", opts[i].DumpAfter)
@@ -432,6 +438,96 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 	}
 
 	return q.Execute(ctx)
+}
+
+// EngineDevTestProfileOpts contains options for EngineDev.TestProfile
+type EngineDevTestProfileOpts struct {
+	// Only run these tests
+	Run string
+	// Skip these tests
+	Skip string
+
+	// Default: "./..."
+	Pkg string
+	// Abort test run on first failure
+	Failfast bool
+	// How many tests to run in parallel - defaults to the number of CPUs
+	Parallel int
+	// How long before timing out the test run
+	Timeout string
+
+	Race bool
+
+	// Default: 1
+	Count int
+
+	EnvFile *Secret
+	// Enable verbose output
+	TestVerbose bool
+	// Enable the given ebpf progs in the engine during tests
+	EbpfProgs []string
+}
+
+// Run core engine tests against an engine recording a wcprof wall-clock
+// profile, and return the recording.
+//
+// The test engine records every session from startup (_DAGGER_WCPROF=1). The
+// dump is fetched from its debug endpoint after `go test` exits, whether or
+// not the tests passed, so a failing run still yields a profile. Benchmark
+// tests gated on _DAGGER_BENCH are opted in, since profiling is what they are
+// for: select them with `run` like any other test.
+func (r *EngineDev) TestProfile(opts ...EngineDevTestProfileOpts) *EngineDevTestProfileResult {
+	q := r.query.Select("testProfile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `envFile` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EnvFile) {
+			q = q.Arg("envFile", opts[i].EnvFile)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `ebpfProgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
+			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+	}
+
+	return &EngineDevTestProfileResult{
+		query: q,
+	}
 }
 
 // EngineDevTestTelemetryOpts contains options for EngineDev.TestTelemetry
@@ -685,6 +781,107 @@ func (r *EngineDevLoadedEngine) Start(ctx context.Context, opts ...EngineDevLoad
 	}
 
 	return q.Execute(ctx)
+}
+
+// The result of a profiled test run: the test engine's wcprof recording, and
+// how the tests went.
+type EngineDevTestProfileResult struct { // engine-dev (../../../../../:0:0)
+	query *querybuilder.Selection
+
+	exitCode *int
+	id       *ID
+	output   *string
+}
+
+func (r *EngineDevTestProfileResult) WithGraphQLQuery(q *querybuilder.Selection) *EngineDevTestProfileResult {
+	return &EngineDevTestProfileResult{
+		query: q,
+	}
+}
+
+// The test engine's wcprof dump (engine/wcprof), covering every
+// session the tests opened
+func (r *EngineDevTestProfileResult) Dump() *File {
+	q := r.query.Select("dump")
+
+	return &File{
+		query: q,
+	}
+}
+
+// The exit status of `go test`
+func (r *EngineDevTestProfileResult) ExitCode(ctx context.Context) (int, error) {
+	if r.exitCode != nil {
+		return *r.exitCode, nil
+	}
+	q := r.query.Select("exitCode")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EngineDevTestProfileResult.
+func (r *EngineDevTestProfileResult) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineDevTestProfileResult) XXX_GraphQLType() string {
+	return "EngineDevTestProfileResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineDevTestProfileResult) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineDevTestProfileResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineDevTestProfileResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *EngineDevTestProfileResult) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = EngineDevTestProfileResult{query: selectNode(dag.query, id, "EngineDevTestProfileResult")}
+	return nil
+}
+
+// The tail of the test output (stdout and stderr)
+func (r *EngineDevTestProfileResult) Output(ctx context.Context) (string, error) {
+	if r.output != nil {
+		return *r.output, nil
+	}
+	q := r.query.Select("output")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // EngineDevOpts contains options for Query.EngineDev

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/defaults"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
@@ -19,6 +20,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/stats"
 )
 
 func serve(ctx context.Context, grpcServer *grpc.Server, conn net.Conn) {
@@ -48,13 +50,16 @@ func grpcClientConn(ctx context.Context, conn net.Conn) (context.Context, *grpc.
 		grpc.WithStreamInterceptor(grpcerrors.StreamClientInterceptor),
 	}
 
+	var traceStatsHandler stats.Handler
 	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
-		statsHandler := tracing.ClientStatsHandler(
+		traceStatsHandler = tracing.ClientStatsHandler(
 			otelgrpc.WithTracerProvider(span.TracerProvider()),
 			otelgrpc.WithPropagators(propagators),
 		)
-		dialOpts = append(dialOpts, grpc.WithStatsHandler(statsHandler))
 	}
+	dialOpts = append(dialOpts, grpc.WithStatsHandler(
+		enginetelemetry.NetworkStatsHandler(traceStatsHandler),
+	))
 
 	cc, err := grpc.DialContext(ctx, "localhost", dialOpts...)
 	if err != nil {

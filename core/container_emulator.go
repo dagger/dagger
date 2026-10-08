@@ -62,13 +62,14 @@ func (m *staticEmulatorMount) Mount() ([]mount.Mount, func() error, error) {
 	}
 
 	ret = true
-	return []mount.Mount{{
-			Type:    "bind",
-			Source:  emulatorPath,
-			Options: []string{"ro", "bind"},
-		}}, func() error {
-			return os.RemoveAll(tmpdir)
-		}, nil
+	mounts := []mount.Mount{{
+		Type:    "bind",
+		Source:  emulatorPath,
+		Options: []string{"ro", "bind"},
+	}}
+	return mounts, func() error {
+		return os.RemoveAll(tmpdir)
+	}, nil
 }
 
 func copyRegularFile(srcPath, dstPath string, mode os.FileMode) error {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -178,7 +179,7 @@ func TestLiftScopeSelection(t *testing.T) {
 		// Several matches are an error listing them, pointing to discovery.
 		_, err = call(t, m, "eval", map[string]any{"target": "go/*"})
 		require.ErrorContains(t, err, `"go/*" is not a resolvable Artifact address`)
-		require.ErrorContains(t, err, "dag://go/* matches 2 artifacts:\ndag://go/lint\ndag://go/test")
+		require.ErrorContains(t, err, "dag://go/* matches 2 artifacts:\ndag://?check=go/lint\ndag://?check=go/test")
 		require.ErrorContains(t, err, "FindArtifacts lists what exists")
 	})
 
@@ -301,7 +302,7 @@ func TestQualifyCollidingTrees(t *testing.T) {
 	// The plain address selects the artifact of every colliding object; where
 	// one is required, the error lists addresses that tell them apart.
 	_, err = filter("dag://staff/members/head").One()
-	require.ErrorContains(t, err, "matches 2 artifacts:\ndag://staff/staff-view/members/head\ndag://staff/staff-pull-tools/members/head")
+	require.ErrorContains(t, err, "matches 2 artifacts:\ndag://?directory=staff/staff-view/members/head\ndag://?directory=staff/staff-pull-tools/members/head")
 	require.Len(t, filter("staff/members/*").Entries, 2)
 	require.Len(t, filter("staff/inbox").Entries, 1)
 	// Include patterns match the plain path too.
@@ -325,42 +326,45 @@ func TestMergeScopeArtifacts(t *testing.T) {
 		{ModuleName: "app", Path: []string{"app", "build"}, TypeName: "Container"},
 	}
 	shadowed := map[string]bool{"roster": true, "git-tools": true}
-	uris := func(selection *Artifacts) []string {
-		var uris []string
+	paths := func(selection *Artifacts) []string {
+		var paths []string
 		for _, entry := range selection.Entries {
-			uri, err := entry.URI(ArtifactURIOpts{})
-			require.NoError(t, err)
-			uris = append(uris, uri)
+			paths = append(paths, strings.Join(entry.Path, "/"))
 		}
-		return uris
+		return paths
 	}
 
-	all, err := mergeScopeArtifacts(bound, shadowed, nil, workspace, nil)
+	all, err := mergeScopeArtifacts(bound, shadowed, nil, &Artifacts{Entries: workspace}, nil)
 	require.NoError(t, err)
 	require.Nil(t, all.Selector.Paths)
-	require.Equal(t, []string{"dag://app/build", "dag://git-tools/head", "dag://roster/members", "dag://roster/members/dir"}, uris(all))
+	require.Equal(t, []string{"app/build", "git-tools/head", "roster/members", "roster/members/dir"}, paths(all))
 	require.Same(t, bound[0], all.Entries[2], "the bound roster wins")
 
-	narrowed, err := mergeScopeArtifacts(bound, shadowed, nil, workspace[3:], []string{"roster:members"})
+	// Workspace.artifacts narrows its entries but keeps all loaded dimensions.
+	narrowedWorkspace := &Artifacts{Entries: workspace[3:], AllDimensions: (&Artifacts{Entries: workspace}).DimensionDefinitions()}
+	narrowed, err := mergeScopeArtifacts(bound, shadowed, nil, narrowedWorkspace, []string{"roster:members"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"roster/members/**"}, narrowed.Selector.Paths)
 	// The workspace part arrives already narrowed by Workspace.artifacts;
 	// include narrows the bound part the same way.
-	require.Equal(t, []string{"dag://app/build", "dag://roster/members", "dag://roster/members/dir"}, uris(narrowed))
+	require.Equal(t, []string{"app/build", "roster/members", "roster/members/dir"}, paths(narrowed))
+	// include skips git-tools/head, but its dimensions still count for names.
+	require.True(t, slices.ContainsFunc(narrowed.AllDimensions, func(d *ArtifactDimension) bool { return d.Identifier == "type:GitRef" }))
+	require.Equal(t, "container", narrowed.Entries[0].DimensionNames["type:Container"])
 
 	// A roster bound as a fresh construction has the workspace's values: the
 	// workspace's roster wins, entrypoint shorthand and all.
 	fresh := map[string]bool{"roster": true}
-	all, err = mergeScopeArtifacts(bound, shadowed, fresh, workspace, nil)
+	all, err = mergeScopeArtifacts(bound, shadowed, fresh, &Artifacts{Entries: workspace}, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"dag://app/build", "dag://git-tools/head", "dag://lint", "dag://roster/load", "dag://roster/members"}, uris(all))
+	require.Equal(t, []string{"app/build", "git-tools/head", "lint", "roster/load", "roster/members"}, paths(all))
 	require.Same(t, workspace[0], all.Entries[4], "the workspace roster wins")
 	// Not where the workspace has no roster, nor one that failed to load:
 	// the binding is all there is.
 	for _, ws := range [][]*Artifact{workspace[3:], workspace[1:2]} {
-		all, err = mergeScopeArtifacts(bound, shadowed, fresh, ws, nil)
+		all, err = mergeScopeArtifacts(bound, shadowed, fresh, &Artifacts{Entries: ws}, nil)
 		require.NoError(t, err)
-		require.Contains(t, uris(all), "dag://roster/members/dir")
-		require.NotContains(t, uris(all), "dag://roster/load")
+		require.Contains(t, paths(all), "roster/members/dir")
+		require.NotContains(t, paths(all), "roster/load")
 	}
 }

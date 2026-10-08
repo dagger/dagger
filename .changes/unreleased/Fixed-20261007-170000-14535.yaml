@@ -1,0 +1,6 @@
+kind: Fixed
+body: Keep the main client's host connection open until the engine's final Dagger Cloud flush at shutdown, so telemetry that needs an OAuth token refresh is no longer dropped.
+time: 2026-10-07T17:00:00-07:00
+custom:
+    Author: sipsma
+    PR: "14535"

@@ -16,6 +16,32 @@ import (
 
 var errBusyCgroup = errors.New("unable to remove container's cgroup: rmdir /sys/fs/cgroup/buildkit/test/init: device or resource busy")
 
+func TestValidContainerCgroupPath(t *testing.T) {
+	for _, tc := range []struct {
+		id, path string
+		valid    bool
+	}{
+		{"run-id", "/sys/fs/cgroup/exec/run-id", false},
+		{"run-id", "/sys/fs/cgroup/tenant/exec/run-id/container", true},
+		{"container", "/sys/fs/cgroup/exec/container", false},
+		{"container", "/sys/fs/cgroup/exec/container/container", true},
+		{"run-id", "/sys/fs/cgroup/exec/run-id/sshfs/mount-id", false},
+		{"run-id", "/sys/fs/cgroup/exec/run-id/sshfs/container", false},
+		{"run-id", "/sys/fs/cgroup/exec/run-id/container/child", false},
+		{"run-id", "/sys/fs/cgroup/exec/other/container", false},
+		{"run-id", "/sys/fs/cgroup/not-exec/run-id/container", false},
+		{"run-id", "/sys/fs/cgroup/exec/prefix-run-id", false},
+		{"run-id", "/sys/fs/cgroup/exec/run-id/../container", false},
+		{"run-id", "exec/run-id/container", false},
+		{"../run-id", "/sys/fs/cgroup/exec/run-id/container", false},
+		{"", "/", false},
+	} {
+		t.Run(tc.path+":"+tc.id, func(t *testing.T) {
+			require.Equal(t, tc.valid, validContainerCgroupPath(tc.id, tc.path))
+		})
+	}
+}
+
 func TestDeleteContainerUnifiedDrain(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		root := t.TempDir()

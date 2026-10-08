@@ -93,11 +93,14 @@ type Doug {
     sandbox: ID! @expectedType(name: "Container"),
   ): String!
 
-  "Run everywhere — a required LIST of object args is not liftable."
+  "Run everywhere — a required LIST of liftable object args lifts element-wise."
   execAll(
     cmd: String!,
     sandboxes: [ID!]! @expectedType(name: "Container"),
   ): String!
+
+  "Authenticate everywhere — a required LIST of blocklisted object args."
+  withTokens(tokens: [ID!]! @expectedType(name: "Secret")): Doug!
 
   "Debug in a sandbox — an optional liftable arg."
   debug(sandbox: ID @expectedType(name: "Container")): Doug!
@@ -138,7 +141,7 @@ type Doug {
   "Evaluate one artifact — a required artifact, lifted from a DAG address."
   eval(target: ID! @expectedType(name: "Artifact")): String!
 
-  "Run checks everywhere — a LIST of selections is not lifted."
+  "Run checks everywhere — a LIST of selections lifts element-wise."
   checkAll(targets: [ID!]! @expectedType(name: "Artifacts")): String!
 
   old: String! @deprecated(reason: "gone")
@@ -203,9 +206,10 @@ func TestObjectToolEligible(t *testing.T) {
 	// address string and is lifted via the core Address API at dispatch time.
 	require.True(t, objectToolEligible(fieldByName(doug, "exec"), nil, conversationToolArgs))
 
-	// A required LIST of liftable objects is not lifted, so it still
-	// disqualifies.
-	require.False(t, objectToolEligible(fieldByName(doug, "execAll"), nil, conversationToolArgs))
+	// A required LIST of liftable objects lifts element-wise, so it does
+	// not disqualify either; a list of blocklisted ones still does.
+	require.True(t, objectToolEligible(fieldByName(doug, "execAll"), nil, conversationToolArgs))
+	require.False(t, objectToolEligible(fieldByName(doug, "withTokens"), nil, conversationToolArgs))
 
 	// An optional object arg never disqualified; still doesn't — liftable or
 	// not.
@@ -232,10 +236,10 @@ func TestObjectToolEligible(t *testing.T) {
 
 	// A required artifact selection lifts from a DAG address into the
 	// conversation's scope, whether it takes the selection or the one
-	// artifact it selects; a list of selections does not lift.
+	// artifact it selects, and so does a list of selections.
 	require.True(t, objectToolEligible(fieldByName(doug, "check"), nil, conversationToolArgs))
 	require.True(t, objectToolEligible(fieldByName(doug, "eval"), nil, conversationToolArgs))
-	require.False(t, objectToolEligible(fieldByName(doug, "checkAll"), nil, conversationToolArgs))
+	require.True(t, objectToolEligible(fieldByName(doug, "checkAll"), nil, conversationToolArgs))
 
 	// except drops a method by name.
 	require.False(t, objectToolEligible(fieldByName(doug, "read"), []string{"read"}, conversationToolArgs))
@@ -359,13 +363,22 @@ func TestObjectMethodSchema(t *testing.T) {
 	changes := applySchema["properties"].(map[string]any)["changes"].(map[string]any)
 	require.Equal(t, "(Changeset ID)", changes["description"])
 
-	// A LIST of liftable objects is not lifted, so it keeps the ID
-	// convention as well.
+	// A LIST of liftable objects is an array of address strings, described
+	// as such with the element type's hint.
 	execAllSchema, err := objectMethodSchema(schema, fieldByName(doug, "execAll"), conversationToolArgs)
 	require.NoError(t, err)
 	sandboxes := execAllSchema["properties"].(map[string]any)["sandboxes"].(map[string]any)
 	require.Equal(t, "array", sandboxes["type"])
-	require.Equal(t, "(Container ID)", sandboxes["description"])
+	require.Equal(t, "string", sandboxes["items"].(map[string]any)["type"])
+	require.Equal(t, "(list of Container addresses, each "+addressableTypes["Container"].hint+")", sandboxes["description"])
+	require.ElementsMatch(t, []string{"cmd", "sandboxes"}, execAllSchema["required"])
+
+	// A list of blocklisted objects keeps the ID convention.
+	withTokensSchema, err := objectMethodSchema(schema, fieldByName(doug, "withTokens"), conversationToolArgs)
+	require.NoError(t, err)
+	tokens := withTokensSchema["properties"].(map[string]any)["tokens"].(map[string]any)
+	require.Equal(t, "array", tokens["type"])
+	require.Equal(t, "(Secret ID)", tokens["description"])
 
 	// Artifact selections take a DAG address, scheme optional, and the hint
 	// teaches its vocabulary: path globs, dimension keys, type assertions,
@@ -450,20 +463,27 @@ func TestLiftableObjectArg(t *testing.T) {
 	_, ok = liftableObjectArg(arg("apply", "changes"))
 	require.False(t, ok)
 
-	// Artifact selections lift, singly; a list of them does not.
+	// Artifact selections lift, singly or as a list.
 	typeName, ok = liftableObjectArg(arg("check", "targets"))
 	require.True(t, ok)
 	require.Equal(t, "Artifacts", typeName)
 	typeName, ok = liftableObjectArg(arg("eval", "target"))
 	require.True(t, ok)
 	require.Equal(t, "Artifact", typeName)
-	_, ok = liftableObjectArg(arg("checkAll", "targets"))
+	typeName, ok = liftableObjectArg(arg("checkAll", "targets"))
+	require.True(t, ok)
+	require.Equal(t, "Artifacts", typeName)
+
+	// LISTS of liftable objects lift element-wise; lists of blocklisted ones
+	// do not.
+	typeName, ok = liftableObjectArg(arg("execAll", "sandboxes"))
+	require.True(t, ok)
+	require.Equal(t, "Container", typeName)
+	_, ok = liftableObjectArg(arg("withTokens", "tokens"))
 	require.False(t, ok)
 
-	// Nor do plain scalars, or LISTS of liftable objects.
+	// Nor do plain scalars.
 	_, ok = liftableObjectArg(arg("exec", "cmd"))
-	require.False(t, ok)
-	_, ok = liftableObjectArg(arg("execAll", "sandboxes"))
 	require.False(t, ok)
 }
 
@@ -890,6 +910,22 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 	require.NoError(t, err)
 	ctx = dagql.ContextWithCache(ctx, cache)
 	srv := newAddressLiftTestServer(t)
+	dagql.Fields[*liftTestRunner]{
+		dagql.Func("execAll", func(ctx context.Context, _ *liftTestRunner, args struct {
+			Cmd       dagql.String
+			Sandboxes dagql.ArrayInput[dagql.ID[*Container]]
+		}) (dagql.String, error) {
+			refs := make([]string, 0, len(args.Sandboxes))
+			for _, id := range args.Sandboxes {
+				ctr, err := id.Load(ctx, srv)
+				if err != nil {
+					return "", err
+				}
+				refs = append(refs, ctr.Self().ImageRef)
+			}
+			return dagql.String(args.Cmd.String() + " in " + strings.Join(refs, ", ")), nil
+		}),
+	}.Install(srv)
 
 	var runner dagql.AnyObjectResult
 	require.NoError(t, srv.Select(ctx, srv.Root(), &runner, dagql.Selector{Field: "runner"}))
@@ -901,6 +937,77 @@ func TestBuildObjectMethodSelector(t *testing.T) {
 	typeName, ok := liftableObjectArg(execField.Arguments.ForName("sandbox"))
 	require.True(t, ok)
 	require.Equal(t, "Container", typeName)
+
+	execAllField := fieldByName(srv.Schema().Types["LiftTestRunner"], "execAll")
+	require.NotNil(t, execAllField)
+	// ...and for a list of IDs too.
+	typeName, ok = liftableObjectArg(execAllField.Arguments.ForName("sandboxes"))
+	require.True(t, ok)
+	require.Equal(t, "Container", typeName)
+
+	premadeID := func(t *testing.T, ref string) string {
+		t.Helper()
+		var ctr dagql.AnyObjectResult
+		require.NoError(t, srv.Select(ctx, srv.Root(), &ctr,
+			dagql.Selector{
+				Field: "address",
+				Args:  []dagql.NamedInput{{Name: "value", Value: dagql.String(ref)}},
+			},
+			dagql.Selector{Field: "container", Args: []dagql.NamedInput{{Name: "noLock", Value: dagql.Boolean(true)}}},
+		))
+		ctrID, err := ctr.ID()
+		require.NoError(t, err)
+		encoded, err := ctrID.Encode()
+		require.NoError(t, err)
+		return encoded
+	}
+
+	t.Run("list of addresses lifts element-wise", func(t *testing.T) {
+		// Addresses and IDs from prior tool results mix freely: each element
+		// that is not an ID is lifted on its own.
+		sel, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execAllField, map[string]any{
+			"cmd":       "make",
+			"sandboxes": []any{"alpine:latest", premadeID(t, "premade"), "golang:1.26"},
+		})
+		require.NoError(t, err)
+		var out dagql.String
+		require.NoError(t, srv.Select(ctx, runner, &out, sel))
+		require.Equal(t, "make in alpine:latest, premade, golang:1.26", out.String())
+	})
+
+	t.Run("list of IDs still decodes directly", func(t *testing.T) {
+		sel, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execAllField, map[string]any{
+			"cmd":       "make",
+			"sandboxes": []any{premadeID(t, "one"), premadeID(t, "two")},
+		})
+		require.NoError(t, err)
+		var out dagql.String
+		require.NoError(t, srv.Select(ctx, runner, &out, sel))
+		require.Equal(t, "make in one, two", out.String())
+	})
+
+	t.Run("list element errors name the element", func(t *testing.T) {
+		_, err := newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execAllField, map[string]any{
+			"cmd":       "make",
+			"sandboxes": []any{"alpine:latest", "bogus:ref"},
+		})
+		require.ErrorContains(t, err, `arg "sandboxes": element 1: "bogus:ref" is neither a Container ID`)
+		require.ErrorContains(t, err, "no such image")
+
+		// Elements are vetted like a single arg: nothing reaches the host.
+		_, err = newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execAllField, map[string]any{
+			"cmd":       "make",
+			"sandboxes": []any{"dag://runner/sandbox"},
+		})
+		require.ErrorContains(t, err, `arg "sandboxes": element 0: "dag://runner/sandbox" is not a resolvable Container address`)
+
+		// A non-string element surfaces the plain decode error.
+		_, err = newMCP().buildObjectMethodSelector(ctx, srv, runner.ObjectType(), execAllField, map[string]any{
+			"cmd":       "make",
+			"sandboxes": []any{"alpine:latest", 42},
+		})
+		require.ErrorContains(t, err, `arg "sandboxes": decode []interface {}`)
+	})
 
 	t.Run("explicit null decodes for a nullable argument", func(t *testing.T) {
 		nullableField := fieldByName(srv.Schema().Types["LiftTestRunner"], "nullable")

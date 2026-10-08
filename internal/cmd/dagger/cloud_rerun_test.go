@@ -45,6 +45,22 @@ func TestCloudRerunTargetsByName(t *testing.T) {
 	require.Equal(t, []string{"lint"}, cloudCheckNames(targets))
 }
 
+func TestCloudRerunTargetsByDAGAddress(t *testing.T) {
+	// The trace's "RE-RUN IN CI" suggestion prints the check's dag:// address;
+	// the command accepts it against the scheme-less Cloud name.
+	setCloudRerunFlags(t, []string{"dag://test"}, false)
+	targets, err := cloudRerunTargets(cloudRerunCheckList())
+	require.NoError(t, err)
+	require.Equal(t, []string{"test"}, cloudCheckNames(targets))
+}
+
+func TestStripDAGScheme(t *testing.T) {
+	require.Equal(t, "test-split/test-cache-persistence", stripDAGScheme("dag://test-split/test-cache-persistence"))
+	require.Equal(t, "golang/generate-all/stale", stripDAGScheme("dag://golang/generate-all/stale"))
+	// A scheme-less Cloud name is returned unchanged.
+	require.Equal(t, "ci:bootstrap", stripDAGScheme("ci:bootstrap"))
+}
+
 func TestCloudRerunTargetsUnknownNameErrors(t *testing.T) {
 	setCloudRerunFlags(t, []string{"ci:bootstrap:lint"}, false)
 	_, err := cloudRerunTargets(cloudRerunCheckList())

@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/introspection"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 type SchemaResolvers interface {
@@ -32,6 +33,10 @@ const defaultNestingVersion = "v1.0.0-0"
 // every v1.0.0 prerelease caller.
 const gpuAPIVersion = "v1.0.0-0"
 
+// From the v1.0 API on, withExec writes a redirected stdout/stderr only to its
+// file. Older views keep logging it too.
+const redirectNotLoggedVersion = "v1.0.0-0"
+
 // Newer views still accept experimentalPrivilegedNesting so existing callers
 // keep working, but ignore it: nesting is already the default.
 var (
@@ -44,7 +49,21 @@ var (
 	deprecatedNestingArg = dagql.Arg("experimentalPrivilegedNesting").
 				View(AfterVersion(defaultNestingVersion)).
 				Deprecated(`Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.`)
+	newSessionNestingArg = dagql.Arg("daggerInDaggerNewSession").
+				View(AfterVersion(defaultNestingVersion)).
+				Doc(`Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.`,
+			`The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.`,
+			`Cannot be combined with "disableDaggerInDagger".`)
 )
+
+// v1Nesting resolves the v1.0 nesting arguments to whether the command joins
+// the current session as a nested client.
+func v1Nesting(disable, newSession bool) (bool, error) {
+	if disable && newSession {
+		return false, fmt.Errorf(`cannot set both "disableDaggerInDagger" and "daggerInDaggerNewSession"`)
+	}
+	return !disable && !newSession, nil
+}
 
 func Syncer[T dagql.Typed]() dagql.Field[T] {
 	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], args struct {
@@ -130,3 +149,33 @@ var AllVersion = core.AllVersion
 
 type BeforeVersion = core.BeforeVersion
 type AfterVersion = core.AfterVersion
+
+// evaluatedDirectory returns a Directory that carries its saved operation,
+// already built: the field did this work at the call before it saved the
+// operation.
+func evaluatedDirectory(ctx context.Context, query *core.Query, lazy core.Lazy[*core.Directory]) (*core.Directory, error) {
+	dir := &core.Directory{
+		Platform: query.Platform(),
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy:     lazy,
+	}
+	if err := lazy.Evaluate(ctx, dir); err != nil {
+		return nil, err
+	}
+	return dir, nil
+}
+
+// evaluatedFile is evaluatedDirectory for a File.
+func evaluatedFile(ctx context.Context, query *core.Query, lazy core.Lazy[*core.File]) (*core.File, error) {
+	file := &core.File{
+		Platform: query.Platform(),
+		File:     new(core.LazyAccessor[string, *core.File]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]),
+		Lazy:     lazy,
+	}
+	if err := lazy.Evaluate(ctx, file); err != nil {
+		return nil, err
+	}
+	return file, nil
+}

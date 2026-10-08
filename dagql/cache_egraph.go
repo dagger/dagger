@@ -931,7 +931,12 @@ func (c *Cache) lookupCacheForRequestLocked(
 	now := time.Now()
 	nowUnix := now.Unix()
 	persistedEdgeExpiresAtUnix := candidateSharedResultExpiryUnix(nowUnix, req.TTL)
-	match := c.lookupMatchForCallLocked(req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
+	var match lookupMatch
+	if req.ListItem {
+		match = c.lookupMatchForListItemLocked(req, nowUnix)
+	} else {
+		match = c.lookupMatchForCallLocked(req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
+	}
 	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
 	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
 
@@ -1732,7 +1737,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 		res.id = c.nextSharedResultID
 		c.nextSharedResultID++
 	}
-	c.resultsByID[res.id] = res
+	c.putResultLocked(res)
 	if res.loadResultCall() == nil && requestFrame != nil {
 		res.storeResultCall(requestFrame.clone())
 		c.traceResultCallFrameUpdated(ctx, res, "index_wait_result_request_frame", nil, res.loadResultCall())
@@ -1887,7 +1892,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	if len(c.egraphTerms) == 0 && len(c.resultsByID) == 1 && c.resultsByID[res.id] == res {
 		// The last entry, with no term left: the reset clears everything it
 		// indexed.
-		delete(c.resultsByID, res.id)
+		c.deleteResultLocked(res)
 		c.maybeResetEgraphLocked()
 		return
 	}
@@ -1908,7 +1913,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	oldFrame := res.loadResultCall()
 	depCount := len(res.deps)
 	res.storeResultCall(nil)
-	delete(c.resultsByID, res.id)
+	c.deleteResultLocked(res)
 	c.traceResultRemoved(ctx, res, oldFrame, depCount)
 
 	nowUnix := time.Now().Unix()
@@ -1983,6 +1988,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.resultIndexedDigests = nil
 	c.broadlyIndexedResults = nil
 	c.resultsByID = nil
+	c.resultPayloadBytes = 0
 	c.holderEntries = nil
 	c.entriesByRecipe = nil
 	c.remoteCaches = nil
@@ -1997,8 +2003,15 @@ func (c *Cache) maybeResetEgraphLocked() {
 	// persisted ID at startup for the same reason.
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, newSlots int) {
+	return c.compactEqClassesModeLocked(force, false)
+}
+
+// compactEqClassesModeLocked is compactEqClassesLocked; with freeAll, it also
+// frees every slot when no class is live, which compactEqClassesLocked leaves.
+//
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, oldSlots int, newSlots int) {
 	if len(c.egraphParents) <= 1 {
 		return false, 0, 0
 	}
@@ -2030,7 +2043,7 @@ func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, 
 
 	oldSlots = len(c.egraphParents) - 1
 	newSlots = len(liveRoots)
-	if newSlots == 0 || oldSlots == newSlots || (!force && oldSlots < newSlots*2) {
+	if (newSlots == 0 && !freeAll) || oldSlots == newSlots || (!force && oldSlots < newSlots*2) {
 		return false, oldSlots, newSlots
 	}
 

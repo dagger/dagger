@@ -101,7 +101,7 @@ func artifactReservedFlags(cmd *cobra.Command) map[string]bool {
 	reserved := map[string]bool{}
 	peers := append([]*cobra.Command{cmd}, cmd.Root().Commands()...)
 	for _, peer := range peers {
-		if peer != cmd && !slices.Contains([]string{"list", "check", "generate", "up", "shell", "agent"}, peer.Name()) {
+		if peer != cmd && !slices.Contains([]string{"list", "check", "generate", "start", "shell", "agent"}, peer.Name()) {
 			continue
 		}
 		flags := copyCommandFlags(peer, "reserved artifact flags")

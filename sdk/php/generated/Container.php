@@ -878,6 +878,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?ReturnType $expect = null,
         ?bool $disableDaggerInDagger = false,
         ?bool $experimentalPrivilegedNesting = false,
+        ?bool $daggerInDaggerNewSession = false,
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
         ?bool $noInit = false,
@@ -907,6 +908,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $experimentalPrivilegedNesting) {
         $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $daggerInDaggerNewSession) {
+        $innerQueryBuilder->setArgument('daggerInDaggerNewSession', $daggerInDaggerNewSession);
         }
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
@@ -1426,6 +1430,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?bool $useEntrypoint = false,
         ?bool $disableDaggerInDagger = false,
         ?bool $experimentalPrivilegedNesting = false,
+        ?bool $daggerInDaggerNewSession = false,
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
         ?bool $noInit = false,
@@ -1442,6 +1447,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $experimentalPrivilegedNesting) {
         $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $daggerInDaggerNewSession) {
+        $innerQueryBuilder->setArgument('daggerInDaggerNewSession', $daggerInDaggerNewSession);
         }
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
@@ -1467,6 +1475,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?bool $useEntrypoint = false,
         ?bool $disableDaggerInDagger = false,
         ?bool $experimentalPrivilegedNesting = false,
+        ?bool $daggerInDaggerNewSession = false,
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
         ?bool $noInit = false,
@@ -1489,6 +1498,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $experimentalPrivilegedNesting) {
         $leafQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $daggerInDaggerNewSession) {
+        $leafQueryBuilder->setArgument('daggerInDaggerNewSession', $daggerInDaggerNewSession);
         }
         if (null !== $insecureRootCapabilities) {
         $leafQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);

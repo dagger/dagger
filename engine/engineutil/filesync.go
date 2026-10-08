@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 )
 
@@ -91,8 +92,13 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 }
 
 func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create host file network recorder: %w", err)
+	}
+
 	msg := filesync.BytesMessage{}
-	err := c.diffcopy(ctx, engine.LocalImportOpts{
+	err = c.diffcopy(ctx, engine.LocalImportOpts{
 		Path:               path,
 		ReadSingleFileOnly: true,
 		MaxFileSize:        MaxFileContentsChunkSize,
@@ -127,6 +133,22 @@ func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsP
 		return nil, fmt.Errorf("failed to stat path: %w", err)
 	}
 	return &msg, nil
+}
+
+// RealCallerHostPath returns the absolute path of the given path on the
+// caller's host, with every symlink resolved.
+func (c *Client) RealCallerHostPath(ctx context.Context, path string) (string, error) {
+	msg := fsutiltypes.Stat{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path:              path,
+		StatPathOnly:      true,
+		StatReturnAbsPath: true,
+		StatResolvePath:   true,
+	}, &msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat path: %w", err)
+	}
+	return msg.Path, nil
 }
 
 func (c *Client) SearchCallerHostPath(ctx context.Context, dir string, opts *engine.LocalSearchOpts) ([]engine.LocalSearchResult, error) {
@@ -205,6 +227,14 @@ func (c *Client) LocalFSExport(
 	if !caller.Supports(method) {
 		return fmt.Errorf("method %s not supported by the client", method)
 	}
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	ctx, err = enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return fmt.Errorf("create directory export network recorder: %w", err)
+	}
 
 	ctx = engine.LocalExportOpts{
 		Path:        destPath,
@@ -222,10 +252,6 @@ func (c *Client) LocalFSExport(
 	// fails, surfacing as a labeled progress row with a climbing byte count
 	// (the receiver only requests changed files, so the total is unknown
 	// and an up-to-date destination transfers nothing).
-	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
-	defer func() {
-		tracing.FinishWithError(span, rerr)
-	}()
 	download := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
 	defer download.Finish()
 
@@ -268,6 +294,14 @@ func (c *Client) LocalFileExport(
 	if err != nil {
 		return fmt.Errorf("failed to stat file: %w", err)
 	}
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	ctx, err = enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return fmt.Errorf("create file export network recorder: %w", err)
+	}
 
 	ctx = engine.LocalExportOpts{
 		Path:               destPath,
@@ -288,10 +322,6 @@ func (c *Client) LocalFileExport(
 	defer diffCopyClient.CloseSend()
 
 	// the file size is known up front, so this renders as a 1-D track
-	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
-	defer func() {
-		tracing.FinishWithError(span, rerr)
-	}()
 	download := bkcache.NewProgressTracker(ctx, "bytes", stat.Size(), "bytes")
 	defer download.Finish()
 
@@ -362,6 +392,14 @@ func (c *Client) ioReaderExport(ctx context.Context, r io.Reader, opts engine.Lo
 	defer func() {
 		slog.TraceContext(ctx, "finished exporting bytes", "err", rerr)
 	}()
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return fmt.Errorf("create reader export network recorder: %w", err)
+	}
 
 	ctx = opts.AppendToOutgoingContext(ctx)
 
@@ -376,10 +414,6 @@ func (c *Client) ioReaderExport(ctx context.Context, r io.Reader, opts engine.Lo
 	defer diffCopyClient.CloseSend()
 
 	// the reader's size is unknown, so this renders as a climbing byte count
-	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
-	defer func() {
-		tracing.FinishWithError(span, rerr)
-	}()
 	download := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
 	defer download.Finish()
 	var sent int64

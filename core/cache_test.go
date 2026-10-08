@@ -81,6 +81,10 @@ func (m *cacheVolumeTestSnapshotManager) SnapshotSize(ctx context.Context, snaps
 	return size, nil
 }
 
+func (*cacheVolumeTestSnapshotManager) SnapshotParent(context.Context, string) (string, error) {
+	return "", nil
+}
+
 func (*cacheVolumeTestSnapshotManager) SnapshotRecordMetadata(context.Context, string) (bkcache.SnapshotRecordMetadata, bool, error) {
 	panic("unexpected SnapshotRecordMetadata call")
 }

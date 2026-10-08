@@ -94,3 +94,40 @@ name = "checkout"
 	_, err = UpdateConfigBytesAt(context.Background(), data, cfg, "nested")
 	require.ErrorContains(t, err, "conflict in name")
 }
+
+func TestModuleScopeLocalClients(t *testing.T) {
+	cfg := &Config{SDKs: map[string]SDKEntry{
+		"go": {Scopes: map[string]SDKScope{
+			"app": {IsModule: true, Clients: []string{"./lib", "../shared", "github.com/example/remote@v1", "../../outside"}},
+			"lib": {IsModule: true, Clients: []string{"/nested/lib2"}},
+			"cli": {Clients: []string{"./lib"}},
+		}},
+		"python": {Scopes: map[string]SDKScope{
+			"./app": {IsModule: true, Clients: []string{"./lib", "./py"}},
+		}},
+	}}
+	require.Equal(t, map[string][]string{
+		"nested/app": {"nested/lib", "nested/py", "shared"},
+		"nested/lib": {"nested/lib2"},
+	}, ModuleScopeLocalClients(cfg, "nested"))
+}
+
+func TestModuleScopeGitClients(t *testing.T) {
+	cfg := &Config{SDKs: map[string]SDKEntry{
+		"go": {Scopes: map[string]SDKScope{
+			"app": {IsModule: true, Clients: []string{"./lib", "github.com/example/remote@v1", "https://gitlab.com/org/repo.git/mod"}},
+			"lib": {IsModule: true, Clients: []string{"/nested/lib2"}},
+			"cli": {Clients: []string{"github.com/example/cli-only"}},
+		}},
+		"python": {Scopes: map[string]SDKScope{
+			"./app": {IsModule: true, Clients: []string{"github.com/example/remote@v1", "git@github.com:example/ssh.git"}},
+		}},
+	}}
+	require.Equal(t, map[string][]string{
+		"nested/app": {"git@github.com:example/ssh.git", "github.com/example/remote@v1", "https://gitlab.com/org/repo.git/mod"},
+	}, ModuleScopeGitClients(cfg, "nested"))
+	require.Equal(t, map[string][]string{
+		"nested/app": {"nested/lib"},
+		"nested/lib": {"nested/lib2"},
+	}, ModuleScopeLocalClients(cfg, "nested"), "git refs must stay out of the local clients")
+}

@@ -1584,6 +1584,21 @@ func (fe *frontendPretty) newTestView(root dagui.SpanID, scopeName string) *Test
 	return tv
 }
 
+// flushTestViews applies the test view updates deferred since the last frame:
+// one full pass if a span batch or resize marked testsDirty, else one pass up
+// from every span logged to. Render calls it once per frame, so a frame costs
+// one pass however many batches arrived before it.
+func (fe *frontendPretty) flushTestViews() {
+	switch {
+	case fe.testsDirty:
+		fe.updateTestViews()
+	case len(fe.testLogSpans) > 0:
+		fe.updateTestViewsForLogs(fe.testLogSpans)
+	}
+	fe.testsDirty = false
+	clear(fe.testLogSpans)
+}
+
 func (fe *frontendPretty) updateTestViews() {
 	if fe.fullscreenTests != nil {
 		fe.fullscreenTests.Update()
@@ -1600,10 +1615,48 @@ func (fe *frontendPretty) updateTestViews() {
 	for _, view := range fe.testSpanChildren {
 		view.UpdateAll()
 	}
-	for id, st := range fe.spanTrees {
-		span := fe.db.Spans.Map[id]
-		if span != nil && (span.CheckName != "" || span.LLMTool != "") {
-			st.Update()
+	for _, st := range fe.testOwnerTrees {
+		st.Update()
+	}
+}
+
+// updateTestViewsForLogs is updateTestViews for a log batch: logs never change
+// which tests exist, only the output shown for a case, and a span's logs only
+// show on its own row, on the ancestor they roll up into, and in test views
+// rooted above it (every case lives beneath its view's root). So only what
+// sits on the path from each logged span to the root needs re-rendering, plus
+// the global views. A batch then costs the depth of the spans it touched, not
+// the size of the session, and leaves every unrelated row's render cache
+// intact.
+func (fe *frontendPretty) updateTestViewsForLogs(spanIDs map[dagui.SpanID]struct{}) {
+	if fe.fullscreenTests != nil {
+		fe.fullscreenTests.Update()
+	}
+	if fe.orphanTests != nil {
+		fe.orphanTests.Update()
+	}
+	if tv := fe.testViews[dagui.SpanID{}]; tv != nil {
+		tv.Update()
+	}
+	var path []dagui.SpanID
+	for logID := range spanIDs {
+		path = path[:0]
+		for id := logID; id.IsValid(); {
+			path = append(path, id)
+			if tv := fe.testViews[id]; tv != nil {
+				tv.Update()
+			}
+			if st := fe.testOwnerTrees[id]; st != nil {
+				st.Update()
+			}
+			span := fe.db.Spans.Map[id]
+			if span == nil {
+				break
+			}
+			id = span.ParentID
+		}
+		for _, view := range fe.testSpanChildren {
+			view.updateForLogs(path)
 		}
 	}
 }
@@ -2288,6 +2341,26 @@ func (v *TestSpanChildrenView) UpdateAll() {
 	}
 }
 
+// updateForLogs re-renders the rows in this view that can show the logs of
+// path[0], given its path to the root: its own row, and the ancestor its logs
+// roll up into. Rows usually sit beneath the view's root, but causal spans are
+// inlined from elsewhere in the trace, so the whole path is checked.
+func (v *TestSpanChildrenView) updateForLogs(path []dagui.SpanID) {
+	updated := false
+	for _, id := range path {
+		if st := v.scope.spanTrees[id]; st != nil {
+			st.Update()
+			updated = true
+		}
+	}
+	if updated {
+		v.Update()
+		if v.container != nil {
+			v.container.Update()
+		}
+	}
+}
+
 func (fe *frontendPretty) testSpanChildrenView(span *dagui.Span) tuist.Component {
 	if span == nil || !span.ID.IsValid() {
 		return nil
@@ -2340,6 +2413,7 @@ func (v *TestSpanChildrenView) sync() bool {
 	}
 
 	children := make([]tuist.Component, 0, len(rowsView.Body))
+	v.scope.treeSync.begin()
 	for i, tree := range rowsView.Body {
 		st := v.fe.getOrCreateSpanTreeInScope(tree.Span.ID, &v.scope)
 		st.parent = nil
@@ -2347,6 +2421,7 @@ func (v *TestSpanChildrenView) sync() bool {
 		v.fe.syncTreeNodeInScope(st, treePrefix{}, &v.scope)
 		children = append(children, st)
 	}
+	pruneSpanTrees(v.scope.spanTrees, &v.scope.treeSync, nil)
 
 	if !sameComponents(v.container.Children, children) {
 		v.container.Children = children

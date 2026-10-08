@@ -1,0 +1,6 @@
+kind: Changed
+body: Reuse anonymous Git advertisements within a session to avoid listing public remote refs twice.
+time: 2026-09-30T12:40:00-07:00
+custom:
+    Author: grouville
+    PR: "14382"

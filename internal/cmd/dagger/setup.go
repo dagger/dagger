@@ -7,7 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 	toml "github.com/pelletier/go-toml"
@@ -98,7 +99,7 @@ func clearSetupCloudLoginPromptPreference() error {
 // migrationStepWarnings collects the warnings attached to the migration's
 // steps. With an empty changeset these are the only signal a legacy config was
 // deliberately skipped rather than absent.
-func migrationStepWarnings(ctx context.Context, migration *dagger.WorkspaceMigration) ([]string, error) {
+func migrationStepWarnings(ctx context.Context, migration *core.WorkspaceMigration) ([]string, error) {
 	steps, err := migration.Steps(ctx)
 	if err != nil {
 		return nil, err
@@ -116,7 +117,7 @@ func migrationStepWarnings(ctx context.Context, migration *dagger.WorkspaceMigra
 
 // currentWorkspaceExportPath derives the local workspace root from its file
 // address and workspace-relative cwd.
-func currentWorkspaceExportPath(ctx context.Context, ws *dagger.Workspace) (string, error) {
+func currentWorkspaceExportPath(ctx context.Context, ws *core.Workspace) (string, error) {
 	cwd, err := ws.Cwd(ctx)
 	if err != nil {
 		return "", fmt.Errorf("workspace cwd: %w", err)

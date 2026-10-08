@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"testing"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -32,7 +34,7 @@ func TestAgents(t *testing.T) {
 
 // installAgents mounts the agents testdata and installs the named modules into a
 // fresh /work/modules/app workspace.
-func installAgents(t *testctx.T, c *dagger.Client, names ...string) (*dagger.Container, error) {
+func installAgents(t *testctx.T, c *dagger.Client, names ...string) (*core.Container, error) {
 	env, err := specificTestEnv(t, c, "agents")
 	if err != nil {
 		return nil, err
@@ -44,11 +46,11 @@ func installAgents(t *testctx.T, c *dagger.Client, names ...string) (*dagger.Con
 	return env.WithWorkdir("app").WithNewFile("dagger.toml", toml), nil
 }
 
-func agentFixtureWorkspace(container *dagger.Container) *dagger.Workspace {
-	return container.Directory("/work").AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "modules/app"})
+func agentFixtureWorkspace(container *core.Container) *core.Workspace {
+	return container.Directory("/work").AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "modules/app"})
 }
 
-func agentFixtureTools(ctx context.Context, t *testctx.T, c *dagger.Client, ws *dagger.Workspace, selection *dagger.Artifacts) (string, error) {
+func agentFixtureTools(ctx context.Context, t *testctx.T, c *dagger.Client, ws *core.Workspace, selection *core.Artifacts) (string, error) {
 	t.Helper()
 	llm, err := composeArtifactAgents(ctx, c, ws, selection)
 	if err != nil {
@@ -64,14 +66,14 @@ func (AgentsSuite) TestListAcrossModules(ctx context.Context, t *testctx.T) {
 
 	out, err := modGen.With(daggerExec("agent", "-l", "-f=link")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "dag+expertise://editor/agent")
+	require.Contains(t, out, "dag+expertise://?expertise=editor/agent")
 	// godoc's base argument is named `llm`, not `base`; it must still be
 	// discovered, since the base is matched by type rather than name.
-	require.Contains(t, out, "dag+expertise://godoc/agent")
+	require.Contains(t, out, "dag+expertise://?expertise=godoc/agent")
 	out, err = modGen.With(daggerExec("list", "expertise", "-f=link")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "dag+expertise://editor/agent")
-	require.Contains(t, out, "dag+expertise://godoc/agent")
+	require.Contains(t, out, "dag+expertise://?expertise=editor/agent")
+	require.Contains(t, out, "dag+expertise://?expertise=godoc/agent")
 }
 
 // TestSDKAgents covers the @agent marker in the SDKs that carry their own
@@ -94,7 +96,7 @@ func (AgentsSuite) TestSDKAgents(ctx context.Context, t *testctx.T) {
 
 			out, err := modGen.With(daggerExec("agent", "-l", "-f=link")).CombinedOutput(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "dag+expertise://"+tc.module+"/agent")
+			require.Contains(t, out, "dag+expertise://?expertise="+tc.module+"/agent")
 
 			out, err = agentFixtureTools(ctx, t, c, agentFixtureWorkspace(modGen), nil)
 			require.NoError(t, err)
@@ -112,8 +114,8 @@ func (AgentsSuite) TestSelection(ctx context.Context, t *testctx.T) {
 
 	out, err := modGen.With(daggerExec("agent", "-l", "-f=link", "editor")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "dag+expertise://editor/agent")
-	require.NotContains(t, out, "dag+expertise://godoc/agent")
+	require.Contains(t, out, "dag+expertise://?expertise=editor/agent")
+	require.NotContains(t, out, "dag+expertise://?expertise=godoc/agent")
 }
 
 func (AgentsSuite) TestNestedDiscovery(ctx context.Context, t *testctx.T) {
@@ -125,7 +127,7 @@ func (AgentsSuite) TestNestedDiscovery(ctx context.Context, t *testctx.T) {
 	// Nested.tools; the rollup recurses through functions, so it is discoverable.
 	out, err := modGen.With(daggerExec("agent", "-l", "-f=link")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "dag+expertise://nested/tools/agent")
+	require.Contains(t, out, "dag+expertise://?expertise=nested/tools/agent")
 }
 
 func (AgentsSuite) TestValidationRejectsExtraRequiredArg(ctx context.Context, t *testctx.T) {
@@ -360,7 +362,7 @@ func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.C
 	))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLoadWorkspaceModules())
-	composed, err := composeArtifactAgents(ctx, c, c.CurrentWorkspace(), nil)
+	composed, err := composeArtifactAgents(ctx, c, core.NewQuery(c).CurrentWorkspace(), nil)
 	require.NoError(t, err)
 	baseline, err := composed.Tools(ctx)
 	require.NoError(t, err)
@@ -370,7 +372,7 @@ func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.C
 	// A tool edit advances the bound Workspace without recomposing the LLM. An
 	// invalid edit must not be compiled by ordinary tool listing, so all tools
 	// from the composed schema remain available for repair.
-	broken := c.CurrentWorkspace().WithNewFile("modules/editor/main.dang", "type Editor {")
+	broken := core.NewQuery(c).CurrentWorkspace().WithNewFile("modules/editor/main.dang", "type Editor {")
 	tools, err := composed.WithWorkspace(broken).Tools(ctx)
 	require.NoError(t, err)
 	require.Equal(t, baseline, tools)

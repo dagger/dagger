@@ -151,16 +151,9 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		{path: consts.DaggerInitPath, file: build.daggerInit()},
 		{path: consts.TiniPath, file: build.Init(), fileOpts: []dagger.ContainerWithFileOpts{{Permissions: 0o755}}},
 	}
-	qemuBins, err := build.qemuBins(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch qemu binaries: %w", err)
-	}
-	for _, bin := range qemuBins {
-		name, err := bin.Name(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get name of binary: %w", err)
-		}
-		bins = append(bins, binAndPath{path: filepath.Join("/usr/local/bin", name), file: bin})
+	qemuDir, qemuNames := build.qemuBins()
+	for _, name := range qemuNames {
+		bins = append(bins, binAndPath{path: filepath.Join("/usr/local/bin", name), file: qemuDir.File(name)})
 	}
 	for _, bin := range build.cniPlugins() {
 		name, err := bin.Name(ctx)
@@ -293,24 +286,6 @@ func (build *Builder) sshfsBin() *dagger.File {
 		WithExec([]string{"meson", "setup", "build", "--buildtype=release"}).
 		WithExec([]string{"meson", "compile", "-C", "build"}).
 		File("/src/build/sshfs")
-}
-
-func (build *Builder) qemuBins(ctx context.Context) ([]*dagger.File, error) {
-	dir := dag.
-		Container(dagger.ContainerOpts{Platform: build.platform}).
-		From(consts.QemuBinImage).
-		Rootfs()
-
-	binNames, err := dir.Entries(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list qemu binaries: %w", err)
-	}
-
-	var bins []*dagger.File
-	for _, binName := range binNames {
-		bins = append(bins, dir.File(binName))
-	}
-	return bins, nil
 }
 
 func (build *Builder) cniPlugins() (bins []*dagger.File) {

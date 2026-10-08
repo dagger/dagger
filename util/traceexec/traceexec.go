@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -32,6 +33,8 @@ func ExecOutput(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOptio
 		cmd.Stderr = io.MultiWriter(stdio.Stderr, errBuf)
 	}
 
+	finishNetwork := enginetelemetry.PrepareCommandNetwork(ctx, cmd)
+	defer finishNetwork()
 	err := cmd.Run()
 	stdout = strings.TrimSpace(outBuf.String())
 	stderr = strings.TrimSpace(errBuf.String())

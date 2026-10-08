@@ -107,7 +107,8 @@ func AroundFunc(
 	// exactly once), and older CLIs read nothing else. The engine exports call
 	// spans on a protected lane that never drops them on overflow and retries
 	// failed exports, so the span copy is a durable delivery, settled per
-	// target like a payload log.
+	// target like a payload log. Frames too large for a span attribute (see
+	// maxSpanCallPayloadBytes) go over the payload log lane instead.
 	callAttr, callOnSpan := callPayloadAttr(ctx, spanName, req.ResultCall)
 	if callOnSpan {
 		attrs = append(attrs, callAttr)
@@ -170,7 +171,11 @@ func AroundFunc(
 	// skip the closure walk below.
 	rootClaimed := claimCallPayload(payloadKeys, callDigest.String())
 
-	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
+	startCtx := ctx
+	if plumbing, ok := moduleProcessPlumbingParent(ctx, spanName, req.Field); ok {
+		startCtx = trace.ContextWithSpanContext(ctx, plumbing)
+	}
+	ctx, span := Tracer(ctx).Start(startCtx, spanName, trace.WithAttributes(attrs...))
 	initCacheEvidence(span, req)
 
 	// Fill any gaps in this call's recipe closure over the payload log lane.
@@ -197,9 +202,51 @@ func AroundFunc(
 	}
 }
 
+type moduleProcessRequestKey struct{}
+
+type moduleProcessRequest struct {
+	plumbingSpan trace.SpanContext
+	requestSpan  trace.SpanID
+}
+
+// WithModuleProcessRequest marks a request from a module process whose
+// function call keeps its plumbing in plumbingSpan. The current span of ctx
+// must be the request's own span: only the request's top-level calls move.
+func WithModuleProcessRequest(ctx context.Context, plumbingSpan trace.SpanContext) context.Context {
+	return context.WithValue(ctx, moduleProcessRequestKey{}, moduleProcessRequest{
+		plumbingSpan: plumbingSpan,
+		requestSpan:  trace.SpanContextFromContext(ctx).SpanID(),
+	})
+}
+
+// moduleProcessPlumbingParent reports where a module process's top-level call
+// belongs when it is plumbing rather than function body: serveModule loads a
+// dependency, and engine-private calls (such as _implementationScoped when the
+// next request installs that dependency) are machinery. Calls nested in a
+// body call stay where they are.
+func moduleProcessPlumbingParent(ctx context.Context, spanName, field string) (trace.SpanContext, bool) {
+	req, ok := ctx.Value(moduleProcessRequestKey{}).(moduleProcessRequest)
+	if !ok || trace.SpanContextFromContext(ctx).SpanID() != req.requestSpan {
+		return trace.SpanContext{}, false
+	}
+	if spanName != "Query.serveModule" && !strings.HasPrefix(field, "_") {
+		return trace.SpanContext{}, false
+	}
+	return req.plumbingSpan, true
+}
+
+// maxSpanCallPayloadBytes caps the encoded (base64) size of a frame carried on
+// its span as dagger.io/dag.call. A span is exported whole, so one oversized
+// attribute (e.g. a Query.blob call with an inline multi-MiB literal) can
+// push a single span past the 64 MiB OTLP frame limit and fail its export
+// batch. Larger frames ride the payload log lane instead, as raw proto bytes
+// without base64's 4/3 inflation.
+const maxSpanCallPayloadBytes = 1 << 20
+
 // callPayloadAttr encodes frame as the dagger.io/dag.call span attribute. ok is
-// false when the frame cannot be built or encoded; the call then has no frame
-// on its span and its payload falls back to the log lane.
+// false when the frame cannot be built or encoded, or when its encoding exceeds
+// maxSpanCallPayloadBytes; the call then has no frame on its span and its
+// payload falls back to the log lane.
 func callPayloadAttr(ctx context.Context, spanName string, frame *dagql.ResultCall) (attribute.KeyValue, bool) {
 	callPB, err := frame.CallPB(ctx)
 	if err != nil {
@@ -209,6 +256,9 @@ func callPayloadAttr(ctx context.Context, spanName string, frame *dagql.ResultCa
 	encoded, err := callPB.Encode()
 	if err != nil {
 		slog.WarnContext(ctx, "failed to encode call", "field", spanName, "err", err)
+		return attribute.KeyValue{}, false
+	}
+	if len(encoded) > maxSpanCallPayloadBytes {
 		return attribute.KeyValue{}, false
 	}
 	return attribute.String(telemetry.DagCallAttr, encoded), true

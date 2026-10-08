@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/gitref"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
 )
@@ -215,7 +216,9 @@ func cloudRerunTargets(checks []cloudapi.Check) ([]cloudapi.Check, error) {
 		var targets []cloudapi.Check
 		var missing []string
 		for _, name := range cloudRerunChecks {
-			if c, ok := byName[name]; ok {
+			// Accept the dag:// address the trace suggests, so the re-run command
+			// it prints works as-is. Cloud check names carry no scheme.
+			if c, ok := byName[stripDAGScheme(name)]; ok {
 				targets = append(targets, c)
 			} else {
 				missing = append(missing, name)
@@ -245,6 +248,19 @@ func cloudRerunTargets(checks []cloudapi.Check) ([]cloudapi.Check, error) {
 		return nil, errNoCloudRerunTargets
 	}
 	return failed, nil
+}
+
+// stripDAGScheme returns a check name's dag:// address as the scheme-less name
+// Cloud uses, so --check accepts either form. A non-address name is unchanged.
+func stripDAGScheme(name string) string {
+	if !dagaddress.IsAddress(name) {
+		return name
+	}
+	addr, err := dagaddress.Parse(name)
+	if err != nil {
+		return name
+	}
+	return addr.Path
 }
 
 func cloudCheckNames(checks []cloudapi.Check) []string {

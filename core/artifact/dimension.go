@@ -3,6 +3,7 @@ package artifact
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -34,6 +35,21 @@ func (*Dimension) Type() *ast.Type {
 
 // Dimensions is the set of dimensions in a selected schema scope.
 type Dimensions []*Dimension
+
+// Union combines dimension sets, sorted by identifier.
+func Union(sets ...Dimensions) Dimensions {
+	byID := map[string]*Dimension{}
+	for _, set := range sets {
+		for _, dim := range set {
+			byID[dim.Identifier] = dim
+		}
+	}
+	result := make(Dimensions, 0, len(byID))
+	for _, id := range slices.Sorted(maps.Keys(byID)) {
+		result = append(result, byID[id])
+	}
+	return result
+}
 
 // Names lists selectors from shortest to most qualified. Collection boundaries
 // provide parent identity; their fields are needed in names only on a conflict.

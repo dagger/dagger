@@ -31,6 +31,8 @@ Workflow:
   engine; then re-run your repro with `dagger`.
 - `engineTest(pkg, run)` runs engine tests with their own ephemeral engine (no
   `start` needed), e.g. pkg "./core/integration" with run "TestSuite/TestSub".
+  Add `wcprofCapture: "<name>"` to profile the test engine with wcprof and
+  keep its recording as a named capture (see below).
 - `dumpId(file, ...)` builds and runs the repo's own `cmd/dump-id` against a
   file in your workspace — no engine session needed. `file` is a
   workspace-relative path to a base64 call ID. Modes mirror the command's
@@ -105,7 +107,9 @@ The loop:
      view for "what would make this faster?". Walking back from the end,
      each step takes the child or wait that ran latest and recurses into it,
      following waits into shared work (singleflight joins, lazy results,
-     execs) rather than the waiter's own subtree. Per class it reports
+     execs) rather than the waiter's own subtree, and following a module
+     function's exec into the API requests its nested client made during
+     the process run. Per class it reports
      on-path own time, which sums to the roots' duration: concurrent work
      that never held anything up gets nothing, unlike summed self time.
      Roots are `op`, or every outermost op matching the filters (e.g.
@@ -142,3 +146,45 @@ is replaced), so:
    on either capture.
 
 Captures are lost when the module state resets (e.g. a new session).
+
+### Profiling one command
+
+`wcprofProfile(args, workdir, warmup, name)` is the whole loop in one call,
+for scripts: it builds a fresh engine that records from startup, runs
+`dagger <args>` in `workdir` (mounted at /work; default the workspace), and
+keeps the recording as a capture under `name`. `warmup`, if given, runs
+first and is left out of the capture (e.g. a small call that loads the
+module). No `start`/`wcprofEnable` needed, and the engine is gone afterwards. A
+failing command still yields its capture: check the reported exit code and
+output tail before trusting the numbers. Use the result in the same pipeline: a later statement of a `dagger -c`
+script that refers to a stored result can run the profile again. To report
+on one profile from several statements, export its dump with
+`wcprofDump(capture)` and load it back with `wcprofLoad(dump, name)`, which
+needs no engine:
+
+    engine-lab | wcprof-profile --args "call","my-mod","build" --name before | wcprof-dump | export /tmp/before.dump
+    engine-lab | wcprof-load --dump $(host | file /tmp/before.dump) --name before | wcprof-report --view critpath --class "^my-mod:" --kind call
+
+### Profiling engine tests and benchmarks
+
+`engineTest(pkg, run, wcprofCapture: "<name>")` runs the tests through
+engine-dev's `testProfile`: the ephemeral test engine records from startup
+(`_DAGGER_WCPROF=1`), and after `go test` exits its dump is kept as a capture
+under `<name>`, alongside the ones `wcprofCapture` takes from the `start`
+engine. No `start`/`wcprofEnable` needed. The result reports the test verdict
+and exit code, the output tail, and the capture summary; a failing run still
+yields its capture, so check the verdict before trusting the numbers.
+
+- Benchmark-style integration tests skip unless `_DAGGER_BENCH` is set;
+  profiled runs set it, so select them with `run`, e.g.
+  `engineTest(pkg: "./core/integration", run: "TestLLM/TestBenchChangesetApply",
+  wcprofCapture: "before")`.
+- The capture holds the whole test engine's work — setup, every client the
+  test opened, teardown. Root reports at the op you care about (e.g.
+  `critpath`/`tree` with `class` matching the tool's or function's call op),
+  or scope them with `client`.
+- To compare code versions, edit the source and run `engineTest` again with
+  another name (each run builds a fresh engine from the current workspace),
+  then `wcprofReport(view: "compare", capture: "after", against: "before")`.
+  An identical re-run in one session may be served from engine-dev's session
+  cache, returning the same capture.

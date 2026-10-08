@@ -21,7 +21,8 @@ Three event types, written by hooks at the engine's blocking choke points:
   waiters, service starts, exec completion), not inferred from span nesting.
 - **links**: non-blocking correlations, most importantly "exec op X hosts
   nested client Y" so module-function calls back into the API are stitched
-  under the exec that made them.
+  under the exec that made them (wcprof-report puts them under the exec's
+  `exec.processRun`).
 
 Current hook points:
 
@@ -35,8 +36,16 @@ Current hook points:
   triggering and joining ops.
 - `engine/engineutil/executor.go`: one `exec` op per container run, one
   `exec_phase` op per setup phase (`exec.setupNetwork`, `exec.setupRootfs`,
-  ..., `exec.runContainer`), plus a split of `exec.containerStart`
-  (engine overhead) vs `exec.processRun` (user work).
+  ..., `exec.runContainer`), plus a split of the container run into
+  `exec.containerStart` (engine overhead up to launching runc),
+  `exec.runtimeStart` (runc creating the container, up to the pid file it
+  writes once the workload is released) and `exec.processRun` (user work).
+  The exec op is linked to every nested client the container connects.
+- `core/lazy_state.go`, `dagql/cache.go syncResultSnapshotLeases`: lock waits
+  on a lazy group's body (`core.lazyGroupOnce.mu`), the whole-op latch
+  (`core.LazyState.LazyMu`) and a result's snapshot lease sync
+  (`dagql.sharedResult.leaseSyncMu`), recorded only when the lock is
+  contended (`wcprof.Lock`).
 - `core/container_exec.go`: cache-volume lock waits, mount preparation and
   output-commit phases, and the wait on the executor.
 - `core/services.go`: `service_start` ops with singleflight wait edges.

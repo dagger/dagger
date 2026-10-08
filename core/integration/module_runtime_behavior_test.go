@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 func (ModuleSuite) TestSecretNested(ctx context.Context, t *testctx.T) {
@@ -198,7 +199,7 @@ func (*Test) MakeSecretID(ctx context.Context) (string, error) {
 		require.NoError(t, err)
 
 		c1 := connect(ctx, t)
-		require.NoError(t, c1.ModuleSource(tmpdir).AsModule().Serve(ctx))
+		require.NoError(t, core.NewQuery(c1).ModuleSource(tmpdir).AsModule().Serve(ctx))
 
 		res1, err := testutil.QueryWithClient[struct {
 			Test struct {
@@ -209,26 +210,26 @@ func (*Test) MakeSecretID(ctx context.Context) (string, error) {
 		secretID := res1.Test.MakeSecretID
 		require.NotEmpty(t, secretID)
 
-		sameSession, err := dagger.Ref[*dagger.Secret](c1, dagger.ID(secretID)).Plaintext(ctx)
+		sameSession, err := core.Ref[*core.Secret](core.NewQuery(c1), core.ID(secretID)).Plaintext(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "asdfasdf", sameSession)
 
 		c2 := connect(ctx, t)
-		require.NoError(t, c2.ModuleSource(tmpdir).AsModule().Serve(ctx))
+		require.NoError(t, core.NewQuery(c2).ModuleSource(tmpdir).AsModule().Serve(ctx))
 
 		// Result-ID loads check the session's bound resources, so the
 		// request is refused at load time instead of being served and failing
 		// later at plaintext resolution.
-		_, err = dagger.Ref[*dagger.Secret](c2, dagger.ID(secretID)).Plaintext(ctx)
+		_, err = core.Ref[*core.Secret](core.NewQuery(c2), core.ID(secretID)).Plaintext(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "has not bound the session resources this result requires")
 
 		require.NoError(t, c1.Close())
 
 		c3 := connect(ctx, t)
-		require.NoError(t, c3.ModuleSource(tmpdir).AsModule().Serve(ctx))
+		require.NoError(t, core.NewQuery(c3).ModuleSource(tmpdir).AsModule().Serve(ctx))
 
-		_, err = dagger.Ref[*dagger.Secret](c3, dagger.ID(secretID)).Plaintext(ctx)
+		_, err = core.Ref[*core.Secret](core.NewQuery(c3), core.ID(secretID)).Plaintext(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "has not bound the session resources this result requires")
 	})
@@ -560,7 +561,7 @@ func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("dependency contextual arg", func(ctx context.Context, t *testctx.T) {
-		getModGen := func(c *dagger.Client) *dagger.Container {
+		getModGen := func(c *dagger.Client) *core.Container {
 			return moduleFixture(t, c, "go/runtime-contextual-arg-dep")
 		}
 

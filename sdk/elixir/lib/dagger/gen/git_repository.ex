@@ -98,6 +98,36 @@ defmodule Dagger.GitRepository do
   end
 
   @doc """
+  Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.
+
+  Frozen workspaces retain their captured upstream selection. Does not contact remote servers.
+  """
+  @spec default_remote(t()) :: {:ok, Dagger.GitRemote.t() | nil} | {:error, term()}
+  def default_remote(%__MODULE__{} = git_repository) do
+    query_builder =
+      git_repository.query_builder |> QB.select("defaultRemote") |> QB.select("id")
+
+    case Client.execute(git_repository.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.GitRemote{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("GitRemote"),
+           client: git_repository.client
+         }}
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
   Returns details for HEAD.
   """
   @spec head(t(), [{:no_lock, boolean() | nil}]) :: Dagger.GitRef.t()
@@ -159,6 +189,43 @@ defmodule Dagger.GitRepository do
       query_builder: query_builder,
       client: git_repository.client
     }
+  end
+
+  @doc """
+  Look up a remote by name. Fails when the remote does not exist.
+  """
+  @spec remote(t(), String.t()) :: Dagger.GitRemote.t()
+  def remote(%__MODULE__{} = git_repository, name) do
+    query_builder =
+      git_repository.query_builder |> QB.select("remote") |> QB.put_arg("name", name)
+
+    %Dagger.GitRemote{
+      query_builder: query_builder,
+      client: git_repository.client
+    }
+  end
+
+  @doc """
+  List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers.
+  """
+  @spec remotes(t()) :: {:ok, [Dagger.GitRemote.t()]} | {:error, term()}
+  def remotes(%__MODULE__{} = git_repository) do
+    query_builder =
+      git_repository.query_builder |> QB.select("remotes") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(git_repository.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.GitRemote{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("GitRemote"),
+           client: git_repository.client
+         }
+       end}
+    end
   end
 
   @doc """
@@ -240,6 +307,8 @@ defmodule Dagger.GitRepository do
   Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
 
   The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+
+  When the receiver is a remote repository (or was derived from one), that remote is retained with its authentication: refs the supplied storage does not contain resolve through it.
   """
   @spec with_contents(t(), Dagger.Directory.t()) :: Dagger.GitRepository.t()
   def with_contents(%__MODULE__{} = git_repository, directory) do

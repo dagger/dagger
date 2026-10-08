@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -20,9 +21,9 @@ import (
 func testOwnership(
 	t *testctx.T,
 	c *dagger.Client,
-	addContent func(ctr *dagger.Container, name, owner string) *dagger.Container,
+	addContent func(ctr *core.Container, name, owner string) *core.Container,
 ) {
-	ctr := c.Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"adduser", "-D", "inherituser"}).
 		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 		WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
@@ -87,9 +88,9 @@ func testInheritOwnership(
 	ctx context.Context,
 	t *testctx.T,
 	c *dagger.Client,
-	addContent func(ctr *dagger.Container, name string) *dagger.Container,
+	addContent func(ctr *core.Container, name string) *core.Container,
 ) {
-	ctr := c.Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 		WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
 		WithUser("auser:agroup").

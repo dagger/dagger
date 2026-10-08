@@ -639,3 +639,57 @@ func TestMaterializeDeepOverlayAncestors(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "leaf", string(got))
 }
+
+func TestForgetSourceLinksBetweenCopies(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	require.NoError(t, os.MkdirAll(filepath.Join(srcRoot, "A"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(srcRoot, "B"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcRoot, "A", "a"), []byte("A"), 0o644))
+	require.NoError(t, os.Link(filepath.Join(srcRoot, "A", "a"), filepath.Join(srcRoot, "A", "b")))
+	require.NoError(t, os.WriteFile(filepath.Join(srcRoot, "B", "a"), []byte("B"), 0o644))
+
+	mode := os.FileMode(0o640)
+	for _, tc := range []struct {
+		name   string
+		copies [][2]string
+		opts   CopyOptions
+		want   map[string]string
+	}{
+		{
+			// The second copy replaces the destination the first linked.
+			name:   "same file twice",
+			copies: [][2]string{{"/A/a", "/a"}, {"/A/a", "/a"}},
+			opts:   CopyOptions{ReplaceExisting: true},
+			want:   map[string]string{"a": "A"},
+		},
+		{
+			// A/b is A/a's inode, but /a holds B/a's content by then.
+			name:   "replaced link",
+			copies: [][2]string{{"/A/a", "/a"}, {"/B/a", "/a"}, {"/A/b", "/b"}},
+			opts:   CopyOptions{ReplaceExisting: true, Mode: &mode},
+			want:   map[string]string{"a": "B", "b": "A"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dstRoot := filepath.Join(root, strings.ReplaceAll(tc.name, " ", "-"))
+			require.NoError(t, os.Mkdir(dstRoot, 0o755))
+			copier, err := NewCopier(Mount{Root: dstRoot})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, copier.Close())
+			})
+			for _, cp := range tc.copies {
+				copier.ForgetSourceLinks()
+				require.NoError(t, copier.CopyFile(context.Background(), Mount{Root: srcRoot}, cp[0], cp[1], tc.opts))
+			}
+			for name, want := range tc.want {
+				got, err := os.ReadFile(filepath.Join(dstRoot, name))
+				require.NoError(t, err)
+				require.Equal(t, want, string(got))
+			}
+		})
+	}
+}

@@ -478,12 +478,16 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 
 // Construct checks through concrete Check fields. An Artifact.value call has
 // the interface type Node, which cannot supply the identity of a new Check.
-func (*artifactsSchema) remoteCheck(_ context.Context, artifact *core.Artifact, args struct{ Arguments core.JSON }) (*core.Check, error) {
-	return &core.Check{RemoteArtifact: artifact.Clone(), RemoteArguments: args.Arguments}, nil
+func (*artifactsSchema) remoteCheck(ctx context.Context, artifact *core.Artifact, args struct{ Arguments core.JSON }) (*core.Check, error) {
+	address, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
+	if err != nil {
+		return nil, err
+	}
+	return &core.Check{RemoteArtifact: artifact.Clone(), RemoteArguments: args.Arguments, Address: address}, nil
 }
 
-func (*artifactsSchema) failedCheck(_ context.Context, _ *core.Artifact, args struct{ Message string }) (*core.Check, error) {
-	return &core.Check{Failure: args.Message}, nil
+func (*artifactsSchema) failedCheck(ctx context.Context, _ *core.Artifact, args struct{ Message string }) (*core.Check, error) {
+	return &core.Check{Failure: args.Message, Address: core.CheckNameFromContext(ctx)}, nil
 }
 
 // Retain object arguments while the generator remains unevaluated.
@@ -712,22 +716,26 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		}
 		nodes = append(nodes, sdkNodes...)
 	}
+	// Names resolve against every loaded node, including those the include
+	// patterns skip.
+	var loaded []*core.Artifact
 	for _, node := range nodes {
-		match, err := matchWorkspaceInclude(ctx, node, include)
-		if err != nil {
-			return nil, err
-		}
-		if !match {
-			continue
-		}
 		path := node.CommandPath().CliCase()
 		if len(path) == 0 {
 			path = node.Path().CliCase()
 		}
-		result.Entries = append(result.Entries, &core.Artifact{
+		entry := &core.Artifact{
 			ModuleName: node.Path()[0], Path: path, DimensionKeys: []*core.ArtifactDimensionKey{},
 			Directives: node.Directives, TypeName: node.ObjectType().Name, Node: node, Workspace: parent,
-		})
+		}
+		loaded = append(loaded, entry)
+		match, err := matchWorkspaceInclude(ctx, node, include)
+		if err != nil {
+			return nil, err
+		}
+		if match {
+			result.Entries = append(result.Entries, entry)
+		}
 	}
 	seenFailures := map[string]bool{}
 	for _, failure := range failures {
@@ -735,11 +743,15 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			continue
 		}
 		seenFailures[failure.Name] = true
-		result.Entries = append(result.Entries, &core.Artifact{
+		entry := &core.Artifact{
 			ModuleName: failure.Name, Path: []string{failure.Name, "load"}, DimensionKeys: []*core.ArtifactDimensionKey{},
 			Directives: []string{"check"}, TypeName: "Check", LoadFailure: &failure, Workspace: parent,
-		})
+		}
+		loaded = append(loaded, entry)
+		result.Entries = append(result.Entries, entry)
 	}
+	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
+	result.NameEntries()
 	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
 	if err := validateArtifactPaths(result.Entries); err != nil {
 		return nil, err
@@ -859,7 +871,9 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		results[i] = result
 		var attrs []attribute.KeyValue
 		localCheck := artifact.TypeName == "Check" && (!md.EnableCloudScaleOut || artifact.LoadFailure != nil || artifact.Workspace.Self() == nil)
-		if localCheck {
+		if artifact.TypeName == "Check" {
+			// Name every check span by its dag:// address, whether it runs here or
+			// scales out to a cloud engine, so CI suggestions reference the address.
 			attrs = append(attrs, attribute.String(telemetry.CheckNameAttr, uri))
 		}
 		if slices.Contains(artifact.Directives, "generate") {

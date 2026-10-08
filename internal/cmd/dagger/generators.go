@@ -7,6 +7,8 @@ import (
 	"path"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
@@ -64,7 +66,7 @@ var generateCmd = &cobra.Command{
 				defer span.End()
 				slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 				dag := engineClient.Dagger()
-				ws := dag.CurrentWorkspace()
+				ws := core.NewQuery(dag).CurrentWorkspace()
 				all, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, generateRequireLoad)
 				if err != nil {
 					return err
@@ -110,7 +112,7 @@ For an up-to-date check that fails on pending changes, use dagger check --genera
 	return changesetDispositionPrompt, nil
 }
 
-func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.Artifacts, failures []artifactLoadFailure, cmd *cobra.Command, disposition changesetDisposition) (rerr error) {
+func runGenerators(ctx context.Context, dag *dagger.Client, generators *core.Artifacts, failures []artifactLoadFailure, cmd *cobra.Command, disposition changesetDisposition) (rerr error) {
 	previewOut := cmd.ErrOrStderr()
 	if disposition == changesetDispositionNoApply {
 		// The primary span focuses rendering on generators. Attach the
@@ -130,20 +132,20 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 	if err := artifactResultErrorsWithOutput(results); err != nil {
 		return err
 	}
-	changes := make([]*dagger.Changeset, 0, len(results))
+	changes := make([]*core.Changeset, 0, len(results))
 	for _, result := range results {
 		if result.Value == nil || result.Value.Type != "Generator" {
 			return fmt.Errorf("%s did not return a Generator", result.Artifact.URI)
 		}
-		changes = append(changes, dagger.Ref[*dagger.Generator](dag, result.Value.ID).Changeset())
+		changes = append(changes, core.Ref[*core.Generator](core.NewQuery(dag), result.Value.ID).Changeset())
 	}
-	cwd, err := dag.CurrentWorkspace().Cwd(ctx)
+	cwd, err := core.NewQuery(dag).CurrentWorkspace().Cwd(ctx)
 	if err != nil {
 		return err
 	}
 	cwd = strings.Trim(cwd, "/")
 	if cwd != "" && cwd != "." {
-		cfg, err := artifactWorkspaceConfig(ctx, dag.CurrentWorkspace())
+		cfg, err := artifactWorkspaceConfig(ctx, core.NewQuery(dag).CurrentWorkspace())
 		if err != nil {
 			return err
 		}
@@ -156,7 +158,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 		sdkGenerators := map[string]bool{}
 		if len(sdkPaths) > 0 {
 			// Discovery resolves the active entrypoint, including -m overrides.
-			selected := dag.CurrentWorkspace().Artifacts(dagger.WorkspaceArtifactsOpts{Include: sdkPaths}).FilterTypes([]string{"Generator"})
+			selected := core.NewQuery(dag).CurrentWorkspace().Artifacts(core.WorkspaceArtifactsOpts{Include: sdkPaths}).FilterTypes([]string{"Generator"})
 			uris, err := artifactURIs(ctx, dag, selected, false)
 			if err != nil {
 				return err
@@ -169,17 +171,17 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 			if sdkGenerators[results[i].Artifact.URI] {
 				continue
 			}
-			before := dag.Directory().WithDirectory(cwd, changeset.Before())
-			after := dag.Directory().WithDirectory(cwd, changeset.After())
+			before := core.NewQuery(dag).Directory().WithDirectory(cwd, changeset.Before())
+			after := core.NewQuery(dag).Directory().WithDirectory(cwd, changeset.After())
 			changes[i] = after.Changes(before)
 		}
 	}
-	merged := dag.Changeset().WithChangesets(changes, dagger.ChangesetWithChangesetsOpts{OnConflict: dagger.ChangesetsMergeConflictFailEarly})
+	merged := core.NewQuery(dag).Changeset().WithChangesets(changes, core.ChangesetWithChangesetsOpts{OnConflict: core.ChangesetsMergeConflictFailEarly})
 	if err := verifyRegeneratedModules(ctx, dag, merged, failures); err != nil {
 		return err
 	}
-	generated := dag.CurrentWorkspace().WithChanges(merged)
-	_, err = handleWorkspaceResponseWithDisposition(ctx, dag, dag.CurrentWorkspace(), generated, disposition, previewOut)
+	generated := core.NewQuery(dag).CurrentWorkspace().WithChanges(merged)
+	_, err = handleWorkspaceResponseWithDisposition(ctx, dag, core.NewQuery(dag).CurrentWorkspace(), generated, disposition, previewOut)
 	if errors.Is(err, idtui.ErrNonInteractive) {
 		return fmt.Errorf("%w; pass -y/--auto-apply to apply changes, or --no-apply to show them without applying", idtui.ErrNonInteractive)
 	}
@@ -188,11 +190,11 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generators *dagger.A
 
 // Check previously unloadable modules against the complete generated tree.
 // A load failure remains a warning because generation can repair other files.
-func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *dagger.Changeset, failures []artifactLoadFailure) error {
+func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *core.Changeset, failures []artifactLoadFailure) error {
 	if len(failures) == 0 {
 		return nil
 	}
-	ws := dag.CurrentWorkspace()
+	ws := core.NewQuery(dag).CurrentWorkspace()
 	cfg, err := artifactWorkspaceConfig(ctx, ws)
 	if err != nil {
 		return err
@@ -220,7 +222,7 @@ func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *
 		if err != nil {
 			return err
 		}
-		name := strings.TrimSuffix(address.Path, "/load")
+		name := strings.TrimSuffix(address.ArtifactPath(address.Types...), "/load")
 		entry, ok := cfg.Modules[name]
 		if !ok || !workspace.IsLocalRef(entry.Source, "") {
 			continue
@@ -238,10 +240,14 @@ func verifyRegeneratedModules(ctx context.Context, dag *dagger.Client, changes *
 			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 		))
-		remaining, loadErr := artifactLoadFailures(loadCtx, dag, generated.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{name}}))
+		remaining, loadErr := artifactLoadFailures(loadCtx, dag, generated.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{name}}))
 		if loadErr == nil {
 			for _, failure := range remaining {
-				if failure.URI == "dag://"+name+"/load" {
+				address, err := dagaddress.Parse(failure.URI)
+				if err != nil {
+					return err
+				}
+				if address.ArtifactPath(address.Types...) == name+"/load" {
 					loadErr = fmt.Errorf("still fails to load with this run's changes: %s", strings.TrimSuffix(failure.LoadError, "; run `dagger generate` and commit the generated files"))
 					break
 				}

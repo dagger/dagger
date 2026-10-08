@@ -63,6 +63,13 @@ type ExecutionMetadata struct {
 	RedirectStdinPath  string
 	RedirectStdoutPath string
 	RedirectStderrPath string
+	// LogRedirectedOutput keeps redirected stdout/stderr in the exec's logs
+	// too, for API views before v1.0.0. By default a redirected stream goes
+	// only to its file.
+	//
+	// json:"-" like ProfArgs below: core derives it from the exec's opts on
+	// every run, so it must not perturb an exec cache key.
+	LogRedirectedOutput bool `json:"-"`
 
 	SecretEnvNames  []string
 	SecretFilePaths []string
@@ -73,6 +80,13 @@ type ExecutionMetadata struct {
 
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
+
+	// If true, Dagger clients started in the container connect to the engine
+	// as new sessions instead of as nested clients of the caller's session.
+	//
+	// omitempty keeps the serialized form, and therefore the cache keys, of
+	// every other exec unchanged.
+	DaggerInDaggerNewSession bool `json:",omitempty"`
 
 	// ProfArgs is the fully-resolved user command (entrypoint + args), captured
 	// in core at exec-run time BEFORE any engine shim (the QEMU emulator, the
@@ -186,6 +200,7 @@ func (c *Client) Run(
 			Ident:    execIdent,
 			ClientID: callerClientID,
 		})
+		state.profExecOpID = execOp.ID()
 	}
 	// OTel analog of execOp: exec.run nests the container run under
 	// the withExec call_exec span (or the service exec span) via the propagated
@@ -207,6 +222,7 @@ func (c *Client) Run(
 	err := c.run(ctx, state,
 		namedSetupFunc{"setupNetwork", c.setupNetwork},
 		namedSetupFunc{"injectInit", c.injectInit},
+		namedSetupFunc{"injectDaggerCLI", c.injectDaggerCLI},
 		namedSetupFunc{"generateBaseSpec", c.generateBaseSpec},
 		namedSetupFunc{"filterEnvs", c.filterEnvs},
 		namedSetupFunc{"setupRootfs", c.setupRootfs},
@@ -219,6 +235,7 @@ func (c *Client) Run(
 		namedSetupFunc{"enableGPU", c.enableGPU},
 		namedSetupFunc{"createCWD", c.createCWD},
 		namedSetupFunc{"setupNestedClient", c.setupNestedClient},
+		namedSetupFunc{"setupNewSessionEndpoint", c.setupNewSessionEndpoint},
 		namedSetupFunc{"installCACerts", c.installCACerts},
 		namedSetupFunc{"runContainer", c.runContainer},
 	)
@@ -382,9 +399,11 @@ func (c *Client) Exec(ctx context.Context, id string, process executor.ProcessIn
 	// is in the process of being created and check again every 100ms or until
 	// context is canceled.
 	var runcState *runc.Container
+	var execState *execState
 	for {
 		c.runningMu.RLock()
-		execState, ok := c.running[id]
+		var ok bool
+		execState, ok = c.running[id]
 		c.runningMu.RUnlock()
 		if !ok {
 			return fmt.Errorf("container %s not found", id)
@@ -425,6 +444,9 @@ func (c *Client) Exec(ctx context.Context, id string, process executor.ProcessIn
 
 	if len(process.Meta.Env) > 0 {
 		spec.Process.Env = process.Meta.Env
+		if execState.hasDaggerCLI() {
+			spec.Process.Env = appendDaggerCLIToPath(spec.Process.Env)
+		}
 	}
 
 	if process.Meta.User != "" {

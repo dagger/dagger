@@ -446,7 +446,7 @@ type changesetPathsMemo struct {
 
 	// bound memoizes PathCountExceeds' partial walk for the last limit asked
 	// about. The callers that apply a tool's changeset ask the same question
-	// in turn — whether to normalize it to a patch, then whether to show it in
+	// in turn — whether it changes anything, then whether to show it in
 	// full — and shouldn't each mount and walk the delta again.
 	boundMu      sync.Mutex
 	boundLimit   int
@@ -923,6 +923,8 @@ func writeGitDiffPatch(ctx context.Context, root string, pathSpecs []string, out
 	cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
 	cmd.Stdout = rewriter
 	cmd.Stderr = logErr
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
 	runErr := cmd.Run()
 	if flushErr := rewriter.Flush(); flushErr != nil && runErr == nil {
 		return flushErr
@@ -2067,7 +2069,10 @@ func gitCmd(ctx context.Context, dir string, args ...string) *exec.Cmd {
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
-	if output, err := gitCmd(ctx, dir, args...).CombinedOutput(); err != nil {
+	cmd := gitCmd(ctx, dir, args...)
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
+	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git %v: %w: %s", args, err, output)
 	}
 	return nil
@@ -2076,6 +2081,8 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 // runGitOutput runs git and returns its stdout.
 func runGitOutput(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := gitCmd(ctx, dir, args...)
+	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
+	defer finish()
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -2360,4 +2367,222 @@ func toSet(slice []string) map[string]struct{} {
 		set[s] = struct{}{}
 	}
 	return set
+}
+
+const persistedFileLazyKindChangesetPatch = "changeset.asPatch"
+
+// FileChangesetPatchLazy writes a changeset's Git-compatible patch.
+type FileChangesetPatchLazy struct {
+	LazyState
+	Changeset dagql.ObjectResult[*Changeset]
+}
+
+type persistedFileChangesetPatchLazy struct {
+	ChangesetResultID uint64 `json:"changesetResultID"`
+}
+
+func (lazy *FileChangesetPatchLazy) Evaluate(ctx context.Context, file *File) error {
+	return evaluateFileOutput(ctx, &lazy.LazyState, "Changeset.asPatch", file, func(ctx context.Context) (*File, error) {
+		return lazy.Changeset.Self().AsPatch(ctx)
+	})
+}
+
+func (lazy *FileChangesetPatchLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	changeset, err := attachLazyInput(attach, lazy.Changeset, "FileChangesetPatchLazy.Changeset")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Changeset = changeset
+	return []dagql.AnyResult{changeset}, nil
+}
+
+func (lazy *FileChangesetPatchLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	changesetID, err := encodePersistedObjectRef(enc, lazy.Changeset, "changeset patch changeset")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedFileChangesetPatchLazy{ChangesetResultID: changesetID})
+}
+
+func decodeFileChangesetPatchLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*File], error) {
+	var persisted persistedFileChangesetPatchLazy
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted changeset patch lazy: %w", err)
+	}
+	changeset, err := loadPersistedObjectResultByResultID[*Changeset](ctx, dec, persisted.ChangesetResultID, "changeset patch changeset")
+	if err != nil {
+		return nil, err
+	}
+	return &FileChangesetPatchLazy{LazyState: NewLazyState(), Changeset: changeset}, nil
+}
+
+const persistedDirectoryLazyKindMergeChangesets = "changeset.merge"
+
+// DirectoryMergeChangesetsLazy produces the directory obtained by merging
+// Changes into Parent: Changeset.__mergeWithChangeset for one change,
+// __mergeWithChangesets (an octopus merge) for several, and, with Workspace
+// set, __mergeForWorkspaceCommit, which tries the native merge first.
+type DirectoryMergeChangesetsLazy struct {
+	LazyState
+	Parent     dagql.ObjectResult[*Changeset]
+	Changes    []dagql.ObjectResult[*Changeset]
+	OnConflict ChangesetMergeConflict
+	Workspace  bool
+}
+
+type persistedDirectoryMergeChangesetsLazy struct {
+	ParentResultID   uint64                 `json:"parentResultID"`
+	ChangesResultIDs []uint64               `json:"changesResultIDs"`
+	OnConflict       ChangesetMergeConflict `json:"onConflict,omitempty"`
+	Workspace        bool                   `json:"workspace,omitempty"`
+}
+
+// MergeStrategy is the strategy of a merge with one changeset.
+func (proto ChangesetMergeConflict) MergeStrategy() WithChangesetMergeConflict {
+	switch proto {
+	case FailEarlyOnMergeConflict:
+		return FailEarlyOnConflict
+	case LeaveConflictMarkersOnMergeConflict:
+		return LeaveConflictMarkers
+	case PreferOursOnMergeConflict:
+		return PreferOursOnConflict
+	case PreferTheirsOnMergeConflict:
+		return PreferTheirsOnConflict
+	default:
+		return FailOnConflict
+	}
+}
+
+// OctopusMergeStrategy is the strategy of a merge with several changesets,
+// which supports only FAIL_EARLY and FAIL.
+func (proto ChangesetMergeConflict) OctopusMergeStrategy() WithChangesetsMergeConflict {
+	if proto == FailEarlyOnMergeConflict {
+		return FailEarlyOnConflicts
+	}
+	return FailOnConflicts
+}
+
+func (lazy *DirectoryMergeChangesetsLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	op := "Changeset.__mergeWithChangeset"
+	switch {
+	case lazy.Workspace:
+		op = "Changeset.__mergeForWorkspaceCommit"
+	case len(lazy.Changes) > 1:
+		op = "Changeset.__mergeWithChangesets"
+	}
+	return evaluateDirectoryOutput(ctx, &lazy.LazyState, op, dir, func(ctx context.Context) (*Directory, error) {
+		if len(lazy.Changes) == 0 {
+			return nil, fmt.Errorf("merge changesets: no changes")
+		}
+		changes := make([]*Changeset, 0, len(lazy.Changes))
+		for _, change := range lazy.Changes {
+			changes = append(changes, change.Self())
+		}
+		parent := lazy.Parent.Self()
+		switch {
+		case lazy.Workspace:
+			return mergeForWorkspaceCommit(ctx, lazy.Parent, lazy.Changes[0])
+		case len(changes) == 1:
+			return parent.MergeWithChangeset(ctx, changes[0], lazy.OnConflict.MergeStrategy())
+		default:
+			return parent.MergeWithChangesets(ctx, changes, lazy.OnConflict.OctopusMergeStrategy())
+		}
+	})
+}
+
+// mergeForWorkspaceCommit tries the native reconciliation. Unsupported inputs
+// and native failures use the general merge, __mergeWithChangeset with FAIL,
+// and share its output.
+func mergeForWorkspaceCommit(ctx context.Context, working, incoming dagql.ObjectResult[*Changeset]) (*Directory, error) {
+	if dir, supported, err := TryNativeWorkspaceMerge(ctx, working.Self(), incoming.Self()); err != nil || supported {
+		return dir, err
+	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	incomingID, err := incoming.ID()
+	if err != nil {
+		return nil, err
+	}
+	var merged dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, working, &merged, dagql.Selector{Field: "__mergeWithChangeset", Args: []dagql.NamedInput{
+		{Name: "changes", Value: dagql.NewID[*Changeset](incomingID)},
+		{Name: "onConflict", Value: FailOnMergeConflict},
+	}}); err != nil {
+		return nil, err
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, merged); err != nil {
+		return nil, err
+	}
+	return cloneDetachedDirectoryForContainerResult(ctx, merged.Self())
+}
+
+func (lazy *DirectoryMergeChangesetsLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachLazyInput(attach, lazy.Parent, "DirectoryMergeChangesetsLazy.Parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	deps := []dagql.AnyResult{parent}
+	for i, change := range lazy.Changes {
+		attached, err := attachLazyInput(attach, change, "DirectoryMergeChangesetsLazy.Changes")
+		if err != nil {
+			return nil, err
+		}
+		lazy.Changes[i] = attached
+		deps = append(deps, attached)
+	}
+	return deps, nil
+}
+
+func (lazy *DirectoryMergeChangesetsLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "changeset merge parent")
+	if err != nil {
+		return nil, err
+	}
+	changeIDs := make([]uint64, 0, len(lazy.Changes))
+	for _, change := range lazy.Changes {
+		id, err := encodePersistedObjectRef(enc, change, "changeset merge changes")
+		if err != nil {
+			return nil, err
+		}
+		changeIDs = append(changeIDs, id)
+	}
+	return json.Marshal(persistedDirectoryMergeChangesetsLazy{
+		ParentResultID:   parentID,
+		ChangesResultIDs: changeIDs,
+		OnConflict:       lazy.OnConflict,
+		Workspace:        lazy.Workspace,
+	})
+}
+
+func decodeDirectoryMergeChangesetsLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*Directory], error) {
+	var persisted persistedDirectoryMergeChangesetsLazy
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted changeset merge lazy: %w", err)
+	}
+	parent, err := loadPersistedObjectResultByResultID[*Changeset](ctx, dec, persisted.ParentResultID, "changeset merge parent")
+	if err != nil {
+		return nil, err
+	}
+	changes := make([]dagql.ObjectResult[*Changeset], 0, len(persisted.ChangesResultIDs))
+	for _, id := range persisted.ChangesResultIDs {
+		change, err := loadPersistedObjectResultByResultID[*Changeset](ctx, dec, id, "changeset merge changes")
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, change)
+	}
+	return &DirectoryMergeChangesetsLazy{
+		LazyState:  NewLazyState(),
+		Parent:     parent,
+		Changes:    changes,
+		OnConflict: persisted.OnConflict,
+		Workspace:  persisted.Workspace,
+	}, nil
 }

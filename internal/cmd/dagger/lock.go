@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
@@ -98,6 +100,13 @@ func runModuleUpdate(cmd *cobra.Command, names []string) error {
 	if cmd.Flags().Changed("version") && version == "" {
 		return fmt.Errorf("--version must not be empty")
 	}
+	source, err := cmd.Flags().GetString("source")
+	if err != nil {
+		return err
+	}
+	if cmd.Flags().Changed("source") && source == "" {
+		return fmt.Errorf("--source must not be empty")
+	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
@@ -106,13 +115,18 @@ func runModuleUpdate(cmd *cobra.Command, names []string) error {
 		if err != nil {
 			return err
 		}
-		selections, err := workspace.SelectModuleUpdates(modules, ".", cwd, names, version)
+		selections, err := workspace.SelectModuleUpdates(modules, ".", cwd, names, version, source)
 		if err != nil {
 			return err
 		}
 		for _, selection := range selections {
 			if err := writeModuleSourceMatch(cmd.ErrOrStderr(), selection); err != nil {
 				return err
+			}
+			if source != "" {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Updating %q source: %s.\n", selection.Name, source); err != nil {
+					return err
+				}
 			}
 			if selection.Version != "" {
 				_, previous, hasVersion, _ := workspace.SplitModuleVersion(selection.Entry.Source)
@@ -127,25 +141,25 @@ func runModuleUpdate(cmd *cobra.Command, names []string) error {
 		var result struct {
 			CurrentWorkspace struct {
 				Result struct {
-					ID dagger.ID
+					ID core.ID
 				}
 			}
 		}
 		if err := dag.Do(ctx, &dagger.Request{
-			Query: `query ModuleUpdate($names: [String!]!, $version: String) {
+			Query: `query ModuleUpdate($names: [String!]!, $version: String, $source: String) {
   currentWorkspace {
-    result: withUpdatedModules(names: $names, version: $version) { id }
+    result: withUpdatedModules(names: $names, version: $version, source: $source) { id }
   }
 }`,
-			Variables: map[string]any{"names": names, "version": version},
+			Variables: map[string]any{"names": names, "version": version, "source": source},
 		}, &dagger.Response{Data: &result}); err != nil {
 			return err
 		}
 		if result.CurrentWorkspace.Result.ID == "" {
 			return fmt.Errorf("module update returned no workspace")
 		}
-		current := dag.CurrentWorkspace().WithWorkdir(".")
-		updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Result.ID).WithWorkdir(".")
+		current := core.NewQuery(dag).CurrentWorkspace().WithWorkdir(".")
+		updated := core.Ref[*core.Workspace](core.NewQuery(dag), result.CurrentWorkspace.Result.ID).WithWorkdir(".")
 		return updateMaterializedWorkspace(ctx, cmd.OutOrStdout(), dag, current, updated)
 	})
 }
@@ -195,11 +209,11 @@ func printSelectedLockEntries(ctx context.Context, outWriter io.Writer, dag *dag
 }
 
 func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagger.Client, selectors []string, noGenerate bool) error {
-	current := dag.CurrentWorkspace()
+	current := core.NewQuery(dag).CurrentWorkspace()
 	var result struct {
 		CurrentWorkspace struct {
 			Updated struct {
-				ID dagger.ID
+				ID core.ID
 			} `json:"updated"`
 		}
 	}
@@ -216,16 +230,16 @@ func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagg
 	if result.CurrentWorkspace.Updated.ID == "" {
 		return fmt.Errorf("lock update returned no workspace")
 	}
-	updated := dagger.Ref[*dagger.Workspace](dag, result.CurrentWorkspace.Updated.ID)
+	updated := core.Ref[*core.Workspace](core.NewQuery(dag), result.CurrentWorkspace.Updated.ID)
 	return updateMaterializedWorkspace(ctx, outWriter, dag, current, updated)
 }
 
-func updateMaterializedWorkspace(ctx context.Context, outWriter io.Writer, dag *dagger.Client, current, updated *dagger.Workspace) error {
+func updateMaterializedWorkspace(ctx context.Context, outWriter io.Writer, dag *dagger.Client, current, updated *core.Workspace) error {
 	updated, err := materializeWorkspace(ctx, dag, updated)
 	if err != nil {
 		return err
 	}
-	isEmpty, err := updated.Changes(dagger.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
+	isEmpty, err := updated.Changes(core.WorkspaceChangesOpts{From: current}).IsEmpty(ctx)
 	if err != nil {
 		return err
 	}

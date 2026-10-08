@@ -34,6 +34,8 @@ type contentTestFault struct {
 	stallHeaders bool
 	// stallAfter blocks the body after that many bytes; negative disables it.
 	stallAfter int
+	// closeDelay makes the body's Close take that long before it is closed.
+	closeDelay time.Duration
 }
 
 // contentTestTransport is an in-process RoundTripper over byte slices. It
@@ -127,11 +129,13 @@ func (tr *contentTestTransport) RoundTrip(req *http.Request) (*http.Response, er
 	if fault.truncate {
 		data = data[:len(data)/2]
 	}
-	resp.Body = tr.body(req.Context(), data, fault.stallAfter)
+	body := tr.body(req.Context(), data, fault.stallAfter)
+	body.closeDelay = fault.closeDelay
+	resp.Body = body
 	return resp, nil
 }
 
-func (tr *contentTestTransport) body(ctx context.Context, data []byte, stallAfter int) io.ReadCloser {
+func (tr *contentTestTransport) body(ctx context.Context, data []byte, stallAfter int) *contentTestBody {
 	tr.open.Add(1)
 	tr.bodies.Add(1)
 	if tr.opened != nil {
@@ -148,6 +152,7 @@ type contentTestBody struct {
 	data       []byte
 	read       int
 	stallAfter int
+	closeDelay time.Duration
 	transport  *contentTestTransport
 	closeOnce  sync.Once
 	closed     chan struct{}
@@ -199,6 +204,7 @@ func (b *contentTestBody) Read(p []byte) (int, error) {
 func (b *contentTestBody) Close() error {
 	b.transport.closes.Add(1)
 	b.closeOnce.Do(func() {
+		time.Sleep(b.closeDelay)
 		close(b.done())
 		b.transport.open.Add(-1)
 	})
@@ -822,10 +828,12 @@ func TestRenewalChainControls(t *testing.T) {
 	t.Run("stalled stream", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			started := time.Now()
-			got := runChainImport(t, fixture, chainRunOptions{localPrefix: true, upper: initial, faults: map[string]contentTestFault{initial.URL: {stallAfter: 10}}, attach: true, key: "key", reply: renewUpper("https://renewed.invalid/upper")})
+			// The idle bound closes the body from its cancellation callback;
+			// a slow Close must still finish before the import returns.
+			got := runChainImport(t, fixture, chainRunOptions{localPrefix: true, upper: initial, faults: map[string]contentTestFault{initial.URL: {stallAfter: 10, closeDelay: time.Second}}, attach: true, key: "key", reply: renewUpper("https://renewed.invalid/upper")})
 			requireChainContentFailure(t, got.err, upper, "copy")
 			require.ErrorIs(t, got.err, errPartContentIdle)
-			require.Equal(t, partContentIdleTimeout, time.Since(started))
+			require.Equal(t, partContentIdleTimeout+time.Second, time.Since(started))
 			require.Empty(t, got.requests)
 		})
 	})

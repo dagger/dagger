@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
@@ -19,7 +21,7 @@ type artifactListPath struct {
 	Dimensions []string
 }
 
-func readArtifactListPaths(ctx context.Context, dag *dagger.Client, selection *dagger.Artifacts) ([]artifactListPath, error) {
+func readArtifactListPaths(ctx context.Context, dag *dagger.Client, selection *core.Artifacts) ([]artifactListPath, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -65,7 +67,8 @@ func omitCollectionTypeKeys(items []listedArtifact, paths []artifactListPath) er
 		}
 		slices.Sort(dimensions)
 		dimensions = slices.Compact(dimensions)
-		cacheKey := addr.Path + "\x00" + strings.Join(dimensions, "\x00")
+		itemPath := addr.ArtifactPath(addr.Types...)
+		cacheKey := itemPath + "\x00" + strings.Join(dimensions, "\x00")
 		if omit, ok := cache[cacheKey]; ok {
 			items[i].OmitTypeKey = omit
 			continue
@@ -75,8 +78,8 @@ func omitCollectionTypeKeys(items []listedArtifact, paths []artifactListPath) er
 			if slices.ContainsFunc(dimensions, func(d string) bool { return !slices.Contains(path.Dimensions, d) }) {
 				continue
 			}
-			candidate := addresses[j]
-			if candidate.Path != addr.Path && !strings.HasPrefix(candidate.Path, addr.Path+"/") {
+			candidate := addresses[j].ArtifactPath(addresses[j].Types...)
+			if candidate != itemPath && !strings.HasPrefix(candidate, itemPath+"/") {
 				safe = false
 				break
 			}

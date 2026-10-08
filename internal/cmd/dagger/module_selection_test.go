@@ -31,7 +31,7 @@ func TestInstalledModuleVersion(t *testing.T) {
 }
 
 func TestModuleVersionCommands(t *testing.T) {
-	for _, args := range [][]string{{"module", "update"}, {"update"}} {
+	for _, args := range [][]string{{"module", "update"}, {"mod", "update"}} {
 		cmd, _, err := rootCmd.Find(args)
 		require.NoError(t, err)
 		require.NotNil(t, cmd.Flags().Lookup("version"))

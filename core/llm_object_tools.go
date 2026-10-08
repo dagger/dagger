@@ -508,10 +508,11 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, b boundTool) ([]LLMTool, er
 			// batch; any other is a sequential step, run alone in the position
 			// it was written (see MCP.CallBatch). A method changes the agent's
 			// state when it returns the bound object's own type, a Workspace, a
-			// Changeset, or an LLM — the conversation itself, run last in its
-			// batch (MCP.SplitContinuationCalls). A module function cached with
-			// policy Never, or a core field marked DoNotCache, is impure too:
-			// side effects and live reads are exactly what those are for.
+			// Changeset, or an LLM — the conversation itself, which the calls
+			// written after it in the batch run on (see toolDispatch). A module
+			// function cached with policy Never, or a core field marked
+			// DoNotCache, is impure too: side effects and live reads are
+			// exactly what those are for.
 			ReadOnly: retType != typeName &&
 				retType != "Changeset" &&
 				retType != workspaceTypeName &&
@@ -720,11 +721,10 @@ func checkLiftableAddress(typeName, addr string) error {
 // argument when that type is liftable: either resolvable from an address
 // string via the core Address API (addressableTypes) AND not in the
 // unliftableTypes capability blocklist, or an artifact selection type
-// (selectionTypes). Only single-object args qualify: a list of IDs
-// ([ID!]! with @expectedType) is not lifted.
+// (selectionTypes). Lists of IDs ([ID!]! with @expectedType) qualify too:
+// each element is lifted on its own (see MCP.liftArgValue).
 func liftableObjectArg(arg *ast.ArgumentDefinition) (string, bool) {
-	if arg.Type == nil || arg.Type.NamedType != "ID" {
-		// Lists of object IDs (arg.Type.Elem != nil) are not liftable.
+	if arg.Type == nil || namedElemType(arg.Type).NamedType != "ID" {
 		return "", false
 	}
 	d := arg.Directives.ForName("expectedType")
@@ -742,6 +742,14 @@ func liftableObjectArg(arg *ast.ArgumentDefinition) (string, bool) {
 		return "", false
 	}
 	return name.Value.Raw, true
+}
+
+// namedElemType unwraps list types down to their innermost named type.
+func namedElemType(t *ast.Type) *ast.Type {
+	for t.Elem != nil {
+		t = t.Elem
+	}
+	return t
 }
 
 // liftHint documents the address syntaxes a liftable type accepts.
@@ -830,7 +838,11 @@ func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition, implicit
 				// accepts an ID.
 				prefix := fmt.Sprintf("(%s ID)", name.Value.Raw)
 				if typeName, ok := liftableObjectArg(arg); ok {
-					prefix = fmt.Sprintf("(%s address: %s)", typeName, liftHint(typeName))
+					if arg.Type.Elem != nil {
+						prefix = fmt.Sprintf("(list of %s addresses, each %s)", typeName, liftHint(typeName))
+					} else {
+						prefix = fmt.Sprintf("(%s address: %s)", typeName, liftHint(typeName))
+					}
 				}
 				if desc == "" {
 					desc = prefix
@@ -1097,13 +1109,16 @@ func (m *MCP) implicitToolInput(ctx context.Context, astField *ast.FieldDefiniti
 //     Workspace.resolve(value: <addr>).<addressField> on the session server,
 //     once checkLiftableAddress has vetted it.
 //
-// The resulting object's ID is re-encoded through the argument's own decoder
+// A list arg lifts element-wise (see MCP.liftArgValue): each element may be
+// an address or an ID from a prior tool result.
+//
+// The resulting objects' IDs are re-encoded through the argument's own decoder
 // so the input matches whatever ID type the field expects (including
-// optional-wrapped IDs). Returns ok=false — without an error — when the
-// argument is not a liftable object arg or the value is not a string, so the
-// caller surfaces the original ID decode error instead. idErr is that
-// original error, folded into the message when address resolution also fails
-// (unless the value is plainly an address rather than an ID).
+// optional-wrapped IDs and lists). Returns ok=false — without an error — when
+// the argument is not a liftable object arg or the value does not have its
+// shape, so the caller surfaces the original ID decode error instead. idErr
+// is that original error, folded into the message when address resolution
+// also fails (unless the value is plainly an address rather than an ID).
 func (m *MCP) liftObjectArg(ctx context.Context, srv *dagql.Server, astField *ast.FieldDefinition, spec dagql.InputSpec, val any, idErr error) (dagql.Input, bool, error) {
 	astArg := astField.Arguments.ForName(spec.Name)
 	if astArg == nil {
@@ -1113,63 +1128,119 @@ func (m *MCP) liftObjectArg(ctx context.Context, srv *dagql.Server, astField *as
 	if !ok {
 		return nil, false, nil
 	}
-	addr, ok := val.(string)
+	lifted, ok, err := m.liftArgValue(ctx, srv, typeName, astArg.Type, val, idErr)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	input, err := spec.Type.Decoder().DecodeInput(lifted)
+	if err != nil {
+		return nil, false, fmt.Errorf("decode lifted %s: %w", typeName, err)
+	}
+	return input, true, nil
+}
+
+// liftArgValue lifts a model-supplied value of a liftable arg of type t into
+// its wire form: an address string becomes the encoded ID of the object it
+// resolves to (see MCP.liftAddress). For a list type, every element is lifted
+// on its own — an element that already decodes as an ID is kept as is, so
+// IDs from prior tool results and addresses mix freely. Returns ok=false when
+// the value does not have the shape of t (a non-string, or a non-list for a
+// list type), so the caller surfaces the original decode error.
+func (m *MCP) liftArgValue(ctx context.Context, srv *dagql.Server, typeName string, t *ast.Type, val any, idErr error) (any, bool, error) {
+	if t.Elem == nil {
+		addr, ok := val.(string)
+		if !ok {
+			return nil, false, nil
+		}
+		encoded, err := m.liftAddress(ctx, srv, typeName, addr, idErr)
+		if err != nil {
+			return nil, false, err
+		}
+		return encoded, true, nil
+	}
+	elems, ok := val.([]any)
 	if !ok {
 		return nil, false, nil
 	}
+	lifted := make([]any, len(elems))
+	for i, elem := range elems {
+		var elemErr error
+		switch x := elem.(type) {
+		case nil:
+			// Left to the decoder: a null element is valid only when the
+			// element type is nullable.
+			continue
+		case string:
+			var id call.ID
+			if elemErr = id.Decode(x); elemErr == nil {
+				lifted[i] = x
+				continue
+			}
+		}
+		v, ok, err := m.liftArgValue(ctx, srv, typeName, t.Elem, elem, elemErr)
+		if err != nil {
+			return nil, false, fmt.Errorf("element %d: %w", i, err)
+		}
+		if !ok {
+			return nil, false, nil
+		}
+		lifted[i] = v
+	}
+	return lifted, true, nil
+}
+
+// liftAddress resolves one address string for a liftable type (see
+// MCP.liftObjectArg) and returns the encoded ID of the resulting object.
+func (m *MCP) liftAddress(ctx context.Context, srv *dagql.Server, typeName, addr string, idErr error) (string, error) {
 	var obj dagql.AnyObjectResult
 	var err error
 	if _, selection := selectionTypes[typeName]; selection {
 		obj, err = m.liftScopeSelection(ctx, srv, addr, typeName == "Artifact")
 		if err != nil {
-			return nil, false, fmt.Errorf("%q is not a resolvable %s address: %w; %s", addr, typeName, err, findArtifactsPointer)
+			return "", fmt.Errorf("%q is not a resolvable %s address: %w; %s", addr, typeName, err, findArtifactsPointer)
 		}
 	} else {
 		parsed, isDAG, parseErr := parseDAGAddress(addr)
 		switch {
 		case isDAG && parseErr != nil:
-			return nil, false, fmt.Errorf("%q is not a resolvable %s address: %w", addr, typeName, parseErr)
+			return "", fmt.Errorf("%q is not a resolvable %s address: %w", addr, typeName, parseErr)
 		case isDAG && !parsed.Absolute:
 			obj, err = m.resolveScopeObject(ctx, srv, parsed, addr, typeName)
 			if err != nil {
-				return nil, false, fmt.Errorf("%q is not a resolvable %s address: %w; %s", addr, typeName, err, findArtifactsPointer)
+				return "", fmt.Errorf("%q is not a resolvable %s address: %w; %s", addr, typeName, err, findArtifactsPointer)
 			}
 		case isDAG:
 			obj, err = m.resolveBoundWorkspaceAddress(ctx, srv, addr, addressableTypes[typeName].addressField)
 			if err != nil {
-				return nil, false, fmt.Errorf("%q is not a resolvable %s address: %w", addr, typeName, err)
+				return "", fmt.Errorf("%q is not a resolvable %s address: %w", addr, typeName, err)
 			}
 		default:
 			// A model-typed string must never reach the calling client's
 			// host, whatever the Address decoder would fall back to for a
 			// human.
 			if err := checkLiftableAddress(typeName, addr); err != nil {
-				return nil, false, fmt.Errorf("%q is not a %s ID or an accepted %s address: %w", addr, typeName, typeName, err)
+				return "", fmt.Errorf("%q is not a %s ID or an accepted %s address: %w", addr, typeName, typeName, err)
 			}
-			obj, err = resolveObjectAddress(ctx, srv, addr, addressableTypes[typeName].addressField)
+			obj, err = resolveObjectAddress(WithAgentAddressResolution(ctx), srv, addr, addressableTypes[typeName].addressField)
 			if err != nil {
 				if dagaddress.IsAddress(addr) {
 					// Plainly not an ID: the decode error would only be noise.
-					return nil, false, fmt.Errorf("%q is not a resolvable %s address: %w", addr, typeName, err)
+					return "", fmt.Errorf("%q is not a resolvable %s address: %w", addr, typeName, err)
 				}
-				return nil, false, fmt.Errorf("%q is neither a %s ID (%w) nor a resolvable %s address: %w",
+				return "", fmt.Errorf("%q is neither a %s ID (%w) nor a resolvable %s address: %w",
 					addr, typeName, idErr, typeName, err)
 			}
 		}
 	}
 	objID, err := obj.ID()
 	if err != nil {
-		return nil, false, fmt.Errorf("get %s ID for address %q: %w", typeName, addr, err)
+		return "", fmt.Errorf("get %s ID for address %q: %w", typeName, addr, err)
 	}
 	encoded, err := objID.Encode()
 	if err != nil {
-		return nil, false, fmt.Errorf("encode %s ID for address %q: %w", typeName, addr, err)
+		return "", fmt.Errorf("encode %s ID for address %q: %w", typeName, addr, err)
 	}
-	input, err := spec.Type.Decoder().DecodeInput(encoded)
-	if err != nil {
-		return nil, false, fmt.Errorf("decode lifted %s ID for address %q: %w", typeName, addr, err)
-	}
-	return input, true, nil
+	return encoded, nil
 }
 
 // parseDAGAddress parses a dag:// address. isDAG reports whether the value

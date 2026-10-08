@@ -1399,7 +1399,7 @@ func validateKeyAgainstType(parts []string, t reflect.Type, fullKey, op string) 
 
 	rest := parts[1:]
 	fieldType := field.Type
-	for fieldType.Kind() == reflect.Ptr {
+	for fieldType.Kind() == reflect.Pointer {
 		fieldType = fieldType.Elem()
 	}
 

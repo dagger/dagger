@@ -5,7 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
+
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 )
@@ -28,7 +29,7 @@ func newArtifactNameIndex(paths []artifactListPath) (artifactNameIndex, error) {
 		}
 		for _, dimension := range path.Dimensions {
 			if strings.HasPrefix(dimension, "type:") {
-				candidate := artifactNamedPath{key: address.Path, module: path.ModuleName, dimensions: path.Dimensions}
+				candidate := artifactNamedPath{key: address.ArtifactPath(address.Types...), module: path.ModuleName, dimensions: path.Dimensions}
 				if !slices.ContainsFunc(index[dimension], func(p artifactNamedPath) bool {
 					return p.key == candidate.key && slices.Equal(p.dimensions, candidate.dimensions)
 				}) {
@@ -93,7 +94,7 @@ func (index artifactNameIndex) short(dimension, key string, filters []dagaddress
 
 // Resolve short type keys as sets. Apply them through the API so an empty
 // match stays an empty filter, which a link query cannot represent.
-func filterArtifactTypeKeys(artifacts *dagger.Artifacts, paths []artifactListPath, filter *dagaddress.Address) (*dagger.Artifacts, error) {
+func filterArtifactTypeKeys(artifacts *core.Artifacts, paths []artifactListPath, filter *dagaddress.Address) (*core.Artifacts, error) {
 	index, err := newArtifactNameIndex(paths)
 	if err != nil {
 		return nil, err

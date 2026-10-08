@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"dagger.io/dagger/core"
+
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
@@ -35,10 +37,10 @@ func (TelemetrySuite) TestInternalVertexes(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
-		dirA := c.Directory().WithNewFile("/foo", "foo")
-		dirB := c.Directory().WithNewFile("/bar", "bar")
+		dirA := core.NewQuery(c).Directory().WithNewFile("/foo", "foo")
+		dirB := core.NewQuery(c).Directory().WithNewFile("/bar", "bar")
 
-		_, err := c.
+		_, err := core.NewQuery(c).
 			Container().
 			From(alpineImage).
 			WithDirectory("/foo", dirA).
@@ -61,7 +63,7 @@ func (TelemetrySuite) TestInternalVertexes(ctx context.Context, t *testctx.T) {
 func (TelemetrySuite) TestSetSessionTitle(ctx context.Context, t *testctx.T) {
 	const title = "Deploy the docs"
 	c, sink := connectWithTrace(ctx, t)
-	require.NoError(t, c.SetSessionTitle(ctx, title))
+	require.NoError(t, core.NewQuery(c).SetSessionTitle(ctx, title))
 	require.NoError(t, c.Close()) // close + flush the session CLI's telemetry
 
 	traces, logs := sink.capture()

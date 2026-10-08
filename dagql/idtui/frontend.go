@@ -15,7 +15,6 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dustin/go-humanize"
-	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/tuist"
@@ -32,6 +31,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -806,7 +806,7 @@ func (r *renderer) renderCall( //nolint: gocyclo
 				fmt.Fprint(out, "  ")
 			}
 			r.indent(out, indentLevel)
-			depth-- //nolint:ineffassign
+			depth-- //nolint:ineffassign,staticcheck
 		} else {
 			printed := 0
 			for _, arg := range visibleArgs {
@@ -869,20 +869,17 @@ func (r *renderer) renderSpan(
 		if span.LLMTool != "" {
 			if span.LLMToolServer != "" {
 				fmt.Fprint(out,
-					out.String(strcase.ToLowerCamel(span.LLMToolServer)).
+					out.String(dagui.ToolServerLabel(span.LLMToolServer)).
 						Foreground(termenv.ANSIBrightMagenta))
 				fmt.Fprint(out, " ")
 			}
-			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
+			fmt.Fprint(out, out.String(dagui.ToolNameLabel(span.LLMTool)).Bold())
 			// For recognized tools, render a styled summary of the meaningful
 			// args (paths in cyan, descriptions/content faint). Fall back to
-			// dumping the first arg for tools we don't recognize.
-			if !renderToolArgsSummary(out, span.LLMTool, span) {
+			// the first line of the first arg for tools we don't recognize.
+			if !renderToolArgsSummary(out, span) {
 				if len(span.LLMToolArgValues) > 0 {
-					// for now, only print the first arg, the rest are likely to be noisy.
-					// Show only its first line so a large multiline value (e.g. a
-					// commit message body) doesn't dominate the row.
-					fmt.Fprint(out, "(", sanitizeSummary(firstLine(span.LLMToolArgValues[0])), ")")
+					fmt.Fprint(out, "(", span.ToolArgsFallback(), ")")
 				}
 			}
 			return nil
@@ -1034,22 +1031,31 @@ func renderSpanDuration(out TermOutput, span *dagui.Span, now time.Time, final b
 }
 
 var metricsVerbosity = map[string]int{
-	telemetry.IOStatDiskReadBytes:      3,
-	telemetry.IOStatDiskWriteBytes:     3,
-	telemetry.IOStatPressureSomeTotal:  3,
-	telemetry.CPUStatPressureSomeTotal: 3,
-	telemetry.CPUStatPressureFullTotal: 3,
-	telemetry.MemoryCurrentBytes:       3,
-	telemetry.MemoryPeakBytes:          3,
-	telemetry.NetstatRxBytes:           3,
-	telemetry.NetstatTxBytes:           3,
-	telemetry.NetstatRxDropped:         3,
-	telemetry.NetstatTxDropped:         3,
-	telemetry.NetstatRxPackets:         3,
-	telemetry.NetstatTxPackets:         3,
-	telemetry.LLMInputTokens:           1,
-	telemetry.LLMOutputTokens:          1,
-	telemetry.FilesyncWrittenBytes:     3,
+	telemetry.IOStatDiskReadBytes:          3,
+	telemetry.IOStatDiskWriteBytes:         3,
+	telemetry.IOStatPressureSomeTotal:      3,
+	telemetry.CPUStatPressureSomeTotal:     3,
+	telemetry.CPUStatPressureFullTotal:     3,
+	telemetry.MemoryCurrentBytes:           3,
+	telemetry.MemoryPeakBytes:              3,
+	telemetryattrs.NetworkRxBytes:          2,
+	telemetryattrs.NetworkTxBytes:          2,
+	telemetryattrs.NetworkEstimatedRxBytes: 2,
+	telemetryattrs.NetworkEstimatedTxBytes: 2,
+	telemetryattrs.NetworkInternalRxBytes:  3,
+	telemetryattrs.NetworkInternalTxBytes:  3,
+	telemetryattrs.NetworkExternalRxBytes:  3,
+	telemetryattrs.NetworkExternalTxBytes:  3,
+	telemetryattrs.NetworkAvailable:        3,
+	telemetry.NetstatRxBytes:               3,
+	telemetry.NetstatTxBytes:               3,
+	telemetry.NetstatRxDropped:             3,
+	telemetry.NetstatTxDropped:             3,
+	telemetry.NetstatRxPackets:             3,
+	telemetry.NetstatTxPackets:             3,
+	telemetry.LLMInputTokens:               1,
+	telemetry.LLMOutputTokens:              1,
+	telemetry.FilesyncWrittenBytes:         3,
 }
 
 func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
@@ -1069,12 +1075,30 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 			r.renderMetric(out, metricsByName, telemetry.MemoryPeakBytes, "Memory Bytes (peak)", humanizeBytes)
 
 			// Network Stats
-			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
-			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
+			if r.renderNetworkAvailability(out, metricsByName) {
+				r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkRxBytes, "Network Rx", humanizeBytes)
+				r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkTxBytes, "Network Tx", humanizeBytes)
+				r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkExternalRxBytes, "External Rx", humanizeBytes)
+				r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkExternalTxBytes, "External Tx", humanizeBytes)
+				r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkInternalRxBytes, "Internal Rx", humanizeBytes)
+				r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkInternalTxBytes, "Internal Tx", humanizeBytes)
+			}
 		}
 	}
 
 	if metricsByName := r.db.MetricsBySpan[span.ID]; metricsByName != nil {
+		// Native operation network stats
+		if span.CallDigest == "" && r.renderNetworkAvailability(out, metricsByName) {
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkRxBytes, "Network Rx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkTxBytes, "Network Tx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkExternalRxBytes, "External Rx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkExternalTxBytes, "External Tx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkInternalRxBytes, "Internal Rx", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkInternalTxBytes, "Internal Tx", humanizeBytes)
+		}
+		r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkEstimatedRxBytes, "Estimated Network Rx", humanizeBytes)
+		r.renderMetricIfNonzero(out, metricsByName, telemetryattrs.NetworkEstimatedTxBytes, "Estimated Network Tx", humanizeBytes)
+
 		// LLM Stats
 		r.renderMetric(out, metricsByName, telemetry.LLMInputTokens, "Input Tokens", humanizeTokens)
 		r.renderMetric(out, metricsByName, telemetry.LLMOutputTokens, "Output Tokens", humanizeTokens)
@@ -1186,6 +1210,31 @@ func (r renderer) renderMetricIfNonzero(
 		}
 		r.renderMetric(out, metricsByName, metricName, label, formatValue)
 	}
+}
+
+func (r renderer) renderNetworkAvailability(
+	out TermOutput,
+	metricsByName map[string][]metricdata.DataPoint[int64],
+) bool {
+	points := metricsByName[telemetryattrs.NetworkAvailable]
+	unavailable := len(points) > 0 && points[len(points)-1].Value == 0
+	hasNetwork := len(points) > 0 || len(metricsByName[telemetryattrs.NetworkRxBytes]) > 0 || len(metricsByName[telemetryattrs.NetworkTxBytes]) > 0
+	hasLegacy := len(metricsByName[telemetry.NetstatRxBytes]) > 0 || len(metricsByName[telemetry.NetstatTxBytes]) > 0
+	// Legacy samples remain readable for older engines and saved traces, but
+	// must not duplicate or replace valid new counters (including zero bytes).
+	if hasLegacy && (!hasNetwork || unavailable) {
+		r.renderNetworkMetric(out, metricsByName, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
+		r.renderNetworkMetric(out, metricsByName, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
+		return false
+	}
+	if len(points) == 0 || points[len(points)-1].Value != 0 {
+		return true
+	}
+	if metricsVerbosity[telemetryattrs.NetworkAvailable] <= r.Verbosity {
+		fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
+		fmt.Fprint(out, out.String("Network metrics: unavailable").Foreground(termenv.ANSIYellow))
+	}
+	return false
 }
 
 func (r renderer) renderNetworkMetric(

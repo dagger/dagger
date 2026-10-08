@@ -101,10 +101,10 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 		require.ErrorContains(t, err, "permission denied")
 		require.Nil(t, md)
 	}
-	require.Len(t, questions.requests, 2)
+	require.Len(t, questions.requests, 3, "a denial is not remembered")
 	_, err = srv.AuthorizeGitPush(moduleCtx, remote, "refs/heads/other", false, false)
 	require.NoError(t, err)
-	require.Len(t, questions.requests, 3)
+	require.Len(t, questions.requests, 4)
 	// A module-created container's nested API client is still delegated.
 	nested := newClient("nested", "owner", "module")
 	sess.clientRuntimes["nested"] = nested
@@ -116,7 +116,7 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	require.Equal(t, remote, md.Remote)
 	_, err = srv.AuthorizeGitPush(nestedCtx, remote, ref, true, false)
 	require.ErrorContains(t, err, "permission denied")
-	require.Len(t, questions.requests, 3)
+	require.Len(t, questions.requests, 5)
 	require.Zero(t, routing.requests, "explicit destinations must not consult owner rewrites")
 
 	// Only the trusted owner has attachables. A nested module caller must use
@@ -182,7 +182,7 @@ func TestGitPushApprovalDenialAndCancellation(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, allowed)
 	}
-	require.Equal(t, 1, calls, "remember a user's No, but not canceled prompts")
+	require.Equal(t, 2, calls, "a user's No holds for one attempt, like a canceled prompt")
 }
 
 func TestGitPushApprovalConcurrent(t *testing.T) {

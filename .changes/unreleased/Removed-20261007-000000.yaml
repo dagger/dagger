@@ -1,0 +1,6 @@
+kind: Removed
+body: 'The top-level `dagger update` command now errors with migration guidance. Use `dagger lock update` to refresh lockfile entries, or `dagger module update` to change installed module sources or versions.'
+time: 2026-10-07T00:00:00Z
+custom:
+  Author: tiborvass
+  PR: ""

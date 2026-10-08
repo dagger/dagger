@@ -70,6 +70,11 @@ lint = [
   "!.dagger/modules/release/registry-config",
   "!.dagger/modules/release/testdata",
 ]
+# 2.14.0 is the first release that reloads cached analyzer facts correctly
+# (golangci/golangci-lint#6807). Older versions intermittently drop SA1019
+# findings when the shared lint cache is partially filled, which makes
+# nolintlint report `//nolint:staticcheck` directives as unused.
+version = "2.14.0"
 
 [modules.helm]
 source = "dagger.io/kubernetes/helm"
@@ -248,7 +253,7 @@ clients = ["./.dagger/modules/engine-dev"]
 
 [sdks.dang.scopes.".dagger/modules/test-split"]
 is-module = true
-clients = ["./.dagger/modules/engine-dev"]
+clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/go"]
 
 [sdks.dang.scopes.".dagger/modules/typescript-client-dev"]
 is-module = true

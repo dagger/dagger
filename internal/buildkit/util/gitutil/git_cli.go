@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/pkg/errors"
 )
 
@@ -194,6 +195,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, err error
 			cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+cli.sshAuthSock)
 		}
 
+		finish := enginetel.PrepareCommandNetwork(ctx, cmd)
 		if cli.exec != nil {
 			// remote git commands spawn helper processes that inherit FDs and don't
 			// handle parent death signal so exec.CommandContext can't be used
@@ -201,6 +203,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, err error
 		} else {
 			err = cmd.Run()
 		}
+		finish()
 
 		if err != nil {
 			select {

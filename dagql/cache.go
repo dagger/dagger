@@ -84,6 +84,9 @@ type CachePruneReport struct {
 	ReclaimedBytes int64
 	// DroppedEdges are the retention edges the run dropped, in order.
 	DroppedEdges []CacheRetentionDrop
+	// DroppedValues counts the values a blob-backed cache's run dropped:
+	// those that only holdings kept once their stored roots went.
+	DroppedValues int
 }
 
 // CacheRetentionDrop is one retention edge a prune run dropped: the entry's
@@ -102,15 +105,44 @@ const (
 )
 
 // CacheMetadataEstimate is a coarse estimate of memory retained by the DAGQL
-// cache's live results and symbolic graph. It intentionally models only the
-// existing result, term, and allocated eq-class cardinalities.
+// cache's live results and symbolic graph. It models the existing result,
+// term, and allocated eq-class cardinalities, plus the large byte payloads
+// whose lengths values report through CachePayloadSizer.
 type CacheMetadataEstimate struct {
 	ResultCount     int
 	TermCount       int
 	ClassSlotCount  int
 	OfferOwnerCount int
 	OfferOwnerBytes int64
+	PayloadBytes    int64
 	EstimatedBytes  int64
+}
+
+// CachePayloadSizer is implemented by values that can retain a large
+// in-memory byte payload, such as file contents held as a recipe, so the
+// structural estimate can count it. CachePayloadBytes must be cheap: report
+// lengths already at hand, never walk or serialize the value. The cache calls
+// it once, outside its own locks, before the result is published.
+type CachePayloadSizer interface {
+	CachePayloadBytes() int64
+}
+
+func cachePayloadBytes(val Typed) int64 {
+	if val == nil {
+		return 0
+	}
+	if nullable, ok := val.(Derefable); ok {
+		inner, valid := nullable.Deref()
+		if !valid {
+			return 0
+		}
+		val = inner
+	}
+	sizer, ok := UnwrapAs[CachePayloadSizer](val)
+	if !ok {
+		return 0
+	}
+	return max(sizer.CachePayloadBytes(), 0)
 }
 
 // CacheMetadataPruneReport summarizes an automatic structural pruning pass.
@@ -137,6 +169,9 @@ type CacheMetadataPruneReport struct {
 	CandidatesExhausted           bool
 	// DroppedEdges are the retention edges the pass dropped, in order.
 	DroppedEdges []CacheRetentionDrop
+	// DroppedValues counts the values a blob-backed cache's pass dropped:
+	// those that only holdings kept once their stored roots went.
+	DroppedValues int
 
 	SnapshotGCAttempted bool
 	SnapshotGCSucceeded bool
@@ -498,6 +533,11 @@ func NewCache(
 		db = c.sqlDB
 	}
 
+	// An engine wipes its store after a stop that was not clean, because its
+	// snapshots may no longer match it. A blob-backed cache has no snapshots,
+	// and its store is a whole, consistent save at every commit (Checkpoint),
+	// so it restores the last save whatever ended the process, and never
+	// marks its store dirty.
 	cleanShutdownVal, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyCleanShutdown)
 	if err != nil {
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -505,7 +545,7 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("read clean_shutdown metadata: %w", err)
 	}
-	if found && cleanShutdownVal != "1" {
+	if c.uncleanStore(found, cleanShutdownVal) {
 		c.persistenceResetReason = CachePersistenceResetUncleanShutdown
 		c.tracePersistStoreWipedUncleanShutdown(ctx, cleanShutdownVal)
 		slog.Warn("dagql persistence store marked unclean; wiping and cold-starting", "cleanShutdown", cleanShutdownVal)
@@ -553,7 +593,7 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("set persistence schema version: %w", err)
 	}
-	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "0"); err != nil {
+	if err := c.markStoreDirty(ctx); err != nil {
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
 			return nil, errors.Join(fmt.Errorf("mark clean_shutdown=0 at startup: %w", err), closeErr)
 		}
@@ -564,6 +604,22 @@ func NewCache(
 	}
 	c.countBootRestored()
 	return c, nil
+}
+
+// uncleanStore reports whether an engine's store was left by a stop that
+// was not clean, so its snapshots may no longer match it. A blob-backed
+// cache's never is (see NewCache).
+func (c *Cache) uncleanStore(found bool, cleanShutdown string) bool {
+	return found && cleanShutdown != "1" && !c.blobBacked
+}
+
+// markStoreDirty marks an engine's store in use until a clean close. A
+// blob-backed cache never marks its store dirty (see NewCache).
+func (c *Cache) markStoreDirty(ctx context.Context) error {
+	if c.blobBacked {
+		return nil
+	}
+	return c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "0")
 }
 
 // countBootRestored counts, once the restore has fully succeeded, the entries
@@ -1658,8 +1714,16 @@ func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error 
 // lock that deleted it. The one other deletion is a failed in-place
 // replacement's, which collects its entry with the edge (cache_current_entry.go).
 func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) (droppedAt time.Time, removed bool, _ error) {
+	droppedAt, removed, _, err := c.removePrunedEdge(ctx, resultID)
+	return droppedAt, removed, err
+}
+
+// removePrunedEdge is removePersistedEdge for a prune. On a blob-backed cache
+// the cascade goes through holdings, and it also reports how many values it
+// dropped (dropPrunedValuesLocked).
+func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (droppedAt time.Time, removed bool, droppedValues int, _ error) {
 	if c == nil || resultID == 0 {
-		return time.Time{}, false, nil
+		return time.Time{}, false, 0, nil
 	}
 
 	var (
@@ -1672,25 +1736,34 @@ func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID
 	edge, found := c.persistedEdgesByResult[resultID]
 	if !found || edge.unpruneable {
 		c.egraphMu.Unlock()
-		return time.Time{}, false, nil
+		return time.Time{}, false, 0, nil
 	}
 	delete(c.persistedEdgesByResult, resultID)
 	droppedAt = time.Now()
+	entriesBefore := len(c.resultsByID)
 	res = c.resultsByID[resultID]
 	if res != nil {
 		var err error
 		queue, err = c.decrementIncomingOwnershipLocked(ctx, res, queue)
 		rerr = errors.Join(rerr, err)
+		if c.blobBacked {
+			queue, droppedValues, err = c.dropPrunedValuesLocked(ctx, []*sharedResult{res})
+			rerr = errors.Join(rerr, err)
+		}
 	}
 	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	onReleases = append(onReleases, collectReleases...)
 	rerr = errors.Join(rerr, collectErr)
+	if c.blobBacked && len(c.resultsByID) < entriesBefore {
+		// The Cloud compacts its classes on collection, not in a prune.
+		c.eqClassRemoved = true
+	}
 	c.egraphMu.Unlock()
 	if c.testAfterRetentionDrop != nil {
 		c.testAfterRetentionDrop(resultID)
 	}
 
-	return droppedAt, true, errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
+	return droppedAt, true, droppedValues, errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
 }
 
 func (c *Cache) incrementIncomingOwnershipLocked(ctx context.Context, res *sharedResult) {
@@ -1827,13 +1900,13 @@ type snapshotOwnerKey struct {
 	Role string
 }
 
-func desiredSnapshotLinksForResult(res *sharedResult, forSync bool) ([]PersistedSnapshotRefLink, error) {
+func desiredSnapshotLinksForResult(ctx context.Context, res *sharedResult, forSync bool) ([]PersistedSnapshotRefLink, error) {
 	if res == nil {
 		return nil, nil
 	}
 	state := res.loadPayloadState()
 	if state.hasValue && state.self != nil {
-		return collectSnapshotOwnerLinks(state.self, res.loadResultCall(), forSync)
+		return collectSnapshotOwnerLinks(ctx, state.self, res.loadResultCall(), forSync)
 	}
 	if state.snapshotLinkIntent != nil {
 		return cloneSnapshotRefLinks(state.snapshotLinkIntent.Links), nil
@@ -1883,10 +1956,10 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 	// transiently store a link set missing a link the other just attached.
 	// Concurrent per-group attempts make concurrent syncs routine, so the
 	// case is removed rather than left to a later sync's repair.
-	res.leaseSyncMu.Lock()
+	wcprof.Lock(ctx, &res.leaseSyncMu, "dagql.sharedResult.leaseSyncMu")
 	defer res.leaseSyncMu.Unlock()
 
-	links, err := desiredSnapshotLinksForResult(res, true)
+	links, err := desiredSnapshotLinksForResult(ctx, res, true)
 	if err != nil {
 		return err
 	}
@@ -1980,7 +2053,7 @@ func (c *Cache) SyncResultSnapshotOwnerLeases(ctx context.Context, res AnyResult
 	return c.syncResultSnapshotLeases(ctx, shared)
 }
 
-func (c *Cache) desiredImportedOwnerLeaseIDs() (map[string]struct{}, error) {
+func (c *Cache) desiredImportedOwnerLeaseIDs(ctx context.Context) (map[string]struct{}, error) {
 	if c == nil {
 		return nil, nil
 	}
@@ -1996,7 +2069,7 @@ func (c *Cache) desiredImportedOwnerLeaseIDs() (map[string]struct{}, error) {
 
 	desired := make(map[string]struct{})
 	for _, res := range results {
-		links, err := desiredSnapshotLinksForResult(res, false)
+		links, err := desiredSnapshotLinksForResult(ctx, res, false)
 		if err != nil {
 			return nil, err
 		}
@@ -2174,6 +2247,9 @@ type Cache struct {
 	releaseCleanupErrMu sync.Mutex
 	releaseCleanupErr   error
 
+	// checkpointMu serializes Checkpoint's saves.
+	checkpointMu sync.Mutex
+
 	persistenceResetReason CachePersistenceResetReason
 	// identity names the cache's persistence database across the engine
 	// processes that open it, and openedExisting reports that this open found
@@ -2241,6 +2317,10 @@ type Cache struct {
 
 	// result id -> result
 	resultsByID map[sharedResultID]*sharedResult
+	// resultPayloadBytes is the sum of payloadBytes over resultsByID. Change
+	// resultsByID only through putResultLocked and deleteResultLocked so the
+	// two stay in step.
+	resultPayloadBytes int64
 
 	// map of eq class -> all terms that have it as an input, needed during repair to
 	// figure out all the terms that need repair after eq class union
@@ -2314,6 +2394,11 @@ type Cache struct {
 	partContentSource *PartContentSource
 	snapshotGC        func(context.Context) error
 
+	// usageSnapshotChains carries the parent chains the last usage pass
+	// resolved into the next one; see snapshotChains.
+	usageSnapshotChainsMu sync.Mutex
+	usageSnapshotChains   snapshotChainMemo
+
 	// Test hooks are nil in production. Tests use them to pause inside or
 	// between lifecycle critical sections without timing-based coordination.
 	testAfterSessionResultRecord    func()
@@ -2326,6 +2411,8 @@ type Cache struct {
 	testAfterSessionOperationEnter  func(string)
 	testBeforeSessionOperationExit  func(string)
 	testAfterCacheClosing           func()
+	// testBeforePrunePolicy runs at the start of each disk prune policy.
+	testBeforePrunePolicy func(policyIdx int)
 	// testAfterLazyAttemptReleased runs on the attempt's goroutine after its
 	// row hold is released and before its operation ends: the point after
 	// which a caller returned by attempt.done can count ownership.
@@ -2489,7 +2576,11 @@ type sharedResult struct {
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key. Only a blob-backed cache (the Cloud)
 	// sets them. Guarded by egraphMu.
-	storedParts                 map[string]PersistedPartOffer
+	storedParts map[string]PersistedPartOffer
+	// storedRecordBytes is the size of the record a blob-backed cache stores
+	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
+	// Guarded by egraphMu.
+	storedRecordBytes           int64
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
 	// Reverse offer ownership does not propagate lookup requirements.
@@ -2506,6 +2597,13 @@ type sharedResult struct {
 	// that name it. Both guarded by egraphMu.
 	holders    map[HolderKey]*holding
 	recipeKeys []digest.Digest
+	// listItems are, on a list entry, the item read at each position of its
+	// value, and listItemOf and listItemNth name that list and position on
+	// such an item (CallRequest.ListItem). Not persisted; guarded by
+	// egraphMu. See cache_list_items.go.
+	listItems   map[int64]*sharedResult
+	listItemOf  *sharedResult
+	listItemNth int64
 
 	// Immutable payload shared by all per-call Result values.
 	self     Typed
@@ -2573,6 +2671,10 @@ type sharedResult struct {
 	// persistedEnvelope is populated for imported rows and decoded lazily on
 	// first cache-hit use in a server-aware context.
 	persistedEnvelope *PersistedResultEnvelope
+	// payloadBytes is this result's share of Cache.resultPayloadBytes: the
+	// large in-memory byte payload its value or envelope retains, measured
+	// once before publication. Guarded by egraphMu once registered.
+	payloadBytes int64
 	// completeParts caches the row's complete parts for the revision of its
 	// value they were read from (see completePartKeys).
 	completeParts atomic.Pointer[rowCompleteParts]
@@ -3731,6 +3833,7 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr e
 	}
 	req := &CallRequest{
 		ResultCall: parentCall.fork(),
+		ListItem:   true,
 	}
 	req.Type = req.Type.Elem.clone()
 	req.Receiver = &ResultCallRef{ResultID: uint64(r.shared.id), shared: r.shared}
@@ -5164,8 +5267,9 @@ func (c *Cache) EntryStats() CacheEntryStats {
 	return stats
 }
 
-// MetadataEstimate returns the current O(1) structural estimate of DAGQL cache
-// memory. It does not inspect payloads or measure physical cache usage.
+// MetadataEstimate returns the current structural estimate of DAGQL cache
+// memory. It reads maintained counts and does not inspect payloads or measure
+// physical cache usage.
 func (c *Cache) MetadataEstimate() CacheMetadataEstimate {
 	if c == nil {
 		return CacheMetadataEstimate{}
@@ -5186,14 +5290,48 @@ func (c *Cache) cacheMetadataEstimateLocked() CacheMetadataEstimate {
 		TermCount:       len(c.egraphTerms),
 		ClassSlotCount:  classSlots,
 		OfferOwnerCount: len(c.offerOwners),
+		PayloadBytes:    c.resultPayloadBytes,
 	}
 	for _, owner := range c.offerOwners {
 		estimate.OfferOwnerBytes += offerMetadataBytes(owner)
 	}
-	estimate.EstimatedBytes = estimate.OfferOwnerBytes + cacheMetadataResultEstimatedBytes*int64(estimate.ResultCount) +
+	estimate.EstimatedBytes = estimate.OfferOwnerBytes + estimate.PayloadBytes +
+		cacheMetadataResultEstimatedBytes*int64(estimate.ResultCount) +
 		cacheMetadataTermEstimatedBytes*int64(estimate.TermCount) +
 		cacheMetadataClassSlotEstimatedBytes*int64(estimate.ClassSlotCount)
 	return estimate
+}
+
+// putResultLocked registers res under its ID. Requires egraphMu for writing.
+func (c *Cache) putResultLocked(res *sharedResult) {
+	old := c.resultsByID[res.id]
+	if old == res {
+		return
+	}
+	if old != nil {
+		c.resultPayloadBytes -= old.payloadBytes
+	}
+	c.resultPayloadBytes += res.payloadBytes
+	c.resultsByID[res.id] = res
+}
+
+// deleteResultLocked unregisters res. Requires egraphMu for writing.
+func (c *Cache) deleteResultLocked(res *sharedResult) {
+	if c.resultsByID[res.id] != res {
+		return
+	}
+	c.forgetListItemLocked(res)
+	c.resultPayloadBytes -= res.payloadBytes
+	delete(c.resultsByID, res.id)
+}
+
+// setResultPayloadBytesLocked replaces res's payload size, keeping the
+// registered total in step. Requires egraphMu for writing.
+func (c *Cache) setResultPayloadBytesLocked(res *sharedResult, n int64) {
+	if c.resultsByID[res.id] == res {
+		c.resultPayloadBytes += n - res.payloadBytes
+	}
+	res.payloadBytes = n
 }
 
 func (c *Cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {
@@ -5346,6 +5484,13 @@ type cacheUsageMeasurementInput struct {
 	identities       []string
 	existingSizeByID map[string]int64
 	sizeMayChange    bool
+
+	// ownIdentities are the payload's own snapshots, before identities was
+	// expanded with their ancestors. The payload can only size these.
+	ownIdentities []string
+	// chainsIncomplete reports that some parent link is unresolved, so the
+	// identities may omit snapshots the row retains.
+	chainsIncomplete bool
 }
 
 type cacheUsageIdentityMeasurement struct {
@@ -5418,9 +5563,13 @@ func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.Sn
 		}
 
 		if !ok {
-			if input.self != nil {
+			switch {
+			case input.ownIdentities != nil && !slices.Contains(input.ownIdentities, identity):
+				// An ancestor of the payload's own snapshots.
+				sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
+			case input.self != nil:
 				sizeBytes, ok, err = cacheUsageSizeBytesFromSelf(ctx, snapshotManager, input.self, identity)
-			} else if len(input.snapshotLinks) > 0 {
+			case len(input.snapshotLinks) > 0:
 				sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
 			}
 			if err != nil {
@@ -6299,6 +6448,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				oc.res.inlineBorrow = source.inlineBorrow
 			}
 			oc.res.self = oc.val.Unwrap()
+			oc.res.payloadBytes = cachePayloadBytes(oc.res.self)
 			if shared := oc.val.cacheSharedResult(); shared != nil {
 				if frame := shared.loadResultCall(); frame != nil {
 					oc.res.storeResultCall(frame.clone())
@@ -6555,6 +6705,18 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		now = time.Now()
 		oc.persistedEdgeExpiresAtUnix = candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds)
 		cur := c.currentEntryForRecipeLocked(recipeDigest)
+		if req.ListItem {
+			// A list item read adopts only the item its list recorded for
+			// the position (cache_list_items.go). Another entry of the
+			// item's recipe stays as it is, and the new item registers
+			// beside it.
+			item := c.listItemLocked(req, now.Unix())
+			if item == nil {
+				unindexed = cur != nil
+				break
+			}
+			cur = item
+		}
 		if cur == nil {
 			break
 		}
@@ -6690,6 +6852,11 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 	if !resWasCacheBacked && !replacedInPlace && !unindexed {
 		c.indexRecipeLocked(recipeDigest, oc.res)
+	}
+	// A session that does not cover the recorded item's requirements keeps
+	// its new item beside it, unrecorded.
+	if req.ListItem && !resWasCacheBacked && c.listItemLocked(req, now.Unix()) == nil {
+		c.recordListItemLocked(req, oc.res)
 	}
 	for _, dep := range resultCallDeps {
 		depID := dep.resultID

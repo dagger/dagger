@@ -25,6 +25,7 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/util/layercopy"
 	"github.com/dagger/dagger/util/patternmatcher"
@@ -76,6 +77,27 @@ var _ dagql.OnReleaser = (*Directory)(nil)
 var _ dagql.HasDependencyResults = (*Directory)(nil)
 var _ dagql.HasDependencyResultsKinds = (*Directory)(nil)
 var _ dagql.HasLazyEvaluation = (*Directory)(nil)
+
+var _ dagql.CachePayloadSizer = (*Directory)(nil)
+
+// CachePayloadBytes reports the new-file contents and saved operation bytes
+// the directory keeps in memory. New-file contents stay after evaluation as
+// its recipe.
+func (dir *Directory) CachePayloadBytes() int64 {
+	if dir == nil {
+		return 0
+	}
+	dir.outputMu.Lock()
+	defer dir.outputMu.Unlock()
+	n := int64(len(dir.lazyJSON))
+	if dir.transferPending != nil {
+		n += int64(len(dir.transferPending.LazyJSON))
+	}
+	if lazy, ok := dir.Lazy.(*DirectoryWithNewFileLazy); ok {
+		n += int64(len(lazy.Content))
+	}
+	return n
+}
 
 func (dir *Directory) OnRelease(ctx context.Context) error {
 	if dir == nil || dir.Snapshot == nil {
@@ -200,6 +222,7 @@ const (
 	persistedDirectoryLazyKindWithPatchFile                 = "directory.withPatchFile"
 	persistedDirectoryLazyKindWithNewFile                   = "directory.withNewFile"
 	persistedDirectoryLazyKindWithFile                      = "directory.withFile"
+	persistedDirectoryLazyKindWithFiles                     = "directory.withFiles"
 	persistedDirectoryLazyKindWithTimestamps                = "directory.withTimestamps"
 	persistedDirectoryLazyKindWithNewDirectory              = "directory.withNewDirectory"
 	persistedDirectoryLazyKindSubdirectory                  = "directory.directory"
@@ -467,6 +490,14 @@ type DirectoryWithFileLazy struct {
 	AttemptUnpackDockerCompatibility bool
 }
 
+type DirectoryWithFilesLazy struct {
+	LazyState
+	Parent      dagql.ObjectResult[*Directory]
+	DestPaths   []string
+	Sources     []dagql.ObjectResult[*File]
+	Permissions *int
+}
+
 type DirectoryWithTimestampsLazy struct {
 	LazyState
 	Parent    dagql.ObjectResult[*Directory]
@@ -568,6 +599,13 @@ type persistedDirectoryWithFileLazy struct {
 	AttemptUnpackDockerCompatibility bool   `json:"attemptUnpackDockerCompatibility,omitempty"`
 }
 
+type persistedDirectoryWithFilesLazy struct {
+	ParentResultID  uint64   `json:"parentResultID"`
+	DestPaths       []string `json:"destPaths"`
+	SourceResultIDs []uint64 `json:"sourceResultIDs"`
+	Permissions     *int     `json:"permissions,omitempty"`
+}
+
 type persistedDirectoryWithTimestampsLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 	Timestamp      int    `json:"timestamp"`
@@ -647,6 +685,9 @@ func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeC
 
 	case *DirectoryGitTreeLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
+		if lazy.KeepGitDir {
+			return persistedDirectoryLazyKindGitFullCheckout, payload, err
+		}
 		return persistedDirectoryLazyKindGitTree, payload, err
 
 	case *DirectoryGitBundleImportLazy:
@@ -678,6 +719,9 @@ func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeC
 	case *DirectoryWithFileLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedDirectoryLazyKindWithFile, payload, err
+	case *DirectoryWithFilesLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindWithFiles, payload, err
 	case *DirectoryWithTimestampsLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedDirectoryLazyKindWithTimestamps, payload, err
@@ -702,6 +746,15 @@ func encodePersistedDirectoryLazy(ctx context.Context, enc *dagql.PersistEncodeC
 	case *DirectoryChownLazy:
 		payload, err := lazy.EncodePersisted(ctx, enc)
 		return persistedDirectoryLazyKindChown, payload, err
+	case *DirectoryMergeChangesetsLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindMergeChangesets, payload, err
+	case *DirectoryGitCommitLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindGitCommit, payload, err
+	case *DirectoryWorkspacePullLazy:
+		payload, err := lazy.EncodePersisted(ctx, enc)
+		return persistedDirectoryLazyKindWorkspacePull, payload, err
 	default:
 		return "", nil, fmt.Errorf("encode persisted directory lazy: unsupported lazy type %T", lazy)
 	}
@@ -720,7 +773,10 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 		return decodeDirectoryGitCommitTreeLazy(ctx, dec, payload)
 
 	case persistedDirectoryLazyKindGitTree:
-		return decodeDirectoryGitTreeLazy(ctx, dec, payload)
+		return decodeDirectoryGitTreeLazy(ctx, dec, payload, false)
+
+	case persistedDirectoryLazyKindGitFullCheckout:
+		return decodeDirectoryGitTreeLazy(ctx, dec, payload, true)
 
 	case persistedDirectoryLazyKindGitBundleImport:
 		return decodeDirectoryGitBundleImportLazy(ctx, dec, payload)
@@ -854,6 +910,8 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 			DoNotCreateDestPath:              persisted.DoNotCreateDestPath,
 			AttemptUnpackDockerCompatibility: persisted.AttemptUnpackDockerCompatibility,
 		}, nil
+	case persistedDirectoryLazyKindWithFiles:
+		return decodeDirectoryWithFilesLazy(ctx, dec, payload)
 	case persistedDirectoryLazyKindWithTimestamps:
 		var persisted persistedDirectoryWithTimestampsLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
@@ -942,6 +1000,12 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 			return nil, err
 		}
 		return &DirectoryChownLazy{LazyState: NewLazyState(), Parent: parent, ChownPath: persisted.ChownPath, Owner: persisted.Owner}, nil
+	case persistedDirectoryLazyKindMergeChangesets:
+		return decodeDirectoryMergeChangesetsLazy(ctx, dec, payload)
+	case persistedDirectoryLazyKindGitCommit:
+		return decodeDirectoryGitCommitLazy(ctx, dec, payload)
+	case persistedDirectoryLazyKindWorkspacePull:
+		return decodeDirectoryWorkspacePullLazy(ctx, dec, payload)
 	default:
 		return nil, fmt.Errorf("decode persisted directory lazy payload: unsupported lazy kind %q", lazyKind)
 	}
@@ -1148,6 +1212,80 @@ func (lazy *DirectoryWithFileLazy) EncodePersisted(ctx context.Context, enc *dag
 		DoNotCreateDestPath:              lazy.DoNotCreateDestPath,
 		AttemptUnpackDockerCompatibility: lazy.AttemptUnpackDockerCompatibility,
 	})
+}
+
+func (lazy *DirectoryWithFilesLazy) Evaluate(ctx context.Context, dir *Directory) error {
+	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withFiles", func(ctx context.Context) error {
+		return dir.WithFiles(ctx, lazy.Parent, lazy.DestPaths, lazy.Sources, lazy.Permissions)
+	})
+}
+
+func (lazy *DirectoryWithFilesLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachDirectoryResult(attach, lazy.Parent, "attach directory withFiles parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	deps := []dagql.AnyResult{parent}
+	for i, source := range lazy.Sources {
+		attached, err := attachFileResult(attach, source, "attach directory withFiles source")
+		if err != nil {
+			return nil, err
+		}
+		lazy.Sources[i] = attached
+		deps = append(deps, attached)
+	}
+	return deps, nil
+}
+
+func (lazy *DirectoryWithFilesLazy) EncodePersisted(ctx context.Context, enc *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(enc, lazy.Parent, "directory withFiles parent")
+	if err != nil {
+		return nil, err
+	}
+	sourceIDs := make([]uint64, 0, len(lazy.Sources))
+	for _, source := range lazy.Sources {
+		id, err := encodePersistedObjectRef(enc, source, "directory withFiles source")
+		if err != nil {
+			return nil, err
+		}
+		sourceIDs = append(sourceIDs, id)
+	}
+	return json.Marshal(persistedDirectoryWithFilesLazy{
+		ParentResultID:  parentID,
+		DestPaths:       slices.Clone(lazy.DestPaths),
+		SourceResultIDs: sourceIDs,
+		Permissions:     lazy.Permissions,
+	})
+}
+
+func decodeDirectoryWithFilesLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*Directory], error) {
+	var persisted persistedDirectoryWithFilesLazy
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted directory withFiles lazy: %w", err)
+	}
+	if len(persisted.DestPaths) != len(persisted.SourceResultIDs) {
+		return nil, fmt.Errorf("decode persisted directory withFiles lazy: %d destination paths for %d sources", len(persisted.DestPaths), len(persisted.SourceResultIDs))
+	}
+	parent, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.ParentResultID, "directory withFiles parent")
+	if err != nil {
+		return nil, err
+	}
+	sources := make([]dagql.ObjectResult[*File], 0, len(persisted.SourceResultIDs))
+	for _, id := range persisted.SourceResultIDs {
+		source, err := loadPersistedObjectResultByResultID[*File](ctx, dec, id, "directory withFiles source")
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, source)
+	}
+	return &DirectoryWithFilesLazy{
+		LazyState:   NewLazyState(),
+		Parent:      parent,
+		DestPaths:   persisted.DestPaths,
+		Sources:     sources,
+		Permissions: persisted.Permissions,
+	}, nil
 }
 
 func (lazy *DirectoryWithTimestampsLazy) Evaluate(ctx context.Context, dir *Directory) error {
@@ -1891,6 +2029,8 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 	if leaveMarkers {
 		apply.Stderr = io.MultiWriter(stdio.Stderr, &stderr)
 	}
+	finish := enginetel.PrepareCommandNetwork(ctx, apply)
+	defer finish()
 	runErr := apply.Run()
 	if runErr != nil && ctx.Err() != nil {
 		return ctx.Err()
@@ -1921,8 +2061,7 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 		// stays a failure rather than passing for a conflict whenever some
 		// other hunk happened to be rejected as well.
 		if failed := wholeFileApplyErrors(stderr.String()); len(failed) > 0 {
-			return fmt.Errorf("git apply: %d file(s) could not be patched at all, which conflict markers cannot express:\n%s",
-				len(failed), strings.Join(failed, "\n"))
+			return wholeFileApplyError(failed)
 		}
 		if len(conflicted) == 0 {
 			// No rejects written: a hard failure (bad patch, not a content
@@ -1948,6 +2087,29 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 	fmt.Fprintf(stdio.Stderr, "WARNING: %d file(s) no longer match the patch; conflict markers were left in: %s\n",
 		len(conflictedTargets), strings.Join(conflictedTargets, ", "))
 	return nil
+}
+
+// wholeFileApplyError is applyGitPatch's error under LEAVE_CONFLICT_MARKERS
+// for files git apply --reject skipped outright.
+func wholeFileApplyError(failed []string) error {
+	return fmt.Errorf("git apply: %d file(s) could not be patched at all, which conflict markers cannot express:\n%s",
+		len(failed), strings.Join(failed, "\n"))
+}
+
+// PatchCreatesExistingError is the error applying a patch gives when the
+// files it creates (new files, rename and copy targets) already exist, as
+// `git apply` words it: with FAIL it is git's own message, and with
+// LEAVE_CONFLICT_MARKERS it is the whole-file failure applyGitPatch reports,
+// since --reject skips such a file without writing a reject for it.
+func PatchCreatesExistingError(onConflict PatchConflict, existing []string) error {
+	failed := make([]string, len(existing))
+	for i, p := range existing {
+		failed[i] = p + ": already exists in working directory"
+	}
+	if onConflict == PatchConflictLeaveMarkers {
+		return wholeFileApplyError(failed)
+	}
+	return fmt.Errorf("git apply: %s", strings.Join(failed, "\n"))
 }
 
 // wholeFileApplyErrors picks out of git apply --reject's stderr the errors
@@ -2818,11 +2980,45 @@ func (dir *Directory) WithFile(
 	doNotCreateDestPath bool,
 	attemptUnpackDockerCompatibility bool,
 ) error {
+	return dir.copyFiles(ctx, parent, []string{destPath}, []dagql.ObjectResult[*File]{src}, permissions, owner, doNotCreateDestPath, attemptUnpackDockerCompatibility)
+}
+
+// WithFiles copies each source to its destination path, in order, in a single
+// new layer. The result is the same as a chain of WithFile calls, one per
+// source.
+func (dir *Directory) WithFiles(
+	ctx context.Context,
+	parent dagql.ObjectResult[*Directory],
+	destPaths []string,
+	srcs []dagql.ObjectResult[*File],
+	permissions *int,
+) error {
+	return dir.copyFiles(ctx, parent, destPaths, srcs, permissions, "", false, false)
+}
+
+func (dir *Directory) copyFiles(
+	ctx context.Context,
+	parent dagql.ObjectResult[*Directory],
+	destPaths []string,
+	srcs []dagql.ObjectResult[*File],
+	permissions *int,
+	owner string,
+	doNotCreateDestPath bool,
+	attemptUnpackDockerCompatibility bool,
+) error {
+	if len(destPaths) != len(srcs) {
+		return fmt.Errorf("with files: %d destination paths for %d sources", len(destPaths), len(srcs))
+	}
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return err
 	}
-	if err := cache.Evaluate(ctx, parent, src); err != nil {
+	inputs := make([]dagql.AnyResult, 0, len(srcs)+1)
+	inputs = append(inputs, parent)
+	for _, src := range srcs {
+		inputs = append(inputs, src)
+	}
+	if err := cache.Evaluate(ctx, inputs...); err != nil {
 		return err
 	}
 	ourDir, err := parent.Self().Dir.GetOrEval(ctx, parent.Result)
@@ -2830,16 +3026,20 @@ func (dir *Directory) WithFile(
 		return err
 	}
 	dir.SetPath(ourDir)
-	srcPath, err := src.Self().File.GetOrEval(ctx, src.Result)
-	if err != nil {
-		return err
-	}
-	srcCacheRef, err := src.Self().Snapshot.GetOrEval(ctx, src.Result)
-	if err != nil {
-		return err
-	}
-	if srcCacheRef == nil {
-		return fmt.Errorf("with file: nil source snapshot")
+	srcPaths := make([]string, len(srcs))
+	srcCacheRefs := make([]bkcache.ImmutableRef, len(srcs))
+	for i, src := range srcs {
+		srcPaths[i], err = src.Self().File.GetOrEval(ctx, src.Result)
+		if err != nil {
+			return err
+		}
+		srcCacheRefs[i], err = src.Self().Snapshot.GetOrEval(ctx, src.Result)
+		if err != nil {
+			return err
+		}
+		if srcCacheRefs[i] == nil {
+			return fmt.Errorf("with file: nil source snapshot")
+		}
 	}
 
 	dirCacheRef, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
@@ -2852,15 +3052,23 @@ func (dir *Directory) WithFile(
 		return err
 	}
 
-	destPathHintIsDirectory := strings.HasSuffix(destPath, "/") || strings.HasSuffix(destPath, "/.")
-	destPath = path.Join(ourDir, destPath)
-	if doNotCreateDestPath {
-		if err := ensureCopyDestParentExists(ctx, dirCacheRef, destPath); err != nil {
-			return err
+	destPathHintIsDirectory := make([]bool, len(destPaths))
+	copyDestPaths := make([]string, len(destPaths))
+	for i, destPath := range destPaths {
+		destPathHintIsDirectory[i] = strings.HasSuffix(destPath, "/") || strings.HasSuffix(destPath, "/.")
+		copyDestPaths[i] = path.Join(ourDir, destPath)
+		if doNotCreateDestPath {
+			if err := ensureCopyDestParentExists(ctx, dirCacheRef, copyDestPaths[i]); err != nil {
+				return err
+			}
 		}
 	}
+	description := fmt.Sprintf("withfiles %d files", len(srcs))
+	if len(srcs) == 1 {
+		description = fmt.Sprintf("withfile %s %s", copyDestPaths[0], filepath.Base(srcPaths[0]))
+	}
 	newRef, err := query.SnapshotManager().New(ctx, dirCacheRef, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, filepath.Base(srcPath))))
+		bkcache.WithDescription(description))
 	if err != nil {
 		return err
 	}
@@ -2883,33 +3091,39 @@ func (dir *Directory) WithFile(
 		}
 		defer copier.Close()
 
-		opts := layercopy.CopyOptions{
-			Chown:             layercopyOwnership(ownership),
-			Mode:              layercopyMode(permissions),
-			ReplaceExisting:   true,
-			DestPathHintIsDir: destPathHintIsDirectory,
-		}
+		for i := range srcs {
+			// Copy each file as its own withFile would: a later copy may
+			// replace an earlier destination, so do not link to it.
+			copier.ForgetSourceLinks()
+			srcPath, destPath := srcPaths[i], copyDestPaths[i]
+			opts := layercopy.CopyOptions{
+				Chown:             layercopyOwnership(ownership),
+				Mode:              layercopyMode(permissions),
+				ReplaceExisting:   true,
+				DestPathHintIsDir: destPathHintIsDirectory[i],
+			}
 
-		if err := MountRef(ctx, srcCacheRef, func(srcRoot string, srcMnt *mount.Mount) error {
-			if attemptUnpackDockerCompatibility {
-				resolvedSrcPath, err := containerdfs.RootPath(srcRoot, srcPath)
-				if err != nil {
-					return err
-				}
-				if isArchivePath(resolvedSrcPath) {
-					realUnpackDestPath, err := copier.MaterializeDestDir(ctx, destPath)
+			if err := MountRef(ctx, srcCacheRefs[i], func(srcRoot string, srcMnt *mount.Mount) error {
+				if attemptUnpackDockerCompatibility {
+					resolvedSrcPath, err := containerdfs.RootPath(srcRoot, srcPath)
 					if err != nil {
 						return err
 					}
-					if err := unpackArchiveFile(resolvedSrcPath, realUnpackDestPath, ownership); err != nil {
-						return fmt.Errorf("failed to unpack source archive: %w", err)
+					if isArchivePath(resolvedSrcPath) {
+						realUnpackDestPath, err := copier.MaterializeDestDir(ctx, destPath)
+						if err != nil {
+							return err
+						}
+						if err := unpackArchiveFile(resolvedSrcPath, realUnpackDestPath, ownership); err != nil {
+							return fmt.Errorf("failed to unpack source archive: %w", err)
+						}
+						return nil
 					}
-					return nil
 				}
+				return copier.CopyFile(ctx, layercopy.Mount{Root: srcRoot, Mount: srcMnt}, srcPath, destPath, opts)
+			}, mountRefAsReadOnly); err != nil {
+				return err
 			}
-			return copier.CopyFile(ctx, layercopy.Mount{Root: srcRoot, Mount: srcMnt}, srcPath, destPath, opts)
-		}, mountRefAsReadOnly); err != nil {
-			return err
 		}
 
 		usage, err = copier.Usage()

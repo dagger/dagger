@@ -59,7 +59,7 @@ func (pm ProcessMode) String() string {
 
 // GenerateSpec generates spec using containerd functionality.
 // opts are ignored for s.Process, s.Hostname, and s.Mounts .
-func GenerateSpec(ctx context.Context, meta executor.Meta, mounts []executor.Mount, id, resolvConf, hostsFile string, namespace network.Namespace, cgroupParent string, processMode ProcessMode, idmap *idtools.IdentityMapping, apparmorProfile string, selinuxB bool, tracingSocket string, opts ...oci.SpecOpts) (*specs.Spec, func(), error) {
+func GenerateSpec(ctx context.Context, meta executor.Meta, mounts []executor.Mount, id, resolvConf, hostsFile string, namespace network.Namespace, cgroupParent string, processMode ProcessMode, idmap *idtools.IdentityMapping, apparmorProfile string, selinuxB bool, tracingSocket string, beforeMounts func(context.Context, *specs.Spec) context.Context, opts ...oci.SpecOpts) (*specs.Spec, func(), error) {
 	c := &containers.Container{
 		ID: id,
 	}
@@ -67,13 +67,16 @@ func GenerateSpec(ctx context.Context, meta executor.Meta, mounts []executor.Mou
 	if len(meta.CgroupParent) > 0 {
 		cgroupParent = meta.CgroupParent
 	}
+	if cgroupParent == "" {
+		cgroupParent = "/"
+	}
 	if cgroupParent != "" {
 		var cgroupsPath string
 		lastSeparator := cgroupParent[len(cgroupParent)-1:]
 		if strings.Contains(cgroupParent, ".slice") && lastSeparator == ":" {
 			cgroupsPath = cgroupParent + id
 		} else {
-			cgroupsPath = filepath.Join("/", cgroupParent, "buildkit", id)
+			cgroupsPath = filepath.Join("/", cgroupParent, "exec", id)
 		}
 		opts = append(opts, oci.WithCgroup(cgroupsPath))
 	}
@@ -151,6 +154,9 @@ func GenerateSpec(ctx context.Context, meta executor.Meta, mounts []executor.Mou
 	}
 
 	sm := &submounts{}
+	if beforeMounts != nil {
+		ctx = beforeMounts(ctx, s)
+	}
 
 	var releasers []func() error
 	releaseAll := func() {

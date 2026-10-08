@@ -89,6 +89,18 @@ func TestWorkspaceCommandAliases(t *testing.T) {
 	require.Equal(t, []string{"i"}, args)
 }
 
+func TestUpdateMovedToLockUpdate(t *testing.T) {
+	cmd, args, err := rootCmd.Find([]string{"update"})
+	require.NoError(t, err)
+	require.Same(t, updateAliasCmd, cmd)
+	require.Empty(t, args)
+	require.True(t, cmd.Hidden)
+	require.True(t, cmd.DisableFlagParsing)
+	for _, args := range [][]string{nil, {"--no-generate"}, {"hello", "--version", "v2"}} {
+		require.EqualError(t, cmd.RunE(cmd, args), "dagger update has moved to dagger lock update to refresh lockfile entries. To change an installed module's source or version, use dagger module update")
+	}
+}
+
 func TestWorkspaceUpdateMovedToLockUpdate(t *testing.T) {
 	for _, command := range []string{"workspace", "ws"} {
 		cmd, args, err := rootCmd.Find([]string{command, "update"})
@@ -310,6 +322,10 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	require.Contains(t, help, "workspace, ws")
 	require.Contains(t, help, "shell, sh")
 	require.NotContains(t, help, "exec, run")
+	require.NotContains(t, help, "start, up")
+	up, _, err := rootCmd.Find([]string{"up"})
+	require.NoError(t, err)
+	require.Same(t, startCmd, up)
 
 	names := rootHelpCommandNames(help)
 	for _, name := range []string{
@@ -320,8 +336,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"module",
 		"settings",
 		"uninstall",
-		"update",
-		"up",
+		"start",
 		"version",
 		"api",
 		"cloud",
@@ -353,11 +368,12 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"installed",
 		"search",
 		"activity",
+		"update",
 	} {
 		require.NotContains(t, names, name)
 	}
 
-	for _, leaf := range []string{"check", "generate", "init", "up"} {
+	for _, leaf := range []string{"check", "generate", "init", "start"} {
 		for _, parent := range []string{"api", "cloud", "workspace"} {
 			require.Less(t, commandIndex(names, leaf), commandIndex(names, parent))
 		}

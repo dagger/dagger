@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -325,6 +326,117 @@ func TestRemoteMetadataCacheKeyIsolation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, gitInitCalls, "unrelated call key should not be aliased to remote metadata payload")
 	require.Equal(t, gitPayload, res.Value())
+}
+
+func TestPrimePublicRemoteScope(t *testing.T) {
+	secret, err := dagql.NewResultForCall(&Secret{Handle: "private-token"}, &dagql.ResultCall{})
+	require.NoError(t, err)
+	socket, err := dagql.NewResultForCall(&Socket{Handle: "private-socket"}, &dagql.ResultCall{})
+	require.NoError(t, err)
+	for name, change := range map[string]func(*RemoteGitRepository){
+		"anonymous": func(*RemoteGitRepository) {},
+		"username":  func(r *RemoteGitRepository) { r.AuthUsername = "user" },
+		"token":     func(r *RemoteGitRepository) { r.AuthToken = dagql.ObjectResult[*Secret]{Result: secret} },
+		"header":    func(r *RemoteGitRepository) { r.AuthHeader = dagql.ObjectResult[*Secret]{Result: secret} },
+		"socket":    func(r *RemoteGitRepository) { r.SSHAuthSocket = dagql.ObjectResult[*Socket]{Result: socket} },
+		"userinfo":  func(r *RemoteGitRepository) { r.URL.User = url.UserPassword("user", "password") },
+		"service":   func(r *RemoteGitRepository) { r.Services = ServiceBindings{{Hostname: "git"}} },
+		"ssh":       func(r *RemoteGitRepository) { r.URL.Scheme = "ssh" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			cache, err := dagql.NewCache(ctx, "", nil, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+			ctx = engine.ContextWithClientMetadata(dagql.ContextWithCache(ctx, cache), &engine.ClientMetadata{ClientID: "cli", SessionID: "first"})
+			repo := &RemoteGitRepository{URL: &gitutil.GitURL{Scheme: "https", Host: "example.com", Path: "/repo"}}
+			change(repo)
+			metadata := &gitutil.Remote{Refs: []*gitutil.Ref{{Name: "HEAD", SHA: strings.Repeat("a", 40)}}}
+			require.NoError(t, repo.PrimePublicRemote(ctx, metadata))
+			key, err := repo.remoteCacheKey(ctx)
+			require.NoError(t, err)
+			initialized := false
+			res, err := cache.GetOrInitArbitrary(ctx, "first", key, func(context.Context) (any, error) { initialized = true; return "existing", nil })
+			require.NoError(t, err)
+			require.Equal(t, name != "anonymous", initialized, "only anonymous HTTP metadata may be primed")
+			if name == "anonymous" {
+				got, err := remoteFromCacheResult(res.Value())
+				require.NoError(t, err)
+				require.Equal(t, metadata, got)
+				metadata.Refs[0].SHA = strings.Repeat("b", 40)
+				require.NoError(t, repo.PrimePublicRemote(ctx, metadata))
+				got, err = repo.Remote(ctx)
+				require.NoError(t, err)
+				require.Equal(t, strings.Repeat("a", 40), got.Refs[0].SHA, "first session view wins; input mutation cannot affect it")
+				ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "cli", SessionID: "second"})
+				require.NoError(t, repo.PrimePublicRemote(ctx, metadata))
+				got, err = repo.Remote(ctx)
+				require.NoError(t, err)
+				require.Equal(t, strings.Repeat("b", 40), got.Refs[0].SHA, "new session sees new refs")
+			} else {
+				require.Equal(t, "existing", res.Value())
+			}
+		})
+	}
+}
+
+func TestCachedGitRemoteLiveRefresh(t *testing.T) {
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+	ctx = engine.ContextWithClientMetadata(dagql.ContextWithCache(ctx, cache), &engine.ClientMetadata{ClientID: "cli", SessionID: "session"})
+
+	const key = "git-remote-live-refresh"
+	head := strings.Repeat("a", 40)
+	lists := 0
+	list := func(context.Context) (*gitutil.Remote, error) { //nolint:unparam // signature fixed by cachedGitRemote
+		lists++
+		return &gitutil.Remote{Refs: []*gitutil.Ref{{Name: "refs/heads/main", SHA: head}}}, nil
+	}
+	get := func(ctx context.Context) string {
+		t.Helper()
+		remote, _, err := cachedGitRemote(ctx, cache, "session", key, list)
+		require.NoError(t, err)
+		require.Len(t, remote.Refs, 1)
+		return remote.Refs[0].SHA
+	}
+
+	require.Equal(t, head, get(ctx))
+	require.Equal(t, 1, lists)
+
+	// The remote moves: ordinary lookups keep the session's listing.
+	old := head
+	head = strings.Repeat("b", 40)
+	require.Equal(t, old, get(ctx))
+	require.Equal(t, 1, lists)
+
+	// A live lookup lists again, once, however many times it reads.
+	live := ContextWithLiveGitRemote(ctx)
+	require.Same(t, liveGitRemoteFromContext(live), liveGitRemoteFromContext(ContextWithLiveGitRemote(live)),
+		"nested live lookups share one refresh")
+	require.Equal(t, head, get(live))
+	require.Equal(t, head, get(live))
+	require.Equal(t, 2, lists)
+
+	// The refreshed listing replaced the session's: ordinary lookups see it.
+	require.Equal(t, head, get(ctx))
+	require.Equal(t, 2, lists)
+
+	// Each live lookup lists again.
+	head = strings.Repeat("c", 40)
+	require.Equal(t, head, get(ContextWithLiveGitRemote(ctx)))
+	require.Equal(t, 3, lists)
+
+	// A live lookup whose own read populated the listing does not list twice.
+	freshKey := key + "-fresh"
+	live = ContextWithLiveGitRemote(ctx)
+	for range 2 {
+		remote, _, err := cachedGitRemote(live, cache, "session", freshKey, list)
+		require.NoError(t, err)
+		require.Equal(t, head, remote.Refs[0].SHA)
+	}
+	require.Equal(t, 4, lists)
 }
 
 func TestNamedFetchRefSpecs(t *testing.T) {

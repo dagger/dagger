@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/auth"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -213,7 +214,11 @@ func (r *Resolver) ResolveImageConfig(
 			}
 		}
 
-		resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport)
+		network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
+		if err != nil {
+			return nil, fmt.Errorf("create registry resolve network recorder: %w", err)
+		}
+		resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, network)
 		if err != nil {
 			return nil, err
 		}
@@ -283,11 +288,16 @@ func (r *Resolver) ResolveImageDigest(
 		tracing.FinishWithError(span, rerr)
 	}()
 
+	network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		return "", "", fmt.Errorf("create registry resolve network recorder: %w", err)
+	}
 	resolvedRef, rootDesc, _, err := r.resolveRemoteRootDescriptor(
 		ctx,
 		ref,
 		opts.Network,
 		opts.RegistryTransport,
+		network,
 	)
 	if err != nil {
 		return "", "", err
@@ -329,7 +339,11 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		}
 	}
 
-	resolvedRef, rootDesc, resolver, err := r.resolvePullRootDescriptor(ctx, ref, opts)
+	network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
+	if err != nil {
+		return nil, fmt.Errorf("create registry pull network recorder: %w", err)
+	}
+	resolvedRef, rootDesc, resolver, err := r.resolvePullRootDescriptor(ctx, ref, opts, network)
 	if err != nil {
 		return nil, err
 	}
@@ -337,25 +351,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	if err != nil {
 		return nil, err
 	}
-	var manifestDesc ocispecs.Descriptor
-	var manifest ocispecs.Manifest
-	if opts.ResolveMode == ResolveModeDefault {
-		metadata, err := r.ensureImageConfigMetadata(ctx, resolvedRef, rootDesc, fetcher, platformMatcher, true)
-		if err != nil {
-			return nil, err
-		}
-		manifestDesc = metadata.manifestDesc
-		manifest = metadata.manifest
-	} else {
-		provider := contentutil.FromFetcher(fetcher)
-		var err error
-		manifestDesc, manifest, err = resolveManifestDescriptor(ctx, provider, rootDesc, platformMatcher, true)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(imageMetadataLeaseTTL), bkcache.MakeTemporary)
+	leaseCtx, release, err := r.newPullLease(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -364,6 +360,24 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 			release(context.WithoutCancel(leaseCtx))
 		}
 	}()
+
+	var manifestDesc ocispecs.Descriptor
+	var manifest ocispecs.Manifest
+	if opts.ResolveMode == ResolveModeDefault {
+		metadata, err := r.ensureImageConfigMetadata(leaseCtx, resolvedRef, rootDesc, fetcher, platformMatcher, true)
+		if err != nil {
+			return nil, err
+		}
+		manifestDesc = metadata.manifestDesc
+		manifest = metadata.manifest
+	} else {
+		provider := contentutil.FromFetcher(fetcher)
+		var err error
+		manifestDesc, manifest, err = resolveManifestDescriptor(leaseCtx, provider, rootDesc, platformMatcher, true)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	metadata := map[digest.Digest]ocispecs.Descriptor{}
 	recordNonLayers := images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
@@ -379,7 +393,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	childrenHandler := images.ChildrenHandler(r.contentStore)
 	handler := images.Handlers(
 		recordNonLayers,
-		remotes.FetchHandler(progressIngester{r.contentStore}, fetcher),
+		remotes.FetchHandler(progressIngester{Ingester: r.contentStore}, fetcher),
 		childrenHandler,
 		dslHandler,
 	)
@@ -453,28 +467,54 @@ type localizedImageClosure struct {
 // the same name to a different registry. A cached blob only remembers the
 // name, so it cannot tell us which registry it really came from. Asking the
 // registry is the only safe option.
-func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, opts PullOpts) (string, ocispecs.Descriptor, remotes.Resolver, error) {
+func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, opts PullOpts, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Resolver, error) {
 	if opts.ResolveMode == ResolveModeDefault && len(opts.Network.HostAliases) == 0 {
 		resolvedRef, rootDesc, _, found, err := r.tryLocalCanonicalConfigMetadata(ctx, ref, ResolveImageConfigOpts{Platform: &opts.Platform})
 		if err != nil {
 			return "", ocispecs.Descriptor{}, nil, err
 		}
 		if found {
-			return resolvedRef, rootDesc, docker.NewResolver(docker.ResolverOptions{Hosts: r.registryHosts(opts.Network, opts.RegistryTransport)}), nil
+			hosts := r.registryHosts(opts.Network, opts.RegistryTransport)
+			fetchHosts := registryHostsWithNetworkRecorder(hosts, recorder)
+			return resolvedRef, rootDesc, docker.NewResolver(docker.ResolverOptions{Hosts: fetchHosts}), nil
 		}
 	}
-	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport)
+	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, recorder)
 }
 
-func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport) (string, ocispecs.Descriptor, remotes.Resolver, error) {
+func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Resolver, error) {
+	hosts := r.registryHosts(network, registryTransport)
+	resolveHosts := registryHostsWithNetworkRecorder(hosts, recorder)
 	resolver := docker.NewResolver(docker.ResolverOptions{
-		Hosts: r.registryHosts(network, registryTransport),
+		Hosts: resolveHosts,
 	})
 	resolvedRef, rootDesc, err := resolver.Resolve(ctx, ref)
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
 	}
+	// The same transport records both resolution and descriptor response bodies.
 	return resolvedRef, rootDesc, resolver, nil
+}
+
+func registryHostsWithNetworkRecorder(hosts docker.RegistryHosts, recorder *enginetelemetry.NetworkAccumulator) docker.RegistryHosts {
+	return func(domain string) ([]docker.RegistryHost, error) {
+		resolved, err := hosts(domain)
+		if err != nil {
+			return nil, err
+		}
+		for i := range resolved {
+			client := cloneHTTPClient(resolved[i].Client)
+			transport := client.Transport
+			if transport == nil {
+				transport = http.DefaultTransport
+			}
+			client.Transport = enginetelemetry.NetworkResponseTransport(transport,
+				func(_ context.Context, n int64) { recorder.Add(n) },
+			)
+			resolved[i].Client = client
+		}
+		return resolved, nil
+	}
 }
 
 func (r *Resolver) tryLocalCanonicalConfig(
@@ -586,7 +626,7 @@ func (r *Resolver) tryLocalCanonicalClosure(
 		return nil, false, nil, nil
 	}
 
-	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(imageMetadataLeaseTTL), bkcache.MakeTemporary)
+	leaseCtx, release, err := r.newPullLease(ctx)
 	if err != nil {
 		return nil, false, nil, err
 	}
@@ -667,6 +707,13 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if img == nil {
 		return errors.New("pushed image is nil")
 	}
+	network, err := enginetelemetry.NewNetworkAccumulator(
+		ctx,
+		enginetelemetry.NetworkTX,
+	)
+	if err != nil {
+		return fmt.Errorf("create registry push network recorder: %w", err)
+	}
 
 	ctx = contentutil.RegisterContentPayloadTypes(ctx)
 	rootDesc := img.RootDesc
@@ -693,7 +740,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	}
 
 	pushUpdateSourceHandler, err := updateDistributionSourceHandler(r.contentStore, images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
-		_, err := pushHandler(pusher, img.Provider)(ctx, desc)
+		_, err := pushHandler(pusher, img.Provider, network)(ctx, desc)
 		return nil, err
 	}), ref)
 	if err != nil {
@@ -732,7 +779,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if err != nil {
 		return err
 	}
-	pushLeaf := pushHandler(pusher, img.Provider)
+	pushLeaf := pushHandler(pusher, img.Provider, network)
 	for i := len(manifestStack) - 1; i >= 0; i-- {
 		if _, err := pushLeaf(ctx, manifestStack[i]); err != nil {
 			return err
@@ -1235,7 +1282,11 @@ func collectManifestStack(ctx context.Context, provider content.Provider, rootDe
 	return stack, nil
 }
 
-func pushHandler(pusher remotes.Pusher, provider content.Provider) images.HandlerFunc {
+func pushHandler(
+	pusher remotes.Pusher,
+	provider content.Provider,
+	network *enginetelemetry.NetworkAccumulator,
+) images.HandlerFunc {
 	return func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
 		cw, err := pusher.Push(ctx, desc)
 		if err != nil {
@@ -1252,7 +1303,10 @@ func pushHandler(pusher remotes.Pusher, provider content.Provider) images.Handle
 		defer ra.Close()
 		// stream upload progress per layer, attributed to the "pushing
 		// <ref>" span carried by ctx
-		w := wrapProgressWriter(ctx, cw, desc)
+		w := &attributedWriter{
+			Writer:  wrapProgressWriter(ctx, cw, desc),
+			network: network,
+		}
 		if err := content.Copy(ctx, w, io.NewSectionReader(ra, 0, desc.Size), desc.Size, desc.Digest); err != nil {
 			if errors.Is(err, cerrdefs.ErrAlreadyExists) {
 				return nil, nil

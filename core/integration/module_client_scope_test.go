@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -30,12 +30,12 @@ module = "go-sdk"
 module = "python-sdk"
 `
 
-func moduleClientScopeTestBase(ctx context.Context, t *testctx.T) *dagger.Container {
+func moduleClientScopeTestBase(ctx context.Context, t *testctx.T) *core.Container {
 	t.Helper()
 	c := connect(ctx, t)
 	sdkPath, err := filepath.Abs("testdata/sdks/module-max-lifecycle")
 	require.NoError(t, err)
-	sdk := c.Host().Directory(sdkPath)
+	sdk := core.NewQuery(c).Host().Directory(sdkPath)
 	return goGitBase(t, c).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
 		With(nonNestedDevEngine(c)).
@@ -52,7 +52,7 @@ source = "dang"
 		WithWorkdir("/work/app/sub")
 }
 
-func readModuleClientConfig(ctx context.Context, t *testctx.T, ctr *dagger.Container) *workspacecfg.Config {
+func readModuleClientConfig(ctx context.Context, t *testctx.T, ctr *core.Container) *workspacecfg.Config {
 	t.Helper()
 	contents, err := ctr.File("/work/dagger.toml").Contents(ctx)
 	require.NoError(t, err)

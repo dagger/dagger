@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -226,6 +227,50 @@ func (DangSuite) TestEnums(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "P256", strings.TrimSpace(out))
+	})
+
+	t.Run("object with an enum field as an argument", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goGitBase(t, c).
+			WithNewFile("dagger.toml", "[modules.types]\nsource = \".dagger/modules/types\"\n").
+			WithNewFile(".dagger/modules/types/dagger-module.toml", `name = "types"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "dang"
+`).
+			WithNewFile(".dagger/modules/types/main.dang", `enum Mood {
+  HAPPY
+  GRUMPY
+}
+
+type Pair {
+  pub left: String!
+  pub mood: Mood!
+
+  new(left: String!, mood: Mood!) {
+    self.left = left
+    self.mood = mood
+    self
+  }
+}
+
+type Types {
+  pub pair(left: String!, mood: Mood!): Pair! {
+    Pair(left: left, mood: mood)
+  }
+
+  pub join(pair: Pair!): String! {
+    pair.left + ":" + JSON.encode(pair.mood)
+  }
+}
+`).
+			With(daggerShellAt("types", "join $(pair --left a --mood GRUMPY)")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `a:"GRUMPY"`, strings.TrimSpace(out))
 	})
 }
 
@@ -570,7 +615,7 @@ func (DangSuite) TestLoadErrorReport(ctx context.Context, t *testctx.T) {
   hello: String! { intentionallyUndefinedSymbol }
 }
 `)
-		mod, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
+		mod, err := core.NewQuery(c).ModuleSource(modDir).AsModule().Sync(ctx)
 		require.NoError(t, err)
 		require.NoError(t, mod.Serve(ctx))
 
@@ -588,17 +633,17 @@ func (DangSuite) TestLoadErrorReport(ctx context.Context, t *testctx.T) {
   hello: IntentionallyUndefinedType! { "hi" }
 }
 `)
-		_, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
+		_, err := core.NewQuery(c).ModuleSource(modDir).AsModule().Sync(ctx)
 		requireReported(t, c, &logs, err, "unresolved type: IntentionallyUndefinedType")
 	})
 }
 
-func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
+func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *core.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/dang", moduleName))
 	require.NoError(t, err)
 
 	return goGitBase(t, c).
-		WithDirectory("testdata/modules/dang/"+moduleName, c.Host().Directory(modSrc)).
+		WithDirectory("testdata/modules/dang/"+moduleName, core.NewQuery(c).Host().Directory(modSrc)).
 		WithWorkdir("/work/testdata/modules/dang/" + moduleName)
 }

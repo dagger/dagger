@@ -34,10 +34,10 @@ $ viztest: Viztest! X.Xs CACHED
 │   ┃ XX:XX:XX WRN port not ready host=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local error="dial tcp 10.XX.XX.XX:6379: connect: connection refused" elapsed=X.Xs
 │   ┃ XX:XX:XX INF port is healthy host=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local endpoint=10.XX.XX.XX:6379
 │
-├╴$ Container.withServiceBinding(
+├╴○ Container.withServiceBinding(
 │   ┆ alias: "redis"
 │   ┆ service: Container.asService: Service!
-│   ): Container! X.Xs CACHED
+│   ): Container! X.Xs
 ├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
 ├╴✔ withExec redis-cli -h redis ping X.Xs
 │ ┃ PONG

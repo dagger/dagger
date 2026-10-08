@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	_ "embed"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"path"
 	"regexp"
 	"slices"
 	"sort"
@@ -23,7 +25,6 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
-	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/patchpreview"
@@ -114,8 +115,8 @@ type MCP struct {
 	// applyStateReturn / adoptLLM). When set, step() appends the turn's tool
 	// results to IT rather than to the LLM that made the call, so the loop
 	// resumes from the returned conversation — env, tools, prompts and all.
-	// Continuations run after the turn's other calls (CallBatch), so by then
-	// there is no other state left to persist. Transient: cleared by Clone.
+	// CallBatch stops once one is adopted; step() runs the turn's remaining
+	// calls on the continued conversation. Transient: cleared by Clone.
 	continuation dagql.ObjectResult[*LLM]
 	// stateChanged records that a tool call changed the bound workspace or
 	// bindings since selfLLM was set — this MCP has diverged from the
@@ -209,10 +210,12 @@ func (m *MCP) Standalone() *MCP {
 // SetSelfLLM records the conversation dispatching this step's tool calls, so
 // the object-tool adapter can pass it explicitly to an `LLM!` argument. Called
 // by step() on its transient MCP clone: first with the response itself, then —
-// before CallBatch runs the turn's continuations — with the turn's workspace
-// and binding changes folded in, so a continuation transforms the
-// state the turn actually produced. The conversation is in sync with this MCP
-// at that point by construction, so the divergence flag resets.
+// before CallBatch runs a continuation — with the workspace and binding
+// changes of the calls before it folded in, so a continuation transforms the
+// state the turn actually produced, and finally, once a continuation is
+// adopted, with that continuation on the MCP running the rest of the turn.
+// The conversation is in sync with this MCP at each point by construction,
+// so the divergence flag resets.
 func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -221,11 +224,11 @@ func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
 }
 
 // errContinuationAdopted is returned by the state rings (applyChangeset,
-// rebindWorkspace, rebindBoundTool) once a continuation has been adopted this
-// turn: step() resumes from the continuation, so a change made after it would
-// be dropped without a trace. Continuations normally run last (see
-// SplitContinuationCalls), so this only fires when one was reached some other
-// way, e.g. wrapped in the Timeout builtin.
+// rebindWorkspace, rebindBoundTool) once a continuation has been adopted on
+// this MCP: step() resumes from the continuation, so a change made here after
+// it would be dropped without a trace. CallBatch stops at a continuation and
+// step() runs the rest of the turn on the continued conversation, so this only
+// fires for a change racing the adoption itself.
 var errContinuationAdopted = errors.New("a conversation-replacing tool call already ran this turn; re-issue this call in the next turn so it applies to the continued conversation")
 
 // guardStateChange is called by the state rings before they mutate this MCP.
@@ -243,26 +246,6 @@ func (m *MCP) markStateChanged() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stateChanged = true
-}
-
-// SplitContinuationCalls partitions a turn's tool calls into the ones to run
-// first, in the order written, and the continuations (ReturnsLLM tools) that
-// CallBatch runs afterwards, once every other call's effect on the workspace
-// and bindings has been folded into the conversation they receive. A
-// continuation is the turn's outermost transform — "replace the conversation"
-// — so it takes everything else that happened as input: `[reload,
-// editModule]` reloads the edit just like `[editModule, reload]` does. Calls
-// to unknown tools stay with the others so they fail there normally.
-func (m *MCP) SplitContinuationCalls(tools []LLMTool, toolCalls []*LLMToolCall) (regular, continuations []*LLMToolCall) {
-	for _, toolCall := range toolCalls {
-		tool, err := m.LookupTool(toolCall.Name, tools)
-		if err == nil && tool.ReturnsLLM {
-			continuations = append(continuations, toolCall)
-			continue
-		}
-		regular = append(regular, toolCall)
-	}
-	return regular, continuations
 }
 
 // Continuation returns the LLM a tool returned during this step, if any. step()
@@ -462,7 +445,7 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		return fmt.Sprintf("WARNING: failed to bound changed paths: %s", err)
 	}
 	if tooLarge {
-		return fmt.Sprintf("The change exceeds the %d-path inspection budget; patch omitted. File contents and renames were not inspected for this summary.", patchSummaryMaxPaths)
+		return patchBudgetExceeded()
 	}
 
 	// Inspect stats before generating a patch. Keep these transient entries
@@ -488,7 +471,39 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 			}
 		}
 	}
+	return summarizeDiffStats(stats)
+}
 
+// summarizeAppliedPatch is summarizePatch for a changeset applied as a patch
+// rendered against the workspace (Changeset.RenderPatchOnto): that patch is
+// what actually changed in the workspace, so it is the one shown, within the
+// same bounds, rather than a second render of the changeset's own.
+func (m *MCP) summarizeAppliedPatch(ctx context.Context, changes dagql.ObjectResult[*Changeset], patch []byte) string {
+	tooLarge, err := changesetTooLarge(ctx, changes)
+	if err != nil {
+		return fmt.Sprintf("WARNING: failed to bound changed paths: %s", err)
+	}
+	if tooLarge {
+		return patchBudgetExceeded()
+	}
+	if preview, ok := readPatchPreview(bytes.NewReader(patch)); ok {
+		return preview
+	}
+	stats, err := changes.Self().DiffStats(ctx)
+	if err != nil {
+		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
+	}
+	if len(stats) == 0 {
+		return ""
+	}
+	return summarizeDiffStats(stats)
+}
+
+func patchBudgetExceeded() string {
+	return fmt.Sprintf("The change exceeds the %d-path inspection budget; patch omitted. File contents and renames were not inspected for this summary.", patchSummaryMaxPaths)
+}
+
+func summarizeDiffStats(stats []*DiffStat) string {
 	const summaryWidth = 80
 
 	entries := make([]patchpreview.Entry, len(stats))
@@ -629,10 +644,11 @@ func (m *MCP) applyStateReturn(ctx context.Context, srv *dagql.Server, val dagql
 				return true, "", err
 			}
 		}
-		if err := m.applyChangeset(ctx, srv, changes); err != nil {
+		out, err := m.applyChangeset(ctx, srv, changes)
+		if err != nil {
 			return true, "", err
 		}
-		return true, m.summarizePatch(ctx, srv, changes), nil
+		return true, out, nil
 	}
 	if ws, ok := dagql.UnwrapAs[dagql.ObjectResult[*Workspace]](val); ok {
 		out, err := m.rebindWorkspace(ctx, srv, ws)
@@ -950,22 +966,24 @@ func countCommitsSince(ctx context.Context, srv *dagql.Server, head, base dagql.
 //     load fails the tool call instead of bricking the loop. A failure here is
 //     an ordinary failed tool call: the agent survives, the old conversation
 //     stands.
-//   - one per turn: LLMs do not compose the way Changesets do, so at most one
-//     continuation may be adopted per batch of tool calls.
+//   - one per MCP: LLMs do not compose the way Changesets do, so at most one
+//     continuation may be adopted on an MCP. A later continuation in the same
+//     turn runs on the continued conversation's MCP instead (see toolDispatch),
+//     transforming the first one's result.
 //   - visibility: the string returned here is the model's notice of what
 //     changed — which tools came and went, and whether the conversation
 //     history itself was replaced. A swap is never silent.
 //
 // Two mechanical details the caller handles rather than this function:
 //
-//   - ordering: CallBatch runs continuations after every other call in the
-//     turn (SplitContinuationCalls), with the turn's workspace and binding
-//     changes already folded into the conversation they receive by step(), so
-//     a continuation transforms what the turn produced. If one is reached out
-//     of order (e.g. wrapped in the Timeout builtin) the stateChanged check
-//     below refuses it rather than let it drop earlier work, and
-//     errContinuationAdopted refuses later work rather than let the
-//     continuation drop it.
+//   - ordering: a continuation runs in its written position. Before it runs,
+//     step() folds the workspace and binding changes of the calls before it
+//     into the conversation it receives, so a continuation transforms what
+//     the turn produced; CallBatch then stops, and step() runs the calls
+//     after it on the continued conversation. If one is adopted without that
+//     fold (e.g. returned some other way than a ReturnsLLM tool) the
+//     stateChanged check below refuses it rather than let it drop earlier
+//     work.
 //   - tool results: step() appends the turn's tool results to the adopted LLM,
 //     and a tool-result block is only valid where the matching tool call exists
 //     in the history. See toolResultSelectors in llm.go, which degrades an
@@ -1149,31 +1167,173 @@ func summarizeToolsetChange(before, after []LLMTool) string {
 	return strings.Join(lines, "\n")
 }
 
-// applyChangeset overlays a Changeset onto the bound workspace and updates
-// m.workspace to the new overlay Workspace.
-func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) error {
+// applyChangeset overlays a Changeset onto the bound workspace, updates
+// m.workspace to the new overlay Workspace, and tells the model what changed.
+//
+// How the overlay is recorded decides what restoring the conversation, and
+// every commit, recompose and module load built from its workspace, replays.
+// The changeset's own recipe is whatever its producer chose: a tool call, and
+// often a container's output, e.g. a generator's source tree after codegen
+// against a dev engine. So:
+//
+//   - A host-backed workspace reads the client's checkout, so a conversation
+//     built on one cannot be reproduced anyway: the raw changeset is applied.
+//   - Otherwise the workspace is already in the engine, and the changeset is
+//     applied as a patch rendered against it (Changeset.RenderPatchOnto) with
+//     Workspace.withPatchFile. The recorded overlay is the prior workspace plus
+//     the patch: the producer is not replayed, and applying it compares no
+//     trees. The patch is also what the model is shown. This holds for a file
+//     edit's changeset too, though its own recipe would be cheap to replay:
+//     that recipe diffs Before and After, a full-tree diff the first read of
+//     the workspace would pay when Before is the whole root, while the patch
+//     is rendered for the tool result anyway.
+//   - Unless that patch is larger than EmbeddedPatchMaxBytes or carries a
+//     binary file (see EmbedPatch): the patch is inlined in the recipe, and
+//     so in every trace that records it, and a build output (`go build`,
+//     `go test -c`) would fill telemetry with megabytes of base85. Such a
+//     changeset is applied raw, so restoring the conversation reruns its
+//     producer instead, assuming it is hermetic. Should it not be, the
+//     patches recorded after it leave conflict markers where they no longer
+//     fit, rather than fail the restore (see applyChangesetPatch).
+//
+// Either way, a changeset that touches .git is refused
+// (refuseGitMetadataChanges).
+//
+// A tool's changeset is measured from the workspace cwd, as Workspace.changes
+// measures them and `dagger generate` applies them: a changeset returned from
+// a function applies wherever its caller stands. Workspace.withChanges and
+// withPatchFile apply at the root, so it is placed at the cwd first.
+func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (string, error) {
 	if m.workspace.Self() == nil {
-		return fmt.Errorf("cannot apply changes: no workspace bound")
+		return "", fmt.Errorf("cannot apply changes: no workspace bound")
 	}
 	if err := m.guardStateChange(); err != nil {
-		return err
-	}
-	normalized, err := normalizeChangesetToPatch(ctx, srv, changes)
-	if err != nil {
-		// Fall back to the raw changeset: normalization is a durability
-		// upgrade for restored conversations, not a correctness requirement
-		// for the live one.
-		slog.Warn("failed to normalize changeset to patch form", "error", err)
-		normalized = changes
+		return "", err
 	}
 	// A successful command need not change any files. Do not retain its
 	// Changeset (or even its Before recipe) as an overlay: that would make
 	// restoring the conversation evaluate the command again. This bounded
 	// check distinguishes directory-only edits from an actual no-op.
-	if changed, err := normalized.Self().PathCountExceeds(ctx, 0); err == nil && !changed {
-		return nil
+	if changed, err := changes.Self().PathCountExceeds(ctx, 0); err == nil && !changed {
+		return "", nil
 	}
-	changesID, err := normalized.ID()
+	if err := refuseGitMetadataChanges(ctx, changes); err != nil {
+		return "", err
+	}
+	ws := m.workspace.Self()
+	root, inEngine := ws.SourceDirectory()
+	inEngine = inEngine && !ws.ClientLocalBase()
+	prefix := workspaceCwdPrefix(ws)
+
+	if inEngine {
+		out, err := m.applyChangesetPatch(ctx, srv, root, prefix, changes)
+		if !PatchNotEmbeddable(err) {
+			return out, err
+		}
+		slog.Debug("changeset patch not embeddable; applying the raw changeset",
+			"reason", err, "max", EmbeddedPatchMaxBytes)
+	}
+	placed, err := changesetAt(ctx, srv, changes, prefix)
+	if err != nil {
+		return "", err
+	}
+	if err := m.overlayChangeset(ctx, srv, placed); err != nil {
+		return "", err
+	}
+	return m.summarizePatch(ctx, srv, changes), nil
+}
+
+// refuseGitMetadataChanges fails for a changeset that touches a .git path, at
+// the workspace root or nested (a vendored checkout's .git). Tools must not
+// change git state through a changeset: as a patch `git apply` refuses such
+// paths, while one carrying binary objects would be applied raw, so the
+// outcome would hinge on the content. A tool that means to change git state
+// returns a Workspace instead.
+func refuseGitMetadataChanges(ctx context.Context, changes dagql.ObjectResult[*Changeset]) error {
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return fmt.Errorf("compute changeset paths: %w", err)
+	}
+	for _, p := range slices.Concat(paths.Added, paths.Modified, paths.AllRemoved) {
+		if isGitMetadataPath(p) {
+			return fmt.Errorf("changeset touches %q: tools must not modify .git; to change git state, return a Workspace instead (e.g. one built from a GitRepository with withContents)", strings.TrimSuffix(p, "/"))
+		}
+	}
+	return nil
+}
+
+// isGitMetadataPath reports whether a changeset path is, or is beneath, a
+// .git entry. A trailing slash (a directory) is ignored.
+func isGitMetadataPath(p string) bool {
+	for part := range strings.SplitSeq(strings.Trim(p, "/"), "/") {
+		if part == ".git" {
+			return true
+		}
+	}
+	return false
+}
+
+// workspaceCwdPrefix returns a workspace's cwd as a path relative to its root,
+// "." for the root itself, whichever way the cwd is spelled ("", ".", "/",
+// "sub" or "/sub").
+func workspaceCwdPrefix(ws *Workspace) string {
+	cwd := path.Clean("/" + ws.Cwd)
+	if cwd == "/" {
+		return "."
+	}
+	return strings.TrimPrefix(cwd, "/")
+}
+
+// changesetAt places a changeset measured from a directory of the workspace
+// at that directory, for Workspace.withChanges, which applies at the root:
+// both sides are copied there in otherwise empty trees.
+func changesetAt(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset], prefix string) (dagql.ObjectResult[*Changeset], error) {
+	if prefix == "." || prefix == "" {
+		return changes, nil
+	}
+	place := func(dir dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Directory], error) {
+		var placed dagql.ObjectResult[*Directory]
+		dirID, err := dir.ID()
+		if err != nil {
+			return placed, err
+		}
+		err = srv.Select(ctx, srv.Root(), &placed,
+			dagql.Selector{View: srv.View, Field: "directory"},
+			dagql.Selector{View: srv.View, Field: "withDirectory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(prefix)},
+				{Name: "source", Value: dagql.NewID[*Directory](dirID)},
+			}},
+		)
+		return placed, err
+	}
+	var placed dagql.ObjectResult[*Changeset]
+	before, err := place(changes.Self().Before)
+	if err != nil {
+		return placed, fmt.Errorf("place changeset at %q: %w", prefix, err)
+	}
+	after, err := place(changes.Self().After)
+	if err != nil {
+		return placed, fmt.Errorf("place changeset at %q: %w", prefix, err)
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return placed, err
+	}
+	if err := srv.Select(ctx, after, &placed, dagql.Selector{
+		View:  srv.View,
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
+		},
+	}); err != nil {
+		return placed, fmt.Errorf("place changeset at %q: %w", prefix, err)
+	}
+	return placed, nil
+}
+
+// overlayChangeset applies a changeset as is, with Workspace.withChanges.
+func (m *MCP) overlayChangeset(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) error {
+	changesID, err := changes.ID()
 	if err != nil {
 		return fmt.Errorf("get changeset ID: %w", err)
 	}
@@ -1192,180 +1352,73 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	return nil
 }
 
-// normalizeChangesetToPatch rewrites a changeset into pure patch data:
-// after = before.withPatchFile(blob(patch), onConflict: LEAVE_CONFLICT_MARKERS),
-// changes = after.changes(from: before).
+// applyChangesetPatch applies a changeset to an in-engine workspace as a patch
+// rendered against the workspace's root, with Workspace.withPatchFile. The
+// changeset applies at prefix, the workspace cwd it was measured from.
 //
-// A tool-built changeset's After is an operation chain (e.g.
-// File.withReplaced) rooted at live workspace reads. Reapplying those
-// operations when a conversation is restored fails once the files have moved
-// on (the search text is gone), or silently re-applies them when it hasn't.
-// Capturing the patch now — while the content the operations ran against is
-// known — makes the recorded overlay pure data, and its restoration a tolerant
-// application: hunks that fit apply, hunks that don't leave conflict markers
-// for the agent to resolve.
+// The patch starts from the workspace's own content, so applying it
+// reproduces what Workspace.withChanges would by construction: there is
+// nothing to check and nothing to fall back to. Only a changeset that touches
+// a workspace mount is refused, as withChanges refuses it; a patch that is too
+// large or carries binary content fails with ErrPatchTooLarge or
+// ErrPatchBinary, for the caller to apply it raw. Should git still refuse the
+// patch, e.g. a file it would create beyond a symbolic link, the call fails
+// and the bound workspace stays as it was.
 //
-// Size alone is no reason to keep the raw changeset: a large one is typically
-// a generator's output, whose raw form retains the generator's execution — dev
-// engines, codegen, toolchains — and makes restoring the conversation re-run
-// all of it. The patch travels as a blob, so its size never inflates call
-// arguments. Only a patch File.contents cannot read is kept raw.
-func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
-	var patch dagql.ObjectResult[*File]
-	if err := srv.Select(ctx, changes, &patch, dagql.Selector{
-		View:  srv.View,
-		Field: "asPatch",
-	}); err != nil {
-		return changes, fmt.Errorf("render changeset as patch: %w", err)
-	}
-	// Stat before reading: File.contents refuses files over
-	// MaxFileContentsSize only after reading up to it.
-	var size int
-	if err := srv.Select(ctx, patch, &size, dagql.Selector{
-		View:  srv.View,
-		Field: "size",
-	}); err != nil {
-		return changes, fmt.Errorf("stat changeset patch: %w", err)
-	}
-	if size > engineutil.MaxFileContentsSize {
-		slog.Debug("changeset patch too large to normalize to patch form; keeping raw changeset",
-			"bytes", size,
-			"max", engineutil.MaxFileContentsSize)
-		return changes, nil
-	}
-	patchData, err := patch.Self().Contents(ctx, patch, nil, nil)
+// The patch is recorded with onConflict LEAVE_CONFLICT_MARKERS rather than
+// FAIL. Applied now, it fits by construction; it can only stop fitting when
+// the conversation is restored and an earlier step, applied raw (see
+// applyChangeset), replays a producer that is not hermetic. Hunks that no
+// longer fit then leave conflict markers instead of failing the whole
+// restore; a file git cannot patch at all still fails it.
+func (m *MCP) applyChangesetPatch(ctx context.Context, srv *dagql.Server, root dagql.ObjectResult[*Directory], prefix string, changes dagql.ObjectResult[*Changeset]) (string, error) {
+	paths, err := changes.Self().ComputePaths(ctx)
 	if err != nil {
-		return changes, fmt.Errorf("read changeset patch: %w", err)
+		return "", fmt.Errorf("compute changeset paths: %w", err)
 	}
-	before := changes.Self().Before
-	if before.Self() == nil {
-		return changes, fmt.Errorf("changeset has no before directory")
-	}
-	beforeID, err := before.ID()
-	if err != nil {
-		return changes, err
-	}
-	// Empty patches still need normalization: they may describe directory-only
-	// changes, or a no-op whose raw After retains an expensive tool execution.
-	patched := before
-	if len(patchData) > 0 {
-		// No View: blob postdates some client views, and like
-		// checkpointOverlay's patch blob this is engine-internal plumbing.
-		var blob dagql.ObjectResult[*File]
-		if err := srv.Select(ctx, srv.Root(), &blob, dagql.Selector{
-			Field: "blob",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.NewString("changeset.patch")},
-				{Name: "contents", Value: dagql.Bytes(patchData)},
-				{Name: "permissions", Value: dagql.NewInt(0o600)},
-			},
-		}); err != nil {
-			return changes, fmt.Errorf("embed changeset patch: %w", err)
-		}
-		blobID, err := blob.ID()
-		if err != nil {
-			return changes, err
-		}
-		if err := srv.Select(ctx, before, &patched, dagql.Selector{
-			View:  srv.View,
-			Field: "withPatchFile",
-			Args: []dagql.NamedInput{
-				{Name: "patch", Value: dagql.NewID[*File](blobID)},
-				{Name: "onConflict", Value: PatchConflictLeaveMarkers},
-			},
-		}); err != nil {
-			return changes, fmt.Errorf("apply patch to before: %w", err)
+	for _, p := range slices.Concat(paths.Added, paths.Modified, paths.AllRemoved) {
+		p = path.Join(prefix, strings.TrimSuffix(p, "/"))
+		if m.workspace.Self().MountedPath(p) {
+			return "", fmt.Errorf("workspace path %q is a read-only mount and cannot be modified", p)
 		}
 	}
-	patched, err = reconcileDirsAfterPatch(ctx, srv, changes, patched)
+	rendered, err := changes.Self().RenderPatchOnto(ctx, root, prefix, EmbeddedPatchMaxBytes)
 	if err != nil {
-		return changes, fmt.Errorf("reconcile directories: %w", err)
+		if PatchNotEmbeddable(err) {
+			return "", err
+		}
+		return "", fmt.Errorf("render changeset patch: %w", err)
 	}
-	var normalized dagql.ObjectResult[*Changeset]
-	if err := srv.Select(ctx, patched, &normalized, dagql.Selector{
-		View:  srv.View,
-		Field: "changes",
-		Args: []dagql.NamedInput{
-			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
-		},
-	}); err != nil {
-		return changes, fmt.Errorf("rebuild changeset from patch: %w", err)
-	}
-	return normalized, nil
-}
-
-// reconcileDirsAfterPatch restores directory-only changes a git patch cannot
-// express. Git tracks files, not directories: an empty directory added by the
-// changeset is invisible to `git diff`, so applying the patch to Before
-// silently drops it — and since the normalized changeset replaces the original
-// on the live workspace binding, the loss would not be confined to the saved
-// form. The patch fully covers file content, so the residue between the
-// patched tree and the changeset's real After can only be directories; any
-// file-level residue means the patch did not reproduce the changeset, and
-// normalization is abandoned (the caller falls back to the raw changeset).
-func reconcileDirsAfterPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset], patched dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Directory], error) {
-	// Quick check: the changeset's own paths are already computed (memoized by
-	// asPatch). Directories carry a trailing slash; if none changed, the patch
-	// covered everything and there is no residue to look for.
-	origPaths, err := changes.Self().ComputePaths(ctx)
-	if err != nil {
-		return patched, fmt.Errorf("compute changeset paths: %w", err)
-	}
-	dirChanged := slices.ContainsFunc(
-		slices.Concat(origPaths.Added, origPaths.AllRemoved),
-		func(p string) bool { return strings.HasSuffix(p, "/") },
-	)
-	if !dirChanged {
-		return patched, nil
+	if rendered.IsEmpty() {
+		// The workspace already holds what the changeset would leave.
+		return "", nil
 	}
 
-	residual, err := NewChangeset(ctx, patched, changes.Self().After)
+	newWS, err := ApplyPatchOnto(ctx, srv, m.workspace, rendered, "changeset.patch", PatchConflictLeaveMarkers)
 	if err != nil {
-		return patched, err
+		return "", err
 	}
-	paths, err := residual.ComputePaths(ctx)
-	if err != nil {
-		return patched, fmt.Errorf("compute patch residue: %w", err)
-	}
-	if len(paths.Modified) > 0 || len(paths.Renamed) > 0 {
-		return patched, fmt.Errorf("patch did not reproduce changeset content: modified %v, renamed %v", paths.Modified, paths.Renamed)
-	}
-	for _, p := range slices.Concat(paths.Added, paths.AllRemoved) {
-		if !strings.HasSuffix(p, "/") {
-			return patched, fmt.Errorf("patch did not reproduce changeset file %q", p)
-		}
-	}
-	// Recorded as selectors on the overlay chain, so they are pure data like
-	// the patch itself, and reapply tolerantly: withNewDirectory is mkdir -p,
-	// withoutDirectory ignores an already-missing path.
-	for _, dir := range paths.Added {
-		info, err := changes.Self().After.Self().Stat(ctx, changes.Self().After, srv, strings.TrimSuffix(dir, "/"), true)
+	// withPatchFile is lazy, and nothing else here runs it. Force the new
+	// root now, so a patch git cannot apply fails this call and leaves the
+	// binding where it was, rather than surfacing from whatever reads the
+	// workspace next (often the next changeset, rendered against it).
+	if newRoot, ok := newWS.Self().SourceDirectory(); ok && newRoot.Self() != nil {
+		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
-			return patched, fmt.Errorf("stat directory %q: %w", dir, err)
+			return "", err
 		}
-		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
-			View:  srv.View,
-			Field: "withNewDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(strings.TrimSuffix(dir, "/"))},
-				{Name: "permissions", Value: dagql.NewInt(info.Permissions)},
-			},
-		}); err != nil {
-			return patched, fmt.Errorf("restore directory %q: %w", dir, err)
+		if err := cache.Evaluate(ctx, newRoot); err != nil {
+			return "", fmt.Errorf("apply changeset patch to the workspace: %w", err)
 		}
 	}
-	for _, dir := range paths.Removed {
-		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
-			View:  srv.View,
-			Field: "withoutDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(strings.TrimSuffix(dir, "/"))},
-			},
-		}); err != nil {
-			return patched, fmt.Errorf("drop directory %q: %w", dir, err)
-		}
+	m.workspace = newWS
+	m.markStateChanged()
+	shown := rendered.Patch
+	if len(rendered.RemovedFiles) > 0 {
+		// The patch does not show what was removed; the stats do.
+		shown = nil
 	}
-	return patched, nil
+	return m.summarizeAppliedPatch(ctx, changes, shown), nil
 }
 
 // workspaceDirectory returns the bound workspace's root directory, for
@@ -1410,7 +1463,8 @@ func (m *MCP) applyWorkspaceSnapshot(ctx context.Context, srv *dagql.Server, bef
 	}); err != nil {
 		return err
 	}
-	return m.applyChangeset(ctx, srv, changes)
+	_, err = m.applyChangeset(ctx, srv, changes)
+	return err
 }
 
 func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Typed) (string, error) {
@@ -1887,8 +1941,14 @@ func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, erro
 	}
 }
 
-// CallBatch runs one turn's tool calls and returns one result per call, in the
-// order the calls were written.
+// CallBatch runs a turn's tool calls in the order they were written, until one
+// of them adopts a continuation. It returns one result per call it ran, in
+// call order, and the calls written after the continuation, which it leaves
+// for the caller to run on the continued conversation (see toolDispatch): a
+// continuation replaces the conversation — its workspace, bindings and
+// toolset — so the calls after it are written against that conversation, not
+// this one. `[checkout, log]` logs the new checkout. When no continuation is
+// adopted, every call runs and rest is empty.
 //
 // Models emit a turn's tool calls as an ordered list and read it as a script,
 // so calls take effect in the order written:
@@ -1908,13 +1968,14 @@ func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, erro
 //     call written against a failed one's effect fails on its own terms (the
 //     edit's search string is missing, the test sees the old tree), and the
 //     model reads both results together.
-//   - Continuations (LLMTool.ReturnsLLM) run last, whatever their position:
-//     see SplitContinuationCalls. beforeContinuations, if set, runs once before
-//     the first of them, so the caller can hand them a conversation that
-//     carries the turn's effects. If it fails, the continuations don't run:
-//     they would replace the conversation with one missing the turn's work.
-func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay, beforeContinuations func(context.Context) error) []*LLMMessage {
-	results := make([]*LLMMessage, len(toolCalls))
+//   - A continuation (a call whose tool returns an LLM, see
+//     isContinuationCall) is a sequential step like any other, in its
+//     position. beforeContinuation, if set, runs right before it, so the
+//     caller can hand it a conversation carrying the effects of the calls
+//     before it. If that fails, the continuation doesn't run: it would
+//     replace the conversation with one missing the turn's work.
+func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay, beforeContinuation func(context.Context) error) (results []*LLMMessage, rest []*LLMToolCall) {
+	results = make([]*LLMMessage, len(toolCalls))
 	position := make(map[*LLMToolCall]int, len(toolCalls))
 	for i, call := range toolCalls {
 		position[call] = i
@@ -1927,10 +1988,19 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 		}
 	}
 	call := func(call *LLMToolCall) *LLMContentBlock {
+		if beforeContinuation != nil && m.isContinuationCall(call, tools) {
+			if err := beforeContinuation(ctx); err != nil {
+				return &LLMContentBlock{
+					Kind:    LLMContentToolResult,
+					CallID:  call.CallID,
+					Text:    fmt.Sprintf("not run: failed to carry this turn's changes into the conversation: %s", err),
+					Errored: true,
+				}
+			}
+		}
 		return m.CallContent(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
 	}
 
-	regular, continuations := m.SplitContinuationCalls(tools, toolCalls)
 	// runSteps executes a plan, handing each call's result to emit.
 	var runSteps func(steps []batchStep, emit func(*LLMToolCall, *LLMContentBlock))
 	runSteps = func(steps []batchStep, emit func(*LLMToolCall, *LLMContentBlock)) {
@@ -1968,25 +2038,25 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 			}
 		}
 	}
-	runSteps(m.planBatch(tools, regular), record)
-
-	if len(continuations) > 0 && beforeContinuations != nil {
-		if err := beforeContinuations(ctx); err != nil {
-			for _, call := range continuations {
-				record(call, &LLMContentBlock{
-					Kind:    LLMContentToolResult,
-					CallID:  call.CallID,
-					Text:    fmt.Sprintf("not run: failed to carry this turn's changes into the conversation: %s", err),
-					Errored: true,
-				})
-			}
-			return results
+	// The top-level steps run one at a time so the batch can stop at the
+	// first continuation: the steps are consecutive runs of calls, so what
+	// remains after it is a suffix of toolCalls.
+	ran := 0
+	for _, step := range m.planBatch(tools, toolCalls) {
+		runSteps([]batchStep{step}, record)
+		ran += len(step.calls)
+		if m.Continuation().Self() != nil {
+			break
 		}
 	}
-	for _, c := range continuations {
-		record(c, call(c))
-	}
-	return results
+	return results[:ran], toolCalls[ran:]
+}
+
+// isContinuationCall reports whether call is to a tool that returns an LLM — a
+// continuation (see adoptLLM) — directly or wrapped in the Timeout builtin.
+func (m *MCP) isContinuationCall(call *LLMToolCall, tools []LLMTool) bool {
+	tool, err := m.planningTool(call, tools)
+	return err == nil && tool.ReturnsLLM
 }
 
 // annotateMCPSyncFailure rewrites the results of an MCP server's calls after

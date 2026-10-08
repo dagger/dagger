@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -49,7 +49,7 @@ source = "other"
 		{"check", "verify", "check"},
 		{"generate", "files", "generator"},
 		{"shell", "dev", "container"},
-		{"up", "web", "service"},
+		{"start", "web", "service"},
 	} {
 		t.Run(test.command, func(ctx context.Context, t *testctx.T) {
 			for _, selection := range []struct {
@@ -70,7 +70,7 @@ source = "other"
 				require.NoError(t, err, strings.Join(args, " "))
 				var want []string
 				for _, target := range selection.want {
-					want = append(want, "dag+"+test.typ+"://"+target)
+					want = append(want, "dag+"+test.typ+"://?"+test.typ+"="+target)
 				}
 				require.ElementsMatch(t, want, strings.Fields(out), strings.Join(args, " "))
 			}
@@ -84,35 +84,35 @@ source = "other"
 				With(daggerNonNestedExec(test.command, "-l", "-f=link", test.target)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Contains(t, out, test.target)
-			require.NotContains(t, out, "dag+"+test.typ+"://app/"+test.target)
-			require.NotContains(t, out, "dag+"+test.typ+"://other/"+test.target)
+			require.NotContains(t, out, "dag+"+test.typ+"://?"+test.typ+"=app/"+test.target)
+			require.NotContains(t, out, "dag+"+test.typ+"://?"+test.typ+"=other/"+test.target)
 		})
 	}
 
 	t.Run("caller skip only excludes the entrypoint", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerNonNestedExec("check", "-l", "-f=link", "--generated=false", "--skip=verify")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+check://other/verify\n", out)
+		require.Equal(t, "dag+check://?check=other/verify\n", out)
 	})
 
 	t.Run("module settings keep local skip names", func(ctx context.Context, t *testctx.T) {
 		out, err := base.WithNewFile("dagger.toml", config+"\ncheck.skip = [\"verify\"]\n").
 			With(daggerNonNestedExec("check", "-l", "-f=link", "--generated=false")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+check://verify\n", out)
+		require.Equal(t, "dag+check://?check=verify\n", out)
 	})
 
 	t.Run("value workspace uses its own entrypoint", func(ctx context.Context, t *testctx.T) {
 		ws := base.Directory("/work").AsWorkspace()
-		checks, err := ws.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
+		checks, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
 		require.NoError(t, err)
 		require.Len(t, checks, 1)
 		name, err := checks[0].URI(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag://verify", name)
+		require.Equal(t, "dag://?check=verify", name)
 
 		changed := ws.WithNewFile("dagger.toml", strings.Replace(config, "entrypoint = true", "entrypoint = false", 1))
-		checks, err = changed.Artifacts(dagger.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
+		checks, err = changed.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
 		require.NoError(t, err)
 		require.Empty(t, checks)
 	})

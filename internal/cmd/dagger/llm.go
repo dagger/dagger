@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger/core"
+
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
@@ -118,7 +120,7 @@ func NewLLMSession(
 	llmModel string,
 	shellHandler *shellCallHandler,
 	frontend idtui.Frontend,
-	initialLLM *dagger.LLM,
+	initialLLM *core.LLM,
 ) (*LLMSession, error) {
 	return newLLMSession(ctx, dag, llmModel, shellHandler, frontend, initialLLM, false)
 }
@@ -130,7 +132,7 @@ func newRestoringLLMSession(ctx context.Context, dag *dagger.Client, shellHandle
 	return newLLMSession(ctx, dag, "", shellHandler, frontend, nil, true)
 }
 
-func newLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler, frontend idtui.Frontend, initialLLM *dagger.LLM, restoring bool) (*LLMSession, error) {
+func newLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler, frontend idtui.Frontend, initialLLM *core.LLM, restoring bool) (*LLMSession, error) {
 	s := &LLMSession{
 		dag:      dag,
 		shell:    shellHandler,
@@ -170,7 +172,7 @@ func newLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 			if err != nil {
 				return nil, err
 			}
-			initialLLM = dag.LLM(dagger.LLMOpts{Model: llmModel}).WithWorkspace(workspace)
+			initialLLM = core.NewQuery(dag).LLM(core.LLMOpts{Model: llmModel}).WithWorkspace(workspace)
 		}
 		if err := own.setInitialLLM(initialLLM); err != nil {
 			return nil, err
@@ -201,7 +203,7 @@ func (s *LLMSession) tools(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		llm = dagger.Ref[*dagger.LLM](s.dag, id)
+		llm = core.Ref[*core.LLM](core.NewQuery(s.dag), id)
 	}
 	if llm == nil {
 		return "", fmt.Errorf("no LLM session active")
@@ -333,7 +335,7 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	}
 	rt := liveAgent{
 		dag:   s.dag,
-		agent: dagger.Ref[*dagger.Agent](s.dag, dagger.ID(encodedID)),
+		agent: core.Ref[*core.Agent](core.NewQuery(s.dag), core.ID(encodedID)),
 	}
 	snapID, err := rt.SnapshotID(ctx)
 	if err != nil {
@@ -344,7 +346,7 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	}
 	attached := s.newAgent(name)
 	attached.bindRuntime(rt, agentHandle, encodedID, owned)
-	snapshot := dagger.Ref[*dagger.LLM](s.dag, snapID)
+	snapshot := core.Ref[*core.LLM](core.NewQuery(s.dag), snapID)
 	// Reset remains trace-authoritative even after export advances its separate
 	// comparison baseline, or an explicit Ctrl+U imports a new client workspace.
 	attached.tracedReset = snapshot.WithoutMessageHistory()
@@ -360,13 +362,13 @@ func (s *LLMSession) attach(ctx context.Context, agentHandle, name, encodedID st
 	// seed field. Both are pinned by ID so later comparisons and exports
 	// reference the value rather than re-shipping a recipe. A later explicit
 	// save/reset advances the baseline.
-	for _, workspace := range []*dagger.Workspace{rt.agent.Seed().Workspace(), snapshot.Workspace()} {
+	for _, workspace := range []*core.Workspace{rt.agent.Seed().Workspace(), snapshot.Workspace()} {
 		id, err := workspace.ID(ctx)
 		if err != nil {
 			slog.Debug("attached agent workspace is not a usable synchronization baseline", "error", err)
 			continue
 		}
-		attached.setLastSynced(dagger.Ref[*dagger.Workspace](s.dag, id))
+		attached.setLastSynced(core.Ref[*core.Workspace](core.NewQuery(s.dag), id))
 		break
 	}
 	if err := attached.setLLM(snapshot); err != nil {
@@ -533,7 +535,7 @@ func normalizeSessionTitle(title string) string {
 func (s *LLMSession) publishTitle(title string) {
 	publish := s.titlePublisher
 	if publish == nil && s.dag != nil {
-		publish = s.dag.SetSessionTitle
+		publish = core.NewQuery(s.dag).SetSessionTitle
 	}
 	if publish == nil {
 		return

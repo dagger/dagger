@@ -32,6 +32,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -2438,48 +2439,18 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	}
 	llm.mcp.SetSelfLLM(responded)
 
-	// CallBatch runs the calls in the order written, except continuations —
-	// tools returning an LLM — which run last, so the conversation they receive
-	// carries the turn's workspace and binding changes: `[editModule, reload]`
-	// reloads the edit. Before they run, fold those changes into the
-	// conversation, materialized here the way the response itself was above.
-	// See MCP.SplitContinuationCalls.
-	base := responded
-	var folded bool
-	resultMsgs := llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallDisplays, func(ctx context.Context) error {
-		if sels := stateDeltaSelectors(llm.mcp, wsBefore, toolsBefore); len(sels) > 0 {
-			var withState dagql.ObjectResult[*LLM]
-			if err := srv.Select(ctx, responded, &withState, sels...); err != nil {
-				return err
-			}
-			base = withState
-		}
-		folded = true
-		llm.mcp.SetSelfLLM(base)
-		return nil
-	})
-
-	// In-step state changes — a Changeset overlaid onto the bound workspace, a
-	// Workspace returned, an object rebound as the new state — live only on this
-	// step's transient MCP clone. They must be re-recorded onto the materialized
-	// state as withWorkspace/withTools selectors, or later steps rebuild history
-	// from the stale bindings and silently revert them. Once folded into base
-	// for the continuations, they already are.
-	var stateSels []dagql.Selector
-	if !folded {
-		stateSels = stateDeltaSelectors(llm.mcp, wsBefore, toolsBefore)
+	// Run the turn's tool calls in the order written; see toolDispatch.
+	dispatch := &toolDispatch{
+		srv:         srv,
+		mcp:         llm.mcp,
+		tools:       tools,
+		base:        responded,
+		wsBefore:    wsBefore,
+		toolsBefore: toolsBefore,
 	}
-
-	// A tool may have returned an LLM: it acted as a continuation, and the turn
-	// resumes from THAT conversation — its env, tools, system prompts and
-	// history — instead of the one that made the call (see MCP.adoptLLM). Its ID
-	// records the transform, so loading it restores that conversation. The turn's state changes
-	// were folded into the conversation it derived from above, and adoptLLM
-	// refuses a continuation that would drop any, so nothing remains to persist
-	// on top of it.
-	if cont := llm.mcp.Continuation(); cont.Self() != nil {
-		base = cont
-	}
+	resultMsgs := dispatch.run(ctx, toolCalls, res.ToolCallDisplays)
+	base := dispatch.base
+	stateSels := dispatch.stateSelectors()
 
 	toolNames := make(map[string]string, len(toolCalls))
 	for _, tc := range toolCalls {
@@ -2526,6 +2497,119 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	}
 
 	return stepped, nil
+}
+
+// toolDispatch runs one turn's tool calls for step(), in the order written.
+// A continuation — a tool returning an LLM — replaces the conversation
+// mid-turn, so the calls the model wrote after it run on THAT conversation:
+// its workspace, bindings and toolset. `[checkout, log]` logs the new
+// checkout, and `[edit, reload]` reloads the edit.
+//
+// mcp is the transient MCP running the current stretch of calls, with its
+// toolset, and base the materialized conversation it is in sync with as of
+// wsBefore and toolsBefore. Before a continuation runs, the stretch's
+// workspace and binding changes are folded into base (fold), so the
+// continuation receives them.
+type toolDispatch struct {
+	srv         *dagql.Server
+	mcp         *MCP
+	tools       []LLMTool
+	base        dagql.ObjectResult[*LLM]
+	wsBefore    *call.ID
+	toolsBefore []boundToolBinding
+}
+
+// run runs the calls and returns one result per call, in call order.
+func (d *toolDispatch) run(ctx context.Context, toolCalls []*LLMToolCall, displays map[string]toolCallDisplay) []*LLMMessage {
+	var results []*LLMMessage
+	for remaining := toolCalls; len(remaining) > 0; {
+		ran, rest := d.mcp.CallBatch(ctx, d.tools, remaining, displays, d.fold)
+		results = append(results, ran...)
+		// A tool returned an LLM: it acted as a continuation, and the turn
+		// resumes from THAT conversation — its env, tools, system prompts and
+		// history — instead of the one that made the call (see MCP.adoptLLM).
+		// Its ID records the transform, so loading it restores that
+		// conversation. The state changes before it were folded into the
+		// conversation it derived from, and adoptLLM refuses a continuation
+		// that would drop any.
+		cont := d.mcp.Continuation()
+		if cont.Self() == nil {
+			break
+		}
+		d.base = cont
+		if len(rest) == 0 {
+			break
+		}
+		if err := d.continueOn(ctx, cont); err != nil {
+			text := fmt.Sprintf("not run: failed to load the tools of the conversation continued by an earlier call: %s", err)
+			for _, tc := range rest {
+				endToolCallDisplay(displays, tc.CallID, true, text)
+				results = append(results, &LLMMessage{
+					Role: LLMMessageRoleUser,
+					Content: []*LLMContentBlock{{
+						Kind:    LLMContentToolResult,
+						CallID:  tc.CallID,
+						Text:    text,
+						Errored: true,
+					}},
+				})
+			}
+			break
+		}
+		remaining = rest
+	}
+	return results
+}
+
+// fold records the current stretch's state changes onto base, materialized
+// the way the response itself was, and hands base to the MCP as the
+// conversation a continuation receives.
+func (d *toolDispatch) fold(ctx context.Context) error {
+	if sels := stateDeltaSelectors(d.mcp, d.wsBefore, d.toolsBefore); len(sels) > 0 {
+		var withState dagql.ObjectResult[*LLM]
+		if err := d.srv.Select(ctx, d.base, &withState, sels...); err != nil {
+			return err
+		}
+		d.base = withState
+	}
+	// base now carries the MCP's state: later changes are relative to it.
+	d.wsBefore, _ = d.mcp.WorkspaceID()
+	d.toolsBefore, _ = d.mcp.BoundToolBindings()
+	d.mcp.SetSelfLLM(d.base)
+	return nil
+}
+
+// continueOn prepares a continuation to run the calls the model wrote after
+// the one that returned it, the way the next step would run them: a transient
+// clone of its MCP, dispatching on its behalf, with its toolset. The bindings
+// are captured before the toolset is built, since building it already touches
+// them (see step).
+func (d *toolDispatch) continueOn(ctx context.Context, cont dagql.ObjectResult[*LLM]) error {
+	next := cont.Self().mcp.Clone()
+	wsBefore, _ := next.WorkspaceID()
+	toolsBefore, _ := next.BoundToolBindings()
+	next.SetSelfLLM(cont)
+	tools, err := next.Tools(ctx)
+	if err != nil {
+		return err
+	}
+	d.mcp, d.tools = next, tools
+	d.wsBefore, d.toolsBefore = wsBefore, toolsBefore
+	return nil
+}
+
+// stateSelectors re-records the in-step state changes — a Changeset overlaid
+// onto the bound workspace, a Workspace returned, an object rebound as the
+// new state — that live only on the transient MCP. They must be recorded onto
+// the materialized state as withWorkspace/withTools selectors, or later steps
+// rebuild history from the stale bindings and silently revert them. If the
+// turn ended on an adopted continuation, nothing remains to persist on top of
+// it.
+func (d *toolDispatch) stateSelectors() []dagql.Selector {
+	if d.mcp.Continuation().Self() != nil {
+		return nil
+	}
+	return stateDeltaSelectors(d.mcp, d.wsBefore, d.toolsBefore)
 }
 
 // toolResultSelectors builds the selectors that append this turn's tool results
@@ -2736,6 +2820,11 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 		if err := ValidateLLMContent(msg.Content); err != nil {
 			return nil, fmt.Errorf("message %d: %w", i, err)
 		}
+	}
+
+	ctx, err := enginetelemetry.WithNetworkRecording(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create LLM network recorders: %w", err)
 	}
 	b := backoff.NewExponentialBackOff()
 	// Sane defaults (ideally not worth extra knobs)

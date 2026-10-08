@@ -16,6 +16,8 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -253,6 +255,66 @@ region = "eu-west-1"
 	})
 }
 
+// TestWorkspaceUserConfigSnapshot covers a snapshot of a checkout — the
+// workspace an agent session works on. The snapshot carries the user-level
+// overlay it was captured with in its recipe, and Workspace.withUserConfig
+// re-reads the caller's user config to pick up later edits.
+func (WorkspaceSuite) TestWorkspaceUserConfigSnapshot(ctx context.Context, t *testctx.T) {
+	workdir := newWorkspaceConfigWorkdir(ctx, t, userConfigWorkspaceFixture)
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = workdir
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out))
+	}
+	git("add", ".")
+	git("commit", "-m", "initial")
+	// A served origin lets the checkout be captured as a portable snapshot.
+	publishCheckpointRemote(ctx, t, workdir)
+	origin := git("remote", "get-url", "origin")
+
+	// Keep the user config outside the checkout, so the snapshot has no
+	// untracked files to ask about.
+	userConfigPath := filepath.Join(t.TempDir(), "config.toml")
+	writeProfile := func(profile string) {
+		t.Helper()
+		require.NoError(t, os.WriteFile(userConfigPath, []byte(fmt.Sprintf(`
+[workspaces.%q.modules.aws.settings]
+profile = %q
+`, origin, profile)), 0o600))
+	}
+	writeProfile("alice-dev")
+
+	c := connect(ctx, t,
+		dagger.WithWorkdir(workdir),
+		dagger.WithEnvironmentVariable("DAGGER_CONFIG", userConfigPath))
+	profile := func(ws *core.Workspace) string {
+		t.Helper()
+		out, err := ws.ConfigRead(ctx, core.WorkspaceConfigReadOpts{
+			Key:       "modules.aws.settings.profile",
+			Effective: true,
+		})
+		require.NoError(t, err)
+		return out
+	}
+
+	frozen := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
+	require.Equal(t, "alice-dev", profile(frozen))
+
+	// Edits made mid-session leave the snapshot as captured until it is
+	// explicitly refreshed.
+	writeProfile("bob-dev")
+	require.Equal(t, "alice-dev", profile(frozen))
+	require.Equal(t, "bob-dev", profile(frozen.WithUserConfig()))
+
+	// Each refresh re-reads: a removed entry drops the user-level value.
+	require.NoError(t, os.Remove(userConfigPath))
+	require.Equal(t, "shared", profile(frozen.WithUserConfig()))
+	require.Equal(t, "alice-dev", profile(frozen))
+}
+
 func (WorkspaceSuite) TestWorkspaceUserConfigWrites(ctx context.Context, t *testctx.T) {
 	t.Run("workspace config --global set, read back, unset", func(ctx context.Context, t *testctx.T) {
 		workdir, userConfigPath := newUserConfigWorkdir(ctx, t,
@@ -398,17 +460,17 @@ entrypoint = true
 [modules.aws.settings]
 region = "us-east-1"
 `)
-	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Host().Directory(hostDir))
+	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, core.NewQuery(c).Host().Directory(hostDir))
 
-	userConfigDaggerExec := func(ctr *dagger.Container, args ...string) *dagger.Container {
-		return ctr.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+	userConfigDaggerExec := func(ctr *core.Container, args ...string) *core.Container {
+		return ctr.WithExec(append([]string{"dagger"}, args...), core.ContainerWithExecOpts{
 			UseEntrypoint: true,
 		})
 	}
 
-	ctr := c.Container().From(alpineImage).
+	ctr := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithDirectory("/cfg", c.Directory()).
+		WithDirectory("/cfg", core.NewQuery(c).Directory()).
 		WithEnvVariable("DAGGER_CONFIG", "/cfg/config.toml").
 		WithWorkdir("/empty")
 

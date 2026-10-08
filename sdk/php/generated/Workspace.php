@@ -196,6 +196,19 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with the calling client's user-level config re-read and applied.
+     *
+     * User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+     *
+     * The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+     */
+    public function withUserConfig(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUserConfig');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Selected native workspace config file relative to the workspace cwd, if any.
      */
     public function configFile(): string
@@ -421,6 +434,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with files removed, without mutating the source.
+     */
+    public function withoutFiles(array $paths): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFiles');
+        $innerQueryBuilder->setArgument('paths', $paths);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a directory removed, without mutating the source.
      */
     public function withoutDirectory(string $path): Workspace
@@ -437,6 +460,21 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChanges');
         $innerQueryBuilder->setArgument('changes', $changes);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+     *
+     * Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+     */
+    public function withPatchFile(File $patch, ?PatchConflict $onConflict = null): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatchFile');
+        $innerQueryBuilder->setArgument('patch', $patch);
+        if (null !== $onConflict) {
+        $innerQueryBuilder->setArgument('onConflict', $onConflict);
+        }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -751,11 +789,11 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace with updated module versions and lockfile state.
+     * Return this workspace with updated module sources, versions and lockfile state.
      *
      * An SDK client scope is regenerated when it targets an updated module.
      */
-    public function withUpdatedModules(?array $names = [], ?string $version = ''): Workspace
+    public function withUpdatedModules(?array $names = [], ?string $version = '', ?string $source = ''): Workspace
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdatedModules');
         if (null !== $names) {
@@ -763,6 +801,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $version) {
         $innerQueryBuilder->setArgument('version', $version);
+        }
+        if (null !== $source) {
+        $innerQueryBuilder->setArgument('source', $source);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

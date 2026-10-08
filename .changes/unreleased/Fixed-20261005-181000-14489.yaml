@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  A module call whose result depends on a served local client is no longer returned stale after only the client's target module changed: the call's cache key now covers the local clients the module's `dagger.toml` declares for the scope, recursively.
+time: 2026-10-05T18:10:00Z
+custom:
+  Author: eunomie
+  PR: 14489

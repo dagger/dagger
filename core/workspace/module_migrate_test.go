@@ -38,7 +38,7 @@ func TestModuleMigrationPreservesConfiguration(t *testing.T) {
 }
 
 func TestModuleMigrationRejectsUnhandledRuntimeSettings(t *testing.T) {
-	cfg := &modules.ModuleConfig{SDK: &modules.SDK{Source: "go", Config: map[string]any{"unknown": true}}}
+	cfg := &modules.ModuleConfig{SDK: &modules.SDK{Source: "go", Config: map[string]any{"unknown": true}}} //nolint:staticcheck // SA1019: the test sets the deprecated legacy field that migration must reject.
 	_, err := PlanModuleMigration(cfg, true)
 	require.ErrorContains(t, err, "cannot be preserved")
 }

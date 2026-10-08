@@ -2168,14 +2168,41 @@ func (s *moduleSchema) serveModule(ctx context.Context, self *core.Query, args s
 		if gitutil.IsCommitSHA(args.RefPin) {
 			sel.Args = append(sel.Args, dagql.NamedInput{Name: "pinOverridesVersion", Value: dagql.Boolean(true)})
 		}
-		if err := dag.Select(ctx, dag.Root(), &src, sel); err != nil {
+		caller, callerErr := self.Server.ModuleParent(ctx)
+		if callerErr != nil && !errors.Is(callerErr, core.ErrNoCurrentModule) {
+			return void, fmt.Errorf("serve module %q: %w", args.Address, callerErr)
+		}
+		resolveCtx, declared := ctx, false
+		if callerErr == nil {
+			if declared, err = callerDeclaresGitClient(ctx, dag, caller, args.Address); err != nil {
+				return void, fmt.Errorf("serve module %q from module %q: %w", args.Address, caller.Self().Name(), err)
+			}
+			if declared {
+				// The module's own config declares this client, as a module's
+				// config declares a dependency: resolve it with the credentials
+				// dependency resolution may use.
+				resolveCtx = core.WithModuleDependencyResolution(ctx)
+			}
+		}
+		if err := dag.Select(resolveCtx, dag.Root(), &src, sel); err != nil {
+			if callerErr == nil && !declared && errors.Is(err, gitutil.ErrGitAuthFailed) {
+				return void, fmt.Errorf("serve module %q: %w; declare it as a client of module %q's scope", args.Address, err, caller.Self().Name())
+			}
 			return void, fmt.Errorf("serve module %q: %w", args.Address, err)
 		}
+	} else if caller, err := self.Server.ModuleParent(ctx); err == nil {
+		// A module's code may run in a process the engine does not treat as the
+		// module, such as one its entrypoint starts; the nearest ancestor that
+		// is a module is the one whose tree the address names.
+		if src, err = callerTreeModuleSource(ctx, dag, caller, args.Address); err != nil {
+			return void, fmt.Errorf("serve module %q from module %q: %w", args.Address, caller.Self().Name(), err)
+		}
+	} else if !errors.Is(err, core.ErrNoCurrentModule) {
+		return void, fmt.Errorf("serve module %q: %w", args.Address, err)
 	} else {
-		// currentWorkspace is what makes this resolvable from a module: it
-		// prefers a Workspace bound into the context (a generator/check group,
-		// or an agent's overlaid workspace) over the session's, so the address
-		// resolves against the same tree the calling module was rolled up from.
+		// currentWorkspace prefers a Workspace bound into the context (a
+		// generator/check group, or an agent's overlaid workspace) over the
+		// session's, so the address resolves against the tree the caller works in.
 		var ws dagql.ObjectResult[*core.Workspace]
 		if err := dag.Select(ctx, dag.Root(), &ws, dagql.Selector{Field: "currentWorkspace"}); err != nil {
 			return void, fmt.Errorf("serve module %q: %w", args.Address, err)
@@ -3035,13 +3062,19 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if !parentMod.Self().Source.Valid {
 		return inst, fmt.Errorf("failed to get source implementation digest for module: no module source available")
 	}
-	sourceDigest, err := parentMod.Self().Source.Value.Self().SourceImplementationDigest(ctx)
+	src := parentMod.Self().Source.Value.Self()
+	sourceDigest, err := src.SourceImplementationDigest(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source implementation digest for module: %w", err)
 	}
 	scopedDigestInputs := []string{"Module._implementationScoped", sourceDigest.String()}
 	if parentMod.Self().AsModuleVariantDigest != "" {
 		scopedDigestInputs = append(scopedDigestInputs, parentMod.Self().AsModuleVariantDigest)
+	}
+	// A git module's code can serve modules beside it in its repository, which
+	// its own files do not cover; its commit covers the whole tree.
+	if src.Kind == core.ModuleSourceKindGit && src.Git != nil {
+		scopedDigestInputs = append(scopedDigestInputs, "gitCommit:"+src.Git.Commit)
 	}
 	scopedDigest := hashutil.HashStrings(scopedDigestInputs...)
 	dag, err := core.CurrentDagqlServer(ctx)

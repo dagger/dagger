@@ -13,6 +13,14 @@ type CallRequest struct {
 	DoNotCache     bool
 	IsPersistable  bool
 
+	// ListItem marks a read of item Nth of the receiver, a cache-backed list
+	// whose value holds the item inline. Such a read is answered only by the
+	// item the receiver recorded for that position (sharedResult.listItems):
+	// two entries of one list recipe can hold different values, and so can a
+	// transferred item whose list the cache did not take, so items matched
+	// by recipe could assemble a list that is neither.
+	ListItem bool
+
 	// PassthroughTelemetry keeps the call span available for trace metadata while
 	// asking the UI to show its children in its place.
 	PassthroughTelemetry bool
@@ -53,6 +61,7 @@ func (req *CallRequest) Clone() *CallRequest {
 		TTL:                  req.TTL,
 		DoNotCache:           req.DoNotCache,
 		IsPersistable:        req.IsPersistable,
+		ListItem:             req.ListItem,
 		PassthroughTelemetry: req.PassthroughTelemetry,
 		ReceiverTypeName:     req.ReceiverTypeName,
 		// CacheEvidence is deliberately NOT carried over: it is per-invocation
@@ -120,5 +129,25 @@ func (req *CallRequest) SetArgInput(ctx context.Context, name string, input Inpu
 		return err
 	}
 	req.SetArg(arg)
+	return nil
+}
+
+// SetImplicitInput adds an engine-computed input to the call's identity. Unlike
+// an argument, the resolver does not receive it and call displays omit it.
+func (req *CallRequest) SetImplicitInput(ctx context.Context, name string, input Input) error {
+	if req == nil {
+		return nil
+	}
+	arg, err := resultCallArgFromInput(ctx, name, input, false)
+	if err != nil {
+		return err
+	}
+	for i, existing := range req.ImplicitInputs {
+		if existing != nil && existing.Name == name {
+			req.ImplicitInputs[i] = arg
+			return nil
+		}
+	}
+	req.ImplicitInputs = append(req.ImplicitInputs, arg)
 	return nil
 }

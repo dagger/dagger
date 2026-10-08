@@ -266,7 +266,7 @@ func init() {
 	for _, cmd := range []*cobra.Command{
 		checksCmd,
 		generateCmd,
-		upCmd,
+		startCmd,
 		agentCmd,
 		apiCallCmd.Command(),
 		callModCmd.Command(),
@@ -322,7 +322,6 @@ func init() {
 		apiFunctionsCmd,
 		functionsAliasCmd,
 		moduleUpdateCmd,
-		updateAliasCmd,
 		moduleVersionCmd,
 		installedCmd,
 		moduleClientScopeCmd,

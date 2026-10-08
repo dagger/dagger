@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/client"
 )
 
@@ -45,7 +45,7 @@ func addListenFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&allowCORS, "allow-cors", false, "allow Cross-Origin Resource Sharing (CORS) requests")
 }
 
-func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, _ []string) error {
+func Listen(ctx context.Context, engineClient *client.Client, _ *core.Module, cmd *cobra.Command, _ []string) error {
 	stderr := cmd.OutOrStderr()
 
 	sessionL, err := net.Listen("tcp", listenAddress)

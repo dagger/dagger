@@ -105,7 +105,7 @@ func (r *entrypointRuntime) AsContainer() (dagql.ObjectResult[*core.Container], 
 
 func (r *entrypointRuntime) Call(
 	ctx context.Context,
-	_ *engineutil.ExecutionMetadata,
+	execMD *engineutil.ExecutionMetadata,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
 ) (rerr error) {
@@ -114,6 +114,12 @@ func (r *entrypointRuntime) Call(
 			rerr = dangshared.ConvertError(rerr)
 		}
 	}()
+
+	fnCall.SetProcessSpanContext(dagql.UserFacingSpanContext(ctx))
+
+	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+	fnCall.SetPlumbingSpanContext(span.SpanContext())
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -135,9 +141,6 @@ func (r *entrypointRuntime) Call(
 	if err != nil {
 		return err
 	}
-
-	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
 
 	var resultJSON []byte
 	_, err = evalDangSource(
@@ -163,13 +166,22 @@ func (r *entrypointRuntime) Call(
 			if err != nil {
 				return nil, err
 			}
-			result, err := callEntrypointMethod(ctx, env, entrypointName, "call", moduleContext, []*core.FunctionCallArgValue{
+			callArgs := []*core.FunctionCallArgValue{
 				workspaceArg,
 				entrypoint.StringCallArg("receiverType", fnCall.ParentName),
 				entrypoint.JSONScalarCallArg("receiverValue", fnCall.Parent),
 				entrypoint.StringCallArg("fnName", fnCall.Name),
 				entrypoint.JSONScalarCallArg("fnArgs", fnArgs),
-			})
+			}
+			// An exec that the entrypoint starts is cached by its own recipe,
+			// which misses the call's implicit inputs, such as the clients the
+			// workspace declares. An entrypoint keys its exec on the call by
+			// declaring a nullable callDigest argument; one that does not
+			// declare it never receives it.
+			if execMD != nil && execMD.CallDigest != "" {
+				callArgs = append(callArgs, entrypoint.StringCallArg("callDigest", execMD.CallDigest.String()))
+			}
+			result, err := callEntrypointMethod(ctx, env, entrypointName, "call", moduleContext, callArgs)
 			if err != nil {
 				return nil, fmt.Errorf("call module entrypoint: %w", err)
 			}

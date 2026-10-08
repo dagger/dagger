@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	telemetry "github.com/dagger/otel-go"
@@ -125,7 +125,6 @@ func init() {
 	addWorkspaceHereFlag(uninstallAliasCmd)
 
 	setWorkspaceFlagPolicy(moduleUpdateCmd)
-	setWorkspaceFlagPolicy(updateAliasCmd)
 	setWorkspaceFlagPolicy(moduleRecommendCmd)
 	setWorkspaceFlagPolicy(moduleDepInstallCmd)
 	setWorkspaceFlagPolicy(installAliasCmd)
@@ -134,18 +133,29 @@ func init() {
 }
 
 var moduleUpdateCmd = newModuleUpdateCmd()
-var updateAliasCmd = newModuleUpdateCmd()
+
+var updateAliasCmd = &cobra.Command{
+	Use:                "update",
+	Hidden:             true,
+	DisableFlagParsing: true,
+	RunE: func(*cobra.Command, []string) error {
+		return fmt.Errorf("dagger update has moved to dagger lock update to refresh lockfile entries. To change an installed module's source or version, use dagger module update")
+	},
+}
 
 func newModuleUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update [NAME|SOURCE...]",
-		Short: "Update installed module versions and lockfile state",
+		Short: "Update installed module sources, versions and lockfile state",
 		Long: `Update an installed module by name or source.
 
 Use --version VERSION or append @VERSION to set a new version request.
+Use --source SOURCE to change the source address. The new source can include
+a version. A local path is relative to the current directory, as with install.
+The module keeps its name and settings.
 Match an installed name first.
 Source matching ignores the version and must select exactly one installation.
-Without a new version, refresh the existing request.
+Without a new version or source, refresh the existing request.
 
 With no arguments, this refreshes all installed modules. It does not refresh
 client targets or runtime targets. If a client scope targets an updated module,
@@ -155,6 +165,7 @@ entries in dagger.lock.`,
 		RunE: runModuleUpdate,
 	}
 	cmd.Flags().String("version", "", "New version request for one installed module")
+	cmd.Flags().String("source", "", "New source address for one installed module")
 	return cmd
 }
 
@@ -271,7 +282,7 @@ func getModuleSourceRefWithDefault() (string, error) {
 // it will try the current directory as a module but provide a nil module if it's not found, not
 // erroring out.
 func optionalModCmdWrapper(
-	fn func(context.Context, *client.Client, *dagger.Module, *cobra.Command, []string) error,
+	fn func(context.Context, *client.Client, *core.Module, *cobra.Command, []string) error,
 	presetSecretToken string,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, cmdArgs []string) error {
@@ -290,7 +301,7 @@ func optionalModCmdWrapper(
 			if err != nil {
 				return err
 			}
-			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+			modSrc := core.NewQuery(dag).ModuleSource(modRef, core.ModuleSourceOpts{
 				AllowNotExists: true,
 			})
 			configExists, err := modSrc.ConfigExists(ctx)
@@ -301,7 +312,7 @@ func optionalModCmdWrapper(
 			case configExists:
 				serveCtx, span := Tracer().Start(ctx, "load module: "+modRef)
 				mod := modSrc.AsModule()
-				serveErr := mod.Serve(serveCtx, dagger.ModuleServeOpts{IncludeDependencies: true})
+				serveErr := mod.Serve(serveCtx, core.ModuleServeOpts{IncludeDependencies: true})
 				telemetry.EndWithCause(span, &serveErr)
 				if serveErr != nil {
 					return fmt.Errorf("failed to serve module: %w", serveErr)

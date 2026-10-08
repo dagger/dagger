@@ -104,7 +104,7 @@ func TestSurfacedServicesName(t *testing.T) {
 	}
 }
 
-// TestServiceDisplaySpans covers the live-dashboard anchor for `dagger up`:
+// TestServiceDisplaySpans covers the live-dashboard anchor for `dagger start`:
 // per-service display spans (a service name WITHOUT the engine's
 // service-instance mark) surface in start order from the moment they exist,
 // wherever they sit beneath the root; instance and boundary-contained spans

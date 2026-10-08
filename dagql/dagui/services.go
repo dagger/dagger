@@ -64,6 +64,13 @@ func (db *DB) SurfacedServicesForSpan(root *Span) []*ServiceNode {
 
 func isServiceInstanceSpan(s *Span) bool { return s.Service && !s.Internal }
 
+// isServiceDisplaySpan reports whether s is a `dagger up` per-service display
+// span (see DB.ServiceDisplaySpans): a service name without the engine's
+// service-instance mark.
+func isServiceDisplaySpan(s *Span) bool {
+	return s.ServiceName != "" && !s.Service && !s.Internal
+}
+
 func buildSurfacedServices(candidates []*Span, root *Span) []*ServiceNode {
 	type info struct {
 		span     *Span
@@ -125,7 +132,7 @@ func buildSurfacedServices(candidates []*Span, root *Span) []*ServiceNode {
 // readiness URLs (ServiceURLs, stamped once the health check passes), and the
 // `ready <url>` child span.
 //
-// Used as dagger up's RootFilter, so the regular trace UI leads with these
+// Used as dagger start's RootFilter, so the regular trace UI leads with these
 // spans from the moment evaluation begins, including build logs and readiness
 // URLs. The same zoom-relative containment as other surfaced kinds applies.
 // The result is cached per DB mutation and per root; callers must treat the
@@ -138,7 +145,7 @@ func (db *DB) ServiceDisplaySpans(root *Span) []*Span {
 	}
 	var displays []*Span
 	for span := range db.Spans.Iter() {
-		if span.ServiceName == "" || span.Service || span.Internal || !span.Received {
+		if !isServiceDisplaySpan(span) || !span.Received {
 			continue
 		}
 		if !spanMayRollUp(span, r, nil) {

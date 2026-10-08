@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
@@ -19,7 +21,7 @@ func commandArtifactTypes(cmd *cobra.Command) []string {
 		return []string{"Check"}
 	case "generate":
 		return []string{"Generator"}
-	case "up":
+	case "start":
 		return []string{"Service"}
 	case "agent":
 		return []string{"Expertise"}
@@ -29,7 +31,7 @@ func commandArtifactTypes(cmd *cobra.Command) []string {
 	return nil
 }
 
-func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, all *dagger.Artifacts) (*dagger.Artifacts, error) {
+func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, all *core.Artifacts) (*core.Artifacts, error) {
 	types := commandArtifactTypes(cmd)
 	if len(types) == 0 {
 		return nil, fmt.Errorf("command %q does not select artifacts", cmd.Name())
@@ -49,7 +51,7 @@ func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.
 	if cmd.Name() == "agent" || cmd.Name() == "shell" {
 		return selected, nil
 	}
-	cfg, err := artifactWorkspaceConfig(ctx, dag.CurrentWorkspace())
+	cfg, err := artifactWorkspaceConfig(ctx, core.NewQuery(dag).CurrentWorkspace())
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +63,7 @@ func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.
 		generated, _ = cmd.Flags().GetBool("generated")
 	}
 	if cmd.Name() == "check" && !generated {
-		selected = selected.FilterParentTypes([]string{"Generator"}, dagger.ArtifactsFilterParentTypesOpts{Exclude: true})
+		selected = selected.FilterParentTypes([]string{"Generator"}, core.ArtifactsFilterParentTypesOpts{Exclude: true})
 	}
 	policies := map[string]workspace.GeneratorPolicy{}
 	if cmd.Name() == "generate" || cmd.Name() == "check" && generated {
@@ -114,7 +116,7 @@ func commandPathExclusions(command string, generated bool, cfg *workspace.Config
 		switch command {
 		case "check":
 			skip = entry.Check.Skip
-		case "up":
+		case "start":
 			skip = entry.Up.Skip
 		}
 		if len(skip) > 0 {
@@ -139,7 +141,7 @@ func commandPathExclusions(command string, generated bool, cfg *workspace.Config
 }
 
 // Settings skip schema paths, not collection keys. Batch the metadata reads.
-func commandSkippedPaths(ctx context.Context, dag *dagger.Client, selected *dagger.Artifacts, exclusions []commandPathExclusion) ([]string, error) {
+func commandSkippedPaths(ctx context.Context, dag *dagger.Client, selected *core.Artifacts, exclusions []commandPathExclusion) ([]string, error) {
 	if len(exclusions) == 0 {
 		return nil, nil
 	}
@@ -206,7 +208,7 @@ func commandSkippedPaths(ctx context.Context, dag *dagger.Client, selected *dagg
 	return slices.Compact(paths), nil
 }
 
-func commandGeneratorPolicies(ctx context.Context, dag *dagger.Client, all *dagger.Artifacts, cfg *workspace.Config) (map[string]workspace.GeneratorPolicy, error) {
+func commandGeneratorPolicies(ctx context.Context, dag *dagger.Client, all *core.Artifacts, cfg *workspace.Config) (map[string]workspace.GeneratorPolicy, error) {
 	id, err := all.ID(ctx)
 	if err != nil {
 		return nil, err

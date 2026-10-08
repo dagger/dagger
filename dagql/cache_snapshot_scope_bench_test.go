@@ -64,7 +64,7 @@ func BenchmarkScopedSnapshotCollector(b *testing.B) {
 			b.ReportMetric(float64(len(leaves)), "outputs")
 			b.ResetTimer()
 			for b.Loop() {
-				links, err := collectSnapshotOwnerLinks(self, frame, false)
+				links, err := collectSnapshotOwnerLinks(b.Context(), self, frame, false)
 				if err != nil || len(links) != len(leaves) {
 					b.Fatalf("links=%d err=%v", len(links), err)
 				}
@@ -79,7 +79,7 @@ func TestScopedCollectorConcurrentPublicationCost(t *testing.T) {
 			frame := persistCodecFrame("inline", self)
 			// First force a guarded rejection; it must expose no partial desired map.
 			leaves[len(leaves)/2].mu.Lock()
-			links, err := collectSnapshotOwnerLinks(self, frame, false)
+			links, err := collectSnapshotOwnerLinks(t.Context(), self, frame, false)
 			leaves[len(leaves)/2].mu.Unlock()
 			require.ErrorIs(t, err, ErrPersistStateNotReady)
 			require.Nil(t, links)
@@ -106,7 +106,7 @@ func TestScopedCollectorConcurrentPublicationCost(t *testing.T) {
 			attempts, retries, success := 0, 0, 0
 			for success < 128 {
 				attempts++
-				links, err := collectSnapshotOwnerLinks(self, frame, false)
+				links, err := collectSnapshotOwnerLinks(t.Context(), self, frame, false)
 				if errors.Is(err, ErrPersistStateNotReady) {
 					retries++
 					require.Nil(t, links)

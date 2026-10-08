@@ -154,7 +154,7 @@ var _ Setter = Optional[Input]{}
 
 func (o Optional[I]) SetField(val reflect.Value) error {
 	switch val.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if o.Valid {
 			ptr := reflect.New(val.Type().Elem())
 			if err := assign(ptr.Elem(), o.Value); err != nil {
@@ -239,7 +239,7 @@ var _ Setter = DynamicOptional{}
 
 func (o DynamicOptional) SetField(val reflect.Value) error {
 	switch val.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if o.Valid {
 			ptr := reflect.New(val.Type().Elem())
 			if err := assign(ptr.Elem(), o.Value); err != nil {

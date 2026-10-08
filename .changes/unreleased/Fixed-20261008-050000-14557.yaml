@@ -1,0 +1,6 @@
+kind: Fixed
+body: Directory.withFiles copies all its files in one step instead of one withFile step per file, so gathering many files no longer slows down with each extra file (300 files went from about 12 s to about 1 s).
+time: 2026-10-08T05:00:00+00:00
+custom:
+    Author: sipsma
+    PR: "14557"

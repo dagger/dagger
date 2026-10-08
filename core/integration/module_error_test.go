@@ -10,7 +10,7 @@ package core
 import (
 	"context"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -73,7 +73,7 @@ func (ModuleSuite) TestLargeErrors(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	err := c.ModuleSource(modDir).AsModule().Serve(ctx)
+	err := core.NewQuery(c).ModuleSource(modDir).AsModule().Serve(ctx)
 	require.NoError(t, err)
 
 	_, err = testutil.QueryWithClient[struct {
@@ -81,7 +81,7 @@ func (ModuleSuite) TestLargeErrors(ctx context.Context, t *testctx.T) {
 			RunNoisy any
 		}
 	}](c, t, `{test{runNoisy}}`, nil)
-	var execError *dagger.ExecError
+	var execError *core.ExecError
 	require.ErrorAs(t, err, &execError)
 
 	// if we get `2` here, that means we're getting the less helpful error:

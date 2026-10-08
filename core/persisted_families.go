@@ -44,6 +44,7 @@ var persistedObjectFamilies = []dagql.PersistedObjectFamily{
 
 	// Immutable outputs.
 	{Name: "core.GitRepository", Typed: (*GitRepository)(nil), Visitor: persistedGitRepositoryVisitor, BackgroundDecode: true},
+	{Name: "core.GitRemoteHandle", Typed: (*GitRemoteHandle)(nil), Visitor: persistedGitRemoteHandleVisitor, BackgroundDecode: true},
 	{Name: "core.GitRef", Typed: (*GitRef)(nil), Visitor: persistedGitRefVisitor, BackgroundDecode: true},
 	{Name: "core.GitCommit", Typed: (*GitCommit)(nil), Visitor: persistedGitCommitVisitor, BackgroundDecode: true},
 	{Name: "core.GitBundle", Typed: (*GitBundle)(nil), Visitor: persistedGitBundleVisitor},

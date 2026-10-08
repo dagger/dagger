@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,7 +15,7 @@ func TestSimpleRecommend(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, dag.Close()) })
 
-	dir := dag.Directory().
+	dir := core.NewQuery(dag).Directory().
 		WithNewFile("go.mod", "module example.com/root").
 		WithNewFile("app/go.mod", "module example.com/app").
 		WithNewFile("app/go.sum", "")
@@ -23,7 +24,7 @@ func TestSimpleRecommend(t *testing.T) {
 			WithNewFile(excluded+"/go.mod", "module example.com/excluded").
 			WithNewFile("app/"+excluded+"/go.mod", "module example.com/excluded")
 	}
-	ws := dir.AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
+	ws := dir.AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "/app"})
 
 	matches, err := SimpleRecommend("**/go.mod", "**/go.sum")(ctx, ws)
 	require.NoError(t, err)
@@ -44,24 +45,24 @@ func TestRecommendModules(t *testing.T) {
 	dag, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, dag.Close()) })
-	ws := dag.Directory().WithNewDirectory("app").AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
+	ws := core.NewQuery(dag).Directory().WithNewDirectory("app").AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "/app"})
 
 	mods := []registryModule{
-		{Name: "z", Recommend: func(ctx context.Context, ws *dagger.Workspace) ([]string, error) {
+		{Name: "z", Recommend: func(ctx context.Context, ws *core.Workspace) ([]string, error) {
 			cwd, err := ws.Cwd(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "/", cwd)
 			return []string{"z/config", "a/config", "a/config"}, nil
 		}},
-		{Name: "installed", Recommend: func(context.Context, *dagger.Workspace) ([]string, error) {
+		{Name: "installed", Recommend: func(context.Context, *core.Workspace) ([]string, error) {
 			t.Fatal("installed modules must not be scanned")
 			return nil, nil
 		}},
 		{Name: "disabled"},
-		{Name: "empty", Recommend: func(context.Context, *dagger.Workspace) ([]string, error) {
+		{Name: "empty", Recommend: func(context.Context, *core.Workspace) ([]string, error) {
 			return nil, nil
 		}},
-		{Name: "a", Recommend: func(context.Context, *dagger.Workspace) ([]string, error) {
+		{Name: "a", Recommend: func(context.Context, *core.Workspace) ([]string, error) {
 			return []string{"other/config"}, nil
 		}},
 	}
@@ -75,7 +76,7 @@ func TestRecommendModules(t *testing.T) {
 
 	_, err = recommendModules(ctx, ws, []registryModule{{
 		Name: "canceled",
-		Recommend: func(context.Context, *dagger.Workspace) ([]string, error) {
+		Recommend: func(context.Context, *core.Workspace) ([]string, error) {
 			return nil, context.Canceled
 		},
 	}}, nil)

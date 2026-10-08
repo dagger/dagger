@@ -6,9 +6,11 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cni "github.com/containerd/go-cni"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -60,8 +62,9 @@ func New(opt Opt) (network.Provider, error) {
 	}
 
 	cp := &cniProvider{
-		CNI:  cniHandle,
-		root: opt.Root,
+		CNI:           cniHandle,
+		root:          opt.Root,
+		netAccounting: nettracer.Active(),
 	}
 	cleanOldNamespaces(cp)
 
@@ -75,9 +78,13 @@ func New(opt Opt) (network.Provider, error) {
 
 type cniProvider struct {
 	cni.CNI
-	root    string
-	nsPool  *cniPool
-	release func() error
+	root          string
+	nsPool        *cniPool
+	release       func() error
+	netAccounting *nettracer.Tracer
+	// prefixesAdded records that the bridge's addresses are classified as
+	// internal; every namespace shares the same bridge.
+	prefixesAdded atomic.Bool
 }
 
 func (c *cniProvider) initNetwork(lock bool) error {
@@ -306,6 +313,16 @@ func (c *cniProvider) newNS(ctx context.Context, hostname string) (*cniNS, error
 		opts:     nsOpts,
 		vethName: vethName,
 	}
+	if c.netAccounting != nil && ns.vethName != "" && !c.prefixesAdded.Load() {
+		if err := c.netAccounting.AddInternalPrefixesForVeth(ns.vethName); err != nil {
+			bklog.G(ctx).Debugf(
+				"classifying bridge addresses for %s as internal: %s",
+				ns.vethName, err,
+			)
+		} else {
+			c.prefixesAdded.Store(true)
+		}
+	}
 
 	if ns.vethName != "" {
 		sample, err := ns.sample()
@@ -319,16 +336,16 @@ func (c *cniProvider) newNS(ctx context.Context, hostname string) (*cniNS, error
 }
 
 type cniNS struct {
-	pool         *cniPool
-	handle       cni.CNI
-	id           string
-	nativeID     string
-	opts         []cni.NamespaceOpts
-	lastUsed     time.Time
-	vethName     string
-	canSample    bool
-	offsetSample *resourcestypes.NetworkSample
-	prevSample   *resourcestypes.NetworkSample
+	pool          *cniPool
+	handle        cni.CNI
+	id            string
+	nativeID      string
+	opts          []cni.NamespaceOpts
+	lastUsed      time.Time
+	vethName      string
+	canSample     bool
+	offsetSample  *resourcestypes.NetworkSample
+	prevSample    *resourcestypes.NetworkSample
 }
 
 func (ns *cniNS) Set(s *specs.Spec) error {
@@ -372,6 +389,10 @@ func (ns *cniNS) Sample() (*resourcestypes.NetworkSample, error) {
 		s.RxErrors -= ns.offsetSample.RxErrors
 		s.TxDropped -= ns.offsetSample.TxDropped
 		s.RxDropped -= ns.offsetSample.RxDropped
+		s.InternalRxBytes -= ns.offsetSample.InternalRxBytes
+		s.InternalTxBytes -= ns.offsetSample.InternalTxBytes
+		s.ExternalRxBytes -= ns.offsetSample.ExternalRxBytes
+		s.ExternalTxBytes -= ns.offsetSample.ExternalTxBytes
 	}
 	return s, nil
 }

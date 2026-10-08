@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -216,9 +217,6 @@ func (cli *GitCLI) RunWithStdin(ctx context.Context, stdin io.Reader, args ...st
 	))
 	defer telemetry.EndWithCause(span, &rerr)
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
-
 	gitBinary := "git"
 	if cli.git != "" {
 		gitBinary = cli.git
@@ -251,11 +249,23 @@ func (cli *GitCLI) RunWithStdin(ctx context.Context, stdin io.Reader, args ...st
 	cmd.Args = append(cmd.Args, cli.args...)
 	cmd.Args = append(cmd.Args, args...)
 
+	// Stdout is data for the caller (rev-parse paths, ls-remote listings,
+	// cat-file dumps), never progress: keep it out of the span's logs, which
+	// tool results and reports render verbatim. Stderr only reaches the span
+	// when the command fails; it is also part of the returned error.
 	buf := bytes.NewBuffer(nil)
 	errbuf := bytes.NewBuffer(nil)
 	cmd.Stdin = stdin
-	cmd.Stdout = io.MultiWriter(buf, stdio.Stdout)
-	cmd.Stderr = io.MultiWriter(errbuf, stdio.Stderr)
+	cmd.Stdout = buf
+	cmd.Stderr = errbuf
+	defer func() {
+		if rerr == nil || errbuf.Len() == 0 {
+			return
+		}
+		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+		defer stdio.Close()
+		_, _ = stdio.Stderr.Write(errbuf.Bytes())
+	}()
 	if cli.streams != nil {
 		stdout, stderr, flush := cli.streams(ctx)
 		if stdout != nil {
@@ -264,8 +274,12 @@ func (cli *GitCLI) RunWithStdin(ctx context.Context, stdin io.Reader, args ...st
 		if stderr != nil {
 			cmd.Stderr = io.MultiWriter(stderr, cmd.Stderr)
 		}
-		defer stdout.Close()
-		defer stderr.Close()
+		if stdout != nil {
+			defer stdout.Close()
+		}
+		if stderr != nil {
+			defer stderr.Close()
+		}
 		defer func() {
 			if rerr != nil {
 				flush()
@@ -299,6 +313,8 @@ func (cli *GitCLI) RunWithStdin(ctx context.Context, stdin io.Reader, args ...st
 		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+cli.indexFile)
 	}
 
+	finishNetwork := enginetelemetry.PrepareCommandNetwork(ctx, cmd)
+	defer finishNetwork()
 	var err error
 	if cli.exec != nil {
 		// remote git commands spawn helper processes that inherit FDs and don't

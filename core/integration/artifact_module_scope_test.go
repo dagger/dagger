@@ -23,13 +23,13 @@ source = "dang"
   pub base: Container! { container.from("alpine") }
   pub assistant(base: LLM!): LLM! @agent { base }
 }`)
-	for _, command := range [][]string{{"check"}, {"up"}, {"shell"}, {"agent"}, {"generate", "--require-load"}} {
+	for _, command := range [][]string{{"check"}, {"start"}, {"shell"}, {"agent"}, {"generate", "--require-load"}} {
 		t.Run(strings.Join(command, " "), func(ctx context.Context, t *testctx.T) {
 			for _, selector := range []string{"--good", "--module=good", "dag://?module=good"} {
 				args := append(slices.Clone(command), "-l", "-f=link", selector)
 				out, err := listing.With(daggerExec(args...)).Stdout(ctx)
 				require.NoError(t, err, strings.Join(args, " "))
-				require.Contains(t, out, "://good/")
+				require.Contains(t, out, "=good/")
 				require.NotContains(t, out, "bad/load")
 			}
 			if command[0] != "check" {
@@ -49,7 +49,7 @@ source = "dang"
 		require.Contains(t, out, "bad/load")
 	})
 	t.Run("a type filter does not hide a selected load failure", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerExecFail("up", "-l", "dag+service://?module=bad")).CombinedOutput(ctx)
+		out, err := base.With(daggerExecFail("start", "-l", "dag+service://?module=bad")).CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "workspace modules could not be loaded")
 	})

@@ -61,7 +61,9 @@ import (
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
@@ -69,6 +71,11 @@ import (
 type Server struct {
 	controlapi.UnimplementedControlServer
 	engineName string
+
+	// newSessionGRPC serves the control API on new session endpoints that
+	// execs get with daggerInDaggerNewSession; built on first use.
+	newSessionGRPCOnce sync.Once
+	newSessionGRPC     *grpc.Server
 	// engineInstanceID names this engine process: a random ID created once at
 	// startup, the service.instance.id of its telemetry.
 	engineInstanceID string
@@ -122,6 +129,7 @@ type Server struct {
 
 	containerdMetaBoltDB *bolt.DB
 	containerdMetaDB     *ctdmetadata.DB
+	snapshotGarbage      *snapshotGarbage
 	localContentStore    content.Store
 	contentStore         *containerdsnapshot.Store
 	builtinContentStore  content.Store
@@ -409,6 +417,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network providers: %w", err)
 	}
+	attachWorkloadNetworkAccounting(srv.cgroupParent)
 
 	baseLabels := map[string]string{
 		wlabel.Executor:       "oci",
@@ -711,14 +720,8 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	srv.workerDefaultGCPolicy = getDefaultDagqlGCPolicy(cfg, ociCfg.GCConfig, srv.rootDir)
 
 	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
-	snapshotGC := func(ctx context.Context) error {
-		stats, err := srv.containerdMetaDB.GarbageCollect(ctx)
-		if err != nil {
-			return err
-		}
-		slog.Debug("containerd garbage collect after dagql prune", "stats", stats)
-		return nil
-	}
+	srv.snapshotGarbage = newSnapshotGarbage(srv.containerdMetaDB)
+	snapshotGC := srv.snapshotGarbage.Collect
 	cacheOpts := []dagql.CacheOption{dagql.WithEngineInstanceID(srv.engineInstanceID)}
 	if srv.engineEvents != nil {
 		cacheOpts = append(cacheOpts, dagql.WithSnapshotShareReport(srv.emitShareEvent))
@@ -734,6 +737,12 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	// refs no longer exist, and this server has not admitted any new work yet.
 	if err := bkcache.ReleaseTransferLeasesAfterRestart(ctx, srv.leaseManager); err != nil {
 		return localCacheStateResetNone, fmt.Errorf("release previous snapshot transfers: %w", err)
+	}
+	if err := bkcache.ReleaseOperationLeasesAfterRestart(ctx, srv.leaseManager); err != nil {
+		return localCacheStateResetNone, fmt.Errorf("release previous operation leases: %w", err)
+	}
+	if err := resolver.ReleasePullLeasesAfterRestart(ctx, srv.leaseManager); err != nil {
+		return localCacheStateResetNone, fmt.Errorf("release previous image pull leases: %w", err)
 	}
 
 	return localCacheStateResetNone, nil
@@ -773,6 +782,7 @@ func (srv *Server) closeLocalCacheStateForReset() error {
 	srv.snapshotterName = ""
 	srv.localContentStore = nil
 	srv.containerdMetaDB = nil
+	srv.snapshotGarbage = nil
 	srv.leaseManager = nil
 	srv.contentStore = nil
 	srv.workerGCPolicies = nil
@@ -1093,6 +1103,23 @@ func (srv *Server) ListWorkers(context.Context, *controlapi.ListWorkersRequest) 
 		}},
 	}
 	return resp, nil
+}
+
+// attachWorkloadNetworkAccounting counts executor workloads' traffic with
+// programs attached once to the cgroup containing every workload's cgroup,
+// never per container.
+func attachWorkloadNetworkAccounting(cgroupParent string) {
+	tracer := nettracer.Active()
+	if tracer == nil {
+		return
+	}
+	parent, ok := nettracer.WorkloadParentPath(cgroupParent)
+	if !ok {
+		return
+	}
+	if err := tracer.AttachWorkloads(parent); err != nil {
+		slog.Warn("workload network accounting unavailable", "error", err)
+	}
 }
 
 func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {

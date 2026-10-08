@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -80,16 +82,16 @@ const definitionComputedLine = "module definition computed"
 // reads the engine's own log rather than what the outer client relays.
 type definitionEngine struct {
 	name     string
-	volume   *dagger.CacheVolume
-	service  *dagger.Service
-	tunnel   *dagger.Service
+	volume   *core.CacheVolume
+	service  *core.Service
+	tunnel   *core.Service
 	endpoint string
 }
 
 func startDefinitionEngine(ctx context.Context, t *testctx.T, outer *dagger.Client, name string) *definitionEngine {
 	t.Helper()
-	e := &definitionEngine{name: name, volume: outer.CacheVolume("module-definition-" + name + "-" + identity.NewID())}
-	ctr := devEngineContainerWithStateKey(outer, "module-definition-"+name+"-state-"+identity.NewID(), func(ctr *dagger.Container) *dagger.Container {
+	e := &definitionEngine{name: name, volume: core.NewQuery(outer).CacheVolume("module-definition-" + name + "-" + identity.NewID())}
+	ctr := devEngineContainerWithStateKey(outer, "module-definition-"+name+"-state-"+identity.NewID(), func(ctr *core.Container) *core.Container {
 		return ctr.WithMountedCache("/transfer-fixture", e.volume).
 			WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture").
 			WithEntrypoint([]string{"sh", "-c", `exec /usr/local/bin/dagger-entrypoint.sh "$@" 2>>/transfer-fixture/engine.log`, "dagger-engine"})
@@ -100,12 +102,12 @@ func startDefinitionEngine(ctx context.Context, t *testctx.T, outer *dagger.Clie
 	ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 	e.service = devEngineContainerAsService(ctr)
 	var err error
-	e.tunnel, err = outer.Host().Tunnel(e.service).Start(ctx)
+	e.tunnel, err = core.NewQuery(outer).Host().Tunnel(e.service).Start(ctx)
 	require.NoError(t, err)
-	e.endpoint, err = e.tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	e.endpoint, err = e.tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = e.tunnel.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		_, _ = e.tunnel.Stop(ctx, core.ServiceStopOpts{Kill: true})
 		_, _ = e.service.Stop(ctx)
 	})
 	return e
@@ -121,7 +123,7 @@ func (e *definitionEngine) connect(ctx context.Context, t *testctx.T, dir string
 // log returns the engine's log so far.
 func (e *definitionEngine) log(ctx context.Context, t *testctx.T, outer *dagger.Client) string {
 	t.Helper()
-	out, err := outer.Container().From(alpineImage).WithMountedCache("/fixture", e.volume).
+	out, err := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/fixture", e.volume).
 		WithEnvVariable("READ", identity.NewID()).
 		WithExec([]string{"sh", "-c", "cat /fixture/engine.log 2>/dev/null || true"}).Stdout(ctx)
 	require.NoError(t, err)
@@ -217,7 +219,7 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 		t.Helper()
 		client := e.connect(ctx, t, dir)
 		defer func() { require.NoError(t, client.Close()) }()
-		require.NoError(t, client.ModuleSource(".").AsModule().Serve(ctx))
+		require.NoError(t, core.NewQuery(client).ModuleSource(".").AsModule().Serve(ctx))
 		var data struct {
 			ModuleSource struct{ AsModule served }
 		}
@@ -287,7 +289,7 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 		require.NoError(t, os.WriteFile(filepath.Join(selfDir, name), content, 0o644))
 	}
 	selfClient := a.connect(ctx, t, selfDir)
-	require.NoError(t, selfClient.ModuleSource(".").AsModule().Serve(ctx))
+	require.NoError(t, core.NewQuery(selfClient).ModuleSource(".").AsModule().Serve(ctx))
 	var selfCall struct {
 		Test struct{ PrintDefault string }
 	}
@@ -312,7 +314,7 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 	require.NoError(t, exporter.Close())
 
 	b := startDefinitionEngine(ctx, t, outer, "b")
-	_, err := outer.Container().From(alpineImage).WithMountedCache("/source", a.volume).WithMountedCache("/destination", b.volume).
+	_, err := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", a.volume).WithMountedCache("/destination", b.volume).
 		WithEnvVariable("COPY", identity.NewID()).
 		WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/definition.json /destination/bundles/definition.json; cp -a /source/blobs /destination/"}).Sync(ctx)
 	require.NoError(t, err)
@@ -339,9 +341,9 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 	// definition, so no runtime runs for it, and still gets the runtime
 	// evaluated: its filesystem is installed from the bundle's download.
 	eager, err := engineClientContainer(ctx, t, outer, b.service).
-		WithDirectory("/work", outer.Host().Directory(checkout)).
+		WithDirectory("/work", core.NewQuery(outer).Host().Directory(checkout)).
 		WithWorkdir("/work").
-		WithExec([]string{"dagger", "functions", "--eager-runtime"}, dagger.ContainerWithExecOpts{DisableDaggerInDagger: true}).Stdout(ctx)
+		WithExec([]string{"dagger", "functions", "--eager-runtime"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).Stdout(ctx)
 	require.NoError(t, err)
 	t.Logf("eager client on B listed:\n%s", eager)
 	require.Contains(t, eager, "hello")
@@ -357,7 +359,7 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 	// not exported, so its body runs, in the downloaded filesystem, with no
 	// further download and still no definition computed.
 	caller := b.connect(ctx, t, checkout)
-	require.NoError(t, caller.ModuleSource(".").AsModule().Serve(ctx))
+	require.NoError(t, core.NewQuery(caller).ModuleSource(".").AsModule().Serve(ctx))
 	var called struct {
 		Probe struct{ Bye string }
 	}

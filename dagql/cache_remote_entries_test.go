@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1423,4 +1425,213 @@ func TestContentDigestIsTaughtWhateverTheCount(t *testing.T) {
 			})
 		}
 	}
+}
+
+// testBlobCloud returns a blob-backed Cloud cache, the remote-cache service's
+// kind, with the compaction checks' test clock and an applier. It holds live
+// holdings of distinct content, and its first collection has checked.
+func testBlobCloud(t *testing.T, live int) (*Cache, func(time.Duration), *cloudApplier) {
+	t.Helper()
+	_, cloud := storedPartTestCache(t, WithBlobStore())
+	advance := testEqClassClock(cloud)
+	a := newCloudApplier(t, cloud)
+	for i := range live {
+		h := holdingOf(fmt.Sprintf("live-%d", i))
+		h.ContentDigest = testDigest(fmt.Sprintf("live-%d-content", i))
+		a.call(callRow{key: HolderKey{"cache-live", uint64(i + 1)}, session: "live", holding: h})
+	}
+	require.Empty(t, a.collect())
+	require.Equal(t, 1, testEqClassChecks(cloud))
+	return cloud, advance, a
+}
+
+// testEqClassCheckState is what a compaction check changes: the class slots,
+// the count of checks and when the last one ran.
+type testEqClassCheckState struct {
+	slots     int
+	checks    int
+	checkedAt time.Time
+}
+
+func testEqClassCheckStateOf(c *Cache) testEqClassCheckState {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return testEqClassCheckState{slots: c.eqClassSlotsLocked(), checks: c.eqClassChecks, checkedAt: c.eqClassCheckedAt}
+}
+
+// testDeadEqClasses adds classes known only by a digest, which no term and no
+// entry uses.
+func testDeadEqClasses(t *testing.T, c *Cache, n int) {
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	for i := range n {
+		c.ensureEqClassForDigestLocked(t.Context(), fmt.Sprintf("dead-%d", i))
+	}
+}
+
+// The service compacts before it forgets any engine's holdings. Right after a
+// collection, within the interval and with fewer dead classes than live ones,
+// neither of which the collection's check would compact, CompactEqClasses
+// frees every dead slot. What the live classes hold is unchanged, and the call
+// counts as a check.
+func TestCompactEqClassesForcesTheCheck(t *testing.T) {
+	t.Parallel()
+	cloud, advance, a := testBlobCloud(t, 20)
+	advance(time.Second)
+	for i := range 2 {
+		churn := holdingOf(fmt.Sprintf("churn-%d", i))
+		churn.ContentDigest = testDigest(fmt.Sprintf("churn-%d-content", i))
+		a.call(callRow{key: HolderKey{"cache-churn", uint64(i + 1)}, session: "churn", holding: churn})
+	}
+	a.endSession("cache-churn", "churn")
+	require.Len(t, a.collect(), 2)
+
+	cloud.egraphMu.Lock()
+	before, live, checks := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud), cloud.eqClassChecks
+	contents := testEqClassContentsLocked(cloud)
+	cloud.egraphMu.Unlock()
+	require.Equal(t, 1, checks, "the collection within the interval didn't check")
+	require.Greater(t, before, live, "the collected holdings left dead classes")
+	require.Less(t, before, 2*live, "fewer dead classes than live ones: the unforced compaction keeps them")
+
+	oldSlots, newSlots, err := cloud.CompactEqClasses(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, before, oldSlots)
+	require.Equal(t, live, newSlots)
+
+	cloud.egraphMu.Lock()
+	after, checksAfter := cloud.eqClassSlotsLocked(), cloud.eqClassChecks
+	afterContents, indexErr := testEqClassContentsLocked(cloud), cacheDerivedIndexesErrorLocked(cloud)
+	cloud.egraphMu.Unlock()
+	require.Equal(t, live, after)
+	require.NoError(t, indexErr)
+	require.Equal(t, contents, afterContents)
+	require.Equal(t, checks+1, checksAfter)
+}
+
+// A forced compaction is a check: the collection checks again only once the
+// interval since the forced call has passed, though the interval since the
+// check before it has.
+func TestCompactEqClassesRestartsTheInterval(t *testing.T) {
+	t.Parallel()
+	cloud, advance, a := testBlobCloud(t, 20)
+	advance(9 * time.Second)
+	_, _, err := cloud.CompactEqClasses(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 2, testEqClassChecks(cloud))
+
+	// A change after the forced call, for the collection to check.
+	a.call(callRow{key: HolderKey{"cache-new", 1}, session: "new", holding: holdingOf("after-force")})
+	advance(2 * time.Second)
+	require.Empty(t, a.collect())
+	require.Equal(t, 2, testEqClassChecks(cloud), "11s after the first check, 2s after the forced one: no check")
+	advance(8 * time.Second)
+	require.Empty(t, a.collect())
+	require.Equal(t, 3, testEqClassChecks(cloud), "10s after the forced check: the change is checked")
+}
+
+// With no class live, the forced compaction frees every slot, which the
+// unforced one leaves, and keeps the entries: here one entry with no class,
+// which keeps the e-graph from its reset. The next class is class 1.
+func TestCompactEqClassesFreesEverySlotWhenNoClassIsLive(t *testing.T) {
+	t.Parallel()
+	_, cloud := storedPartTestCache(t, WithBlobStore())
+	testDeadEqClasses(t, cloud, 8)
+	cloud.egraphMu.Lock()
+	entry := &sharedResult{id: cloud.nextSharedResultID}
+	cloud.nextSharedResultID++
+	cloud.putResultLocked(entry)
+	before, live := cloud.eqClassSlotsLocked(), testLiveEqClassesLocked(cloud)
+	cloud.egraphMu.Unlock()
+	require.Equal(t, 8, before)
+	require.Zero(t, live)
+
+	oldSlots, newSlots, err := cloud.CompactEqClasses(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 8, oldSlots)
+	require.Zero(t, newSlots)
+
+	cloud.egraphMu.Lock()
+	after, digests, kept := cloud.eqClassSlotsLocked(), len(cloud.egraphDigestToClass), cloud.resultsByID[entry.id] == entry
+	next := cloud.ensureEqClassForDigestLocked(t.Context(), "after")
+	indexErr := cacheDerivedIndexesErrorLocked(cloud)
+	cloud.deleteResultLocked(entry)
+	cloud.egraphMu.Unlock()
+	require.Zero(t, after)
+	require.Zero(t, digests)
+	require.True(t, kept, "the entry stays")
+	require.Equal(t, eqClassID(1), next)
+	require.NoError(t, indexErr)
+}
+
+// CompactEqClasses refuses, changing nothing, on a cache without a blob store,
+// with snapshot sharing enabled, and when its context is done before the
+// compaction starts, including while it waits for the graph.
+func TestCompactEqClassesRefusesAndChangesNothing(t *testing.T) {
+	t.Parallel()
+	refuses := func(t *testing.T, c *Cache, ctx context.Context, check func(error)) {
+		t.Helper()
+		before := testEqClassCheckStateOf(c)
+		_, _, err := c.CompactEqClasses(ctx)
+		check(err)
+		require.Equal(t, before, testEqClassCheckStateOf(c))
+	}
+	t.Run("no blob store", func(t *testing.T) {
+		t.Parallel()
+		cloud := newCloudCache(t)
+		testDeadEqClasses(t, cloud, 4)
+		refuses(t, cloud, t.Context(), func(err error) { require.ErrorContains(t, err, "the cache has no blob store") })
+	})
+	t.Run("snapshot sharing", func(t *testing.T) {
+		t.Parallel()
+		_, cloud := storedPartTestCache(t, WithBlobStore())
+		testDeadEqClasses(t, cloud, 4)
+		require.NoError(t, cloud.EnableSnapshotSharing())
+		refuses(t, cloud, t.Context(), func(err error) { require.ErrorContains(t, err, "snapshot sharing is enabled") })
+	})
+	t.Run("done context", func(t *testing.T) {
+		t.Parallel()
+		_, cloud := storedPartTestCache(t, WithBlobStore())
+		testDeadEqClasses(t, cloud, 4)
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		refuses(t, cloud, ctx, func(err error) { require.ErrorIs(t, err, context.Canceled) })
+	})
+	t.Run("done while waiting for the graph", func(t *testing.T) {
+		t.Parallel()
+		_, cloud := storedPartTestCache(t, WithBlobStore())
+		testDeadEqClasses(t, cloud, 4)
+		before := testEqClassCheckStateOf(cloud)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		cloud.egraphMu.Lock()
+		locked := true
+		defer func() {
+			if locked {
+				cloud.egraphMu.Unlock()
+			}
+		}()
+		done := make(chan error, 1)
+		go func() {
+			_, _, err := cloud.CompactEqClasses(ctx)
+			done <- err
+		}()
+		blocked := false
+		for deadline := time.Now().Add(10 * time.Second); !blocked && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+			buf := make([]byte, 1<<20)
+			n := runtime.Stack(buf, true)
+			for _, stack := range strings.Split(string(buf[:n]), "\n\n") {
+				if strings.Contains(stack, "(*Cache).CompactEqClasses(") && strings.Contains(stack, "sync.(*RWMutex).Lock(") {
+					blocked = true
+					break
+				}
+			}
+		}
+		require.True(t, blocked, "CompactEqClasses waits for the graph")
+		cancel()
+		cloud.egraphMu.Unlock()
+		locked = false
+		require.ErrorIs(t, <-done, context.Canceled)
+		require.Equal(t, before, testEqClassCheckStateOf(cloud))
+	})
 }

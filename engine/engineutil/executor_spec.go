@@ -27,6 +27,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	"github.com/dagger/dagger/engine/engineutil/resources"
 	"github.com/dagger/dagger/engine/slog"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
@@ -44,7 +45,7 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -71,8 +72,15 @@ const (
 	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
 	DaggerEngineNumCPUEnv = "DAGGER_ENGINE_NUM_CPU"
+	DaggerEngineEnv       = "DAGGER_ENGINE"
 
 	DaggerQemuEmulatorMountPoint = "/dev/.dagger_qemu_emulator"
+
+	// DaggerCLIDir holds the engine's dagger CLI in containers with nesting
+	// enabled, and is appended to their PATH. It lives under /dev because
+	// every container gets a fresh /dev, so nothing is created in the
+	// container's own filesystem.
+	DaggerCLIDir = "/dev/.dagger"
 
 	cgroupSampleInterval     = 5 * time.Second
 	finalCgroupSampleTimeout = 5 * time.Second
@@ -97,7 +105,11 @@ type execState struct {
 	rootMount executor.Mount
 	mounts    []executor.Mount
 
-	cleanups *cleanups.Cleanups
+	cleanups             *cleanups.Cleanups
+	mountResources       enginetel.ExecMountResources
+	resourceCgroupPath   string
+	stopResourceSampler  func()
+	closeWorkloadNetwork func() error
 
 	spec             *specs.Spec
 	networkNamespace bknetwork.Namespace
@@ -115,6 +127,11 @@ type execState struct {
 	// stashed by setupSecretScrubbing, so the profile-argv scrubber at the emit
 	// site reuses the exact same secret set as the stdout/stderr scrubbers.
 	profSecretFilePaths []string
+	// stdoutRedirected/stderrRedirected are set by setupStdio when the stream
+	// is redirected to a file in the container, in which case setupOTel leaves
+	// it out of the exec's logs.
+	stdoutRedirected bool
+	stderrRedirected bool
 
 	startedOnce *sync.Once
 	startedCh   chan<- struct{}
@@ -126,6 +143,10 @@ type execState struct {
 	nestedClientMetadata     *engine.ClientMetadata
 	nestedClientModule       dagql.AnyObjectResult
 	nestedClientFunctionCall dagql.Typed
+
+	// profExecOpID is the wcprof exec.run op of this run (0 when not
+	// profiling): the op nested clients of this exec are linked to.
+	profExecOpID uint64
 
 	doneErr error
 	done    chan struct{}
@@ -391,8 +412,86 @@ func (c *Client) injectInit(_ context.Context, state *execState) error {
 	return nil
 }
 
+// injectDaggerCLI mounts the engine's own dagger CLI read-only into containers
+// that can connect back to Dagger, and appends its directory to PATH. The CLI
+// is built for the engine's architecture; the bundled QEMU runs host binaries
+// directly, so it also works in emulated containers.
+func (c *Client) injectDaggerCLI(_ context.Context, state *execState) error {
+	if !state.hasDaggerCLI() {
+		return nil
+	}
+
+	state.mounts = append(state.mounts, executor.Mount{
+		Src:      hostBindMount{srcPath: distconsts.DaggerCLIPath},
+		Dest:     path.Join(DaggerCLIDir, "dagger"),
+		Readonly: true,
+	})
+
+	state.procInfo.Meta.Env = appendDaggerCLIToPath(state.procInfo.Meta.Env)
+
+	return nil
+}
+
+// hasDaggerCLI reports whether the container gets the dagger CLI, i.e. whether
+// it can connect back to Dagger, as a nested client or as a new session.
+func (state *execState) hasDaggerCLI() bool {
+	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
+		return true
+	}
+	return state.execMD != nil && state.execMD.DaggerInDaggerNewSession
+}
+
+// appendDaggerCLIToPath returns a copy of env with DaggerCLIDir appended to
+// PATH, if PATH is set.
+func appendDaggerCLIToPath(env []string) []string {
+	env = slices.Clone(env)
+	for i, kv := range env {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k != "PATH" {
+			continue
+		}
+		if v == "" {
+			v = DaggerCLIDir
+		} else {
+			v += ":" + DaggerCLIDir
+		}
+		env[i] = k + "=" + v
+	}
+	return env
+}
+
 func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	var extraOpts []ctdoci.SpecOpts
+	// Reverse cleanup order: delete the container, release its mounts, take
+	// the final parent sample, then release the retained helper counters.
+	state.cleanups.Add("release exec mount accounting", func() error {
+		var err error
+		if state.mountResources != nil {
+			err = state.mountResources.Close()
+		}
+		// runc removes the container leaf, not its accounting parent.
+		// Mount accounting may already have removed the parent.
+		if filepath.IsAbs(state.resourceCgroupPath) && !strings.Contains(state.resourceCgroupPath, ":") {
+			removeErr := os.Remove(filepath.Join("/sys/fs/cgroup", state.resourceCgroupPath))
+			if !errors.Is(removeErr, os.ErrNotExist) {
+				err = errors.Join(err, removeErr)
+			}
+		}
+		return err
+	})
+	state.cleanups.Add("release workload network accounting", func() error {
+		if state.closeWorkloadNetwork != nil {
+			return state.closeWorkloadNetwork()
+		}
+		return nil
+	})
+	state.cleanups.Add("finish exec mount resource sample", func() error {
+		if state.stopResourceSampler != nil {
+			state.stopResourceSampler()
+			return nil
+		}
+		return sampleFailedExecMountResources(ctx, state)
+	})
 	if state.procInfo.Meta.ReadonlyRootFS {
 		extraOpts = append(extraOpts, ctdoci.WithRootFSReadonly())
 	}
@@ -411,6 +510,14 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 		c.ApparmorProfile,
 		c.SELinux,
 		"",
+		func(ctx context.Context, spec *specs.Spec) context.Context {
+			state.resourceCgroupPath = spec.Linux.CgroupsPath
+			state.mountResources = enginetel.NewExecMountResources(spec.Linux.CgroupsPath)
+			if state.mountResources != nil {
+				return enginetel.WithExecMountResources(ctx, state.mountResources)
+			}
+			return ctx
+		},
 		extraOpts...,
 	)
 	if err != nil {
@@ -419,6 +526,10 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	state.cleanups.Add("base OCI spec cleanup", cleanups.Infallible(ociSpecCleanup))
 
 	state.spec = baseSpec
+	// Systemd uses a scope identifier, not a filesystem path. Preserve it.
+	if filepath.IsAbs(state.resourceCgroupPath) && !strings.Contains(state.resourceCgroupPath, ":") {
+		state.spec.Linux.CgroupsPath = filepath.Join(state.resourceCgroupPath, "container")
+	}
 	return nil
 }
 
@@ -438,6 +549,35 @@ func (c *Client) filterEnvs(_ context.Context, state *execState) error {
 	state.spec.Process.Env = filteredEnvs
 
 	return nil
+}
+
+type rootfsUnmountOps struct {
+	unmount          func(target string, flags int) error
+	unmountRecursive func(target string, flags int) error
+	// unmountSyscall is the raw syscall: unlike unmount, it reports EINVAL.
+	unmountSyscall func(target string, flags int) error
+}
+
+var systemRootfsUnmountOps = rootfsUnmountOps{
+	unmount:          mount.Unmount,
+	unmountRecursive: mount.UnmountRecursive,
+	unmountSyscall:   unix.Unmount,
+}
+
+// unmountFromRootfs undoes a mount the executor made into a container rootfs.
+// A recursive bind is first detached with MNT_DETACH, which takes its whole
+// subtree in one syscall, as moby's mount.RecursiveUnmount does.
+// UnmountRecursive is only the fallback: it parses the entire mount table,
+// which is large when many containers are running, and every read of the
+// table holds the kernel's mount lock.
+func unmountFromRootfs(ops rootfsUnmountOps, dstPath string, recursive bool) error {
+	if !recursive {
+		return ops.unmount(dstPath, 0)
+	}
+	if err := ops.unmountSyscall(dstPath, unix.MNT_DETACH); err == nil {
+		return nil
+	}
+	return ops.unmountRecursive(dstPath, 0)
 }
 
 //nolint:gocyclo
@@ -495,10 +635,12 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 			metaMount = &mnt
 
 		case mnt.Destination == DaggerQemuEmulatorMountPoint,
+			strings.HasPrefix(mnt.Destination, DaggerCLIDir+"/"),
 			strings.HasPrefix(mnt.Destination, "/dev/pipes/"):
 			// Keep specific sub-mounts of /dev in the OCI spec so that runc processes
 			// them after the /dev tmpfs mount. The qemu emulator is at
-			// /dev/.dagger_qemu_emulator and /dev/pipes/ is used by heredoc processing.
+			// /dev/.dagger_qemu_emulator, the dagger CLI is under /dev/.dagger/ and
+			// /dev/pipes/ is used by heredoc processing.
 			filteredMounts = append(filteredMounts, mnt)
 
 		case containerfs.IsSpecialMountType(mnt.Type):
@@ -602,13 +744,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		overlayIncompatDir := overlay.VolatileIncompatDir(mnt)
 
 		state.cleanups.Add("unmount from rootfs "+mnt.Target, func() error {
-			var err error
-			if slices.Contains(mnt.Options, "rbind") {
-				err = mount.UnmountRecursive(dstPath, 0)
-			} else {
-				err = mount.Unmount(dstPath, 0)
-			}
-			if err != nil {
+			if err := unmountFromRootfs(systemRootfsUnmountOps, dstPath, slices.Contains(mnt.Options, "rbind")); err != nil {
 				return err
 			}
 			if overlayIncompatDir != "" {
@@ -765,6 +901,7 @@ func (c *Client) setupStdio(_ context.Context, state *execState) error {
 				return fmt.Errorf("chown redirect stdout file: %w", err)
 			}
 			stdoutWriters = append(stdoutWriters, redirectStdoutFile)
+			state.stdoutRedirected = true
 		}
 
 		redirectStderrPath := state.execMD.RedirectStderrPath
@@ -781,6 +918,7 @@ func (c *Client) setupStdio(_ context.Context, state *execState) error {
 				return fmt.Errorf("chown redirect stderr file: %w", err)
 			}
 			stderrWriters = append(stderrWriters, redirectStderrFile)
+			state.stderrRedirected = true
 		}
 	}
 
@@ -814,8 +952,17 @@ func (c *Client) setupOTel(ctx context.Context, state *execState) error {
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	state.cleanups.Add("close logs", stdio.Close)
-	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
-	state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}
+	// A stream redirected to a file is meant to go to that file, not to the
+	// exec's logs, so leave it out of telemetry. setupStdio still captures it
+	// for Container.stdout/stderr. Callers on API views before v1.0.0 opt back
+	// into logging it with LogRedirectedOutput.
+	logRedirected := state.execMD != nil && state.execMD.LogRedirectedOutput
+	if !state.stdoutRedirected || logRedirected {
+		state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
+	}
+	if !state.stderrRedirected || logRedirected {
+		state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}
+	}
 
 	listener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
 		return net.Listen("tcp", "127.0.0.1:0")
@@ -1114,6 +1261,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		state.nestedClientMetadata,
 		parentClientID,
 	)
+	transports.profExecOpID = state.profExecOpID
 	state.cleanups.Add("close nested client transports", cleanups.Infallible(transports.Close))
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
@@ -1174,6 +1322,47 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	return nil
 }
 
+// setupNewSessionEndpoint gives the container an engine endpoint of its own,
+// so each Dagger client started in it connects as the main client of a new
+// session rather than as a nested client of the caller's session. The stock
+// CLI and SDKs find it through DAGGER_ENGINE.
+func (c *Client) setupNewSessionEndpoint(ctx context.Context, state *execState) error {
+	if state.execMD == nil || !state.execMD.DaggerInDaggerNewSession {
+		return nil
+	}
+
+	listener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
+		return net.Listen("tcp", "127.0.0.1:0")
+	})
+	if err != nil {
+		return fmt.Errorf("listen for new session clients: %w", err)
+	}
+	state.cleanups.Add("close new session listener", cleanups.IgnoreErrs(listener.Close, net.ErrClosed))
+
+	state.spec.Process.Env = append(state.spec.Process.Env, DaggerEngineEnv+"=tcp://"+listener.Addr().String())
+
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	httpSrv := &http.Server{
+		// NOTE: no ReadHeaderTimeout (gosec G112), for the same reason as the
+		// nested client listener above.
+		Handler:   http.HandlerFunc(c.SessionHandler.ServeHTTPToNewSession),
+		Protocols: protocols,
+	}
+	srvPool := pool.New().WithErrors()
+	srvPool.Go(func() error {
+		err := httpSrv.Serve(listener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
+			return fmt.Errorf("serve new session listener: %w", err)
+		}
+		return nil
+	})
+	state.cleanups.Add("wait for new session server", srvPool.Wait)
+	state.cleanups.Add("close new session http server", httpSrv.Close)
+	return nil
+}
+
 // nestedClientTransportManager is the process-level proxy capability for one
 // exec. A nested process may create more than one sequential engine client, so
 // each exact header-aware client ID gets its own registered, one-shot transport;
@@ -1186,6 +1375,8 @@ type nestedClientTransportManager struct {
 	sessionHandler  sessionHandler
 	baseMetadata    *engine.ClientMetadata
 	parentClientID  string
+	// profExecOpID is the wcprof op of the exec hosting these clients.
+	profExecOpID uint64
 
 	closed     bool
 	transports map[string]*nestedClientTransport
@@ -1292,7 +1483,11 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	}
 	if wcprof.Enabled(manager.registrationCtx) {
 		// The analyzer stitches each logical nested client's ops under this exec.
-		wcprof.Link(manager.registrationCtx, wcprof.LinkKindNestedClient, 0, 0, metadata.ClientID, 0)
+		// The link is from the exec op itself, not the setupNestedClient phase
+		// the registration context carries: that phase ends before the
+		// container starts, so ops hung under it would sit outside the exec's
+		// run.
+		wcprof.Link(manager.registrationCtx, wcprof.LinkKindNestedClient, manager.profExecOpID, 0, metadata.ClientID, 0)
 	}
 	return transport, &metadata, 0, nil
 }
@@ -1447,67 +1642,74 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	trace.SpanFromContext(ctx).AddEvent("Container created")
 
+	cgroupPath := state.resourceCgroupPath
+	readWorkloads := enginetel.HasWorkloadReadings(ctx)
+	hasCallDigest := state.execMD != nil && state.execMD.CallDigest != ""
+	sampleCgroup := cgroupPath != "" && (hasCallDigest || readWorkloads)
+
+	// Reserve the workload's network counters before runc starts it, so its
+	// first packet counts. Cleanups run in reverse, so the release runs after
+	// the sampler's final sample and after runc deletes the container.
+	var workloadNetwork *nettracer.Workload
+	if tracer := nettracer.Active(); tracer != nil && sampleCgroup {
+		path := filepath.Join(cgroupMountpoint, cgroupPath)
+		workload, err := func() (*nettracer.Workload, error) {
+			cookie, err := workloadNetnsCookie(ctx, state)
+			if err != nil {
+				return nil, fmt.Errorf("network namespace cookie: %w", err)
+			}
+			return tracer.Workload(path, cookie)
+		}()
+		if err != nil {
+			bklog.G(ctx).Debugf("workload network accounting unavailable for %s: %s", state.id, err)
+		} else {
+			workloadNetwork = workload
+			// Keep these counters through mount teardown and the final
+			// parent sample. The exec cleanup removes the parent cgroup.
+			state.closeWorkloadNetwork = workload.Close
+		}
+	}
+
 	state.cleanups.Add("runc delete container", func() error {
 		return deleteContainer(ctx, state.id, cgroups.IsCgroup2UnifiedMode(), c.Runc.Delete, func(recoveryCtx context.Context) error {
 			return killContainerCgroup(recoveryCtx, state.id, state.spec.Linux.CgroupsPath)
 		})
 	})
 
-	cgroupPath := state.spec.Linux.CgroupsPath
 	// Wake the existing sampler when runc starts. The cgroup may not exist at
 	// that point; the final cleanup sample also covers short executions.
 	var readingsStarted chan struct{}
-	readWorkloads := enginetel.HasWorkloadReadings(ctx)
 	if readWorkloads {
 		readingsStarted = make(chan struct{})
 	}
-	hasCallDigest := state.execMD != nil && state.execMD.CallDigest != ""
-	if cgroupPath != "" && (hasCallDigest || readWorkloads) {
-		meter := telemetry.Meter(ctx, InstrumentationLibrary)
-		if !hasCallDigest {
-			// Preserve the ordinary path's exclusion of unassociated execs.
-			meter = noop.NewMeterProvider().Meter(InstrumentationLibrary)
-		}
-		meter = enginetel.WorkloadReadingMeter(ctx, meter, InstrumentationLibrary)
+	if sampleCgroup {
+		var meter metric.Meter
+		var commonAttrs attribute.Set
+		ctx, meter, commonAttrs = execResourceTelemetry(ctx, state)
 		readingInterval := min(enginetel.WorkloadReadingInterval(ctx, cgroupSampleInterval), cgroupSampleInterval)
-
-		var commonAttrs []attribute.KeyValue
-		if hasCallDigest {
-			commonAttrs = append(commonAttrs, attribute.String(telemetry.DagDigestAttr, string(state.execMD.CallDigest)))
+		var networkSampler resources.BKNetworkSampler = state.networkNamespace
+		if workloadNetwork != nil {
+			networkSampler = workloadNetworkSampler{netNS: state.networkNamespace, workload: workloadNetwork}
 		}
-		spanContext := trace.SpanContextFromContext(ctx)
-		if spanContext.HasSpanID() {
-			commonAttrs = append(commonAttrs,
-				attribute.String(telemetry.MetricsSpanIDAttr, spanContext.SpanID().String()),
-			)
-		}
-		if spanContext.HasTraceID() {
-			commonAttrs = append(commonAttrs,
-				attribute.String(telemetry.MetricsTraceIDAttr, spanContext.TraceID().String()),
-			)
-		}
-
-		if readWorkloads {
-			// Keep workload export dimensions out of the SDK gauge's series identity.
-			workloadAttrs := append(slices.Clone(commonAttrs),
-				attribute.String(enginetel.ExecutionIDAttr, state.id),
-				attribute.Bool(enginetel.ExecutionInternalAttr, state.execMD != nil && state.execMD.Internal),
-				attribute.Int64(enginetel.SampleIntervalAttr, readingInterval.Milliseconds()),
-			)
-			ctx = enginetel.WithWorkloadReadingAttributes(ctx, attribute.NewSet(workloadAttrs...))
-		}
-		cgroupSampler, err := resources.NewSampler(cgroupPath, state.networkNamespace, meter, attribute.NewSet(commonAttrs...))
+		cgroupSampler, err := resources.NewSampler(cgroupPath, networkSampler, meter, commonAttrs)
 		if err != nil {
 			return fmt.Errorf("create cgroup sampler: %w", err)
+		}
+		if state.mountResources != nil {
+			cgroupSampler.SetMountNetwork(state.mountResources)
+			if !state.mountResources.Available() {
+				cgroupSampler.DisableCgroupSamples()
+			}
 		}
 
 		cgroupSamplerCtx, cgroupSamplerCancel := context.WithCancelCause(context.WithoutCancel(ctx))
 		cgroupSamplerPool := pool.New()
 
-		state.cleanups.Add("cancel cgroup sampler", cleanups.Infallible(func() {
+		stopSampler := sync.OnceFunc(func() {
 			cgroupSamplerCancel(fmt.Errorf("container cleanup: %w", context.Canceled))
 			cgroupSamplerPool.Wait()
-		}))
+		})
+		state.stopResourceSampler = stopSampler
 
 		cgroupSamplerPool.Go(func() {
 			ticker := time.NewTicker(cgroupSampleInterval)
@@ -1590,6 +1792,13 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 				close(state.startedCh)
 			}
 		})
+	}
+
+	// With wcprof on, runc writes a pid file once the workload is released,
+	// which splits runc's container start-up from the user's process run.
+	var pidFile string
+	if wcprof.Enabled(ctx) {
+		pidFile = filepath.Join(bundle, "init.pid")
 	}
 
 	killer := newRunProcKiller(c.Runc, state.id)
@@ -1700,6 +1909,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 				Started:   started,
 				IO:        io,
 				ExtraArgs: []string{"--keep"},
+				PidFile:   pidFile,
 			})
 			return err
 		})
@@ -1726,7 +1936,13 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		}
 		if startedNS := profStartedNS.Load(); startedNS > 0 {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
-			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser, Argv: profArgv}, startedNS, endNS, outcome)
+			processStartNS := startedNS
+			if releasedNS := workloadReleasedNS(pidFile, startedNS, profStartedWall.Load()); releasedNS > startedNS && releasedNS <= endNS {
+				// runc creating the container, up to releasing the workload
+				wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, releasedNS, wcprof.OutcomeOK)
+				processStartNS = releasedNS
+			}
+			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser, Argv: profArgv}, processStartNS, endNS, outcome)
 		} else {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, endNS, outcome)
 		}

@@ -1866,12 +1866,14 @@ type Container implements Exportable & Node & Syncer {
     redirectStdin: String = ""
 
     """
-    Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+    Redirect the command's standard output to a file in the container. The
+    redirected output is not logged. Example: "./stdout.txt"
     """
     redirectStdout: String = ""
 
     """
-    Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+    Redirect the command's standard error to a file in the container. The
+    redirected output is not logged. Example: "./stderr.txt"
     """
     redirectStderr: String = ""
 
@@ -1884,6 +1886,19 @@ type Container implements Exportable & Node & Syncer {
     disableDaggerInDagger: Boolean = false
 
     experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
+
+    """
+    Connect Dagger clients started by the command to the current engine as new
+    sessions, instead of as clients of the current session. Each connection gets
+    its own session, released when that client closes.
+
+    The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger
+    CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the
+    SDK download one.
+
+    Cannot be combined with "disableDaggerInDagger".
+    """
+    daggerInDaggerNewSession: Boolean = false
 
     """
     Execute the command with all root capabilities. Like --privileged in Docker
@@ -2434,6 +2449,19 @@ type Container implements Exportable & Node & Syncer {
     experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
 
     """
+    Connect Dagger clients started by the command to the current engine as new
+    sessions, instead of as clients of the current session. Each connection gets
+    its own session, released when that client closes.
+
+    The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger
+    CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the
+    SDK download one.
+
+    Cannot be combined with "disableDaggerInDagger".
+    """
+    daggerInDaggerNewSession: Boolean = false
+
+    """
     Execute the command with all root capabilities. This is similar to running a
     command with "sudo" or executing "docker run" with the "--privileged" flag.
     Containerization does not provide any security guarantees when using this
@@ -2490,6 +2518,19 @@ type Container implements Exportable & Node & Syncer {
     disableDaggerInDagger: Boolean = false
 
     experimentalPrivilegedNesting: Boolean = false @deprecated(reason: "Commands can access Dagger by default. Use \"disableDaggerInDagger\" to opt out.")
+
+    """
+    Connect Dagger clients started by the command to the current engine as new
+    sessions, instead of as clients of the current session. Each connection gets
+    its own session, released when that client closes.
+
+    The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger
+    CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the
+    SDK download one.
+
+    Cannot be combined with "disableDaggerInDagger".
+    """
+    daggerInDaggerNewSession: Boolean = false
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -4097,6 +4138,16 @@ type GitRef implements Node {
   """The resolved ref name at this ref."""
   ref: String! @deprecated(reason: "Use \"name\" instead.")
 
+  """
+  Return true when the other ref's commit equals this commit or is an ancestor of it.
+
+  Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.
+  """
+  contains(
+    """The ref whose commit to look for in this ref's history."""
+    other: ID! @expectedType(name: "GitRef")
+  ): Boolean!
+
   """Find the best common ancestor between this ref and another ref."""
   commonAncestor(
     """The other ref to compare against."""
@@ -4183,6 +4234,24 @@ type GitRef implements Node {
   ): Workspace!
 }
 
+"""A named reference to a remote Git repository."""
+type GitRemote implements Node {
+  """A unique identifier for this GitRemote."""
+  id: ID!
+
+  """
+  Access this remote's repository using its fetch URL and the caller's
+  credentials, or the source's existing capability for this exact destination.
+
+  HEAD is the remote's HEAD, independent of the workspace's selected commit.
+  Remote registration alone does not grant credentials.
+  """
+  repository: GitRepository!
+
+  """The remote's name."""
+  name: String!
+}
+
 """A git repository."""
 type GitRepository implements Node {
   """A unique identifier for this GitRepository."""
@@ -4212,6 +4281,11 @@ type GitRepository implements Node {
     `abc1234~2`. The result is a detached ref of the resulting commit; remote
     repositories fetch the history the walk needs. Other git revision syntax
     (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
+
+    A repository derived from a remote one (e.g. a workspace's history after a
+    snapshot or commit) resolves names and commits it does not contain itself
+    through that remote, with its authentication. Its branches and tags listings
+    include the remote's.
     """
     name: String!
 
@@ -4329,6 +4403,24 @@ type GitRepository implements Node {
   ): GitRepository!
 
   """
+  List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers.
+  """
+  remotes: [GitRemote!]!
+
+  """Look up a remote by name. Fails when the remote does not exist."""
+  remote(
+    """The remote's name."""
+    name: String!
+  ): GitRemote!
+
+  """
+  Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.
+
+  Frozen workspaces retain their captured upstream selection. Does not contact remote servers.
+  """
+  defaultRemote: GitRemote
+
+  """
   Replace this repository's storage with the supplied self-contained Git
   repository, retaining its logical URL and push destinations.
 
@@ -4339,6 +4431,10 @@ type GitRepository implements Node {
   The receiver's logical routing wins over the supplied Git configuration; that
   configuration is not rewritten. Use Directory.asGit to open the supplied
   repository without retaining the receiver's routing.
+
+  When the receiver is a remote repository (or was derived from one), that
+  remote is retained with its authentication: refs the supplied storage does not
+  contain resolve through it.
   """
   withContents(
     """
@@ -7123,6 +7219,19 @@ type Workspace implements Node {
   ): Workspace!
 
   """
+  Return this workspace with the calling client's user-level config re-read and applied.
+
+  User-level config (the [workspaces.*] section of the Dagger config file) is
+  read when a session loads its workspace, and snapshots keep that
+  configuration. Call this to pick up edits made since, for example when an
+  agent reloads its modules.
+
+  The entry is matched by the workspace's git origin remote. A workspace without
+  one, or without a matching entry, gets no user-level config.
+  """
+  withUserConfig: Workspace!
+
+  """
   Selected native workspace config file relative to the workspace cwd, if any.
   """
   configFile: String!
@@ -7341,6 +7450,14 @@ type Workspace implements Node {
     path: String!
   ): Workspace!
 
+  """Return this workspace with files removed, without mutating the source."""
+  withoutFiles(
+    """
+    Paths of the files to remove. Relative paths resolve from the workspace cwd.
+    """
+    paths: [String!]!
+  ): Workspace!
+
   """
   Return this workspace with a directory removed, without mutating the source.
   """
@@ -7358,6 +7475,24 @@ type Workspace implements Node {
     """Changes to apply."""
     changes: ID! @expectedType(name: "Changeset")
   ): Workspace!
+
+  """
+  Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+
+  Paths in the patch are relative to the workspace root, whatever its cwd, as
+  `git diff` writes them. Patching a path at or under a mount is an error.
+  """
+  withPatchFile(
+    """File containing the patch to apply"""
+    patch: ID! @expectedType(name: "File")
+
+    """
+    How to handle hunks that no longer apply to the target content: fail
+    (default), or apply what fits and leave git-style conflict markers where it
+    doesn't.
+    """
+    onConflict: PatchConflict = FAIL
+  ): Workspace! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """
   Return this workspace with its working directory pointed at the given workspace-relative path.
@@ -7652,7 +7787,7 @@ type Workspace implements Node {
   ): Workspace!
 
   """
-  Return this workspace with updated module versions and lockfile state.
+  Return this workspace with updated module sources, versions and lockfile state.
 
   An SDK client scope is regenerated when it targets an updated module.
   """
@@ -7666,6 +7801,12 @@ type Workspace implements Node {
     New version request for exactly one selected module. Cannot be combined with a version suffix.
     """
     version: String = ""
+
+    """
+    New source for exactly one selected module. Resolved like an install source.
+    Cannot be combined with a version or a version suffix.
+    """
+    source: String = ""
   ): Workspace!
 
   """Installed SDKs."""

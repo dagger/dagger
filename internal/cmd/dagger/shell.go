@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger/core"
+
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -381,7 +383,7 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 		}
 
 		// Load the target LLM state (the point we're branching to).
-		loadedLLM := dagger.Ref[*dagger.LLM](h.dag, dagger.ID(encodedID))
+		loadedLLM := core.Ref[*core.LLM](core.NewQuery(h.dag), core.ID(encodedID))
 
 		// If the user requested summarization, summarize the OLD branch (the
 		// current conversation being abandoned) and inject the summary into the
@@ -431,7 +433,7 @@ func (h *shellCallHandler) EditFromID(ctx context.Context, encodedID string) fun
 		return func() error { return fmt.Errorf("no LLM session active") }
 	}
 	return func() error {
-		base := dagger.Ref[*dagger.LLM](h.dag, dagger.ID(encodedID))
+		base := core.Ref[*core.LLM](core.NewQuery(h.dag), core.ID(encodedID))
 		if err := target.Rewind(ctx, base); err != nil {
 			return err
 		}
@@ -950,11 +952,11 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	return h.initLLM(ctx, nil)
 }
 
-func (h *shellCallHandler) initLLM(ctx context.Context, initial *dagger.LLM) (*LLMSession, error) {
+func (h *shellCallHandler) initLLM(ctx context.Context, initial *core.LLM) (*LLMSession, error) {
 	return h.initLLMSession(ctx, initial, false)
 }
 
-func (h *shellCallHandler) initLLMSession(ctx context.Context, initial *dagger.LLM, restoring bool) (*LLMSession, error) {
+func (h *shellCallHandler) initLLMSession(ctx context.Context, initial *core.LLM, restoring bool) (*LLMSession, error) {
 	if s, e := h.llmMaybe(); s != nil || e != nil {
 		return s, e
 	}

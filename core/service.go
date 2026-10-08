@@ -55,6 +55,7 @@ type Service struct {
 	Container                     dagql.ObjectResult[*Container]
 	Args                          []string
 	ExperimentalPrivilegedNesting bool
+	DaggerInDaggerNewSession      bool
 	InsecureRootCapabilities      bool
 	NoInit                        bool
 	ExecMD                        *engineutil.ExecutionMetadata
@@ -90,6 +91,7 @@ type persistedServicePayload struct {
 	ContainerResultID             uint64                        `json:"containerResultID,omitempty"`
 	Args                          []string                      `json:"args,omitempty"`
 	ExperimentalPrivilegedNesting bool                          `json:"experimentalPrivilegedNesting,omitempty"`
+	DaggerInDaggerNewSession      bool                          `json:"daggerInDaggerNewSession,omitempty"`
 	InsecureRootCapabilities      bool                          `json:"insecureRootCapabilities,omitempty"`
 	NoInit                        bool                          `json:"noInit,omitempty"`
 	ExecMD                        *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
@@ -123,6 +125,7 @@ func (svc *Service) EncodePersistedObject(ctx context.Context, enc *dagql.Persis
 		CustomHostname:                svc.CustomHostname,
 		Args:                          slices.Clone(svc.Args),
 		ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
+		DaggerInDaggerNewSession:      svc.DaggerInDaggerNewSession,
 		InsecureRootCapabilities:      svc.InsecureRootCapabilities,
 		NoInit:                        svc.NoInit,
 		ExecMD:                        svc.ExecMD,
@@ -200,6 +203,7 @@ func (*Service) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDec
 		Container:                     container,
 		Args:                          slices.Clone(persisted.Args),
 		ExperimentalPrivilegedNesting: persisted.ExperimentalPrivilegedNesting,
+		DaggerInDaggerNewSession:      persisted.DaggerInDaggerNewSession,
 		InsecureRootCapabilities:      persisted.InsecureRootCapabilities,
 		NoInit:                        persisted.NoInit,
 		ExecMD:                        persisted.ExecMD,
@@ -587,6 +591,7 @@ func (svc *Service) startContainer(
 	if execMD == nil {
 		execMD, err = ctr.execMeta(ctx, ContainerExecOpts{
 			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
+			DaggerInDaggerNewSession:      svc.DaggerInDaggerNewSession,
 			NoInit:                        svc.NoInit,
 		}, nil, svc.ModuleContext)
 		if err != nil {

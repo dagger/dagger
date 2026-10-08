@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"dagger.io/dagger/core"
+
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -28,7 +30,7 @@ func (LocalCacheSuite) TestConcurrentSessionsShareOneEntry(ctx context.Context, 
 	c := connect(ctx, t)
 
 	// A tag is resolved once per session; a digest is not.
-	image, err := c.Container().From(alpineImage).ImageRef(ctx)
+	image, err := core.NewQuery(c).Container().From(alpineImage).ImageRef(ctx)
 	require.NoError(t, err)
 
 	devEngine := devEngineContainerAsService(devEngineContainer(c,
@@ -37,13 +39,13 @@ func (LocalCacheSuite) TestConcurrentSessionsShareOneEntry(ctx context.Context, 
 			return cfg
 		}),
 	))
-	tunnel, err := c.Host().Tunnel(devEngine).Start(ctx)
+	tunnel, err := core.NewQuery(c).Host().Tunnel(devEngine).Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, _ = tunnel.Stop(context.Background())
 		_, _ = devEngine.Stop(context.Background())
 	})
-	endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	endpoint, err := tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
 	sessions := make([]*dagger.Client, 3)
@@ -57,8 +59,8 @@ func (LocalCacheSuite) TestConcurrentSessionsShareOneEntry(ctx context.Context, 
 
 	// The exec gives up after a minute, so the test cannot hang on it.
 	barrier := "concurrent-sessions-barrier-" + identity.NewID()
-	withBarrier := func(session *dagger.Client) *dagger.Container {
-		return session.Container().From(image).WithMountedCache("/barrier", session.CacheVolume(barrier))
+	withBarrier := func(session *dagger.Client) *core.Container {
+		return core.NewQuery(session).Container().From(image).WithMountedCache("/barrier", core.NewQuery(session).CacheVolume(barrier))
 	}
 	const script = `for i in $(seq 600); do [ -e /barrier/open ] && break; sleep 0.1; done
 [ -e /barrier/open ] || exit 1
@@ -115,7 +117,7 @@ head -c 16 /dev/urandom | base64`
 		} `json:"results"`
 	}
 	readSnapshot := func() snapshot {
-		raw, err := c.Container().From(alpineImage).
+		raw, err := core.NewQuery(c).Container().From(alpineImage).
 			WithServiceBinding("dev-engine", devEngine).
 			WithEnvVariable("READ", identity.NewID()).
 			WithExec([]string{"wget", "-qO-", "http://dev-engine:6060/debug/dagql/cache"}).

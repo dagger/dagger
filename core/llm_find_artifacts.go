@@ -515,11 +515,8 @@ type artifactRow struct {
 // artifactRowDimension is a dimension a schema path needs a key for.
 type artifactRowDimension struct {
 	Identifier string
-	// Name is the query name used in the row's address.
-	Name string
-	// Lookup is the name that selects the dimension in the whole scope, for
-	// the keys view.
-	Lookup         string
+	// Name selects the dimension in the row's address and in the keys view.
+	Name           string
 	KeyName        string
 	KeyDescription string
 }
@@ -534,8 +531,8 @@ func (d artifactRowDimension) placeholder() string {
 
 // artifactPathRows renders the selection's path definitions (as
 // Artifacts.pathDefinitions(typeAssertion: true) does), each with the
-// dimensions it needs. Dimension names are chosen within the path's own scope,
-// as Artifact.uri names them, so a filled-in address resolves.
+// dimensions it needs. Dimension names are chosen in the whole scope, as
+// Artifact.uri names them, so a filled-in address resolves.
 func artifactPathRows(scope, selection *Artifacts, tag func(*Artifact) string) ([]artifactRow, error) {
 	opts := ArtifactURIOpts{TypeAssertion: true}
 	paths, err := selection.PathDefinitions(opts)
@@ -552,12 +549,11 @@ func artifactPathRows(scope, selection *Artifacts, tag func(*Artifact) string) (
 			entries[uri] = entry
 		}
 	}
-	scopeDims := scope.DimensionDefinitions()
+	names := scope.AllDimensions
 	rows := make([]artifactRow, 0, len(paths))
 	for _, path := range paths {
 		entry := entries[path.URI]
 		row := artifactRow{Address: path.URI, Description: path.Description, LoadError: path.LoadError, Tag: tag(entry)}
-		pathDims := scope.FilterPath(entry.Path).DimensionDefinitions()
 		defs := entry.DimensionDefinitions()
 		var query []string
 		for _, id := range path.Dimensions {
@@ -571,8 +567,7 @@ func artifactPathRows(scope, selection *Artifacts, tag func(*Artifact) string) (
 			def := defs[i]
 			need := artifactRowDimension{
 				Identifier:     def.Identifier,
-				Name:           pathDims.DisplayName(def),
-				Lookup:         scopeDims.DisplayName(def),
+				Name:           names.DisplayName(def),
 				KeyName:        def.KeyName,
 				KeyDescription: def.KeyDescription,
 			}
@@ -580,7 +575,11 @@ func artifactPathRows(scope, selection *Artifacts, tag func(*Artifact) string) (
 			query = append(query, need.placeholder())
 		}
 		if len(query) > 0 {
-			row.Address += "?" + strings.Join(query, "&")
+			sep := "?"
+			if strings.Contains(row.Address, "?") {
+				sep = "&"
+			}
+			row.Address += sep + strings.Join(query, "&")
 		}
 		rows = append(rows, row)
 	}
@@ -631,10 +630,10 @@ func renderArtifactRows(rows []artifactRow, keys map[string]*dimensionKeys) stri
 			if description := firstParagraph(need.KeyDescription); description != "" {
 				about = append(about, strings.TrimRight(description, "."))
 			}
-			if inline := renderInlineKeys(keys[need.Identifier], need.Lookup); inline != "" {
+			if inline := renderInlineKeys(keys[need.Identifier], need.Name); inline != "" {
 				about = append(about, inline)
 			} else {
-				about = append(about, fmt.Sprintf("list its keys with %s(dimension: %q)", findArtifactsToolName, need.Lookup))
+				about = append(about, fmt.Sprintf("list its keys with %s(dimension: %q)", findArtifactsToolName, need.Name))
 			}
 			out.WriteString(" — ")
 			out.WriteString(strings.Join(about, "; "))

@@ -19,6 +19,16 @@ func WithCheckName(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, checkNameKey{}, name)
 }
 
+// CheckNameFromContext returns the check's dag:// address when the current
+// evaluation already named it (see WithCheckName), or "" otherwise. Check
+// constructors use it to record the address on the Check itself so later runs
+// name their span correctly even when reached through a path that does not set
+// the context value.
+func CheckNameFromContext(ctx context.Context) string {
+	name, _ := ctx.Value(checkNameKey{}).(string)
+	return name
+}
+
 // Check is a deferred assertion and its outcome.
 type Check struct {
 	Assertion       dagql.Nullable[dagql.String]                   `field:"true" doc:"The assertion that is false when this check fails."`
@@ -28,6 +38,7 @@ type Check struct {
 	Receiver        dagql.ObjectResult[*ModuleObject]
 	Workspace       dagql.ObjectResult[*Workspace]
 	Function        string
+	Address         string
 	Inputs          []CallInput
 	Generator       dagql.ObjectResult[*Generator]
 	CacheTTL        int64
@@ -41,6 +52,7 @@ func (*Check) Type() *ast.Type { return &ast.Type{NamedType: "Check", NonNull: t
 func (*Check) TypeDescription() string {
 	return "One deferred check. Reading pass, error, or sync runs it."
 }
+
 func (c *Check) Clone() *Check {
 	copy := *c
 	if c.RemoteArtifact != nil {
@@ -55,9 +67,12 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 		return c, nil
 	}
 	var failure error
-	name, _ := ctx.Value(checkNameKey{}).(string)
+	name := CheckNameFromContext(ctx)
 	if c.RemoteArtifact == nil && name == "" {
-		name = c.Function
+		name = c.Address
+		if name == "" {
+			name = c.Function
+		}
 		if name == "" {
 			name = "generator stale"
 		}

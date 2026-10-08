@@ -240,7 +240,7 @@ func (fe *frontendPretty) renderMessageLogs(out TermOutput, span *dagui.Span) {
 	if fe.spanVerbosity(span) >= toolArgsVerbosity {
 		fe.renderSpanLogBlock(out, span, span, 0, true)
 	}
-	if collapsesToolOutput(span) {
+	if span.CollapsesToolOutput() {
 		return
 	}
 	fe.renderSpanLogBlock(out, span, span, 0, false)

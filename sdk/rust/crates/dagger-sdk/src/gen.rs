@@ -3263,6 +3263,11 @@ pub struct ContainerStatOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
+    /// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+    /// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+    /// Cannot be combined with "disableDaggerInDagger".
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_in_dagger_new_session: Option<bool>,
     /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     #[builder(setter(into, strip_option), default)]
     pub disable_dagger_in_dagger: Option<bool>,
@@ -3282,13 +3287,13 @@ pub struct ContainerWithExecOpts<'a> {
     /// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
-    /// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+    /// Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stderr: Option<&'a str>,
     /// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdin: Option<&'a str>,
-    /// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+    /// Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
     /// Content to write to the command's standard input. Example: "Hello world")
@@ -3487,6 +3492,11 @@ pub struct ContainerAsServiceOpts<'a> {
     /// If empty, the container's default command is used.
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
+    /// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+    /// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+    /// Cannot be combined with "disableDaggerInDagger".
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_in_dagger_new_session: Option<bool>,
     /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     #[builder(setter(into, strip_option), default)]
     pub disable_dagger_in_dagger: Option<bool>,
@@ -3512,6 +3522,11 @@ pub struct ContainerUpOpts<'a> {
     /// If empty, the container's default command is used.
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
+    /// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+    /// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+    /// Cannot be combined with "disableDaggerInDagger".
+    #[builder(setter(into, strip_option), default)]
+    pub dagger_in_dagger_new_session: Option<bool>,
     /// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
     #[builder(setter(into, strip_option), default)]
     pub disable_dagger_in_dagger: Option<bool>,
@@ -5269,6 +5284,9 @@ impl Container {
                 experimental_privileged_nesting,
             );
         }
+        if let Some(dagger_in_dagger_new_session) = opts.dagger_in_dagger_new_session {
+            query = query.arg("daggerInDaggerNewSession", dagger_in_dagger_new_session);
+        }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
@@ -6163,6 +6181,9 @@ impl Container {
                 experimental_privileged_nesting,
             );
         }
+        if let Some(dagger_in_dagger_new_session) = opts.dagger_in_dagger_new_session {
+            query = query.arg("daggerInDaggerNewSession", dagger_in_dagger_new_session);
+        }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
@@ -6216,6 +6237,9 @@ impl Container {
                 "experimentalPrivilegedNesting",
                 experimental_privileged_nesting,
             );
+        }
+        if let Some(dagger_in_dagger_new_session) = opts.dagger_in_dagger_new_session {
+            query = query.arg("daggerInDaggerNewSession", dagger_in_dagger_new_session);
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
@@ -10853,6 +10877,23 @@ impl GitRef {
         let query = self.selection.select("ref");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Return true when the other ref's commit equals this commit or is an ancestor of it.
+    /// Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The ref whose commit to look for in this ref's history.
+    pub async fn contains(&self, other: impl IntoID<Id>) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("contains");
+        query = query.arg_lazy(
+            "other",
+            Box::new(move || {
+                let other = other.clone();
+                Box::pin(async move { other.into_id().await.unwrap().quote() })
+            }),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Find the best common ancestor between this ref and another ref.
     ///
     /// # Arguments
@@ -11067,6 +11108,64 @@ impl Node for GitRef {
     }
 }
 #[derive(Clone)]
+pub struct GitRemote {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for GitRemote {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for GitRemote {
+    fn graphql_type() -> &'static str {
+        "GitRemote"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl GitRemote {
+    /// A unique identifier for this GitRemote.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Access this remote's repository using its fetch URL and the caller's credentials, or the source's existing capability for this exact destination.
+    /// HEAD is the remote's HEAD, independent of the workspace's selected commit. Remote registration alone does not grant credentials.
+    pub fn repository(&self) -> GitRepository {
+        let query = self.selection.select("repository");
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The remote's name.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for GitRemote {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct GitRepository {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -11208,6 +11307,8 @@ impl GitRepository {
     /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
     ///
     /// The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
+    ///
+    /// A repository derived from a remote one (e.g. a workspace's history after a snapshot or commit) resolves names and commits it does not contain itself through that remote, with its authentication. Its branches and tags listings include the remote's.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn r#ref(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("ref");
@@ -11227,6 +11328,8 @@ impl GitRepository {
     /// Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
     ///
     /// The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
+    ///
+    /// A repository derived from a remote one (e.g. a workspace's history after a snapshot or commit) resolves names and commits it does not contain itself through that remote, with its authentication. Its branches and tags listings include the remote's.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn r#ref_opts(&self, name: impl Into<String>, opts: GitRepositoryRefOpts) -> GitRef {
         let mut query = self.selection.select("ref");
@@ -11542,9 +11645,57 @@ impl GitRepository {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers.
+    pub async fn remotes(&self) -> Result<Vec<GitRemote>, DaggerError> {
+        let query = self.selection.select("remotes");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| GitRemote {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("GitRemote"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Look up a remote by name. Fails when the remote does not exist.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The remote's name.
+    pub fn remote(&self, name: impl Into<String>) -> GitRemote {
+        let mut query = self.selection.select("remote");
+        query = query.arg("name", name.into());
+        GitRemote {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.
+    /// Frozen workspaces retain their captured upstream selection. Does not contact remote servers.
+    pub async fn default_remote(&self) -> Result<Option<GitRemote>, DaggerError> {
+        let query = self.selection.select("defaultRemote");
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| GitRemote {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("GitRemote"),
+            graphql_client: self.graphql_client.clone(),
+        }))
+    }
     /// Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
     /// Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
     /// The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+    /// When the receiver is a remote repository (or was derived from one), that remote is retained with its authentication: refs the supplied storage does not contain resolve through it.
     ///
     /// # Arguments
     ///
@@ -18105,6 +18256,12 @@ pub struct WorkspaceWithFileOpts {
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithPatchFileOpts {
+    /// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+    #[builder(setter(into, strip_option), default)]
+    pub on_conflict: Option<PatchConflict>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithModuleOpts<'a> {
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
@@ -18220,6 +18377,9 @@ pub struct WorkspaceWithUpdatedModulesOpts<'a> {
     /// Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
     #[builder(setter(into, strip_option), default)]
     pub names: Option<Vec<&'a str>>,
+    /// New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
+    #[builder(setter(into, strip_option), default)]
+    pub source: Option<&'a str>,
     /// New version request for exactly one selected module. Cannot be combined with a version suffix.
     #[builder(setter(into, strip_option), default)]
     pub version: Option<&'a str>,
@@ -18649,6 +18809,17 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with the calling client's user-level config re-read and applied.
+    /// User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+    /// The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+    pub fn with_user_config(&self) -> Workspace {
+        let query = self.selection.select("withUserConfig");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Selected native workspace config file relative to the workspace cwd, if any.
     pub async fn config_file(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("configFile");
@@ -19067,6 +19238,23 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with files removed, without mutating the source.
+    ///
+    /// # Arguments
+    ///
+    /// * `paths` - Paths of the files to remove. Relative paths resolve from the workspace cwd.
+    pub fn without_files(&self, paths: Vec<impl Into<String>>) -> Workspace {
+        let mut query = self.selection.select("withoutFiles");
+        query = query.arg(
+            "paths",
+            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a directory removed, without mutating the source.
     ///
     /// # Arguments
@@ -19095,6 +19283,57 @@ impl Workspace {
                 Box::pin(async move { changes.into_id().await.unwrap().quote() })
             }),
         );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+    /// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `patch` - File containing the patch to apply
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_patch_file(&self, patch: impl IntoID<Id>) -> Workspace {
+        let mut query = self.selection.select("withPatchFile");
+        query = query.arg_lazy(
+            "patch",
+            Box::new(move || {
+                let patch = patch.clone();
+                Box::pin(async move { patch.into_id().await.unwrap().quote() })
+            }),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+    /// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `patch` - File containing the patch to apply
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_patch_file_opts(
+        &self,
+        patch: impl IntoID<Id>,
+        opts: WorkspaceWithPatchFileOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withPatchFile");
+        query = query.arg_lazy(
+            "patch",
+            Box::new(move || {
+                let patch = patch.clone();
+                Box::pin(async move { patch.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(on_conflict) = opts.on_conflict {
+            query = query.arg("onConflict", on_conflict);
+        }
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -19744,7 +19983,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with updated module versions and lockfile state.
+    /// Return this workspace with updated module sources, versions and lockfile state.
     /// An SDK client scope is regenerated when it targets an updated module.
     ///
     /// # Arguments
@@ -19758,7 +19997,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with updated module versions and lockfile state.
+    /// Return this workspace with updated module sources, versions and lockfile state.
     /// An SDK client scope is regenerated when it targets an updated module.
     ///
     /// # Arguments
@@ -19774,6 +20013,9 @@ impl Workspace {
         }
         if let Some(version) = opts.version {
             query = query.arg("version", version);
+        }
+        if let Some(source) = opts.source {
+            query = query.arg("source", source);
         }
         Workspace {
             proc: self.proc.clone(),

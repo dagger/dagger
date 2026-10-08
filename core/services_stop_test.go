@@ -309,3 +309,56 @@ func TestServicesForceStopEscalatesExplicitStop(t *testing.T) {
 		require.True(t, svc.waitKilled(t))
 	})
 }
+
+// Detaches left over from a stopped instance must not count against the
+// instance restarted under the same key: they would take its bindings and
+// stop it while its own binders still use it.
+func TestServicesStaleDetachKeepsRestartedInstance(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		services := NewServices()
+		ctx := context.Background()
+		key := stopTestKey(t.Name())
+		start := func(svc *stopRecordingStartable) (*RunningService, func()) {
+			t.Helper()
+			running, release, err := services.startWithKey(ctx, key, svc, ServiceStartOpts{}, false)
+			require.NoError(t, err)
+			return running, release
+		}
+		newSvc := func() *stopRecordingStartable {
+			return &stopRecordingStartable{
+				requests: make(chan bool, 100),
+				exited:   make(chan struct{}),
+			}
+		}
+
+		// two binders of the first instance, then an explicit stop
+		oldSvc := newSvc()
+		old, releaseOld1 := start(oldSvc)
+		_, releaseOld2 := start(oldSvc)
+		stopErr := make(chan error, 1)
+		go func() { stopErr <- services.StopRunning(ctx, old, false) }()
+		require.False(t, oldSvc.nextRequest(t))
+		oldSvc.exit(false)
+		require.NoError(t, <-stopErr)
+		synctest.Wait()
+
+		// restart, with two binders of the new instance
+		newerSvc := newSvc()
+		restarted, _ := start(newerSvc)
+		_, _ = start(newerSvc)
+		require.NotSame(t, old, restarted)
+
+		// the first instance's binders detach late
+		releaseOld1()
+		releaseOld2()
+		newerSvc.noRequest(t, 2*TerminateGracePeriod)
+
+		services.l.Lock()
+		current, bindings := services.running[key], services.bindings[key]
+		services.l.Unlock()
+		require.Same(t, restarted, current)
+		require.Equal(t, 2, bindings)
+
+		newerSvc.exit(false)
+	})
+}
