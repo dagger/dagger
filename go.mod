@@ -264,7 +264,7 @@ require (
 	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
-	github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20260930065927-d02ea66ae2eb // indirect
+	github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20261008065726-b65b2de014a6 // indirect
 	github.com/danielgatis/go-ansicode v1.0.14 // indirect
 	github.com/danielgatis/go-iterator v0.0.1 // indirect
 	github.com/danielgatis/go-utf8 v1.0.1 // indirect
