@@ -914,7 +914,7 @@ func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 		}
 	})
 
-	t.Run("repeated and hardlinked sources", func(ctx context.Context, t *testctx.T) {
+	t.Run("repeated and hard-linked sources", func(ctx context.Context, t *testctx.T) {
 		// A/a and A/b are one inode; B/a has the same name as A/a.
 		ctr := c.Container().From(alpineImage).
 			WithExec([]string{"sh", "-c", "mkdir /A /B && echo A > /A/a && ln /A/a /A/b && echo B > /B/a"})
