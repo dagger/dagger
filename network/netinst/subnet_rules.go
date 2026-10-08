@@ -97,14 +97,14 @@ func (n *subnetNetwork) comment() string {
 // masqChain is the iptables nat chain holding this network's masquerade rules.
 // Chain names are limited to 28 characters.
 func (n *subnetNetwork) masqChain() string {
-	return "DAGGER-MASQ-" + sha512Hex(n.name, 16)
+	return "DAGGER-MASQ-" + sha512Hex(n.name)
 }
 
-// sha512Hex returns the first length hex digits of the SHA-512 of s, the
-// hashing the CNI plugins use for chain names and rule comments.
-func sha512Hex(s string, length int) string {
+// sha512Hex returns the first 16 hex digits of the SHA-512 of s, the hashing
+// the CNI plugins use for chain names and rule comments.
+func sha512Hex(s string) string {
 	sum := sha512.Sum512([]byte(s))
-	return hex.EncodeToString(sum[:])[:length]
+	return hex.EncodeToString(sum[:])[:16]
 }
 
 // forwardRules accept traffic from the containers and replies to it, like the
@@ -431,7 +431,7 @@ func findLeftovers(ctx context.Context, n *subnetNetwork, ipt iptablesClient, cn
 		if err != nil && !knftables.IsNotFound(err) {
 			errs = append(errs, err)
 		}
-		hash := sha512Hex(n.name, 16) + "-"
+		hash := sha512Hex(n.name) + "-"
 		for _, rule := range nftRules {
 			if rule.Comment != nil && strings.HasPrefix(*rule.Comment, hash) {
 				l.nftRules = append(l.nftRules, rule)

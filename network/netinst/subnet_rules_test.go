@@ -113,7 +113,7 @@ func (f *fakeIPTables) List(table, chain string) ([]string, error) {
 	return lines, nil
 }
 
-func (f *fakeIPTables) DeleteById(table, chain string, id int) error {
+func (f *fakeIPTables) DeleteById(table, chain string, id int) error { //nolint:staticcheck // go-iptables names it DeleteById
 	rules, err := f.rules(table, chain)
 	if err != nil {
 		return err
@@ -494,5 +494,5 @@ func TestSplitRule(t *testing.T) {
 // masquerade rules.
 func cniNFTRuleComment(network, ifname, containerID string) string {
 	return fmt.Sprintf("%s-%s, net: %s, if: %s, id: %s",
-		sha512Hex(network, 16), sha512Hex(ifname+":"+containerID, 16), network, ifname, containerID)
+		sha512Hex(network), sha512Hex(ifname+":"+containerID), network, ifname, containerID)
 }
