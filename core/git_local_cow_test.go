@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sys/unix"
 )
 
 // cowTestSource builds a repository exercising everything a retained checkout
@@ -295,6 +296,68 @@ func TestCowCheckoutSnapshotRoot(t *testing.T) {
 	got, err := readSnapshotRootInfo(inherited)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
+}
+
+// GitRepository.__cleaned restores a retained checkout's worktree to HEAD.
+// Its index has no stat data, so only content may decide what differs: a
+// same-size edit with the checkout's normalized timestamps must be restored,
+// and nothing else rewritten.
+func TestCleanGitWorktree(t *testing.T) {
+	ctx := context.Background()
+	source, _, tip := cowTestSource(t)
+	checkout := freshRetainedCheckout(t, source, &gitutil.Ref{SHA: tip})
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, ".git", "info", "exclude"), []byte("*.log\n"), 0644))
+	edit := func(dir string) {
+		file := filepath.Join(dir, "file")
+		require.NoError(t, os.WriteFile(file, []byte("TIP"), 0644)) // same size as "tip"
+		require.NoError(t, unix.UtimesNanoAt(unix.AT_FDCWD, file, []unix.Timespec{{Sec: 1}, {Sec: 1}}, 0))
+		require.NoError(t, os.Remove(filepath.Join(dir, "executable")))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "untracked"), []byte("untracked"), 0644))
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "new", "dir"), 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "new", "dir", "file"), []byte("untracked"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "ignored.log"), []byte("ignored"), 0644))
+	}
+	clean := func(dir string, run func(*gitutil.GitCLI) error) {
+		index, err := os.ReadFile(filepath.Join(dir, ".git", "index"))
+		require.NoError(t, err)
+		tmp := filepath.Join(t.TempDir(), "index")
+		require.NoError(t, os.WriteFile(tmp, index, 0600))
+		require.NoError(t, run(gitutil.NewGitCLI(gitutil.WithDir(dir), gitutil.WithIndexFile(tmp))))
+	}
+	contents := func(dir string) map[string]string {
+		out := map[string]string{}
+		for path, entry := range localTreeSnapshot(t, dir) {
+			mode, rest, _ := strings.Cut(entry, " ")
+			_, content, _ := strings.Cut(rest, " ")
+			out[path] = mode + " " + content
+		}
+		return out
+	}
+
+	// The previous implementation, restoring every file.
+	want := cowCopy(t, checkout)
+	edit(want)
+	clean(want, func(git *gitutil.GitCLI) error {
+		for _, args := range [][]string{{"restore", "--staged", "."}, {"restore", "."}, {"clean", "-fd"}} {
+			if _, err := git.Run(ctx, args...); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	got := cowCopy(t, checkout)
+	edit(got)
+	before := objectFiles(t, filepath.Join(got, "nested"))
+	clean(got, func(git *gitutil.GitCLI) error { return cleanGitWorktree(ctx, git) })
+	require.Equal(t, contents(want), contents(got))
+	data, err := os.ReadFile(filepath.Join(got, "file"))
+	require.NoError(t, err)
+	require.Equal(t, "tip", string(data))
+	require.FileExists(t, filepath.Join(got, "ignored.log"))
+	require.NoFileExists(t, filepath.Join(got, "untracked"))
+	// Untouched files were not rewritten.
+	require.Equal(t, before, objectFiles(t, filepath.Join(got, "nested")))
 }
 
 // BenchmarkCowGitCheckout compares the full checkout's fetch into an empty

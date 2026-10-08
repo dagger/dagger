@@ -330,25 +330,7 @@ func (repo *LocalGitRepository) cleanedInto(ctx context.Context, dst *Directory)
 			return err
 		}
 		return withTemporaryGitIndex(idx, tmp, func(indexPath string) error {
-			git = git.New(gitutil.WithIndexFile(indexPath))
-
-			// reset index to HEAD
-			// NOTE: we cannot use "git reset --hard" because it writes every file,
-			// which *kills* performance on overlayfs
-			_, err = git.Run(ctx, "restore", "--staged", ".")
-			if err != nil {
-				return err
-			}
-			_, err = git.Run(ctx, "restore", ".")
-			if err != nil {
-				return err
-			}
-			_, err = git.Run(ctx, "clean", "-fd")
-			if err != nil {
-				return err
-			}
-
-			return nil
+			return cleanGitWorktree(ctx, git.New(gitutil.WithIndexFile(indexPath)))
 		})
 	})
 	if err != nil {
@@ -367,6 +349,31 @@ func (repo *LocalGitRepository) cleanedInto(ctx context.Context, dst *Directory)
 	dst.Services = slices.Clone(repo.Directory.Self().Services)
 	dst.SetSnapshot(snap)
 	return false, nil
+}
+
+// cleanGitWorktree resets git's index (a private copy: see cleanedInto) and
+// worktree to HEAD and removes untracked files, keeping ignored ones.
+func cleanGitWorktree(ctx context.Context, git *gitutil.GitCLI) error {
+	// reset index to HEAD
+	// NOTE: we cannot use "git reset --hard" because it writes every file,
+	// which *kills* performance on overlayfs
+	if _, err := git.Run(ctx, "restore", "--staged", "."); err != nil {
+		return err
+	}
+	// Retained checkouts store an index without stat data
+	// (finishGitCheckout and commits normalize it with read-tree), so restore
+	// would find every entry changed and rewrite the whole worktree: seconds
+	// on a large tree, and a copy of every file in the new layer. Refresh it
+	// first. With no stat data to match, refresh compares every file's
+	// content with its blob, so only files that really differ are restored.
+	// Failing to refresh only loses the shortcut: restore rewrites what it
+	// must.
+	_, _ = git.New(gitutil.WithIgnoreError()).Run(ctx, "update-index", "-q", "--unmerged", "--refresh")
+	if _, err := git.Run(ctx, "restore", "."); err != nil {
+		return err
+	}
+	_, err := git.Run(ctx, "clean", "-fd")
+	return err
 }
 
 // withTemporaryGitIndex owns the newly created index until the Git commands finish.
