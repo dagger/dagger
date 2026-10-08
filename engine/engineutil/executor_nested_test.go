@@ -1,6 +1,7 @@
 package engineutil
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/stretchr/testify/require"
 )
 
@@ -167,6 +169,42 @@ func TestContainerNestedTransportManagerUsesExactHeaderlessProxyIdentity(t *test
 	require.Equal(t, int32(1), handler.closed.Load())
 	manager.Close()
 	require.Equal(t, int32(1), handler.closed.Load())
+}
+
+// Nested clients are linked to the exec hosting them, not to the short
+// setupNestedClient phase whose context registration runs under: that phase
+// ends before the container starts, so the client's requests never fall
+// inside it.
+func TestContainerNestedClientLinkedToExecOp(t *testing.T) {
+	t.Parallel()
+
+	wcprof.EnsureRecorder()
+	execCtx, execOp := wcprof.BeginOp(wcprof.ContextWithProfiling(t.Context()), wcprof.OpKindExec, "exec.run", wcprof.OpOpts{})
+	phaseCtx, phaseOp := wcprof.BeginOp(execCtx, wcprof.OpKindExecPhase, "exec.setupNestedClient", wcprof.OpOpts{})
+	handler := &nestedTransportSessionHandler{}
+	manager := newNestedClientTransportManager(phaseCtx, handler, &engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "nested-client-link",
+	}, "parent")
+	manager.profExecOpID = execOp.ID()
+	phaseOp.End(wcprof.OutcomeOK)
+
+	_, _, _, err := manager.transportForRequest(httptest.NewRequest(http.MethodGet, "/query", nil))
+	require.NoError(t, err)
+	manager.Close()
+	execOp.End(wcprof.OutcomeOK)
+
+	var buf bytes.Buffer
+	require.NoError(t, wcprof.Active().WriteDump(&buf, false))
+	header, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	var from []uint64
+	for _, ev := range events {
+		if ev.Type == "link" && ev.LinkKind == wcprof.LinkKindNestedClient.String() && header.Strings[ev.IdentID] == "nested-client-link" {
+			from = append(from, ev.ParentID)
+		}
+	}
+	require.Equal(t, []uint64{execOp.ID()}, from)
 }
 
 // gatedRegistrationHandler blocks each registration until released so tests

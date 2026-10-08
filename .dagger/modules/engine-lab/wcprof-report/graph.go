@@ -30,7 +30,8 @@ type Op struct {
 	Children []*Op // sorted by Start
 	Waits    []*Wait
 	// Reparented marks roots of a nested client attached under the exec op
-	// hosting that client (a nested_client link), not via a recorded parent.
+	// hosting that client (a nested_client link), or its exec.processRun
+	// phase, not via a recorded parent.
 	Reparented bool
 
 	// Self is the op's interval minus the union of its children's intervals
@@ -205,18 +206,29 @@ func Build(header *wcprof.DumpHeader, events []wcprof.DumpEvent) *Graph {
 		if op.ParentID != 0 {
 			if p, ok := g.ByID[op.ParentID]; ok && p != op {
 				op.Parent = p
+				// g.Ops is start-sorted, so children come out start-sorted too.
+				p.Children = append(p.Children, op)
 			}
 		}
-		if op.Parent == nil {
-			if h, ok := hosts[op.Client]; ok && h != op {
-				op.Parent = h
-				op.Reparented = true
-			}
-		}
-		// g.Ops is start-sorted, so children come out start-sorted too.
+	}
+	// Recorded parents are wired first: placing a nested root needs the
+	// host exec's subtree.
+	adopted := make(map[*Op]bool)
+	for _, op := range g.Ops {
 		if op.Parent != nil {
-			op.Parent.Children = append(op.Parent.Children, op)
+			continue
 		}
+		if h, ok := hosts[op.Client]; ok && h != op {
+			if p := nestedClientParent(h, op); p != op {
+				op.Parent = p
+				op.Reparented = true
+				p.Children = append(p.Children, op)
+				adopted[p] = true
+			}
+		}
+	}
+	for p := range adopted {
+		slices.SortStableFunc(p.Children, func(a, b *Op) int { return cmpInt64(a.Start, b.Start) })
 	}
 
 	for i, op := range g.Ops {
@@ -230,6 +242,45 @@ func Build(header *wcprof.DumpHeader, events []wcprof.DumpEvent) *Graph {
 		g.End = max(g.End, op.End)
 	}
 	return g
+}
+
+// nestedClientParent is where a root op of a nested client hosted by host
+// goes: under the exec's exec.processRun phase running when the root
+// started, so the client's requests are part of the process run that made
+// them (its self time is then the user's own work between requests, and the
+// critical path follows into them), or under the exec when no process run
+// covers it. Engines before the link moved to the exec op recorded it from
+// the exec's setupNestedClient phase, which ends before the process starts;
+// such a host is replaced by its exec.
+func nestedClientParent(host, root *Op) *Op {
+	exec := host
+	for exec.Kind == "exec_phase" && exec.Parent != nil {
+		exec = exec.Parent
+	}
+	if exec.Kind != "exec" {
+		return host
+	}
+	if run := findProcessRun(exec, root.Start); run != nil {
+		return run
+	}
+	return exec
+}
+
+// findProcessRun returns the exec.processRun phase under op whose interval
+// contains t, or nil.
+func findProcessRun(op *Op, t int64) *Op {
+	for _, ch := range op.Children {
+		if ch.Kind != "exec_phase" || ch.Start > t || t >= ch.End {
+			continue
+		}
+		if ch.Class == "exec.processRun" {
+			return ch
+		}
+		if run := findProcessRun(ch, t); run != nil {
+			return run
+		}
+	}
+	return nil
 }
 
 // selfTime is the op's duration minus the union of its children's intervals
