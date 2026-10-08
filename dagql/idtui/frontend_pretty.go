@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -371,6 +372,14 @@ type frontendPretty struct {
 	// cleared by recalculateViewLocked in Render. This coalesces multiple
 	// data updates into a single recalculate per render frame.
 	viewDirty bool
+
+	// testsDirty and testLogSpans defer test view updates to the next frame
+	// the way viewDirty defers recalculation: testsDirty when span batches or
+	// a resize may have changed any test view (updateTestViews), testLogSpans
+	// when log batches only touched the views above those spans
+	// (updateTestViewsForLogs). See flushTestViews.
+	testsDirty   bool
+	testLogSpans map[dagui.SpanID]struct{}
 
 	// search state (Vim-style "/" search)
 	searchQuery          string           // confirmed search string
@@ -2643,7 +2652,7 @@ func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
 				sr.Update()
 			}
 		}
-		fe.updateTestViews()
+		fe.testsDirty = true
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple batches into one recalculate per frame.
 		fe.viewDirty = true
@@ -3088,7 +3097,7 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 				sr.Update()
 			}
 		}
-		fe.updateTestViews()
+		fe.testsDirty = true
 		for view := range fe.spanLists {
 			view.UpdateAll()
 		}
@@ -3177,7 +3186,10 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		for spanID := range logSpanIDs {
 			fe.updateLogPagerForLogs(spanID)
 		}
-		fe.updateTestViewsForLogs(logSpanIDs)
+		if fe.testLogSpans == nil {
+			fe.testLogSpans = make(map[dagui.SpanID]struct{})
+		}
+		maps.Copy(fe.testLogSpans, logSpanIDs)
 		for view := range fe.spanLists {
 			view.UpdateAll()
 		}
@@ -3581,6 +3593,9 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		// so the renderer doesn't truncate (maxLiteralLen = 0).
 		fe.contentWidth = 0
 	}
+	// Coalesce the test view updates of every batch since the last frame,
+	// before any view (command-owned ones included) renders.
+	fe.flushTestViews()
 	if fe.commandView != nil {
 		fe.RenderChild(ctx, fe.commandView)
 		return
@@ -7577,7 +7592,7 @@ func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
 	fe.contentWidth = msg.Width
 	fe.logs.SetWidth(fe.contentWidth)
 	if old != msg {
-		fe.updateTestViews()
+		fe.testsDirty = true
 	}
 	if old.Width != msg.Width {
 		fe.syncHUDWidth()

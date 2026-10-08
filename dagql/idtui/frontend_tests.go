@@ -1584,6 +1584,21 @@ func (fe *frontendPretty) newTestView(root dagui.SpanID, scopeName string) *Test
 	return tv
 }
 
+// flushTestViews applies the test view updates deferred since the last frame:
+// one full pass if a span batch or resize marked testsDirty, else one pass up
+// from every span logged to. Render calls it once per frame, so a frame costs
+// one pass however many batches arrived before it.
+func (fe *frontendPretty) flushTestViews() {
+	switch {
+	case fe.testsDirty:
+		fe.updateTestViews()
+	case len(fe.testLogSpans) > 0:
+		fe.updateTestViewsForLogs(fe.testLogSpans)
+	}
+	fe.testsDirty = false
+	clear(fe.testLogSpans)
+}
+
 func (fe *frontendPretty) updateTestViews() {
 	if fe.fullscreenTests != nil {
 		fe.fullscreenTests.Update()

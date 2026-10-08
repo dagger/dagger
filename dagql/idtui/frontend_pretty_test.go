@@ -1111,6 +1111,64 @@ func TestLiveTestsReachInlineRollups(t *testing.T) {
 	}
 }
 
+// TestLiveTestViewsCoalesceBatches verifies that test view updates deferred
+// from several span and log batches all land in the one frame rendered after
+// them.
+func TestLiveTestViewsCoalesceBatches(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	id := prettyTestSpanID
+	rootID, checkAID, checkBID, testA1ID := id(1), id(2), id(3), id(4)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	failing := func(n byte, parent dagui.SpanID, name string) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID: id(n), TraceID: prettyTestTraceID(), ParentID: parent, Name: name,
+			StartTime: start, EndTime: end, TestCaseName: name,
+			TestStatus: dagui.TestStatusFailure, Final: true,
+		}
+	}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "root", StartTime: start},
+		{
+			ID: checkAID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check a",
+			StartTime: start, EndTime: end, CheckName: "a", Final: true,
+		},
+		{
+			ID: checkBID, TraceID: prettyTestTraceID(), ParentID: rootID, Name: "check b",
+			StartTime: start, EndTime: end, CheckName: "b", Final: true,
+		},
+		failing(4, checkAID, "TestA1"),
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 60))
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.SetPrimary(rootID)
+	lines := fe.tui.Step()
+	if _, ok := findPrettyTestLine(lines, "TestA1"); !ok {
+		t.Fatalf("render did not include check a's inline TESTS:\n%s", strings.Join(lines, "\n"))
+	}
+
+	logTo := func(spanID dagui.SpanID, body string) {
+		t.Helper()
+		require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{
+			frontendTestLogRecord(spanID.SpanID, otellog.StringValue(body)),
+		}))
+	}
+	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(5, checkBID, "TestB1")})
+	logTo(testA1ID, "boom a\n")
+	fe.ImportSnapshots([]dagui.SpanSnapshot{failing(6, checkAID, "TestA2")})
+	logTo(id(5), "boom b\n")
+	lines = fe.tui.Step()
+	for _, want := range []string{"TestA1", "TestA2", "TestB1", "boom a", "boom b"} {
+		if _, ok := findPrettyTestLine(lines, want); !ok {
+			t.Fatalf("frame after batches missing %q:\n%s", want, strings.Join(lines, "\n"))
+		}
+	}
+}
+
 // TestShellToolInlineTestsAlignWithToolDot verifies a shell transcript's tool
 // call hangs its inline TESTS rollup off a pipe in the same column as the faint
 // dot in front of the tool name (where its log gutter sits too), with the
