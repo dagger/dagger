@@ -181,14 +181,21 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 			return pkgerrors.Wrapf(err, "attach snapshot %s to owner lease %s", currentSnapshotID, leaseID)
 		}
 
-		blobs := cm.addSnapshotOwner(currentSnapshotID, leaseID, labeledBlobs[currentSnapshotID])
-		for _, dgst := range blobs {
-			err = cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
-				ID:   dgst.String(),
-				Type: "content",
-			})
-			if err != nil && !cerrdefs.IsAlreadyExists(err) {
-				return pkgerrors.Wrapf(err, "attach content %s for snapshot %s to owner lease %s", dgst, currentSnapshotID, leaseID)
+		attached := map[digest.Digest]struct{}{}
+		for {
+			pending := cm.addSnapshotOwner(currentSnapshotID, leaseID, labeledBlobs[currentSnapshotID], attached)
+			if len(pending) == 0 {
+				break
+			}
+			for _, dgst := range pending {
+				err = cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
+					ID:   dgst.String(),
+					Type: "content",
+				})
+				if err != nil && !cerrdefs.IsAlreadyExists(err) {
+					return pkgerrors.Wrapf(err, "attach content %s for snapshot %s to owner lease %s", dgst, currentSnapshotID, leaseID)
+				}
+				attached[dgst] = struct{}{}
 			}
 		}
 	}
@@ -208,16 +215,19 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 	return nil
 }
 
-// addSnapshotOwner records leaseID as an owner of snapshotID and returns the
-// snapshot's blobs for the caller to attach: those recorded in this process,
-// and labeledBlob, the one its label names, which survives a restart. The
-// lease is flat, so the collector will not follow the label itself; the
-// resource is what keeps the blob.
+// addSnapshotOwner records leaseID as an owner of snapshotID once every blob
+// of the snapshot is in attached, and otherwise returns the blobs still to
+// attach. The snapshot's blobs are those recorded in this process, and
+// labeledBlob, the one its label names, which survives a restart. The lease is
+// flat, so the collector will not follow the label itself; the resource is
+// what keeps the blob.
 //
-// Reading the blobs and recording the owner happen under one hold of cm.mu,
-// so a blob recordSnapshotContent records concurrently is either returned
-// here or attached by recordSnapshotContent to this lease.
-func (cm *snapshotManager) addSnapshotOwner(snapshotID, leaseID string, labeledBlob digest.Digest) []digest.Digest {
+// The check and the record happen under one hold of cm.mu: a blob that
+// recordSnapshotContent records concurrently is either returned here, or
+// recorded after the owner and attached to it by recordSnapshotContent. As
+// when all of AttachLease ran under cm.mu, a lease becomes an owner only once
+// the snapshot's blobs are attached to it.
+func (cm *snapshotManager) addSnapshotOwner(snapshotID, leaseID string, labeledBlob digest.Digest, attached map[digest.Digest]struct{}) []digest.Digest {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -229,16 +239,21 @@ func (cm *snapshotManager) addSnapshotOwner(snapshotID, leaseID string, labeledB
 		}
 		cm.snapshotContentDigests[snapshotID][labeledBlob] = struct{}{}
 	}
-	blobs := make([]digest.Digest, 0, len(cm.snapshotContentDigests[snapshotID]))
+	var pending []digest.Digest
 	for dgst := range cm.snapshotContentDigests[snapshotID] {
-		blobs = append(blobs, dgst)
+		if _, ok := attached[dgst]; !ok {
+			pending = append(pending, dgst)
+		}
+	}
+	if len(pending) > 0 {
+		return pending
 	}
 
 	if cm.snapshotOwnerLeases[snapshotID] == nil {
 		cm.snapshotOwnerLeases[snapshotID] = make(map[string]struct{})
 	}
 	cm.snapshotOwnerLeases[snapshotID][leaseID] = struct{}{}
-	return blobs
+	return nil
 }
 
 func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) error {

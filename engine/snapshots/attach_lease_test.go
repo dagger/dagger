@@ -85,19 +85,20 @@ func TestAttachLeaseDoesNotBlockSnapshotReopen(t *testing.T) {
 }
 
 // A blob recorded for a snapshot while AttachLease is attaching it ends up
-// in the owner lease whichever side of the owner's registration it lands
-// on: AttachLease returns it, or the recording attaches it to the owner.
+// in the owner lease: AttachLease rechecks the snapshot's blobs before it
+// records the owner, and a blob recorded after that is attached to the owner
+// by the recording.
 func TestAttachLeaseHoldsBlobRecordedDuringAttach(t *testing.T) {
 	t.Parallel()
 
-	t.Run("recorded before the owner", func(t *testing.T) {
+	t.Run("before the snapshot is attached", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()
 		store := testutil.NewStore(t)
 		built, buildOwner := buildSnapshot(t, store, nil, "c.txt", "diffed during attach")
 		snapshotID := built.SnapshotID()
 
-		const owner = "dagql/result/owner-before"
+		const owner = "dagql/result/owner-snapshot"
 		entered, release := blockAdd(store, owner, isSnapshot)
 		defer release()
 		attachErr := make(chan error, 1)
@@ -105,7 +106,7 @@ func TestAttachLeaseHoldsBlobRecordedDuringAttach(t *testing.T) {
 		waitFor(t, entered, "AttachLease to reach the snapshot resource")
 
 		// The first export diffs the snapshot and records the blob, before
-		// AttachLease has registered the owner.
+		// AttachLease reads the snapshot's blobs.
 		exported := make(chan error, 1)
 		var blob string
 		go func() {
@@ -121,7 +122,7 @@ func TestAttachLeaseHoldsBlobRecordedDuringAttach(t *testing.T) {
 		release()
 		require.NoError(t, waitFor(t, attachErr, "AttachLease"))
 		_, _, contents := leaseResources(t, store, owner)
-		require.Equal(t, []string{blob}, contents, "AttachLease attached the blob recorded before it registered the owner")
+		require.Equal(t, []string{blob}, contents, "AttachLease attached the blob recorded before it read the blobs")
 
 		require.NoError(t, built.Release(ctx))
 		require.NoError(t, store.Manager.RemoveLease(ctx, buildOwner))
@@ -132,7 +133,7 @@ func TestAttachLeaseHoldsBlobRecordedDuringAttach(t *testing.T) {
 		require.False(t, snapshotPresent(t, store, snapshotID))
 	})
 
-	t.Run("recorded after the owner", func(t *testing.T) {
+	t.Run("while its blobs are attached", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()
 		store := testutil.NewStore(t)
@@ -140,8 +141,8 @@ func TestAttachLeaseHoldsBlobRecordedDuringAttach(t *testing.T) {
 		snapshotID := built.SnapshotID()
 		recorded, _ := exportOnce(t, store, snapshotID)
 
-		// Block on the recorded blob: the owner is registered by then.
-		const owner = "dagql/result/owner-after"
+		// Block on the recorded blob, which AttachLease has read.
+		const owner = "dagql/result/owner-blobs"
 		entered, release := blockAdd(store, owner, func(r leases.Resource) bool {
 			return r.Type == "content" && r.ID == recorded.String()
 		})
@@ -151,7 +152,7 @@ func TestAttachLeaseHoldsBlobRecordedDuringAttach(t *testing.T) {
 		waitFor(t, entered, "AttachLease to reach the recorded blob")
 
 		// A forced export records a gzip variant for the snapshot, which
-		// AttachLease did not read: the recording attaches it to the owner.
+		// AttachLease did not read: its recheck attaches the variant.
 		exported := make(chan error, 1)
 		var variant string
 		go func() {
@@ -256,17 +257,12 @@ func TestAttachLeaseConcurrentOwners(t *testing.T) {
 	}
 }
 
-// A failed lease write fails AttachLease with the write's error and leaves
-// the manager usable; a retry attaches the whole chain, and removing the
-// owner releases it.
+// A failed lease write fails AttachLease with the write's error. The lease
+// is not recorded as an owner of a snapshot whose blobs it failed to take, so
+// an export of the snapshot meanwhile neither writes to it nor fails on it. A
+// retry attaches the whole chain, and removing the owner releases it.
 func TestAttachLeaseWriteFailure(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	store := testutil.NewStore(t)
-	built, buildOwner := buildSnapshot(t, store, nil, "e.txt", "attach fails once")
-	snapshotID := built.SnapshotID()
-	blob, _ := exportOnce(t, store, snapshotID)
-
 	for _, tc := range []struct {
 		name  string
 		match func(leases.Resource) bool
@@ -275,7 +271,14 @@ func TestAttachLeaseWriteFailure(t *testing.T) {
 		{"blob", func(r leases.Resource) bool { return r.Type == "content" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			owner := "dagql/result/fails-on-" + tc.name
+			t.Parallel()
+			ctx := context.Background()
+			store := testutil.NewStore(t)
+			built, buildOwner := buildSnapshot(t, store, nil, "e.txt", "attach fails once")
+			snapshotID := built.SnapshotID()
+			recorded, _ := exportOnce(t, store, snapshotID)
+
+			const owner = "dagql/result/fails"
 			injected := errors.New("injected lease write failure")
 			store.BeforeAdd = func(_ context.Context, l leases.Lease, r leases.Resource) error {
 				if l.ID == owner && tc.match(r) {
@@ -286,23 +289,35 @@ func TestAttachLeaseWriteFailure(t *testing.T) {
 			err := store.Manager.AttachLease(ctx, owner, snapshotID)
 			require.ErrorIs(t, err, injected)
 			require.ErrorContains(t, err, owner)
+			_, _, contents := leaseResources(t, store, owner)
+			require.Empty(t, contents, "the failed attach holds no blob")
 
-			ref, err := store.Manager.GetBySnapshotID(ctx, snapshotID, bkcache.NoUpdateLastUsed)
-			require.NoError(t, err, "the manager is usable after the failure")
-			require.NoError(t, ref.Release(ctx))
+			// A forced export records a gzip variant of the snapshot with
+			// the failing writes still in place.
+			forced, err := built.ExportChain(ctx, config.RefConfig{Compression: compression.New(compression.Gzip).SetForce(true)})
+			require.NoError(t, err, "the export does not write to the failed owner")
+			variant := forced.Layers[0].Descriptor.Digest
+			require.NotEqual(t, recorded, variant)
+			require.NoError(t, forced.Release(ctx))
+			_, _, contents = leaseResources(t, store, owner)
+			require.Empty(t, contents, "the failed owner did not take the variant")
 
 			store.BeforeAdd = nil
 			require.NoError(t, store.Manager.AttachLease(ctx, owner, snapshotID))
 			_, snapshots, contents := leaseResources(t, store, owner)
 			require.Equal(t, []string{snapshotID}, snapshots)
-			require.Equal(t, []string{blob.String()}, contents)
+			require.ElementsMatch(t, []string{recorded.String(), variant.String()}, contents)
+
+			require.NoError(t, built.Release(ctx))
+			require.NoError(t, store.Manager.RemoveLease(ctx, buildOwner))
+			store.GC(t)
+			require.True(t, snapshotPresent(t, store, snapshotID), "the retried owner keeps the snapshot")
+			require.True(t, blobPresent(t, store, recorded))
 			require.NoError(t, store.Manager.RemoveLease(ctx, owner))
+			store.GC(t)
+			require.False(t, snapshotPresent(t, store, snapshotID))
+			require.False(t, blobPresent(t, store, recorded))
+			require.False(t, blobPresent(t, store, variant))
 		})
 	}
-
-	require.NoError(t, built.Release(ctx))
-	require.NoError(t, store.Manager.RemoveLease(ctx, buildOwner))
-	store.GC(t)
-	require.False(t, snapshotPresent(t, store, snapshotID), "no failed or retried owner kept the snapshot")
-	require.False(t, blobPresent(t, store, blob))
 }
