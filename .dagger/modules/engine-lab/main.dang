@@ -582,7 +582,9 @@ type EngineLab {
   the capture: use it to load the module so the capture holds only the
   command. The capture is kept under `name`, like `wcprofCapture` keeps one:
   slice it with `wcprofReport`, `compare` it, or get the file with
-  `wcprofDump`.
+  `wcprofDump`. A failing command still yields its capture; the result
+  reports the exit code and the output tail, so check them before trusting
+  the numbers. A failing warm-up fails the call.
 
   Independent of `start`: the engine lives only for this call. Use the
   result in the same pipeline (e.g. `| wcprofDump | export ...`): a later
@@ -661,10 +663,13 @@ type EngineLab {
     } else {
       client.withExec(run + warmup)
     }
-    let dump = warmed
+    let ran = warmed
       # drop what the engine recorded before the command
       .withExec(["curl", "-sSf", "--max-time", "300", "-o", "/dev/null", debugURL("/debug/wcprof/dump?flush=1")])
-      .withExec(run + args)
+      # a failing command still yields its profile, like engineTest's
+      .withExec(run + args, expect: ReturnType.ANY)
+    let status = ran.{{exitCode, combinedOutput}}
+    let dump = ran
       .withExec(["curl", "-sSf", "--max-time", "300", "-o", "/tmp/wcprof.dump", debugURL("/debug/wcprof/dump?flush=0")])
       .file("/tmp/wcprof.dump")
       .sync
@@ -673,7 +678,14 @@ type EngineLab {
     let names = wcprofCaptureNames + [name]
     self.wcprofCaptureNames = names
     self.wcprofDumps = wcprofDumps + [dump]
-    print("capture \"" + name + "\" (captures: " + names.uniq.join(", ") + ")\n" + summary)
+    let verdict = if (status.exitCode == 0) {
+      "command succeeded"
+    } else {
+      "COMMAND FAILED (exit " + toString(status.exitCode) + ")"
+    }
+    print(
+      verdict + "; output tail:\n" + tail(status.combinedOutput, 40) + "\n\ncapture \"" + name + "\" (captures: " + names.uniq.join(", ") + ")\n" + summary,
+    )
     self
   }
 

@@ -154,8 +154,9 @@ for scripts: it builds a fresh engine that records from startup, runs
 `dagger <args>` in `workdir` (mounted at /work; default the workspace), and
 keeps the recording as a capture under `name`. `warmup`, if given, runs
 first and is left out of the capture (e.g. a small call that loads the
-module). No `start`/`wcprofEnable` needed, and the engine is gone afterwards.
-Use the result in the same pipeline: a later statement of a `dagger -c`
+module). No `start`/`wcprofEnable` needed, and the engine is gone afterwards. A
+failing command still yields its capture: check the reported exit code and
+output tail before trusting the numbers. Use the result in the same pipeline: a later statement of a `dagger -c`
 script that refers to a stored result can run the profile again. To report
 on one profile from several statements, export its dump with
 `wcprofDump(capture)` and load it back with `wcprofLoad(dump, name)`, which
