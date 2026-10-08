@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -181,10 +182,12 @@ func TestContainerNestedClientLinkedToExecOp(t *testing.T) {
 	wcprof.EnsureRecorder()
 	execCtx, execOp := wcprof.BeginOp(wcprof.ContextWithProfiling(t.Context()), wcprof.OpKindExec, "exec.run", wcprof.OpOpts{})
 	phaseCtx, phaseOp := wcprof.BeginOp(execCtx, wcprof.OpKindExecPhase, "exec.setupNestedClient", wcprof.OpOpts{})
+	// The recorder is process-wide: a client ID of this run's own.
+	clientID := fmt.Sprintf("nested-client-link-%d", execOp.ID())
 	handler := &nestedTransportSessionHandler{}
 	manager := newNestedClientTransportManager(phaseCtx, handler, &engine.ClientMetadata{
 		SessionID: "session",
-		ClientID:  "nested-client-link",
+		ClientID:  clientID,
 	}, "parent")
 	manager.profExecOpID = execOp.ID()
 	phaseOp.End(wcprof.OutcomeOK)
@@ -200,7 +203,7 @@ func TestContainerNestedClientLinkedToExecOp(t *testing.T) {
 	require.NoError(t, err)
 	var from []uint64
 	for _, ev := range events {
-		if ev.Type == "link" && ev.LinkKind == wcprof.LinkKindNestedClient.String() && header.Strings[ev.IdentID] == "nested-client-link" {
+		if ev.Type == "link" && ev.LinkKind == wcprof.LinkKindNestedClient.String() && header.Strings[ev.IdentID] == clientID {
 			from = append(from, ev.ParentID)
 		}
 	}
