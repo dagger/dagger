@@ -200,28 +200,28 @@ func TestUnmountFromRootfs(t *testing.T) {
 	t.Parallel()
 
 	const dst = "/rootfs/etc/hosts"
+	type call struct {
+		op    string
+		flags int
+	}
 	detachErr := errors.New("detach failed")
 	for _, tc := range []struct {
 		name      string
 		recursive bool
 		detachErr error
-		want      []string
+		want      []call
 	}{
-		{name: "bind", want: []string{"unmount 0"}},
-		{name: "rbind detaches", recursive: true, want: []string{"syscall MNT_DETACH"}},
-		{name: "rbind falls back", recursive: true, detachErr: detachErr, want: []string{"syscall MNT_DETACH", "recursive 0"}},
+		{name: "bind", want: []call{{"unmount", 0}}},
+		{name: "rbind detaches", recursive: true, want: []call{{"syscall", unix.MNT_DETACH}}},
+		{name: "rbind falls back", recursive: true, detachErr: detachErr, want: []call{{"syscall", unix.MNT_DETACH}, {"recursive", 0}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			var calls []string
+			var calls []call
 			record := func(op string, err error) func(string, int) error {
 				return func(target string, flags int) error {
 					require.Equal(t, dst, target)
-					flag := "0"
-					if flags == unix.MNT_DETACH {
-						flag = "MNT_DETACH"
-					}
-					calls = append(calls, op+" "+flag)
+					calls = append(calls, call{op, flags})
 					return err
 				}
 			}
