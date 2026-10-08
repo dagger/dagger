@@ -1381,14 +1381,14 @@ func (WorkspaceSuite) TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe(ctx co
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			c, sink := connectWithTrace(ctx, t)
-			outputs := c.Container().From(alpineImage).WithWorkdir("/out").
+			outputs := core.NewQuery(c).Container().From(alpineImage).WithWorkdir("/out").
 				WithExec([]string{"sh", "-ec", "mkdir tmp; " + tc.build}).
 				Directory("/out")
 			size, err := outputs.File(tc.path).Size(ctx)
 			require.NoError(t, err)
-			var base *dagger.GitRef
+			var base *core.GitRef
 			if tc.local {
-				base = c.Container().From(alpineImage).
+				base = core.NewQuery(c).Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "git"}).With(gitUserConfig).
 					WithWorkdir("/repo").WithExec([]string{"git", "init", "-b", "main"}).
 					WithNewFile("notes.txt", "base\n").
@@ -1396,8 +1396,8 @@ func (WorkspaceSuite) TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe(ctx co
 					WithExec([]string{"git", "commit", "-m", "base"}).
 					Directory(".").AsGit().Head()
 			} else {
-				daemon, url := gitService(ctx, t, c, c.Directory().WithNewFile("notes.txt", "base\n"))
-				base = c.Git(url, dagger.GitOpts{ExperimentalServiceHost: daemon}).Branch("main")
+				daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("notes.txt", "base\n"))
+				base = core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main")
 			}
 			ws := base.AsWorkspace().
 				WithNewFile("notes.txt", "committed\n").
@@ -1408,7 +1408,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe(ctx co
 			require.Equal(t, []string{"tmp/", tc.path}, got.Git.Uncommitted.AddedPaths)
 			require.Empty(t, got.Git.Uncommitted.ModifiedPaths)
 
-			committed := dagger.Ref[*dagger.Workspace](c, got.ID)
+			committed := core.Ref[*core.Workspace](core.NewQuery(c), got.ID)
 			if !tc.local {
 				// The commit is detached: the remote branch the workspace was
 				// built from still resolves through the remote, to its
@@ -1419,7 +1419,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe(ctx co
 				require.NoError(t, err)
 				require.Equal(t, baseSHA, mainSHA, "committing must not advance the branch")
 			}
-			head := committed.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+			head := committed.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 			notes, err := head.File("notes.txt").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "committed\n", notes)
@@ -1434,14 +1434,14 @@ func (WorkspaceSuite) TestWorkspaceWithCommitKeepsBuildOutputsOutOfRecipe(ctx co
 			rest, err := commitWorkspace(ctx, c, committed, "outputs", nil)
 			require.NoError(t, err)
 			require.Empty(t, rest.Git.Uncommitted.AddedPaths)
-			restored := dagger.Ref[*dagger.Workspace](c, rest.ID)
+			restored := core.Ref[*core.Workspace](core.NewQuery(c), rest.ID)
 			kept, err = restored.Git().Head().Tree().File(tc.path).Size(ctx)
 			require.NoError(t, err)
 			require.Equal(t, size, kept)
 
 			// The recorded recipe, and every call the session published,
 			// stays small: nothing inlined the output as a patch blob.
-			recipe, err := sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(restored))
+			recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(restored))
 			require.NoError(t, err)
 			require.Less(t, len(recipe), 1<<20, "the build output must not be inlined in the recipe")
 			id := new(call.ID)

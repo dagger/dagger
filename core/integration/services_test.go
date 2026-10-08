@@ -91,7 +91,7 @@ func (ServiceSuite) TestNestingNewSession(ctx context.Context, t *testctx.T) {
 	// the query fails, so polling retries instead of failing off the test
 	// goroutine.
 	clientListed := func(ctx context.Context, c *dagger.Client, clientID string) *bool {
-		clients, err := c.Engine().Clients(ctx)
+		clients, err := core.NewQuery(c).Engine().Clients(ctx)
 		if err != nil {
 			return nil
 		}
@@ -110,10 +110,10 @@ func (ServiceSuite) TestNestingNewSession(ctx context.Context, t *testctx.T) {
 	// newSessionService runs a Dagger CLI as a service whose query blocks, so its
 	// session stays open until the service stops. engine.clients lists the
 	// main client of every session on the engine.
-	newSessionService := func(c *dagger.Client, clientID string) *dagger.Container {
+	newSessionService := func(c *dagger.Client, clientID string) *core.Container {
 		block := fmt.Sprintf(`{ container { from(address: %q) { withEnvVariable(name: "BUST", value: %q) { withExec(args: ["sleep", "3600"]) { sync } } } } }`,
 			alpineImage, identity.NewID())
-		return c.Container().From(busyboxImage).
+		return core.NewQuery(c).Container().From(busyboxImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithNewFile("/block.graphql", block).
 			WithEnvVariable("DAGGER_SESSION_CLIENT_ID", clientID).
@@ -125,7 +125,7 @@ func (ServiceSuite) TestNestingNewSession(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		clientID := identity.NewID()
 		svc, err := newSessionService(c, clientID).
-			AsService(dagger.ContainerAsServiceOpts{
+			AsService(core.ContainerAsServiceOpts{
 				Args:                     []string{"sh", "-c", serve},
 				DaggerInDaggerNewSession: true,
 			}).
@@ -151,7 +151,7 @@ func (ServiceSuite) TestNestingNewSession(ctx context.Context, t *testctx.T) {
 		defer cancel()
 		upErr := make(chan error, 1)
 		go func() {
-			upErr <- newSessionService(c, clientID).Up(upCtx, dagger.ContainerUpOpts{
+			upErr <- newSessionService(c, clientID).Up(upCtx, core.ContainerUpOpts{
 				Args:                     []string{"sh", "-c", serve},
 				Random:                   true,
 				DaggerInDaggerNewSession: true,
@@ -186,9 +186,9 @@ func (ServiceSuite) TestNestingNewSession(ctx context.Context, t *testctx.T) {
 
 	t.Run("conflicts with disableDaggerInDagger", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		_, err := c.Container().From(busyboxImage).
+		_, err := core.NewQuery(c).Container().From(busyboxImage).
 			WithExposedPort(8080).
-			AsService(dagger.ContainerAsServiceOpts{
+			AsService(core.ContainerAsServiceOpts{
 				Args:                     []string{"httpd", "-f", "-p", "8080"},
 				DisableDaggerInDagger:    true,
 				DaggerInDaggerNewSession: true,
