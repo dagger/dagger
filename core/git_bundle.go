@@ -44,6 +44,16 @@ const (
 	maxGitBundleHeaderLine  = 64 << 10
 )
 
+// MaxCapturedGitBundleBytes bounds the bundle a workspace capture (snapshot,
+// and every Git mutation that freezes a client checkout) may record. The
+// bundle carries the checkout's unpushed commits and pending changes, and is
+// inlined in the recipe as one Query.blob, so it travels in every trace that
+// records the recipe, as a single call payload: past the 64 MiB OTLP frame
+// limit, that trace can no longer be restored. Half that leaves room for the
+// rest of the frame, and for base64 when the payload rides the call's span
+// (32 MiB encodes to about 43 MiB).
+const MaxCapturedGitBundleBytes = 32 << 20
+
 // GitBundle is a standard Git bundle and its lazily parsed header.
 type GitBundle struct {
 	File             dagql.ObjectResult[*File]
