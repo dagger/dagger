@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -20,7 +21,16 @@ import (
 // each changeset's paths took, and requires the merges' own work to stay
 // proportional to the change: no phase may cost what a whole-tree walk or
 // copy costs.
+//
+// Skipped unless _DAGGER_BENCH is set (engine-dev's testProfile sets it), to
+// keep it out of CI:
+//
+//	engine-lab engineTest(pkg: "./core/integration",
+//	  run: "TestWorkspace/TestWorkspaceCommitMergeBreakdown", wcprofCapture: "<name>")
 func (WorkspaceSuite) TestWorkspaceCommitMergeBreakdown(ctx context.Context, t *testctx.T) {
+	if os.Getenv(benchEnv) == "" {
+		t.Skip("benchmark: set " + benchEnv + "=1 to run (engine-dev testProfile does)")
+	}
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	const files = 16000
