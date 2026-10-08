@@ -104,9 +104,10 @@ func GetLayerDelta(lower, upper []mount.Mount) (LayerDelta, error) {
 // comparing the two merged views, so content a later layer reverts, or a
 // whiteout a later layer refills, is no change. A deleted directory is
 // reported once, without its contents, as is a directory replaced by a file.
-// A directory opaque in any of the layers hides the shared layers beneath it
-// on one side, so it is diffed in full. A redirected directory is an error:
-// the caller falls back to WalkChanges.
+// A directory opaque in any of the layers, or replaced in one (by a whiteout
+// or a file) and made a directory again by a later one, hides the shared
+// layers beneath it on one side, so it is diffed in full. A redirected
+// directory is an error: the caller falls back to WalkChanges.
 func WalkLayerDeltaChanges(
 	ctx context.Context,
 	changeFn continuityfs.ChangeFunc,
@@ -147,6 +148,13 @@ func WalkLayerDeltaChanges(
 				return pkgerrors.New("redirect_dir is used but it's not supported in overlayfs differ")
 			}
 			candidates[path] = struct{}{}
+			if !f.IsDir() {
+				// A whiteout, or any other non-directory, hides what the
+				// layers beneath hold at the path: should a later layer
+				// make it a directory again, that directory holds only
+				// what the layers above wrote, as an opaque one would.
+				opaque[path] = struct{}{}
+			}
 			if f.IsDir() {
 				for _, key := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
 					value := make([]byte, 1)

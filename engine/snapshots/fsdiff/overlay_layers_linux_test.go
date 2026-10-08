@@ -163,6 +163,14 @@ func TestWalkLayerDeltaChangesAbove(t *testing.T) {
 	f.mark(layers[1], "was")
 	f.write("was", "file now\n", layers[2], f.upper)
 	f.write("fresh/a.txt", "a\n", layers[0], f.upper)
+	// A directory removed and made again by later layers holds only what
+	// they wrote: nothing lists the shared contents it lost.
+	f.write("replaced/keep.txt", "keep\n", f.lower)
+	f.mark(layers[0], "replaced")
+	f.write("replaced/new.txt", "new\n", layers[1], f.upper)
+	f.write("refiled/keep.txt", "keep\n", f.lower)
+	f.write("refiled", "file\n", layers[0])
+	f.write("refiled/new.txt", "new\n", layers[2], f.upper)
 	f.write("fresh/sub/b.txt", "b\n", layers[2], f.upper)
 	f.write("a-b", "sorts between a and a/b\n", layers[1], f.upper)
 	f.share("a/b", "nested\n")
@@ -209,5 +217,10 @@ func TestWalkLayerDeltaChangesSiblings(t *testing.T) {
 	// A shared file the lower side replaced by a directory.
 	f.write("kind", "shared file\n", f.upper)
 	f.write("kind/inner.txt", "lower dir\n", lower[0], f.lower)
+	// A shared directory the lower side removed and made again: upper
+	// still has the shared contents.
+	f.write("lower-replaced/keep.txt", "keep\n", f.upper)
+	f.mark(lower[0], "lower-replaced")
+	f.write("lower-replaced/new.txt", "new\n", lower[1], f.lower)
 	f.requireSameAsWalkChanges(LayerDelta{Lower: lower, Upper: upper})
 }
