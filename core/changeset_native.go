@@ -36,10 +36,6 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 	if working == nil || incoming == nil || working.Before.Self() == nil {
 		return nil, false, nil
 	}
-	lazy, ok := working.Before.Self().Lazy.(*DirectoryGitTreeLazy)
-	if !ok {
-		return nil, false, nil
-	}
 	ctx, span := Tracer(ctx).Start(ctx, "git native workspace merge", telemetry.Internal())
 	phases := newMergePhases(span, "git.native_merge")
 	defer func() {
@@ -49,10 +45,19 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 		span.SetAttributes(attribute.Bool("dagger.git.native_merge.supported", supported))
 		telemetry.EndWithCause(span, &rerr)
 	}()
-	for _, changes := range []*Changeset{working, incoming} {
-		ok, err := GitCommitChangesetNativeBase(ctx, lazy.Ref, changes)
-		if err != nil || !ok {
+	// Ineligible provenance is a fallback like any other: record its reason,
+	// prefixed with the side, rather than skipping the merge silently.
+	lazy, ok := working.Before.Self().Lazy.(*DirectoryGitTreeLazy)
+	if !ok {
+		return nil, false, nativeCommitUnsupportedReason("working-before-not-git-tree")
+	}
+	for i, changes := range []*Changeset{working, incoming} {
+		reason, err := gitCommitChangesetNativeBaseReason(ctx, lazy.Ref, changes)
+		if err != nil {
 			return nil, false, err
+		}
+		if reason != "" {
+			return nil, false, nativeCommitUnsupportedReason(nativeMergeLabels[i] + "-" + reason)
 		}
 	}
 	contents := make([]*changesetContent, 2)
