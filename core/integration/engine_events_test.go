@@ -632,8 +632,9 @@ func stopProvisionedEngine(ctx context.Context, t *testctx.T, dockerc *core.Cont
 // under dockerd. Before the stop has failed it also reports the running
 // engine's goroutines, from the debug endpoint the image driver starts it
 // with; after, the tail of the engine's log. Each part is capped (256KiB of
-// goroutines, 64KiB of processes, 64KiB of log) and every command has a
-// timeout, so a stuck engine can't hang or flood the test.
+// goroutines, 64KiB of processes, 64KiB of log), every command is killed
+// after a timeout, and the whole capture gives up after 90s, so a stuck
+// engine can't hang or flood the test.
 //
 // The engine image has no HTTP client, so bash fetches the goroutines over
 // /dev/tcp. Processes are read from dockerd's PID namespace through a helper
@@ -642,13 +643,13 @@ func stopProvisionedEngine(ctx context.Context, t *testctx.T, dockerc *core.Cont
 func engineStopDiagnostics(ctx context.Context, dockerc *core.Container, engineImage string, failed bool) string {
 	script := `
 if [ -z "$FAILED" ]; then
-  for id in $(docker ps -q); do
+  for id in $(timeout -s KILL 10 docker ps -q); do
     echo "=== goroutines of $id"
-    timeout 15 docker exec "$id" bash -c 'exec 3<>/dev/tcp/127.0.0.1/6060 && printf "GET /debug/pprof/goroutine?debug=2 HTTP/1.0\r\n\r\n" >&3 && cat <&3' 2>&1 | head -c 262144
+    timeout -s KILL 15 docker exec "$id" bash -c 'exec 3<>/dev/tcp/127.0.0.1/6060 && printf "GET /debug/pprof/goroutine?debug=2 HTTP/1.0\r\n\r\n" >&3 && cat <&3' 2>&1 | head -c 262144
   done
 fi
 echo "=== processes"
-timeout 20 docker run --rm --pid=host --privileged --network=none --entrypoint sh "$IMAGE" -c '
+timeout -s KILL 20 docker run --rm --pid=host --privileged --network=none --entrypoint sh "$IMAGE" -c '
 for p in /proc/[0-9]*; do
   [ -r "$p/status" ] || continue
   state=
@@ -659,9 +660,9 @@ for p in /proc/[0-9]*; do
   head -n 16 "$p/stack" 2>/dev/null
 done' 2>&1 | head -c 65536
 if [ -n "$FAILED" ]; then
-  for id in $(docker ps -aq --filter name=^dagger-engine-); do
+  for id in $(timeout -s KILL 10 docker ps -aq --filter name=^dagger-engine-); do
     echo "=== log tail of $id"
-    timeout 10 docker logs --tail 200 "$id" 2>&1 | tail -c 65536
+    timeout -s KILL 10 docker logs --tail 200 "$id" 2>&1 | tail -c 65536
   done
 fi
 `
@@ -671,6 +672,8 @@ fi
 	if failed {
 		ctr = ctr.WithEnvVariable("FAILED", "1")
 	}
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
 	out, err := ctr.
 		WithExec([]string{"sh", "-c", script}, core.ContainerWithExecOpts{Expect: core.ReturnTypeAny}).
 		Stdout(ctx)
