@@ -712,6 +712,7 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		// Chain imports take a builtin image's layers from the engine's own
 		// files rather than the remote cache.
 		BuiltinContent: srv.builtinContentStore,
+		MetadataDB:     srv.containerdMetaDB,
 	})
 	if err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to create snapshot manager: %w", err)
