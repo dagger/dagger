@@ -17,6 +17,8 @@ export {
   enumType,
   entrypoint,
   getRegisteredClass,
+  SchemaNames,
+  resolveSchemaNames,
 } from "./core.js"
 
 export type { ConnectOpts, CallbackFct } from "./core.js"

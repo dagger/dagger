@@ -42,6 +42,7 @@ export async function entrypoint(files: string[]) {
         const executor = new Executor(modules, scanResult)
 
         try {
+          await executor.loadSchemaNames()
           result = await invoke(executor, scanResult, {
             parentName,
             fnName,
