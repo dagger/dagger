@@ -966,10 +966,10 @@ func TestRecordCallPayloadsRepairWalksOncePerLoss(t *testing.T) {
 	require.Equal(t, 3, keys.repairsStarted(), "a new loss lets the root walk again")
 }
 
-// A payload gets at most one repair copy. Once a repair walk claimed it and
-// that copy was lost too, repair walks that other losses keep running must
-// not emit it again; such a walk records no coverage, so an ordinary walk
-// still reaches the frame as it would without repair.
+// A payload gets at most one repair copy per target. Once a repair walk
+// claimed it and that copy was lost too, repair walks that other losses keep
+// running must not emit it again; such a walk records no coverage, so an
+// ordinary walk still reaches the frame as it would without repair.
 func TestRecordCallPayloadsRepairCopiesEachPayloadOnce(t *testing.T) {
 	rec, ctx := payloadRecorderCtx(t)
 	frames := chainCall(5)

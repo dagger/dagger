@@ -3618,9 +3618,9 @@ func TestCallPayloadLossRepair(t *testing.T) {
 		"no recipe walk can re-emit a control record, so losing one must not make walks repair")
 }
 
-// A payload gets at most one repair copy, even while other losses keep
-// repair walks running: once a repair walk claimed it, later repair walks are
-// refused it, though an ordinary walk may still claim it.
+// A payload gets at most one repair copy per target, even while other losses
+// keep repair walks running: once a repair walk claimed it, later repair
+// walks are refused it, though an ordinary walk may still claim it.
 func TestCallPayloadRepairCopiesEachPayloadOnce(t *testing.T) {
 	t.Parallel()
 
