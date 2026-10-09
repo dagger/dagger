@@ -77,12 +77,15 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 	}
 	span.SetAttributes(attribute.Int("dagger.git.native_merge.scoped_stage_paths",
 		len(commitStagePaths(contents[0].paths))+len(commitStagePaths(contents[1].paths))))
-	local, err := nativeCommitRepository(ctx, lazy.Ref)
-	if err != nil {
+	var local *LocalGitRepository
+	if err := phases.run(ctx, "repository", func(ctx context.Context) (err error) {
+		local, err = nativeCommitRepository(ctx, lazy.Ref)
+		return err
+	}); err != nil {
 		return nil, true, err
 	}
 	var result *Directory
-	err = local.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
+	err := local.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
 		out, err := source.Run(ctx, "rev-parse", "--absolute-git-dir")
 		if err != nil {
 			return err
