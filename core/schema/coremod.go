@@ -202,6 +202,12 @@ func (m *CoreMod) WithView(view call.View) *CoreMod {
 }
 
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.InstallOpts) error {
+	// @reevaluate lets generated clients reuse the IDs of objects that don't
+	// need to be reevaluated. Modules pinned to an engine version before v1.0.0
+	// don't see it, so their generated clients keep fetching every ID. Module
+	// views drop the prerelease (engine.APIViewVersion), so every v1.0.0
+	// prerelease sees it.
+	dag.InstallDirective(dagql.ReevaluateDirective.View(AfterVersion("v1.0.0-beta.17")))
 	for _, schema := range []SchemaResolvers{
 		&querySchema{},
 		&directorySchema{},

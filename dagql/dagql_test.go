@@ -2564,6 +2564,28 @@ func TestReevaluateDirective(t *testing.T) {
 	}
 }
 
+// TestReevaluateDirectiveHiddenWithItsView checks that a view hiding the
+// @reevaluate declaration also hides its uses, so a schema never uses a
+// directive it does not declare.
+func TestReevaluateDirectiveHiddenWithItsView(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](srv)
+	dagql.Fields[Query]{
+		dagql.Func("freshPoint", func(ctx context.Context, self Query, args struct{}) (*points.Point, error) {
+			return &points.Point{X: 1, Y: 2}, nil
+		}).Reevaluate(),
+	}.Install(srv)
+	srv.InstallDirective(dagql.ReevaluateDirective.View(dagql.ExactView("future")))
+
+	old := srv.SchemaForView("old")
+	require.NotContains(t, old.Directives, "reevaluate")
+	require.Nil(t, old.Types["Query"].Fields.ForName("freshPoint").Directives.ForName("reevaluate"))
+
+	future := srv.SchemaForView("future")
+	require.Contains(t, future.Directives, "reevaluate")
+	require.NotNil(t, future.Types["Query"].Fields.ForName("freshPoint").Directives.ForName("reevaluate"))
+}
+
 func TestIDRecipeArgIsInternal(t *testing.T) {
 	srv := newExternalDagqlServerForTest(t, Query{})
 
