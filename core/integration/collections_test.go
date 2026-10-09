@@ -206,6 +206,97 @@ func (CollectionsSuite) TestCallCollectionSelectors(ctx context.Context, t *test
 	require.Contains(t, stderr, "required collection selector --collections-items-item not set")
 }
 
+// A collection grid whose key argument names differ from its type names, so
+// the selector flags are visibly the dimensions' and not the arguments'.
+const collectionSelectorSource = `package main
+
+type Selectors struct{}
+
+func (*Selectors) Projects() *Projects {
+  return &Projects{Paths: []string{"./api", "./web"}}
+}
+
+// +collection
+type Projects struct {
+  // +keys
+  Paths []string
+}
+
+// +get
+func (projects *Projects) Project(path string) *Project { return &Project{Path: path} }
+
+type Project struct{ Path string }
+
+func (project *Project) Suites() *Suites {
+  return &Suites{Project: project.Path, Files: []string{"e2e.test.ts", "unit.test.ts"}}
+}
+
+// +collection
+type Suites struct {
+  Project string
+  // +keys
+  Files []string
+}
+
+// +get
+func (suites *Suites) Suite(file string) *Suite {
+  return &Suite{Project: suites.Project, File: file}
+}
+
+type Suite struct {
+  Project string
+  File    string
+}
+
+// +check
+func (suite *Suite) Run() error { return nil }
+`
+
+func collectionSelectorSourceDir(c *dagger.Client) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.selectors]\nsource = \"./selectors\"\nentrypoint = true\n").
+		WithNewFile("selectors/dagger.json", `{"name":"selectors","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("selectors/main.go", collectionSelectorSource)
+}
+
+// Selectors before the first function name the item the pipeline starts
+// from, so the collection path does not have to be walked at all.
+func (CollectionsSuite) TestCallPathFreeSelection(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := goGitBase(t, c).
+		WithDirectory("/work", collectionSelectorSourceDir(c)).
+		WithWorkdir("/work")
+
+	// Both dimensions pin one item; the function runs on it.
+	out, err := base.With(daggerCall("--selectors-project=./api", "--selectors-suite=unit.test.ts", "file")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "unit.test.ts", out)
+
+	// The outer selector pins the outer item, leaving its collection to walk.
+	out, err = base.With(daggerCall("--selectors-project=./web", "suites", "keys")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "e2e.test.ts\nunit.test.ts\n", out)
+
+	// Selecting a whole collection names the candidates instead of guessing.
+	_, err = base.With(daggerCall("--selectors-projects", "path")).Stdout(ctx)
+	requireErrOut(t, err, "match 2 artifacts")
+
+	// A typo stays a flag error rather than becoming a selector.
+	_, err = base.With(daggerCall("--selectors-projekt=./api", "path")).Stdout(ctx)
+	requireErrOut(t, err, "unknown flag: --selectors-projekt")
+
+	// Rooting at the outer item composes with the per-boundary selector that
+	// the flattened command on the nested collection requires.
+	out, err = base.With(daggerCall("--selectors-project=./api", "suites", "file", "--selectors-suite=unit.test.ts")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "unit.test.ts", out)
+
+	// Walking the projection by hand keeps working.
+	out, err = base.With(daggerCall("projects", "get", "--key=./api", "suites", "get", "--key=unit.test.ts", "file")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "unit.test.ts", out)
+}
+
 func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c)).WithWorkdir("/work")
