@@ -301,7 +301,7 @@ func (ClientSuite) TestSessionRetiredByEngineReportsCause(ctx context.Context, t
 	}
 	require.Equal(t, http.StatusOK, code, body)
 	require.Contains(t, body, "engine closed session")
-	require.Contains(t, body, "misses two health checks in a row")
+	require.Contains(t, body, "fails its health checks")
 	require.NotContains(t, body, "already used and released")
 	t.Logf("response on the retired session: %s", body)
 

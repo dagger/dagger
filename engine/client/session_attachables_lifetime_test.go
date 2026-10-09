@@ -199,7 +199,7 @@ func TestSessionClosedByEngineReportsCause(t *testing.T) {
 			}
 			require.Eventually(t, func() bool { return c.SessionLost() != nil }, time.Second, 10*time.Millisecond)
 			require.ErrorContains(t, c.SessionLost(), `engine closed session "lifetime-test"`)
-			require.ErrorContains(t, c.SessionLost(), "misses two health checks in a row")
+			require.ErrorContains(t, c.SessionLost(), "fails its health checks")
 
 			// Requests get the cause in the engine's own error shape, instead of
 			// being forwarded to the engine's "already used and released" error.
@@ -211,11 +211,19 @@ func TestSessionClosedByEngineReportsCause(t *testing.T) {
 			require.Len(t, resp.Errors, 1)
 			require.Contains(t, resp.Errors[0].Message, `engine closed session "lifetime-test"`)
 
-			// Close skips the shutdown request the engine would reject.
+			// Direct requests, such as the CLI's own queries, get the cause
+			// without reaching the engine; so does Close, which skips the
+			// shutdown request the engine would reject.
 			c.httpClient = &httpClient{inner: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				return nil, fmt.Errorf("unexpected request to %s", req.URL.Path)
 			})}}
-			err := c.Close()
+			require.ErrorContains(t, c.Do(context.Background(), "{ version }", "", nil, nil), `engine closed session "lifetime-test"`)
+			httpResp, err := EngineConn(c).Do(httptest.NewRequest(http.MethodPost, "http://dagger"+engine.QueryEndpoint, nil))
+			if httpResp != nil {
+				httpResp.Body.Close()
+			}
+			require.ErrorContains(t, err, `engine closed session "lifetime-test"`)
+			err = c.Close()
 			require.ErrorContains(t, err, `engine closed session "lifetime-test"`)
 			require.NotContains(t, err.Error(), "unexpected request")
 		})

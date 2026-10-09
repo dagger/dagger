@@ -788,7 +788,7 @@ func (c *Client) runSessionAttachables() {
 // engine's generic "session was already used and released" error.
 func (c *Client) sessionLostError(now time.Time) error {
 	return fmt.Errorf("engine closed session %q: it closed this client's session attachables connection, "+
-		"which it does when the client misses two health checks in a row (for example, when the client process or its machine stalls) "+
+		"which it does when the client fails its health checks (for example, when the client process or its machine stalls) "+
 		"or when the engine shuts down; the longest this client went without a health check was %s; "+
 		"the session and its state (services, secrets, cached results) are gone, so start a new session",
 		c.SessionID, c.sessionSrv.health.longestGap(now).Truncate(100*time.Millisecond))
@@ -893,9 +893,9 @@ type SessionAttachablesServer struct {
 
 // healthCheckObserver serves the standard gRPC health service that the engine
 // polls to check that this client is alive, and records the longest gap
-// between those checks. When the engine retires a session for missed health
-// checks, that gap shows whether this client went unchecked (it stalled) or
-// kept answering (the stall was on the engine's side of the connection).
+// between those checks. When the engine retires a session for failed health
+// checks, a long gap shows the checks stopped reaching this client, and a
+// short one that they kept arriving; it does not say which side stalled.
 type healthCheckObserver struct {
 	*health.Server
 
@@ -1740,6 +1740,9 @@ func (c *Client) Do(
 		return err
 	}
 	defer cancel(errors.New("Client.Do done"))
+	if err := c.SessionLost(); err != nil {
+		return err
+	}
 
 	gqlClient := graphql.NewClient("http://dagger"+engine.QueryEndpoint, c.httpClient)
 
@@ -2014,7 +2017,12 @@ func (c *httpClient) Close() error {
 }
 
 func EngineConn(engineClient *Client) DirectConn {
-	return engineClient.httpClient.Do
+	return func(req *http.Request) (*http.Response, error) {
+		if err := engineClient.SessionLost(); err != nil {
+			return nil, err
+		}
+		return engineClient.httpClient.Do(req)
+	}
 }
 
 type DirectConn func(*http.Request) (*http.Response, error)
