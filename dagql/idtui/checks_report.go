@@ -282,7 +282,7 @@ func (fe *frontendPretty) SurfacedFailedCheckSpans() []dagui.SpanID {
 			// The cause is often reached via a forward link instead -- a check
 			// links to the lazy-eval span that did (and failed) the work, which the
 			// subtree fetch doesn't descend into. Fetch those targets directly.
-			for _, o := range n.Span.ErrorOrigins.Order {
+			for _, o := range n.Span.ErrorOrigins.Spans() {
 				add(o.ID)
 			}
 			for _, l := range n.Span.Links {
@@ -293,7 +293,7 @@ func (fe *frontendPretty) SurfacedFailedCheckSpans() []dagui.SpanID {
 		// (renderGeneratorNode -> renderCauseDetail), so prefetch theirs too.
 		addGenerator := func(n *dagui.GeneratorNode) {
 			add(n.Span.ID)
-			for _, o := range n.Span.ErrorOrigins.Order {
+			for _, o := range n.Span.ErrorOrigins.Spans() {
 				add(o.ID)
 			}
 			for _, l := range n.Span.Links {

@@ -18,8 +18,6 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-type SpanSet = *OrderedSet[SpanID, *Span]
-
 // spanStateCategory represents the primary state of a span for rollup counting
 type spanStateCategory uint8
 
@@ -91,21 +89,23 @@ func (st *RollUpState) decrementCategory(cat spanStateCategory) {
 type Span struct {
 	SpanSnapshot
 
-	ParentSpan    *Span   `json:"-"`
-	ChildSpans    SpanSet `json:"-"`
-	RunningSpans  SpanSet `json:"-"`
-	FailedLinks   SpanSet `json:"-"`
-	CanceledLinks SpanSet `json:"-"`
-	RevealedSpans SpanSet `json:"-"`
-	ErrorOrigins  SpanSet `json:"-"`
+	// The span's relations to other spans. Each is nil while empty (see
+	// SpanSet), which most of them are.
+	ParentSpan    *Span    `json:"-"`
+	ChildSpans    *SpanSet `json:"-"`
+	RunningSpans  *SpanSet `json:"-"`
+	FailedLinks   *SpanSet `json:"-"`
+	CanceledLinks *SpanSet `json:"-"`
+	RevealedSpans *SpanSet `json:"-"`
+	ErrorOrigins  *SpanSet `json:"-"`
 
 	// ProgressSpans tracks descendant spans carrying progress, so rows
 	// representing a subtree (collapsed, or with hidden descendants) can
 	// render it.
-	ProgressSpans SpanSet `json:"-"`
+	ProgressSpans *SpanSet `json:"-"`
 
-	causesViaLinks  SpanSet
-	effectsViaLinks SpanSet
+	causesViaLinks  *SpanSet
+	effectsViaLinks *SpanSet
 
 	// Pre-computed RollUp state for rendering progress bars
 	// Maintained incrementally for all spans, not just those marked RollUp
@@ -249,9 +249,9 @@ func (span *Span) Base() *callpbv1.Call {
 	return nil
 }
 
-func countChildren(set SpanSet, opts FrontendOpts) int {
+func countChildren(set *SpanSet, opts FrontendOpts) int {
 	count := 0
-	for _, child := range set.Order {
+	for _, child := range set.Spans() {
 		if child.Passthrough && !opts.Debug {
 			count += countChildren(child.ChildSpans, opts)
 		} else {
@@ -744,30 +744,30 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	propagate := func(parent *Span, causal, activity bool) bool {
 		var changed bool
 		if span.IsRunningOrEffectsRunning() {
-			changed = SpanSetAdd(&parent.RunningSpans, span)
+			changed = addToSpanSet(&parent.RunningSpans, span)
 		} else {
-			changed = SpanSetRemove(&parent.RunningSpans, span)
+			changed = removeFromSpanSet(&parent.RunningSpans, span)
 		}
 		if causal && span.IsFailed() && !span.Blocked {
 			// Blocked resumptions carry a cascaded prerequisite failure, not a
 			// failure of the parent's own work; they don't mark the parent
 			// caused-failed. The prerequisite's own resume span propagates the
 			// real failure to its own causal targets.
-			changed = SpanSetAdd(&parent.FailedLinks, span) || changed
+			changed = addToSpanSet(&parent.FailedLinks, span) || changed
 			// Propagate error origins across explicit causal links so the
 			// caused-failed span renders the leaf error rather than its own
 			// (possibly cascaded) status description. Self-references are
 			// dropped — renderStepError treats any non-empty ErrorOrigins as
 			// "errored elsewhere, don't repeat".
-			for _, origin := range span.ErrorOrigins.Order {
+			for _, origin := range span.ErrorOrigins.Spans() {
 				if origin.ID == parent.ID {
 					continue
 				}
-				changed = SpanSetAdd(&parent.ErrorOrigins, origin) || changed
+				changed = parent.AddErrorOrigin(origin) || changed
 			}
 		}
 		if causal && span.IsCanceled() {
-			changed = SpanSetAdd(&parent.CanceledLinks, span) || changed
+			changed = addToSpanSet(&parent.CanceledLinks, span) || changed
 		}
 		if activity && parent.Activity.Add(span) {
 			changed = true
@@ -801,7 +801,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	// Handle revealed spans propagation separately to stop at revealed parents
 	if span.Reveal {
 		for parent := range span.Parents {
-			if SpanSetAdd(&parent.RevealedSpans, span) {
+			if parent.AddRevealedSpan(span) {
 				span.db.update(parent)
 			}
 
@@ -930,7 +930,7 @@ func (span *Span) Descendants(f func(*Span) bool) {
 	var collect func(*Span) bool
 	collect = func(s *Span) bool {
 		// Use ChildSpans directly since we don't have opts here
-		for _, child := range s.ChildSpans.Order {
+		for _, child := range s.ChildSpans.Spans() {
 			if !f(child) {
 				return false
 			}
@@ -950,12 +950,12 @@ func (span *Span) RollUpState() *RollUpState {
 	return span.rollUpState
 }
 
-func (span *Span) ChildOrRevealedSpans(opts FrontendOpts) (SpanSet, bool) {
+func (span *Span) ChildOrRevealedSpans(opts FrontendOpts) (*SpanSet, bool) {
 	verbosity := opts.Verbosity
 	if v, ok := opts.SpanVerbosity[span.ID]; ok {
 		verbosity = v
 	}
-	if len(span.RevealedSpans.Order) > 0 && !opts.RevealNoisySpans && verbosity < ShowSpammyVerbosity {
+	if span.RevealedSpans.Len() > 0 && !opts.RevealNoisySpans && verbosity < ShowSpammyVerbosity {
 		return span.RevealedSpans, true
 	} else {
 		return span.ChildSpans, false
@@ -976,22 +976,22 @@ func (span *Span) IsUnset() bool {
 
 // Errors returns the individual errored spans contributing to the span's
 // Failed or CausedFailure status.
-func (span *Span) Errors() SpanSet {
+func (span *Span) Errors() *SpanSet {
 	errs := NewSpanSet()
 	if span.IsFailed() {
-		errs.Add(span)
+		errs.add(span)
 	}
-	if len(errs.Order) > 0 {
+	if errs.Len() > 0 {
 		return errs
 	}
-	for _, failed := range span.FailedLinks.Order {
-		errs.Add(failed)
+	for _, failed := range span.FailedLinks.Spans() {
+		errs.add(failed)
 	}
 	return errs
 }
 
 func (span *Span) IsFailedOrCausedFailure() bool {
-	return span.IsFailed() || (span.FailedLinks != nil && len(span.FailedLinks.Order) > 0) || (span.Final && span.Failed_)
+	return span.IsFailed() || span.FailedLinks.Len() > 0 || (span.Final && span.Failed_)
 }
 
 func (span *Span) FailedReason() (bool, []string) {
@@ -999,7 +999,7 @@ func (span *Span) FailedReason() (bool, []string) {
 	if span.IsFailed() {
 		reasons = append(reasons, "span itself errored")
 	}
-	for _, failed := range span.FailedLinks.Order {
+	for _, failed := range span.FailedLinks.Spans() {
 		reasons = append(reasons, "span has failed link: "+failed.Name)
 	}
 	if len(reasons) == 0 && span.Final && span.Failed_ {
@@ -1009,7 +1009,7 @@ func (span *Span) FailedReason() (bool, []string) {
 }
 
 func (span *Span) IsCanceled() bool {
-	return span.Canceled || len(span.CanceledLinks.Order) > 0
+	return span.Canceled || span.CanceledLinks.Len() > 0
 }
 
 func (span *Span) CanceledReason() (bool, []string) {
@@ -1022,7 +1022,7 @@ func (span *Span) CanceledReason() (bool, []string) {
 	} else if span.Canceled {
 		reasons = append(reasons, "span says it is canceled")
 	}
-	for _, canceled := range span.CanceledLinks.Order {
+	for _, canceled := range span.CanceledLinks.Spans() {
 		reasons = append(reasons, "span has canceled link: "+canceled.Name)
 	}
 	return len(reasons) > 0, reasons
@@ -1102,7 +1102,7 @@ func (span *Span) IsRunning() bool {
 
 // CausalSpans iterates over the spans that directly cause this span.
 func (span *Span) CausalSpans(f func(*Span) bool) {
-	if len(span.causesViaLinks.Order) == 0 {
+	if span.causesViaLinks.Len() == 0 {
 		// Most spans have no causes; skip allocating the recursive visitor.
 		return
 	}
@@ -1118,7 +1118,7 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 		}
 		return true
 	}
-	for _, cause := range span.causesViaLinks.Order {
+	for _, cause := range span.causesViaLinks.Spans() {
 		if !visit(cause) {
 			return
 		}
@@ -1126,7 +1126,7 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 }
 
 func (span *Span) EffectSpans(f func(*Span) bool) {
-	for _, span := range span.effectsViaLinks.Order {
+	for _, span := range span.effectsViaLinks.Spans() {
 		if !f(span) {
 			return
 		}
@@ -1157,7 +1157,7 @@ func (span *Span) IsPending() bool {
 // actually finished all deferred work. Blocked resumptions and successful
 // partial resumptions do not count: the work is still pending.
 func (span *Span) hasResolvedEffects() bool {
-	for _, effect := range span.effectsViaLinks.Order {
+	for _, effect := range span.effectsViaLinks.Spans() {
 		// This remains an any test. A partial effect may remain recorded after
 		// a sibling finishes, but that later non-partial effect resolves pending.
 		if !effect.Blocked && !effect.Partial {
@@ -1173,7 +1173,7 @@ func (span *Span) PendingReason() (bool, []string) {
 		if span.IsRunning() {
 			reasons = append(reasons, "span is running")
 		}
-		for _, running := range span.RunningSpans.Order {
+		for _, running := range span.RunningSpans.Spans() {
 			reasons = append(reasons, "span has running link: "+running.Name)
 		}
 		return false, reasons
@@ -1182,7 +1182,7 @@ func (span *Span) PendingReason() (bool, []string) {
 		if span.hasResolvedEffects() {
 			return false, []string{"span has resumed via causal continuation"}
 		}
-		if len(span.effectsViaLinks.Order) > 0 {
+		if span.effectsViaLinks.Len() > 0 {
 			return true, []string{"span only has incomplete resumptions; work is still pending"}
 		}
 		return true, []string{"span says it is pending"}

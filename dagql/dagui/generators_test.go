@@ -136,15 +136,15 @@ func TestPromoteGeneratorsTo(t *testing.T) {
 		t.Fatal("expected a root span")
 	}
 	db.PromoteGeneratorsTo(host)
-	if len(host.RevealedSpans.Order) != 1 {
-		t.Fatalf("RevealedSpans = %d spans, want 1", len(host.RevealedSpans.Order))
+	if len(host.RevealedSpans.Spans()) != 1 {
+		t.Fatalf("RevealedSpans = %d spans, want 1", len(host.RevealedSpans.Spans()))
 	}
-	if host.RevealedSpans.Order[0].GeneratorName != "viztest:gen" {
-		t.Fatalf("revealed span = %+v, want the generator", host.RevealedSpans.Order[0])
+	if host.RevealedSpans.Spans()[0].GeneratorName != "viztest:gen" {
+		t.Fatalf("revealed span = %+v, want the generator", host.RevealedSpans.Spans()[0])
 	}
 	// Idempotent: re-promotion must not duplicate.
 	db.PromoteGeneratorsTo(host)
-	if len(host.RevealedSpans.Order) != 1 {
-		t.Fatalf("re-promotion duplicated revealed spans: %d", len(host.RevealedSpans.Order))
+	if len(host.RevealedSpans.Spans()) != 1 {
+		t.Fatalf("re-promotion duplicated revealed spans: %d", len(host.RevealedSpans.Spans()))
 	}
 }

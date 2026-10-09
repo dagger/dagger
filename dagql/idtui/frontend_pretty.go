@@ -902,7 +902,7 @@ func (s *SpanTreeView) computeChildPrefix(out TermOutput, hasNext bool) treePref
 	color := restrainedStatusColor(span)
 
 	var connector, bar string
-	if len(span.RevealedSpans.Order) > 0 || span.Reveal {
+	if len(span.RevealedSpans.Spans()) > 0 || span.Reveal {
 		// Revealed spans are visually indented beneath their parent,
 		// not connected with tree lines.
 		connector = "  "
@@ -1837,7 +1837,7 @@ func (fe *frontendPretty) reportHeartbeatLine(elapsed time.Duration) string {
 		if running {
 			// only count leaves to approximate "things actually executing"
 			leaf := true
-			for _, child := range span.ChildSpans.Order {
+			for _, child := range span.ChildSpans.Spans() {
 				if child.IsRunningOrEffectsRunning() {
 					leaf = false
 					break
@@ -3559,7 +3559,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 			KeyEnabled(fe.searchQuery != "" || (fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan))),
 		key.NewBinding(key.WithKeys("r"),
 			key.WithHelp("r", "go to error"),
-			KeyEnabled(focused != nil && len(focused.ErrorOrigins.Order) > 0)),
+			KeyEnabled(focused != nil && len(focused.ErrorOrigins.Spans()) > 0)),
 		key.NewBinding(key.WithKeys("p"),
 			key.WithHelp("p", progressToggleHelp(fe.progressExpanded[fe.FocusedSpan])),
 			KeyEnabled(focused != nil && fe.spanHasProgressRollup(fe.FocusedSpan))),
@@ -4770,7 +4770,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 				// (renderGeneratorFailureDetail); explicit origins render like a
 				// check's causes.
 				fe.requestLogs(n.Span.ID)
-				for _, origin := range n.Span.ErrorOrigins.Order {
+				for _, origin := range n.Span.ErrorOrigins.Spans() {
 					fe.requestLogs(origin.ID)
 				}
 			})
@@ -5663,10 +5663,10 @@ func (fe *frontendPretty) promoteGeneratorsLocked() {
 	// generate's skipped-module rows visible mid-run alongside the generators
 	// (the final report persists them via the SKIPPED MODULES section).
 	for _, skip := range fe.db.SkippedModuleSpans() {
-		dagui.SpanSetAdd(&host.RevealedSpans, skip)
+		host.AddRevealedSpan(skip)
 	}
 	for _, regen := range fe.db.RegeneratedModuleSpans() {
-		dagui.SpanSetAdd(&host.RevealedSpans, regen)
+		host.AddRevealedSpan(regen)
 	}
 	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
@@ -5824,7 +5824,7 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 	// Determine visible children
 	var childTrees []*dagui.TraceTree
 	if tree.ShouldShowRevealedSpans(opts) {
-		for _, revealedSpan := range tree.Span.RevealedSpans.Order {
+		for _, revealedSpan := range tree.Span.RevealedSpans.Spans() {
 			if revealedTree, ok := rowsView.BySpan[revealedSpan.ID]; ok {
 				childTrees = append(childTrees, revealedTree)
 			}
@@ -5839,7 +5839,7 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 	span := tree.Span
 	color := restrainedStatusColor(span)
-	if !span.Reveal && len(span.RevealedSpans.Order) == 0 {
+	if !span.Reveal && len(span.RevealedSpans.Spans()) == 0 {
 		st.childrenGapPrefix = st.prefix.forChildren + out.String(VertBar+" ").Foreground(color).Faint().String()
 	} else {
 		st.childrenGapPrefix = st.prefix.forChildren + "  "
@@ -7761,11 +7761,11 @@ func (fe *frontendPretty) goErrorOrigin() {
 	if focused == nil {
 		return
 	}
-	if len(focused.ErrorOrigins.Order) == 0 {
+	if len(focused.ErrorOrigins.Spans()) == 0 {
 		return
 	}
 	var earliest *dagui.Span
-	for _, span := range focused.ErrorOrigins.Order {
+	for _, span := range focused.ErrorOrigins.Spans() {
 		if earliest == nil || span.StartTime.Before(earliest.StartTime) {
 			earliest = span
 		}
@@ -7862,14 +7862,14 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 			}
 		}
 	}
-	if len(span.ProgressSpans.Order) > 0 && (!row.Expanded || !row.HasChildren) {
+	if len(span.ProgressSpans.Spans()) > 0 && (!row.Expanded || !row.HasChildren) {
 		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
 	}
 	if fe.rollsUpSubChecks(row) {
 		// A check deferring to its inline CHECKS rollup: the failure is explained
 		// by the failed sub-checks rendered in the rollup above, so don't also dump
 		// this check's own orchestrating command error here.
-	} else if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
+	} else if len(row.Span.ErrorOrigins.Spans()) > 0 && (!row.Expanded || !row.HasChildren) {
 		origins := fe.renderableErrorOrigins(row.Span)
 		sortErrorOrigins(origins)
 		multi := len(origins) > 1
@@ -7900,8 +7900,8 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 // session) would render as an empty stub while suppressing the only copy of
 // the message.
 func (fe *frontendPretty) renderableErrorOrigins(span *dagui.Span) []*dagui.Span {
-	origins := make([]*dagui.Span, 0, len(span.ErrorOrigins.Order))
-	for _, cause := range span.ErrorOrigins.Order {
+	origins := make([]*dagui.Span, 0, len(span.ErrorOrigins.Spans()))
+	for _, cause := range span.ErrorOrigins.Spans() {
 		if cause.ID == span.ID {
 			continue
 		}
@@ -7988,15 +7988,15 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 			vt.WriteMarkdown([]byte("- " + effect.Name + "\n"))
 		}
 	}
-	if len(span.RevealedSpans.Order) > 0 {
+	if len(span.RevealedSpans.Spans()) > 0 {
 		vt.WriteMarkdown([]byte("\n\n## Revealed spans\n\n"))
-		for _, revealed := range span.RevealedSpans.Order {
+		for _, revealed := range span.RevealedSpans.Spans() {
 			vt.WriteMarkdown([]byte("- " + revealed.Name + "\n"))
 		}
 	}
-	if len(span.ErrorOrigins.Order) > 0 {
+	if len(span.ErrorOrigins.Spans()) > 0 {
 		vt.WriteMarkdown([]byte("\n\n## Error origins\n\n"))
-		for _, span := range span.ErrorOrigins.Order {
+		for _, span := range span.ErrorOrigins.Spans() {
 			vt.WriteMarkdown([]byte("- " + span.Name + "\n"))
 		}
 	}
@@ -8142,7 +8142,7 @@ func (fe *frontendPretty) renderProgressRollup(ctx tuist.Context, out TermOutput
 	showAll := fe.progressExpanded[span.ID] || r.Debug ||
 		r.Verbosity >= dagui.ShowSpammyVerbosity
 	var done []*dagui.Span
-	for _, src := range span.ProgressSpans.Order {
+	for _, src := range span.ProgressSpans.Spans() {
 		if src == span || !src.HasProgress() {
 			continue
 		}
@@ -8189,7 +8189,7 @@ func (fe *frontendPretty) spanHasProgressRollup(id dagui.SpanID) bool {
 		}
 	}
 	var done int
-	for _, src := range span.ProgressSpans.Order {
+	for _, src := range span.ProgressSpans.Spans() {
 		if src == span || !src.HasProgress() || !foldableProgressSource(src) {
 			continue
 		}
@@ -8240,7 +8240,7 @@ func CheckRootCauses(root *dagui.Span) []*dagui.Span {
 		seen[s.ID] = true
 		origins = append(origins, s)
 	}
-	for _, o := range root.ErrorOrigins.Order {
+	for _, o := range root.ErrorOrigins.Spans() {
 		add(o)
 	}
 	if len(origins) > 0 {
@@ -8254,20 +8254,20 @@ func CheckRootCauses(root *dagui.Span) []*dagui.Span {
 		}
 		visited[s.ID] = true
 		if s.IsFailed() {
-			for _, o := range s.ErrorOrigins.Order {
+			for _, o := range s.ErrorOrigins.Spans() {
 				add(o)
 			}
 			failedChild := false
-			for _, c := range s.ChildSpans.Order {
+			for _, c := range s.ChildSpans.Spans() {
 				if c.IsFailedOrCausedFailure() {
 					failedChild = true
 				}
 			}
-			if !failedChild && len(s.ErrorOrigins.Order) == 0 {
+			if !failedChild && len(s.ErrorOrigins.Spans()) == 0 {
 				add(s)
 			}
 		}
-		for _, c := range s.ChildSpans.Order {
+		for _, c := range s.ChildSpans.Spans() {
 			walk(c)
 		}
 	}
@@ -8461,7 +8461,7 @@ func (fe *frontendPretty) hasShownRootError() bool {
 // A nested session's error may arrive before its origin's final span. Until
 // that span carries a message, keep the error on the propagating span visible.
 func hasSpanErrorMessage(span *dagui.Span) bool {
-	for _, failed := range span.Errors().Order {
+	for _, failed := range span.Errors().Spans() {
 		if strings.TrimSpace(failed.Status.Description) != "" {
 			return true
 		}
@@ -8478,12 +8478,12 @@ func hasSpanErrorMessage(span *dagui.Span) bool {
 // shows — an internal span, or one whose data never arrived — must not
 // suppress the message, or the error would vanish from the report entirely.
 func (fe *frontendPretty) errorShownElsewhere(span *dagui.Span) bool {
-	if len(span.ErrorOrigins.Order) == 0 {
+	if len(span.ErrorOrigins.Spans()) == 0 {
 		return false
 	}
 	var sectionOrigins []*dagui.Span
 	sectionsComputed := false
-	for _, origin := range span.ErrorOrigins.Order {
+	for _, origin := range span.ErrorOrigins.Spans() {
 		if origin == nil || origin.ID == span.ID || !origin.Received {
 			continue
 		}
@@ -8527,13 +8527,13 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 	// printing it here also represents them: claim the origins so the
 	// root-cause sections and the CLI's trailing Error: line don't repeat
 	// what was just shown.
-	for _, origin := range row.Span.ErrorOrigins.Order {
+	for _, origin := range row.Span.ErrorOrigins.Spans() {
 		if origin != nil && origin.ID != row.Span.ID {
 			fe.claims.claimErrorID(origin.ID)
 		}
 	}
 	errorCounts := map[string]int{}
-	for _, span := range row.Span.Errors().Order {
+	for _, span := range row.Span.Errors().Spans() {
 		errText := span.Status.Description
 		if errText == "" {
 			continue
@@ -9319,7 +9319,7 @@ func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 	} else if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
-		if len(span.ErrorOrigins.Order) > 0 && !fe.reportOnly && !fe.finalRender {
+		if len(span.ErrorOrigins.Spans()) > 0 && !fe.reportOnly && !fe.finalRender {
 			color := termenv.ANSIBrightBlack
 			focusedAnyOrigin := span.ErrorOrigins.Has(fe.FocusedSpan)
 			if time.Since(fe.pressedKeyAt) < keypressDuration && focusedAnyOrigin {

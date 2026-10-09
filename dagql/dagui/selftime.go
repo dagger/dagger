@@ -116,7 +116,7 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 	for ival := range span.Activity.Intervals(now) {
 		painted = append(painted, ival)
 	}
-	for _, child := range span.ChildSpans.Order {
+	for _, child := range span.ChildSpans.Spans() {
 		if ival := child.observedInterval(now); ival.End.After(ival.Start) {
 			painted = append(painted, ival)
 		}
@@ -291,7 +291,7 @@ func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth i
 	// The target's own waits, including those recorded on its execution twins.
 	var subs []waitWindow
 	win.target.collectWaitWindows(&subs, win.target, now)
-	for _, child := range win.target.ChildSpans.Order {
+	for _, child := range win.target.ChildSpans.Spans() {
 		if child.Name == win.target.Name {
 			child.collectWaitWindows(&subs, win.target, now)
 		}
@@ -469,14 +469,14 @@ func (span *Span) collectWaitWindows(dst *[]waitWindow, row *Span, now time.Time
 	// the caller's name and nest directly under it) and on its deferred
 	// executions (effect spans, e.g. lazy resumes) belong to the row too.
 	if span == row {
-		for _, child := range span.ChildSpans.Order {
+		for _, child := range span.ChildSpans.Spans() {
 			if child.Name == span.Name {
 				child.collectOwnWaits(dst, row, now)
 			}
 		}
-		for _, effect := range span.effectsViaLinks.Order {
+		for _, effect := range span.effectsViaLinks.Spans() {
 			effect.collectOwnWaits(dst, row, now)
-			for _, child := range effect.ChildSpans.Order {
+			for _, child := range effect.ChildSpans.Spans() {
 				if child.Name == effect.Name {
 					child.collectOwnWaits(dst, row, now)
 				}
@@ -540,17 +540,17 @@ func (span *Span) collectInferredWaits(dst *[]waitWindow, now time.Time) {
 				candidates = append(candidates, c)
 			}
 		}
-		for _, child := range s.ChildSpans.Order {
+		for _, child := range s.ChildSpans.Spans() {
 			add(child)
 			if child.Name == s.Name {
-				for _, gc := range child.ChildSpans.Order {
+				for _, gc := range child.ChildSpans.Spans() {
 					add(gc)
 				}
 			}
 		}
-		for _, effect := range s.effectsViaLinks.Order {
+		for _, effect := range s.effectsViaLinks.Spans() {
 			add(effect)
-			for _, child := range effect.ChildSpans.Order {
+			for _, child := range effect.ChildSpans.Spans() {
 				add(child)
 			}
 		}
@@ -644,7 +644,7 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 		if c == nil || depth >= 2 {
 			return
 		}
-		for _, child := range c.ChildSpans.Order {
+		for _, child := range c.ChildSpans.Spans() {
 			visitOnce(child)
 			visitLabelSpans(child, depth+1)
 		}
@@ -662,7 +662,7 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 		// Cause links and the parent fallback map resume markers to the
 		// operations retained in TimeSegment.Blockers. Expand those operations
 		// too: their waits form the next link and their descendants carry labels.
-		for _, cause := range c.causesViaLinks.Order {
+		for _, cause := range c.causesViaLinks.Spans() {
 			// Preserve the existing dependency on every direct cause, even though
 			// resolveBlocker deterministically selects the first one.
 			visitOnce(cause)
@@ -687,10 +687,10 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 				emit(s.db.Spans.Map[s.Links[i].SpanContext.SpanID], depth)
 			}
 		}
-		for _, child := range s.ChildSpans.Order {
+		for _, child := range s.ChildSpans.Spans() {
 			if child.Name == s.Name {
 				emit(child, depth)
-				for _, gc := range child.ChildSpans.Order {
+				for _, gc := range child.ChildSpans.Spans() {
 					emit(gc, depth)
 				}
 			} else if resolved := resolveBlocker(child); resolved != nil && resolved != child {
@@ -699,9 +699,9 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 				emit(child, depth)
 			}
 		}
-		for _, effect := range s.effectsViaLinks.Order {
+		for _, effect := range s.effectsViaLinks.Spans() {
 			emit(effect, depth)
-			for _, child := range effect.ChildSpans.Order {
+			for _, child := range effect.ChildSpans.Spans() {
 				emit(child, depth)
 			}
 		}
@@ -725,7 +725,7 @@ func resolveBlockerPath(target *Span, visit func(*Span)) *Span {
 			return target
 		}
 		var next *Span
-		for _, cause := range target.causesViaLinks.Order {
+		for _, cause := range target.causesViaLinks.Spans() {
 			if cause != target {
 				next = cause
 				break
@@ -810,7 +810,7 @@ func (span *Span) execArgv(depth int) string {
 	if depth >= 2 {
 		return ""
 	}
-	for _, child := range span.ChildSpans.Order {
+	for _, child := range span.ChildSpans.Spans() {
 		if argv := child.execArgv(depth + 1); argv != "" {
 			return argv
 		}

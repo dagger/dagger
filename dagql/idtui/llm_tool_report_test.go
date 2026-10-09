@@ -139,8 +139,8 @@ func TestASCIIReporterScopedToolCallReport(t *testing.T) {
 	}
 	// ...and the promotion must not have mutated the shared DB either: a
 	// later whole-trace render of the same (cached) DB would inherit it.
-	if db.Spans.Map[loopID].Passthrough != true || len(db.Spans.Map[loopID].RevealedSpans.Order) != 0 {
-		t.Errorf("scoped render mutated the DB: revealed=%d", len(db.Spans.Map[loopID].RevealedSpans.Order))
+	if db.Spans.Map[loopID].Passthrough != true || len(db.Spans.Map[loopID].RevealedSpans.Spans()) != 0 {
+		t.Errorf("scoped render mutated the DB: revealed=%d", len(db.Spans.Map[loopID].RevealedSpans.Spans()))
 	}
 }
 

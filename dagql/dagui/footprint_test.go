@@ -396,7 +396,7 @@ func TestFootprintTrace(t *testing.T) {
 	if running != 0 {
 		t.Fatalf("%d spans still running after the trace completed", running)
 	}
-	if db.RootSpan == nil || len(db.RootSpan.ChildSpans.Order) == 0 {
+	if db.RootSpan == nil || db.RootSpan.ChildSpans.Len() == 0 {
 		t.Fatal("root span has no children")
 	}
 }

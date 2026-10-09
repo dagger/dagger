@@ -160,8 +160,7 @@ func TestCallWidthRefreshesBetweenRootRenders(t *testing.T) {
 				leaf.Args[0] = widthTestString("value", strings.Repeat("long", 50))
 			} else {
 				other := widthTestCall(db, "replacement", "replacement", widthTestString("value", strings.Repeat("long", 50)))
-				db.CreatorSpans[leaf.Digest] = dagui.NewSpanSet()
-				db.CreatorSpans[leaf.Digest].Add(&dagui.Span{SpanSnapshot: dagui.SpanSnapshot{CallDigest: other.Digest}})
+				db.CreatorSpans[leaf.Digest] = dagui.NewSpanSet(&dagui.Span{SpanSnapshot: dagui.SpanSnapshot{CallDigest: other.Digest}})
 			}
 			require.Contains(t, render(), "\n", "updated telemetry must invalidate the earlier short width")
 			leaf.Args[0] = widthTestString("value", "short")

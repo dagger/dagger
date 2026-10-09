@@ -152,7 +152,7 @@ type DB struct {
 	// it's a slice rather than a map keyed on start time.
 	Intervals map[string][]*Span
 
-	CreatorSpans map[string]SpanSet
+	CreatorSpans map[string]*SpanSet
 
 	// Map of call digest -> metric name -> data points
 	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
@@ -200,7 +200,7 @@ type DB struct {
 	// because they hadn't been received yet; they're sent once they arrive.
 	unsentAncestors map[SpanID]struct{}
 
-	pendingResumeOutputs map[resumeOutputKey]SpanSet
+	pendingResumeOutputs map[resumeOutputKey]*SpanSet
 	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
 	resolvedLogsBySpan   map[SpanID][]sdklog.Record
 
@@ -280,20 +280,20 @@ func NewDB() *DB {
 	return &DB{
 		PrimaryLogs: make(map[SpanID][]sdklog.Record),
 
-		Spans:     NewSpanSet(),
+		Spans:     newSpanIndex(),
 		Resources: make(map[attribute.Distinct]*resource.Resource),
 
 		Calls: make(map[string]*callpbv1.Call),
 
 		Intervals: make(map[string][]*Span),
 
-		CreatorSpans: make(map[string]SpanSet),
+		CreatorSpans: make(map[string]*SpanSet),
 
 		seenSpans: make(map[SpanID]struct{}),
 
 		unsentAncestors: make(map[SpanID]struct{}),
 
-		pendingResumeOutputs: make(map[resumeOutputKey]SpanSet),
+		pendingResumeOutputs: make(map[resumeOutputKey]*SpanSet),
 		pendingLogsByOutput:  make(map[resumeOutputKey][]sdklog.Record),
 		resolvedLogsBySpan:   make(map[SpanID][]sdklog.Record),
 
@@ -359,11 +359,11 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			// deep-dive.
 			return true
 		}
-		if span.Reveal || len(span.RevealedSpans.Order) > 0 {
+		if span.Reveal || span.RevealedSpans.Len() > 0 {
 			// always include revealed spans and their parents
 			return true
 		}
-		if span.HasProgress() || len(span.ProgressSpans.Order) > 0 {
+		if span.HasProgress() || span.ProgressSpans.Len() > 0 {
 			// always include progress-carrying spans and their ancestor
 			// chain, so remote frontends can place them in the tree even
 			// when they're deep inside unsubscribed subtrees
@@ -372,7 +372,7 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 		if span.Passthrough {
 			// include any passthrough spans to ensure failures are collected.
 			// the POST /query span for example never fails on its own.
-			for _, child := range span.ChildSpans.Order {
+			for _, child := range span.ChildSpans.Spans() {
 				if child.IsFailedOrCausedFailure() {
 					return true
 				}
@@ -942,18 +942,9 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		SpanSnapshot: SpanSnapshot{
 			ID: spanID,
 		},
-		// Every relation starts out sharing the immutable empty set: most
-		// of them stay empty, and SpanSetAdd allocates on the first add.
-		ChildSpans:      emptySpanSet,
-		RunningSpans:    emptySpanSet,
-		RevealedSpans:   emptySpanSet,
-		FailedLinks:     emptySpanSet,
-		CanceledLinks:   emptySpanSet,
-		ErrorOrigins:    emptySpanSet,
-		ProgressSpans:   emptySpanSet,
-		causesViaLinks:  emptySpanSet,
-		effectsViaLinks: emptySpanSet,
-		db:              db,
+		// The relation sets (ChildSpans and so on) stay nil until the
+		// first span is added: most of them stay empty.
+		db: db,
 	}
 }
 
@@ -1207,7 +1198,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// associate the span to its parent
 	if span.ParentID.IsValid() {
 		span.ParentSpan = db.initSpan(span.ParentID)
-		if SpanSetAdd(&span.ParentSpan.ChildSpans, span) {
+		if addToSpanSet(&span.ParentSpan.ChildSpans, span) {
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
 		}
@@ -1231,9 +1222,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			// (Otherwise the linking span could just be a child span.)
 			"":
 			linked := db.initSpan(linkedCtx.SpanID)
-			SpanSetAdd(&linked.ChildSpans, span)
-			SpanSetAdd(&linked.effectsViaLinks, span)
-			SpanSetAdd(&span.causesViaLinks, linked)
+			addToSpanSet(&linked.ChildSpans, span)
+			addToSpanSet(&linked.effectsViaLinks, span)
+			addToSpanSet(&span.causesViaLinks, linked)
 		case telemetry.LinkPurposeErrorOrigin:
 			if linkedCtx.SpanID == span.ID {
 				// defense in depth; it's technically possible to link to yourself, and
@@ -1242,7 +1233,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				continue
 			}
 			linked := db.initSpan(linkedCtx.SpanID)
-			SpanSetAdd(&span.ErrorOrigins, linked)
+			span.AddErrorOrigin(linked)
 		}
 	}
 
@@ -1256,7 +1247,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				continue
 			}
 			linked := db.initSpan(originID)
-			SpanSetAdd(&span.ErrorOrigins, linked)
+			span.AddErrorOrigin(linked)
 		}
 	}
 
@@ -1335,10 +1326,10 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		// output -> creator (usually just the one)
 		creators := db.CreatorSpans[span.Output]
 		if creators == nil {
-			creators = newSmallSpanSet()
+			creators = &SpanSet{}
 			db.CreatorSpans[span.Output] = creators
 		}
-		creators.Add(span)
+		creators.add(span)
 
 		db.resolvePendingResumeOutputs(span.Output, span.TraceID)
 		db.resolvePendingLogs(span.Output, span.TraceID)
@@ -1367,9 +1358,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 }
 
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {
-	changed := SpanSetAdd(&creator.ChildSpans, span)
-	SpanSetAdd(&creator.effectsViaLinks, span)
-	SpanSetAdd(&span.causesViaLinks, creator)
+	changed := addToSpanSet(&creator.ChildSpans, span)
+	addToSpanSet(&creator.effectsViaLinks, span)
+	addToSpanSet(&span.causesViaLinks, creator)
 	if changed {
 		db.update(creator)
 	}
@@ -1382,7 +1373,7 @@ func (db *DB) creatorSpanForDigestInTrace(dig string, traceID trace.TraceID) *Sp
 	}
 
 	var best *Span
-	for _, creator := range creators.Order {
+	for _, creator := range creators.Spans() {
 		if creator.TraceID.TraceID != traceID {
 			continue
 		}
@@ -1406,9 +1397,9 @@ func (db *DB) maybeResumeOutput(span *Span) {
 			Output:  span.ResumeOutput,
 		}
 		if db.pendingResumeOutputs[key] == nil {
-			db.pendingResumeOutputs[key] = newSmallSpanSet()
+			db.pendingResumeOutputs[key] = &SpanSet{}
 		}
-		db.pendingResumeOutputs[key].Add(span)
+		db.pendingResumeOutputs[key].add(span)
 		return
 	}
 
@@ -1429,7 +1420,7 @@ func (db *DB) resolvePendingResumeOutputs(output string, traceID TraceID) {
 		return
 	}
 	delete(db.pendingResumeOutputs, key)
-	for _, span := range pending.Order {
+	for _, span := range pending.Spans() {
 		db.linkResumedOutput(span, creator)
 		span.PropagateStatusToParentsAndLinks()
 		db.update(span)
@@ -1639,7 +1630,7 @@ func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
 		}
 		seen[dig] = true
 		// Try each creator in order
-		for _, creator := range creators.Order {
+		for _, creator := range creators.Spans() {
 			if seen[creator.CallDigest] {
 				continue
 			}
@@ -1738,7 +1729,7 @@ func (db *DB) Simplify(call *callpbv1.Call, force bool) *callpbv1.Call {
 		return call
 	}
 
-	for _, creator := range creators.Order {
+	for _, creator := range creators.Spans() {
 		if creator.CallDigest == "" {
 			continue
 		}

@@ -522,13 +522,13 @@ func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, sel
 		color := restrainedStatusColor(span)
 
 		var prefix string
-		if i == 0 && selfHoriz && !row.Span.Reveal && len(parent.Span.RevealedSpans.Order) == 0 {
+		if i == 0 && selfHoriz && !row.Span.Reveal && parent.Span.RevealedSpans.Len() == 0 {
 			if row.Next != nil {
 				prefix = VertRightBar + HorizHalfLeftBar
 			} else {
 				prefix = CornerBottomLeft + HorizHalfLeftBar
 			}
-		} else if nextChild.Next != nil && !row.Span.Reveal && len(parent.Span.RevealedSpans.Order) == 0 {
+		} else if nextChild.Next != nil && !row.Span.Reveal && parent.Span.RevealedSpans.Len() == 0 {
 			prefix = VertBar + " "
 		} else {
 			prefix = "  "

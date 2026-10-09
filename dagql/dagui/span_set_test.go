@@ -17,77 +17,83 @@ func testSetSpan(i int) *Span {
 	}}
 }
 
-// A fresh span's relations all share emptySpanSet: reads see an empty set,
-// the first SpanSetAdd gives the relation a set of its own, and emptying it
-// again hands it back.
-func TestSpanSetSharedEmpty(t *testing.T) {
+// A fresh span's relations are nil, and every read treats a nil set as
+// empty. The first add gives the relation a set of the span's own; emptying
+// it drops the set again.
+func TestSpanSetNilRelations(t *testing.T) {
 	db := NewDB()
 	a := db.newSpan(testSetSpan(1).ID)
 	b := db.newSpan(testSetSpan(2).ID)
 	child := testSetSpan(3)
 
-	if a.ChildSpans != emptySpanSet || len(a.ChildSpans.Order) != 0 || a.ChildSpans.Has(child.ID) {
-		t.Fatal("fresh span should share the empty set")
+	for _, set := range []*SpanSet{
+		a.ChildSpans, a.RunningSpans, a.FailedLinks, a.CanceledLinks,
+		a.RevealedSpans, a.ErrorOrigins, a.ProgressSpans,
+		a.causesViaLinks, a.effectsViaLinks,
+	} {
+		if set != nil {
+			t.Fatal("a fresh span's relations should be nil")
+		}
 	}
-	if !SpanSetAdd(&a.ChildSpans, child) {
+	if a.ChildSpans.Len() != 0 || a.ChildSpans.Spans() != nil || a.ChildSpans.Has(child.ID) {
+		t.Fatal("a nil set reads as empty")
+	}
+	if _, ok := a.ChildSpans.Get(child.ID); ok {
+		t.Fatal("a nil set has nothing to get")
+	}
+	for range a.ChildSpans.Iter() {
+		t.Fatal("a nil set iterates over nothing")
+	}
+	if a.IsFailedOrCausedFailure() || a.IsCanceled() || a.Errors().Len() != 0 {
+		t.Fatal("a span without relations has no derived status")
+	}
+
+	if !a.AddRevealedSpan(child) {
 		t.Fatal("first add should add")
 	}
-	if SpanSetAdd(&a.ChildSpans, child) {
+	if a.AddRevealedSpan(child) {
 		t.Fatal("second add of the same span should not add")
 	}
-	if a.ChildSpans == emptySpanSet || !a.ChildSpans.Has(child.ID) {
+	if !a.RevealedSpans.Has(child.ID) || a.RevealedSpans.Len() != 1 {
 		t.Fatal("add should give the relation its own set")
 	}
-	if len(emptySpanSet.Order) != 0 || emptySpanSet.Map != nil {
-		t.Fatal("shared empty set was mutated")
-	}
-	if b.ChildSpans != emptySpanSet || len(b.ChildSpans.Order) != 0 {
+	if b.RevealedSpans != nil {
 		t.Fatal("other spans' relations should be unaffected")
 	}
 
-	if SpanSetRemove(&b.ChildSpans, child) {
-		t.Fatal("removing from the empty set should report false")
+	if b.RemoveRevealedSpan(child) {
+		t.Fatal("removing from a nil set should report false")
 	}
-	if !SpanSetRemove(&a.ChildSpans, child) {
+	if !a.RemoveRevealedSpan(child) {
 		t.Fatal("remove should remove")
 	}
-	if a.ChildSpans != emptySpanSet {
-		t.Fatal("an emptied relation should go back to the shared empty set")
+	if a.RevealedSpans != nil {
+		t.Fatal("an emptied relation should go back to nil")
 	}
-
-	defer func() {
-		if recover() == nil {
-			t.Fatal("adding to the shared empty set directly should panic")
-		}
-		if len(emptySpanSet.Order) != 0 {
-			t.Fatal("shared empty set was mutated")
-		}
-	}()
-	b.ChildSpans.Add(child)
 }
 
-// A small set searches linearly until it outgrows smallSetMax, then indexes
+// A set searches linearly until it outgrows smallSpanSet, then indexes
 // itself; membership and start-time order are the same either way.
-func TestSmallSpanSet(t *testing.T) {
-	var set SpanSet = emptySpanSet
-	const n = 3 * smallSetMax
+func TestSpanSetGrowsIndex(t *testing.T) {
+	var set *SpanSet
+	const n = 3 * smallSpanSet
 	spans := make([]*Span, n)
 	for i := range spans {
 		// added in reverse start order, so each insert lands at the front
 		spans[i] = testSetSpan(n - i)
 	}
 	for i, span := range spans {
-		if !SpanSetAdd(&set, span) {
+		if !addToSpanSet(&set, span) {
 			t.Fatalf("add %d: not added", i)
 		}
-		if SpanSetAdd(&set, span) {
+		if addToSpanSet(&set, span) {
 			t.Fatalf("add %d: duplicate added", i)
 		}
 		if got := set.Len(); got != i+1 {
 			t.Fatalf("add %d: len = %d", i, got)
 		}
-		if (set.Map != nil) != (i+1 > smallSetMax) {
-			t.Fatalf("add %d: map allocated = %v", i, set.Map != nil)
+		if (set.index != nil) != (i+1 > smallSpanSet) {
+			t.Fatalf("add %d: index allocated = %v", i, set.index != nil)
 		}
 		for _, added := range spans[:i+1] {
 			if got, ok := set.Get(added.ID); !ok || got != added {
@@ -98,25 +104,32 @@ func TestSmallSpanSet(t *testing.T) {
 			t.Fatalf("add %d: has a span never added", i)
 		}
 	}
+	ordered := set.Spans()
 	for i := 1; i < n; i++ {
-		if !set.Order[i-1].StartTime.Before(set.Order[i].StartTime) {
+		if !ordered[i-1].StartTime.Before(ordered[i].StartTime) {
 			t.Fatalf("order not sorted by start time at %d", i)
 		}
 	}
 	for _, span := range spans {
-		if !SpanSetRemove(&set, span) {
+		if !removeFromSpanSet(&set, span) {
 			t.Fatalf("remove %v: not removed", span.ID)
 		}
 		if set.Has(span.ID) {
 			t.Fatalf("remove %v: still present", span.ID)
 		}
 	}
-	if set != emptySpanSet {
-		t.Fatal("emptied set should be the shared empty set")
+	if set != nil {
+		t.Fatal("an emptied set should be dropped")
 	}
+}
 
-	var nilSet SpanSet
-	if nilSet.Has(spans[0].ID) || nilSet.Len() != 0 {
-		t.Fatal("a nil set is empty")
+// Spans that start together keep the order they were added in.
+func TestSpanSetStableForEqualStarts(t *testing.T) {
+	first, second, third := testSetSpan(1), testSetSpan(2), testSetSpan(3)
+	second.StartTime = first.StartTime
+	set := NewSpanSet(first, third, second)
+	got := set.Spans()
+	if len(got) != 3 || got[0] != first || got[1] != second || got[2] != third {
+		t.Fatalf("order = %v", got)
 	}
 }

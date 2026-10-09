@@ -321,7 +321,7 @@ func TestTraceFailureNavigationSurvivesDispatch(t *testing.T) {
 	snaps = append(snaps, teardown)
 	db := dagui.NewDB()
 	db.ImportSnapshots(snaps)
-	dagui.SpanSetAdd(&db.Spans.Map[root.ID].ErrorOrigins, db.Spans.Map[origin.ID])
+	db.Spans.Map[root.ID].AddErrorOrigin(db.Spans.Map[origin.ID])
 	expanded := failureReportExpansion(db, db.Spans.Map[root.ID])
 	require.True(t, expanded[teardown.ID])
 	require.False(t, expanded[traceTargetSpanID(5)])

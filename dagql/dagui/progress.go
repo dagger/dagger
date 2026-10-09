@@ -134,7 +134,7 @@ func (db *DB) IngestProgress(spanID SpanID, item string, current, total int64, u
 	// membership marks the ancestor updated so remote frontends receive the
 	// chain linking the progress span into the tree.
 	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
-		if SpanSetAdd(&parent.ProgressSpans, span) {
+		if parent.AddProgressSpan(span) {
 			db.update(parent)
 		}
 	}
@@ -148,7 +148,7 @@ func (db *DB) IngestProgress(spanID SpanID, item string, current, total int64, u
 // ingested before their span arrives (leaving the ancestor walk with nowhere
 // to go), and spans can arrive before their ancestors.
 func (db *DB) propagateProgressSpans(span *Span) {
-	sources := span.ProgressSpans.Order
+	sources := span.ProgressSpans.Spans()
 	if span.HasProgress() {
 		sources = append([]*Span{span}, sources...)
 	}
@@ -157,7 +157,7 @@ func (db *DB) propagateProgressSpans(span *Span) {
 	}
 	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
 		for _, src := range sources {
-			if SpanSetAdd(&parent.ProgressSpans, src) {
+			if parent.AddProgressSpan(src) {
 				db.update(parent)
 			}
 		}
