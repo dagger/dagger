@@ -748,6 +748,7 @@ for obj in listing.get("Contents") or []:
     modified = int(datetime.datetime.fromisoformat(obj["LastModified"].replace("Z", "+00:00")).timestamp())
     if modified >= since:
         writes.append((modified, "s3://" + obj["Key"]))
+s3_writes = len(writes)
 # The mock server creates its records file on its first request, which a main
 # publish may never make.
 events = []
@@ -777,8 +778,11 @@ if early:
     )
 print(
     f"{ref} publish order ok: engine tags {', '.join(sorted(engine_tags))} pushed by {utc(engine_done)}; "
-    f"{len(writes)} writes from {utc(writes[0][0])} ({writes[0][1]}, {writes[0][0] - engine_done}s after) to {utc(writes[-1][0])}"
+    f"{s3_writes} S3 objects and {len(writes) - s3_writes} mock endpoint writes from {utc(writes[0][0])} "
+    f"({writes[0][1]}, {writes[0][0] - engine_done}s after) to {utc(writes[-1][0])}"
 )
+for at, what in writes:
+    print(f"  {utc(at)} {what}")
 PY
 `}).
 		Stdout(ctx)
