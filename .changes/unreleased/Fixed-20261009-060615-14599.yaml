@@ -1,5 +1,5 @@
 kind: Fixed
-body: Execs now get cgroup controllers (cpu, memory, io, pids…) when the engine container's entrypoint isn't PID 1, for example an engine run as a Dagger service or with `docker run --init`; the entrypoint moved only one process out of the root cgroup, so enabling the controllers failed.
+body: Execs now get cgroup controllers (cpu, memory, io, pids…) when the engine container's entrypoint isn't PID 1, as when the engine runs as a Dagger service; the entrypoint moved only one process out of the root cgroup, so enabling the controllers failed.
 time: 2026-10-09T06:06:15+00:00
 custom:
     Author: sipsma
