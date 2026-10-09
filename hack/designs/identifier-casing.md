@@ -451,21 +451,72 @@ Notes:
 
 ## Engine Integration
 
-All engine-side case conversion goes through one Go package (e.g.
-`engine/naming`), which the core API also wraps:
+All engine-side case conversion goes through `engine/naming`, which the core
+API also wraps. In `core`, a `Namer` (`core/gqlformat.go`) holds either a
+naming dictionary or nothing; a nil dictionary is the legacy path, which keeps
+the old strcase code byte for byte:
 
-| today | replaced by |
+| legacy (strcase) | `Namer` with a dictionary |
 | --- | --- |
-| `gqlObjectName` (`strcase.ToCamel`) | `PASCAL` / `UPPERCASE` |
-| `gqlFieldName`, `gqlArgName` (`strcase.ToLowerCamel`) | `CAMEL` / `UPPERCASE` |
-| `gqlEnumMemberName` (`strcase.ToScreamingSnake`) | `SCREAMING_SNAKE` |
-| `namespaceObject` prefix check (`'A' <= rest[0] <= 'Z'`) | compare word lists: the object's words start with the module's words |
-| `strcase.ToKebab` for CLI flags and addresses (`core/modtree.go`, `core/artifacts.go`, `core/schema/address.go`, `engine/server/session_workspaces.go`) | `KEBAB` |
-| `strcase.ConfigureAcronym` in `core/llm.go` | dictionary |
-| `withFinalTypeName` / `__withName` re-application in `core/typedef_results.go` | not needed: canonical names are fixed points |
+| `gqlObjectName` (`strcase.ToCamel`) | `ObjectName`: `PASCAL` / `UPPERCASE` |
+| `gqlFieldName`, `gqlArgName` (`strcase.ToLowerCamel`) | `FieldName`, `ArgName`: `CAMEL` / `UPPERCASE` |
+| `gqlEnumMemberName` (`strcase.ToScreamingSnake`) | `EnumMemberName`: `SCREAMING_SNAKE` |
+| `namespaceObject` prefix check (`'A' <= rest[0] <= 'Z'`) | `NamespaceObject`: the object's words start with the module's words |
+| `strcase.ToKebab` for CLI paths and addresses (`core/modtree.go`, `core/artifacts.go`, `core/schema/address.go`, `engine/server/session_workspaces.go`) | `CLIName`: `KEBAB`, keeping glob and path characters |
+| `strcase.ConfigureAcronym` in `core/llm.go`, `core/json.go` | dictionary; the calls stay for the legacy path only |
+| `withFinalTypeName` / `__withName` in `core/typedef_results.go` | not needed on the new path (canonical names are fixed points); kept for legacy modules |
 
-CLI flags change too: `E2ETest` becomes `--e2e-test` instead of strcase's
-`--e-2-e-test`.
+### Which namer applies
+
+- **Typedef constructors** (`function`, `withArg`, `__objectTypeDef`,
+  `withEnum`, `__withCollectionMember`, ...) are installed with
+  `View(AllVersion)`, so the caller's view is part of the call and its cache
+  key, and they normalize with `NamerFromContext` (the namer for the current
+  call's view). A module runtime connects at its `engineVersion`, so its
+  typedefs are named by its version. Public constructors pass the view on to
+  the internal `__*` selects they make; the in-engine Dang runtime stamps its
+  module's view on its naming selectors (`core/sdk/dang/shared/naming.go`).
+- **Module-level naming** (`namespaceObject`, type and constructor lookups,
+  validation) uses `Module.Namer()`, chosen by the module source's
+  `engineVersion`. Module tree CLI paths (checks, generators, artifacts) use
+  the namer of the module that declared the node, so a legacy dependency keeps
+  its old paths inside a new workspace.
+- **Mixed versions.** A dependency's types are installed with *its* rules, so
+  a module at a different version may spell a reference differently
+  (`HttpClient` vs `HTTPClient`). `namespaceTypeName` falls back to a
+  dependency type whose name matches under either rule set
+  (`depTypeReference`). Legacy modules skip core types in that fallback, so
+  their schema doesn't change.
+- **Matching user input.** Addresses, include patterns and pre-load module
+  name matching (`FieldNameCandidates`, `SameCLIName`, `artifactPatterns`)
+  accept both the legacy and the new spelling, since they run before the
+  module's version is known.
+- **SDK runtime arguments.** SDK modules at the new version receive the
+  `introspectionJSON` argument instead of `introspectionJson`.
+- **Go module codegen** (`cmd/codegen`) can't import `core`, so
+  `module_naming.go` mirrors `Namer`, gated by the introspection JSON's
+  `__schemaVersion`.
+
+### CLI
+
+The CLI loads typedefs without each module's `engineVersion`, so it names
+commands and flags with the dictionary for its own engine version. Legacy
+spellings stay accepted: flags are normalized through both spellings, and
+commands get the legacy name as an alias. So `E2ETest` is `--e2e-test`, and
+`--e-2-e-test` still works.
+
+### Remaining strcase uses
+
+- The legacy `Namer` path and `legacyNamespaceObject`, for modules below the
+  gate.
+- `canonicalWorkspaceModuleName` and `canonicalOverlayModuleName`: comparison
+  keys only, never shown to users.
+- The `core/llm.go` and `core/json.go` acronym registrations, which the legacy
+  path still needs.
+- Legacy fallbacks in the CLI and `core/envfile.go` (old flag and variable
+  prefixes).
+- `dagql` struct-field naming and `dagql/idtui` display, which handle core
+  names, not module names.
 
 ## SDK Integration
 
@@ -553,6 +604,26 @@ existing view mechanism (`AfterVersion` / `BeforeVersion` in `core/util.go`):
 - A dictionary addition lands with an engine version and applies only to
   modules and clients at or above it.
 
+`naming.DictionaryFor(engineVersion)` maps a version to the dictionary it
+selects: no version means the latest dictionary, and a version below
+`naming.FirstVersion` (`v1.0.0`), or an invalid one, gets `naming.Initial`.
+Each dictionary release adds an entry to the list in
+`engine/naming/version.go`. Module normalization is gated separately, at
+`IdentifierNamingVersion` (`v1.0.0-0`, so prereleases opt in): below it, the
+`Namer` uses strcase.
+
+Known gaps:
+
+- The TypeScript runtime's self-call introspection
+  (`sdk/typescript/src/module/introspector/introspection_json.ts`) still uses
+  ports of strcase to predict schema names, so self calls to names with
+  acronyms miss on new modules.
+- The Python runtime builds interface method and argument names with
+  `to_camel_case` (`sdk/python/src/dagger/mod/_converter.py`), so interface
+  calls to names with acronyms miss on new modules.
+- CLI naming follows the CLI's engine version, not each module's (see
+  [CLI](#cli)).
+
 ### What changes for module authors (on bump)
 
 Module type, field and argument names that contain runs of capitals or
@@ -561,6 +632,9 @@ dictionary terms get their real casing back:
 - `MyModHttpclient` → `MyModHTTPClient`
 - `Llmmessage` → `LLMMessage`, and references to core `LLM*` / `JSON*` types
   resolve to the core type instead of a namespaced copy.
+- CLI flags: `E2ETest` → `--e2e-test` (was `--e-2-e-test`, which is still
+  accepted).
+- Python arguments: `com_url` → `comURL` (was `comUrl`).
 
 Names that were already canonical don't change.
 
