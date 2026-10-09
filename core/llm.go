@@ -164,8 +164,17 @@ type LLMEndpoint struct {
 	// sourced from catwalk's per-model levels) for providers that support
 	// reasoning. Each provider maps it onto its native effort parameter
 	// (Anthropic output_config.effort, OpenAI/Codex reasoning.effort, Gemini
-	// thinking_level). Empty or "none" disables reasoning.
+	// thinking_level). Empty or "none" disables reasoning. Models that don't
+	// take an effort level natively (see ReasoningMode) may get it translated,
+	// e.g. into an Anthropic thinking budget, or dropped.
 	ReasoningEffort string
+
+	// ReasoningMode is how the model takes reasoning configuration, from
+	// catwalk's embedded catalog: whether it accepts effort levels, only a
+	// thinking-token budget, or no reasoning at all. Providers consult it to
+	// translate (or drop) ReasoningEffort for models that don't accept it
+	// natively. LLMReasoningUnknown when the model isn't in the catalog.
+	ReasoningMode LLMReasoningMode
 
 	// DefaultMaxTokens and ContextWindow are the model's default output-token
 	// cap and total context size, from catwalk's embedded catalog. Zero when
@@ -1375,6 +1384,7 @@ func (r *LLMRouter) Route(model, provider string) (*LLMEndpoint, error) {
 	if m, ok := lookupCatalogModel(endpoint.Provider, endpoint.Model); ok {
 		endpoint.DefaultMaxTokens = m.DefaultMaxTokens
 		endpoint.ContextWindow = m.ContextWindow
+		endpoint.ReasoningMode = catalogReasoningMode(m)
 	}
 	return endpoint, nil
 }
