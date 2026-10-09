@@ -146,9 +146,14 @@ type DB struct {
 
 	Calls map[string]*callpbv1.Call
 
-	Outputs   map[string]map[string]struct{}
-	OutputOf  map[string]map[string]struct{}
-	Intervals map[string]map[time.Time]*Span
+	Outputs  map[string]map[string]struct{}
+	OutputOf map[string]map[string]struct{}
+
+	// Intervals holds the spans seen for each call digest, one per distinct
+	// start time (a later span with the same start time replaces the
+	// earlier), in no particular order. Usually there's just the one, so
+	// it's a slice rather than a map keyed on start time.
+	Intervals map[string][]*Span
 
 	CreatorSpans map[string]SpanSet
 
@@ -269,7 +274,7 @@ func NewDB() *DB {
 
 		OutputOf:  make(map[string]map[string]struct{}),
 		Outputs:   make(map[string]map[string]struct{}),
-		Intervals: make(map[string]map[time.Time]*Span),
+		Intervals: make(map[string][]*Span),
 
 		CreatorSpans: make(map[string]SpanSet),
 
@@ -1217,12 +1222,18 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		}
 	}
 
-	// keep track of intervals seen for a digest
+	// keep track of intervals seen for a digest, one span per start time
 	if span.CallDigest != "" {
-		if db.Intervals[span.CallDigest] == nil {
-			db.Intervals[span.CallDigest] = make(map[time.Time]*Span)
+		spans := db.Intervals[span.CallDigest]
+		i := slices.IndexFunc(spans, func(other *Span) bool {
+			// ==, not Equal: the key equality a map[time.Time] used
+			return other.StartTime == span.StartTime
+		})
+		if i >= 0 {
+			spans[i] = span
+		} else {
+			db.Intervals[span.CallDigest] = append(spans, span)
 		}
-		db.Intervals[span.CallDigest][span.StartTime] = span
 	}
 
 	if span.CallDigest != "" && span.CallPayload != "" {
