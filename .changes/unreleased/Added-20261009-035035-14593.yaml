@@ -1,0 +1,12 @@
+kind: Added
+body: |
+  The schema marks fields that must be evaluated again for each use with a new
+  `@reevaluate` directive: fields whose every evaluation may give a new result
+  or repeat a side effect, such as module functions with cache policy `never`.
+  With `when`, only calls that set one of the named Boolean arguments, such as
+  `noCache`, are reevaluated. Clients use it to decide which object IDs they may
+  reuse.
+time: 2026-10-09T03:50:35Z
+custom:
+    Author: sipsma
+    PR: "14593"
