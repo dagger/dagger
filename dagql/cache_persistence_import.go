@@ -555,6 +555,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 
 	if c.snapshotManager != nil {
 		rows := bkcache.PersistentMetadataRows{
+			ContentHashes:   make([]bkcache.SnapshotContentHashRow, 0, len(snapshotContentHashRows)),
 			SnapshotContent: make([]bkcache.SnapshotContentRow, 0, len(snapshotContentRows)),
 			ImportedByBlob:  make([]bkcache.ImportedLayerBlobRow, 0, len(importedLayerBlobRows)),
 			ImportedByDiff:  make([]bkcache.ImportedLayerDiffRow, 0, len(importedLayerDiffRows)),

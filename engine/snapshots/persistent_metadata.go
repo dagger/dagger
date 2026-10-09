@@ -1,6 +1,7 @@
 package snapshots
 
 import (
+	"bytes"
 	"context"
 	stderrors "errors"
 	"strings"
@@ -100,19 +101,19 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 		cm.snapshotOwnerLeases = make(map[string]map[string]struct{})
 	}
 	cm.metadataStore.mu.Lock()
-	cm.metadataStore.contentHashes = make(map[string][]byte, len(rows.ContentHashes))
+	defer cm.metadataStore.mu.Unlock()
+	cm.metadataStore.pendingContentHashes = make(map[string][]byte, len(rows.ContentHashes))
 	for _, row := range rows.ContentHashes {
-		if row.SnapshotID != "" && len(row.Data) != 0 {
-			data := append([]byte(nil), row.Data...)
-			if md, ok := cm.metadataStore.refs[row.SnapshotID]; ok {
-				md.external[ContentHashMetadataKey] = data
-			} else {
-				// Rehydration still needs to discover the snapshot's other metadata.
-				cm.metadataStore.contentHashes[row.SnapshotID] = data
-			}
+		if row.SnapshotID == "" || len(row.Data) == 0 {
+			continue
+		}
+		data := bytes.Clone(row.Data)
+		if md, ok := cm.metadataStore.refs[row.SnapshotID]; ok {
+			md.external[ContentHashMetadataKey] = data
+		} else {
+			cm.metadataStore.pendingContentHashes[row.SnapshotID] = data
 		}
 	}
-	cm.metadataStore.mu.Unlock()
 
 	return nil
 }
@@ -160,19 +161,20 @@ func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
 		if len(owners) == 0 {
 			continue
 		}
-		data := cm.metadataStore.contentHashes[snapshotID]
+		if rec, ok := cm.records[snapshotID]; ok && rec.mutable {
+			continue
+		}
+		data := cm.metadataStore.pendingContentHashes[snapshotID]
 		if md, ok := cm.metadataStore.refs[snapshotID]; ok {
-			if rec, ok := cm.records[snapshotID]; ok && rec.mutable {
-				continue
-			}
 			data = md.external[ContentHashMetadataKey]
 		}
-		if len(data) != 0 {
-			rows.ContentHashes = append(rows.ContentHashes, SnapshotContentHashRow{
-				SnapshotID: snapshotID,
-				Data:       append([]byte(nil), data...),
-			})
+		if len(data) == 0 {
+			continue
 		}
+		rows.ContentHashes = append(rows.ContentHashes, SnapshotContentHashRow{
+			SnapshotID: snapshotID,
+			Data:       bytes.Clone(data),
+		})
 	}
 
 	return rows

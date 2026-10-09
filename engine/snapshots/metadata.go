@@ -84,19 +84,19 @@ func (v *Value) Unmarshal(target interface{}) error {
 }
 
 type metadataStore struct {
-	mu    sync.RWMutex
-	refs  map[string]*cacheMetadata
-	index map[string]map[string]struct{}
-	// Loaded hash trees awaiting snapshot metadata rehydration.
-	contentHashes map[string][]byte
-	closed        bool
+	mu     sync.RWMutex
+	refs   map[string]*cacheMetadata
+	index  map[string]map[string]struct{}
+	closed bool
+
+	// Persisted hash records for snapshots whose metadata has not been opened.
+	pendingContentHashes map[string][]byte
 }
 
 func newMetadataStore() *metadataStore {
 	return &metadataStore{
-		refs:          make(map[string]*cacheMetadata),
-		index:         make(map[string]map[string]struct{}),
-		contentHashes: make(map[string][]byte),
+		refs:  make(map[string]*cacheMetadata),
+		index: make(map[string]map[string]struct{}),
 	}
 }
 
@@ -120,9 +120,9 @@ func (s *metadataStore) getOrCreate(id string) *cacheMetadata {
 		indexes:  make(map[string]string),
 		external: make(map[string][]byte),
 	}
-	if data, ok := s.contentHashes[id]; ok {
+	if data, ok := s.pendingContentHashes[id]; ok {
 		md.external[ContentHashMetadataKey] = data
-		delete(s.contentHashes, id)
+		delete(s.pendingContentHashes, id)
 	}
 	s.refs[id] = md
 	return md
@@ -131,7 +131,7 @@ func (s *metadataStore) getOrCreate(id string) *cacheMetadata {
 func (s *metadataStore) clear(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.contentHashes, id)
+	delete(s.pendingContentHashes, id)
 	md, ok := s.refs[id]
 	if !ok {
 		return
@@ -158,7 +158,7 @@ func (s *metadataStore) close() error {
 	s.closed = true
 	s.refs = nil
 	s.index = nil
-	s.contentHashes = nil
+	s.pendingContentHashes = nil
 	return nil
 }
 
