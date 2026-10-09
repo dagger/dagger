@@ -712,6 +712,9 @@ func TestCurrentTypeDefsAccessorsNotCached(t *testing.T) {
 	baseCache, err := dagql.NewCache(baseCtx, "", nil, nil)
 	require.NoError(t, err)
 	baseCtx = dagql.ContextWithCache(baseCtx, baseCache)
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	baseCtx = core.ContextWithQuery(baseCtx, root)
 
 	sessionCtx := func(name string) context.Context {
 		return engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
@@ -720,11 +723,9 @@ func TestCurrentTypeDefsAccessorsNotCached(t *testing.T) {
 		})
 	}
 	ctxA := sessionCtx("a")
-	srv := &currentTypeDefsTestServer{}
 	coreSchemaBase, err := NewCoreSchemaBase(ctxA, srv)
 	require.NoError(t, err)
 	coreMod := coreSchemaBase.CoreMod("")
-	root := core.NewRoot(srv)
 	srv.deps = core.NewSchemaBuilder(root, []core.Mod{coreMod})
 
 	// Each CLI invocation is a new session: query once, release the session,
@@ -749,17 +750,17 @@ func TestCurrentTypeDefsAccessorsNotCached(t *testing.T) {
 	for _, r := range snapshot.Results {
 		typeNames[r.SharedResultID] = r.TypeName
 	}
-	var cached []string
+	cached := map[string]int{}
 	for _, r := range snapshot.Results {
 		if r.ResultCall == nil || r.ResultCall.Receiver == nil {
 			continue
 		}
 		receiver := typeNames[r.ResultCall.Receiver.ResultID]
 		if slices.Contains(typeDefAccessorFields[receiver], r.ResultCall.Field) {
-			cached = append(cached, receiver+"."+r.ResultCall.Field)
+			cached[receiver+"."+r.ResultCall.Field]++
 		}
 	}
-	require.Empty(t, cached, "typedef accessor results were stored in the cache")
+	require.Empty(t, cached, "typedef accessor results stored in the cache, by field")
 
 	// IDs of typedefs and of list items returned by the accessors still load.
 	var out struct {
@@ -796,15 +797,15 @@ func TestCurrentTypeDefsAccessorsNotCached(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, argID)
-	loaded, err := dagB.Query(ctxB, `query($obj: ID!, $arg: ID!) {
-		obj: node(id: $obj) { ... on ObjectTypeDef { name } }
-		arg: node(id: $arg) { ... on FunctionArg { name } }
-	}`, map[string]any{"obj": objID, "arg": argID})
-	require.NoError(t, err)
-	require.Equal(t, map[string]any{
-		"obj": map[string]any{"name": objName},
-		"arg": map[string]any{"name": argName},
-	}, loaded)
+	for encoded, name := range map[string]string{objID: objName, argID: argName} {
+		var id call.ID
+		require.NoError(t, id.Decode(encoded))
+		loaded, err := dagB.Load(ctxB, &id)
+		require.NoError(t, err)
+		var loadedName string
+		require.NoError(t, dagB.Select(ctxB, loaded, &loadedName, dagql.Selector{Field: "name"}))
+		require.Equal(t, name, loadedName)
+	}
 }
 
 func TestWorkspaceAddressViews(t *testing.T) {
