@@ -356,7 +356,7 @@ func TestIncompleteErrorOriginDoesNotSuppressMessage(t *testing.T) {
 				// A nested session's error can arrive before its origin's final span.
 				{ID: originID, TraceID: prettyTestTraceID(), ParentID: callID, Name: "Workspace.directory", StartTime: start, Status: originStatus},
 			})
-			db.Spans.Map[callID].ErrorOrigins.Add(db.Spans.Map[originID])
+			dagui.SpanSetAdd(&db.Spans.Map[callID].ErrorOrigins, db.Spans.Map[originID])
 			db.SetPrimarySpan(rootID)
 			fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 30))
 			fe.err = fmt.Errorf("%s [traceparent:%s-%s]", message, prettyTestTraceID(), originID)

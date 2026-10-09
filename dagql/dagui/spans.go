@@ -693,16 +693,16 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	propagate := func(parent *Span, causal, activity bool) bool {
 		var changed bool
 		if span.IsRunningOrEffectsRunning() {
-			changed = parent.RunningSpans.Add(span)
+			changed = SpanSetAdd(&parent.RunningSpans, span)
 		} else {
-			changed = parent.RunningSpans.Remove(span)
+			changed = SpanSetRemove(&parent.RunningSpans, span)
 		}
 		if causal && span.IsFailed() && !span.Blocked {
 			// Blocked resumptions carry a cascaded prerequisite failure, not a
 			// failure of the parent's own work; they don't mark the parent
 			// caused-failed. The prerequisite's own resume span propagates the
 			// real failure to its own causal targets.
-			changed = parent.FailedLinks.Add(span) || changed
+			changed = SpanSetAdd(&parent.FailedLinks, span) || changed
 			// Propagate error origins across explicit causal links so the
 			// caused-failed span renders the leaf error rather than its own
 			// (possibly cascaded) status description. Self-references are
@@ -712,11 +712,11 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 				if origin.ID == parent.ID {
 					continue
 				}
-				changed = parent.ErrorOrigins.Add(origin) || changed
+				changed = SpanSetAdd(&parent.ErrorOrigins, origin) || changed
 			}
 		}
 		if causal && span.IsCanceled() {
-			changed = parent.CanceledLinks.Add(span) || changed
+			changed = SpanSetAdd(&parent.CanceledLinks, span) || changed
 		}
 		if activity && parent.Activity.Add(span) {
 			changed = true
@@ -750,7 +750,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	// Handle revealed spans propagation separately to stop at revealed parents
 	if span.Reveal {
 		for parent := range span.Parents {
-			if parent.RevealedSpans.Add(span) {
+			if SpanSetAdd(&parent.RevealedSpans, span) {
 				span.db.update(parent)
 			}
 

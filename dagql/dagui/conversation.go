@@ -224,7 +224,7 @@ func (db *DB) PromoteConversationNodesTo(host *Span, nodes []*MessageNode) {
 	var wire func(parent *Span, nodes []*MessageNode)
 	wire = func(parent *Span, nodes []*MessageNode) {
 		for _, node := range nodes {
-			parent.RevealedSpans.Add(node.Span)
+			SpanSetAdd(&parent.RevealedSpans, node.Span)
 			wire(node.Span, node.Children)
 		}
 	}
@@ -247,7 +247,7 @@ func (db *DB) DemoteConversationNodesFrom(host *Span, nodes []*MessageNode) {
 	var unwire func(parent *Span, nodes []*MessageNode)
 	unwire = func(parent *Span, nodes []*MessageNode) {
 		for _, node := range nodes {
-			parent.RevealedSpans.Remove(node.Span)
+			SpanSetRemove(&parent.RevealedSpans, node.Span)
 			unwire(node.Span, node.Children)
 		}
 	}

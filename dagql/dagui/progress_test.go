@@ -83,7 +83,7 @@ func TestIngestProgressLogs(t *testing.T) {
 
 	// progress surfaces on ancestors for collapsed/hidden rendering
 	from := db.Spans.Map[fromID]
-	if _, ok := from.ProgressSpans.Map[pullID]; !ok {
+	if !from.ProgressSpans.Has(pullID) {
 		t.Fatal("expected pulling span in ancestor's ProgressSpans")
 	}
 
@@ -140,7 +140,7 @@ func TestIngestProgressLogsBeforeSpans(t *testing.T) {
 		},
 	})
 	export := db.Spans.Map[exportID]
-	if _, ok := export.ProgressSpans.Map[downloadID]; !ok {
+	if !export.ProgressSpans.Has(downloadID) {
 		t.Fatal("expected late-arriving span's progress to register in its parent")
 	}
 
@@ -157,7 +157,7 @@ func TestIngestProgressLogsBeforeSpans(t *testing.T) {
 		},
 	})
 	root := db.Spans.Map[rootID]
-	if _, ok := root.ProgressSpans.Map[downloadID]; !ok {
+	if !root.ProgressSpans.Has(downloadID) {
 		t.Fatal("expected progress registration to propagate to late-arriving ancestors")
 	}
 }
@@ -228,7 +228,7 @@ func TestProgressSnapshotRoundTrip(t *testing.T) {
 
 	// imported progress registers in ancestors (stubbed from ParentID here)
 	from := client.Spans.Map[fromID]
-	if _, ok := from.ProgressSpans.Map[pullID]; !ok {
+	if !from.ProgressSpans.Has(pullID) {
 		t.Fatal("expected imported progress span in ancestor's ProgressSpans")
 	}
 

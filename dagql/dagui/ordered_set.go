@@ -11,14 +11,32 @@ type OrderedSet[K comparable, V any] struct {
 	Order    []V
 	KeyFunc  func(V) K
 	LessFunc func(V, V) bool
-	Map      map[K]V
+
+	// Map indexes Order by key. A small set (see newSmallSpanSet) leaves it
+	// nil until it outgrows smallSetMax values, so look values up with Has
+	// and Get rather than reading Map directly.
+	Map map[K]V
 
 	// deferring is set between deferSort and settle. While it is set, Add
 	// appends to Order instead of inserting in place, and Order is sorted
 	// only up to sorted; settle sorts the rest and merges it in.
 	deferring bool
-	sorted    int
+
+	// small sets search Order linearly until they hold more than
+	// smallSetMax values, sparing the map for the many sets that stay tiny.
+	small bool
+
+	// frozen marks the shared empty span set (emptySpanSet), which must
+	// never be added to.
+	frozen bool
+
+	sorted int
 }
+
+// smallSetMax is the most values a small set holds before indexing them in
+// a map. A linear scan over this many keys costs about as much as hashing
+// one.
+const smallSetMax = 8
 
 func NewSet[T comparable]() *OrderedSet[T, T] {
 	return &OrderedSet[T, T]{
@@ -41,7 +59,60 @@ func NewOrderedSet[K comparable, V any](keyFunc func(V) K, vs ...V) *OrderedSet[
 func NewSpanSet(spans ...*Span) *OrderedSet[SpanID, *Span] {
 	set := NewOrderedSet(spanKeyFunc)
 	set.LessFunc = byStartTime
+	for _, span := range spans {
+		set.Add(span)
+	}
 	return set
+}
+
+// newSmallSpanSet returns a span set that expects to stay small: it skips
+// the map index until it holds more than smallSetMax spans.
+func newSmallSpanSet() SpanSet {
+	return &OrderedSet[SpanID, *Span]{
+		KeyFunc:  spanKeyFunc,
+		LessFunc: byStartTime,
+		small:    true,
+	}
+}
+
+// emptySpanSet is the shared, immutable empty set every span relation (a
+// Span's ChildSpans, RunningSpans and so on) starts out as. Most of them stay
+// empty forever, so they share this one instead of each allocating its own,
+// and reads need no nil checks. Writes go through addSpan and removeSpan,
+// which swap in a set of the span's own on the first add; adding to
+// emptySpanSet directly panics.
+var emptySpanSet = &OrderedSet[SpanID, *Span]{
+	KeyFunc:  spanKeyFunc,
+	LessFunc: byStartTime,
+	small:    true,
+	frozen:   true,
+}
+
+// SpanSetAdd adds span to the span relation *set, giving the relation a set
+// of its own first if it still shares emptySpanSet. It reports whether span
+// was added. Use it for every write to a Span's relation sets (ChildSpans,
+// RevealedSpans, ErrorOrigins, ProgressSpans, ...).
+func SpanSetAdd(set *SpanSet, span *Span) bool {
+	if *set == nil || (*set).frozen {
+		*set = newSmallSpanSet()
+	}
+	return (*set).Add(span)
+}
+
+// SpanSetRemove removes span from the span relation *set, returning the
+// relation to the shared emptySpanSet once it is empty so its storage can be
+// collected. It reports whether span was removed.
+func SpanSetRemove(set *SpanSet, span *Span) bool {
+	if *set == nil || (*set).frozen {
+		return false
+	}
+	if !(*set).Remove(span) {
+		return false
+	}
+	if len((*set).Order) == 0 && !(*set).deferring {
+		*set = emptySpanSet
+	}
+	return true
 }
 
 func byStartTime(a, b *Span) bool {
@@ -68,14 +139,24 @@ func (set *OrderedSet[K, V]) UnmarshalJSON(p []byte) error {
 }
 
 func (set *OrderedSet[K, V]) Add(value V) bool {
+	if set.frozen {
+		panic("dagui: Add on the shared empty span set; use SpanSetAdd")
+	}
 	key := set.KeyFunc(value)
-	if _, ok := set.Map[key]; ok {
+	if set.Has(key) {
 		return false
 	}
-	if set.Map == nil {
-		set.Map = map[K]V{}
+	if set.Map != nil || !set.small || len(set.Order) >= smallSetMax {
+		if set.Map == nil {
+			// first value of a regular set, or a small set outgrowing its
+			// linear search
+			set.Map = make(map[K]V, len(set.Order)+1)
+			for _, v := range set.Order {
+				set.Map[set.KeyFunc(v)] = v
+			}
+		}
+		set.Map[key] = value
 	}
-	set.Map[key] = value
 	if set.LessFunc != nil && !set.deferring {
 		set.Order = insert(set.Order, value, set.LessFunc)
 	} else {
@@ -84,9 +165,47 @@ func (set *OrderedSet[K, V]) Add(value V) bool {
 	return true
 }
 
+// Has reports whether the set holds a value with the given key. A nil set is
+// empty.
+func (set *OrderedSet[K, V]) Has(key K) bool {
+	_, ok := set.Get(key)
+	return ok
+}
+
+// Get returns the value with the given key, if the set holds one. A nil set
+// is empty.
+func (set *OrderedSet[K, V]) Get(key K) (V, bool) {
+	if set == nil {
+		var zero V
+		return zero, false
+	}
+	if set.Map != nil || !set.small {
+		v, ok := set.Map[key]
+		return v, ok
+	}
+	for _, v := range set.Order {
+		if set.KeyFunc(v) == key {
+			return v, true
+		}
+	}
+	var zero V
+	return zero, false
+}
+
+// Len returns the number of values in the set. A nil set is empty.
+func (set *OrderedSet[K, V]) Len() int {
+	if set == nil {
+		return 0
+	}
+	return len(set.Order)
+}
+
 func (set *OrderedSet[K, V]) Remove(value V) bool {
+	if set.frozen {
+		return false
+	}
 	key := set.KeyFunc(value)
-	if _, ok := set.Map[key]; !ok {
+	if !set.Has(key) {
 		return false
 	}
 	delete(set.Map, key)
@@ -101,10 +220,20 @@ func (set *OrderedSet[K, V]) Remove(value V) bool {
 	if removeIdx < set.sorted {
 		set.sorted--
 	}
+	if len(set.Order) == 0 {
+		// Go maps never shrink, and a set that once held many values (say,
+		// an ancestor's RunningSpans) would otherwise pin their storage
+		// forever.
+		set.Order = nil
+		set.Map = nil
+	}
 	return true
 }
 
 func (set *OrderedSet[K, V]) Clear() {
+	if set.frozen {
+		return
+	}
 	set.Order = nil
 	set.sorted = 0
 	clear(set.Map)

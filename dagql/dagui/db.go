@@ -888,15 +888,17 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		SpanSnapshot: SpanSnapshot{
 			ID: spanID,
 		},
-		ChildSpans:      NewSpanSet(),
-		RunningSpans:    NewSpanSet(),
-		RevealedSpans:   NewSpanSet(),
-		FailedLinks:     NewSpanSet(),
-		CanceledLinks:   NewSpanSet(),
-		ErrorOrigins:    NewSpanSet(),
-		ProgressSpans:   NewSpanSet(),
-		causesViaLinks:  NewSpanSet(),
-		effectsViaLinks: NewSpanSet(),
+		// Every relation starts out sharing the immutable empty set: most
+		// of them stay empty, and SpanSetAdd allocates on the first add.
+		ChildSpans:      emptySpanSet,
+		RunningSpans:    emptySpanSet,
+		RevealedSpans:   emptySpanSet,
+		FailedLinks:     emptySpanSet,
+		CanceledLinks:   emptySpanSet,
+		ErrorOrigins:    emptySpanSet,
+		ProgressSpans:   emptySpanSet,
+		causesViaLinks:  emptySpanSet,
+		effectsViaLinks: emptySpanSet,
 		db:              db,
 	}
 }
@@ -1149,7 +1151,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// associate the span to its parent
 	if span.ParentID.IsValid() {
 		span.ParentSpan = db.initSpan(span.ParentID)
-		if span.ParentSpan.ChildSpans.Add(span) {
+		if SpanSetAdd(&span.ParentSpan.ChildSpans, span) {
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
 		}
@@ -1173,9 +1175,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			// (Otherwise the linking span could just be a child span.)
 			"":
 			linked := db.initSpan(linkedCtx.SpanID)
-			linked.ChildSpans.Add(span)
-			linked.effectsViaLinks.Add(span)
-			span.causesViaLinks.Add(linked)
+			SpanSetAdd(&linked.ChildSpans, span)
+			SpanSetAdd(&linked.effectsViaLinks, span)
+			SpanSetAdd(&span.causesViaLinks, linked)
 		case telemetry.LinkPurposeErrorOrigin:
 			if linkedCtx.SpanID == span.ID {
 				// defense in depth; it's technically possible to link to yourself, and
@@ -1184,7 +1186,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				continue
 			}
 			linked := db.initSpan(linkedCtx.SpanID)
-			span.ErrorOrigins.Add(linked)
+			SpanSetAdd(&span.ErrorOrigins, linked)
 		}
 	}
 
@@ -1198,7 +1200,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				continue
 			}
 			linked := db.initSpan(originID)
-			span.ErrorOrigins.Add(linked)
+			SpanSetAdd(&span.ErrorOrigins, linked)
 		}
 	}
 
@@ -1269,11 +1271,13 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		}
 		db.OutputOf[span.Output][span.CallDigest] = struct{}{}
 
-		// output -> creator
-		if db.CreatorSpans[span.Output] == nil {
-			db.CreatorSpans[span.Output] = NewSpanSet()
+		// output -> creator (usually just the one)
+		creators := db.CreatorSpans[span.Output]
+		if creators == nil {
+			creators = newSmallSpanSet()
+			db.CreatorSpans[span.Output] = creators
 		}
-		db.CreatorSpans[span.Output].Add(span)
+		creators.Add(span)
 
 		db.resolvePendingResumeOutputs(span.Output, span.TraceID)
 		db.resolvePendingLogs(span.Output, span.TraceID)
@@ -1302,9 +1306,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 }
 
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {
-	changed := creator.ChildSpans.Add(span)
-	creator.effectsViaLinks.Add(span)
-	span.causesViaLinks.Add(creator)
+	changed := SpanSetAdd(&creator.ChildSpans, span)
+	SpanSetAdd(&creator.effectsViaLinks, span)
+	SpanSetAdd(&span.causesViaLinks, creator)
 	if changed {
 		db.update(creator)
 	}
@@ -1341,7 +1345,7 @@ func (db *DB) maybeResumeOutput(span *Span) {
 			Output:  span.ResumeOutput,
 		}
 		if db.pendingResumeOutputs[key] == nil {
-			db.pendingResumeOutputs[key] = NewSpanSet()
+			db.pendingResumeOutputs[key] = newSmallSpanSet()
 		}
 		db.pendingResumeOutputs[key].Add(span)
 		return

@@ -5663,10 +5663,10 @@ func (fe *frontendPretty) promoteGeneratorsLocked() {
 	// generate's skipped-module rows visible mid-run alongside the generators
 	// (the final report persists them via the SKIPPED MODULES section).
 	for _, skip := range fe.db.SkippedModuleSpans() {
-		host.RevealedSpans.Add(skip)
+		dagui.SpanSetAdd(&host.RevealedSpans, skip)
 	}
 	for _, regen := range fe.db.RegeneratedModuleSpans() {
-		host.RevealedSpans.Add(regen)
+		dagui.SpanSetAdd(&host.RevealedSpans, regen)
 	}
 	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
@@ -9321,7 +9321,7 @@ func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 		fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
 		if len(span.ErrorOrigins.Order) > 0 && !fe.reportOnly && !fe.finalRender {
 			color := termenv.ANSIBrightBlack
-			_, focusedAnyOrigin := span.ErrorOrigins.Map[fe.FocusedSpan]
+			focusedAnyOrigin := span.ErrorOrigins.Has(fe.FocusedSpan)
 			if time.Since(fe.pressedKeyAt) < keypressDuration && focusedAnyOrigin {
 				color = termenv.ANSIWhite
 			}

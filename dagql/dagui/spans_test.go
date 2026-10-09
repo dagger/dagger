@@ -632,10 +632,10 @@ func TestResumeOutputReparentsRuntimeSpanUnderCreator(t *testing.T) {
 	if asService == nil {
 		t.Fatal("expected asService span")
 	}
-	if _, ok := asService.ChildSpans.Map[runtimeID]; !ok {
+	if !asService.ChildSpans.Has(runtimeID) {
 		t.Fatal("expected creator span to include runtime child")
 	}
-	if _, ok := runtime.causesViaLinks.Map[asServiceID]; !ok {
+	if !runtime.causesViaLinks.Has(asServiceID) {
 		t.Fatal("expected runtime span to causally resume under creator")
 	}
 

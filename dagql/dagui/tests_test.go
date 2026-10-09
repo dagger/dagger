@@ -749,7 +749,7 @@ func sharedAncestorTests(count int) (*DB, SpanSnapshot) {
 	db.ImportSnapshots(snapshots)
 	// The work is also a causal continuation of the case, so its activity and
 	// failures affect the case's aggregate rather than only RunningSpans.
-	db.Spans.Map[work.ID].causesViaLinks.Add(db.Spans.Map[work.ParentID])
+	SpanSetAdd(&db.Spans.Map[work.ID].causesViaLinks, db.Spans.Map[work.ParentID])
 	db.TestView()
 	return db, work
 }

@@ -95,7 +95,7 @@ func (db *DB) PromoteGeneratorsTo(host *Span) {
 	var wire func(parent *Span, nodes []*GeneratorNode)
 	wire = func(parent *Span, nodes []*GeneratorNode) {
 		for _, node := range nodes {
-			parent.RevealedSpans.Add(node.Span)
+			SpanSetAdd(&parent.RevealedSpans, node.Span)
 			wire(node.Span, node.Children)
 		}
 	}
