@@ -4414,7 +4414,13 @@ func (e gqlError) WriteTo(w http.ResponseWriter) {
 	if err != nil {
 		panic(err)
 	}
-	http.Error(w, string(bytes), e.httpCode)
+	// Not http.Error, which labels the body text/plain: GraphQL clients
+	// such as graphql-request only parse a body labelled JSON.
+	w.Header().Del("Content-Length")
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(e.httpCode)
+	w.Write(bytes)
 }
 
 // httpHandlerFunc lets you write an http handler that just returns an error, which will be
@@ -4433,17 +4439,25 @@ func httpHandlerFunc[T any](fn func(http.ResponseWriter, *http.Request, T) error
 			WithField("path", r.URL.Path).
 			WithError(err).Error("failed to serve request")
 
+		var httpErr httpError
+		var gqlErr gqlError
+		isHTTPErr := errors.As(err, &httpErr)
+		isGQLErr := !isHTTPErr && errors.As(err, &gqlErr)
+		if isGQLErr {
+			// Label the GraphQL error body as JSON before the probe below:
+			// its empty Write commits the response headers.
+			w.Header().Set("Content-Type", "application/json")
+		}
+
 		// check whether this is a hijacked connection, if so we can't write any http errors to it
 		if _, testErr := w.Write(nil); testErr == http.ErrHijacked {
 			return
 		}
 
-		var httpErr httpError
-		var gqlErr gqlError
 		switch {
-		case errors.As(err, &httpErr):
+		case isHTTPErr:
 			httpErr.WriteTo(w)
-		case errors.As(err, &gqlErr):
+		case isGQLErr:
 			gqlErr.WriteTo(w)
 		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
