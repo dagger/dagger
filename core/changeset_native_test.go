@@ -23,6 +23,7 @@ func TestFallbackMarkerReason(t *testing.T) {
 	require.Equal(t, "error: "+strings.Repeat("x", 48)+"…", long)
 }
 
+//nolint:gocyclo // one oracle loop over every scenario; the metric counts their setups together
 func TestNativeWorkspaceMergeMatchesCheckout(t *testing.T) {
 	// The engine runs with umask 000. Exercise both it and the usual host
 	// umask: Git's normalization is not a hard-coded 0644/0755 policy.

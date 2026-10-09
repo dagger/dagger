@@ -1418,6 +1418,8 @@ const (
 
 // finishGitCheckout materializes a ref whose objects are already available.
 // tmpref is set only when the caller fetched the objects into a temporary ref.
+//
+//nolint:gocyclo // one sequence of checkout steps, each skipped per inheritance mode; splitting hides their order
 func finishGitCheckout(
 	ctx context.Context,
 	checkoutGit *gitutil.GitCLI,

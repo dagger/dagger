@@ -163,7 +163,7 @@ func gitContentsCheckoutBase(ctx context.Context, srv *dagql.Server, contents da
 	}
 	frame, err := contents.ResultCall()
 	if err != nil || frame == nil {
-		return base, "", "contents-recipe", nil
+		return base, "", "contents-recipe", nil //nolint:nilerr // deliberate: an unreadable recipe means no base, not a failure
 	}
 	isCheckout := func(field string) bool { return field == "__fullCheckout" || field == "__checkout" }
 	switch {
@@ -185,7 +185,7 @@ func gitContentsCheckoutBase(ctx context.Context, srv *dagql.Server, contents da
 		}
 		receiver, err := frame.ReceiverCall(ctx)
 		if err != nil || receiver == nil || !isCheckout(receiver.Field) {
-			return base, "", "contents-not-checkout", nil
+			return base, "", "contents-not-checkout", nil //nolint:nilerr // deliberate: an unreadable recipe means no base, not a failure
 		}
 		selector, err := contents.Self().Dir.GetOrEval(ctx, contents.Result)
 		if err != nil {
@@ -198,11 +198,11 @@ func gitContentsCheckoutBase(ctx context.Context, srv *dagql.Server, contents da
 	case frame.Field == "__pullDirectory":
 		receiver, err := frame.ReceiverCall(ctx)
 		if err != nil || receiver == nil {
-			return base, "", "contents-recipe", nil
+			return base, "", "contents-recipe", nil //nolint:nilerr // deliberate: an unreadable recipe means no base, not a failure
 		}
 		id, err := receiver.RecipeID(ctx)
 		if err != nil {
-			return base, "", "contents-recipe", nil
+			return base, "", "contents-recipe", nil //nolint:nilerr // deliberate: an unreadable recipe means no base, not a failure
 		}
 		ws, err := dagql.NewID[*Workspace](id).Load(ctx, srv)
 		if err != nil {

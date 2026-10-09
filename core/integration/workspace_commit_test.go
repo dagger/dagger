@@ -985,7 +985,9 @@ func (WorkspaceSuite) TestWorkspaceRetainedCheckoutFullCheckouts(ctx context.Con
 	require.NoError(t, err)
 	fullCheckout := func(id core.ID) *core.Directory {
 		var out struct {
-			Node struct{ FullCheckout struct{ ID core.ID } `json:"__fullCheckout"` }
+			Node struct {
+				FullCheckout struct{ ID core.ID } `json:"__fullCheckout"`
+			}
 		}
 		require.NoError(t, c.Do(ctx, &dagger.Request{
 			Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { __fullCheckout { id } } } }`,

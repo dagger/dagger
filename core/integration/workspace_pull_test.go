@@ -326,7 +326,9 @@ func (WorkspaceSuite) TestWorkspaceRetainedCheckoutTrees(ctx context.Context, t 
 	receiverID, err := head.AsWorkspace(asWorkspace).ID(ctx)
 	require.NoError(t, err)
 	var fullCheckout struct {
-		Node struct{ FullCheckout struct{ ID core.ID } `json:"__fullCheckout"` }
+		Node struct {
+			FullCheckout struct{ ID core.ID } `json:"__fullCheckout"`
+		}
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{
 		Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { __fullCheckout { id } } } }`,

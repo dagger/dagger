@@ -53,18 +53,16 @@ func (p *mergePhases) run(ctx context.Context, phase string, fn func(context.Con
 	return err
 }
 
-// record records phase as having run from start until now, and returns now:
-// the next phase's start.
-func (p *mergePhases) record(ctx context.Context, phase string, start phaseMark) phaseMark {
-	end := phaseNow()
+// record records phase as having run from start until now.
+func (p *mergePhases) record(ctx context.Context, phase string, start phaseMark) {
 	if p == nil {
-		return end
+		return
 	}
+	end := phaseNow()
 	if start.ns != 0 && end.ns != 0 {
 		wcprof.RecordOp(ctx, wcprof.OpKindIO, p.prefix+"."+phase, wcprof.OpOpts{}, start.ns, end.ns, wcprof.OutcomeOK)
 	}
 	p.add(phase, end.wall.Sub(start.wall))
-	return end
 }
 
 func (p *mergePhases) add(phase string, d time.Duration) {

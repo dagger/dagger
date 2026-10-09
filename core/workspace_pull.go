@@ -93,6 +93,8 @@ type WorkspacePullPick struct {
 // leaves both input workspaces intact. Only source HEAD is fetched, not its
 // working tree or overlay. The result contains the integrated HEAD and the
 // receiver's remaining uncommitted changes, merged against that HEAD.
+//
+//nolint:gocyclo // plan and apply share one fold over the source's commits; splitting hides the order of its steps
 func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Directory], source *GitRef, dirty *Changeset, opts WorkspacePullOpts, apply bool) (*Directory, []WorkspacePullPick, error) {
 	if err := opts.Validate(); err != nil {
 		return nil, nil, err
