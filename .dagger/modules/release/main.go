@@ -409,7 +409,7 @@ func (r *Release) Publish( //nolint:gocyclo
 				}()
 
 				if semver.IsValid(version) && !isPrerelease {
-					notes := dag.Changelog(r.Workspace).LookupEntry(component.path, version)
+					notes := dag.Changie(r.Workspace).LookupEntry(component.path, version)
 					repo := "https://github.com/dagger/dagger"
 					if githubHost != "" {
 						repo = "https://" + githubHost + "/dagger/dagger"

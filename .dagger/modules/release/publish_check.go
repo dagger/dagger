@@ -208,7 +208,7 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagge
 	// A stable release reads release notes from a changelog file per published
 	// component: the root .changes/<tag>.md for the engine and CLI (cli-dev's
 	// publish step), and <component>/.changes/<tag>.md for each SDK and the Helm
-	// chart (Changelog.lookupEntry, used when cutting their GitHub releases). The
+	// chart (Changie.lookupEntry, used when cutting their GitHub releases). The
 	// pre-release working tree under test carries none of these until the release
 	// is actually cut, so stub them all.
 	//
