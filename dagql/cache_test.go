@@ -7594,6 +7594,41 @@ func TestResolveSessionResourceCandidatesOrdering(t *testing.T) {
 	assert.Equal(t, candidates[2].Value, "alpha")
 }
 
+// The lookup resource filter reads the session's handle set after dropping
+// sessionMu, and readers run it concurrently under the egraphMu read lock
+// (part tasks and demands), so binding a handle must not modify a set the
+// filter may be reading.
+func TestCacheResourceFilterRacesHandleBinding(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	assert.NilError(t, c.BindSessionResource(ctx, "s", "client", "h0", "v"))
+	res := &sharedResult{requiredSessionResources: set.NewTreeSet(compareSessionResourceHandles)}
+	res.requiredSessionResources.Insert("h0")
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := range 2000 {
+			assert.Check(t, c.BindSessionResource(ctx, "s", "client", SessionResourceHandle(fmt.Sprintf("h%d", i+1)), "v"))
+		}
+	}()
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 2000 {
+				c.egraphMu.RLock()
+				ok := c.sessionSatisfiesResourceRequirementsLocked("s", res)
+				c.egraphMu.RUnlock()
+				assert.Check(t, ok)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncestors(t *testing.T) {
 	t.Parallel()
 

@@ -692,6 +692,8 @@ func (c *Cache) sessionSatisfiesResourceRequirementsLocked(sessionID string, res
 		return true
 	}
 
+	// The set is immutable once published (BindSessionResource replaces it),
+	// so it can be read after sessionMu is dropped.
 	c.sessionMu.Lock()
 	available := c.sessionHandlesBySession[sessionID]
 	c.sessionMu.Unlock()

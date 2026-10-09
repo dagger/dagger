@@ -927,10 +927,16 @@ func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientI
 	if c.sessionHandlesBySession == nil {
 		c.sessionHandlesBySession = make(map[string]*set.TreeSet[SessionResourceHandle])
 	}
-	if c.sessionHandlesBySession[sessionID] == nil {
-		c.sessionHandlesBySession[sessionID] = set.NewTreeSet(compareSessionResourceHandles)
+	// A published handle set is never modified: the lookup filter reads it
+	// after dropping sessionMu. A new handle replaces the set with a copy.
+	if handles := c.sessionHandlesBySession[sessionID]; handles == nil || !handles.Contains(handle) {
+		next := set.NewTreeSet(compareSessionResourceHandles)
+		if handles != nil {
+			next = handles.Copy()
+		}
+		next.Insert(handle)
+		c.sessionHandlesBySession[sessionID] = next
 	}
-	c.sessionHandlesBySession[sessionID].Insert(handle)
 	c.sessionMu.Unlock()
 
 	return nil
