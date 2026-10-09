@@ -605,16 +605,27 @@ type testClosureKeys struct {
 	mu       sync.Mutex
 	claimed  map[string]bool
 	covered  map[string]bool
+	lost     map[string]bool
+	repaired map[string]bool
 	epoch    uint64
 	attempts int
+	repairs  int
 	// afterSkip, if set, runs once, right after the first walk is told a
 	// closure is covered: the moment an exporter's failed write could release
 	// a claim inside the closure that walk has just decided to skip.
 	afterSkip func()
+	// beforeRepair, if set, runs once when a walk asks whether to repair: the
+	// moment the root that walk failed to claim could be released.
+	beforeRepair func()
 }
 
 func newTestClosureKeys() *testClosureKeys {
-	return &testClosureKeys{claimed: map[string]bool{}, covered: map[string]bool{}}
+	return &testClosureKeys{
+		claimed:  map[string]bool{},
+		covered:  map[string]bool{},
+		lost:     map[string]bool{},
+		repaired: map[string]bool{},
+	}
 }
 
 func (s *testClosureKeys) ClaimCallPayload(key string) bool {
@@ -625,6 +636,25 @@ func (s *testClosureKeys) ClaimCallPayload(key string) bool {
 		return false
 	}
 	s.claimed[key] = true
+	delete(s.lost, key)
+	return true
+}
+
+func (s *testClosureKeys) StartCallPayloadRepair(root string) bool {
+	s.mu.Lock()
+	before := s.beforeRepair
+	s.beforeRepair = nil
+	s.mu.Unlock()
+	if before != nil {
+		before()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.lost) == 0 || s.covered[root] || s.repaired[root] {
+		return false
+	}
+	s.repaired[root] = true
+	s.repairs++
 	return true
 }
 
@@ -667,6 +697,22 @@ func (s *testClosureKeys) release(key string) {
 	delete(s.claimed, key)
 	s.covered = map[string]bool{}
 	s.epoch++
+}
+
+// lose mirrors a write the exporter gave up on: a release that stays
+// pending until something claims the frame again.
+func (s *testClosureKeys) lose(key string) {
+	s.release(key)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lost[key] = true
+	s.repaired = map[string]bool{}
+}
+
+func (s *testClosureKeys) repairsStarted() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.repairs
 }
 
 func (s *testClosureKeys) takeAttempts() int {
@@ -718,6 +764,11 @@ func TestRecordCallPayloadsStopsAtCoveredClosure(t *testing.T) {
 	require.NotNil(t, rec.get(topDigest.String()))
 	require.LessOrEqual(t, keys.takeAttempts(), 2,
 		"extending a covered chain by one call must not re-claim the frames below it")
+
+	recordCallPayloads(ctx, keys, topDigest.String(), top)
+	require.Equal(t, depth+1, rec.emissionCount())
+	require.Equal(t, 1, keys.takeAttempts(), "with nothing lost, a replay stops at its root's claim")
+	require.Zero(t, keys.repairsStarted())
 }
 
 // Coverage is only a shortcut: a frame claimed but not yet walked (here, the
@@ -790,6 +841,144 @@ func TestRecordCallPayloadsRewalksAfterReleaseDuringPrunedWalk(t *testing.T) {
 		}
 	}
 	require.Equal(t, 2, released)
+}
+
+// A frame another producer held while a walk passed it, and whose write the
+// exporter then gave up on, must be emitted again by a later walk even when
+// that walk starts at a root that is already claimed: otherwise every replay
+// of the root stops at its claim and the frame stays missing for the client.
+func TestRecordCallPayloadsReplayRepairsLostFrame(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	frames := chainCall(5)
+	digests := make([]string, len(frames))
+	for i, frame := range frames {
+		dgst, err := frame.RecipeDigest(ctx)
+		require.NoError(t, err)
+		digests[i] = dgst.String()
+	}
+
+	keys := newTestClosureKeys()
+	require.True(t, keys.ClaimCallPayload(digests[1]), "another producer holds the frame")
+	recordCallPayloads(ctx, keys, digests[4], frames[4])
+	require.Equal(t, 4, rec.emissionCount())
+	require.Nil(t, rec.get(digests[1]))
+
+	keys.lose(digests[1])
+	recordCallPayloads(ctx, keys, digests[4], frames[4])
+	require.NotNil(t, rec.get(digests[1]), "a replay must re-emit the lost frame")
+	require.Equal(t, 5, rec.emissionCount(), "nothing else is emitted twice")
+	require.False(t, keys.ClaimCallPayload(digests[1]), "the lost frame is claimed again")
+}
+
+// A call that rides its own span repairs the same way when its root was
+// already claimed.
+func TestRecordCallPayloadsForSpanRepairsLostFrame(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	frames := chainCall(3)
+	digests := make([]string, len(frames))
+	for i, frame := range frames {
+		dgst, err := frame.RecipeDigest(ctx)
+		require.NoError(t, err)
+		digests[i] = dgst.String()
+	}
+
+	keys := newTestClosureKeys()
+	require.True(t, keys.ClaimCallPayload(digests[2]))
+	recordCallPayloadsForSpan(ctx, keys, digests[2], frames[2], true, true)
+	require.Equal(t, 2, rec.emissionCount())
+
+	keys.lose(digests[0])
+	recordCallPayloadsForSpan(ctx, keys, digests[2], frames[2], false, true)
+	require.Equal(t, 3, rec.emissionCount(), "the replay must re-emit only the lost frame")
+	require.Equal(t, digests[0], rec.snapshot()[2].digest)
+}
+
+// While a loss stays pending (here, one no replay reaches), each root walks
+// at most once, and a walk prunes at the closures earlier repair walks
+// covered: re-driving a deep chain costs a claim per replay, not a walk.
+func TestRecordCallPayloadsRepairWalksOncePerLoss(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	const depth = 200
+	frames := chainCall(depth)
+	digests := make([]string, len(frames))
+	for i, frame := range frames {
+		dgst, err := frame.RecipeDigest(ctx)
+		require.NoError(t, err)
+		digests[i] = dgst.String()
+	}
+
+	keys := newTestClosureKeys()
+	recordCallPayloads(ctx, keys, digests[depth-1], frames[depth-1])
+	require.Equal(t, depth, rec.emissionCount())
+	keys.takeAttempts()
+
+	keys.lose("xxh3:unreachable")
+	recordCallPayloads(ctx, keys, digests[depth-1], frames[depth-1])
+	require.Equal(t, 1, keys.repairsStarted())
+	require.Equal(t, depth, keys.takeAttempts(),
+		"the loss cleared coverage, so the first repair walk claims over the whole chain once")
+	require.Equal(t, depth, rec.emissionCount(), "nothing in the chain was lost")
+
+	for range 3 {
+		recordCallPayloads(ctx, keys, digests[depth-1], frames[depth-1])
+	}
+	require.Equal(t, 1, keys.repairsStarted(), "a root walks once per loss")
+	require.Equal(t, 3, keys.takeAttempts(), "later replays claim only their root")
+
+	recordCallPayloads(ctx, keys, digests[depth/2], frames[depth/2])
+	require.Equal(t, 1, keys.repairsStarted(), "a root the repair walk covered needs no walk")
+	require.Equal(t, 1, keys.takeAttempts())
+
+	top := testResultCall("top", &Void{}, frames[depth-1])
+	topDigest, err := top.RecipeDigest(ctx)
+	require.NoError(t, err)
+	require.True(t, keys.ClaimCallPayload(topDigest.String()), "another producer holds the new root")
+	keys.takeAttempts()
+	recordCallPayloads(ctx, keys, topDigest.String(), top)
+	require.Equal(t, 2, keys.repairsStarted())
+	require.LessOrEqual(t, keys.takeAttempts(), 2,
+		"a new root's repair walk stops at the closure the earlier one covered")
+
+	keys.lose("xxh3:unreachable-too")
+	recordCallPayloads(ctx, keys, digests[depth-1], frames[depth-1])
+	require.Equal(t, 3, keys.repairsStarted(), "a new loss lets the root walk again")
+}
+
+// A repair walk starts at a root someone else claimed. If that claim is
+// released before the walk reads the release epoch, the walk must not record
+// the root as covered: it never logged or claimed it, and later walks would
+// prune there and never emit it.
+func TestRecordCallPayloadsRepairWalkDoesNotCoverUnownedRoot(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	frames := chainCall(4)
+	digests := make([]string, len(frames))
+	for i, frame := range frames {
+		dgst, err := frame.RecipeDigest(ctx)
+		require.NoError(t, err)
+		digests[i] = dgst.String()
+	}
+
+	keys := newTestClosureKeys()
+	recordCallPayloads(ctx, keys, digests[2], frames[2])
+	require.Equal(t, 3, rec.emissionCount())
+
+	// Some other frame is lost, and the root's own claim is released right
+	// after this walk failed to claim it.
+	keys.lose(digests[0])
+	keys.beforeRepair = func() { keys.release(digests[2]) }
+	recordCallPayloads(ctx, keys, digests[2], frames[2])
+	require.Equal(t, 1, keys.repairsStarted())
+	require.False(t, keys.CallPayloadClosureCovered(digests[2]),
+		"a repair walk must not cover a root it does not own")
+
+	recordCallPayloads(ctx, keys, digests[3], frames[3])
+	var root int
+	for _, record := range rec.snapshot() {
+		if record.digest == digests[2] {
+			root++
+		}
+	}
+	require.Equal(t, 2, root, "a later walk must reach and re-emit the released root")
 }
 
 // A frame the cache stops holding, deep inside a closure an earlier walk
