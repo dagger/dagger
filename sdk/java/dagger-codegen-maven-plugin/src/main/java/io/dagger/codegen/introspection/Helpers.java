@@ -7,6 +7,7 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterSpec;
 import com.palantir.javapoet.TypeName;
 import java.util.List;
+import java.util.stream.Collectors;
 import javax.lang.model.element.Modifier;
 
 public class Helpers {
@@ -151,23 +152,97 @@ public class Helpers {
     }
   }
 
+  /**
+   * The Java spelling of a field, argument or input field name: camelCase with acronyms written
+   * like words ({@code asJson}, {@code withGpu}) when the schema JSON has the name's words, else
+   * the schema name as is. Strings sent to the API always use the schema name.
+   */
+  static String javaName(String name, List<IdentifierWord> words) {
+    if (words == null || words.isEmpty()) {
+      return name;
+    }
+    return Identifiers.format(words, Identifiers.Casing.CAMEL, true);
+  }
+
+  /** The Java method name of a field. */
   static String formatName(Field field) {
+    return escapeMethodName(field, javaName(field.getName(), field.getWords()));
+  }
+
+  /**
+   * The Java method name of a field before identifier words: the schema name, escaped. When it
+   * differs from {@link #formatName(Field)}, it's kept as a deprecated alias.
+   */
+  static String legacyName(Field field) {
+    return escapeMethodName(field, field.getName());
+  }
+
+  private static String escapeMethodName(Field field, String name) {
     if ("Container".equals(field.getParentObject().getName()) && "import".equals(field.getName())) {
       return "importTarball";
-    } else if (JAVA_KEYWORDS.contains(field.getName())
-        || (JAVA_OBJECT_METHODS.contains(field.getName()) && field.getRequiredArgs().isEmpty())) {
-      return field.getName() + "_";
+    } else if (JAVA_KEYWORDS.contains(name)
+        || (JAVA_OBJECT_METHODS.contains(name) && field.getRequiredArgs().isEmpty())) {
+      return name + "_";
     } else {
-      return field.getName();
+      return name;
     }
   }
 
+  /**
+   * The class holding a field's optional arguments. It keeps the name derived from the schema name:
+   * like other class names, it doesn't follow the identifier words, and an alias differing only in
+   * case would clash with it on case-insensitive file systems.
+   */
+  static String argumentsClassName(Field field) {
+    return capitalize(legacyName(field)) + "Arguments";
+  }
+
+  /** The Java variable name of an argument or input field. */
   static String formatName(InputObject arg) {
-    if (JAVA_KEYWORDS.contains(arg.getName())) {
-      return "_" + arg.getName();
+    return escapeVariableName(javaName(arg.getName(), arg.getWords()));
+  }
+
+  private static String escapeVariableName(String name) {
+    if (JAVA_KEYWORDS.contains(name)) {
+      return "_" + name;
     } else {
-      return arg.getName();
+      return name;
     }
+  }
+
+  /** The name of the "with" setter of an argument or input field. */
+  static String withSetterName(InputObject var) {
+    return "with" + capitalize(javaName(var.getName(), var.getWords()));
+  }
+
+  /** The name of the "with" setter of an argument or input field before identifier words. */
+  static String legacyWithSetterName(InputObject var) {
+    return "with" + capitalize(var.getName());
+  }
+
+  /**
+   * A deprecated method under a name the generator used before identifier words, forwarding to the
+   * method that replaces it.
+   */
+  static MethodSpec deprecatedAlias(MethodSpec target, String legacyName, Modifier... modifiers) {
+    MethodSpec.Builder builder =
+        MethodSpec.methodBuilder(legacyName)
+            .addModifiers(Modifier.PUBLIC)
+            .addModifiers(modifiers)
+            .addTypeVariables(target.typeVariables())
+            .returns(target.returnType())
+            .addParameters(target.parameters())
+            .addExceptions(target.exceptions())
+            .addAnnotation(Deprecated.class)
+            .addJavadoc("@deprecated Use {@link #$L} instead.\n", target.name());
+    String args =
+        target.parameters().stream().map(ParameterSpec::name).collect(Collectors.joining(", "));
+    if (TypeName.VOID.equals(target.returnType())) {
+      builder.addStatement("$L($L)", target.name(), args);
+    } else {
+      builder.addStatement("return $L($L)", target.name(), args);
+    }
+    return builder.build();
   }
 
   static MethodSpec getter(String var, TypeName type) {
@@ -194,7 +269,7 @@ public class Helpers {
 
   static MethodSpec withSetter(InputObject var, TypeName type, TypeName returnType, String doc) {
     MethodSpec.Builder builder =
-        MethodSpec.methodBuilder("with" + capitalize(var.getName()))
+        MethodSpec.methodBuilder(withSetterName(var))
             .addModifiers(Modifier.PUBLIC)
             .addParameter(type, Helpers.formatName(var))
             .returns(returnType)

@@ -6,7 +6,9 @@ import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import javax.lang.model.element.Modifier;
 
 /**
@@ -46,6 +48,8 @@ class InterfaceVisitor extends AbstractVisitor {
     }
 
     if (type.getFields() != null) {
+      Set<String> methodNames =
+          type.getFields().stream().map(Helpers::formatName).collect(Collectors.toSet());
       for (Field field : type.getFields()) {
         MethodSpec.Builder methodBuilder =
             MethodSpec.methodBuilder(Helpers.formatName(field))
@@ -87,7 +91,14 @@ class InterfaceVisitor extends AbstractVisitor {
           methodBuilder.addAnnotation(Deprecated.class);
         }
 
-        interfaceBuilder.addMethod(methodBuilder.build());
+        MethodSpec method = methodBuilder.build();
+        interfaceBuilder.addMethod(method);
+        // A method renamed by identifier words keeps its old name as a deprecated default
+        // method, so implementations don't need to provide it.
+        String legacyName = Helpers.legacyName(field);
+        if (!legacyName.equals(method.name()) && !methodNames.contains(legacyName)) {
+          interfaceBuilder.addMethod(Helpers.deprecatedAlias(method, legacyName, Modifier.DEFAULT));
+        }
       }
     }
 
