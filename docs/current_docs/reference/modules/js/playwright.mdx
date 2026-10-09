@@ -21,22 +21,45 @@ dagger module install dagger.io/js/playwright
 
 Pin your project's `@playwright/test` version exactly (or commit a lockfile).
 The module runs your tests in the `mcr.microsoft.com/playwright` image
-matching the version installed per `package-lock.json`. Without a lockfile it
-uses the version declared in `package.json`, where a floating range like
-`^1.58.2` can install a newer Playwright than the image's browsers.
+matching the version in the lockfile (`package-lock.json`, `pnpm-lock.yaml`,
+`yarn.lock`, or `bun.lock`). Without a lockfile it uses the version declared in
+`package.json`, where a floating range like `^1.58.2` is read as its lower
+bound and can install a newer Playwright than the image's browsers.
 
 ## Run the check
 
 ```bash
-dagger check                  # run every check in the workspace
-dagger check dag://playwright/test  # just the Playwright suite
+dagger check --playwright                                    # every Playwright project
+dagger check --playwright-project=apps/web                   # one project
+dagger check --playwright-project=apps/web --playwright-test-file=tests/login.spec.ts   # one test file
 ```
 
-`playwright:test` finds the directory containing `playwright.config.*`,
-installs your project's dependencies, and runs `npx playwright test`. If your
-config declares a [`webServer`](https://playwright.dev/docs/test-webserver),
-Playwright starts your app inside the container exactly as it does on your
-machine, with no further setup needed.
+The check is `playwright/projects/tests/test`. It installs your project's
+dependencies and runs the project's own `playwright test` once per project,
+over the selected test files. If your config declares a
+[`webServer`](https://playwright.dev/docs/test-webserver), Playwright starts
+your app inside the container exactly as it does on your machine, with no
+further setup needed.
+
+## Projects and test files
+
+| Flag | Collection | Key |
+| --- | --- | --- |
+| `--playwright-project` | `projects` | Directory holding the `playwright.config`, relative to the workspace root. The root is `.` |
+| `--playwright-test-file` | `tests`, on a project | Test file path, relative to the project |
+
+List the keys with `dagger list playwright-projects -a` and `dagger list playwright-test-files -a`. [Select collection items](../../../using/checking.mdx#select-collection-items) describes how to select items.
+
+A project is a directory holding `playwright.config.ts`, `.js`, `.mjs`, `.cjs`,
+`.mts`, or `.cts`. These are directories, not the browser `projects` inside a
+config. Projects are found at or below the directory `dagger` runs from, plus
+the nearest project that encloses it. Hidden directories and `node_modules` are
+left out.
+
+Test files are found by reading the config's `testDir`, `testMatch`, and
+`testIgnore` when they are literal values, including those of each browser
+project, and Playwright's defaults otherwise. A project where no test file is
+found has the single key `.`, which runs the whole project.
 
 ## Wire in the service under test
 
@@ -45,7 +68,7 @@ duplicating that knowledge in `webServer`. Two steps:
 
 **1. Set the `service` setting to a module reference.** That is the install
 name of another module in your `dagger.toml`, and a function on it that returns
-a `Service`. Run `dagger artifact list --type Service` to list their DAG addresses:
+a `Service`. Run `dagger list services` to list their DAG addresses:
 
 ```toml
 [modules.playwright.settings]
@@ -113,11 +136,10 @@ The module sets `CI=true`, so review what your `playwright.config` keys off
 
 List the current settings with `dagger module settings playwright`, then change one
 with `dagger module settings playwright <key> <value>`. They live in `dagger.toml`
-under `[modules.playwright.settings]`:
+under `[modules.playwright.settings]`, and apply to every project. To test
+projects against different services, install the module twice under different
+names.
 
-- `sourcePath` (default: discover) is the workspace path of the Playwright
-  project. Set it when the workspace holds more than one
-  `playwright.config.*`.
 - `service` is the DAG address (`"dag://module/function"`) of the service under
   test.
 - `serviceHostname` (default `frontend`) is the hostname the service is bound as
@@ -126,15 +148,27 @@ under `[modules.playwright.settings]`:
   `mcr.microsoft.com/playwright:v<version>-noble` image.
 - `baseCtr` is a full `Container` override. It is also wireable, e.g.
   `baseCtr = "dag://base-images/chromium"`.
-- `packageManager` (default `npm`) is the package manager used to install
-  dependencies. Set it to `yarn`, `pnpm`, or `bun` to match your project.
+- `packageManager` (default empty) is the package manager that installs
+  dependencies: `npm`, `yarn`, `pnpm`, or `bun`. Empty detects it from the
+  `packageManager` field of `package.json`, then from the lockfile, then uses
+  npm.
+- `installFlags` (default empty) are extra arguments for the install command,
+  such as `["--ignore-scripts"]`.
+- `setup` (default empty) are shell commands run in the project directory after
+  dependencies are installed and before the tests, such as
+  `["pnpm --filter @my/lib build"]` to build workspace packages the tests
+  import.
+- `environment` (default empty) sets environment variables in the test
+  containers, as `KEY=VALUE`.
 - `localhostProxy` (default `false`) enables the localhost proxy described
   under secure contexts above.
 - `args` (default `[]`) are extra `playwright test` arguments, e.g.
   `["--project", "chromium"]`.
-- `shards` (default `1`) splits the check across that many parallel
-  containers. Shards run concurrently against the same wired service and
-  fail fast on the first failure.
+- `shards` (default `1`) splits each project's run across that many parallel
+  containers against the same wired service. With every test file selected,
+  each container runs one Playwright shard. With some selected, the selected
+  files are split into up to that many groups. Every failing container is
+  reported.
 
 ```toml
 [modules.playwright.settings]
@@ -144,13 +178,15 @@ shards = 4
 
 ## Get the HTML report
 
-To inspect a failing run, call `report`. It runs the suite tolerating
-failures and returns the HTML report directory. Include the `html` reporter
-in your config, then export the report to your machine:
+To inspect a failing run, call `report` on a project. It runs the project's
+tests tolerating failures, with the `html` reporter added, and returns the HTML
+report directory. Export it to your machine:
 
 ```bash
-dagger api call playwright report -o ./playwright-report
+dagger api call playwright project --path=apps/web report export --path=./playwright-report
 ```
+
+`project` returns the project that contains a path.
 
 ## Working with other modules
 

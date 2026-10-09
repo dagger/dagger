@@ -1,14 +1,14 @@
 ---
 title: "Staticcheck"
 slug: /reference/modules/go/staticcheck
-description: "Analyze Go modules across a workspace with Staticcheck."
+description: "Analyze the Go projects in a workspace with Staticcheck."
 ---
 
 # Staticcheck
 
-The Staticcheck module analyzes Go source as a Dagger check. It discovers
-`go.mod` files and runs Staticcheck separately in each selected Go module,
-using the same configuration locally and in CI.
+The Staticcheck module analyzes Go source as a Dagger check, using the same
+configuration locally and in CI. Each `staticcheck.conf` roots a project, and
+the module analyzes each project with its configuration.
 
 ## Add it to your workspace
 
@@ -22,41 +22,42 @@ in the workspace.
 ## Run the check
 
 ```bash
-dagger check                      # run every check in the workspace
-dagger check dag://staticcheck/lint-all # analyze the selected Go modules
+dagger check --staticcheck                              # analyze every project
+dagger check --staticcheck-project=services/api        # analyze one project
 ```
 
-`lint-all` discovers Go modules at or below the working directory, including
-the enclosing module when run from a subdirectory. Run it from the workspace
-root to check every module. It runs `staticcheck ./...` in each selected module
-and fails if any module has diagnostics. Test files are analyzed too; tests and
-generators are not executed.
+The check is `staticcheck/projects/lint`. It runs `staticcheck` on the packages
+of each Go module a project covers, on the toolchain that module's `go.mod`
+asks for. Test files are analyzed too; tests and generators are not executed.
 
 The module includes `staticcheck.conf` files with their directory structure
-intact, preserving configuration inheritance. Go and native sources, embedded
-assets, and local `go.mod` replacement dependencies within the workspace are
-included automatically. Go module, build, and Staticcheck caches are shared
-between runs.
+intact. Staticcheck merges a package's `staticcheck.conf` files itself, so a
+nested project inherits its parent's configuration. Go and native sources,
+embedded assets, and local `go.mod` replacement dependencies within the
+workspace are included automatically. Go module, build, and Staticcheck caches
+are shared between runs.
 
-## Module discovery
+## Projects
 
-`lint-all` finds Go modules by looking for `go.mod` files:
+| Flag | Collection | Key |
+| --- | --- | --- |
+| `--staticcheck-project` | `projects` | Directory holding the `staticcheck.conf`, relative to the workspace root. The root is `.` |
 
-- Every directory at or below the directory `dagger` runs from that holds a
-  `go.mod` is a Go module. Run `dagger` from the workspace root to cover the
-  whole repository.
-- When `dagger` runs from a directory inside a Go module, that enclosing module
-  is included as well.
-- Every `go.mod` counts, including those under `vendor/`, `testdata/`,
-  `examples/`, hidden directories, and directories listed in `.gitignore`.
-- A directory is a module when its `go.mod` parses and it holds at least one
-  Go file, so an empty module or a placeholder `go.mod` is left out.
+List the keys with `dagger list staticcheck-projects -a`. [Select collection items](../../../using/checking.mdx#select-collection-items) describes how to select items.
 
-Exclude a module with the `lint` setting, which selects module roots by path
-from the workspace root. `"!vendor"` excludes the module at `vendor` and any
-module below it, and exclusions always win. The pattern rules are the same as
-the Go module's `test` setting, listed under
-[Module discovery](../go.mdx#module-discovery).
+A project is a directory holding a `staticcheck.conf`. It covers everything
+below it that a nested `staticcheck.conf` does not claim: each Go module below
+it, and the part below it of a Go module that encloses it. A repository without
+a `staticcheck.conf` has no projects, so nothing is analyzed.
+
+Projects are found at or below the directory `dagger` runs from, plus the
+nearest project that encloses it. Run `dagger` from the workspace root to
+cover the whole repository.
+
+Exclude a project with the `lint` setting, which selects project roots by path
+from the workspace root. The pattern rules are the same as the Go module's
+`test` setting, listed under [Module discovery](../go.mdx#module-discovery). An
+excluded project is still listed, and its check passes without running.
 
 ## Configure it
 
@@ -64,10 +65,10 @@ List the current settings with `dagger module settings staticcheck`, then
 change one with `dagger module settings staticcheck <key> <value>`. Settings
 live in `dagger.toml` under `[modules.staticcheck.settings]`:
 
-- `version` (default `v0.8.1`) selects the Staticcheck release every module is
+- `version` (default `v0.8.1`) selects the Staticcheck release every project is
   checked with. It is installed into the lint container unless that container
   already carries Staticcheck.
-- `goVersion` sets one Go toolchain for every module, overriding the `go`
+- `goVersion` sets one Go toolchain for every Go module, overriding the `go`
   directive in each module's `go.mod`. Without it, each module is checked in
   `golang:<version>-alpine` for the version its own `go.mod` asks for. It is
   separate from the Go module's `version`, which applies to tests and
@@ -78,11 +79,11 @@ live in `dagger.toml` under `[modules.staticcheck.settings]`:
   so `goVersion` is ignored alongside it.
 - `includeExtraFiles` (default empty) adds workspace-root path patterns for
   files that automatic source discovery misses.
-- `lint` (default `["**"]`) selects module roots to analyze. A bare path or
-  `path/**` includes that module and its descendants; `!path` excludes them.
-  Exclusions always win. `"**"` and `"*"` match every module. With no positive
-  pattern, every module is included unless excluded; `["!**"]` skips all
-  modules. Other glob forms are not supported by this setting.
+- `lint` (default `["**"]`) selects project roots to analyze. A bare path or
+  `path/**` includes that project and the projects below it; `!path` excludes
+  them. Exclusions always win. `"**"` and `"*"` match every project. With no
+  positive pattern, every project is included unless excluded; `["!**"]` skips
+  all projects. Other glob forms are not supported by this setting.
 
 Edit list-valued settings directly in `dagger.toml`:
 

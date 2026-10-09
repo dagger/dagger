@@ -6,7 +6,10 @@ description: "Run Vitest tests for modern JavaScript and TypeScript workspaces."
 
 # Vitest
 
-The Vitest module runs Vitest tests for JavaScript and TypeScript projects. Reach for it when the project uses Vitest, especially Vite apps and modern frontend packages, whether you want to run the suite as a workspace check, validate frontend packages and libraries, or list discovered tests when test selection is unclear.
+The Vitest module runs Vitest tests for JavaScript and TypeScript projects as a
+Dagger check, locally, in CI, and in Dagger Cloud. Each Vitest or Vite config
+roots a project, and each project's test files are a collection, so a check can
+run one project, one test file, or everything.
 
 ## Add it to your workspace
 
@@ -17,33 +20,78 @@ dagger module install dagger.io/js/vitest
 ## Run the tests
 
 ```bash
-dagger check             # run every check in the workspace
-dagger check dag://vitest/test # run the Vitest suite
+dagger check --vitest                                            # run every Vitest project
+dagger check --vitest-project=apps/web                           # run one project
+dagger check --vitest-project=apps/web --vitest-test-file=src/add.test.js   # run one test file
 ```
 
-`vitest:test` installs dependencies and runs the Vitest suite over the workspace (excluding `node_modules`, `dist`, and `build`). It automatically registers an OpenTelemetry hook, so individual tests appear as spans in the Dagger TUI and Dagger Cloud without changing the project's Vitest config.
+The check is `vitest/projects/tests/test`. It installs dependencies and runs
+the project's own Vitest once per project, over the selected test files. With
+every file in the project selected, it runs `vitest` with the project's config.
+With some selected, it runs only those files.
 
-## Test options
+The module registers an OpenTelemetry hook, so individual tests appear as spans
+in the Dagger TUI and Dagger Cloud without changing the project's Vitest
+config. Tests can call Dagger themselves.
 
-The `vitest:test` check runs with default options. Call the `test` function directly with `dagger api call` to override them:
+## Collections
 
-- `files` limits the run to specific test files.
-- `build` runs the project's build script before testing.
-- `flags` are extra flags passed through to `vitest`.
+| Flag | Collection | Key |
+| --- | --- | --- |
+| `--vitest-project` | `projects` | Directory holding the config, relative to the workspace root. The root is `.` |
+| `--vitest-test-file` | `tests`, on a project | Test file path, relative to the project |
 
-Use `list` to print the tests Vitest discovers when test selection is unclear.
+List the keys with `dagger list vitest-projects -a` and `dagger list vitest-test-files -a`. [Select collection items](../../../using/checking.mdx#select-collection-items) describes how to select items.
+
+A project is a directory holding `vitest.config.*` or `vite.config.*`, with a
+`ts`, `mts`, `cts`, `js`, `mjs`, or `cjs` extension. Projects are found at or
+below the directory `dagger` runs from, plus the nearest project that encloses
+it. A nested project is a project of its own.
+
+Test files are the files that match Vitest's default `include` pattern, such as
+`*.test.ts` and `*.spec.js`. The config's own `include` and `exclude` are not
+read. `node_modules`, `.git`, and nested projects are left out. A project with
+no test files has nothing to run.
+
+Dependencies install at the nearest workspace root (a `pnpm-workspace.yaml` or
+a `package.json` with `workspaces`), else the nearest lockfile, else the
+nearest `package.json`. The source is mounted without `node_modules` and
+without files ignored by `.gitignore`.
+
+To print the tests Vitest discovers in a project, call its `list` function:
+
+```bash
+dagger api call vitest project --path=apps/web list
+```
 
 ## Configure it
 
-List the current settings and their values with `dagger module settings vitest`, then set one with `dagger module settings vitest <key> <value>`. They live in `dagger.toml` under `[modules.vitest.settings]`:
+List the current settings and their values with `dagger module settings vitest`,
+then set one with `dagger module settings vitest <key> <value>`. They live in
+`dagger.toml` under `[modules.vitest.settings]` and apply to every project:
 
-- `packageManager` (default `npm`) is the package manager used to install dependencies before testing. Set it to `yarn` or `pnpm` to match the project; with `pnpm`, the module enables Corepack automatically.
-- `baseImageAddress` (default `node:25-alpine`) is the Node base image tests run in. Pin it to the project's Node version, for example `node:22-alpine`.
+- `packageManager` (default empty) is the package manager that installs
+  dependencies: `npm`, `yarn`, `pnpm`, or `bun`. Empty detects it from the
+  `packageManager` field of `package.json`, then from the lockfile, then uses
+  npm. The module enables Corepack for pnpm and Yarn.
+- `baseImageAddress` (default `node:25-alpine`) is the Node base image tests
+  run in. Pin it to the project's Node version, for example `node:22-alpine`.
+- `includeExtraFiles` (default empty) are workspace-root include patterns
+  mounted alongside the project at their workspace-relative paths, for fixtures
+  or schemas a project imports from elsewhere in a monorepo.
+- `build` (default `false`) runs the package manager's build script before the
+  tests.
+- `flags` (default empty) are extra flags passed to every `vitest` run.
+- `installFlags` (default empty) are extra flags for the install command, such
+  as `["--ignore-scripts"]`.
+- `environment` (default empty) sets environment variables for the install and
+  the tests, as `KEY=VALUE`.
 
 ```toml
 [modules.vitest.settings]
-packageManager = "pnpm"
 baseImageAddress = "node:22-alpine"
+includeExtraFiles = ["schema/*.json"]
+build = true
 ```
 
 ## Working with other modules

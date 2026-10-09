@@ -21,7 +21,7 @@ dagger check                   # run every check in the workspace
 dagger check dag://ps-analyzer/check # run PSScriptAnalyzer on discovered PowerShell scripts
 ```
 
-`ps-analyzer:check` finds every `.ps1`, `.psm1`, and `.psd1` file in the workspace and runs `Invoke-ScriptAnalyzer` recursively, failing on any diagnostic it reports.
+`ps-analyzer:check` finds every `.ps1`, `.psm1`, and `.psd1` file at or below the directory `dagger` runs from and runs `Invoke-ScriptAnalyzer` recursively, failing on any diagnostic it reports.
 
 ## Configure it
 
