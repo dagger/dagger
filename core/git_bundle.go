@@ -518,15 +518,34 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 
 	ctx, cancel := context.WithTimeout(ctx, gitBundleCommandTimeout)
 	defer cancel()
+	var baseSHA string
+	if base != nil {
+		baseSHA = base.Ref.SHA
+	}
+	_, local := repo.Backend.(*LocalGitRepository)
 	err = repo.Backend.mount(ctx, 0, false, backends, func(source *gitutil.GitCLI) error {
 		return MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
-			var baseSHA string
-			if base != nil {
-				baseSHA = base.Ref.SHA
+			if err := prepareGitBundleSource(ctx, source, repo.Backend, root, targets, baseSHA); err != nil {
+				return err
 			}
-			return createGitBundleFromSource(ctx, source, repo.Backend, root, targets, baseSHA)
+			if !local {
+				return nil
+			}
+			// A local scratch repository borrows the source's objects through
+			// an alternate: it can only be bundled while the source is mounted.
+			return finishGitBundleFile(ctx, root, targets, baseSHA)
 		})
 	})
+	if err == nil && !local {
+		// A remote scratch repository owns copies of everything it bundles.
+		// Pack the bundle with the mirror (and its lock) released.
+		err = MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
+			ctx, span := Tracer(ctx).Start(ctx, "creating git bundle (mirror released)", telemetry.Internal())
+			err := finishGitBundleFile(ctx, root, targets, baseSHA)
+			telemetry.EndWithCause(span, &err)
+			return err
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -550,6 +569,23 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 // survives: the private repository (including its temporary alternates) is removed
 // before the output snapshot is committed.
 func createGitBundleFromSource(ctx context.Context, source *gitutil.GitCLI, backend GitRepositoryBackend, root string, targets []*gitBundleTarget, baseSHA string) error {
+	if err := prepareGitBundleSource(ctx, source, backend, root, targets, baseSHA); err != nil {
+		return err
+	}
+	return finishGitBundleFile(ctx, root, targets, baseSHA)
+}
+
+// gitBundleScratch is the private repository a bundle is packed from.
+func gitBundleScratch(root string) string {
+	return filepath.Join(root, ".git-bundle-source")
+}
+
+// prepareGitBundleSource gives the scratch repository under root every target
+// ref and the base. This is the only phase that reads source. A remote
+// scratch fetches (owns) its objects; a local one borrows them through an
+// alternate, so finishGitBundleFile must then run before source is released.
+// On error, the scratch repository is removed.
+func prepareGitBundleSource(ctx context.Context, source *gitutil.GitCLI, backend GitRepositoryBackend, root string, targets []*gitBundleTarget, baseSHA string) (rerr error) {
 	sourceURL, err := source.URL(ctx)
 	if err != nil {
 		return fmt.Errorf("locate canonical git repository: %w", err)
@@ -563,11 +599,15 @@ func createGitBundleFromSource(ctx context.Context, source *gitutil.GitCLI, back
 		return fmt.Errorf("unsupported git repository object format %q", objectFormat)
 	}
 
-	scratch := filepath.Join(root, ".git-bundle-source")
+	scratch := gitBundleScratch(root)
 	if err := os.MkdirAll(scratch, 0o700); err != nil {
 		return err
 	}
-	defer os.RemoveAll(scratch)
+	defer func() {
+		if rerr != nil {
+			os.RemoveAll(scratch)
+		}
+	}()
 	if _, err := runGitEnv(ctx, scratch, "init", "--bare", "--quiet", "--object-format="+objectFormat); err != nil {
 		return fmt.Errorf("initialize git bundle repository: %w", err)
 	}
@@ -618,18 +658,25 @@ func createGitBundleFromSource(ctx context.Context, source *gitutil.GitCLI, back
 			return fmt.Errorf("fetch git bundle ref %s: %w", target.exact.Name, err)
 		}
 	}
+	if baseSHA != "" && !local {
+		if _, err := runGitEnv(ctx, scratch, "fetch", "--quiet", "--no-tags", sourceURL, baseSHA+":refs/dagger/bundle/base"); err != nil {
+			return fmt.Errorf("fetch git bundle base %s: %w", baseSHA, err)
+		}
+	}
+	return nil
+}
 
+// finishGitBundleFile packs the prepared scratch repository into
+// root/repository.bundle, removes the scratch repository, and validates the
+// result. It reads only the scratch repository and whatever it borrows.
+func finishGitBundleFile(ctx context.Context, root string, targets []*gitBundleTarget, baseSHA string) error {
+	scratch := gitBundleScratch(root)
+	defer os.RemoveAll(scratch)
 	bundleArgs := []string{"bundle", "create", "--version=3", filepath.Join(root, "repository.bundle")}
 	for _, target := range targets {
 		bundleArgs = append(bundleArgs, target.exact.Name)
 	}
 	if baseSHA != "" {
-		if !local {
-			baseRef := "refs/dagger/bundle/base"
-			if _, err := runGitEnv(ctx, scratch, "fetch", "--quiet", "--no-tags", sourceURL, baseSHA+":"+baseRef); err != nil {
-				return fmt.Errorf("fetch git bundle base %s: %w", baseSHA, err)
-			}
-		}
 		// Excluding the exact SHA avoids a collision with an advertised ref.
 		bundleArgs = append(bundleArgs, "^"+baseSHA)
 	}
@@ -807,7 +854,7 @@ func importGitBundleInto(ctx context.Context, dst *Directory, repo *GitRepositor
 		}
 
 		mountStart := wcprof.NowNS()
-		prerequisitesFetched := false
+		fetchedPrerequisites := 0
 		mountErr := repo.Backend.mount(ctx, 0, false, backends, func(source *gitutil.GitCLI) error {
 			// Mounting the source is where the prerequisites' history is
 			// fetched, and where a remote mirror's lock is waited on.
@@ -836,7 +883,9 @@ func importGitBundleInto(ctx context.Context, dst *Directory, repo *GitRepositor
 				if err != nil {
 					return err
 				}
-				prerequisitesFetched = method == "fetch"
+				if method == "fetch" {
+					fetchedPrerequisites = len(prerequisites)
+				}
 				span.SetAttributes(attribute.String("dagger.git.bundle.prerequisites.method", method))
 				recordGitBundlePhase(ctx, span, "prerequisites", method, copyStart)
 				return nil
@@ -845,35 +894,12 @@ func importGitBundleInto(ctx context.Context, dst *Directory, repo *GitRepositor
 		if mountErr != nil {
 			return fmt.Errorf("import git bundle prerequisites %s: %w", strings.Join(bundle.PrerequisiteSHAs, ", "), mountErr)
 		}
-		return MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
-			unbundleStart := wcprof.NowNS()
-			if err := verifyGitBundleInRepo(ctx, root, bundlePath); err != nil {
-				return fmt.Errorf("verify git bundle: %w", err)
-			}
-			if err := fetchGitBundleRefs(ctx, root, bundlePath, header.Refs); err != nil {
-				return fmt.Errorf("import git bundle: %w", err)
-			}
-			recordGitBundlePhase(ctx, span, "unbundle", "", unbundleStart)
-			if prerequisitesFetched {
-				for i := range prerequisites {
-					if _, err := runGitEnv(ctx, root, "update-ref", "-d", gitBundlePrerequisiteRef(i)); err != nil {
-						return fmt.Errorf("remove temporary git bundle prerequisite ref %d: %w", i, err)
-					}
-				}
-			}
-			if _, err := runGitEnv(ctx, root, "pack-refs", "--all"); err != nil {
-				return fmt.Errorf("normalize git bundle refs: %w", err)
-			}
-			git := gitutil.NewGitCLI(gitutil.WithDir(root))
-			for _, remote := range remotes {
-				if err := writeGitCheckoutRemote(ctx, git, remote); err != nil {
-					return fmt.Errorf("preserve git bundle source remote: %w", err)
-				}
-			}
-			if err := writeGitRemoteSelection(ctx, git, remotes, upstream); err != nil {
-				return fmt.Errorf("preserve git bundle remote selection: %w", err)
-			}
-			return normalizeCanonicalGitDir(root)
+		// The bundle repository owns its prerequisites' history now: verifying,
+		// unbundling and normalizing it must not hold the source.
+		return MountRef(ctx, bkref, func(root string, _ *mount.Mount) (rerr error) {
+			ctx, finishSpan := Tracer(ctx).Start(ctx, "unbundling git bundle (source released)", telemetry.Internal())
+			defer telemetry.EndWithCause(finishSpan, &rerr)
+			return finishGitBundleImport(ctx, span, root, bundlePath, header.Refs, fetchedPrerequisites, remotes, upstream)
 		})
 	})
 	if err != nil {
@@ -906,6 +932,10 @@ func gitBundlePrerequisiteRef(index int) string {
 // failure (a shallow source, say) discards the partial pack and falls back
 // to fetching each prerequisite into a temporary ref. method reports which
 // ran: "pack", "fetch", or "none" without prerequisites.
+//
+// Either way nothing (no alternates file, no hardlink) refers back to the
+// source once this returns, so the caller may release it, and a remote's
+// mirror lock, before finishGitBundleImport.
 func copyGitBundlePrerequisites(ctx context.Context, source *gitutil.GitCLI, root string, prerequisites []*gitutil.Ref) (method string, _ error) {
 	if len(prerequisites) == 0 {
 		return "none", nil
@@ -937,6 +967,40 @@ func copyGitBundlePrerequisites(ctx context.Context, source *gitutil.GitCLI, roo
 		}
 	}
 	return "fetch", nil
+}
+
+// finishGitBundleImport verifies and unbundles bundlePath into the bundle
+// repository at root, whose prerequisites copyGitBundlePrerequisites already
+// copied, and drops the fetchedPrerequisites temporary refs it left. It reads
+// only root and the bundle, so it runs with the source released. The unbundle
+// phase is recorded on importSpan (see recordGitBundlePhase).
+func finishGitBundleImport(ctx context.Context, importSpan trace.Span, root, bundlePath string, refs []*GitBundleRef, fetchedPrerequisites int, remotes []GitRemote, upstream string) error {
+	unbundleStart := wcprof.NowNS()
+	if err := verifyGitBundleInRepo(ctx, root, bundlePath); err != nil {
+		return fmt.Errorf("verify git bundle: %w", err)
+	}
+	if err := fetchGitBundleRefs(ctx, root, bundlePath, refs); err != nil {
+		return fmt.Errorf("import git bundle: %w", err)
+	}
+	recordGitBundlePhase(ctx, importSpan, "unbundle", "", unbundleStart)
+	for i := range fetchedPrerequisites {
+		if _, err := runGitEnv(ctx, root, "update-ref", "-d", gitBundlePrerequisiteRef(i)); err != nil {
+			return fmt.Errorf("remove temporary git bundle prerequisite ref %d: %w", i, err)
+		}
+	}
+	if _, err := runGitEnv(ctx, root, "pack-refs", "--all"); err != nil {
+		return fmt.Errorf("normalize git bundle refs: %w", err)
+	}
+	git := gitutil.NewGitCLI(gitutil.WithDir(root))
+	for _, remote := range remotes {
+		if err := writeGitCheckoutRemote(ctx, git, remote); err != nil {
+			return fmt.Errorf("preserve git bundle source remote: %w", err)
+		}
+	}
+	if err := writeGitRemoteSelection(ctx, git, remotes, upstream); err != nil {
+		return fmt.Errorf("preserve git bundle remote selection: %w", err)
+	}
+	return normalizeCanonicalGitDir(root)
 }
 
 func packGitBundlePrerequisites(ctx context.Context, source *gitutil.GitCLI, root string, prerequisites []*gitutil.Ref) error {

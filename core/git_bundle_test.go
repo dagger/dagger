@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestRunGitEnvTelemetryPrivacy(t *testing.T) {
@@ -171,9 +172,14 @@ func TestCreateRemoteGitBundlePreservesAnnotatedTag(t *testing.T) {
 	targets := []*gitBundleTarget{{
 		exact: &gitutil.Ref{Name: "refs/tags/v1", SHA: tag}, checkout: &gitutil.Ref{SHA: head},
 	}}
-	require.NoError(t, createGitBundleFromSource(ctx, gitutil.NewGitCLI(gitutil.WithDir(mirror)), &RemoteGitRepository{URL: url}, root, targets, ""))
+	require.NoError(t, prepareGitBundleSource(ctx, gitutil.NewGitCLI(gitutil.WithDir(mirror)), &RemoteGitRepository{URL: url}, root, targets, ""))
+	// A remote bundle is packed with the mirror released: once prepared, the
+	// scratch repository must own everything it bundles.
 	require.NoError(t, os.RemoveAll(origin))
 	require.NoError(t, os.RemoveAll(mirror))
+	require.NoFileExists(t, filepath.Join(gitBundleScratch(root), "objects", "info", "alternates"))
+	require.NoError(t, finishGitBundleFile(ctx, root, targets, ""))
+	require.NoDirExists(t, gitBundleScratch(root))
 	dest := t.TempDir()
 	gitBundleTestRun(t, dest, "init", "--bare", "--quiet")
 	bundlePath := filepath.Join(root, "repository.bundle")
@@ -182,6 +188,48 @@ func TestCreateRemoteGitBundlePreservesAnnotatedTag(t *testing.T) {
 	require.Equal(t, tag, gitBundleTestRun(t, dest, "rev-parse", "refs/tags/v1"))
 	require.Contains(t, gitBundleTestRun(t, dest, "cat-file", "-p", tag), "annotation")
 	gitBundleTestRun(t, dest, "fsck", "--full", "--strict")
+}
+
+// Importing a bundle borrows its source (for a remote, the locked mirror) only
+// to copy the prerequisites' history. Verifying, unbundling and normalizing
+// run with the source released, so deleting it in between must not matter.
+func TestGitBundleImportIndependentAfterPrerequisites(t *testing.T) {
+	ctx := context.Background()
+	source := t.TempDir()
+	gitBundleTestRun(t, source, "init", "--quiet", "--initial-branch=main")
+	require.NoError(t, os.WriteFile(filepath.Join(source, "file"), []byte("base\n"), 0o600))
+	gitBundleTestRun(t, source, "add", ".")
+	gitBundleTestRun(t, source, "commit", "--quiet", "-m", "base")
+	base := gitBundleTestRun(t, source, "rev-parse", "HEAD")
+	require.NoError(t, os.WriteFile(filepath.Join(source, "file"), []byte("head\n"), 0o600))
+	gitBundleTestRun(t, source, "commit", "--quiet", "-am", "head")
+	head := gitBundleTestRun(t, source, "rev-parse", "HEAD")
+	gitBundleTestRun(t, source, "gc", "--quiet")
+	bundlePath := filepath.Join(t.TempDir(), "repository.bundle")
+	gitBundleTestRun(t, source, "bundle", "create", "--version=3", bundlePath, "refs/heads/main", "^"+base)
+	header, err := inspectGitBundleFile(bundlePath)
+	require.NoError(t, err)
+	require.Equal(t, []string{base}, header.PrerequisiteSHAs)
+
+	root := t.TempDir()
+	gitBundleTestRun(t, root, "init", "--bare", "--quiet")
+	prerequisites := []*gitutil.Ref{{SHA: base}}
+	method, err := copyGitBundlePrerequisites(ctx, gitutil.NewGitCLI(gitutil.WithDir(source)), root, prerequisites)
+	require.NoError(t, err)
+	fetched := 0
+	if method == "fetch" {
+		fetched = len(prerequisites)
+	}
+
+	require.NoError(t, os.RemoveAll(source))
+	remotes := []GitRemote{{Name: "origin", URL: "https://example.com/repo", Implicit: true}}
+	require.NoError(t, finishGitBundleImport(ctx, trace.SpanFromContext(ctx), root, bundlePath, header.Refs, fetched, remotes, "origin"))
+	require.NoFileExists(t, filepath.Join(root, "objects", "info", "alternates"))
+	gitBundleTestRun(t, root, "fsck", "--full", "--strict")
+	require.Equal(t, head, gitBundleTestRun(t, root, "rev-parse", "refs/heads/main"))
+	require.Equal(t, "base", gitBundleTestRun(t, root, "log", "-1", "--format=%s", "refs/heads/main^"))
+	require.Equal(t, "refs/heads/main", gitBundleTestRun(t, root, "for-each-ref", "--format=%(refname)"), "temporary prerequisite refs must not survive")
+	require.Equal(t, "https://example.com/repo", gitBundleTestRun(t, root, "remote", "get-url", "origin"))
 }
 
 func TestCreateLocalGitBundleQuotesAlternatePath(t *testing.T) {
