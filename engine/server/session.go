@@ -200,9 +200,10 @@ type daggerSession struct {
 	// claimed or taken since. While one is pending on a route, a replay whose
 	// root someone already claimed walks its closure once more, since that
 	// claim no longer proves the closure reached the client. A repair walk
-	// that claims the payload marks it repaired for good: repair walks never
-	// claim it again, so a client DB that keeps failing gets at most one
-	// repair copy of each payload, not one per replay. callPayloadLostTargets
+	// claims only pending pairs, and marks each one it claims repaired for
+	// good, so every repair copy spends at least one pair: a payload gets at
+	// most one repair copy per target it was lost for, however many walks run
+	// and whatever becomes of the copies. callPayloadLostTargets
 	// counts the pending pairs per target and callPayloadLostCount in total,
 	// so no-loss checks are one atomic load and route checks never scan the
 	// pairs.
@@ -4017,9 +4018,11 @@ const (
 	callPayloadLossRepaired
 )
 
-// claimCallPayloadForRepair is claimCallPayload for a repair walk: it skips
-// targets whose payload already had its repair copy, reporting them as
-// refused, and marks the pending losses it claims repaired.
+// claimCallPayloadForRepair is claimCallPayload for a repair walk: it claims
+// only the targets with a pending loss, marking each repaired, and reports
+// refused if it left any other target unclaimed. Those are either retried by
+// their own export (a failure that was not final) or already had their repair
+// copy.
 func (sess *daggerSession) claimCallPayloadForRepair(digest string, targets []string) (claimed []string, refused bool) {
 	if digest == "" || len(targets) == 0 {
 		return nil, false
@@ -4034,14 +4037,12 @@ func (sess *daggerSession) claimCallPayloadForRepair(digest string, targets []st
 			continue
 		}
 		key := callPayloadKey{digest, target}
-		switch sess.callPayloadLost[key] {
-		case callPayloadLossRepaired:
+		if sess.callPayloadLost[key] != callPayloadLossPending {
 			refused = true
 			continue
-		case callPayloadLossPending:
-			sess.settleCallPayloadLossLocked(key)
-			sess.callPayloadLost[key] = callPayloadLossRepaired
 		}
+		sess.settleCallPayloadLossLocked(key)
+		sess.callPayloadLost[key] = callPayloadLossRepaired
 		states[target] = callPayloadClaimed
 		claimed = append(claimed, target)
 	}

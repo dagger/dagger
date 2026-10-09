@@ -82,8 +82,8 @@ func recordCallPayloads(
 // exporter gave up on it, so the claimant's walk no longer proves the closure
 // reached the client. The walk neither logs the root nor records it as
 // covered, since it does not own the root's claim, which may be released at
-// any moment. It claims through ClaimCallPayloadForRepair, so a payload gets
-// at most one repair copy.
+// any moment. It claims through ClaimCallPayloadForRepair, so it emits only
+// lost payloads, each at most once per target it was lost for.
 func repairCallPayloads(
 	ctx context.Context,
 	store dagql.CallPayloadSeenKeyStore,
@@ -237,8 +237,9 @@ func walkCallPayloads(
 		}
 	}
 	if refused {
-		// A frame whose repair copy is spent stays unclaimed, so these
-		// closures are not covered, and a re-walk would be refused the same.
+		// The repair left a frame unclaimed (one still being retried, or one
+		// whose repair copy is spent), so these closures are not covered, and
+		// a re-walk would be refused the same.
 		return
 	}
 	// Every frame of these closures is now claimed, by this walk or an
