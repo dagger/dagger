@@ -1,0 +1,6 @@
+kind: Changed
+body: The engine now runs containers with crun instead of runc. Starting a container takes a few milliseconds instead of tens, which made 100 sequential execs about 40% faster and a cold 262-package Go build about 7% faster on arm64.
+time: 2026-10-09T21:11:22.000000000Z
+custom:
+    Author: sipsma
+    PR: "14607"
