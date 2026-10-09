@@ -2,10 +2,9 @@ package dagql
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"slices"
-
-	"github.com/dagger/dagger/internal/buildkit/identity"
 
 	"github.com/dagger/dagger/engine"
 )
@@ -16,7 +15,7 @@ type perClientCacheScopeKey struct{}
 // cache namespace while preserving the real client metadata used by resolvers.
 // Use it when a resolution must be re-evaluated against request-scoped state.
 func WithPerClientCacheScope(ctx context.Context) context.Context {
-	return WithNamedPerClientCacheScope(ctx, identity.NewID())
+	return WithNamedPerClientCacheScope(ctx, rand.Text())
 }
 
 // WithNamedPerClientCacheScope is like WithPerClientCacheScope but pins the
@@ -87,7 +86,7 @@ var PerSessionInput = ImplicitInput{
 var PerCallInput = ImplicitInput{
 	Name: "cachePerCall",
 	Resolver: func(context.Context, map[string]Input) (Input, error) {
-		return NewString(identity.NewID()), nil
+		return NewString(rand.Text()), nil
 	},
 }
 

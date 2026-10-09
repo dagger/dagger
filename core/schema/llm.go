@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 
@@ -9,7 +10,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
 type llmSchema struct {
@@ -801,7 +801,7 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 		return res, err
 	}
 	restored := args.Handle.Valid && args.Handle.Value.String() != ""
-	handle := identity.NewID()
+	handle := rand.Text()
 	if restored {
 		handle = args.Handle.Value.String()
 	}

@@ -2,11 +2,11 @@ package schema
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
 type engineSchema struct{}
@@ -125,7 +125,7 @@ func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.ObjectRes
 				Args: []dagql.NamedInput{
 					{
 						Name:  "key",
-						Value: dagql.NewString(identity.NewID()),
+						Value: dagql.NewString(rand.Text()),
 					},
 				},
 			},

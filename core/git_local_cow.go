@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -18,7 +19,6 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/wcprof"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -485,7 +485,7 @@ func cowGitCheckout(ctx context.Context, root string, source *gitutil.GitCLI, re
 	// would: the reachable tags and the temporary ref finishGitCheckout
 	// deletes again (which leaves its namespace directory behind, as after a
 	// fetch).
-	tmpref := "refs/dagger.tmp/" + identity.NewID()
+	tmpref := "refs/dagger.tmp/" + rand.Text()
 	var stdin strings.Builder
 	stdin.WriteString("create " + tmpref + " " + ref.SHA + "\n")
 	for _, tag := range tags {

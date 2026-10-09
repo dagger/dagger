@@ -2,11 +2,11 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 
 	"dagger.io/dagger/core"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +26,7 @@ func (EngineSuite) TestExecutionDigestMatchesCacheHits(ctx context.Context, t *t
 	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, engineCtr)).Start(ctx)
 	require.NoError(t, err)
 
-	marker := identity.NewID()
+	marker := rand.Text()
 	script := fmt.Sprintf(
 		`container | from %s | with-mounted-directory /src $(git https://github.com/dagger/dagger-test-modules | commit %s | tree) | with-exec echo %s | stdout`,
 		alpineImage, vcsTestCaseCommit, marker,
@@ -34,7 +34,7 @@ func (EngineSuite) TestExecutionDigestMatchesCacheHits(ctx context.Context, t *t
 	// Two clients, so two sessions: the first executes, the second hits.
 	for range 2 {
 		out, err := telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			WithExec([]string{"/bin/dagger", "script", "-M", "-c", script}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 			Stdout(ctx)
 		require.NoError(t, err)

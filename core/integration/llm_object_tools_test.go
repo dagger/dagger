@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,7 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
 // TestObjectToolset locks in that the LLM's tools come from the objects it's
@@ -169,7 +169,7 @@ type Editor {
 	}
 	require.NotNil(t, receiver)
 	require.Equal(t, "editor", receiver.Field())
-	marker := identity.NewID()
+	marker := rand.Text()
 	receiver = receiver.With(call.WithArgs(call.NewArgument("marker", call.NewLiteralString(marker), false)))
 	objectID, err := receiver.Encode()
 	require.NoError(t, err)
@@ -208,7 +208,7 @@ type Editor {
 	// tool listing can succeed without loading the receiver; the next turn must
 	// actually reconstruct it and invoke its module-defined method.
 	target := connect(ctx, t)
-	restored, err := rehydrateAgent(ctx, target, string(snapshot), identity.NewID(), "restored", "IDLE", "")
+	restored, err := rehydrateAgent(ctx, target, string(snapshot), rand.Text(), "restored", "IDLE", "")
 	require.NoError(t, err)
 	_, reply, err := restored.sendAndWait(ctx, t, "read the marker")
 	require.NoError(t, err)
@@ -672,7 +672,7 @@ type Runner {
       .changes(before.directory(".").withoutDirectory(".git"))
   }
 }
-`, "no-op-replay-"+identity.NewID(), `test ! -f /counter/"$LABEL" || { echo producer-replayed >&2; exit 91; }; touch /counter/"$LABEL"; `+tc.edit))
+`, "no-op-replay-"+rand.Text(), `test ! -f /counter/"$LABEL" || { echo producer-replayed >&2; exit 91; }; touch /counter/"$LABEL"; `+tc.edit))
 			calls := []core.LLMContentBlockInput{{
 				Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "run",
 				Arguments: core.JSON(`{"label":"first"}`),
@@ -784,7 +784,7 @@ type Codegen {
     after.directory(".").changes(before.directory("."))
   }
 }
-`, "generator-replay-"+identity.NewID(), from,
+`, "generator-replay-"+rand.Text(), from,
 		`test ! -f /counter/"$LABEL" || { echo producer-replayed >&2; exit 91; }; touch /counter/"$LABEL"; `+script)
 }
 

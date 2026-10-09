@@ -8,6 +8,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"net"
@@ -19,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/goproxy/goproxy"
 	"github.com/stretchr/testify/require"
@@ -158,7 +158,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 	`
 
 	squidCert, squidKey := certGen.newServerCerts(squidAlias)
-	squidLogsVolume := core.NewQuery(c).CacheVolume("squid-logs-" + identity.NewID())
+	squidLogsVolume := core.NewQuery(c).CacheVolume("squid-logs-" + rand.Text())
 	squid := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "squid", "ca-certificates", "go"}).
 		WithExec([]string{"go", "install", "github.com/rchunping/squid-urlrewrite@latest"}).
@@ -271,7 +271,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 					test.proxyLogTest(t, c, func(ctx context.Context) (string, error) {
 						return core.NewQuery(c).Container().From(alpineImage).
 							WithMountedCache("/var/log/squidaccess", squidLogsVolume).
-							WithEnvVariable("CACHEBUSTER", identity.NewID()).
+							WithEnvVariable("CACHEBUSTER", rand.Text()).
 							WithExec([]string{"cat", "/var/log/squidaccess/access.log"}).
 							Stdout(ctx)
 					})

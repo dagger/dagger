@@ -10,6 +10,7 @@ package core
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,7 +25,6 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/koron-go/prefixw"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -60,7 +60,7 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 		},
 	})
 
-	eventsVol := core.NewQuery(c).CacheVolume("dagger-silent-session-events-" + identity.NewID())
+	eventsVol := core.NewQuery(c).CacheVolume("dagger-silent-session-events-" + rand.Text())
 	base := core.NewQuery(c).Container().
 		From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
@@ -74,7 +74,7 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 		WithExposedPort(8080).
 		AsService()
 
-	eventsID := identity.NewID()
+	eventsID := rand.Text()
 	// The engine publishes the session's telemetry to the same Cloud.
 	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding("cloud", fakeCloud)
@@ -140,7 +140,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 	}
 
-	c1msg := identity.NewID()
+	c1msg := rand.Text()
 	echo(ctx1, c1, c1msg)
 	require.Eventually(t, func() bool {
 		return strings.Contains(out1.String(), "echoed: "+c1msg)
@@ -155,7 +155,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 	defer cancelTimeout()
 	c2, out2 := newClient(timeoutCtx2, "client 2")
 
-	c2msg := identity.NewID()
+	c2msg := rand.Text()
 	echo(ctx2, c2, c2msg)
 	require.Eventually(t, func() bool {
 		return strings.Contains(out2.String(), "echoed: "+c2msg)
@@ -167,7 +167,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 	defer cancelTimeout()
 	c3, out3 := newClient(timeoutCtx3, "client 3")
 
-	c3msg := identity.NewID()
+	c3msg := rand.Text()
 	echo(ctx3, c3, c3msg)
 	require.Eventually(t, func() bool {
 		return strings.Contains(out3.String(), "echoed: "+c3msg)
@@ -354,7 +354,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 		},
 	})
 
-	eventsVol := core.NewQuery(c).CacheVolume("dagger-dev-engine-events-" + identity.NewID())
+	eventsVol := core.NewQuery(c).CacheVolume("dagger-dev-engine-events-" + rand.Text())
 
 	withCode := core.NewQuery(c).Container().
 		From(golangImage).
@@ -371,7 +371,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 		WithExposedPort(8080).
 		AsService()
 
-	eventsID := identity.NewID()
+	eventsID := rand.Text()
 	// The engine publishes the session's telemetry to the same Cloud.
 	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding("cloud", fakeCloud)

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +44,7 @@ func pushGitRef(ctx context.Context, c *dagger.Client, source *core.GitRef, dest
 func pushRemoteSHA(ctx context.Context, t *testctx.T, c *dagger.Client, service *core.Service, url, ref string) string {
 	t.Helper()
 	out, err := core.NewQuery(c).Container().From(alpineImage).WithExec([]string{"apk", "add", "git"}).
-		WithServiceBinding("remote", service).WithEnvVariable("CACHEBUST", identity.NewID()).
+		WithServiceBinding("remote", service).WithEnvVariable("CACHEBUST", rand.Text()).
 		WithExec([]string{"git", "ls-remote", url, ref}).Stdout(ctx)
 	require.NoError(t, err)
 	fields := strings.Fields(out)

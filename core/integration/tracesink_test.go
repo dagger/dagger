@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -18,7 +19,6 @@ import (
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/agentcontrol"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -166,7 +166,7 @@ func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, 
 	if err != nil {
 		return "", err
 	}
-	name := "recipe-capture-" + identity.NewID()
+	name := "recipe-capture-" + rand.Text()
 	_, err = rehydrateAgent(ctx, c, string(seed), name, name, "IDLE", "")
 	if err != nil {
 		return "", err
@@ -180,7 +180,7 @@ func (sink *agentTraceSink) captureShellRecipe(ctx context.Context, t *testctx.T
 	t.Helper()
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	name := "shell-recipe-" + identity.NewID()
+	name := "shell-recipe-" + rand.Text()
 	_, err := base.With(daggerShell(selection + " | spawn --handle " + name + " --name " + name)).Sync(ctx)
 	if err != nil {
 		return "", err

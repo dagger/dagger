@@ -1,6 +1,7 @@
 package client
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -8,7 +9,6 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
 const StableIDFileName = "stable_client_id"
@@ -20,7 +20,7 @@ func GetHostStableID(lg *slog.Logger) string {
 	id, err := internalGetStableID(filepath.Join(xdg.StateHome, "dagger"))
 	if err != nil {
 		lg.Warn("failed to get stable ID, defaulting to random value", "error", err)
-		return identity.NewID()
+		return rand.Text()
 	}
 	return id
 }
@@ -52,7 +52,7 @@ func internalGetStableID(parentDirPath string) (string, error) {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	stableID := identity.NewID()
+	stableID := rand.Text()
 	if _, err := tmpFile.WriteString(stableID); err != nil {
 		return "", fmt.Errorf("failed to write stable ID: %w", err)
 	}

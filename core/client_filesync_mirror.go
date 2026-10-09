@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -9,7 +10,6 @@ import (
 	"github.com/dagger/dagger/engine/filesync"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"google.golang.org/grpc"
@@ -316,6 +316,6 @@ func errorsJoin(errs ...error) error {
 func NewEphemeralClientFilesyncMirror(drive string) *ClientFilesyncMirror {
 	return &ClientFilesyncMirror{
 		Drive:       drive,
-		EphemeralID: identity.NewID(),
+		EphemeralID: rand.Text(),
 	}
 }

@@ -7,6 +7,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"regexp"
 	"strings"
@@ -16,8 +17,6 @@ import (
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
-
-	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
 // toolStateWorkspace is a workspace with one Dang module, served from
@@ -54,7 +53,7 @@ type Runlog {
     "runs: [" + out.trimSpace + "]"
   }
 }
-`, "tool-state-runs-"+identity.NewID(), alpineImage)).
+`, "tool-state-runs-"+rand.Text(), alpineImage)).
 		AsWorkspace()
 }
 

@@ -24,7 +24,6 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -55,7 +54,7 @@ func newTelemetrySplitCloud(t *testctx.T, c *dagger.Client, withs ...core.WithCo
 			"go.sum",
 		},
 	})
-	events := core.NewQuery(c).CacheVolume("dagger-telemetry-split-events-" + identity.NewID())
+	events := core.NewQuery(c).CacheVolume("dagger-telemetry-split-events-" + rand.Text())
 	base := core.NewQuery(c).Container().
 		From(golangImage).
 		With(goCache(c)).
@@ -73,7 +72,7 @@ func newTelemetrySplitCloud(t *testctx.T, c *dagger.Client, withs ...core.WithCo
 			AsService(),
 		reader:   base,
 		events:   events,
-		eventsID: identity.NewID(),
+		eventsID: rand.Text(),
 	}
 }
 
@@ -102,7 +101,7 @@ type telemetrySplitRecord struct {
 
 func readTelemetrySplitLines[T any](ctx context.Context, t *testctx.T, cloud telemetrySplitCloud, path string) []T {
 	raw, err := cloud.reader.
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithExec([]string{"sh", "-c", fmt.Sprintf("cat /events/%s/%s 2>/dev/null || true", cloud.eventsID, path)}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -213,7 +212,7 @@ func telemetrySplitEngine(c *dagger.Client, ctr *core.Container, cloud telemetry
 func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *core.Container) *core.Container {
 	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
 	return ctr.
-		WithMountedCache("/var/lib/dagger", core.NewQuery(c).CacheVolume("dagger-telemetry-split-state-"+identity.NewID())).
+		WithMountedCache("/var/lib/dagger", core.NewQuery(c).CacheVolume("dagger-telemetry-split-state-"+rand.Text())).
 		WithExposedPort(1234, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
 		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",
@@ -270,7 +269,7 @@ func (ClientSuite) TestTelemetrySplitPublishesOnce(ctx context.Context, t *testc
 			if tc.releasedCLI {
 				cli = releasedCLI
 			}
-			marker := identity.NewID()
+			marker := rand.Text()
 			// The exec prints "<marker>-out", which appears nowhere else.
 			query := fmt.Sprintf(`{ container { from(address: %q) { withExec(args: ["sh", "-c", "echo $0-out", %q]) { exitCode } } } }`, alpineImage, marker)
 			_, err = telemetrySplitClient(ctx, t, c, cli, engine, cloud).
@@ -309,7 +308,7 @@ func (ClientSuite) TestTelemetrySplitEngineCannotReachCloud(ctx context.Context,
 	engine, err := devEngineContainerAsService(telemetrySplitEngineWithoutCloud(c, devEngineContainer(c))).Start(ctx)
 	require.NoError(t, err)
 
-	marker := identity.NewID()
+	marker := rand.Text()
 	query := fmt.Sprintf(`{ container { from(address: %q) { withExec(args: ["sh", "-c", "echo $0-out", %q]) { exitCode } } } }`, alpineImage, marker)
 	_, err = telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
 		WithNewFile("/query.graphql", query).
@@ -458,7 +457,7 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 				WithEnvVariable("SSL_CERT_DIR", "/etc/ssl/certs:/tls/certs")).Start(ctx)
 			require.NoError(t, err)
 
-			marker := identity.NewID()
+			marker := rand.Text()
 			_, err = telemetrySplitClient(ctx, t, c, cli, parent, fakeCloud).
 				WithExec([]string{"apk", "add", "git"}).
 				WithWorkdir("/work").
@@ -548,7 +547,7 @@ func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T)
 	engine, err := devEngineContainerAsService(telemetrySplitEngine(c, devEngineContainer(c), cloud)).Start(ctx)
 	require.NoError(t, err)
 
-	mainID, nestedID := identity.NewID(), identity.NewID()
+	mainID, nestedID := rand.Text(), rand.Text()
 	_, err = telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
 		WithExec(markerExecArgs("main-marker-", mainID), core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 		WithDirectory("/work/marker", telemetrySplitMarkerModule(c)).
@@ -619,7 +618,7 @@ func (ClientSuite) TestEngineTelemetryCloudOAuthRefresh(ctx context.Context, t *
 	endpoint, err := engine.Endpoint(ctx, core.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	require.NoError(t, err)
 
-	markerID := identity.NewID()
+	markerID := rand.Text()
 	staleCreds := `{"access_token":"stale-token","token_type":"Bearer","refresh_token":"test-refresh-token","expiry":"2020-01-01T00:00:00Z"}`
 	clientCtr := cloud.bind(core.NewQuery(c).Container().From(alpineImage)).
 		WithServiceBinding("dev-engine", engine).
@@ -638,7 +637,7 @@ func (ClientSuite) TestEngineTelemetryCloudOAuthRefresh(ctx context.Context, t *
 	output := got.execOutput(t, "refresh-marker-"+markerID)
 	require.False(t, got.cliLogWriters(t)[output.Writer], "the engine publishes the output")
 
-	events := cloud.reader.WithEnvVariable("CACHEBUSTER", identity.NewID())
+	events := cloud.reader.WithEnvVariable("CACHEBUSTER", rand.Text())
 	_, err = events.
 		WithExec([]string{"test", "-s", fmt.Sprintf("/events/%s/engine/issued-tokens.txt", cloud.eventsID)}).
 		Sync(ctx)

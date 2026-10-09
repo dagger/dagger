@@ -2,6 +2,7 @@ package snapshots
 
 import (
 	"context"
+	"crypto/rand"
 	"sync"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/moby/locker"
 	digest "github.com/opencontainers/go-digest"
@@ -421,7 +421,7 @@ func (cm *snapshotManager) getRecord(ctx context.Context, id string, opts ...Ref
 }
 
 func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefOption) (mr MutableRef, err error) {
-	id := identity.NewID()
+	id := rand.Text()
 
 	var parentSnapshotID string
 	if s != nil {
@@ -564,7 +564,7 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 		return cm.GetBySnapshotID(ctx, upper.SnapshotID(), append(opts, NoUpdateLastUsed)...)
 	}
 
-	id := identity.NewID()
+	id := rand.Text()
 	snapshotID := id
 
 	var diffs []Diff
@@ -639,7 +639,7 @@ func (cm *snapshotManager) Merge(ctx context.Context, parents []ImmutableRef, op
 		return cm.GetBySnapshotID(ctx, normalized[0].SnapshotID(), append(opts, NoUpdateLastUsed)...)
 	}
 
-	id := identity.NewID()
+	id := rand.Text()
 	snapshotID := id
 
 	diffs := make([]Diff, 0, len(normalized))

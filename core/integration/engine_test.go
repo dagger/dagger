@@ -28,7 +28,6 @@ import (
 	"dagger.io/dagger/core"
 
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/pelletier/go-toml"
 	"golang.org/x/sync/errgroup"
 
@@ -68,7 +67,7 @@ func devEngineContainerAsService(ctr *core.Container) *core.Service {
 
 // devEngineContainer returns a nested dev engine.
 func devEngineContainer(c *dagger.Client, withs ...func(*core.Container) *core.Container) *core.Container {
-	return devEngineContainerWithStateKey(c, "dagger-dev-engine-state-"+identity.NewID(), withs...)
+	return devEngineContainerWithStateKey(c, "dagger-dev-engine-state-"+rand.Text(), withs...)
 }
 
 func devEngineContainerWithStateKey(c *dagger.Client, stateCacheKey string, withs ...func(*core.Container) *core.Container) *core.Container {
@@ -722,7 +721,7 @@ func (EngineSuite) TestConcurrentCallContextCanceled(ctx context.Context, t *tes
 		WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("srv", httpSvc).
 		WithEnvVariable("PORT", fmt.Sprintf("%d", port)).
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		Sync(ctx)
 	require.NoError(t, err)
 	ctr = ctr.WithExec([]string{

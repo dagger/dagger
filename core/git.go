@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
@@ -1396,7 +1396,7 @@ func fetchGitCheckout(ctx context.Context, checkoutGit *gitutil.GitCLI, cloneURL
 		return "", err
 	}
 
-	tmpref := "refs/dagger.tmp/" + identity.NewID()
+	tmpref := "refs/dagger.tmp/" + rand.Text()
 
 	// TODO: maybe this should use --no-tags by default, but that's a breaking change :(
 	// also, we currently don't do any special work to ensure that the fetched
@@ -1503,7 +1503,7 @@ func packGitCheckout(ctx context.Context, checkoutGit, source *gitutil.GitCLI, r
 			return "", fmt.Errorf("pack followed tags: %w", err)
 		}
 	}
-	tmpref := "refs/dagger.tmp/" + identity.NewID()
+	tmpref := "refs/dagger.tmp/" + rand.Text()
 	var updates strings.Builder
 	updates.WriteString("create " + tmpref + " " + ref.SHA + "\n")
 	for _, tag := range tags {

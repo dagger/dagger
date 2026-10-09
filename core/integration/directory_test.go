@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/engineutil"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -955,7 +954,7 @@ func (DirectorySuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 		ls, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/dir", dir).
-			WithEnvVariable("RANDOM", identity.NewID()).
+			WithEnvVariable("RANDOM", rand.Text()).
 			WithExec([]string{"sh", "-c", "ls -al /dir && ls -al /dir/sub-dir"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -968,7 +967,7 @@ func (DirectorySuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 		content, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithMountedDirectory("/dir", dir).
-			WithEnvVariable("RANDOM", identity.NewID()).
+			WithEnvVariable("RANDOM", rand.Text()).
 			// NB: there's a gotcha here: we need to tar * and not . because the
 			// directory itself has an unstable timestamp. :(
 			WithExec([]string{"sh", "-c", "tar -cf - -C /dir * | sha256sum -"}).

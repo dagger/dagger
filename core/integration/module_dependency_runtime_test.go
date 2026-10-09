@@ -9,13 +9,13 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -161,7 +161,7 @@ func (ModuleSuite) TestUseLocalMulti(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			modGen := moduleFixture(t, c, tc.fixture).
-				WithEnvVariable("BUST", identity.NewID()) // NB(vito): hmm...
+				WithEnvVariable("BUST", rand.Text()) // NB(vito): hmm...
 
 			out, err := modGen.With(daggerQueryAt(".", `{names}`)).Stdout(ctx)
 			require.NoError(t, err)

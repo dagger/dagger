@@ -9,6 +9,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
@@ -21,7 +22,6 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/testctx"
@@ -60,7 +60,7 @@ func (SecretProvider) TestEnv(ctx context.Context, t *testctx.T) {
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
-	secretValue := "secret" + identity.NewID()
+	secretValue := "secret" + rand.Text()
 	out, err := fetchSecret(
 		ctx,
 		ctr.WithEnvVariable("TOPSECRET", secretValue),
@@ -83,7 +83,7 @@ func (SecretProvider) TestFile(ctx context.Context, t *testctx.T) {
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
-	secretValue := "secret" + identity.NewID()
+	secretValue := "secret" + rand.Text()
 	out, err := fetchSecret(
 		ctx,
 		ctr.WithNewFile("/tmp/topsecret", secretValue),
@@ -106,7 +106,7 @@ func (SecretProvider) TestCmd(ctx context.Context, t *testctx.T) {
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
-	secretValue := "secret" + identity.NewID()
+	secretValue := "secret" + rand.Text()
 	secretValueEncoded := base64.StdEncoding.EncodeToString([]byte(secretValue))
 	out, err := fetchSecret(
 		ctx,
@@ -268,7 +268,7 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	// Create a secret with a client
-	secretValue := "secret" + identity.NewID()
+	secretValue := "secret" + rand.Text()
 	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", secretValue)
 	require.NoError(t, err)
 
@@ -308,7 +308,7 @@ func (SecretProvider) TestVaultOIDCFallbackError(ctx context.Context, t *testctx
 	c := connect(ctx, t)
 
 	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
-	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", "secret"+identity.NewID())
+	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", "secret"+rand.Text())
 
 	ctr := newVaultQueryContainer(c, t, vaultServer).
 		WithEnvVariable("VAULT_OIDC_SKIP_BROWSER", "1")
@@ -341,7 +341,7 @@ func (SecretProvider) TestVaultOIDCTokenPriority(ctx context.Context, t *testctx
 	c := connect(ctx, t)
 
 	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
-	secretValue := "secret" + identity.NewID()
+	secretValue := "secret" + rand.Text()
 	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", secretValue)
 
 	ctr := newVaultQueryContainer(c, t, vaultServer).
@@ -362,7 +362,7 @@ func (SecretProvider) TestVaultOIDCCachedToken(ctx context.Context, t *testctx.T
 	c := connect(ctx, t)
 
 	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
-	secretValue := "secret" + identity.NewID()
+	secretValue := "secret" + rand.Text()
 	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", secretValue)
 
 	ctr := newVaultQueryContainer(c, t, vaultServer).
@@ -382,7 +382,7 @@ func (SecretProvider) TestVaultOIDCExpiredCachedToken(ctx context.Context, t *te
 	c := connect(ctx, t)
 
 	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, nil)
-	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", "secret"+identity.NewID())
+	seedVaultSecret(ctx, t, vaultImage, vaultServer, "secret/testsecret", "foo", "secret"+rand.Text())
 
 	ctr := newVaultQueryContainer(c, t, vaultServer).
 		WithEnvVariable("VAULT_OIDC_SKIP_BROWSER", "1")
@@ -404,7 +404,7 @@ func (SecretProvider) TestVaultOIDCEndToEnd(ctx context.Context, t *testctx.T) {
 	dex := startDexOIDCProvider(ctx, t, c)
 	vaultImage, vaultServer := startVaultDevServer(ctx, t, c, map[string]*core.Service{"dex": dex})
 
-	secretValue := "secret" + identity.NewID()
+	secretValue := "secret" + rand.Text()
 	configureVaultOIDC(ctx, t, vaultImage, vaultServer, dex, secretValue)
 
 	ctr := core.NewQuery(c).Container().
@@ -500,7 +500,7 @@ func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
 func (SecretProvider) TestGnomeKeyring(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	secretValue := "secret" + identity.NewID()
+	secretValue := "secret" + rand.Text()
 	secretValueEncoded := base64.StdEncoding.EncodeToString([]byte(secretValue))
 
 	keyringScript := `#!/usr/bin/env sh
@@ -607,7 +607,7 @@ floci:
 		WithEnvVariable("NOCACHE", time.Now().String())
 
 	// Create test secrets in Secrets Manager
-	secretValue := "secret" + identity.NewID()
+	secretValue := "secret" + rand.Text()
 	_, err = awsCLI.
 		WithExec([]string{
 			"aws", "secretsmanager", "create-secret",
@@ -629,7 +629,7 @@ floci:
 	require.NoError(t, err)
 
 	// Create test parameters in Parameter Store
-	paramValue := "param" + identity.NewID()
+	paramValue := "param" + rand.Text()
 	_, err = awsCLI.
 		WithExec([]string{
 			"aws", "ssm", "put-parameter",

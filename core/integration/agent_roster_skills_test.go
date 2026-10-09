@@ -14,13 +14,13 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -149,7 +149,7 @@ func (AgentRuntimeSuite) TestRosterAddressingWithSkills(ctx context.Context, t *
 
 			// A per-run marker, so "the reconstructed handle sees this
 			// runtime" cannot pass by coincidence.
-			marker := "roster marker " + identity.NewID()
+			marker := "roster marker " + rand.Text()
 			delivery, err := h.sendNoWait(ctx, t, marker)
 			require.NoError(t, err)
 			require.Equal(t, "STARTED", delivery)

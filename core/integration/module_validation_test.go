@@ -10,12 +10,12 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"path/filepath"
 	"testing"
 
 	"dagger.io/dagger/core"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -43,7 +43,7 @@ func (ModuleSuite) TestWrapping(ctx context.Context, t *testctx.T) {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			id := identity.NewID()
+			id := rand.Text()
 
 			out, err := moduleFixture(t, c, tc.fixture).
 				With(daggerQueryAt(".",

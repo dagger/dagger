@@ -2,6 +2,7 @@ package snapshots
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,7 +22,6 @@ import (
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
 	rootlessmountopts "github.com/dagger/dagger/engine/snapshots/rootlessmountopts"
 	"github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
@@ -610,7 +610,7 @@ func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ MountableRe
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
-	viewLeaseID := identity.NewID()
+	viewLeaseID := rand.Text()
 	viewSnapshotID := viewLeaseID + "-view"
 	releaseViewLease := func() error {
 		err := sr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: viewLeaseID})
@@ -704,7 +704,7 @@ func (sr *mutableRef) commit(ctx context.Context, usage *snapshots.Usage) (_ *im
 		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
 	}
 
-	id := identity.NewID()
+	id := rand.Text()
 	md := sr.cm.ensureMetadata(id)
 	committed := &cacheRecord{cm: sr.cm, md: md}
 	var commitOpts []snapshots.Opt

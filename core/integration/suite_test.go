@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +21,6 @@ import (
 
 	sdkcore "dagger.io/dagger/core"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -100,7 +100,7 @@ func newCache(t *testctx.T) core.CacheVolumeID {
 			}
 		}
 	`, &testutil.QueryOptions{Variables: map[string]any{
-		"key": identity.NewID(),
+		"key": rand.Text(),
 	}})
 	require.NoError(t, err)
 
@@ -166,11 +166,11 @@ const (
 )
 
 func registryRef(name string) string {
-	return fmt.Sprintf("%s/%s:%s", registryHost, name, identity.NewID())
+	return fmt.Sprintf("%s/%s:%s", registryHost, name, rand.Text())
 }
 
 func privateRegistryRef(name string) string {
-	return fmt.Sprintf("%s/%s:%s", privateRegistryHost, name, identity.NewID())
+	return fmt.Sprintf("%s/%s:%s", privateRegistryHost, name, rand.Text())
 }
 
 func ls(dir string) ([]string, error) {

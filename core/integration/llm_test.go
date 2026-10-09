@@ -6,6 +6,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -23,7 +24,6 @@ import (
 	"dagger.io/dagger/engineconn"
 	"github.com/creack/pty"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -339,7 +339,7 @@ func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
 	// Give the workspace a fresh digest so the nested execs actually run. If
 	// they hit the shared cache, there is no live stdout for captureLogs to
 	// surface and the build result correctly collapses to "(done)".
-	source := fmt.Sprintf("package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n\n// cache-buster: %s\n", identity.NewID())
+	source := fmt.Sprintf("package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n\n// cache-buster: %s\n", rand.Text())
 	writeArgs, err := json.Marshal(map[string]string{"content": source})
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
@@ -470,7 +470,7 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 		WithResponse([]core.LLMContentBlockInput{
 			{Kind: core.LLMContentBlockKindText, Text: "Doing the work."},
 			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
-				Arguments: core.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, identity.NewID()))},
+				Arguments: core.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, rand.Text()))},
 		}).
 		WithToolResult("call_1", "", false).
 		WithResponse([]core.LLMContentBlockInput{
@@ -564,7 +564,7 @@ func (LLMSuite) TestToolFindSpans(ctx context.Context, t *testctx.T) {
 		WithResponse([]core.LLMContentBlockInput{
 			{Kind: core.LLMContentBlockKindText, Text: "Doing the work."},
 			{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report",
-				Arguments: core.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, identity.NewID()))},
+				Arguments: core.JSON(fmt.Sprintf(`{"cacheBuster":%q}`, rand.Text()))},
 		}).
 		WithToolResult("call_1", "", false).
 		WithResponse([]core.LLMContentBlockInput{
@@ -611,7 +611,7 @@ func (LLMSuite) TestToolInspectCall(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work").
 		WithMountedDirectory(".", core.NewQuery(c).Host().Directory(srcPath))
 
-	buster := identity.NewID()
+	buster := rand.Text()
 	model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
 			"Use the report tool to do the work and write the report.\n"+
@@ -726,7 +726,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 		for _, tc := range tcs {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-				args := []string{"--allow-llm", tc.allowLLM, modelFlag, "prompt", "--string-arg", "greet me", "--cache-buster", identity.NewID()}
+				args := []string{"--allow-llm", tc.allowLLM, modelFlag, "prompt", "--string-arg", "greet me", "--cache-buster", rand.Text()}
 
 				_, err := daggerCliBase(t, c).
 					With(daggerCallAt(tc.module, args...)).
@@ -737,7 +737,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("noninteractive prompt fail", func(ctx context.Context, t *testctx.T) {
-		args := []string{modelFlag, "prompt", "--string-arg", t.Name(), "--cache-buster", identity.NewID()}
+		args := []string{modelFlag, "prompt", "--string-arg", t.Name(), "--cache-buster", rand.Text()}
 
 		_, err := daggerCliBase(t, c).
 			With(daggerCallAt(directModuleRef, args...)).
@@ -748,7 +748,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	t.Run("environment variable", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
 			WithEnvVariable("DAGGER_ALLOW_LLM", "all").
-			With(daggerCallAt(indirectModuleRef, modelFlag, "prompt", "--string-arg", "greet me", "--cache-buster", identity.NewID())).
+			With(daggerCallAt(indirectModuleRef, modelFlag, "prompt", "--string-arg", "greet me", "--cache-buster", rand.Text())).
 			Stdout(ctx)
 		require.NoError(t, err)
 	})
@@ -756,7 +756,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	t.Run("shell allow all", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
 			WithExec([]string{"dagger", "script", "-m", indirectModuleRef, "--allow-llm=all"}, core.ContainerWithExecOpts{
-				Stdin: fmt.Sprintf(`. %s | prompt "greet me" %q`, modelFlag, identity.NewID()),
+				Stdin: fmt.Sprintf(`. %s | prompt "greet me" %q`, modelFlag, rand.Text()),
 			}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -765,7 +765,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	t.Run("shell interactive module loads", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
 			WithExec([]string{"dagger", "script", "--allow-llm", directModuleSymbolic}, core.ContainerWithExecOpts{
-				Stdin: fmt.Sprintf(`%s %s | prompt "greet me" %q`, indirectModuleRef, modelFlag, identity.NewID()),
+				Stdin: fmt.Sprintf(`%s %s | prompt "greet me" %q`, indirectModuleRef, modelFlag, rand.Text()),
 			}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -839,7 +839,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 				}
 				cmd, console := consoleDagger(
 					ctx, t,
-					progressFlag, "call", "-m", tc.module, "--allow-llm", tc.allowLLM, modelFlag, "prompt", "--string-arg", fmt.Sprintf("greet me %d", i), "--cache-buster", identity.NewID(),
+					progressFlag, "call", "-m", tc.module, "--allow-llm", tc.allowLLM, modelFlag, "prompt", "--string-arg", fmt.Sprintf("greet me %d", i), "--cache-buster", rand.Text(),
 				)
 				defer console.Close()
 
@@ -1202,7 +1202,7 @@ func (LLMSuite) TestNestedClientInheritsSessionConfig(ctx context.Context, t *te
 	// credentials, and an anthropic model only routes when nothing
 	// higher-priority is configured.
 	sessionModel := "claude-session-wide-model"
-	apiKey := "secret" + identity.NewID()
+	apiKey := "secret" + rand.Text()
 	os.Setenv("ANTHROPIC_MODEL", sessionModel)
 	os.Setenv("ANTHROPIC_API_KEY", apiKey)
 
