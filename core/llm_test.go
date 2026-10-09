@@ -484,6 +484,59 @@ func TestExplicitProviderRouting(t *testing.T) {
 	assert.ErrorContains(t, err, `unknown LLM provider "bogus"`)
 }
 
+// TestExplicitProviderDefaultModel covers a provider requested without a
+// model: it gets its own default, not the global default — which may belong to
+// another provider and mean nothing to this one.
+func TestExplicitProviderDefaultModel(t *testing.T) {
+	r := routerWith(t, map[string]*engine.LLMProviderConfig{
+		"openai":     {APIKey: "env://OPENAI_API_KEY"},
+		"openrouter": {APIKey: "env://OPENROUTER_API_KEY"},
+		"anthropic":  {APIKey: "env://ANTHROPIC_API_KEY"},
+	})
+	// OpenAI wins the global default by priority...
+	model, _ := r.DefaultRoute()
+	require.Equal(t, modelDefaultOpenAI, model)
+
+	// ...but an explicit OpenRouter request takes OpenRouter's default.
+	ep, err := r.Route("", string(OpenRouter))
+	require.NoError(t, err)
+	assert.Equal(t, OpenRouter, ep.Provider)
+	assert.Equal(t, modelDefaultOpenRouter, ep.Model)
+	ep, err = r.Route("", string(Anthropic))
+	require.NoError(t, err)
+	assert.Equal(t, Anthropic, ep.Provider)
+	assert.Equal(t, modelDefaultAnthropic, ep.Model)
+
+	// A provider's configured model wins over its built-in default, and the
+	// configured default route over both, when it names this provider.
+	r, err = NewLLMRouter(&engine.LLMConfig{
+		DefaultProvider: "openrouter",
+		DefaultModel:    "google/gemini-2.5-pro",
+		Providers: map[string]*engine.LLMProviderConfig{
+			"openrouter": {APIKey: "env://OPENROUTER_API_KEY", Model: "openai/gpt-4.1"},
+			"openai":     {APIKey: "env://OPENAI_API_KEY"},
+			"anthropic":  {APIKey: "env://ANTHROPIC_API_KEY", Model: "claude-x"},
+		},
+	}, &engine.ClientMetadata{})
+	require.NoError(t, err)
+	ep, err = r.Route("", string(Anthropic))
+	require.NoError(t, err)
+	assert.Equal(t, "claude-x", ep.Model)
+	ep, err = r.Route("", string(OpenRouter))
+	require.NoError(t, err)
+	assert.Equal(t, "google/gemini-2.5-pro", ep.Model)
+	ep, err = r.Route("", string(OpenAI))
+	require.NoError(t, err)
+	assert.Equal(t, OpenAI, ep.Provider)
+	assert.Equal(t, modelDefaultOpenAI, ep.Model)
+
+	// Codex keeps its routing prefix off the wire.
+	ep, err = r.Route("", string(OpenAICodex))
+	require.NoError(t, err)
+	assert.Equal(t, OpenAICodex, ep.Provider)
+	assert.Equal(t, modelDefaultCodex, ep.Model)
+}
+
 // TestOpenAIRequestUsesNonStrictNullableToolSchema locks the provider boundary:
 // strict mode stays off, while nullable GraphQL arguments remain properties
 // that explicitly accept null without becoming required.

@@ -329,6 +329,46 @@ func (r *LLMRouter) DefaultRoute() (model string, provider LLMProvider) {
 	return "", ""
 }
 
+// providerDefaultModel returns the model to use when provider is requested
+// explicitly without a model: the configured default route's model if it
+// routes to provider, else provider's configured model, else its built-in
+// default. Local and Other have no built-in default, so they fall back to the
+// global default.
+func (r *LLMRouter) providerDefaultModel(provider LLMProvider) string {
+	cfg := r.provider(provider)
+	model := ""
+	switch {
+	case r.defaultModel != "" && r.defaultProvider == provider:
+		model = r.defaultModel
+	case cfg.Model != "":
+		model = cfg.Model
+	default:
+		switch provider {
+		case OpenAI:
+			model = modelDefaultOpenAI
+			if cfg.APIKey == "" && cfg.BaseURL != "" {
+				// A self-hosted model behind OPENAI_BASE_URL, as in
+				// DefaultRoute.
+				model = modelDefaultMeta
+			}
+		case OpenAICodex:
+			model = modelDefaultCodex
+		case OpenRouter:
+			model = modelDefaultOpenRouter
+		case Anthropic:
+			model = modelDefaultAnthropic
+		case Google:
+			model = modelDefaultGoogle
+		default:
+			return r.DefaultModel()
+		}
+	}
+	if provider == OpenAICodex {
+		return normalizeCodexModel(model)
+	}
+	return model
+}
+
 // SmallModel returns the user-configured small model for provider, falling
 // back to Catwalk's recommendation. Unknown and local providers without an
 // explicit small model return no route, allowing the caller to retain the
@@ -372,13 +412,17 @@ func (r *LLMRouter) routeProvider(provider LLMProvider) (*LLMEndpoint, error) {
 // Routing is pure: the endpoint carries no credential and no provider client
 // yet. Endpoint resolves those for the one provider that was routed.
 func (r *LLMRouter) Route(model, provider string) (*LLMEndpoint, error) {
-	if model == "" {
+	switch {
+	case model == "" && provider != "":
+		// The global default may belong to another provider, whose model
+		// name means nothing here (OpenRouter, for one, expects namespaced
+		// IDs), so take the requested provider's own default.
+		model = r.providerDefaultModel(LLMProvider(provider))
+	case model == "":
 		var defaultProvider LLMProvider
 		model, defaultProvider = r.DefaultRoute()
-		if provider == "" {
-			provider = string(defaultProvider)
-		}
-	} else {
+		provider = string(defaultProvider)
+	default:
 		model = resolveModelAlias(model)
 	}
 	var endpoint *LLMEndpoint
