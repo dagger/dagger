@@ -52,6 +52,12 @@ type Module struct {
 	// carries the module carries the definition too.
 	Definition dagql.Nullable[dagql.ObjectResult[*Module]]
 
+	// SourceOverrides, when set, replaces what namespacing and validation
+	// read from Source. ModuleSource._moduleNamespacedDefinition sets it: its
+	// implementation-scoped receiver may carry another client's source kind,
+	// repository URL, commit and engine version. Not persisted.
+	SourceOverrides *SourceOverrides
+
 	// The following are populated while initializing the module
 
 	// The doc string of the module, if any
@@ -1412,7 +1418,7 @@ func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDe
 		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 	}
 	if fn.IsCheck && fn.CheckReturnType.Self() == nil && fn.ReturnType.Self().Kind != TypeDefKindVoid &&
-		mod.Source.Valid && AfterVersion("v1.0.0-0").Contains(call.View(mod.Source.Value.Self().EngineVersion)) {
+		mod.sourceEngineVersionAfter("v1.0.0-0") {
 		if obj.SourceModuleName == "" || fn.ReturnType.Self().ToType().Name() != "Check" {
 			return fmt.Errorf("check %s.%s must return Void", obj.Name, fn.Name)
 		}
@@ -2013,8 +2019,8 @@ func (mod *Module) namespaceSourceMap(
 	}
 	filename := filepath.Join(modPath, sourceMap.Value.Self().Filename)
 	url := sourceMap.Value.Self().URL
-	if mod.Source.Valid && mod.Source.Value.Self().Kind == ModuleSourceKindGit {
-		link, err := mod.Source.Value.Self().Git.Link(filename, sourceMap.Value.Self().Line, sourceMap.Value.Self().Column)
+	if git := mod.sourceMapGit(); git != nil {
+		link, err := git.Link(filename, sourceMap.Value.Self().Line, sourceMap.Value.Self().Column)
 		if err != nil {
 			return dagql.Nullable[dagql.ObjectResult[*SourceMap]]{}, fmt.Errorf("namespace source map git link: %w", err)
 		}
@@ -2046,6 +2052,36 @@ func (mod *Module) namespaceSourceMap(
 		return dagql.Nullable[dagql.ObjectResult[*SourceMap]]{}, fmt.Errorf("namespace source map: %w", err)
 	}
 	return dagql.NonNull(updated), nil
+}
+
+// SourceOverrides are the source facts namespacing and validation read,
+// given explicitly instead of read from the module's source.
+type SourceOverrides struct {
+	// Git is the git source that source maps link into; nil means no links.
+	Git *GitModuleSource
+	// EngineVersion is the engine version functions are validated against.
+	EngineVersion string
+}
+
+// sourceMapGit is the git source that namespaced source maps link into, or
+// nil if they get no links.
+func (mod *Module) sourceMapGit() *GitModuleSource {
+	if mod.SourceOverrides != nil {
+		return mod.SourceOverrides.Git
+	}
+	if mod.Source.Valid && mod.Source.Value.Self().Kind == ModuleSourceKindGit {
+		return mod.Source.Value.Self().Git
+	}
+	return nil
+}
+
+// sourceEngineVersionAfter reports whether the module's source requires an
+// engine version after version.
+func (mod *Module) sourceEngineVersionAfter(version string) bool {
+	if mod.SourceOverrides != nil {
+		return AfterVersion(version).Contains(call.View(mod.SourceOverrides.EngineVersion))
+	}
+	return mod.Source.Valid && AfterVersion(version).Contains(call.View(mod.Source.Value.Self().EngineVersion))
 }
 
 // modulePath gets the prefix for the file sourcemaps, so that the sourcemap is

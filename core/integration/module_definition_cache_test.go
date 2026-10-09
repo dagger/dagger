@@ -171,12 +171,26 @@ func definitionRows(t *testctx.T, report transferFixtureReport) map[uint64]defin
 // and returns the _moduleTypesDefinition rows in it.
 func moduleTypesDefinitionRows(ctx context.Context, t *testctx.T, client *dagger.Client) []uint64 {
 	t.Helper()
+	return fieldRows(ctx, t, client, "_moduleTypesDefinition")
+}
+
+// namespacedDefinitionRows closes client after reading the cache report
+// and returns the _moduleNamespacedDefinition rows in it.
+func namespacedDefinitionRows(ctx context.Context, t *testctx.T, client *dagger.Client) []uint64 {
+	t.Helper()
+	return fieldRows(ctx, t, client, "_moduleNamespacedDefinition")
+}
+
+// fieldRows closes client after reading the cache report and returns the
+// rows in it whose call selects field.
+func fieldRows(ctx context.Context, t *testctx.T, client *dagger.Client, field string) []uint64 {
+	t.Helper()
 	defer func() { require.NoError(t, client.Close()) }()
 	var report transferFixtureReport
 	require.NoError(t, transferFixture(ctx, client, "report", "", []string{}, &report))
 	var out []uint64
 	for _, row := range report.Rows {
-		if row.Call != nil && row.Call.Field == "_moduleTypesDefinition" {
+		if row.Call != nil && row.Call.Field == field {
 			out = append(out, row.ResultID)
 		}
 	}
@@ -232,8 +246,12 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 	}
 	functionNames := func(s served) []string { return functionNamesOf(s.Objects) }
 
+	namespacedRows := func() []uint64 { return namespacedDefinitionRows(ctx, t, a.connect(ctx, t, checkout)) }
+
 	first, firstRows := load(t, a, checkout)
 	require.Len(t, firstRows, 1, "the first load computed one definition")
+	firstNamespaced := namespacedRows()
+	require.Len(t, firstNamespaced, 1, "the first load namespaced the definition into the module once")
 	require.Equal(t, []string{"Probe.hello"}, functionNames(first))
 	require.Equal(t, "Probe answers with fixed strings.", first.Objects[0].AsObject.Description)
 	hello := first.Objects[0].AsObject.Functions[0]
@@ -248,6 +266,7 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 	require.Equal(t, first.Objects, second.Objects, "the served objects, descriptions and source maps are equal")
 	require.NotEmpty(t, second.Runtime.ID, "Module.runtime resolves on the hitting client")
 	require.Equal(t, 1, a.logCount(ctx, t, outer, definitionComputedLine), "the second client's load did not run the runtime for the definition")
+	require.ElementsMatch(t, firstNamespaced, namespacedRows(), "the second client reused the namespaced typedefs instead of rebuilding them")
 
 	writeProbe(moduleDefinitionProbeSourceEdited)
 	third, thirdRows := load(t, a, checkout)
@@ -257,6 +276,9 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 		require.Contains(t, thirdRows, id)
 	}
 	require.Equal(t, 2, a.logCount(ctx, t, outer, definitionComputedLine), "the edit's definition ran the runtime once")
+	editedNamespaced := namespacedRows()
+	require.Len(t, editedNamespaced, 2, "the edited definition is namespaced beside the retained old one")
+	require.Subset(t, editedNamespaced, firstNamespaced)
 
 	// A Dang module's SDK implements ModuleTypes, so its load takes that
 	// branch and never reaches the cached-definition field: no row is added.
