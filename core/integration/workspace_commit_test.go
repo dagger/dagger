@@ -20,6 +20,7 @@ import (
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -444,9 +445,12 @@ func (WorkspaceSuite) TestWorkspaceWithCommitNativeReconciliationTrace(ctx conte
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture, inspector := workspaceReconciliationFixture(c)
+	// Unique content keeps the merge out of the cache that parallel tests share,
+	// so this test always emits its own native merge spans.
+	selected := "selected-" + identity.NewID() + "\n"
 	checkWorkspaceReconciliation(ctx, t, c, fixture, inspector, workspaceReconciliationCase{
-		name: "ordinary native trace", include: []string{"file.txt"}, wantFile: "selected\n",
-		pending: func(d *core.Directory) *core.Directory { return d.WithNewFile("file.txt", "selected\n") },
+		name: "ordinary native trace", include: []string{"file.txt"}, wantFile: selected,
+		pending: func(d *core.Directory) *core.Directory { return d.WithNewFile("file.txt", selected) },
 	})
 	require.NoError(t, c.Close()) // Drain telemetry, after all inline cases.
 	traces, _ := sink.capture()
