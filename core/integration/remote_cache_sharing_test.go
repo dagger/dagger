@@ -28,6 +28,10 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	checkout := func() string {
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("shared host notes"), 0644))
+		for _, name := range []string{"before", "warm", "after"} {
+			require.NoError(t, os.Mkdir(filepath.Join(dir, name), 0755))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, name, "source.txt"), []byte("unchanged source"), 0644))
+		}
 		return dir
 	}
 	type running struct {
@@ -140,6 +144,23 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.Len(t, installedRow.SnapshotLinks, 1, "the receiver owns its own snapshot link")
 	require.Equal(t, donorRef, installedRow.SnapshotLinks[0].RefKey, "it is the donor's exact snapshot, owned independently")
 
+	// Different projections with identical bytes share downstream actions.
+	// The random output reveals whether the command really executed again.
+	action := func(client *dagger.Client, source *core.Directory) *core.Container {
+		return core.NewQuery(client).Container().From(alpineImage).
+			WithMountedDirectory("/source", source).
+			WithExec([]string{"sh", "-ec", "cat /source/source.txt >/dev/null; cat /proc/sys/kernel/random/uuid"})
+	}
+	beforeSource := core.Ref[*core.Directory](core.NewQuery(b.client), core.ID(handle)).Directory("before")
+	beforeDigest, err := beforeSource.Digest(ctx)
+	require.NoError(t, err)
+	beforeToken, err := action(b.client, beforeSource).Stdout(ctx)
+	require.NoError(t, err)
+	warmSource := core.Ref[*core.Directory](core.NewQuery(b.client), core.ID(handle)).Directory("warm")
+	warmToken, err := action(b.client, warmSource).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, beforeToken, warmToken, "identical source projections should reuse the executed action")
+
 	// Restart B: ownership survives, and demanding the exact restored row
 	// installs, downloads, evaluates and settles nothing for that row.
 	stop(b)
@@ -171,4 +192,21 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 		require.Equal(t, "owner-sync", event.Kind, "a read of a restored owned snapshot needs no part operation: %+v", event)
 		require.Empty(t, event.Address.Part, "a read of a restored owned snapshot needs no part operation: %+v", event)
 	}
+
+	// First prove the previous action survived persistence. Then demand a
+	// projection never requested before the restart. Losing imported hash
+	// records changes its content identity and unnecessarily starts a new
+	// process, even though its bytes match the old action's source.
+	originalSource := core.Ref[*core.Directory](core.NewQuery(b.client), core.ID(handle)).Directory("before")
+	originalToken, err := action(b.client, originalSource).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, beforeToken, originalToken, "the original action result must survive restart")
+	afterSource := core.Ref[*core.Directory](core.NewQuery(b.client), core.ID(handle)).Directory("after")
+	afterToken, err := action(b.client, afterSource).Stdout(ctx)
+	require.NoError(t, err)
+	afterDigest, err := afterSource.Digest(ctx)
+	require.NoError(t, err)
+	t.Logf("unchanged projection after restart: before digest=%s after digest=%s action reused=%t", beforeDigest, afterDigest, beforeToken == afterToken)
+	require.Equal(t, beforeToken, afterToken, "unchanged content should reuse the action across restart")
+	require.Equal(t, beforeDigest, afterDigest, "unchanged content should keep its imported digest across restart")
 }

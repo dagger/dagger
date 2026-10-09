@@ -175,7 +175,7 @@ type cacheMetadata struct {
 	cache.RefMetadata
 }
 
-const keyContentHash = "buildkit.contenthash.v0"
+const keyContentHash = cache.ContentHashMetadataKey
 
 func (md cacheMetadata) GetContentHash() ([]byte, error) {
 	return md.GetExternal(keyContentHash)

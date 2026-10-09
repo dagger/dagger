@@ -55,6 +55,7 @@ type persistStateSnapshot struct {
 	resultOutputEqClasses []persistdb.MirrorResultOutputEqClass
 	results               []persistResultSnapshot
 	snapshotContentLinks  []persistdb.MirrorSnapshotContentLink
+	snapshotContentHashes []persistdb.MirrorSnapshotContentHash
 	importedLayerByBlob   []persistdb.MirrorImportedLayerBlobIndex
 	importedLayerByDiff   []persistdb.MirrorImportedLayerDiffIndex
 }

@@ -76,6 +76,11 @@ type MirrorSnapshotContentLink struct {
 	Digest     string
 }
 
+type MirrorSnapshotContentHash struct {
+	SnapshotID string
+	Data       []byte
+}
+
 type MirrorImportedLayerBlobIndex struct {
 	ParentSnapshotID string
 	BlobDigest       string
@@ -91,6 +96,7 @@ type MirrorImportedLayerDiffIndex struct {
 const clearMirrorImportedLayerDiffIndex = `DELETE FROM imported_layer_diff_index`
 const clearMirrorImportedLayerBlobIndex = `DELETE FROM imported_layer_blob_index`
 const clearMirrorSnapshotContentLinks = `DELETE FROM snapshot_content_links`
+const clearMirrorSnapshotContentHashes = `DELETE FROM snapshot_content_hashes`
 const clearMirrorResultSnapshotLinks = `DELETE FROM result_snapshot_links`
 const clearMirrorPersistedEdges = `DELETE FROM persisted_edges`
 const clearMirrorResultDeps = `DELETE FROM result_deps`
@@ -106,6 +112,7 @@ func (q *Queries) ClearMirrorState(ctx context.Context) error {
 		clearMirrorImportedLayerDiffIndex,
 		clearMirrorImportedLayerBlobIndex,
 		clearMirrorSnapshotContentLinks,
+		clearMirrorSnapshotContentHashes,
 		clearMirrorResultSnapshotLinks,
 		clearMirrorPersistedEdges,
 		clearMirrorResultDeps,
@@ -219,6 +226,15 @@ INSERT INTO snapshot_content_links (snapshot_id, digest) VALUES (?, ?)
 
 func (q *Queries) InsertMirrorSnapshotContentLink(ctx context.Context, arg MirrorSnapshotContentLink) error {
 	_, err := q.exec(ctx, nil, insertMirrorSnapshotContentLink, arg.SnapshotID, arg.Digest)
+	return err
+}
+
+const insertMirrorSnapshotContentHash = `
+INSERT INTO snapshot_content_hashes (snapshot_id, data) VALUES (?, ?)
+`
+
+func (q *Queries) InsertMirrorSnapshotContentHash(ctx context.Context, arg MirrorSnapshotContentHash) error {
+	_, err := q.exec(ctx, nil, insertMirrorSnapshotContentHash, arg.SnapshotID, arg.Data)
 	return err
 }
 
@@ -429,6 +445,25 @@ func (q *Queries) ListMirrorResultSnapshotLinks(ctx context.Context) ([]MirrorRe
 	for rows.Next() {
 		var row MirrorResultSnapshotLink
 		if err := rows.Scan(&row.ResultID, &row.RefKey, &row.Role, &row.OutputPath); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+const listMirrorSnapshotContentHashes = `SELECT snapshot_id, data FROM snapshot_content_hashes`
+
+func (q *Queries) ListMirrorSnapshotContentHashes(ctx context.Context) ([]MirrorSnapshotContentHash, error) {
+	rows, err := q.db.QueryContext(ctx, listMirrorSnapshotContentHashes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MirrorSnapshotContentHash
+	for rows.Next() {
+		var row MirrorSnapshotContentHash
+		if err := rows.Scan(&row.SnapshotID, &row.Data); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
