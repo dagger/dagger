@@ -62,7 +62,7 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
      *
      * Note: this is in the context of a module, so some core types may be hidden.
      */
-    public function introspectionSchemaJSON(): File
+    public function introspectionSchemaJson(): File
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('introspectionSchemaJSON');
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));

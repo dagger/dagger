@@ -33,7 +33,7 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
         ?GitRepository $to = null,
         ?string $remote = '',
         ?string $branch = '',
-        ?string $expectedRemoteSHA = '',
+        ?string $expectedRemoteSha = '',
     ): GitPushResult {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('push');
         if (null !== $to) {
@@ -45,8 +45,8 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $branch) {
         $innerQueryBuilder->setArgument('branch', $branch);
         }
-        if (null !== $expectedRemoteSHA) {
-        $innerQueryBuilder->setArgument('expectedRemoteSHA', $expectedRemoteSHA);
+        if (null !== $expectedRemoteSha) {
+        $innerQueryBuilder->setArgument('expectedRemoteSHA', $expectedRemoteSha);
         }
         return new \Dagger\GitPushResult($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -63,7 +63,7 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * The resolved commit SHA at this ref.
      */
-    public function commitSHA(): string
+    public function commitSha(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commitSHA');
         return (string)$this->queryLeaf($leafQueryBuilder, 'commitSHA');

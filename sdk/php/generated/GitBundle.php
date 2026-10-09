@@ -70,7 +70,7 @@ class GitBundle extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Commits that must already exist wherever this bundle is applied.
      */
-    public function prerequisiteSHAs(): array
+    public function prerequisiteShas(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('prerequisiteSHAs');
         return (array)$this->queryLeaf($leafQueryBuilder, 'prerequisiteSHAs');

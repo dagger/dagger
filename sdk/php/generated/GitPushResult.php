@@ -34,7 +34,7 @@ class GitPushResult extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * The previous remote object ID; empty when the ref was created.
      */
-    public function previousSHA(): string
+    public function previousSha(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('previousSHA');
         return (string)$this->queryLeaf($leafQueryBuilder, 'previousSHA');

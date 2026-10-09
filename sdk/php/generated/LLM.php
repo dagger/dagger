@@ -289,10 +289,10 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Append the result of a tool call to the message history.
      */
-    public function withToolResult(string $callID, string $content, bool $errored, ?array $blocks = null): LLM
+    public function withToolResult(string $callId, string $content, bool $errored, ?array $blocks = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolResult');
-        $innerQueryBuilder->setArgument('callId', $callID);
+        $innerQueryBuilder->setArgument('callId', $callId);
         $innerQueryBuilder->setArgument('content', $content);
         $innerQueryBuilder->setArgument('errored', $errored);
         if (null !== $blocks) {
@@ -329,7 +329,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Add an external MCP server to the LLM
      */
-    public function withMCPServer(string $name, Service $service): LLM
+    public function withMcpServer(string $name, Service $service): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMCPServer');
         $innerQueryBuilder->setArgument('name', $name);
