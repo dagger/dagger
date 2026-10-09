@@ -127,6 +127,10 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 		}
 	}
 	var spans iter.Seq[*Span]
+	// Walking every span visits (and marks seen) every span in the DB, so the
+	// walk's seen set can be sized up front instead of growing through
+	// rehashes, which dominated large traces' walks.
+	seenHint := 0
 	if view.Zoomed != nil {
 		if len(view.Zoomed.RevealedSpans.Order) > 0 &&
 			// Revealed spans bubble up all the way to the root span. By default, we
@@ -146,14 +150,16 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 		}
 	} else {
 		spans = db.AllSpans()
+		seenHint = len(db.Spans.Order)
 	}
 	if opts.RootFilter != nil && (!opts.ZoomedSpan.IsValid() || opts.ZoomedSpan == db.PrimarySpan) {
 		if roots := opts.RootFilter(db, view.Zoomed); len(roots) > 0 {
 			spans = slices.Values(roots)
+			seenHint = 0
 		}
 	}
 
-	db.WalkSpans(opts, spans, func(tree *TraceTree) {
+	db.walkSpans(opts, spans, seenHint, func(tree *TraceTree) {
 		if tree.Parent != nil {
 			tree.Parent.Children = append(tree.Parent.Children, tree)
 		} else {
@@ -164,7 +170,12 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	return view
 }
 
-func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceTree)) { //nolint:gocyclo
+func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceTree)) {
+	db.walkSpans(opts, spans, 0, f)
+}
+
+// walkSpans is WalkSpans with a capacity hint for the set of visited spans.
+func (db *DB) walkSpans(opts FrontendOpts, spans iter.Seq[*Span], seenHint int, f func(*TraceTree)) { //nolint:gocyclo
 	// Strict scoping: the walk root a span must descend from by real
 	// parentage. See FrontendOpts.StrictSubtree -- this is what makes a scoped
 	// report render exactly the root span's own subtree.
@@ -185,8 +196,22 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 	}
 	var lastTree *TraceTree
 	var lastCall *TraceTree
-	seen := make(map[SpanID]bool)
+	seen := make(map[SpanID]bool, seenHint)
 	var walk func(*Span, *TraceTree) bool
+	// walkCauses walks a span's causal spans inline under parent, reporting
+	// whether the last one walked was collected (so the span reparents under
+	// it). It's its own closure, rather than a range-over-func loop inside
+	// walk, so walk's locals aren't captured -- that moved them to the heap on
+	// every call, a handful of allocations per span on every rebuild.
+	walkCauses := func(span *Span, parent *TraceTree) bool {
+		reparent := false
+		for cause := range span.CausalSpans {
+			if !span.HasParent(cause) {
+				reparent = walk(cause, parent)
+			}
+		}
+		return reparent
+	}
 	walk = func(span *Span, parent *TraceTree) bool {
 		spanID := span.ID
 		if seen[spanID] {
@@ -240,12 +265,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 		}
 
 		// display causal spans inline (always only one, but the data is many:many)
-		reparent := false
-		for cause := range span.CausalSpans {
-			if !span.HasParent(cause) {
-				reparent = walk(cause, parent)
-			}
-		}
+		reparent := len(span.causesViaLinks.Order) > 0 && walkCauses(span, parent)
 
 		// reparent
 		if reparent {
