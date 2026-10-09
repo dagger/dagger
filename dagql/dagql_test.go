@@ -20,6 +20,7 @@ import (
 	"github.com/99designs/gqlgen/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
@@ -2549,6 +2550,17 @@ func TestReevaluateDirective(t *testing.T) {
 			}
 		}
 		require.Equal(t, want, got, field)
+	}
+
+	// Both forms must be valid uses of the declared directive.
+	when := schema.Directives["reevaluate"].Arguments.ForName("when")
+	require.NotNil(t, when)
+	for _, use := range []string{"@reevaluate", `@reevaluate(when: ["noCache"])`} {
+		_, err := gqlparser.LoadSchema(&ast.Source{
+			Name:  "reevaluate.graphql",
+			Input: fmt.Sprintf("directive @reevaluate(when: %s) on FIELD_DEFINITION\ntype Query { fresh: String %s }", when.Type, use),
+		})
+		require.NoError(t, err, use)
 	}
 }
 

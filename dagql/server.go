@@ -430,7 +430,7 @@ var coreDirectives = []DirectiveSpec{
 				Description: FormatDescription(
 					`Only calls that set one of these Boolean arguments to true are
 					reevaluated. When omitted, every call is.`),
-				Type: ArrayInput[String](nil),
+				Type: Optional[ArrayInput[String]]{},
 			},
 		),
 		Locations: []DirectiveLocation{

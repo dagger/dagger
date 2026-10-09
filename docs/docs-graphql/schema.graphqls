@@ -73,7 +73,7 @@ directive @reevaluate(
   """
   Only calls that set one of these Boolean arguments to true are reevaluated. When omitted, every call is.
   """
-  when: [String!]!
+  when: [String!]
 ) on FIELD_DEFINITION
 
 """Indicates the source information for where a given field is defined."""
