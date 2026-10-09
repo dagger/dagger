@@ -1466,7 +1466,7 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	}
 	if client, ok := manager.transports[clientID]; ok {
 		manager.mu.Unlock()
-		return client.await()
+		return client.await(req.Context())
 	}
 
 	// The request chooses only its fresh logical client ID. Session identity,
@@ -1481,6 +1481,17 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	manager.transports[clientID] = client
 	manager.mu.Unlock()
 
+	// The registration can wait for the exec's session helper, which starts
+	// alongside the command, so it runs for the exec rather than this request:
+	// a canceled request stops waiting without failing the registration for
+	// the requests that share it.
+	go manager.register(client)
+	return client.await(req.Context())
+}
+
+// register registers client's transport with the session and records the
+// outcome on client.
+func (manager *nestedClientTransportManager) register(client *nestedClientTransport) {
 	// Register without holding manager.mu. Close runs from exec cleanup, which
 	// can itself be waited on by the session that serves this registration, so
 	// the server call must never be able to block Close. Concurrent requests
@@ -1488,7 +1499,7 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	// registration.
 	transport, err := manager.sessionHandler.RegisterNestedClientTransportForExec(
 		manager.registrationCtx,
-		&metadata,
+		client.metadata,
 		manager.parentClientID,
 		manager.baseMetadata.ClientID,
 	)
@@ -1498,22 +1509,22 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 		// Registration is an exact, one-time binding. A failure must not send an
 		// SSE client into a retry loop or fall through to any other client, and
 		// it is not cached: a later request for the same ID registers again.
-		if manager.transports[clientID] == client {
-			delete(manager.transports, clientID)
+		if manager.transports[client.metadata.ClientID] == client {
+			delete(manager.transports, client.metadata.ClientID)
 		}
 		client.err = fmt.Errorf("register nested client transport: %w", err)
 		close(client.ready)
 		manager.mu.Unlock()
-		return nil, nil, http.StatusConflict, client.err
+		return
 	}
 	client.transport = transport
 	closedMeanwhile := manager.closed
-	close(client.ready)
 	manager.mu.Unlock()
 
 	if closedMeanwhile {
 		// Close could not see this transport while the registration was in
-		// flight, so the registering request completes the cleanup.
+		// flight, so the registration completes the cleanup, before any
+		// request can see the transport.
 		transport.Close()
 	}
 	if wcprof.Enabled(manager.registrationCtx) {
@@ -1521,16 +1532,20 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 		// The link is from the exec op itself, not the setupNestedClient phase
 		// the registration context carries: that phase ends before the
 		// container starts, so ops hung under it would sit outside the exec's
-		// run.
-		wcprof.Link(manager.registrationCtx, wcprof.LinkKindNestedClient, manager.profExecOpID, 0, metadata.ClientID, 0)
+		// run. It is recorded before any request can use the client.
+		wcprof.Link(manager.registrationCtx, wcprof.LinkKindNestedClient, manager.profExecOpID, 0, client.metadata.ClientID, 0)
 	}
-	return transport, &metadata, 0, nil
+	close(client.ready)
 }
 
 // await returns the outcome of the registration that created this entry,
-// waiting for it if it is still in flight.
-func (client *nestedClientTransport) await() (*engine.NestedClientTransport, *engine.ClientMetadata, int, error) {
-	<-client.ready
+// waiting for it if it is still in flight, or until ctx is done.
+func (client *nestedClientTransport) await(ctx context.Context) (*engine.NestedClientTransport, *engine.ClientMetadata, int, error) {
+	select {
+	case <-client.ready:
+	case <-ctx.Done():
+		return nil, nil, http.StatusServiceUnavailable, fmt.Errorf("wait for nested client transport: %w", context.Cause(ctx))
+	}
 	if client.err != nil {
 		return nil, nil, http.StatusConflict, client.err
 	}
