@@ -12,7 +12,7 @@ const (
 )
 
 const (
-	RuncPath       = "/usr/local/bin/runc"
+	RuntimePath    = "/usr/local/bin/crun"
 	DaggerInitPath = "/usr/local/bin/dagger-init"
 	// DaggerInitSessionPath is the session-attachables helper of nested
 	// clients, mounted into their containers at InitSessionContainerPath.

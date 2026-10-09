@@ -395,7 +395,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	//
 
 	srv.runc = &runc.Runc{
-		Command:   distconsts.RuncPath,
+		Command:   distconsts.RuntimePath,
 		Log:       filepath.Join(srv.executorRootDir, "runc-log.json"),
 		LogFormat: runc.JSON,
 		Setpgid:   true,
