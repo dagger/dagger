@@ -31,6 +31,30 @@ func TestGlobHostPathCancellation(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
+func TestGlobHostPathWildcardDirThenTrailingGlob(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{"a/b/keep.txt", "a/b/c/deep.txt", "a/top.txt"} {
+		path = filepath.Join(root, filepath.FromSlash(path))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, nil, 0o600))
+	}
+
+	for _, test := range []struct {
+		pattern string
+		want    []string
+	}{
+		{pattern: "a/*/**", want: []string{"a/b/c/", "a/b/c/deep.txt", "a/b/keep.txt"}},
+		{pattern: "a/*/*", want: []string{"a/b/c/", "a/b/keep.txt"}},
+		{pattern: "a/b/**", want: []string{"a/b/c/", "a/b/c/deep.txt", "a/b/keep.txt"}},
+	} {
+		t.Run(test.pattern, func(t *testing.T) {
+			matches, err := globHostPath(context.Background(), root, test.pattern)
+			require.NoError(t, err)
+			require.ElementsMatch(t, test.want, matches)
+		})
+	}
+}
+
 type canceledDiffCopyStream struct {
 	grpc.ServerStream
 	ctx context.Context

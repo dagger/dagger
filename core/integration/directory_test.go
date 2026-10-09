@@ -1576,6 +1576,15 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 				})
 			})
 
+			t.Run("wildcard directory then trailing double star", func(ctx context.Context, t *testctx.T) {
+				entries, err := tc.src.Glob(ctx, "subdir/*/**")
+
+				require.NoError(t, err)
+				require.ElementsMatch(t, entries, []string{
+					"subdir/subsubdir/package.json", "subdir/subsubdir/index.mts", "subdir/subsubdir/JS.md",
+				})
+			})
+
 			t.Run("recursive with complex pattern that include only markdown", func(ctx context.Context, t *testctx.T) {
 				entries, err := tc.src.Glob(ctx, "subdir/**/*.md")
 
