@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"dagger.io/dagger/core"
 
@@ -567,11 +568,7 @@ func (ProvisionSuite) TestImageDriverEngineEventsNeedEnable(ctx context.Context,
 		require.Contains(t, out, marker)
 
 		// A graceful stop emits engine.stop and flushes any events.
-		_, err = ctr.
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
-			WithExec([]string{"sh", "-c", "docker stop -t 60 $(docker ps -q)"}).
-			Sync(ctx)
-		require.NoError(t, err)
+		stopProvisionedEngine(ctx, t, ctr, tag)
 		return eventsID
 	}
 	// events runs script where the fake Cloud records what it received
@@ -597,4 +594,91 @@ func (ProvisionSuite) TestImageDriverEngineEventsNeedEnable(ctx context.Context,
 	sent := events(on, "cat logs.json.engine-events")
 	require.Contains(t, sent, telemetryattrs.EngineEventStart)
 	require.Contains(t, sent, telemetryattrs.EngineEventStop)
+}
+
+// stopProvisionedEngine stops the engine provisioned in dockerc with a 60s
+// grace period, after which docker force-kills it. The engine's own output
+// lives only in its container's log, which test cleanup removes, so a stop
+// that fails would otherwise leave nothing to say why. If the engine is still
+// running 45s in, before the force-kill, this records its goroutines and the
+// state of every process under docker; it logs them only if the stop then
+// fails, together with the process states and the engine's log tail as they
+// are after the failed stop.
+func stopProvisionedEngine(ctx context.Context, t *testctx.T, dockerc *core.Container, engineImage string) {
+	stopped := make(chan error, 1)
+	go func() {
+		_, err := dockerc.
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithExec([]string{"sh", "-c", "docker stop -t 60 $(docker ps -q)"}).
+			Sync(ctx)
+		stopped <- err
+	}()
+	var err error
+	var slow string
+	select {
+	case err = <-stopped:
+	case <-time.After(45 * time.Second):
+		slow = engineStopDiagnostics(ctx, dockerc, engineImage, false)
+		err = <-stopped
+	}
+	if err != nil && slow != "" {
+		t.Logf("engine still running 45s into its graceful stop:\n%s", slow)
+		t.Logf("after the failed stop:\n%s", engineStopDiagnostics(ctx, dockerc, engineImage, true))
+	}
+	require.NoError(t, err)
+}
+
+// engineStopDiagnostics reports the state and kernel stack of every process
+// under dockerd. Before the stop has failed it also reports the running
+// engine's goroutines, from the debug endpoint the image driver starts it
+// with; after, the tail of the engine's log. Each part is capped (256KiB of
+// goroutines, 64KiB of processes, 64KiB of log), every command is killed
+// after a timeout, and the whole capture gives up after 90s, so a stuck
+// engine can't hang or flood the test.
+//
+// The engine image has no HTTP client, so bash fetches the goroutines over
+// /dev/tcp. Processes are read from dockerd's PID namespace through a helper
+// container of the engine image, which works even when the engine container
+// is too far gone to exec into.
+func engineStopDiagnostics(ctx context.Context, dockerc *core.Container, engineImage string, failed bool) string {
+	script := `
+if [ -z "$FAILED" ]; then
+  for id in $(timeout -s KILL 10 docker ps -q); do
+    echo "=== goroutines of $id"
+    timeout -s KILL 15 docker exec "$id" bash -c 'exec 3<>/dev/tcp/127.0.0.1/6060 && printf "GET /debug/pprof/goroutine?debug=2 HTTP/1.0\r\n\r\n" >&3 && cat <&3' 2>&1 | head -c 262144
+  done
+fi
+echo "=== processes"
+timeout -s KILL 20 docker run --rm --pid=host --privileged --network=none --entrypoint sh "$IMAGE" -c '
+for p in /proc/[0-9]*; do
+  [ -r "$p/status" ] || continue
+  state=
+  while read -r k v; do
+    case "$k" in State:|PPid:) state="$state $k $v" ;; esac
+  done < "$p/status"
+  echo "--- pid ${p#/proc/}$state wchan $(cat "$p/wchan" 2>/dev/null): $(tr "\0" " " < "$p/cmdline" 2>/dev/null | head -c 160)"
+  head -n 16 "$p/stack" 2>/dev/null
+done' 2>&1 | head -c 65536
+if [ -n "$FAILED" ]; then
+  for id in $(timeout -s KILL 10 docker ps -aq --filter name=^dagger-engine-); do
+    echo "=== log tail of $id"
+    timeout -s KILL 10 docker logs --tail 200 "$id" 2>&1 | tail -c 65536
+  done
+fi
+`
+	ctr := dockerc.
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("IMAGE", engineImage)
+	if failed {
+		ctr = ctr.WithEnvVariable("FAILED", "1")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	out, err := ctr.
+		WithExec([]string{"sh", "-c", script}, core.ContainerWithExecOpts{Expect: core.ReturnTypeAny}).
+		Stdout(ctx)
+	if err != nil {
+		return err.Error()
+	}
+	return out
 }
