@@ -20,7 +20,7 @@ from typing_extensions import dataclass_transform, overload
 import dagger
 from dagger import dag
 from dagger.client._core import configure_converter_enum
-from dagger.mod._converter import make_converter, to_typedef
+from dagger.mod._converter import make_converter, to_interface_impl, to_typedef
 from dagger.mod._exceptions import (
     BadUsageError,
     FunctionError,
@@ -31,6 +31,7 @@ from dagger.mod._exceptions import (
     log_exception_only,
     transform_error,
 )
+from dagger.mod._naming import SchemaNames, resolve_schema_names
 from dagger.mod._resolver import (
     Constructor,
     Field,
@@ -83,6 +84,7 @@ class Module:
         self._objects: dict[str, ObjectType] = {}
         self._enums: dict[str, type[enum.Enum]] = {}
         self._main: ObjectType | None = None
+        self._schema_names = SchemaNames()
         # Escape hatch if there's too much noise from showing stack traces
         # from exceptions raised in functions by default. Not documented
         # intentionally for now.
@@ -92,6 +94,27 @@ class Module:
     def main_cls(self) -> type[ObjectType]:
         assert self._main is not None
         return self._main.cls
+
+    @property
+    def schema_names(self) -> SchemaNames:
+        """Schema names of the module's interfaces, for calls through them."""
+        return self._schema_names
+
+    async def load_schema_names(self):
+        """Ask the engine how it names the module's interfaces.
+
+        Modules at engine version v1.0.0 and later have their names
+        formatted by the engine's naming rules. Calls through the module's
+        interfaces need those names, so get them before invoking anything.
+        """
+        interfaces = [obj for obj in self._objects.values() if obj.interface]
+        if not interfaces:
+            return
+        names = await resolve_schema_names(self.main_cls.__name__, interfaces)
+        if names is not None:
+            self._schema_names = names
+            # Bindings built before now used the older conversion.
+            to_interface_impl.cache_clear()
 
     def is_main(self, other: ObjectType) -> bool:
         """Check if the given object is the main object of the module."""
@@ -351,6 +374,8 @@ class Module:
                     "input_args": textwrap.shorten(repr(inputs), 144),
                 },
             )
+
+        await self.load_schema_names()
 
         result = await self.get_result(
             parent_name,
