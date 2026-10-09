@@ -1372,9 +1372,23 @@ func doGitCheckout(
 	depth int,
 	discardGitDir bool,
 ) error {
-	_, err := checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
+	tmpref, err := fetchGitCheckout(ctx, checkoutGit, cloneURL, ref, depth)
 	if err != nil {
 		return err
+	}
+	return finishGitCheckout(ctx, checkoutGit, remotes, cloneURL, ref, discardGitDir, tmpref, gitCheckoutFresh)
+}
+
+// fetchGitCheckout initializes the checkout and copies ref's objects from
+// cloneURL into a temporary ref. This is the only phase of a checkout that
+// reads the source: a caller borrowing a locked mirror only needs to hold it
+// until this returns. Fetching from a file:// URL goes through the pack
+// transport, so the checkout owns full copies of its objects, with no
+// alternates or hardlinks back to the source.
+func fetchGitCheckout(ctx context.Context, checkoutGit *gitutil.GitCLI, cloneURL string, ref *gitutil.Ref, depth int) (string, error) {
+	_, err := checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
+	if err != nil {
+		return "", err
 	}
 
 	tmpref := "refs/dagger.tmp/" + identity.NewID()
@@ -1390,9 +1404,9 @@ func doGitCheckout(
 	args = append(args, ref.SHA+":"+tmpref)
 	_, err = checkoutGit.Run(ctx, args...)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return finishGitCheckout(ctx, checkoutGit, remotes, cloneURL, ref, discardGitDir, tmpref, gitCheckoutFresh)
+	return tmpref, nil
 }
 
 // gitCheckoutReuse says what a checkout inherits rather than writes itself.
@@ -1418,6 +1432,8 @@ const (
 
 // finishGitCheckout materializes a ref whose objects are already available.
 // tmpref is set only when the caller fetched the objects into a temporary ref.
+// cloneURL is only used in error messages. After fetchGitCheckout the checkout
+// owns its objects, so this may run after a borrowed mirror has been released.
 //
 //nolint:gocyclo // one sequence of checkout steps, each skipped per inheritance mode; splitting hides their order
 func finishGitCheckout(
