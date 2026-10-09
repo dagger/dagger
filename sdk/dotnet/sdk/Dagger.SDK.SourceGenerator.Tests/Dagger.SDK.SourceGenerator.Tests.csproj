@@ -19,4 +19,9 @@
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
     </ItemGroup>
 
+    <ItemGroup>
+        <!-- The engine's shared naming test vectors. -->
+        <EmbeddedResource Include="..\..\..\..\engine\naming\testdata\vectors.json" Link="Fixtures\vectors.json" LogicalName="vectors.json" />
+    </ItemGroup>
+
 </Project>
