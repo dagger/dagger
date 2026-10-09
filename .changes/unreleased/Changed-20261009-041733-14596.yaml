@@ -1,0 +1,6 @@
+kind: Changed
+body: CLI commands that load a workspace start faster because the engine no longer rebuilds typedefs on every invocation. Typedef accessors are no longer cached per session, and each module's namespaced typedefs are now cached across clients instead of being rebuilt by every client that loads the module. On a 41-module workspace, `dagger functions` went from about 1.4s to 1.0s on a warm engine.
+time: 2026-10-09T04:17:33Z
+custom:
+  Author: sipsma
+  PR: "14596"
