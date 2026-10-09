@@ -270,45 +270,68 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 		"GIT_AUTHOR_DATE=2000-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2000-01-01T00:00:00Z",
 	}
 	work := ""
+	// Each phase runs its git commands under its own profile op, so a
+	// profile breaks a slow phase down by command (git.<verb>).
+	runCtx := ctx
 	run := func(args ...string) (string, error) {
-		return runWorkspaceCommitGit(ctx, work, append(slices.Clone(env), "GIT_WORK_TREE="+work), args...)
+		return runWorkspaceCommitGit(runCtx, work, append(slices.Clone(env), "GIT_WORK_TREE="+work), args...)
+	}
+	phase := func(name string, fn func() error) error {
+		outer := runCtx
+		return phases.run(outer, name, func(ctx context.Context) error {
+			runCtx = ctx
+			defer func() { runCtx = outer }()
+			return fn()
+		})
+	}
+	// The raw content applied to a worktree, timed apart from the git
+	// commands around it.
+	applyTo := func(i int, dir string) error {
+		return phases.run(runCtx, "apply_"+nativeMergeLabels[i], func(context.Context) error {
+			return apply[i](dir)
+		})
 	}
 	commits := make([]string, 2)
 	trees := make([]string, 2)
-	start = phases.record(ctx, "init", start)
+	phases.record(ctx, "init", start)
 	for i, changes := range paths {
-		work = filepath.Join(scratch, strconv.Itoa(i))
-		if err := os.Mkdir(work, 0755); err != nil {
-			return err
-		}
-		if err := stageNativeChanges(run, parent, changes, false, func() error {
-			// Controls have been hydrated, but still describe the parent.
-			if err := validateNativeWorkspaceBase(run, base, changes); err != nil {
+		if err := phase("stage_"+nativeMergeLabels[i], func() error {
+			work = filepath.Join(scratch, strconv.Itoa(i))
+			if err := os.Mkdir(work, 0755); err != nil {
 				return err
 			}
-			return apply[i](work)
+			if err := stageNativeChanges(run, parent, changes, false, func() error {
+				// Controls have been hydrated, but still describe the parent.
+				if err := validateNativeWorkspaceBase(run, base, changes); err != nil {
+					return err
+				}
+				return applyTo(i, work)
+			}); err != nil {
+				return err
+			}
+			tree, err := run("write-tree")
+			if err != nil {
+				return err
+			}
+			trees[i] = strings.TrimSpace(tree)
+			commit, err := run("commit-tree", trees[i], "-p", parent, "-m", "workspace merge")
+			if err != nil {
+				return err
+			}
+			commits[i] = strings.TrimSpace(commit)
+			// merge-tree labels conflict messages with its arguments. Name the
+			// sides instead of printing scratch commit IDs nobody can look up.
+			_, err = run("update-ref", "refs/heads/"+nativeMergeLabels[i], commits[i])
+			return err
 		}); err != nil {
 			return err
 		}
-		tree, err := run("write-tree")
-		if err != nil {
-			return err
-		}
-		trees[i] = strings.TrimSpace(tree)
-		commit, err := run("commit-tree", trees[i], "-p", parent, "-m", "workspace merge")
-		if err != nil {
-			return err
-		}
-		commits[i] = strings.TrimSpace(commit)
-		// merge-tree labels conflict messages with its arguments. Name the
-		// sides instead of printing scratch commit IDs nobody can look up.
-		if _, err := run("update-ref", "refs/heads/"+nativeMergeLabels[i], commits[i]); err != nil {
-			return err
-		}
-		start = phases.record(ctx, "stage_"+nativeMergeLabels[i], start)
 	}
-	merged, err := run("merge-tree", "--write-tree", "--name-only", "--merge-base="+parent, nativeMergeLabels[0], nativeMergeLabels[1])
-	start = phases.record(ctx, "merge_tree", start)
+	var merged string
+	err = phase("merge_tree", func() (err error) {
+		merged, err = run("merge-tree", "--write-tree", "--name-only", "--merge-base="+parent, nativeMergeLabels[0], nativeMergeLabels[1])
+		return err
+	})
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -325,21 +348,22 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 	// identical entries retain incoming permissions, ownership and raw bytes
 	// (including CRLF). Applying raw content is part of that transition, not
 	// a shortcut returning After in place of Git reconciliation.
-	defer func() { phases.record(ctx, "replay", start) }()
-	work = base
-	if err := apply[0](base); err != nil {
-		return err
-	}
-	if err := nativeWorkspaceCheckout(run, base, trees[0], parent); err != nil {
-		return err
-	}
-	if err := apply[1](base); err != nil {
-		return err
-	}
-	if err := nativeWorkspaceCheckout(run, base, trees[1], trees[0]); err != nil {
-		return err
-	}
-	return nativeWorkspaceCheckout(run, base, trees[0], merged)
+	return phase("replay", func() error {
+		work = base
+		if err := applyTo(0, base); err != nil {
+			return err
+		}
+		if err := nativeWorkspaceCheckout(run, base, trees[0], parent); err != nil {
+			return err
+		}
+		if err := applyTo(1, base); err != nil {
+			return err
+		}
+		if err := nativeWorkspaceCheckout(run, base, trees[1], trees[0]); err != nil {
+			return err
+		}
+		return nativeWorkspaceCheckout(run, base, trees[0], merged)
+	})
 }
 
 // validateNativeMergePaths rejects deltas the native merge does not emulate:

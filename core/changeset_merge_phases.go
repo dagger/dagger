@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -70,4 +72,30 @@ func (p *mergePhases) add(phase string, d time.Duration) {
 	defer p.mu.Unlock()
 	p.ms[phase] += d.Milliseconds()
 	p.span.SetAttributes(attribute.Int64("dagger."+p.prefix+"."+phase+"_ms", p.ms[phase]))
+}
+
+// recordFallbackMarker records a zero-length wcprof io op
+// "<class>[<reason>]", so a profile counts fallbacks by reason without the
+// span's attributes. A reason code (nativeCommitUnsupportedReason) is used
+// as is; any other error is bucketed by its text up to the first colon, cut
+// short, to keep the classes few.
+func recordFallbackMarker(ctx context.Context, class string, err error) {
+	now := wcprof.NowNS()
+	if now == 0 || err == nil {
+		return
+	}
+	wcprof.RecordOp(ctx, wcprof.OpKindIO, class+"["+fallbackMarkerReason(err)+"]", wcprof.OpOpts{}, now, now, wcprof.OutcomeOK)
+}
+
+func fallbackMarkerReason(err error) string {
+	var reason nativeCommitUnsupportedReason
+	if errors.As(err, &reason) {
+		return string(reason)
+	}
+	msg, _, _ := strings.Cut(err.Error(), ":")
+	const maxLen = 48
+	if len(msg) > maxLen {
+		msg = strings.ToValidUTF8(msg[:maxLen], "") + "…"
+	}
+	return "error: " + msg
 }

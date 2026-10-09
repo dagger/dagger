@@ -26,6 +26,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/wcprof"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/fsutil"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
@@ -2185,6 +2186,7 @@ func gitMergeChangesets(
 			fallback := rerr != nil && ctx.Err() == nil && !errors.As(rerr, new(gitMergeConflictError))
 			if fallback {
 				span.SetAttributes(attribute.String("dagger.git.scoped_merge.fallback_reason", rerr.Error()))
+				recordFallbackMarker(ctx, "git.merge.scoped_fallback", rerr)
 				rerr = errScopedMergeFallback
 			}
 			span.SetAttributes(attribute.Bool("dagger.git.scoped_merge.supported", !fallback))
@@ -2230,29 +2232,41 @@ func (ws *gitMergeWorkspace) mergeChangesets(ctx context.Context, scope *gitMerg
 	if !scoped {
 		prefix = "full_"
 	}
-	start := phaseNow()
-	baseDirs, err := ws.listDirs()
-	if err != nil {
+	var baseDirs []mergeDir
+	if err := phases.run(ctx, prefix+"base_dirs", func(context.Context) (err error) {
+		baseDirs, err = ws.listDirs()
+		return err
+	}); err != nil {
 		return err
 	}
-	start = phases.record(ctx, prefix+"base_dirs", start)
-	if scoped {
-		if err := initScopedGitRepo(ctx, ws.workDir, scope); err != nil {
-			return err
+	// Each phase runs its git commands under its own profile op, so a
+	// profile breaks a slow phase down by command (git.<verb>).
+	if err := phases.run(ctx, prefix+"init", func(ctx context.Context) error {
+		if scoped {
+			return initScopedGitRepo(ctx, ws.workDir, scope)
 		}
-	} else if err := initGitRepo(ctx, ws.workDir); err != nil {
+		return initGitRepo(ctx, ws.workDir)
+	}); err != nil {
 		return err
 	}
-	start = phases.record(ctx, prefix+"init", start)
-	if err := createBranchWithContent(ctx, ws, "ours", ours, scoped); err != nil {
+	if err := phases.run(ctx, prefix+"branch_ours", func(ctx context.Context) error {
+		return createBranchWithContent(ctx, ws, "ours", ours, scoped)
+	}); err != nil {
 		return err
 	}
-	start = phases.record(ctx, prefix+"branch_ours", start)
-	if err := createBranchWithContent(ctx, ws, "theirs", theirs, scoped, "HEAD~1"); err != nil {
+	if err := phases.run(ctx, prefix+"branch_theirs", func(ctx context.Context) error {
+		return createBranchWithContent(ctx, ws, "theirs", theirs, scoped, "HEAD~1")
+	}); err != nil {
 		return err
 	}
-	start = phases.record(ctx, prefix+"branch_theirs", start)
-	defer func() { phases.record(ctx, prefix+"merge", start) }()
+	return phases.run(ctx, prefix+"merge", func(ctx context.Context) error {
+		return ws.mergeBranches(ctx, scoped, baseDirs, ours, theirs, conflicts, strategy)
+	})
+}
+
+// mergeBranches merges the theirs branch into ours, in the worktree, and
+// restores the baseDirs git pruned.
+func (ws *gitMergeWorkspace) mergeBranches(ctx context.Context, scoped bool, baseDirs []mergeDir, ours, theirs *changesetContent, conflicts Conflicts, strategy WithChangesetMergeConflict) error {
 	if err := runGit(ctx, ws.workDir, "checkout", "ours"); err != nil {
 		return err
 	}
@@ -2428,7 +2442,9 @@ var gitThrowawayConfig = []string{
 	"-c", "core.looseCompression=0",
 }
 
-func runGit(ctx context.Context, dir string, args ...string) error {
+func runGit(ctx context.Context, dir string, args ...string) (rerr error) {
+	ctx, op := beginGitProfileOp(ctx, args)
+	defer func() { op.EndErr(rerr) }()
 	cmd := gitCmd(ctx, dir, slices.Concat(gitThrowawayConfig, args)...)
 	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
 	defer finish()
@@ -2438,8 +2454,25 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	return nil
 }
 
+// beginGitProfileOp starts a profile op for one merge git command, e.g.
+// git.add, under the caller's phase.
+func beginGitProfileOp(ctx context.Context, args []string) (context.Context, *wcprof.Op) {
+	verb := "command"
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-c" {
+			i++
+			continue
+		}
+		verb = args[i]
+		break
+	}
+	return wcprof.BeginOp(ctx, wcprof.OpKindIO, "git."+verb, wcprof.OpOpts{})
+}
+
 // runGitOutput runs git and returns its stdout.
-func runGitOutput(ctx context.Context, dir string, args ...string) (string, error) {
+func runGitOutput(ctx context.Context, dir string, args ...string) (_ string, rerr error) {
+	ctx, op := beginGitProfileOp(ctx, args)
+	defer func() { op.EndErr(rerr) }()
 	cmd := gitCmd(ctx, dir, slices.Concat(gitThrowawayConfig, args)...)
 	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
 	defer finish()
@@ -2453,7 +2486,9 @@ func runGitOutput(ctx context.Context, dir string, args ...string) (string, erro
 }
 
 // runGitCombined runs git and returns its combined output, even on failure.
-func runGitCombined(ctx context.Context, dir string, args ...string) (string, error) {
+func runGitCombined(ctx context.Context, dir string, args ...string) (_ string, rerr error) {
+	ctx, op := beginGitProfileOp(ctx, args)
+	defer func() { op.EndErr(rerr) }()
 	cmd := gitCmd(ctx, dir, slices.Concat(gitThrowawayConfig, args)...)
 	finish := enginetel.PrepareCommandNetwork(ctx, cmd)
 	defer finish()
@@ -2465,7 +2500,9 @@ func runGitCombined(ctx context.Context, dir string, args ...string) (string, er
 }
 
 // runGitInput runs git with stdin.
-func runGitInput(ctx context.Context, dir string, stdin []byte, args ...string) error {
+func runGitInput(ctx context.Context, dir string, stdin []byte, args ...string) (rerr error) {
+	ctx, op := beginGitProfileOp(ctx, args)
+	defer func() { op.EndErr(rerr) }()
 	cmd := gitCmd(ctx, dir, slices.Concat(gitThrowawayConfig, args)...)
 	cmd.Stdin = bytes.NewReader(stdin)
 	finish := enginetel.PrepareCommandNetwork(ctx, cmd)

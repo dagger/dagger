@@ -15,6 +15,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func TestFallbackMarkerReason(t *testing.T) {
+	require.Equal(t, "directory-metadata", fallbackMarkerReason(nativeCommitUnsupportedReason("directory-metadata")))
+	require.Equal(t, "incoming-parent-ref", fallbackMarkerReason(fmt.Errorf("wrapped: %w", nativeCommitUnsupportedReason("incoming-parent-ref"))))
+	require.Equal(t, "error: git [read-tree abc]", fallbackMarkerReason(errors.New("git [read-tree abc]: exit status 128: fatal")))
+	long := fallbackMarkerReason(errors.New(strings.Repeat("x", 100)))
+	require.Equal(t, "error: "+strings.Repeat("x", 48)+"…", long)
+}
+
 func TestNativeWorkspaceMergeMatchesCheckout(t *testing.T) {
 	// The engine runs with umask 000. Exercise both it and the usual host
 	// umask: Git's normalization is not a hard-coded 0644/0755 policy.

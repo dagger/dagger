@@ -18,6 +18,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -222,6 +223,9 @@ func nativeFallback(ctx context.Context, span trace.Span, attr string, err error
 		return false
 	}
 	span.SetAttributes(attribute.String(attr, err.Error()))
+	// The profile marker, e.g. git.native_merge.fallback[<reason>] for
+	// dagger.git.native_merge.fallback_reason.
+	recordFallbackMarker(ctx, strings.TrimSuffix(strings.TrimPrefix(attr, "dagger."), "_reason"), err)
 	return true
 }
 
@@ -1057,7 +1061,10 @@ func runWorkspaceCommitGitStream(ctx context.Context, dir string, extraEnv []str
 		operation = commandArgs[0]
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "git "+operation, telemetry.Internal())
+	// A profile op per command, e.g. git.read-tree, under the caller's phase.
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindIO, "git."+operation, wcprof.OpOpts{})
 	defer func() {
+		op.EndErr(rerr)
 		var spanErr error
 		if rerr != nil {
 			spanErr = fmt.Errorf("git %s failed", operation)
