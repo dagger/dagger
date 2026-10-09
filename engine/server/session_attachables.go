@@ -139,6 +139,20 @@ func (m *sessionAttachableManager) waitContext(ctx context.Context, clientID str
 	return context.WithTimeout(ctx, timeout)
 }
 
+// WaitExpected waits for clientID's attachables if a nested exec's session
+// helper is expected to register them, until it does, fails, or the exec
+// ends. It returns at once for clients that aren't expected.
+func (m *sessionAttachableManager) WaitExpected(ctx context.Context, clientID string) error {
+	m.mu.Lock()
+	_, expected := m.expected[clientID]
+	m.mu.Unlock()
+	if !expected {
+		return nil
+	}
+	_, err := m.Wait(ctx, clientID)
+	return err
+}
+
 func (m *sessionAttachableManager) Wait(ctx context.Context, clientID string) (engineutil.SessionCaller, error) {
 	for {
 		m.mu.Lock()

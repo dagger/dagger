@@ -115,6 +115,14 @@ func (srv *Server) registerNestedClientTransport(
 	if !scope.CanDelegateTo(authority) {
 		return nil, fmt.Errorf("parent client scope does not belong to the current session %q", metadata.SessionID)
 	}
+	// A logical client is bound to its exec's bootstrap client, whose session
+	// helper starts alongside the exec's command: wait for the helper to
+	// connect, as queries do.
+	if attachablesClientID != metadata.ClientID && sess.attachables != nil {
+		if err := sess.attachables.WaitExpected(ctx, attachablesClientID); err != nil {
+			return nil, fmt.Errorf("attachables client %q for nested client %q: %w", attachablesClientID, metadata.ClientID, err)
+		}
+	}
 
 	sess.clientMu.RLock()
 	_, recordExists := sess.clientRecords[metadata.ClientID]
