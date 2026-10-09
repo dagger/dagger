@@ -82,6 +82,23 @@ func cowCopy(t testing.TB, src string) string {
 	dest := filepath.Join(t.TempDir(), "root")
 	out, err := exec.Command("cp", "-a", src, dest).CombinedOutput()
 	require.NoError(t, err, string(out))
+	// A snapshot keeps every timestamp exactly, but not every `cp -a` does:
+	// BusyBox's truncates them to seconds and leaves symlinks at the time of
+	// the copy, which makes the index entries of the copied symlinks racy.
+	require.NoError(t, filepath.WalkDir(src, func(path string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		var st unix.Stat_t
+		if err := unix.Lstat(path, &st); err != nil {
+			return err
+		}
+		return unix.UtimesNanoAt(unix.AT_FDCWD, filepath.Join(dest, rel), []unix.Timespec{st.Atim, st.Mtim}, unix.AT_SYMLINK_NOFOLLOW)
+	}))
 	return dest
 }
 
