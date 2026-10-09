@@ -34,7 +34,11 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 	# otherwise writing subtree_control fails with EBUSY.
 	# An error during moving non-existent process (i.e., "cat") is ignored.
 	mkdir -p /sys/fs/cgroup/engine
-	xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/engine/cgroup.procs || :
+	# One pid per write: cgroup.procs migrates only the first pid of a write,
+	# and busybox xargs batches its echo output into one write.
+	for pid in $(cat /sys/fs/cgroup/cgroup.procs); do
+		echo "$pid" > /sys/fs/cgroup/engine/cgroup.procs 2>/dev/null || :
+	done
 	# enable controllers
 	sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
 		> /sys/fs/cgroup/cgroup.subtree_control
