@@ -533,14 +533,27 @@ for:
 | Elixir | `PASCAL`/`UPPERCASE` | `SNAKE` | `SNAKE` | `SNAKE` atoms |
 | Rust | `PASCAL`/`CAPITALIZED` | `SNAKE` | `SNAKE` | `PASCAL`/`CAPITALIZED` |
 | PHP | today's converter (`JsonValue`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
-| .NET | `PASCAL`/`CAPITALIZED` | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `PASCAL`/`CAPITALIZED` |
+| .NET | schema name (`ID` written `Id`) | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | schema value |
 | Java | schema name (`PASCAL`/`UPPERCASE`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | schema value |
 
 The type and method/field columns for Go, TypeScript, Python, Elixir, Rust and
-PHP match what those SDKs generate today. The argument and enum columns, and
-the .NET row, are proposals to confirm with each SDK's maintainers.
-Today .NET passes type names through unchanged (`LLMMessageRole`) and
-title-cases members.
+PHP match what those SDKs generate today. The argument and enum columns are
+proposals to confirm with each SDK's maintainers.
+
+.NET follows the Framework Design Guidelines for members: methods and input
+object properties are PascalCase and parameters camelCase, with acronyms
+written like words (`WithMcpServer`, `insecureSkipTlsVerify`). The guidelines'
+two-letter exception (`IOStream`) is left out: the only two-letter acronym in
+the core schema besides `ID` (which the guidelines write `Id`) is `GZ`, in an
+enum value, so it changes no C# name. Classes keep the schema's names. Generated
+code writes GraphQL type names as literals, so renaming classes would be safe on
+the wire, but it would break every user of `LLM`, `JSON`, `JSONValue` and the
+like with no alias: enums, input structs and return types can't be aliased
+across assemblies. Enum members keep the schema's values, because
+`JsonStringEnumConverter` and argument serialization write a member's C# name.
+Renamed methods and properties keep their old names as `[Obsolete]` forwarders
+(default interface methods on interfaces). Renamed parameters can't be
+aliased, since C# can't overload on parameter names.
 
 Java follows Google Java Style for members (`asJson`, `withGpu`), keeping the
 old spellings as deprecated forwarders. Its classes and enum constants keep the
@@ -686,10 +699,14 @@ casing:
 - **Python**: 2 names — `prerequisite_sh_as` → `prerequisite_shas`,
   `experimental_with_all_gp_us` → `experimental_with_all_gpus`.
 - **TypeScript, PHP methods**: none (they use schema names as is).
-- **Rust, Elixir, .NET**: not measured in full. Rust has both of Python's
-  plural bugs and Elixir has `prerequisite_sh_as`; .NET also fixes
-  `InsecureSkipTlsverify` → `InsecureSkipTLSVerify` (or
-  `InsecureSkipTlsVerify` in `CAPITALIZED`).
+- **.NET**: 3 methods — `WithVcsgeneratedPaths` → `WithVcsGeneratedPaths`
+  (and `WithVcsignoredPaths`), `WithMcpserver` → `WithMcpServer` — kept as
+  obsolete forwarders; 3 parameters — `insecureSkipTLSVerify` →
+  `insecureSkipTlsVerify` on `From` and `PublishAsync`, `expectedRemoteSHA` →
+  `expectedRemoteSha` on `GitRef.Push` — which break named-argument callers.
+  No type, property or enum member changes.
+- **Rust, Elixir**: not measured in full. Rust has both of Python's plural
+  bugs and Elixir has `prerequisite_sh_as`.
 
 Where cheap, SDKs keep the old names as deprecated aliases for one release.
 
@@ -788,7 +805,8 @@ package, plus any SDK that keeps a local copy for offline use) must pass.
 
 1. **.NET's two-letter rule** (`IOStream` but `HtmlTag`; `Id` and `Ok` are
    exceptions). It only affects C#, F# and VB, and only two-letter acronyms
-   other than `ID`, which don't appear in the core schema today. Proposal: leave
+   other than `ID`. In the core schema that is `GZ`, in an enum value the .NET
+   SDK writes as is, so it changes no C# name. Proposal: leave
    it out. .NET uses `CAPITALIZED`, and `Identifier.words` carries what's needed
    if the .NET SDK ever wants the exact form. A third `AcronymStyle` value can be
    added later without breaking anyone.
