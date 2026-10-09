@@ -3241,9 +3241,7 @@ func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sha
 		if outputEqID == 0 {
 			continue
 		}
-		for dig := range c.eqClassToDigests[outputEqID] {
-			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, nil)
-		}
+		c.appendOutputEqClassResultsLocked(candidates, outputEqID, nowUnix)
 	}
 	if requireCleanAttachment {
 		clean := newSharedResultSet()
