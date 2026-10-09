@@ -25,6 +25,11 @@ public class CodeRenderer : ICodeRenderer
     /// </summary>
     public Dictionary<string, Type> InterfaceTypes { get; set; } = new();
 
+    /// <summary>
+    /// Names C# members. Set from the schema JSON's identifier words, if any.
+    /// </summary>
+    public Namer Namer { get; set; } = Namer.Legacy;
+
     public string RenderPre()
     {
         return """
@@ -59,14 +64,35 @@ public class CodeRenderer : ICodeRenderer
         var properties = type.InputFields.Select(field =>
             $$"""
             {{RenderDocComment(field)}}
-            public {{GetArgTypeName(field)}} {{Formatter.FormatProperty(
-                field.Name
-            )}} { get; } = {{field.GetVarName()}};
+            public {{GetArgTypeName(field)}} {{Namer.Property(field.Name)}} { get; } = {{VarName(
+                field
+            )}};
             """
         );
 
+        // Keep properties renamed by identifier words under their legacy
+        // names too.
+        var propertyNames = new HashSet<string>(
+            type.InputFields.Select(field => Namer.Property(field.Name))
+        );
+        var legacyProperties = type
+            .InputFields.Select(field =>
+                (
+                    Field: field,
+                    Name: Namer.Property(field.Name),
+                    LegacyName: Namer.Legacy.Property(field.Name)
+                )
+            )
+            .Where(p => p.LegacyName != p.Name && !propertyNames.Contains(p.LegacyName))
+            .Select(p =>
+                $"""
+                [Obsolete("Use {p.Name} instead.")]
+                public {GetArgTypeName(p.Field)} {p.LegacyName} => {p.Name};
+                """
+            );
+
         var constructorFields = type.InputFields.Select(field =>
-            $"{GetArgTypeName(field)} {field.GetVarName()}"
+            $"{GetArgTypeName(field)} {VarName(field)}"
         );
 
         var toKeyValuePairsProperties = type.InputFields.Select(field =>
@@ -95,6 +121,7 @@ public class CodeRenderer : ICodeRenderer
             )}}) : IInputObject
             {
                 {{string.Join("\n\n", properties)}}
+                {{string.Join("\n\n", legacyProperties)}}
                 {{toKeyValuePairsMethod}}
             }
             """;
@@ -121,8 +148,8 @@ public class CodeRenderer : ICodeRenderer
                 var requiredArgs = field.RequiredArgs();
                 var optionalArgs = field.OptionalArgs();
                 var args = requiredArgs
-                    .Select(RenderArgument)
-                    .Concat(optionalArgs.Select(RenderOptionalArgument))
+                    .Select(arg => RenderArgument(arg))
+                    .Concat(optionalArgs.Select(arg => RenderOptionalArgument(arg)))
                     .Concat(
                         isAsync ? new[] { "CancellationToken cancellationToken = default" } : []
                     );
@@ -137,11 +164,14 @@ public class CodeRenderer : ICodeRenderer
                 """;
             });
 
+        var legacyInterfaceMethods = RenderLegacyForwarders(type, inInterface: true);
+
         var interfaceCode = $$"""
             {{RenderDocComment(type)}}
             public interface {{interfaceName}} : IId
             {
                 {{string.Join("\n\n", interfaceMethods)}}
+                {{string.Join("\n\n", legacyInterfaceMethods)}}
             }
             """;
 
@@ -165,8 +195,8 @@ public class CodeRenderer : ICodeRenderer
             var requiredArgs = field.RequiredArgs();
             var optionalArgs = field.OptionalArgs();
             var args = requiredArgs
-                .Select(RenderArgument)
-                .Concat(optionalArgs.Select(RenderOptionalArgument))
+                .Select(arg => RenderArgument(arg))
+                .Concat(optionalArgs.Select(arg => RenderOptionalArgument(arg)))
                 .Concat(isAsync ? new[] { "CancellationToken cancellationToken = default" } : []);
 
             return $$"""
@@ -212,12 +242,14 @@ public class CodeRenderer : ICodeRenderer
         var implementsClause =
             implementsList.Count > 0 ? $", {string.Join(", ", implementsList)}" : "";
         var interfaceAdapters = isInterface ? [] : RenderInterfaceAdapters(type).ToArray();
+        var legacyMethods = RenderLegacyForwarders(type, inInterface: false);
 
         return $$"""
             {{RenderDocComment(type)}}
             public class {{className}}(QueryBuilder queryBuilder, GraphQLClient gqlClient) : {{baseClass}}{{implementsClause}}
             {
                 {{string.Join("\n\n", methods)}}
+                {{string.Join("\n\n", legacyMethods)}}
                 {{string.Join("\n\n", interfaceAdapters)}}
             }
             """;
@@ -333,7 +365,7 @@ public class CodeRenderer : ICodeRenderer
         return RenderSummaryDocComment(type.Description);
     }
 
-    private static string RenderDocComment(Field field)
+    private string RenderDocComment(Field field)
     {
         var builder = new StringBuilder();
         builder.AppendLine(RenderSummaryDocComment(field.Description));
@@ -342,7 +374,7 @@ public class CodeRenderer : ICodeRenderer
             (sb, arg) =>
             {
                 string[] lines = arg.Description.Split('\n');
-                sb.AppendLine($"/// <param name=\"{arg.GetVarName()}\">");
+                sb.AppendLine($"/// <param name=\"{VarName(arg)}\">");
                 foreach (var line in lines)
                 {
                     sb.AppendLine($"/// {line}");
@@ -392,14 +424,23 @@ public class CodeRenderer : ICodeRenderer
         return type;
     }
 
-    private string RenderArgument(InputValue arg)
+    /// <summary>
+    /// The C# parameter name of an argument or input object field.
+    /// </summary>
+    private string VarName(InputValue arg, Namer? namer = null)
     {
-        return $"{GetArgTypeName(arg)} {arg.GetVarName()}";
+        return (namer ?? Namer).Var(arg.Name);
     }
 
-    private string RenderOptionalArgument(InputValue arg)
+    private string RenderArgument(InputValue arg, Namer? namer = null)
+    {
+        return $"{GetArgTypeName(arg)} {VarName(arg, namer)}";
+    }
+
+    private string RenderOptionalArgument(InputValue arg, Namer? namer = null)
     {
         var nullableType = GetArgTypeName(arg) + "?";
+        var varName = VarName(arg, namer);
 
         if (arg.DefaultValue != null)
         {
@@ -413,23 +454,23 @@ public class CodeRenderer : ICodeRenderer
                 )
             )
             {
-                return $"{nullableType} {arg.GetVarName()} = null";
+                return $"{nullableType} {varName} = null";
             }
 
             if (arg.Type.IsScalar() && string.IsNullOrWhiteSpace(arg.DefaultValue.Trim('"')))
             {
-                return $"{nullableType} {arg.GetVarName()} = null";
+                return $"{nullableType} {varName} = null";
             }
 
             if (arg.Type.IsEnum() && !string.IsNullOrWhiteSpace(arg.DefaultValue.Trim('"')))
             {
-                return $"{nullableType} {arg.GetVarName()} = {GetArgTypeName(arg)}.{arg.DefaultValue}";
+                return $"{nullableType} {varName} = {GetArgTypeName(arg)}.{arg.DefaultValue}";
             }
 
-            return $"{nullableType} {arg.GetVarName()} = {arg.DefaultValue}";
+            return $"{nullableType} {varName} = {arg.DefaultValue}";
         }
 
-        return $"{nullableType} {arg.GetVarName()} = null";
+        return $"{nullableType} {varName} = null";
     }
 
     private string RenderReturnType(Field field, string parentTypeName)
@@ -551,15 +592,15 @@ public class CodeRenderer : ICodeRenderer
 
                 var args = interfaceField
                     .RequiredArgs()
-                    .Select(RenderArgument)
+                    .Select(arg => RenderArgument(arg))
                     .Concat(
                         interfaceField
                             .OptionalArgs()
-                            .Select(arg => $"{GetArgTypeName(arg)}? {arg.GetVarName()}")
+                            .Select(arg => $"{GetArgTypeName(arg)}? {VarName(arg)}")
                     )
                     .Concat(isAsync ? new[] { "CancellationToken cancellationToken" } : []);
                 var forwardedArgs = interfaceField
-                    .Args.Select(arg => $"{arg.GetVarName()}: {arg.GetVarName()}")
+                    .Args.Select(arg => $"{VarName(arg)}: {VarName(arg)}")
                     .Concat(isAsync ? new[] { "cancellationToken: cancellationToken" } : []);
                 var returnType = RenderReturnType(interfaceField, interfaceName)
                     .Replace("async ", "");
@@ -581,15 +622,61 @@ public class CodeRenderer : ICodeRenderer
         }
     }
 
-    private string FormatMethodName(Field field, string parentTypeName)
+    private string FormatMethodName(Field field, string parentTypeName, Namer? namer = null)
     {
-        var methodName = Formatter.FormatMethod(field.Name);
+        var methodName = (namer ?? Namer).Method(field.Name);
         if (parentTypeName.Equals(field.Name, StringComparison.CurrentCultureIgnoreCase))
         {
             methodName = $"{methodName}_";
         }
 
         return IsAsyncField(field, parentTypeName) ? $"{methodName}Async" : methodName;
+    }
+
+    /// <summary>
+    /// Methods renamed by identifier words keep their legacy names, and
+    /// legacy parameter names, as obsolete forwarders. On an interface they
+    /// are default implementations.
+    /// </summary>
+    private IEnumerable<string> RenderLegacyForwarders(Type type, bool inInterface)
+    {
+        var fields = inInterface
+            ? type.Fields.Where(field => field.Name != "id").ToArray()
+            : type.Fields;
+        var methodNames = new HashSet<string>(
+            fields.Select(field => FormatMethodName(field, type.Name))
+        );
+        foreach (var field in fields)
+        {
+            var methodName = FormatMethodName(field, type.Name);
+            var legacyName = FormatMethodName(field, type.Name, Namer.Legacy);
+            if (legacyName == methodName || methodNames.Contains(legacyName))
+            {
+                continue;
+            }
+
+            var isAsync = IsAsyncField(field, type.Name);
+            var requiredArgs = field.RequiredArgs();
+            var optionalArgs = field.OptionalArgs();
+            var args = requiredArgs
+                .Select(arg => RenderArgument(arg, Namer.Legacy))
+                .Concat(optionalArgs.Select(arg => RenderOptionalArgument(arg, Namer.Legacy)))
+                .Concat(isAsync ? new[] { "CancellationToken cancellationToken = default" } : []);
+            var forwardedArgs = requiredArgs
+                .Concat(optionalArgs)
+                .Select(arg => VarName(arg, Namer.Legacy))
+                .Concat(isAsync ? new[] { "cancellationToken" } : []);
+            var returnType = RenderReturnType(field, type.Name).Replace("async ", "");
+            var visibility = inInterface ? "" : "public ";
+
+            yield return $$"""
+                [Obsolete("Use {{methodName}} instead.")]
+                {{visibility}}{{returnType}} {{legacyName}}({{string.Join(
+                    ",",
+                    args
+                )}}) => {{methodName}}({{string.Join(",", forwardedArgs)}});
+                """;
+        }
     }
 
     private string RenderArgumentBuilder(Field field)
@@ -628,7 +715,7 @@ public class CodeRenderer : ICodeRenderer
                     builder,
                     (sb, arg) =>
                     {
-                        var varName = arg.GetVarName();
+                        var varName = VarName(arg);
                         return sb.Append($"""if ({varName} is {GetArgTypeName(arg)} {varName}_)""")
                             .Append("{\n")
                             .Append(
@@ -649,7 +736,7 @@ public class CodeRenderer : ICodeRenderer
         bool asProperty = false
     )
     {
-        var argName = arg.GetVarName();
+        var argName = VarName(arg);
         if (addVarSuffix)
         {
             argName = $"{argName}_";
@@ -657,7 +744,7 @@ public class CodeRenderer : ICodeRenderer
 
         if (asProperty)
         {
-            argName = Formatter.FormatProperty(argName);
+            argName = Namer.Property(arg.Name);
         }
 
         // If @expectedType resolves to an IId-able type, use IdValue
