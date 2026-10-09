@@ -80,6 +80,45 @@ func TestOpenAIChatSendsPromptCacheKey(t *testing.T) {
 	assert.Nil(t, payload.PromptCacheKey)
 }
 
+func TestOpenRouterSendsReasoningEffort(t *testing.T) {
+	requestBody := make(chan []byte, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		requestBody <- body
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"test","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}`)
+	}))
+	t.Cleanup(server.Close)
+
+	history := llmTestHistory()
+	// A tool keeps the non-streaming path in use, which the stub answers.
+	tools := []LLMTool{{Name: "read", Schema: map[string]any{"type": "object"}}}
+	send := func(endpoint *LLMEndpoint) map[string]any {
+		t.Helper()
+		_, err := newOpenAIClient(endpoint, "", true).SendQuery(t.Context(), history, tools, &LLMCallOpts{})
+		require.NoError(t, err)
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal(<-requestBody, &payload))
+		return payload
+	}
+
+	payload := send(&LLMEndpoint{Model: "openai/gpt-5", Provider: OpenRouter, BaseURL: server.URL, ReasoningEffort: "high"})
+	assert.Equal(t, map[string]any{"effort": "high"}, payload["reasoning"])
+	assert.NotContains(t, payload, "reasoning_effort")
+
+	// Unset leaves the request alone.
+	payload = send(&LLMEndpoint{Model: "openai/gpt-5", Provider: OpenRouter, BaseURL: server.URL})
+	assert.NotContains(t, payload, "reasoning")
+
+	// Other compatible endpoints don't get OpenRouter's parameter.
+	payload = send(&LLMEndpoint{Model: "llama", Provider: Local, BaseURL: server.URL, ReasoningEffort: "high"})
+	assert.NotContains(t, payload, "reasoning")
+}
+
 // codexStubRequest is what the stub backend saw of one Codex request.
 type codexStubRequest struct {
 	sessionID string

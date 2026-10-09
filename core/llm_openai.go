@@ -334,6 +334,16 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 		params.PromptCacheKey = openai.String(openAIPromptCacheKey(history))
 	}
 
+	// OpenRouter takes reasoning effort in its own unified `reasoning` object,
+	// which it translates for whichever upstream model serves the request.
+	// "none" passes through too: OpenRouter reads it as reasoning off, which
+	// must override a model that reasons by default.
+	if c.endpoint.Provider == OpenRouter && c.endpoint.ReasoningEffort != "" {
+		params.SetExtraFields(map[string]any{
+			"reasoning": map[string]any{"effort": c.endpoint.ReasoningEffort},
+		})
+	}
+
 	// Apply an explicit maxTokens cap. The parameter is optional for
 	// OpenAI-style APIs — left unset, the provider allows up to the model's
 	// maximum — so no default is invented. OpenAI itself needs the modern
