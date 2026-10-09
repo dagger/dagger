@@ -29,15 +29,25 @@ const (
 	CallPayloadRetryMaxDelay  = 2 * time.Second
 	// CallPayloadMaxExportAttempts bounds how often one batch is retried
 	// before it is dropped, so a dead client DB cannot wedge the queue
-	// forever. Dropping is lossy: the session exporter releases the failed
-	// targets, but a later closure walk only re-emits a dropped record if it
-	// reaches it through a root that is itself still undelivered. When the
-	// root already landed, every walk from it short-circuits at the root's
-	// claim and the dropped dependency stays missing for that client unless
-	// some other chain happens to include it. The drop is logged with the
-	// records' digests so that gap is at least diagnosable.
+	// forever. The last attempt's context is marked (see
+	// IsFinalExportAttempt), so the session exporter can record the targets
+	// that final failure loses: a later replay that reaches a lost payload
+	// emits it once more, even through a root that already landed. A payload
+	// no later call reaches, or one lost again after that repair, stays
+	// missing for that client. The drop is logged with the records' digests
+	// so that gap is at least diagnosable.
 	CallPayloadMaxExportAttempts = 8
 )
+
+type finalExportAttemptKey struct{}
+
+// IsFinalExportAttempt reports whether ctx belongs to a protected lane's last
+// export attempt for its batch: if that export fails, the batch is dropped
+// rather than retried.
+func IsFinalExportAttempt(ctx context.Context) bool {
+	final, _ := ctx.Value(finalExportAttemptKey{}).(bool)
+	return final
+}
 
 // CallPayloadBatchProcessor gives immutable call payloads a short, on-demand
 // path to the session exporter while the ordinary log processor retains its
@@ -409,7 +419,14 @@ func (batcher *protectedBatcher[T]) exportPass(ctx context.Context) (retryIn tim
 	for len(queued) > 0 {
 		batchSize := min(len(queued), batcher.batchSize)
 		batch := queued[:batchSize]
-		exportErr := batcher.export(ctx, batch)
+		exportCtx := ctx
+		if final := failures+1 >= CallPayloadMaxExportAttempts; final || IsFinalExportAttempt(ctx) {
+			// Marked either way: a flush started from inside another lane's
+			// final export (control records flush the call lanes first) is
+			// not that lane's final attempt.
+			exportCtx = context.WithValue(ctx, finalExportAttemptKey{}, final)
+		}
+		exportErr := batcher.export(exportCtx, batch)
 		if exportErr == nil {
 			failures = 0
 			clear(batch)

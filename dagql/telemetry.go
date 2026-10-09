@@ -114,4 +114,12 @@ type CallPayloadClosureStore interface {
 	// since epoch, so a walk that skipped covered closures knows to claim
 	// over them again.
 	CoverCallPayloadClosures(digests []string, epoch uint64) bool
+
+	// StartCallPayloadRepair reports whether a walk whose root someone else
+	// already claimed must walk the root's closure anyway, and if so counts
+	// that walk as started. A root's claim normally proves its claimant
+	// walked the closure, but a payload the exporter gave up on may sit
+	// inside it; until something claims that payload again, each root walks
+	// once per loss.
+	StartCallPayloadRepair(root string) bool
 }

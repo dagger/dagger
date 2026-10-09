@@ -195,6 +195,23 @@ type daggerSession struct {
 	// releases so a walk that raced one records nothing.
 	callPayloadCovered map[string]map[string]struct{}
 	callPayloadEpoch   uint64
+	// callPayloadLost records each (digest, target) whose final export
+	// attempt failed (see enginetel.IsFinalExportAttempt): true while nothing
+	// has claimed or taken it since. While one is pending on a route, a
+	// replay whose root someone already claimed walks its closure once more,
+	// since that claim no longer proves the closure reached the client. The
+	// entry outlives its repair, and a pair lost again is not repaired again,
+	// so a client DB that keeps failing gets one more copy of each lost
+	// payload, not one per replay. callPayloadLostTargets counts the pending
+	// pairs per target and callPayloadLostCount in total, so no-loss checks
+	// are one atomic load and route checks never scan the pairs.
+	callPayloadLost        map[callPayloadKey]bool
+	callPayloadLostTargets map[string]int
+	callPayloadLostCount   atomic.Int64
+	// callPayloadRepaired records, per root, the targets for which a replay
+	// started a repair walk since the last loss, so each root walks at most
+	// once per loss.
+	callPayloadRepaired map[string]map[string]struct{}
 
 	services *core.Services
 	agents   *core.AgentRuntimes
@@ -3841,12 +3858,52 @@ func (s *callPayloadDeliveryStore) CallPayloadReleaseEpoch() uint64 {
 func (s *callPayloadDeliveryStore) CallPayloadClosureCovered(digest string) bool {
 	s.session.callPayloadMu.Lock()
 	defer s.session.callPayloadMu.Unlock()
-	covered := s.session.callPayloadCovered[digest]
-	if len(covered) == 0 {
+	return coversTargets(s.session.callPayloadCovered[digest], s.targets)
+}
+
+func (s *callPayloadDeliveryStore) StartCallPayloadRepair(root string) bool {
+	sess := s.session
+	if sess.callPayloadLostCount.Load() == 0 {
 		return false
 	}
+	sess.callPayloadMu.Lock()
+	defer sess.callPayloadMu.Unlock()
+	lost := false
 	for _, target := range s.targets {
-		if _, ok := covered[target]; !ok {
+		if sess.callPayloadLostTargets[target] > 0 {
+			lost = true
+			break
+		}
+	}
+	// A root covered since the loss had its whole closure claimed after the
+	// release that preceded it, so nothing it reaches is still lost.
+	if !lost || coversTargets(sess.callPayloadCovered[root], s.targets) {
+		return false
+	}
+	repaired := sess.callPayloadRepaired[root]
+	if coversTargets(repaired, s.targets) {
+		return false
+	}
+	if repaired == nil {
+		if sess.callPayloadRepaired == nil {
+			sess.callPayloadRepaired = map[string]map[string]struct{}{}
+		}
+		repaired = make(map[string]struct{}, len(s.targets))
+		sess.callPayloadRepaired[root] = repaired
+	}
+	for _, target := range s.targets {
+		repaired[target] = struct{}{}
+	}
+	return true
+}
+
+// coversTargets reports whether set holds every target.
+func coversTargets(set map[string]struct{}, targets []string) bool {
+	if len(set) == 0 {
+		return false
+	}
+	for _, target := range targets {
+		if _, ok := set[target]; !ok {
 			return false
 		}
 	}
@@ -3932,9 +3989,59 @@ func (sess *daggerSession) claimCallPayload(digest string, targets []string) []s
 		if states[target] == callPayloadUnclaimed {
 			states[target] = callPayloadClaimed
 			claimed = append(claimed, target)
+			sess.recoverCallPayloadLocked(digest, target)
 		}
 	}
 	return claimed
+}
+
+// callPayloadKey names one target's copy of one call payload.
+type callPayloadKey struct {
+	digest, target string
+}
+
+// loseCallPayloadLocked records that the final export attempt for a target
+// failed (see callPayloadLost). Requires callPayloadMu.
+func (sess *daggerSession) loseCallPayloadLocked(digest, target string) {
+	if strings.HasPrefix(digest, controlPayloadKeyPrefix) {
+		// No recipe walk can emit a control record again.
+		return
+	}
+	key := callPayloadKey{digest, target}
+	if _, ok := sess.callPayloadLost[key]; ok {
+		// Lost before: its one repair is spent.
+		return
+	}
+	if sess.callPayloadLost == nil {
+		sess.callPayloadLost = map[callPayloadKey]bool{}
+		sess.callPayloadLostTargets = map[string]int{}
+	}
+	sess.callPayloadLost[key] = true
+	sess.callPayloadLostTargets[target]++
+	sess.callPayloadLostCount.Add(1)
+	// Every root may reach the lost payload, including those already
+	// repaired.
+	sess.callPayloadRepaired = nil
+}
+
+// recoverCallPayloadLocked settles a pending loss once a producer claims the
+// target again or an exporter takes it. Requires callPayloadMu.
+func (sess *daggerSession) recoverCallPayloadLocked(digest, target string) {
+	if sess.callPayloadLostCount.Load() == 0 {
+		return
+	}
+	key := callPayloadKey{digest, target}
+	if !sess.callPayloadLost[key] {
+		return
+	}
+	sess.callPayloadLost[key] = false
+	if sess.callPayloadLostTargets[target]--; sess.callPayloadLostTargets[target] == 0 {
+		delete(sess.callPayloadLostTargets, target)
+	}
+	if sess.callPayloadLostCount.Add(-1) == 0 {
+		// Nothing left to repair: no replay asks again until the next loss.
+		sess.callPayloadRepaired = nil
+	}
 }
 
 // takeCallPayloadForWrite gives the caller exclusive ownership of every route
@@ -3955,6 +4062,7 @@ func (sess *daggerSession) takeCallPayloadForWrite(digest string, targets []stri
 		case callPayloadUnclaimed, callPayloadClaimed:
 			states[target] = callPayloadWriting
 			taken = append(taken, target)
+			sess.recoverCallPayloadLocked(digest, target)
 		case callPayloadWriting, callPayloadDelivered:
 			// Another export owns it, or it is already there.
 		}
@@ -3964,10 +4072,11 @@ func (sess *daggerSession) takeCallPayloadForWrite(digest string, targets []stri
 
 // settleCallPayload records the outcome of a delivery attempt. delivered
 // marks each target done for good. Otherwise the targets are released so the
-// span's or record's retry can deliver them — or, once the protected
-// processor gives up on it, a later closure walk, though only one that
-// reaches the frame via a root not yet delivered to that target.
-func (sess *daggerSession) settleCallPayload(digest string, targets []string, delivered bool) {
+// span's or record's retry can deliver them — or, when final reports that the
+// protected processor gives up on it, a later closure walk that reaches the
+// frame: the loss makes replays of already claimed roots walk again (see
+// callPayloadLost).
+func (sess *daggerSession) settleCallPayload(digest string, targets []string, delivered, final bool) {
 	if digest == "" || len(targets) == 0 {
 		return
 	}
@@ -3985,6 +4094,9 @@ func (sess *daggerSession) settleCallPayload(digest string, targets []string, de
 			// stops at a covered digest would never reach it again.
 			sess.callPayloadCovered = nil
 			sess.callPayloadEpoch++
+			if final {
+				sess.loseCallPayloadLocked(digest, target)
+			}
 		}
 	}
 }
