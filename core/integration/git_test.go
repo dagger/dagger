@@ -26,7 +26,9 @@ import (
 	"dagger.io/dagger/core"
 
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -743,6 +745,61 @@ done
 	lines = log(ctx, dir)
 	require.Len(t, lines, commitCount)
 	require.Contains(t, lines[len(lines)-1], "commit 1")
+}
+
+// TestMirrorLockTelemetry checks that the work done while holding a remote's
+// mirror lock is traced inside the hold span, rather than beside it: the
+// mirror fetch and the checkout's object copy are its descendants. The hold
+// span is passthrough, not internal, so the fetch span (which carries clone
+// progress) is not pruned from the default view along with it.
+func (GitSuite) TestMirrorLockTelemetry(ctx context.Context, t *testctx.T) {
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, sink.clientOpts()...)
+
+	// Unique content: a fresh remote, so the mirror has to fetch.
+	content := core.NewQuery(c).Directory().WithNewFile("README.md", identity.NewID())
+	daemon, url := gitService(ctx, t, c, content)
+	_, err := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).
+		Branch("main").
+		Tree().
+		Entries(ctx)
+	require.NoError(t, err)
+
+	holdName := "holding git mirror lock: " + url
+	underHold := func(span *dagui.Span) *dagui.Span {
+		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
+			if p.Name == holdName {
+				return p
+			}
+		}
+		return nil
+	}
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		sink.read(func(db *dagui.DB) {
+			var fetching, copying *dagui.Span
+			for _, span := range db.Spans.Order {
+				switch span.Name {
+				case "fetching " + url:
+					fetching = span
+				case "copying git objects: checkout":
+					if underHold(span) != nil {
+						copying = span
+					}
+				}
+			}
+			if !assert.NotNil(ct, fetching, "mirror fetch span") {
+				return
+			}
+			hold := fetching.ParentSpan
+			if assert.NotNil(ct, hold) {
+				assert.Equal(ct, holdName, hold.Name, "the mirror fetch runs under the hold span")
+				assert.True(ct, hold.Passthrough, "the hold span renders its children in its place")
+				assert.False(ct, hold.Internal, "an internal hold span would prune the fetch span's progress")
+				assert.True(ct, dagui.FrontendOpts{}.ShouldShow(db, hold), "the hold span must not hide its subtree")
+			}
+			assert.NotNil(ct, copying, "the checkout's object copy runs under the hold span")
+		})
+	}, time.Minute, 100*time.Millisecond)
 }
 
 func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {

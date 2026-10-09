@@ -90,7 +90,7 @@ func (repo *LocalGitRepository) fullHistory(ctx context.Context) (*LocalGitRepos
 		return nil, err
 	}
 	shallow := false
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err := repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 		dir, err := repo.nativeGitDir(ctx, git.Dir())
 		if err != nil {
 			return err
@@ -130,7 +130,10 @@ func HydrateGitRepository(ctx context.Context, source dagql.ObjectResult[*GitRef
 	if err := repo.validateHistorySource(ctx); err != nil {
 		return nil, err
 	}
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error { _, err := repo.nativeGitDir(ctx, git.Dir()); return err })
+	err := repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
+		_, err := repo.nativeGitDir(ctx, git.Dir())
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -214,13 +217,13 @@ func copyGitShallowBoundary(sourceGitDir, destGitDir string) error {
 	return os.WriteFile(filepath.Join(destGitDir, "shallow"), data, 0600)
 }
 
-func (ref *LocalGitRef) mountHistory(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+func (ref *LocalGitRef) mountHistory(ctx context.Context, depth int, includeTags bool, fn func(context.Context, *gitutil.GitCLI) error) error {
 	if ref.repo.HistorySource.Self() == nil {
 		return ref.repo.mount(ctx, depth, includeTags, nil, fn)
 	}
 	need := depth <= 0
 	if !need {
-		err := ref.repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		err := ref.repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 			if _, err := ref.repo.nativeGitDir(ctx, git.Dir()); err != nil {
 				return err
 			}

@@ -169,7 +169,7 @@ func (ref *LocalGitRef) cowDeltaTree(ctx context.Context, srv *dagql.Server, rem
 		}
 		telemetry.EndWithCause(span, &rerr)
 	}()
-	err := ref.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
+	err := ref.repo.mount(ctx, 0, false, nil, func(ctx context.Context, source *gitutil.GitCLI) error {
 		if _, err := ref.repo.nativeGitDir(ctx, source.Dir()); err != nil {
 			return err
 		}

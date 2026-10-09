@@ -283,7 +283,7 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 // fetched to answer the expansion.
 func (repo *RemoteGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
 	var sha string
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err := repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 		var err error
 		sha, err = git.ResolveShortSHA(ctx, prefix)
 		return err
@@ -461,8 +461,8 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
 }
 
-func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) (retErr error) {
-	return repo.initRemote(ctx, func(remote string) (rerr error) {
+func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(context.Context, *gitutil.GitCLI) error) (retErr error) {
+	return repo.initRemote(ctx, func(ctx context.Context, remote string) (rerr error) {
 		git, cleanup, err := repo.setup(ctx)
 		if err != nil {
 			return err
@@ -486,7 +486,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 			return fmt.Errorf("failed to expire reflog for remote %s: %w", repo.URL.Remote(), err)
 		}
 
-		return fn(git)
+		return fn(ctx, git)
 	})
 }
 
@@ -774,7 +774,7 @@ func namedFetchRefSpecs(refs []*RemoteGitRef) []string {
 	return refSpecs
 }
 
-func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string) error) (retErr error) {
+func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(ctx context.Context, dir string) error) (retErr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -797,8 +797,14 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 	// Everything until the unlock holds the mirror for every other consumer
 	// of this remote, across sessions: callers keep only the work that reads
 	// or updates the mirror inside fn, and finish in their private copy after.
-	ctx, holdSpan := Tracer(ctx).Start(ctx, "holding git mirror lock: "+repo.URL.RedactedRemote(), telemetry.Internal())
-	defer holdSpan.End()
+	//
+	// fn runs in the holding ctx, so the fetch and the caller's mirror work
+	// nest under the hold span and the git.mirror.locked op instead of
+	// beside them. The span is passthrough rather than internal: dagui prunes
+	// an internal span's whole subtree, which would hide the "fetching" span
+	// and its clone progress.
+	ctx, holdSpan := Tracer(ctx).Start(ctx, "holding git mirror lock: "+repo.URL.RedactedRemote(), telemetry.Passthrough())
+	defer telemetry.EndWithCause(holdSpan, &retErr)
 	ctx, holdOp := wcprof.BeginOp(ctx, wcprof.OpKindIO, "git.mirror.locked", wcprof.OpOpts{Ident: lockIdent, WorkType: wcprof.WorkTypeEngine})
 	defer func() { holdOp.EndErr(retErr) }()
 
@@ -854,7 +860,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 		}
 	}
 
-	return fn(dir)
+	return fn(ctx, dir)
 }
 
 func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (_ *Directory, rerr error) {
@@ -900,7 +906,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
 
 		var tmpref string
-		err := ref.mount(ctx, depth, includeTags, func(mirrorGit *gitutil.GitCLI) error {
+		err := ref.mount(ctx, depth, includeTags, func(ctx context.Context, mirrorGit *gitutil.GitCLI) error {
 			var err error
 			tmpref, _, err = copyGitCheckout(ctx, checkoutGit, mirrorGit, checkoutDirGit, ref.Ref, depth)
 			return err
@@ -955,7 +961,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	return dir, nil
 }
 
-func (ref *RemoteGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+func (ref *RemoteGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(context.Context, *gitutil.GitCLI) error) error {
 	return ref.repo.mount(ctx, depth, includeTags, []GitRefBackend{ref}, fn)
 }
 

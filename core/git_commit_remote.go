@@ -98,7 +98,7 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 		err = MountRef(ctx, child, func(dest string, _ *mount.Mount) error {
 			// Only explicit history consumers request depth zero. Ordinary commits
 			// own a single-commit source boundary, even if the mirror is already warm.
-			err := ref.mount(ctx, depth, false, func(_ *gitutil.GitCLI) error {
+			err := ref.mount(ctx, depth, false, func(ctx context.Context, _ *gitutil.GitCLI) error {
 				// mount holds both the mirror lock and its snapshot lease. Borrow an
 				// actual read-only mount so Git cannot freshen inherited pack mtimes.
 				// Reading Mirror.snapshot directly is only safe because ref.mount →

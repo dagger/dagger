@@ -523,7 +523,7 @@ func CreateGitBundleFile(ctx context.Context, repo *GitRepository, refs []string
 		baseSHA = base.Ref.SHA
 	}
 	_, local := repo.Backend.(*LocalGitRepository)
-	err = repo.Backend.mount(ctx, 0, false, backends, func(source *gitutil.GitCLI) error {
+	err = repo.Backend.mount(ctx, 0, false, backends, func(ctx context.Context, source *gitutil.GitCLI) error {
 		return MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
 			if err := prepareGitBundleSource(ctx, source, repo.Backend, root, targets, baseSHA); err != nil {
 				return err
@@ -929,10 +929,14 @@ func importGitBundleInto(ctx context.Context, dst *Directory, repo *GitRepositor
 
 		mountStart := wcprof.NowNS()
 		fetchedPrerequisites := 0
-		mountErr := repo.Backend.mount(ctx, 0, false, backends, func(source *gitutil.GitCLI) error {
+		importCtx := ctx
+		mountErr := repo.Backend.mount(ctx, 0, false, backends, func(ctx context.Context, source *gitutil.GitCLI) error {
 			// Mounting the source is where the prerequisites' history is
-			// fetched, and where a remote mirror's lock is waited on.
-			recordGitBundleMarker(ctx, span, "source", mountStart)
+			// fetched, and where a remote mirror's lock is waited on. The
+			// marker is about the mount, so it stays under the import; the
+			// work below nests under whatever the mount holds (for a remote,
+			// git.mirror.locked).
+			recordGitBundleMarker(importCtx, span, "source", mountStart)
 			formatOut, err := source.Run(ctx, "rev-parse", "--show-object-format")
 			if err != nil {
 				return fmt.Errorf("read git repository object format: %w", err)
@@ -1111,8 +1115,10 @@ func packGitBundlePrerequisites(ctx context.Context, source *gitutil.GitCLI, roo
 
 // recordGitBundlePhase records a phase of a bundle import that ran from start
 // until now: on the import span as dagger.git.bundle.<phase>_ms, and as a
-// wcprof io op "git.bundle.<phase>[<detail>]" under the import's lazy op.
-// Phases never overlap each other or a recorded wait.
+// wcprof io op "git.bundle.<phase>[<detail>]" under ctx's op: the import's
+// lazy op, or for the prerequisites copy whatever the source mount holds
+// (for a remote, git.mirror.locked). Phases never overlap each other or a
+// recorded wait.
 func recordGitBundlePhase(ctx context.Context, span trace.Span, phase, detail string, start int64) {
 	end := wcprof.NowNS()
 	span.SetAttributes(attribute.Int64("dagger.git.bundle."+phase+"_ms", (end-start)/int64(time.Millisecond)))

@@ -150,8 +150,11 @@ type GitRepositoryBackend interface {
 	// Cleaned returns a Directory representing the repository with all uncommitted changes discarded.
 	Cleaned(ctx context.Context) (dagql.ObjectResult[*Directory], error)
 
-	// mount mounts the repository with the provided refs and executes the given function.
-	mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
+	// mount mounts the repository with the provided refs and executes the
+	// given function. fn receives the context to do its work in: it descends
+	// from ctx and carries the telemetry of whatever mount holds while fn
+	// runs (e.g. a remote mirror's lock), so work done in fn nests under it.
+	mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(context.Context, *gitutil.GitCLI) error) error
 }
 
 type GitRef struct {
@@ -186,7 +189,9 @@ type GitCommitMetadata struct {
 type GitRefBackend interface {
 	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (checkout *Directory, err error)
 
-	mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error
+	// mount mounts the ref and executes the given function with a context
+	// descending from ctx, as GitRepositoryBackend.mount does.
+	mount(ctx context.Context, depth int, includeTags bool, fn func(context.Context, *gitutil.GitCLI) error) error
 }
 
 // SelectLatestGitRef selects the greatest stable release tag in remote after
@@ -368,7 +373,7 @@ func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRe
 		return nil, err
 	}
 	if local, ok := backend.(*LocalGitRepository); ok {
-		err := local.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		err := local.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 			var err error
 			repo.Remotes, repo.UpstreamRemote, err = readGitRemoteSelection(ctx, git)
 			return err
@@ -446,7 +451,7 @@ func (repo *GitRepository) WalkRevision(ctx context.Context, base *gitutil.Ref, 
 		return "", err
 	}
 	walk := func(depth int) (sha string, err error) {
-		err = backend.mount(ctx, depth, false, func(git *gitutil.GitCLI) error {
+		err = backend.mount(ctx, depth, false, func(ctx context.Context, git *gitutil.GitCLI) error {
 			var err error
 			sha, err = git.WalkRevision(ctx, rev, base.SHA)
 			return err
@@ -1180,7 +1185,7 @@ func (commit *GitCommit) Metadata(ctx context.Context) (*GitCommitMetadata, erro
 	}
 
 	var out []byte
-	err := commit.Backend.mount(ctx, 1, false, func(git *gitutil.GitCLI) error {
+	err := commit.Backend.mount(ctx, 1, false, func(ctx context.Context, git *gitutil.GitCLI) error {
 		var err error
 		out, err = git.Run(ctx, "cat-file", "commit", commit.Ref.SHA)
 		return err
@@ -1212,18 +1217,18 @@ func (commit *GitCommit) PrefillMetadata(meta *GitCommitMetadata) {
 }
 
 func (commit *GitCommit) prefetch(ctx context.Context, depth int, includeTags bool) error {
-	return commit.Mount(ctx, depth, includeTags, func(*gitutil.GitCLI) error {
-		return nil
-	})
+	return commit.Mount(ctx, depth, includeTags, nil)
 }
 
-// Mount mounts the commit's repository with this commit available at the requested depth.
-func (commit *GitCommit) Mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+// Mount mounts the commit's repository with this commit available at the
+// requested depth, running fn with a context descending from ctx (see
+// GitRepositoryBackend.mount).
+func (commit *GitCommit) Mount(ctx context.Context, depth int, includeTags bool, fn func(context.Context, *gitutil.GitCLI) error) error {
 	if commit == nil || commit.Backend == nil {
 		return fmt.Errorf("git commit: missing backend")
 	}
 	if fn == nil {
-		fn = func(*gitutil.GitCLI) error { return nil }
+		fn = func(context.Context, *gitutil.GitCLI) error { return nil }
 	}
 	return commit.Backend.mount(ctx, depth, includeTags, fn)
 }
@@ -1816,14 +1821,15 @@ func writeGitCheckoutRemote(ctx context.Context, checkoutGit *gitutil.GitCLI, re
 //
 // Refs sharing a repository are mounted together. Refs from different local
 // repositories share their cached objects read-only; others use refJoin.
-func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI, shas []string) error) error {
+// fn runs with the context of the mount that holds the objects it reads.
+func mountRefs(ctx context.Context, refs []*GitRef, fn func(ctx context.Context, git *gitutil.GitCLI, shas []string) error) error {
 	if len(refs) == 0 {
 		return fmt.Errorf("mount refs: no refs given")
 	}
 	// A single ref needs neither repository identity nor a joined object store.
 	if len(refs) == 1 {
-		return refs[0].Backend.mount(ctx, 0, false, func(git *gitutil.GitCLI) error {
-			return fn(git, []string{refs[0].Ref.SHA})
+		return refs[0].Backend.mount(ctx, 0, false, func(ctx context.Context, git *gitutil.GitCLI) error {
+			return fn(ctx, git, []string{refs[0].Ref.SHA})
 		})
 	}
 
@@ -1848,15 +1854,20 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 
 	if sameRepo { // fast-path, just grab all the refs from the same repo
 		// depth 0 = full fetch, so that history is available
-		return refs[0].Repo.Self().Backend.mount(ctx, 0, false, backends, func(git *gitutil.GitCLI) error {
-			return fn(git, shas)
+		return refs[0].Repo.Self().Backend.mount(ctx, 0, false, backends, func(ctx context.Context, git *gitutil.GitCLI) error {
+			return fn(ctx, git, shas)
 		})
 	}
 
-	if handled, err := mountOwnedShallowHistory(ctx, refs, fn); err != nil || handled {
+	// The paths below only borrow local object stores or private joins:
+	// their reads hold no mount whose telemetry fn needs to nest under.
+	localFn := func(git *gitutil.GitCLI, shas []string) error {
+		return fn(ctx, git, shas)
+	}
+	if handled, err := mountOwnedShallowHistory(ctx, refs, localFn); err != nil || handled {
 		return err
 	}
-	if handled, err := mountRefsWithLocalDonor(ctx, refs, fn); err != nil || handled {
+	if handled, err := mountRefsWithLocalDonor(ctx, refs, localFn); err != nil || handled {
 		return err
 	}
 	historyRefs, err := nativeParentHistoryRefs(ctx, refs)
@@ -1871,7 +1882,7 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 		}
 	}
 	if allLocal {
-		err := mountCachedGitRefs(ctx, historyRefs, fn)
+		err := mountCachedGitRefs(ctx, historyRefs, localFn)
 		if !errors.Is(err, errShallowCachedGitHistory) {
 			return err
 		}
@@ -1883,12 +1894,12 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 	}
 	defer cleanup()
 
-	return fn(git, shas)
+	return fn(ctx, git, shas)
 }
 
 func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error) {
 	var mergeBase string
-	err := mountRefs(ctx, []*GitRef{ref1, ref2}, func(git *gitutil.GitCLI, shas []string) error {
+	err := mountRefs(ctx, []*GitRef{ref1, ref2}, func(ctx context.Context, git *gitutil.GitCLI, shas []string) error {
 		out, err := git.Run(ctx, append([]string{"merge-base"}, shas...)...)
 		if err != nil {
 			return fmt.Errorf("git merge-base failed: %w", err)
@@ -1941,7 +1952,7 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 	bounded := opts.Base == nil && len(opts.Paths) == 0
 	_, local := ref.Backend.(*LocalGitRef)
 	needsFullHistory := false
-	readLog := func(git *gitutil.GitCLI, shas []string) error {
+	readLog := func(ctx context.Context, git *gitutil.GitCLI, shas []string) error {
 		args := []string{"rev-list", "-n", strconv.Itoa(opts.Limit), shas[0]}
 		if len(shas) > 1 {
 			args = append(args, "^"+shas[1])
@@ -1986,8 +1997,8 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 	if bounded {
 		// Avoid unshallowing an entire remote just to read a short log. Path
 		// filters and base exclusions need full history.
-		err = ref.Backend.mount(ctx, opts.Limit, false, func(git *gitutil.GitCLI) error {
-			return readLog(git, []string{ref.Ref.SHA})
+		err = ref.Backend.mount(ctx, opts.Limit, false, func(ctx context.Context, git *gitutil.GitCLI) error {
+			return readLog(ctx, git, []string{ref.Ref.SHA})
 		})
 	} else {
 		needsFullHistory = true
@@ -2045,8 +2056,8 @@ func mountCachedGitRefs(ctx context.Context, refs []*GitRef, fn func(*gitutil.Gi
 	var objects []string
 	var shas []string
 	var objectFormat string
-	var mountNext func(int) error
-	mountNext = func(i int) error {
+	var mountNext func(context.Context, int) error
+	mountNext = func(ctx context.Context, i int) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -2055,7 +2066,7 @@ func mountCachedGitRefs(ctx context.Context, refs []*GitRef, fn func(*gitutil.Gi
 				return fn(git, shas)
 			})
 		}
-		return refs[i].Backend.mount(ctx, 0, false, func(git *gitutil.GitCLI) error {
+		return refs[i].Backend.mount(ctx, 0, false, func(ctx context.Context, git *gitutil.GitCLI) error {
 			shallow, err := git.Run(ctx, "rev-parse", "--is-shallow-repository")
 			if err != nil {
 				return err
@@ -2083,10 +2094,10 @@ func mountCachedGitRefs(ctx context.Context, refs []*GitRef, fn func(*gitutil.Gi
 			}
 			objects = append(objects, strings.TrimSuffix(string(path), "\n"))
 			shas = append(shas, refs[i].Ref.SHA)
-			return mountNext(i + 1)
+			return mountNext(ctx, i+1)
 		})
 	}
-	return mountNext(0)
+	return mountNext(ctx, 0)
 }
 
 // withGitObjectView creates only private repository metadata. Every source
@@ -2154,7 +2165,9 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 	for i, ref := range refs {
 		eg.Go(func() error {
 			commits[i] = ref.Ref.SHA
-			return ref.Backend.mount(egCtx, 0, false, func(gitN *gitutil.GitCLI) error {
+			// The callback's ctx descends from egCtx: it is canceled with the
+			// group, and nests the work under the ref's mount.
+			return ref.Backend.mount(egCtx, 0, false, func(egCtx context.Context, gitN *gitutil.GitCLI) error {
 				remoteURL, err := gitN.URL(egCtx)
 				if err != nil {
 					return err

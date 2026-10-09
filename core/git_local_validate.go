@@ -14,7 +14,7 @@ import (
 // ValidateSelfContained ensures that reopening supplied storage cannot depend
 // on a worktree pointer, common directory, or object store outside its root.
 func (repo *LocalGitRepository) ValidateSelfContained(ctx context.Context) error {
-	return repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	return repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 		root, err := filepath.EvalSymlinks(git.Dir())
 		if err != nil {
 			return err
