@@ -392,6 +392,25 @@ func (ModuleSuite) TestNeverCacheModuleObjectReturn(ctx context.Context, t *test
 	require.Contains(t, out, "Test@")
 }
 
+// TestReevaluatedObjectArgReuse checks that the Go client re-evaluates an
+// object built through a field marked @reevaluate every time it is passed as
+// an argument, while it may reuse the ID of any other object.
+func (ModuleSuite) TestReevaluatedObjectArgReuse(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := moduleFixture(t, c, "go/reevaluate-arg-reuse")
+
+	out, err := modGen.With(daggerCall("check")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, strings.Join([]string{
+		"never-one-query different",
+		"never-two-queries different",
+		"never-derived different",
+		"never-built-once same",
+		"cached-one-query same",
+	}, "\n"), strings.TrimSpace(out))
+}
+
 func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		sdk     string
