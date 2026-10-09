@@ -2,6 +2,7 @@
 
 namespace Dagger\Tests\Unit\Service;
 
+use Dagger\Attribute\GraphQLType;
 use Dagger\ValueObject\Type;
 use Generator;
 use Dagger\Service\NormalizesClassName;
@@ -76,4 +77,24 @@ final class NormalizesClassNameTest extends TestCase
             yield $name => [$shortenedName, $name];
         }
     }
+
+    #[Test]
+    public function itReadsGraphQLTypeNames(): void
+    {
+        self::assertSame('JSONValue', NormalizesClassName::graphQLTypeName(GraphQLTypedFixture::class));
+        self::assertSame('JSONKind', NormalizesClassName::graphQLTypeName(GraphQLTypedEnumFixture::class));
+        self::assertNull(NormalizesClassName::graphQLTypeName(self::class));
+        self::assertNull(NormalizesClassName::graphQLTypeName('Dagger\\DoesNotExist'));
+    }
+}
+
+#[GraphQLType('JSONValue')]
+final class GraphQLTypedFixture
+{
+}
+
+#[GraphQLType('JSONKind')]
+enum GraphQLTypedEnumFixture: string
+{
+    case A = 'A';
 }

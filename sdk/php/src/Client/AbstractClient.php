@@ -6,6 +6,7 @@ use Dagger\Client;
 use Dagger\Connection;
 use Dagger\GraphQl\QueryBuilderChain;
 use Dagger\Id;
+use Dagger\Service\NormalizesClassName;
 use GraphQL\Client as GqlClient;
 use GraphQL\Query;
 use GraphQL\QueryBuilder\QueryBuilder;
@@ -69,7 +70,7 @@ abstract class AbstractClient
         $shortName = (new ReflectionClass($className))->getShortName();
 
         // Reverse the PHP class name → GraphQL type name mapping
-        $graphQLTypeName ??= match ($shortName) {
+        $graphQLTypeName ??= NormalizesClassName::graphQLTypeName($className) ?? match ($shortName) {
             'Function_' => 'Function',
             'Client' => 'Query',
             default => $shortName,
