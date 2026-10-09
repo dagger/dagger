@@ -894,6 +894,74 @@ func TestBoundToolsUseTheirDefiningSchemaAuthoritatively(t *testing.T) {
 	})
 }
 
+// describeTestReport is an object a bound tool returns, defined only in the
+// tool's defining schema.
+type describeTestReport struct{ Summary string }
+
+func (*describeTestReport) Type() *ast.Type {
+	return &ast.Type{NamedType: "DescribeTestReport", NonNull: true}
+}
+
+// TestBoundToolDescribesObjectOutsideCurrentSchema covers a bound method
+// returning an object whose type the dispatching server doesn't serve: the
+// result is described from the object's own class, reading its trivial scalar
+// fields and skipping object-valued and non-trivial ones.
+func TestBoundToolDescribesObjectOutsideCurrentSchema(t *testing.T) {
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "describe-object-test",
+		SessionID: "describe-object-test",
+	})
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+
+	defining := newAddressLiftTestServer(t)
+	defining.InstallObject(dagql.NewClass(defining, dagql.ClassOpts[*describeTestReport]{Typed: &describeTestReport{}}))
+	// Like module functions and fields, the object-returning fields below
+	// hand back objects already wrapped in their defining class.
+	trivial := func(f dagql.Field[*describeTestReport]) dagql.Field[*describeTestReport] {
+		f.Spec.Directives = append(f.Spec.Directives, &ast.Directive{Name: trivialFieldDirectiveName})
+		return f
+	}
+	dagql.Fields[*describeTestReport]{
+		trivial(dagql.Func("summary", func(_ context.Context, r *describeTestReport, _ struct{}) (dagql.String, error) {
+			return dagql.String(r.Summary), nil
+		})),
+		trivial(dagql.Func("runner", func(ctx context.Context, _ *describeTestReport, _ struct{}) (dagql.ObjectResult[*liftTestRunner], error) {
+			return dagql.NewObjectResultForCurrentCall(ctx, defining, &liftTestRunner{})
+		})),
+		dagql.Func("details", func(_ context.Context, _ *describeTestReport, _ struct{}) (dagql.String, error) {
+			return "", fmt.Errorf("non-trivial fields must not be selected")
+		}),
+	}.Install(defining)
+	dagql.Fields[*liftTestRunner]{
+		dagql.Func("report", func(ctx context.Context, _ *liftTestRunner, args struct{ Summary string }) (dagql.ObjectResult[*describeTestReport], error) {
+			return dagql.NewObjectResultForCurrentCall(ctx, defining, &describeTestReport{Summary: args.Summary})
+		}),
+	}.Install(defining)
+
+	// The dispatching server knows neither the runner nor its report.
+	current := newCoreDagqlServerForTest(t, &Query{})
+	_, ok := current.ObjectType("DescribeTestReport")
+	require.False(t, ok)
+
+	var runner dagql.AnyObjectResult
+	require.NoError(t, defining.Select(ctx, defining.Root(), &runner, dagql.Selector{Field: "runner"}))
+	toolsets, err := newMCP().WithTools(runner, defining.Schema(), nil).boundToolsets(current)
+	require.NoError(t, err)
+	require.Len(t, toolsets, 1)
+	for _, tool := range toolsets[0].tools {
+		if tool.Name != "report" {
+			continue
+		}
+		out, err := tool.Call(ctx, map[string]any{"summary": "all good"})
+		require.NoError(t, err)
+		require.JSONEq(t, `{"type": "DescribeTestReport", "data": {"summary": "all good"}}`, fmt.Sprint(out))
+		return
+	}
+	t.Fatal("report tool not found")
+}
+
 // TestBuildObjectMethodSelector covers argument dispatch against a
 // real dagql field: nullable scalars accept explicit null, while model-supplied
 // strings for liftable object args first try ID decoding and then address

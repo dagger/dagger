@@ -3473,27 +3473,34 @@ func readTraceReportOpts() traceReportOpts {
 // objects are referenced by the names they're bound to (a `let` within a script
 // or a WithObject injection), and a bare object can be rebuilt from its
 // expression (Dagger is content-addressed), so this is purely informational.
+//
+// Fields come from the object's own class, not srv's schema: a bound tool's
+// method can return an object whose type srv doesn't serve, or serves only in
+// an older revision (see boundTool.definingSchema).
 func (m *MCP) describeObject(ctx context.Context, srv *dagql.Server, target dagql.AnyObjectResult) (string, error) {
-	schema := srv.Schema()
-	typeName := target.Type().Name()
 	res := map[string]any{
-		"type": typeName,
+		"type": target.Type().Name(),
 	}
 	data := map[string]any{}
-	for _, field := range schema.Types[typeName].Fields {
-		trivial := field.Directives.ForName(trivialFieldDirectiveName) != nil
+	for _, spec := range target.ObjectType().FieldSpecs(srv.View) {
+		trivial := slices.ContainsFunc(spec.Directives, func(d *ast.Directive) bool {
+			return d.Name == trivialFieldDirectiveName
+		})
 		if !trivial {
 			continue
 		}
 		var val dagql.AnyResult
 		err := srv.Select(ctx, target, &val, dagql.Selector{
 			View:  srv.View,
-			Field: field.Name,
+			Field: spec.Name,
 		})
 		if err != nil {
 			return "", err
 		}
-		if _, isObj := srv.ObjectType(val.Type().Name()); isObj {
+		if val == nil {
+			continue
+		}
+		if _, isObj := dagql.UnwrapAs[dagql.AnyObjectResult](val); isObj {
 			// skip any fields that reference objects, to avoid dumping entire
 			// ModuleObjects
 			continue
@@ -3502,7 +3509,7 @@ func (m *MCP) describeObject(ctx context.Context, srv *dagql.Server, target dagq
 		if err != nil {
 			return "", err
 		}
-		data[field.Name] = datum
+		data[spec.Name] = datum
 	}
 	if len(data) > 0 {
 		res["data"] = data
