@@ -425,8 +425,8 @@ func TestSessionExportersRecordPayloadsTheProcessorsDrop(t *testing.T) {
 	require.True(t, store.ClaimCallPayload(spanDigest))
 
 	require.Error(t, logExporter.Export(t.Context(), []sdklog.Record{record}))
-	require.Zero(t, sess.callPayloadLostCount.Load(), "a failure outside a final attempt loses nothing")
-	require.False(t, store.StartCallPayloadRepair("xxh3:root"))
+	require.Zero(t, sess.callPayloadLostCount, "a failure outside a final attempt loses nothing")
+	require.False(t, store.startRepair("xxh3:root"))
 	require.True(t, store.ClaimCallPayload(logDigest))
 
 	logs := enginetel.NewCallPayloadBatchProcessor(logExporter)
@@ -443,12 +443,12 @@ func TestSessionExportersRecordPayloadsTheProcessorsDrop(t *testing.T) {
 	require.ErrorContains(t, logErr, "dropping 1 protected records")
 	require.ErrorContains(t, spanErr, "dropping 1 protected spans")
 
-	require.EqualValues(t, 2, sess.callPayloadLostCount.Load())
-	require.True(t, store.StartCallPayloadRepair("xxh3:root"),
+	require.EqualValues(t, 2, sess.callPayloadLostCount)
+	require.True(t, store.startRepair("xxh3:root"),
 		"a replay of an already claimed root must walk again")
 	require.True(t, store.ClaimCallPayload(logDigest), "a repair walk can claim the lost payload")
 	require.True(t, store.ClaimCallPayload(spanDigest))
-	require.Zero(t, sess.callPayloadLostCount.Load())
+	require.Zero(t, sess.callPayloadLostCount)
 
 	require.ErrorContains(t, logs.Shutdown(ctx), "dropping 1 protected records")
 	require.ErrorContains(t, spans.Shutdown(ctx), "dropping 1 protected spans")

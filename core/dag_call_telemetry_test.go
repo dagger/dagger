@@ -133,6 +133,10 @@ type testSeenKeys struct {
 	keys sync.Map
 }
 
+func (s *testSeenKeys) ClaimCallPayloadRoot(key string) (claimed, repair bool) {
+	return s.ClaimCallPayload(key), false
+}
+
 func (s *testSeenKeys) ClaimCallPayload(key string) bool {
 	_, seen := s.keys.LoadOrStore(key, struct{}{})
 	return !seen
@@ -615,8 +619,9 @@ type testClosureKeys struct {
 	// closure is covered: the moment an exporter's failed write could release
 	// a claim inside the closure that walk has just decided to skip.
 	afterSkip func()
-	// beforeRepair, if set, runs once when a walk asks whether to repair: the
-	// moment the root that walk failed to claim could be released.
+	// beforeRepair, if set, runs once right after a failed root claim decided
+	// whether to repair: the moment that root could be released, before the
+	// repair walk starts.
 	beforeRepair func()
 }
 
@@ -658,22 +663,23 @@ func (s *testClosureKeys) ClaimCallPayloadForRepair(key string) (claimed, refuse
 	return true, false
 }
 
-func (s *testClosureKeys) StartCallPayloadRepair(root string) bool {
+func (s *testClosureKeys) ClaimCallPayloadRoot(root string) (claimed, repair bool) {
+	if s.ClaimCallPayload(root) {
+		return true, false
+	}
 	s.mu.Lock()
+	repair = len(s.lost) > 0 && !s.covered[root] && !s.repaired[root]
+	if repair {
+		s.repaired[root] = true
+		s.repairs++
+	}
 	before := s.beforeRepair
 	s.beforeRepair = nil
 	s.mu.Unlock()
 	if before != nil {
 		before()
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.lost) == 0 || s.covered[root] || s.repaired[root] {
-		return false
-	}
-	s.repaired[root] = true
-	s.repairs++
-	return true
+	return false, repair
 }
 
 func (s *testClosureKeys) CallPayloadReleaseEpoch() uint64 {
@@ -905,12 +911,16 @@ func TestRecordCallPayloadsForSpanRepairsLostFrame(t *testing.T) {
 	}
 
 	keys := newTestClosureKeys()
-	require.True(t, keys.ClaimCallPayload(digests[2]))
-	recordCallPayloadsForSpan(ctx, keys, digests[2], frames[2], true, true)
+	claimed, repair := claimCallPayload(keys, digests[2])
+	require.True(t, claimed)
+	recordCallPayloadsForSpan(ctx, keys, digests[2], frames[2], claimed, repair, true)
 	require.Equal(t, 2, rec.emissionCount())
 
 	keys.lose(digests[0])
-	recordCallPayloadsForSpan(ctx, keys, digests[2], frames[2], false, true)
+	claimed, repair = claimCallPayload(keys, digests[2])
+	require.False(t, claimed)
+	require.True(t, repair)
+	recordCallPayloadsForSpan(ctx, keys, digests[2], frames[2], claimed, repair, true)
 	require.Equal(t, 3, rec.emissionCount(), "the replay must re-emit only the lost frame")
 	require.Equal(t, digests[0], rec.snapshot()[2].digest)
 }
