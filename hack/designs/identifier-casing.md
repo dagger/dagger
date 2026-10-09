@@ -534,13 +534,19 @@ for:
 | Rust | `PASCAL`/`CAPITALIZED` | `SNAKE` | `SNAKE` | `PASCAL`/`CAPITALIZED` |
 | PHP | `PASCAL`/`CAPITALIZED` | `CAMEL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `SCREAMING_SNAKE` |
 | .NET | `PASCAL`/`CAPITALIZED` | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `PASCAL`/`CAPITALIZED` |
-| Java | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
+| Java | schema name (`PASCAL`/`UPPERCASE`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | schema value |
 
 The type and method/field columns for Go, TypeScript, Python, Elixir, Rust and
 PHP match what those SDKs generate today. The argument and enum columns, and
-the .NET and Java rows, are proposals to confirm with each SDK's maintainers.
+the .NET row, are proposals to confirm with each SDK's maintainers.
 Today .NET passes type names through unchanged (`LLMMessageRole`) and
 title-cases members.
+
+Java follows Google Java Style for members (`asJson`, `withGpu`), keeping the
+old spellings as deprecated forwarders. Its classes and enum constants keep the
+schema's names: the runtime uses a class's simple name as its GraphQL type and
+serializes enum constants by name, and a class renamed only in case can't keep
+a deprecated alias next to it on case-insensitive file systems.
 
 Runtime function dispatch is unaffected. SDKs register functions with their
 native names, and the engine dispatches by `OriginalName`, so nothing on the
