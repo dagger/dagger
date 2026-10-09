@@ -649,14 +649,12 @@ func (s *testClosureKeys) ClaimCallPayloadForRepair(key string) (claimed, refuse
 	if s.claimed[key] {
 		return false, false
 	}
-	if s.spent[key] {
+	if !s.lost[key] {
 		return false, true
 	}
 	s.claimed[key] = true
-	if s.lost[key] {
-		delete(s.lost, key)
-		s.spent[key] = true
-	}
+	delete(s.lost, key)
+	s.spent[key] = true
 	return true, false
 }
 
@@ -1016,6 +1014,32 @@ func TestRecordCallPayloadsRepairCopiesEachPayloadOnce(t *testing.T) {
 	require.NoError(t, err)
 	recordCallPayloads(ctx, keys, topDigest.String(), top)
 	require.Equal(t, 3, copies(), "an ordinary walk still reaches the frame")
+}
+
+// A frame released by a failure that is not final is still queued for its
+// export's retry. A repair walk that other losses run must not emit another
+// copy of it, nor record coverage over it.
+func TestRecordCallPayloadsRepairLeavesRetriedFramesAlone(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	frames := chainCall(4)
+	digests := make([]string, len(frames))
+	for i, frame := range frames {
+		dgst, err := frame.RecipeDigest(ctx)
+		require.NoError(t, err)
+		digests[i] = dgst.String()
+	}
+
+	keys := newTestClosureKeys()
+	recordCallPayloads(ctx, keys, digests[3], frames[3])
+	require.Equal(t, 4, rec.emissionCount())
+
+	keys.lose("xxh3:unreachable")
+	keys.release(digests[1])
+	recordCallPayloads(ctx, keys, digests[3], frames[3])
+	require.Equal(t, 1, keys.repairsStarted())
+	require.Equal(t, 4, rec.emissionCount(), "the retried frame is its export's to deliver")
+	require.False(t, keys.CallPayloadClosureCovered(digests[2]),
+		"a walk that left a frame unclaimed must not record coverage")
 }
 
 // A repair walk starts at a root someone else claimed. If that claim is

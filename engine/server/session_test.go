@@ -3659,6 +3659,55 @@ func TestCallPayloadRepairCopiesEachPayloadOnce(t *testing.T) {
 		"an ordinary walk still claims it, as it would without repair")
 }
 
+// A repair walk claims only pending losses, and each claim spends its pair
+// for good, so every repair copy spends at least one pair. A pair released by
+// a failure that was not final is left to its own export's retry, and a pair
+// whose repair is spent is left alone even when a repair copy for another
+// target on the route reaches it.
+func TestCallPayloadRepairClaimsOnlyPendingLosses(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+	route := []string{"child", "parent"}
+	store := &callPayloadDeliveryStore{session: sess, targets: route}
+	fail := func(digest string, targets []string, final bool) {
+		t.Helper()
+		require.Equal(t, targets, sess.takeCallPayloadForWrite(digest, targets))
+		sess.settleCallPayload(digest, targets, false, final)
+	}
+
+	require.True(t, store.ClaimCallPayload("xxh3:retried"))
+	fail("xxh3:retried", route, false)
+	claimed, refused := store.ClaimCallPayloadForRepair("xxh3:retried")
+	require.False(t, claimed, "a failure that was not final is its export's to retry")
+	require.True(t, refused)
+
+	// a is lost for both targets; parent's repair copy is lost too.
+	require.True(t, store.ClaimCallPayload("xxh3:a"))
+	fail("xxh3:a", route, true)
+	require.EqualValues(t, 2, sess.callPayloadLostCount.Load())
+	parentOnly := &callPayloadDeliveryStore{session: sess, targets: []string{"parent"}}
+	claimed, refused = parentOnly.ClaimCallPayloadForRepair("xxh3:a")
+	require.True(t, claimed)
+	require.False(t, refused)
+	fail("xxh3:a", []string{"parent"}, true)
+	require.EqualValues(t, 1, sess.callPayloadLostCount.Load(), "parent's repair is spent")
+
+	claimed, refused = store.ClaimCallPayloadForRepair("xxh3:a")
+	require.True(t, claimed, "child's loss is still pending")
+	require.True(t, refused, "parent's spent repair is left unclaimed")
+	require.Zero(t, sess.callPayloadLostCount.Load())
+	// The exporter writes the copy to every route target still missing it,
+	// parent included; that write failing spends nothing new.
+	fail("xxh3:a", route, true)
+	require.Zero(t, sess.callPayloadLostCount.Load(), "every pair of a has spent its repair")
+	claimed, refused = store.ClaimCallPayloadForRepair("xxh3:a")
+	require.False(t, claimed)
+	require.True(t, refused)
+	require.Equal(t, route, sess.claimCallPayload("xxh3:a", route),
+		"an ordinary walk still claims it, as it would without repair")
+}
+
 func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {
 	t.Parallel()
 
