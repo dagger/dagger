@@ -57,6 +57,24 @@ dagger -m core api call container \
   stdout
 ```
 
+## Select a collection item
+
+The selectors that filter `dagger check` also name an item to call functions on, so a pipeline can start at one item of a collection. `dagger list` prints the dimensions and their keys:
+
+```shell
+dagger list
+dagger list vitest-test-files -a
+```
+
+Selectors go before the first function, and `--help` after them lists what the item offers:
+
+```shell
+dagger api call --vitest-project=. --vitest-test-file=src/errors.test.ts --help
+dagger api call --vitest-project=. --vitest-test-file=src/errors.test.ts <function>
+```
+
+Each selector pins the item at its own dimension, so naming only the outer one selects that item instead, with its own collections left to navigate. If the selectors match more than one item, the error lists the candidates.
+
 ## Output
 
 By default the result is printed to your terminal. Format it as JSON:

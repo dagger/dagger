@@ -122,6 +122,10 @@ type FuncCommand struct {
 	// withFn is the `with` function on Query root, if present.
 	// Used to forward constructor args from the root command.
 	withFn *modFunction
+
+	// artifactRoot is set when dimension flags name a collection item to
+	// start the pipeline from, instead of the module root.
+	artifactRoot *artifactRootSelection
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
@@ -348,6 +352,11 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	// are more likely to be from wrong CLI usage.
 	fc.showUsage = true
 
+	// Before the command tree: its shape depends on the selected item's type.
+	if err := fc.selectArtifactRoot(ctx, c, a); err != nil {
+		return err
+	}
+
 	cmd, flags, err := fc.loadCommand(c, a)
 	if err != nil {
 		return err
@@ -359,7 +368,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 
 	// No args to the parent command
 	if cmd == c {
-		return fc.RunE(ctx, fc.mod.MainObject.AsObject.Constructor)(cmd, flags)
+		return fc.RunE(ctx, fc.rootFunction())(cmd, flags)
 	}
 
 	return cmd.RunE(cmd, flags)
@@ -373,7 +382,7 @@ func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Co
 	defer telemetry.EndWithCause(span, &rerr)
 	fc.ctx = spanCtx
 
-	builder := fc.cobraBuilder(ctx, fc.mod.MainObject.AsObject.Constructor)
+	builder := fc.cobraBuilder(ctx, fc.rootFunction())
 
 	cmd, args, err := fc.traverse(c, a, builder)
 	if err != nil {
@@ -465,6 +474,15 @@ func (fc *FuncCommand) traverse(c *cobra.Command, a []string, build func(*cobra.
 	return fc.traverse(cmd, args, cmd.PreRunE)
 }
 
+// rootFunction is where the command tree starts: the module's constructor,
+// or a collection item when dimension flags named one.
+func (fc *FuncCommand) rootFunction() *modFunction {
+	if fc.artifactRoot != nil {
+		return fc.artifactRoot.fn
+	}
+	return fc.mod.MainObject.AsObject.Constructor
+}
+
 // cobraBuilder returns a PreRunE compatible function to add the next set of
 // flags and sub-commands to the command tree, based on a function definition.
 func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*cobra.Command, []string) error {
@@ -525,6 +543,11 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		// This avoids an empty `with()` selection when no args are provided.
 		if isQueryConstructor {
 			return fc.selectWith(c)
+		}
+
+		// The node(id:) selection already roots the pipeline at the item.
+		if fc.artifactRoot != nil && fn == fc.artifactRoot.fn {
+			return nil
 		}
 
 		// Easier to add query builder selections as we traverse the command tree.
