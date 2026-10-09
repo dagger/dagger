@@ -89,7 +89,7 @@ func devEngineContainerWithStateKey(c *dagger.Client, stateCacheKey string, with
 	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
 	return ctr.
 		WithMountedCache("/var/lib/dagger", c.CacheVolume(stateCacheKey)).
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",
 			// avoid network conflicts with other tests
@@ -754,7 +754,7 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "3s").
 			WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
-				Protocol: dagger.NetworkProtocolTcp,
+				Protocol: dagger.NetworkProtocolTCP,
 			})
 	})
 	devEngine := devEngineContainerAsService(devEngineCtr)
@@ -889,7 +889,7 @@ func (EngineSuite) TestSessionTeardownSurvivesNestedClientStartup(ctx context.Co
 		}),
 		func(ctr *dagger.Container) *dagger.Container {
 			return ctr.WithExposedPort(6060, dagger.ContainerWithExposedPortOpts{
-				Protocol: dagger.NetworkProtocolTcp,
+				Protocol: dagger.NetworkProtocolTCP,
 			})
 		},
 	))
@@ -1007,7 +1007,7 @@ func (EngineSuite) TestDagqlCacheEntriesNoLeak(ctx context.Context, t *testctx.T
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "1s").
 			WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
-				Protocol: dagger.NetworkProtocolTcp,
+				Protocol: dagger.NetworkProtocolTCP,
 			})
 	}))
 

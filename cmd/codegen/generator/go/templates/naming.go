@@ -65,13 +65,12 @@ func formatArgName(s string) string {
 }
 
 // enumValueName formats an enum value into the Go suffix of its scoped
-// constant name (`<Enum><Value>`). It keeps the shape strcase gave enum
-// values before identifier words: PASCAL with capitalized acronyms, so
-// `TCP` stays `Tcp` and `LEAVE_CONFLICT_MARKERS` stays
-// `LeaveConflictMarkers`.
+// constant name (`<Enum><Value>`): PASCAL with uppercase acronyms, like every
+// other Go identifier, so `TCP` becomes `TCP` (strcase gave `Tcp`) and
+// `LEAVE_CONFLICT_MARKERS` stays `LeaveConflictMarkers`.
 func enumValueName(s string) string {
 	if id, ok := schemaIdentifier(s); ok {
-		return id.Format(naming.Pascal, naming.Capitalized)
+		return id.Format(naming.Pascal, naming.Uppercase)
 	}
 	return strcase.ToCamel(s)
 }

@@ -337,7 +337,7 @@ func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
 		}).
 		WithExposedPort(9000, dagger.ContainerWithExposedPortOpts{
 			Description: "nine thousand",
-			Protocol:    dagger.NetworkProtocolUdp,
+			Protocol:    dagger.NetworkProtocolUDP,
 		}).
 		WithDefaultArgs([]string{"python", "-m", "http.server"}).
 		AsService()
@@ -359,11 +359,11 @@ func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
 		case 0:
 			require.Equal(t, 8000, port)
 			require.Equal(t, "eight thousand", desc)
-			require.Equal(t, dagger.NetworkProtocolTcp, proto)
+			require.Equal(t, dagger.NetworkProtocolTCP, proto)
 		case 1:
 			require.Equal(t, 9000, port)
 			require.Equal(t, "nine thousand", desc)
-			require.Equal(t, dagger.NetworkProtocolUdp, proto)
+			require.Equal(t, dagger.NetworkProtocolUDP, proto)
 		}
 	}
 }
@@ -416,7 +416,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 			Description: "eight thousand tcp",
 		}).
 		WithExposedPort(8000, dagger.ContainerWithExposedPortOpts{
-			Protocol:    dagger.NetworkProtocolUdp,
+			Protocol:    dagger.NetworkProtocolUDP,
 			Description: "eight thousand udp",
 		}).
 		WithExposedPort(5432)
@@ -499,7 +499,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	require.Nil(t, desc)
 
 	withoutUDP := withPorts.WithoutExposedPort(8000, dagger.ContainerWithoutExposedPortOpts{
-		Protocol: dagger.NetworkProtocolUdp,
+		Protocol: dagger.NetworkProtocolUDP,
 	})
 	cid, err = withoutUDP.ID(ctx)
 	require.NoError(t, err)
@@ -536,12 +536,12 @@ func (ServiceSuite) TestPortOCIConfig(ctx context.Context, t *testctx.T) {
 			Description: "eight thousand tcp",
 		}).
 		WithExposedPort(8000, dagger.ContainerWithExposedPortOpts{
-			Protocol:    dagger.NetworkProtocolUdp,
+			Protocol:    dagger.NetworkProtocolUDP,
 			Description: "eight thousand udp",
 		}).
 		WithExposedPort(5432).
 		WithExposedPort(5432, dagger.ContainerWithExposedPortOpts{
-			Protocol: dagger.NetworkProtocolUdp,
+			Protocol: dagger.NetworkProtocolUDP,
 		})
 
 	dest := t.TempDir()
@@ -564,7 +564,7 @@ func (ServiceSuite) TestPortOCIConfig(ctx context.Context, t *testctx.T) {
 
 	withoutPorts := withPorts.
 		WithoutExposedPort(8000, dagger.ContainerWithoutExposedPortOpts{
-			Protocol: dagger.NetworkProtocolUdp,
+			Protocol: dagger.NetworkProtocolUDP,
 		}).
 		WithoutExposedPort(5432)
 
@@ -791,7 +791,7 @@ func (ServiceSuite) TestExecUDPServices(ctx context.Context, t *testctx.T) {
 		WithMountedFile("/src/main.go",
 			c.Directory().WithNewFile("main.go", udpSrc).File("main.go")).
 		WithExposedPort(4321, dagger.ContainerWithExposedPortOpts{
-			Protocol: dagger.NetworkProtocolUdp,
+			Protocol: dagger.NetworkProtocolUDP,
 		}).
 		// use TCP :4322 for health-check to avoid test flakiness, since UDP dial
 		// health-checks aren't really a thing
@@ -1915,7 +1915,7 @@ func (ServiceSuite) TestServiceFromUncachedPrivateImage(ctx context.Context, t *
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	engineSvc := devEngineContainerAsService(devEngineContainer(c,

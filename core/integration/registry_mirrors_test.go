@@ -26,7 +26,7 @@ func (EngineSuite) TestRegistryMirrorsCustomCA(ctx context.Context, t *testctx.T
 		WithFile("/certs/domain.key", registryKey).
 		WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
 		WithEnvVariable("REGISTRY_HTTP_TLS_KEY", "/certs/domain.key").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 		WithMountedCache("/cache/logs", cacheVolume).
 		WithDefaultArgs([]string{"sh", "-c", "registry serve /etc/distribution/config.yml | tee /cache/logs/registry.log"}).
 		AsService()
@@ -57,7 +57,7 @@ func (EngineSuite) TestRegistryMirrorsHTTP(ctx context.Context, t *testctx.T) {
 
 	cacheVolume := c.CacheVolume(t.Name())
 	registry := c.Container().From("registry:3").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 		WithMountedCache("/cache/logs", cacheVolume).
 		WithDefaultArgs([]string{"sh", "-c", "registry serve /etc/distribution/config.yml | tee /cache/logs/registry.log"}).
 		AsService()

@@ -583,7 +583,7 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "1s").
 				WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
-					Protocol: dagger.NetworkProtocolTcp,
+					Protocol: dagger.NetworkProtocolTCP,
 				})
 		},
 	)

@@ -433,7 +433,7 @@ func (a *sessionAgent) attachTunnel(ctx context.Context, tok string, u *url.URL,
 		[]dagger.PortForward{{
 			Backend:  port,
 			Frontend: port,
-			Protocol: dagger.NetworkProtocolTcp,
+			Protocol: dagger.NetworkProtocolTCP,
 		}},
 		dagger.HostServiceOpts{Host: u.Hostname()},
 	)

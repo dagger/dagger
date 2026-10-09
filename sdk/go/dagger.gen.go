@@ -22880,7 +22880,7 @@ func (v ImageLayerCompression) Name() string {
 		return "Gzip"
 	case ImageLayerCompressionZstd:
 		return "Zstd"
-	case ImageLayerCompressionEStarGz:
+	case ImageLayerCompressionEStarGZ:
 		return "EStarGZ"
 	case ImageLayerCompressionUncompressed:
 		return "Uncompressed"
@@ -22913,7 +22913,7 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 	case "":
 		*v = ""
 	case "EStarGZ":
-		*v = ImageLayerCompressionEStarGz
+		*v = ImageLayerCompressionEStarGZ
 	case "ESTARGZ":
 		*v = ImageLayerCompressionEstargz
 	case "Gzip":
@@ -22933,11 +22933,11 @@ const (
 
 	ImageLayerCompressionZstd ImageLayerCompression = "Zstd"
 
-	ImageLayerCompressionEStarGz ImageLayerCompression = "EStarGZ"
-	ImageLayerCompressionEstargz ImageLayerCompression = ImageLayerCompressionEStarGz
+	ImageLayerCompressionEStarGZ ImageLayerCompression = "EStarGZ"
+	ImageLayerCompressionEstargz ImageLayerCompression = ImageLayerCompressionEStarGZ
 
-	// Deprecated: use ImageLayerCompressionEStarGz instead.
-	ImageLayerCompressionEstarGz ImageLayerCompression = ImageLayerCompressionEStarGz
+	// Deprecated: use ImageLayerCompressionEStarGZ instead.
+	ImageLayerCompressionEstarGz ImageLayerCompression = ImageLayerCompressionEStarGZ
 
 	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
 )
@@ -22949,7 +22949,7 @@ func (ImageMediaTypes) IsEnum() {}
 
 func (v ImageMediaTypes) Name() string {
 	switch v {
-	case ImageMediaTypesOciMediaTypes:
+	case ImageMediaTypesOCIMediaTypes:
 		return "OCIMediaTypes"
 	case ImageMediaTypesDockerMediaTypes:
 		return "DockerMediaTypes"
@@ -22986,9 +22986,9 @@ func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
 	case "DockerMediaTypes":
 		*v = ImageMediaTypesDockerMediaTypes
 	case "OCI":
-		*v = ImageMediaTypesOci
+		*v = ImageMediaTypesOCI
 	case "OCIMediaTypes":
-		*v = ImageMediaTypesOciMediaTypes
+		*v = ImageMediaTypesOCIMediaTypes
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
@@ -22996,11 +22996,14 @@ func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	ImageMediaTypesOciMediaTypes ImageMediaTypes = "OCIMediaTypes"
-	ImageMediaTypesOci           ImageMediaTypes = ImageMediaTypesOciMediaTypes
+	ImageMediaTypesOCIMediaTypes ImageMediaTypes = "OCIMediaTypes"
+	ImageMediaTypesOCI           ImageMediaTypes = ImageMediaTypesOCIMediaTypes
 
-	// Deprecated: use ImageMediaTypesOciMediaTypes instead.
-	ImageMediaTypesOcimediaTypes ImageMediaTypes = ImageMediaTypesOciMediaTypes
+	// Deprecated: use ImageMediaTypesOCIMediaTypes instead.
+	ImageMediaTypesOcimediaTypes ImageMediaTypes = ImageMediaTypesOCIMediaTypes
+
+	// Deprecated: use ImageMediaTypesOCIMediaTypes instead.
+	ImageMediaTypesOci ImageMediaTypes = ImageMediaTypesOCIMediaTypes
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
@@ -23355,9 +23358,9 @@ func (NetworkProtocol) IsEnum() {}
 
 func (v NetworkProtocol) Name() string {
 	switch v {
-	case NetworkProtocolTcp:
+	case NetworkProtocolTCP:
 		return "TCP"
-	case NetworkProtocolUdp:
+	case NetworkProtocolUDP:
 		return "UDP"
 	default:
 		return ""
@@ -23388,9 +23391,9 @@ func (v *NetworkProtocol) UnmarshalJSON(dt []byte) error {
 	case "":
 		*v = ""
 	case "TCP":
-		*v = NetworkProtocolTcp
+		*v = NetworkProtocolTCP
 	case "UDP":
-		*v = NetworkProtocolUdp
+		*v = NetworkProtocolUDP
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
@@ -23398,9 +23401,15 @@ func (v *NetworkProtocol) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	NetworkProtocolTcp NetworkProtocol = "TCP"
+	NetworkProtocolTCP NetworkProtocol = "TCP"
 
-	NetworkProtocolUdp NetworkProtocol = "UDP"
+	// Deprecated: use NetworkProtocolTCP instead.
+	NetworkProtocolTcp NetworkProtocol = NetworkProtocolTCP
+
+	NetworkProtocolUDP NetworkProtocol = "UDP"
+
+	// Deprecated: use NetworkProtocolUDP instead.
+	NetworkProtocolUdp NetworkProtocol = NetworkProtocolUDP
 )
 
 // How to handle patch hunks that no longer apply to the target content.
@@ -23467,9 +23476,9 @@ func (RegistryProtocol) IsEnum() {}
 
 func (v RegistryProtocol) Name() string {
 	switch v {
-	case RegistryProtocolHttps:
+	case RegistryProtocolHTTPS:
 		return "HTTPS"
-	case RegistryProtocolHttp:
+	case RegistryProtocolHTTP:
 		return "HTTP"
 	default:
 		return ""
@@ -23500,9 +23509,9 @@ func (v *RegistryProtocol) UnmarshalJSON(dt []byte) error {
 	case "":
 		*v = ""
 	case "HTTP":
-		*v = RegistryProtocolHttp
+		*v = RegistryProtocolHTTP
 	case "HTTPS":
-		*v = RegistryProtocolHttps
+		*v = RegistryProtocolHTTPS
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
@@ -23510,9 +23519,15 @@ func (v *RegistryProtocol) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	RegistryProtocolHttps RegistryProtocol = "HTTPS"
+	RegistryProtocolHTTPS RegistryProtocol = "HTTPS"
 
-	RegistryProtocolHttp RegistryProtocol = "HTTP"
+	// Deprecated: use RegistryProtocolHTTPS instead.
+	RegistryProtocolHttps RegistryProtocol = RegistryProtocolHTTPS
+
+	RegistryProtocolHTTP RegistryProtocol = "HTTP"
+
+	// Deprecated: use RegistryProtocolHTTP instead.
+	RegistryProtocolHttp RegistryProtocol = RegistryProtocolHTTP
 )
 
 // Expected return type of an execution

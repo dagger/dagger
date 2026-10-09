@@ -159,12 +159,15 @@ func TestEnumIdentifierWords(t *testing.T) {
 
 	got := renderTemplate(t, tmpl, enum)
 
-	// Enum values keep strcase's capitalized acronyms, but follow word
-	// boundaries: EStarGZ is e-stargz, not estar-gz.
-	require.Regexp(t, `ImageLayerCompressionEStarGz\s+ImageLayerCompression = "EStarGZ"`, got)
-	require.Regexp(t, `ImageLayerCompressionTcp\s+ImageLayerCompression = "TCP"`, got)
-	require.Contains(t, got, "// Deprecated: use ImageLayerCompressionEStarGz instead.\n\tImageLayerCompressionEstarGz ImageLayerCompression = ImageLayerCompressionEStarGz")
-	require.NotContains(t, got, "use ImageLayerCompressionTcp instead.")
+	// Enum values uppercase initialisms like every Go identifier, and follow
+	// word boundaries: EStarGZ is e-stargz, not estar-gz. The old strcase
+	// names stay as deprecated aliases.
+	require.Regexp(t, `ImageLayerCompressionEStarGZ\s+ImageLayerCompression = "EStarGZ"`, got)
+	require.Regexp(t, `ImageLayerCompressionTCP\s+ImageLayerCompression = "TCP"`, got)
+	require.Regexp(t, `ImageLayerCompressionGzip\s+ImageLayerCompression = "Gzip"`, got)
+	require.Contains(t, got, "// Deprecated: use ImageLayerCompressionEStarGZ instead.\n\tImageLayerCompressionEstarGz ImageLayerCompression = ImageLayerCompressionEStarGZ")
+	require.Contains(t, got, "// Deprecated: use ImageLayerCompressionTCP instead.\n\tImageLayerCompressionTcp ImageLayerCompression = ImageLayerCompressionTCP")
+	require.NotContains(t, got, "use ImageLayerCompressionGzip instead.")
 	// Wire names are unchanged.
 	require.Contains(t, got, `case "EStarGZ":`)
 	require.Contains(t, got, `return "EStarGZ"`)

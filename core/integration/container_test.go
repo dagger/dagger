@@ -4013,7 +4013,7 @@ func credentials(r *http.Request) (string, string, bool) {
 		WithNewFile("/src/main.go", tokenAuthServer).
 		WithMountedCache("/logs", tokenLogs).
 		WithEnvVariable("GOCACHE", "/tmp/go-cache").
-		WithExposedPort(5001, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(5001, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
 		AsService()
 
@@ -4022,7 +4022,7 @@ func credentials(r *http.Request) (string, string, bool) {
 		From("registry:3").
 		WithNewFile("/etc/distribution/config.yml", registryConfig).
 		WithMountedCache("/cache/logs", registryLogs).
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 		WithDefaultArgs([]string{"sh", "-c", "registry serve /etc/distribution/config.yml | tee /cache/logs/registry.log"}).
 		AsService()
 
@@ -4181,7 +4181,7 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, o
 			WithFile("/certs/domain.key", registryKey).
 			WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
 			WithEnvVariable("REGISTRY_HTTP_TLS_KEY", "/certs/domain.key").
-			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c,
@@ -4216,7 +4216,7 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, o
 		registry := c.Container().
 			From("registry:3").
 			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-http-"+identity.NewID())).
-			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c,
@@ -4246,7 +4246,7 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, o
 		registry := c.Container().
 			From("registry:3").
 			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-http-api-"+identity.NewID())).
-			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
@@ -4275,7 +4275,7 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, o
 			WithFile("/certs/domain.key", registryKey).
 			WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
 			WithEnvVariable("REGISTRY_HTTP_TLS_KEY", "/certs/domain.key").
-			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
@@ -4298,7 +4298,7 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, o
 		registry := c.Container().
 			From("registry:3").
 			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-http-invalid-api-"+identity.NewID())).
-			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
@@ -4330,7 +4330,7 @@ func (ContainerSuite) TestWithRegistryAuthFileAndDirectoryAccess(ctx context.Con
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	devEngine := devEngineContainerAsService(devEngineContainer(c,
@@ -4859,7 +4859,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
-			dagger.ImageLayerCompressionEStarGz,
+			dagger.ImageLayerCompressionEStarGZ,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
@@ -4926,7 +4926,7 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			dagger.ImageMediaTypesOciMediaTypes,
+			dagger.ImageMediaTypesOCIMediaTypes,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
@@ -5046,7 +5046,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 
 	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
 		dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: t.Name(), version: dockerVersion})
-		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOciMediaTypes, dagger.ImageMediaTypesDockerMediaTypes} {
+		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOCIMediaTypes, dagger.ImageMediaTypesDockerMediaTypes} {
 			for _, compression := range []dagger.ImageLayerCompression{dagger.ImageLayerCompressionGzip, dagger.ImageLayerCompressionZstd, dagger.ImageLayerCompressionUncompressed} {
 				t.Run(fmt.Sprintf("%s-%s-%s-%s", t.Name(), dockerVersion, mediaType, compression), func(ctx context.Context, t *testctx.T) {
 					tmpdir := t.TempDir()

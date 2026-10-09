@@ -667,9 +667,15 @@ deprecated aliases, before 1.0.
 Measured on the core schema, comparing today's codegen with the proposed
 casing:
 
-- **Go**: 6 names — `ParentShas` → `ParentSHAs`, `Sdks` → `SDKs`, `Sha` →
-  `SHA`, `ShortSha` → `ShortSHA`, `VcsGeneratedPaths` → `VCSGeneratedPaths`,
-  `VcsIgnoredPaths` → `VCSIgnoredPaths`.
+- **Go**: 7 methods — `ParentShas` → `ParentSHAs`, `Sdks` → `SDKs`, `Sha` →
+  `SHA`, `ShortSha` → `ShortSHA`, `SshfsVolume` → `SSHFSVolume`,
+  `VcsGeneratedPaths` → `VCSGeneratedPaths`, `VcsIgnoredPaths` →
+  `VCSIgnoredPaths` — plus enum constants that strcase had capitalized:
+  `NetworkProtocolTcp` → `NetworkProtocolTCP` (and `Udp`),
+  `RegistryProtocolHttp` → `RegistryProtocolHTTP` (and `Https`),
+  `ImageMediaTypesOcimediaTypes` → `ImageMediaTypesOCIMediaTypes` (and `Oci`),
+  `ImageLayerCompressionEstarGz` → `ImageLayerCompressionEStarGZ`. The old
+  names stay as deprecated wrappers and aliases.
 - **Python**: 2 names — `prerequisite_sh_as` → `prerequisite_shas`,
   `experimental_with_all_gp_us` → `experimental_with_all_gpus`.
 - **TypeScript, PHP methods**: none (they use schema names as is).

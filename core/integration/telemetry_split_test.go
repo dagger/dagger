@@ -212,7 +212,7 @@ func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *dagger.Container) *
 	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
 	return ctr.
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-telemetry-split-state-"+identity.NewID())).
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTCP}).
 		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--network-name", deviceName,
