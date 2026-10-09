@@ -201,9 +201,12 @@ func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Direct
 			ctx, span := Tracer(ctx).Start(ctx, "construct "+name+" snapshot")
 			defer telemetry.EndWithCause(span, &rerr)
 			head := base
+			// The fetch (including mounting and unmounting the source) and the
+			// changes are traced separately, so a slow phase can be attributed.
 			if ref != nil {
 				head = ref.Ref.SHA
-				if err := ref.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{ref.Backend}, func(ctx context.Context, remote *gitutil.GitCLI) error {
+				fetchCtx, fetchSpan := Tracer(ctx).Start(ctx, "fetch "+name+" head", telemetry.Internal())
+				err := ref.Repo.Self().Backend.mount(fetchCtx, 0, false, []GitRefBackend{ref.Backend}, func(ctx context.Context, remote *gitutil.GitCLI) error {
 					url, err := remote.URL(ctx)
 					if err != nil {
 						return err
@@ -213,11 +216,15 @@ func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Direct
 					// the whole history.
 					_, err = runWorkspacePullGit(ctx, ws.workDir, nil, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--negotiation-tip=HEAD", url, head)
 					return err
-				}); err != nil {
+				})
+				telemetry.EndWithCause(fetchSpan, &err)
+				if err != nil {
 					return "", err
 				}
 			}
-			content, err := changes.content(ctx)
+			contentCtx, contentSpan := Tracer(ctx).Start(ctx, "read "+name+" changes", telemetry.Internal())
+			content, err := changes.content(contentCtx)
+			telemetry.EndWithCause(contentSpan, &err)
 			if err != nil {
 				return "", err
 			}
