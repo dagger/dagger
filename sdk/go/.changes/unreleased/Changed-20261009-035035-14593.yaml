@@ -1,0 +1,11 @@
+kind: Changed
+body: |
+  Generated clients remember an object's ID after fetching it, so passing the
+  same object to many calls no longer asks the engine for its ID each time.
+  Objects built through fields marked `@reevaluate`, such as never-cached
+  module functions, still fetch their ID on every use, so each use evaluates
+  them again.
+time: 2026-10-09T03:50:35Z
+custom:
+    Author: sipsma
+    PR: "14593"

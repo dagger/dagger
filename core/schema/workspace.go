@@ -86,7 +86,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
 		dagql.NodeFunc("withCommitsFrom", s.withCommitsFrom).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Captures local receivers before integrating commits").
+			DoNotCache("Captures local receivers before integrating commits").Reevaluate().
 			Doc("Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.",
 				"Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.",
 				"A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.",
@@ -98,7 +98,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("__saveDirectory", s.saveDirectory).View(AfterVersion("v1.0.0-0")).NotReplayable("Export destination is session-local").Doc("(Internal-only) Integrate source work into a captured destination and bundle the result."),
 		dagql.NodeFunc("withCommit", s.withCommit).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Freezes host-backed receivers before committing").
+			DoNotCache("Freezes host-backed receivers before committing").Reevaluate().
 			Doc("Create a Git commit from a changeset and return a stable workspace with HEAD advanced.",
 				"The changeset is three-way merged into both HEAD and the frozen working tree. Compatible unselected edits remain uncommitted; incoming changes need not already be in the working tree. Conflicts with either tree fail without modifying the workspace. Empty changesets, or changes already present in HEAD, fail with nothing to commit.",
 				"A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.",
@@ -113,7 +113,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withReset", s.withReset).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Freezes host-backed receivers before resetting").
+			DoNotCache("Freezes host-backed receivers before resetting").Reevaluate().
 			Doc("Move this workspace's Git HEAD to a commit and return the resulting stable workspace.",
 				"A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.",
 				"With hard, the working tree is reset to the commit and every uncommitted change is discarded.",
@@ -124,7 +124,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("snapshot", s.snapshot).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Captures the client's current Git state after approval").
+			DoNotCache("Captures the client's current Git state after approval").Reevaluate().
 			Experimental("Best-effort capture for resumable sessions; capture and fallback behavior may change.").
 			Doc("Return a snapshot of this workspace as a stable value.",
 				"Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.",
@@ -141,7 +141,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(dagql.Arg("name").Doc("Environment name, or empty to clear the selection.")),
 		dagql.NodeFunc("withUserConfig", s.withUserConfig).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Reads the calling client's user config").
+			DoNotCache("Reads the calling client's user config").Reevaluate().
 			Doc("Return this workspace with the calling client's user-level config re-read and applied.",
 				"User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.",
 				"The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config."),
@@ -549,7 +549,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"Reflects the selected env's effective view."),
 		dagql.NodeFunc("module", s.module).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Reads live config from host").
+			DoNotCache("Reads live config from host").Reevaluate().
 			Doc("Return a module defined in the workspace configuration.",
 				"Reflects the selected env's effective view.").
 			Args(

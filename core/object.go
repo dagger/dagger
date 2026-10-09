@@ -1339,6 +1339,9 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 	// rather than looking them up from the server — the constructor
 	// is not installed on the outer server when Entrypoint is set.
 	var constructorArgs []dagql.InputSpec
+	// A proxy runs the constructor before the method, so it is reevaluated
+	// when the constructor is.
+	var constructorReevaluated bool
 	if obj.TypeDef.Constructor.Valid {
 		fn, err := NewModFunction(ctx, obj.Module, obj.TypeDef, obj.TypeDef.Constructor.Value.Self())
 		if err != nil {
@@ -1352,6 +1355,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 			return fmt.Errorf("failed to get constructor field spec: %w", err)
 		}
 		constructorArgs = spec.Args.Inputs(dag.View)
+		constructorReevaluated = spec.Reevaluated()
 	}
 
 	// Install `with` field on Query that stores constructor args for
@@ -1411,6 +1415,10 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 			continue
 		}
 		proxySpec := *field.Spec
+		// The proxy drops the method's implicit inputs, which may carry the
+		// per-call input that marks it reevaluated; keep the marker.
+		proxySpec.Reevaluate = field.Spec.Reevaluated() || constructorReevaluated
+		proxySpec.ReevaluateWhen = field.Spec.ReevaluateArgs()
 		proxySpec.GetDynamicInput = nil
 		proxySpec.ImplicitInputs = nil
 		proxySpec.Trivial = false

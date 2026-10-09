@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/golden"
 
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
@@ -18,6 +19,58 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
+
+// TestReevaluateDirectiveGatedByView checks that @reevaluate, its declaration
+// and its uses, appears only in the API views of engine versions from
+// v1.0.0-beta.17. Module schemas use engine.APIViewVersion, which drops the
+// prerelease, so every v1.0.0 prerelease gets the v1.0.0 view: modules pinned
+// to v0.x keep a schema without @reevaluate, and v1 modules see it.
+func TestReevaluateDirectiveGatedByView(t *testing.T) {
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "reevaluate-view-client",
+		SessionID: "reevaluate-view-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+
+	uses := func(schema *ast.Schema) int {
+		n := 0
+		for _, def := range schema.Types {
+			for _, field := range def.Fields {
+				if field.Directives.ForName("reevaluate") != nil {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	for _, tc := range []struct {
+		engineVersion string
+		declared      bool
+	}{
+		{engineVersion: "v0.21.6", declared: false},
+		{engineVersion: "v1.0.0-beta.16", declared: true},
+		{engineVersion: "v1.0.0-beta.17", declared: true},
+	} {
+		view := call.View(engine.APIViewVersion(tc.engineVersion))
+		dag, err := coreSchemaBase.Fork(ctx, root, view)
+		require.NoError(t, err)
+		schema := dag.SchemaForView(view)
+		if tc.declared {
+			require.Contains(t, schema.Directives, "reevaluate", tc.engineVersion)
+			require.NotNil(t, schema.Types["Address"].Fields.ForName("container").Directives.ForName("reevaluate"), tc.engineVersion)
+		} else {
+			require.NotContains(t, schema.Directives, "reevaluate", tc.engineVersion)
+			require.Zero(t, uses(schema), tc.engineVersion)
+		}
+	}
+}
 
 func TestBaseSchemaAllowlist(t *testing.T) {
 	// base_schema.json is the public API surface visible to the oldest supported

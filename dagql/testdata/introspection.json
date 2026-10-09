@@ -2075,6 +2075,36 @@
           {
             "defaultValue": null,
             "deprecationReason": null,
+            "description": "Only calls that set one of these Boolean arguments to true are reevaluated. When omitted, every call is.",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "when",
+            "type": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        ],
+        "description": "Indicates that every evaluation of this field may give a new result or repeat a side effect. A client must evaluate it again for each use: it must not reuse an ID it fetched for an object built through this field.",
+        "locations": [
+          "FIELD_DEFINITION"
+        ],
+        "name": "reevaluate"
+      },
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
             "description": "",
             "directives": [],
             "isDeprecated": false,

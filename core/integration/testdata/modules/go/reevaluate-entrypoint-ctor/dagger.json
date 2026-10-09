@@ -1,0 +1,7 @@
+{
+  "name": "fresh",
+  "sdk": {
+    "source": "go"
+  },
+  "source": "."
+}

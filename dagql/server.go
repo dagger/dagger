@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"weak"
 
@@ -372,6 +373,29 @@ var coreScalars = []ScalarType{
 	AnyID{},
 }
 
+// ReevaluateDirective declares @reevaluate. A schema may install it with a
+// ViewFilter: in views that hide it, its uses on fields are hidden too (see
+// SchemaForView).
+var ReevaluateDirective = DirectiveSpec{
+	Name: "reevaluate",
+	Description: FormatDescription(
+		`Indicates that every evaluation of this field may give a new result or
+		repeat a side effect. A client must evaluate it again for each use: it
+		must not reuse an ID it fetched for an object built through this field.`),
+	Args: NewInputSpecs(
+		InputSpec{
+			Name: "when",
+			Description: FormatDescription(
+				`Only calls that set one of these Boolean arguments to true are
+				reevaluated. When omitted, every call is.`),
+			Type: Optional[ArrayInput[String]]{},
+		},
+	),
+	Locations: []DirectiveLocation{
+		DirectiveLocationFieldDefinition,
+	},
+}
+
 var coreDirectives = []DirectiveSpec{
 	{
 		Name: "deprecated",
@@ -418,6 +442,7 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationEnumValue,
 		},
 	},
+	ReevaluateDirective,
 	{
 		Name:        "sourceMap",
 		Description: FormatDescription(`Indicates the source information for where a given field is defined.`),
@@ -994,12 +1019,26 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			schema.AddPossibleType(def.Name, def)
 		})
 		schema.Directives = map[string]*ast.DirectiveDefinition{}
+		hiddenDirectives := map[string]bool{}
 		sortutil.RangeSorted(s.directives, func(n string, d DirectiveSpec) {
 			if d.ViewFilter != nil && !d.ViewFilter.Contains(view) {
+				hiddenDirectives[n] = true
 				return
 			}
 			schema.Directives[n] = d.DirectiveDefinition(view)
 		})
+		// A directive hidden in this view must not be used in it either.
+		if len(hiddenDirectives) > 0 {
+			for _, def := range schema.Types {
+				def.Directives = withoutDirectives(def.Directives, hiddenDirectives)
+				for _, field := range def.Fields {
+					field.Directives = withoutDirectives(field.Directives, hiddenDirectives)
+					for _, arg := range field.Arguments {
+						arg.Directives = withoutDirectives(arg.Directives, hiddenDirectives)
+					}
+				}
+			}
+		}
 		h := xxh3.New()
 		json.NewEncoder(h).Encode(schema)
 		s.schemas[view] = schema
@@ -1007,6 +1046,14 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 	})
 
 	return s.schemas[view]
+}
+
+// withoutDirectives returns dirs without the directives named in hidden.
+func withoutDirectives(dirs ast.DirectiveList, hidden map[string]bool) ast.DirectiveList {
+	if !slices.ContainsFunc(dirs, func(d *ast.Directive) bool { return hidden[d.Name] }) {
+		return dirs
+	}
+	return slices.DeleteFunc(slices.Clone(dirs), func(d *ast.Directive) bool { return hidden[d.Name] })
 }
 
 type viewFilteredType interface {

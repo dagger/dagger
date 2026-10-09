@@ -15,7 +15,7 @@ func (s generatorSchema) Install(srv *dagql.Server) {
 	stale := dagql.NodeFunc("stale", s.stale).Doc("A check that passes when this generator would produce no changes.")
 	stale.Spec.Directives = append(stale.Spec.Directives, &ast.Directive{Name: "check"})
 	dagql.Fields[*core.Generator]{
-		dagql.NodeFunc("changeset", s.changeset).DoNotCache("Use the generation function cache policy.").Doc("Run the generator and return its changes."),
+		dagql.NodeFunc("changeset", s.changeset).DoNotCache("Use the generation function cache policy.").Reevaluate().Doc("Run the generator and return its changes."),
 		// Each completed generator has its own identity. Its source function
 		// still controls whether generation itself is cached.
 		dagql.NodeFunc("sync", s.sync).WithInput(dagql.PerCallInput).Doc("Run the generator and retain its result."),

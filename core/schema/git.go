@@ -297,7 +297,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		}).View(AfterVersion("v1.0.0-0")).Doc("(Internal-only) Check immutable local history for workspace export base reuse."),
 		dagql.NodeFunc("push", s.push).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Pushes to an external Git repository on each invocation.").
+			DoNotCache("Pushes to an external Git repository on each invocation.").Reevaluate().
 			NotReplayable("Requires explicit Git push authorization from the calling client").
 			Doc("Push this ref's commit and history to a remote repository using the destination's credentials.",
 				"The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.",
@@ -1126,7 +1126,8 @@ var gitPerClientInput = agentAddressScopedInput(dagql.PerClientInput)
 // change.
 func agentAddressScopedInput(input dagql.ImplicitInput) dagql.ImplicitInput {
 	return dagql.ImplicitInput{
-		Name: input.Name,
+		Name:        input.Name,
+		PerCallWhen: input.PerCallWhen,
 		Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
 			resolved, err := input.Resolver(ctx, args)
 			if err != nil || !core.IsAgentAddressResolution(ctx) {
@@ -1153,7 +1154,8 @@ func agentAddressScopedInput(input dagql.ImplicitInput) dagql.ImplicitInput {
 func gitLockScopedInput(argName string) dagql.ImplicitInput {
 	perClient := gitLiveInput(dagql.PerClientInput)
 	return dagql.ImplicitInput{
-		Name: "cachePerClientLock:" + argName,
+		Name:        "cachePerClientLock:" + argName,
+		PerCallWhen: perClient.PerCallWhen,
 		Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
 			if name, ok := args[argName].(dagql.String); ok {
 				base := name.String()

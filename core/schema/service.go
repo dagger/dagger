@@ -147,7 +147,7 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("terminal", s.terminal).
-			DoNotCache("Imperatively mutates runtime state."),
+			DoNotCache("Imperatively mutates runtime state.").Reevaluate(),
 	}.Install(srv)
 }
 

@@ -2,6 +2,12 @@
 type {{ .Name | FormatName }} struct {
 {{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	query *querybuilder.Selection
+	{{- if MemoizeIDs }}
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+	{{- end }}
 
     {{ range $field := .Fields }}
         {{- if $field.TypeRef.IsScalar }}
@@ -26,6 +32,11 @@ func (r *{{ $.Name | FormatName }}) With(f With{{ .Name | FormatName }}Func) *{{
 func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *{{ $.Name | FormatName }} {
 	return &{{ .Name | FormatName }}{
 		query: q,
+		{{- if MemoizeIDs }}
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+		{{- end }}
 	}
 }
 
@@ -89,6 +100,10 @@ type {{ $field | FieldOptionsStructName }} struct {
     }
     {{- end }}
 	q := r.query.Select("{{ $field.Name }}")
+	{{- $refetchWhen := and MemoizeIDs (not $convertID) (not (IsNullableObject $field.TypeRef)) (or (IsInterfaceRef $field.TypeRef) $field.TypeRef.IsObject) $field.Directives.ReevaluateWhen }}
+	{{- if $refetchWhen }}
+	refetchID := r.refetchID
+	{{- end }}
 
 	{{- if HasOptionals $field.Args }}
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -97,6 +112,9 @@ type {{ $field | FieldOptionsStructName }} struct {
 	// `{{ $arg.Name }}` optional argument
 	if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
 		q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
+		{{- if and $refetchWhen (HasString $refetchWhen $arg.Name) }}
+		refetchID = true
+		{{- end }}
 	}
 	{{- end }}
 	{{- end }}
@@ -107,6 +125,11 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- range $arg := $field.Args }}
 	{{- if not (IsArgOptional $arg) }}
 	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name | FormatParamName }})
+	{{- if and $refetchWhen (HasString $refetchWhen $arg.Name) }}
+	if {{ $arg.Name | FormatParamName }} {
+		refetchID = true
+	}
+	{{- end }}
 	{{- end }}
 	{{- end }}
 	{{- $typeName := $field.TypeRef | FormatOutputType }}
@@ -144,11 +167,17 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- /* Interface return: wrap in the interface's query-builder struct */ -}}
 	return &{{ $typeName | InterfaceClientName }}{
 		query: q,
+		{{- if MemoizeIDs }}
+		refetchID: {{ if $field.Directives.Reevaluates }}true{{ else if $refetchWhen }}refetchID{{ else }}r.refetchID{{ end }},
+		{{- end }}
 	}
 
 	{{- else if $field.TypeRef.IsObject }}
 	return &{{ $typeName }} {
 		query: q,
+		{{- if MemoizeIDs }}
+		refetchID: {{ if $field.Directives.Reevaluates }}true{{ else if $refetchWhen }}refetchID{{ else }}r.refetchID{{ end }},
+		{{- end }}
 	}
 
 	{{- else if and $field.TypeRef.IsList (IsListOfInterface $field.TypeRef) }}
@@ -213,6 +242,18 @@ type {{ $field | FieldOptionsStructName }} struct {
 	}
 
 	return convert(response), nil
+	    {{- else if and (eq $field.Name "id") (ne $field.ParentObject.Name "Query") }}
+	{{- if MemoizeIDs }}
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() ({{ FormatFieldOutputType $field }}, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+	{{- else }}
+	return response, q.Execute(ctx)
+	{{- end }}
 	    {{- else }}
 	return response, q.Execute(ctx)
 	    {{- end }}
@@ -269,6 +310,9 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
 func (r *{{ $.Name | FormatName }}) As{{ $iface.Name | FormatName }}() {{ $iface.Name | InterfaceReturnType }} {
 	return &{{ $iface.Name | InterfaceClientName }}{
 		query: r.query,
+		{{- if MemoizeIDs }}
+		refetchID: r.refetchID,
+		{{- end }}
 	}
 }
 {{ end -}}

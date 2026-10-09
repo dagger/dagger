@@ -64,6 +64,18 @@ directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
 """The stored keys field of a collection."""
 directive @keys on FIELD_DEFINITION
 
+"""
+Indicates that every evaluation of this field may give a new result or repeat a
+side effect. A client must evaluate it again for each use: it must not reuse an
+ID it fetched for an object built through this field.
+"""
+directive @reevaluate(
+  """
+  Only calls that set one of these Boolean arguments to true are reevaluated. When omitted, every call is.
+  """
+  when: [String!]
+) on FIELD_DEFINITION
+
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
@@ -90,7 +102,7 @@ type Address implements Node {
     A DAG address is unaffected: its module evaluates as usual.
     """
     noLock: Boolean = false
-  ): Container!
+  ): Container! @reevaluate
 
   """Load a directory from the address."""
   directory(
@@ -108,7 +120,7 @@ type Address implements Node {
     A DAG address is unaffected: its module evaluates as usual.
     """
     noLock: Boolean = false
-  ): Directory!
+  ): Directory! @reevaluate(when: ["noCache","noLock"])
 
   """Load a file from the address."""
   file(
@@ -126,7 +138,7 @@ type Address implements Node {
     A DAG address is unaffected: its module evaluates as usual.
     """
     noLock: Boolean = false
-  ): File!
+  ): File! @reevaluate(when: ["noCache","noLock"])
 
   """Load a git ref (branch, tag or commit) from the address."""
   gitRef(
@@ -136,25 +148,25 @@ type Address implements Node {
     A DAG address is unaffected: its module evaluates as usual.
     """
     noLock: Boolean = false
-  ): GitRef!
+  ): GitRef! @reevaluate(when: ["noLock"])
 
   """Load a git repository from the address."""
   gitRepository: GitRepository!
 
   """Load a secret from the address."""
-  secret: Secret!
+  secret: Secret! @reevaluate
 
   """Load a service from the address."""
   service: Service!
 
   """Load a local socket from the address."""
-  socket: Socket!
+  socket: Socket! @reevaluate
 
   """Load a volume from the address."""
-  volume: Volume!
+  volume: Volume! @reevaluate
 
   """Load a workspace from a module reference."""
-  workspace: Workspace!
+  workspace: Workspace! @reevaluate
 }
 
 """
@@ -213,7 +225,7 @@ type Agent implements Node {
 
   Branching from it does not affect the agent.
   """
-  snapshot: LLM! @experimental(reason: "Agent APIs are likely to change.")
+  snapshot: LLM! @experimental(reason: "Agent APIs are likely to change.") @reevaluate
 
   """
   Enqueue a message, on the record: it is consumed at a step boundary, appends
@@ -696,7 +708,7 @@ type Artifacts implements Node {
     Checks that scale out to cloud engines are not counted. 0 means no limit.
     """
     maxConcurrency: Int = 0
-  ): [ArtifactResult!]!
+  ): [ArtifactResult!]! @reevaluate
 
   """
   List the modules represented in this selection without evaluating artifact values.
@@ -2042,7 +2054,7 @@ type Container implements Exportable & Node & Syncer {
     Allow HTTPS registry communication without verifying the server certificate.
     """
     insecureSkipTLSVerify: Boolean = false
-  ): String!
+  ): String! @reevaluate
 
   """The platform this container executes and publishes as."""
   platform: Platform!
@@ -2091,7 +2103,7 @@ type Container implements Exportable & Node & Syncer {
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
-  ): String!
+  ): String! @reevaluate
 
   """Exports the container as an image to the host's container image store."""
   exportImage(
@@ -2399,7 +2411,7 @@ type Container implements Exportable & Node & Syncer {
     trusted commands.
     """
     insecureRootCapabilities: Boolean
-  ): Container!
+  ): Container! @reevaluate
 
   """
   Configures all GPUs available on the host to be accessible to this container.
@@ -3072,7 +3084,7 @@ type Directory implements Exportable & Node & Syncer {
     trusted commands.
     """
     insecureRootCapabilities: Boolean
-  ): Directory!
+  ): Directory! @reevaluate
 
   """Return a snapshot with a symlink"""
   withSymlink(
@@ -3148,7 +3160,7 @@ type EngineCache implements Node {
   id: ID!
 
   """The current set of entries in the cache"""
-  entrySet(key: String = ""): EngineCacheEntrySet!
+  entrySet(key: String = ""): EngineCacheEntrySet! @reevaluate
 
   """Prune the cache of releaseable entries"""
   prune(
@@ -3901,10 +3913,10 @@ type Generator implements Node {
   id: ID!
 
   """Run the generator and return its changes."""
-  changeset: Changeset!
+  changeset: Changeset! @reevaluate
 
   """Run the generator and retain its result."""
-  sync: Generator!
+  sync: Generator! @reevaluate
 
   """A check that passes when this generator would produce no changes."""
   stale: Check! @check
@@ -4109,7 +4121,7 @@ type GitRef implements Node {
     exist.
     """
     expectedRemoteSHA: String = ""
-  ): GitPushResult!
+  ): GitPushResult! @reevaluate
 
   """The commit this ref resolves to."""
   targetCommit: GitCommit!
@@ -4261,7 +4273,7 @@ type GitRepository implements Node {
   head(
     """Ignore the workspace lockfile for this lookup."""
     noLock: Boolean = false
-  ): GitRef!
+  ): GitRef! @reevaluate(when: ["noLock"])
 
   """Returns details of a ref."""
   ref(
@@ -4291,7 +4303,7 @@ type GitRepository implements Node {
 
     """Ignore the workspace lockfile for this lookup."""
     noLock: Boolean = false
-  ): GitRef!
+  ): GitRef! @reevaluate(when: ["noLock"])
 
   """Returns details of a branch."""
   branch(
@@ -4300,7 +4312,7 @@ type GitRepository implements Node {
 
     """Ignore the workspace lockfile for this lookup."""
     noLock: Boolean = false
-  ): GitRef!
+  ): GitRef! @reevaluate(when: ["noLock"])
 
   """Returns details of a tag."""
   tag(
@@ -4309,7 +4321,7 @@ type GitRepository implements Node {
 
     """Ignore the workspace lockfile for this lookup."""
     noLock: Boolean = false
-  ): GitRef!
+  ): GitRef! @reevaluate(when: ["noLock"])
 
   """Returns details of a commit."""
   commit(
@@ -4337,7 +4349,7 @@ type GitRepository implements Node {
 
     """Ignore the workspace lockfile for this lookup."""
     noLock: Boolean = false
-  ): GitRef!
+  ): GitRef! @reevaluate(when: ["noLock"])
 
   """tags that match any of the given glob patterns."""
   tags(
@@ -4528,7 +4540,7 @@ type Host implements Node {
 
     """Apply .gitignore filter rules inside the directory"""
     gitignore: Boolean = false
-  ): Directory!
+  ): Directory! @reevaluate(when: ["noCache"])
 
   """Accesses a file on the host."""
   file(
@@ -4537,7 +4549,7 @@ type Host implements Node {
 
     """If true, the file will always be reloaded from the host."""
     noCache: Boolean = false
-  ): File!
+  ): File! @reevaluate(when: ["noCache"])
 
   """
   Search for a file or directory by walking up the tree from system workdir.
@@ -4548,7 +4560,7 @@ type Host implements Node {
     name: String!
 
     noCache: Boolean = false
-  ): String
+  ): String @reevaluate(when: ["noCache"])
 
   """Accesses a Unix socket on the host."""
   unixSocket(
@@ -5116,7 +5128,7 @@ type LLM implements Node & Syncer {
     The loop error to create the agent with, for state FAILED. Refused with any other state.
     """
     error: String = ""
-  ): ID! @expectedType(name: "Agent") @experimental(reason: "Agent APIs are likely to change.")
+  ): ID! @expectedType(name: "Agent") @experimental(reason: "Agent APIs are likely to change.") @reevaluate
 
   """
   Reconstruct a spawned agent from its runtime handle.
@@ -6189,7 +6201,7 @@ type Query implements Node {
     value as looked up when the secret is constructed.
     """
     cacheKey: String
-  ): Secret!
+  ): Secret! @reevaluate
 
   """
   Sets a secret given a user defined name to its plaintext and returns the secret.
@@ -6202,7 +6214,7 @@ type Query implements Node {
 
     """The plaintext of the secret"""
     plaintext: String!
-  ): Secret!
+  ): Secret! @reevaluate
 
   """Queries the host environment."""
   host: Host!
@@ -6406,7 +6418,7 @@ type Query implements Node {
   address(value: String!): Address!
 
   """Detect and return the current workspace."""
-  currentWorkspace: Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
+  currentWorkspace: Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.") @reevaluate
 }
 
 """Transport protocol to use for registry operations."""
@@ -6571,7 +6583,7 @@ type Service implements Node & Syncer {
     Return only container ports declared before startup. Other service types return an empty list.
     """
     declared: Boolean = false
-  ): [Port!]!
+  ): [Port!]! @reevaluate
 
   """
   Retrieves an endpoint that clients can use to reach this container.
@@ -6616,7 +6628,7 @@ type Service implements Node & Syncer {
     kill: Boolean = false
   ): ID! @expectedType(name: "Service")
 
-  terminal(cmd: [String!] = []): Service!
+  terminal(cmd: [String!] = []): Service! @reevaluate
 }
 
 """A Unix or TCP/IP socket that can be mounted into a container."""
@@ -7030,7 +7042,7 @@ type Workspace implements Node {
     Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
     """
     path: String = "."
-  ): WorkspaceMigration!
+  ): WorkspaceMigration! @reevaluate
 
   """
   Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
@@ -7102,7 +7114,7 @@ type Workspace implements Node {
     Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
     """
     maxCommits: Int = 100
-  ): Workspace!
+  ): Workspace! @reevaluate
 
   """
   Create a Git commit from a changeset and return a stable workspace with HEAD advanced.
@@ -7148,7 +7160,7 @@ type Workspace implements Node {
 
     """Add a Signed-off-by trailer using the commit author's name and email."""
     signoff: Boolean = false
-  ): Workspace!
+  ): Workspace! @reevaluate
 
   """
   Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
@@ -7178,7 +7190,7 @@ type Workspace implements Node {
 
     """Discard uncommitted changes, resetting the working tree to the commit."""
     hard: Boolean = false
-  ): Workspace!
+  ): Workspace! @reevaluate
 
   """
   Return a snapshot of this workspace as a stable value.
@@ -7199,7 +7211,7 @@ type Workspace implements Node {
 
   The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
   """
-  snapshot: Workspace! @experimental(reason: "Best-effort capture for resumable sessions; capture and fallback behavior may change.")
+  snapshot: Workspace! @experimental(reason: "Best-effort capture for resumable sessions; capture and fallback behavior may change.") @reevaluate
 
   """
   Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
@@ -7229,7 +7241,7 @@ type Workspace implements Node {
   The entry is matched by the workspace's git origin remote. A workspace without
   one, or without a matching entry, gets no user-level config.
   """
-  withUserConfig: Workspace!
+  withUserConfig: Workspace! @reevaluate
 
   """
   Selected native workspace config file relative to the workspace cwd, if any.
@@ -7910,7 +7922,7 @@ type Workspace implements Node {
   module(
     """Module name to inspect."""
     name: String!
-  ): WorkspaceModule!
+  ): WorkspaceModule! @reevaluate
 
   """
   Load a module source from a path within the workspace.
@@ -7960,7 +7972,7 @@ type Workspace implements Node {
     cwd; absolute paths start at the workspace root.
     """
     modules: [String!] = []
-  ): WorkspaceMigration!
+  ): WorkspaceMigration! @reevaluate
 
   """
   Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.

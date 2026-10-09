@@ -20,6 +20,7 @@ import (
 	"github.com/99designs/gqlgen/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
@@ -2502,6 +2503,87 @@ func TestViews(t *testing.T) {
 			firstExclusive
 		}`, "Cannot query field")
 	})
+}
+
+func TestReevaluateDirective(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](srv)
+	newPoint := func(ctx context.Context, self Query, args struct{}) (*points.Point, error) {
+		return &points.Point{X: 1, Y: 2}, nil
+	}
+	dagql.Fields[Query]{
+		dagql.Func("plainPoint", newPoint),
+		dagql.Func("reevaluatedPoint", newPoint).Reevaluate(),
+		dagql.Func("perCallPoint", newPoint).WithInput(dagql.PerCallInput),
+		dagql.Func("uncachedPoint", newPoint).DoNotCache("routing only"),
+		dagql.Func("requestedPoint", func(ctx context.Context, self Query, args struct {
+			NoCache bool `default:"false"`
+		}) (*points.Point, error) {
+			return &points.Point{X: 1, Y: 2}, nil
+		}).WithInput(dagql.RequestedCacheInput("noCache")),
+		dagql.Func("livePoint", func(ctx context.Context, self Query, args struct {
+			NoCache bool `default:"false"`
+			NoLock  bool `default:"false"`
+		}) (*points.Point, error) {
+			return &points.Point{X: 1, Y: 2}, nil
+		}).WithInput(dagql.PerCallWhen("noLock", dagql.RequestedCacheInput("noCache"))),
+	}.Install(srv)
+
+	schema := srv.SchemaForView("")
+	require.NotNil(t, schema.Directives["reevaluate"])
+	query := schema.Types["Query"]
+	for field, want := range map[string]string{
+		"plainPoint":       "",
+		"reevaluatedPoint": "@reevaluate",
+		"perCallPoint":     "@reevaluate",
+		"uncachedPoint":    "",
+		"requestedPoint":   `@reevaluate(when: ["noCache"])`,
+		"livePoint":        `@reevaluate(when: ["noCache","noLock"])`,
+	} {
+		def := query.Fields.ForName(field)
+		require.NotNil(t, def, field)
+		got := ""
+		if dir := def.Directives.ForName("reevaluate"); dir != nil {
+			got = "@reevaluate"
+			if when := dir.Arguments.ForName("when"); when != nil {
+				got += "(when: " + when.Value.String() + ")"
+			}
+		}
+		require.Equal(t, want, got, field)
+	}
+
+	// Both forms must be valid uses of the declared directive.
+	when := schema.Directives["reevaluate"].Arguments.ForName("when")
+	require.NotNil(t, when)
+	for _, use := range []string{"@reevaluate", `@reevaluate(when: ["noCache"])`} {
+		_, err := gqlparser.LoadSchema(&ast.Source{
+			Name:  "reevaluate.graphql",
+			Input: fmt.Sprintf("directive @reevaluate(when: %s) on FIELD_DEFINITION\ntype Query { fresh: String %s }", when.Type, use),
+		})
+		require.NoError(t, err, use)
+	}
+}
+
+// TestReevaluateDirectiveHiddenWithItsView checks that a view hiding the
+// @reevaluate declaration also hides its uses, so a schema never uses a
+// directive it does not declare.
+func TestReevaluateDirectiveHiddenWithItsView(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](srv)
+	dagql.Fields[Query]{
+		dagql.Func("freshPoint", func(ctx context.Context, self Query, args struct{}) (*points.Point, error) {
+			return &points.Point{X: 1, Y: 2}, nil
+		}).Reevaluate(),
+	}.Install(srv)
+	srv.InstallDirective(dagql.ReevaluateDirective.View(dagql.ExactView("future")))
+
+	old := srv.SchemaForView("old")
+	require.NotContains(t, old.Directives, "reevaluate")
+	require.Nil(t, old.Types["Query"].Fields.ForName("freshPoint").Directives.ForName("reevaluate"))
+
+	future := srv.SchemaForView("future")
+	require.Contains(t, future.Directives, "reevaluate")
+	require.NotNil(t, future.Types["Query"].Fields.ForName("freshPoint").Directives.ForName("reevaluate"))
 }
 
 func TestIDRecipeArgIsInternal(t *testing.T) {

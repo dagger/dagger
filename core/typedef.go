@@ -327,6 +327,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 	switch cachePolicy {
 	case FunctionCachePolicyNever:
 		spec.IsPersistable = false
+		spec.Reevaluate = true
 
 	case FunctionCachePolicyPerSession:
 		spec.IsPersistable = false
