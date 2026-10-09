@@ -101,6 +101,7 @@ func moduleDefinitionTestEnv(t *testing.T, path, session string, stub *moduleDef
 	dagql.Fields[*core.ModuleSource]{
 		moduleDefinitionField(resolver),
 		moduleTypesDefinitionField((&moduleSourceSchema{}).moduleSourceModuleTypesDefinition),
+		moduleNamespacedDefinitionField((&moduleSourceSchema{}).moduleSourceNamespacedDefinition),
 	}.Install(srv)
 	return ctx, cache, srv, server
 }
@@ -561,4 +562,162 @@ func TestModuleTypesDefinitionIdentityAndScope(t *testing.T) {
 	require.EqualValues(t, 4, impl.typesCalls.Load(), "a changed source recomputes the definition")
 	require.Same(t, first.Unwrap(), selectTypes(ctx, src, in.schema, "demo").Unwrap())
 	require.EqualValues(t, 4, impl.typesCalls.Load(), "other variants do not replace the original definition")
+}
+
+// The namespaced definition is keyed on the scoped source, the definition,
+// the schema file, the loaded name, the engine version and the git source
+// that source maps link into, with no additional per-client input.
+func TestModuleNamespacedDefinitionIdentity(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv := moduleDefinitionTestCache(t, "", "s1", &moduleDefinitionTestResolver{})
+	scoped := digest.FromString("scoped source")
+	in := definitionTestInputsFor(t, ctx, cache, srv, "s1", "source", scoped, "runtime", "schema")
+	def := selectDefinition(t, ctx, srv, in, "demo")
+	defID, err := def.ID()
+	require.NoError(t, err)
+
+	type key struct {
+		source            dagql.ObjectResult[*core.ModuleSource]
+		definition        *call.ID
+		schema            dagql.ObjectResult[*core.File]
+		name, version     string
+		gitURL, gitCommit string
+	}
+	base := key{source: in.source, definition: defID, schema: in.schema, name: "demo", version: "v1.0.0", gitURL: "https://github.com/acme/demo", gitCommit: "c1"}
+	selectNamespaced := func(ctx context.Context, k key) dagql.ObjectResult[*core.Module] {
+		t.Helper()
+		schemaID, err := k.schema.ID()
+		require.NoError(t, err)
+		var res dagql.ObjectResult[*core.Module]
+		require.NoError(t, srv.Select(ctx, k.source, &res, dagql.Selector{
+			Field: "_moduleNamespacedDefinition",
+			Args: []dagql.NamedInput{
+				{Name: "definition", Value: dagql.NewID[*core.Module](k.definition)},
+				{Name: "introspectionJson", Value: dagql.NewID[*core.File](schemaID)},
+				{Name: "moduleName", Value: dagql.String(k.name)},
+				{Name: "engineVersion", Value: dagql.String(k.version)},
+				{Name: "gitHtmlRepoUrl", Value: dagql.String(k.gitURL)},
+				{Name: "gitCommit", Value: dagql.String(k.gitCommit)},
+			},
+		}))
+		return res
+	}
+
+	first := selectNamespaced(ctx, base)
+	require.Equal(t, "definition of demo", first.Self().Description)
+	require.Equal(t, "demo", first.Self().NameField)
+
+	// A second client in a second session with the same inputs gets the
+	// same row.
+	second := selectNamespaced(withClient(ctx, "c2", "s2"), base)
+	require.Same(t, first.Unwrap(), second.Unwrap(), "no per-client input: the second client hits")
+
+	// Each input alone changes the key.
+	otherDef := selectDefinition(t, ctx, srv, in, "other")
+	otherDefID, err := otherDef.ID()
+	require.NoError(t, err)
+	otherSchema := definitionTestInputsFor(t, ctx, cache, srv, "s1", "source", scoped, "runtime", "schema-2").schema
+	edited := definitionTestInputsFor(t, ctx, cache, srv, "s1", "source-edited", digest.FromString("edited source"), "runtime", "schema").source
+	vary := func(change func(*key)) key {
+		k := base
+		change(&k)
+		return k
+	}
+	for name, k := range map[string]key{
+		"definition":     vary(func(k *key) { k.definition = otherDefID }),
+		"schema file":    vary(func(k *key) { k.schema = otherSchema }),
+		"source digest":  vary(func(k *key) { k.source = edited }),
+		"module name":    vary(func(k *key) { k.name = "renamed" }),
+		"engine version": vary(func(k *key) { k.version = "v0.19.0" }),
+		"git repository": vary(func(k *key) { k.gitURL = "https://github.com/acme/fork" }),
+		"git commit":     vary(func(k *key) { k.gitCommit = "c2" }),
+	} {
+		res := selectNamespaced(ctx, k)
+		require.NotSame(t, first.Unwrap(), res.Unwrap(), "a changed %s is a new namespaced definition", name)
+	}
+
+	// The same scoped digest under another recipe hits structurally, which
+	// is the cross-client and cross-engine case.
+	equivalent := definitionTestInputsFor(t, ctx, cache, srv, "s1", "source-other-recipe", scoped, "runtime", "schema").source
+	same := selectNamespaced(ctx, vary(func(k *key) { k.source = equivalent }))
+	require.Same(t, first.Unwrap(), same.Unwrap(), "the same scoped digest under another recipe hits structurally")
+}
+
+// The namespaced definition's source maps link into the git source given as
+// arguments, not into the scoped receiver's, which may be another client's
+// source with the same content: another commit of the same repository, or a
+// local checkout of it.
+func TestModuleNamespacedDefinitionSourceMapLinks(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "links", SessionID: "links"})
+	server := &currentTypeDefsTestServer{}
+	root := core.NewRoot(server)
+	ctx = core.ContextWithQuery(ctx, root)
+	base, err := NewCoreSchemaBase(ctx, server)
+	require.NoError(t, err)
+	dag, err := base.Fork(ctx, root, "")
+	require.NoError(t, err)
+
+	// The definition: one object whose source map the SDK reported
+	// relative to the module's source directory.
+	var sourceMap dagql.ObjectResult[*core.SourceMap]
+	require.NoError(t, dag.Select(ctx, dag.Root(), &sourceMap, dagql.Selector{Field: "sourceMap", Args: []dagql.NamedInput{
+		{Name: "filename", Value: dagql.String("main.go")},
+		{Name: "line", Value: dagql.Int(3)},
+		{Name: "column", Value: dagql.Int(1)},
+	}}))
+	sourceMapID, err := sourceMap.ID()
+	require.NoError(t, err)
+	var typeDef dagql.ObjectResult[*core.TypeDef]
+	require.NoError(t, dag.Select(ctx, dag.Root(), &typeDef,
+		dagql.Selector{Field: "typeDef"},
+		dagql.Selector{Field: "withObject", Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String("Holder")},
+			{Name: "sourceMap", Value: dagql.Opt(dagql.NewID[*core.SourceMap](sourceMapID))},
+		}},
+	))
+	def := attachDefinitionTestResult(t, ctx, cache, dag, "links", "definition", &core.Module{NameField: "demo", ObjectDefs: dagql.ObjectResultArray[*core.TypeDef]{typeDef}})
+	defID, err := def.ID()
+	require.NoError(t, err)
+	schema := attachDefinitionTestResult(t, ctx, cache, dag, "links", "schema", &core.File{Platform: core.Platform{OS: "linux", Architecture: "arm64"}, File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]), Lazy: &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: "schema.json", Contents: []byte("{}")}})
+	schemaID, err := schema.ID()
+	require.NoError(t, err)
+	// The receiver is a git source at another commit.
+	src := attachDefinitionTestResult(t, ctx, cache, dag, "links", "source", &core.ModuleSource{
+		Kind: core.ModuleSourceKindGit, ModuleName: "demo", ModuleOriginalName: "demo", SourceSubpath: "mod",
+		Git: &core.GitModuleSource{HTMLRepoURL: "https://github.com/acme/demo", Commit: "c1"},
+	})
+
+	namespacedSourceMap := func(gitArgs ...dagql.NamedInput) *core.SourceMap {
+		t.Helper()
+		var res dagql.ObjectResult[*core.Module]
+		require.NoError(t, dag.Select(ctx, src, &res, dagql.Selector{
+			Field: "_moduleNamespacedDefinition",
+			Args: append([]dagql.NamedInput{
+				{Name: "definition", Value: dagql.NewID[*core.Module](defID)},
+				{Name: "introspectionJson", Value: dagql.NewID[*core.File](schemaID)},
+				{Name: "moduleName", Value: dagql.String("demo")},
+				{Name: "engineVersion", Value: dagql.String("v1.0.0")},
+			}, gitArgs...),
+		}))
+		require.Len(t, res.Self().ObjectDefs, 1)
+		obj := res.Self().ObjectDefs[0].Self().AsObject.Value.Self()
+		require.Equal(t, "demo", obj.SourceModuleName)
+		require.True(t, obj.SourceMap.Valid)
+		return obj.SourceMap.Value.Self()
+	}
+
+	linked := namespacedSourceMap(
+		dagql.NamedInput{Name: "gitHtmlRepoUrl", Value: dagql.String("https://github.com/acme/demo")},
+		dagql.NamedInput{Name: "gitCommit", Value: dagql.String("c2")},
+	)
+	require.Equal(t, &core.SourceMap{Module: "demo", Filename: "mod/main.go", Line: 3, Column: 1, URL: "https://github.com/acme/demo/tree/c2/mod/main.go#L3"}, linked)
+
+	unlinked := namespacedSourceMap()
+	require.Equal(t, &core.SourceMap{Module: "demo", Filename: "mod/main.go", Line: 3, Column: 1}, unlinked, "a non-git load gets no link from a git receiver")
 }

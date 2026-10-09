@@ -249,6 +249,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`The module source scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
 		moduleDefinitionField(s.moduleSourceModuleDefinition),
 		moduleTypesDefinitionField(s.moduleSourceModuleTypesDefinition),
+		moduleNamespacedDefinitionField(s.moduleSourceNamespacedDefinition),
 		dagql.NodeFunc("introspectionSchemaJSON", s.moduleSourceIntrospectionSchemaJSON).
 			Doc(`The introspection schema JSON file for this module source.`,
 				`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
@@ -3269,28 +3270,21 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 
 	// update the module's types with what was returned from the call above
 	mod.Description = initialized.Description
-	for _, obj := range initialized.ObjectDefs {
-		slog.ExtraDebug("ObjectDefs", "mod.Name", mod.Name(), "sourceModuleName", obj.Self().AsObject.Value.Self().SourceModuleName, "originalName", obj.Self().AsObject.Value.Self().OriginalName, "name", obj.Self().AsObject.Value.Self().Name)
-		mod, err = mod.WithObject(ctx, obj)
+	if mod.Definition.Valid {
+		// A cached definition is namespaced into the module through its own
+		// cached field, so each new client reuses the namespaced typedefs.
+		namespaced, err := s.namespacedDefinition(ctx, dag, mod)
 		if err != nil {
-			return nil, fmt.Errorf("failed to add object to module %q: %w", modName, err)
+			return nil, err
 		}
-	}
-	for _, iface := range initialized.InterfaceDefs {
-		mod, err = mod.WithInterface(ctx, iface)
+		mod.ObjectDefs = slices.Clone(namespaced.Self().ObjectDefs)
+		mod.InterfaceDefs = slices.Clone(namespaced.Self().InterfaceDefs)
+		mod.EnumDefs = slices.Clone(namespaced.Self().EnumDefs)
+	} else {
+		mod, err = withNamespacedDefinition(ctx, mod, initialized, modName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to add interface to module %q: %w", modName, err)
+			return nil, err
 		}
-	}
-	for _, enum := range initialized.EnumDefs {
-		mod, err = mod.WithEnum(ctx, enum)
-		if err != nil {
-			return nil, fmt.Errorf("failed to add enum to module %q: %w", modName, err)
-		}
-	}
-	err = mod.Patch(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
 
 	if typeDefsEnabled && isSelfCallsEnabled(src) {
@@ -3341,6 +3335,169 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 	}
 
 	return mod, nil
+}
+
+// withNamespacedDefinition adds def's objects, interfaces and enums to mod,
+// each validated against mod's dependencies and namespaced into mod, then
+// patches them. modName names the module in errors.
+func withNamespacedDefinition(ctx context.Context, mod, def *core.Module, modName string) (*core.Module, error) {
+	var err error
+	for _, obj := range def.ObjectDefs {
+		slog.ExtraDebug("ObjectDefs", "mod.Name", mod.Name(), "sourceModuleName", obj.Self().AsObject.Value.Self().SourceModuleName, "originalName", obj.Self().AsObject.Value.Self().OriginalName, "name", obj.Self().AsObject.Value.Self().Name)
+		mod, err = mod.WithObject(ctx, obj)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add object to module %q: %w", modName, err)
+		}
+	}
+	for _, iface := range def.InterfaceDefs {
+		mod, err = mod.WithInterface(ctx, iface)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add interface to module %q: %w", modName, err)
+		}
+	}
+	for _, enum := range def.EnumDefs {
+		mod, err = mod.WithEnum(ctx, enum)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add enum to module %q: %w", modName, err)
+		}
+	}
+	if err := mod.Patch(ctx); err != nil {
+		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
+	}
+	return mod, nil
+}
+
+// moduleNamespacedDefinitionArgs are the identity of a definition namespaced
+// into the module it is loaded as. With the receiver, the
+// implementation-scoped source, they name everything namespacing reads: the
+// definition; the dependencies' introspection schema, which decides which
+// types belong to a dependency; the module's name as loaded; the engine
+// version its functions are validated against; and the git repository and
+// commit that source maps link into, which the scoped source does not
+// identify. No per-client input, so a module loaded again by a new client
+// reuses the namespaced typedefs.
+type moduleNamespacedDefinitionArgs struct {
+	Definition        core.ModuleID
+	IntrospectionJSON core.FileID `name:"introspectionJson"`
+	ModuleName        string
+	EngineVersion     string `default:""`
+	GitHTMLRepoURL    string `name:"gitHtmlRepoUrl" default:""`
+	GitCommit         string `default:""`
+}
+
+// moduleNamespacedDefinitionField declares
+// ModuleSource._moduleNamespacedDefinition, shared with tests like
+// moduleDefinitionField.
+func moduleNamespacedDefinitionField(resolver dagql.NodeFuncHandler[*core.ModuleSource, moduleNamespacedDefinitionArgs, dagql.ObjectResult[*core.Module]]) dagql.Field[*core.ModuleSource] {
+	return dagql.NodeFunc("_moduleNamespacedDefinition", resolver).
+		IsPersistable().
+		Doc(`The module's definition with its typedefs validated, namespaced into the module and patched.`,
+			`Keyed on the implementation-scoped source, the definition, the dependencies' introspection schema, the loaded module name, the engine version and the git source that source maps link into, so equivalent loads on different clients and engines share one result.`).
+		Args(
+			dagql.Arg("definition").Doc(`The module's cached definition.`),
+			dagql.Arg("introspectionJson").Doc(`The introspection schema JSON file of the module's dependencies.`),
+			dagql.Arg("moduleName").Doc(`The module's name as loaded.`),
+			dagql.Arg("engineVersion").Doc(`The engine version the module's source requires.`),
+			dagql.Arg("gitHtmlRepoUrl").Doc(`The repository URL that source maps link into, for a git source.`),
+			dagql.Arg("gitCommit").Doc(`The commit that source maps link into, for a git source.`),
+		)
+}
+
+// namespacedDefinition selects mod's definition namespaced into mod.
+func (s *moduleSourceSchema) namespacedDefinition(
+	ctx context.Context,
+	dag *dagql.Server,
+	mod *core.Module,
+) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	src := mod.Source.Value
+	scopedSrc, err := core.ImplementationScopedModuleSource(ctx, src)
+	if err != nil {
+		return inst, fmt.Errorf("failed to scope module source for namespaced definition: %w", err)
+	}
+	schemaJSONFile, err := mod.Deps.SchemaIntrospectionJSONFileForModule(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json for namespaced definition: %w", err)
+	}
+	schemaJSONFileID, err := schemaJSONFile.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json ID for namespaced definition: %w", err)
+	}
+	defID, err := mod.Definition.Value.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get definition ID for namespaced definition: %w", err)
+	}
+	args := []dagql.NamedInput{
+		{Name: "definition", Value: dagql.NewID[*core.Module](defID)},
+		{Name: "introspectionJson", Value: dagql.NewID[*core.File](schemaJSONFileID)},
+		{Name: "moduleName", Value: dagql.String(mod.NameField)},
+		{Name: "engineVersion", Value: dagql.String(src.Self().EngineVersion)},
+	}
+	if git := src.Self().Git; src.Self().Kind == core.ModuleSourceKindGit && git != nil {
+		args = append(args,
+			dagql.NamedInput{Name: "gitHtmlRepoUrl", Value: dagql.String(git.HTMLRepoURL)},
+			dagql.NamedInput{Name: "gitCommit", Value: dagql.String(git.Commit)},
+		)
+	}
+	if err := dag.Select(ctx, scopedSrc, &inst, dagql.Selector{Field: "_moduleNamespacedDefinition", Args: args}); err != nil {
+		return inst, fmt.Errorf("failed to get namespaced definition for module %q: %w", mod.NameField, err)
+	}
+	return inst, nil
+}
+
+// moduleSourceNamespacedDefinition is the resolver of
+// _moduleNamespacedDefinition: on a miss it loads the dependencies from the
+// scoped source, as the definition fields do, and namespaces the definition
+// into a module named by the arguments.
+func (s *moduleSourceSchema) moduleSourceNamespacedDefinition(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	args moduleNamespacedDefinitionArgs,
+) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	def, err := args.Definition.Load(ctx, dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load definition for namespaced definition: %w", err)
+	}
+	deps, err := s.loadDependencyModules(ctx, src, src)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load dependencies for namespaced definition: %w", err)
+	}
+	// The scoped source may be another client's with equal content, so
+	// what else namespacing and validation read comes from the arguments.
+	overrides := &core.SourceOverrides{EngineVersion: args.EngineVersion}
+	if args.GitHTMLRepoURL != "" || args.GitCommit != "" {
+		overrides.Git = &core.GitModuleSource{HTMLRepoURL: args.GitHTMLRepoURL, Commit: args.GitCommit}
+	}
+	mod := &core.Module{
+		Source:          dagql.NonNull(src),
+		ContextSource:   dagql.NonNull(src),
+		NameField:       args.ModuleName,
+		OriginalName:    src.Self().ModuleOriginalName,
+		SDKConfig:       src.Self().SDK,
+		Deps:            deps,
+		SourceOverrides: overrides,
+	}
+	if mod.SDKConfig == nil {
+		mod.SDKConfig = &core.SDKConfig{}
+	}
+	mod, err = withNamespacedDefinition(ctx, mod, def.Self(), args.ModuleName)
+	if err != nil {
+		return inst, err
+	}
+	namespaced := &core.Module{
+		NameField:     mod.NameField,
+		OriginalName:  mod.OriginalName,
+		SDKConfig:     mod.SDKConfig.Clone(),
+		Description:   def.Self().Description,
+		ObjectDefs:    slices.Clone(mod.ObjectDefs),
+		InterfaceDefs: slices.Clone(mod.InterfaceDefs),
+		EnumDefs:      slices.Clone(mod.EnumDefs),
+		Runtime:       def.Self().Runtime,
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, dag, namespaced)
 }
 
 // moduleDefinitionArgs are the identity of a cached module definition: the
