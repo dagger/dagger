@@ -95,6 +95,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("commits").Doc("Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits."),
 				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
 		dagql.NodeFunc("__pullDirectory", s.pullDirectory).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Apply a bounded pull in a scratch repository."),
+		dagql.NodeFunc("__pullRepository", s.pullRepository).View(AfterVersion("v1.0.0-0")).IsPersistable().Doc("(Internal-only) Preserve pull provenance for incremental source checkouts."),
 		dagql.NodeFunc("__saveDirectory", s.saveDirectory).View(AfterVersion("v1.0.0-0")).NotReplayable("Export destination is session-local").Doc("(Internal-only) Integrate source work into a captured destination and bundle the result."),
 		dagql.NodeFunc("withCommit", s.withCommit).
 			View(AfterVersion("v1.0.0-0")).

@@ -18,6 +18,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -140,41 +141,58 @@ func GitCommitChangeset(
 // selection, filters and arbitrary equal-looking directories must use the merge
 // path. Repository recipe identity deliberately retains authorization scope.
 func GitCommitChangesetNativeBase(ctx context.Context, parent dagql.ObjectResult[*GitRef], changes *Changeset) (bool, error) {
+	reason, err := gitCommitChangesetNativeBaseReason(ctx, parent, changes)
+	return reason == "", err
+}
+
+// gitCommitChangesetNativeBaseReason is GitCommitChangesetNativeBase with the
+// fixed code of the first provenance check that failed ("" when eligible), so
+// fast paths can record why they were skipped.
+func gitCommitChangesetNativeBaseReason(ctx context.Context, parent dagql.ObjectResult[*GitRef], changes *Changeset) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return false, err
+		return "", err
+	}
+	if changes == nil || changes.Before.Self() == nil {
+		return "no-before", nil
 	}
 	ref := parent.Self()
-	if ref == nil || ref.Ref == nil || ref.Repo.Self() == nil || len(ref.Ref.SHA) != 40 || !IsFullGitSHA(ref.Ref.SHA) || changes == nil || changes.Before.Self() == nil {
-		return false, nil
+	if ref == nil || ref.Ref == nil || ref.Repo.Self() == nil || len(ref.Ref.SHA) != 40 || !IsFullGitSHA(ref.Ref.SHA) {
+		return "parent-ref", nil
 	}
 	if ref.Ref.Name != "" && ref.Ref.Name != ref.Ref.SHA && !strings.HasPrefix(ref.Ref.Name, "refs/heads/") {
-		return false, nil
+		return "parent-ref-kind", nil
 	}
 	switch ref.Backend.(type) {
 	case *LocalGitRef, *RemoteGitRef:
 	default:
-		return false, nil
+		return "parent-backend", nil
 	}
 	lazy, ok := changes.Before.Self().Lazy.(*DirectoryGitTreeLazy)
 	if !ok || lazy.Ref.Self() == nil || lazy.Ref.Self().Ref == nil {
-		return false, nil
+		return "before-not-git-tree", nil
 	}
 	base := lazy.Ref.Self()
 	if base.Repo.Self() == nil {
-		return false, nil
+		return "before-not-git-tree", nil
 	}
-	if lazy.KeepGitDir || !lazy.DiscardGitDir && !base.Repo.Self().DiscardGitDir || base.Ref.SHA != ref.Ref.SHA {
-		return false, nil
+	if lazy.KeepGitDir || !lazy.DiscardGitDir && !base.Repo.Self().DiscardGitDir {
+		return "before-keeps-git-dir", nil
+	}
+	if base.Ref.SHA != ref.Ref.SHA {
+		return "before-commit-mismatch", nil
 	}
 	baseRepo, err := base.Repo.RecipeDigest(ctx)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	parentRepo, err := ref.Repo.RecipeDigest(ctx)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	return baseRepo == parentRepo, nil
+	if baseRepo != parentRepo {
+		return "before-repository-mismatch", nil
+	}
+	return "", nil
 }
 
 var errNativeCommitUnsupported = errors.New("unsupported native git commit")
@@ -205,6 +223,9 @@ func nativeFallback(ctx context.Context, span trace.Span, attr string, err error
 		return false
 	}
 	span.SetAttributes(attribute.String(attr, err.Error()))
+	// The profile marker, e.g. git.native_merge.fallback[<reason>] for
+	// dagger.git.native_merge.fallback_reason.
+	recordFallbackMarker(ctx, strings.TrimSuffix(strings.TrimPrefix(attr, "dagger."), "_reason"), err)
 	return true
 }
 
@@ -287,9 +308,13 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 		span.SetAttributes(attribute.Bool("dagger.git.native.supported", supported))
 		telemetry.EndWithCause(span, &rerr)
 	}()
-	ok, err := GitCommitChangesetNativeBase(ctx, parent, changes)
-	if err != nil || !ok {
+	reason, err := gitCommitChangesetNativeBaseReason(ctx, parent, changes)
+	if err != nil {
 		return nil, false, err
+	}
+	if reason != "" {
+		// Recorded on the span by nativeFallback like any other fallback.
+		return nil, false, nativeCommitUnsupportedReason(reason)
 	}
 	if err := normalizeNativeCommitOpts(&opts); err != nil {
 		return nil, true, err
@@ -1036,7 +1061,10 @@ func runWorkspaceCommitGitStream(ctx context.Context, dir string, extraEnv []str
 		operation = commandArgs[0]
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "git "+operation, telemetry.Internal())
+	// A profile op per command, e.g. git.read-tree, under the caller's phase.
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindIO, "git."+operation, wcprof.OpOpts{})
 	defer func() {
+		op.EndErr(rerr)
 		var spanErr error
 		if rerr != nil {
 			spanErr = fmt.Errorf("git %s failed", operation)

@@ -141,8 +141,8 @@ func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return inst, err
 	}
-	repo, err := workspaceRepositoryFromDirectory(ctx, parent, dagql.Selector{Field: "__pullDirectory", Args: resolved.selectors()})
-	if err != nil {
+	var repo dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(ctx, parent, &repo, dagql.Selector{Field: "__pullRepository", Args: resolved.selectors()}); err != nil {
 		return inst, err
 	}
 	if err := srv.Select(ctx, repo, &inst, dagql.Selector{Field: "head"}, dagql.Selector{Field: "asWorkspace", Args: []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(parent.Self().Cwd)}}}); err != nil {
@@ -204,4 +204,90 @@ func (s *workspaceSchema) pullDirectory(ctx context.Context, parent dagql.Object
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
+// pullRepository opens the pulled storage like GitRepository.withContents on
+// the receiver HEAD's repository, preserving the workspace's logical origin
+// and push routing, and keeps the receiver's HEAD as the new HEAD's checkout
+// base. A pull leaves HEAD where it was, cherry-picks commits on top of it or
+// fast-forwards to a descendant, so the receiver's HEAD is an ancestor of the
+// new one and a source-only checkout of it can apply just the delta to the
+// receiver's canonical tree (planIncrementalGitCheckout verifies the ancestry
+// in the object database before relying on it). Like
+// GitRef.__withCommitRepository, the provenance lives on this private,
+// replayable recipe: public withContents must not infer it from arbitrary
+// supplied storage.
+//
+// The pulled storage is a complete checkout (Workspace.git.__checkout carries
+// full history), so it retains no owned-shallow HistorySource: shallow
+// storage without one is rejected by the incremental planner, which then
+// takes the full checkout.
+func (s *workspaceSchema) pullRepository(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspacePullArgs) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	var dir dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, parent, &dir, dagql.Selector{Field: "__pullDirectory", Args: args.selectors()}); err != nil {
+		return inst, err
+	}
+	var head dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, parent, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
+		return inst, err
+	}
+	repo, err := gitRepositoryWithContents(ctx, srv, head.Self().Repo, dir)
+	if err != nil {
+		return inst, err
+	}
+	local, ok := repo.Self().Backend.(*core.LocalGitRepository)
+	if !ok || head.Self().Ref == nil || !core.IsFullGitSHA(head.Self().Ref.SHA) {
+		return repo, nil
+	}
+	remote, err := repo.Self().LoadRemote(ctx)
+	if err != nil {
+		return inst, err
+	}
+	pulled, err := remote.Lookup("HEAD")
+	if err != nil {
+		return inst, fmt.Errorf("resolve pulled repository HEAD: %w", err)
+	}
+	checkoutParent, parentTree, err := pullCheckoutParent(ctx, srv, head)
+	if err != nil {
+		return inst, err
+	}
+	backend := *local
+	backend.CheckoutBase = &core.GitCheckoutBase{Parent: checkoutParent, CommitSHA: pulled.SHA, Tree: parentTree}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo.Self().CloneWithBackend(&backend))
+}
+
+// pullCheckoutParent returns the receiver HEAD's exact recipe as the checkout
+// base. A remote HEAD is pinned to its resolved SHA, the recipe its
+// source-only tree uses, together with that canonical tree, which incremental
+// checkout requires of a remote base so it never needs another fetch. Unlike
+// GitRef.withCommit, whose base tree is usually already materialized, a pull
+// does not evaluate the tree just for this: a cold one, or one that fails, is
+// left out, and the pulled HEAD then checks out in full.
+func pullCheckoutParent(ctx context.Context, srv *dagql.Server, head dagql.ObjectResult[*core.GitRef]) (parent dagql.ObjectResult[*core.GitRef], tree dagql.ObjectResult[*core.Directory], _ error) {
+	if _, remote := head.Self().Backend.(*core.RemoteGitRef); !remote {
+		return head, tree, nil
+	}
+	if err := srv.Select(ctx, head.Self().Repo, &parent, dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(head.Self().Ref.SHA)}}}); err != nil {
+		return parent, tree, err
+	}
+	if err := srv.Select(ctx, parent, &tree, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "discardGitDir", Value: dagql.Boolean(true)}}}); err != nil {
+		if ctx.Err() != nil {
+			return parent, tree, err
+		}
+		return parent, dagql.ObjectResult[*core.Directory]{}, nil
+	}
+	if dagql.HasPendingLazyComputation(tree) {
+		return parent, dagql.ObjectResult[*core.Directory]{}, nil
+	}
+	if _, err := tree.Self().Snapshot.GetOrEval(ctx, tree.Result); err != nil {
+		if ctx.Err() != nil {
+			return parent, tree, err
+		}
+		return parent, dagql.ObjectResult[*core.Directory]{}, nil
+	}
+	return parent, tree, nil
 }

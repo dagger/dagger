@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/util/gitutil"
@@ -36,10 +35,6 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 	if working == nil || incoming == nil || working.Before.Self() == nil {
 		return nil, false, nil
 	}
-	lazy, ok := working.Before.Self().Lazy.(*DirectoryGitTreeLazy)
-	if !ok {
-		return nil, false, nil
-	}
 	ctx, span := Tracer(ctx).Start(ctx, "git native workspace merge", telemetry.Internal())
 	phases := newMergePhases(span, "git.native_merge")
 	defer func() {
@@ -49,10 +44,19 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 		span.SetAttributes(attribute.Bool("dagger.git.native_merge.supported", supported))
 		telemetry.EndWithCause(span, &rerr)
 	}()
-	for _, changes := range []*Changeset{working, incoming} {
-		ok, err := GitCommitChangesetNativeBase(ctx, lazy.Ref, changes)
-		if err != nil || !ok {
+	// Ineligible provenance is a fallback like any other: record its reason,
+	// prefixed with the side, rather than skipping the merge silently.
+	lazy, ok := working.Before.Self().Lazy.(*DirectoryGitTreeLazy)
+	if !ok {
+		return nil, false, nativeCommitUnsupportedReason("working-before-not-git-tree")
+	}
+	for i, changes := range []*Changeset{working, incoming} {
+		reason, err := gitCommitChangesetNativeBaseReason(ctx, lazy.Ref, changes)
+		if err != nil {
 			return nil, false, err
+		}
+		if reason != "" {
+			return nil, false, nativeCommitUnsupportedReason(nativeMergeLabels[i] + "-" + reason)
 		}
 	}
 	contents := make([]*changesetContent, 2)
@@ -72,12 +76,15 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 	}
 	span.SetAttributes(attribute.Int("dagger.git.native_merge.scoped_stage_paths",
 		len(commitStagePaths(contents[0].paths))+len(commitStagePaths(contents[1].paths))))
-	local, err := nativeCommitRepository(ctx, lazy.Ref)
-	if err != nil {
+	var local *LocalGitRepository
+	if err := phases.run(ctx, "repository", func(ctx context.Context) (err error) {
+		local, err = nativeCommitRepository(ctx, lazy.Ref)
+		return err
+	}); err != nil {
 		return nil, true, err
 	}
 	var result *Directory
-	err = local.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
+	err := local.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
 		out, err := source.Run(ctx, "rev-parse", "--absolute-git-dir")
 		if err != nil {
 			return err
@@ -96,7 +103,7 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 			for i, content := range contents {
 				paths[i] = content.paths.withoutGitMeta()
 				if err := phases.run(ctx, "validate_"+nativeMergeLabels[i], func(ctx context.Context) error {
-					return validateNativeWorkspaceContent(ctx, ws.workDir, content)
+					return validateNativeWorkspaceContent(ctx, content)
 				}); err != nil {
 					return err
 				}
@@ -125,9 +132,8 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 }
 
 // validateNativeWorkspaceContent walks only the materialized delta, never the
-// baseline. File metadata changes omitted by ComputePaths and ancestor directory
-// metadata cannot safely be represented by Git trees; leave those to the oracle.
-func validateNativeWorkspaceContent(ctx context.Context, base string, content *changesetContent) error {
+// baseline: every file it holds must be one ComputePaths reported.
+func validateNativeWorkspaceContent(ctx context.Context, content *changesetContent) error {
 	if content.diff.Self() == nil {
 		return nil
 	}
@@ -147,20 +153,11 @@ func validateNativeWorkspaceContent(ctx context.Context, base string, content *c
 		if err != nil {
 			return err
 		}
-		return validateNativeWorkspaceDelta(ctx, base, dir, content.paths.withoutGitMeta())
+		return validateNativeWorkspaceDelta(ctx, dir, content.paths.withoutGitMeta())
 	}, mountRefAsReadOnly)
 }
 
-func validateNativeWorkspaceDelta(ctx context.Context, base, delta string, paths *ChangesetPaths) error {
-	root, err := os.OpenRoot(base)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	// WalkDir visits parents first. Once a delta directory replaces a
-	// non-directory (including a symlink), or is newly introduced, none of
-	// its descendants exist in Before. Do not look through the old ancestor.
-	introducedDirs := map[string]bool{}
+func validateNativeWorkspaceDelta(ctx context.Context, delta string, paths *ChangesetPaths) error {
 	declared := map[string]bool{}
 	for _, p := range slices.Concat(paths.Added, paths.Modified) {
 		declared[p] = true
@@ -183,45 +180,21 @@ func validateNativeWorkspaceDelta(ctx context.Context, base, delta string, paths
 			}
 			return nil
 		}
-		if !entry.IsDir() {
-			if !declared[rel] {
-				return nativeCommitUnsupportedReason("unreported-filesystem-change")
-			}
+		// Directories may carry any metadata: mode, owner, xattrs, the root's
+		// included, whether the delta introduces them or changes existing
+		// ones (a patch applied under the engine's umask 000 makes 0777 ones;
+		// a diff snapshot's root may differ from Before's). Git records none
+		// of it, and the replay applies the same raw deltas through the same
+		// checkout transitions as the legacy merge, so it ends with the same
+		// directories: Git's own where a transition recreates one, the raw
+		// delta's where none touches it (TestNativeWorkspaceMergeMatchesCheckout
+		// and the reconciliation oracle). Files are another matter: the legacy
+		// merge stages the whole worktree, so a file change ComputePaths does
+		// not report, such as a mode-only change, could reach its commits.
+		if entry.IsDir() || declared[rel] {
 			return nil
 		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		var before os.FileInfo
-		if !introducedDirs[path.Dir(rel)] {
-			before, err = root.Lstat(filepath.FromSlash(rel))
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-		}
-		if before == nil || !before.IsDir() {
-			introducedDirs[rel] = true
-		}
-		stat := info.Sys().(*syscall.Stat_t)
-		if before != nil && before.IsDir() {
-			old := before.Sys().(*syscall.Stat_t)
-			if info.Mode() != before.Mode() || stat.Uid != old.Uid || stat.Gid != old.Gid {
-				return nativeCommitUnsupportedReason("directory-metadata")
-			}
-		} else if info.Mode().Perm() != 0755 || stat.Uid != uint32(os.Geteuid()) || stat.Gid != uint32(os.Getegid()) {
-			return nativeCommitUnsupportedReason("directory-metadata")
-		}
-		// Git cannot reproduce directory xattrs. Even equal ones are uncommon;
-		// conservatively fall back rather than widening the metadata contract.
-		n, err := unix.Llistxattr(name, nil)
-		if err != nil && !errors.Is(err, unix.ENOTSUP) {
-			return err
-		}
-		if n != 0 {
-			return nativeCommitUnsupportedReason("directory-xattrs")
-		}
-		return nil
+		return nativeCommitUnsupportedReason("unreported-filesystem-change")
 	})
 }
 
@@ -256,45 +229,68 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 		"GIT_AUTHOR_DATE=2000-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2000-01-01T00:00:00Z",
 	}
 	work := ""
+	// Each phase runs its git commands under its own profile op, so a
+	// profile breaks a slow phase down by command (git.<verb>).
+	runCtx := ctx
 	run := func(args ...string) (string, error) {
-		return runWorkspaceCommitGit(ctx, work, append(slices.Clone(env), "GIT_WORK_TREE="+work), args...)
+		return runWorkspaceCommitGit(runCtx, work, append(slices.Clone(env), "GIT_WORK_TREE="+work), args...)
+	}
+	phase := func(name string, fn func() error) error {
+		outer := runCtx
+		return phases.run(outer, name, func(ctx context.Context) error {
+			runCtx = ctx
+			defer func() { runCtx = outer }()
+			return fn()
+		})
+	}
+	// The raw content applied to a worktree, timed apart from the git
+	// commands around it.
+	applyTo := func(i int, dir string) error {
+		return phases.run(runCtx, "apply_"+nativeMergeLabels[i], func(context.Context) error {
+			return apply[i](dir)
+		})
 	}
 	commits := make([]string, 2)
 	trees := make([]string, 2)
-	start = phases.record(ctx, "init", start)
+	phases.record(ctx, "init", start)
 	for i, changes := range paths {
-		work = filepath.Join(scratch, strconv.Itoa(i))
-		if err := os.Mkdir(work, 0755); err != nil {
-			return err
-		}
-		if err := stageNativeChanges(run, parent, changes, false, func() error {
-			// Controls have been hydrated, but still describe the parent.
-			if err := validateNativeWorkspaceBase(run, base, changes); err != nil {
+		if err := phase("stage_"+nativeMergeLabels[i], func() error {
+			work = filepath.Join(scratch, strconv.Itoa(i))
+			if err := os.Mkdir(work, 0755); err != nil {
 				return err
 			}
-			return apply[i](work)
+			if err := stageNativeChanges(run, parent, changes, false, func() error {
+				// Controls have been hydrated, but still describe the parent.
+				if err := validateNativeWorkspaceBase(run, base, changes); err != nil {
+					return err
+				}
+				return applyTo(i, work)
+			}); err != nil {
+				return err
+			}
+			tree, err := run("write-tree")
+			if err != nil {
+				return err
+			}
+			trees[i] = strings.TrimSpace(tree)
+			commit, err := run("commit-tree", trees[i], "-p", parent, "-m", "workspace merge")
+			if err != nil {
+				return err
+			}
+			commits[i] = strings.TrimSpace(commit)
+			// merge-tree labels conflict messages with its arguments. Name the
+			// sides instead of printing scratch commit IDs nobody can look up.
+			_, err = run("update-ref", "refs/heads/"+nativeMergeLabels[i], commits[i])
+			return err
 		}); err != nil {
 			return err
 		}
-		tree, err := run("write-tree")
-		if err != nil {
-			return err
-		}
-		trees[i] = strings.TrimSpace(tree)
-		commit, err := run("commit-tree", trees[i], "-p", parent, "-m", "workspace merge")
-		if err != nil {
-			return err
-		}
-		commits[i] = strings.TrimSpace(commit)
-		// merge-tree labels conflict messages with its arguments. Name the
-		// sides instead of printing scratch commit IDs nobody can look up.
-		if _, err := run("update-ref", "refs/heads/"+nativeMergeLabels[i], commits[i]); err != nil {
-			return err
-		}
-		start = phases.record(ctx, "stage_"+nativeMergeLabels[i], start)
 	}
-	merged, err := run("merge-tree", "--write-tree", "--name-only", "--merge-base="+parent, nativeMergeLabels[0], nativeMergeLabels[1])
-	start = phases.record(ctx, "merge_tree", start)
+	var merged string
+	err = phase("merge_tree", func() (err error) {
+		merged, err = run("merge-tree", "--write-tree", "--name-only", "--merge-base="+parent, nativeMergeLabels[0], nativeMergeLabels[1])
+		return err
+	})
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -311,25 +307,29 @@ func nativeWorkspaceMerge(ctx context.Context, parentObjects, parent, base strin
 	// identical entries retain incoming permissions, ownership and raw bytes
 	// (including CRLF). Applying raw content is part of that transition, not
 	// a shortcut returning After in place of Git reconciliation.
-	defer func() { phases.record(ctx, "replay", start) }()
-	work = base
-	if err := apply[0](base); err != nil {
-		return err
-	}
-	if err := nativeWorkspaceCheckout(run, base, trees[0], parent); err != nil {
-		return err
-	}
-	if err := apply[1](base); err != nil {
-		return err
-	}
-	if err := nativeWorkspaceCheckout(run, base, trees[1], trees[0]); err != nil {
-		return err
-	}
-	return nativeWorkspaceCheckout(run, base, trees[0], merged)
+	return phase("replay", func() error {
+		work = base
+		if err := applyTo(0, base); err != nil {
+			return err
+		}
+		if err := nativeWorkspaceCheckout(run, base, trees[0], parent); err != nil {
+			return err
+		}
+		if err := applyTo(1, base); err != nil {
+			return err
+		}
+		if err := nativeWorkspaceCheckout(run, base, trees[1], trees[0]); err != nil {
+			return err
+		}
+		return nativeWorkspaceCheckout(run, base, trees[0], merged)
+	})
 }
 
 // validateNativeMergePaths rejects deltas the native merge does not emulate:
-// changed Git controls and empty added directories.
+// changed Git controls. Empty added directories need nothing: Git never sees
+// them, in the scratch stages or the legacy merge, and the replay applies them
+// with the raw deltas, through the legacy merge's checkout transitions, which
+// prune a directory only where they remove the last file beneath it.
 func validateNativeMergePaths(paths []*ChangesetPaths) error {
 	for _, changes := range paths {
 		for _, p := range commitStagePaths(changes) {
@@ -338,24 +338,6 @@ func validateNativeMergePaths(paths []*ChangesetPaths) error {
 				// Changing controls can restage otherwise unchanged baseline
 				// files in the legacy whole-worktree add. Do not emulate that.
 				return nativeCommitUnsupportedReason("merge-controls-change")
-			}
-		}
-		// An added directory must be an ancestor of some added file.
-		filled := map[string]bool{}
-		for _, p := range changes.Added {
-			if strings.HasSuffix(p, "/") {
-				continue
-			}
-			for dir := path.Dir(p); dir != "." && dir != "/"; dir = path.Dir(dir) {
-				if filled[dir+"/"] {
-					break // its ancestors were recorded with it
-				}
-				filled[dir+"/"] = true
-			}
-		}
-		for _, p := range changes.Added {
-			if strings.HasSuffix(p, "/") && !filled[p] {
-				return nativeCommitUnsupportedReason("empty-directory")
 			}
 		}
 	}

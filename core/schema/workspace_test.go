@@ -97,7 +97,7 @@ func testWorkspaceGitCheckoutReuse(t *testing.T, discard bool, order string) {
 	git := &gitSchema{}
 	wsSchema := &workspaceSchema{}
 	dagql.Fields[*core.GitRef]{
-		dagql.NodeFunc("tree", git.tree),
+		dagql.NodeFuncWithDynamicInputs("tree", git.tree, git.treeCacheKey),
 		dagql.NodeFunc("__fullCheckout", git.fullCheckout),
 	}.Install(srv)
 	dagql.Fields[*core.WorkspaceGit]{
@@ -220,17 +220,51 @@ func testWorkspaceGitCheckoutReuse(t *testing.T, discard bool, order string) {
 	// A default source tree is still shallow, not the full checkout.
 	var shallow dagql.ObjectResult[*core.Directory]
 	require.NoError(t, srv.Select(ctx, ref, &shallow, dagql.Selector{Field: "tree"}))
-	require.NotSame(t, tree.Self(), shallow.Self())
-	require.NoError(t, cache.Evaluate(ctx, shallow))
-	require.Equal(t, 1, backend.requests[len(backend.requests)-1].depth)
 	var tagged dagql.ObjectResult[*core.Directory]
 	require.NoError(t, srv.Select(ctx, ref, &tagged, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
 		{Name: "depth", Value: dagql.NewInt(0)},
 		{Name: "includeTags", Value: dagql.NewBoolean(true)},
 	}}))
+	if discard {
+		// Without .git, depth and tags shape nothing in the tree: every
+		// spelling is one call and one materialization.
+		require.Same(t, tree.Self(), shallow.Self())
+		require.Same(t, tree.Self(), tagged.Self())
+		var explicit dagql.ObjectResult[*core.Directory]
+		require.NoError(t, srv.Select(ctx, ref, &explicit, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
+			{Name: "depth", Value: dagql.NewInt(1)},
+			{Name: "includeTags", Value: dagql.NewBoolean(false)},
+		}}))
+		require.Same(t, tree.Self(), explicit.Self())
+		require.Equal(t, 1, discarded, "one checkout for every spelling")
+		return
+	}
+	require.NotSame(t, tree.Self(), shallow.Self())
+	require.NoError(t, cache.Evaluate(ctx, shallow))
+	require.Equal(t, 1, backend.requests[len(backend.requests)-1].depth)
+	var explicitShallow dagql.ObjectResult[*core.Directory]
+	require.NoError(t, srv.Select(ctx, ref, &explicitShallow, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+		{Name: "discardGitDir", Value: dagql.NewBoolean(false)},
+		{Name: "depth", Value: dagql.NewInt(1)},
+		{Name: "includeTags", Value: dagql.NewBoolean(false)},
+	}}))
+	require.Same(t, shallow.Self(), explicitShallow.Self(), "explicit defaults share the materialization")
 	require.NotSame(t, tree.Self(), tagged.Self())
 	require.NoError(t, cache.Evaluate(ctx, tagged))
 	require.True(t, backend.requests[len(backend.requests)-1].includeTags)
+	// Without .git, depth and tags shape nothing in the tree.
+	var discarded1, discarded2 dagql.ObjectResult[*core.Directory]
+	require.NoError(t, srv.Select(ctx, ref, &discarded1, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+		{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
+	}}))
+	require.NoError(t, srv.Select(ctx, ref, &discarded2, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+		{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
+		{Name: "depth", Value: dagql.NewInt(0)},
+		{Name: "includeTags", Value: dagql.NewBoolean(true)},
+	}}))
+	require.Same(t, discarded1.Self(), discarded2.Self())
+	require.NotSame(t, shallow.Self(), discarded1.Self())
 }
 
 func TestWorkspaceExportBaseCandidate(t *testing.T) {

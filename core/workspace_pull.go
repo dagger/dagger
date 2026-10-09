@@ -14,8 +14,11 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const MaxWorkspacePullCommits = 1000
@@ -90,6 +93,8 @@ type WorkspacePullPick struct {
 // leaves both input workspaces intact. Only source HEAD is fetched, not its
 // working tree or overlay. The result contains the integrated HEAD and the
 // receiver's remaining uncommitted changes, merged against that HEAD.
+//
+//nolint:gocyclo // plan and apply share one fold over the source's commits; splitting hides the order of its steps
 func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Directory], source *GitRef, dirty *Changeset, opts WorkspacePullOpts, apply bool) (*Directory, []WorkspacePullPick, error) {
 	if err := opts.Validate(); err != nil {
 		return nil, nil, err
@@ -106,32 +111,63 @@ func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Director
 		return nil, nil, err
 	}
 	var picks []WorkspacePullPick
-	dir, err := withGitMergeWorkspace(ctx, base, "Workspace pull commits", func(ws *gitMergeWorkspace) error {
+	dir, err := withGitMergeWorkspace(ctx, base, "Workspace pull commits", func(ws *gitMergeWorkspace) (rerr error) {
+		ctx, span := Tracer(ctx).Start(ctx, "git workspace pull", telemetry.Internal())
+		defer telemetry.EndWithCause(span, &rerr)
+		start := wcprof.NowNS()
 		err := source.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{source.Backend}, func(git *gitutil.GitCLI) error {
 			url, err := git.URL(ctx)
 			if err != nil {
 				return err
 			}
-			_, err = runWorkspacePullGit(ctx, ws.workDir, nil, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", url, source.Ref.SHA)
+			// The base checkout has a detached HEAD and no refs, and fetch
+			// negotiates only from refs unless told otherwise: without the tip,
+			// it would claim to have nothing and receive the whole history.
+			_, err = runWorkspacePullGit(ctx, ws.workDir, nil, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--negotiation-tip=HEAD", url, source.Ref.SHA)
 			return err
 		})
 		if err != nil {
 			return fmt.Errorf("fetch source commits: %w", err)
 		}
+		start = recordWorkspacePullPhase(ctx, span, "fetch", "", start)
 		base, err := runWorkspacePullGit(ctx, ws.workDir, nil, "rev-parse", "HEAD")
 		if err != nil {
 			return err
 		}
 		base = strings.TrimSpace(base)
-		if err := ws.applyContent(ctx, content); err != nil {
-			return err
-		}
-		dirtySHA, err := workspaceSnapshotCommit(ctx, ws.workDir, base)
-		if err != nil {
-			return err
-		}
-		if _, err := runWorkspacePullGit(ctx, ws.workDir, nil, "reset", "--hard", base); err != nil {
-			return err
+		// The base is a retained checkout, whose index carries no stat data
+		// (finishGitCheckout normalizes it with read-tree): every entry looks
+		// modified, so `add -A` below would re-hash every file (writing each
+		// existing object again, which freshens, and so copies up, the
+		// inherited packs) and each `reset --hard`/`read-tree -u` would
+		// rewrite every file of the tree into the new layer. Refreshing
+		// compares content instead (stat data cannot match), only reading.
+		refreshed := refreshWorkspacePullIndex(ctx, ws.workDir)
+		span.SetAttributes(attribute.Bool("dagger.git.pull.index_refreshed", refreshed))
+		start = recordWorkspacePullPhase(ctx, span, "refresh", "", start)
+		var dirtySHA string
+		if workspaceExportContentEmpty(content) {
+			// Nothing to carry over: the worktree is already the base tree,
+			// and so is its snapshot.
+			dirtySHA, err = workspaceSnapshotTreeCommit(ctx, ws.workDir, base+"^{tree}")
+			if err != nil {
+				return err
+			}
+			span.SetAttributes(attribute.Bool("dagger.git.pull.dirty", false))
+			start = recordWorkspacePullPhase(ctx, span, "dirty", "clean", start)
+		} else {
+			if err := ws.applyContent(ctx, content); err != nil {
+				return err
+			}
+			dirtySHA, err = workspaceSnapshotCommit(ctx, ws.workDir, base)
+			if err != nil {
+				return err
+			}
+			if _, err := runWorkspacePullGit(ctx, ws.workDir, nil, "reset", "--hard", base); err != nil {
+				return err
+			}
+			span.SetAttributes(attribute.Bool("dagger.git.pull.dirty", true))
+			start = recordWorkspacePullPhase(ctx, span, "dirty", "snapshot", start)
 		}
 		// File contents are merged after folding committed history. Identical
 		// pre-existing dirt can thus be incorporated into incoming commits.
@@ -147,6 +183,8 @@ func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Director
 		if err != nil {
 			return err
 		}
+		start = recordWorkspacePullPhase(ctx, span, "fold", "", start)
+		defer func() { recordWorkspacePullPhase(ctx, span, "merge", "", start) }()
 		merged, mergeErr := runWorkspacePullGit(ctx, ws.workDir, nil, "merge-tree", "--write-tree", "--merge-base="+base, "HEAD", dirtySHA)
 		if mergeErr != nil {
 			mergeErr = fmt.Errorf("merge uncommitted changes: %w\n%s", mergeErr, strings.TrimSpace(merged))
@@ -201,6 +239,31 @@ func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Director
 		return normalizeGitDirAfterCommit(ctx, ws.workDir)
 	})
 	return dir, picks, err
+}
+
+// refreshWorkspacePullIndex records the worktree's stat data in the index of
+// the scratch checkout at dir, comparing each file's content with its blob
+// where the stat data does not match (a retained checkout's index has none).
+// It writes no objects and no worktree file. Failing to refresh only loses the
+// shortcut: later commands then re-hash and rewrite what they must. Reports
+// whether the refresh succeeded.
+func refreshWorkspacePullIndex(ctx context.Context, dir string) bool {
+	_, err := runWorkspacePullGit(ctx, dir, nil, "update-index", "-q", "--unmerged", "--refresh")
+	return err == nil
+}
+
+// recordWorkspacePullPhase records a phase of a pull that ran from start
+// until now, as dagger.git.pull.<phase>_ms on span and a wcprof io op
+// "git.pull.<phase>[<detail>]", and returns now: the next phase's start.
+func recordWorkspacePullPhase(ctx context.Context, span trace.Span, phase, detail string, start int64) int64 {
+	end := wcprof.NowNS()
+	span.SetAttributes(attribute.Int64("dagger.git.pull."+phase+"_ms", (end-start)/int64(time.Millisecond)))
+	class := "git.pull." + phase
+	if detail != "" {
+		class += "[" + detail + "]"
+	}
+	wcprof.RecordOp(ctx, wcprof.OpKindIO, class, wcprof.OpOpts{}, start, end, wcprof.OutcomeOK)
+	return end
 }
 
 func pullGitList(ctx context.Context, dir string, limit int, revisions ...string) ([]string, error) {

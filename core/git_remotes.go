@@ -332,7 +332,13 @@ func containsWithFullHistory(ctx context.Context, refs []*GitRef) (bool, error) 
 			if err != nil {
 				return err
 			}
-			_, err = git.Run(ctx, "fetch", "--no-tags", "--unshallow", url, ref.Ref.SHA)
+			// The joined repository has no refs (see refJoin): negotiate from
+			// the commits it holds, or the fetch receives everything again.
+			args := []string{"fetch", "--no-tags", "--unshallow"}
+			for _, sha := range shas {
+				args = append(args, "--negotiation-tip="+sha)
+			}
+			_, err = git.Run(ctx, append(args, url, ref.Ref.SHA)...)
 			return err
 		})
 		if err != nil {

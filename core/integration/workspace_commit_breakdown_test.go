@@ -148,12 +148,12 @@ func (WorkspaceSuite) TestWorkspaceCommitMergeBreakdown(ctx context.Context, t *
 			}
 		case s.walk != "":
 			t.Logf("BREAKDOWN walk=%s span=%q dur=%s in_merge=%t %s ancestors=%q", s.walk, s.name, s.dur, inMerge(s), strings.Join(s.attrs, " "), ancestors(s))
-			// Two unrelated snapshots of one tree (two checkouts of the
-			// commit) have no layers to go by; that is the inputs' shape, not
-			// the merge's doing. Snapshots of one lineage must not be walked
-			// in full.
-			unrelated := slices.ContainsFunc(s.attrs, func(attr string) bool { return strings.Contains(attr, "share no layers") })
-			if s.walk == "trees" && inMerge(s) && !unrelated {
+			// Every tree here is one lineage: the commit's tree, however a
+			// caller spells GitRef.tree's arguments, is one snapshot
+			// (treeCacheKey), and every edit is a layer above it. No
+			// changeset may walk both whole trees.
+			changeset := s.name == "compare changeset trees" || inMerge(s)
+			if s.walk == "trees" && changeset {
 				wholeTree = append(wholeTree, fmt.Sprintf("%s %s %q", s.name, strings.Join(s.attrs, " "), ancestors(s)))
 			}
 		}

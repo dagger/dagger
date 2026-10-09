@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,18 +53,16 @@ func (p *mergePhases) run(ctx context.Context, phase string, fn func(context.Con
 	return err
 }
 
-// record records phase as having run from start until now, and returns now:
-// the next phase's start.
-func (p *mergePhases) record(ctx context.Context, phase string, start phaseMark) phaseMark {
-	end := phaseNow()
+// record records phase as having run from start until now.
+func (p *mergePhases) record(ctx context.Context, phase string, start phaseMark) {
 	if p == nil {
-		return end
+		return
 	}
+	end := phaseNow()
 	if start.ns != 0 && end.ns != 0 {
 		wcprof.RecordOp(ctx, wcprof.OpKindIO, p.prefix+"."+phase, wcprof.OpOpts{}, start.ns, end.ns, wcprof.OutcomeOK)
 	}
 	p.add(phase, end.wall.Sub(start.wall))
-	return end
 }
 
 func (p *mergePhases) add(phase string, d time.Duration) {
@@ -70,4 +70,30 @@ func (p *mergePhases) add(phase string, d time.Duration) {
 	defer p.mu.Unlock()
 	p.ms[phase] += d.Milliseconds()
 	p.span.SetAttributes(attribute.Int64("dagger."+p.prefix+"."+phase+"_ms", p.ms[phase]))
+}
+
+// recordFallbackMarker records a zero-length wcprof io op
+// "<class>[<reason>]", so a profile counts fallbacks by reason without the
+// span's attributes. A reason code (nativeCommitUnsupportedReason) is used
+// as is; any other error is bucketed by its text up to the first colon, cut
+// short, to keep the classes few.
+func recordFallbackMarker(ctx context.Context, class string, err error) {
+	now := wcprof.NowNS()
+	if now == 0 || err == nil {
+		return
+	}
+	wcprof.RecordOp(ctx, wcprof.OpKindIO, class+"["+fallbackMarkerReason(err)+"]", wcprof.OpOpts{}, now, now, wcprof.OutcomeOK)
+}
+
+func fallbackMarkerReason(err error) string {
+	var reason nativeCommitUnsupportedReason
+	if errors.As(err, &reason) {
+		return string(reason)
+	}
+	msg, _, _ := strings.Cut(err.Error(), ":")
+	const maxLen = 48
+	if len(msg) > maxLen {
+		msg = strings.ToValidUTF8(msg[:maxLen], "") + "…"
+	}
+	return "error: " + msg
 }

@@ -23,42 +23,60 @@ import (
 )
 
 func (ref *LocalGitRef) incrementalCheckoutEligible() bool {
+	return ref.incrementalCheckoutIneligible() == ""
+}
+
+// incrementalCheckoutIneligible names why the commit has no usable checkout
+// base, or returns "" when incrementalTree may be tried.
+func (ref *LocalGitRef) incrementalCheckoutIneligible() string {
 	base := ref.repo.CheckoutBase
-	if base == nil || ref.Ref == nil || ref.SHA != base.CommitSHA || len(ref.SHA) != 40 || !IsFullGitSHA(ref.SHA) {
-		return false
+	switch {
+	case base == nil:
+		return "no-checkout-base"
+	case ref.Ref == nil || ref.SHA != base.CommitSHA:
+		return "not-checkout-base-commit"
+	case len(ref.SHA) != 40 || !IsFullGitSHA(ref.SHA):
+		return "commit-format"
 	}
 	parent := base.Parent.Self()
 	if parent == nil || parent.Ref == nil || len(parent.Ref.SHA) != 40 || !IsFullGitSHA(parent.Ref.SHA) {
-		return false
+		return "parent-format"
 	}
-	_, local := parent.Backend.(*LocalGitRef)
-	if local {
-		return true
+	switch parent.Backend.(type) {
+	case *LocalGitRef:
+		return ""
+	case *RemoteGitRef:
+		if base.Tree.Self() == nil {
+			return "remote-parent-without-tree"
+		}
+		return ""
+	default:
+		return "parent-backend"
 	}
-	_, remote := parent.Backend.(*RemoteGitRef)
-	return remote && base.Tree.Self() != nil
 }
 
 // incrementalTree applies only the commit's delta to a COW child of the parent
 // tree. False means the caller must use the full checkout: unsupported inputs,
 // a cold parent it may not materialize (see incrementalParentTree), a snapshot
 // chain that is already too deep, an unusable parent tree, or any other failure
-// (see nativeFallback). Only the caller's cancellation surfaces.
-func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) (_ *Directory, supported bool, rerr error) {
+// (see nativeFallback); reason then names the cause. Only the caller's
+// cancellation surfaces.
+func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) (_ *Directory, supported bool, reason string, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "materialize incremental git checkout", telemetry.Internal())
 	defer func() {
 		if nativeFallback(ctx, span, "dagger.git.checkout.incremental.fallback", rerr) {
+			reason = gitTreeFallbackCode(rerr)
 			supported, rerr = false, nil
 		}
 		span.SetAttributes(attribute.Bool("dagger.git.checkout.incremental.supported", supported))
 		telemetry.EndWithCause(span, &rerr)
 	}()
 	if err := ref.repo.CheckoutBase.validateTree(ctx); err != nil {
-		return nil, false, err
+		return nil, false, "", err
 	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, false, "", err
 	}
 	var result *Directory
 	err = ref.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) (rerr error) {
@@ -67,7 +85,8 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		}
 		// These gates run before selecting/evaluating the parent tree. Unsupported
 		// controls must re-checkout every file, including otherwise unchanged blobs.
-		plan, reason, err := planIncrementalGitCheckout(ctx, source, ref.repo.CheckoutBase.Parent.Self().Ref.SHA, ref.SHA, ref.repo.HistorySource.Self() != nil)
+		var plan *incrementalGitCheckoutPlan
+		plan, reason, err = planIncrementalGitCheckout(ctx, source, ref.repo.CheckoutBase.Parent.Self().Ref.SHA, ref.SHA, ref.repo.HistorySource.Self() != nil)
 		if err != nil {
 			return err
 		}
@@ -84,16 +103,27 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 				return err
 			}
 		}
+		// The detail of a supported checkout: whether its parent tree was
+		// already materialized or had to be evaluated first.
+		cold := dagql.HasPendingLazyComputation(parent)
 		snapshot, parentPath, ok, err := incrementalParentTree(ctx, parent)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			span.SetAttributes(attribute.String("dagger.git.checkout.incremental.fallback", "cold-parent"))
+			reason = "cold-parent"
+			span.SetAttributes(attribute.String("dagger.git.checkout.incremental.fallback", reason))
 			return nil
 		}
+		reason = "parent-tree"
+		if cold {
+			reason = "cold-parent-tree"
+		}
 		supported = true
-		span.SetAttributes(attribute.Int("dagger.git.checkout.incremental.changed_paths", len(plan.changed)))
+		span.SetAttributes(
+			attribute.Int("dagger.git.checkout.incremental.changed_paths", len(plan.changed)),
+			attribute.String("dagger.git.checkout.incremental.base", reason),
+		)
 		child, err := query.SnapshotManager().New(ctx, snapshot, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription("incremental git source checkout"))
 		if err != nil {
 			return err
@@ -133,9 +163,9 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		if result != nil {
 			err = errors.Join(err, result.OnRelease(context.WithoutCancel(ctx)))
 		}
-		return nil, supported, err
+		return nil, supported, reason, err
 	}
-	return result, supported, nil
+	return result, supported, reason, nil
 }
 
 // incrementalColdParentKey marks a context that is materializing a cold parent
@@ -194,30 +224,24 @@ func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, par
 	if len(parent) != 40 || len(child) != 40 || !IsFullGitSHA(parent) || !IsFullGitSHA(child) {
 		return nil, "commit-format", nil
 	}
-	if _, err := nativeCommitGitDirWithShallow(ctx, source.Dir(), ownedShallow); err != nil {
+	gitDir, err := nativeCommitGitDirWithShallow(ctx, source.Dir(), ownedShallow)
+	if err != nil {
 		if nativeCommitFallback(err) {
 			return nil, "repository-layout", nil
 		}
 		return nil, "", err
 	}
-	// Do not trust annotation alone, nor accept merges: the retained recipe
-	// must be this commit's single actual parent in the current object database.
+	// Do not trust annotation alone: the retained recipe must be an actual
+	// ancestor of this commit in the current object database (see
+	// incrementalCheckoutAncestor). The tree delta itself holds for any pair
+	// of commits; ancestry keeps it to the history the annotation describes.
 	source = source.New(gitutil.WithArgs("--no-replace-objects"))
-	// Read the raw object, not revision traversal: info/grafts rewrites parents
-	// even when replace refs are disabled. Only top-level commit headers count.
-	commit, err := source.Run(ctx, "cat-file", "commit", child)
+	ancestor, err := incrementalCheckoutAncestor(ctx, source, gitDir, parent, child)
 	if err != nil {
 		return nil, "", err
 	}
-	headers, _, _ := strings.Cut(string(commit), "\n\n")
-	var parents []string
-	for _, line := range strings.Split(headers, "\n") {
-		if sha, ok := strings.CutPrefix(line, "parent "); ok {
-			parents = append(parents, sha)
-		}
-	}
-	if len(parents) != 1 || parents[0] != parent {
-		return nil, "parent-mismatch", nil
+	if !ancestor {
+		return nil, "not-ancestor", nil
 	}
 	// Only the delta is inspected, never either full tree. A full checkout's
 	// submodule step depends only on the gitlinks and .gitmodules, so when the
@@ -229,6 +253,49 @@ func planIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, par
 		return nil, "", err
 	}
 	return parseIncrementalGitCheckoutPlan(changes)
+}
+
+// incrementalCheckoutAncestor reports whether base is child itself or one of
+// its ancestors by the parents recorded in the commit objects. Replace refs
+// are disabled by the caller, and revision traversal in the source would also
+// honor info/grafts, which rewrite parents even then. The common case, a base
+// that is the child's sole parent (GitRef.withCommit), reads the child's raw
+// headers. Otherwise (several commits pulled on top of the base, or a
+// fast-forward through merges), the walk runs in a private view of the
+// object database: no refs, replace refs or grafts, only the exact shallow
+// boundary of owned storage, so a base beyond it is simply not an ancestor.
+func incrementalCheckoutAncestor(ctx context.Context, source *gitutil.GitCLI, gitDir, base, child string) (bool, error) {
+	commit, err := source.Run(ctx, "cat-file", "commit", child)
+	if err != nil {
+		return false, err
+	}
+	if base == child {
+		return true, nil
+	}
+	// Only top-level commit headers count.
+	headers, _, _ := strings.Cut(string(commit), "\n\n")
+	var parents []string
+	for _, line := range strings.Split(headers, "\n") {
+		if sha, ok := strings.CutPrefix(line, "parent "); ok {
+			parents = append(parents, sha)
+		}
+	}
+	if len(parents) == 1 && parents[0] == base {
+		return true, nil
+	}
+	if len(parents) == 0 {
+		return false, nil
+	}
+	ancestor := false
+	err = withGitObjectView(ctx, []string{filepath.Join(gitDir, "objects")}, "sha1", func(view *gitutil.GitCLI) error {
+		if err := copyGitShallowBoundary(gitDir, view.Dir()); err != nil {
+			return err
+		}
+		var err error
+		ancestor, err = gitIsAncestor(ctx, view.New(gitutil.WithArgs("--no-replace-objects")), base, child)
+		return err
+	})
+	return ancestor, err
 }
 
 // parseIncrementalGitCheckoutPlan reads `diff-tree --raw -z` output:

@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // WorkspaceExportBaseAvailable is a non-evaluating eligibility check. A local
@@ -191,6 +192,10 @@ func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Direct
 		if err != nil {
 			return err
 		}
+		// The destination is a retained checkout, whose index has no stat
+		// data: refresh it so that resets and `add -A` rewrite and re-hash
+		// only what changed (see WorkspacePullCommits).
+		trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("dagger.git.export.index_refreshed", refreshWorkspacePullIndex(ctx, ws.workDir)))
 		worktreeHead := base
 		snapshot := func(ctx context.Context, name string, ref *GitRef, changes *Changeset) (_ string, rerr error) {
 			ctx, span := Tracer(ctx).Start(ctx, "construct "+name+" snapshot")
@@ -203,7 +208,10 @@ func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Direct
 					if err != nil {
 						return err
 					}
-					_, err = runWorkspacePullGit(ctx, ws.workDir, nil, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", url, head)
+					// Negotiate from HEAD: the checkout has no refs (see
+					// WorkspacePullCommits), so fetch would otherwise receive
+					// the whole history.
+					_, err = runWorkspacePullGit(ctx, ws.workDir, nil, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--negotiation-tip=HEAD", url, head)
 					return err
 				}); err != nil {
 					return "", err

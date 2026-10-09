@@ -54,6 +54,9 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return inst, err
 	}
+	if err := requireWorkspaceResetReachable(ctx, srv, base, sha); err != nil {
+		return inst, fmt.Errorf("commit %s is not in this workspace's repository: %w", args.Commit, err)
+	}
 	var dir dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, base, &dir,
 		dagql.Selector{Field: "asGit"},
@@ -128,6 +131,35 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 		inst = overlaid
 	}
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, frozen.Self(), frozen.Self().SelectedEnv())
+}
+
+// requireWorkspaceResetReachable rejects a target the frozen checkout's HEAD
+// does not reach. A retained checkout may hold more objects than its history:
+// a copy-on-write checkout shares its repository's object database, orphaned
+// commits included (see core.cowGitCheckout). Reset semantics are defined by
+// history, not by which objects happen to be stored, so a reverted commit
+// stays unreachable however the checkout was built. Every tag a checkout
+// carries is reachable from HEAD too, so HEAD alone decides.
+func requireWorkspaceResetReachable(ctx context.Context, srv *dagql.Server, checkout dagql.ObjectResult[*core.Directory], sha string) error {
+	var repo dagql.ObjectResult[*core.GitRepository]
+	if err := srv.Select(ctx, checkout, &repo, dagql.Selector{Field: "asGit"}); err != nil {
+		return err
+	}
+	var head, target dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, repo, &head, dagql.Selector{Field: "head"}); err != nil {
+		return err
+	}
+	if err := srv.Select(ctx, repo, &target, dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.NewString(sha)}}}); err != nil {
+		return err
+	}
+	reachable, err := head.Self().Contains(ctx, target.Self())
+	if err != nil {
+		return err
+	}
+	if !reachable {
+		return fmt.Errorf("not reachable from HEAD %s", head.Self().Ref.SHA)
+	}
+	return nil
 }
 
 // resolveWorkspaceResetTarget resolves a reset target (a commit hash or

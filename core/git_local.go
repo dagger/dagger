@@ -63,7 +63,8 @@ func (repo *LocalGitRepository) validateUpstream() error {
 	return nil
 }
 
-// GitCheckoutBase retains the exact canonical parent recipe of a checked commit.
+// GitCheckoutBase retains the exact canonical recipe of a checked commit's
+// parent (GitRef.withCommit) or, for a pull, of an ancestor it was built on.
 // It is a DAG dependency, never a mounted path or a dirty worktree baseline.
 type GitCheckoutBase struct {
 	Parent    dagql.ObjectResult[*GitRef]
@@ -329,25 +330,7 @@ func (repo *LocalGitRepository) cleanedInto(ctx context.Context, dst *Directory)
 			return err
 		}
 		return withTemporaryGitIndex(idx, tmp, func(indexPath string) error {
-			git = git.New(gitutil.WithIndexFile(indexPath))
-
-			// reset index to HEAD
-			// NOTE: we cannot use "git reset --hard" because it writes every file,
-			// which *kills* performance on overlayfs
-			_, err = git.Run(ctx, "restore", "--staged", ".")
-			if err != nil {
-				return err
-			}
-			_, err = git.Run(ctx, "restore", ".")
-			if err != nil {
-				return err
-			}
-			_, err = git.Run(ctx, "clean", "-fd")
-			if err != nil {
-				return err
-			}
-
-			return nil
+			return cleanGitWorktree(ctx, git.New(gitutil.WithIndexFile(indexPath)))
 		})
 	})
 	if err != nil {
@@ -366,6 +349,31 @@ func (repo *LocalGitRepository) cleanedInto(ctx context.Context, dst *Directory)
 	dst.Services = slices.Clone(repo.Directory.Self().Services)
 	dst.SetSnapshot(snap)
 	return false, nil
+}
+
+// cleanGitWorktree resets git's index (a private copy: see cleanedInto) and
+// worktree to HEAD and removes untracked files, keeping ignored ones.
+func cleanGitWorktree(ctx context.Context, git *gitutil.GitCLI) error {
+	// reset index to HEAD
+	// NOTE: we cannot use "git reset --hard" because it writes every file,
+	// which *kills* performance on overlayfs
+	if _, err := git.Run(ctx, "restore", "--staged", "."); err != nil {
+		return err
+	}
+	// Retained checkouts store an index without stat data
+	// (finishGitCheckout and commits normalize it with read-tree), so restore
+	// would find every entry changed and rewrite the whole worktree: seconds
+	// on a large tree, and a copy of every file in the new layer. Refresh it
+	// first. With no stat data to match, refresh compares every file's
+	// content with its blob, so only files that really differ are restored.
+	// Failing to refresh only loses the shortcut: restore rewrites what it
+	// must.
+	_, _ = git.New(gitutil.WithIgnoreError()).Run(ctx, "update-index", "-q", "--unmerged", "--refresh")
+	if _, err := git.Run(ctx, "restore", "."); err != nil {
+		return err
+	}
+	_, err := git.Run(ctx, "clean", "-fd")
+	return err
 }
 
 // withTemporaryGitIndex owns the newly created index until the Git commands finish.
@@ -508,8 +516,30 @@ func resolveGitConfigRemote(ctx context.Context, git *gitutil.GitCLI, remote Git
 }
 
 func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (_ *Directory, rerr error) {
-	if discardGitDir && ref.incrementalCheckoutEligible() {
-		dir, supported, err := ref.incrementalTree(ctx, srv)
+	if discardGitDir {
+		var finish func(path, detail string, skipped []string, err error)
+		ctx, finish = startGitSourceTree(ctx)
+		path, detail, skipped := "full", "", []string(nil)
+		defer func() { finish(path, detail, skipped, rerr) }()
+		if reason := ref.incrementalCheckoutIneligible(); reason != "" {
+			skipped = append(skipped, "incremental="+reason)
+		} else {
+			dir, supported, reason, err := ref.incrementalTree(ctx, srv)
+			if err != nil || supported {
+				path, detail = "incremental", "base="+reason
+				return dir, err
+			}
+			skipped = append(skipped, "incremental="+reason)
+		}
+		dir, supported, reason, err := ref.contentsCheckoutTree(ctx, srv)
+		if err != nil || supported {
+			path, detail = "checkout", reason
+			return dir, err
+		}
+		skipped = append(skipped, "checkout="+reason)
+	}
+	if !discardGitDir && depth <= 0 {
+		dir, supported, err := ref.cowTree(ctx, srv, remotes, upstreamRemote)
 		if err != nil || supported {
 			return dir, err
 		}
@@ -547,26 +577,9 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return fmt.Errorf("could not find git url: %w", err)
 		}
 
-		// The checkout is rebuilt from scratch, which would drop the source
-		// repository's remotes. Carry its remote configuration over -- with
-		// any remotes registered on the repository object overlaid -- so
-		// remote-aware tooling (gh, git fetch) keeps resolving the repository
-		// from the result; the checkout itself still fetches from the local
-		// mount.
-		configRemotes, err := readGitConfigRemotes(ctx, git)
+		checkoutRemotes, upstream, err := localCheckoutRemotes(ctx, git, ref.Ref.Name, remotes, upstreamRemote)
 		if err != nil {
-			return fmt.Errorf("could not read remotes: %w", err)
-		}
-		checkoutRemotes := MergeGitRemotes(configRemotes, remotes)
-		var upstream string
-		if upstreamRemote != nil {
-			checkoutRemotes = MergeGitRemotes(nil, remotes)
-			upstream = *upstreamRemote
-		} else {
-			upstream, err = gitBranchUpstream(ctx, git, ref.Ref.Name)
-			if err != nil {
-				return err
-			}
+			return err
 		}
 
 		return MountRef(ctx, bkref, func(checkoutDir string, _ *mount.Mount) error {
@@ -607,6 +620,27 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 	return dir, nil
 }
 
+// localCheckoutRemotes selects the remote configuration a retained checkout
+// of the named ref carries. The checkout is rebuilt rather than copied, which
+// would drop the source repository's remotes. Carry its remote configuration
+// over -- with any remotes registered on the repository object overlaid -- so
+// remote-aware tooling (gh, git fetch) keeps resolving the repository from the
+// result; the checkout itself never fetches from those remotes.
+func localCheckoutRemotes(ctx context.Context, git *gitutil.GitCLI, name string, remotes []GitRemote, upstreamRemote *string) ([]GitRemote, string, error) {
+	if upstreamRemote != nil {
+		return MergeGitRemotes(nil, remotes), *upstreamRemote, nil
+	}
+	configRemotes, err := readGitConfigRemotes(ctx, git)
+	if err != nil {
+		return nil, "", fmt.Errorf("could not read remotes: %w", err)
+	}
+	upstream, err := gitBranchUpstream(ctx, git, name)
+	if err != nil {
+		return nil, "", err
+	}
+	return MergeGitRemotes(configRemotes, remotes), upstream, nil
+}
+
 // doLocalGitTreeCheckout borrows the mounted source's objects while creating a
 // tree without .git. No history is copied or fetched: depth and tag selection
 // cannot affect the resulting worktree. The source must remain mounted until
@@ -617,7 +651,7 @@ func doLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCL
 	if err := initLocalGitTreeCheckout(ctx, source, checkout); err != nil {
 		return err
 	}
-	return finishGitCheckout(ctx, checkout, remotes, cloneURL, ref, true, "")
+	return finishGitCheckout(ctx, checkout, remotes, cloneURL, ref, true, "", gitCheckoutFresh)
 }
 
 func initLocalGitTreeCheckout(ctx context.Context, source, checkout *gitutil.GitCLI) error {

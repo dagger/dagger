@@ -3,7 +3,10 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
+	"sync"
+	"time"
 
 	"dagger.io/dagger/core"
 
@@ -12,6 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 type workspacePullPlanEntry struct {
@@ -124,6 +128,310 @@ func (WorkspaceSuite) TestWorkspacePullFastForward(ctx context.Context, t *testc
 	name, err := next.Git().Head().TargetCommit().AuthorName(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "Dagger", name)
+}
+
+// A pulled HEAD is several commits ahead of the receiver's HEAD, whether the
+// pull fast-forwards or cherry-picks. Its source-only tree must still be a
+// delta on the receiver's canonical tree, identical to a full checkout.
+func (WorkspaceSuite) TestWorkspacePullIncrementalCheckout(ctx context.Context, t *testctx.T) {
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture, inspector := gitIncrementalCheckoutFixture(c)
+	commit := func(ws *core.Workspace, message string) *core.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), message, workspaceCommitDate)
+	}
+	base := snapshotWorkspace(ctx, t, c, fixture.AsGit().Head().AsWorkspace())
+	source := commit(base.WithNewFile("selected.txt", "source\n"), "source one")
+	source = commit(source.WithNewFile("added/deep.txt", "added\n").WithoutFile("delete.txt"), "source two")
+	source = snapshotWorkspace(ctx, t, c, source)
+	for name, receiver := range map[string]*core.Workspace{
+		"fast-forward": base,
+		"cherry-pick":  snapshotWorkspace(ctx, t, c, commit(base.WithNewFile("local.txt", "local\n"), "local")),
+	} {
+		// The receiver's canonical tree is warm, as it is in a live session.
+		workspaceCommitManifest(ctx, t, inspector, receiver.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true}))
+		pulled, err := applyWorkspacePull(ctx, c, receiver, source, nil, 100)
+		require.NoError(t, err, name)
+		head := pulled.Git().Head()
+		tree := head.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
+		require.Equal(t, workspaceCommitManifest(ctx, t, inspector, gitFullCheckoutOracle(head)), workspaceCommitManifest(ctx, t, inspector, tree), name)
+		requireGitCheckoutTimes(ctx, t, inspector, tree)
+	}
+	require.NoError(t, c.Close()) // Drain finished spans.
+
+	traces, _ := sink.capture()
+	pulls := map[string]bool{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if span.Name != "materialize incremental git checkout" || span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					var supported bool
+					var changed int64
+					var fallback string
+					for _, attr := range span.Attributes {
+						switch attr.Key {
+						case "dagger.git.checkout.incremental.supported":
+							supported = attr.Value.GetBoolValue()
+						case "dagger.git.checkout.incremental.changed_paths":
+							changed = attr.Value.GetIntValue()
+						case "dagger.git.checkout.incremental.fallback":
+							fallback = attr.Value.GetStringValue()
+						}
+					}
+					t.Logf("incremental checkout supported=%t changed_paths=%d fallback=%q", supported, changed, fallback)
+					// Single-commit deltas are withCommit's; the pulled
+					// HEADs are three paths away from their receivers.
+					if supported && changed == 3 {
+						pulls[string(span.TraceId)+string(span.SpanId)] = true
+					}
+				}
+			}
+		}
+	}
+	require.Len(t, pulls, 2, "each pulled HEAD must check out as a delta on its receiver")
+}
+
+// An agent session replayed on a cold engine: a remote-backed workspace, a
+// few commits, a cherry-picking and a fast-forwarding pull from another
+// workspace, and the uncommitted changes of each, which compare HEAD's
+// source-only tree. Live, and replayed from recipes after pruning the cache,
+// every local HEAD's tree must be a delta: freezing a receiver for a commit
+// or a pull already materializes its HEAD's tree, so a parent is never cold.
+func (WorkspaceSuite) TestWorkspacePullColdTrees(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	content := core.NewQuery(c).Directory().
+		WithNewFile(".gitattributes", "*.txt text eol=lf\n").
+		WithNewFile("base.txt", "base\n").
+		WithNewFile("dir/keep.txt", "keep\n")
+	// A replay on a cold engine rebuilds this repository and fetches pinned
+	// commits by SHA, as from a hosted remote: keep the commit reproducible
+	// and allow SHA wants, which git daemon refuses by default.
+	service := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		WithEnvVariable("GIT_AUTHOR_DATE", workspaceCommitDate).
+		WithEnvVariable("GIT_COMMITTER_DATE", workspaceCommitDate).
+		WithDirectory("/root/repo", content).
+		WithExec([]string{"sh", "-ec", `
+cd /root/repo
+git init -q -b main
+git -c user.name=Test -c user.email=test@localhost add -A
+git -c user.name=Test -c user.email=test@localhost commit -q -m init
+mkdir /root/srv
+git clone -q --no-local --bare /root/repo /root/srv/repo.git
+git -C /root/srv/repo.git config uploadpack.allowAnySHA1InWant true
+`}).
+		WithExposedPort(9418).
+		WithDefaultArgs([]string{"sh", "-c", "git daemon --verbose --export-all --base-path=/root/srv"}).
+		AsService()
+	host, err := service.Hostname(ctx)
+	require.NoError(t, err)
+	url := fmt.Sprintf("git://%s/repo.git", host)
+	base := snapshotWorkspace(ctx, t, c, core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace())
+	commit := func(ws *core.Workspace, message string) *core.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted(), message, workspaceCommitDate)
+	}
+	agent := base
+	for i := range 3 {
+		agent = commit(agent.WithNewFile(fmt.Sprintf("agent/%d.txt", i), fmt.Sprintf("agent %d\n", i)), fmt.Sprintf("agent %d", i))
+	}
+	agent = snapshotWorkspace(ctx, t, c, agent.WithNewFile("pending.txt", "work in progress\n"))
+	source := base
+	for i := range 2 {
+		source = commit(source.WithNewFile(fmt.Sprintf("worker/%d.txt", i), fmt.Sprintf("worker %d\n", i)).WithoutFile("dir/keep.txt"), fmt.Sprintf("worker %d", i))
+	}
+	source = snapshotWorkspace(ctx, t, c, source)
+	picked, err := applyWorkspacePull(ctx, c, agent, source, nil, 100)
+	require.NoError(t, err)
+	// Commit only the new file: the pulled-in pending edit stays pending.
+	picked = picked.WithNewFile("after-pick.txt", "picked\n")
+	picked = snapshotWorkspace(ctx, t, c, picked.WithCommit(picked.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Exclude: []string{"pending.txt"}}), "after pick", workspaceCommitDate))
+	forwarded, err := applyWorkspacePull(ctx, c, base, source, nil, 100)
+	require.NoError(t, err)
+	forwarded = snapshotWorkspace(ctx, t, c, commit(forwarded.WithNewFile("after-ff.txt", "forwarded\n"), "after fast-forward"))
+	requirePending := func(name string, ws *core.Workspace) {
+		pending, err := ws.Git().Uncommitted().AddedPaths(ctx)
+		require.NoError(t, err, name)
+		if name == "cherry-pick" {
+			require.Equal(t, []string{"pending.txt"}, pending)
+		} else {
+			require.Empty(t, pending, name)
+		}
+	}
+	ids := map[string]core.ID{}
+	for name, ws := range map[string]*core.Workspace{"cherry-pick": picked, "fast-forward": forwarded} {
+		requirePending(name, ws)
+		// A replayable recipe, as a resumed session's trace records it.
+		ids[name], err = sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(ws))
+		require.NoError(t, err)
+	}
+	require.NoError(t, c.Close()) // Drain finished spans.
+	live := gitSourceTreePaths(t, sink)
+	require.NotEmpty(t, live["incremental"])
+	require.Empty(t, live["full"], "local HEADs must not need a full source checkout")
+
+	// Replay both recipes on an engine that has forgotten everything, like a
+	// resumed session: concurrently, as restored agents are.
+	replay := func() map[string]map[string]bool {
+		pruner := connect(ctx, t)
+		require.NoError(t, core.NewQuery(pruner).Engine().LocalCache().Prune(ctx))
+		require.NoError(t, pruner.Close())
+		cold, coldSink := connectWithTrace(ctx, t)
+		var eg errgroup.Group
+		replayedPending := make(map[string][]string, len(ids))
+		var mu sync.Mutex
+		for name, id := range ids {
+			eg.Go(func() error {
+				pending, err := core.Ref[*core.LLM](core.NewQuery(cold), id).Workspace().Git().Uncommitted().AddedPaths(ctx)
+				mu.Lock()
+				replayedPending[name] = pending
+				mu.Unlock()
+				return err
+			})
+		}
+		require.NoError(t, eg.Wait())
+		require.Equal(t, []string{"pending.txt"}, replayedPending["cherry-pick"])
+		require.Empty(t, replayedPending["fast-forward"])
+		require.NoError(t, cold.Close())
+		replayed := gitSourceTreePaths(t, coldSink)
+		require.Empty(t, replayed["full"], "replayed local HEADs must not need a full source checkout")
+		return replayed
+	}
+	// Close returns once a session's telemetry is flushed, but the engine
+	// releases its cached results afterwards, asynchronously. A prune that
+	// runs first keeps them as live, and the replay is served warm,
+	// materializing no trees at all. Prune and replay again until it runs cold.
+	deadline := time.Now().Add(2 * time.Minute)
+	for attempt := 1; ; attempt++ {
+		replayed := replay()
+		if len(replayed["incremental"]) > 0 {
+			break
+		}
+		require.True(t, time.Now().Before(deadline), "replayed local HEADs must build their trees incrementally; got %v", replayed)
+		t.Logf("replay %d built no incremental source trees (%v); its cache was not cold yet, retrying", attempt, replayed)
+		time.Sleep(time.Second)
+	}
+}
+
+// Sessions recorded before checkout bases were retained replay repositories
+// opened with GitRepository.withContents over a retained checkout, over its
+// .git, or over a pull's scratch repository. Their source-only trees must come
+// from those checkouts, not from another full checkout, and match the trees
+// of the same commits built incrementally.
+func (WorkspaceSuite) TestWorkspaceRetainedCheckoutTrees(ctx context.Context, t *testctx.T) {
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
+	fixture, inspector := gitIncrementalCheckoutFixture(c)
+	repo := fixture.AsGit()
+	discard := core.GitRefTreeOpts{DiscardGitDir: true}
+	before := repo.Head().Tree(discard)
+	head := repo.Head().WithCommit(before.WithNewFile("selected.txt", "committed\n").Changes(before), "receiver", workspaceCommitDate, "Oracle", "oracle@example.com")
+	headTree := head.Tree(discard)
+	source := head.WithCommit(headTree.WithNewFile("added/deep.txt", "added\n").WithoutFile("delete.txt").WithNewFile("selected.txt", "source\n").Changes(headTree), "source", workspaceCommitDate, "Oracle", "oracle@example.com")
+	headID, err := head.ID(ctx)
+	require.NoError(t, err)
+	headSHA, err := head.CommitSHA(ctx)
+	require.NoError(t, err)
+	sourceSHA, err := source.CommitSHA(ctx)
+	require.NoError(t, err)
+	asWorkspace := core.GitRefAsWorkspaceOpts{Cwd: "/"}
+	sourceID, err := source.AsWorkspace(asWorkspace).ID(ctx)
+	require.NoError(t, err)
+	receiverID, err := head.AsWorkspace(asWorkspace).ID(ctx)
+	require.NoError(t, err)
+	var fullCheckout struct {
+		Node struct {
+			FullCheckout struct{ ID core.ID } `json:"__fullCheckout"`
+		}
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { __fullCheckout { id } } } }`,
+		Variables: map[string]any{"id": headID},
+	}, &dagger.Response{Data: &fullCheckout}))
+	full := core.Ref[*core.Directory](core.NewQuery(c), fullCheckout.Node.FullCheckout.ID)
+	pulled := core.Ref[*core.Directory](core.NewQuery(c), selectHidden(ctx, t, c, receiverID, "Workspace", "__pullDirectory", map[string]any{
+		"source":         sourceID,
+		"committerName":  "Committer",
+		"committerEmail": "committer@example.com",
+	}))
+	pulledSHA, err := pulled.AsGit().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sourceSHA, pulledSHA, "fast-forward")
+	for _, tc := range []struct {
+		name     string
+		contents *core.Directory
+		sha      string
+		want     *core.Directory
+	}{
+		{"checkout", full, headSHA, headTree},
+		{"checkout .git", full.Directory(".git"), headSHA, headTree},
+		{"pull", pulled, pulledSHA, source.Tree(discard)},
+	} {
+		ref := repo.WithContents(tc.contents).Ref(tc.sha)
+		tree := ref.Tree(discard)
+		require.Equal(t, workspaceCommitManifest(ctx, t, inspector, tc.want), workspaceCommitManifest(ctx, t, inspector, tree), tc.name)
+		requireGitCheckoutTimes(ctx, t, inspector, tree)
+		// Replayed workspaces reach the same tree through asWorkspace.
+		exists, err := ref.AsWorkspace(asWorkspace).Directory("/").Exists(ctx, "selected.txt")
+		require.NoError(t, err, tc.name)
+		require.True(t, exists, tc.name)
+	}
+	require.NoError(t, c.Close()) // Drain finished spans.
+	paths := gitSourceTreePaths(t, sink)
+	require.NotEmpty(t, paths["checkout:checkout/strip"])
+	require.NotEmpty(t, paths["checkout:checkout-git-dir/strip"])
+	require.NotEmpty(t, paths["checkout:pull-receiver/delta"])
+}
+
+// gitSourceTreePaths groups the source-only trees a session materialized by
+// the path they took (span "git source tree: <path>"), and by path:detail,
+// logging each.
+func gitSourceTreePaths(t *testctx.T, sink *agentTraceSink) map[string]map[string]bool {
+	traces, _ := sink.capture()
+	paths := map[string]map[string]bool{}
+	for _, request := range traces {
+		for _, resource := range request.ResourceSpans {
+			for _, scope := range resource.ScopeSpans {
+				for _, span := range scope.Spans {
+					if !strings.HasPrefix(span.Name, "git source tree") || span.EndTimeUnixNano <= span.StartTimeUnixNano {
+						continue
+					}
+					id := string(span.TraceId) + string(span.SpanId)
+					var path, detail string
+					var skipped []string
+					for _, attr := range span.Attributes {
+						switch attr.Key {
+						case "dagger.git.tree.path":
+							path = attr.Value.GetStringValue()
+						case "dagger.git.tree.detail":
+							detail = attr.Value.GetStringValue()
+						case "dagger.git.tree.skipped":
+							for _, v := range attr.Value.GetArrayValue().GetValues() {
+								skipped = append(skipped, v.GetStringValue())
+							}
+						}
+					}
+					if paths[path] == nil {
+						paths[path] = map[string]bool{}
+					}
+					if paths[path][id] {
+						continue
+					}
+					paths[path][id] = true
+					if detail != "" {
+						if paths[path+":"+detail] == nil {
+							paths[path+":"+detail] = map[string]bool{}
+						}
+						paths[path+":"+detail][id] = true
+					}
+					t.Logf("source tree path=%s detail=%q skipped=%v duration=%s", path, detail, skipped, time.Duration(span.EndTimeUnixNano-span.StartTimeUnixNano))
+				}
+			}
+		}
+	}
+	return paths
 }
 
 func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testctx.T) {
