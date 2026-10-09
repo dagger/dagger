@@ -138,3 +138,24 @@ func TestActivityIntervals(t *testing.T) {
 		require.Equal(t, "1h59m59s", activity.Duration(now).String())
 	})
 }
+
+// Tracking running spans must not leave a map behind once they've all
+// completed: every ancestor of a span that ever ran would pin one.
+func TestActivityReleasesRunningSet(t *testing.T) {
+	start := time.Unix(100, 0)
+	running := &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{
+		ID:        dagui.SpanID{SpanID: [8]byte{1}},
+		StartTime: start,
+	}}
+	var activity dagui.Activity
+	require.True(t, activity.Add(running))
+	require.True(t, activity.IsRunning())
+	require.Len(t, activity.AllRunning, 1)
+
+	done := *running
+	done.EndTime = start.Add(time.Second)
+	require.True(t, activity.Add(&done))
+	require.False(t, activity.IsRunning())
+	require.Nil(t, activity.AllRunning)
+	require.Equal(t, time.Second, activity.Duration(start.Add(time.Hour)))
+}

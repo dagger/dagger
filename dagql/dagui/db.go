@@ -1047,6 +1047,9 @@ func (activity *Activity) Add(span *Span) bool {
 	wasEarliest := span.StartTime.Equal(activity.EarliestRunning)
 	delete(activity.AllRunning, span.ID)
 	if len(activity.AllRunning) == 0 {
+		// Go maps never shrink: drop it rather than pin storage sized for
+		// every span that ever ran beneath this one.
+		activity.AllRunning = nil
 		if !activity.EarliestRunning.IsZero() {
 			activity.EarliestRunning = time.Time{}
 			changed = true
