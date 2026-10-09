@@ -1,0 +1,6 @@
+kind: Changed
+body: Reading a small file from a cached step's output does less containerd bookkeeping. A file's stat and its contents read now share one read-only mount instead of two, and each read-only mount writes its lease in one metadata transaction instead of two.
+time: 2026-10-09T03:51:00Z
+custom:
+    Author: sipsma
+    PR: "14594"

@@ -196,6 +196,7 @@ func ptr[T any](v T) *T {
 
 type mountRefOpt struct {
 	readOnly bool
+	shared   bool
 }
 
 type mountRefOptFn func(opt *mountRefOpt)
@@ -204,11 +205,29 @@ func mountRefAsReadOnly(opt *mountRefOpt) {
 	opt.readOnly = true
 }
 
+// mountRefShared makes MountRef, within a read mount scope (see
+// withReadMountScope), use the scope's read-only mount of an immutable
+// snapshot instead of mounting it again. f must only read.
+func mountRefShared(opt *mountRefOpt) {
+	opt.shared = true
+}
+
 // MountRef is a utility for easily mounting a ref.
 //
 // To simplify external logic, when the ref is nil, i.e. scratch, the callback
 // just receives a tmpdir that gets deleted when the function completes.
 func MountRef(ctx context.Context, ref bkcache.Ref, f func(string, *mount.Mount) error, optFns ...mountRefOptFn) error {
+	var opt mountRefOpt
+	for _, optFn := range optFns {
+		optFn(&opt)
+	}
+	if scope := readMountScopeFrom(ctx); opt.shared && scope != nil {
+		if immutable, ok := ref.(bkcache.ImmutableRef); ok && immutable != nil {
+			if ok, err := scope.mountShared(ctx, immutable, f); ok {
+				return err
+			}
+		}
+	}
 	dir, m, closer, err := MountRefCloser(ctx, ref, optFns...)
 	if err != nil {
 		return err

@@ -612,15 +612,6 @@ func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ MountableRe
 
 	viewLeaseID := identity.NewID()
 	viewSnapshotID := viewLeaseID + "-view"
-	if _, err := sr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
-		l.ID = viewLeaseID
-		l.Labels = map[string]string{
-			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
-		}
-		return nil
-	}, MakeTemporary); err != nil && !cerrdefs.IsAlreadyExists(err) {
-		return nil, err
-	}
 	releaseViewLease := func() error {
 		err := sr.cm.LeaseManager.Delete(context.TODO(), leases.Lease{ID: viewLeaseID})
 		if cerrdefs.IsNotFound(err) {
@@ -628,10 +619,27 @@ func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ MountableRe
 		}
 		return err
 	}
-	if err := sr.cm.LeaseManager.AddResource(ctx, leases.Lease{ID: viewLeaseID}, leases.Resource{
-		ID:   viewSnapshotID,
-		Type: "snapshots/" + sr.cm.Snapshotter.Name(),
-	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+	// The view lease and its snapshot resource are written in one metadata
+	// transaction: every read-only mount makes them, so they are hot.
+	if err := sr.cm.updateMetadata(ctx, func(ctx context.Context) error {
+		if _, err := sr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
+			l.ID = viewLeaseID
+			l.Labels = map[string]string{
+				"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
+			}
+			return nil
+		}, MakeTemporary); err != nil && !cerrdefs.IsAlreadyExists(err) {
+			return err
+		}
+		if err := sr.cm.LeaseManager.AddResource(ctx, leases.Lease{ID: viewLeaseID}, leases.Resource{
+			ID:   viewSnapshotID,
+			Type: "snapshots/" + sr.cm.Snapshotter.Name(),
+		}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+			return err
+		}
+		return nil
+	}); err != nil {
+		// Without a metadata DB the lease may have been created on its own.
 		_ = releaseViewLease()
 		return nil, err
 	}
