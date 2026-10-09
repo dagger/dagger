@@ -295,9 +295,11 @@ func TestSharedMountFailure(t *testing.T) {
 		}
 		return nil
 	}
-	_, _, _, err := ref.(bkcache.SharedMounter).MountShared(ctx)
+	root, _, release, err := ref.(bkcache.SharedMounter).MountShared(ctx)
 	store.BeforeAdd = nil
 	require.ErrorIs(t, err, injected)
+	require.Empty(t, root)
+	require.Nil(t, release)
 	require.Empty(t, viewLeases(t, store))
 
 	require.Equal(t, "a", readShared(t, ref, "a.txt"))
