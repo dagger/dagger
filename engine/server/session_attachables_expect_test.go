@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/engine/engineutil"
 )
 
 // registerAttachables registers attachables for clientID on m, ending them
@@ -112,4 +114,30 @@ func TestRegisteredAttachablesOutliveAFailureReport(t *testing.T) {
 	fail(errors.New("exited"))
 	_, err := m.Wait(t.Context(), "nested")
 	require.NoError(t, err)
+}
+
+// A canceled query stops waiting for a nested exec's attachables, though
+// those waits have no fixed bound.
+func TestClientCallerCancelStopsExpectedWait(t *testing.T) {
+	sess := &daggerSession{sessionID: "sess", attachables: newSessionAttachableManager()}
+	sess.state.Store(sessionStateInitialized)
+	sess.clientRecords = map[string]*clientRecord{"nested": {daggerSession: sess, clientID: "nested"}}
+	srv := &Server{daggerSessions: map[string]*daggerSession{"sess": sess}, engineUtilOpts: &engineutil.Opts{}}
+	require.NoError(t, srv.initializeSessionEngineClient(t.Context(), sess))
+	_, done := sess.attachables.Expect("nested")
+	defer done()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	got := make(chan error, 1)
+	go func() {
+		_, err := sess.getClientCaller(ctx, "nested")
+		got <- err
+	}()
+	require.Eventually(t, func() bool {
+		sess.attachables.mu.Lock()
+		defer sess.attachables.mu.Unlock()
+		return len(sess.attachables.waiters["nested"]) != 0
+	}, 5*time.Second, time.Millisecond, "the query never waited for the attachables")
+	cancel()
+	require.ErrorIs(t, requireResult(t, got), context.Canceled)
 }

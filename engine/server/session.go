@@ -1449,7 +1449,9 @@ func (srv *Server) initializeSessionEngineClient(ctx context.Context, sess *dagg
 
 	var callerG singleflight.Group[string, engineutil.SessionCaller]
 	sess.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
-		ctx = context.WithoutCancel(ctx)
+		// The flight's ctx ends when every caller's has: waits for a nested
+		// exec's attachables have no fixed bound, so a canceled query must not
+		// hold on to one.
 		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (engineutil.SessionCaller, error) {
 			caller, err := srv.clientAttachableCallerWithin(ctx, sess.sessionID, id, false, defaultAttachablesWait)
 			return caller, err
