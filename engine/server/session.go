@@ -3858,8 +3858,17 @@ func (s *callPayloadDeliveryStore) ClaimCallPayloadRoot(digest string) (claimed,
 	}
 	sess.callPayloadMu.Lock()
 	defer sess.callPayloadMu.Unlock()
-	if len(sess.claimCallPayloadLocked(digest, s.targets)) > 0 {
-		return true, false
+	// claimCallPayload's loop, without collecting the claimed targets.
+	states := sess.callPayloadStates(digest, true)
+	for _, target := range s.targets {
+		if states[target] == callPayloadUnclaimed {
+			states[target] = callPayloadClaimed
+			sess.recoverCallPayloadLocked(digest, target)
+			claimed = true
+		}
+	}
+	if claimed || sess.callPayloadLostCount == 0 {
+		return claimed, false
 	}
 	return false, sess.startCallPayloadRepairLocked(digest, s.targets)
 }
@@ -4002,12 +4011,7 @@ func (sess *daggerSession) claimCallPayload(digest string, targets []string) []s
 	}
 	sess.callPayloadMu.Lock()
 	defer sess.callPayloadMu.Unlock()
-	return sess.claimCallPayloadLocked(digest, targets)
-}
 
-// claimCallPayloadLocked is claimCallPayload's critical section. Requires
-// callPayloadMu.
-func (sess *daggerSession) claimCallPayloadLocked(digest string, targets []string) []string {
 	states := sess.callPayloadStates(digest, true)
 	claimed := make([]string, 0, len(targets))
 	for _, target := range targets {
