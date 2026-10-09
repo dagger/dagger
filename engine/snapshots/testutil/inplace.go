@@ -59,6 +59,32 @@ func bindSource(mounts []mount.Mount) (string, func(), error) {
 	return mounts[0].Source, func() {}, nil
 }
 
+// inPlaceMounter "mounts" a native bind mount by using its source in place,
+// so shared read-only mounts need no privileges. It counts its mounts.
+type inPlaceMounter struct {
+	store  *Store
+	mounts []mount.Mount
+	root   string
+}
+
+func (m *inPlaceMounter) Mount() (string, error) {
+	root, _, err := bindSource(m.mounts)
+	if err != nil {
+		return "", err
+	}
+	m.root = root
+	m.store.LocalMounts.Add(1)
+	return root, nil
+}
+
+func (m *inPlaceMounter) Unmount() error {
+	if m.root != "" {
+		m.root = ""
+		m.store.LocalUnmounts.Add(1)
+	}
+	return nil
+}
+
 // Root returns the directory behind a committed snapshot of this store, for a
 // test that reads the bytes it expects there.
 func Root(t testing.TB, ref bkcache.ImmutableRef) string {
