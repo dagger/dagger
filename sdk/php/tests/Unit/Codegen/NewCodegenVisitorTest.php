@@ -68,21 +68,24 @@ class NewCodegenVisitorTest extends TestCase
     {
         $class = $this->generate(self::objectType(), self::identifiers());
 
-        self::assertTrue($class->hasMethod('filterURI'));
-        $method = $class->getMethod('filterURI');
-        self::assertSame('filterURI', $method->getName());
-        self::assertSame(['pushURL', 'callID'], array_keys($method->getParameters()));
+        self::assertTrue($class->hasMethod('withGpu'));
+        $method = $class->getMethod('withGpu');
+        self::assertSame('withGpu', $method->getName());
+        self::assertSame(['insecureSkipTlsVerify', 'callId'], array_keys($method->getParameters()));
 
         // the schema names still go over the wire
         $body = $method->getBody();
-        self::assertStringContainsString("new \\Dagger\\Client\\QueryBuilder('filterUri')", $body);
-        self::assertStringContainsString("->setArgument('pushUrl', \$pushURL)", $body);
-        self::assertStringContainsString("if (null !== \$callID) {", $body);
-        self::assertStringContainsString("->setArgument('callId', \$callID)", $body);
-        self::assertStringContainsString("queryLeaf(\$leafQueryBuilder, 'filterUri')", $body);
+        self::assertStringContainsString("new \\Dagger\\Client\\QueryBuilder('withGPU')", $body);
+        self::assertStringContainsString(
+            "->setArgument('insecureSkipTLSVerify', \$insecureSkipTlsVerify)",
+            $body,
+        );
+        self::assertStringContainsString("if (null !== \$callId) {", $body);
+        self::assertStringContainsString("->setArgument('callID', \$callId)", $body);
+        self::assertStringContainsString("queryLeaf(\$leafQueryBuilder, 'withGPU')", $body);
 
         // a case-only rename needs no forwarder: PHP method names are case-insensitive
-        self::assertSame(['filterURI', 'fooBar', 'foo_bar'], array_keys($class->getMethods()));
+        self::assertSame(['withGpu', 'fooBar', 'foo_bar'], array_keys($class->getMethods()));
     }
 
     #[Test]
@@ -102,10 +105,13 @@ class NewCodegenVisitorTest extends TestCase
         foreach ([null, Identifiers::fromArray([])] as $identifiers) {
             $class = $this->generate(self::objectType(), $identifiers);
 
-            $method = $class->getMethods()['filterUri'];
-            self::assertSame(['pushUrl', 'callId'], array_keys($method->getParameters()));
-            self::assertStringContainsString("->setArgument('pushUrl', \$pushUrl)", $method->getBody());
-            self::assertSame(['filterUri', 'foo_bar'], array_keys($class->getMethods()));
+            $method = $class->getMethods()['withGPU'];
+            self::assertSame(['insecureSkipTLSVerify', 'callID'], array_keys($method->getParameters()));
+            self::assertStringContainsString(
+                "->setArgument('insecureSkipTLSVerify', \$insecureSkipTLSVerify)",
+                $method->getBody(),
+            );
+            self::assertSame(['withGPU', 'foo_bar'], array_keys($class->getMethods()));
         }
     }
 
@@ -203,11 +209,11 @@ class NewCodegenVisitorTest extends TestCase
             'name' => 'Artifacts',
             'fields' => [
                 [
-                    'name' => 'filterUri',
+                    'name' => 'withGPU',
                     'type' => ['kind' => 'NON_NULL', 'ofType' => $string],
                     'args' => [
-                        ['name' => 'pushUrl', 'type' => ['kind' => 'NON_NULL', 'ofType' => $string]],
-                        ['name' => 'callId', 'type' => $string],
+                        ['name' => 'insecureSkipTLSVerify', 'type' => ['kind' => 'NON_NULL', 'ofType' => $string]],
+                        ['name' => 'callID', 'type' => $string],
                     ],
                 ],
                 [
@@ -229,9 +235,9 @@ class NewCodegenVisitorTest extends TestCase
 
         return Identifiers::fromArray([
             'Artifacts' => [$word('artifacts')],
-            'filterUri' => [$word('filter'), $acronym('URI')],
-            'pushUrl' => [$word('push'), $acronym('URL')],
-            'callId' => [$word('call'), $acronym('ID')],
+            'withGPU' => [$word('with'), $acronym('GPU')],
+            'insecureSkipTLSVerify' => [$word('insecure'), $word('skip'), $acronym('TLS'), $word('verify')],
+            'callID' => [$word('call'), $acronym('ID')],
             'foo_bar' => [$word('foo'), $word('bar')],
             'Compression' => [$word('compression')],
             'Gzip' => [$word('gzip')],

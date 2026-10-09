@@ -27,7 +27,8 @@ use Nette\PhpGenerator\Method;
  * When the schema carries the engine's identifier words (engine views
  * v1.0.0 and above), PHP names are formatted from them:
  *
- *   - methods and their parameters: CAMEL / UPPERCASE (filterURI, callID);
+ *   - methods and their parameters: CAMEL / CAPITALIZED, acronyms written
+ *     like words as Symfony and Laravel do (filterUri, withGpu, callId);
  *   - enum cases: SCREAMING_SNAKE (PER_SESSION), keeping the schema name
  *     where that would collide with another value's case (Gzip vs GZIP).
  *
@@ -580,7 +581,7 @@ class NewCodegenVisitor extends CodeWriter
      */
     private function methodName(string $fieldName): string
     {
-        return $this->identifiers?->format($fieldName, Casing::CAMEL) ?? $fieldName;
+        return $this->identifiers?->format($fieldName, Casing::CAMEL, true) ?? $fieldName;
     }
 
     /**
@@ -588,7 +589,7 @@ class NewCodegenVisitor extends CodeWriter
      */
     private function argName(string $argName): string
     {
-        return $this->identifiers?->format($argName, Casing::CAMEL) ?? $argName;
+        return $this->identifiers?->format($argName, Casing::CAMEL, true) ?? $argName;
     }
 
     /**
