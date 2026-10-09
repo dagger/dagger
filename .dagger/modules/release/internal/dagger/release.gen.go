@@ -22,9 +22,10 @@ func (r *Query) Release(ws *Workspace) *Release { // release (../../../../../:0:
 type Release struct { // release (../../../../../:0:0)
 	query *querybuilder.Selection
 
-	id                       *ID
-	notify                   *Void
-	publishWithMockEndpoints *Void
+	id                             *ID
+	notify                         *Void
+	publishStableWithMockEndpoints *Void
+	publishWithMockEndpoints       *Void
 }
 
 func (r *Release) WithGraphQLQuery(q *querybuilder.Selection) *Release {
@@ -371,6 +372,34 @@ func (r *Release) Publish(tag string, commit string, opts ...ReleasePublishOpts)
 	return &ReleaseReport{
 		query: q,
 	}
+}
+
+// ReleasePublishStableWithMockEndpointsOpts contains options for Release.PublishStableWithMockEndpoints
+type ReleasePublishStableWithMockEndpointsOpts struct {
+	// Source tree to publish. The check commits this exact tree to a local git
+	// service and invokes release through a nested engine using that git ref.
+	Source *Directory
+}
+
+// Exercise the stable release publish path against local mock endpoints.
+//
+// Same as publish-with-mock-endpoints, but the tagged publish uses the Helm
+// chart version without its prerelease suffix (e.g. v1.0.0 for
+// 1.0.0-beta.17), so the stable-only steps run: the root GitHub release,
+// package managers, docs, and the latest_version/versions pointers.
+func (r *Release) PublishStableWithMockEndpoints(ctx context.Context, opts ...ReleasePublishStableWithMockEndpointsOpts) error {
+	if r.publishStableWithMockEndpoints != nil {
+		return nil
+	}
+	q := r.query.Select("publishStableWithMockEndpoints")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+	}
+
+	return q.Execute(ctx)
 }
 
 // ReleasePublishWithMockEndpointsOpts contains options for Release.PublishWithMockEndpoints
