@@ -215,9 +215,10 @@ func TestGitMirrorFetchPrivateRefs(t *testing.T) {
 	require.Equal(t, "new", gitMirrorTestRun(t, checkout, "show", "HEAD:small"))
 }
 
-// A remote checkout borrows the locked mirror only for fetchGitCheckout. Once
+// A remote checkout borrows the locked mirror only for copyGitCheckout. Once
 // that returns, nothing may depend on the mirror: no alternates, borrowed
-// paths or further reads. Deleting it before finishing proves it.
+// paths or further reads. Deleting it before finishing proves it, for the
+// pack-objects copy (full history) and the fetch (depth-limited) alike.
 func TestGitCheckoutIndependentAfterFetch(t *testing.T) {
 	source, _, next := gitMirrorTestSource(t)
 	for _, tc := range []struct {
@@ -225,10 +226,13 @@ func TestGitCheckoutIndependentAfterFetch(t *testing.T) {
 		refName string
 		depth   int
 		discard bool
+		method  string
 	}{
-		{name: "branch full history", refName: "refs/heads/main"},
-		{name: "detached shallow", depth: 1},
-		{name: "discard git dir", depth: 1, discard: true},
+		{name: "branch full history", refName: "refs/heads/main", method: "pack"},
+		{name: "detached full history", method: "pack"},
+		{name: "detached shallow", depth: 1, method: "fetch"},
+		{name: "discard git dir", depth: 1, discard: true, method: "fetch"},
+		{name: "discard git dir full history", discard: true, method: "pack"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
@@ -237,8 +241,9 @@ func TestGitCheckoutIndependentAfterFetch(t *testing.T) {
 			ref := &gitutil.Ref{SHA: next, Name: tc.refName}
 			checkout := t.TempDir()
 			checkoutGit := gitutil.NewGitCLI(gitutil.WithWorkTree(checkout), gitutil.WithGitDir(filepath.Join(checkout, ".git")))
-			tmpref, err := fetchGitCheckout(ctx, checkoutGit, "file://"+mirror, ref, tc.depth)
+			tmpref, method, err := copyGitCheckout(ctx, checkoutGit, git, filepath.Join(checkout, ".git"), ref, tc.depth)
 			require.NoError(t, err)
+			require.Equal(t, tc.method, method)
 
 			require.NoError(t, os.RemoveAll(mirror))
 			remotes := []GitRemote{{Name: "origin", URL: "https://example.com/repo", Implicit: true}}

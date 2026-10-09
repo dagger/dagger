@@ -901,11 +901,8 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 
 		var tmpref string
 		err := ref.mount(ctx, depth, includeTags, func(mirrorGit *gitutil.GitCLI) error {
-			gitURL, err := mirrorGit.URL(ctx)
-			if err != nil {
-				return fmt.Errorf("could not find git dir: %w", err)
-			}
-			tmpref, err = fetchGitCheckout(ctx, checkoutGit, gitURL, ref.Ref, depth)
+			var err error
+			tmpref, _, err = copyGitCheckout(ctx, checkoutGit, mirrorGit, checkoutDirGit, ref.Ref, depth)
 			return err
 		})
 		if err != nil {

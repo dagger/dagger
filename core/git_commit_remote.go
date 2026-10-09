@@ -4,10 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/dagql"
@@ -170,14 +169,12 @@ func copyRemoteCommitBase(ctx context.Context, source, dest, sha string, depth i
 			return err
 		}
 	}
-	// pack-objects creates temporary files in its primary object database,
-	// even with an absolute output prefix. Keep that database private too.
-	env := []string{"GIT_NO_REPLACE_OBJECTS=1", "GIT_NO_LAZY_FETCH=1", "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + strconv.Quote(filepath.Join(gitDir, "objects"))}
-	if _, err := runWorkspaceCommitGitInput(ctx, dest, env, strings.NewReader(sha+"\n"),
-		"pack-objects", "--revs", "--delta-base-offset", filepath.Join(dest, "objects", "pack", "pack")); err != nil {
-		return err
+	// The pack's primary object database (where pack-objects also keeps its
+	// temporary files) is dest's own; the mirror is only borrowed.
+	run := func(ctx context.Context, env []string, stdin io.Reader, args ...string) (string, error) {
+		return runWorkspaceCommitGitInput(ctx, dest, env, stdin, args...)
 	}
-	return nil
+	return packGitObjects(ctx, run, filepath.Join(dest, "objects"), filepath.Join(gitDir, "objects"), []string{sha}, true)
 }
 
 // finishRemoteCommitBase points the packed repository at dest to sha and

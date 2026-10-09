@@ -1413,8 +1413,9 @@ func fetchGitCheckout(ctx context.Context, checkoutGit *gitutil.GitCLI, cloneURL
 type gitCheckoutReuse int
 
 const (
-	// gitCheckoutFresh: the caller fetched the objects into an empty
-	// repository; finishGitCheckout writes everything else.
+	// gitCheckoutFresh: the caller copied the objects into an empty
+	// repository (fetchGitCheckout, or copyGitCheckout from a locked
+	// mirror); finishGitCheckout writes everything else.
 	gitCheckoutFresh gitCheckoutReuse = iota
 	// gitCheckoutInheritedObjects: the object database was not written by
 	// this checkout (see cowGitCheckout). Its files keep their timestamps,
@@ -1430,10 +1431,136 @@ const (
 	gitCheckoutInheritedWorktree
 )
 
+// copyGitCheckout is fetchGitCheckout from a borrowed source repository (a
+// remote's mirror, under its lock). A full-history checkout copies its
+// objects with pack-objects instead (see packGitClosure), falling back to the
+// fetch on any failure; gitDir, the checkout's git directory, is discarded
+// whole before the fallback. The result is the same either way: ref's
+// history in the checkout's own object database under the returned tmpref,
+// and the tags a fetch would have followed. method reports which copy ran.
+func copyGitCheckout(ctx context.Context, checkoutGit, source *gitutil.GitCLI, gitDir string, ref *gitutil.Ref, depth int) (tmpref, method string, _ error) {
+	sourceURL, err := source.URL(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("could not find git dir: %w", err)
+	}
+	var pack, discard func(context.Context) error
+	if depth <= 0 {
+		pack = func(ctx context.Context) (err error) {
+			tmpref, err = packGitCheckout(ctx, checkoutGit, source, ref)
+			return err
+		}
+		discard = func(context.Context) error {
+			tmpref = ""
+			return os.RemoveAll(gitDir)
+		}
+	}
+	method, err = copyGitObjects(ctx, "checkout", pack, discard, func(ctx context.Context) (err error) {
+		tmpref, err = fetchGitCheckout(ctx, checkoutGit, sourceURL, ref, depth)
+		return err
+	})
+	return tmpref, method, err
+}
+
+// packGitCheckout initializes the checkout like fetchGitCheckout and gives it
+// ref's complete history with pack-objects, plus what the fetch's tag
+// auto-following would have added: every tag in source whose peeled object
+// is in that history, as refs/tags/<name> with its tag object. Refs are only
+// written, in one transaction, once all objects are in place.
+func packGitCheckout(ctx context.Context, checkoutGit, source *gitutil.GitCLI, ref *gitutil.Ref) (string, error) {
+	if _, err := checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init"); err != nil {
+		return "", err
+	}
+	copier, err := newGitPackCopy(ctx, checkoutGit, source)
+	if err != nil {
+		return "", err
+	}
+	if err := copier.pack(ctx, []string{ref.SHA}, true); err != nil {
+		return "", err
+	}
+	tags, err := gitFollowedTags(ctx, checkoutGit, source)
+	if err != nil {
+		return "", err
+	}
+	var tagObjects []string
+	for _, tag := range tags {
+		if tag.annotated {
+			tagObjects = append(tagObjects, tag.oid)
+		}
+	}
+	if len(tagObjects) > 0 {
+		if err := copier.pack(ctx, tagObjects, false); err != nil {
+			return "", fmt.Errorf("pack followed tags: %w", err)
+		}
+	}
+	tmpref := "refs/dagger.tmp/" + identity.NewID()
+	var updates strings.Builder
+	updates.WriteString("create " + tmpref + " " + ref.SHA + "\n")
+	for _, tag := range tags {
+		updates.WriteString("create " + tag.name + " " + tag.oid + "\n")
+	}
+	if _, err := checkoutGit.RunWithStdin(ctx, strings.NewReader(updates.String()), "update-ref", "--stdin"); err != nil {
+		return "", err
+	}
+	return tmpref, nil
+}
+
+type gitFollowedTag struct {
+	name      string
+	oid       string
+	annotated bool
+}
+
+// gitFollowedTags lists the tags a fetch from source into dest would follow
+// automatically: those whose peeled object dest now has. Tags of tags are
+// left to the fetch.
+func gitFollowedTags(ctx context.Context, dest, source *gitutil.GitCLI) ([]gitFollowedTag, error) {
+	// %(object)/%(type) name what an annotated tag points at directly, and
+	// %(*objectname) what it peels to. Ref names cannot contain spaces, so
+	// splitting keeps a lightweight tag's empty fields in place.
+	out, err := source.Run(ctx, "for-each-ref", "--format=%(objectname) %(objecttype) %(type) %(*objectname) %(refname)", "refs/tags/")
+	if err != nil {
+		return nil, err
+	}
+	var candidates []gitFollowedTag
+	var peeled []string
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, " ")
+		if len(fields) != 5 {
+			return nil, fmt.Errorf("unexpected tag listing %q", line)
+		}
+		tag := gitFollowedTag{name: fields[4], oid: fields[0]}
+		target := fields[0]
+		if fields[1] == "tag" {
+			if fields[2] == "tag" {
+				return nil, fmt.Errorf("tag %s points at another tag", tag.name)
+			}
+			tag.annotated = true
+			target = fields[3]
+		}
+		candidates = append(candidates, tag)
+		peeled = append(peeled, target)
+	}
+	present, err := gitObjectsPresent(ctx, dest, peeled)
+	if err != nil {
+		return nil, err
+	}
+	var tags []gitFollowedTag
+	for i, tag := range candidates {
+		if present[peeled[i]] {
+			tags = append(tags, tag)
+		}
+	}
+	return tags, nil
+}
+
 // finishGitCheckout materializes a ref whose objects are already available.
 // tmpref is set only when the caller fetched the objects into a temporary ref.
-// cloneURL is only used in error messages. After fetchGitCheckout the checkout
-// owns its objects, so this may run after a borrowed mirror has been released.
+// cloneURL is only used in error messages. After fetchGitCheckout (or
+// copyGitCheckout) the checkout owns its objects, so this may run after a
+// borrowed mirror has been released.
 //
 //nolint:gocyclo // one sequence of checkout steps, each skipped per inheritance mode; splitting hides their order
 func finishGitCheckout(
@@ -2024,12 +2151,22 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 				if _, err := git.Run(egCtx, "remote", "add", remoteName, remoteURL); err != nil {
 					return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
 				}
-				args := []string{"fetch", "--no-tags", "--update-shallow"}
-				for _, sha := range fetched {
-					args = append(args, "--negotiation-tip="+sha)
-				}
-				if _, err := git.Run(egCtx, append(args, remoteName, ref.Ref.SHA)...); err != nil {
-					return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
+				// A failed pack can only leave objects of this ref's own
+				// history behind, which the fetch then completes.
+				_, err = copyGitObjects(egCtx, "join", func(ctx context.Context) error {
+					return packGitClosure(ctx, git, gitN, []string{ref.Ref.SHA})
+				}, nil, func(ctx context.Context) error {
+					args := []string{"fetch", "--no-tags", "--update-shallow"}
+					for _, sha := range fetched {
+						args = append(args, "--negotiation-tip="+sha)
+					}
+					if _, err := git.Run(ctx, append(args, remoteName, ref.Ref.SHA)...); err != nil {
+						return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
+					}
+					return nil
+				})
+				if err != nil {
+					return err
 				}
 				fetched = append(fetched, ref.Ref.SHA)
 				return nil
