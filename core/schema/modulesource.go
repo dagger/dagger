@@ -3461,7 +3461,9 @@ func (s *moduleSourceSchema) moduleSourceNamespacedDefinition(
 	if err != nil {
 		return inst, fmt.Errorf("failed to load definition for namespaced definition: %w", err)
 	}
-	deps, err := s.loadDependencyModules(ctx, src, src)
+	// The receiver's engine version may be another client's; the core view
+	// namespacing and validation see is the one this load requires.
+	deps, err := s.loadDependencyModulesForEngineVersion(ctx, src, src, args.EngineVersion)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dependencies for namespaced definition: %w", err)
 	}
@@ -4304,6 +4306,17 @@ func (s *moduleSourceSchema) loadDependencyModules(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
 	defaultPathContextSrc dagql.ObjectResult[*core.ModuleSource],
+) (*core.SchemaBuilder, error) {
+	return s.loadDependencyModulesForEngineVersion(ctx, src, defaultPathContextSrc, src.Self().EngineVersion)
+}
+
+// loadDependencyModulesForEngineVersion is loadDependencyModules with the
+// core module's view pinned to engineVersion instead of src's.
+func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	defaultPathContextSrc dagql.ObjectResult[*core.ModuleSource],
+	engineVersion string,
 ) (_ *core.SchemaBuilder, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
@@ -4376,7 +4389,7 @@ func (s *moduleSourceSchema) loadDependencyModules(
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
-	deps, err := s.loadDefaultSchemaBuilder(ctx, src)
+	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, engineVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -4394,6 +4407,15 @@ func (s *moduleSourceSchema) loadDefaultSchemaBuilder(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
 ) (*core.SchemaBuilder, error) {
+	return s.defaultSchemaBuilderForEngineVersion(ctx, src.Self().EngineVersion)
+}
+
+// defaultSchemaBuilderForEngineVersion is loadDefaultSchemaBuilder for an
+// explicit engine version.
+func (s *moduleSourceSchema) defaultSchemaBuilderForEngineVersion(
+	ctx context.Context,
+	engineVersion string,
+) (*core.SchemaBuilder, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -4405,7 +4427,7 @@ func (s *moduleSourceSchema) loadDefaultSchemaBuilder(
 	baseMods := defaultDeps.Mods()
 	for i, depMod := range baseMods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
-			baseMods[i] = coreMod.WithView(call.View(engine.APIViewVersion(src.Self().EngineVersion)))
+			baseMods[i] = coreMod.WithView(call.View(engine.APIViewVersion(engineVersion)))
 		}
 	}
 	return core.NewSchemaBuilder(query, baseMods), nil

@@ -721,3 +721,82 @@ func TestModuleNamespacedDefinitionSourceMapLinks(t *testing.T) {
 	unlinked := namespacedSourceMap()
 	require.Equal(t, &core.SourceMap{Module: "demo", Filename: "mod/main.go", Line: 3, Column: 1}, unlinked, "a non-git load gets no link from a git receiver")
 }
+
+// namespacedDefinitionCoreServer serves the core schema as every module's
+// default dependency, as the engine does.
+type namespacedDefinitionCoreServer struct {
+	*currentTypeDefsTestServer
+	defaultDeps *core.SchemaBuilder
+}
+
+func (s *namespacedDefinitionCoreServer) DefaultDeps(context.Context) (*core.SchemaBuilder, error) {
+	return s.defaultDeps, nil
+}
+
+// Namespacing and validation see the core API at the engine version given
+// as an argument, not the scoped receiver's, which may be another client's
+// source with the same content and an older engine version. GitBundle is
+// only in the core API after v1.0.0-beta.10.
+func TestModuleNamespacedDefinitionCoreView(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "core-view", SessionID: "core-view"})
+	server := &namespacedDefinitionCoreServer{currentTypeDefsTestServer: &currentTypeDefsTestServer{}}
+	root := core.NewRoot(server)
+	ctx = core.ContextWithQuery(ctx, root)
+	base, err := NewCoreSchemaBase(ctx, server)
+	require.NoError(t, err)
+	server.defaultDeps = core.NewSchemaBuilder(root, []core.Mod{base.CoreMod("")})
+	dag, err := base.Fork(ctx, root, "")
+	require.NoError(t, err)
+
+	// The definition: an object with a function returning the core
+	// GitBundle.
+	idOf := func(res interface{ ID() (*call.ID, error) }) *call.ID {
+		t.Helper()
+		id, err := res.ID()
+		require.NoError(t, err)
+		return id
+	}
+	var bundleType dagql.ObjectResult[*core.TypeDef]
+	require.NoError(t, dag.Select(ctx, dag.Root(), &bundleType,
+		dagql.Selector{Field: "typeDef"},
+		dagql.Selector{Field: "withObject", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("GitBundle")}}},
+	))
+	var fn dagql.ObjectResult[*core.Function]
+	require.NoError(t, dag.Select(ctx, dag.Root(), &fn, dagql.Selector{Field: "function", Args: []dagql.NamedInput{
+		{Name: "name", Value: dagql.String("bundle")},
+		{Name: "returnType", Value: dagql.NewID[*core.TypeDef](idOf(bundleType))},
+	}}))
+	var holder dagql.ObjectResult[*core.TypeDef]
+	require.NoError(t, dag.Select(ctx, dag.Root(), &holder,
+		dagql.Selector{Field: "typeDef"},
+		dagql.Selector{Field: "withObject", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String("Holder")}}},
+		dagql.Selector{Field: "withFunction", Args: []dagql.NamedInput{{Name: "function", Value: dagql.NewID[*core.Function](idOf(fn))}}},
+	))
+	def := attachDefinitionTestResult(t, ctx, cache, dag, "core-view", "definition", &core.Module{NameField: "demo", ObjectDefs: dagql.ObjectResultArray[*core.TypeDef]{holder}})
+	schema := attachDefinitionTestResult(t, ctx, cache, dag, "core-view", "schema", &core.File{Platform: core.Platform{OS: "linux", Architecture: "arm64"}, File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]), Lazy: &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: "schema.json", Contents: []byte("{}")}})
+	// The receiver predates GitBundle.
+	src := attachDefinitionTestResult(t, ctx, cache, dag, "core-view", "source", &core.ModuleSource{
+		Kind: core.ModuleSourceKindDir, ModuleName: "demo", ModuleOriginalName: "demo", EngineVersion: "v0.19.0",
+	})
+
+	var res dagql.ObjectResult[*core.Module]
+	require.NoError(t, dag.Select(ctx, src, &res, dagql.Selector{
+		Field: "_moduleNamespacedDefinition",
+		Args: []dagql.NamedInput{
+			{Name: "definition", Value: dagql.NewID[*core.Module](idOf(def))},
+			{Name: "introspectionJson", Value: dagql.NewID[*core.File](idOf(schema))},
+			{Name: "moduleName", Value: dagql.String("demo")},
+			{Name: "engineVersion", Value: dagql.String("v1.0.0")},
+		},
+	}))
+	require.Len(t, res.Self().ObjectDefs, 1)
+	fns := res.Self().ObjectDefs[0].Self().AsObject.Value.Self().Functions
+	require.Len(t, fns, 1)
+	require.Equal(t, "GitBundle", fns[0].Self().ReturnType.Self().Name, "the return type resolves to the core GitBundle, not a module type")
+}
