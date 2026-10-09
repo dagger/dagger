@@ -155,8 +155,18 @@ func TestGitCheckoutPackFallsBackToFetch(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, repo.fetchObjects(t.Context(), mirrorGit, 0, true, refs))
 		ref := &gitutil.Ref{SHA: base}
-		packed := gitPackTestCheckoutFrom(t, mirror, mirrorGit, ref, true)
+		// The tags are checked before packing: the fallback must not follow
+		// a full-history pack it then throws away.
+		packs := 0
+		countPacks := gitutil.WithExec(func(_ context.Context, cmd *exec.Cmd) error {
+			if slices.Contains(cmd.Args, "pack-objects") {
+				packs++
+			}
+			return cmd.Run()
+		})
+		packed := gitPackTestCheckoutFrom(t, mirror, mirrorGit, ref, true, countPacks)
 		require.Equal(t, "fetch", packed.method)
+		require.Zero(t, packs, "pack-objects ran before the tag check refused the copy")
 		fetched := gitPackTestCheckoutFrom(t, mirror, mirrorGit, ref, false)
 		require.Equal(t, fetched.state(t), packed.state(t))
 		require.Contains(t, fetched.state(t)["refs"], "refs/tags/v-nested ")

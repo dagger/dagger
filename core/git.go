@@ -1474,10 +1474,16 @@ func packGitCheckout(ctx context.Context, checkoutGit, source *gitutil.GitCLI, r
 	if err != nil {
 		return "", err
 	}
+	// List the tags first: a source the copy cannot follow tags from falls
+	// back to the fetch before packing a history it would throw away.
+	candidates, err := gitTagCandidates(ctx, source)
+	if err != nil {
+		return "", err
+	}
 	if err := copier.pack(ctx, []string{ref.SHA}, true); err != nil {
 		return "", err
 	}
-	tags, err := gitFollowedTags(ctx, checkoutGit, source)
+	tags, err := gitFollowedTags(ctx, checkoutGit, candidates)
 	if err != nil {
 		return "", err
 	}
@@ -1508,12 +1514,13 @@ type gitFollowedTag struct {
 	name      string
 	oid       string
 	annotated bool
+	// peeled is the object the tag points at, through its tag object.
+	peeled string
 }
 
-// gitFollowedTags lists the tags a fetch from source into dest would follow
-// automatically: those whose peeled object dest now has. Tags of tags are
-// left to the fetch.
-func gitFollowedTags(ctx context.Context, dest, source *gitutil.GitCLI) ([]gitFollowedTag, error) {
+// gitTagCandidates lists every tag in source, with the object each peels to.
+// It refuses tags of tags, which only the fetch follows.
+func gitTagCandidates(ctx context.Context, source *gitutil.GitCLI) ([]gitFollowedTag, error) {
 	// %(object)/%(type) name what an annotated tag points at directly, and
 	// %(*objectname) what it peels to. Ref names cannot contain spaces, so
 	// splitting keeps a lightweight tag's empty fields in place.
@@ -1522,7 +1529,6 @@ func gitFollowedTags(ctx context.Context, dest, source *gitutil.GitCLI) ([]gitFo
 		return nil, err
 	}
 	var candidates []gitFollowedTag
-	var peeled []string
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if line == "" {
 			continue
@@ -1531,25 +1537,33 @@ func gitFollowedTags(ctx context.Context, dest, source *gitutil.GitCLI) ([]gitFo
 		if len(fields) != 5 {
 			return nil, fmt.Errorf("unexpected tag listing %q", line)
 		}
-		tag := gitFollowedTag{name: fields[4], oid: fields[0]}
-		target := fields[0]
+		tag := gitFollowedTag{name: fields[4], oid: fields[0], peeled: fields[0]}
 		if fields[1] == "tag" {
 			if fields[2] == "tag" {
 				return nil, fmt.Errorf("tag %s points at another tag", tag.name)
 			}
 			tag.annotated = true
-			target = fields[3]
+			tag.peeled = fields[3]
 		}
 		candidates = append(candidates, tag)
-		peeled = append(peeled, target)
+	}
+	return candidates, nil
+}
+
+// gitFollowedTags selects the candidates a fetch into dest would follow
+// automatically: those whose peeled object dest now has.
+func gitFollowedTags(ctx context.Context, dest *gitutil.GitCLI, candidates []gitFollowedTag) ([]gitFollowedTag, error) {
+	peeled := make([]string, len(candidates))
+	for i, tag := range candidates {
+		peeled[i] = tag.peeled
 	}
 	present, err := gitObjectsPresent(ctx, dest, peeled)
 	if err != nil {
 		return nil, err
 	}
 	var tags []gitFollowedTag
-	for i, tag := range candidates {
-		if present[peeled[i]] {
+	for _, tag := range candidates {
+		if present[tag.peeled] {
 			tags = append(tags, tag)
 		}
 	}
