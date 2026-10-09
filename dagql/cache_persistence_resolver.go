@@ -94,17 +94,22 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		return sharedResultLookup{res: res, requiredGenAtCheck: requiredGenAtCheck}, nil
 	}
 
+	// The deferred unlock matters on panic: resolvePath recovers a panic
+	// raised in this section, and a lock left held would block every later
+	// cache operation in the engine.
 	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
 	res := c.resultsByID[resultID]
 	if res == nil {
-		c.egraphMu.Unlock()
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)
 	}
 	if res.noValueLocked() {
 		// Not even as a starting point for an equivalent: an entry known only
 		// through holdings has no value of this engine.
-		c.egraphMu.Unlock()
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: %w", resultID, errEntryHasNoValue)
+	}
+	if c.testInResultIDLookup != nil {
+		c.testInResultIDLookup(res)
 	}
 	if mode != sharedResultLookupExact {
 		// Require clean attachment, as publication adoption does: without it
@@ -116,7 +121,6 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	}
 	if mode == sharedResultLookupCanonicalEquivalentForSession &&
 		!c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) {
-		c.egraphMu.Unlock()
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: session %q has not bound the session resources this result requires", resultID, sessionID)
 	}
 	// Captured inside the same critical section as the requirement pre-check
@@ -125,7 +129,6 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	requiredGenAtCheck := res.requiredSessionResourcesGen.Load()
 
 	alreadyTracked, trackedCount, err := c.acquireSessionResultLocked(ctx, sessionID, res)
-	c.egraphMu.Unlock()
 	if err != nil {
 		return sharedResultLookup{}, err
 	}
