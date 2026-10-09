@@ -21,12 +21,10 @@ import (
 )
 
 func main() {
-	var err error
-	switch os.Args[0] {
-	case "/.init":
-		err = mainInit()
+	if os.Args[0] != "/.init" {
+		return
 	}
-	if err != nil {
+	if err := mainInit(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
