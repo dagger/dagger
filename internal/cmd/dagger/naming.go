@@ -103,7 +103,7 @@ func normalizeFlagName(name string) string {
 func isKebab(name string) bool {
 	for i := 0; i < len(name); i++ {
 		c := name[i]
-		if !('a' <= c && c <= 'z' || '0' <= c && c <= '9' || c == '-') {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
 			return false
 		}
 	}
