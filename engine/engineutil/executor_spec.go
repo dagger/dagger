@@ -396,12 +396,14 @@ func (m hostBindMountRef) Mount() ([]mount.Mount, func() error, error) {
 	}}, func() error { return nil }, nil
 }
 
+// initPath is where the injected init is mounted in the container.
+const initPath = "/.init"
+
 func (c *Client) injectInit(_ context.Context, state *execState) error {
 	if state.execMD != nil && state.execMD.NoInit {
 		return nil
 	}
 
-	initPath := "/.init"
 	state.mounts = append(state.mounts, executor.Mount{
 		Src:      hostBindMount{srcPath: distconsts.DaggerInitPath},
 		Dest:     initPath,
@@ -1609,6 +1611,12 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		return os.RemoveAll(bundle)
 	})
 
+	initTiming, err := newInitTiming(ctx, state.spec)
+	if err != nil {
+		return err
+	}
+	defer initTiming.close()
+
 	configPath := filepath.Join(bundle, "config.json")
 	f, err := os.Create(configPath)
 	if err != nil {
@@ -1616,7 +1624,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 	defer f.Close()
 
-	if err := json.NewEncoder(f).Encode(state.spec); err != nil {
+	if err := json.NewEncoder(f).Encode(initTiming.withEnv(state.spec)); err != nil {
 		return fmt.Errorf("failed to encode spec: %w", err)
 	}
 	f.Close()
@@ -1906,10 +1914,11 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			}
 
 			_, err = c.Runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
-				Started:   started,
-				IO:        io,
-				ExtraArgs: []string{"--keep"},
-				PidFile:   pidFile,
+				Started:    started,
+				IO:         io,
+				ExtraArgs:  []string{"--keep"},
+				PidFile:    pidFile,
+				ExtraFiles: initTiming.extraFiles(),
 			})
 			return err
 		})
@@ -1942,7 +1951,10 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 				wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, releasedNS, wcprof.OutcomeOK)
 				processStartNS = releasedNS
 			}
-			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser, Argv: profArgv}, processStartNS, endNS, outcome)
+			runID := wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser, Argv: profArgv}, processStartNS, endNS, outcome)
+			if initStartedNS, spawnedNS, exitedNS, ok := initTiming.read(); ok {
+				recordProcessRunSplit(ctx, runID, state.id, profArgv, processStartNS, endNS, initStartedNS, spawnedNS, exitedNS, outcome)
+			}
 		} else {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, endNS, outcome)
 		}

@@ -562,6 +562,29 @@ func TestCritpathNestedClient(t *testing.T) {
 	}
 }
 
+func TestNestedClientUnderWorkload(t *testing.T) {
+	b := newDump(t)
+	b.call(1, 0, "mod:Mod.fn", "c", 0, 100) // exec op 2
+	b.op(3, 2, "exec", "exec.run", "c", "ok", 5, 100)
+	b.op(5, 3, "exec_phase", "exec.runContainer", "", "ok", 6, 100)
+	b.op(6, 5, "exec_phase", "exec.containerStart", "", "ok", 6, 10)
+	b.op(7, 5, "exec_phase", "exec.processRun", "", "ok", 10, 100)
+	b.op(11, 7, "exec_phase", "exec.initStart", "", "ok", 10, 12)
+	b.op(12, 7, "exec_phase", "exec.processSpawn", "", "ok", 12, 14)
+	b.op(13, 7, "exec_phase", "exec.workload", "", "ok", 14, 95)
+	b.op(14, 7, "exec_phase", "exec.processExit", "", "ok", 95, 100)
+	b.events = append(b.events, wcprof.DumpEvent{Type: "link", LinkKind: "nested_client", ParentID: 3, IdentID: b.id("nested"), StartNS: 15 * msNS, EndNS: 15 * msNS})
+	b.op(8, 0, "session_phase", "session.serveQuery", "nested", "ok", 20, 80)
+	g := b.graph()
+	if p := g.ByID[8].Parent; p == nil || p.ID != 13 {
+		t.Fatalf("the nested client's root should be under the exec's workload phase, got parent %v", p)
+	}
+	// 81ms of workload minus the 60ms request.
+	if got, want := g.ByID[13].Self, 21*msNS; got != want {
+		t.Errorf("self of workload: got %s, want %s", fmtDur(got), fmtDur(want))
+	}
+}
+
 func TestCritpathShortSegments(t *testing.T) {
 	// The threshold is 1% of the 10s path: 100ms.
 	b := newDump(t)

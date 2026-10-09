@@ -251,7 +251,8 @@ func Build(header *wcprof.DumpHeader, events []wcprof.DumpEvent) *Graph {
 // critical path follows into them), or under the exec when no process run
 // covers it. Engines before the link moved to the exec op recorded it from
 // the exec's setupNestedClient phase, which ends before the process starts;
-// such a host is replaced by its exec.
+// such a host is replaced by its exec. When the process run is split, the
+// root goes under its exec.workload phase, the command's own run.
 func nestedClientParent(host, root *Op) *Op {
 	exec := host
 	for exec.Kind == "exec_phase" && exec.Parent != nil {
@@ -274,6 +275,11 @@ func findProcessRun(op *Op, t int64) *Op {
 			continue
 		}
 		if ch.Class == "exec.processRun" {
+			for _, w := range ch.Children {
+				if w.Class == "exec.workload" && w.Start <= t && t < w.End {
+					return w
+				}
+			}
 			return ch
 		}
 		if run := findProcessRun(ch, t); run != nil {

@@ -22,7 +22,7 @@ Three event types, written by hooks at the engine's blocking choke points:
 - **links**: non-blocking correlations, most importantly "exec op X hosts
   nested client Y" so module-function calls back into the API are stitched
   under the exec that made them (wcprof-report puts them under the exec's
-  `exec.processRun`).
+  `exec.processRun`, or its `exec.workload` when the run is split).
 
 Current hook points:
 
@@ -40,6 +40,12 @@ Current hook points:
   `exec.containerStart` (engine overhead up to launching runc),
   `exec.runtimeStart` (runc creating the container, up to the pid file it
   writes once the workload is released) and `exec.processRun` (user work).
+  When the container runs under the injected `/.init`, `/.init` reports its
+  own timing on a pipe and `exec.processRun` is split further into
+  `exec.initStart` (exec of `/.init` up to its main), `exec.processSpawn`
+  (its setup and the fork/exec of the command), `exec.workload` (the command,
+  user work) and `exec.processExit` (`/.init` exiting, runc reaping it and
+  exiting, and the stdio drain).
   The exec op is linked to every nested client the container connects.
 - `core/lazy_state.go`, `dagql/cache.go syncResultSnapshotLeases`: lock waits
   on a lazy group's body (`core.lazyGroupOnce.mu`), the whole-op latch
