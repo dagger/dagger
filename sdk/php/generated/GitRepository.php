@@ -157,13 +157,13 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
      */
-    public function withRemote(string $name, string $url, ?string $pushUrl = ''): GitRepository
+    public function withRemote(string $name, string $url, ?string $pushURL = ''): GitRepository
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRemote');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('url', $url);
-        if (null !== $pushUrl) {
-        $innerQueryBuilder->setArgument('pushUrl', $pushUrl);
+        if (null !== $pushURL) {
+        $innerQueryBuilder->setArgument('pushUrl', $pushURL);
         }
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

@@ -13,6 +13,7 @@ namespace Dagger;
  *
  * A function always evaluates against a parent object and is given a set of named arguments.
  */
+#[Attribute\GraphQLType('Function')]
 class Function_ extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**

@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+#[Attribute\GraphQLType('JSONValue')]
 class JsonValue extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**

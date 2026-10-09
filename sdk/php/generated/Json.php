@@ -11,6 +11,7 @@ namespace Dagger;
 /**
  * An arbitrary JSON-encoded value.
  */
+#[Attribute\GraphQLType('JSON')]
 readonly class Json extends Client\AbstractScalar
 {
 }

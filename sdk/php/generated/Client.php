@@ -11,6 +11,7 @@ namespace Dagger;
 /**
  * The root of the DAG.
  */
+#[Attribute\GraphQLType('Query')]
 class Client extends Client\AbstractClient implements Client\IdAble, Node
 {
     /**
@@ -604,27 +605,27 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
-    public function codegen(ModuleSource $modSource, File $introspectionJson): GeneratedCode
+    public function codegen(ModuleSource $modSource, File $introspectionJSON): GeneratedCode
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegen');
         $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJSON);
         return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
-    public function codegenBase(ModuleSource $modSource, File $introspectionJson): Container
+    public function codegenBase(ModuleSource $modSource, File $introspectionJSON): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegenBase');
         $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJSON);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
-    public function moduleRuntime(ModuleSource $modSource, File $introspectionJson): Container
+    public function moduleRuntime(ModuleSource $modSource, File $introspectionJSON): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleRuntime');
         $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJSON);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }
