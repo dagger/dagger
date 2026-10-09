@@ -3,16 +3,19 @@ package client
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -23,7 +26,7 @@ import (
 
 // The fake engine performs the real attachables upgrade, then calls the real
 // registered gRPC server over that connection. No Dagger engine is required.
-func newAttachablesLifetimeClient(t *testing.T, e2e bool) (*Client, context.CancelFunc, grpc_health_v1.HealthClient, <-chan struct{}) {
+func newAttachablesLifetimeClient(t *testing.T, e2e bool) (*Client, context.CancelFunc, grpc_health_v1.HealthClient, <-chan struct{}, func()) {
 	t.Helper()
 	commandCtx, cancelCommand := context.WithCancel(context.Background())
 	t.Cleanup(cancelCommand)
@@ -105,7 +108,10 @@ func newAttachablesLifetimeClient(t *testing.T, e2e bool) (*Client, context.Canc
 	response, err := health.Check(ctx, &grpc_health_v1.HealthCheckRequest{}, grpc.WaitForReady(true))
 	require.NoError(t, err)
 	require.Equal(t, grpc_health_v1.HealthCheckResponse_SERVING, response.Status)
-	return c, cancelCommand, health, observed.closed
+	// closeEngine closes the engine's end, as the engine does when the client
+	// misses its health checks.
+	closeEngine := func() { _ = peer.Close(); _ = engineConn.Close() }
+	return c, cancelCommand, health, observed.closed, closeEngine
 }
 
 func TestSessionAttachablesRemainAvailableThroughCancelledCommandShutdown(t *testing.T) {
@@ -116,7 +122,7 @@ func TestSessionAttachablesRemainAvailableThroughCancelledCommandShutdown(t *tes
 	t.Setenv("SSH_AUTH_SOCK", "")
 	for _, e2e := range []bool{false, true} {
 		t.Run(fmt.Sprintf("e2e=%t", e2e), func(t *testing.T) {
-			c, cancelCommand, health, attachablesClosed := newAttachablesLifetimeClient(t, e2e)
+			c, cancelCommand, health, attachablesClosed, _ := newAttachablesLifetimeClient(t, e2e)
 			cancelCommand()
 			select {
 			case <-attachablesClosed:
@@ -157,7 +163,7 @@ func TestSessionAttachablesStopOnClientInitializationFailure(t *testing.T) {
 	t.Setenv("SSH_AUTH_SOCK", "")
 	for _, e2e := range []bool{false, true} {
 		t.Run(fmt.Sprintf("e2e=%t", e2e), func(t *testing.T) {
-			c, _, _, closed := newAttachablesLifetimeClient(t, e2e)
+			c, _, _, closed, _ := newAttachablesLifetimeClient(t, e2e)
 			c.internalCancel(errors.New("client initialization failed"))
 			select {
 			case <-closed:
@@ -174,6 +180,65 @@ func TestSessionAttachablesStopOnClientInitializationFailure(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSessionClosedByEngineReportsCause(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("DOCKER_CONFIG", t.TempDir())
+	t.Setenv("SSH_AUTH_SOCK", "")
+	for _, e2e := range []bool{false, true} {
+		t.Run(fmt.Sprintf("e2e=%t", e2e), func(t *testing.T) {
+			c, _, _, attachablesClosed, closeEngine := newAttachablesLifetimeClient(t, e2e)
+			require.NoError(t, c.SessionLost())
+
+			closeEngine()
+			select {
+			case <-attachablesClosed:
+			case <-time.After(time.Second):
+				t.Fatal("client did not notice the engine closing attachables")
+			}
+			require.Eventually(t, func() bool { return c.SessionLost() != nil }, time.Second, 10*time.Millisecond)
+			require.ErrorContains(t, c.SessionLost(), `engine closed session "lifetime-test"`)
+			require.ErrorContains(t, c.SessionLost(), "misses two health checks in a row")
+
+			// Requests get the cause in the engine's own error shape, instead of
+			// being forwarded to the engine's "already used and released" error.
+			rec := httptest.NewRecorder()
+			c.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "http://dagger"+engine.QueryEndpoint, strings.NewReader(`{"query":"{version}"}`)))
+			require.Equal(t, http.StatusOK, rec.Code)
+			var resp graphql.Response
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+			require.Len(t, resp.Errors, 1)
+			require.Contains(t, resp.Errors[0].Message, `engine closed session "lifetime-test"`)
+
+			// Close skips the shutdown request the engine would reject.
+			c.httpClient = &httpClient{inner: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("unexpected request to %s", req.URL.Path)
+			})}}
+			err := c.Close()
+			require.ErrorContains(t, err, `engine closed session "lifetime-test"`)
+			require.NotContains(t, err.Error(), "unexpected request")
+		})
+	}
+}
+
+func TestSessionClosedByEngineDuringShutdownIsNotLost(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("DOCKER_CONFIG", t.TempDir())
+	t.Setenv("SSH_AUTH_SOCK", "")
+	c, _, _, attachablesClosed, closeEngine := newAttachablesLifetimeClient(t, false)
+	// The engine ends the main client's attachables while it handles the
+	// client's shutdown request, before Close stops them itself.
+	c.httpClient = &httpClient{inner: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != engine.ShutdownEndpoint {
+			return nil, fmt.Errorf("unexpected path %s", req.URL.Path)
+		}
+		closeEngine()
+		<-attachablesClosed
+		return &http.Response{StatusCode: http.StatusNoContent, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
+	})}}
+	require.NoError(t, c.Close())
+	require.NoError(t, c.SessionLost())
 }
 
 type observedAttachablesConn struct {
