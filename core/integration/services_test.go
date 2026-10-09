@@ -731,12 +731,12 @@ func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *te
 
 	script := core.NewQuery(c).Container().
 		From(alpineImage).
-		WithNewFile("script", "#!/bin/sh\nwhile true; do echo -n cool | nc -l -p 1337; done").
+		WithNewFile("script", "#!/bin/sh\nmkdir -p /www && echo -n cool > /www/index.html && exec httpd -f -p 1337 -h /www").
 		WithExec([]string{"/bin/sh", "-c", "chmod +x script"}).
 		File("script")
 
 	srv := core.NewQuery(c).Container().
-		From(alpineImage).
+		From(busyboxImage).
 		WithFile("/bin/app", script).
 		WithSymlink("doesnt", "matter"). // WithSymlink runs as a dagOp, so this covers services built from dagOp-produced containers
 		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
@@ -746,7 +746,7 @@ func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *te
 	s, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("coolserver", srv.AsService()).
-		WithExec([]string{"sh", "-c", "nc coolserver 1337"}).
+		WithExec([]string{"sh", "-c", "wget -q -O- http://coolserver:1337"}).
 		Stdout(ctx)
 
 	require.NoError(t, err)

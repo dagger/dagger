@@ -1264,7 +1264,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 	t.Run("service-bound graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "persist-service-binding-state-" + identity.NewID()
-		serviceScript := "#!/bin/sh\nwhile true; do cat /work/service-random.txt | nc -l -p 8080; done\n"
+		serviceScript := "#!/bin/sh\nexec httpd -f -p 8080 -h /work\n"
 		serviceSetupScript := `
 set -eu
 mkdir -p /work
@@ -1273,7 +1273,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/service-random.txt
 		serviceRunScript := `
 set -eu
 mkdir -p /work
-nc sidecar 8080 > /work/service.txt
+wget -q -O /work/service.txt http://sidecar:8080/service-random.txt
 head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/client-random.txt
 `
 
@@ -1287,7 +1287,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/client-random.txt
 
 			service := core.NewQuery(engineClient).
 				Container().
-				From(alpineImage).
+				From(busyboxImage).
 				WithExec([]string{"sh", "-ec", serviceSetupScript}).
 				WithNewFile("/bin/app", serviceScript, core.ContainerWithNewFileOpts{Permissions: 0o755}).
 				WithExposedPort(8080).
