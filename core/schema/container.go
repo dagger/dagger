@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
@@ -2425,7 +2424,7 @@ func (s *containerSchema) withoutEnvVariable(ctx context.Context, parent dagql.O
 		newEnv := []string{}
 
 		core.WalkEnv(cfg.Env, func(k, _, env string) {
-			if !shell.EqualEnvKeys(k, args.Name) {
+			if k != args.Name {
 				newEnv = append(newEnv, env)
 			}
 		})
