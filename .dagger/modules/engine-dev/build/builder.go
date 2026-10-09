@@ -149,6 +149,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
 		{path: consts.RuncPath, file: build.runcBin()},
 		{path: consts.DaggerInitPath, file: build.daggerInit()},
+		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session", false)},
 		{path: consts.TiniPath, file: build.Init(), fileOpts: []dagger.ContainerWithFileOpts{{Permissions: 0o755}}},
 	}
 	qemuDir, qemuNames := build.qemuBins()

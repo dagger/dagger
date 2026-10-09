@@ -14,8 +14,17 @@ const (
 const (
 	RuncPath       = "/usr/local/bin/runc"
 	DaggerInitPath = "/usr/local/bin/dagger-init"
-	DaggerCLIPath  = "/usr/local/bin/dagger"
-	TiniPath       = "/usr/local/bin/tini"
+	// DaggerInitSessionPath is the session-attachables helper of nested
+	// clients, mounted into their containers at InitSessionContainerPath.
+	DaggerInitSessionPath    = "/usr/local/bin/dagger-init-session"
+	InitSessionContainerPath = "/.init-session"
+	// InitTimingFDEnv names the fd on which the injected /.init reports
+	// when it started, spawned the command and reaped it, as CLOCK_MONOTONIC
+	// nanoseconds ("<started> <spawned> <exited>\n"). The engine sets it only
+	// when profiling with wcprof; /.init removes it before starting the command.
+	InitTimingFDEnv = "_DAGGER_INIT_TIMING_FD"
+	DaggerCLIPath   = "/usr/local/bin/dagger"
+	TiniPath        = "/usr/local/bin/tini"
 
 	EngineDefaultStateDir = "/var/lib/dagger"
 

@@ -3,12 +3,10 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -19,11 +17,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/engine/client/secretprovider"
-	"github.com/dagger/dagger/engine/session/git"
-	"github.com/dagger/dagger/engine/session/h2c"
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 func main() {
@@ -31,8 +25,6 @@ func main() {
 	switch os.Args[0] {
 	case "/.init":
 		err = mainInit()
-	case "/proc/self/exe":
-		err = mainSession()
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -213,15 +205,15 @@ func mainInit() error {
 }
 
 // timingFile returns the fd the engine passed for reporting this process's
-// timing when profiling (see engine.InitTimingFDEnv), or nil. It removes the
+// timing when profiling (see distconsts.InitTimingFDEnv), or nil. It removes the
 // variable so the command doesn't inherit it, and keeps the fd from leaking
 // into the command too.
 func timingFile() *os.File {
-	v, ok := os.LookupEnv(engine.InitTimingFDEnv)
+	v, ok := os.LookupEnv(distconsts.InitTimingFDEnv)
 	if !ok {
 		return nil
 	}
-	os.Unsetenv(engine.InitTimingFDEnv)
+	os.Unsetenv(distconsts.InitTimingFDEnv)
 	fd, err := strconv.Atoi(v)
 	if err != nil || fd < 3 {
 		return nil
@@ -248,7 +240,7 @@ func startSessionSubprocess() error {
 	}
 
 	// start the session subprocess
-	cmd := exec.Command("/proc/self/exe")
+	cmd := exec.Command(distconsts.InitSessionContainerPath)
 
 	// forwarding our stdio ensures that a panic in the child process won't get hidden and any other logging works too
 	cmd.Stdout = os.Stdout
@@ -259,6 +251,14 @@ func startSessionSubprocess() error {
 		Setsid: true,
 	}
 	err = cmd.Start()
+	if errors.Is(err, fs.ErrNotExist) {
+		// Not a nested client, though the command's env names a session: the
+		// engine only mounts the helper for nested clients. Run the command
+		// without session attachables, as when the helper fails at once.
+		r.Close()
+		w.Close()
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("failed to start session subprocess: %w", err)
 	}
@@ -283,60 +283,4 @@ func startSessionSubprocess() error {
 	case <-time.After(5 * time.Minute):
 		return fmt.Errorf("timed out waiting for session subprocess to start")
 	}
-}
-
-func mainSession() error {
-	ctx := context.Background()
-
-	// this is closed when the session server is about to run, letting the parent process know that
-	pipeW := os.NewFile(3, "session-pipe-w")
-
-	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
-	if !ok {
-		return fmt.Errorf("DAGGER_SESSION_PORT not set")
-	}
-	_, err := strconv.Atoi(portStr)
-	if err != nil {
-		return fmt.Errorf("DAGGER_SESSION_PORT invalid: %w", err)
-	}
-
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", "127.0.0.1:"+portStr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to session server: %w", err)
-	}
-
-	attachables := []client.SessionAttachable{
-		// secrets
-		secretprovider.NewSecretProvider(),
-		// sockets
-		client.SocketProvider{EnableHostNetworkAccess: true},
-		// host=>container networking
-		h2c.NewTunnelListenerAttachable(ctx),
-		// Git attachable
-		git.NewGitAttachable(ctx),
-	}
-	// filesync
-	filesyncer, err := client.NewFilesyncer()
-	if err != nil {
-		return err
-	}
-	attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
-
-	nestedClientID := os.Getenv(engine.NestedClientIDEnv)
-	if nestedClientID == "" {
-		return fmt.Errorf("%s not set", engine.NestedClientIDEnv)
-	}
-	headers := engine.ClientMetadata{ClientID: nestedClientID}.AppendToHTTPHeaders(http.Header{})
-	sessionSrv, err := client.ConnectSessionAttachables(ctx, conn, headers, attachables...)
-	if err != nil {
-		return err
-	}
-	defer sessionSrv.Stop()
-
-	if err := pipeW.Close(); err != nil {
-		return err
-	}
-	sessionSrv.Run(ctx)
-
-	return nil
 }

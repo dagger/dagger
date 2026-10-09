@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
@@ -34,7 +34,7 @@ func TestInitTimingOnlyWhenProfilingInit(t *testing.T) {
 	require.NotNil(t, timing)
 	defer timing.close()
 	spec := timing.withEnv(initSpec)
-	require.Equal(t, []string{"A=1", engine.InitTimingFDEnv + "=3"}, spec.Process.Env)
+	require.Equal(t, []string{"A=1", distconsts.InitTimingFDEnv + "=3"}, spec.Process.Env)
 	require.Equal(t, []string{"A=1"}, initSpec.Process.Env, "the exec's own spec is unchanged")
 	require.Len(t, timing.extraFiles(), 1)
 }

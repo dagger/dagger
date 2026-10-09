@@ -3,11 +3,12 @@ package consts
 import "github.com/dagger/dagger/engine/distconsts"
 
 const (
-	EngineServerPath = "/usr/local/bin/dagger-engine"
-	RuncPath         = distconsts.RuncPath
-	DaggerInitPath   = distconsts.DaggerInitPath
-	DaggerCLIPath    = distconsts.DaggerCLIPath
-	TiniPath         = distconsts.TiniPath
+	EngineServerPath      = "/usr/local/bin/dagger-engine"
+	RuncPath              = distconsts.RuncPath
+	DaggerInitPath        = distconsts.DaggerInitPath
+	DaggerInitSessionPath = distconsts.DaggerInitSessionPath
+	DaggerCLIPath         = distconsts.DaggerCLIPath
+	TiniPath              = distconsts.TiniPath
 )
 
 const (
