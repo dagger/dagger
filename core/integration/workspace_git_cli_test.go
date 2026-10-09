@@ -15,7 +15,7 @@ import (
 // attachable together. No LLM or Cloud credentials are needed.
 func (WorkspaceSuite) TestNestedCLISnapshotApproval(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	changes, err := c.Directory().WithNewFile("created.txt", "created").Changes(c.Directory()).ID(ctx)
+	changes, err := core.NewQuery(c).Directory().WithNewFile("created.txt", "created").Changes(core.NewQuery(c).Directory()).ID(ctx)
 	require.NoError(t, err)
 	query := fmt.Sprintf(`{ currentWorkspace { snapshot {
 		file(path: "untracked.txt") { contents }
@@ -26,7 +26,7 @@ func (WorkspaceSuite) TestNestedCLISnapshotApproval(ctx context.Context, t *test
 			}
 		}
 	} } }`, changes)
-	out, err := c.Container().From(alpineImage).
+	out, err := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "python3"}).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/repo").
@@ -98,7 +98,7 @@ with open("/stdout", "w+") as stdout, open("/stderr", "w+") as stderr:
             print(stderr.read())
             print(screen)
 `).
-		WithExec([]string{"python3", "/drive-console.py"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).Stdout(ctx)
+		WithExec([]string{"python3", "/drive-console.py"}, core.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, `"contents": "approved"`)
 	require.Contains(t, out, `"contents": "created"`)
