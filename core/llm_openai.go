@@ -17,22 +17,33 @@ import (
 )
 
 type OpenAIClient struct {
-	client           openai.Client
+	chat             openai.ChatCompletionService
 	endpoint         *LLMEndpoint
 	disableStreaming bool
 }
 
+// newOpenAIClient builds a chat completions client for an OpenAI-compatible
+// endpoint.
+//
+// It deliberately avoids openai.NewClient: that seeds every client with
+// defaults read from the engine process's own environment (OPENAI_API_KEY,
+// OPENAI_BASE_URL, OPENAI_ORG_ID, ...). The endpoint is the whole
+// configuration — routed from what the session's clients sent — so an
+// endpoint without a key of its own (an OpenRouter or local route configured
+// with only a model or base URL) must not quietly pick up the engine's OpenAI
+// key and send it to a third party.
 func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreaming bool) *OpenAIClient {
-	var opts []option.RequestOption
-	opts = append(opts, option.WithHeader("Content-Type", "application/json"))
+	opts := []option.RequestOption{
+		option.WithEnvironmentProduction(),
+		option.WithHeader("Content-Type", "application/json"),
+	}
 	if azureVersion != "" {
 		opts = append(opts, azure.WithEndpoint(endpoint.BaseURL, azureVersion))
 		if endpoint.Key != "" {
 			opts = append(opts, azure.WithAPIKey(endpoint.Key))
 		}
 		opts = append(opts, option.WithHTTPClient(endpoint.otelHTTPClient("openai-azure")))
-		c := openai.NewClient(opts...)
-		return &OpenAIClient{client: c, endpoint: endpoint}
+		return &OpenAIClient{chat: openai.NewChatCompletionService(opts...), endpoint: endpoint}
 	}
 
 	if endpoint.Key != "" {
@@ -43,8 +54,7 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 	}
 
 	opts = append(opts, option.WithHTTPClient(endpoint.otelHTTPClient("openai")))
-	c := openai.NewClient(opts...)
-	return &OpenAIClient{client: c, endpoint: endpoint, disableStreaming: disableStreaming}
+	return &OpenAIClient{chat: openai.NewChatCompletionService(opts...), endpoint: endpoint, disableStreaming: disableStreaming}
 }
 
 var _ LLMClient = (*OpenAIClient)(nil)
@@ -481,7 +491,7 @@ func (c *OpenAIClient) queryWithStreaming(
 		IncludeUsage: openai.Opt(true),
 	}
 
-	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
+	stream := c.chat.NewStreaming(ctx, params)
 	if stream.Err() != nil {
 		// errored establishing connection; bail so stream.Close doesn't panic
 		return nil, stream.Err()
@@ -526,7 +536,7 @@ func (c *OpenAIClient) queryWithoutStreaming(
 	attrs []attribute.KeyValue,
 	dp *displayPhases,
 ) (*openai.ChatCompletion, error) {
-	compl, err := c.client.Chat.Completions.New(ctx, params)
+	compl, err := c.chat.New(ctx, params)
 	if err != nil {
 		return nil, err
 	}

@@ -544,6 +544,39 @@ func TestOpenAIRequestUsesNonStrictNullableToolSchema(t *testing.T) {
 	require.Equal(t, []any{"filePath"}, parameters["required"])
 }
 
+// TestOpenAIClientIgnoresEngineEnvironment checks that an OpenAI-compatible
+// endpoint is configured by its route alone: the SDK's environment defaults
+// must not leak the engine's own OpenAI credential to a route that has none.
+func TestOpenAIClientIgnoresEngineEnvironment(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "engine-openai-key")
+	t.Setenv("OPENAI_ORG_ID", "engine-org")
+	t.Setenv("OPENAI_PROJECT_ID", "engine-project")
+
+	headers := make(chan http.Header, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers <- r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"test","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}`)
+	}))
+	t.Cleanup(server.Close)
+	// A tool keeps the non-streaming path in use, which the stub answers.
+	tools := []LLMTool{{Name: "read", Schema: map[string]any{"type": "object"}}}
+
+	client := newOpenAIClient(&LLMEndpoint{Model: "openai/gpt-4.1", Provider: OpenRouter, BaseURL: server.URL}, "", true)
+	_, err := client.SendQuery(t.Context(), llmTestHistory(), tools, &LLMCallOpts{})
+	require.NoError(t, err)
+	got := <-headers
+	assert.Empty(t, got.Get("Authorization"))
+	assert.Empty(t, got.Get("OpenAI-Organization"))
+	assert.Empty(t, got.Get("OpenAI-Project"))
+
+	// The route's own key is still sent.
+	client = newOpenAIClient(&LLMEndpoint{Model: "openai/gpt-4.1", Provider: OpenRouter, BaseURL: server.URL, Key: "route-key"}, "", true)
+	_, err = client.SendQuery(t.Context(), llmTestHistory(), tools, &LLMCallOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, "Bearer route-key", (<-headers).Get("Authorization"))
+}
+
 func TestOpenAIConvertToolCalls(t *testing.T) {
 	history := []*LLMMessage{{
 		Role: LLMMessageRoleAssistant,
