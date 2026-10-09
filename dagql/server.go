@@ -419,6 +419,16 @@ var coreDirectives = []DirectiveSpec{
 		},
 	},
 	{
+		Name: "reevaluate",
+		Description: FormatDescription(
+			`Indicates that every evaluation of this field may give a new result or
+			repeat a side effect. A client must evaluate it again for each use: it
+			must not reuse an ID it fetched for an object built through this field.`),
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+		},
+	},
+	{
 		Name:        "sourceMap",
 		Description: FormatDescription(`Indicates the source information for where a given field is defined.`),
 		Args: NewInputSpecs(

@@ -982,6 +982,13 @@ type FieldSpec struct {
 	// calls deduped. The string value is a reason why the field should not be cached.
 	DoNotCache string
 
+	// Reevaluate marks a field whose every evaluation may give a new result
+	// or repeat a side effect, so a client must evaluate it again for each
+	// use rather than reuse an ID it fetched before. The schema exposes it as
+	// the @reevaluate directive. Fields with the per-call cache input are
+	// reevaluated without setting it; see Reevaluated.
+	Reevaluate bool
+
 	// If set, the result of this field will be cached for the given TTL (in seconds).
 	TTL int64
 
@@ -1045,7 +1052,19 @@ func (spec FieldSpec) FieldDefinition(view call.View) *ast.FieldDefinition {
 	if spec.ExperimentalReason != "" {
 		def.Directives = append(def.Directives, experimental(spec.ExperimentalReason))
 	}
+	if spec.Reevaluated() {
+		def.Directives = append(def.Directives, reevaluate())
+	}
 	return def
+}
+
+// Reevaluated reports whether every evaluation of the field may give a new
+// result or repeat a side effect: it is marked Reevaluate, or it has the
+// per-call cache input.
+func (spec FieldSpec) Reevaluated() bool {
+	return spec.Reevaluate || slices.ContainsFunc(spec.ImplicitInputs, func(input ImplicitInput) bool {
+		return input.Name == PerCallInput.Name
+	})
 }
 
 func (spec *FieldSpec) resolveImplicitInputCallArgs(ctx context.Context, inputArgs map[string]Input) ([]*ResultCallArg, error) {
@@ -1535,6 +1554,16 @@ func (field Field[T]) DoNotCache(reason string, paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
+	return field
+}
+
+// Reevaluate marks the field as giving a new result, or repeating a side
+// effect, on every evaluation. See FieldSpec.Reevaluate.
+func (field Field[T]) Reevaluate() Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.Reevaluate = true
 	return field
 }
 

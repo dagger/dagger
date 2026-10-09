@@ -2504,6 +2504,34 @@ func TestViews(t *testing.T) {
 	})
 }
 
+func TestReevaluateDirective(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](srv)
+	newPoint := func(ctx context.Context, self Query, args struct{}) (*points.Point, error) {
+		return &points.Point{X: 1, Y: 2}, nil
+	}
+	dagql.Fields[Query]{
+		dagql.Func("plainPoint", newPoint),
+		dagql.Func("reevaluatedPoint", newPoint).Reevaluate(),
+		dagql.Func("perCallPoint", newPoint).WithInput(dagql.PerCallInput),
+		dagql.Func("uncachedPoint", newPoint).DoNotCache("routing only"),
+	}.Install(srv)
+
+	schema := srv.SchemaForView("")
+	require.NotNil(t, schema.Directives["reevaluate"])
+	query := schema.Types["Query"]
+	for field, want := range map[string]bool{
+		"plainPoint":       false,
+		"reevaluatedPoint": true,
+		"perCallPoint":     true,
+		"uncachedPoint":    false,
+	} {
+		def := query.Fields.ForName(field)
+		require.NotNil(t, def, field)
+		require.Equal(t, want, def.Directives.ForName("reevaluate") != nil, field)
+	}
+}
+
 func TestIDRecipeArgIsInternal(t *testing.T) {
 	srv := newExternalDagqlServerForTest(t, Query{})
 

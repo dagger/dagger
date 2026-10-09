@@ -117,6 +117,12 @@ func experimental(reason string) *ast.Directive {
 	}
 }
 
+func reevaluate() *ast.Directive {
+	return &ast.Directive{
+		Name: "reevaluate",
+	}
+}
+
 func internal() *ast.Directive {
 	return &ast.Directive{
 		Name: "internal",
