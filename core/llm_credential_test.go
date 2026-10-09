@@ -175,7 +175,7 @@ func TestCredentialSourceRejectOnlyCurrentToken(t *testing.T) {
 	var hints []string
 	var resolveErr error
 	resolve := credentialResolver(func(ctx context.Context) (Credential, error) {
-		hints = append(hints, secretprovider.RejectedEnvValue(ctx))
+		hints = append(hints, secretprovider.RejectedSecretValue(ctx))
 		if resolveErr != nil {
 			return Credential{}, resolveErr
 		}
@@ -420,28 +420,28 @@ func TestCredentialSourceInvalidate(t *testing.T) {
 }
 
 // TestCredentialReloaderReadsTokenBeforeExpiry pins the ordering the two
-// halves agreed on: the client's refresher hook fires on the *token* lookup
-// and rewrites both variables, so reading the expiry first would pair a fresh
-// token with the outgoing one's expiry.
+// halves agreed on: the client's resolver may rotate the token on the *token*
+// read and rewrite both, so reading the expiry first would pair a fresh token
+// with the outgoing one's expiry.
 func TestCredentialReloaderReadsTokenBeforeExpiry(t *testing.T) {
 	var order []string
 	token, expiry := "token-v1", "2026-01-02T15:04:05Z"
-	getenv := func(_ context.Context, key string) (string, error) {
-		order = append(order, key)
-		switch key {
-		case "ANTHROPIC_AUTH_TOKEN":
-			// The refresher hook runs inside this lookup and updates both.
+	resolve := func(_ context.Context, uri string) (string, error) {
+		order = append(order, uri)
+		switch uri {
+		case "llmconfig://anthropic/auth_token":
+			// The CLI's resolver refreshes inside this lookup and updates both.
 			token, expiry = "token-v2", "2026-01-02T16:04:05Z"
 			return token, nil
-		case "ANTHROPIC_AUTH_TOKEN_EXPIRES_AT":
+		case "llmconfig://anthropic/auth_token_expires_at":
 			return expiry, nil
 		}
 		return "", nil
 	}
 
-	cred, err := credentialReloader(getenv, "ANTHROPIC_AUTH_TOKEN")(t.Context())
+	cred, err := credentialReloader(resolve, "llmconfig://anthropic/auth_token", "llmconfig://anthropic/auth_token_expires_at")(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN_EXPIRES_AT"}, order)
+	require.Equal(t, []string{"llmconfig://anthropic/auth_token", "llmconfig://anthropic/auth_token_expires_at"}, order)
 	require.Equal(t, "token-v2", cred.Token)
 	require.Equal(t, time.Date(2026, 1, 2, 16, 4, 5, 0, time.UTC), cred.ExpiresAt)
 }
@@ -449,34 +449,46 @@ func TestCredentialReloaderReadsTokenBeforeExpiry(t *testing.T) {
 func TestCredentialReloaderTolerance(t *testing.T) {
 	t.Run("no token means no credential and no expiry lookup", func(t *testing.T) {
 		var lookups []string
-		cred, err := credentialReloader(func(_ context.Context, key string) (string, error) {
-			lookups = append(lookups, key)
+		cred, err := credentialReloader(func(_ context.Context, uri string) (string, error) {
+			lookups = append(lookups, uri)
 			return "", nil
-		}, "OPENAI_CODEX_AUTH_TOKEN")(t.Context())
+		}, "env://OPENAI_CODEX_AUTH_TOKEN", "env://OPENAI_CODEX_AUTH_TOKEN_EXPIRES_AT")(t.Context())
 		require.NoError(t, err)
 		require.Empty(t, cred.Token)
-		require.Equal(t, []string{"OPENAI_CODEX_AUTH_TOKEN"}, lookups)
+		require.Equal(t, []string{"env://OPENAI_CODEX_AUTH_TOKEN"}, lookups)
+	})
+
+	t.Run("no expiry URI means no expiry lookup", func(t *testing.T) {
+		var lookups []string
+		cred, err := credentialReloader(func(_ context.Context, uri string) (string, error) {
+			lookups = append(lookups, uri)
+			return "tok", nil
+		}, "env://ANTHROPIC_AUTH_TOKEN", "")(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, "tok", cred.Token)
+		require.True(t, cred.ExpiresAt.IsZero())
+		require.Equal(t, []string{"env://ANTHROPIC_AUTH_TOKEN"}, lookups)
 	})
 
 	t.Run("unreadable expiry is unknown, not fatal", func(t *testing.T) {
-		cred, err := credentialReloader(func(_ context.Context, key string) (string, error) {
-			if key == "ANTHROPIC_AUTH_TOKEN" {
+		cred, err := credentialReloader(func(_ context.Context, uri string) (string, error) {
+			if uri == "env://ANTHROPIC_AUTH_TOKEN" {
 				return "tok", nil
 			}
 			return "", fmt.Errorf("client went away")
-		}, "ANTHROPIC_AUTH_TOKEN")(t.Context())
+		}, "env://ANTHROPIC_AUTH_TOKEN", "env://ANTHROPIC_AUTH_TOKEN_EXPIRES_AT")(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, "tok", cred.Token)
 		require.True(t, cred.ExpiresAt.IsZero())
 	})
 
 	t.Run("garbage expiry is unknown, not expired", func(t *testing.T) {
-		cred, err := credentialReloader(func(_ context.Context, key string) (string, error) {
-			if key == "ANTHROPIC_AUTH_TOKEN" {
+		cred, err := credentialReloader(func(_ context.Context, uri string) (string, error) {
+			if uri == "env://ANTHROPIC_AUTH_TOKEN" {
 				return "tok", nil
 			}
 			return "sometime next week", nil
-		}, "ANTHROPIC_AUTH_TOKEN")(t.Context())
+		}, "env://ANTHROPIC_AUTH_TOKEN", "env://ANTHROPIC_AUTH_TOKEN_EXPIRES_AT")(t.Context())
 		require.NoError(t, err)
 		require.True(t, cred.ExpiresAt.IsZero())
 
@@ -488,8 +500,8 @@ func TestCredentialReloaderTolerance(t *testing.T) {
 	t.Run("failed token lookup is fatal", func(t *testing.T) {
 		_, err := credentialReloader(func(context.Context, string) (string, error) {
 			return "", fmt.Errorf("client went away")
-		}, "ANTHROPIC_AUTH_TOKEN")(t.Context())
-		require.ErrorContains(t, err, "ANTHROPIC_AUTH_TOKEN")
+		}, "env://ANTHROPIC_AUTH_TOKEN", "")(t.Context())
+		require.ErrorContains(t, err, "client went away")
 	})
 }
 
