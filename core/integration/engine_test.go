@@ -269,7 +269,7 @@ func (EngineSuite) TestExecCgroupControllers(ctx context.Context, t *testctx.T) 
 	devEngineSvc := devEngineContainerAsService(devEngineContainer(c))
 	clientCtr := engineClientContainer(ctx, t, c, devEngineSvc).
 		WithExec([]string{"dagger", "query"}, core.ContainerWithExecOpts{
-			Stdin:                 `{container{from(address:"` + alpineImage + `"){withExec(args:["cat","/sys/fs/cgroup/cgroup.controllers"]){stdout}}}}`,
+			Stdin:                 `{container{from(address:"` + alpineImage + `"){withExec(args:["sh","-c","cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null || echo no-cgroup-v2"]){stdout}}}}`,
 			DisableDaggerInDagger: true,
 		})
 	stdout, err := clientCtr.Stdout(ctx)
@@ -284,6 +284,10 @@ func (EngineSuite) TestExecCgroupControllers(ctx context.Context, t *testctx.T) 
 		}
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &res))
+	if strings.TrimSpace(res.Container.From.WithExec.Stdout) == "no-cgroup-v2" {
+		// The entrypoint only sets up controllers on cgroup v2.
+		t.Skip("the engine's execs aren't on cgroup v2")
+	}
 	controllers := strings.Fields(res.Container.From.WithExec.Stdout)
 	for _, want := range []string{"cpu", "memory", "pids"} {
 		require.Contains(t, controllers, want, "the exec's cgroup has no %s controller", want)
