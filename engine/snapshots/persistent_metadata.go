@@ -280,6 +280,18 @@ func (cm *snapshotManager) writeLease(ctx context.Context, fn func(context.Conte
 	return true, fnErr
 }
 
+// updateMetadata runs fn's metadata writes in one transaction, which is rolled
+// back when fn fails. Without a metadata DB, fn's writes are made one by one.
+// fn must not take cm.mu.
+func (cm *snapshotManager) updateMetadata(ctx context.Context, fn func(context.Context) error) error {
+	if cm.metadataDB == nil {
+		return fn(ctx)
+	}
+	return cm.metadataDB.Update(func(tx *bolt.Tx) error {
+		return fn(boltutil.WithTransaction(ctx, tx))
+	})
+}
+
 func (cm *snapshotManager) createOwnerLease(ctx context.Context, leaseID string) error {
 	_, err := cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
 		l.ID = leaseID
