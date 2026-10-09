@@ -12,6 +12,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
 	"gotest.tools/v3/assert"
 )
@@ -34,6 +35,9 @@ func cacheDerivedIndexesErrorLocked(c *Cache) error {
 		return err
 	}
 	if err := cacheOutputEqClassSurvivorErrorLocked(c, time.Now().Unix()); err != nil {
+		return err
+	}
+	if err := cacheOutputEqClassCandidatesErrorLocked(c, time.Now().Unix()); err != nil {
 		return err
 	}
 	exactDigestsByResult, err := cacheExactDigestIndexErrorLocked(c)
@@ -139,6 +143,34 @@ func cacheOutputEqClassSurvivorErrorLocked(c *Cache, nowUnix int64) error {
 		}
 	}
 	return nil
+}
+
+// cacheOutputEqClassCandidatesErrorLocked checks that the servable results
+// of every output eq-class root read from outputEqClassResults are the ones
+// the digest postings of its digests name, so the canonical equivalent search
+// finds the same candidates through either index.
+func cacheOutputEqClassCandidatesErrorLocked(c *Cache, nowUnix int64) error {
+	for root := range c.outputEqClassResults {
+		fromPostings := newSharedResultSet()
+		for dig := range c.eqClassToDigests[root] {
+			c.appendDigestResultsLocked(fromPostings, digest.Digest(dig), nowUnix, nil)
+		}
+		fromClass := newSharedResultSet()
+		c.appendOutputEqClassResultsLocked(fromClass, root, nowUnix)
+		if !slices.Equal(sharedResultSetIDs(fromPostings), sharedResultSetIDs(fromClass)) {
+			return fmt.Errorf("output eq-class root %d candidates %v differ from its digest postings' %v",
+				root, sharedResultSetIDs(fromClass), sharedResultSetIDs(fromPostings))
+		}
+	}
+	return nil
+}
+
+func sharedResultSetIDs(results *set.TreeSet[*sharedResult]) []sharedResultID {
+	ids := make([]sharedResultID, 0, results.Size())
+	for res := range results.Items() {
+		ids = append(ids, res.id)
+	}
+	return ids
 }
 
 // cacheExactDigestIndexErrorLocked checks the exact digest index: every
@@ -312,6 +344,51 @@ func cacheDerivedIndexWideOutputFixture(t testing.TB, width int, imported bool) 
 		f.cache, f.ctx = newCacheDerivedIndexFixtureCache(t, f.setupSession, f.dbPath)
 	}
 	return f
+}
+
+func TestCacheCanonicalEquivalentReadsOutputEqClassResults(t *testing.T) {
+	for _, imported := range []bool{false, true} {
+		t.Run("imported="+strconv.FormatBool(imported), func(t *testing.T) {
+			const width = 4
+			f := cacheDerivedIndexWideOutputFixture(t, width, imported)
+			defer f.close(t)
+			c := f.cache
+			nowUnix := time.Now().Unix()
+
+			c.egraphMu.Lock()
+			root := c.eqClassRootLocked(c.egraphDigestToClass[digest.FromString("derived-index-wide-output-content").String()])
+			members := slices.Sorted(maps.Keys(c.outputEqClassResults[root]))
+			digestCount := len(c.eqClassToDigests[root])
+			_, broad := c.broadlyIndexedResults[members[0]]
+			c.egraphMu.Unlock()
+			assert.Equal(t, width, len(members))
+			assert.Assert(t, digestCount > width, "wide output class has only %d digests", digestCount)
+			assert.Equal(t, imported, broad)
+
+			canonicalIDs := func() []sharedResultID {
+				c.egraphMu.Lock()
+				defer c.egraphMu.Unlock()
+				ids := make([]sharedResultID, 0, len(members))
+				for _, id := range members {
+					canonical := c.canonicalEquivalentSharedResultLocked("", c.resultsByID[id], nowUnix, true)
+					ids = append(ids, canonical.id)
+				}
+				return ids
+			}
+			for i, id := range canonicalIDs() {
+				assert.Equal(t, members[0], id, "result %d did not resolve to the lowest-ID equivalent", members[i])
+			}
+
+			c.egraphMu.Lock()
+			c.resultsByID[members[0]].expiresAtUnix = nowUnix - 1
+			indexErr := cacheDerivedIndexesErrorLocked(c)
+			c.egraphMu.Unlock()
+			assert.NilError(t, indexErr)
+			for i, id := range canonicalIDs()[1:] {
+				assert.Equal(t, members[1], id, "result %d resolved to an expired equivalent", members[i+1])
+			}
+		})
+	}
 }
 
 func TestCacheOutputEqClassInverseMixedSurvivor(t *testing.T) {

@@ -616,25 +616,46 @@ func (c *Cache) appendDigestResultsLocked(candidates *set.TreeSet[*sharedResult]
 		return
 	}
 	for resID := range resultSet.Items() {
-		res := c.resultsByID[resID]
-		if res == nil {
-			continue
+		if res := c.servableCandidateLocked(resID, nowUnix, sawExpired); res != nil {
+			candidates.Insert(res)
 		}
-		if res.attachmentState() == resultAttachmentFailed {
-			continue
-		}
-		// An entry known only through holdings has no value to serve.
-		if res.noValueLocked() {
-			continue
-		}
-		if c.resultExpiredAtLocked(res, nowUnix) {
-			if sawExpired != nil {
-				*sawExpired = true
-			}
-			continue
-		}
-		candidates.Insert(res)
 	}
+}
+
+// appendOutputEqClassResultsLocked adds the servable results of an output
+// eq-class root, read from outputEqClassResults. It finds the same results
+// as appendDigestResultsLocked over every digest of the class: a result is
+// posted only under digests merged into one of its output classes, and every
+// output class of a result holds a digest it is posted under.
+func (c *Cache) appendOutputEqClassResultsLocked(candidates *set.TreeSet[*sharedResult], root eqClassID, nowUnix int64) {
+	for resID := range c.outputEqClassResults[root] {
+		if res := c.servableCandidateLocked(resID, nowUnix, nil); res != nil {
+			candidates.Insert(res)
+		}
+	}
+}
+
+// servableCandidateLocked returns the result lookup may serve for resID, or
+// nil. sawExpired is set as in appendDigestResultsLocked.
+func (c *Cache) servableCandidateLocked(resID sharedResultID, nowUnix int64, sawExpired *bool) *sharedResult {
+	res := c.resultsByID[resID]
+	if res == nil {
+		return nil
+	}
+	if res.attachmentState() == resultAttachmentFailed {
+		return nil
+	}
+	// An entry known only through holdings has no value to serve.
+	if res.noValueLocked() {
+		return nil
+	}
+	if c.resultExpiredAtLocked(res, nowUnix) {
+		if sawExpired != nil {
+			*sawExpired = true
+		}
+		return nil
+	}
+	return res
 }
 
 func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult], termSet *set.TreeSet[egraphTermID], nowUnix int64, sawExpired *bool) {
@@ -644,23 +665,9 @@ func (c *Cache) appendTermSetResultsLocked(candidates *set.TreeSet[*sharedResult
 
 	for termID := range termSet.Items() {
 		for resID := range c.termResults[termID] {
-			res := c.resultsByID[resID]
-			if res == nil {
-				continue
+			if res := c.servableCandidateLocked(resID, nowUnix, sawExpired); res != nil {
+				candidates.Insert(res)
 			}
-			if res.attachmentState() == resultAttachmentFailed {
-				continue
-			}
-			if res.noValueLocked() {
-				continue
-			}
-			if c.resultExpiredAtLocked(res, nowUnix) {
-				if sawExpired != nil {
-					*sawExpired = true
-				}
-				continue
-			}
-			candidates.Insert(res)
 		}
 	}
 	if !candidates.Empty() {
