@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"time"
 
 	"dagger.io/dagger/core"
@@ -85,4 +88,35 @@ func shutDownNestedEngine(ctx context.Context, client **dagger.Client, upstream,
 		errs = errors.Join(errs, err)
 	}
 	return errs
+}
+
+// nestedEngineStopDiagnostics reports a nested engine's goroutines and the
+// state, wait channel and kernel stack of every process it can see, from its
+// debug handlers. Each part is capped (256KiB of goroutines, 64KiB of
+// processes) and each request times out, so a stuck engine can't hang or
+// flood the test.
+func nestedEngineStopDiagnostics(debugURL string) string {
+	client := &http.Client{Timeout: 20 * time.Second}
+	var out strings.Builder
+	for _, part := range []struct {
+		path  string
+		limit int64
+	}{
+		{"/debug/pprof/goroutine?debug=2", 256 << 10},
+		{"/debug/processes", 64 << 10},
+	} {
+		fmt.Fprintf(&out, "=== %s\n", part.path)
+		resp, err := client.Get(debugURL + part.path)
+		if err != nil {
+			fmt.Fprintln(&out, err)
+			continue
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, part.limit))
+		resp.Body.Close()
+		out.Write(body)
+		if err != nil {
+			fmt.Fprintln(&out, err)
+		}
+	}
+	return out.String()
 }

@@ -19,6 +19,7 @@ import (
 	enginecore "github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -139,14 +140,52 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		client           *dagger.Client
 		sink             *agentTraceSink
 		endpoint         string
+		// The nested engine's debug handlers, for dumping a stuck stop.
+		debugTunnel *core.Service
+		debug       string
+	}
+	stopDebugTunnel := func(e *running) {
+		if e.debugTunnel != nil {
+			_, _ = e.debugTunnel.Stop(context.WithoutCancel(ctx), core.ServiceStopOpts{Kill: true})
+			e.debugTunnel = nil
+		}
 	}
 	stop := func(t *testctx.T, e *running) {
 		t.Helper()
-		require.NoError(t, stopNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
+		// This graceful stop has run into its bound before (#14271, #14418).
+		// Record the nested engine's goroutines and processes while it is
+		// still stopping, and log them only if the stop then fails.
+		quit := make(chan struct{})
+		dumped := make(chan struct{})
+		var dumps []string
+		go func() {
+			defer close(dumped)
+			began := time.Now()
+			for _, at := range []time.Duration{40 * time.Second, 90 * time.Second} {
+				select {
+				case <-quit:
+					return
+				case <-time.After(time.Until(began.Add(at))):
+				}
+				dumps = append(dumps, fmt.Sprintf("nested engine still stopping after %s:\n%s", at, nestedEngineStopDiagnostics(e.debug)))
+			}
+		}()
+		err := stopNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel)
+		close(quit)
+		<-dumped
+		stopDebugTunnel(e)
+		if err != nil {
+			for _, dump := range dumps {
+				t.Log(dump)
+			}
+		}
+		require.NoError(t, err)
 	}
 	discard := func(t *testctx.T, e *running) {
 		t.Helper()
-		require.NoError(t, discardNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
+		err := discardNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel)
+		stopDebugTunnel(e)
+		require.NoError(t, err)
 	}
 	start := func(t *testctx.T, state string, volume *core.CacheVolume, checkout string) *running {
 		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *core.Container) *core.Container {
@@ -157,11 +196,23 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			// across restart independently of host disk pressure.
 			ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
 		}
+		// Serve the debug handlers, exposed after the engine's own port so
+		// that stays the service's first port.
+		ctr = engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+			cfg.GRPC.DebugAddress = "0.0.0.0:6060"
+			return cfg
+		})(ctr).WithExposedPort(6060, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp})
 		e := &running{upstream: devEngineContainerAsService(ctr)}
 		var err error
 		e.tunnel, err = core.NewQuery(outer).Host().Tunnel(e.upstream).Start(ctx)
 		require.NoError(t, err)
 		e.endpoint, err = e.tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+		require.NoError(t, err)
+		e.debugTunnel, err = core.NewQuery(outer).Host().Tunnel(e.upstream, core.HostTunnelOpts{
+			Ports: []core.PortForward{{Backend: 6060, Protocol: core.NetworkProtocolTcp}},
+		}).Start(ctx)
+		require.NoError(t, err)
+		e.debug, err = e.debugTunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "http"})
 		require.NoError(t, err)
 		// Start an independent CLI session on this exact engine, with telemetry
 		// attached before construction; an inherited nested session cannot supply
