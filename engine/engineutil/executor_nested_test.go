@@ -24,6 +24,10 @@ type nestedTransportSessionHandler struct {
 	served     atomic.Int32
 }
 
+func (handler *nestedTransportSessionHandler) ExpectNestedExecAttachables(string, string) (func(error), func(), error) {
+	return func(error) {}, func() {}, nil
+}
+
 func (handler *nestedTransportSessionHandler) RegisterNestedClientTransportForExec(
 	_ context.Context,
 	metadata *engine.ClientMetadata,

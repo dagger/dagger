@@ -36,6 +36,23 @@ func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 		require.NotEmpty(t, strings.TrimSpace(out))
 	})
 
+	t.Run("uses the container's session at once", func(ctx context.Context, t *testctx.T) {
+		// The session helper starts alongside the command, so a command whose
+		// first call reads the container's files or env through the session
+		// waits for the helper in the engine.
+		ctr := sdkcore.NewQuery(c).Container().
+			From(alpineImage).
+			WithNewFile("/data/hello.txt", "hello from the container").
+			WithEnvVariable("NESTED_SECRET", "from the env").
+			WithEnvVariable("ID", identity.NewID())
+		out, err := ctr.WithExec([]string{"dagger", "-c", "host | file /data/hello.txt | contents"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from the container", strings.TrimSpace(out))
+		out, err = ctr.WithExec([]string{"dagger", "-c", "secret env://NESTED_SECRET | plaintext"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "from the env", strings.TrimSpace(out))
+	})
+
 	t.Run("container without a shell or libc", func(ctx context.Context, t *testctx.T) {
 		out, err := sdkcore.NewQuery(c).Container().
 			WithExec([]string{"dagger", "core", "version"}).

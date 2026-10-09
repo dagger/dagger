@@ -1449,10 +1449,9 @@ func (srv *Server) initializeSessionEngineClient(ctx context.Context, sess *dagg
 
 	var callerG singleflight.Group[string, engineutil.SessionCaller]
 	sess.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
+		ctx = context.WithoutCancel(ctx)
 		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (engineutil.SessionCaller, error) {
-			caller, err := srv.clientAttachableCaller(ctx, sess.sessionID, id, false)
+			caller, err := srv.clientAttachableCallerWithin(ctx, sess.sessionID, id, false, defaultAttachablesWait)
 			return caller, err
 		})
 		return caller, err
@@ -3621,10 +3620,27 @@ func (srv *Server) SpecificClientMetadata(ctx context.Context, clientID string) 
 	return record.daggerSession.clientMetadataSnapshot(requested)
 }
 
+// defaultAttachablesWait bounds how long a client's queries wait for its
+// session attachables to register, except for those a nested exec's session
+// helper registers: those waits last as long as the exec (see
+// sessionAttachableManager.Expect).
+const defaultAttachablesWait = 10 * time.Second
+
 func (srv *Server) clientAttachableCaller(
 	ctx context.Context,
 	sessID, clientID string,
 	ifAvailable bool,
+) (engineutil.SessionCaller, error) {
+	return srv.clientAttachableCallerWithin(ctx, sessID, clientID, ifAvailable, 0)
+}
+
+// clientAttachableCallerWithin is clientAttachableCaller with the wait for the
+// attachables bounded by timeout (0 means only ctx bounds it).
+func (srv *Server) clientAttachableCallerWithin(
+	ctx context.Context,
+	sessID, clientID string,
+	ifAvailable bool,
+	timeout time.Duration,
 ) (engineutil.SessionCaller, error) {
 	record, err := srv.clientRecordFromIDs(sessID, clientID)
 	if err != nil {
@@ -3647,6 +3663,8 @@ func (srv *Server) clientAttachableCaller(
 		caller, _ := record.daggerSession.attachables.Lookup(attachablesClientID)
 		return caller, nil
 	}
+	ctx, cancel := record.daggerSession.attachables.waitContext(ctx, attachablesClientID, timeout)
+	defer cancel()
 	caller, err := record.daggerSession.attachables.Wait(ctx, attachablesClientID)
 	if err != nil {
 		return nil, err

@@ -44,6 +44,25 @@ func (srv *Server) RegisterNestedClientTransportForExec(
 	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, attachablesClientID)
 }
 
+// ExpectNestedExecAttachables records that a nested exec's session helper
+// will register attachablesClientID's attachables, starting alongside the
+// exec's command. Queries then wait for them as long as the exec runs instead
+// of a fixed timeout. fail reports that the helper will not register them, and
+// done that the exec has ended.
+func (srv *Server) ExpectNestedExecAttachables(sessionID, attachablesClientID string) (fail func(error), done func(), _ error) {
+	srv.daggerSessionsMu.RLock()
+	sess := srv.daggerSessions[sessionID]
+	srv.daggerSessionsMu.RUnlock()
+	if sess == nil {
+		return nil, nil, fmt.Errorf("session %q not found", sessionID)
+	}
+	if sess.attachables == nil {
+		return func(error) {}, func() {}, nil
+	}
+	fail, done = sess.attachables.Expect(attachablesClientID)
+	return fail, done, nil
+}
+
 func (srv *Server) registerNestedClientTransport(
 	ctx context.Context,
 	metadata *engine.ClientMetadata,

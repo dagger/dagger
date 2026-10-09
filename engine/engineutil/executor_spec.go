@@ -148,6 +148,12 @@ type execState struct {
 	// profiling): the op nested clients of this exec are linked to.
 	profExecOpID uint64
 
+	// sessionHelperStatus carries /.init's report that a nested client's
+	// session helper failed, and failSessionHelper fails the waits for its
+	// attachables with it (both nil unless /.init starts a helper).
+	sessionHelperStatus *sessionHelperStatus
+	failSessionHelper   func(error)
+
 	doneErr error
 	done    chan struct{}
 }
@@ -1275,6 +1281,24 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	transports.profExecOpID = state.profExecOpID
 	state.cleanups.Add("close nested client transports", cleanups.Infallible(transports.Close))
 
+	// /.init starts the session helper alongside the command rather than
+	// before it, so the client's queries wait for its attachables. Without
+	// /.init nothing starts a helper, and the default wait applies.
+	if state.execMD == nil || !state.execMD.NoInit {
+		fail, done, err := c.SessionHandler.ExpectNestedExecAttachables(state.nestedClientMetadata.SessionID, state.nestedClientMetadata.ClientID)
+		if err != nil {
+			return fmt.Errorf("expect nested client attachables: %w", err)
+		}
+		state.cleanups.Add("end nested client attachables wait", cleanups.Infallible(done))
+		status, err := newSessionHelperStatus()
+		if err != nil {
+			return err
+		}
+		state.cleanups.Add("close session helper status", cleanups.Infallible(status.close))
+		state.sessionHelperStatus = status
+		state.failSessionHelper = fail
+	}
+
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
 	state.cleanups.Add("cancel session server", cleanups.Infallible(func() {
 		srvCancel(errors.New("container cleanup"))
@@ -1633,7 +1657,14 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 	defer f.Close()
 
-	if err := json.NewEncoder(f).Encode(initTiming.withEnv(state.spec)); err != nil {
+	var initFDs initFDs
+	initFDs.add(distconsts.SessionHelperStatusFDEnv, state.sessionHelperStatus.writeEnd())
+	initFDs.add(distconsts.InitTimingFDEnv, initTiming.writeEnd())
+	if state.sessionHelperStatus != nil {
+		go state.sessionHelperStatus.watch(state.failSessionHelper)
+	}
+
+	if err := json.NewEncoder(f).Encode(initFDs.withEnv(state.spec)); err != nil {
 		return fmt.Errorf("failed to encode spec: %w", err)
 	}
 	f.Close()
@@ -1927,7 +1958,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 				IO:         io,
 				ExtraArgs:  []string{"--keep"},
 				PidFile:    pidFile,
-				ExtraFiles: initTiming.extraFiles(),
+				ExtraFiles: initFDs.files,
 			})
 			return err
 		})

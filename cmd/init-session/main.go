@@ -3,7 +3,7 @@
 // Command init-session serves the session attachables of a nested Dagger
 // client from inside its container. The injected /.init starts it, mounted at
 // distconsts.InitSessionContainerPath, before the user's command when the
-// exec is a nested client, and waits for fd 3 to close.
+// exec is a nested client, alongside the user's command.
 package main
 
 import (
@@ -30,9 +30,6 @@ func main() {
 
 func mainSession() error {
 	ctx := context.Background()
-
-	// this is closed when the session server is about to run, letting the parent process know that
-	pipeW := os.NewFile(3, "session-pipe-w")
 
 	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
 	if !ok {
@@ -76,9 +73,6 @@ func mainSession() error {
 	}
 	defer sessionSrv.Stop()
 
-	if err := pipeW.Close(); err != nil {
-		return err
-	}
 	sessionSrv.Run(ctx)
 
 	return nil

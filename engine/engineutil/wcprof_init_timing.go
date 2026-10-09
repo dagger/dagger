@@ -12,7 +12,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 
-	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
@@ -24,10 +23,6 @@ import (
 type initTiming struct {
 	r, w *os.File
 }
-
-// initTimingFD is the fd the pipe's write end has in the container: runc
-// --preserve-fds passes runc's extra files on from fd 3.
-const initTimingFD = 3
 
 // newInitTiming returns an initTiming when profiling an exec that runs under
 // the injected /.init, or nil.
@@ -42,25 +37,17 @@ func newInitTiming(ctx context.Context, spec *specs.Spec) (*initTiming, error) {
 	return &initTiming{r: r, w: w}, nil
 }
 
-// withEnv returns a copy of spec whose process env tells /.init where to
-// report. state.spec is left as is, so nothing else run from it sees the fd.
-func (t *initTiming) withEnv(spec *specs.Spec) *specs.Spec {
-	if t == nil {
-		return spec
-	}
-	cp := *spec
-	proc := *spec.Process
-	proc.Env = append(slices.Clip(proc.Env), fmt.Sprintf("%s=%d", distconsts.InitTimingFDEnv, initTimingFD))
-	cp.Process = &proc
-	return &cp
-}
-
-// withoutInitTimingEnv returns env without the variable withEnv adds. The
-// bundle's config.json carries it, and processes exec'd into a running
-// container start from that spec but get neither the fd nor /.init.
-func withoutInitTimingEnv(env []string) []string {
+// withoutInitFDEnv returns env without the variables initFDs adds. The
+// bundle's config.json carries them, and processes exec'd into a running
+// container start from that spec but get neither the fds nor /.init.
+func withoutInitFDEnv(env []string) []string {
 	return slices.DeleteFunc(env, func(kv string) bool {
-		return strings.HasPrefix(kv, distconsts.InitTimingFDEnv+"=")
+		for _, name := range initFDEnvNames {
+			if strings.HasPrefix(kv, name+"=") {
+				return true
+			}
+		}
+		return false
 	})
 }
 
@@ -77,17 +64,17 @@ func readBundleSpec(bundle string) (*specs.Spec, error) {
 		return nil, err
 	}
 	if spec.Process != nil {
-		spec.Process.Env = withoutInitTimingEnv(spec.Process.Env)
+		spec.Process.Env = withoutInitFDEnv(spec.Process.Env)
 	}
 	return spec, nil
 }
 
-// extraFiles returns the files runc passes into the container, from fd 3.
-func (t *initTiming) extraFiles() []*os.File {
+// writeEnd returns the pipe's end for /.init, or nil.
+func (t *initTiming) writeEnd() *os.File {
 	if t == nil {
 		return nil
 	}
-	return []*os.File{t.w}
+	return t.w
 }
 
 func (t *initTiming) close() {

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -23,7 +24,20 @@ type sessionAttachableManager struct {
 	mu      sync.Mutex
 	callers map[string]*sessionAttachableCaller
 	waiters map[string][]chan struct{}
+	// expected holds the clients whose attachables a nested exec's session
+	// helper will register. Waits for them last until the helper registers,
+	// fails, or the exec ends, instead of a fixed timeout. A non-nil error
+	// means it will not register (any more).
+	expected map[string]*expectedAttachables
 }
+
+type expectedAttachables struct {
+	err error
+}
+
+// errExecEnded fails waits for a nested exec's attachables once the exec is
+// over.
+var errExecEnded = errors.New("the exec ended before its Dagger session helper connected")
 
 type sessionAttachableCaller struct {
 	ctx       context.Context
@@ -33,8 +47,9 @@ type sessionAttachableCaller struct {
 
 func newSessionAttachableManager() *sessionAttachableManager {
 	return &sessionAttachableManager{
-		callers: map[string]*sessionAttachableCaller{},
-		waiters: map[string][]chan struct{}{},
+		callers:  map[string]*sessionAttachableCaller{},
+		waiters:  map[string][]chan struct{}{},
+		expected: map[string]*expectedAttachables{},
 	}
 }
 
@@ -90,12 +105,50 @@ func (m *sessionAttachableManager) Lookup(clientID string) (engineutil.SessionCa
 	return caller, true
 }
 
+// Expect marks clientID's attachables as coming from a nested exec's session
+// helper, which starts alongside the exec's command rather than before it.
+// fail records that the helper will not register them; done records that the
+// exec has ended. Either wakes current waits with the error, and makes later
+// ones fail at once.
+func (m *sessionAttachableManager) Expect(clientID string) (fail func(error), done func()) {
+	m.mu.Lock()
+	exp := &expectedAttachables{}
+	m.expected[clientID] = exp
+	m.mu.Unlock()
+	fail = func(err error) {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if exp.err == nil {
+			exp.err = err
+			m.wakeWaitersLocked(clientID)
+		}
+	}
+	return fail, func() { fail(errExecEnded) }
+}
+
+// waitContext bounds a wait for clientID's attachables by timeout (0 means
+// none), unless they are expected from a nested exec's session helper: those
+// waits last until the helper registers, fails, or the exec ends.
+func (m *sessionAttachableManager) waitContext(ctx context.Context, clientID string, timeout time.Duration) (context.Context, context.CancelFunc) {
+	m.mu.Lock()
+	_, expected := m.expected[clientID]
+	m.mu.Unlock()
+	if expected || timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
 func (m *sessionAttachableManager) Wait(ctx context.Context, clientID string) (engineutil.SessionCaller, error) {
 	for {
 		m.mu.Lock()
 		if caller, ok := m.callers[clientID]; ok && caller.active() {
 			m.mu.Unlock()
 			return caller, nil
+		}
+		if exp := m.expected[clientID]; exp != nil && exp.err != nil {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("no session attachables for client %q: %w", clientID, exp.err)
 		}
 
 		waiter := make(chan struct{})
