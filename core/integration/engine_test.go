@@ -260,6 +260,40 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 	require.Equal(t, engineName, strings.TrimSpace(stdout))
 }
 
+// An engine run as a Dagger service starts under Dagger's /.init, so its
+// entrypoint isn't PID 1. The entrypoint must still move every process out
+// of the root cgroup, or it can't enable controllers for the execs' cgroups.
+func (EngineSuite) TestExecCgroupControllers(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	devEngineSvc := devEngineContainerAsService(devEngineContainer(c))
+	clientCtr := engineClientContainer(ctx, t, c, devEngineSvc).
+		WithExec([]string{"dagger", "query"}, core.ContainerWithExecOpts{
+			Stdin:                 `{container{from(address:"` + alpineImage + `"){withExec(args:["sh","-c","cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null || echo no-cgroup-v2"]){stdout}}}}`,
+			DisableDaggerInDagger: true,
+		})
+	stdout, err := clientCtr.Stdout(ctx)
+	require.NoError(t, err)
+	var res struct {
+		Container struct {
+			From struct {
+				WithExec struct {
+					Stdout string
+				}
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &res))
+	if strings.TrimSpace(res.Container.From.WithExec.Stdout) == "no-cgroup-v2" {
+		// The entrypoint only sets up controllers on cgroup v2.
+		t.Skip("the engine's execs aren't on cgroup v2")
+	}
+	controllers := strings.Fields(res.Container.From.WithExec.Stdout)
+	for _, want := range []string{"cpu", "memory", "pids"} {
+		require.Contains(t, controllers, want, "the exec's cgroup has no %s controller", want)
+	}
+}
+
 func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
