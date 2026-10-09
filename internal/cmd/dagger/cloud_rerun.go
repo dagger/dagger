@@ -251,7 +251,9 @@ func cloudRerunTargets(checks []cloudapi.Check) ([]cloudapi.Check, error) {
 }
 
 // stripDAGScheme returns a check name's dag:// address as the scheme-less name
-// Cloud uses, so --check accepts either form. A non-address name is unchanged.
+// Cloud uses, so --check accepts either form. The name is the address path, or
+// the check key of a path-less address such as "dag://?check=lint". A
+// non-address name is unchanged.
 func stripDAGScheme(name string) string {
 	if !dagaddress.IsAddress(name) {
 		return name
@@ -260,7 +262,7 @@ func stripDAGScheme(name string) string {
 	if err != nil {
 		return name
 	}
-	return addr.Path
+	return addr.ArtifactPath("check")
 }
 
 func cloudCheckNames(checks []cloudapi.Check) []string {
