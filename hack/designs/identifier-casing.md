@@ -532,7 +532,7 @@ for:
 | Python | `PASCAL`/`UPPERCASE` | `SNAKE` | `SNAKE` | `SCREAMING_SNAKE` |
 | Elixir | `PASCAL`/`UPPERCASE` | `SNAKE` | `SNAKE` | `SNAKE` atoms |
 | Rust | `PASCAL`/`CAPITALIZED` | `SNAKE` | `SNAKE` | `PASCAL`/`CAPITALIZED` |
-| PHP | `PASCAL`/`CAPITALIZED` | `CAMEL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `SCREAMING_SNAKE` |
+| PHP | today's converter (`JsonValue`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
 | .NET | `PASCAL`/`CAPITALIZED` | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `PASCAL`/`CAPITALIZED` |
 | Java | schema name (`PASCAL`/`UPPERCASE`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | schema value |
 
@@ -547,6 +547,13 @@ old spellings as deprecated forwarders. Its classes and enum constants keep the
 schema's names: the runtime uses a class's simple name as its GraphQL type and
 serializes enum constants by name, and a class renamed only in case can't keep
 a deprecated alias next to it on case-insensitive file systems.
+
+PHP follows the Symfony and Laravel convention of writing acronyms like words
+in members (`filterUri`, `withGpu`). PHP method names are case-insensitive, so
+those changes are cosmetic; parameter names matter for named arguments. Classes
+keep today's converter (`ID`/`JSON` written `Id`/`Json`, the rest as the schema
+has them), since a case-only class rename only breaks PSR-4 autoloading of the
+old spelling. Renamed enum cases keep their old names as deprecated constants.
 
 Runtime function dispatch is unaffected. SDKs register functions with their
 native names, and the engine dispatches by `OriginalName`, so nothing on the
