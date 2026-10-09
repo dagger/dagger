@@ -1315,14 +1315,14 @@ func TestMergeValuesRelocatesOfferOwnersToTheTargets(t *testing.T) {
 	local := persistedListTestResult(t, bctx, b, bsrv, "dep", String("dep")).cacheSharedResult()
 	require.NotEqual(t, dep.cacheSharedResult().id, local.id)
 	b.egraphMu.RLock()
-	before := local.incomingOwnershipCount
+	before := local.incomingOwnershipCount.Load()
 	b.egraphMu.RUnlock()
 
 	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
 	require.NoError(t, err)
 	b.egraphMu.RLock()
 	offers := b.resultsByID[sharedResultID(reply.Imported()[0].ResultID)].testPartOffers()
-	after := local.incomingOwnershipCount
+	after := local.incomingOwnershipCount.Load()
 	b.egraphMu.RUnlock()
 	require.Len(t, offers, 1)
 	for _, offer := range offers {
@@ -2174,7 +2174,7 @@ func TestMergeValuesRelocationKeepsReferencesWithinDependencies(t *testing.T) {
 	r := b.resultsByID[sharedResultID(mergeTestValueOf(t, reply, rootOrdinal).Number)]
 	require.Len(t, r.deps, 1, "both records land on one entry")
 	for id := range r.deps {
-		require.Equal(t, 1, int(b.resultsByID[id].incomingOwnershipCount), "the root owns the entry once")
+		require.Equal(t, 1, int(b.resultsByID[id].incomingOwnershipCount.Load()), "the root owns the entry once")
 	}
 	refs := 0
 	_, err = VisitEncodedReferences(PersistedRecord{ResultID: uint64(r.id), Envelope: *r.persistedEnvelope, Call: r.loadResultCall()}, func(ref *PersistedRef) error {

@@ -175,7 +175,7 @@ func TestValueTransferCaptureRetiresAnOfferOnACompletedOutput(t *testing.T) {
 	// The part completes, and the gate never settles it.
 	value.done.Store(true)
 	value.rev.Add(1)
-	owners := res.incomingOwnershipCount
+	owners := res.incomingOwnershipCount.Load()
 
 	bundle := exportTestBundle(t, ctx, c, root)
 	require.Len(t, bundle.Values, 1)
@@ -184,7 +184,7 @@ func TestValueTransferCaptureRetiresAnOfferOnACompletedOutput(t *testing.T) {
 	offers := len(res.testPartOffers())
 	c.egraphMu.RUnlock()
 	require.Zero(t, offers, "the capture retired the obsolete offer")
-	require.Equal(t, owners, res.incomingOwnershipCount)
+	require.Equal(t, owners, res.incomingOwnershipCount.Load())
 	require.Zero(t, c.activeGlobalOperations.Load())
 }
 
@@ -214,7 +214,7 @@ func TestValueTransferCapture(t *testing.T) {
 			object := &transferTestValue{Text: "pending"}
 			root := persistedListTestResult(t, ctx, c, srv, "root", object)
 			res := root.cacheSharedResult()
-			owners := res.incomingOwnershipCount
+			owners := res.incomingOwnershipCount.Load()
 			c.testTransferCopied = func(uint64) {
 				switch kind {
 				case "output":
@@ -249,7 +249,7 @@ func TestValueTransferCapture(t *testing.T) {
 				close(res.attachDepsWaitCh)
 			}
 			require.ErrorIs(t, err, ErrPersistStateNotReady)
-			require.Equal(t, owners, res.incomingOwnershipCount)
+			require.Equal(t, owners, res.incomingOwnershipCount.Load())
 			require.Zero(t, c.activeGlobalOperations.Load())
 		})
 	}

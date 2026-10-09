@@ -443,7 +443,7 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 			sameEntry := cloud.resultsByID[entry.id] == entry
 			sameDep := cloud.resultsByID[depEntry.id] == depEntry
 			_, depEdge := entry.deps[depEntry.id]
-			owners, depOwners := entry.incomingOwnershipCount, depEntry.incomingOwnershipCount
+			owners, depOwners := entry.incomingOwnershipCount.Load(), depEntry.incomingOwnershipCount.Load()
 			postings := slices.Clone(cloud.resultIndexedDigests[entry.id])
 			keyed := map[digest.Digest]bool{}
 			classed := map[digest.Digest]bool{}

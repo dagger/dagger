@@ -22,24 +22,24 @@ func TestValueTransferFixtureExactRoots(t *testing.T) {
 	id, err := exact.ID()
 	require.NoError(t, err)
 	shared := exact.cacheSharedResult()
-	before := shared.incomingOwnershipCount
+	before := shared.incomingOwnershipCount.Load()
 	require.NoError(t, c.WithTransferFixtureRoots(ctx, "test-session", []*call.ID{id}, func(roots []AnyResult) error {
 		require.Same(t, shared, roots[0].cacheSharedResult())
-		require.Equal(t, before+1, shared.incomingOwnershipCount)
+		require.Equal(t, before+1, shared.incomingOwnershipCount.Load())
 		require.NoError(t, c.WithTransferFixtureRoots(ctx, "test-session", []*call.ID{id}, func([]AnyResult) error { return nil }))
 		return nil
 	}))
-	require.Equal(t, before, shared.incomingOwnershipCount)
+	require.Equal(t, before, shared.incomingOwnershipCount.Load())
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
 	require.ErrorIs(t, c.WithTransferFixtureRoots(canceled, "test-session", []*call.ID{id}, func([]AnyResult) error { t.Fatal("canceled consumer"); return nil }), context.Canceled)
-	require.Equal(t, before, shared.incomingOwnershipCount)
+	require.Equal(t, before, shared.incomingOwnershipCount.Load())
 	require.Error(t, c.WithTransferFixtureRoots(ctx, "test-session", []*call.ID{call.NewEngineResultID(id.EngineResultID(), call.NewType(Int(0).Type()))}, func([]AnyResult) error { return nil }))
 	report, err := c.TransferFixtureSnapshot(ctx, "test-session", []*call.ID{id})
 	require.NoError(t, err)
 	require.Len(t, report.Rows, 1)
 	require.Equal(t, id.EngineResultID(), report.Rows[0].ResultID)
-	require.Equal(t, before, shared.incomingOwnershipCount)
+	require.Equal(t, before, shared.incomingOwnershipCount.Load())
 }
 
 func TestSchemaModuleSelectionFallback(t *testing.T) {

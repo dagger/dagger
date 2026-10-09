@@ -750,7 +750,7 @@ func ownershipCounts(c *Cache, rows ...*sharedResult) []int64 {
 	defer c.egraphMu.RUnlock()
 	counts := make([]int64, len(rows))
 	for i, row := range rows {
-		counts[i] = row.incomingOwnershipCount
+		counts[i] = row.incomingOwnershipCount.Load()
 	}
 	return counts
 }

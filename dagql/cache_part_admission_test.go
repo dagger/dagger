@@ -386,12 +386,12 @@ func CheckSessionlessRestoredDirectoryForTest(t *testing.T, ctx context.Context,
 	_, _, probe, err := c.probePart(ctx, donor, address)
 	require.NoError(t, err)
 	require.NotNil(t, probe)
-	before := donor.incomingOwnershipCount
+	before := donor.incomingOwnershipCount.Load()
 	source, err := c.newSessionlessPartSourceLease(ctx, receiver, donor, address, address, *probe)
 	require.NoError(t, err)
-	require.Equal(t, before+1, donor.incomingOwnershipCount)
+	require.Equal(t, before+1, donor.incomingOwnershipCount.Load())
 	require.NoError(t, source.Release(ctx))
-	require.Equal(t, before, donor.incomingOwnershipCount)
+	require.Equal(t, before, donor.incomingOwnershipCount.Load())
 	// Preparation never grants authority over a replacement call frame.
 	lookup, err := c.partLookupFor(receiver)
 	require.NoError(t, err)
@@ -401,5 +401,5 @@ func CheckSessionlessRestoredDirectoryForTest(t *testing.T, ctx context.Context,
 	c.egraphMu.Unlock()
 	require.ErrorIs(t, err, ErrPartReselect)
 	require.Nil(t, source)
-	require.Equal(t, before, donor.incomingOwnershipCount)
+	require.Equal(t, before, donor.incomingOwnershipCount.Load())
 }

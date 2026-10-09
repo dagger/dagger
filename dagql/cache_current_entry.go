@@ -71,7 +71,7 @@ func (c *Cache) resultInUseLocked(res *sharedResult) bool {
 	if _, retained := c.persistedEdgesByResult[res.id]; retained {
 		idle++
 	}
-	if res.incomingOwnershipCount != idle {
+	if res.incomingOwnershipCount.Load() != idle {
 		return true
 	}
 	// Session release removes a session's ownership units before it deletes

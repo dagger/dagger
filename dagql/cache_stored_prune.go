@@ -63,7 +63,7 @@ func (c *Cache) dropPrunedValuesLocked(ctx context.Context, queue []*sharedResul
 	for len(queue) > 0 {
 		res := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
-		if c.resultsByID[res.id] != res || res.incomingOwnershipCount > res.engineHoldingsLocked() {
+		if c.resultsByID[res.id] != res || res.incomingOwnershipCount.Load() > res.engineHoldingsLocked() {
 			continue
 		}
 		if res.hasOwnValueLocked() {
@@ -72,7 +72,7 @@ func (c *Cache) dropPrunedValuesLocked(ctx context.Context, queue []*sharedResul
 			rerr = errors.Join(rerr, err)
 			dropped++
 		}
-		if res.incomingOwnershipCount == 0 {
+		if res.incomingOwnershipCount.Load() == 0 {
 			collect = append(collect, res)
 		}
 	}

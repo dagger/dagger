@@ -129,7 +129,7 @@ func shareTestQueueDepth(c *Cache) (pending int, members int) {
 func shareTestHolds(c *Cache, res AnyResult) int64 {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	return res.cacheSharedResult().incomingOwnershipCount
+	return res.cacheSharedResult().incomingOwnershipCount.Load()
 }
 
 // shareTestAwaitHolds waits for res's incoming holds to return to want. A
@@ -641,7 +641,7 @@ func TestSnapshotSharingCoalescing(t *testing.T) {
 	class := c.ensureEqClassForDigestLocked(ctx, "coalescing-class")
 	c.addResultOutputEqClassLocked(donorRow.id, class)
 	c.addResultOutputEqClassLocked(receiverRow.id, class)
-	before := donorRow.incomingOwnershipCount
+	before := donorRow.incomingOwnershipCount.Load()
 	// Queue the same class repeatedly before the worker takes it.
 	c.queueSnapshotShareLocked(ctx, class)
 	c.queueSnapshotShareLocked(ctx, class)
@@ -651,7 +651,7 @@ func TestSnapshotSharingCoalescing(t *testing.T) {
 	for _, item := range c.sharePending {
 		members, ops = len(item.members), len(item.ops)
 	}
-	held := donorRow.incomingOwnershipCount
+	held := donorRow.incomingOwnershipCount.Load()
 	c.egraphMu.Unlock()
 	require.Equal(t, 1, pending, "repeated notifications coalesce into one item")
 	require.Equal(t, 2, members)
@@ -854,13 +854,13 @@ func TestSnapshotSharingReleaseThenExternalFinish(t *testing.T) {
 	attemptReleased := armLazyAttemptReleased(c)
 	donorRow := donor.cacheSharedResult()
 	c.egraphMu.RLock()
-	donorBefore := donorRow.incomingOwnershipCount
+	donorBefore := donorRow.incomingOwnershipCount.Load()
 	c.egraphMu.RUnlock()
 
 	var atFinish int64
 	c.testBeforeShareFinish = func(receipt *ReadyPartReceipt) {
 		c.egraphMu.RLock()
-		atFinish = donorRow.incomingOwnershipCount
+		atFinish = donorRow.incomingOwnershipCount.Load()
 		c.egraphMu.RUnlock()
 		require.Same(t, receiver.cacheSharedResult(), receipt.receiver)
 	}
@@ -874,7 +874,7 @@ func TestSnapshotSharingReleaseThenExternalFinish(t *testing.T) {
 	require.Equal(t, 0, barrier.awaitPass(t), "the completion trigger queued an empty successor")
 	waitLazyAttemptReleased(t, attemptReleased)
 	c.egraphMu.RLock()
-	after := donorRow.incomingOwnershipCount
+	after := donorRow.incomingOwnershipCount.Load()
 	c.egraphMu.RUnlock()
 	require.Equal(t, donorBefore, after, "the pass balances every hold it took")
 }
@@ -1543,7 +1543,7 @@ func TestSnapshotSharingFailedFinishLastOwner(t *testing.T) {
 	}
 	c.egraphMu.RLock()
 	_, registered := c.resultsByID[row.id]
-	holds := row.incomingOwnershipCount
+	holds := row.incomingOwnershipCount.Load()
 	c.egraphMu.RUnlock()
 	require.False(t, registered, "with no owner left the receiver is collected")
 	require.Zero(t, holds, "the failed Finish's retry state owns no receipt and no hold")

@@ -108,14 +108,14 @@ func TestOfferPartsOwnership(t *testing.T) {
 	offer.Value.Services = []TransferredServiceBinding{{ServiceResultID: uint64(dep.cacheSharedResult().id), Aliases: []string{"a"}}}
 	blob := digest.FromString("content")
 	offer.Chain.Layers = []snapshots.ExportLayer{{Descriptor: ocispec.Descriptor{Digest: blob, Size: 7, MediaType: "application/octet-stream"}}}
-	base := dep.cacheSharedResult().incomingOwnershipCount
+	base := dep.cacheSharedResult().incomingOwnershipCount.Load()
 	out, err := c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, OfferAccepted, out[0].Outcome)
 	key, _ := partAddressKey(offer.Address)
 	owner := row.testPartOffers()[key].owner
 	require.Equal(t, int64(1), owner.holds)
-	require.Equal(t, base+1, dep.cacheSharedResult().incomingOwnershipCount)
+	require.Equal(t, base+1, dep.cacheSharedResult().incomingOwnershipCount.Load())
 	rev := row.transferRevision
 	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{offer})
 	require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestOfferPartsOwnership(t *testing.T) {
 	require.True(t, out[0].Replaced)
 	require.Same(t, owner, row.testPartOffers()[key].owner)
 	require.Equal(t, int64(1), owner.holds)
-	require.Equal(t, base+1, dep.cacheSharedResult().incomingOwnershipCount)
+	require.Equal(t, base+1, dep.cacheSharedResult().incomingOwnershipCount.Load())
 	bad := testLiveOffer()
 	bad.Owner.DependencyIDs = []uint64{uint64(row.id)}
 	out, err = c.testOfferParts(ctx, r, []PersistedPartOffer{offer, bad})

@@ -170,7 +170,7 @@ func runCanonicalSwapReleaseAttempt(t *testing.T, attempt int) (adoptedSibling b
 	if adoptedSibling {
 		c.egraphMu.Lock()
 		registered := c.resultsByID[sharedA.id] == sharedA
-		ownership := sharedA.incomingOwnershipCount
+		ownership := sharedA.incomingOwnershipCount.Load()
 		c.egraphMu.Unlock()
 		t.Logf("attempt %d: call C adopted result A (id=%d): payloadReleased=%v reRegistered=%v ownership=%d",
 			attempt, sharedA.id, siblingReleased, registered, ownership)

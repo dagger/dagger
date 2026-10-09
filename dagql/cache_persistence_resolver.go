@@ -94,11 +94,13 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		return sharedResultLookup{res: res, requiredGenAtCheck: requiredGenAtCheck}, nil
 	}
 
+	// The canonical pick and the session claim only read the e-graph, so
+	// concurrent ID loads share the lock (see acquireSessionResultLocked).
 	// The deferred unlock matters on panic: resolvePath recovers a panic
 	// raised in this section, and a lock left held would block every later
 	// cache operation in the engine.
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
 	res := c.resultsByID[resultID]
 	if res == nil {
 		return sharedResultLookup{}, fmt.Errorf("resolve result %d: missing shared result", resultID)

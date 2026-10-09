@@ -191,7 +191,7 @@ func TestCacheUsagePruneSnapshotExcludesMeasurementHolds(t *testing.T) {
 	res := publishUsageValue(t, c, "hold-count", &usageCallbackValue{Int: NewInt(1), callback: func(string) {}})
 	row := res.cacheSharedResult()
 	c.egraphMu.RLock()
-	before := row.incomingOwnershipCount
+	before := row.incomingOwnershipCount.Load()
 	c.egraphMu.RUnlock()
 	snapshot, err := c.snapshotPruneStateCancelable(nil, pruneSnapshotDisk, 0, nil)
 	if err != nil {

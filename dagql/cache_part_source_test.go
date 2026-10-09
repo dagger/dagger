@@ -50,7 +50,7 @@ func TestPartSourceSelection(t *testing.T) {
 	partTestEquivalent(t, c, receiver, donor)
 	leaf := persistedListTestResult(t, ctx, c, srv, "leaf", String("owned"))
 	transferTestOffer(t, c, ctx, receiver, leaf)
-	before := receiver.cacheSharedResult().incomingOwnershipCount
+	before := receiver.cacheSharedResult().incomingOwnershipCount.Load()
 	source, err := c.AcquireEquivalentPartSource(ctx, receiver, PersistedPartAddress{Part: "snapshot"})
 	require.NoError(t, err)
 	require.NotNil(t, source)
@@ -58,7 +58,7 @@ func TestPartSourceSelection(t *testing.T) {
 	require.Same(t, donor.cacheSharedResult(), source.source)
 	require.NoError(t, source.Release(ctx))
 	require.NoError(t, source.Release(ctx))
-	require.Equal(t, before, receiver.cacheSharedResult().incomingOwnershipCount)
+	require.Equal(t, before, receiver.cacheSharedResult().incomingOwnershipCount.Load())
 	source, err = c.AcquireEquivalentPartSource(ctx, donor, PersistedPartAddress{Part: "snapshot"})
 	require.NoError(t, err)
 	require.Same(t, donor.cacheSharedResult(), source.source)
@@ -273,7 +273,7 @@ func TestPartSourceScanFailureReleasesWinner(t *testing.T) {
 			c.egraphMu.RLock()
 			loserCollected := c.resultsByID[loser.cacheSharedResult().id] == nil
 			slots, holds := winnerOwner.slots, winnerOwner.holds
-			owners := winner.cacheSharedResult().incomingOwnershipCount
+			owners := winner.cacheSharedResult().incomingOwnershipCount.Load()
 			c.egraphMu.RUnlock()
 			require.True(t, loserCollected)
 			require.Equal(t, slots, holds)
