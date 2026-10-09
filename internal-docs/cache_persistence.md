@@ -237,6 +237,7 @@ This is the persisted mirror of the in-memory dagql cache/e-graph state.
 ### 3. Snapshot-manager persistent metadata
 
 - `snapshot_content_links`
+- `snapshot_content_hashes`
 - `imported_layer_blob_index`
 - `imported_layer_diff_index`
 
@@ -489,11 +490,16 @@ Examples:
 Separately, the snapshot manager exports:
 
 - snapshot-content digest links
+- per-path hash records for owned immutable snapshots
 - imported-layer indexes by blob digest
 - imported-layer indexes by diff ID
 
 Those rows are written into the snapshot metadata tables and loaded back into
 the snapshot manager at startup.
+
+Imported files use XXH3 hashes, while filesystem rescans use SHA-256. Preserving
+the existing records keeps unchanged directory digests stable across a clean
+restart and avoids rescanning those snapshots.
 
 ### Immutable snapshot transfers
 

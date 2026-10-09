@@ -59,6 +59,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list mirror snapshot_content_links: %w", err)
 	}
+	snapshotContentHashRows, err := c.pdb.ListMirrorSnapshotContentHashes(ctx)
+	if err != nil {
+		return fmt.Errorf("list mirror snapshot_content_hashes: %w", err)
+	}
 	importedLayerBlobRows, err := c.pdb.ListMirrorImportedLayerBlobIndex(ctx)
 	if err != nil {
 		return fmt.Errorf("list mirror imported_layer_blob_index: %w", err)
@@ -554,6 +558,12 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			SnapshotContent: make([]bkcache.SnapshotContentRow, 0, len(snapshotContentRows)),
 			ImportedByBlob:  make([]bkcache.ImportedLayerBlobRow, 0, len(importedLayerBlobRows)),
 			ImportedByDiff:  make([]bkcache.ImportedLayerDiffRow, 0, len(importedLayerDiffRows)),
+		}
+		for _, row := range snapshotContentHashRows {
+			rows.ContentHashes = append(rows.ContentHashes, bkcache.SnapshotContentHashRow{
+				SnapshotID: row.SnapshotID,
+				Data:       row.Data,
+			})
 		}
 		for _, row := range snapshotContentRows {
 			rows.SnapshotContent = append(rows.SnapshotContent, bkcache.SnapshotContentRow{

@@ -16,10 +16,20 @@ import (
 
 const dagqlResultLeasePrefix = "dagql/result/"
 
+// ContentHashMetadataKey stores the serialized per-path hash tree. Imported
+// hashes must survive a restart: rescanning uses a different file hash format.
+const ContentHashMetadataKey = "buildkit.contenthash.v0"
+
 type PersistentMetadataRows struct {
 	SnapshotContent []SnapshotContentRow
 	ImportedByBlob  []ImportedLayerBlobRow
 	ImportedByDiff  []ImportedLayerDiffRow
+	ContentHashes   []SnapshotContentHashRow
+}
+
+type SnapshotContentHashRow struct {
+	SnapshotID string
+	Data       []byte
 }
 
 type SnapshotContentRow struct {
@@ -89,6 +99,20 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 	if cm.snapshotOwnerLeases == nil {
 		cm.snapshotOwnerLeases = make(map[string]map[string]struct{})
 	}
+	cm.metadataStore.mu.Lock()
+	cm.metadataStore.contentHashes = make(map[string][]byte, len(rows.ContentHashes))
+	for _, row := range rows.ContentHashes {
+		if row.SnapshotID != "" && len(row.Data) != 0 {
+			data := append([]byte(nil), row.Data...)
+			if md, ok := cm.metadataStore.refs[row.SnapshotID]; ok {
+				md.external[ContentHashMetadataKey] = data
+			} else {
+				// Rehydration still needs to discover the snapshot's other metadata.
+				cm.metadataStore.contentHashes[row.SnapshotID] = data
+			}
+		}
+	}
+	cm.metadataStore.mu.Unlock()
 
 	return nil
 }
@@ -126,6 +150,29 @@ func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
 			DiffID:           key.DiffID,
 			SnapshotID:       snapshotID,
 		})
+	}
+
+	// Keep hash records only for owned immutable snapshots. Mutable mirrors
+	// and snapshots without owners do not belong in the durable checkpoint.
+	cm.metadataStore.mu.RLock()
+	defer cm.metadataStore.mu.RUnlock()
+	for snapshotID, owners := range cm.snapshotOwnerLeases {
+		if len(owners) == 0 {
+			continue
+		}
+		data := cm.metadataStore.contentHashes[snapshotID]
+		if md, ok := cm.metadataStore.refs[snapshotID]; ok {
+			if rec, ok := cm.records[snapshotID]; ok && rec.mutable {
+				continue
+			}
+			data = md.external[ContentHashMetadataKey]
+		}
+		if len(data) != 0 {
+			rows.ContentHashes = append(rows.ContentHashes, SnapshotContentHashRow{
+				SnapshotID: snapshotID,
+				Data:       append([]byte(nil), data...),
+			})
+		}
 	}
 
 	return rows
