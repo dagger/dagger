@@ -51,10 +51,9 @@ public class DaggerSchemaGeneratorMojo extends AbstractMojo {
     getLog().info(String.format("Set Dagger CLI to %s", this.bin));
 
     Path dest = outputDir.toPath();
-    try (InputStream query = DaggerCLIUtils.introspectionQuery(getClass());
-        OutputStream outputFile = new FileOutputStream(new File(outputDir, "schema.json"))) {
+    try (OutputStream outputFile = new FileOutputStream(new File(outputDir, "schema.json"))) {
       getLog().info("Querying Dagger CLI for schema");
-      InputStream schema = DaggerCLIUtils.query(query, this.bin);
+      InputStream schema = DaggerCLIUtils.introspect(getClass(), this.bin);
       outputFile.write(schema.readAllBytes());
     } catch (Exception ioe) {
       throw new MojoExecutionException(ioe);
