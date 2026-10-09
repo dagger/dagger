@@ -316,7 +316,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("__fullCheckout", s.fullCheckout).
 			IsPersistable().
 			Doc(`(Internal-only) Materialize full history and Git metadata regardless of keepGitDir.`),
-		dagql.NodeFunc("tree", s.tree).
+		dagql.NodeFuncWithDynamicInputs("tree", s.tree, s.treeCacheKey).
 			IsPersistable().
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
@@ -471,7 +471,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("includePreRelease").Doc(`Include pre-release tags when choosing the latest tag.`),
 			),
-		dagql.NodeFunc("tree", s.commitTree).
+		dagql.NodeFuncWithDynamicInputs("tree", s.commitTree, s.commitTreeCacheKey).
 			IsPersistable().
 			Doc(`The filesystem tree at this commit.`).
 			Args(
@@ -2491,6 +2491,42 @@ type treeArgs struct {
 
 	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
+}
+
+// treeCacheKey canonicalizes a tree call's arguments, so that the spellings
+// of one tree share one call, one cached result and so one snapshot: an
+// argument at its default is dropped, and without .git, depth and
+// includeTags shape nothing in the tree (only the history and tag refs
+// under .git) and are dropped too, as is discardGitDir when the repository
+// already discards .git. Snapshots of one tree built by separate calls share
+// no layers, so a diff between their descendants (a workspace's changes, a
+// merge's) would have to walk both trees in full.
+func (s *gitSchema) treeCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeArgs, req *dagql.CallRequest) error {
+	canonicalGitTreeArgs(req, parent.Self().Repo.Self().DiscardGitDir, args.DiscardGitDir, args.Depth, args.IncludeTags)
+	return nil
+}
+
+func (s *gitSchema) commitTreeCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args commitTreeArgs, req *dagql.CallRequest) error {
+	canonicalGitTreeArgs(req, parent.Self().Repo.Self().DiscardGitDir, args.DiscardGitDir, args.Depth, args.IncludeTags)
+	return nil
+}
+
+func canonicalGitTreeArgs(req *dagql.CallRequest, repoDiscardsGitDir, discardGitDir bool, depth int, includeTags bool) {
+	if repoDiscardsGitDir || discardGitDir {
+		if repoDiscardsGitDir || !discardGitDir {
+			req.DeleteArg("discardGitDir")
+		}
+		req.DeleteArg("depth")
+		req.DeleteArg("includeTags")
+		return
+	}
+	req.DeleteArg("discardGitDir")
+	if depth == 1 {
+		req.DeleteArg("depth")
+	}
+	if !includeTags {
+		req.DeleteArg("includeTags")
+	}
 }
 
 func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeArgs) (inst dagql.ObjectResult[*core.Directory], rerr error) {
