@@ -104,14 +104,18 @@ type Span struct {
 	// render it.
 	ProgressSpans SpanSet `json:"-"`
 
-	// A span name can change while the span is live. The OTel SDK's start
-	// snapshot cannot carry that later mutation, so a semantic log record keeps
-	// the latest name authoritative over repeated frozen live snapshots.
-	nameFromLog    string
-	hasNameFromLog bool
+	causesViaLinks  SpanSet
+	effectsViaLinks SpanSet
 
-	callCache *callpbv1.Call
-	baseCache *callpbv1.Call
+	// Pre-computed RollUp state for rendering progress bars
+	// Maintained incrementally for all spans, not just those marked RollUp
+	rollUpState *RollUpState
+
+	db *DB
+
+	// Indicates that this span was actually exported to the database, and not
+	// just allocated due to a span parent or other relationship.
+	Received bool
 
 	// callPayloadElided is set once integrateSpan has decoded the span's
 	// CallPayload into db.Calls and dropped it; Snapshot re-encodes it.
@@ -120,21 +124,38 @@ type Span struct {
 	// updateQueued marks the span as listed in db.updatedSpans.
 	updateQueued bool
 
-	causesViaLinks  SpanSet
-	effectsViaLinks SpanSet
-
-	// Indicates that this span was actually exported to the database, and not
-	// just allocated due to a span parent or other relationship.
-	Received bool
-
-	// Pre-computed RollUp state for rendering progress bars
-	// Maintained incrementally for all spans, not just those marked RollUp
-	rollUpState *RollUpState
-
 	// Cached state classification for incremental updates
 	lastRollUpCategory spanStateCategory
 
-	db *DB
+	// NOTE: a name updated by a log record lives in db.namesFromLog, and the
+	// Call/Base cache in db.spanCalls, not here: few spans need either. Mind
+	// the size of this struct, which is multiplied by every span in a trace:
+	// it fits the 1024-byte allocation size class, malloc header included
+	// (see TestSpanSize).
+}
+
+// spanCalls caches a span's Call and Base.
+type spanCalls struct {
+	call *callpbv1.Call
+	base *callpbv1.Call
+}
+
+// cachedCalls returns the span's Call/Base cache.
+func (span *Span) cachedCalls() spanCalls {
+	if span.db == nil {
+		return spanCalls{}
+	}
+	return span.db.spanCalls[span]
+}
+
+// cacheCalls updates the span's Call/Base cache.
+func (span *Span) cacheCalls(update func(*spanCalls)) {
+	calls := span.db.spanCalls[span]
+	update(&calls)
+	if span.db.spanCalls == nil {
+		span.db.spanCalls = map[*Span]spanCalls{}
+	}
+	span.db.spanCalls[span] = calls
 }
 
 // Snapshot returns a snapshot of the span's current state.
@@ -162,14 +183,17 @@ func (span *Span) Snapshot() SpanSnapshot {
 }
 
 func (span *Span) Call() *callpbv1.Call {
-	if span.callCache != nil {
-		return span.callCache
+	if cached := span.cachedCalls().call; cached != nil {
+		return cached
 	}
 	if span.CallDigest == "" {
 		return nil
 	}
-	span.callCache = span.db.Call(span.CallDigest)
-	return span.callCache
+	call := span.db.Call(span.CallDigest)
+	if call != nil {
+		span.cacheCalls(func(calls *spanCalls) { calls.call = call })
+	}
+	return call
 }
 
 // CallID rebuilds the ID of the call this span reports on. It is the DB-level
@@ -183,8 +207,8 @@ func (span *Span) CallID() (*call.ID, error) {
 }
 
 func (span *Span) Base() *callpbv1.Call {
-	if span.baseCache != nil {
-		return span.baseCache
+	if cached := span.cachedCalls().base; cached != nil {
+		return cached
 	}
 
 	call := span.Call()
@@ -201,20 +225,24 @@ func (span *Span) Base() *callpbv1.Call {
 			if span.Name != "" && strings.HasSuffix(span.Name, suffix) {
 				baseName := strings.TrimSuffix(span.Name, suffix)
 				if baseName != "" {
-					span.baseCache = &callpbv1.Call{
+					base := &callpbv1.Call{
 						Digest: call.ReceiverDigest,
 						Type: &callpbv1.Type{
 							NamedType: baseName,
 						},
 					}
-					return span.baseCache
+					span.cacheCalls(func(calls *spanCalls) { calls.base = base })
+					return base
 				}
 			}
 		}
 		parentCall = span.db.MustCall(call.ReceiverDigest)
 		if parentCall != nil {
-			span.baseCache = span.db.Simplify(parentCall, span.Internal)
-			return span.baseCache
+			base := span.db.Simplify(parentCall, span.Internal)
+			if base != nil {
+				span.cacheCalls(func(calls *spanCalls) { calls.base = base })
+			}
+			return base
 		}
 	}
 
@@ -234,36 +262,44 @@ func countChildren(set SpanSet, opts FrontendOpts) int {
 }
 
 type SpanSnapshot struct {
+	// NOTE: fields are grouped to avoid alignment padding (the bools sit
+	// together below), since this struct is multiplied by every span in a
+	// trace. Keep it that way when adding fields; see TestSpanSize.
+
 	// Monotonically increasing number for each update seen for this span.
 	Version int
 
-	// Indicates that this snapshot is in its final state and should be trusted
-	// over any state derived from the local state.
-	// This is used for snapshots that come from a remote server.
-	Final bool
+	ID       SpanID
+	TraceID  TraceID
+	ParentID SpanID `json:",omitzero"`
 
-	ID        SpanID
-	TraceID   TraceID
 	Name      string
 	StartTime time.Time
 	EndTime   time.Time
 
 	Activity Activity `json:",omitzero"`
 
-	ParentID SpanID     `json:",omitzero"`
-	Links    []SpanLink `json:",omitempty"`
+	Links []SpanLink `json:",omitempty"`
 
 	Status sdktrace.Status `json:",omitzero"`
 
-	// statuses derived from the span and any causal continuations
-	Failed_         bool     `json:",omitempty"`
+	// reasons for the statuses derived from the span and any causal
+	// continuations (Failed_, Cached_, Pending_ and Canceled_ below)
 	FailedReason_   []string `json:",omitempty"`
-	Cached_         bool     `json:",omitempty"`
 	CachedReason_   []string `json:",omitempty"`
-	Pending_        bool     `json:",omitempty"`
 	PendingReason_  []string `json:",omitempty"`
-	Canceled_       bool     `json:",omitempty"`
 	CanceledReason_ []string `json:",omitempty"`
+
+	// Indicates that this snapshot is in its final state and should be trusted
+	// over any state derived from the local state.
+	// This is used for snapshots that come from a remote server.
+	Final bool
+
+	// statuses derived from the span and any causal continuations
+	Failed_   bool `json:",omitempty"`
+	Cached_   bool `json:",omitempty"`
+	Pending_  bool `json:",omitempty"`
+	Canceled_ bool `json:",omitempty"`
 
 	// statuses reported by the span via attributes
 	Canceled bool `json:",omitempty"`
@@ -291,23 +327,13 @@ type SpanSnapshot struct {
 	Encapsulated bool `json:",omitempty"`
 	Passthrough  bool `json:",omitempty"`
 	Ignore       bool `json:",omitempty"`
+	Boundary     bool `json:",omitempty"`
+	Reveal       bool `json:",omitempty"`
+	RollUpLogs   bool `json:",omitempty"`
+	RollUpSpans  bool `json:",omitempty"`
 
-	// Test attributes
-	TestCaseName  string     `json:",omitempty"`
-	TestSuiteName string     `json:",omitempty"`
-	TestStatus    TestStatus `json:",omitempty"`
-
-	Boundary    bool `json:",omitempty"`
-	Reveal      bool `json:",omitempty"`
-	RollUpLogs  bool `json:",omitempty"`
-	RollUpSpans bool `json:",omitempty"`
-
-	// Check name + status
-	CheckName   string `json:",omitempty"`
-	CheckPassed bool   `json:",omitempty"`
-
-	// Generator name
-	GeneratorName string `json:",omitempty"`
+	// Check status (see CheckName)
+	CheckPassed bool `json:",omitempty"`
 
 	// Set on a span reporting a workspace module that best-effort generate
 	// skipped because it could not be loaded.
@@ -322,6 +348,25 @@ type SpanSnapshot struct {
 	// that installed the Service value).
 	Service bool `json:",omitempty"`
 
+	// Agent marks the long-lived loop span of a started agent runtime (see
+	// AgentID).
+	Agent bool `json:",omitempty"`
+
+	LLMThinking bool `json:",omitempty"`
+
+	HasLogs bool `json:",omitempty"`
+
+	// Test attributes
+	TestCaseName  string     `json:",omitempty"`
+	TestSuiteName string     `json:",omitempty"`
+	TestStatus    TestStatus `json:",omitempty"`
+
+	// Check name (see CheckPassed)
+	CheckName string `json:",omitempty"`
+
+	// Generator name
+	GeneratorName string `json:",omitempty"`
+
 	// Service name
 	ServiceName string `json:",omitempty"`
 
@@ -332,14 +377,13 @@ type SpanSnapshot struct {
 	// renderServiceURLs).
 	ServiceURLs []string `json:",omitempty"`
 
-	// Agent marks the long-lived loop span of a started agent runtime
-	// (running exactly while the loop does; its subtree carries the agent's
-	// turns). AgentID is the spawn-minted runtime handle that identifies the
-	// agent ACROSS loop spans — a resume-retry relaunches the loop, so one
-	// agent can own several. AgentCallDigest is the digest of the call that
-	// produced the agent value, from which a client can reconstruct a
-	// sendable handle.
-	Agent           bool   `json:",omitempty"`
+	// The Agent flag marks the long-lived loop span of a started agent
+	// runtime (running exactly while the loop does; its subtree carries the
+	// agent's turns). AgentID is the spawn-minted runtime handle that
+	// identifies the agent ACROSS loop spans — a resume-retry relaunches the
+	// loop, so one agent can own several. AgentCallDigest is the digest of
+	// the call that produced the agent value, from which a client can
+	// reconstruct a sendable handle.
 	AgentID         string `json:",omitempty"`
 	AgentName       string `json:",omitempty"`
 	AgentCallDigest string `json:",omitempty"`
@@ -358,7 +402,6 @@ type SpanSnapshot struct {
 	ContentType string `json:",omitempty"`
 
 	LLMRole          string   `json:",omitempty"`
-	LLMThinking      bool     `json:",omitempty"`
 	LLMTool          string   `json:",omitempty"`
 	LLMToolServer    string   `json:",omitempty"`
 	LLMToolArgNames  []string `json:",omitempty"`
@@ -394,8 +437,7 @@ type SpanSnapshot struct {
 	CallPayload string `json:",omitempty"`
 	CallScope   string `json:",omitempty"`
 
-	ChildCount int  `json:",omitempty"`
-	HasLogs    bool `json:",omitempty"`
+	ChildCount int `json:",omitempty"`
 
 	// Progress holds streaming-progress items attributed directly to this
 	// span, folded from progress log records. It lives in the snapshot so

@@ -279,13 +279,13 @@ func TestLateExactCallPayloadInvalidatesProvisionalSpanCaches(t *testing.T) {
 		t.Fatalf("base cache was not rebuilt from the exact call: %+v", got)
 	}
 
-	cachedCall, cachedBase := span.callCache, span.baseCache
+	cachedCall, cachedBase := db.spanCalls[span].call, db.spanCalls[span].base
 	mutations := db.MutationCount()
 	exportCallPayloads(t, db, spanID(2), exact)
 	if db.MutationCount() != mutations {
 		t.Fatal("duplicate payload changed the DB mutation count")
 	}
-	if span.callCache != cachedCall || span.baseCache != cachedBase {
+	if cached := db.spanCalls[span]; cached.call == nil || cached.call != cachedCall || cached.base != cachedBase {
 		t.Fatal("duplicate payload invalidated already-exact span caches")
 	}
 }

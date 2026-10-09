@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"reflect"
 	"runtime"
 	"strconv"
 	"testing"
 	"time"
+	"unsafe"
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -324,6 +326,33 @@ func BenchmarkSpanFootprint(b *testing.B) {
 			b.ReportMetric(fp.bytesPerSpan, "B/span")
 			b.ReportMetric(fp.objectsPerSpan, "objs/span")
 		})
+	}
+}
+
+// TestSpanSize guards the size of Span, which every span in a trace pays:
+// with its fields packed to avoid alignment padding, it fits the 1024-byte
+// allocation size class (the next is 1152). Objects over 512 bytes that hold
+// pointers carry an 8-byte malloc header, so that takes 1016 bytes or less.
+func TestSpanSize(t *testing.T) {
+	if unsafe.Sizeof(uintptr(0)) != 8 {
+		t.Skip("sizes are for 64-bit platforms")
+	}
+	for _, typ := range []reflect.Type{reflect.TypeFor[Span](), reflect.TypeFor[SpanSnapshot]()} {
+		var padding, end uintptr
+		for i := range typ.NumField() {
+			field := typ.Field(i)
+			padding += field.Offset - end
+			end = field.Offset + field.Type.Size()
+		}
+		padding += typ.Size() - end
+		t.Logf("%s: %d bytes, %d of them padding", typ.Name(), typ.Size(), padding)
+		// the bools never fill a whole word, so allow for one partial one
+		if padding >= 8 {
+			t.Errorf("%s has %d bytes of padding; group its small fields together", typ.Name(), padding)
+		}
+	}
+	if size := unsafe.Sizeof(Span{}); size > 1024-8 {
+		t.Errorf("Span is %d bytes, past the 1024-byte size class (with its 8-byte malloc header)", size)
 	}
 }
 

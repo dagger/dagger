@@ -179,6 +179,18 @@ type DB struct {
 	// finally see them
 	seenSpans map[SpanID]struct{}
 
+	// namesFromLog holds span names updated by span.name log records. A
+	// span name can change while the span is live. The OTel SDK's start
+	// snapshot cannot carry that later mutation, so a semantic log record
+	// keeps the latest name authoritative over repeated frozen live
+	// snapshots, until the completed span arrives with its final name.
+	namesFromLog map[SpanID]string
+
+	// spanCalls caches Span.Call and Span.Base for the spans that have been
+	// asked (mostly rendered ones), rather than every span carrying room for
+	// them. addCall invalidates provisional entries.
+	spanCalls map[*Span]spanCalls
+
 	// unsentAncestors holds ancestors of surfaced spans (see
 	// Span.IsSurfacedKind) that UpdatedSnapshots needed to send but couldn't,
 	// because they hadn't been received yet; they're sent once they arrive.
@@ -435,16 +447,15 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 			// predates it
 			snapshot.Progress = span.Progress
 		}
-		if span.hasNameFromLog && snapshot.EndTime.Before(snapshot.StartTime) {
+		if name, ok := db.namesFromLog[span.ID]; ok && snapshot.EndTime.Before(snapshot.StartTime) {
 			// Live name updates arrive on logs because repeated in-flight span
 			// exports retain their start-time name. Do not let one roll the newer
 			// name back.
-			snapshot.Name = span.nameFromLog
+			snapshot.Name = name
 		} else if !snapshot.EndTime.Before(snapshot.StartTime) {
 			// A completed snapshot carries the span's actual ending name and
 			// becomes authoritative over the live-log bridge.
-			span.nameFromLog = ""
-			span.hasNameFromLog = false
+			delete(db.namesFromLog, span.ID)
 		}
 		span.SpanSnapshot = snapshot
 		db.integrateSpan(span)
@@ -635,8 +646,10 @@ func (db *DB) ingestSpanName(record sdklog.Record) bool {
 		return true
 	}
 	span := db.initSpan(spanID)
-	span.nameFromLog = name
-	span.hasNameFromLog = true
+	if db.namesFromLog == nil {
+		db.namesFromLog = map[SpanID]string{}
+	}
+	db.namesFromLog[span.ID] = name
 	if span.Name != name {
 		span.Name = name
 		db.update(span)
@@ -929,12 +942,11 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	spanData.TraceID = TraceID{span.SpanContext().TraceID()}
 	spanData.ParentID.SpanID = span.Parent().SpanID()
 	spanData.Name = span.Name()
-	if spanData.hasNameFromLog && span.StartTime().After(span.EndTime()) {
-		spanData.Name = spanData.nameFromLog
+	if name, ok := db.namesFromLog[spanID]; ok && span.StartTime().After(span.EndTime()) {
+		spanData.Name = name
 	} else if !span.StartTime().After(span.EndTime()) {
 		// The completed span's final export carries its actual ending name.
-		spanData.nameFromLog = ""
-		spanData.hasNameFromLog = false
+		delete(db.namesFromLog, spanID)
 	}
 	spanData.StartTime = span.StartTime()
 	spanData.EndTime = span.EndTime()
