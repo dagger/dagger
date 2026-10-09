@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -22,12 +23,12 @@ import (
 // toolStateWorkspace is a workspace with one Dang module, served from
 // modules/<name> with the given constructor settings (TOML lines), that
 // depends on a fresh runlog module (see runLogDang).
-func toolStateWorkspace(c *dagger.Client, name, source string, settings ...string) *dagger.Workspace {
+func toolStateWorkspace(c *dagger.Client, name, source string, settings ...string) *core.Workspace {
 	config := fmt.Sprintf("[modules.%s]\nsource = \"modules/%s\"\n", name, name)
 	if len(settings) > 0 {
 		config += fmt.Sprintf("\n[modules.%s.settings]\n%s\n", name, strings.Join(settings, "\n"))
 	}
-	return c.Directory().
+	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", config).
 		WithNewFile("modules/"+name+"/dagger.json", fmt.Sprintf(`{"name":%q,"engineVersion":"v1.0.0-0","sdk":"dang","dependencies":[{"name":"runlog","source":"../runlog"}]}`, name)).
 		WithNewFile("modules/"+name+"/main.dang", source).
@@ -116,12 +117,12 @@ func coldEngine(ctx context.Context, t *testctx.T, env ...string) *dagger.Client
 
 // restoreOnColdEngine captures result's committed recipe, ends the producing
 // session, and loads the recipe on a fresh engine.
-func restoreOnColdEngine(ctx context.Context, t *testctx.T, c *dagger.Client, sink *agentTraceSink, result *dagger.LLM, env ...string) *dagger.LLM {
+func restoreOnColdEngine(ctx context.Context, t *testctx.T, c *dagger.Client, sink *agentTraceSink, result *core.LLM, env ...string) *core.LLM {
 	t.Helper()
 	recipe, err := sink.captureLLMRecipe(ctx, t, c, result)
 	require.NoError(t, err)
 	require.NoError(t, c.Close())
-	return dagger.Ref[*dagger.LLM](coldEngine(ctx, t, env...), recipe)
+	return core.Ref[*core.LLM](core.NewQuery(coldEngine(ctx, t, env...)), recipe)
 }
 
 // TestToolStateRestoreSkipsProducer covers a @cache(Never) method returning
@@ -157,10 +158,10 @@ type Counter {
   }
 `+runLogDang+`}
 `)
-	script := recomposeRecordingTurn(c.LLM(), "bump", "bump", "bump", "noop", "readCount", "runs")
+	script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "bump", "bump", "bump", "noop", "readCount", "runs")
 	script = recomposeRecordingTurn(script, "read", "readCount", "runs")
 	model := cannedRecordingModel(ctx, t, c, script)
-	composed, err := composeArtifactAgents(ctx, c, ws, nil, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws))
+	composed, err := composeArtifactAgents(ctx, c, ws, nil, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws))
 	require.NoError(t, err)
 	result := composed.WithPrompt("bump").Loop()
 	transcript, err := result.Transcript(ctx)
@@ -222,10 +223,10 @@ type History {
 func (LLMSuite) TestToolStateRestoreDropsOverwrittenValues(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 	ws := toolStateWorkspace(c, "history", fmt.Sprintf(historyDang, "", runLogDang))
-	script := recomposeRecordingTurn(c.LLM(), "advance", "advance", "advance", "advance", "read", "runs")
+	script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "advance", "advance", "advance", "advance", "read", "runs")
 	script = recomposeRecordingTurn(script, "read", "read", "runs")
 	model := cannedRecordingModel(ctx, t, c, script)
-	composed, err := composeArtifactAgents(ctx, c, ws, nil, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws))
+	composed, err := composeArtifactAgents(ctx, c, ws, nil, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws))
 	require.NoError(t, err)
 	result := composed.WithPrompt("advance").Loop()
 	transcript, err := result.Transcript(ctx)
@@ -257,11 +258,11 @@ func (LLMSuite) TestToolStateReloadDropsHistory(ctx context.Context, t *testctx.
   added: String! { "added; step: " + toString(step) }
 `)
 	ws := toolStateWorkspace(c, "history", initial)
-	script := recomposeRecordingTurn(c.LLM(), "before", "advance", "advance", "read")
+	script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "before", "advance", "advance", "read")
 	script = recomposeRecordingTurn(script, "after", "added", "advance", "read", "runs")
 	script = recomposeRecordingTurn(script, "restored", "read", "added", "runs")
 	model := cannedRecordingModel(ctx, t, c, script)
-	llm, err := composeArtifactAgents(ctx, c, ws, nil, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws))
+	llm, err := composeArtifactAgents(ctx, c, ws, nil, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws))
 	require.NoError(t, err)
 	llm = llm.WithPrompt("before").Loop()
 	transcript, err := llm.Transcript(ctx)
@@ -377,10 +378,10 @@ func (LLMSuite) TestToolStateFieldKinds(ctx context.Context, t *testctx.T) {
 	env := []string{toolStateTokenEnv + "=s3cr3t"}
 	c, sink := connectWithTrace(ctx, t, engineconn.Config{ExtraEnv: env})
 	ws := toolStateWorkspace(c, "kinds", kindsDang, fmt.Sprintf("seed = %q", "env://"+toolStateTokenEnv))
-	script := recomposeRecordingTurn(c.LLM(), "mutate", "stamp", "mutate", "stamp", "noop", "stamp", "describe")
+	script := recomposeRecordingTurn(core.NewQuery(c).LLM(), "mutate", "stamp", "mutate", "stamp", "noop", "stamp", "describe")
 	script = recomposeRecordingTurn(script, "restored", "stamp", "noop", "stamp", "describe")
 	model := cannedRecordingModel(ctx, t, c, script)
-	composed, err := composeArtifactAgents(ctx, c, ws, nil, c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws))
+	composed, err := composeArtifactAgents(ctx, c, ws, nil, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws))
 	require.NoError(t, err)
 	result := composed.WithPrompt("mutate").Loop()
 	transcript, err := result.Transcript(ctx)
