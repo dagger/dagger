@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
@@ -31,6 +32,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vito/go-sse/sse"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -196,6 +198,15 @@ type Client struct {
 	closeCtx      context.Context
 	closeRequests context.CancelCauseFunc
 	closeMu       sync.RWMutex
+
+	// closing is set when Close starts. The engine closes the session
+	// attachables connection as part of an orderly shutdown, which must not be
+	// mistaken for a lost session.
+	closing atomic.Bool
+	// sessionLost is the cause recorded when the engine closed the session
+	// attachables connection before Close started. The engine retires the
+	// session when it does that, so every later request fails with this cause.
+	sessionLost atomic.Pointer[error]
 
 	telemetry *errgroup.Group
 
@@ -761,8 +772,35 @@ func (c *Client) runSessionAttachables() {
 		}
 		defer cancel(errors.New("session attachables stopped"))
 		c.sessionSrv.Run(ctx)
+		if ctx.Err() == nil && !c.closing.Load() {
+			// Neither Close nor a failed init stopped the attachables: the
+			// engine closed the connection, and with it retired the session.
+			err := c.sessionLostError(time.Now())
+			c.sessionLost.Store(&err)
+			slog.Error("engine closed the session", "error", err)
+		}
 		return nil
 	})
+}
+
+// sessionLostError explains a session the engine retired by closing its
+// attachables connection. Without it, every later request fails with the
+// engine's generic "session was already used and released" error.
+func (c *Client) sessionLostError(now time.Time) error {
+	return fmt.Errorf("engine closed session %q: it closed this client's session attachables connection, "+
+		"which it does when the client fails its health checks (for example, when the client process or its machine stalls) "+
+		"or when the engine shuts down; the longest this client went without a health check was %s; "+
+		"the session and its state (services, secrets, cached results) are gone, so start a new session",
+		c.SessionID, c.sessionSrv.health.longestGap(now).Truncate(100*time.Millisecond))
+}
+
+// SessionLost returns the cause recorded when the engine closed this client's
+// session, or nil while the session is live.
+func (c *Client) SessionLost() error {
+	if err := c.sessionLost.Load(); err != nil {
+		return *err
+	}
+	return nil
 }
 
 func ConnectSessionAttachables(
@@ -818,7 +856,8 @@ func ConnectSessionAttachables(
 
 func NewSessionAttachablesServer(ctx context.Context, conn net.Conn, attachables ...SessionAttachable) *SessionAttachablesServer {
 	srv := grpc.NewServer()
-	grpc_health_v1.RegisterHealthServer(srv, health.NewServer())
+	healthSrv := newHealthCheckObserver(time.Now())
+	grpc_health_v1.RegisterHealthServer(srv, healthSrv)
 	for _, attachable := range attachables {
 		attachable.Register(srv)
 	}
@@ -835,6 +874,7 @@ func NewSessionAttachablesServer(ctx context.Context, conn net.Conn, attachables
 		Attachables: attachables,
 		MethodURLs:  methodURLs,
 		Conn:        conn,
+		health:      healthSrv,
 	}
 }
 
@@ -847,6 +887,45 @@ type SessionAttachablesServer struct {
 	MethodURLs  []string
 	Conn        net.Conn
 	Attachables []SessionAttachable
+
+	health *healthCheckObserver
+}
+
+// healthCheckObserver serves the standard gRPC health service that the engine
+// polls to check that this client is alive, and records the longest gap
+// between those checks. When the engine retires a session for failed health
+// checks, a long gap shows the checks stopped reaching this client, and a
+// short one that they kept arriving; it does not say which side stalled.
+type healthCheckObserver struct {
+	*health.Server
+
+	mu      sync.Mutex
+	last    time.Time
+	longest time.Duration
+}
+
+func newHealthCheckObserver(start time.Time) *healthCheckObserver {
+	return &healthCheckObserver{Server: health.NewServer(), last: start}
+}
+
+func (h *healthCheckObserver) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+	h.observe(time.Now())
+	return h.Server.Check(ctx, req)
+}
+
+func (h *healthCheckObserver) observe(now time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.longest = max(h.longest, now.Sub(h.last))
+	h.last = now
+}
+
+// longestGap returns the longest time between health checks, counting the
+// time from the last check until now.
+func (h *healthCheckObserver) longestGap(now time.Time) time.Duration {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return max(h.longest, now.Sub(h.last))
 }
 
 func (srv *SessionAttachablesServer) Run(ctx context.Context) {
@@ -878,9 +957,13 @@ func (c *Client) daggerConnect(ctx context.Context) error {
 }
 
 func (c *Client) Close() (rerr error) {
+	c.closing.Store(true)
 	// shutdown happens outside of c.closeMu, since it requires a connection
-	shutdownErr := c.shutdownServer()
-	if shutdownErr != nil {
+	if lostErr := c.SessionLost(); lostErr != nil {
+		// The engine already retired the session, so it would reject the
+		// shutdown request. Report why the session ended instead.
+		rerr = errors.Join(rerr, lostErr)
+	} else if shutdownErr := c.shutdownServer(); shutdownErr != nil {
 		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", shutdownErr))
 	} else if c.telemetry != nil {
 		// A successful /shutdown has flushed the session's telemetry and
@@ -1486,6 +1569,11 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if err := c.SessionLost(); err != nil {
+		writeSessionLost(w, r, err)
+		return
+	}
+
 	proxyReq := &http.Request{
 		Method: r.Method,
 		URL: &url.URL{
@@ -1529,6 +1617,26 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil && !errors.Is(err, context.Canceled) {
 		panic(err) // don't write header because we already wrote to the body, which isn't allowed
 	}
+}
+
+// writeSessionLost answers a request on a session the engine has retired. A
+// query gets the body the engine itself sends for a released session, a
+// GraphQL error with status 200, so SDKs surface the cause the same way.
+func writeSessionLost(w http.ResponseWriter, r *http.Request, err error) {
+	if r.URL.Path != engine.QueryEndpoint {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	body, marshalErr := json.Marshal(graphql.Response{
+		Errors: gqlerror.List{{Message: err.Error()}},
+	})
+	if marshalErr != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(body)
 }
 
 // writeFlusher flushes after every write.
@@ -1632,6 +1740,9 @@ func (c *Client) Do(
 		return err
 	}
 	defer cancel(errors.New("Client.Do done"))
+	if err := c.SessionLost(); err != nil {
+		return err
+	}
 
 	gqlClient := graphql.NewClient("http://dagger"+engine.QueryEndpoint, c.httpClient)
 
@@ -1906,7 +2017,12 @@ func (c *httpClient) Close() error {
 }
 
 func EngineConn(engineClient *Client) DirectConn {
-	return engineClient.httpClient.Do
+	return func(req *http.Request) (*http.Response, error) {
+		if err := engineClient.SessionLost(); err != nil {
+			return nil, err
+		}
+		return engineClient.httpClient.Do(req)
+	}
 }
 
 type DirectConn func(*http.Request) (*http.Response, error)
