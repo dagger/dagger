@@ -631,6 +631,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Release).Publish(&parent, ctx, tag, commit, dryRun, registryImage, registryUsername, registryPassword, githubToken, githubOrgName, githubHost, githubCaCert, netlifyToken, netlifyApiurl, pypiToken, pypiRepo, pypiUrl, npmToken, npmRegistryUrl, hexApikey, hexApiurl, cargoRegistryToken, cargoRegistryIndex, goSdkDestRemote, phpSdkDestRemote, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl, artefactsFqdn, helmRegistry, discordWebhook)
+		case "PublishStableWithMockEndpoints":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *dagger.Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			return nil, (*Release).PublishStableWithMockEndpoints(&parent, ctx, source)
 		case "PublishWithMockEndpoints":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -785,12 +799,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("helmRegistry", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 147, 2)}).
 							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 149, 2)})).
 					WithFunction(
+						dag.Function("PublishStableWithMockEndpoints",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Exercise the stable release publish path against local mock endpoints.\n\nSame as publish-with-mock-endpoints, but the tagged publish uses the Helm\nchart version without its prerelease suffix (e.g. v1.0.0 for\n1.0.0-beta.17), so the stable-only steps run: the root GitHub release,\npackage managers, docs, and the latest_version/versions pointers.").
+							WithSourceMap(dag.SourceMap("publish_check.go", 79, 1)).
+							WithCheck().
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Source tree to publish. The check commits this exact tree to a local git\nservice and invokes release through a nested engine using that git ref.", SourceMap: dag.SourceMap("publish_check.go", 85, 2), DefaultPath: "/"})).
+					WithFunction(
 						dag.Function("PublishWithMockEndpoints",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Exercise the release publish path against local mock endpoints.").
-							WithSourceMap(dag.SourceMap("publish_check.go", 62, 1)).
+							WithSourceMap(dag.SourceMap("publish_check.go", 61, 1)).
 							WithCheck().
-							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Source tree to publish. The check commits this exact tree to a local git\nservice and invokes release through a nested engine using that git ref.", SourceMap: dag.SourceMap("publish_check.go", 68, 2), DefaultPath: "/"})).
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Source tree to publish. The check commits this exact tree to a local git\nservice and invokes release through a nested engine using that git ref.", SourceMap: dag.SourceMap("publish_check.go", 67, 2), DefaultPath: "/"})).
 					WithFunction(
 						dag.Function("PythonSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).

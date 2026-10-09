@@ -48,8 +48,9 @@ type publishCheckEnv struct {
 	verdaccio   *dagger.Service
 	mockSvc     *dagger.Service
 
-	certs       *releaseCheckCerts
-	mockRecords *dagger.CacheVolume
+	certs           *releaseCheckCerts
+	mockRecords     *dagger.CacheVolume
+	registryStorage *dagger.CacheVolume
 
 	platform        dagger.Platform
 	platformArchive string
@@ -57,8 +58,6 @@ type publishCheckEnv struct {
 
 // Exercise the release publish path against local mock endpoints.
 // +check
-//
-//nolint:gocyclo
 func (r *Release) PublishWithMockEndpoints(
 	ctx context.Context,
 
@@ -66,8 +65,35 @@ func (r *Release) PublishWithMockEndpoints(
 	// service and invokes release through a nested engine using that git ref.
 	// +defaultPath="/"
 	source *dagger.Directory,
+) error {
+	return r.publishWithMockEndpoints(ctx, source, false)
+}
+
+// Exercise the stable release publish path against local mock endpoints.
+//
+// Same as publish-with-mock-endpoints, but the tagged publish uses the Helm
+// chart version without its prerelease suffix (e.g. v1.0.0 for
+// 1.0.0-beta.17), so the stable-only steps run: the root GitHub release,
+// package managers, docs, and the latest_version/versions pointers.
+// +check
+func (r *Release) PublishStableWithMockEndpoints(
+	ctx context.Context,
+
+	// Source tree to publish. The check commits this exact tree to a local git
+	// service and invokes release through a nested engine using that git ref.
+	// +defaultPath="/"
+	source *dagger.Directory,
+) error {
+	return r.publishWithMockEndpoints(ctx, source, true)
+}
+
+//nolint:gocyclo
+func (r *Release) publishWithMockEndpoints(
+	ctx context.Context,
+	source *dagger.Directory,
+	stable bool,
 ) (rerr error) {
-	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"), r.Workspace)
+	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"), r.Workspace, stable)
 	if err != nil {
 		return err
 	}
@@ -91,6 +117,7 @@ func (r *Release) PublishWithMockEndpoints(
 		return err
 	}
 
+	initialStart := time.Now()
 	initialOut, err := env.runReleasePublish(ctx, engine, "main")
 	if err != nil {
 		return err
@@ -99,6 +126,9 @@ func (r *Release) PublishWithMockEndpoints(
 		return err
 	}
 	if err := requireContains(initialOut, "- [x] 🚗 CLI", "initial main publish should publish the CLI"); err != nil {
+		return err
+	}
+	if err := env.assertPublishOrder(ctx, "main", initialStart); err != nil {
 		return err
 	}
 	if err := env.assertInitialCLIReleaseOutputs(ctx); err != nil {
@@ -113,6 +143,7 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		return err
 	}
 
+	taggedStart := time.Now()
 	taggedOut, err := env.runReleasePublish(ctx, engine, env.releaseTag)
 	if err != nil {
 		return err
@@ -144,6 +175,9 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		}
 	}
 	if err := requireNotContains(taggedOut, "Error while publishing", "release publish should complete against mock endpoints"); err != nil {
+		return err
+	}
+	if err := env.assertPublishOrder(ctx, env.releaseTag, taggedStart); err != nil {
 		return err
 	}
 
@@ -195,12 +229,12 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	return nil
 }
 
-func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagger.Workspace) (*publishCheckEnv, error) {
+func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagger.Workspace, stable bool) (*publishCheckEnv, error) {
 	platform, platformArchive, err := publishCheckPlatform(ctx)
 	if err != nil {
 		return nil, err
 	}
-	releaseTag, releaseVersion, err := publishCheckRelease(ctx, source)
+	releaseTag, releaseVersion, err := publishCheckRelease(ctx, source, stable)
 	if err != nil {
 		return nil, err
 	}
@@ -307,8 +341,12 @@ git rev-parse HEAD
 	}
 	env.moduleRef = env.repoURL + "@" + env.commit
 
+	// The registry's storage lives on a cache volume so assertPublishOrder can
+	// read when each engine tag was pushed.
+	env.registryStorage = dag.CacheVolume("release-registry-storage-" + randomID())
 	env.registrySvc = dag.Container().
 		From("registry:3").
+		WithMountedCache("/var/lib/registry", env.registryStorage).
 		WithNewFile("/auth/htpasswd", publishCheckRegistryUser+":$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC").
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
@@ -345,7 +383,7 @@ git rev-parse HEAD
 	return env, nil
 }
 
-func publishCheckRelease(ctx context.Context, source *dagger.Directory) (tag, version string, rerr error) {
+func publishCheckRelease(ctx context.Context, source *dagger.Directory, stable bool) (tag, version string, rerr error) {
 	chartYaml, err := source.File("helm/dagger/Chart.yaml").Contents(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("read Helm chart metadata: %w", err)
@@ -367,6 +405,9 @@ func publishCheckRelease(ctx context.Context, source *dagger.Directory) (tag, ve
 	}
 	if !semver.IsValid(tag) {
 		return "", "", fmt.Errorf("helm chart version %q does not produce a valid release tag", version)
+	}
+	if stable {
+		tag = strings.TrimSuffix(semver.Canonical(tag), semver.Prerelease(tag))
 	}
 	return tag, strings.TrimPrefix(tag, "v"), nil
 }
@@ -617,6 +658,93 @@ func (env *publishCheckEnv) assertMockEvents(ctx context.Context) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// assertPublishOrder checks that nothing user-visible went out before the
+// engine image it depends on: every S3 object written and every write request
+// the mock endpoints received since the publish started must come no earlier
+// than the last engine tag pushed during that publish. All mock services run
+// on the same host, so their clocks agree; S3 LastModified has one-second
+// resolution, so times are compared in whole seconds.
+func (env *publishCheckEnv) assertPublishOrder(ctx context.Context, ref string, since time.Time) error {
+	out, err := env.awsCLI().
+		WithExec([]string{"apk", "add", "python3"}).
+		WithMountedCache("/records", env.mockRecords).
+		WithMountedCache("/registry", env.registryStorage).
+		WithEnvVariable("AWS_BUCKET", env.awsBucket).
+		WithEnvVariable("PUBLISH_REF", ref).
+		WithEnvVariable("PUBLISH_SINCE", fmt.Sprint(since.Unix())).
+		WithExec([]string{"sh", "-ec", `
+set -eu
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 --bucket "$AWS_BUCKET" > /tmp/s3-objects.json
+python3 - <<'PY'
+import datetime
+import glob
+import json
+import os
+import sys
+
+def fail(msg):
+    print(msg, file=sys.stderr)
+    raise SystemExit(1)
+
+def utc(ts):
+    return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%H:%M:%S")
+
+ref = os.environ["PUBLISH_REF"]
+since = int(os.environ["PUBLISH_SINCE"])
+
+engine_tags = {}
+for link in glob.glob("/registry/docker/registry/v2/repositories/dagger/engine/_manifests/tags/*/current/link"):
+    pushed = int(os.stat(link).st_mtime)
+    if pushed >= since:
+        engine_tags[link.split("/")[-3]] = pushed
+
+writes = []
+listing = json.load(open("/tmp/s3-objects.json", encoding="utf-8"))
+for obj in listing.get("Contents") or []:
+    modified = int(datetime.datetime.fromisoformat(obj["LastModified"].replace("Z", "+00:00")).timestamp())
+    if modified >= since:
+        writes.append((modified, "s3://" + obj["Key"]))
+# The mock server creates its records file on its first request, which a main
+# publish may never make.
+events = []
+if os.path.exists("/records/events.jsonl"):
+    with open("/records/events.jsonl", encoding="utf-8") as f:
+        events = [json.loads(line) for line in f if line.strip()]
+for event in events:
+    if event.get("method") not in ("POST", "PUT", "PATCH", "DELETE"):
+        continue
+    at = int(event.get("time", 0))
+    if at >= since:
+        writes.append((at, event.get("method") + " " + event.get("path", "")))
+writes.sort()
+
+if not writes:
+    fail(f"{ref} publish: expected S3 objects or mock endpoint writes, found none")
+if not engine_tags:
+    fail(f"{ref} publish: {len(writes)} writes went public but no engine tag was pushed; first: {writes[0][1]} at {utc(writes[0][0])}")
+
+engine_done = max(engine_tags.values())
+early = [w for w in writes if w[0] < engine_done]
+if early:
+    lines = [f"  {utc(at)} {what}" for at, what in early[:10]]
+    fail(
+        f"{ref} publish: {len(early)} of {len(writes)} writes went public before the last engine tag was pushed at {utc(engine_done)} "
+        f"(tags: {', '.join(sorted(engine_tags))}); earliest:\n" + "\n".join(lines)
+    )
+print(
+    f"{ref} publish order ok: engine tags {', '.join(sorted(engine_tags))} pushed by {utc(engine_done)}; "
+    f"{len(writes)} writes from {utc(writes[0][0])} ({writes[0][1]}, {writes[0][0] - engine_done}s after) to {utc(writes[-1][0])}"
+)
+PY
+`}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("check %s publish order: %w", ref, err)
+	}
+	fmt.Println(strings.TrimSpace(out))
 	return nil
 }
 
