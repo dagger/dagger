@@ -135,6 +135,8 @@ type snapshotManager struct {
 	importLayerLocker      keyedLocker
 	exportLayerLocker      keyedLocker
 	ownerLeaseLocker       *locker.Locker
+	// backgroundReleases releases read-only mounts off their callers' paths.
+	backgroundReleases *backgroundReleases
 
 	mountPool sharableMountPool
 }
@@ -155,6 +157,7 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		importedLayerByDiff:    make(map[ImportedLayerDiffKey]string),
 		snapshotOwnerLeases:    make(map[string]map[string]struct{}),
 		ownerLeaseLocker:       locker.New(),
+		backgroundReleases:     newBackgroundReleases(maxPendingReleases),
 	}
 
 	p, err := newSharableMountPool(opt.MountPoolRoot)
@@ -183,6 +186,7 @@ func (cm *snapshotManager) init(ctx context.Context) error {
 // Close closes the manager and releases the metadata database lock. No other
 // method should be called after Close.
 func (cm *snapshotManager) Close() error {
+	cm.WaitForBackgroundReleases()
 	return cm.metadataStore.close()
 }
 

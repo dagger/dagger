@@ -286,11 +286,20 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, optFns ...mountRefOptF
 	if err != nil {
 		return "", nil, nil, err
 	}
-	return dir, &m, func() error {
+	release := func() error {
 		err := lm.Unmount()
 		err = errors.Join(err, unmount())
 		return err
-	}, nil
+	}
+	if background, ok := ref.(bkcache.BackgroundReleaser); ok {
+		// A read-only view's unmount and release do not need to hold up the
+		// caller; they run after it, in that order.
+		return dir, &m, func() error {
+			background.ReleaseInBackground(release)
+			return nil
+		}, nil
+	}
+	return dir, &m, release, nil
 }
 
 func Supports(ctx context.Context, minVersion string) bool {
