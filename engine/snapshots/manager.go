@@ -9,6 +9,7 @@ import (
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/metadata"
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
@@ -41,6 +42,15 @@ type SnapshotManagerOpt struct {
 	// MetadataDB is the containerd metadata database behind LeaseManager.
 	// When set, AttachLease makes its lease writes in one transaction.
 	MetadataDB metadata.Transactor
+	// LocalMounter mounts a snapshot's mounts on a local directory for
+	// shared read-only mounts; nil means LocalMounterWithMounts. Tests use
+	// one that needs no privileges.
+	LocalMounter func([]mount.Mount) Mounter
+	// SharedMountLinger and MaxIdleSharedMounts bound the shared read-only
+	// mounts nobody is using that are kept; zero means
+	// DefaultSharedMountLinger and DefaultMaxIdleSharedMounts.
+	SharedMountLinger   time.Duration
+	MaxIdleSharedMounts int
 }
 
 type ImportedImage struct {
@@ -137,6 +147,9 @@ type snapshotManager struct {
 	ownerLeaseLocker       *locker.Locker
 	// backgroundReleases releases read-only mounts off their callers' paths.
 	backgroundReleases *backgroundReleases
+	// sharedMounts keeps one read-only mount per snapshot for its readers.
+	sharedMounts *sharedMounts
+	localMounter func([]mount.Mount) Mounter
 
 	mountPool sharableMountPool
 }
@@ -158,7 +171,12 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		snapshotOwnerLeases:    make(map[string]map[string]struct{}),
 		ownerLeaseLocker:       locker.New(),
 		backgroundReleases:     newBackgroundReleases(maxPendingReleases),
+		localMounter:           opt.LocalMounter,
 	}
+	if cm.localMounter == nil {
+		cm.localMounter = func(ms []mount.Mount) Mounter { return LocalMounterWithMounts(ms) }
+	}
+	cm.sharedMounts = newSharedMounts(opt.SharedMountLinger, opt.MaxIdleSharedMounts, cm.backgroundReleases.run)
 
 	p, err := newSharableMountPool(opt.MountPoolRoot)
 	if err != nil {

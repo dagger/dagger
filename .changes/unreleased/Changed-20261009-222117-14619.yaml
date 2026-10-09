@@ -1,0 +1,6 @@
+kind: Changed
+body: Read-only mounts of cached snapshots are now shared across the engine. Every reader of a snapshot uses one mount, which is kept for up to 30 seconds after its last reader, with at most 512 such unused mounts. Each garbage collection pass and prune releases the unused mounts first. A first per-package Go build of yq through a Dagger module mounted snapshots 548 times instead of 3,086 and was about 5% faster.
+time: 2026-10-09T22:21:17Z
+custom:
+    Author: sipsma
+    PR: "14619"

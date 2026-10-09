@@ -53,6 +53,17 @@ type Store struct {
 	AfterAdd    func(context.Context, leases.Lease, leases.Resource)
 	AfterCreate func(leases.Lease)
 	root        string
+
+	// SharedMountLinger and MaxIdleSharedMounts, when set before the manager
+	// is (re)opened, bound its idle shared read-only mounts.
+	SharedMountLinger   time.Duration
+	MaxIdleSharedMounts int
+	// LocalMounts and LocalUnmounts count the shared read-only mounts made
+	// and unmounted; they are made in place, without privileges.
+	LocalMounts   atomic.Int64
+	LocalUnmounts atomic.Int64
+	// BeforeLocalUnmount runs before each of those unmounts.
+	BeforeLocalUnmount func()
 }
 
 func NewStore(t testing.TB) *Store {
@@ -93,6 +104,11 @@ func (s *Store) openManager(t testing.TB) {
 		MountPoolRoot:  filepath.Join(s.root, "mounts"),
 		BuiltinContent: s.Builtin,
 		MetadataDB:     observedTransactor{DB: s.DB, store: s},
+		LocalMounter: func(ms []mount.Mount) bkcache.Mounter {
+			return &inPlaceMounter{store: s, mounts: ms}
+		},
+		SharedMountLinger:   s.SharedMountLinger,
+		MaxIdleSharedMounts: s.MaxIdleSharedMounts,
 	})
 	require.NoError(t, err)
 }
@@ -102,6 +118,14 @@ func (s *Store) openManager(t testing.TB) {
 func (s *Store) WithBuiltin(t testing.TB, provider content.InfoReaderProvider) {
 	t.Helper()
 	s.Builtin = provider
+	s.Reload(t)
+}
+
+// WithSharedMounts reopens the manager with the given bounds on its idle
+// shared read-only mounts, keeping the persistent metadata.
+func (s *Store) WithSharedMounts(t testing.TB, linger time.Duration, maxIdle int) {
+	t.Helper()
+	s.SharedMountLinger, s.MaxIdleSharedMounts = linger, maxIdle
 	s.Reload(t)
 }
 

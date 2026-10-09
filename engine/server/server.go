@@ -1000,10 +1000,11 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		err = errors.Join(err, srv.clientDBs.Close())
 	}
 
-	// Read-only mounts still being released in the background finish before
-	// the final collection and the metadata DBs close.
-	if waiter, ok := srv.workerCache.(bkcache.BackgroundReleaseWaiter); ok {
-		waiter.WaitForBackgroundReleases()
+	// Shared read-only mounts nobody is using, and the releases running in
+	// the background, are released before the final collection and before
+	// the metadata DBs close.
+	if releaser, ok := srv.workerCache.(bkcache.ReadOnlyMountReleaser); ok {
+		releaser.WaitForBackgroundReleases()
 	}
 
 	if srv.engineCache != nil && srv.localCacheGCEnabled {
