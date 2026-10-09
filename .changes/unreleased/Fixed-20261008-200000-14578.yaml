@@ -1,5 +1,5 @@
 kind: Fixed
-body: Calls no longer re-walk their whole cached call history to log telemetry payloads, so re-running a large cached graph one call at a time is no longer quadratic (a no-change replay of a 263-package Go build went from about 3.8 s to about 2.5 s).
+body: Calls no longer re-walk their whole cached call history to log telemetry payloads, so re-running a large cached graph one call at a time no longer does quadratic work.
 time: 2026-10-08T20:00:00+00:00
 custom:
     Author: sipsma
