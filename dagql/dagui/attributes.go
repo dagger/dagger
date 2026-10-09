@@ -28,15 +28,22 @@ type SpanAttributes []spanAttribute
 
 type spanAttribute struct {
 	name string
-	// val is the attribute's value: the string itself when str is set, its
-	// JSON encoding otherwise.
+	// val is the attribute's value: the string itself, or for any other
+	// value its JSON encoding behind a jsonValueMarker.
 	val string
-	str bool
+}
+
+// jsonValueMarker prefixes a spanAttribute value held as JSON. A string
+// value starting with it is held as JSON too, so the two never mix up.
+const jsonValueMarker = "\x00"
+
+func (attr spanAttribute) isJSON() bool {
+	return strings.HasPrefix(attr.val, jsonValueMarker)
 }
 
 func (attr spanAttribute) json() json.RawMessage {
-	if !attr.str {
-		return json.RawMessage(attr.val)
+	if attr.isJSON() {
+		return json.RawMessage(attr.val[len(jsonValueMarker):])
 	}
 	payload, err := json.Marshal(attr.val)
 	if err != nil {
@@ -70,11 +77,11 @@ func (attrs SpanAttributes) String(name string) (string, bool) {
 	if i < 0 {
 		return "", false
 	}
-	if attrs[i].str {
+	if !attrs[i].isJSON() {
 		return attrs[i].val, true
 	}
 	var str string
-	if err := json.Unmarshal([]byte(attrs[i].val), &str); err != nil {
+	if err := json.Unmarshal(attrs[i].json(), &str); err != nil {
 		return "", false
 	}
 	return str, true
@@ -105,22 +112,21 @@ func compareAttrNames(a, b spanAttribute) int {
 
 // SetJSON sets the named attribute to a value given as its JSON encoding.
 func (attrs *SpanAttributes) SetJSON(name string, payload json.RawMessage) {
-	attrs.set(spanAttribute{name: internAttrName(name), val: string(payload)})
+	attrs.set(spanAttribute{name: internAttrName(name), val: jsonValueMarker + string(payload)})
 }
 
 // setValue sets the named attribute to an OTel attribute value, as returned
 // by attribute.Value.AsInterface.
 func (attrs *SpanAttributes) setValue(name string, val any) error {
 	attr := spanAttribute{name: internAttrName(name)}
-	if str, ok := val.(string); ok {
+	if str, ok := val.(string); ok && !strings.HasPrefix(str, jsonValueMarker) {
 		attr.val = internAttrValue(name, str)
-		attr.str = true
 	} else {
 		payload, err := json.Marshal(val)
 		if err != nil {
 			return err
 		}
-		attr.val = string(payload)
+		attr.val = jsonValueMarker + string(payload)
 	}
 	attrs.set(attr)
 	return nil
@@ -131,7 +137,13 @@ func (attrs *SpanAttributes) set(attr spanAttribute) {
 		(*attrs)[i] = attr
 		return
 	}
-	*attrs = append(*attrs, attr)
+	// Grow one at a time: a span's attributes arrive in a single batch and
+	// are kept for the life of the DB, so slack capacity would be paid for
+	// by every span. The copies are short-lived garbage.
+	grown := make(SpanAttributes, len(*attrs)+1)
+	copy(grown, *attrs)
+	grown[len(*attrs)] = attr
+	*attrs = grown
 }
 
 func (attrs SpanAttributes) MarshalJSON() ([]byte, error) {
@@ -169,7 +181,7 @@ func (attrs *SpanAttributes) UnmarshalJSON(p []byte) error {
 	for name, payload := range m {
 		decoded = append(decoded, spanAttribute{
 			name: internAttrName(name),
-			val:  string(payload),
+			val:  jsonValueMarker + string(payload),
 		})
 	}
 	slices.SortFunc(decoded, compareAttrNames)

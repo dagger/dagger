@@ -17,6 +17,7 @@ func TestSpanAttributes(t *testing.T) {
 	snapshot.ProcessAttribute("a.bool", true)
 	snapshot.ProcessAttribute("m.int", int64(42))
 	snapshot.ProcessAttribute("m.slice", []string{"x", "y"})
+	snapshot.ProcessAttribute("m.nul", "\x00not json")
 	snapshot.ProcessAttribute(telemetryattrs.CacheOutcomeAttr, "hit")
 	// a later export of the span replaces the value
 	snapshot.ProcessAttribute("z.str", "goodbye <world>")
@@ -28,6 +29,7 @@ func TestSpanAttributes(t *testing.T) {
 		"a.bool":                        true,
 		"m.int":                         int64(42),
 		"m.slice":                       []string{"x", "y"},
+		"m.nul":                         "\x00not json",
 		telemetryattrs.CacheOutcomeAttr: "hit",
 	} {
 		payload, err := json.Marshal(val)
@@ -52,6 +54,9 @@ func TestSpanAttributes(t *testing.T) {
 	}
 	if str, ok := attrs.String("z.str"); !ok || str != "goodbye <world>" {
 		t.Errorf("String(z.str) = %q, %v", str, ok)
+	}
+	if str, ok := attrs.String("m.nul"); !ok || str != "\x00not json" {
+		t.Errorf("String(m.nul) = %q, %v", str, ok)
 	}
 	if _, ok := attrs.String("a.bool"); ok {
 		t.Error("String of a bool attribute should fail")
