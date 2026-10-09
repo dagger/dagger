@@ -1,7 +1,6 @@
 package dagui
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -388,7 +387,7 @@ type SpanSnapshot struct {
 	// remote frontends receive it without reprocessing the raw records.
 	Progress *SpanProgress `json:",omitempty"`
 
-	ExtraAttributes map[string]json.RawMessage `json:",omitempty"`
+	ExtraAttributes SpanAttributes `json:",omitempty"`
 }
 
 type SpanLink struct {
@@ -641,15 +640,10 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 		snapshot.Encapsulated = true
 
 	default:
-		if snapshot.ExtraAttributes == nil {
-			snapshot.ExtraAttributes = make(map[string]json.RawMessage)
-		}
-		payload, err := json.Marshal(val)
-		if err != nil {
+		if err := snapshot.ExtraAttributes.setValue(name, val); err != nil {
 			slog.Warn("failed to marshal attribute", "attribute", name, "val", val)
 			return
 		}
-		snapshot.ExtraAttributes[name] = json.RawMessage(payload)
 	}
 }
 

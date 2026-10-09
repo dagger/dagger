@@ -801,13 +801,10 @@ func truncateLabel(s string) string {
 // execArgv finds the wcprof exec argv stamped on the op's process-run
 // span (a grandchild of the call span: call → exec.run → exec.processRun).
 func (span *Span) execArgv(depth int) string {
-	if raw, ok := span.ExtraAttributes[telemetryattrs.WcprofExecArgvAttr]; ok {
-		var enc string
-		if err := json.Unmarshal(raw, &enc); err == nil {
-			var argv []string
-			if err := json.Unmarshal([]byte(enc), &argv); err == nil && len(argv) > 0 {
-				return truncateLabel(strings.Join(argv, " "))
-			}
+	if enc, ok := span.ExtraAttributes.String(telemetryattrs.WcprofExecArgvAttr); ok {
+		var argv []string
+		if err := json.Unmarshal([]byte(enc), &argv); err == nil && len(argv) > 0 {
+			return truncateLabel(strings.Join(argv, " "))
 		}
 	}
 	if depth >= 2 {
