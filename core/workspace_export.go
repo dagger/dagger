@@ -178,7 +178,7 @@ func workspaceExportSnapshot(ctx context.Context, ws *gitMergeWorkspace, head st
 // untracked paths from fromDirty are reconstructed, and the client verifies
 // their actual contents before accepting the transport.
 func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Directory], dirty *Changeset, source *GitRef, sourceDirty *Changeset, from *GitRef, fromDirty *Changeset, opts WorkspacePullOpts) (*Directory, error) {
-	ctx, cancel := context.WithTimeout(ctx, WorkspacePullTimeout)
+	ctx, cancel := WithWorkspacePullTimeout(ctx)
 	defer cancel()
 	if err := opts.Validate(); err != nil {
 		return nil, err

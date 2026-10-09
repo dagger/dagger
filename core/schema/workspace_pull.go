@@ -81,7 +81,7 @@ func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectR
 	}
 	resolved.Source = dagql.NewID[*core.Workspace](id)
 	if len(args.Commits) > 0 {
-		ctx, cancel := context.WithTimeout(ctx, core.WorkspacePullTimeout)
+		ctx, cancel := core.WithWorkspacePullTimeout(ctx)
 		defer cancel()
 		var repo dagql.ObjectResult[*core.GitRepository]
 		if err := srv.Select(ctx, source, &repo, dagql.Selector{Field: "git"}, dagql.Selector{Field: "__repository"}); err != nil {
