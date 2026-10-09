@@ -1199,6 +1199,11 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 		return fmt.Errorf("install state rebind: %w", err)
 	}
 	fields = append(fields, rebind)
+	setter, err := obj.stateSetterField(dag)
+	if err != nil {
+		return fmt.Errorf("install state setter: %w", err)
+	}
+	fields = append(fields, setter)
 
 	class.Install(fields...)
 	dag.InstallObject(class, installDirectives...)

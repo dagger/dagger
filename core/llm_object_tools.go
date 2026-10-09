@@ -972,7 +972,7 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 		if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), recv, &val, sel); err != nil {
 			return nil, err
 		}
-		return m.routeObjectMethodResult(ctx, srv, typeName, val)
+		return m.routeObjectMethodResult(ctx, srv, typeName, recv, val)
 	}
 }
 
@@ -1337,7 +1337,7 @@ func resolveObjectAddress(ctx context.Context, srv *dagql.Server, addr, addressF
 //   - any other object: sync it, return its print (else a type description).
 //   - Void/null: return its print, else "(done)".
 //   - scalar/list/record: return the value.
-func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, typeName string, val dagql.AnyResult) (any, error) {
+func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, typeName string, recv dagql.AnyObjectResult, val dagql.AnyResult) (any, error) {
 	// A Changeset overlays onto the workspace (a Workspace replaces it, an LLM
 	// replaces the whole conversation), returning a summary. step() persists the
 	// resulting workspace via a withWorkspace selector, or resumes from the
@@ -1369,9 +1369,16 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 		if obj.Type().Name() == typeName {
 			// Same-type return: the result is the agent's new state. Rebind it
 			// (step() persists this as a withTools selector); the method's own print
-			// output is the response.
-			if err := m.rebindBoundTool(typeName, obj); err != nil {
+			// output is the response. The state is recorded field-wise on the
+			// receiver, not as the call that produced it (see fieldwiseState).
+			state, changed, err := m.fieldwiseState(ctx, srv, recv, obj)
+			if err != nil {
 				return nil, err
+			}
+			if changed {
+				if err := m.rebindBoundTool(typeName, state); err != nil {
+					return nil, err
+				}
 			}
 			return m.logsOrDone(ctx), nil
 		}
@@ -1392,6 +1399,39 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 
 	// Scalar, list, enum, or record: return the value directly.
 	return m.outputToLLM(ctx, srv, val)
+}
+
+// fieldwiseState returns the state to rebind after a same-type tool return,
+// and whether there is anything to rebind at all.
+//
+// The returned object's identity is the call that produced it — typically a
+// @cache(Never) method like start or restart — so recording it as the binding
+// would replay that call wherever the state is loaded again. Instead, the
+// fields that changed are re-applied to the receiver with the pure
+// __withField setter, so the recorded state is
+// recv!__withField(...)!__withField(...). A return whose fields all match the
+// receiver records nothing. The producing call itself remains visible in the
+// trace, as the tool call's own span.
+//
+// A module object's producing call is never recorded: if its state can't be
+// expressed field-wise, the error fails the tool call. Only objects without
+// module fields (core types) are rebound as returned, since there is nothing
+// to diff.
+func (m *MCP) fieldwiseState(ctx context.Context, srv *dagql.Server, recv, returned dagql.AnyObjectResult) (dagql.AnyObjectResult, bool, error) {
+	if _, ok := dagql.UnwrapAs[*ModuleObject](returned); !ok {
+		return returned, true, nil
+	}
+	if recv == nil {
+		return nil, false, fmt.Errorf("record %s state: no previous state", returned.Type().Name())
+	}
+	state, err := WithModuleObjectFields(ctx, srv, recv, returned)
+	if err != nil {
+		return nil, false, fmt.Errorf("record %s state: %w", returned.Type().Name(), err)
+	}
+	if state == nil {
+		return nil, false, nil
+	}
+	return state, true, nil
 }
 
 // syncObject forces an object result (running its side effects) when it has a

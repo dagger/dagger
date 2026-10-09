@@ -124,8 +124,9 @@ func restoreRequest() traceRestore {
 // order, and it is load-bearing rather than incidental: the chief's recorded
 // chain binds its workers BY ID, so a tool dispatched before a worker's
 // re-hydration resolves the handle against a registry that has never heard of
-// it (recommendation §6.2's seed race). Attaching a conversation is the first
-// thing that can lead to one, so every rehydrate has to precede every attach.
+// it (the seed race, hack/designs/resume-from-trace.md §4.1). Attaching a
+// conversation is the first thing that can lead to one, so every rehydrate has
+// to precede every attach.
 func TestRestorePlanRehydratesEverythingBeforeAnythingIsAddressed(t *testing.T) {
 	src, dst := chiefAndWorkers(), newFakeRestoreTarget()
 	require.NoError(t, executeRestorePlan(context.Background(), src, dst, restoreRequest()))
