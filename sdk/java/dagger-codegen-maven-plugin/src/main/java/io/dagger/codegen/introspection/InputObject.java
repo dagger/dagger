@@ -1,5 +1,6 @@
 package io.dagger.codegen.introspection;
 
+import jakarta.json.bind.annotation.JsonbTransient;
 import java.util.List;
 
 public class InputObject {
@@ -9,6 +10,17 @@ public class InputObject {
   private String defaultValue; // isDeprecated
   private TypeRef type;
   private List<Directive> directives;
+
+  /** The name's words from the schema JSON's __identifiers, or null. */
+  @JsonbTransient private List<IdentifierWord> words;
+
+  public List<IdentifierWord> getWords() {
+    return words;
+  }
+
+  public void setWords(List<IdentifierWord> words) {
+    this.words = words;
+  }
 
   public String getName() {
     return name;

@@ -1,7 +1,5 @@
 package io.dagger.codegen.introspection;
 
-import static org.apache.commons.lang3.StringUtils.capitalize;
-
 import com.palantir.javapoet.*;
 import jakarta.json.bind.annotation.JsonbTypeDeserializer;
 import jakarta.json.bind.annotation.JsonbTypeSerializer;
@@ -10,10 +8,13 @@ import jakarta.json.bind.serializer.JsonbDeserializer;
 import jakarta.json.stream.JsonParser;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.function.UnaryOperator;
+import java.util.stream.Collectors;
 import javax.lang.model.element.Modifier;
 
 class ObjectVisitor extends AbstractVisitor {
@@ -163,13 +164,15 @@ class ObjectVisitor extends AbstractVisitor {
             .build();
     classBuilder.addMethod(constructor);
 
+    Set<String> methodNames =
+        type.getFields().stream().map(Helpers::formatName).collect(Collectors.toSet());
     for (Field field : type.getFields()) {
       if (field.hasOptionalArgs()) {
         buildFieldArgumentsHelpers(classBuilder, field, type);
-        buildFieldMethod(classBuilder, field, true);
+        addFieldMethod(classBuilder, buildFieldMethod(field, true), field, methodNames);
       }
 
-      buildFieldMethod(classBuilder, field, false);
+      addFieldMethod(classBuilder, buildFieldMethod(field, false), field, methodNames);
     }
 
     if (List.of("Container", "Directory").contains(type.getName())) {
@@ -209,8 +212,20 @@ class ObjectVisitor extends AbstractVisitor {
     return field.getTypeRef().formatInput(expectedType);
   }
 
-  private void buildFieldMethod(
-      TypeSpec.Builder classBuilder, Field field, boolean withOptionalArgs) {
+  /**
+   * Adds a field's method, and when identifier words renamed it, its old name as a deprecated alias
+   * (unless another field now has that name).
+   */
+  private static void addFieldMethod(
+      TypeSpec.Builder classBuilder, MethodSpec method, Field field, Set<String> methodNames) {
+    classBuilder.addMethod(method);
+    String legacyName = Helpers.legacyName(field);
+    if (!legacyName.equals(method.name()) && !methodNames.contains(legacyName)) {
+      classBuilder.addMethod(Helpers.deprecatedAlias(method, legacyName));
+    }
+  }
+
+  private MethodSpec buildFieldMethod(Field field, boolean withOptionalArgs) {
     MethodSpec.Builder fieldMethodBuilder =
         MethodSpec.methodBuilder(Helpers.formatName(field)).addModifiers(Modifier.PUBLIC);
     TypeName returnType = resolveReturnType(field);
@@ -232,9 +247,7 @@ class ObjectVisitor extends AbstractVisitor {
     fieldMethodBuilder.addParameters(mandatoryParams);
     if (withOptionalArgs && field.hasOptionalArgs()) {
       fieldMethodBuilder.addParameter(
-          ParameterSpec.builder(
-                  ClassName.bestGuess(capitalize(Helpers.formatName(field)) + "Arguments"),
-                  "optArgs")
+          ParameterSpec.builder(ClassName.bestGuess(Helpers.argumentsClassName(field)), "optArgs")
               .addJavadoc("$L optional arguments\n", Helpers.formatName(field))
               .build());
     }
@@ -350,7 +363,7 @@ class ObjectVisitor extends AbstractVisitor {
       fieldMethodBuilder.addJavadoc("@deprecated $L\n", field.getDeprecationReason());
     }
 
-    classBuilder.addMethod(fieldMethodBuilder.build());
+    return fieldMethodBuilder.build();
   }
 
   /**
@@ -361,7 +374,7 @@ class ObjectVisitor extends AbstractVisitor {
    * @param type
    */
   private void buildFieldArgumentsHelpers(TypeSpec.Builder classBuilder, Field field, Type type) {
-    String fieldArgumentsClassName = capitalize(Helpers.formatName(field)) + "Arguments";
+    String fieldArgumentsClassName = Helpers.argumentsClassName(field);
 
     /* Inner class XXXArguments */
     TypeSpec.Builder fieldArgumentsClassBuilder =
@@ -377,16 +390,22 @@ class ObjectVisitor extends AbstractVisitor {
             .toList();
     fieldArgumentsClassBuilder.addFields(optionalArgFields);
 
-    List<MethodSpec> optionalArgFieldWithMethods =
-        field.getOptionalArgs().stream()
-            .map(
-                arg ->
-                    Helpers.withSetter(
-                        arg,
-                        resolveArgType(arg, field),
-                        ClassName.bestGuess(fieldArgumentsClassName),
-                        arg.getDescription()))
-            .toList();
+    List<MethodSpec> optionalArgFieldWithMethods = new ArrayList<>();
+    Set<String> withSetterNames =
+        field.getOptionalArgs().stream().map(Helpers::withSetterName).collect(Collectors.toSet());
+    for (InputObject arg : field.getOptionalArgs()) {
+      MethodSpec withSetter =
+          Helpers.withSetter(
+              arg,
+              resolveArgType(arg, field),
+              ClassName.bestGuess(fieldArgumentsClassName),
+              arg.getDescription());
+      optionalArgFieldWithMethods.add(withSetter);
+      String legacyName = Helpers.legacyWithSetterName(arg);
+      if (!legacyName.equals(withSetter.name()) && !withSetterNames.contains(legacyName)) {
+        optionalArgFieldWithMethods.add(Helpers.deprecatedAlias(withSetter, legacyName));
+      }
+    }
     fieldArgumentsClassBuilder.addMethods(optionalArgFieldWithMethods);
 
     List<CodeBlock> blocks =

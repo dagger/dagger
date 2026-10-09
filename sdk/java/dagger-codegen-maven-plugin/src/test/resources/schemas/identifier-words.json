@@ -1,0 +1,176 @@
+{
+  "__schemaVersion": "v1.0.0",
+  "__schema": {
+    "queryType": {"name": "Query"},
+    "types": [
+      {
+        "kind": "OBJECT", "name": "Query", "description": "The root of the API.",
+        "fields": [
+          {
+            "name": "container", "description": "Creates a scratch container.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "OBJECT", "name": "Container", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          }
+        ],
+        "interfaces": []
+      },
+      {
+        "kind": "INTERFACE", "name": "Node", "description": "An object with an ID.",
+        "fields": [
+          {
+            "name": "id", "description": "The node's ID.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "htmlURL", "description": "A web page for the node.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          }
+        ],
+        "possibleTypes": [{"kind": "OBJECT", "name": "Container", "ofType": null}]
+      },
+      {
+        "kind": "OBJECT", "name": "Container", "description": "A container.",
+        "interfaces": [{"kind": "INTERFACE", "name": "Node", "ofType": null}],
+        "fields": [
+          {
+            "name": "id", "description": "The container's ID.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "htmlURL", "description": "A web page for the container.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "asJSON", "description": "The container as JSON.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "prerequisiteSHAs", "description": "Commits the container needs.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "LIST", "name": null, "ofType": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "withGPU", "description": "Adds GPUs.",
+            "args": [
+              {
+                "name": "devices", "description": "The GPUs.", "defaultValue": null, "directives": [],
+                "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "LIST", "name": null, "ofType": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}}}}
+              }
+            ],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "OBJECT", "name": "Container", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "withMCPServer", "description": "Adds an MCP server.",
+            "args": [
+              {
+                "name": "name", "description": "The server's name.", "defaultValue": null, "directives": [],
+                "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}}
+              },
+              {
+                "name": "insecureSkipTLSVerify", "description": "Skip TLS verification.", "defaultValue": "false", "directives": [],
+                "type": {"kind": "SCALAR", "name": "Boolean", "ofType": null}
+              }
+            ],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "OBJECT", "name": "Container", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "import", "description": "Imports a tarball.",
+            "args": [
+              {
+                "name": "source", "description": "The tarball.", "defaultValue": null, "directives": [],
+                "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}}
+              }
+            ],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "OBJECT", "name": "Container", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          }
+        ]
+      },
+      {
+        "kind": "INPUT_OBJECT", "name": "BuildArg", "description": "A build argument.",
+        "inputFields": [
+          {
+            "name": "name", "description": "The argument's name.", "defaultValue": null, "directives": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}}
+          },
+          {
+            "name": "insecureSkipTLSVerify", "description": "Skip TLS verification.", "defaultValue": null, "directives": [],
+            "type": {"kind": "SCALAR", "name": "Boolean", "ofType": null}
+          }
+        ]
+      },
+      {
+        "kind": "ENUM", "name": "FunctionCachePolicy", "description": "A cache policy.",
+        "enumValues": [
+          {"name": "Default", "description": "The default.", "isDeprecated": false, "deprecationReason": null},
+          {"name": "PerSession", "description": "Once per session.", "isDeprecated": false, "deprecationReason": null}
+        ]
+      },
+      {"kind": "SCALAR", "name": "ID", "description": "An ID."},
+      {"kind": "SCALAR", "name": "String", "description": "A string."},
+      {"kind": "SCALAR", "name": "Boolean", "description": "A boolean."}
+    ]
+  },
+  "__identifiers": {
+    "Query": [{"kind": "WORD", "text": "query", "suffix": "", "capitalized": "Query"}],
+    "Node": [{"kind": "WORD", "text": "node", "suffix": "", "capitalized": "Node"}],
+    "Container": [{"kind": "WORD", "text": "container", "suffix": "", "capitalized": "Container"}],
+    "BuildArg": [
+      {"kind": "WORD", "text": "build", "suffix": "", "capitalized": "Build"},
+      {"kind": "WORD", "text": "arg", "suffix": "", "capitalized": "Arg"}
+    ],
+    "FunctionCachePolicy": [
+      {"kind": "WORD", "text": "function", "suffix": "", "capitalized": "Function"},
+      {"kind": "WORD", "text": "cache", "suffix": "", "capitalized": "Cache"},
+      {"kind": "WORD", "text": "policy", "suffix": "", "capitalized": "Policy"}
+    ],
+    "Default": [{"kind": "WORD", "text": "default", "suffix": "", "capitalized": "Default"}],
+    "PerSession": [
+      {"kind": "WORD", "text": "per", "suffix": "", "capitalized": "Per"},
+      {"kind": "WORD", "text": "session", "suffix": "", "capitalized": "Session"}
+    ],
+    "ID": [{"kind": "ACRONYM", "text": "ID", "suffix": "", "capitalized": "Id"}],
+    "String": [{"kind": "WORD", "text": "string", "suffix": "", "capitalized": "String"}],
+    "Boolean": [{"kind": "WORD", "text": "boolean", "suffix": "", "capitalized": "Boolean"}],
+    "container": [{"kind": "WORD", "text": "container", "suffix": "", "capitalized": "Container"}],
+    "id": [{"kind": "ACRONYM", "text": "ID", "suffix": "", "capitalized": "Id"}],
+    "htmlURL": [
+      {"kind": "ACRONYM", "text": "HTML", "suffix": "", "capitalized": "Html"},
+      {"kind": "ACRONYM", "text": "URL", "suffix": "", "capitalized": "Url"}
+    ],
+    "asJSON": [
+      {"kind": "WORD", "text": "as", "suffix": "", "capitalized": "As"},
+      {"kind": "ACRONYM", "text": "JSON", "suffix": "", "capitalized": "Json"}
+    ],
+    "prerequisiteSHAs": [
+      {"kind": "WORD", "text": "prerequisite", "suffix": "", "capitalized": "Prerequisite"},
+      {"kind": "ACRONYM", "text": "SHA", "suffix": "s", "capitalized": "Sha"}
+    ],
+    "withGPU": [
+      {"kind": "WORD", "text": "with", "suffix": "", "capitalized": "With"},
+      {"kind": "ACRONYM", "text": "GPU", "suffix": "", "capitalized": "Gpu"}
+    ],
+    "devices": [{"kind": "WORD", "text": "devices", "suffix": "", "capitalized": "Devices"}],
+    "withMCPServer": [
+      {"kind": "WORD", "text": "with", "suffix": "", "capitalized": "With"},
+      {"kind": "ACRONYM", "text": "MCP", "suffix": "", "capitalized": "Mcp"},
+      {"kind": "WORD", "text": "server", "suffix": "", "capitalized": "Server"}
+    ],
+    "name": [{"kind": "WORD", "text": "name", "suffix": "", "capitalized": "Name"}],
+    "insecureSkipTLSVerify": [
+      {"kind": "WORD", "text": "insecure", "suffix": "", "capitalized": "Insecure"},
+      {"kind": "WORD", "text": "skip", "suffix": "", "capitalized": "Skip"},
+      {"kind": "ACRONYM", "text": "TLS", "suffix": "", "capitalized": "Tls"},
+      {"kind": "WORD", "text": "verify", "suffix": "", "capitalized": "Verify"}
+    ],
+    "import": [{"kind": "WORD", "text": "import", "suffix": "", "capitalized": "Import"}],
+    "source": [{"kind": "WORD", "text": "source", "suffix": "", "capitalized": "Source"}]
+  }
+}
