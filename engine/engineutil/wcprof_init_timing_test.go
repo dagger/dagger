@@ -2,12 +2,16 @@ package engineutil
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/wcprof"
@@ -72,6 +76,55 @@ func TestInitTimingReadNoReport(t *testing.T) {
 	var nilTiming *initTiming
 	_, _, _, ok = nilTiming.read()
 	require.False(t, ok)
+}
+
+func TestInitTimingReadLeakedWriter(t *testing.T) {
+	wcprof.EnsureRecorder()
+	ctx := wcprof.ContextWithProfiling(t.Context())
+	for _, report := range []bool{false, true} {
+		timing, err := newInitTiming(ctx, &specs.Spec{Process: &specs.Process{Args: []string{initPath, "true"}}})
+		require.NoError(t, err)
+		// A copy of the write end that outlives runc, e.g. leaked to a
+		// process left running in the container.
+		leaked, err := unix.Dup(int(timing.w.Fd()))
+		require.NoError(t, err)
+		if report {
+			_, err = fmt.Fprintf(timing.w, "%d %d %d\n", monotonicNS(), monotonicNS(), monotonicNS())
+			require.NoError(t, err)
+		}
+		done := make(chan bool)
+		go func() {
+			_, _, _, ok := timing.read()
+			done <- ok
+		}()
+		select {
+		case ok := <-done:
+			require.Equal(t, report, ok)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("read blocked on the leaked writer (report=%v)", report)
+		}
+		unix.Close(leaked)
+		timing.close()
+	}
+}
+
+func TestReadBundleSpecWithoutInitTimingEnv(t *testing.T) {
+	wcprof.EnsureRecorder()
+	ctx := wcprof.ContextWithProfiling(t.Context())
+	spec := &specs.Spec{Process: &specs.Process{Args: []string{initPath, "sleep", "100"}, Env: []string{"A=1", "PATH=/bin"}}}
+	timing, err := newInitTiming(ctx, spec)
+	require.NoError(t, err)
+	defer timing.close()
+
+	// The bundle's config.json is written with the variable; a process
+	// exec'd into the running container starts from it without /.init.
+	bundle := t.TempDir()
+	b, err := json.Marshal(timing.withEnv(spec))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(bundle, "config.json"), b, 0o600))
+	got, err := readBundleSpec(bundle)
+	require.NoError(t, err)
+	require.Equal(t, []string{"A=1", "PATH=/bin"}, got.Process.Env)
 }
 
 // phases returns the exec_phase ops recorded under parent, by class.

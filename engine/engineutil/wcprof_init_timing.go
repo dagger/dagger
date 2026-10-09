@@ -2,9 +2,12 @@ package engineutil
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -52,6 +55,33 @@ func (t *initTiming) withEnv(spec *specs.Spec) *specs.Spec {
 	return &cp
 }
 
+// withoutInitTimingEnv returns env without the variable withEnv adds. The
+// bundle's config.json carries it, and processes exec'd into a running
+// container start from that spec but get neither the fd nor /.init.
+func withoutInitTimingEnv(env []string) []string {
+	return slices.DeleteFunc(env, func(kv string) bool {
+		return strings.HasPrefix(kv, engine.InitTimingFDEnv+"=")
+	})
+}
+
+// readBundleSpec reads the spec of the container in bundle, for processes
+// exec'd into it.
+func readBundleSpec(bundle string) (*specs.Spec, error) {
+	f, err := os.Open(filepath.Join(bundle, "config.json"))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	spec := &specs.Spec{}
+	if err := json.NewDecoder(f).Decode(spec); err != nil {
+		return nil, err
+	}
+	if spec.Process != nil {
+		spec.Process.Env = withoutInitTimingEnv(spec.Process.Env)
+	}
+	return spec, nil
+}
+
 // extraFiles returns the files runc passes into the container, from fd 3.
 func (t *initTiming) extraFiles() []*os.File {
 	if t == nil {
@@ -79,11 +109,14 @@ func (t *initTiming) read() (startedNS, spawnedNS, exitedNS int64, ok bool) {
 	// the report is one write of less than PIPE_BUF, so one read gets all of
 	// it. Don't block in case a leaked copy of the write end is still open.
 	t.w.Close()
-	if err := unix.SetNonblock(int(t.r.Fd()), true); err != nil {
+	// Fd puts the file in blocking mode, so take it once, before making it
+	// non-blocking.
+	fd := int(t.r.Fd())
+	if err := unix.SetNonblock(fd, true); err != nil {
 		return 0, 0, 0, false
 	}
 	buf := make([]byte, 128)
-	n, err := unix.Read(int(t.r.Fd()), buf)
+	n, err := unix.Read(fd, buf)
 	if err != nil || n <= 0 {
 		return 0, 0, 0, false
 	}

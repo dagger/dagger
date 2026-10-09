@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,13 +32,26 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// initEnv is the environment for running the test binary as /.init: the
+// test's own, without a Dagger session (which would make /.init start its
+// session subprocess, i.e. this test binary again), plus env.
+func initEnv(env ...string) []string {
+	var out []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "DAGGER_SESSION_") {
+			out = append(out, kv)
+		}
+	}
+	return append(append(out, runAsInitEnv+"=1"), env...)
+}
+
 func TestInitReportsTiming(t *testing.T) {
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
 	defer r.Close()
 
 	cmd := exec.Command(os.Args[0], "sh", "-c", `sleep 0.2; env; test -e /proc/$$/fd/3 && echo fd3-leaked; exit 3`)
-	cmd.Env = append(os.Environ(), runAsInitEnv+"=1", engine.InitTimingFDEnv+"=3")
+	cmd.Env = initEnv(engine.InitTimingFDEnv + "=3")
 	cmd.ExtraFiles = []*os.File{w}
 	before := monotonicNS()
 	out, err := cmd.Output()
@@ -61,7 +75,7 @@ func TestInitReportsTiming(t *testing.T) {
 func TestInitWithoutTiming(t *testing.T) {
 	cmd := exec.Command(os.Args[0], "sh", "-c", `env`)
 	// An fd below 3 is never a timing pipe.
-	cmd.Env = append(os.Environ(), runAsInitEnv+"=1", engine.InitTimingFDEnv+"=1")
+	cmd.Env = initEnv(engine.InitTimingFDEnv + "=1")
 	out, err := cmd.Output()
 	require.NoError(t, err)
 	require.NotContains(t, string(out), engine.InitTimingFDEnv)

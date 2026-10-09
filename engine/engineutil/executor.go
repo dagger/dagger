@@ -7,7 +7,6 @@ https://github.com/dagger/dagger/internal/buildkit/blob/08180a774253a8199ebdb629
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -426,13 +425,8 @@ func (c *Client) Exec(ctx context.Context, id string, process executor.ProcessIn
 	}
 
 	// load default process spec (for Env, Cwd etc) from bundle
-	spec := &specs.Spec{}
-	f, err := os.Open(filepath.Join(runcState.Bundle, "config.json"))
+	spec, err := readBundleSpec(runcState.Bundle)
 	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if err := json.NewDecoder(f).Decode(spec); err != nil {
 		return err
 	}
 
