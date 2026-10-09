@@ -70,12 +70,14 @@ func TestInitTimingReadNoReport(t *testing.T) {
 	defer timing.close()
 	// /.init died before reaping the command: nothing was written, and the
 	// read doesn't block.
-	_, _, _, ok := timing.read()
+	_, _, exited, ok := timing.read()
 	require.False(t, ok)
+	require.Zero(t, exited)
 
 	var nilTiming *initTiming
-	_, _, _, ok = nilTiming.read()
+	_, _, exited, ok = nilTiming.read()
 	require.False(t, ok)
+	require.Zero(t, exited)
 }
 
 func TestInitTimingReadLeakedWriter(t *testing.T) {
