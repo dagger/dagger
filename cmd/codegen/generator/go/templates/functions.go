@@ -144,6 +144,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatArrayToSingleType": funcs.formatArrayToSingleType,
 		"IsPartial":               funcs.isPartial,
 		"IsModuleCode":            funcs.isModuleCode,
+		"MemoizeIDs":              funcs.memoizeIDs,
 		"IsStandaloneClient":      funcs.isStandaloneClient,
 		"IsCoreLibrary":           funcs.isCoreLibrary,
 		"CoreConstructorName":     funcs.coreConstructorName,
@@ -916,4 +917,21 @@ func hasTypeScope(scopes []string) bool {
 		}
 	}
 	return false
+}
+
+// memoizeIDs reports whether generated objects may remember the ID they
+// fetch. Only when the schema marks the fields that must be evaluated again
+// for each use (@reevaluate): objects built through those fields fetch their
+// ID on every use, so each use evaluates them again.
+func (funcs goTemplateFuncs) memoizeIDs() bool {
+	schema := funcs.fullSchema
+	if schema == nil {
+		schema = funcs.schema
+	}
+	if schema == nil {
+		return false
+	}
+	return slices.ContainsFunc(schema.Directives, func(d *introspection.DirectiveDef) bool {
+		return d.Name == "reevaluate"
+	})
 }

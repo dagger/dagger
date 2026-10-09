@@ -361,6 +361,13 @@ func (t Directives) IsExperimental() bool {
 	return t.Directive("experimental") != nil
 }
 
+// Reevaluates reports whether every evaluation of the field may give a new
+// result or repeat a side effect (@reevaluate), so a client must evaluate it
+// again for each use.
+func (t Directives) Reevaluates() bool {
+	return t.Directive("reevaluate") != nil
+}
+
 func (t Directives) ExperimentalReason() string {
 	return fromJSON[string](t.Directive("experimental").Arg("reason"))
 }

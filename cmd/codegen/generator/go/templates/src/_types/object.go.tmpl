@@ -2,6 +2,12 @@
 type {{ .Name | FormatName }} struct {
 {{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	query *querybuilder.Selection
+	{{- if MemoizeIDs }}
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+	{{- end }}
 
     {{ range $field := .Fields }}
         {{- if $field.TypeRef.IsScalar }}
@@ -144,11 +150,17 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- /* Interface return: wrap in the interface's query-builder struct */ -}}
 	return &{{ $typeName | InterfaceClientName }}{
 		query: q,
+		{{- if MemoizeIDs }}
+		refetchID: {{ if $field.Directives.Reevaluates }}true{{ else }}r.refetchID{{ end }},
+		{{- end }}
 	}
 
 	{{- else if $field.TypeRef.IsObject }}
 	return &{{ $typeName }} {
 		query: q,
+		{{- if MemoizeIDs }}
+		refetchID: {{ if $field.Directives.Reevaluates }}true{{ else }}r.refetchID{{ end }},
+		{{- end }}
 	}
 
 	{{- else if and $field.TypeRef.IsList (IsListOfInterface $field.TypeRef) }}
@@ -213,6 +225,18 @@ type {{ $field | FieldOptionsStructName }} struct {
 	}
 
 	return convert(response), nil
+	    {{- else if and (eq $field.Name "id") (ne $field.ParentObject.Name "Query") }}
+	{{- if MemoizeIDs }}
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() ({{ FormatFieldOutputType $field }}, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+	{{- else }}
+	return response, q.Execute(ctx)
+	{{- end }}
 	    {{- else }}
 	return response, q.Execute(ctx)
 	    {{- end }}
@@ -269,6 +293,9 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
 func (r *{{ $.Name | FormatName }}) As{{ $iface.Name | FormatName }}() {{ $iface.Name | InterfaceReturnType }} {
 	return &{{ $iface.Name | InterfaceClientName }}{
 		query: r.query,
+		{{- if MemoizeIDs }}
+		refetchID: r.refetchID,
+		{{- end }}
 	}
 }
 {{ end -}}

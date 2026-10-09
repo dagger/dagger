@@ -91,6 +91,9 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- else if $field.TypeRef.IsObject }}
 	return &{{ $typeName }} {
 		query: q,
+		{{- if and MemoizeIDs (ne $typeName "Client") }}
+		refetchID: {{ if $field.Directives.Reevaluates }}true{{ else }}r.refetchID{{ end }},
+		{{- end }}
 		{{- if eq $typeName "Client" }}
 		client: r.client,
 		{{ end }}
@@ -138,7 +141,21 @@ type {{ $field | FieldOptionsStructName }} struct {
 
 	return convert(response), nil
 	{{- else }}
+	{{- if and (eq $field.Name "id") (ne $field.ParentObject.Name "Query") }}
+	{{- if MemoizeIDs }}
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() ({{ FormatFieldOutputType $field }}, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+	{{- else }}
 	return response, q.Execute(ctx)
+	{{- end }}
+	{{- else }}
+	return response, q.Execute(ctx)
+	{{- end }}
 	{{- end }}
 	{{- end }}
 }
