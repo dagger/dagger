@@ -1,0 +1,6 @@
+kind: Changed
+body: Every exec starts faster, because the engine's in-container init no longer contains the session code that only Dagger-in-Dagger execs need. That code is now a separate helper, mounted only into those execs.
+time: 2026-10-09T17:15:25+00:00
+custom:
+    Author: sipsma
+    PR: "14605"

@@ -411,6 +411,15 @@ func (c *Client) injectInit(_ context.Context, state *execState) error {
 	})
 	state.procInfo.Meta.Args = append([]string{initPath}, state.procInfo.Meta.Args...)
 
+	// nested clients' /.init starts the session attachables helper
+	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
+		state.mounts = append(state.mounts, executor.Mount{
+			Src:      hostBindMount{srcPath: distconsts.DaggerInitSessionPath},
+			Dest:     distconsts.InitSessionContainerPath,
+			Readonly: true,
+		})
+	}
+
 	return nil
 }
 
