@@ -21,6 +21,7 @@ import (
 	"github.com/mackerelio/go-osstat/memory"
 	"github.com/mackerelio/go-osstat/uptime"
 	"github.com/prometheus/procfs"
+	"github.com/prometheus/procfs/blockdevice"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/exp/constraints"
 	"golang.org/x/net/trace"
@@ -295,8 +296,78 @@ func logMetrics(ctx context.Context, engineStateRootDir string, eng *server.Serv
 			}
 		}
 
+		// disk I/O, pressure stall and writeback stats, to tell a slow or
+		// stalled disk apart from a busy workload
+		l = withDiskIOStats(l, engineStateRootDir)
+		procFS, err := procfs.NewDefaultFS()
+		if err == nil {
+			l = withPressureStats(l, procFS)
+			meminfo, err := procFS.Meminfo()
+			if err == nil && meminfo.DirtyBytes != nil && meminfo.WritebackBytes != nil {
+				l = withUnsignedIntField(l, "mem-dirty", *meminfo.DirtyBytes)
+				l = withUnsignedIntField(l, "mem-writeback", *meminfo.WritebackBytes)
+			}
+		} else {
+			l = l.WithField("procfs-error", err.Error())
+		}
+
 		l.Info("engine metrics")
 	}
+}
+
+// withDiskIOStats adds the /proc/diskstats stats of the block device that
+// holds dir. All are cumulative counters except disk-io-in-progress, which is
+// the number of I/Os in flight when sampled.
+func withDiskIOStats(l *logrus.Entry, dir string) *logrus.Entry {
+	var st unix.Stat_t
+	if err := unix.Stat(dir, &st); err != nil {
+		return l.WithField("disk-io-error", err.Error())
+	}
+	fs, err := blockdevice.NewDefaultFS()
+	if err != nil {
+		return l.WithField("disk-io-error", err.Error())
+	}
+	diskstats, err := fs.ProcDiskstats()
+	if err != nil {
+		return l.WithField("disk-io-error", err.Error())
+	}
+	major, minor := unix.Major(st.Dev), unix.Minor(st.Dev)
+	for _, s := range diskstats {
+		if s.MajorNumber != major || s.MinorNumber != minor {
+			continue
+		}
+		l = l.WithField("disk-io-device", s.DeviceName)
+		l = withUnsignedIntField(l, "disk-io-reads", s.ReadIOs)
+		l = withUnsignedIntField(l, "disk-io-read-bytes", s.ReadSectors*512)
+		l = withUnsignedIntField(l, "disk-io-read-ms", s.ReadTicks)
+		l = withUnsignedIntField(l, "disk-io-writes", s.WriteIOs)
+		l = withUnsignedIntField(l, "disk-io-write-bytes", s.WriteSectors*512)
+		l = withUnsignedIntField(l, "disk-io-write-ms", s.WriteTicks)
+		l = withUnsignedIntField(l, "disk-io-in-progress", s.IOsInProgress)
+		l = withUnsignedIntField(l, "disk-io-busy-ms", s.IOsTotalTicks)
+		l = withUnsignedIntField(l, "disk-io-weighted-ms", s.WeightedIOTicks)
+		return l
+	}
+	return l.WithField("disk-io-error", fmt.Sprintf("no block device %d:%d for %s", major, minor, dir))
+}
+
+// withPressureStats adds the cumulative pressure stall totals, in
+// microseconds, from /proc/pressure.
+func withPressureStats(l *logrus.Entry, fs procfs.FS) *logrus.Entry {
+	for _, resource := range []string{"cpu", "io", "memory"} {
+		psi, err := fs.PSIStatsForResource(resource)
+		if err != nil {
+			l = l.WithField(fmt.Sprintf("pressure-%s-error", resource), err.Error())
+			continue
+		}
+		if psi.Some != nil {
+			l = withUnsignedIntField(l, fmt.Sprintf("pressure-%s-some-us", resource), psi.Some.Total)
+		}
+		if psi.Full != nil {
+			l = withUnsignedIntField(l, fmt.Sprintf("pressure-%s-full-us", resource), psi.Full.Total)
+		}
+	}
+	return l
 }
 
 func withUnsignedIntField[T constraints.Unsigned](l *logrus.Entry, name string, value T) *logrus.Entry {
