@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -409,6 +410,36 @@ func (ModuleSuite) TestReevaluatedObjectArgReuse(ctx context.Context, t *testctx
 		"never-built-once same",
 		"cached-one-query same",
 	}, "\n"), strings.TrimSpace(out))
+}
+
+// TestReevaluatedEntrypointProxy checks that an entrypoint proxy, which runs
+// the module's constructor before the method, is marked @reevaluate when the
+// constructor is never cached, even though the method is cached.
+func (ModuleSuite) TestReevaluatedEntrypointProxy(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := moduleEntrypointFixture(t, c, "fresh", "go/reevaluate-entrypoint-ctor")
+
+	out, err := base.With(daggerQuery(`{__type(name:"Query"){fields{name directives{name}}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	var res struct {
+		Type struct {
+			Fields []struct {
+				Name       string
+				Directives []struct{ Name string }
+			}
+		} `json:"__type"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &res))
+	var directives []string
+	for _, field := range res.Type.Fields {
+		if field.Name == "stamped" {
+			for _, dir := range field.Directives {
+				directives = append(directives, dir.Name)
+			}
+		}
+	}
+	require.Contains(t, directives, "reevaluate")
 }
 
 func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
