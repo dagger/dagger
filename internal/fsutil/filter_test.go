@@ -50,6 +50,12 @@ func TestFilterFSPrunesExcludedDirectoriesByPatternPrecedence(t *testing.T) {
 			wantWalked: []string{"app/node_modules"},
 		},
 		{
+			name:       "re-include with wildcard dir then trailing double star",
+			patterns:   []string{"app", "!app/*/**"},
+			wantFiles:  []string{"app/node_modules/cache.js", "app/node_modules/deep/cache.keep", "app/node_modules/deep/image.webp", "logs/app.log", "logs/keep.txt"},
+			wantWalked: []string{"app/node_modules"},
+		},
+		{
 			name:       "later re-include points elsewhere",
 			patterns:   []string{"app/node_modules", "logs", "!logs/keep.txt"},
 			wantFiles:  []string{"app/image.webp", "logs/keep.txt"},
@@ -110,4 +116,41 @@ func walkedBelow(paths []string, dir string) bool {
 		}
 	}
 	return false
+}
+
+func TestFilterFSIncludeWildcardDirThenTrailingGlob(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{"a/b/keep.txt", "a/b/c/deep.txt", "a/top.txt", "other/b/x.txt"} {
+		path = filepath.Join(root, filepath.FromSlash(path))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, nil, 0o644))
+	}
+
+	for _, test := range []struct {
+		pattern   string
+		wantFiles []string
+	}{
+		{pattern: "a/*/**", wantFiles: []string{"a/b/c/deep.txt", "a/b/keep.txt"}},
+		{pattern: "a/**/*", wantFiles: []string{"a/b/c/deep.txt", "a/b/keep.txt", "a/top.txt"}},
+	} {
+		t.Run(test.pattern, func(t *testing.T) {
+			base, err := NewFS(root)
+			require.NoError(t, err)
+			filtered, err := NewFilterFS(base, &FilterOpt{IncludePatterns: []string{test.pattern}})
+			require.NoError(t, err)
+
+			var files []string
+			err = filtered.Walk(context.Background(), "/", func(path string, entry gofs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if !entry.IsDir() {
+					files = append(files, filepath.ToSlash(path))
+				}
+				return nil
+			})
+			require.NoError(t, err)
+			require.ElementsMatch(t, test.wantFiles, files)
+		})
+	}
 }
