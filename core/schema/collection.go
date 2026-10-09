@@ -17,7 +17,10 @@ func installCollectionSchema(s *moduleSchema, dag *dagql.Server) {
 		dagql.Func("withCollectionKeys", s.typeDefWithCollectionKeys).View(AfterVersion("v1.0.0-0")).Doc("Select the stored keys field for this collection."),
 		dagql.Func("withCollectionGet", s.typeDefWithCollectionGet).View(AfterVersion("v1.0.0-0")).Doc("Select the item lookup function for this collection."),
 		dagql.Func("withCollectionDelta", s.typeDefWithCollectionDelta).View(AfterVersion("v1.0.0-0")).Doc("Select the field that receives changes from the original collection."),
-		dagql.Func("asCollection", s.typeDefAsCollection).View(AfterVersion("v1.0.0-0")).Doc("Collection metadata, or null if this object is not a collection."),
+		dagql.Func("asCollection", s.typeDefAsCollection).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("simple field selection").
+			Doc("Collection metadata, or null if this object is not a collection."),
 	}.Install(dag)
 	dagql.Fields[*core.ObjectTypeDef]{
 		dagql.Func("__withCollectionMember", s.objectTypeDefWithCollectionMember),
