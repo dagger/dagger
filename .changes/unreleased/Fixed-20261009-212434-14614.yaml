@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Keep imported directory hashes stable after the engine's memory cache evicts them, avoiding unnecessary cache misses.
+time: 2026-10-09T21:24:34.658104+00:00
+custom:
+    Author: grouville
+    PR: "14614"
