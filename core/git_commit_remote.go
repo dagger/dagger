@@ -90,27 +90,29 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 		}
 	}
 	if child == nil {
-		// Only explicit history consumers request depth zero. Ordinary commits
-		// own a single-commit source boundary, even if the mirror is already warm.
-		err = ref.mount(ctx, depth, false, func(_ *gitutil.GitCLI) error {
-			// mount holds both the mirror lock and its snapshot lease. Borrow an
-			// actual read-only mount so Git cannot freshen inherited pack mtimes.
-			// Reading Mirror.snapshot directly is only safe because ref.mount →
-			// initRemote → Mirror.acquire holds mirror.mu until this callback returns.
-			return MountRef(ctx, ref.repo.Mirror.Self().snapshot, func(source string, _ *mount.Mount) error {
-				if _, err := nativeCommitGitDirWithShallow(ctx, source, true); err != nil {
-					return err
-				}
-				child, err = query.SnapshotManager().New(ctx, nil,
-					bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
-					bkcache.WithDescription("owned remote commit closure"))
-				if err != nil {
-					return err
-				}
-				return MountRef(ctx, child, func(dest string, _ *mount.Mount) error {
-					return packRemoteCommitBaseDepth(ctx, source, dest, ref.SHA, remotes, depth)
-				})
-			}, mountRefAsReadOnly)
+		child, err = query.SnapshotManager().New(ctx, nil,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
+			bkcache.WithDescription("owned remote commit closure"))
+		if err != nil {
+			return nil, err
+		}
+		err = MountRef(ctx, child, func(dest string, _ *mount.Mount) error {
+			// Only explicit history consumers request depth zero. Ordinary commits
+			// own a single-commit source boundary, even if the mirror is already warm.
+			err := ref.mount(ctx, depth, false, func(_ *gitutil.GitCLI) error {
+				// mount holds both the mirror lock and its snapshot lease. Borrow an
+				// actual read-only mount so Git cannot freshen inherited pack mtimes.
+				// Reading Mirror.snapshot directly is only safe because ref.mount →
+				// initRemote → Mirror.acquire holds mirror.mu until this callback returns.
+				return MountRef(ctx, ref.repo.Mirror.Self().snapshot, func(source string, _ *mount.Mount) error {
+					return copyRemoteCommitBase(ctx, source, dest, ref.SHA, depth)
+				}, mountRefAsReadOnly)
+			})
+			if err != nil {
+				return err
+			}
+			// dest owns the packed closure: finish with the mirror released.
+			return finishRemoteCommitBase(ctx, dest, ref.SHA, remotes)
 		})
 	}
 	if err != nil {
@@ -137,7 +139,18 @@ func GitRemoteCommitBase(ctx context.Context, parent dagql.ObjectResult[*GitRef]
 // A non-thin pack contains exactly the selected history, even when unrelated
 // objects are delta bases in the donor pack. Git reuses compressed objects where
 // possible; the cost of traversal/packing is still real and traced separately.
-func packRemoteCommitBaseDepth(ctx context.Context, source, dest, sha string, remotes []GitRemote, depth int) (rerr error) {
+func packRemoteCommitBaseDepth(ctx context.Context, source, dest, sha string, remotes []GitRemote, depth int) error {
+	if err := copyRemoteCommitBase(ctx, source, dest, sha, depth); err != nil {
+		return err
+	}
+	return finishRemoteCommitBase(ctx, dest, sha, remotes)
+}
+
+// copyRemoteCommitBase packs sha's closure (depth one or complete) from the
+// borrowed source into a fresh bare repository at dest. This is the only phase
+// of a promotion that reads source: the alternate is a transient environment
+// variable, so dest refers back to nothing once this returns.
+func copyRemoteCommitBase(ctx context.Context, source, dest, sha string, depth int) (rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "git pack remote commit closure", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 	if len(sha) != 40 || !IsFullGitSHA(sha) {
@@ -164,6 +177,12 @@ func packRemoteCommitBaseDepth(ctx context.Context, source, dest, sha string, re
 		"pack-objects", "--revs", "--delta-base-offset", filepath.Join(dest, "objects", "pack", "pack")); err != nil {
 		return err
 	}
+	return nil
+}
+
+// finishRemoteCommitBase points the packed repository at dest to sha and
+// records its remotes. It reads only dest, so it runs with the mirror released.
+func finishRemoteCommitBase(ctx context.Context, dest, sha string, remotes []GitRemote) error {
 	if err := os.WriteFile(filepath.Join(dest, "HEAD"), []byte(sha+"\n"), 0644); err != nil {
 		return err
 	}
