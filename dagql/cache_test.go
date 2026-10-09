@@ -3497,6 +3497,167 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		cacheTestReleaseSession(t, c, ctx)
 		assert.Equal(t, 0, c.Size())
 	})
+
+	// Congruence merge onto an already repaired root:
+	//
+	//   s(f1) -> f1      (s returns its receiver)
+	//   s(f2) -> q
+	//   u(q)  -> o3,  w(o3) -> o5
+	//   u(f1) -> o4
+	//
+	//   equivalence digest introduced later:
+	//     f1 ~ f2   (shared extra digest)
+	//
+	// Expected repair/propagation:
+	//   s(f1) ~ s(f2)  => f1 ~ q, merged into the root already being repaired
+	//   u(q) ~ u(f1)   => o3 ~ o4
+	//   => w(o4) hits w(o3)
+	t.Run("congruence_merge_onto_repaired_root", func(t *testing.T) {
+		ctx := cacheTestContext(t.Context())
+		c, err := NewCache(ctx, "", nil, nil)
+		assert.NilError(t, err)
+
+		shared := call.ExtraDigest{Digest: digest.FromString("repaired-root-shared"), Label: "repaired-root-shared"}
+		rootReq := func(field string, extras ...call.ExtraDigest) *CallRequest {
+			return &CallRequest{
+				ResultCall: &ResultCall{
+					Kind:         ResultCallKindField,
+					Type:         NewResultCallType(Int(0).Type()),
+					Field:        field,
+					ExtraDigests: slices.Clone(extras),
+				},
+			}
+		}
+		unaryReq := func(parent AnyResult, field string) *CallRequest {
+			return &CallRequest{
+				ResultCall: &ResultCall{
+					Kind:     ResultCallKindField,
+					Type:     NewResultCallType(Int(0).Type()),
+					Field:    field,
+					Receiver: &ResultCallRef{ResultID: uint64(parent.cacheSharedResult().id)},
+				},
+			}
+		}
+		publish := func(req *CallRequest, fn func() AnyResult) (AnyResult, int) {
+			initCalls := 0
+			res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+				initCalls++
+				return fn(), nil
+			})
+			assert.NilError(t, err)
+			return res, initCalls
+		}
+		intResult := func(v int) func() AnyResult {
+			return func() AnyResult { return cacheTestPlainResult(NewInt(v)) }
+		}
+
+		f1Res, _ := publish(rootReq("repaired-root-f-1"), intResult(101))
+		f2Res, _ := publish(rootReq("repaired-root-f-2"), intResult(102))
+		_, _ = publish(unaryReq(f1Res, "repaired-root-s"), func() AnyResult { return f1Res })
+		qRes, _ := publish(unaryReq(f2Res, "repaired-root-s"), intResult(202))
+		o3Res, _ := publish(unaryReq(qRes, "repaired-root-u"), intResult(303))
+		o5Res, _ := publish(unaryReq(o3Res, "repaired-root-w"), intResult(505))
+		o4Res, initCalls := publish(unaryReq(f1Res, "repaired-root-u"), intResult(304))
+		assert.Equal(t, 1, initCalls)
+
+		f1AliasRes, initCalls := publish(rootReq("repaired-root-f-1", shared), intResult(1911))
+		assert.Equal(t, 0, initCalls)
+		assert.Assert(t, f1AliasRes.HitCache())
+		f2AliasRes, initCalls := publish(rootReq("repaired-root-f-2", shared), intResult(1912))
+		assert.Equal(t, 0, initCalls)
+		assert.Assert(t, f2AliasRes.HitCache())
+
+		w4Res, initCalls := publish(unaryReq(o4Res, "repaired-root-w"), intResult(9999))
+		assert.Equal(t, 0, initCalls)
+		assert.Assert(t, w4Res.HitCache())
+		assert.Equal(t, 505, cacheTestUnwrapInt(t, w4Res))
+		assert.Equal(t, cacheTestMustEncodeID(t, o5Res), cacheTestMustEncodeID(t, w4Res))
+
+		cacheTestReleaseSession(t, c, ctx)
+		assert.Equal(t, 0, c.Size())
+	})
+
+	// Cascaded merge onto an already repaired root, two levels down:
+	//
+	//   s(f1) -> p,   v(p) -> f1   (v returns an existing result)
+	//   s(f2) -> r,   v(r) -> q
+	//   u(q)  -> o3,  w(o3) -> o5
+	//   u(f1) -> o4
+	//
+	//   equivalence digest introduced later:
+	//     f1 ~ f2   (shared extra digest)
+	//
+	// Expected repair/propagation:
+	//   s(f1) ~ s(f2)  => p ~ r
+	//   v(p) ~ v(r)    => f1 ~ q, merged into the root repaired two steps earlier
+	//   u(q) ~ u(f1)   => o3 ~ o4
+	//   => w(o4) hits w(o3)
+	t.Run("cascaded_merge_onto_repaired_root", func(t *testing.T) {
+		ctx := cacheTestContext(t.Context())
+		c, err := NewCache(ctx, "", nil, nil)
+		assert.NilError(t, err)
+
+		shared := call.ExtraDigest{Digest: digest.FromString("repaired-cascade-shared"), Label: "repaired-cascade-shared"}
+		rootReq := func(field string, extras ...call.ExtraDigest) *CallRequest {
+			return &CallRequest{
+				ResultCall: &ResultCall{
+					Kind:         ResultCallKindField,
+					Type:         NewResultCallType(Int(0).Type()),
+					Field:        field,
+					ExtraDigests: slices.Clone(extras),
+				},
+			}
+		}
+		unaryReq := func(parent AnyResult, field string) *CallRequest {
+			return &CallRequest{
+				ResultCall: &ResultCall{
+					Kind:     ResultCallKindField,
+					Type:     NewResultCallType(Int(0).Type()),
+					Field:    field,
+					Receiver: &ResultCallRef{ResultID: uint64(parent.cacheSharedResult().id)},
+				},
+			}
+		}
+		publish := func(req *CallRequest, fn func() AnyResult) (AnyResult, int) {
+			initCalls := 0
+			res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+				initCalls++
+				return fn(), nil
+			})
+			assert.NilError(t, err)
+			return res, initCalls
+		}
+		intResult := func(v int) func() AnyResult {
+			return func() AnyResult { return cacheTestPlainResult(NewInt(v)) }
+		}
+
+		f1Res, _ := publish(rootReq("repaired-cascade-f-1"), intResult(101))
+		f2Res, _ := publish(rootReq("repaired-cascade-f-2"), intResult(102))
+		pRes, _ := publish(unaryReq(f1Res, "repaired-cascade-s"), intResult(201))
+		rRes, _ := publish(unaryReq(f2Res, "repaired-cascade-s"), intResult(202))
+		_, _ = publish(unaryReq(pRes, "repaired-cascade-v"), func() AnyResult { return f1Res })
+		qRes, _ := publish(unaryReq(rRes, "repaired-cascade-v"), intResult(402))
+		o3Res, _ := publish(unaryReq(qRes, "repaired-cascade-u"), intResult(303))
+		o5Res, _ := publish(unaryReq(o3Res, "repaired-cascade-w"), intResult(505))
+		o4Res, initCalls := publish(unaryReq(f1Res, "repaired-cascade-u"), intResult(304))
+		assert.Equal(t, 1, initCalls)
+
+		f1AliasRes, initCalls := publish(rootReq("repaired-cascade-f-1", shared), intResult(1911))
+		assert.Equal(t, 0, initCalls)
+		assert.Assert(t, f1AliasRes.HitCache())
+		f2AliasRes, initCalls := publish(rootReq("repaired-cascade-f-2", shared), intResult(1912))
+		assert.Equal(t, 0, initCalls)
+		assert.Assert(t, f2AliasRes.HitCache())
+
+		w4Res, initCalls := publish(unaryReq(o4Res, "repaired-cascade-w"), intResult(9999))
+		assert.Equal(t, 0, initCalls)
+		assert.Assert(t, w4Res.HitCache())
+		assert.Equal(t, 505, cacheTestUnwrapInt(t, w4Res))
+		assert.Equal(t, cacheTestMustEncodeID(t, o5Res), cacheTestMustEncodeID(t, w4Res))
+
+		cacheTestReleaseSession(t, c, ctx)
+		assert.Equal(t, 0, c.Size())
+	})
 }
 
 func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
