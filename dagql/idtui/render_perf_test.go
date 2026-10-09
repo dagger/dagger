@@ -2,11 +2,14 @@ package idtui
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/trace"
@@ -173,5 +176,194 @@ func TestStreamingRecalcPacing(t *testing.T) {
 		id = stream()
 		fe.recalculateViewLocked()
 		require.NotNil(t, fe.rows.BySpan[id])
+	})
+}
+
+const summaryPerfIndent = 2
+
+// newTestSummaryFixture builds a test view of failing cases (each with
+// logLines(i) lines of logs), two skipped cases with logs and a passing suite,
+// plus the live TestView rendering its summary at width 80.
+func newTestSummaryFixture(failing int, logLines func(i int) int) (*TestView, *dagui.TestView, *int) {
+	logsBySpan := map[dagui.SpanID]*Vterm{}
+	var roots []*dagui.TestNode
+	addCase := func(i int, category dagui.TestCategory, lines int) {
+		id := perfSpanID(uint64(i))
+		name := fmt.Sprintf("case-%d", i)
+		if lines > 0 {
+			logs := NewVterm(termenv.Ascii)
+			// Match the width the summary sizes logs to, so SetWidth is a no-op.
+			logs.SetWidth(80 - (summaryPerfIndent + 8))
+			for l := range lines {
+				fmt.Fprintf(logs, "%s log line %d\n", name, l)
+			}
+			logsBySpan[id] = logs
+		}
+		roots = append(roots, &dagui.TestNode{
+			ID:           dagui.TestNodeID(name),
+			Kind:         dagui.TestNodeCase,
+			Name:         name,
+			Span:         &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{ID: id, Name: name}},
+			SelfCategory: category,
+			Category:     category,
+		})
+	}
+	for i := range failing {
+		addCase(i, dagui.TestCategoryFailing, logLines(i))
+	}
+	addCase(failing, dagui.TestCategorySkipped, 2)
+	addCase(failing+1, dagui.TestCategorySkipped, 1)
+	roots = append(roots, &dagui.TestNode{
+		ID:       "passing",
+		Kind:     dagui.TestNodeSuite,
+		Name:     "passing suite",
+		FullName: "passing suite",
+		Category: dagui.TestCategoryPassing,
+		Counts:   dagui.TestCounts{Passing: 5},
+	})
+	view := &dagui.TestView{
+		Roots:  roots,
+		Counts: dagui.TestCounts{Failing: failing, Skipped: 2, Passing: 5},
+	}
+	requests := new(int)
+	tv := &TestView{
+		SummaryIndent:   summaryPerfIndent,
+		SummaryLogLines: 8,
+		Logs:            logsBySpan,
+		RequestLogs:     func(dagui.SpanID) { *requests++ },
+	}
+	return tv, view, requests
+}
+
+// eagerTestSummaryLines is renderTestSummaryLines as it was before it learned
+// to skip logs that can't be shown: every entry's logs are rendered, then the
+// same layout decides what fits.
+func eagerTestSummaryLines(tv *TestView, out TermOutput, view *dagui.TestView, width, height int) []string {
+	if tv.testSummaryFinal() {
+		width = 0
+	}
+	header := tv.renderTestSummaryHeader(out, strings.Repeat(" ", max(tv.SummaryIndent, 0)), width)
+	entries := collectTestSummaryEntries(view)
+	var blocks []testSummaryBlock
+	for _, group := range [][]testSummaryEntry{entries.failing, entries.skipped, entries.running} {
+		for _, entry := range group {
+			blocks = append(blocks, testSummaryBlock{
+				name: tv.renderTestSummaryEntryName(out, entry, width),
+				logs: tv.renderTestSummaryLogs(out, entry, width),
+			})
+		}
+	}
+	var passing []string
+	for _, entry := range entries.passing {
+		passing = append(passing, tv.renderTestSummaryPassingSuite(out, entry, width))
+	}
+	counts := renderTestSummaryCounts(out, view.Counts, tv.SummaryIndent, width)
+	full := tv.withSummaryNote(assembleTestSummary(header, blocks, passing, counts))
+	if height <= 0 || len(full) <= height {
+		return full
+	}
+	if height == 1 {
+		return []string{tv.renderTestSummaryOneLine(out, view.Counts, width)}
+	}
+	compact := tv.renderTestSummaryCountsCompact(out, view.Counts, width)
+	return tv.condenseTestSummary(out, header, blocks, passing, compact, height)
+}
+
+// TestTestSummarySkipsUnshownLogs checks that the live summary renders the
+// same lines as rendering every entry's logs would, at every height, while
+// only touching the logs of entries it can show.
+func TestTestSummarySkipsUnshownLogs(t *testing.T) {
+	render := func(f func(*TestView, TermOutput, *dagui.TestView, int, int) []string, tv *TestView, view *dagui.TestView, height int) string {
+		var buf strings.Builder
+		out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+		return strings.Join(f(tv, out, view, 80, height), "\n")
+	}
+	for _, failing := range []int{0, 1, 3, 7} {
+		tv, view, _ := newTestSummaryFixture(failing, func(i int) int { return []int{3, 0, 12, 1}[i%4] })
+		require.Contains(t, render((*TestView).renderTestSummaryLines, tv, view, 0), "log line")
+		for height := 0; height <= 60; height++ {
+			require.Equal(t,
+				render(eagerTestSummaryLines, tv, view, height),
+				render((*TestView).renderTestSummaryLines, tv, view, height),
+				"failing=%d height=%d", failing, height)
+		}
+	}
+
+	// 12 entries in 30 rows: room for the names plus a couple of entries'
+	// logs.
+	tv, view, requests := newTestSummaryFixture(10, func(int) int { return 20 })
+	render((*TestView).renderTestSummaryLines, tv, view, 30)
+	require.LessOrEqual(t, *requests, 3, "only shown entries' logs should be rendered")
+	*requests = 0
+	render((*TestView).renderTestSummaryLines, tv, view, 0)
+	require.Equal(t, 12, *requests, "an unbounded summary renders every entry's logs")
+
+	// Too many entries for even their names: no logs at all.
+	tv, view, requests = newTestSummaryFixture(500, func(int) int { return 20 })
+	render((*TestView).renderTestSummaryLines, tv, view, 30)
+	require.Zero(t, *requests)
+}
+
+func TestVtermPrintTailMatchesPrint(t *testing.T) {
+	for _, content := range []string{
+		"",
+		"one\n",
+		"one\ntwo",
+		"one\n\n\ntwo\n\n\n",
+		strings.Repeat("a line that wraps around the narrow terminal\n", 50),
+	} {
+		term := NewVterm(termenv.Ascii)
+		term.SetWidth(12)
+		_, _ = term.Write([]byte(content))
+		var buf strings.Builder
+		require.NoError(t, term.Print(&buf))
+		want := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+		for _, n := range []int{1, 2, 3, 8, 1000} {
+			got, total := term.PrintTail(n)
+			require.Equal(t, len(want), total, "content=%q", content)
+			require.Equal(t, want[len(want)-min(n, len(want)):], got, "content=%q n=%d", content, n)
+		}
+	}
+}
+
+// BenchmarkTestSummaryLive renders a live, height-bounded test summary over
+// many failing tests with long logs, as a TestView does every frame. eager
+// renders every entry's logs first, as the summary used to.
+func BenchmarkTestSummaryLive(b *testing.B) {
+	tv, view, _ := newTestSummaryFixture(300, func(int) int { return 2000 })
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	b.Run("lazy", func(b *testing.B) {
+		for b.Loop() {
+			tv.renderTestSummaryLines(out, view, 80, 30)
+		}
+	})
+	b.Run("eager", func(b *testing.B) {
+		for b.Loop() {
+			eagerTestSummaryLines(tv, out, view, 80, 30)
+		}
+	})
+}
+
+// BenchmarkVtermTail compares tailing a long log through Print with
+// PrintTail, as the live summary does for each shown entry.
+func BenchmarkVtermTail(b *testing.B) {
+	term := NewVterm(termenv.Ascii)
+	term.SetWidth(70)
+	for l := range 20000 {
+		fmt.Fprintf(term, "log line %d\n", l)
+	}
+	b.Run("Print", func(b *testing.B) {
+		for b.Loop() {
+			var buf strings.Builder
+			_ = term.Print(&buf)
+			lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+			_ = lines[len(lines)-8:]
+		}
+	})
+	b.Run("PrintTail", func(b *testing.B) {
+		for b.Loop() {
+			term.PrintTail(8)
+		}
 	})
 }

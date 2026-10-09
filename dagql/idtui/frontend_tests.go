@@ -691,13 +691,10 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 
 	entries := collectTestSummaryEntries(view)
 	var blocks []testSummaryBlock
+	var blockEntries []testSummaryEntry
 	addBlock := func(entry testSummaryEntry) {
-		entryLines := tv.renderTestSummaryEntry(out, entry, width)
-		blk := testSummaryBlock{name: entryLines[0]}
-		if len(entryLines) > 1 {
-			blk.logs = entryLines[1:]
-		}
-		blocks = append(blocks, blk)
+		blocks = append(blocks, testSummaryBlock{name: tv.renderTestSummaryEntryName(out, entry, width)})
+		blockEntries = append(blockEntries, entry)
 	}
 	for _, entry := range entries.failing {
 		addBlock(entry)
@@ -707,6 +704,24 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 	}
 	for _, entry := range entries.running {
 		addBlock(entry)
+	}
+	// Fill in logs top entry first. Sizing and printing an entry's logs is the
+	// expensive part, and with many failing tests most of them can't be shown
+	// in a bounded summary anyway, so stop as soon as the logs rendered so far
+	// guarantee the result is condensed: the roomy layout needs at least the
+	// heading, every name, those logs and a counts line, so once the logs
+	// exceed height-2-len(blocks) rows it can't fit, and condenseTestSummary
+	// spends at most that many rows on logs, taking them top entry first --
+	// all from entries already rendered here. The output is identical to
+	// rendering every entry's logs; entries past the cut just don't request
+	// logs they couldn't show.
+	logLines := 0
+	for i, entry := range blockEntries {
+		if height > 0 && logLines > height-2-len(blocks) {
+			break
+		}
+		blocks[i].logs = tv.renderTestSummaryLogs(out, entry, width)
+		logLines += len(blocks[i].logs)
 	}
 	var passing []string
 	for _, entry := range entries.passing {
@@ -883,7 +898,9 @@ func renderInspectKeyHint(out TermOutput, key string) string {
 		out.String(" inspect").Foreground(termenv.ANSIBrightBlack).String()
 }
 
-func (tv *TestView) renderTestSummaryEntry(out TermOutput, entry testSummaryEntry, width int) []string {
+// renderTestSummaryEntryName renders a non-passing entry's name line; its logs
+// render separately (renderTestSummaryLogs), only when they can be shown.
+func (tv *TestView) renderTestSummaryEntryName(out TermOutput, entry testSummaryEntry, width int) string {
 	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
 	icon := out.String(testCategoryIcon(entry.category)).Foreground(testCategoryColor(entry.category)).String()
 	statusLabel := testSummaryStatus(entry)
@@ -893,9 +910,7 @@ func (tv *TestView) renderTestSummaryEntry(out TermOutput, entry testSummaryEntr
 		labelWidth := max(width-lipgloss.Width(indent)-lipgloss.Width(icon)-lipgloss.Width(status)-2, 1)
 		label = clipPlain(label, labelWidth)
 	}
-	lines := []string{clipTestSummaryLine(indent+icon+" "+label+" "+status, width)}
-	lines = append(lines, tv.renderTestSummaryLogs(out, entry, width)...)
-	return lines
+	return clipTestSummaryLine(indent+icon+" "+label+" "+status, width)
 }
 
 func (tv *TestView) renderTestSummaryPassingSuite(out TermOutput, entry testSummaryEntry, width int) string {
@@ -940,29 +955,21 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 	if limit < 0 || limit > usedHeight {
 		limit = usedHeight
 	}
-	var buf strings.Builder
-	var err error
 	if final {
-		err = logs.PrintRaw(&buf)
-	} else {
-		err = logs.Print(&buf)
-	}
-	if err != nil {
-		return nil
-	}
-	rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
-	if final {
+		var buf strings.Builder
+		if err := logs.PrintRaw(&buf); err != nil {
+			return nil
+		}
+		rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 		// Anchor on the failure rather than an arbitrary tail, and point at the
 		// full logs -- the same treatment the zoomed (--test) view uses.
 		return errorWindowLines(out, rawLines, indent, tv.TraceID, cloudLogsHintTarget(entry.span))
 	}
 
 	// Live (interactive) summary: a small tail with a "more lines" footer.
-	hidden := 0
-	if len(rawLines) > limit {
-		hidden = len(rawLines) - limit
-		rawLines = rawLines[len(rawLines)-limit:]
-	}
+	// Only the tail is rendered; this runs every frame, for every shown entry.
+	rawLines, total := logs.PrintTail(limit)
+	hidden := total - len(rawLines)
 	textWidth := max(width-lipgloss.Width(indent), 1)
 	lines := make([]string, 0, len(rawLines)+1)
 	for _, line := range rawLines {

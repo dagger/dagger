@@ -612,6 +612,33 @@ func (term *Vterm) Print(w io.Writer) error {
 	return nil
 }
 
+// PrintTail returns the last n of the lines Print would write, and how many
+// lines Print would write in all, without rendering the lines before them:
+// Print renders every row, so tailing a long log through it costs the whole
+// log.
+func (term *Vterm) PrintTail(n int) ([]string, int) {
+	if term.segments != nil {
+		var buf strings.Builder
+		_ = term.Print(&buf)
+		lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+		return lines[len(lines)-min(n, len(lines)):], len(lines)
+	}
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	// Print writes rows 0 through used+1, as far as the content goes.
+	rows := min(term.vt.UsedHeight()+2, len(term.vt.Content))
+	if rows == 0 {
+		// Print writes nothing, which splits into one empty line.
+		return []string{""}[:min(n, 1)], 1
+	}
+	from := max(rows-n, 0)
+	lines := make([]string, 0, rows-from)
+	for _, l := range term.vt.Content[from:rows] {
+		lines = append(lines, strings.TrimRight(string(l), " "))
+	}
+	return lines, rows
+}
+
 // PrintRaw prints the bytes written to the log terminal without applying any
 // terminal wrapping or markdown rendering.
 func (term *Vterm) PrintRaw(w io.Writer) error {
