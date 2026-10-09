@@ -274,29 +274,45 @@ git -C /root/srv/repo.git config uploadpack.allowAnySHA1InWant true
 
 	// Replay both recipes on an engine that has forgotten everything, like a
 	// resumed session: concurrently, as restored agents are.
-	pruner := connect(ctx, t)
-	require.NoError(t, core.NewQuery(pruner).Engine().LocalCache().Prune(ctx))
-	require.NoError(t, pruner.Close())
-	cold, coldSink := connectWithTrace(ctx, t)
-	var eg errgroup.Group
-	replayedPending := make(map[string][]string, len(ids))
-	var mu sync.Mutex
-	for name, id := range ids {
-		eg.Go(func() error {
-			pending, err := core.Ref[*core.LLM](core.NewQuery(cold), id).Workspace().Git().Uncommitted().AddedPaths(ctx)
-			mu.Lock()
-			replayedPending[name] = pending
-			mu.Unlock()
-			return err
-		})
+	replay := func() map[string]map[string]bool {
+		pruner := connect(ctx, t)
+		require.NoError(t, core.NewQuery(pruner).Engine().LocalCache().Prune(ctx))
+		require.NoError(t, pruner.Close())
+		cold, coldSink := connectWithTrace(ctx, t)
+		var eg errgroup.Group
+		replayedPending := make(map[string][]string, len(ids))
+		var mu sync.Mutex
+		for name, id := range ids {
+			eg.Go(func() error {
+				pending, err := core.Ref[*core.LLM](core.NewQuery(cold), id).Workspace().Git().Uncommitted().AddedPaths(ctx)
+				mu.Lock()
+				replayedPending[name] = pending
+				mu.Unlock()
+				return err
+			})
+		}
+		require.NoError(t, eg.Wait())
+		require.Equal(t, []string{"pending.txt"}, replayedPending["cherry-pick"])
+		require.Empty(t, replayedPending["fast-forward"])
+		require.NoError(t, cold.Close())
+		replayed := gitSourceTreePaths(t, coldSink)
+		require.Empty(t, replayed["full"], "replayed local HEADs must not need a full source checkout")
+		return replayed
 	}
-	require.NoError(t, eg.Wait())
-	require.Equal(t, []string{"pending.txt"}, replayedPending["cherry-pick"])
-	require.Empty(t, replayedPending["fast-forward"])
-	require.NoError(t, cold.Close())
-	replayed := gitSourceTreePaths(t, coldSink)
-	require.NotEmpty(t, replayed["incremental"])
-	require.Empty(t, replayed["full"], "replayed local HEADs must not need a full source checkout")
+	// Close returns once a session's telemetry is flushed, but the engine
+	// releases its cached results afterwards, asynchronously. A prune that
+	// runs first keeps them as live, and the replay is served warm,
+	// materializing no trees at all. Prune and replay again until it runs cold.
+	deadline := time.Now().Add(2 * time.Minute)
+	for attempt := 1; ; attempt++ {
+		replayed := replay()
+		if len(replayed["incremental"]) > 0 {
+			break
+		}
+		require.True(t, time.Now().Before(deadline), "replayed local HEADs must build their trees incrementally; got %v", replayed)
+		t.Logf("replay %d built no incremental source trees (%v); its cache was not cold yet, retrying", attempt, replayed)
+		time.Sleep(time.Second)
+	}
 }
 
 // Sessions recorded before checkout bases were retained replay repositories
