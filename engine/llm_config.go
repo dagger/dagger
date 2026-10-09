@@ -48,7 +48,9 @@ type LLMProviderConfig struct {
 	// given API version.
 	AzureVersion string `json:"azure_version,omitempty"`
 	// DisableStreaming turns off streaming responses for an OpenAI provider.
-	DisableStreaming bool `json:"disable_streaming,omitempty"`
+	// A pointer, so an explicit false survives the trip and can override a
+	// true layered in from another client; nil means unset.
+	DisableStreaming *bool `json:"disable_streaming,omitempty"`
 
 	// ClaudeCodeVersion is the Claude Code release to present when
 	// authenticating Anthropic with a subscription OAuth token, as a bare
@@ -66,6 +68,10 @@ func (c *LLMConfig) Clone() *LLMConfig {
 		cp.Providers = make(map[string]*LLMProviderConfig, len(c.Providers))
 		for name, p := range c.Providers {
 			pp := *p
+			if p.DisableStreaming != nil {
+				v := *p.DisableStreaming
+				pp.DisableStreaming = &v
+			}
 			cp.Providers[name] = &pp
 		}
 	}
@@ -109,6 +115,11 @@ func (p *LLMProviderConfig) IsEmpty() bool {
 // HasCredential reports whether the provider has any credential configured.
 func (p *LLMProviderConfig) HasCredential() bool {
 	return p != nil && (p.APIKey != "" || p.AuthToken != "")
+}
+
+// StreamingDisabled reports whether DisableStreaming is set to true.
+func (p *LLMProviderConfig) StreamingDisabled() bool {
+	return p != nil && p.DisableStreaming != nil && *p.DisableStreaming
 }
 
 // Merge overlays src onto p: only fields src sets overwrite p's, so a config
@@ -156,8 +167,9 @@ func (p *LLMProviderConfig) Merge(src *LLMProviderConfig) {
 	if src.AzureVersion != "" {
 		p.AzureVersion = src.AzureVersion
 	}
-	if src.DisableStreaming {
-		p.DisableStreaming = true
+	if src.DisableStreaming != nil {
+		v := *src.DisableStreaming
+		p.DisableStreaming = &v
 	}
 	if src.ClaudeCodeVersion != "" {
 		p.ClaudeCodeVersion = src.ClaudeCodeVersion

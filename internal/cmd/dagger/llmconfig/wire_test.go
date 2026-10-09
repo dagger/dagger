@@ -319,24 +319,28 @@ func TestAssembleDisableStreaming(t *testing.T) {
 		name        string
 		file        *Config
 		env, dotenv map[string]string
-		want        bool
+		want        *bool
 	}{
-		{name: "env", env: map[string]string{"OPENAI_DISABLE_STREAMING": "true"}, want: true},
-		{name: "file", file: streamingFile, want: true},
-		{name: "env false over file", file: streamingFile, env: map[string]string{"OPENAI_DISABLE_STREAMING": "false"}, want: false},
+		{name: "unset", want: nil},
+		{name: "env", env: map[string]string{"OPENAI_DISABLE_STREAMING": "true"}, want: new(true)},
+		{name: "file", file: streamingFile, want: new(true)},
+		{name: "env false over file", file: streamingFile, env: map[string]string{"OPENAI_DISABLE_STREAMING": "false"}, want: new(false)},
+		// An explicit false travels on its own, to override a true from the
+		// session's main client when this one is nested.
+		{name: "env false alone", env: map[string]string{"OPENAI_DISABLE_STREAMING": "false"}, want: new(false)},
 		{
 			name: "dotenv over env",
 			env:  map[string]string{"OPENAI_API_KEY": "k", "OPENAI_DISABLE_STREAMING": "1"},
 			dotenv: map[string]string{
 				"OPENAI_DISABLE_STREAMING": "0",
 			},
-			want: false,
+			want: new(false),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, _, err := assemble(tc.file, mapEnv(tc.env), tc.dotenv)
 			require.NoError(t, err)
-			var got bool
+			var got *bool
 			if cfg != nil && cfg.Providers["openai"] != nil {
 				got = cfg.Providers["openai"].DisableStreaming
 			}

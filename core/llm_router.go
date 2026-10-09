@@ -195,7 +195,7 @@ func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
 		Provider:         OpenAI,
 		BaseURL:          cfg.BaseURL,
 		azureVersion:     cfg.AzureVersion,
-		disableStreaming: cfg.DisableStreaming,
+		disableStreaming: cfg.StreamingDisabled(),
 	}
 }
 

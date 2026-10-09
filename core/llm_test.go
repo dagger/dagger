@@ -65,7 +65,7 @@ func TestLLMRouterApply(t *testing.T) {
 				Model:            "openai-model",
 				SmallModel:       "openai-small-model",
 				AzureVersion:     "openai-azure-version",
-				DisableStreaming: true,
+				DisableStreaming: new(true),
 			},
 			"openai-codex": {
 				AuthToken:          "llmconfig://openai-codex/auth_token",
@@ -109,7 +109,7 @@ func TestLLMRouterApply(t *testing.T) {
 	openai := r.Providers[OpenAI]
 	assert.Equal(t, "llmconfig://openai/api_key", openai.APIKey)
 	assert.Equal(t, "openai-azure-version", openai.AzureVersion)
-	assert.True(t, openai.DisableStreaming)
+	assert.True(t, openai.StreamingDisabled())
 
 	codex := r.Providers[OpenAICodex]
 	assert.Equal(t, "llmconfig://openai-codex/auth_token", codex.AuthToken)
@@ -230,6 +230,34 @@ func TestLLMRouterLocalClient(t *testing.T) {
 
 	require.NoError(t, r.Apply(local(&engine.LLMProviderConfig{BaseURL: "http://localhost:11434"}), container))
 	assert.Same(t, container, r.localClient)
+}
+
+// TestLLMRouterLayeredDisableStreaming covers a nested client overriding the
+// main client's disable_streaming: an explicit false must win over an
+// inherited true, while leaving it unset inherits it.
+func TestLLMRouterLayeredDisableStreaming(t *testing.T) {
+	host := &engine.ClientMetadata{ClientID: "host"}
+	container := &engine.ClientMetadata{ClientID: "container"}
+	openai := func(cfg *engine.LLMProviderConfig) *engine.LLMConfig {
+		// Round-trip through JSON, as ClientMetadata does.
+		data, err := json.Marshal(&engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{"openai": cfg}})
+		require.NoError(t, err)
+		var out engine.LLMConfig
+		require.NoError(t, json.Unmarshal(data, &out))
+		return &out
+	}
+
+	r := new(LLMRouter)
+	require.NoError(t, r.Apply(openai(&engine.LLMProviderConfig{APIKey: "env://OPENAI_API_KEY", DisableStreaming: new(true)}), host))
+	require.NoError(t, r.Apply(openai(&engine.LLMProviderConfig{Model: "gpt-x"}), container))
+	ep, err := r.Route("gpt-x", "")
+	require.NoError(t, err)
+	assert.True(t, ep.disableStreaming, "unset inherits the host's value")
+
+	require.NoError(t, r.Apply(openai(&engine.LLMProviderConfig{DisableStreaming: new(false)}), container))
+	ep, err = r.Route("gpt-x", "")
+	require.NoError(t, err)
+	assert.False(t, ep.disableStreaming, "an explicit false overrides it")
 }
 
 func TestLLMRouterDefaultRoute(t *testing.T) {

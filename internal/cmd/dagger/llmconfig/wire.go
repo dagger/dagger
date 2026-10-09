@@ -210,8 +210,9 @@ func assemble(
 		}
 	}
 
-	// Merge can only turn DisableStreaming on; an explicit "false" from a
-	// higher layer must be able to turn it back off.
+	// An explicit value travels even when false, so it can turn off a true
+	// from a lower layer here — or, engine-side, from the session's main
+	// client when this is a nested one.
 	for _, v := range []string{getenv(disableStreamingVar), dotenv[disableStreamingVar]} {
 		if v == "" {
 			continue
@@ -220,9 +221,7 @@ func assemble(
 		if err != nil {
 			return nil, nil, fmt.Errorf("%w: %s=%q is not a boolean", ErrMalformed, disableStreamingVar, v)
 		}
-		if b || out.Providers["openai"] != nil {
-			out.Provider("openai").DisableStreaming = b
-		}
+		out.Provider("openai").DisableStreaming = &b
 	}
 
 	// An explicitly configured model in the environment decides the default
@@ -308,8 +307,11 @@ func fileLayer(file *Config) *engine.LLMConfig {
 			ReasoningEffort:   p.ReasoningEffort,
 			APICompat:         p.APICompat,
 			AzureVersion:      p.AzureVersion,
-			DisableStreaming:  p.DisableStreaming,
 			ClaudeCodeVersion: p.ClaudeCodeVersion,
+		}
+		if p.DisableStreaming {
+			// The file can't tell false from absent, so it only ever sets it.
+			wp.DisableStreaming = &p.DisableStreaming
 		}
 		switch {
 		case p.IsOAuth():
