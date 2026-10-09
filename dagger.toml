@@ -34,7 +34,13 @@ source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
-source = "dagger.io/go@main"
+# Move forward from the locked @main revision to the first revision with
+# generator-container support (dagger/go#47), before collection-based discovery
+# (dagger/go#63) adds ~19 min of workspace-wide scanning to Go checks.
+# Unpin once discovery respects the configured test/generate paths and both
+# golang/packages checks finish within CI's 30 min execution limit while
+# retaining custom generator-container support.
+source = "dagger.io/go@3202b07da551a4d3936769a548305c2bf0ade6b5"
 legacy-default-path = true
 
 [modules.golang.settings]

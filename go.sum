@@ -255,6 +255,14 @@ github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20260919020330-7e73c6a
 github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20260919020330-7e73c6ac9b51/go.mod h1:Kn+d0I9dL+wXH9zDlYvGeETYBdUQKZT4r22JR2ehh4g=
 github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20260919032052-b04ae28ac7f0 h1:jDV+IPjuF82eHiq8w49GS+X/p2k05WXORnAGrJD02K8=
 github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20260919032052-b04ae28ac7f0/go.mod h1:Kn+d0I9dL+wXH9zDlYvGeETYBdUQKZT4r22JR2ehh4g=
+github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20260930065927-d02ea66ae2eb h1:uO9j+TLEqkavKhtl0UuvFehx2DBb+VleZlN36lZmml0=
+github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20260930065927-d02ea66ae2eb/go.mod h1:Kn+d0I9dL+wXH9zDlYvGeETYBdUQKZT4r22JR2ehh4g=
+github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20261008065726-b65b2de014a6 h1:M/RL3QHSGRjWnxsWIR+uclGmdi8a1/tHAA1alNQ+O8k=
+github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20261008065726-b65b2de014a6/go.mod h1:Kn+d0I9dL+wXH9zDlYvGeETYBdUQKZT4r22JR2ehh4g=
+github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20261008175934-86253ac8227d h1:T0mSZ2XKtQytzZzxrA18gZwGpv9a0RYb3oisgz4t0W0=
+github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20261008175934-86253ac8227d/go.mod h1:Kn+d0I9dL+wXH9zDlYvGeETYBdUQKZT4r22JR2ehh4g=
+github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20261009013450-c289aba874d9 h1:HvL9ZWwS0jK7TEjFo/v4N0e+6EPwBJwbx93aQrw57+o=
+github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen v0.0.0-20261009013450-c289aba874d9/go.mod h1:uA3PU5IJwC9HbywBZgBDKD8blYlW/OB7OOjeGnDSbBw=
 github.com/dagger/otel-go v1.43.1-0.20260917165636-2bca4f5622cf h1:Nni6sYCsh8x97jlWG7sLDxRFQ/rxCRnxJnBHUSzjvFM=
 github.com/dagger/otel-go v1.43.1-0.20260917165636-2bca4f5622cf/go.mod h1:ofLvQtf5Xj/6XZcBUxWxD8vCIaSqGFl/PDywoCxLJHU=
 github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59 h1:g6vfdGRyz6fAjfHz5FyYPZgHy8qcQ31fHrBl1iCOzxw=

@@ -39,7 +39,7 @@ type GoClientDev {
 
   """
   Go container with a Dagger CLI and a dev engine built from this checkout.
-  sdk/go/core selects it with //go:generate:container go-client:generate-env,
+  sdk/go/core selects it with //go:generate:container dag://go-client/generate-env,
   so that the core bindings match the API of this checkout.
   """
   pub generateEnv: Container! {
