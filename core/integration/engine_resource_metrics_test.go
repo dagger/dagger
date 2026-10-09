@@ -161,7 +161,7 @@ exec dagger query
 	engineRunning = true
 	_, err = engineClientContainer(ctx, t, c, engineService).
 		WithEnvVariable("CLIENT_NONCE", identity.NewID()).
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"dagger", "core", "version"}, core.ContainerWithExecOpts{
 			DisableDaggerInDagger: true,
 		}).
 		Sync(ctx)
