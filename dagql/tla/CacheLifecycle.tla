@@ -33,6 +33,36 @@
 (* One atomic model action represents one Go critical section or one       *)
 (* lock-free atomic transition. Races live between those actions.          *)
 (*                                                                         *)
+(* egraphMu is a read-write lock. A section held for writing excludes      *)
+(* every other section, so it is one action. Three kinds of section hold   *)
+(* it only for reading: the lookup of a miss or a plain recipe-digest hit  *)
+(* with its session claim (LookupHit), session result tracking             *)
+(* (WaiterClaim) and ID loads (FnInnerLoadClaim). Read sections can        *)
+(* overlap each other, so modeling each as one action is sound only        *)
+(* because they commute: each writes nothing but its own invocation, a     *)
+(* session edge recorded under sessionMu, and an atomic increment of one   *)
+(* result's ownership count, and no read section reads what another       *)
+(* writes in a way that changes its outcome. Any interleaving of           *)
+(* overlapping read sections therefore equals some serial order of them,   *)
+(* and every action that does not commute with them - release, collection, *)
+(* publication, prune - holds the write lock and cannot overlap them. A     *)
+(* section that must change the e-graph (a hit that teaches an identity)   *)
+(* leaves the read lock having changed nothing and repeats the lookup      *)
+(* under the write lock; that first pass is a stutter step.                *)
+(*                                                                         *)
+(* The commutation argument is checked, not only assumed: with            *)
+(* SharedSections = "split" the two read sections with work on both sides *)
+(* of their sessionMu nesting - the lookup hit and the ID-load claim -     *)
+(* are a selection step and a claim step, open read sections exclude      *)
+(* write-locked steps (WriteLockAvailable), and everything else            *)
+(* interleaves (shared_claims; shared_claims_stale_edge is the mutation   *)
+(* that proves the overlap is observable). The waiter claim has nothing   *)
+(* between taking the read lock and its sessionMu section, so it stays one *)
+(* action. Two read-section writes are outside the model: the last-used    *)
+(* stamp (per-result payloadMu; it only orders pruning) and share         *)
+(* notifications, which read sections never open (only the write-locked   *)
+(* teaching fallback does).                                                *)
+(*                                                                         *)
 (* ABSTRACTIONS                                                            *)
 (*   - Equivalence is a static partition of call identities (ClassOf).     *)
 (*     The e-graph's runtime class merging (the Teach* helpers) is not     *)
@@ -199,6 +229,18 @@ CONSTANTS
                         \* is entered; the ordering lives before the attempt,
                         \* not inside any body.
     ModelContainerPartPersistence, \* preserve consumed parts and defer saved opens
+    SharedSections,     \* how the egraphMu read sections are modeled:
+                        \* "atomic" - each is one action, sound by the
+                        \* commutation argument in GRANULARITY (every
+                        \* configuration that predates the split);
+                        \* "split" - the lookup hit and the ID-load claim
+                        \* are each a selection step and a claim step, with
+                        \* other read sections and lock-free steps free to
+                        \* run between them and write-locked steps excluded
+                        \* until the claim; "split_stale_edge" - "split"
+                        \* with a deliberate bug, the session edge read at
+                        \* selection instead of under sessionMu at the
+                        \* claim, which must break OwnershipExact
     ModelPartDelegation, \* enable parent demands and final copy sweeps; a body
                         \* spawns an internal evaluator for a part of a
                         \* dependency (delegation bodies evaluating the
@@ -449,6 +491,18 @@ ResultIds == 1..Len(res)
 EvalIds   == 1..Len(evals)
 InvocationIds    == 1..Len(invocations)
 OngoingCallIds     == 1..Len(ongoingCalls)
+
+\* SharedSections # "atomic": an open egraphMu read section is a selection
+\* step whose claim step has not run yet. A step that holds egraphMu for
+\* writing cannot start while one is open (WriteLockAvailable); lock-free
+\* steps and other read sections can.
+OpenReadSections ==
+    {i \in InvocationIds : invocations[i].phase = "lookupClaim"}
+OpenLoadReadSections ==
+    {o \in OngoingCallIds : ongoingCalls[o].acqSel # 0}
+WriteLockAvailable ==
+    \/ SharedSections = "atomic"
+    \/ OpenReadSections = {} /\ OpenLoadReadSections = {}
 
 \* Optional external-call scopes reserve room for the post-restart reader.
 \* The default is the existing global bound and changes no prior scenario.
@@ -981,6 +1035,9 @@ NewInvocation(s, c, p, o, admitted) ==
      \* "stored set equals the capture" name the same observable, and the
      \* serve-time comparison in ReadBarrierOk reads this field.
      selRequired |-> {},
+     \* Only for SharedSections = "split_stale_edge": whether the session
+     \* edge existed when the selection step ran. Constant FALSE otherwise.
+     selHadEdge |-> FALSE,
      \* Property-only ghost: TRUE once an action modeling THIS invocation's
      \* own ctx.Done arm has fired. See CancelOnlyOwn.
      ownCancel |-> FALSE,
@@ -1028,15 +1085,67 @@ SpawnNested ==
 (* has not failed. The egraphMu section selects the result, then nests      *)
 (* sessionMu to claim the session edge. A released-session tombstone       *)
 (* refuses the claim without adding an edge. Persistable hits commit their *)
-(* edge only after the read barrier and payload load succeed.               *)
+(* edge only after the read barrier and payload load succeed. The section  *)
+(* holds egraphMu for reading when the hit teaches the e-graph nothing,    *)
+(* and for writing otherwise (see GRANULARITY).                             *)
 (*                                                                         *)
-(* Go: lookupCacheForRequest, cache_egraph.go:977-1038. Inside the one     *)
+(* Go: lookupCacheForRequest, cache_egraph.go. Inside the one              *)
 (* lock hold:                                                              *)
 (*   - a candidate in the request's equivalence class is selected          *)
 (*   - the session record and ownership unit are added together             *)
 (* After the lock, an accepted hit passes the read barrier before return.  *)
 (***************************************************************************)
+(* LookupHitSelect / LookupHitClaim: LookupHit with its egraphMu read      *)
+(* section split at the point where it nests sessionMu (SharedSections #  *)
+(* "atomic"). The selection step runs the candidate pick, the resource      *)
+(* filter and the requirement-generation capture; it writes only its own   *)
+(* invocation. The claim step is acquireSessionResultLocked's sessionMu    *)
+(* section: the tombstone check, the session edge and the atomic ownership *)
+(* increment. Between them other read sections, release marking and its    *)
+(* sessionMu snapshot, admission and every other lock-free step can run;   *)
+(* write-locked steps cannot (WriteLockAvailable), because the read lock   *)
+(* is held from selection through the claim.                               *)
+(*                                                                         *)
+(* Go: lookupCacheForRequest (egraphMu.RLock), lookupCacheForRequestLocked *)
+(* with readOnly, claimLookupHitLocked, acquireSessionResultLocked.        *)
+(***************************************************************************)
+LookupHitSelect(i) ==
+    /\ SharedSections # "atomic"
+    /\ invocations[i].phase = "lookup"
+    /\ \E r \in LookupEligibleInClass(ClassOf[invocations[i].call]) :
+        /\ res[r].required \subseteq sessionRelease[invocations[i].sess].handles
+        /\ invocations' = [invocations EXCEPT ![i].phase = "lookupClaim",
+                                ![i].resId = r,
+                                ![i].path = "hit",
+                                ![i].selRequired = res[r].required,
+                                ![i].lookupBarrierAtSelection = res[r].barrier,
+                                ![i].selHadEdge =
+                                    /\ SharedSections = "split_stale_edge"
+                                    /\ <<invocations[i].sess, r>> \in sessionEdges]
+    /\ UNCHANGED <<res, ongoingCalls, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
+
+LookupHitClaim(i) ==
+    /\ invocations[i].phase = "lookupClaim"
+    /\ LET s == invocations[i].sess
+           r == invocations[i].resId
+           haveEdge == IF SharedSections = "split_stale_edge"
+                       THEN invocations[i].selHadEdge
+                       ELSE <<s, r>> \in sessionEdges
+       IN IF sessionRelease[s].phase = "live"
+          THEN /\ res' = IF haveEdge THEN res
+                          ELSE [res EXCEPT ![r].own = @ + 1]
+               /\ sessionEdges' = sessionEdges \cup {<<s, r>>}
+               /\ countedEdges' = countedEdges \cup {<<s, r>>}
+               /\ invocations' = [invocations EXCEPT ![i].phase = "readBarrier"]
+          ELSE /\ UNCHANGED <<res, sessionEdges, countedEdges>>
+               /\ invocations' = [invocations EXCEPT ![i].phase = "refusing",
+                                       ![i].refusedEpoch = epoch]
+    /\ UNCHANGED <<ongoingCalls, ongoingCallIndex, sessionRelease, evals, epoch, flushed>>
+
+(***************************************************************************)
 LookupHit(i) ==
+    /\ SharedSections = "atomic"
     /\ invocations[i].phase = "lookup"
     /\ \E r \in LookupEligibleInClass(ClassOf[invocations[i].call]) :
         \* Session-resource filter (selectLookupCandidateForSessionLocked,
@@ -1153,6 +1262,10 @@ CreateOc(i) ==
              \* serialized per call here; concurrent resolver loads
              \* interleave across calls, not within one.
              acqPending |-> 0,
+             \* SharedSections # "atomic": the result an inner load's
+             \* selection step picked, its claim step still to run
+             \* (0 = none). Always 0 under "atomic".
+             acqSel |-> 0,
              \* the inner operation was admitted (beginSessionOperation's
              \* CAS, active incremented) and has not yet exited
              acqAdmitted |-> FALSE,
@@ -1243,8 +1356,10 @@ FnInnerLoadAdmit(o) ==
                    evals, epoch, flushed>>
 
 \* the admitted load's claim: selection and the edge claim under the
-\* graph locks (lookupCacheForRequest / acquireSessionResultLocked)
+\* graph locks (lookupCacheForRequest / sharedResultByResultID /
+\* acquireSessionResultLocked), egraphMu held for reading (see GRANULARITY)
 FnInnerLoadClaim(o) ==
+    /\ SharedSections = "atomic"
     /\ ongoingCalls[o].fnState \in {"running", "canceled"}
     /\ ongoingCalls[o].acqAdmitted
     /\ ongoingCalls[o].acqPending = 0
@@ -1263,6 +1378,50 @@ FnInnerLoadClaim(o) ==
         /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].acqPending = r]
     /\ UNCHANGED <<invocations, ongoingCallIndex, sessionRelease, evals, epoch, flushed>>
 
+\* FnInnerLoadSelect / FnInnerLoadClaimCommit: FnInnerLoadClaim with its
+\* egraphMu read section split where it nests sessionMu
+\* (SharedSections # "atomic"), as for LookupHitSelect / LookupHitClaim.
+\* The selection (sharedResultByResultID's canonical pick and resource
+\* check) does not read the tombstone; the claim step does, under sessionMu,
+\* and a refused claim exits the operation as FnInnerLoadPreclaimRefused
+\* does. Go: sharedResultByResultID (egraphMu.RLock),
+\* acquireSessionResultLocked.
+FnInnerLoadSelect(o) ==
+    /\ SharedSections # "atomic"
+    /\ ongoingCalls[o].fnState \in {"running", "canceled"}
+    /\ ongoingCalls[o].acqAdmitted
+    /\ ongoingCalls[o].acqPending = 0
+    /\ ongoingCalls[o].acqSel = 0
+    /\ \E r \in ResultIds :
+        /\ res[r].registered
+        /\ res[r].barrier \in {"none", "closedOk"}
+        /\ r \notin ongoingCalls[o].acq
+        /\ res[r].required \subseteq sessionRelease[ongoingCalls[o].sess].handles
+        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].acqSel = r]
+    /\ UNCHANGED <<invocations, res, ongoingCallIndex, sessionEdges, countedEdges,
+                   sessionRelease, evals, epoch, flushed>>
+
+FnInnerLoadClaimCommit(o) ==
+    /\ ongoingCalls[o].acqSel # 0
+    /\ LET s == ongoingCalls[o].sess
+           r == ongoingCalls[o].acqSel
+           haveEdge == <<s, r>> \in sessionEdges
+       IN IF sessionRelease[s].phase = "live"
+          THEN /\ res' = IF haveEdge THEN res
+                          ELSE [res EXCEPT ![r].own = @ + 1]
+               /\ sessionEdges' = sessionEdges \cup {<<s, r>>}
+               /\ countedEdges' = countedEdges \cup {<<s, r>>}
+               /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].acqPending = r,
+                                                       ![o].acqSel = 0]
+               /\ UNCHANGED sessionRelease
+          ELSE /\ sessionRelease[s].active > 0
+               /\ sessionRelease' = FinishSessionOperation(sessionRelease, s)
+               /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].acqAdmitted = FALSE,
+                                                       ![o].loadRefused = TRUE,
+                                                       ![o].acqSel = 0]
+               /\ UNCHANGED <<res, sessionEdges, countedEdges>>
+    /\ UNCHANGED <<invocations, ongoingCallIndex, evals, epoch, flushed>>
+
 \* the admitted operation resolves without claiming an existing cached
 \* result - a miss, a fresh nested execution, or any other completion -
 \* and exits (op.finish); nothing about possession changes
@@ -1270,6 +1429,7 @@ FnInnerLoadDone(o) ==
     /\ ongoingCalls[o].fnState \in {"running", "canceled"}
     /\ ongoingCalls[o].acqAdmitted
     /\ ongoingCalls[o].acqPending = 0
+    /\ ongoingCalls[o].acqSel = 0
     /\ sessionRelease[ongoingCalls[o].sess].phase = "live"
     /\ sessionRelease[ongoingCalls[o].sess].active > 0
     /\ sessionRelease' = FinishSessionOperation(sessionRelease, ongoingCalls[o].sess)
@@ -1284,6 +1444,7 @@ FnInnerLoadPreclaimRefused(o) ==
     /\ ongoingCalls[o].fnState \in {"running", "canceled"}
     /\ ongoingCalls[o].acqAdmitted
     /\ ongoingCalls[o].acqPending = 0
+    /\ ongoingCalls[o].acqSel = 0
     /\ sessionRelease[ongoingCalls[o].sess].phase # "live"
     /\ sessionRelease[ongoingCalls[o].sess].active > 0
     /\ sessionRelease' = FinishSessionOperation(sessionRelease, ongoingCalls[o].sess)
@@ -1478,6 +1639,8 @@ WaiterCancelLate(i) ==
 \* committed first, so late intent survives even when the final waiter
 \* departs through cancellation.
 WaiterDropHoldCanceled(i) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ invocations[i].phase = "cancelDropHold"
     /\ LET o == invocations[i].oc IN
        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].hold = FALSE]
@@ -1674,6 +1837,8 @@ ReleasedWhileCurrentOpen(o) ==
         /\ res[r].barrier = "open"
 
 PubIndexFresh(o) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ ongoingCalls[o].pubState = "begun"
     /\ ongoingCalls[o].outcome = "fresh"
     /\ \/ Current(ongoingCalls[o].call) = {}
@@ -1711,6 +1876,8 @@ PubIndexFresh(o) ==
 (* (PubIndexFresh).                                                        *)
 (***************************************************************************)
 PubAdoptSameCall(o) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ ongoingCalls[o].pubState = "begun"
     /\ ongoingCalls[o].outcome = "fresh"
     /\ \E r \in Current(ongoingCalls[o].call) :
@@ -1736,6 +1903,8 @@ PubAdoptSameCall(o) ==
 (* barrier armed, as for PubIndexFresh.                                    *)
 (***************************************************************************)
 PubReplaceInPlace(o) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ ongoingCalls[o].pubState = "begun"
     /\ ongoingCalls[o].outcome = "fresh"
     /\ \E r \in Current(ongoingCalls[o].call) :
@@ -1772,6 +1941,8 @@ PubReplaceInPlace(o) ==
 (* never a lookup candidate again.                                         *)
 (***************************************************************************)
 PubRetire(o) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ ongoingCalls[o].pubState = "begun"
     /\ ongoingCalls[o].outcome = "fresh"
     /\ \E r \in Current(ongoingCalls[o].call) :
@@ -1821,6 +1992,8 @@ CanonicalPick(o) ==
 \* hold lands on the dead slot, mirroring Go's unconditional hold
 \* increment; PubIndexReuse then fails the publication.
 PubAdopt(o) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ ongoingCalls[o].pubState = "begun"
     /\ ongoingCalls[o].outcome = "reuse"
     /\ LET r == CanonicalPick(o) IN
@@ -1841,6 +2014,8 @@ PubAdopt(o) ==
 (*     results (resWasCacheBacked skips the barrier arm)                   *)
 (***************************************************************************)
 PubIndexReuse(o) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ ongoingCalls[o].pubState = "adopted"
     /\ LET r == ongoingCalls[o].resId IN
        IF ~res[r].registered
@@ -1894,6 +2069,8 @@ DepReachable(rf, start, target) ==
     IN Reach({start}, {start})
 
 PubAttachAddDep(o) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ ongoingCalls[o].pubState = "attaching"
     \* no dependency edge lands after the claim refusal: the hook returned
     /\ ~ongoingCalls[o].attachRefused
@@ -2022,6 +2199,8 @@ PubAttachClaimRefused(o) ==
 \* attachment was open keeps it until that session releases, as for any
 \* failed publication.
 PubAttachFailDropHold(o) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     \* an injected attachment failure, or the deterministic one: an
     \* attachment-time claim attempt was refused by release marking
     /\ \/ AttachCanFail
@@ -2106,6 +2285,8 @@ WaiterObservePubErr(i) ==
 \* cache.go:4896-4914). The persistence arm is vacuous here because
 \* needsPersistedEdge requires a successful publication.
 WaiterDropHoldPubErr(i) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ invocations[i].phase = "pubErrDropHold"
     /\ LET o == invocations[i].oc IN
        /\ ongoingCalls' = [ongoingCalls EXCEPT ![o].hold = FALSE]
@@ -2125,8 +2306,9 @@ WaiterDropHoldPubErr(i) ==
 (*   3. the last waiter releases the handoff hold                          *)
 (*   4. the read barrier (ensurePersistedHitValueLoaded)                   *)
 (*                                                                         *)
-(* The claim is one egraphMu critical section with sessionMu nested inside *)
-(* it. A released tombstone refuses the claim. The waiter still departs,   *)
+(* The claim is one egraphMu read section with sessionMu nested inside    *)
+(* it (trackSessionResult; see GRANULARITY). A released tombstone refuses  *)
+(* the claim. The waiter still departs,                                    *)
 (* and the final waiter still commits persistence before dropping the hold. *)
 (***************************************************************************)
 
@@ -2174,6 +2356,8 @@ WaiterDepart(i) ==
 \* edges (session, dependency, persisted) keep the result alive.
 \* Go: wait, cache.go:4873-4876 -> releaseOngoingCallHandoff.
 WaiterReleaseHold(i) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ invocations[i].phase \in {"releaseHold", "refusedReleaseHold"}
     /\ LET o == invocations[i].oc
            refused == invocations[i].phase = "refusedReleaseHold"
@@ -2276,6 +2460,8 @@ ReadBarrierResourceMismatchMiss(i) ==
 \* registration guard prevents resurrection if the result was collected in
 \* the interval before this lock acquisition.
 PersistHit(i) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ invocations[i].phase = "persistHit"
     /\ LET r == invocations[i].resId
            persisted == IF res[r].registered /\ ~res[r].persisted
@@ -2709,6 +2895,8 @@ ReleaseSessionSnapshot(s) ==
 \* result, then collect. Session records remain until hooks and arbitrary
 \* value cleanup complete.
 ReleaseSessionCollect(s) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ sessionRelease[s].phase = "collecting"
     /\ sessionRelease[s].active = 0
     /\ LET snap == sessionRelease[s].snap
@@ -2812,6 +3000,8 @@ BindResource ==
 (* closure DataRequired judges (see its comment).                          *)
 (***************************************************************************)
 AddDepLate ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ ModelLateDeps
     /\ \E p \in ResultIds, d \in ResultIds :
         /\ p # d
@@ -2857,6 +3047,8 @@ AddDepLate ==
 (* modeled.                                                                *)
 (***************************************************************************)
 PruneCut(r) ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ AllowPruneCut
     /\ r \in ResultIds
     /\ res[r].persisted
@@ -2911,6 +3103,8 @@ MergedRecord(c, handleVal, deps, requiredVal) ==
                    requiredVal, {}, {}, {})
 
 MergeLive ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ ModelMerge
     /\ ~flushed.closing
     /\ \E c \in Calls, withDep \in BOOLEAN :
@@ -3096,6 +3290,8 @@ Flush ==
 (***************************************************************************)
 
 Restart ==
+    \* holds egraphMu for writing; see WriteLockAvailable
+    /\ WriteLockAvailable
     /\ ModelPersistence
     /\ epoch = 1
     /\ flushed.done
@@ -3878,6 +4074,7 @@ Next ==
     \/ Spawn \/ SpawnNested
     \/ \E i \in InvocationIds :
          \/ LookupHit(i) \/ LookupMiss(i)
+         \/ LookupHitSelect(i) \/ LookupHitClaim(i)
          \/ Join(i) \/ CreateOc(i) \/ CreateOcLeaseFail(i)
          \/ WaiterCancel(i) \/ WaiterCancelLate(i) \/ WaiterObserveFnErr(i)
          \/ WaiterObservePubErr(i) \/ WaiterDropHoldPubErr(i)
@@ -3895,6 +4092,7 @@ Next ==
          \/ InvocationOperationExit(i)
     \/ \E o \in OngoingCallIds :
          \/ FnInnerLoadAdmit(o) \/ FnInnerLoadClaim(o)
+         \/ FnInnerLoadSelect(o) \/ FnInnerLoadClaimCommit(o)
          \/ FnInnerLoadDone(o) \/ FnInnerLoadPreclaimRefused(o)
          \/ FnInnerLoadDeliver(o) \/ FnInnerLoadRefused(o)
          \/ FnComplete(o) \/ PubBegin(o)
@@ -3970,6 +4168,7 @@ SystemProgress(o) ==
     \* (Done) or is refused pre-claim; claimed it delivers or is refused
     \/ FnInnerLoadDone(o) \/ FnInnerLoadPreclaimRefused(o)
     \/ FnInnerLoadDeliver(o) \/ FnInnerLoadRefused(o)
+    \/ FnInnerLoadClaimCommit(o)
     \* an in-flight attachment claim attempt always resolves too
     \/ PubAttachClaimOk(o) \/ PubAttachClaimRefused(o)
     \/ FnComplete(o) \/ PubBegin(o)
@@ -3981,6 +4180,7 @@ SystemProgress(o) ==
 
 WaiterProgress(i) ==
     \/ LookupHit(i) \/ LookupMiss(i) \/ Join(i) \/ CreateOc(i)
+    \/ LookupHitClaim(i)
     \/ WaiterObserveFnErr(i) \/ WaiterObservePubErr(i)
     \/ WaiterDropHoldPubErr(i) \/ WaiterDropHoldCanceled(i)
     \/ WaiterClaim(i)
@@ -4173,6 +4373,10 @@ TypeOK ==
     /\ \A o \in OngoingCallIds : ongoingCalls[o].replaced \in BOOLEAN
     /\ \A o \in OngoingCallIds : ongoingCalls[o].acq \subseteq 1..Len(res)
     /\ \A o \in OngoingCallIds : ongoingCalls[o].acqPending \in 0..Len(res)
+    /\ \A o \in OngoingCallIds : ongoingCalls[o].acqSel \in 0..Len(res)
+    /\ \A o \in OngoingCallIds :
+         ongoingCalls[o].acqSel # 0 => ongoingCalls[o].acqAdmitted
+    /\ SharedSections \in {"atomic", "split", "split_stale_edge"}
     /\ \A o \in OngoingCallIds : ongoingCalls[o].attachTarget \in 0..Len(res)
     /\ \A o \in OngoingCallIds :
          ongoingCalls[o].acqPending # 0 => ongoingCalls[o].acqAdmitted

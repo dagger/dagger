@@ -146,6 +146,17 @@ var expectedOutcome = map[string]string{
 	"recipe_expiry_deps":    "",
 	"recipe_expiry_restart": "",
 	"recipe_merge":          "",
+
+	// green: the egraphMu read sections split where they nest sessionMu
+	// (SharedSections = "split"), so overlapping lookup hits, ID-load
+	// claims, release marking and lock-free steps interleave between selection and
+	// claim, and write-locked steps wait for the claim.
+	"shared_claims":           "",
+	"shared_claims_prune":     "",
+	"shared_claims_resources": "",
+	// mutation: the claim trusts the session edge read at selection, so
+	// two overlapping hits of one session both add an ownership unit.
+	"shared_claims_stale_edge": "OwnershipExact",
 }
 
 var clientExpectedOutcome = map[string]string{
