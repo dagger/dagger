@@ -21,6 +21,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -247,6 +248,44 @@ func TestRecordedResponseProviderEmitsPerToolCallDisplaySpans(t *testing.T) {
 	v, ok := spanAttr(byName["read"], telemetryattrs.LLMToolResultTokensAttr)
 	require.True(t, ok, "read: missing result tokens attr")
 	require.Greater(t, v.AsInt64(), int64(0))
+}
+
+// A reply's display spans start streaming before the response is recorded, so
+// they open on the REQUEST state's digest. Once the withResponse call exists,
+// step re-points every one of them (text and tool calls alike) at it: a branch
+// from a reply must keep the reply, and the rewind marker's chain walk must
+// agree.
+func TestStampResponseDigestPointsDisplaySpansAtResponse(t *testing.T) {
+	sr, ctx := recordingTestRecorder(t)
+	ctx = dagql.ContextWithCache(ctx, nil)
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	srv.InstallObject(dagql.NewClass[*LLM](srv))
+	requestFrame := testResultCall("withPrompt", &LLM{}, testResultCall("llm", &LLM{}, nil))
+	request := llmChainResult(t, srv, requestFrame)
+	responded := llmChainResult(t, srv, testResultCall("withResponse", &LLM{}, requestFrame))
+	requestDigest, err := request.RecipeDigest(ctx)
+	require.NoError(t, err)
+	responseDigest, err := responded.RecipeDigest(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, requestDigest, responseDigest)
+
+	dp := newDisplayPhases(ctx, requestDigest.String(), nil)
+	dp.StartText(0)
+	dp.Close(0)
+	dp.EmitToolCall(1, "call_1", "read", `{"path":"main.go"}`)
+	spans, _ := dp.Response()
+	require.Len(t, spans, 2)
+
+	stampResponseDigest(ctx, spans, responded)
+	for _, s := range spans {
+		s.End()
+	}
+	require.Len(t, sr.Ended(), 2)
+	for _, s := range sr.Ended() {
+		v, ok := spanAttr(s, telemetryattrs.LLMCallDigestAttr)
+		require.True(t, ok, "%s: missing call digest attr", s.Name())
+		require.Equal(t, responseDigest.String(), v.AsString(), "%s must point at its withResponse", s.Name())
+	}
 }
 
 // Live telemetry exports a span only at start and end, so the tool-call span

@@ -2437,6 +2437,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 		}
 		return inst, err
 	}
+	stampResponseDigest(ctx, res.DisplaySpans, responded)
 	llm.mcp.SetSelfLLM(responded)
 
 	// Run the turn's tool calls in the order written; see toolDispatch.
@@ -2777,6 +2778,27 @@ func messageHasBlock(msg *LLMMessage, kind LLMContentBlockKind, callID string) b
 		}
 	}
 	return false
+}
+
+// stampResponseDigest re-points the response's display spans (text, thinking
+// and tool calls) at the withResponse call that recorded them, now that it
+// exists. They start streaming before the response is materialized, so they
+// open carrying the REQUEST state's digest; left that way, a branch from a
+// reply would rewind to the state before it and silently drop the reply the
+// user picked. Every display span is still open here — CallBatch and step's
+// own cleanup end them later — so the attribute rides their end export.
+func stampResponseDigest(ctx context.Context, spans []trace.Span, responded dagql.ObjectResult[*LLM]) {
+	if len(spans) == 0 {
+		return
+	}
+	dig, err := responded.RecipeDigest(ctx)
+	if err != nil || dig == "" {
+		return
+	}
+	attr := attribute.String(telemetryattrs.LLMCallDigestAttr, dig.String())
+	for _, s := range spans {
+		s.SetAttributes(attr)
+	}
 }
 
 // emitNewMessageSpans emits display spans for prompt content appended since the

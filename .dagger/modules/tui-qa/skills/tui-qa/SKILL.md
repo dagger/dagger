@@ -63,6 +63,10 @@ Once the session is up, `toolset` lists the tools the model actually sees
 If engine-lab tools are available, their start tool prints a tcp://<host>:1234
 endpoint — pass it as `start(engineAddress: ...)` to run the TUI against THAT engine
 instead of a fresh one, so its debug endpoints and logs observe exactly what
-the TUI is driving. Caveats: no LLM auth in that mode (avoid for
-`args: ["agent"]`), and restarting/stopping the lab engine breaks the attached
-TUI session — start a new one after.
+the TUI is driving. This is the mode for QA'ing engine-side changes, including
+`args: ["agent"]`: LLM auth still works, because the module's `daggerConfig`
+setting (the host's ~/.config/dagger/config.toml) is mounted into the CLI
+under test and carries its LLM provider settings. Only if `daggerConfig` is
+unset does an `agent` session against the lab engine fail to authenticate.
+Caveat: restarting/stopping the lab engine breaks the attached TUI session —
+start a new one after.
