@@ -109,15 +109,18 @@ func (m *matcher) shouldDescend(rel string, state matchState) bool {
 	return false
 }
 
-// patternWithoutTrailingGlob is from internal/fsutil.
+// patternWithoutTrailingGlob is from internal/fsutil, except that it strips
+// only one trailing glob. Stripping both would turn "a/*/**" into "a", a
+// literal prefix that does not cover a/b.
 func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {
 	patStr := p.String()
 	// We use filepath.Separator here because patternmatcher.Pattern patterns
 	// get transformed to use the native path separator:
 	// https://github.com/moby/patternmatcher/blob/130b41bafc16209dc1b52a103fdac1decad04f1a/patternmatcher.go#L52
-	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"**")
-	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
-	return patStr
+	if trimmed, ok := strings.CutSuffix(patStr, string(filepath.Separator)+"**"); ok {
+		return trimmed
+	}
+	return strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
 }
 
 func (m *matcher) includePath(rel string, abs string, info os.FileInfo, parent matchState) (bool, matchState, error) {

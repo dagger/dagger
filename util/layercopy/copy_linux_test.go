@@ -824,6 +824,8 @@ func TestCopyDirectoryIncludePruningKeepsCopiedPaths(t *testing.T) {
 		{name: "wildcard in name", filter: Filter{Include: []string{"a/b/*.go"}}},
 		{name: "question mark", filter: Filter{Include: []string{"a/?/keep.txt"}}},
 		{name: "character class", filter: Filter{Include: []string{"[ao]*/b"}}},
+		{name: "wildcard dir then trailing double star", filter: Filter{Include: []string{"a/*/**"}}},
+		{name: "trailing double star then star", filter: Filter{Include: []string{"a/**/*"}}},
 		{name: "double star in middle", filter: Filter{Include: []string{"a/**/deep.txt"}}},
 		{name: "leading double star", filter: Filter{Include: []string{"**/keep.txt"}}},
 		{name: "double star only", filter: Filter{Include: []string{"**"}}},
