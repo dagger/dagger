@@ -244,6 +244,10 @@ func TestCachePersistenceWorkerMirrorsSnapshotManagerMetadataRows(t *testing.T) 
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	snapshotManager := &fakeSnapshotManager{
 		persistentRows: bkcache.PersistentMetadataRows{
+			ContentHashes: []bkcache.SnapshotContentHashRow{{
+				SnapshotID: "snap-root",
+				Data:       []byte("serialized\x00imported hash records"),
+			}},
 			SnapshotContent: []bkcache.SnapshotContentRow{{
 				SnapshotID: "snap-root",
 				Digest:     "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -269,6 +273,12 @@ func TestCachePersistenceWorkerMirrorsSnapshotManagerMetadataRows(t *testing.T) 
 	}()
 
 	assert.NilError(t, c.persistCurrentState(ctx))
+	contentHashRows, err := c.pdb.ListMirrorSnapshotContentHashes(ctx)
+	assert.NilError(t, err)
+	assert.DeepEqual(t, contentHashRows, []persistdb.MirrorSnapshotContentHash{{
+		SnapshotID: "snap-root",
+		Data:       []byte("serialized\x00imported hash records"),
+	}})
 
 	snapshotContentRows, err := c.pdb.ListMirrorSnapshotContentLinks(ctx)
 	assert.NilError(t, err)
@@ -301,6 +311,10 @@ func TestCachePersistenceImportHydratesSnapshotMetadataAndSyncsOwnerLeases(t *te
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheA, err := NewCache(ctx, dbPath, &fakeSnapshotManager{
 		persistentRows: bkcache.PersistentMetadataRows{
+			ContentHashes: []bkcache.SnapshotContentHashRow{{
+				SnapshotID: "snapshot-a",
+				Data:       []byte("serialized\x00imported hash records"),
+			}},
 			SnapshotContent: []bkcache.SnapshotContentRow{{
 				SnapshotID: "snapshot-a",
 				Digest:     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -343,6 +357,10 @@ func TestCachePersistenceImportHydratesSnapshotMetadataAndSyncsOwnerLeases(t *te
 	assert.DeepEqual(t, snapshotManagerB.loadedRows.SnapshotContent, []bkcache.SnapshotContentRow{{
 		SnapshotID: "snapshot-a",
 		Digest:     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}})
+	assert.DeepEqual(t, snapshotManagerB.loadedRows.ContentHashes, []bkcache.SnapshotContentHashRow{{
+		SnapshotID: "snapshot-a",
+		Data:       []byte("serialized\x00imported hash records"),
 	}})
 	assert.Equal(t, 0, len(snapshotManagerB.loadedRows.ImportedByBlob))
 	assert.Equal(t, 0, len(snapshotManagerB.loadedRows.ImportedByDiff))
