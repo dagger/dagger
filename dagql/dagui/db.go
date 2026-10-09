@@ -146,9 +146,6 @@ type DB struct {
 
 	Calls map[string]*callpbv1.Call
 
-	Outputs  map[string]map[string]struct{}
-	OutputOf map[string]map[string]struct{}
-
 	// Intervals holds the spans seen for each call digest, one per distinct
 	// start time (a later span with the same start time replaces the
 	// earlier), in no particular order. Usually there's just the one, so
@@ -272,8 +269,6 @@ func NewDB() *DB {
 
 		Calls: make(map[string]*callpbv1.Call),
 
-		OutputOf:  make(map[string]map[string]struct{}),
-		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string][]*Span),
 
 		CreatorSpans: make(map[string]SpanSet),
@@ -1294,18 +1289,6 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	}
 
 	if span.CallDigest != "" && span.Output != "" {
-		// parent -> child
-		if db.Outputs[span.CallDigest] == nil {
-			db.Outputs[span.CallDigest] = make(map[string]struct{})
-		}
-		db.Outputs[span.CallDigest][span.Output] = struct{}{}
-
-		// child -> parent
-		if db.OutputOf[span.Output] == nil {
-			db.OutputOf[span.Output] = make(map[string]struct{})
-		}
-		db.OutputOf[span.Output][span.CallDigest] = struct{}{}
-
 		// output -> creator (usually just the one)
 		creators := db.CreatorSpans[span.Output]
 		if creators == nil {
