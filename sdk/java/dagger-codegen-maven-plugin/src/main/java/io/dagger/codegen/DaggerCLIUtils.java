@@ -1,6 +1,7 @@
 package io.dagger.codegen;
 
 import com.ongres.process.FluentProcess;
+import io.dagger.codegen.introspection.IdentifierFetcher;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -107,6 +108,22 @@ public class DaggerCLIUtils {
     waitForCopies(stdin);
 
     return new ByteArrayInputStream(out.toByteArray());
+  }
+
+  /**
+   * Runs the introspection query against the dagger CLI and returns the schema JSON, with the words
+   * of its names under "__identifiers" when the engine provides them (engine views v1.0.0-0 and
+   * above), as in the schema JSON the engine hands to modules.
+   */
+  public static InputStream introspect(Class<?> anchorClass, String binPath)
+      throws IOException, InterruptedException {
+    byte[] schema = query(introspectionQuery(anchorClass), binPath).readAllBytes();
+    schema =
+        IdentifierFetcher.addIdentifiers(
+            schema,
+            graphql ->
+                query(new ByteArrayInputStream(graphql.getBytes(StandardCharsets.UTF_8)), binPath));
+    return new ByteArrayInputStream(schema);
   }
 
   public static InputStream introspectionQuery(Class<?> anchorClass) throws IOException {
