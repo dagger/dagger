@@ -95,7 +95,7 @@ func countingOCIRegistryService(c *dagger.Client) *core.Service {
 		WithNewFile("/src/main.go", countingOCIRegistrySource).
 		WithMountedCache("/tmp/go-cache", core.NewQuery(c).CacheVolume("counting-oci-registry-go-cache")).
 		WithEnvVariable("GOCACHE", "/tmp/go-cache").
-		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
+		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTCP}).
 		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
 		AsService()
 }

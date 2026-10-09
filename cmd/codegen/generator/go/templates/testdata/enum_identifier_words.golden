@@ -7,9 +7,9 @@ func (v ImageLayerCompression) Name() string {
 	switch v {
 	case ImageLayerCompressionGzip:
 		return "Gzip"
-	case ImageLayerCompressionEStarGz:
+	case ImageLayerCompressionEStarGZ:
 		return "EStarGZ"
-	case ImageLayerCompressionTcp:
+	case ImageLayerCompressionTCP:
 		return "TCP"
 	default:
 		return ""
@@ -40,11 +40,11 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 	case "":
 		*v = ""
 	case "EStarGZ":
-		*v = ImageLayerCompressionEStarGz
+		*v = ImageLayerCompressionEStarGZ
 	case "Gzip":
 		*v = ImageLayerCompressionGzip
 	case "TCP":
-		*v = ImageLayerCompressionTcp
+		*v = ImageLayerCompressionTCP
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
@@ -57,16 +57,19 @@ const (
 	// Deprecated: use ImageLayerCompressionGzip instead
 	Gzip ImageLayerCompression = ImageLayerCompressionGzip
 
-	ImageLayerCompressionEStarGz ImageLayerCompression = "EStarGZ"
+	ImageLayerCompressionEStarGZ ImageLayerCompression = "EStarGZ"
 
-	// Deprecated: use ImageLayerCompressionEStarGz instead
-	Estargz ImageLayerCompression = ImageLayerCompressionEStarGz
+	// Deprecated: use ImageLayerCompressionEStarGZ instead
+	Estargz ImageLayerCompression = ImageLayerCompressionEStarGZ
 
-	// Deprecated: use ImageLayerCompressionEStarGz instead.
-	ImageLayerCompressionEstarGz ImageLayerCompression = ImageLayerCompressionEStarGz
+	// Deprecated: use ImageLayerCompressionEStarGZ instead.
+	ImageLayerCompressionEstarGz ImageLayerCompression = ImageLayerCompressionEStarGZ
 
-	ImageLayerCompressionTcp ImageLayerCompression = "TCP"
+	ImageLayerCompressionTCP ImageLayerCompression = "TCP"
 
-	// Deprecated: use ImageLayerCompressionTcp instead
-	Tcp ImageLayerCompression = ImageLayerCompressionTcp
+	// Deprecated: use ImageLayerCompressionTCP instead
+	Tcp ImageLayerCompression = ImageLayerCompressionTCP
+
+	// Deprecated: use ImageLayerCompressionTCP instead.
+	ImageLayerCompressionTcp ImageLayerCompression = ImageLayerCompressionTCP
 )
