@@ -2465,6 +2465,9 @@ type Cache struct {
 	testBeforeShareFinish func(*ReadyPartReceipt)
 	// testBeforePartCommit sees every preparation as Commit receives it.
 	testBeforePartCommit func(*PreparedReadyPart)
+	// testInResultIDLookup runs inside sharedResultByResultID's session
+	// critical section, before the canonical-equivalent selection.
+	testInResultIDLookup func(*sharedResult)
 
 	closeOnce sync.Once
 	closeErr  error

@@ -7629,6 +7629,51 @@ func TestCacheResourceFilterRacesHandleBinding(t *testing.T) {
 	wg.Wait()
 }
 
+// resolvePath recovers a panic raised inside a cache critical section into a
+// call error and the engine keeps serving, so the panic must not leave
+// egraphMu held behind it.
+func TestCacheResultIDLookupPanicReleasesLock(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+
+	frame := cacheTestIntCall("lookup-panic")
+	res, err := c.GetOrInitCall(ctx, "producer", srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	assert.NilError(t, err)
+	resultID := uint64(res.cacheSharedResult().id)
+
+	c.testInResultIDLookup = func(*sharedResult) {
+		panic("cache-test panic in result ID lookup")
+	}
+	recovered := func() (r any) {
+		defer func() { r = recover() }()
+		_, _ = c.LoadResultByResultID(ctx, "panicked", srv, resultID)
+		return nil
+	}()
+	assert.Equal(t, recovered, "cache-test panic in result ID lookup")
+	c.testInResultIDLookup = nil
+
+	loaded := make(chan error, 1)
+	go func() {
+		_, err := c.LoadResultByResultID(ctx, "after-panic", srv, resultID)
+		loaded <- err
+	}()
+	select {
+	case err := <-loaded:
+		assert.NilError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("result ID lookup still blocked 10s after a recovered panic in an earlier lookup")
+	}
+
+	assert.NilError(t, c.ReleaseSession(ctx, "after-panic"))
+	assert.NilError(t, c.ReleaseSession(ctx, "producer"))
+}
+
 func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncestors(t *testing.T) {
 	t.Parallel()
 
