@@ -234,9 +234,18 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagge
 	if err != nil {
 		return nil, err
 	}
-	releaseTag, releaseVersion, err := publishCheckRelease(ctx, source, stable)
+	releaseTag, releaseVersion, err := publishCheckRelease(ctx, source)
 	if err != nil {
 		return nil, err
+	}
+	if stable && semver.Prerelease(releaseTag) != "" {
+		stableTag := strings.TrimSuffix(semver.Canonical(releaseTag), semver.Prerelease(releaseTag))
+		stableVersion := strings.TrimPrefix(stableTag, "v")
+		source, err = withPublishCheckVersion(ctx, source, releaseVersion, stableVersion)
+		if err != nil {
+			return nil, err
+		}
+		releaseTag, releaseVersion = stableTag, stableVersion
 	}
 
 	// A stable release reads release notes from a changelog file per published
@@ -383,7 +392,7 @@ git rev-parse HEAD
 	return env, nil
 }
 
-func publishCheckRelease(ctx context.Context, source *dagger.Directory, stable bool) (tag, version string, rerr error) {
+func publishCheckRelease(ctx context.Context, source *dagger.Directory) (tag, version string, rerr error) {
 	chartYaml, err := source.File("helm/dagger/Chart.yaml").Contents(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("read Helm chart metadata: %w", err)
@@ -406,10 +415,42 @@ func publishCheckRelease(ctx context.Context, source *dagger.Directory, stable b
 	if !semver.IsValid(tag) {
 		return "", "", fmt.Errorf("helm chart version %q does not produce a valid release tag", version)
 	}
-	if stable {
-		tag = strings.TrimSuffix(semver.Canonical(tag), semver.Prerelease(tag))
-	}
 	return tag, strings.TrimPrefix(tag, "v"), nil
+}
+
+// publishCheckVersionFiles are the files that name the release version in a
+// commit a release is cut from: internal/version/VERSION, the Go SDK file
+// generated from it, and the files the *-target-version generators own (the
+// Java SDK is left out because release doesn't publish it).
+var publishCheckVersionFiles = []string{
+	"internal/version/VERSION",
+	"sdk/go/engineconn/version.gen.go",
+	"helm/dagger/Chart.yaml",
+	"docs/current_docs/partials/version.js",
+	"sdk/python/src/dagger/_engine/_version.py",
+	"sdk/typescript/src/provisioning/default.ts",
+	"sdk/php/src/Connection/version.php",
+	"sdk/elixir/lib/dagger/core/version.ex",
+	"sdk/rust/crates/dagger-sdk/src/core/version.rs",
+	"sdk/rust/Cargo.toml",
+	"sdk/rust/Cargo.lock",
+}
+
+// withPublishCheckVersion makes source look like the commit a release of
+// version would be cut from, by replacing from with version in every
+// publishCheckVersionFiles entry.
+func withPublishCheckVersion(ctx context.Context, source *dagger.Directory, from, version string) (*dagger.Directory, error) {
+	for _, path := range publishCheckVersionFiles {
+		contents, err := source.File(path).Contents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read release version file: %w", err)
+		}
+		if !strings.Contains(contents, from) {
+			return nil, fmt.Errorf("release version file %s does not mention version %s", path, from)
+		}
+		source = source.WithNewFile(path, strings.ReplaceAll(contents, from, version))
+	}
+	return source, nil
 }
 
 func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service, error) {
@@ -1847,7 +1888,12 @@ func (env *publishCheckEnv) assertEngineVersion(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("check engine version in published image: %w", err)
 	}
-	return requireContains(version, env.releaseTag, "published engine binary should report release tag")
+	// dagger-engine --version prints "<version> <tag> <platform>".
+	lines := strings.Split(strings.TrimSpace(version), "\n")
+	if fields := strings.Fields(lines[len(lines)-1]); len(fields) == 0 || fields[0] != env.releaseTag {
+		return fmt.Errorf("published engine binary should report version %s, got %q", env.releaseTag, version)
+	}
+	return nil
 }
 
 func (env *publishCheckEnv) assertCLIVersion(ctx context.Context) error {
@@ -1863,7 +1909,12 @@ tar -xzf /tmp/dagger.tgz -C /tmp/dagger
 	if err != nil {
 		return fmt.Errorf("check CLI version in published archive: %w", err)
 	}
-	return requireContains(version, env.releaseTag, "published CLI binary should report release tag")
+	for _, line := range strings.Split(version, "\n") {
+		if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "version:" && fields[1] == env.releaseTag {
+			return nil
+		}
+	}
+	return fmt.Errorf("published CLI binary should report version %s, got %q", env.releaseTag, version)
 }
 
 func (env *publishCheckEnv) assertNpmVersion(
