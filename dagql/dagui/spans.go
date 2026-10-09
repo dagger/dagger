@@ -117,6 +117,9 @@ type Span struct {
 	// CallPayload into db.Calls and dropped it; Snapshot re-encodes it.
 	callPayloadElided bool
 
+	// updateQueued marks the span as listed in db.updatedSpans.
+	updateQueued bool
+
 	causesViaLinks  SpanSet
 	effectsViaLinks SpanSet
 

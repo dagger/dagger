@@ -162,10 +162,15 @@ type DB struct {
 	// to drive the status line's cost/context display.
 	LLMTokenMetrics *LLMTokenMetrics
 
-	// updatedSpans is a set of spans that have been updated since the last
+	// updatedSpans lists the spans that have been updated since the last
 	// sync, which includes any parent spans whose overall active time intervals
-	// or status were modified via a child or linked span.
-	updatedSpans SpanSet
+	// or status were modified via a child or linked span, in the order they
+	// were first updated. Span.updateQueued marks membership.
+	//
+	// Nothing drains it unless the DB serves a remote frontend through
+	// UpdatedSnapshots, so it ends up holding every span: a slice keeps that
+	// to a pointer apiece.
+	updatedSpans []*Span
 
 	// seenSpans keeps track of which spans have been observed via
 	// UpdatedSnapshots so that we can know whether we need to send them when we
@@ -268,8 +273,7 @@ func NewDB() *DB {
 
 		CreatorSpans: make(map[string]SpanSet),
 
-		updatedSpans: NewOrderedSet(spanKeyFunc),
-		seenSpans:    make(map[SpanID]struct{}),
+		seenSpans: make(map[SpanID]struct{}),
 
 		unsentAncestors: make(map[SpanID]struct{}),
 
@@ -293,7 +297,7 @@ func (db *DB) hasSeen(spanID SpanID) bool {
 func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 	// updatedSpans is kept in insertion order, since every span update lands
 	// in it; sort it by start time only here, when it's read
-	updated := slices.Clone(db.updatedSpans.Order)
+	updated := slices.Clone(db.updatedSpans)
 	slices.SortStableFunc(updated, func(a, b *Span) int {
 		return a.StartTime.Compare(b.StartTime)
 	})
@@ -375,7 +379,10 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			delete(db.unsentAncestors, snapshot.ID)
 		}
 	}
-	db.updatedSpans = NewOrderedSet(spanKeyFunc)
+	for _, span := range db.updatedSpans {
+		span.updateQueued = false
+	}
+	db.updatedSpans = nil
 	return snapshots
 }
 
@@ -475,7 +482,10 @@ func (db *DB) update(span *Span) {
 		return
 	}
 	span.Version++
-	db.updatedSpans.Add(span)
+	if !span.updateQueued {
+		span.updateQueued = true
+		db.updatedSpans = append(db.updatedSpans, span)
+	}
 }
 
 // Matches returns true if the span matches the filter, looking through
