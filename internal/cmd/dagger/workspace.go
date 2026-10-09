@@ -280,6 +280,7 @@ func init() {
 	workspaceCmd.AddCommand(workspaceRemoteCmd)
 	workspaceCmd.AddCommand(workspaceRemotesCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)
+	workspaceCmd.AddCommand(workspaceDoctorCmd)
 	workspaceCmd.AddCommand(workspaceUpdateCmd)
 
 	addWorkspaceHereFlag(workspaceConfigCmd)

@@ -269,9 +269,13 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 		}
 	}
 
-	ca, err := auth.GetCloudAuth(ctx)
-	if err != nil {
-		return params, err
+	ca, checked := ctx.Value(doctorCloudAuthKey{}).(*auth.Cloud)
+	if !checked {
+		var err error
+		ca, err = auth.GetCloudAuth(ctx)
+		if err != nil {
+			return params, err
+		}
 	}
 	params.CloudAuth = ca
 
@@ -351,11 +355,21 @@ func withSetupSessions(
 	ctx context.Context,
 	before func(context.Context),
 	fn func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) error,
-) (rerr error) {
-	params := client.Params{
+) error {
+	return withLazySessions(ctx, client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
-	}
+	}, before, fn)
+}
+
+// withLazySessions runs fn under one frontend and trace without connecting to
+// the engine. Each operation requests a session with params when it needs one.
+func withLazySessions(
+	ctx context.Context,
+	params client.Params,
+	before func(context.Context),
+	fn func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) error,
+) (rerr error) {
 	if err := applyWorkspaceClientParams(&params); err != nil {
 		return err
 	}
