@@ -78,6 +78,9 @@ func (m *inPlaceMounter) Mount() (string, error) {
 }
 
 func (m *inPlaceMounter) Unmount() error {
+	if m.store.BeforeLocalUnmount != nil {
+		m.store.BeforeLocalUnmount()
+	}
 	if m.root != "" {
 		m.root = ""
 		m.store.LocalUnmounts.Add(1)

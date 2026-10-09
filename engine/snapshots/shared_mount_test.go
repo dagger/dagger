@@ -233,6 +233,53 @@ func TestSharedMountShutdownDrain(t *testing.T) {
 	require.NoError(t, store.Manager.RemoveLease(ctx, idleOwner))
 }
 
+// Releasing the idle shared mounts, as each collection pass does first, and
+// waiting for background releases, as shutdown does, both wait for a mount
+// evicted earlier whose release is still running: until it finishes, its
+// view holds its snapshot.
+func TestSharedMountDrainWaitsForEvictions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	store.WithSharedMounts(t, time.Millisecond, 0)
+	entered, unblock := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	store.BeforeLocalUnmount = func() {
+		once.Do(func() {
+			close(entered)
+			<-unblock
+		})
+	}
+	ref, owner := buildSnapshot(t, store, nil, "a.txt", "a")
+	require.Equal(t, "a", readShared(t, ref, "a.txt"))
+	<-entered // the linger ran out and the eviction's unmount is running
+
+	releaser := mountReleaser(t, store)
+	idleReleased := make(chan error, 1)
+	go func() { idleReleased <- releaser.ReleaseIdleSharedMounts() }()
+	drained := make(chan struct{})
+	go func() {
+		releaser.WaitForBackgroundReleases()
+		close(drained)
+	}()
+	select {
+	case err := <-idleReleased:
+		close(unblock)
+		t.Fatalf("idle mounts released while an eviction was still running: %v", err)
+	case <-drained:
+		close(unblock)
+		t.Fatal("background releases drained while an eviction was still running")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(unblock)
+	require.NoError(t, <-idleReleased)
+	<-drained
+	require.Empty(t, viewLeases(t, store))
+
+	require.NoError(t, ref.Release(ctx))
+	require.NoError(t, store.Manager.RemoveLease(ctx, owner))
+}
+
 // A failed shared mount is not kept: its reader gets the error, and the next
 // reader mounts again.
 func TestSharedMountFailure(t *testing.T) {

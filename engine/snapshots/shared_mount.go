@@ -45,6 +45,10 @@ type sharedMounts struct {
 	// idle holds the mounts nobody uses, most recently used first.
 	idle   *list.List
 	closed bool
+	// evicting counts the mounts taken out of the set whose release has not
+	// finished; evicted is signaled when it drops to zero.
+	evicting int
+	evicted  *sync.Cond
 }
 
 type sharedMount struct {
@@ -70,13 +74,15 @@ func newSharedMounts(linger time.Duration, maxIdle int, release func(func() erro
 	if maxIdle <= 0 {
 		maxIdle = DefaultMaxIdleSharedMounts
 	}
-	return &sharedMounts{
+	s := &sharedMounts{
 		linger:  linger,
 		maxIdle: maxIdle,
 		release: release,
 		entries: map[string]*sharedMount{},
 		idle:    list.New(),
 	}
+	s.evicted = sync.NewCond(&s.mu)
+	return s
 }
 
 // acquire returns the shared mount for key, making it with open if no reader
@@ -149,12 +155,12 @@ func (s *sharedMounts) done(key string, m *sharedMount) {
 	for s.idle.Len() > s.maxIdle {
 		oldestKey := s.idle.Back().Value.(string)
 		oldest := s.entries[oldestKey]
-		s.removeIdleLocked(oldestKey, oldest)
+		s.evictLocked(oldestKey, oldest)
 		evicted = append(evicted, oldest)
 	}
 	s.mu.Unlock()
 	for _, m := range evicted {
-		s.release(m.unmount)
+		s.releaseEvicted(m)
 	}
 }
 
@@ -165,9 +171,31 @@ func (s *sharedMounts) expire(key string, m *sharedMount, gen uint64) {
 		s.mu.Unlock()
 		return
 	}
-	s.removeIdleLocked(key, m)
+	s.evictLocked(key, m)
 	s.mu.Unlock()
-	s.release(m.unmount)
+	s.releaseEvicted(m)
+}
+
+// evictLocked takes the idle mount m out of the set for releaseEvicted,
+// counting it until its release finishes.
+func (s *sharedMounts) evictLocked(key string, m *sharedMount) {
+	s.removeIdleLocked(key, m)
+	s.evicting++
+}
+
+// releaseEvicted releases the evicted mount m off the caller's path.
+func (s *sharedMounts) releaseEvicted(m *sharedMount) {
+	s.release(func() error {
+		defer func() {
+			s.mu.Lock()
+			s.evicting--
+			if s.evicting == 0 {
+				s.evicted.Broadcast()
+			}
+			s.mu.Unlock()
+		}()
+		return m.unmount()
+	})
 }
 
 // unidleLocked takes m off the idle list for a new reader.
@@ -188,8 +216,9 @@ func (s *sharedMounts) removeIdleLocked(key string, m *sharedMount) {
 	}
 }
 
-// releaseIdle releases every mount nobody uses before returning, so that
-// their views no longer hold their snapshots, as before garbage collection.
+// releaseIdle releases every mount nobody uses, and waits for the releases of
+// mounts already evicted, so that their views no longer hold their snapshots,
+// as before garbage collection.
 func (s *sharedMounts) releaseIdle() error {
 	s.mu.Lock()
 	var idle []*sharedMount
@@ -206,6 +235,11 @@ func (s *sharedMounts) releaseIdle() error {
 	for _, m := range idle {
 		errs = append(errs, m.unmount())
 	}
+	s.mu.Lock()
+	for s.evicting > 0 {
+		s.evicted.Wait()
+	}
+	s.mu.Unlock()
 	return errors.Join(errs...)
 }
 

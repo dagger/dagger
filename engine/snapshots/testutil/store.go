@@ -62,6 +62,8 @@ type Store struct {
 	// and unmounted; they are made in place, without privileges.
 	LocalMounts   atomic.Int64
 	LocalUnmounts atomic.Int64
+	// BeforeLocalUnmount runs before each of those unmounts.
+	BeforeLocalUnmount func()
 }
 
 func NewStore(t testing.TB) *Store {
