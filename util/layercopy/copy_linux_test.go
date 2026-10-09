@@ -693,3 +693,156 @@ func TestForgetSourceLinksBetweenCopies(t *testing.T) {
 		})
 	}
 }
+
+// filterTestTree is a source tree for the include-filter tests. Directories
+// end in a slash.
+var filterTestTree = []string{
+	"a/",
+	"a/b/",
+	"a/b/keep.txt",
+	"a/b/other.go",
+	"a/b/c/",
+	"a/b/c/deep.txt",
+	"a/skip.txt",
+	"a/sibling/",
+	"a/sibling/x/",
+	"a/sibling/x/y.txt",
+	"ab/",
+	"ab/z.txt",
+	"top.txt",
+	"other/",
+	"other/b/",
+	"other/b/keep.txt",
+}
+
+func writeFilterTestTree(t *testing.T, root string) {
+	t.Helper()
+	for _, p := range filterTestTree {
+		path := filepath.Join(root, p)
+		if strings.HasSuffix(p, "/") {
+			require.NoError(t, os.MkdirAll(path, 0o755))
+			continue
+		}
+		require.NoError(t, os.WriteFile(path, []byte(p), 0o644))
+	}
+}
+
+// filteredCopy copies srcRoot into a new destination with the given filter.
+// It returns the copied paths, directories ending in a slash, and the source
+// directories the copy read. If noPrune is set, the copy walks the whole tree,
+// as it did before include filters pruned directories.
+func filteredCopy(t *testing.T, srcRoot string, filter Filter, noPrune bool) (copied []string, read []string) {
+	t.Helper()
+
+	dstRoot := t.TempDir()
+	copier, err := NewCopier(Mount{Root: dstRoot})
+	require.NoError(t, err)
+
+	src, err := copier.sourceForCopy(Mount{Root: srcRoot})
+	require.NoError(t, err)
+	src.onReadDir = func(rel string) {
+		read = append(read, rel)
+	}
+	m, err := newMatcher(srcRoot, filter)
+	require.NoError(t, err)
+	if noPrune {
+		m.onlyPrefixIncludes = false
+	}
+	require.NoError(t, copier.copy(context.Background(), src, m, "/", "/out", CopyOptions{
+		Filter:          filter,
+		CopyDirContents: true,
+		ReplaceExisting: true,
+	}))
+	require.NoError(t, copier.Close())
+
+	outRoot := filepath.Join(dstRoot, "out")
+	require.NoError(t, filepath.WalkDir(outRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(outRoot, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		if d.IsDir() {
+			rel += "/"
+		}
+		copied = append(copied, rel)
+		return nil
+	}))
+	return copied, read
+}
+
+func TestCopyDirectoryIncludeSkipsNonMatchingDirs(t *testing.T) {
+	t.Parallel()
+
+	srcRoot := t.TempDir()
+	writeFilterTestTree(t, srcRoot)
+
+	copied, read := filteredCopy(t, srcRoot, Filter{
+		Include: []string{"a/b/keep.txt"},
+	}, false)
+	require.Equal(t, []string{"a/", "a/b/", "a/b/keep.txt"}, copied)
+	// Only the root and the directories on the way to the include pattern are
+	// read. The non-matching siblings a/b/c, a/sibling, ab and other are not.
+	require.ElementsMatch(t, []string{"", "a", "a/b"}, read)
+
+	copied, read = filteredCopy(t, srcRoot, Filter{
+		Include: []string{"a/b/*"},
+	}, false)
+	require.Equal(t, []string{"a/", "a/b/", "a/b/c/", "a/b/c/deep.txt", "a/b/keep.txt", "a/b/other.go"}, copied)
+	require.ElementsMatch(t, []string{"", "a", "a/b", "a/b/c"}, read)
+}
+
+func TestCopyDirectoryIncludePruningKeepsCopiedPaths(t *testing.T) {
+	t.Parallel()
+
+	srcRoot := t.TempDir()
+	writeFilterTestTree(t, srcRoot)
+
+	for _, tc := range []struct {
+		name   string
+		filter Filter
+		// prunes is whether the copy walks fewer directories than the full tree.
+		prunes bool
+	}{
+		{name: "literal file", filter: Filter{Include: []string{"a/b/keep.txt"}}, prunes: true},
+		{name: "literal dir", filter: Filter{Include: []string{"a/b"}}, prunes: true},
+		{name: "trailing star", filter: Filter{Include: []string{"a/b/*"}}, prunes: true},
+		{name: "trailing double star", filter: Filter{Include: []string{"a/**"}}, prunes: true},
+		{name: "dir name prefix of sibling", filter: Filter{Include: []string{"a"}}, prunes: true},
+		{name: "several literals", filter: Filter{Include: []string{"top.txt", "other/b"}}, prunes: true},
+		{name: "literal with exclude", filter: Filter{Include: []string{"a"}, Exclude: []string{"a/b/c"}}, prunes: true},
+		{name: "literal with negation", filter: Filter{Include: []string{"a", "!a/b"}}, prunes: true},
+		{name: "negation of a sibling", filter: Filter{Include: []string{"a/b/keep.txt", "!other"}}, prunes: true},
+		{name: "leading dot slash", filter: Filter{Include: []string{"./a/b/keep.txt"}}, prunes: true},
+		{name: "leading slash", filter: Filter{Include: []string{"/a/b/keep.txt"}}, prunes: true},
+		{name: "wildcard in dir", filter: Filter{Include: []string{"*/b/keep.txt"}}},
+		{name: "wildcard in name", filter: Filter{Include: []string{"a/b/*.go"}}},
+		{name: "question mark", filter: Filter{Include: []string{"a/?/keep.txt"}}},
+		{name: "character class", filter: Filter{Include: []string{"[ao]*/b"}}},
+		{name: "wildcard dir then trailing double star", filter: Filter{Include: []string{"a/*/**"}}},
+		{name: "trailing double star then star", filter: Filter{Include: []string{"a/**/*"}}},
+		{name: "double star in middle", filter: Filter{Include: []string{"a/**/deep.txt"}}},
+		{name: "leading double star", filter: Filter{Include: []string{"**/keep.txt"}}},
+		{name: "double star only", filter: Filter{Include: []string{"**"}}},
+		{name: "wildcard mixed with literal", filter: Filter{Include: []string{"top.txt", "*/x"}}},
+		{name: "wildcard with negation", filter: Filter{Include: []string{"**/*.txt", "!a/sibling"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			want, fullRead := filteredCopy(t, srcRoot, tc.filter, true)
+			got, read := filteredCopy(t, srcRoot, tc.filter, false)
+			require.Equal(t, want, got)
+			if tc.prunes {
+				require.Less(t, len(read), len(fullRead))
+			} else {
+				require.ElementsMatch(t, fullRead, read)
+			}
+		})
+	}
+}

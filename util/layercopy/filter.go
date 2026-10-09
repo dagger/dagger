@@ -3,6 +3,7 @@ package layercopy
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/dagger/dagger/util/fsxutil"
@@ -15,11 +16,20 @@ type matcher struct {
 	include     *patternmatcher.PatternMatcher
 	exclude     *patternmatcher.PatternMatcher
 	gitignore   *fsxutil.GitignoreMatcher
+
+	// onlyPrefixIncludes is true when every include pattern is a literal path,
+	// optionally followed by a trailing glob. Then a directory that matches no
+	// include pattern and is not a prefix of one cannot contain a match, so it
+	// does not need to be walked. This mirrors internal/fsutil's filterFS.
+	onlyPrefixIncludes bool
 }
 
 type matchState struct {
 	include patternmatcher.MatchInfo
 	exclude patternmatcher.MatchInfo
+
+	// includeMatched is whether the include patterns alone matched the path.
+	includeMatched bool
 }
 
 func newMatcher(_ string, filter Filter) (*matcher, error) {
@@ -44,6 +54,18 @@ func newMatcher(_ string, filter Filter) (*matcher, error) {
 			return nil, err
 		}
 		m.include = pm
+
+		patternChars := "*[]?^"
+		if filepath.Separator != '\\' {
+			patternChars += `\`
+		}
+		m.onlyPrefixIncludes = true
+		for _, p := range pm.Patterns() {
+			if !p.Exclusion() && strings.ContainsAny(patternWithoutTrailingGlob(p), patternChars) {
+				m.onlyPrefixIncludes = false
+				break
+			}
+		}
 	}
 	if len(filter.Exclude) > 0 {
 		pm, err := patternmatcher.New(filter.Exclude)
@@ -62,12 +84,43 @@ func newMatcher(_ string, filter Filter) (*matcher, error) {
 	return m, nil
 }
 
-func (m *matcher) shouldDescend(rel string) bool {
-	if m.only == nil {
+func (m *matcher) shouldDescend(rel string, state matchState) bool {
+	rel = cleanRel(rel)
+	if m.only != nil {
+		if _, ok := m.onlyParents[rel]; !ok {
+			return false
+		}
+	}
+	if rel == "" || m.include == nil || !m.onlyPrefixIncludes || state.includeMatched {
 		return true
 	}
-	_, ok := m.onlyParents[cleanRel(rel)]
-	return ok
+	// Same rule as internal/fsutil's filterFS: skip the directory unless some
+	// include pattern lies beneath it.
+	dirSlash := filepath.ToSlash(rel) + "/"
+	for _, pat := range m.include.Patterns() {
+		if pat.Exclusion() {
+			continue
+		}
+		patStr := filepath.ToSlash(patternWithoutTrailingGlob(pat)) + "/"
+		if strings.HasPrefix(patStr, dirSlash) {
+			return true
+		}
+	}
+	return false
+}
+
+// patternWithoutTrailingGlob is from internal/fsutil, except that it strips
+// only one trailing glob. Stripping both would turn "a/*/**" into "a", a
+// literal prefix that does not cover a/b.
+func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {
+	patStr := p.String()
+	// We use filepath.Separator here because patternmatcher.Pattern patterns
+	// get transformed to use the native path separator:
+	// https://github.com/moby/patternmatcher/blob/130b41bafc16209dc1b52a103fdac1decad04f1a/patternmatcher.go#L52
+	if trimmed, ok := strings.CutSuffix(patStr, string(filepath.Separator)+"**"); ok {
+		return trimmed
+	}
+	return strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
 }
 
 func (m *matcher) includePath(rel string, abs string, info os.FileInfo, parent matchState) (bool, matchState, error) {
@@ -87,6 +140,7 @@ func (m *matcher) includePath(rel string, abs string, info os.FileInfo, parent m
 			return false, state, err
 		}
 		state.include = includeInfo
+		state.includeMatched = matched
 		include = include && matched
 	}
 	if m.exclude != nil {

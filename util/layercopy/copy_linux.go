@@ -248,7 +248,7 @@ func (c *Copier) copyEntry(
 			childPending = append(childPending, pendingDir{entry: ent, destPath: destPath})
 		}
 
-		if !matcher.shouldDescend(ent.Rel) {
+		if !matcher.shouldDescend(ent.Rel, state) {
 			if include {
 				return c.dest.applyMetadataPath(realDirPath, &ent, opts)
 			}
