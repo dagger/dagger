@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Dagger\Codegen\Introspection;
 
 use DateTimeImmutable;
+use Dagger\Attribute\GraphQLType;
 use Dagger\Client\AbstractClient;
 use Dagger\Client\AbstractInputObject;
 use Dagger\Client\AbstractObject;
@@ -66,6 +67,7 @@ class NewCodegenVisitor extends CodeWriter
         }
 
         $scalarClass->setExtends(AbstractScalar::class);
+        $this->addGraphQLType($scalarClass, $type->name);
 
         $this->write($scalarClass);
     }
@@ -79,6 +81,7 @@ class NewCodegenVisitor extends CodeWriter
         if ($type->description !== null) {
             $inputObjectClass->addComment($type->description);
         }
+        $this->addGraphQLType($inputObjectClass, $type->name);
 
         $constructor = $inputObjectClass->addMethod('__construct');
 
@@ -112,6 +115,7 @@ class NewCodegenVisitor extends CodeWriter
         if ($type->description !== null) {
             $enumClass->addComment($type->description);
         }
+        $this->addGraphQLType($enumClass, $type->name);
 
         $caseNames = $this->enumCaseNames($type);
         foreach ($type->enumValues as $value) {
@@ -145,6 +149,7 @@ class NewCodegenVisitor extends CodeWriter
         if ($type->description !== null) {
             $objectClass->addComment($type->description);
         }
+        $this->addGraphQLType($objectClass, $type->name);
 
         if ($type->hasField('id')) {
             $objectClass->addImplement(IdAble::class);
@@ -178,6 +183,7 @@ class NewCodegenVisitor extends CodeWriter
         if ($type->description !== null) {
             $interfaceClass->addComment($type->description);
         }
+        $this->addGraphQLType($interfaceClass, $type->name);
 
         // Set parentTypeName on fields for ConvertID detection
         foreach ($type->fields as $field) {
@@ -199,6 +205,7 @@ class NewCodegenVisitor extends CodeWriter
         if ($type->description !== null) {
             $clientClass->addComment("Query-builder client for the {$type->name} interface.");
         }
+        $this->addGraphQLType($clientClass, $type->name);
 
         foreach ($type->fields as $field) {
             $this->generateObjectMethod($clientClass, $field, $type, true);
@@ -553,6 +560,20 @@ class NewCodegenVisitor extends CodeWriter
     }
 
     // ---- Formatting helpers ----
+
+    /**
+     * Names the GraphQL type a class stands for when its PHP name differs
+     * (JsonValue for JSONValue), so the runtime needn't guess it from the
+     * class name. Only for schemas with identifier words, so older schemas
+     * generate byte-identical code.
+     */
+    private function addGraphQLType(ClassType|EnumType|InterfaceType $class, string $graphQLTypeName): void
+    {
+        if ($this->identifiers === null || $class->getName() === $graphQLTypeName) {
+            return;
+        }
+        $class->addAttribute(GraphQLType::class, [$graphQLTypeName]);
+    }
 
     /**
      * The PHP name of the method generated for a field.

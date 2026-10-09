@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Dagger\Tests\Unit\Codegen;
 
+use Dagger\Attribute\GraphQLType;
 use Dagger\Codegen\Introspection\IntrospectionType;
 use Dagger\Codegen\Introspection\NewCodegenVisitor;
 use Dagger\Codegen\Naming\Identifiers;
@@ -146,6 +147,27 @@ class NewCodegenVisitorTest extends TestCase
         self::assertInstanceOf(EnumType::class, $legacy);
         self::assertSame(['Gzip', 'PerSession', 'GZIP', 'Default'], array_keys($legacy->getCases()));
         self::assertSame([], $legacy->getConstants());
+    }
+
+    #[Test]
+    public function itNamesGraphQLTypesOfRenamedClasses(): void
+    {
+        $jsonValue = IntrospectionType::fromArray(['kind' => 'OBJECT', 'name' => 'JSONValue', 'fields' => []]);
+        $artifacts = IntrospectionType::fromArray(['kind' => 'OBJECT', 'name' => 'Artifacts', 'fields' => []]);
+        $words = Identifiers::fromArray([]);
+
+        $class = $this->generate($jsonValue, $words);
+        self::assertSame('JsonValue', $class->getName());
+        $attributes = $class->getAttributes();
+        self::assertCount(1, $attributes);
+        self::assertSame(GraphQLType::class, $attributes[0]->getName());
+        self::assertSame(['JSONValue'], $attributes[0]->getArguments());
+
+        // named like the GraphQL type: nothing to say
+        self::assertSame([], $this->generate($artifacts, $words)->getAttributes());
+
+        // without words, the generated code stays as it was
+        self::assertSame([], $this->generate($jsonValue)->getAttributes());
     }
 
     private function generate(
