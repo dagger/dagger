@@ -23,7 +23,7 @@ type cliSessionConn struct {
 	childCancel context.CancelCauseFunc
 	childProc   *exec.Cmd
 	stderrBuf   *safeBuffer
-	ioWait      *sync.WaitGroup
+	logOutput   *drainingWriter
 }
 
 func (c *cliSessionConn) Host() string {
@@ -33,6 +33,8 @@ func (c *cliSessionConn) Host() string {
 func (c *cliSessionConn) Close() error {
 	if c.childCancel != nil && c.childProc != nil {
 		c.childCancel(errors.New("client closed"))
+		// Wait also waits for stderr to be copied to the log output, up to
+		// WaitDelay if a leftover subprocess still holds the pipe open.
 		err := c.childProc.Wait()
 		if err != nil {
 			// only context canceled is expected
@@ -40,10 +42,19 @@ func (c *cliSessionConn) Close() error {
 				return fmt.Errorf("close: %w\nstderr:\n%s", err, c.stderrBuf.String())
 			}
 		}
-		c.ioWait.Wait()
+		if err := c.logOutput.Err(); err != nil {
+			return fmt.Errorf("close: write log output: %w", err)
+		}
 	}
 	return nil
 }
+
+// sessionWaitDelay bounds how long Close waits for the session to exit and for
+// its stderr to be copied after stdin is closed. Tests may lower it.
+//
+// Set a long timeout to give time for any cache exports to pack layers up
+// which currently has to happen synchronously with the session.
+var sessionWaitDelay = 300 * time.Second // 5 mins
 
 func getSDKVersion() string {
 	version := "n/a"
@@ -146,7 +157,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	var stdout io.ReadCloser
 	var stderrBuf *safeBuffer
 	var childStdin io.WriteCloser
-	var ioWait *sync.WaitGroup
+	var logOutput *drainingWriter
 
 	if cfg.LogOutput != nil {
 		fmt.Fprintf(cfg.LogOutput, "Creating new Engine session... ")
@@ -163,11 +174,6 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 			return nil, err
 		}
 
-		stderrPipe, err := proc.StderrPipe()
-		if err != nil {
-			cmdCancel(fmt.Errorf("failed to create stderr pipe: %w", err))
-			return nil, err
-		}
 		if cfg.LogOutput == nil {
 			cfg.LogOutput = io.Discard
 		}
@@ -178,13 +184,11 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		// the user has to enable log output to see anything.
 		stderrBuf = &safeBuffer{}
 		discardableBuf := &discardableWriter{w: stderrBuf}
-		ioWait = new(sync.WaitGroup)
-		ioWait.Add(1)
-		go func() {
-			defer ioWait.Done()
-			io.Copy(io.MultiWriter(cfg.LogOutput, discardableBuf), stderrPipe)
-		}()
 		defer discardableBuf.Discard()
+		// Let os/exec copy stderr so that Wait does not return until all of it
+		// has been written to the log output.
+		logOutput = &drainingWriter{w: cfg.LogOutput}
+		proc.Stderr = io.MultiWriter(logOutput, discardableBuf)
 
 		// Open a stdin pipe with the child process. The engine-session shutsdown
 		// when it is closed. This is a platform-agnostic way of ensuring
@@ -199,9 +203,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		// chance to drain logs.
 		proc.Cancel = childStdin.Close
 
-		// Set a long timeout to give time for any cache exports to pack layers up
-		// which currently has to happen synchronously with the session.
-		proc.WaitDelay = 300 * time.Second // 5 mins
+		proc.WaitDelay = sessionWaitDelay
 
 		if err := proc.Start(); err != nil {
 			if strings.Contains(err.Error(), "text file busy") {
@@ -209,7 +211,6 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 				proc = nil
 				stdout.Close()
 				stdout = nil
-				stderrPipe.Close()
 				stderrBuf = nil
 				childStdin.Close()
 				childStdin = nil
@@ -283,8 +284,27 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		childCancel: cmdCancel,
 		childProc:   proc,
 		stderrBuf:   stderrBuf,
-		ioWait:      ioWait,
+		logOutput:   logOutput,
 	}, nil
+}
+
+// a writer that keeps accepting writes after the underlying writer fails, so
+// the session never blocks writing to stderr, and remembers the first error.
+// Only the os/exec stderr copier writes to it, and Err is read after Wait.
+type drainingWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (w *drainingWriter) Write(p []byte) (int, error) {
+	if w.err == nil {
+		_, w.err = w.w.Write(p)
+	}
+	return len(p), nil
+}
+
+func (w *drainingWriter) Err() error {
+	return w.err
 }
 
 // a writer that can later be turned into io.Discard
