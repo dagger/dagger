@@ -134,16 +134,24 @@ func (cm *cacheManager) SetCacheContext(ctx context.Context, md cache.RefMetadat
 		return errors.Errorf("invalid cachecontext: %T", cc)
 	}
 	if md.ID() != cc.md.ID() {
+		cc.mu.Lock()
+		if cc.txn != nil {
+			cc.commitActiveTransaction()
+		}
+		tree := cc.tree
+		cc.mu.Unlock()
 		cc = &cacheContext{
 			md:       cacheMetadata{md},
-			tree:     cci.(*cacheContext).tree,
+			tree:     tree,
 			dirtyMap: map[string]struct{}{},
 			linkMap:  map[string][][]byte{},
 		}
-	} else {
-		if err := cc.save(); err != nil {
-			return err
-		}
+	}
+	// Persist the tree on the destination metadata before publishing it in
+	// the LRU. Otherwise eviction loses imported hashes and a subsequent
+	// filesystem scan can give the same files a different digest.
+	if err := cc.save(); err != nil {
+		return err
 	}
 	cm.lruMu.Lock()
 	cm.lru.Add(md.ID(), cc)
