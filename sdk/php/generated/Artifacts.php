@@ -185,7 +185,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Remove artifacts selected by a DAG address.
      */
-    public function withoutURI(string $uri): Artifacts
+    public function withoutUri(string $uri): Artifacts
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUri');
         $innerQueryBuilder->setArgument('uri', $uri);
@@ -251,7 +251,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
      *
      * The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
      */
-    public function filterURI(string $uri): Artifacts
+    public function filterUri(string $uri): Artifacts
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterUri');
         $innerQueryBuilder->setArgument('uri', $uri);

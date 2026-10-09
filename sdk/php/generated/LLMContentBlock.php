@@ -43,7 +43,7 @@ class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, No
     /**
      * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
      */
-    public function callID(): string
+    public function callId(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('callId');
         return (string)$this->queryLeaf($leafQueryBuilder, 'callId');
