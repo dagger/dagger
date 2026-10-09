@@ -283,34 +283,40 @@ func (c *fakeIDConn) last(path string) string {
 // queryFieldPath returns the field names of a single-chain query such as
 // `query{a{b(x:"y"){c}}}`, skipping arguments and quoted strings.
 func queryFieldPath(q string) []string {
-	q = q[strings.Index(q, "{"):]
+	if i := strings.IndexByte(q, '{'); i >= 0 {
+		q = q[i:]
+	}
 	var fields []string
 	var name strings.Builder
 	depth := 0
 	inString := false
 	for i := 0; i < len(q); i++ {
 		ch := q[i]
-		switch {
-		case inString:
-			if ch == '\\' {
+		if inString {
+			switch ch {
+			case '\\':
 				i++
-			} else if ch == '"' {
+			case '"':
 				inString = false
 			}
-		case ch == '"':
+			continue
+		}
+		switch ch {
+		case '"':
 			inString = true
-		case ch == '(':
+		case '(':
 			depth++
-		case ch == ')':
+		case ')':
 			depth--
-		case depth > 0:
-		case ch == '{' || ch == '}' || ch == ' ':
-			if name.Len() > 0 {
+		case '{', '}', ' ':
+			if depth == 0 && name.Len() > 0 {
 				fields = append(fields, name.String())
 				name.Reset()
 			}
 		default:
-			name.WriteByte(ch)
+			if depth == 0 {
+				name.WriteByte(ch)
+			}
 		}
 	}
 	return fields
