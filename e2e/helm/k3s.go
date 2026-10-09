@@ -1,6 +1,7 @@
 package helm
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -11,7 +12,12 @@ type k3sCluster struct {
 	configCache *dagger.CacheVolume
 	service     *dagger.Service
 	config      *dagger.File
+	// configReader mounts configCache at /cache/k3s.
+	configReader *dagger.Container
 }
+
+// The k3s server log, in configCache.
+const k3sLogName = "k3s.log"
 
 func newK3S(dag *dagger.Client, name string) k3sCluster {
 	kubeconfigName := fmt.Sprintf("k3s-%d.yaml", time.Now().UnixNano())
@@ -46,19 +52,29 @@ func newK3S(dag *dagger.Client, name string) k3sCluster {
 		AsService(dagger.ContainerAsServiceOpts{
 			Args: []string{
 				"sh", "-c",
-				"k3s server --debug --bind-address $(ip route | grep src | awk '{print $NF}') --write-kubeconfig " + kubeconfigPath + " --disable traefik --disable metrics-server --egress-selector-mode=disabled",
+				"k3s server --debug --log /etc/rancher/k3s/" + k3sLogName + " --alsologtostderr --bind-address $(ip route | grep src | awk '{print $NF}') --write-kubeconfig " + kubeconfigPath + " --disable traefik --disable metrics-server --egress-selector-mode=disabled",
 			},
 			InsecureRootCapabilities: true,
 			UseEntrypoint:            true,
 		})
 
-	k3s.config = dag.Container().
+	k3s.configReader = dag.Container().
 		From("alpine").
+		WithMountedCache("/cache/k3s", k3s.configCache)
+
+	k3s.config = k3s.configReader.
 		WithEnvVariable("CACHE", time.Now().String()).
-		WithMountedCache("/cache/k3s", k3s.configCache).
 		WithExec([]string{"sh", "-c", waitForKubeconfig}).
 		WithExec([]string{"cp", kubeconfigCachePath, "k3s.yaml"}).
 		File("k3s.yaml")
 
 	return k3s
+}
+
+// serverLogTail returns the last warnings and errors in the k3s server log.
+func (k k3sCluster) serverLogTail(ctx context.Context) (string, error) {
+	return k.configReader.
+		WithEnvVariable("CACHE", time.Now().String()).
+		WithExec([]string{"sh", "-c", `grep -E 'level=(warning|error|fatal)|^[EWF][0-9]{4} ' /cache/k3s/` + k3sLogName + ` 2>&1 | tail -n 40`}).
+		Stdout(ctx)
 }
