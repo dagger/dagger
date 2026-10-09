@@ -115,7 +115,7 @@ func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Director
 		ctx, span := Tracer(ctx).Start(ctx, "git workspace pull", telemetry.Internal())
 		defer telemetry.EndWithCause(span, &rerr)
 		start := wcprof.NowNS()
-		err := source.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{source.Backend}, func(git *gitutil.GitCLI) error {
+		err := source.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{source.Backend}, func(ctx context.Context, git *gitutil.GitCLI) error {
 			url, err := git.URL(ctx)
 			if err != nil {
 				return err

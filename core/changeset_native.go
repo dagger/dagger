@@ -84,7 +84,7 @@ func TryNativeWorkspaceMerge(ctx context.Context, working, incoming *Changeset) 
 		return nil, true, err
 	}
 	var result *Directory
-	err := local.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
+	err := local.mount(ctx, 0, false, nil, func(ctx context.Context, source *gitutil.GitCLI) error {
 		out, err := source.Run(ctx, "rev-parse", "--absolute-git-dir")
 		if err != nil {
 			return err

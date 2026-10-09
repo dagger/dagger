@@ -42,7 +42,7 @@ func mountOwnedShallowHistory(ctx context.Context, refs []*GitRef, fn func(*gitu
 		}
 		anchor := local.repo.HistorySource.Self().Ref.SHA
 		handled := false
-		err = local.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
+		err = local.repo.mount(ctx, 0, false, nil, func(ctx context.Context, source *gitutil.GitCLI) error {
 			dir, err := local.repo.nativeGitDir(ctx, source.Dir())
 			if err != nil {
 				if nativeCommitFallback(err) {
@@ -206,7 +206,7 @@ func mountRefsWithLocalDonor(ctx context.Context, refs []*GitRef, fn func(*gitut
 			seen[repo] = true
 			// Raw storage: a complete-history mount of an owned checkout
 			// would hydrate through the remote, which this path avoids.
-			src := &donorHistorySource{mount: func(ctx context.Context, fn func(*gitutil.GitCLI) error) error {
+			src := &donorHistorySource{mount: func(ctx context.Context, fn func(context.Context, *gitutil.GitCLI) error) error {
 				return repo.mount(ctx, 0, false, nil, fn)
 			}}
 			if hs := repo.HistorySource.Self(); hs != nil {
@@ -250,7 +250,7 @@ func donorGitDir(ctx context.Context, root string) (string, error) {
 }
 
 type donorHistorySource struct {
-	mount func(context.Context, func(*gitutil.GitCLI) error) error
+	mount func(context.Context, func(context.Context, *gitutil.GitCLI) error) error
 	// gitDir validates the mounted storage and returns its git directory.
 	gitDir func(context.Context, string) (string, error)
 	// donor: complete local history that may cover other refs.
@@ -271,8 +271,8 @@ func joinDonorHistory(ctx context.Context, sources []*donorHistorySource, needed
 	var donors []*gitutil.GitCLI
 	anchors := make([]string, len(sources))
 	handled := false
-	var mountNext func(int) error
-	mountNext = func(i int) error {
+	var mountNext func(context.Context, int) error
+	mountNext = func(ctx context.Context, i int) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -292,7 +292,7 @@ func joinDonorHistory(ctx context.Context, sources []*donorHistorySource, needed
 			})
 		}
 		src := sources[i]
-		return src.mount(ctx, func(git *gitutil.GitCLI) error {
+		return src.mount(ctx, func(ctx context.Context, git *gitutil.GitCLI) error {
 			dir, err := src.gitDir(ctx, git.Dir())
 			if err != nil {
 				if nativeCommitFallback(err) {
@@ -315,10 +315,10 @@ func joinDonorHistory(ctx context.Context, sources []*donorHistorySource, needed
 				}
 			}
 			objects = append(objects, filepath.Join(dir, "objects"))
-			return mountNext(i + 1)
+			return mountNext(ctx, i+1)
 		})
 	}
-	err := mountNext(0)
+	err := mountNext(ctx, 0)
 	return handled, err
 }
 
@@ -358,7 +358,7 @@ func nativeParentHistoryRefs(ctx context.Context, refs []*GitRef) ([]*GitRef, er
 			continue
 		}
 		valid := false
-		err = local.repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		err = local.repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 			var err error
 			valid, err = validateNativeParentHistory(ctx, git, remote.Ref.SHA, candidate.Ref.SHA)
 			return err

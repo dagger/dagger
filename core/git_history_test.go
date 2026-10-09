@@ -26,13 +26,13 @@ type historyTestRef struct {
 	err  error
 }
 
-func (ref *historyTestRef) mount(ctx context.Context, depth int, tags bool, fn func(*gitutil.GitCLI) error) error {
+func (ref *historyTestRef) mount(ctx context.Context, depth int, tags bool, fn func(context.Context, *gitutil.GitCLI) error) error {
 	if ref.err != nil {
 		return ref.err
 	}
 	ref.held = true
 	defer func() { ref.held = false }()
-	return fn(ref.git)
+	return fn(ctx, ref.git)
 }
 
 func historyRef(dir, sha string) *GitRef {

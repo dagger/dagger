@@ -79,7 +79,7 @@ func (ref *LocalGitRef) incrementalTree(ctx context.Context, srv *dagql.Server) 
 		return nil, false, "", err
 	}
 	var result *Directory
-	err = ref.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) (rerr error) {
+	err = ref.repo.mount(ctx, 0, false, nil, func(ctx context.Context, source *gitutil.GitCLI) (rerr error) {
 		if _, err := ref.repo.nativeGitDir(ctx, source.Dir()); err != nil {
 			return err
 		}

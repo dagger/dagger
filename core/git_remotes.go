@@ -80,7 +80,7 @@ func (repo *GitRepository) ConfiguredRemotes(ctx context.Context) ([]GitRemote, 
 	var upstream string
 	switch backend := repo.Backend.(type) {
 	case *LocalGitRepository:
-		err := backend.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		err := backend.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 			var err error
 			remotes, err = readGitConfigRemotes(ctx, git)
 			if err != nil {
@@ -256,7 +256,7 @@ func (ref *GitRef) Contains(ctx context.Context, other *GitRef) (bool, error) {
 	}
 	var contains bool
 	refs := []*GitRef{ref, other}
-	err := mountRefs(ctx, refs, func(git *gitutil.GitCLI, shas []string) error {
+	err := mountRefs(ctx, refs, func(ctx context.Context, git *gitutil.GitCLI, shas []string) error {
 		var err error
 		contains, err = gitContains(ctx, git, shas[0], shas[1])
 		return err
@@ -296,7 +296,7 @@ func containsWithFullHistory(ctx context.Context, refs []*GitRef) (bool, error) 
 		}
 		seen[local.repo] = true
 		upstream := local.repo.Upstream
-		err := local.repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		err := local.repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 			boundaries, err := gitShallowBoundaries(ctx, git)
 			if err != nil {
 				return err
@@ -327,7 +327,7 @@ func containsWithFullHistory(ctx context.Context, refs []*GitRef) (bool, error) 
 		if !slices.Contains(boundaries, ref.Ref.SHA) {
 			continue // An earlier fetch may have completed this boundary too.
 		}
-		err = ref.Backend.mount(ctx, 0, false, func(source *gitutil.GitCLI) error {
+		err = ref.Backend.mount(ctx, 0, false, func(ctx context.Context, source *gitutil.GitCLI) error {
 			url, err := source.URL(ctx)
 			if err != nil {
 				return err

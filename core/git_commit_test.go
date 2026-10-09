@@ -572,10 +572,10 @@ func TestGitNativeCommitStorageEligibility(t *testing.T) {
 
 type boundedGitLogBackend struct {
 	GitRefBackend
-	mountFn func(context.Context, int, bool, func(*gitutil.GitCLI) error) error
+	mountFn func(context.Context, int, bool, func(context.Context, *gitutil.GitCLI) error) error
 }
 
-func (b boundedGitLogBackend) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+func (b boundedGitLogBackend) mount(ctx context.Context, depth int, includeTags bool, fn func(context.Context, *gitutil.GitCLI) error) error {
 	return b.mountFn(ctx, depth, includeTags, fn)
 }
 
@@ -659,11 +659,11 @@ func TestGitLogBoundedHistory(t *testing.T) {
 				return cmd.Run()
 			}))
 			var depths []int
-			backend := boundedGitLogBackend{mountFn: func(ctx context.Context, depth int, tags bool, fn func(*gitutil.GitCLI) error) error {
+			backend := boundedGitLogBackend{mountFn: func(ctx context.Context, depth int, tags bool, fn func(context.Context, *gitutil.GitCLI) error) error {
 				depths = append(depths, depth)
 				require.False(t, tags)
 				gitMirrorTestFetch(t, repo, git, tc.sha, depth)
-				return fn(git)
+				return fn(ctx, git)
 			}}
 			ref := &GitRef{Backend: backend, Ref: &gitutil.Ref{SHA: tc.sha}}
 			commits, err := ref.Log(ctx, GitLogOptions{Limit: tc.limit, Paths: tc.paths})

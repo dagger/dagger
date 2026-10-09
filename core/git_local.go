@@ -150,7 +150,7 @@ func (repo *LocalGitRepository) Get(ctx context.Context, ref *gitutil.Ref) (GitR
 
 func (repo *LocalGitRepository) Remote(ctx context.Context) (*gitutil.Remote, error) {
 	var remote *gitutil.Remote
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err := repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 		gitURL, err := git.URL(ctx)
 		if err != nil {
 			return err
@@ -189,7 +189,7 @@ func (repo *LocalGitRepository) ResolveShortSHA(ctx context.Context, prefix stri
 // never hydrates.
 func (repo *LocalGitRepository) resolveShortSHA(ctx context.Context, prefix string) (string, error) {
 	var sha string
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err := repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 		var err error
 		sha, err = git.ResolveShortSHA(ctx, prefix)
 		return err
@@ -204,7 +204,7 @@ func (repo *LocalGitRepository) resolveShortSHA(ctx context.Context, prefix stri
 // It never hydrates: a commit beyond an owned shallow boundary is absent.
 func (repo *LocalGitRepository) HasCommit(ctx context.Context, sha string) (bool, error) {
 	var has bool
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err := repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 		// --quiet: a missing commit is an answer, not an error worth logging.
 		out, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", "--quiet", sha+"^{commit}")
 		if err != nil {
@@ -218,7 +218,7 @@ func (repo *LocalGitRepository) HasCommit(ctx context.Context, sha string) (bool
 
 func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*File, error) {
 	var gitDir string
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err := repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 		dir, err := git.GitDir(ctx)
 		if err != nil {
 			return err
@@ -389,7 +389,7 @@ func withTemporaryGitIndex(idx io.Reader, tmp *os.File, run func(string) error) 
 	return run(tmp.Name())
 }
 
-func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
+func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(context.Context, *gitutil.GitCLI) error) error {
 	// A nil refs list is a raw-storage request (identity, staging, validation).
 	// Bundle/push/export callers explicitly request refs and complete history.
 	if len(refs) > 0 && repo.HistorySource.Self() != nil {
@@ -429,11 +429,11 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTag
 		}
 
 		git := gitutil.NewGitCLI(gitutil.WithDir(src))
-		return fn(git)
+		return fn(ctx, git)
 	}, mountRefAsReadOnly)
 }
 
-func (ref *LocalGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+func (ref *LocalGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(context.Context, *gitutil.GitCLI) error) error {
 	return ref.mountHistory(ctx, depth, includeTags, fn)
 }
 
@@ -571,7 +571,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 	if discardGitDir {
 		mountDepth = 1
 	}
-	err = ref.mount(ctx, mountDepth, includeTags, func(git *gitutil.GitCLI) error {
+	err = ref.mount(ctx, mountDepth, includeTags, func(ctx context.Context, git *gitutil.GitCLI) error {
 		gitURL, err := git.URL(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find git url: %w", err)

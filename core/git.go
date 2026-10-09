@@ -150,8 +150,11 @@ type GitRepositoryBackend interface {
 	// Cleaned returns a Directory representing the repository with all uncommitted changes discarded.
 	Cleaned(ctx context.Context) (dagql.ObjectResult[*Directory], error)
 
-	// mount mounts the repository with the provided refs and executes the given function.
-	mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
+	// mount mounts the repository with the provided refs and executes the
+	// given function. fn receives the context to do its work in: it descends
+	// from ctx and carries the telemetry of whatever mount holds while fn
+	// runs (e.g. a remote mirror's lock), so work done in fn nests under it.
+	mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(context.Context, *gitutil.GitCLI) error) error
 }
 
 type GitRef struct {
@@ -186,7 +189,9 @@ type GitCommitMetadata struct {
 type GitRefBackend interface {
 	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (checkout *Directory, err error)
 
-	mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error
+	// mount mounts the ref and executes the given function with a context
+	// descending from ctx, as GitRepositoryBackend.mount does.
+	mount(ctx context.Context, depth int, includeTags bool, fn func(context.Context, *gitutil.GitCLI) error) error
 }
 
 // SelectLatestGitRef selects the greatest stable release tag in remote after
@@ -368,7 +373,7 @@ func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRe
 		return nil, err
 	}
 	if local, ok := backend.(*LocalGitRepository); ok {
-		err := local.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		err := local.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 			var err error
 			repo.Remotes, repo.UpstreamRemote, err = readGitRemoteSelection(ctx, git)
 			return err
@@ -446,7 +451,7 @@ func (repo *GitRepository) WalkRevision(ctx context.Context, base *gitutil.Ref, 
 		return "", err
 	}
 	walk := func(depth int) (sha string, err error) {
-		err = backend.mount(ctx, depth, false, func(git *gitutil.GitCLI) error {
+		err = backend.mount(ctx, depth, false, func(ctx context.Context, git *gitutil.GitCLI) error {
 			var err error
 			sha, err = git.WalkRevision(ctx, rev, base.SHA)
 			return err
@@ -1180,7 +1185,7 @@ func (commit *GitCommit) Metadata(ctx context.Context) (*GitCommitMetadata, erro
 	}
 
 	var out []byte
-	err := commit.Backend.mount(ctx, 1, false, func(git *gitutil.GitCLI) error {
+	err := commit.Backend.mount(ctx, 1, false, func(ctx context.Context, git *gitutil.GitCLI) error {
 		var err error
 		out, err = git.Run(ctx, "cat-file", "commit", commit.Ref.SHA)
 		return err
@@ -1212,18 +1217,18 @@ func (commit *GitCommit) PrefillMetadata(meta *GitCommitMetadata) {
 }
 
 func (commit *GitCommit) prefetch(ctx context.Context, depth int, includeTags bool) error {
-	return commit.Mount(ctx, depth, includeTags, func(*gitutil.GitCLI) error {
-		return nil
-	})
+	return commit.Mount(ctx, depth, includeTags, nil)
 }
 
-// Mount mounts the commit's repository with this commit available at the requested depth.
-func (commit *GitCommit) Mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+// Mount mounts the commit's repository with this commit available at the
+// requested depth, running fn with a context descending from ctx (see
+// GitRepositoryBackend.mount).
+func (commit *GitCommit) Mount(ctx context.Context, depth int, includeTags bool, fn func(context.Context, *gitutil.GitCLI) error) error {
 	if commit == nil || commit.Backend == nil {
 		return fmt.Errorf("git commit: missing backend")
 	}
 	if fn == nil {
-		fn = func(*gitutil.GitCLI) error { return nil }
+		fn = func(context.Context, *gitutil.GitCLI) error { return nil }
 	}
 	return commit.Backend.mount(ctx, depth, includeTags, fn)
 }
@@ -1372,9 +1377,23 @@ func doGitCheckout(
 	depth int,
 	discardGitDir bool,
 ) error {
-	_, err := checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
+	tmpref, err := fetchGitCheckout(ctx, checkoutGit, cloneURL, ref, depth)
 	if err != nil {
 		return err
+	}
+	return finishGitCheckout(ctx, checkoutGit, remotes, cloneURL, ref, discardGitDir, tmpref, gitCheckoutFresh)
+}
+
+// fetchGitCheckout initializes the checkout and copies ref's objects from
+// cloneURL into a temporary ref. This is the only phase of a checkout that
+// reads the source: a caller borrowing a locked mirror only needs to hold it
+// until this returns. Fetching from a file:// URL goes through the pack
+// transport, so the checkout owns full copies of its objects, with no
+// alternates or hardlinks back to the source.
+func fetchGitCheckout(ctx context.Context, checkoutGit *gitutil.GitCLI, cloneURL string, ref *gitutil.Ref, depth int) (string, error) {
+	_, err := checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
+	if err != nil {
+		return "", err
 	}
 
 	tmpref := "refs/dagger.tmp/" + identity.NewID()
@@ -1390,17 +1409,18 @@ func doGitCheckout(
 	args = append(args, ref.SHA+":"+tmpref)
 	_, err = checkoutGit.Run(ctx, args...)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return finishGitCheckout(ctx, checkoutGit, remotes, cloneURL, ref, discardGitDir, tmpref, gitCheckoutFresh)
+	return tmpref, nil
 }
 
 // gitCheckoutReuse says what a checkout inherits rather than writes itself.
 type gitCheckoutReuse int
 
 const (
-	// gitCheckoutFresh: the caller fetched the objects into an empty
-	// repository; finishGitCheckout writes everything else.
+	// gitCheckoutFresh: the caller copied the objects into an empty
+	// repository (fetchGitCheckout, or copyGitCheckout from a locked
+	// mirror); finishGitCheckout writes everything else.
 	gitCheckoutFresh gitCheckoutReuse = iota
 	// gitCheckoutInheritedObjects: the object database was not written by
 	// this checkout (see cowGitCheckout). Its files keep their timestamps,
@@ -1416,8 +1436,150 @@ const (
 	gitCheckoutInheritedWorktree
 )
 
+// copyGitCheckout is fetchGitCheckout from a borrowed source repository (a
+// remote's mirror, under its lock). A full-history checkout copies its
+// objects with pack-objects instead (see packGitClosure), falling back to the
+// fetch on any failure; gitDir, the checkout's git directory, is discarded
+// whole before the fallback. The result is the same either way: ref's
+// history in the checkout's own object database under the returned tmpref,
+// and the tags a fetch would have followed. method reports which copy ran.
+func copyGitCheckout(ctx context.Context, checkoutGit, source *gitutil.GitCLI, gitDir string, ref *gitutil.Ref, depth int) (tmpref, method string, _ error) {
+	sourceURL, err := source.URL(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("could not find git dir: %w", err)
+	}
+	var pack, discard func(context.Context) error
+	if depth <= 0 {
+		pack = func(ctx context.Context) (err error) {
+			tmpref, err = packGitCheckout(ctx, checkoutGit, source, ref)
+			return err
+		}
+		discard = func(context.Context) error {
+			tmpref = ""
+			return os.RemoveAll(gitDir)
+		}
+	}
+	method, err = copyGitObjects(ctx, "checkout", pack, discard, func(ctx context.Context) (err error) {
+		tmpref, err = fetchGitCheckout(ctx, checkoutGit, sourceURL, ref, depth)
+		return err
+	})
+	return tmpref, method, err
+}
+
+// packGitCheckout initializes the checkout like fetchGitCheckout and gives it
+// ref's complete history with pack-objects, plus what the fetch's tag
+// auto-following would have added: every tag in source whose peeled object
+// is in that history, as refs/tags/<name> with its tag object. Refs are only
+// written, in one transaction, once all objects are in place.
+func packGitCheckout(ctx context.Context, checkoutGit, source *gitutil.GitCLI, ref *gitutil.Ref) (string, error) {
+	if _, err := checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init"); err != nil {
+		return "", err
+	}
+	copier, err := newGitPackCopy(ctx, checkoutGit, source)
+	if err != nil {
+		return "", err
+	}
+	// List the tags first: a source the copy cannot follow tags from falls
+	// back to the fetch before packing a history it would throw away.
+	candidates, err := gitTagCandidates(ctx, source)
+	if err != nil {
+		return "", err
+	}
+	if err := copier.pack(ctx, []string{ref.SHA}, true); err != nil {
+		return "", err
+	}
+	tags, err := gitFollowedTags(ctx, checkoutGit, candidates)
+	if err != nil {
+		return "", err
+	}
+	var tagObjects []string
+	for _, tag := range tags {
+		if tag.annotated {
+			tagObjects = append(tagObjects, tag.oid)
+		}
+	}
+	if len(tagObjects) > 0 {
+		if err := copier.pack(ctx, tagObjects, false); err != nil {
+			return "", fmt.Errorf("pack followed tags: %w", err)
+		}
+	}
+	tmpref := "refs/dagger.tmp/" + identity.NewID()
+	var updates strings.Builder
+	updates.WriteString("create " + tmpref + " " + ref.SHA + "\n")
+	for _, tag := range tags {
+		updates.WriteString("create " + tag.name + " " + tag.oid + "\n")
+	}
+	if _, err := checkoutGit.RunWithStdin(ctx, strings.NewReader(updates.String()), "update-ref", "--stdin"); err != nil {
+		return "", err
+	}
+	return tmpref, nil
+}
+
+type gitFollowedTag struct {
+	name      string
+	oid       string
+	annotated bool
+	// peeled is the object the tag points at, through its tag object.
+	peeled string
+}
+
+// gitTagCandidates lists every tag in source, with the object each peels to.
+// It refuses tags of tags, which only the fetch follows.
+func gitTagCandidates(ctx context.Context, source *gitutil.GitCLI) ([]gitFollowedTag, error) {
+	// %(object)/%(type) name what an annotated tag points at directly, and
+	// %(*objectname) what it peels to. Ref names cannot contain spaces, so
+	// splitting keeps a lightweight tag's empty fields in place.
+	out, err := source.Run(ctx, "for-each-ref", "--format=%(objectname) %(objecttype) %(type) %(*objectname) %(refname)", "refs/tags/")
+	if err != nil {
+		return nil, err
+	}
+	var candidates []gitFollowedTag
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, " ")
+		if len(fields) != 5 {
+			return nil, fmt.Errorf("unexpected tag listing %q", line)
+		}
+		tag := gitFollowedTag{name: fields[4], oid: fields[0], peeled: fields[0]}
+		if fields[1] == "tag" {
+			if fields[2] == "tag" {
+				return nil, fmt.Errorf("tag %s points at another tag", tag.name)
+			}
+			tag.annotated = true
+			tag.peeled = fields[3]
+		}
+		candidates = append(candidates, tag)
+	}
+	return candidates, nil
+}
+
+// gitFollowedTags selects the candidates a fetch into dest would follow
+// automatically: those whose peeled object dest now has.
+func gitFollowedTags(ctx context.Context, dest *gitutil.GitCLI, candidates []gitFollowedTag) ([]gitFollowedTag, error) {
+	peeled := make([]string, len(candidates))
+	for i, tag := range candidates {
+		peeled[i] = tag.peeled
+	}
+	present, err := gitObjectsPresent(ctx, dest, peeled)
+	if err != nil {
+		return nil, err
+	}
+	var tags []gitFollowedTag
+	for _, tag := range candidates {
+		if present[tag.peeled] {
+			tags = append(tags, tag)
+		}
+	}
+	return tags, nil
+}
+
 // finishGitCheckout materializes a ref whose objects are already available.
 // tmpref is set only when the caller fetched the objects into a temporary ref.
+// cloneURL is only used in error messages. After fetchGitCheckout (or
+// copyGitCheckout) the checkout owns its objects, so this may run after a
+// borrowed mirror has been released.
 //
 //nolint:gocyclo // one sequence of checkout steps, each skipped per inheritance mode; splitting hides their order
 func finishGitCheckout(
@@ -1659,14 +1821,15 @@ func writeGitCheckoutRemote(ctx context.Context, checkoutGit *gitutil.GitCLI, re
 //
 // Refs sharing a repository are mounted together. Refs from different local
 // repositories share their cached objects read-only; others use refJoin.
-func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI, shas []string) error) error {
+// fn runs with the context of the mount that holds the objects it reads.
+func mountRefs(ctx context.Context, refs []*GitRef, fn func(ctx context.Context, git *gitutil.GitCLI, shas []string) error) error {
 	if len(refs) == 0 {
 		return fmt.Errorf("mount refs: no refs given")
 	}
 	// A single ref needs neither repository identity nor a joined object store.
 	if len(refs) == 1 {
-		return refs[0].Backend.mount(ctx, 0, false, func(git *gitutil.GitCLI) error {
-			return fn(git, []string{refs[0].Ref.SHA})
+		return refs[0].Backend.mount(ctx, 0, false, func(ctx context.Context, git *gitutil.GitCLI) error {
+			return fn(ctx, git, []string{refs[0].Ref.SHA})
 		})
 	}
 
@@ -1691,15 +1854,20 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 
 	if sameRepo { // fast-path, just grab all the refs from the same repo
 		// depth 0 = full fetch, so that history is available
-		return refs[0].Repo.Self().Backend.mount(ctx, 0, false, backends, func(git *gitutil.GitCLI) error {
-			return fn(git, shas)
+		return refs[0].Repo.Self().Backend.mount(ctx, 0, false, backends, func(ctx context.Context, git *gitutil.GitCLI) error {
+			return fn(ctx, git, shas)
 		})
 	}
 
-	if handled, err := mountOwnedShallowHistory(ctx, refs, fn); err != nil || handled {
+	// The paths below only borrow local object stores or private joins:
+	// their reads hold no mount whose telemetry fn needs to nest under.
+	localFn := func(git *gitutil.GitCLI, shas []string) error {
+		return fn(ctx, git, shas)
+	}
+	if handled, err := mountOwnedShallowHistory(ctx, refs, localFn); err != nil || handled {
 		return err
 	}
-	if handled, err := mountRefsWithLocalDonor(ctx, refs, fn); err != nil || handled {
+	if handled, err := mountRefsWithLocalDonor(ctx, refs, localFn); err != nil || handled {
 		return err
 	}
 	historyRefs, err := nativeParentHistoryRefs(ctx, refs)
@@ -1714,7 +1882,7 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 		}
 	}
 	if allLocal {
-		err := mountCachedGitRefs(ctx, historyRefs, fn)
+		err := mountCachedGitRefs(ctx, historyRefs, localFn)
 		if !errors.Is(err, errShallowCachedGitHistory) {
 			return err
 		}
@@ -1726,12 +1894,12 @@ func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI,
 	}
 	defer cleanup()
 
-	return fn(git, shas)
+	return fn(ctx, git, shas)
 }
 
 func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error) {
 	var mergeBase string
-	err := mountRefs(ctx, []*GitRef{ref1, ref2}, func(git *gitutil.GitCLI, shas []string) error {
+	err := mountRefs(ctx, []*GitRef{ref1, ref2}, func(ctx context.Context, git *gitutil.GitCLI, shas []string) error {
 		out, err := git.Run(ctx, append([]string{"merge-base"}, shas...)...)
 		if err != nil {
 			return fmt.Errorf("git merge-base failed: %w", err)
@@ -1784,7 +1952,7 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 	bounded := opts.Base == nil && len(opts.Paths) == 0
 	_, local := ref.Backend.(*LocalGitRef)
 	needsFullHistory := false
-	readLog := func(git *gitutil.GitCLI, shas []string) error {
+	readLog := func(ctx context.Context, git *gitutil.GitCLI, shas []string) error {
 		args := []string{"rev-list", "-n", strconv.Itoa(opts.Limit), shas[0]}
 		if len(shas) > 1 {
 			args = append(args, "^"+shas[1])
@@ -1829,8 +1997,8 @@ func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMet
 	if bounded {
 		// Avoid unshallowing an entire remote just to read a short log. Path
 		// filters and base exclusions need full history.
-		err = ref.Backend.mount(ctx, opts.Limit, false, func(git *gitutil.GitCLI) error {
-			return readLog(git, []string{ref.Ref.SHA})
+		err = ref.Backend.mount(ctx, opts.Limit, false, func(ctx context.Context, git *gitutil.GitCLI) error {
+			return readLog(ctx, git, []string{ref.Ref.SHA})
 		})
 	} else {
 		needsFullHistory = true
@@ -1888,8 +2056,8 @@ func mountCachedGitRefs(ctx context.Context, refs []*GitRef, fn func(*gitutil.Gi
 	var objects []string
 	var shas []string
 	var objectFormat string
-	var mountNext func(int) error
-	mountNext = func(i int) error {
+	var mountNext func(context.Context, int) error
+	mountNext = func(ctx context.Context, i int) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -1898,7 +2066,7 @@ func mountCachedGitRefs(ctx context.Context, refs []*GitRef, fn func(*gitutil.Gi
 				return fn(git, shas)
 			})
 		}
-		return refs[i].Backend.mount(ctx, 0, false, func(git *gitutil.GitCLI) error {
+		return refs[i].Backend.mount(ctx, 0, false, func(ctx context.Context, git *gitutil.GitCLI) error {
 			shallow, err := git.Run(ctx, "rev-parse", "--is-shallow-repository")
 			if err != nil {
 				return err
@@ -1926,10 +2094,10 @@ func mountCachedGitRefs(ctx context.Context, refs []*GitRef, fn func(*gitutil.Gi
 			}
 			objects = append(objects, strings.TrimSuffix(string(path), "\n"))
 			shas = append(shas, refs[i].Ref.SHA)
-			return mountNext(i + 1)
+			return mountNext(ctx, i+1)
 		})
 	}
-	return mountNext(0)
+	return mountNext(ctx, 0)
 }
 
 // withGitObjectView creates only private repository metadata. Every source
@@ -1989,15 +2157,17 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 	eg, egCtx := errgroup.WithContext(ctx)
 	mu := sync.Mutex{} // cannot simultaneously add+fetch remotes
 	commits := make([]string, len(refs))
-	// Fetching a commit ID writes no ref, and fetch negotiates only from refs
-	// unless told otherwise: without these tips, every fetch after the first
-	// would claim to have nothing and receive the whole shared history again.
-	var fetched []string
+	// Commits whose history git already owns, guarded by mu. Fetching or
+	// packing a commit ID writes no ref, so these are what later copies
+	// exclude (the pack) or negotiate from (the fetch fallback).
+	var joined []string
 
 	for i, ref := range refs {
 		eg.Go(func() error {
 			commits[i] = ref.Ref.SHA
-			return ref.Backend.mount(egCtx, 0, false, func(gitN *gitutil.GitCLI) error {
+			// The callback's ctx descends from egCtx: it is canceled with the
+			// group, and nests the work under the ref's mount.
+			return ref.Backend.mount(egCtx, 0, false, func(egCtx context.Context, gitN *gitutil.GitCLI) error {
 				remoteURL, err := gitN.URL(egCtx)
 				if err != nil {
 					return err
@@ -2008,14 +2178,10 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 				if _, err := git.Run(egCtx, "remote", "add", remoteName, remoteURL); err != nil {
 					return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
 				}
-				args := []string{"fetch", "--no-tags", "--update-shallow"}
-				for _, sha := range fetched {
-					args = append(args, "--negotiation-tip="+sha)
-				}
-				if _, err := git.Run(egCtx, append(args, remoteName, ref.Ref.SHA)...); err != nil {
+				if err := joinGitObjects(egCtx, git, gitN, remoteName, ref.Ref.SHA, joined); err != nil {
 					return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
 				}
-				fetched = append(fetched, ref.Ref.SHA)
+				joined = append(joined, ref.Ref.SHA)
 				return nil
 			})
 		})
@@ -2025,6 +2191,30 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 		return nil, nil, nil, err
 	}
 	return git, commits, cleanup, nil
+}
+
+// joinGitObjects copies sha's history from source into git, a refJoin
+// repository that already owns the complete history of every commit in
+// joined. Joined refs usually share most of their history (a fork and its
+// upstream, two branches): the pack copies only what joined lacks rather than
+// a second full history. The fetch fallback reaches source as remoteName,
+// negotiating from joined: fetch otherwise negotiates only from refs, and git
+// has none, so it would claim to have nothing and receive the whole shared
+// history again.
+func joinGitObjects(ctx context.Context, git, source *gitutil.GitCLI, remoteName, sha string, joined []string) error {
+	// A failed pack can only leave objects of this ref's own history behind,
+	// which the fetch then completes.
+	_, err := copyGitObjects(ctx, "join", func(ctx context.Context) error {
+		return packGitClosure(ctx, git, source, []string{sha}, joined...)
+	}, nil, func(ctx context.Context) error {
+		args := []string{"fetch", "--no-tags", "--update-shallow"}
+		for _, tip := range joined {
+			args = append(args, "--negotiation-tip="+tip)
+		}
+		_, err := git.Run(ctx, append(args, remoteName, sha)...)
+		return err
+	})
+	return err
 }
 
 // visitPersistedRemoteGitRepositoryRefs walks every declared reference of a

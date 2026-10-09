@@ -80,7 +80,7 @@ func (ref *LocalGitRef) contentsCheckoutTree(ctx context.Context, srv *dagql.Ser
 		return nil, false, "", err
 	}
 	var result *Directory
-	err = ref.repo.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) (rerr error) {
+	err = ref.repo.mount(ctx, 0, false, nil, func(ctx context.Context, source *gitutil.GitCLI) (rerr error) {
 		child, err := query.SnapshotManager().New(ctx, snapshot, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription("git source tree from checkout"))
 		if err != nil {
 			return err

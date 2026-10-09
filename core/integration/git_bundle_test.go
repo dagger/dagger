@@ -283,6 +283,94 @@ func (GitSuite) TestGitBundlePreservesAnnotatedTag(ctx context.Context, t *testc
 	require.Equal(t, "tag", strings.TrimSpace(objectType))
 }
 
+// Bundling a remote annotated tag fetches the tag object from origin while
+// the mirror is locked. That fetch must negotiate against the tag's history,
+// already copied from the mirror, rather than clone it all again: the origin
+// refuses any pack of the tag object that has no haves to exclude.
+func (GitSuite) TestGitBundleRemoteAnnotatedTagFetchesOnlyTag(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	origin := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		With(gitUserConfig).
+		WithWorkdir("/repos/repo").
+		WithExec([]string{"sh", "-ec", `
+			git init -q -b main
+			for i in 1 2 3 4 5; do echo $i > file.txt; git add file.txt; git commit -q -m "commit$i"; done
+			git tag -a v1.0.0 -m release HEAD~1
+			git config --system uploadpack.packObjectsHook /hook.sh
+			cat > /hook.sh <<EOF
+#!/bin/sh
+set -eu
+in=\$(mktemp)
+cat > "\$in"
+# upload-pack feeds pack-objects the wants, then --not, then the haves.
+if grep -qx $(git rev-parse refs/tags/v1.0.0) "\$in" &&
+	! sed '1,/^--not\$/d' "\$in" | grep -q '^[0-9a-f]'; then
+	echo "refusing to send the tag's full history" >&2
+	exit 1
+fi
+exec "\$@" < "\$in"
+EOF
+			chmod +x /hook.sh
+		`})
+	tagSHA, err := origin.WithExec([]string{"git", "rev-parse", "refs/tags/v1.0.0"}).Stdout(ctx)
+	require.NoError(t, err)
+	tagSHA = strings.TrimSpace(tagSHA)
+	svc := origin.WithExposedPort(9418).
+		WithDefaultArgs([]string{"git", "daemon", "--export-all", "--base-path=/repos"}).
+		AsService()
+	host, err := svc.Hostname(ctx)
+	require.NoError(t, err)
+	_, err = svc.Start(ctx)
+	require.NoError(t, err)
+	defer svc.Stop(ctx)
+	repoURL := "git://" + host + "/repo"
+
+	client := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithServiceBinding("origin", svc)
+	// The hook is live: a fetch of the tag with no history to negotiate fails.
+	_, err = client.WithExec([]string{"sh", "-ec", `
+		git init -q --bare /cold
+		git -C /cold fetch -q git://origin/repo refs/tags/v1.0.0:refs/tags/v1.0.0
+	`}).Sync(ctx)
+	require.Error(t, err)
+
+	repo := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: svc})
+	for _, refs := range [][]string{
+		{"refs/tags/v1.0.0"},
+		{"refs/heads/main", "refs/tags/v1.0.0"},
+	} {
+		bundle := repo.Bundle(refs)
+		bundleRefs, err := bundle.Refs(ctx)
+		require.NoError(t, err, "bundle %v", refs)
+		require.Len(t, bundleRefs, len(refs))
+		tag := bundleRefs[len(refs)-1]
+		name, err := tag.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "refs/tags/v1.0.0", name)
+		sha, err := tag.Sha(ctx)
+		require.NoError(t, err)
+		require.Equal(t, tagSHA, sha)
+
+		out, err := client.
+			WithMountedFile("/repository.bundle", bundle.AsFile()).
+			WithExec([]string{"sh", "-ec", `
+				git init -q --bare /verify
+				git -C /verify fetch -q /repository.bundle 'refs/*:refs/*'
+				git -C /verify for-each-ref --format='%(refname)'
+				git -C /verify cat-file -t refs/tags/v1.0.0
+				git -C /verify rev-list --count refs/tags/v1.0.0
+			`}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		n := len(lines)
+		require.Equal(t, refs, lines[:n-2], "bundle must carry only the requested refs")
+		require.Equal(t, []string{"tag", "4"}, lines[n-2:])
+	}
+}
+
 func (GitSuite) TestGitBundleImportAfterPrerequisiteRefAdvances(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base\n"))
