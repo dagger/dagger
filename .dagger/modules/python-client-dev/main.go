@@ -55,29 +55,35 @@ func New(
 	// direct call; dependencies don't inherit it, so callers must forward it.
 	ws *dagger.Workspace,
 ) *PythonClientDev {
+	baseContainer := pythonBaseContainer(workspaceDir, sourcePath)
+
 	return &PythonClientDev{
 		DevContainer: dag.DaggerEngine(ws, dagger.DaggerEngineOpts{
 			ClientDockerConfig: clientDockerConfig,
 		}).InstallClient(
 			dagger.DaggerEngineInstallClientOpts{
-				Client: dag.Wolfi().
-					Container(dagger.WolfiContainerOpts{Packages: []string{"libgcc"}}).
-					WithEnvVariable("PYTHONUNBUFFERED", "1").
-					WithEnvVariable(
-						"PATH",
-						"/root/.local/bin:/usr/local/bin:$PATH",
-						dagger.ContainerWithEnvVariableOpts{Expand: true}).
-					With(toolsCache("uv", "ruff", "mypy")).
-					With(uvTool(workspaceDir)).
-					WithDirectory("/src/sdk/python", workspaceDir.Directory(sourcePath)).
-					WithWorkdir("/src/sdk/python").
-					WithExec(uv("sync")),
+				Client: baseContainer,
 			}),
 		Workspace:         workspaceDir,
 		SourcePath:        sourcePath,
 		SupportedVersions: supportedVersions,
 		Ws:                ws,
 	}
+}
+
+func pythonBaseContainer(workspace *dagger.Directory, sourcePath string) *dagger.Container {
+	return dag.Wolfi().
+		Container(dagger.WolfiContainerOpts{Packages: []string{"libgcc"}}).
+		WithEnvVariable("PYTHONUNBUFFERED", "1").
+		WithEnvVariable(
+			"PATH",
+			"/root/.local/bin:/usr/local/bin:$PATH",
+			dagger.ContainerWithEnvVariableOpts{Expand: true}).
+		With(toolsCache("uv", "ruff", "mypy")).
+		With(uvTool(workspace)).
+		WithDirectory("/src/sdk/python", workspace.Directory(sourcePath)).
+		WithWorkdir("/src/sdk/python").
+		WithExec(uv("sync"))
 }
 
 var supportedVersions = []string{"3.14", "3.13", "3.12", "3.11", "3.10"}
@@ -288,7 +294,7 @@ func (t PythonClientDev) Build(
 	// +default="0.0.0"
 	version string,
 ) *dagger.Container {
-	return t.DevContainer.
+	return pythonBaseContainer(t.Workspace, t.SourcePath).
 		WithoutDirectory("dist").
 		WithExec(uv("version", version)).
 		WithExec(uv("build"))
