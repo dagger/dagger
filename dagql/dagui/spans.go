@@ -113,6 +113,10 @@ type Span struct {
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call
 
+	// callPayloadElided is set once integrateSpan has decoded the span's
+	// CallPayload into db.Calls and dropped it; Snapshot re-encodes it.
+	callPayloadElided bool
+
 	causesViaLinks  SpanSet
 	effectsViaLinks SpanSet
 
@@ -143,6 +147,14 @@ func (span *Span) Snapshot() SpanSnapshot {
 	snapshot := span.SpanSnapshot
 	snapshot.Final = true // NOTE: applied to copy
 	snapshot.Progress = span.Progress.Clone()
+	if span.callPayloadElided && snapshot.CallPayload == "" && span.db != nil {
+		// hand the frontend the payload the span arrived with
+		if call := span.db.Calls[snapshot.CallDigest]; call != nil {
+			if payload, err := call.Encode(); err == nil {
+				snapshot.CallPayload = payload
+			}
+		}
+	}
 	return snapshot
 }
 

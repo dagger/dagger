@@ -1216,11 +1216,22 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		// Span channel: a spanned call carries its base64 payload on the span
 		// itself. Decode eagerly into the same store the log channel fills so
 		// nothing downstream has to know which channel carried a call.
-		var spanCall callpbv1.Call
-		if err := spanCall.Decode(span.CallPayload); err == nil {
-			db.addCall(span.CallDigest, &spanCall)
+		//
+		// Then let go of the payload: it's the bulk of a call span's
+		// attributes, and db.Calls holds the call now. Snapshot encodes it
+		// again for a frontend that needs it.
+		if _, known := db.Calls[span.CallDigest]; known {
+			span.CallPayload = ""
+			span.callPayloadElided = true
 		} else {
-			slog.Warn("failed to decode span call payload", "digest", span.CallDigest, "err", err)
+			var spanCall callpbv1.Call
+			if err := spanCall.Decode(span.CallPayload); err == nil {
+				db.addCall(span.CallDigest, &spanCall)
+				span.CallPayload = ""
+				span.callPayloadElided = true
+			} else {
+				slog.Warn("failed to decode span call payload", "digest", span.CallDigest, "err", err)
+			}
 		}
 	}
 

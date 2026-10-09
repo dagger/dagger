@@ -405,6 +405,29 @@ func TestSpanCarriedCallPayloadIngests(t *testing.T) {
 	if id.Digest().String() != spannedCall.Digest {
 		t.Fatalf("rebuilt digest = %s, want %s", id.Digest(), spannedCall.Digest)
 	}
+
+	// The DB keeps the decoded call, not the payload, but snapshots still
+	// hand a remote frontend a payload it can ingest the same way.
+	span := db.Spans.Map[spanID(1)]
+	if span.CallPayload != "" {
+		t.Fatal("span kept its call payload after decoding it")
+	}
+	snapshot := span.Snapshot()
+	if snapshot.CallPayload == "" {
+		t.Fatal("snapshot lost the span's call payload")
+	}
+	var fromSnapshot callpbv1.Call
+	if err := fromSnapshot.Decode(snapshot.CallPayload); err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(&fromSnapshot, spannedCall) {
+		t.Fatalf("snapshot payload = %v, want %v", &fromSnapshot, spannedCall)
+	}
+	remote := NewDB()
+	remote.ImportSnapshots([]SpanSnapshot{snapshot})
+	if got := remote.Call(spannedCall.Digest); got == nil || !proto.Equal(got, spannedCall) {
+		t.Fatalf("snapshot payload was not ingested remotely: %+v", got)
+	}
 }
 
 // The two raw-payload tests below check that a digested or binary literal
