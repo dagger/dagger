@@ -1407,12 +1407,13 @@ func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx co
 
 	svc := core.NewQuery(seedClient).
 		Container().
-		From(alpineImage).
+		From(busyboxImage).
 		WithExec([]string{
 			"sh", "-ec",
 			"dd if=/dev/zero of=/service-payload bs=1M count=256 status=none",
 		}).
-		WithDefaultArgs([]string{"sh", "-ec", "while true; do echo -n ok | nc -l -p 8080; done"}).
+		WithNewFile("/srv/index.html", "ok").
+		WithDefaultArgs([]string{"httpd", "-f", "-p", "8080", "-h", "/srv"}).
 		WithExposedPort(8080).
 		AsService()
 
@@ -1429,7 +1430,7 @@ func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx co
 		Container().
 		From(alpineImage).
 		WithServiceBinding("svc", runningSvc).
-		WithExec([]string{"nc", "svc", "8080"}).
+		WithExec([]string{"wget", "-q", "-O-", "http://svc:8080"}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "ok", out)
