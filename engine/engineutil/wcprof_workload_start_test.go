@@ -36,6 +36,19 @@ func TestWorkloadReleasedFromPidFile(t *testing.T) {
 	require.Greater(t, released, startedNS, "the release is after the started callback")
 }
 
+func TestWorkloadReleasedWithinATick(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "init.pid")
+	const startedNS = int64(5 * time.Second)
+	startedWall := time.Now()
+	writePidFile(t, pidFile)
+	// The coarse clock stamped the file a tick before the started callback.
+	early := startedWall.Add(-4 * time.Millisecond)
+	require.NoError(t, os.Chtimes(pidFile, early, early))
+
+	require.Equal(t, startedNS, workloadReleasedNS(pidFile, startedNS, startedWall.UnixNano()),
+		"a release within a tick of the start is clamped to the start, not dropped")
+}
+
 func TestWorkloadReleasedUnknown(t *testing.T) {
 	now := time.Now().UnixNano()
 	missing := filepath.Join(t.TempDir(), "init.pid")

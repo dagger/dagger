@@ -1955,7 +1955,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		if startedNS := profStartedNS.Load(); startedNS > 0 {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
 			processStartNS := startedNS
-			if releasedNS := workloadReleasedNS(pidFile, startedNS, profStartedWall.Load()); releasedNS > startedNS && releasedNS <= endNS {
+			if releasedNS := workloadReleasedNS(pidFile, startedNS, profStartedWall.Load()); releasedNS != 0 && releasedNS <= endNS {
 				// runc creating the container, up to releasing the workload
 				wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, releasedNS, wcprof.OutcomeOK)
 				processStartNS = releasedNS
