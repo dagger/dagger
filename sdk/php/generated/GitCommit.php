@@ -100,7 +100,7 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * The abbreviated commit SHA.
      */
-    public function shortSha(): string
+    public function shortSHA(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('shortSha');
         return (string)$this->queryLeaf($leafQueryBuilder, 'shortSha');
@@ -190,7 +190,7 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Parent commit SHAs.
      */
-    public function parentShas(): array
+    public function parentSHAs(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('parentShas');
         return (array)$this->queryLeaf($leafQueryBuilder, 'parentShas');

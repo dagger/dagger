@@ -11,6 +11,7 @@ namespace Dagger;
 /**
  * Query-builder client for the Node interface.
  */
+#[Attribute\GraphQLType('Node')]
 class NodeClient extends Client\AbstractObject implements Node, Client\IdAble
 {
     public function id(): Id
