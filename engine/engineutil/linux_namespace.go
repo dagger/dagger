@@ -10,10 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opencontainers/runc/libcontainer"
+	runc "github.com/containerd/go-runc"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"golang.org/x/sys/unix"
+
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 const (
@@ -269,7 +271,7 @@ func (gwp *GlobalNamespaceWorkerPool) createNamespaceWorker(containerID string, 
 		if ns.Path != "" {
 			targetPath = ns.Path
 		} else {
-			// Get the container PID using libcontainer
+			// Get the container PID from the runtime
 			pid, err := getContainerPID(containerID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get container PID: %w", err)
@@ -423,22 +425,15 @@ func ShutdownGlobalNamespaceWorkerPool() {
 	}
 }
 
-// getContainerPID retrieves the PID of a container using libcontainer
+// getContainerPID asks the container runtime for the PID of a running
+// container's init process.
 func getContainerPID(containerID string) (int, error) {
-	// Load the container using libcontainer
-	container, err := libcontainer.Load("/run/runc", containerID)
+	state, err := (&runc.Runc{Command: distconsts.RuntimePath}).State(context.Background(), containerID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to create libcontainer factory: %w", err)
+		return 0, fmt.Errorf("get state of container %s: %w", containerID, err)
 	}
-
-	state, err := container.OCIState()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get OCI state for container %s: %w", containerID, err)
-	}
-
 	if state.Pid == 0 {
 		return 0, fmt.Errorf("container %s has no running process", containerID)
 	}
-
 	return state.Pid, nil
 }
