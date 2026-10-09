@@ -82,7 +82,8 @@ func recordCallPayloads(
 // exporter gave up on it, so the claimant's walk no longer proves the closure
 // reached the client. The walk neither logs the root nor records it as
 // covered, since it does not own the root's claim, which may be released at
-// any moment.
+// any moment. It claims through ClaimCallPayloadForRepair, so a payload gets
+// at most one repair copy.
 func repairCallPayloads(
 	ctx context.Context,
 	store dagql.CallPayloadSeenKeyStore,
@@ -93,7 +94,7 @@ func repairCallPayloads(
 	if !ok || frame == nil || !closures.StartCallPayloadRepair(callDigest) {
 		return
 	}
-	walkCallPayloads(ctx, store, callDigest, frame, true, false)
+	walkCallPayloads(ctx, store, callDigest, frame, true, true)
 }
 
 // claimCallPayload claims a call's own payload for the store's route. A call
@@ -139,17 +140,18 @@ func recordClaimedCallPayloads(
 	frame *dagql.ResultCall,
 	rootOnSpan bool,
 ) {
-	walkCallPayloads(ctx, store, callDigest, frame, rootOnSpan, true)
+	walkCallPayloads(ctx, store, callDigest, frame, rootOnSpan, false)
 }
 
-// walkCallPayloads is recordClaimedCallPayloads for a root the walk may not
-// own: unless rootOwned, the root is left out of the coverage record.
+// walkCallPayloads is recordClaimedCallPayloads, or with repair set, the walk
+// of repairCallPayloads: the root is left out of the coverage record, and
+// frames are claimed for repair.
 func walkCallPayloads(
 	ctx context.Context,
 	store dagql.CallPayloadSeenKeyStore,
 	callDigest string,
 	frame *dagql.ResultCall,
-	rootOnSpan, rootOwned bool,
+	rootOnSpan, repair bool,
 ) {
 	if store == nil || frame == nil {
 		return
@@ -180,11 +182,18 @@ func walkCallPayloads(
 	}
 
 	logger := telemetry.Logger(ctx, InstrumentationLibrary)
+	var refused bool
 	emit := func(dgst string, callPB *callpbv1.Call) {
 		if dgst == callDigest {
 			// The root was claimed before rebuilding. When its payload rides
 			// the span, only its closure needs the log fallback.
 			if rootOnSpan {
+				return
+			}
+		} else if repair {
+			claimed, refusedNow := closures.ClaimCallPayloadForRepair(dgst)
+			refused = refused || refusedNow
+			if !claimed {
 				return
 			}
 		} else {
@@ -223,9 +232,14 @@ func walkCallPayloads(
 	digests := make([]string, 0, len(calls))
 	for _, callPB := range calls {
 		emit(callPB.GetDigest(), callPB)
-		if rootOwned || callPB.GetDigest() != callDigest {
+		if !repair || callPB.GetDigest() != callDigest {
 			digests = append(digests, callPB.GetDigest())
 		}
+	}
+	if refused {
+		// A frame whose repair copy is spent stays unclaimed, so these
+		// closures are not covered, and a re-walk would be refused the same.
+		return
 	}
 	// Every frame of these closures is now claimed, by this walk or an
 	// earlier one; the skipped parts were covered already. Unless a claim was

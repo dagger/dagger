@@ -196,16 +196,17 @@ type daggerSession struct {
 	callPayloadCovered map[string]map[string]struct{}
 	callPayloadEpoch   uint64
 	// callPayloadLost records each (digest, target) whose final export
-	// attempt failed (see enginetel.IsFinalExportAttempt): true while nothing
-	// has claimed or taken it since. While one is pending on a route, a
-	// replay whose root someone already claimed walks its closure once more,
-	// since that claim no longer proves the closure reached the client. The
-	// entry outlives its repair, and a pair lost again is not repaired again,
-	// so a client DB that keeps failing gets one more copy of each lost
-	// payload, not one per replay. callPayloadLostTargets counts the pending
-	// pairs per target and callPayloadLostCount in total, so no-loss checks
-	// are one atomic load and route checks never scan the pairs.
-	callPayloadLost        map[callPayloadKey]bool
+	// attempt failed (see enginetel.IsFinalExportAttempt) and nothing has
+	// claimed or taken since. While one is pending on a route, a replay whose
+	// root someone already claimed walks its closure once more, since that
+	// claim no longer proves the closure reached the client. A repair walk
+	// that claims the payload marks it repaired for good: repair walks never
+	// claim it again, so a client DB that keeps failing gets at most one
+	// repair copy of each payload, not one per replay. callPayloadLostTargets
+	// counts the pending pairs per target and callPayloadLostCount in total,
+	// so no-loss checks are one atomic load and route checks never scan the
+	// pairs.
+	callPayloadLost        map[callPayloadKey]callPayloadLoss
 	callPayloadLostTargets map[string]int
 	callPayloadLostCount   atomic.Int64
 	// callPayloadRepaired records, per root, the targets for which a replay
@@ -3861,6 +3862,11 @@ func (s *callPayloadDeliveryStore) CallPayloadClosureCovered(digest string) bool
 	return coversTargets(s.session.callPayloadCovered[digest], s.targets)
 }
 
+func (s *callPayloadDeliveryStore) ClaimCallPayloadForRepair(digest string) (claimed, refused bool) {
+	targets, refused := s.session.claimCallPayloadForRepair(digest, s.targets)
+	return len(targets) > 0, refused
+}
+
 func (s *callPayloadDeliveryStore) StartCallPayloadRepair(root string) bool {
 	sess := s.session
 	if sess.callPayloadLostCount.Load() == 0 {
@@ -4000,6 +4006,48 @@ type callPayloadKey struct {
 	digest, target string
 }
 
+// callPayloadLoss is a lost pair's repair state (see callPayloadLost).
+type callPayloadLoss uint8
+
+const (
+	// callPayloadLossPending: lost, and nothing has claimed it since.
+	callPayloadLossPending callPayloadLoss = iota + 1
+	// callPayloadLossRepaired: a repair walk claimed it, so repair walks
+	// leave it alone from now on, whatever becomes of that copy.
+	callPayloadLossRepaired
+)
+
+// claimCallPayloadForRepair is claimCallPayload for a repair walk: it skips
+// targets whose payload already had its repair copy, reporting them as
+// refused, and marks the pending losses it claims repaired.
+func (sess *daggerSession) claimCallPayloadForRepair(digest string, targets []string) (claimed []string, refused bool) {
+	if digest == "" || len(targets) == 0 {
+		return nil, false
+	}
+	sess.callPayloadMu.Lock()
+	defer sess.callPayloadMu.Unlock()
+
+	states := sess.callPayloadStates(digest, true)
+	claimed = make([]string, 0, len(targets))
+	for _, target := range targets {
+		if states[target] != callPayloadUnclaimed {
+			continue
+		}
+		key := callPayloadKey{digest, target}
+		switch sess.callPayloadLost[key] {
+		case callPayloadLossRepaired:
+			refused = true
+			continue
+		case callPayloadLossPending:
+			sess.settleCallPayloadLossLocked(key)
+			sess.callPayloadLost[key] = callPayloadLossRepaired
+		}
+		states[target] = callPayloadClaimed
+		claimed = append(claimed, target)
+	}
+	return claimed, refused
+}
+
 // loseCallPayloadLocked records that the final export attempt for a target
 // failed (see callPayloadLost). Requires callPayloadMu.
 func (sess *daggerSession) loseCallPayloadLocked(digest, target string) {
@@ -4008,15 +4056,15 @@ func (sess *daggerSession) loseCallPayloadLocked(digest, target string) {
 		return
 	}
 	key := callPayloadKey{digest, target}
-	if _, ok := sess.callPayloadLost[key]; ok {
-		// Lost before: its one repair is spent.
+	if sess.callPayloadLost[key] != 0 {
+		// Its one repair copy is spent.
 		return
 	}
 	if sess.callPayloadLost == nil {
-		sess.callPayloadLost = map[callPayloadKey]bool{}
+		sess.callPayloadLost = map[callPayloadKey]callPayloadLoss{}
 		sess.callPayloadLostTargets = map[string]int{}
 	}
-	sess.callPayloadLost[key] = true
+	sess.callPayloadLost[key] = callPayloadLossPending
 	sess.callPayloadLostTargets[target]++
 	sess.callPayloadLostCount.Add(1)
 	// Every root may reach the lost payload, including those already
@@ -4024,19 +4072,26 @@ func (sess *daggerSession) loseCallPayloadLocked(digest, target string) {
 	sess.callPayloadRepaired = nil
 }
 
-// recoverCallPayloadLocked settles a pending loss once a producer claims the
-// target again or an exporter takes it. Requires callPayloadMu.
+// recoverCallPayloadLocked forgets a pending loss once a producer claims the
+// target again or an exporter takes it, outside a repair walk: that copy is
+// no repair, so a later loss is repairable again. Requires callPayloadMu.
 func (sess *daggerSession) recoverCallPayloadLocked(digest, target string) {
 	if sess.callPayloadLostCount.Load() == 0 {
 		return
 	}
 	key := callPayloadKey{digest, target}
-	if !sess.callPayloadLost[key] {
+	if sess.callPayloadLost[key] != callPayloadLossPending {
 		return
 	}
-	sess.callPayloadLost[key] = false
-	if sess.callPayloadLostTargets[target]--; sess.callPayloadLostTargets[target] == 0 {
-		delete(sess.callPayloadLostTargets, target)
+	sess.settleCallPayloadLossLocked(key)
+	delete(sess.callPayloadLost, key)
+}
+
+// settleCallPayloadLossLocked takes a pending loss off the counts. Requires
+// callPayloadMu.
+func (sess *daggerSession) settleCallPayloadLossLocked(key callPayloadKey) {
+	if sess.callPayloadLostTargets[key.target]--; sess.callPayloadLostTargets[key.target] == 0 {
+		delete(sess.callPayloadLostTargets, key.target)
 	}
 	if sess.callPayloadLostCount.Add(-1) == 0 {
 		// Nothing left to repair: no replay asks again until the next loss.

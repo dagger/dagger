@@ -122,4 +122,11 @@ type CallPayloadClosureStore interface {
 	// inside it; until something claims that payload again, each root walks
 	// once per loss.
 	StartCallPayloadRepair(root string) bool
+
+	// ClaimCallPayloadForRepair is ClaimCallPayload for a repair walk. It
+	// refuses, and reports refused for, targets whose payload a repair walk
+	// already claimed once, so a client DB that keeps failing gets at most
+	// one repair copy of each payload. A walk that was refused anything
+	// leaves an unclaimed frame behind, so it must not record coverage.
+	ClaimCallPayloadForRepair(digest string) (claimed, refused bool)
 }

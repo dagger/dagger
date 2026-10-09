@@ -3608,14 +3608,55 @@ func TestCallPayloadLossRepair(t *testing.T) {
 	require.False(t, store.StartCallPayloadRepair("xxh3:fresh"))
 
 	sess.settleCallPayload("xxh3:def", []string{"child"}, false, true)
-	require.Zero(t, sess.callPayloadLostCount.Load(),
-		"a pair lost again already had its repair, so a dead DB is not retried per replay")
-	require.False(t, store.StartCallPayloadRepair("xxh3:fresh"))
+	require.EqualValues(t, 1, sess.callPayloadLostCount.Load(),
+		"a copy that was no repair spends no repair, so losing it again is repairable")
+	require.True(t, store.StartCallPayloadRepair("xxh3:fresh"))
 
 	control := controlPayloadKeyPrefix + "abc"
 	lose(control, "child")
-	require.Zero(t, sess.callPayloadLostCount.Load(),
+	require.EqualValues(t, 1, sess.callPayloadLostCount.Load(),
 		"no recipe walk can re-emit a control record, so losing one must not make walks repair")
+}
+
+// A payload gets at most one repair copy, even while other losses keep
+// repair walks running: once a repair walk claimed it, later repair walks are
+// refused it, though an ordinary walk may still claim it.
+func TestCallPayloadRepairCopiesEachPayloadOnce(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
+	lose := func(digest string) {
+		t.Helper()
+		require.Equal(t, store.targets, sess.takeCallPayloadForWrite(digest, store.targets))
+		sess.settleCallPayload(digest, store.targets, false, true)
+	}
+	for _, digest := range []string{"xxh3:a", "xxh3:b"} {
+		require.True(t, store.ClaimCallPayload(digest))
+		lose(digest)
+	}
+	require.EqualValues(t, 2, sess.callPayloadLostCount.Load())
+
+	// Replaying R1 repairs a; that copy is lost too.
+	require.True(t, store.StartCallPayloadRepair("xxh3:r1"))
+	claimed, refused := store.ClaimCallPayloadForRepair("xxh3:a")
+	require.True(t, claimed)
+	require.False(t, refused)
+	lose("xxh3:a")
+	require.EqualValues(t, 1, sess.callPayloadLostCount.Load(), "only b is still pending")
+
+	// b keeps repair walks running; R2 reaches a but not b.
+	require.True(t, store.StartCallPayloadRepair("xxh3:r2"))
+	claimed, refused = store.ClaimCallPayloadForRepair("xxh3:a")
+	require.False(t, claimed, "a already had its repair copy")
+	require.True(t, refused)
+	claimed, refused = store.ClaimCallPayloadForRepair("xxh3:b")
+	require.True(t, claimed)
+	require.False(t, refused)
+	require.Zero(t, sess.callPayloadLostCount.Load())
+
+	require.True(t, store.ClaimCallPayload("xxh3:a"),
+		"an ordinary walk still claims it, as it would without repair")
 }
 
 func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {
