@@ -501,3 +501,61 @@ func TestBootstrapFramingRequiresVerifiedTerminal(t *testing.T) {
 		t.Fatal("corrupt bootstrap verified")
 	}
 }
+
+func TestManagerLookupsDoNotWaitOnManifestWrites(t *testing.T) {
+	sizing, release := make(chan struct{}), make(chan struct{})
+	manager, err := NewManager(Config{Root: t.TempDir(), StoreSize: func(string) (int64, error) {
+		close(sizing)
+		<-release
+		return 10, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Register(testTraceA, "client"); err != nil {
+		t.Fatal(err)
+	}
+	marked := make(chan error, 1)
+	go func() { marked <- manager.MarkIncomplete(testTraceA, errors.New("teardown failed")) }()
+	// The writer is now stalled mid-update, as a slow fsync stalls it.
+	<-sizing
+	looked := make(chan error, 1)
+	go func() {
+		manifest, err := manager.Manifest(testTraceA)
+		if err != nil {
+			looked <- err
+			return
+		}
+		if manifest.State != StateActive {
+			looked <- errors.New("lookup saw an unwritten manifest")
+			return
+		}
+		manager.List("", "", 10)
+		manager.KeepSet()
+		if _, err := manager.Register(testTraceA, "nested"); err == nil {
+			looked <- errors.New("second registration for the same trace succeeded")
+			return
+		}
+		looked <- nil
+	}()
+	select {
+	case err := <-looked:
+		close(release)
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		close(release)
+		t.Fatal("lookups waited on a stalled manifest write")
+	}
+	if err := <-marked; err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := manager.Manifest(testTraceA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.State != StateIncomplete || manifest.SizeBytes != 10 {
+		t.Fatalf("marked manifest = %+v", manifest)
+	}
+}
