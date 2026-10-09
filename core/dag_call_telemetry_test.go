@@ -606,6 +606,7 @@ type testClosureKeys struct {
 	claimed  map[string]bool
 	covered  map[string]bool
 	lost     map[string]bool
+	spent    map[string]bool
 	repaired map[string]bool
 	epoch    uint64
 	attempts int
@@ -624,6 +625,7 @@ func newTestClosureKeys() *testClosureKeys {
 		claimed:  map[string]bool{},
 		covered:  map[string]bool{},
 		lost:     map[string]bool{},
+		spent:    map[string]bool{},
 		repaired: map[string]bool{},
 	}
 }
@@ -638,6 +640,24 @@ func (s *testClosureKeys) ClaimCallPayload(key string) bool {
 	s.claimed[key] = true
 	delete(s.lost, key)
 	return true
+}
+
+func (s *testClosureKeys) ClaimCallPayloadForRepair(key string) (claimed, refused bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.attempts++
+	if s.claimed[key] {
+		return false, false
+	}
+	if s.spent[key] {
+		return false, true
+	}
+	s.claimed[key] = true
+	if s.lost[key] {
+		delete(s.lost, key)
+		s.spent[key] = true
+	}
+	return true, false
 }
 
 func (s *testClosureKeys) StartCallPayloadRepair(root string) bool {
@@ -700,11 +720,15 @@ func (s *testClosureKeys) release(key string) {
 }
 
 // lose mirrors a write the exporter gave up on: a release that stays
-// pending until something claims the frame again.
+// pending until something claims the frame again, unless a repair walk
+// already claimed it once.
 func (s *testClosureKeys) lose(key string) {
 	s.release(key)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.spent[key] {
+		return
+	}
 	s.lost[key] = true
 	s.repaired = map[string]bool{}
 }
@@ -942,6 +966,56 @@ func TestRecordCallPayloadsRepairWalksOncePerLoss(t *testing.T) {
 	keys.lose("xxh3:unreachable-too")
 	recordCallPayloads(ctx, keys, digests[depth-1], frames[depth-1])
 	require.Equal(t, 3, keys.repairsStarted(), "a new loss lets the root walk again")
+}
+
+// A payload gets at most one repair copy. Once a repair walk claimed it and
+// that copy was lost too, repair walks that other losses keep running must
+// not emit it again; such a walk records no coverage, so an ordinary walk
+// still reaches the frame as it would without repair.
+func TestRecordCallPayloadsRepairCopiesEachPayloadOnce(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	frames := chainCall(5)
+	digests := make([]string, len(frames))
+	for i, frame := range frames {
+		dgst, err := frame.RecipeDigest(ctx)
+		require.NoError(t, err)
+		digests[i] = dgst.String()
+	}
+	lost := digests[1]
+	copies := func() int {
+		var n int
+		for _, record := range rec.snapshot() {
+			if record.digest == lost {
+				n++
+			}
+		}
+		return n
+	}
+
+	keys := newTestClosureKeys()
+	recordCallPayloads(ctx, keys, digests[4], frames[4])
+	sibling := testResultCall("sibling", &Void{}, frames[2])
+	siblingDigest, err := sibling.RecipeDigest(ctx)
+	require.NoError(t, err)
+	recordCallPayloads(ctx, keys, siblingDigest.String(), sibling)
+	require.Equal(t, 1, copies())
+
+	keys.lose(lost)
+	recordCallPayloads(ctx, keys, digests[4], frames[4])
+	require.Equal(t, 2, copies(), "the first replay repairs the lost frame")
+
+	keys.lose(lost)
+	keys.lose("xxh3:unreachable")
+	recordCallPayloads(ctx, keys, siblingDigest.String(), sibling)
+	require.Equal(t, 2, copies(), "a repair copy that was lost too is not repaired again")
+	require.False(t, keys.CallPayloadClosureCovered(digests[2]),
+		"a walk that left a frame unclaimed must not record coverage")
+
+	top := testResultCall("top", &Void{}, frames[4])
+	topDigest, err := top.RecipeDigest(ctx)
+	require.NoError(t, err)
+	recordCallPayloads(ctx, keys, topDigest.String(), top)
+	require.Equal(t, 3, copies(), "an ordinary walk still reaches the frame")
 }
 
 // A repair walk starts at a root someone else claimed. If that claim is
