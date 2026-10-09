@@ -41,6 +41,9 @@ func main() {
 }
 
 func mainInit() error {
+	startedNS := monotonicNS()
+	timing := timingFile()
+
 	sigCh := make(chan os.Signal, 16)
 	// Handle every signal other than a few exceptions noted at the end.
 	// Importantly, by handling all these signals, the child process will start with
@@ -144,6 +147,7 @@ func mainInit() error {
 	if err != nil {
 		return err
 	}
+	spawnedNS := monotonicNS()
 
 	// handle signals until our child exits
 	for sig := range sigCh {
@@ -175,6 +179,7 @@ func mainInit() error {
 					break
 				}
 				if deadPid == child.Pid {
+					exitedNS := monotonicNS()
 					// our child died, so we should too
 					exitStatus := ws.ExitStatus()
 					if exitStatus == -1 {
@@ -183,6 +188,10 @@ func mainInit() error {
 
 					// send SIGTERM to anyone left
 					unix.Kill(-child.Pid, syscall.SIGTERM)
+
+					if timing != nil {
+						fmt.Fprintf(timing, "%d %d %d\n", startedNS, spawnedNS, exitedNS)
+					}
 
 					// goodbye
 					os.Exit(exitStatus)
@@ -201,6 +210,32 @@ func mainInit() error {
 	}
 
 	return nil
+}
+
+// timingFile returns the fd the engine passed for reporting this process's
+// timing when profiling (see engine.InitTimingFDEnv), or nil. It removes the
+// variable so the command doesn't inherit it, and keeps the fd from leaking
+// into the command too.
+func timingFile() *os.File {
+	v, ok := os.LookupEnv(engine.InitTimingFDEnv)
+	if !ok {
+		return nil
+	}
+	os.Unsetenv(engine.InitTimingFDEnv)
+	fd, err := strconv.Atoi(v)
+	if err != nil || fd < 3 {
+		return nil
+	}
+	unix.CloseOnExec(fd)
+	return os.NewFile(uintptr(fd), "init-timing")
+}
+
+func monotonicNS() int64 {
+	var ts unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err != nil {
+		return 0
+	}
+	return ts.Nano()
 }
 
 func startSessionSubprocess() error {

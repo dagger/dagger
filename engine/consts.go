@@ -43,6 +43,12 @@ const (
 	QueryEndpoint     = "/query"
 	ShutdownEndpoint  = "/shutdown"
 
+	// InitTimingFDEnv names the fd on which the injected /.init helper reports
+	// when it started, spawned the command and reaped it, as CLOCK_MONOTONIC
+	// nanoseconds ("<started> <spawned> <exited>\n"). The engine sets it only
+	// when profiling with wcprof; /.init removes it before starting the command.
+	InitTimingFDEnv = "_DAGGER_INIT_TIMING_FD"
+
 	// Buildkit-interpreted session keys, can't change
 	SessionIDMetaKey         = "X-Docker-Expose-Session-Uuid"
 	SessionNameMetaKey       = "X-Docker-Expose-Session-Name"
