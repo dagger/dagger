@@ -365,13 +365,15 @@ func TestCacheCanonicalEquivalentReadsOutputEqClassResults(t *testing.T) {
 			assert.Assert(t, digestCount > width, "wide output class has only %d digests", digestCount)
 			assert.Equal(t, imported, broad)
 
+			const loadSession = "canonical-load"
+			loadCtx := cacheTestSessionContext(f.ctx, loadSession)
+			defer func() { assert.NilError(t, c.ReleaseSession(loadCtx, loadSession)) }()
 			canonicalIDs := func() []sharedResultID {
-				c.egraphMu.Lock()
-				defer c.egraphMu.Unlock()
 				ids := make([]sharedResultID, 0, len(members))
 				for _, id := range members {
-					canonical := c.canonicalEquivalentSharedResultLocked("", c.resultsByID[id], nowUnix, true)
-					ids = append(ids, canonical.id)
+					lookup, err := c.sharedResultByResultID(loadCtx, loadSession, id, sharedResultLookupCanonicalEquivalent)
+					assert.NilError(t, err)
+					ids = append(ids, lookup.res.id)
 				}
 				return ids
 			}
