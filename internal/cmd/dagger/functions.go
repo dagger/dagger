@@ -7,12 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger/core"
+	"github.com/dagger/dagger/core/artifact"
 
 	"github.com/charmbracelet/huh"
 	"github.com/opencontainers/go-digest"
@@ -67,6 +72,24 @@ var (
 	skippedOptsAnnotation = "help:skippedOpts"
 )
 
+const collectionCallSelectorFlag = "dagger.io/collection-call-selector"
+
+type functionCommandPath struct {
+	Module string
+	Fields []string
+}
+
+type collectionCallRoute struct {
+	Dimension *artifact.Dimension
+	KeyType   *modTypeDef
+	Batch     bool
+}
+
+type plannedFunctionCall struct {
+	fn  *modFunction
+	cmd *cobra.Command
+}
+
 // FuncCommand is a config object used to create a dynamic set of commands
 // for querying a module's functions.
 type FuncCommand struct {
@@ -118,6 +141,11 @@ type FuncCommand struct {
 	q   *querybuilder.Selection
 	c   *client.Client
 	ctx context.Context
+
+	pendingCalls             []plannedFunctionCall
+	collectionDimensions     artifact.Dimensions
+	collectionDimensionsRead bool
+	collectionDimensionsErr  error
 
 	// withFn is the `with` function on Query root, if present.
 	// Used to forward constructor args from the root command.
@@ -301,6 +329,10 @@ func (fc *FuncCommand) Help(cmd *cobra.Command) error {
 // execute runs the main logic for the top level command's RunE function.
 func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	ctx := c.Context()
+	fc.pendingCalls = nil
+	fc.collectionDimensions = nil
+	fc.collectionDimensionsRead = false
+	fc.collectionDimensionsErr = nil
 
 	var cmd *cobra.Command
 	defer func() {
@@ -472,6 +504,9 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		if err := fc.addFlagsForFunction(c, fn); err != nil {
 			return err
 		}
+		if err := fc.addCollectionSelectorFlags(ctx, c, fn); err != nil {
+			return err
+		}
 
 		// When the root type is Query and the constructor is the no-op
 		// identity (name == ""), discover `with` from the type's functions
@@ -499,7 +534,7 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 			return c.FlagErrorFunc()(c, err)
 		}
 
-		if err := fc.addSubCommands(ctx, c, fn.ReturnType); err != nil {
+		if err := fc.addSubCommands(ctx, c, fn); err != nil {
 			return err
 		}
 
@@ -631,9 +666,66 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 	return nil
 }
 
+func (fc *FuncCommand) addCollectionSelectorFlags(ctx context.Context, cmd *cobra.Command, fn *modFunction) error {
+	if len(fn.collectionRoutes) == 0 {
+		return nil
+	}
+
+	selected := make(artifact.Dimensions, 0, len(fn.collectionRoutes))
+	seen := map[string]bool{}
+	for _, route := range fn.collectionRoutes {
+		if seen[route.Dimension.Identifier] {
+			return fmt.Errorf("collection path %q crosses the same selector twice; use get or subset explicitly", route.Dimension.Identifier)
+		}
+		seen[route.Dimension.Identifier] = true
+		selected = append(selected, route.Dimension)
+	}
+
+	if !fc.collectionDimensionsRead {
+		fc.collectionDimensionsRead = true
+		if fc.c != nil {
+			fc.collectionDimensions, fc.collectionDimensionsErr = artifactDimensions(
+				ctx,
+				fc.c.Dagger(),
+				core.NewQuery(fc.c.Dagger()).CurrentWorkspace().Artifacts(),
+			)
+		}
+	}
+	if fc.collectionDimensionsErr != nil {
+		return fmt.Errorf("load collection selector names: %w", fc.collectionDimensionsErr)
+	}
+
+	definitions := artifact.Union(selected, fc.collectionDimensions)
+	names := artifactDimensionFlagNames(cmd, definitions)
+	for _, route := range fn.collectionRoutes {
+		name := names[route.Dimension.Identifier].Key
+		if name == "" {
+			return fmt.Errorf("allocate selector for collection path %q", route.Dimension.Identifier)
+		}
+		if cmd.Flags().Lookup(name) != nil {
+			return fmt.Errorf("collection selector --%s conflicts with an argument", name)
+		}
+		usage := fmt.Sprintf("Select %s by `%s`", cliName(route.Dimension.ItemType), route.Dimension.KeyName)
+		if route.Batch {
+			usage += "; may be repeated"
+		}
+		usage += " [required]"
+		cmd.Flags().StringArray(name, nil, usage)
+		flag := cmd.Flags().Lookup(name)
+		flag.Annotations = map[string][]string{
+			artifactDimensionFlag:      {route.Dimension.Identifier},
+			collectionCallSelectorFlag: {"true"},
+			"help:group":               {"Selection"},
+		}
+	}
+	cmd.Use += " [selection]"
+	return nil
+}
+
 // addSubCommands creates sub-commands for the functions in an object or
 // interface type definition.
-func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, typeDef *modTypeDef) error {
+func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, parentFn *modFunction) error {
+	typeDef := parentFn.ReturnType
 	if err := fc.mod.LoadTypeDef(typeDef); err != nil {
 		return err
 	}
@@ -648,9 +740,20 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 		return err
 	}
 
+	commandNames := map[string]bool{}
 	for _, fn := range fns {
-		subCmd := fc.makeSubCmd(ctx, fn)
+		child := fn.commandClone()
+		child.commandPath = fc.childCommandPath(parentFn, child, typeDef.AsCollection != nil)
+		child.collectionRoutes = slices.Clone(parentFn.collectionRoutes)
+		subCmd := fc.makeSubCmd(ctx, child)
 		cmd.AddCommand(subCmd)
+		commandNames[child.CmdName()] = true
+	}
+
+	if collection := typeDef.AsCollection; collection != nil {
+		if err := fc.addCollectionFunctionCommands(ctx, cmd, parentFn, collection, commandNames); err != nil {
+			return err
+		}
 	}
 
 	if cmd.HasAvailableSubCommands() {
@@ -662,6 +765,128 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	}
 
 	return nil
+}
+
+func (fc *FuncCommand) childCommandPath(parent, child *modFunction, collectionProjection bool) *functionCommandPath {
+	if parent.commandPath == nil {
+		module := child.SourceModuleName
+		if module == "" && child.ReturnType != nil && child.ReturnType.AsObject != nil {
+			module = child.ReturnType.AsObject.SourceModuleName
+		}
+		if module == "" {
+			module = fc.mod.Name
+		}
+		path := &functionCommandPath{Module: cliName(module)}
+		if child.Name != gqlFieldName(module) {
+			path.Fields = []string{cliName(child.Name)}
+		}
+		return path
+	}
+
+	path := &functionCommandPath{
+		Module: parent.commandPath.Module,
+		Fields: slices.Clone(parent.commandPath.Fields),
+	}
+	if !collectionProjection || !isCollectionProjectionFunction(child.Name) {
+		path.Fields = append(path.Fields, cliName(child.Name))
+	}
+	return path
+}
+
+func isCollectionProjectionFunction(name string) bool {
+	switch name {
+	case "keys", "list", "get", "subset", "batch":
+		return true
+	default:
+		return false
+	}
+}
+
+func (fc *FuncCommand) addCollectionFunctionCommands(
+	ctx context.Context,
+	cmd *cobra.Command,
+	parentFn *modFunction,
+	collection *modCollection,
+	reserved map[string]bool,
+) error {
+	if parentFn.commandPath == nil {
+		return nil
+	}
+	for _, typeDef := range []*modTypeDef{collection.KeyType, collection.ValueType, collection.BatchType} {
+		if typeDef != nil {
+			if err := fc.mod.LoadTypeDef(typeDef); err != nil {
+				return err
+			}
+		}
+	}
+
+	dimension, err := collectionCommandDimension(parentFn.commandPath, parentFn.ReturnType, collection)
+	if err != nil {
+		return err
+	}
+	type candidate struct {
+		fn    *modFunction
+		batch bool
+	}
+	candidates := map[string][]candidate{}
+	for _, side := range []struct {
+		typeDef *modTypeDef
+		batch   bool
+	}{{collection.ValueType, false}, {collection.BatchType, true}} {
+		if side.typeDef == nil {
+			continue
+		}
+		provider := side.typeDef.AsFunctionProvider()
+		if provider == nil {
+			continue
+		}
+		fns, _, err := GetSupportedFunctions(provider)
+		if err != nil {
+			return err
+		}
+		for _, fn := range fns {
+			name := fn.CmdName()
+			candidates[name] = append(candidates[name], candidate{fn: fn, batch: side.batch})
+		}
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(candidates)) {
+		matches := candidates[name]
+		if reserved[name] || len(matches) != 1 {
+			continue
+		}
+		match := matches[0]
+		route := &collectionCallRoute{Dimension: dimension, KeyType: collection.KeyType, Batch: match.batch}
+		child := match.fn.commandClone()
+		child.commandPath = &functionCommandPath{
+			Module: parentFn.commandPath.Module,
+			Fields: append(slices.Clone(parentFn.commandPath.Fields), cliName(child.Name)),
+		}
+		child.collectionRoute = route
+		child.collectionRoutes = append(slices.Clone(parentFn.collectionRoutes), route)
+		cmd.AddCommand(fc.makeSubCmd(ctx, child))
+	}
+	return nil
+}
+
+func collectionCommandDimension(path *functionCommandPath, collectionType *modTypeDef, collection *modCollection) (*artifact.Dimension, error) {
+	if path == nil || path.Module == "" || collectionType == nil || collection.ValueType == nil || collection.KeyType == nil {
+		return nil, errors.New("collection command is missing selector metadata")
+	}
+	itemType := collection.ValueType.Name()
+	identifier := "/" + strings.Join(append([]string{path.Module}, path.Fields...), "/")
+	dimension := &artifact.Dimension{
+		Kind:           "COLLECTION",
+		CollectionType: collectionType.Name(),
+		Identifier:     identifier,
+		Name:           cliName(itemType),
+		ItemType:       itemType,
+		KeyName:        "key",
+	}
+	qualified := append([]string{path.Module}, path.Fields...)
+	itemName := strings.TrimPrefix(dimension.Name, path.Module+"-")
+	dimension.QualifiedName = strings.Join(append(qualified, itemName), "-")
+	return dimension, nil
 }
 
 // makeSubCmd creates a sub-command for a function definition.
@@ -691,8 +916,18 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 	return newCmd
 }
 
-// selectFunc adds the function selection to the query.
+// selectFunc adds the function selection to the query. Once a flattened
+// collection route is crossed, selections are deferred until the leaf so its
+// selector flags can lower back to get/subset calls in the right order.
 func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
+	if fn.collectionRoute != nil || len(fc.pendingCalls) > 0 {
+		fc.pendingCalls = append(fc.pendingCalls, plannedFunctionCall{fn: fn, cmd: cmd})
+		return nil
+	}
+	return fc.selectFuncNow(fn, cmd)
+}
+
+func (fc *FuncCommand) selectFuncNow(fn *modFunction, cmd *cobra.Command) error {
 	fc.q = fc.q.Select(fn.Name)
 
 	missingFlags := []string{}
@@ -763,9 +998,141 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	return nil
 }
 
+func (fc *FuncCommand) selectPendingFunctions(selectorCmd *cobra.Command) error {
+	for _, call := range fc.pendingCalls {
+		if call.fn.collectionRoute != nil {
+			if err := fc.selectCollectionRoute(selectorCmd, call.fn.collectionRoute); err != nil {
+				return err
+			}
+		}
+		if err := fc.selectFuncNow(call.fn, call.cmd); err != nil {
+			return err
+		}
+	}
+	fc.pendingCalls = nil
+	return nil
+}
+
+func (fc *FuncCommand) selectCollectionRoute(selectorCmd *cobra.Command, route *collectionCallRoute) error {
+	values, flagName, err := fc.collectionSelectorValues(selectorCmd, route.Dimension.Identifier)
+	if err != nil {
+		return err
+	}
+	if len(values) == 0 {
+		return fmt.Errorf("required collection selector --%s not set", flagName)
+	}
+	if !route.Batch && len(values) != 1 {
+		return fmt.Errorf("collection selector --%s requires exactly one value", flagName)
+	}
+
+	typed, err := collectionSelectorValues(route.KeyType, values)
+	if err != nil {
+		return fmt.Errorf("invalid value for --%s: %w", flagName, err)
+	}
+	if route.Batch {
+		fc.q = fc.q.Select("subset").Arg("keys", typed).Select("batch")
+	} else {
+		fc.q = fc.q.Select("get").Arg("key", reflect.ValueOf(typed).Index(0).Interface())
+	}
+	return nil
+}
+
+func (fc *FuncCommand) collectionSelectorValues(selectorCmd *cobra.Command, identifier string) ([]string, string, error) {
+	commands := []*cobra.Command{selectorCmd}
+	for _, call := range fc.pendingCalls {
+		commands = append(commands, call.cmd)
+	}
+	seen := map[*cobra.Command]bool{}
+	var values []string
+	flagName := "selector"
+	var resultErr error
+	for _, cmd := range commands {
+		if cmd == nil || seen[cmd] {
+			continue
+		}
+		seen[cmd] = true
+		flags := cmd.LocalNonPersistentFlags()
+		flags.VisitAll(func(flag *pflag.Flag) {
+			if len(flag.Annotations[collectionCallSelectorFlag]) == 0 ||
+				len(flag.Annotations[artifactDimensionFlag]) == 0 ||
+				flag.Annotations[artifactDimensionFlag][0] != identifier {
+				return
+			}
+			flagName = flag.Name
+			if !flag.Changed {
+				return
+			}
+			selected, getErr := flags.GetStringArray(flag.Name)
+			if getErr != nil && resultErr == nil {
+				resultErr = getErr
+				return
+			}
+			values = append(values, selected...)
+		})
+	}
+	return values, flagName, resultErr
+}
+
+func collectionSelectorValues(typeDef *modTypeDef, values []string) (any, error) {
+	switch typeDef.Kind {
+	case core.TypeDefKindStringKind, core.TypeDefKindScalarKind:
+		return values, nil
+	case core.TypeDefKindIntegerKind:
+		result := make([]int, len(values))
+		for i, value := range values {
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return nil, err
+			}
+			result[i] = parsed
+		}
+		return result, nil
+	case core.TypeDefKindFloatKind:
+		result := make([]float64, len(values))
+		for i, value := range values {
+			parsed, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				return nil, err
+			}
+			result[i] = parsed
+		}
+		return result, nil
+	case core.TypeDefKindBooleanKind:
+		result := make([]bool, len(values))
+		for i, value := range values {
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return nil, err
+			}
+			result[i] = parsed
+		}
+		return result, nil
+	case core.TypeDefKindEnumKind:
+		result := make([]string, len(values))
+		for i, value := range values {
+			found := false
+			for _, member := range typeDef.AsEnum.Members {
+				if strings.EqualFold(value, member.Name) {
+					result[i], found = member.Name, true
+					break
+				}
+			}
+			if !found {
+				return nil, fmt.Errorf("value should be one of %s", strings.Join(typeDef.AsEnum.ValueNames(), ","))
+			}
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("unsupported collection key type %s", typeDef.Kind)
+	}
+}
+
 // RunE is the final command in the function chain, where the API request is made.
 func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
+		if err := fc.selectPendingFunctions(cmd); err != nil {
+			return err
+		}
 		q := handleObjectLeaf(fc.q, fn.ReturnType)
 
 		// Silence usage from this point on as errors don't likely come

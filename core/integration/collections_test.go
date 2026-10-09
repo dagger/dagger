@@ -172,6 +172,40 @@ func (CollectionsSuite) TestCallProjectedList(ctx context.Context, t *testctx.T)
 	require.Equal(t, 3, strings.Count(out, "CollectionsItem@"))
 }
 
+func (CollectionsSuite) TestCallCollectionSelectors(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c)).WithWorkdir("/work")
+
+	// Item functions stay on the authored collection path. The selector name
+	// comes from the singular item type, not the plural collection field.
+	out, err := base.With(daggerCallAt("./collections", "items", "name", "--collections-items-item=a")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "item:a", out)
+
+	// Repeated selectors address the subset when the function belongs to the
+	// collection's batch type.
+	out, err = base.With(daggerCallAt("./collections", "items", "selected", "--collections-items-item=a", "--collections-items-item=c")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "a\nc\n", out)
+
+	// Every nested collection boundary contributes its own selector.
+	out, err = base.With(daggerCallAt("./collections", "items", "parts", "name", "--collections-items-item=a", "--collections-items-part=x")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "x", out)
+
+	// The projected API remains available as an explicit escape hatch.
+	out, err = base.With(daggerCallAt("./collections", "items", "get", "--key=a", "name")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "item:a", out)
+
+	stderr, err := base.WithExec(
+		[]string{"dagger", "call", "-m", "./collections", "items", "name"},
+		core.ContainerWithExecOpts{UseEntrypoint: true, Expect: core.ReturnTypeFailure},
+	).Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "required collection selector --collections-items-item not set")
+}
+
 func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := goGitBase(t, c).WithDirectory("/work", collectionSource(c)).WithWorkdir("/work")
