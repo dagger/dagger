@@ -447,7 +447,7 @@ Notes:
 - Like every object in the schema, `IdentifierWord` and `NamingTerm` also
   implement `Node`.
 - The API is `@experimental` and visible to clients at engine version
-  `v1.0.0` and above.
+  `v1.0.0-0` and above, so prereleases see it.
 
 ## Engine Integration
 
@@ -520,25 +520,45 @@ commands get the legacy name as an alias. So `E2ETest` is `--e2e-test`, and
 
 ## SDK Integration
 
-Codegen calls `formatIdentifiers` (or the Go package directly, for codegen
-written in Go) and deletes its own conversion code. What each SDK should ask
-for:
+Codegen formats names from the words the engine writes into the schema JSON
+(see [Schema JSON words](#schema-json-words)); Go codegen, written in Go, uses
+`engine/naming` directly. Each SDK keeps its old converter only as the fallback
+for schemas without words, so older schemas generate byte-identical code.
+
+The principle is **"when in Rome"**: each SDK follows its own language's
+acronym convention, not one house style. Go writes initialisms in capitals
+(`ParentSHAs`), .NET, Java and PHP write acronyms like words (`WithMcpServer`,
+`asJson`, `withGpu`), and the snake-case SDKs need only the word boundaries
+(`prerequisite_shas`). What each SDK generates:
 
 | SDK | types | methods / fields | args | enum values |
 | --- | --- | --- | --- | --- |
 | GraphQL schema | `PASCAL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `SCREAMING_SNAKE` |
 | Go | `PASCAL`/`UPPERCASE` | `PASCAL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `PASCAL`/`UPPERCASE` |
-| TypeScript | `PASCAL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `SCREAMING_SNAKE` |
-| Python | `PASCAL`/`UPPERCASE` | `SNAKE` | `SNAKE` | `SCREAMING_SNAKE` |
-| Elixir | `PASCAL`/`UPPERCASE` | `SNAKE` | `SNAKE` | `SNAKE` atoms |
+| TypeScript | schema name (`PASCAL`/`UPPERCASE`) | `CAMEL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `PASCAL`/`CAPITALIZED` |
+| Python | schema name | `SNAKE` | `SNAKE` | schema value |
+| Elixir | `PASCAL`/`UPPERCASE` | `SNAKE` | `SNAKE` | schema-value atoms (`SNAKE` functions) |
 | Rust | `PASCAL`/`CAPITALIZED` | `SNAKE` | `SNAKE` | `PASCAL`/`CAPITALIZED` |
-| PHP | today's converter (`JsonValue`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
+| PHP | existing converter (`JsonValue`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
 | .NET | schema name (`ID` written `Id`) | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | schema value |
 | Java | schema name (`PASCAL`/`UPPERCASE`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | schema value |
 
-The type and method/field columns for Go, TypeScript, Python, Elixir, Rust and
-PHP match what those SDKs generate today. The argument and enum columns are
-proposals to confirm with each SDK's maintainers.
+Only SDK identifiers change. Selected fields, argument names, input object
+keys, enum values and GraphQL type names go over the wire as the schema has
+them. Where an SDK serializes an input object field by its own name, a
+renamed field is mapped back to its wire name (`#[serde(rename)]` in Rust,
+`@JsonbProperty` in Java; Elixir keeps the legacy struct keys).
+
+Type names stay as the schema has them, or as the SDK's existing converter
+writes them, in SDKs whose runtime looks types up by name (TypeScript, Python,
+Java, PHP) or where a case-only rename can't be aliased (Java and PHP class
+files, .NET types across assemblies). Enum values stay put where they are
+serialized by member name (Python, Java, .NET).
+
+TypeScript's own convention is ambiguous (`XMLHttpRequest`, `innerHTML`).
+Members follow the schema's `UPPERCASE` (`filterURI`, `callID`), and enum
+members keep the `PASCAL`/`CAPITALIZED` form the generator always wrote
+(`Tcp`, `Oci`).
 
 .NET follows the Framework Design Guidelines for members: methods and input
 object properties are PascalCase and parameters camelCase, with acronyms
@@ -566,11 +586,30 @@ in members (`filterUri`, `withGpu`). PHP method names are case-insensitive, so
 those changes are cosmetic; parameter names matter for named arguments. Classes
 keep today's converter (`ID`/`JSON` written `Id`/`Json`, the rest as the schema
 has them), since a case-only class rename only breaks PSR-4 autoloading of the
-old spelling. Renamed enum cases keep their old names as deprecated constants.
+old spelling. A class whose name differs from its GraphQL type carries
+`#[GraphQLType('JSONValue')]`, which the runtime reads when loading objects by
+ID and registering module types. Renamed enum cases keep their old names as
+deprecated constants.
+
+### Module runtimes
 
 Runtime function dispatch is unaffected. SDKs register functions with their
 native names, and the engine dispatches by `OriginalName`, so nothing on the
 dispatch path depends on names round-tripping.
+
+Calls a runtime builds itself, through a module's own interfaces, do depend on
+schema names: the runtime has to know what the engine named the interface type,
+its functions and their arguments. The Python and TypeScript runtimes no longer
+predict those names. Before invoking a function of a module that declares
+interfaces, they ask the engine with `Query.formatIdentifiers`, in batches, and
+use the results for selections, argument keys and `node(id:)` type names (the
+TypeScript runtime namespaces each interface the way the engine does,
+comparing words). The gate is
+the field itself: a runtime's session is served at its module's engine
+version, and `formatIdentifiers` exists exactly from the version the naming
+rules start at, so older modules keep the conversion they always used. Go
+module codegen mirrors `Namer` instead (see
+[Which namer applies](#which-namer-applies)).
 
 ### Schema JSON words
 
@@ -605,16 +644,18 @@ An SDK formats the words itself, which needs no dictionary:
   uppercased. Then the suffix.
 
 `engine/naming/testdata/vectors.json` lists inputs with their words and every
-format, for testing these formatters.
+format, for testing these formatters. Each SDK's formatter tests run against
+it.
 
 The JSON comes from `__schemaJSONFile` (so module and client introspection
-JSON), `Schema.merge` (which adds the words of the names it merges in),
-`cmd/introspect`, and `codegen introspect`, which reads the words from
-`Query.identifier` since the GraphQL introspection query can't carry them.
+JSON), `Schema.merge` (which adds the words of the names it merges in), and
+`cmd/introspect`. Codegen that runs the GraphQL introspection query itself
+(`codegen introspect`, and the PHP and Java client generators) fetches the
+words from `Query.identifier`, in batches, since the query can't carry them.
 
-**Gate:** `__identifiers` appears only for schema views at `v1.0.0` and above,
-the identifier API's gate, parsed with the caller's dictionary. When it is
-absent, SDKs keep their current converters, so older modules regenerate
+**Gate:** `__identifiers` appears only for schema views at `v1.0.0-0` and
+above, the identifier API's gate, parsed with the caller's dictionary. When it
+is absent, SDKs keep their current converters, so older modules regenerate
 unchanged.
 
 ## Versioning and Compatibility
@@ -640,13 +681,11 @@ Each dictionary release adds an entry to the list in
 
 Known gaps:
 
-- The TypeScript runtime's self-call introspection
-  (`sdk/typescript/src/module/introspector/introspection_json.ts`) still uses
-  ports of strcase to predict schema names, so self calls to names with
-  acronyms miss on new modules.
-- The Python runtime builds interface method and argument names with
-  `to_camel_case` (`sdk/python/src/dagger/mod/_converter.py`), so interface
-  calls to names with acronyms miss on new modules.
+- The TypeScript SDK's module introspection JSON emitter
+  (`sdk/typescript/src/module/introspector/introspection_json.ts`) still
+  predicts schema names with ports of strcase. It isn't wired in and runs
+  without an engine connection; whoever wires it should resolve names through
+  the engine like the runtimes do (see [Module runtimes](#module-runtimes)).
 - CLI naming follows the CLI's engine version, not each module's (see
   [CLI](#cli)).
 
@@ -678,37 +717,72 @@ initial dictionary, before the API above added its own (canonical) names:
   aliases: `FunctionCachePolicy` (`Default`, `PerSession`, `Never`).
   `ImageLayerCompression` and `ImageMediaTypes` already have aliases.
 
-Proposal: add an engine test asserting that every core name is canonical,
-with an allowlist for these 8. Decide separately whether to rename them, with
-deprecated aliases, before 1.0.
+`TestCoreSchemaCanonical` in `engine/naming` asserts that every core type name
+and every field/argument name outside an allowlist of the 7 is canonical, and
+fails when an allowlisted name becomes canonical; legacy enum values are only
+logged. Whether to rename the 8, with deprecated aliases, before 1.0 is an
+[open question](#open-questions).
 
 ### What changes for SDK users
 
-Measured on the core schema, comparing today's codegen with the proposed
-casing:
+Measured on the core client each SDK regenerates in this change, against the
+code it generated before:
 
-- **Go**: 7 methods — `ParentShas` → `ParentSHAs`, `Sdks` → `SDKs`, `Sha` →
-  `SHA`, `ShortSha` → `ShortSHA`, `SshfsVolume` → `SSHFSVolume`,
-  `VcsGeneratedPaths` → `VCSGeneratedPaths`, `VcsIgnoredPaths` →
-  `VCSIgnoredPaths` — plus enum constants that strcase had capitalized:
+- **Go**: 7 methods (and their option structs) — `ParentShas` → `ParentSHAs`,
+  `Sdks` → `SDKs`, `Sha` → `SHA`, `ShortSha` → `ShortSHA`, `SshfsVolume` →
+  `SSHFSVolume`, `VcsGeneratedPaths` → `VCSGeneratedPaths`, `VcsIgnoredPaths`
+  → `VCSIgnoredPaths` — plus enum constants that strcase had capitalized:
   `NetworkProtocolTcp` → `NetworkProtocolTCP` (and `Udp`),
   `RegistryProtocolHttp` → `RegistryProtocolHTTP` (and `Https`),
   `ImageMediaTypesOcimediaTypes` → `ImageMediaTypesOCIMediaTypes` (and `Oci`),
   `ImageLayerCompressionEstarGz` → `ImageLayerCompressionEStarGZ`. The old
-  names stay as deprecated wrappers and aliases.
-- **Python**: 2 names — `prerequisite_sh_as` → `prerequisite_shas`,
-  `experimental_with_all_gp_us` → `experimental_with_all_gpus`.
-- **TypeScript, PHP methods**: none (they use schema names as is).
+  names stay as deprecated wrappers and aliases. Parameter renames (`pushUrl`
+  → `pushURL`) don't affect Go callers.
+- **TypeScript**: 5 methods — `Artifacts.filterUri` → `filterURI`,
+  `Artifacts.withoutUri` → `withoutURI`, `GitCommit.parentShas` →
+  `parentSHAs`, `GitCommit.shortSha` → `shortSHA`, `LLMContentBlock.callId` →
+  `callID` — plus 5 Opts types (`ArtifactUriOpts` → `ArtifactURIOpts`,
+  `ClientHttpOpts` → `ClientHTTPOpts`, `ClientSshfsVolumeOpts` →
+  `ClientSSHFSVolumeOpts`, `WorkspaceWithSdkOpts` → `WorkspaceWithSDKOpts`,
+  `WorkspaceWithoutSdkOpts` → `WorkspaceWithoutSDKOpts`) and 2 opts keys
+  (`pushUrl` → `pushURL`, `asSdkName` → `asSDKName`), all kept as deprecated
+  aliases. The positional parameter `LLM.withToolResult(callId)` becomes
+  `callID`. No type or enum member changes.
+- **Python**: 2 methods — `prerequisite_sh_as` → `prerequisite_shas`,
+  `experimental_with_all_gp_us` → `experimental_with_all_gpus` — kept as
+  deprecated aliases.
+- **Rust**: the same 2 methods as Python, kept as deprecated aliases. No type
+  changes (`JsonValue` stays).
+- **Elixir**: 1 function — `prerequisite_sh_as` → `prerequisite_shas` — kept
+  as a deprecated alias.
+- **PHP**: members are now `CAMEL`/`CAPITALIZED`. 19 methods change only in
+  case (`withGPU` → `withGpu`), which PHP method names ignore: `traceURL`,
+  `withGPU`, `experimentalWithGPU`, `experimentalWithAllGPUs`, `asJSON`,
+  `withVCSGeneratedPaths`, `withVCSIgnoredPaths`, `prerequisiteSHAs`,
+  `previousSHA`, `commitSHA`, `withMCPServer`, `introspectionSchemaJSON` (on
+  `Module` and `ModuleSource`), `withSDK` (on `ModuleSource` and `Workspace`),
+  `withoutSDK`, `clientSchemaIntrospectionJSON`, `htmlURL` and `htmlRepoURL`.
+  Legacy enum cases become `SCREAMING_SNAKE`
+  (`FunctionCachePolicy::PER_SESSION`, `ImageLayerCompression::E_STAR_GZ`,
+  `ImageMediaTypes::OCI_MEDIA_TYPES`, ...) with the old names as deprecated
+  constants. 3 parameters — `insecureSkipTLSVerify` → `insecureSkipTlsVerify`
+  on `from` and `publish`, `expectedRemoteSHA` → `expectedRemoteSha` on
+  `GitRef::push` — break named-argument callers. No class changes.
+- **Java**: the same 19 case-only method renames as PHP (`asJSON` → `asJson`,
+  `withGPU` → `withGpu`, ...), plus optional-argument setters
+  (`withInsecureSkipTLSVerify` → `withInsecureSkipTlsVerify`), all kept as
+  deprecated forwarders. Parameter names don't affect Java callers. No class
+  or enum constant changes.
 - **.NET**: 3 methods — `WithVcsgeneratedPaths` → `WithVcsGeneratedPaths`
   (and `WithVcsignoredPaths`), `WithMcpserver` → `WithMcpServer` — kept as
   obsolete forwarders; 3 parameters — `insecureSkipTLSVerify` →
   `insecureSkipTlsVerify` on `From` and `PublishAsync`, `expectedRemoteSHA` →
   `expectedRemoteSha` on `GitRef.Push` — which break named-argument callers.
   No type, property or enum member changes.
-- **Rust, Elixir**: not measured in full. Rust has both of Python's plural
-  bugs and Elixir has `prerequisite_sh_as`.
 
-Where cheap, SDKs keep the old names as deprecated aliases for one release.
+Renamed identifiers stay as deprecated aliases wherever the language allows
+one. The only hard breaks are the PHP and .NET parameter renames above: neither
+language can alias a parameter name.
 
 ## Guarantees
 
@@ -823,6 +897,18 @@ package, plus any SDK that keeps a local copy for offline use) must pass.
    never splits, because the same rule on lowercase words risks false
    positives. Without it, `PASCAL` names made only of acronyms (`JSONAPI`,
    `HTMLURL`) wouldn't come back unchanged.
+5. **Java and PHP class names.** Strict "when in Rome" would write them
+   `CAPITALIZED` (`JsonValue`, `Llm` in Java; `JsonValue` throughout in PHP).
+   A case-only class rename can't keep a deprecated alias, so this would be a
+   breaking change, best left for a major version.
+6. **TypeScript's convention.** The ecosystem writes acronyms both ways. The
+   generator uses `UPPERCASE` members and `CAPITALIZED` enum members today;
+   confirm with the TypeScript maintainers.
+7. **Input object field names.** Rust and Elixir (and possibly Python) had
+   existing bugs where an input object field is sent by its SDK name rather
+   than its schema name. The new codegen maps renamed fields back to their
+   wire names without changing behavior; the underlying bugs are a separate
+   fix.
 
 ## Implementation Plan
 
@@ -833,10 +919,14 @@ package, plus any SDK that keeps a local copy for offline use) must pass.
 3. Switch engine normalization (`core/gqlformat.go`, typedef constructors,
    `namespaceObject`, CLI kebab names) to the package behind an engine-version
    view. Keep strcase behavior for older modules.
-4. Delete `strcase.ConfigureAcronym` in `core/llm.go` and the
-   `withFinalTypeName` re-normalization workaround once older modules are
-   handled by the legacy path.
+4. Keep `strcase.ConfigureAcronym` in `core/llm.go` / `core/json.go` and the
+   `withFinalTypeName` re-normalization workaround for the legacy path only;
+   delete them once modules below the gate are no longer supported.
 5. Add the core-schema canonical-name test with the allowlist.
-6. Move SDK codegen to `formatIdentifiers` one SDK at a time, starting with
-   Python, Rust and Elixir (the visible plural bugs), then Go (golint list), then
-   TypeScript, PHP and .NET.
+6. Write each name's words into the schema JSON, and move SDK codegen to
+   format from them one SDK at a time: Python, Rust and Elixir (the visible
+   plural bugs), Go (golint list), TypeScript, PHP, Java and .NET.
+7. Resolve the names module runtimes build themselves (Python and TypeScript
+   interface calls) through `formatIdentifiers`.
+
+Steps 1–7 are done; step 4's deletion waits on the legacy path.
