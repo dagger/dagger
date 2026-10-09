@@ -895,11 +895,18 @@ func (file *File) WithContents(ctx context.Context, parent dagql.ObjectResult[*D
 }
 
 // Contents handles file content retrieval
-func (file *File) Contents(ctx context.Context, self dagql.ObjectResult[*File], offset, limit *int) ([]byte, error) {
+func (file *File) Contents(ctx context.Context, self dagql.ObjectResult[*File], offset, limit *int) (_ []byte, rerr error) {
 	if limit != nil && *limit == 0 {
 		// edge case: 0 limit, possibly from maths, just don't do anything
 		return nil, nil
 	}
+
+	// Resolving the file can stat it in the same snapshot, e.g. a subfile
+	// of a directory; that stat and this read share one mount.
+	ctx, closeMounts := withReadMountScope(ctx)
+	defer func() {
+		rerr = errors.Join(rerr, closeMounts())
+	}()
 
 	var buf bytes.Buffer
 	w := &limitedWriter{
@@ -962,7 +969,7 @@ func (file *File) Contents(ctx context.Context, self dagql.ObjectResult[*File], 
 			}
 		}
 		return err
-	}, mountRefAsReadOnly)
+	}, mountRefAsReadOnly, mountRefShared)
 	if err != nil {
 		return nil, err
 	}

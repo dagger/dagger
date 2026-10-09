@@ -3779,7 +3779,7 @@ func (dir *Directory) Stat(ctx context.Context, self dagql.ObjectResult[*Directo
 		}
 		fileInfo, err = osStatFunc(resolvedPath)
 		return TrimErrPathPrefix(err, root)
-	})
+	}, mountRefShared)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, &os.PathError{Op: "stat", Path: targetPath, Err: syscall.ENOENT}
