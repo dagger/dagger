@@ -1,0 +1,6 @@
+kind: Fixed
+body: Directory.filter and withDirectory with include patterns no longer walk directories that no include pattern can reach, so a filter that includes a few files no longer reads the whole source tree.
+time: 2026-10-09T17:02:32+00:00
+custom:
+    Author: sipsma
+    PR: "14603"
