@@ -39,6 +39,11 @@ type {{ .Name | InterfaceClientName }} struct {
 func (r *{{ .Name | InterfaceClientName }}) WithGraphQLQuery(q *querybuilder.Selection) *{{ .Name | InterfaceClientName }} {
 	return &{{ .Name | InterfaceClientName }}{
 		query: q,
+		{{- if MemoizeIDs }}
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+		{{- end }}
 	}
 }
 
@@ -133,14 +138,14 @@ type {{ $field | FieldOptionsStructName }} struct {
 	return &{{ $typeName | InterfaceClientName }}{
 		query: q,
 		{{- if MemoizeIDs }}
-		refetchID: {{ if $field.Directives.Reevaluates }}true{{ else }}r.refetchID{{ end }},
+		refetchID: true,
 		{{- end }}
 	}
 	{{- else if $field.TypeRef.IsObject }}
 	return &{{ $typeName }}{
 		query: q,
 		{{- if MemoizeIDs }}
-		refetchID: {{ if $field.Directives.Reevaluates }}true{{ else }}r.refetchID{{ end }},
+		refetchID: true,
 		{{- end }}
 	}
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}

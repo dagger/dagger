@@ -161,6 +161,50 @@ func TestObjectIDRefetchedForReevaluatedChain(t *testing.T) {
 	require.Equal(t, 2, conn.count("address.container.id"))
 }
 
+// TestObjectIDRefetchedWhenRequested verifies that an object built through a
+// field reevaluated only when an argument asks for it (here noCache) fetches
+// its ID on every use only for such calls.
+func TestObjectIDRefetchedWhenRequested(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		opts []core.HostDirectoryOpts
+		want int
+	}{
+		{name: "default", want: 1},
+		{name: "noCache", opts: []core.HostDirectoryOpts{{NoCache: true}}, want: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := &fakeIDConn{}
+			c, err := dagger.Connect(ctx, dagger.WithConn(conn))
+			require.NoError(t, err)
+			dir := core.NewQuery(c).Host().Directory(".", tc.opts...)
+			for range 2 {
+				_, err := dir.ID(ctx)
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.want, conn.count("host.directory.id"))
+		})
+	}
+}
+
+// TestObjectIDRefetchedForRawQuery verifies that an object built from a raw
+// query, whose fields may need to be reevaluated, fetches its ID on every use.
+func TestObjectIDRefetchedForRawQuery(t *testing.T) {
+	ctx := context.Background()
+	conn := &fakeIDConn{}
+	c, err := dagger.Connect(ctx, dagger.WithConn(conn))
+	require.NoError(t, err)
+	q := core.NewQuery(c)
+
+	f := (&core.File{}).WithGraphQLQuery(q.QueryBuilder().Select("directory").Select("file").Arg("path", "a"))
+	for range 2 {
+		_, err := f.ID(ctx)
+		require.NoError(t, err)
+	}
+	require.Equal(t, 2, conn.count("directory.file.id"))
+}
+
 // fakeIDConn answers single-chain GraphQL queries. It returns the chain's
 // field path, such as "directory.file.id", as the value of the last field, and
 // records each query by that path.

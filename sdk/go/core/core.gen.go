@@ -167,6 +167,9 @@ type Address struct {
 func (r *Address) WithGraphQLQuery(q *querybuilder.Selection) *Address {
 	return &Address{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -212,6 +215,7 @@ type AddressDirectoryOpts struct {
 // Load a directory from the address.
 func (r *Address) Directory(opts ...AddressDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
@@ -228,16 +232,18 @@ func (r *Address) Directory(opts ...AddressDirectoryOpts) *Directory {
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
+			refetchID = true
 		}
 		// `noLock` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoLock) {
 			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
 		}
 	}
 
 	return &Directory{
 		query:     q,
-		refetchID: r.refetchID,
+		refetchID: refetchID,
 	}
 }
 
@@ -259,6 +265,7 @@ type AddressFileOpts struct {
 // Load a file from the address.
 func (r *Address) File(opts ...AddressFileOpts) *File {
 	q := r.query.Select("file")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
@@ -275,16 +282,18 @@ func (r *Address) File(opts ...AddressFileOpts) *File {
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
+			refetchID = true
 		}
 		// `noLock` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoLock) {
 			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
 		}
 	}
 
 	return &File{
 		query:     q,
-		refetchID: r.refetchID,
+		refetchID: refetchID,
 	}
 }
 
@@ -299,16 +308,18 @@ type AddressGitRefOpts struct {
 // Load a git ref (branch, tag or commit) from the address.
 func (r *Address) GitRef(opts ...AddressGitRefOpts) *GitRef {
 	q := r.query.Select("gitRef")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `noLock` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoLock) {
 			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
 		}
 	}
 
 	return &GitRef{
 		query:     q,
-		refetchID: r.refetchID,
+		refetchID: refetchID,
 	}
 }
 
@@ -467,6 +478,9 @@ type Agent struct {
 func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
 	return &Agent{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -855,6 +869,9 @@ type AgentMessage struct {
 func (r *AgentMessage) WithGraphQLQuery(q *querybuilder.Selection) *AgentMessage {
 	return &AgentMessage{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -986,6 +1003,9 @@ type Artifact struct {
 func (r *Artifact) WithGraphQLQuery(q *querybuilder.Selection) *Artifact {
 	return &Artifact{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -1252,6 +1272,9 @@ type ArtifactDimension struct {
 func (r *ArtifactDimension) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactDimension {
 	return &ArtifactDimension{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -1429,6 +1452,9 @@ type ArtifactDimensionKey struct {
 func (r *ArtifactDimensionKey) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactDimensionKey {
 	return &ArtifactDimensionKey{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -1531,6 +1557,9 @@ type ArtifactPath struct {
 func (r *ArtifactPath) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactPath {
 	return &ArtifactPath{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -1664,6 +1693,9 @@ type ArtifactResult struct {
 func (r *ArtifactResult) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactResult {
 	return &ArtifactResult{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -1789,6 +1821,9 @@ func (r *Artifacts) With(f WithArtifactsFunc) *Artifacts {
 func (r *Artifacts) WithGraphQLQuery(q *querybuilder.Selection) *Artifacts {
 	return &Artifacts{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -2525,6 +2560,9 @@ type CacheVolume struct {
 func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
 	return &CacheVolume{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -2608,6 +2646,9 @@ func (r *Changeset) With(f WithChangesetFunc) *Changeset {
 func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
 	return &Changeset{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -2938,6 +2979,9 @@ func (r *Check) With(f WithCheckFunc) *Check {
 func (r *Check) WithGraphQLQuery(q *querybuilder.Selection) *Check {
 	return &Check{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -3080,6 +3124,9 @@ type ClientFilesyncMirror struct {
 func (r *ClientFilesyncMirror) WithGraphQLQuery(q *querybuilder.Selection) *ClientFilesyncMirror {
 	return &ClientFilesyncMirror{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -3153,6 +3200,9 @@ type Cloud struct {
 func (r *Cloud) WithGraphQLQuery(q *querybuilder.Selection) *Cloud {
 	return &Cloud{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -3237,6 +3287,9 @@ type CollectionDelta struct {
 func (r *CollectionDelta) WithGraphQLQuery(q *querybuilder.Selection) *CollectionDelta {
 	return &CollectionDelta{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -3328,6 +3381,9 @@ type CollectionTypeDef struct {
 func (r *CollectionTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *CollectionTypeDef {
 	return &CollectionTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -3440,6 +3496,9 @@ type Command struct {
 func (r *Command) WithGraphQLQuery(q *querybuilder.Selection) *Command {
 	return &Command{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -3618,6 +3677,9 @@ func (r *Container) With(f WithContainerFunc) *Container {
 func (r *Container) WithGraphQLQuery(q *querybuilder.Selection) *Container {
 	return &Container{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -6085,6 +6147,9 @@ type CurrentModule struct {
 func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModule {
 	return &CurrentModule{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -6273,6 +6338,9 @@ type DiffStat struct {
 func (r *DiffStat) WithGraphQLQuery(q *querybuilder.Selection) *DiffStat {
 	return &DiffStat{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -6424,6 +6492,9 @@ func (r *Directory) With(f WithDirectoryFunc) *Directory {
 func (r *Directory) WithGraphQLQuery(q *querybuilder.Selection) *Directory {
 	return &Directory{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -7384,6 +7455,9 @@ type Engine struct {
 func (r *Engine) WithGraphQLQuery(q *querybuilder.Selection) *Engine {
 	return &Engine{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -7494,6 +7568,9 @@ type EngineCache struct {
 func (r *EngineCache) WithGraphQLQuery(q *querybuilder.Selection) *EngineCache {
 	return &EngineCache{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -7704,6 +7781,9 @@ type EngineCacheEntry struct {
 func (r *EngineCacheEntry) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntry {
 	return &EngineCacheEntry{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -7879,6 +7959,9 @@ type EngineCacheEntrySet struct {
 func (r *EngineCacheEntrySet) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntrySet {
 	return &EngineCacheEntrySet{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8013,6 +8096,9 @@ type EnumTypeDef struct {
 func (r *EnumTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumTypeDef {
 	return &EnumTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8213,6 +8299,9 @@ type EnumValueTypeDef struct {
 func (r *EnumValueTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumValueTypeDef {
 	return &EnumValueTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8364,6 +8453,9 @@ func (r *EnvFile) With(f WithEnvFileFunc) *EnvFile {
 func (r *EnvFile) WithGraphQLQuery(q *querybuilder.Selection) *EnvFile {
 	return &EnvFile{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8567,6 +8659,9 @@ type EnvVariable struct {
 func (r *EnvVariable) WithGraphQLQuery(q *querybuilder.Selection) *EnvVariable {
 	return &EnvVariable{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8673,6 +8768,9 @@ func (r *Error) With(f WithErrorFunc) *Error {
 func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
 	return &Error{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8804,6 +8902,9 @@ type ErrorValue struct {
 func (r *ErrorValue) WithGraphQLQuery(q *querybuilder.Selection) *ErrorValue {
 	return &ErrorValue{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8904,6 +9005,9 @@ type Expertise struct {
 func (r *Expertise) WithGraphQLQuery(q *querybuilder.Selection) *Expertise {
 	return &Expertise{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -9027,6 +9131,9 @@ type FieldTypeDef struct {
 func (r *FieldTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *FieldTypeDef {
 	return &FieldTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -9179,6 +9286,9 @@ func (r *File) With(f WithFileFunc) *File {
 func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 	return &File{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -9637,6 +9747,9 @@ func (r *Function) With(f WithFunctionFunc) *Function {
 func (r *Function) WithGraphQLQuery(q *querybuilder.Selection) *Function {
 	return &Function{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -10000,6 +10113,9 @@ type FunctionArg struct {
 func (r *FunctionArg) WithGraphQLQuery(q *querybuilder.Selection) *FunctionArg {
 	return &FunctionArg{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -10192,6 +10308,9 @@ type FunctionCall struct {
 func (r *FunctionCall) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCall {
 	return &FunctionCall{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -10361,6 +10480,9 @@ type FunctionCallArgValue struct {
 func (r *FunctionCallArgValue) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCallArgValue {
 	return &FunctionCallArgValue{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -10467,6 +10589,9 @@ func (r *GeneratedCode) With(f WithGeneratedCodeFunc) *GeneratedCode {
 func (r *GeneratedCode) WithGraphQLQuery(q *querybuilder.Selection) *GeneratedCode {
 	return &GeneratedCode{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -10599,6 +10724,9 @@ func (r *Generator) With(f WithGeneratorFunc) *Generator {
 func (r *Generator) WithGraphQLQuery(q *querybuilder.Selection) *Generator {
 	return &Generator{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -10711,6 +10839,9 @@ func (r *GitBundle) With(f WithGitBundleFunc) *GitBundle {
 func (r *GitBundle) WithGraphQLQuery(q *querybuilder.Selection) *GitBundle {
 	return &GitBundle{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -10874,6 +11005,9 @@ type GitBundleRef struct {
 func (r *GitBundleRef) WithGraphQLQuery(q *querybuilder.Selection) *GitBundleRef {
 	return &GitBundleRef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -10983,6 +11117,9 @@ type GitCommit struct {
 func (r *GitCommit) WithGraphQLQuery(q *querybuilder.Selection) *GitCommit {
 	return &GitCommit{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -11330,6 +11467,9 @@ type GitPushResult struct {
 func (r *GitPushResult) WithGraphQLQuery(q *querybuilder.Selection) *GitPushResult {
 	return &GitPushResult{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -11467,6 +11607,9 @@ func (r *GitRef) With(f WithGitRefFunc) *GitRef {
 func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	return &GitRef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -11866,6 +12009,9 @@ type GitRemote struct {
 func (r *GitRemote) WithGraphQLQuery(q *querybuilder.Selection) *GitRemote {
 	return &GitRemote{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -11972,6 +12118,9 @@ func (r *GitRepository) With(f WithGitRepositoryFunc) *GitRepository {
 func (r *GitRepository) WithGraphQLQuery(q *querybuilder.Selection) *GitRepository {
 	return &GitRepository{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -12010,17 +12159,19 @@ type GitRepositoryBranchOpts struct {
 // Returns details of a branch.
 func (r *GitRepository) Branch(name string, opts ...GitRepositoryBranchOpts) *GitRef {
 	q := r.query.Select("branch")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `noLock` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoLock) {
 			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
 		}
 	}
 	q = q.Arg("name", name)
 
 	return &GitRef{
 		query:     q,
-		refetchID: r.refetchID,
+		refetchID: refetchID,
 	}
 }
 
@@ -12108,16 +12259,18 @@ type GitRepositoryHeadOpts struct {
 // Returns details for HEAD.
 func (r *GitRepository) Head(opts ...GitRepositoryHeadOpts) *GitRef {
 	q := r.query.Select("head")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `noLock` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoLock) {
 			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
 		}
 	}
 
 	return &GitRef{
 		query:     q,
-		refetchID: r.refetchID,
+		refetchID: refetchID,
 	}
 }
 
@@ -12180,6 +12333,7 @@ type GitRepositoryLatestOpts struct {
 // Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned unless noLock is enabled.
 func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
 	q := r.query.Select("latest")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
@@ -12188,12 +12342,13 @@ func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
 		// `noLock` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoLock) {
 			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
 		}
 	}
 
 	return &GitRef{
 		query:     q,
-		refetchID: r.refetchID,
+		refetchID: refetchID,
 	}
 }
 
@@ -12206,17 +12361,19 @@ type GitRepositoryRefOpts struct {
 // Returns details of a ref.
 func (r *GitRepository) Ref(name string, opts ...GitRepositoryRefOpts) *GitRef {
 	q := r.query.Select("ref")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `noLock` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoLock) {
 			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
 		}
 	}
 	q = q.Arg("name", name)
 
 	return &GitRef{
 		query:     q,
-		refetchID: r.refetchID,
+		refetchID: refetchID,
 	}
 }
 
@@ -12273,17 +12430,19 @@ type GitRepositoryTagOpts struct {
 // Returns details of a tag.
 func (r *GitRepository) Tag(name string, opts ...GitRepositoryTagOpts) *GitRef {
 	q := r.query.Select("tag")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `noLock` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoLock) {
 			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
 		}
 	}
 	q = q.Arg("name", name)
 
 	return &GitRef{
 		query:     q,
-		refetchID: r.refetchID,
+		refetchID: refetchID,
 	}
 }
 
@@ -12425,6 +12584,9 @@ type HTTPState struct {
 func (r *HTTPState) WithGraphQLQuery(q *querybuilder.Selection) *HTTPState {
 	return &HTTPState{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -12503,6 +12665,9 @@ type HealthcheckConfig struct {
 func (r *HealthcheckConfig) WithGraphQLQuery(q *querybuilder.Selection) *HealthcheckConfig {
 	return &HealthcheckConfig{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -12664,6 +12829,9 @@ type Host struct {
 func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
 	return &Host{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -12693,6 +12861,7 @@ type HostDirectoryOpts struct {
 // Accesses a directory on the host.
 func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
@@ -12705,6 +12874,7 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
+			refetchID = true
 		}
 		// `gitignore` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
@@ -12715,7 +12885,7 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 
 	return &Directory{
 		query:     q,
-		refetchID: r.refetchID,
+		refetchID: refetchID,
 	}
 }
 
@@ -12728,17 +12898,19 @@ type HostFileOpts struct {
 // Accesses a file on the host.
 func (r *Host) File(path string, opts ...HostFileOpts) *File {
 	q := r.query.Select("file")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
+			refetchID = true
 		}
 	}
 	q = q.Arg("path", path)
 
 	return &File{
 		query:     q,
-		refetchID: r.refetchID,
+		refetchID: refetchID,
 	}
 }
 
@@ -12914,6 +13086,9 @@ type InputTypeDef struct {
 func (r *InputTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *InputTypeDef {
 	return &InputTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -13035,6 +13210,9 @@ type InterfaceTypeDef struct {
 func (r *InterfaceTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *InterfaceTypeDef {
 	return &InterfaceTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -13207,6 +13385,9 @@ func (r *JSONValue) With(f WithJSONValueFunc) *JSONValue {
 func (r *JSONValue) WithGraphQLQuery(q *querybuilder.Selection) *JSONValue {
 	return &JSONValue{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -13481,6 +13662,9 @@ func (r *LLM) With(f WithLLMFunc) *LLM {
 func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 	return &LLM{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14285,6 +14469,9 @@ func (r *LLMContent) With(f WithLLMContentFunc) *LLMContent {
 func (r *LLMContent) WithGraphQLQuery(q *querybuilder.Selection) *LLMContent {
 	return &LLMContent{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14448,6 +14635,9 @@ type LLMContentBlock struct {
 func (r *LLMContentBlock) WithGraphQLQuery(q *querybuilder.Selection) *LLMContentBlock {
 	return &LLMContentBlock{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14671,6 +14861,9 @@ type LLMMessage struct {
 func (r *LLMMessage) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessage {
 	return &LLMMessage{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14826,6 +15019,9 @@ type LLMMessageOrigin struct {
 func (r *LLMMessageOrigin) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessageOrigin {
 	return &LLMMessageOrigin{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14960,6 +15156,9 @@ type LLMSkill struct {
 func (r *LLMSkill) WithGraphQLQuery(q *querybuilder.Selection) *LLMSkill {
 	return &LLMSkill{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -15063,6 +15262,9 @@ type LLMTokenUsage struct {
 func (r *LLMTokenUsage) WithGraphQLQuery(q *querybuilder.Selection) *LLMTokenUsage {
 	return &LLMTokenUsage{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -15202,6 +15404,9 @@ type Label struct {
 func (r *Label) WithGraphQLQuery(q *querybuilder.Selection) *Label {
 	return &Label{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -15300,6 +15505,9 @@ type ListTypeDef struct {
 func (r *ListTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ListTypeDef {
 	return &ListTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -15394,6 +15602,9 @@ func (r *Module) With(f WithModuleFunc) *Module {
 func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
 	return &Module{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -15827,6 +16038,9 @@ type ModuleConfigClient struct {
 func (r *ModuleConfigClient) WithGraphQLQuery(q *querybuilder.Selection) *ModuleConfigClient {
 	return &ModuleConfigClient{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -15952,6 +16166,9 @@ func (r *ModuleSource) With(f WithModuleSourceFunc) *ModuleSource {
 func (r *ModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *ModuleSource {
 	return &ModuleSource{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -16748,6 +16965,9 @@ type ObjectTypeDef struct {
 func (r *ObjectTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ObjectTypeDef {
 	return &ObjectTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -16976,6 +17196,9 @@ type Port struct {
 func (r *Port) WithGraphQLQuery(q *querybuilder.Selection) *Port {
 	return &Port{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -17105,6 +17328,9 @@ type Query struct {
 func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
 	return &Query{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -17944,6 +18170,9 @@ type RemoteGitMirror struct {
 func (r *RemoteGitMirror) WithGraphQLQuery(q *querybuilder.Selection) *RemoteGitMirror {
 	return &RemoteGitMirror{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -18018,6 +18247,9 @@ type SDKConfig struct {
 func (r *SDKConfig) WithGraphQLQuery(q *querybuilder.Selection) *SDKConfig {
 	return &SDKConfig{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -18119,6 +18351,9 @@ type ScalarTypeDef struct {
 func (r *ScalarTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ScalarTypeDef {
 	return &ScalarTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -18239,6 +18474,9 @@ func (r *Schema) With(f WithSchemaFunc) *Schema {
 func (r *Schema) WithGraphQLQuery(q *querybuilder.Selection) *Schema {
 	return &Schema{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -18339,6 +18577,9 @@ type SearchResult struct {
 func (r *SearchResult) WithGraphQLQuery(q *querybuilder.Selection) *SearchResult {
 	return &SearchResult{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -18498,6 +18739,9 @@ type SearchSubmatch struct {
 func (r *SearchSubmatch) WithGraphQLQuery(q *querybuilder.Selection) *SearchSubmatch {
 	return &SearchSubmatch{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -18612,6 +18856,9 @@ type Secret struct {
 func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
 	return &Secret{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -18737,6 +18984,9 @@ func (r *Service) With(f WithServiceFunc) *Service {
 func (r *Service) WithGraphQLQuery(q *querybuilder.Selection) *Service {
 	return &Service{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -19025,6 +19275,9 @@ type Socket struct {
 func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
 	return &Socket{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -19102,6 +19355,9 @@ type SourceMap struct {
 func (r *SourceMap) WithGraphQLQuery(q *querybuilder.Selection) *SourceMap {
 	return &SourceMap{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -19243,6 +19499,9 @@ type Stat struct {
 func (r *Stat) WithGraphQLQuery(q *querybuilder.Selection) *Stat {
 	return &Stat{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -19368,6 +19627,9 @@ type Terminal struct {
 func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
 	return &Terminal{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -19475,6 +19737,9 @@ func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 func (r *TypeDef) WithGraphQLQuery(q *querybuilder.Selection) *TypeDef {
 	return &TypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -20038,6 +20303,9 @@ type Volume struct {
 func (r *Volume) WithGraphQLQuery(q *querybuilder.Selection) *Volume {
 	return &Volume{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -20126,6 +20394,9 @@ func (r *Workspace) With(f WithWorkspaceFunc) *Workspace {
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	return &Workspace{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -21717,6 +21988,9 @@ type WorkspaceCommitPick struct {
 func (r *WorkspaceCommitPick) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceCommitPick {
 	return &WorkspaceCommitPick{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -21835,6 +22109,9 @@ type WorkspaceGit struct {
 func (r *WorkspaceGit) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceGit {
 	return &WorkspaceGit{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -21942,6 +22219,9 @@ type WorkspaceMigration struct {
 func (r *WorkspaceMigration) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceMigration {
 	return &WorkspaceMigration{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -22082,6 +22362,9 @@ type WorkspaceMigrationStep struct {
 func (r *WorkspaceMigrationStep) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceMigrationStep {
 	return &WorkspaceMigrationStep{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -22203,6 +22486,9 @@ type WorkspaceModule struct {
 func (r *WorkspaceModule) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceModule {
 	return &WorkspaceModule{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -22364,6 +22650,9 @@ type WorkspaceModuleSetting struct {
 func (r *WorkspaceModuleSetting) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceModuleSetting {
 	return &WorkspaceModuleSetting{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -22529,6 +22818,9 @@ type WorkspaceSDK struct {
 func (r *WorkspaceSDK) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceSDK {
 	return &WorkspaceSDK{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -22719,6 +23011,9 @@ type ExportableClient struct {
 func (r *ExportableClient) WithGraphQLQuery(q *querybuilder.Selection) *ExportableClient {
 	return &ExportableClient{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -22828,6 +23123,9 @@ type NodeClient struct {
 func (r *NodeClient) WithGraphQLQuery(q *querybuilder.Selection) *NodeClient {
 	return &NodeClient{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -22905,6 +23203,9 @@ type SyncerClient struct {
 func (r *SyncerClient) WithGraphQLQuery(q *querybuilder.Selection) *SyncerClient {
 	return &SyncerClient{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
