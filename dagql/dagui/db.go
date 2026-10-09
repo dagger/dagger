@@ -191,6 +191,10 @@ type DB struct {
 	// them. addCall invalidates provisional entries.
 	spanCalls map[*Span]spanCalls
 
+	// names interns span names, which repeat heavily: a dagql call span is
+	// named for its Type.field.
+	names map[string]string
+
 	// unsentAncestors holds ancestors of surfaced spans (see
 	// Span.IsSurfacedKind) that UpdatedSnapshots needed to send but couldn't,
 	// because they hadn't been received yet; they're sent once they arrive.
@@ -299,6 +303,32 @@ func NewDB() *DB {
 
 func (db *DB) seen(spanID SpanID) {
 	db.seenSpans[spanID] = struct{}{}
+}
+
+// maxInternedNames bounds db.names, so a trace of uniquely named spans
+// can't grow it without limit; past it, names are kept as they came.
+const maxInternedNames = 1 << 14
+
+// maxInternedNameLen skips interning long names, which are rarely repeated.
+const maxInternedNameLen = 64
+
+// internName returns a shared copy of a span name, so spans with the same
+// name don't each keep their own.
+func (db *DB) internName(name string) string {
+	if len(name) > maxInternedNameLen {
+		return name
+	}
+	if interned, ok := db.names[name]; ok {
+		return interned
+	}
+	if len(db.names) >= maxInternedNames {
+		return name
+	}
+	if db.names == nil {
+		db.names = map[string]string{}
+	}
+	db.names[name] = name
+	return name
 }
 
 func (db *DB) hasSeen(spanID SpanID) bool {
@@ -442,6 +472,7 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 		span := db.findOrAllocSpan(snapshot.ID)
 		span.Received = true
 		snapshot.Version += span.Version // don't reset the version
+		snapshot.Name = db.internName(snapshot.Name)
 		if snapshot.Progress == nil {
 			// don't lose locally ingested progress to a snapshot that
 			// predates it
@@ -941,7 +972,7 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	spanData.Received = true
 	spanData.TraceID = TraceID{span.SpanContext().TraceID()}
 	spanData.ParentID.SpanID = span.Parent().SpanID()
-	spanData.Name = span.Name()
+	spanData.Name = db.internName(span.Name())
 	if name, ok := db.namesFromLog[spanID]; ok && span.StartTime().After(span.EndTime()) {
 		spanData.Name = name
 	} else if !span.StartTime().After(span.EndTime()) {

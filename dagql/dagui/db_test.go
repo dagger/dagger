@@ -4,6 +4,7 @@ import (
 	"sort"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 // rootSubscription is the filter a remote frontend that only subscribed to
@@ -27,6 +28,23 @@ func forwardedNames(t *testing.T, db *DB, snapshots []SpanSnapshot) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// Spans with the same name share one copy of it.
+func TestSpanNamesInterned(t *testing.T) {
+	db := NewDB()
+	name := func() string { return string([]byte("Container.withExec")) }
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: spanID(1), Name: name()},
+		{ID: spanID(2), Name: name()},
+	})
+	a, b := db.Spans.Map[spanID(1)].Name, db.Spans.Map[spanID(2)].Name
+	if a != "Container.withExec" || b != a {
+		t.Fatalf("names = %q, %q", a, b)
+	}
+	if unsafe.StringData(a) != unsafe.StringData(b) {
+		t.Fatal("spans with the same name should share it")
+	}
 }
 
 // db.Intervals keeps one span per call digest and start time: re-exports of
