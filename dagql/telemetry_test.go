@@ -28,6 +28,10 @@ func (s *testCallPayloadSeenKeyStore) ClaimCallPayload(digest string) bool {
 	return !seen
 }
 
+func (s *testCallPayloadSeenKeyStore) ClaimCallPayloadRoot(digest string) (claimed, repair bool) {
+	return s.ClaimCallPayload(digest), false
+}
+
 // The two telemetry dedupe stores must be blind to each other. Payload
 // decisions cover a chain's whole closure and must neither suppress spans nor
 // be suppressed by the session-wide span cache.

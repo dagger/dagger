@@ -1,0 +1,6 @@
+kind: Fixed
+body: A call payload that telemetry failed to deliver to a client after every retry is logged again by later calls that reach it, instead of staying missing for that client.
+time: 2026-10-09T04:34:42+00:00
+custom:
+    Author: sipsma
+    PR: "14597"

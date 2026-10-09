@@ -351,12 +351,14 @@ type flakyLogExporter struct {
 	attempts int
 	bodies   []string
 	batches  []int
+	finals   []bool
 }
 
-func (e *flakyLogExporter) Export(_ context.Context, recs []sdklog.Record) error {
+func (e *flakyLogExporter) Export(ctx context.Context, recs []sdklog.Record) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.attempts++
+	e.finals = append(e.finals, IsFinalExportAttempt(ctx))
 	if e.attempts <= e.failures {
 		return errors.New("client db unavailable")
 	}
@@ -500,6 +502,35 @@ func TestCallPayloadBatchProcessorDropsBatchAfterMaxAttempts(t *testing.T) {
 	err = proc.Shutdown(ctx)
 	require.ErrorContains(t, err, "dropping 1 protected records")
 	require.Equal(t, 1, strings.Count(err.Error(), "dropping"))
+}
+
+// Only the last attempt before a drop is marked final, so the session
+// exporter records what the drop loses and nothing a retry still delivers. A
+// flush started from inside another lane's final export (control records
+// flush the call lanes first) is not marked final by inheritance.
+func TestCallPayloadBatchProcessorMarksFinalAttempt(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		exp := &flakyLogExporter{failures: CallPayloadMaxExportAttempts}
+		proc := NewCallPayloadBatchProcessor(exp)
+		provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(proc))
+		logger := provider.Logger("test.core")
+		logger.Emit(t.Context(), payloadRecordWithBody("doomed"))
+		require.ErrorContains(t, proc.ForceFlush(t.Context()), "dropping 1 protected records")
+
+		logger.Emit(t.Context(), payloadRecordWithBody("fresh"))
+		inherited := context.WithValue(t.Context(), finalExportAttemptKey{}, true)
+		require.NoError(t, proc.ForceFlush(inherited))
+
+		exp.mu.Lock()
+		finals := append([]bool(nil), exp.finals...)
+		exp.mu.Unlock()
+		want := make([]bool, CallPayloadMaxExportAttempts+1)
+		want[CallPayloadMaxExportAttempts-1] = true
+		require.Equal(t, want, finals)
+		require.ErrorContains(t, proc.Shutdown(t.Context()), "dropping 1 protected records")
+	})
 }
 
 // captureLogExporter keeps every record it is handed.

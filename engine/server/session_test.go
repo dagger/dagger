@@ -3482,7 +3482,7 @@ func TestCallPayloadDeliveryStore(t *testing.T) {
 	require.False(t, storeA.ClaimCallPayload("xxh3:abc"),
 		"a claim must be spent at the producer, before anything is persisted")
 	require.Equal(t, []string{"clientA"}, sess.takeCallPayloadForWrite("xxh3:abc", storeA.targets))
-	sess.settleCallPayload("xxh3:abc", storeA.targets, true)
+	sess.settleCallPayload("xxh3:abc", storeA.targets, true, false)
 	require.False(t, storeA.ClaimCallPayload("xxh3:abc"))
 	require.Empty(t, sess.callPayloadMissingTargets("xxh3:abc", storeA.targets))
 
@@ -3516,8 +3516,8 @@ func TestCallPayloadWriteOwnershipAndRelease(t *testing.T) {
 	require.False(t, store.ClaimCallPayload("xxh3:abc"),
 		"a target being written is still claimed for the producer")
 
-	sess.settleCallPayload("xxh3:abc", []string{"parent"}, true)
-	sess.settleCallPayload("xxh3:abc", []string{"child"}, false)
+	sess.settleCallPayload("xxh3:abc", []string{"parent"}, true, false)
+	sess.settleCallPayload("xxh3:abc", []string{"child"}, false, false)
 	require.Equal(t, []string{"child"}, sess.callPayloadMissingTargets("xxh3:abc", route))
 	require.True(t, store.ClaimCallPayload("xxh3:abc"),
 		"a released target must be claimable by a later walk")
@@ -3547,10 +3547,10 @@ func TestCallPayloadClosureCoverage(t *testing.T) {
 		"coverage for one route must not satisfy a target that never received the closure")
 
 	require.Equal(t, store.targets, sess.takeCallPayloadForWrite("xxh3:abc", store.targets))
-	sess.settleCallPayload("xxh3:abc", []string{"parent"}, true)
+	sess.settleCallPayload("xxh3:abc", []string{"parent"}, true, false)
 	require.True(t, store.CallPayloadClosureCovered("xxh3:def"),
 		"a delivered write must not void coverage")
-	sess.settleCallPayload("xxh3:abc", []string{"child"}, false)
+	sess.settleCallPayload("xxh3:abc", []string{"child"}, false, false)
 	require.False(t, store.CallPayloadClosureCovered("xxh3:def"),
 		"a released claim must void every covered closure")
 
@@ -3558,6 +3558,172 @@ func TestCallPayloadClosureCoverage(t *testing.T) {
 		"a walk that started before a release must learn it raced one")
 	require.False(t, store.CallPayloadClosureCovered("xxh3:def"),
 		"a walk that started before a release must not record coverage")
+}
+
+// startRepair asks, as a failed root claim does, whether a replay of root
+// must walk its closure for a lost payload.
+func (s *callPayloadDeliveryStore) startRepair(root string) bool {
+	s.session.callPayloadMu.Lock()
+	defer s.session.callPayloadMu.Unlock()
+	return s.session.startCallPayloadRepairLocked(root, s.targets)
+}
+
+// Only a failed final export attempt loses a payload: a failure the exporter
+// retries does not. A pending loss makes each already claimed root on its
+// route walk once, until something claims or takes the payload again, and a
+// pair lost a second time is not repaired again.
+func TestCallPayloadLossRepair(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"parent", "child"}}
+	sibling := &callPayloadDeliveryStore{session: sess, targets: []string{"parent", "sibling"}}
+	lose := func(digest, target string) {
+		t.Helper()
+		require.Equal(t, []string{target}, sess.takeCallPayloadForWrite(digest, []string{target}))
+		sess.settleCallPayload(digest, []string{target}, false, true)
+	}
+
+	require.True(t, store.ClaimCallPayload("xxh3:abc"))
+	require.Equal(t, store.targets, sess.takeCallPayloadForWrite("xxh3:abc", store.targets))
+	sess.settleCallPayload("xxh3:abc", []string{"parent"}, true, true)
+	sess.settleCallPayload("xxh3:abc", []string{"child"}, false, false)
+	require.False(t, store.startRepair("xxh3:root"),
+		"neither a delivered write nor a failure the exporter retries loses the payload")
+
+	lose("xxh3:abc", "child")
+	require.EqualValues(t, 1, sess.callPayloadLostCount)
+	require.False(t, sibling.startRepair("xxh3:root"),
+		"a loss on another route's target must not make this route walk")
+	require.True(t, store.startRepair("xxh3:root"))
+	require.False(t, store.startRepair("xxh3:root"), "a root walks once per loss")
+	require.True(t, store.startRepair("xxh3:other"))
+
+	epoch := store.CallPayloadReleaseEpoch()
+	require.True(t, store.ClaimCallPayload("xxh3:covered"))
+	require.True(t, store.CoverCallPayloadClosures([]string{"xxh3:covered"}, epoch))
+	require.False(t, store.startRepair("xxh3:covered"),
+		"a root covered since the loss reaches nothing still lost")
+
+	claimed, repair := store.ClaimCallPayloadRoot("xxh3:replayed")
+	require.True(t, claimed)
+	require.False(t, repair, "a root this call claims needs no repair")
+	claimed, repair = store.ClaimCallPayloadRoot("xxh3:replayed")
+	require.False(t, claimed)
+	require.True(t, repair, "a failed root claim decides the repair")
+	claimed, repair = store.ClaimCallPayloadRoot("xxh3:replayed")
+	require.False(t, claimed)
+	require.False(t, repair, "once per loss")
+
+	lose("xxh3:def", "child")
+	require.True(t, store.startRepair("xxh3:root"), "a new loss lets every root walk again")
+
+	require.True(t, store.ClaimCallPayload("xxh3:abc"), "the lost target can be claimed again")
+	require.Equal(t, []string{"child"}, sess.takeCallPayloadForWrite("xxh3:def", []string{"child"}),
+		"an exporter can take the lost target too")
+	require.Zero(t, sess.callPayloadLostCount, "claiming or taking a lost target settles its loss")
+	require.Empty(t, sess.callPayloadLostTargets)
+	require.False(t, store.startRepair("xxh3:fresh"))
+
+	sess.settleCallPayload("xxh3:def", []string{"child"}, false, true)
+	require.EqualValues(t, 1, sess.callPayloadLostCount,
+		"a copy that was no repair spends no repair, so losing it again is repairable")
+	require.True(t, store.startRepair("xxh3:fresh"))
+
+	control := controlPayloadKeyPrefix + "abc"
+	lose(control, "child")
+	require.EqualValues(t, 1, sess.callPayloadLostCount,
+		"no recipe walk can re-emit a control record, so losing one must not make walks repair")
+}
+
+// A payload gets at most one repair copy per target, even while other losses
+// keep repair walks running: once a repair walk claimed it, later repair
+// walks are refused it, though an ordinary walk may still claim it.
+func TestCallPayloadRepairCopiesEachPayloadOnce(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
+	lose := func(digest string) {
+		t.Helper()
+		require.Equal(t, store.targets, sess.takeCallPayloadForWrite(digest, store.targets))
+		sess.settleCallPayload(digest, store.targets, false, true)
+	}
+	for _, digest := range []string{"xxh3:a", "xxh3:b"} {
+		require.True(t, store.ClaimCallPayload(digest))
+		lose(digest)
+	}
+	require.EqualValues(t, 2, sess.callPayloadLostCount)
+
+	// Replaying R1 repairs a; that copy is lost too.
+	require.True(t, store.startRepair("xxh3:r1"))
+	claimed, refused := store.ClaimCallPayloadForRepair("xxh3:a")
+	require.True(t, claimed)
+	require.False(t, refused)
+	lose("xxh3:a")
+	require.EqualValues(t, 1, sess.callPayloadLostCount, "only b is still pending")
+
+	// b keeps repair walks running; R2 reaches a but not b.
+	require.True(t, store.startRepair("xxh3:r2"))
+	claimed, refused = store.ClaimCallPayloadForRepair("xxh3:a")
+	require.False(t, claimed, "a already had its repair copy")
+	require.True(t, refused)
+	claimed, refused = store.ClaimCallPayloadForRepair("xxh3:b")
+	require.True(t, claimed)
+	require.False(t, refused)
+	require.Zero(t, sess.callPayloadLostCount)
+
+	require.True(t, store.ClaimCallPayload("xxh3:a"),
+		"an ordinary walk still claims it, as it would without repair")
+}
+
+// A repair walk claims only pending losses, and each claim spends its pair
+// for good, so every repair copy spends at least one pair. A pair released by
+// a failure that was not final is left to its own export's retry, and a pair
+// whose repair is spent is left alone even when a repair copy for another
+// target on the route reaches it.
+func TestCallPayloadRepairClaimsOnlyPendingLosses(t *testing.T) {
+	t.Parallel()
+
+	sess := &daggerSession{}
+	route := []string{"child", "parent"}
+	store := &callPayloadDeliveryStore{session: sess, targets: route}
+	fail := func(digest string, targets []string, final bool) {
+		t.Helper()
+		require.Equal(t, targets, sess.takeCallPayloadForWrite(digest, targets))
+		sess.settleCallPayload(digest, targets, false, final)
+	}
+
+	require.True(t, store.ClaimCallPayload("xxh3:retried"))
+	fail("xxh3:retried", route, false)
+	claimed, refused := store.ClaimCallPayloadForRepair("xxh3:retried")
+	require.False(t, claimed, "a failure that was not final is its export's to retry")
+	require.True(t, refused)
+
+	// a is lost for both targets; parent's repair copy is lost too.
+	require.True(t, store.ClaimCallPayload("xxh3:a"))
+	fail("xxh3:a", route, true)
+	require.EqualValues(t, 2, sess.callPayloadLostCount)
+	parentOnly := &callPayloadDeliveryStore{session: sess, targets: []string{"parent"}}
+	claimed, refused = parentOnly.ClaimCallPayloadForRepair("xxh3:a")
+	require.True(t, claimed)
+	require.False(t, refused)
+	fail("xxh3:a", []string{"parent"}, true)
+	require.EqualValues(t, 1, sess.callPayloadLostCount, "parent's repair is spent")
+
+	claimed, refused = store.ClaimCallPayloadForRepair("xxh3:a")
+	require.True(t, claimed, "child's loss is still pending")
+	require.True(t, refused, "parent's spent repair is left unclaimed")
+	require.Zero(t, sess.callPayloadLostCount)
+	// The exporter writes the copy to every route target still missing it,
+	// parent included; that write failing spends nothing new.
+	fail("xxh3:a", route, true)
+	require.Zero(t, sess.callPayloadLostCount, "every pair of a has spent its repair")
+	claimed, refused = store.ClaimCallPayloadForRepair("xxh3:a")
+	require.False(t, claimed)
+	require.True(t, refused)
+	require.Equal(t, route, sess.claimCallPayload("xxh3:a", route),
+		"an ordinary walk still claims it, as it would without repair")
 }
 
 func TestCallPayloadClaimsConcurrentOverlappingRoutes(t *testing.T) {

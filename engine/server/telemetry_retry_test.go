@@ -13,6 +13,7 @@ import (
 
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/clientdb"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
@@ -399,4 +400,56 @@ func TestSessionLogExporterReleasesFailedPayloadClaims(t *testing.T) {
 	require.NoError(t, os.Remove(root))
 	require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{record}))
 	require.False(t, store.ClaimCallPayload(digest))
+}
+
+// When a protected lane gives up on a payload, the targets its final attempt
+// failed are lost, so replays on their route walk their closures again; a
+// failure the lane still retries loses nothing.
+func TestSessionExportersRecordPayloadsTheProcessorsDrop(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "store")
+	require.NoError(t, os.WriteFile(root, []byte("unavailable"), 0600))
+	dbs := clientdb.NewDBs(root)
+	srv := &Server{clientDBs: dbs}
+	sess := &daggerSession{clientRecords: map[string]*clientRecord{}}
+	sess.clientRecords["client"] = &clientRecord{daggerSession: sess, clientID: "client"}
+	ps := NewPubSub(srv)
+	logExporter := sessionLogExporter{sess: sess, ps: ps}
+	store := &callPayloadDeliveryStore{session: sess, targets: []string{"client"}}
+
+	logBody, logDigest := serverCallPayload(t, "lookup", "log")
+	spanBody, spanDigest := serverCallPayload(t, "lookup", "span")
+	record := scopedLogRecord(t, "test.core", otellog.BytesValue(logBody),
+		otellog.String(telemetryattrs.TelemetryOriginClientIDAttr, "client"),
+		otellog.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	require.True(t, store.ClaimCallPayload(logDigest))
+	require.True(t, store.ClaimCallPayload(spanDigest))
+
+	require.Error(t, logExporter.Export(t.Context(), []sdklog.Record{record}))
+	require.Zero(t, sess.callPayloadLostCount, "a failure outside a final attempt loses nothing")
+	require.False(t, store.startRepair("xxh3:root"))
+	require.True(t, store.ClaimCallPayload(logDigest))
+
+	logs := enginetel.NewCallPayloadBatchProcessor(logExporter)
+	spans := enginetel.NewCallSpanProcessor(sessionSpanExporter{sess: sess, ps: ps})
+	require.NoError(t, logs.OnEmit(t.Context(), &record))
+	spans.OnEnd(callSpan(t, "client", 1, spanBody, spanDigest))
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	var logErr, spanErr error
+	wg.Go(func() { logErr = logs.ForceFlush(ctx) })
+	wg.Go(func() { spanErr = spans.ForceFlush(ctx) })
+	wg.Wait()
+	require.ErrorContains(t, logErr, "dropping 1 protected records")
+	require.ErrorContains(t, spanErr, "dropping 1 protected spans")
+
+	require.EqualValues(t, 2, sess.callPayloadLostCount)
+	require.True(t, store.startRepair("xxh3:root"),
+		"a replay of an already claimed root must walk again")
+	require.True(t, store.ClaimCallPayload(logDigest), "a repair walk can claim the lost payload")
+	require.True(t, store.ClaimCallPayload(spanDigest))
+	require.Zero(t, sess.callPayloadLostCount)
+
+	require.ErrorContains(t, logs.Shutdown(ctx), "dropping 1 protected records")
+	require.ErrorContains(t, spans.Shutdown(ctx), "dropping 1 protected spans")
 }

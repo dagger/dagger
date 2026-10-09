@@ -56,7 +56,8 @@ import (
 // digests already claimed by a span or log in the client's delivery domain.
 // It is the path for calls without a recording span of their own. A root
 // already claimed short-circuits the whole walk: reachability is transitive,
-// so the claim's own walk already covered every frame this one would.
+// so the claim's own walk already covered every frame this one would — unless
+// a payload was lost since (see repairCallPayloads).
 func recordCallPayloads(
 	ctx context.Context,
 	store dagql.CallPayloadSeenKeyStore,
@@ -66,34 +67,66 @@ func recordCallPayloads(
 	if store == nil || frame == nil {
 		return
 	}
-	if !store.ClaimCallPayload(callDigest) {
+	claimed, repair := store.ClaimCallPayloadRoot(callDigest)
+	if !claimed {
 		// Someone already claimed this call's payload, and whoever did also
 		// walked its closure — reachability is transitive, so that walk
 		// covered everything this one would.
+		if repair {
+			repairCallPayloads(ctx, store, callDigest, frame)
+		}
 		return
 	}
 	recordClaimedCallPayloads(ctx, store, callDigest, frame, false)
 }
 
+// repairCallPayloads walks the closure of a call whose payload someone else
+// already claimed, when the root's claim reported that a payload was lost
+// since: the exporter gave up on it, so the claimant's walk no longer proves
+// the closure reached the client. The walk neither logs the root nor records it as
+// covered, since it does not own the root's claim, which may be released at
+// any moment. It claims through ClaimCallPayloadForRepair, so it emits only
+// lost payloads, each at most once per target it was lost for.
+func repairCallPayloads(
+	ctx context.Context,
+	store dagql.CallPayloadSeenKeyStore,
+	callDigest string,
+	frame *dagql.ResultCall,
+) {
+	if _, ok := store.(dagql.CallPayloadClosureStore); !ok || frame == nil {
+		return
+	}
+	walkCallPayloads(ctx, store, callDigest, frame, true, true)
+}
+
 // claimCallPayload claims a call's own payload for the store's route. A call
 // with a recording span claims its root before starting the span: the span's
-// exporter settles that claim once the frame lands on the span.
-func claimCallPayload(store dagql.CallPayloadSeenKeyStore, callDigest string) bool {
-	return store != nil && store.ClaimCallPayload(callDigest)
+// exporter settles that claim once the frame lands on the span. repair
+// reports that the root was already claimed but its closure needs a repair
+// walk (see dagql.CallPayloadSeenKeyStore).
+func claimCallPayload(store dagql.CallPayloadSeenKeyStore, callDigest string) (claimed, repair bool) {
+	if store == nil {
+		return false, false
+	}
+	return store.ClaimCallPayloadRoot(callDigest)
 }
 
 // recordCallPayloadsForSpan is the closure walk for a call that got a span.
 // rootClaimed reports whether this call claimed its own payload (see
-// claimCallPayload); if not, whoever did also walked its closure. rootOnSpan
+// claimCallPayload); if not, whoever did also walked its closure, unless
+// rootRepair reports a lost payload (see repairCallPayloads). rootOnSpan
 // means the root frame rides the span itself, so only its closure needs logs.
 func recordCallPayloadsForSpan(
 	ctx context.Context,
 	store dagql.CallPayloadSeenKeyStore,
 	callDigest string,
 	frame *dagql.ResultCall,
-	rootClaimed, rootOnSpan bool,
+	rootClaimed, rootRepair, rootOnSpan bool,
 ) {
 	if !rootClaimed {
+		if rootRepair {
+			repairCallPayloads(ctx, store, callDigest, frame)
+		}
 		return
 	}
 	recordClaimedCallPayloads(ctx, store, callDigest, frame, rootOnSpan)
@@ -115,6 +148,19 @@ func recordClaimedCallPayloads(
 	callDigest string,
 	frame *dagql.ResultCall,
 	rootOnSpan bool,
+) {
+	walkCallPayloads(ctx, store, callDigest, frame, rootOnSpan, false)
+}
+
+// walkCallPayloads is recordClaimedCallPayloads, or with repair set, the walk
+// of repairCallPayloads: the root is left out of the coverage record, and
+// frames are claimed for repair.
+func walkCallPayloads(
+	ctx context.Context,
+	store dagql.CallPayloadSeenKeyStore,
+	callDigest string,
+	frame *dagql.ResultCall,
+	rootOnSpan, repair bool,
 ) {
 	if store == nil || frame == nil {
 		return
@@ -145,6 +191,7 @@ func recordClaimedCallPayloads(
 	}
 
 	logger := telemetry.Logger(ctx, InstrumentationLibrary)
+	var refused bool
 	emit := func(dgst string, callPB *callpbv1.Call) {
 		if dgst == callDigest {
 			// The root was claimed before rebuilding. When its payload rides
@@ -152,13 +199,17 @@ func recordClaimedCallPayloads(
 			if rootOnSpan {
 				return
 			}
-		} else {
+		} else if repair {
+			claimed, refusedNow := closures.ClaimCallPayloadForRepair(dgst)
+			refused = refused || refusedNow
+			if !claimed {
+				return
+			}
+		} else if !store.ClaimCallPayload(dgst) {
 			// Claim every other frame before encoding so concurrent and
 			// repeated closure walks skip payloads already claimed by either
 			// transport.
-			if !store.ClaimCallPayload(dgst) {
-				return
-			}
+			return
 		}
 
 		// The payload carries its own digest: it is the key the producer files
@@ -188,7 +239,15 @@ func recordClaimedCallPayloads(
 	digests := make([]string, 0, len(calls))
 	for _, callPB := range calls {
 		emit(callPB.GetDigest(), callPB)
-		digests = append(digests, callPB.GetDigest())
+		if !repair || callPB.GetDigest() != callDigest {
+			digests = append(digests, callPB.GetDigest())
+		}
+	}
+	if refused {
+		// The repair left a frame unclaimed (one still being retried, or one
+		// whose repair copy is spent), so these closures are not covered, and
+		// a re-walk would be refused the same.
+		return
 	}
 	// Every frame of these closures is now claimed, by this walk or an
 	// earlier one; the skipped parts were covered already. Unless a claim was

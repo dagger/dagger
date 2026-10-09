@@ -235,6 +235,10 @@ func classifyCallPayloadRecord(rec sdklog.Record) (digest string, payload bool, 
 	return decoded.GetDigest(), true, nil
 }
 
+// controlPayloadKeyPrefix keys revisioned control records in the call payload
+// delivery state, in a key space disjoint from recipe digests.
+const controlPayloadKeyPrefix = "control:"
+
 type sessionSpanExporter struct {
 	sess *daggerSession
 	ps   *PubSub
@@ -281,12 +285,13 @@ func (exp sessionSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 			byTarget[target] = append(byTarget[target], span)
 		}
 	}
+	final := enginetel.IsFinalExportAttempt(ctx)
 	var eg errgroup.Group
 	for target, targetSpans := range byTarget {
 		eg.Go(func() error {
 			err := exp.ps.Spans(target).ExportSpans(ctx, targetSpans)
 			for _, digest := range payloadsByTarget[target] {
-				exp.sess.settleCallPayload(digest, []string{target}, err == nil)
+				exp.sess.settleCallPayload(digest, []string{target}, err == nil, final)
 			}
 			if err != nil {
 				return fmt.Errorf("export spans to %s: %w", target, err)
@@ -379,7 +384,7 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 				slog.Warn("dropping unencodable control record", "origin", origin, "err", err)
 				continue
 			}
-			digest = fmt.Sprintf("control:%x", sha256.Sum256(encoded))
+			digest = fmt.Sprintf("%s%x", controlPayloadKeyPrefix, sha256.Sum256(encoded))
 			payload = true // reuse post-persistence per-target settlement, in a disjoint key space
 		}
 		if !payload {
@@ -405,12 +410,13 @@ func (exp sessionLogExporter) Export(ctx context.Context, records []sdklog.Recor
 		}
 	}
 
+	final := enginetel.IsFinalExportAttempt(ctx)
 	var eg errgroup.Group
 	for target, targetRecords := range byTarget {
 		eg.Go(func() error {
 			err := exp.ps.Logs(target).Export(ctx, targetRecords)
 			for _, digest := range payloadsByTarget[target] {
-				exp.sess.settleCallPayload(digest, []string{target}, err == nil)
+				exp.sess.settleCallPayload(digest, []string{target}, err == nil, final)
 			}
 			if err != nil {
 				return fmt.Errorf("export logs to %s: %w", target, err)

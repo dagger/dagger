@@ -169,7 +169,7 @@ func AroundFunc(
 	// claim once the frame lands. Claiming afterwards could let that export
 	// settle an unclaimed digest first, and the claim's failure would then
 	// skip the closure walk below.
-	rootClaimed := claimCallPayload(payloadKeys, callDigest.String())
+	rootClaimed, rootRepair := claimCallPayload(payloadKeys, callDigest.String())
 
 	startCtx := ctx
 	if plumbing, ok := moduleProcessPlumbingParent(ctx, spanName, req.Field); ok {
@@ -184,7 +184,7 @@ func AroundFunc(
 	// claimed for this delivery domain. A root claimed elsewhere means that
 	// claimant already walked the closure.
 	recordCallPayloadsForSpan(ctx, payloadKeys, callDigest.String(), req.ResultCall,
-		rootClaimed, callOnSpan && span.IsRecording())
+		rootClaimed, rootRepair, callOnSpan && span.IsRecording())
 
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
 		slog.InfoContext(ctx, "end call",

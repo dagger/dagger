@@ -86,8 +86,19 @@ func ShouldEmitTelemetry(ctx context.Context, store TelemetrySeenKeyStore, callK
 // SHOWN again — a re-run tool call is a new span worth seeing — but a
 // payload is immutable data keyed by its own digest, so a second copy tells a
 // client nothing it does not already have.
+//
+// ClaimCallPayloadRoot is ClaimCallPayload for a call's own payload, the one
+// claim every call makes. When the root is already claimed, repair reports
+// whether the call must walk its closure anyway: the root's claim normally
+// proves its claimant walked the closure, but a payload the exporter gave up
+// on may sit inside it. A store that repairs counts a true repair as that
+// walk started, so each root repairs once per loss, and implements
+// CallPayloadClosureStore, whose ClaimCallPayloadForRepair the walk claims
+// through. Deciding inside the root's claim keeps a replay with nothing lost
+// at the one store call it always made.
 type CallPayloadSeenKeyStore interface {
 	ClaimCallPayload(string) bool
+	ClaimCallPayloadRoot(string) (claimed, repair bool)
 }
 
 // CallPayloadClosureStore is an optional extension of CallPayloadSeenKeyStore
@@ -114,4 +125,12 @@ type CallPayloadClosureStore interface {
 	// since epoch, so a walk that skipped covered closures knows to claim
 	// over them again.
 	CoverCallPayloadClosures(digests []string, epoch uint64) bool
+
+	// ClaimCallPayloadForRepair is ClaimCallPayload for a repair walk. It
+	// claims only targets whose payload is lost and not yet repaired, so each
+	// repair copy settles a loss and a client DB that keeps failing gets a
+	// bounded number of them. refused reports that it left some other target
+	// unclaimed; a walk that was refused anything leaves an unclaimed frame
+	// behind, so it must not record coverage.
+	ClaimCallPayloadForRepair(digest string) (claimed, refused bool)
 }
