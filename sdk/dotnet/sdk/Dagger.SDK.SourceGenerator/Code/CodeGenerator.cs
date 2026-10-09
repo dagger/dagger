@@ -26,6 +26,7 @@ public class CodeGenerator(ICodeRenderer renderer)
             codeRenderer.InterfaceTypes = introspection
                 .Schema.Types.Where(t => t.Kind == "INTERFACE")
                 .ToDictionary(t => t.Name);
+            codeRenderer.Namer = new Namer(introspection.Identifiers);
         }
 
         var builder = new StringBuilder(renderer.RenderPre());

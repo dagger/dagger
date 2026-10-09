@@ -23,6 +23,7 @@ type DotnetClientDev {
       "!sdk/dotnet/sdk/global.json",
       "!sdk/dotnet/sdk/**/*.cs",
       "!sdk/dotnet/sdk/**/*.csproj",
+      "!sdk/dotnet/sdk/Dagger.SDK.SourceGenerator.Tests/Fixtures/*.json",
       "!engine/naming/testdata/vectors.json",
     ])
 

@@ -22,6 +22,9 @@
     <ItemGroup>
         <!-- The engine's shared naming test vectors. -->
         <EmbeddedResource Include="..\..\..\..\engine\naming\testdata\vectors.json" Link="Fixtures\vectors.json" LogicalName="vectors.json" />
+        <EmbeddedResource Include="Fixtures\core-schema.json" LogicalName="core-schema.json" />
+        <!-- The SDK runtime, to compile generated code against. -->
+        <EmbeddedResource Include="..\Dagger.SDK\**\*.cs" Exclude="..\Dagger.SDK\bin\**;..\Dagger.SDK\obj\**" LogicalName="Runtime/%(RecursiveDir)%(Filename)%(Extension)" />
     </ItemGroup>
 
 </Project>
