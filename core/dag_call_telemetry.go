@@ -205,13 +205,11 @@ func walkCallPayloads(
 			if !claimed {
 				return
 			}
-		} else {
+		} else if !store.ClaimCallPayload(dgst) {
 			// Claim every other frame before encoding so concurrent and
 			// repeated closure walks skip payloads already claimed by either
 			// transport.
-			if !store.ClaimCallPayload(dgst) {
-				return
-			}
+			return
 		}
 
 		// The payload carries its own digest: it is the key the producer files
