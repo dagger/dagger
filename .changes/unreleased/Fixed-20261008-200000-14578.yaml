@@ -1,0 +1,6 @@
+kind: Fixed
+body: Calls no longer re-walk their whole cached call history to log telemetry payloads, so re-running a large cached graph one call at a time no longer does quadratic work.
+time: 2026-10-08T20:00:00+00:00
+custom:
+    Author: sipsma
+    PR: "14578"

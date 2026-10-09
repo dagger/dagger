@@ -89,3 +89,29 @@ func ShouldEmitTelemetry(ctx context.Context, store TelemetrySeenKeyStore, callK
 type CallPayloadSeenKeyStore interface {
 	ClaimCallPayload(string) bool
 }
+
+// CallPayloadClosureStore is an optional extension of CallPayloadSeenKeyStore
+// that remembers which digests have had their whole recipe closure claimed,
+// so a closure walk can stop there instead of re-walking a deep chain on
+// every new call that extends it. Without it, every walk visits the whole
+// closure and claims frame by frame.
+type CallPayloadClosureStore interface {
+	CallPayloadSeenKeyStore
+
+	// CallPayloadReleaseEpoch identifies the current set of claims: it changes
+	// whenever a claim is released, which can leave a covered closure with a
+	// gap again.
+	CallPayloadReleaseEpoch() uint64
+
+	// CallPayloadClosureCovered reports whether a completed walk has claimed
+	// the digest and its whole closure for every target of the route, with no
+	// claim released since.
+	CallPayloadClosureCovered(digest string) bool
+
+	// CoverCallPayloadClosures records that a walk that started at epoch has
+	// claimed every digest and its whole closure for every target of the
+	// route. It records nothing and returns false if a claim was released
+	// since epoch, so a walk that skipped covered closures knows to claim
+	// over them again.
+	CoverCallPayloadClosures(digests []string, epoch uint64) bool
+}

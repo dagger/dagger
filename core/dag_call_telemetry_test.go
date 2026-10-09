@@ -597,3 +597,233 @@ func TestRecordCallPayloadsClaimsBeforeConcurrentWalks(t *testing.T) {
 	recordCallPayloads(ctx, seen, rootDigest.String(), agent)
 	require.Equal(t, 5, rec.emissionCount())
 }
+
+// testClosureKeys is testSeenKeys plus the closure coverage a session store
+// keeps, and counts claim attempts so tests can see how much of a chain a
+// walk visits.
+type testClosureKeys struct {
+	mu       sync.Mutex
+	claimed  map[string]bool
+	covered  map[string]bool
+	epoch    uint64
+	attempts int
+	// afterSkip, if set, runs once, right after the first walk is told a
+	// closure is covered: the moment an exporter's failed write could release
+	// a claim inside the closure that walk has just decided to skip.
+	afterSkip func()
+}
+
+func newTestClosureKeys() *testClosureKeys {
+	return &testClosureKeys{claimed: map[string]bool{}, covered: map[string]bool{}}
+}
+
+func (s *testClosureKeys) ClaimCallPayload(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.attempts++
+	if s.claimed[key] {
+		return false
+	}
+	s.claimed[key] = true
+	return true
+}
+
+func (s *testClosureKeys) CallPayloadReleaseEpoch() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.epoch
+}
+
+func (s *testClosureKeys) CallPayloadClosureCovered(key string) bool {
+	s.mu.Lock()
+	covered := s.covered[key]
+	after := s.afterSkip
+	if covered {
+		s.afterSkip = nil
+	}
+	s.mu.Unlock()
+	if covered && after != nil {
+		after()
+	}
+	return covered
+}
+
+func (s *testClosureKeys) CoverCallPayloadClosures(keys []string, epoch uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if epoch != s.epoch {
+		return false
+	}
+	for _, key := range keys {
+		s.covered[key] = true
+	}
+	return true
+}
+
+// release mirrors a failed write: the claim is released and coverage reset.
+func (s *testClosureKeys) release(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.claimed, key)
+	s.covered = map[string]bool{}
+	s.epoch++
+}
+
+func (s *testClosureKeys) takeAttempts() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := s.attempts
+	s.attempts = 0
+	return n
+}
+
+// chainCall builds a receiver chain of n steps, like a module re-driving a
+// long pipeline one call at a time.
+func chainCall(n int) []*dagql.ResultCall {
+	frames := make([]*dagql.ResultCall, 0, n)
+	var prev *dagql.ResultCall
+	for i := range n {
+		frame := testResultCall("step", &Void{}, prev)
+		frame.Args = []*dagql.ResultCallArg{{
+			Name:  "n",
+			Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindInt, IntValue: int64(i)},
+		}}
+		frames = append(frames, frame)
+		prev = frame
+	}
+	return frames
+}
+
+// Extending a chain whose closure was already walked must cost only the new
+// frames. Before closure coverage, every new call re-walked (and re-claimed)
+// its whole closure, which made re-driving an n-step cached chain O(n^2).
+func TestRecordCallPayloadsStopsAtCoveredClosure(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	const depth = 200
+	frames := chainCall(depth + 1)
+
+	keys := newTestClosureKeys()
+	prefix := frames[depth-1]
+	prefixDigest, err := prefix.RecipeDigest(ctx)
+	require.NoError(t, err)
+	recordCallPayloads(ctx, keys, prefixDigest.String(), prefix)
+	require.Equal(t, depth, rec.emissionCount(), "the first walk emits the whole chain")
+	keys.takeAttempts()
+
+	top := frames[depth]
+	topDigest, err := top.RecipeDigest(ctx)
+	require.NoError(t, err)
+	recordCallPayloads(ctx, keys, topDigest.String(), top)
+	require.Equal(t, depth+1, rec.emissionCount(), "only the new frame is emitted")
+	require.NotNil(t, rec.get(topDigest.String()))
+	require.LessOrEqual(t, keys.takeAttempts(), 2,
+		"extending a covered chain by one call must not re-claim the frames below it")
+}
+
+// Coverage is only a shortcut: a frame claimed but not yet walked (here, the
+// middle of the chain) must not hide the frames below it, and a released claim
+// must be re-emitted by a later walk even from inside a covered closure.
+func TestRecordCallPayloadsClosureCoverageKeepsPayloads(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	frames := chainCall(5)
+	digests := make([]string, len(frames))
+	for i, frame := range frames {
+		dgst, err := frame.RecipeDigest(ctx)
+		require.NoError(t, err)
+		digests[i] = dgst.String()
+	}
+
+	keys := newTestClosureKeys()
+	require.True(t, keys.ClaimCallPayload(digests[2]))
+	recordCallPayloads(ctx, keys, digests[4], frames[4])
+	require.Equal(t, 4, rec.emissionCount(),
+		"a claimed but unwalked frame must not prune the frames below it")
+	require.Nil(t, rec.get(digests[2]))
+	require.NotNil(t, rec.get(digests[0]))
+
+	keys.release(digests[1])
+	top := testResultCall("top", &Void{}, frames[4])
+	topDigest, err := top.RecipeDigest(ctx)
+	require.NoError(t, err)
+	recordCallPayloads(ctx, keys, topDigest.String(), top)
+	require.Equal(t, 6, rec.emissionCount(),
+		"a released frame inside a covered closure must be emitted again")
+	var released int
+	for _, record := range rec.snapshot() {
+		if record.digest == digests[1] {
+			released++
+		}
+	}
+	require.Equal(t, 2, released)
+}
+
+// A claim released after a walk decided to skip the covered closure holding
+// it, but before the walk finished, must not be left unclaimed: the walk's
+// root is claimed by then, so no replay of that call would reach the frame.
+// The walk notices the release when it records its coverage and repeats a
+// full pass over its closure.
+func TestRecordCallPayloadsRewalksAfterReleaseDuringPrunedWalk(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	frames := chainCall(5)
+	digests := make([]string, len(frames))
+	for i, frame := range frames {
+		dgst, err := frame.RecipeDigest(ctx)
+		require.NoError(t, err)
+		digests[i] = dgst.String()
+	}
+
+	keys := newTestClosureKeys()
+	recordCallPayloads(ctx, keys, digests[3], frames[3])
+	require.Equal(t, 4, rec.emissionCount())
+
+	keys.afterSkip = func() { keys.release(digests[1]) }
+	recordCallPayloads(ctx, keys, digests[4], frames[4])
+	require.Nil(t, keys.afterSkip, "the walk must have skipped the covered closure")
+	require.Equal(t, 6, rec.emissionCount(),
+		"the frame released during the walk must be emitted again")
+	require.False(t, keys.ClaimCallPayload(digests[1]),
+		"the released frame must be claimed again")
+	var released int
+	for _, record := range rec.snapshot() {
+		if record.digest == digests[1] {
+			released++
+		}
+	}
+	require.Equal(t, 2, released)
+}
+
+// A frame the cache stops holding, deep inside a closure an earlier walk
+// already emitted, must not cost a later call its payload logs. Rebuilding
+// the later call's whole recipe ID fails on such a frame, so a walk that
+// needed the full ID logged nothing for it, and the claimed root was never
+// retried: only a root that rides its own span still reached the client, and
+// no other new frame of that call, or of any later call built on it, did. A
+// walk that stops at the covered closure never reaches the gap.
+func TestRecordCallPayloadsCoveredClosureHidesUnresolvableFrame(t *testing.T) {
+	rec, ctx := payloadRecorderCtx(t)
+	frames := chainCall(5)
+	digests := make([]string, len(frames))
+	for i, frame := range frames {
+		dgst, err := frame.RecipeDigest(ctx)
+		require.NoError(t, err)
+		digests[i] = dgst.String()
+	}
+
+	keys := newTestClosureKeys()
+	recordCallPayloads(ctx, keys, digests[4], frames[4])
+	require.Equal(t, 5, rec.emissionCount())
+
+	// The bottom frame is gone: frames[1] now reaches it only through a
+	// shared-result reference the cache cannot resolve. Digests are already
+	// derived, as they are for any frame an earlier walk visited.
+	frames[1].Receiver = &dagql.ResultCallRef{ResultID: 42}
+	top := testResultCall("top", &Void{}, frames[4])
+	topDigest, err := top.RecipeDigest(ctx)
+	require.NoError(t, err)
+	_, err = top.RecipeID(ctx)
+	require.Error(t, err, "the full recipe ID can no longer be rebuilt")
+
+	recordCallPayloads(ctx, keys, topDigest.String(), top)
+	require.Equal(t, 6, rec.emissionCount(), "the new call's payload is still emitted")
+	require.NotNil(t, rec.get(topDigest.String()))
+}

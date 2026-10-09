@@ -188,6 +188,13 @@ type daggerSession struct {
 	// write. It is never held across I/O.
 	callPayloadMu      sync.Mutex
 	callPayloadTargets map[string]map[string]callPayloadState
+	// callPayloadCovered records, per digest, the targets for which a
+	// completed closure walk has claimed the digest and its whole closure, so
+	// later walks can stop there. A release clears it, since the released
+	// frame may sit inside any covered closure; callPayloadEpoch counts
+	// releases so a walk that raced one records nothing.
+	callPayloadCovered map[string]map[string]struct{}
+	callPayloadEpoch   uint64
 
 	services *core.Services
 	agents   *core.AgentRuntimes
@@ -3819,10 +3826,54 @@ type callPayloadDeliveryStore struct {
 	targets []string
 }
 
-var _ dagql.CallPayloadSeenKeyStore = (*callPayloadDeliveryStore)(nil)
+var _ dagql.CallPayloadClosureStore = (*callPayloadDeliveryStore)(nil)
 
 func (s *callPayloadDeliveryStore) ClaimCallPayload(digest string) bool {
 	return len(s.session.claimCallPayload(digest, s.targets)) > 0
+}
+
+func (s *callPayloadDeliveryStore) CallPayloadReleaseEpoch() uint64 {
+	s.session.callPayloadMu.Lock()
+	defer s.session.callPayloadMu.Unlock()
+	return s.session.callPayloadEpoch
+}
+
+func (s *callPayloadDeliveryStore) CallPayloadClosureCovered(digest string) bool {
+	s.session.callPayloadMu.Lock()
+	defer s.session.callPayloadMu.Unlock()
+	covered := s.session.callPayloadCovered[digest]
+	if len(covered) == 0 {
+		return false
+	}
+	for _, target := range s.targets {
+		if _, ok := covered[target]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *callPayloadDeliveryStore) CoverCallPayloadClosures(digests []string, epoch uint64) bool {
+	sess := s.session
+	sess.callPayloadMu.Lock()
+	defer sess.callPayloadMu.Unlock()
+	if epoch != sess.callPayloadEpoch {
+		return false
+	}
+	if sess.callPayloadCovered == nil {
+		sess.callPayloadCovered = map[string]map[string]struct{}{}
+	}
+	for _, digest := range digests {
+		covered := sess.callPayloadCovered[digest]
+		if covered == nil {
+			covered = make(map[string]struct{}, len(s.targets))
+			sess.callPayloadCovered[digest] = covered
+		}
+		for _, target := range s.targets {
+			covered[target] = struct{}{}
+		}
+	}
+	return true
 }
 
 // callPayloadState is one (digest, target) pair's position in the payload
@@ -3930,6 +3981,10 @@ func (sess *daggerSession) settleCallPayload(digest string, targets []string, de
 			states[target] = callPayloadDelivered
 		case states[target] == callPayloadWriting:
 			delete(states, target)
+			// Any covered closure may contain this frame, and a walk that
+			// stops at a covered digest would never reach it again.
+			sess.callPayloadCovered = nil
+			sess.callPayloadEpoch++
 		}
 	}
 }

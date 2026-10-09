@@ -120,24 +120,27 @@ func recordClaimedCallPayloads(
 		return
 	}
 
-	id, err := frame.RecipeID(ctx)
+	// A closure store lets the walk stop at frames whose whole closure an
+	// earlier walk already claimed, so extending a deep chain by one call
+	// costs that call's new frames rather than the whole chain. The claims
+	// below still decide what is emitted, so the payloads are the same either
+	// way.
+	closures, _ := store.(dagql.CallPayloadClosureStore)
+	var (
+		skip  func(string) bool
+		epoch uint64
+	)
+	if closures != nil {
+		epoch = closures.CallPayloadReleaseEpoch()
+		skip = closures.CallPayloadClosureCovered
+	}
+	calls, err := frame.RecipeCalls(ctx, skip)
 	if err != nil {
 		// Debug, not Warn: a recipe that cannot be rebuilt (a handle-form
 		// reference to a shared result, a frame the cache no longer holds)
 		// is a known shape, and this runs once per distinct call digest —
 		// warning would mean thousands of identical lines for one bad chain.
-		slog.DebugContext(ctx, "failed to rebuild recipe ID for call payloads", "digest", callDigest, "err", err)
-		return
-	}
-	dagPB, err := id.ToProto()
-	if err != nil {
-		slog.DebugContext(ctx, "failed to build call payload DAG", "digest", callDigest, "err", err)
-		return
-	}
-	// A handle-form ID is an engine-local result reference, not a recipe:
-	// there are no frames to publish and no client could rebuild them anyway.
-	recipe := dagPB.GetRecipe()
-	if recipe == nil {
+		slog.DebugContext(ctx, "failed to rebuild recipe for call payloads", "digest", callDigest, "err", err)
 		return
 	}
 
@@ -180,16 +183,29 @@ func recordClaimedCallPayloads(
 		logger.Emit(ctx, rec)
 	}
 
-	// Emit the requested root first so consumers see the frame they asked for
-	// before the rest of its closure.
-	calls := recipe.GetCallsByDigest()
-	rootDigest := recipe.GetRootDigest()
-	if root := calls[rootDigest]; root != nil {
-		emit(rootDigest, root)
+	// The root comes first, so consumers see the frame they asked for before
+	// the rest of its closure.
+	digests := make([]string, 0, len(calls))
+	for _, callPB := range calls {
+		emit(callPB.GetDigest(), callPB)
+		digests = append(digests, callPB.GetDigest())
 	}
-	for dgst, callPB := range calls {
-		if dgst != rootDigest {
-			emit(dgst, callPB)
+	// Every frame of these closures is now claimed, by this walk or an
+	// earlier one; the skipped parts were covered already. Unless a claim was
+	// released while the walk ran: if it sat in a part the walk skipped,
+	// nothing would reach it again, since this call's root is claimed and a
+	// replay stops there. Then claim over the whole closure once more.
+	if closures == nil || closures.CoverCallPayloadClosures(digests, epoch) {
+		return
+	}
+	full, err := frame.RecipeCalls(ctx, nil)
+	if err != nil {
+		slog.DebugContext(ctx, "failed to rebuild recipe for call payloads", "digest", callDigest, "err", err)
+		return
+	}
+	for _, callPB := range full {
+		if callPB.GetDigest() != callDigest {
+			emit(callPB.GetDigest(), callPB)
 		}
 	}
 }
