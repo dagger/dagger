@@ -371,19 +371,23 @@ type TuiQa {
 
   """
   List spans currently loaded in the TUI (id / status / name), optionally
-  filtered by a name substring. Status is ERROR (span errored), FAIL (caused a
-  failure via a link), run, or ok.
+  filtered by a name substring and/or an OTel attribute. Status is ERROR (span
+  errored), FAIL (caused a failure via a link), run, or ok.
   """
-  spans(query: String! = ""): String! @cache(policy: FunctionCachePolicy.Never) {
-    # URL-encode spaces so multi-word span names (e.g. "load SDK: go") don't
-    # produce a malformed URL that curl rejects (exit 3).
-    let path = if (query == "") { "/spans" } else {
-      "/spans?q=" + query.replace(
-        " ",
-        "%20",
-      )
-    }
-    get(path)
+  spans(
+    """
+    Substring of the span name (or service name). Empty matches every span.
+    """
+    query: String! = "",
+    """
+    Keep only spans carrying this attribute: "key" (present) or "key=text"
+    (its value contains text; strings compared unquoted), e.g.
+    "dagger.git.checkout.cow.fallback=true". Each listed span then shows the
+    attribute's value. Empty applies no attribute filter.
+    """
+    attr: String! = "",
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    getParams("/spans", "q=" + query, "attr=" + attr)
   }
 
   """
@@ -464,13 +468,22 @@ type TuiQa {
   """
   Show one span in depth: name, status, error and its origins, timing, the
   dagui flags that shape how the UI treats it (internal, passthrough,
-  encapsulation, log/span roll-up, service, …), the parent chain up to the
-  root with each ancestor's flags, and its loaded direct children. Get ids
-  from `spans`; use this to answer "why is this span hidden / why didn't its
-  logs roll up", or to walk up and down from a span.
+  encapsulation, log/span roll-up, service, …), its OTel attributes (those
+  the UI keeps verbatim, e.g. the engine's dagger.git.* measurements, then
+  those it parsed, under their OTel keys), the parent chain up to the root
+  with each ancestor's flags, and its loaded direct children. Get ids from
+  `spans`; use this to answer "why is this span hidden / why didn't its logs
+  roll up / what did this span record", or to walk up and down from a span.
   """
-  span(spanHex: String!): String! @cache(policy: FunctionCachePolicy.Never) {
-    get("/span?id=" + spanHex)
+  span(
+    spanHex: String!,
+    """
+    Cap on each attribute value, in bytes of its JSON encoding; 0 prints
+    values in full.
+    """
+    attrMax: Int! = 300,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    getParams("/span", "id=" + spanHex, "attrMax=" + toString(attrMax))
   }
 
   """
@@ -643,6 +656,24 @@ type TuiQa {
         "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
         "--max-time", toString(maxTime),
         "--data-binary", body,
+        url + path,
+      ])
+      .stdout
+  }
+
+  # GET a text endpoint with two "name=value" params, URL-encoded by curl.
+  let getParams(path: String!, first: String!, second: String!): String! {
+    if (url == "") {
+      return "No active TUI session. Call the tui-qa start tool first."
+    }
+    client
+      .withEnvVariable("TUI_QA_NONCE", Random.string)
+      .withExec([
+        "curl", "-s", "--get",
+        "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
+        "--max-time", "60",
+        "--data-urlencode", first,
+        "--data-urlencode", second,
         url + path,
       ])
       .stdout

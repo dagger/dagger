@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dagger/dagger/dagql/dagui"
 )
@@ -26,6 +27,55 @@ import (
 // The list is a navigation aid -- enough to pick the next span to inspect --
 // not an enumeration; RenderSpanTimings is the tool for the whole subtree.
 const InspectMaxChildren = 20
+
+// InspectAttrMaxLen is the default cap on each attribute value a span detail
+// prints, in bytes of its JSON encoding. Attributes carry whole tool
+// arguments and call input lists; the cap keeps one span from flooding the
+// reader, and the console's /span takes ?attrMax= to lift it.
+const InspectAttrMaxLen = 300
+
+// inspectListAttrMaxLen caps the attribute value a filtered span listing
+// prints beside each span.
+const inspectListAttrMaxLen = 120
+
+// truncateAttrValue caps value at maxLen bytes (0 = unlimited) on a rune
+// boundary, saying how long it really was.
+func truncateAttrValue(value string, maxLen int) string {
+	if maxLen <= 0 || len(value) <= maxLen {
+		return value
+	}
+	cut := maxLen
+	for cut > 0 && !utf8.RuneStart(value[cut]) {
+		cut--
+	}
+	return fmt.Sprintf("%s… (%d bytes)", value[:cut], len(value))
+}
+
+// SpanAttrFilter selects spans by one attribute: "key" matches spans that
+// carry it, "key=text" those whose value contains text (a string value
+// compared unquoted, anything else as its JSON encoding).
+type SpanAttrFilter struct {
+	Key, Value string
+	HasValue   bool
+}
+
+// ParseSpanAttrFilter parses a "key" or "key=text" attribute filter.
+func ParseSpanAttrFilter(spec string) SpanAttrFilter {
+	key, value, hasValue := strings.Cut(spec, "=")
+	return SpanAttrFilter{Key: key, Value: value, HasValue: hasValue}
+}
+
+// Match reports whether sp carries a matching attribute, and returns it.
+func (f SpanAttrFilter) Match(sp *dagui.Span) (dagui.SpanAttribute, bool) {
+	attr, ok := sp.Attribute(f.Key)
+	if !ok {
+		return attr, false
+	}
+	if f.HasValue && !strings.Contains(attr.Text(), f.Value) {
+		return attr, false
+	}
+	return attr, true
+}
 
 // SpanStatus classifies a span with a short, stable vocabulary: ERROR (the
 // span itself errored), FAIL (it passed its own OTel status through but a
@@ -59,6 +109,7 @@ func SpanFlags(sp *dagui.Span) []string {
 	set(sp.Encapsulate, "encapsulate")
 	set(sp.Encapsulated, "encapsulated")
 	set(sp.Passthrough, "passthrough")
+	set(sp.ImportedRoot, "importedRoot")
 	set(sp.Ignore, "ignore")
 	set(sp.Reveal, "reveal")
 	set(sp.RollUpLogs, "rollUpLogs")
@@ -97,7 +148,18 @@ func SpanFlags(sp *dagui.Span) []string {
 // the ones a reader asking "what just ran" means -- and says how many earlier
 // matches were dropped. 0 lists them all.
 func RenderSpanList(db *dagui.DB, query string, limit int) string {
-	var spans []*dagui.Span
+	return RenderSpanListFiltered(db, query, nil, limit)
+}
+
+// RenderSpanListFiltered is RenderSpanList, further narrowed to the spans a
+// non-nil attribute filter matches; each listed span then shows the matched
+// attribute's (truncated) value.
+func RenderSpanListFiltered(db *dagui.DB, query string, attrFilter *SpanAttrFilter, limit int) string {
+	type listed struct {
+		span *dagui.Span
+		attr dagui.SpanAttribute
+	}
+	var spans []listed
 	for _, sp := range db.Spans.Order {
 		if !sp.Received {
 			// A placeholder allocated for a parent pointer, not a span
@@ -107,9 +169,18 @@ func RenderSpanList(db *dagui.DB, query string, limit int) string {
 		if query != "" && !strings.Contains(sp.Name, query) && !strings.Contains(sp.ServiceName, query) {
 			continue
 		}
-		spans = append(spans, sp)
+		entry := listed{span: sp}
+		if attrFilter != nil {
+			attr, ok := attrFilter.Match(sp)
+			if !ok {
+				continue
+			}
+			entry.attr = attr
+		}
+		spans = append(spans, entry)
 	}
-	slices.SortFunc(spans, func(a, b *dagui.Span) int {
+	slices.SortFunc(spans, func(x, y listed) int {
+		a, b := x.span, y.span
 		if cmp := a.StartTime.Compare(b.StartTime); cmp != 0 {
 			return cmp
 		}
@@ -123,7 +194,8 @@ func RenderSpanList(db *dagui.DB, query string, limit int) string {
 		fmt.Fprintf(&b, "... %d earlier matching spans omitted (narrow the query, or raise the limit) ...\n", len(spans)-limit)
 		spans = spans[len(spans)-limit:]
 	}
-	for _, sp := range spans {
+	for _, entry := range spans {
+		sp := entry.span
 		name := sp.Name
 		if sp.Service {
 			tag := "service"
@@ -132,17 +204,27 @@ func RenderSpanList(db *dagui.DB, query string, limit int) string {
 			}
 			name += "  [" + tag + "]"
 		}
+		if attrFilter != nil {
+			name += "  [" + entry.attr.Key + "=" + truncateAttrValue(entry.attr.Value, inspectListAttrMaxLen) + "]"
+		}
 		fmt.Fprintf(&b, "%s  %-5s  %s\n", sp.ID, SpanStatus(sp), name)
 	}
 	return b.String()
 }
 
 // RenderSpanDetail reports one span in depth: status, timing, the error it
-// carries, the UI-shaping flags, the parent chain up to the root -- each
+// carries, the UI-shaping flags, its OTel attributes (values capped at
+// InspectAttrMaxLen), the parent chain up to the root -- each
 // ancestor with its own set flags, which is what debugging "why is this span
 // hidden / why didn't its logs roll up" needs -- and its direct children, as
 // the way down. Returns false if the span isn't loaded in the DB.
 func RenderSpanDetail(db *dagui.DB, id dagui.SpanID) (string, bool) {
+	return RenderSpanDetailWith(db, id, InspectAttrMaxLen)
+}
+
+// RenderSpanDetailWith is RenderSpanDetail with each attribute value capped at
+// attrMaxLen bytes (0 = unlimited).
+func RenderSpanDetailWith(db *dagui.DB, id dagui.SpanID, attrMaxLen int) (string, bool) {
 	sp, ok := db.Spans.Map[id]
 	if !ok || sp == nil || !sp.Received {
 		return "", false
@@ -192,6 +274,7 @@ func RenderSpanDetail(db *dagui.DB, id dagui.SpanID) (string, bool) {
 	if sp.HasLogs {
 		fmt.Fprintf(&b, "logs:     yes\n")
 	}
+	renderSpanAttributes(&b, sp, attrMaxLen)
 	fmt.Fprintf(&b, "parents (nearest first):\n")
 	if sp.ParentSpan == nil {
 		fmt.Fprintf(&b, "  (none — root span)\n")
@@ -225,6 +308,37 @@ func RenderSpanDetail(db *dagui.DB, id dagui.SpanID) (string, bool) {
 		fmt.Fprintf(&b, "%s\n", line)
 	}
 	return b.String(), true
+}
+
+// renderSpanAttributes lists a span's OTel attributes in two groups: the ones
+// dagui keeps verbatim (everything it does not interpret -- e.g. the engine's
+// dagger.git.* measurements), then the ones it parsed into typed fields and
+// that are rebuilt from them.
+func renderSpanAttributes(b *strings.Builder, sp *dagui.Span, maxLen int) {
+	var raw, parsed []dagui.SpanAttribute
+	for _, attr := range sp.Attributes() {
+		if attr.Parsed {
+			parsed = append(parsed, attr)
+		} else {
+			raw = append(raw, attr)
+		}
+	}
+	if len(raw) == 0 && len(parsed) == 0 {
+		fmt.Fprintf(b, "attributes: (none)\n")
+		return
+	}
+	if len(raw) > 0 {
+		fmt.Fprintf(b, "attributes (as recorded):\n")
+		for _, attr := range raw {
+			fmt.Fprintf(b, "  %s = %s\n", attr.Key, truncateAttrValue(attr.Value, maxLen))
+		}
+	}
+	if len(parsed) > 0 {
+		fmt.Fprintf(b, "attributes (parsed by the UI; rebuilt from its fields):\n")
+		for _, attr := range parsed {
+			fmt.Fprintf(b, "  %s = %s\n", attr.Key, truncateAttrValue(attr.Value, maxLen))
+		}
+	}
 }
 
 // RenderSpanTimings lists root's loaded subtree chronologically -- span ID,

@@ -70,6 +70,17 @@ const (
 	// backfill so that fetch is bounded rather than live. (int)
 	UIUpdateTimeUnixNanoAttr = "dagger.io/ui.update_time_unix_nano"
 
+	// UIImportedRootAttr marks a parentless span that a client imported from
+	// ANOTHER session's trace and folded in beside its own
+	// (hack/designs/resume-from-trace.md §5.1.1): the trace importer stamps
+	// it, alongside dagger.io/ui.passthrough, unless the imported trace IS
+	// the session (`dagger trace`, TraceImporter.KeepRoots). dagui never
+	// takes such a span as the DB's root or primary span, so its end cannot
+	// trigger the "root ended, cancel everything still running" sweep over
+	// the live session. Passthrough alone is not that signal: any span may
+	// ask to be passed through. Client-side only; nothing publishes it. (bool)
+	UIImportedRootAttr = "dagger.io/ui.imported_root"
+
 	// LogRoleAttr describes a semantic role for an OTLP log record whose body
 	// carries data rather than ordinary log output. LogRoleSpanName means the
 	// body is the latest display name for the span the record is attributed to;

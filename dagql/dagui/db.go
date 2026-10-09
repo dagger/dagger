@@ -1222,8 +1222,16 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		}
 	}
 
-	if !span.ParentID.IsValid() && span.Received {
+	if !span.ParentID.IsValid() && span.Received && !span.ImportedRoot {
 		// keep track of the trace's root span
+		//
+		// An imported root (a trace folded in from another session by `dagger
+		// agent -r`, hack/designs/resume-from-trace.md §5.1.1) never
+		// qualifies, as root or primary: that trace is over, and taking its
+		// root here would cancel every live span below as it arrives. The
+		// live root usually got here first, but not when the CLI runs nested
+		// (TRACEPARENT inherited): then its root has a parent, never
+		// qualifies itself, and the imported root was the first candidate.
 		if db.RootSpan == nil {
 			db.RootSpan = span
 		}

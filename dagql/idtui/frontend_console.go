@@ -210,10 +210,16 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 	})
 	mux.HandleFunc("/wait", fe.consoleWaitHandler)
 	mux.HandleFunc("/spans", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		var attrFilter *SpanAttrFilter
+		if spec := q.Get("attr"); spec != "" {
+			f := ParseSpanAttrFilter(spec)
+			attrFilter = &f
+		}
 		fe.consoleMu.Lock()
 		defer fe.consoleMu.Unlock()
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		io.WriteString(w, RenderSpanList(fe.db, r.URL.Query().Get("q"), 0))
+		io.WriteString(w, RenderSpanListFiltered(fe.db, q.Get("q"), attrFilter, 0))
 	})
 	mux.HandleFunc("/toolset", func(w http.ResponseWriter, r *http.Request) {
 		// The rendered docs of the tools the model in an interactive LLM
@@ -253,9 +259,17 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 			http.Error(w, fmt.Sprintf("bad span hex %q: %v", hex, err), http.StatusBadRequest)
 			return
 		}
+		attrMax := InspectAttrMaxLen
+		if raw := r.URL.Query().Get("attrMax"); raw != "" {
+			attrMax, err = strconv.Atoi(raw)
+			if err != nil || attrMax < 0 {
+				http.Error(w, "attrMax must be a non-negative integer (0 = untruncated)", http.StatusBadRequest)
+				return
+			}
+		}
 		fe.consoleMu.Lock()
 		defer fe.consoleMu.Unlock()
-		detail, ok := RenderSpanDetail(fe.db, dagui.SpanID{SpanID: sid})
+		detail, ok := RenderSpanDetailWith(fe.db, dagui.SpanID{SpanID: sid}, attrMax)
 		if !ok {
 			http.Error(w, fmt.Sprintf("unknown span %s", hex), http.StatusNotFound)
 			return
@@ -531,8 +545,10 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  POST /wait [regex]   block until the screen matches the body regex, or\n"+
 		"                       (with no body) has been unchanged for ?quiet= (default 2s);\n"+
 		"                       either way return the frame at ?timeout= (default 60s) at the latest\n"+
-		"  GET  /spans[?q=sub]  loaded-span id/status/name listing\n"+
-		"  GET  /span?id=<hex>  span detail: status, error, timing, flags, parent chain, direct children\n"+
+		"  GET  /spans[?q=sub][&attr=key[=text]]  loaded-span id/status/name listing; attr keeps spans\n"+
+		"                       carrying that attribute (with a value containing text) and shows its value\n"+
+		"  GET  /span?id=<hex>[&attrMax=300]  span detail: status, error, timing, flags, attributes\n"+
+		"                       (values capped at attrMax bytes; 0 = untruncated), parent chain, direct children\n"+
 		"  GET  /timings?root=<hex>[&minDuration=10ms&limit=200]  loaded subtree wall timings (0 limit = unlimited)\n"+
 		"  GET  /id?dig=<dig>   encoded dagql ID rebuilt for a call digest\n"+
 		"  GET  /calls?grep=<re> content-search ingested call payloads (full search, bounded previews)\n"+

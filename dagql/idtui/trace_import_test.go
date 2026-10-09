@@ -416,6 +416,84 @@ func TestImportedRootRendersPassthrough(t *testing.T) {
 		"the imported root's children must render in its place")
 }
 
+// TestNestedLiveRootSurvivesACompletedImportedRoot is the nested resume: the
+// CLI inherited a TRACEPARENT (under tui-qa, in CI, inside another agent's
+// shell), so its own root has a parent and never qualifies as db.RootSpan --
+// and the imported trace's root, which ended long ago, reached the DB first.
+// Taking that root as db.RootSpan armed the "root ended, cancel everything
+// still running" sweep against the live session: every live span rendered
+// canceled and left running, with a synthetic end instead of its own.
+func TestNestedLiveRootSurvivesACompletedImportedRoot(t *testing.T) {
+	ctx := context.Background()
+	db := dagui.NewDB()
+
+	const (
+		outerParentSpanID byte  = 99 // the inherited TRACEPARENT; never exported here
+		foreignRootEnd    int64 = 200
+		liveLoopEnd       int64 = 1040
+		liveRootEnd       int64 = 1050
+	)
+
+	// The source session exited cleanly: its root ended.
+	imp := enginetel.NewTraceImporter(enginetel.TraceImportSinks{
+		Spans:   db,
+		Logs:    db.LogExporter(),
+		Metrics: db.MetricExporter(),
+	})
+	require.NoError(t, imp.ImportSpans(ctx, cannedTrace(foreignTraceIDByte,
+		cannedSpan{id: foreignRootSpanID, name: "dagger agent", start: foreignRootStart, end: foreignRootEnd},
+		cannedSpan{
+			id: foreignTurnSpanID, parent: foreignRootSpanID, name: "imported turn",
+			start: foreignTurnStart, end: foreignTurnEnd,
+			attrs: cannedMessageAttrs("assistant"),
+		},
+	)))
+	require.NoError(t, imp.Seal(ctx))
+
+	foreignRoot := db.Spans.Map[prettyTestSpanID(foreignRootSpanID)]
+	require.NotNil(t, foreignRoot)
+	require.True(t, foreignRoot.ImportedRoot, "the importer did not mark its root as imported")
+	require.Nil(t, db.RootSpan, "an imported root became the DB's root")
+	require.False(t, db.PrimarySpan.IsValid(), "an imported root became the primary span")
+
+	// Now the live CLI's spans arrive, running, under the inherited parent.
+	liveRoot := cannedSpan{id: liveRootSpanID, parent: outerParentSpanID, name: "dagger agent -r", start: 1000}
+	liveLoop := cannedSpan{id: liveLoopSpanID, parent: liveRootSpanID, name: "agent: interactive", start: 1010}
+	require.NoError(t, db.ExportSpans(ctx, telemetry.SpansFromPB(
+		cannedTrace(liveTraceIDByte, liveRoot, liveLoop).GetResourceSpans())))
+
+	for _, id := range []byte{liveRootSpanID, liveLoopSpanID} {
+		span := db.Spans.Map[prettyTestSpanID(id)]
+		require.NotNil(t, span)
+		require.True(t, span.IsRunning(), "%q was swept by the imported root's end", span.Name)
+		require.False(t, span.Canceled, "%q was canceled by the imported root's end", span.Name)
+		require.False(t, span.LeftRunning, "%q was marked left running", span.Name)
+	}
+	require.Nil(t, db.RootSpan, "the live root has a parent; nothing should be the DB's root")
+
+	// ...and they end with their own end times.
+	liveLoop.end, liveRoot.end = liveLoopEnd, liveRootEnd
+	require.NoError(t, db.ExportSpans(ctx, telemetry.SpansFromPB(
+		cannedTrace(liveTraceIDByte, liveLoop, liveRoot).GetResourceSpans())))
+
+	for id, end := range map[byte]int64{liveRootSpanID: liveRootEnd, liveLoopSpanID: liveLoopEnd} {
+		span := db.Spans.Map[prettyTestSpanID(id)]
+		require.False(t, span.IsRunning(), "%q never ended", span.Name)
+		require.False(t, span.Canceled, "%q ended canceled", span.Name)
+		require.False(t, span.LeftRunning, "%q ended left running", span.Name)
+		require.True(t, span.EndTime.Equal(time.Unix(end, 0)),
+			"%q ended at %v, want its own end %v", span.Name, span.EndTime, time.Unix(end, 0))
+	}
+
+	// What the console's /timings reports: real durations, not "completion
+	// unrecorded".
+	timings, ok := RenderSpanTimings(db, prettyTestSpanID(liveRootSpanID), 0, 0, time.Unix(2000, 0))
+	require.True(t, ok)
+	require.NotContains(t, timings, "completion unrecorded")
+	require.Contains(t, timings, "50s  \"dagger agent -r\"")
+	require.Contains(t, timings, "30s  \"agent: interactive\"")
+}
+
 // TestImportKeepRootsLeavesTheRootAsPrimary is the `dagger trace` shape: the
 // imported trace is the only trace the DB holds, so its root must stay a real
 // root -- the DB's own root and primary span, rendering its children the way a
@@ -437,6 +515,7 @@ func TestImportKeepRootsLeavesTheRootAsPrimary(t *testing.T) {
 	root := db.Spans.Map[rootID]
 	require.NotNil(t, root)
 	require.False(t, root.Passthrough, "KeepRoots must not stamp the root passthrough")
+	require.False(t, root.ImportedRoot, "KeepRoots must not mark the root imported")
 	require.Equal(t, rootID, db.PrimarySpan, "the imported root must become the primary span")
 	require.NotNil(t, db.RootSpan)
 	require.Equal(t, rootID, db.RootSpan.ID)
