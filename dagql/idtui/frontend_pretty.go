@@ -377,6 +377,14 @@ type frontendPretty struct {
 	// data updates into a single recalculate per render frame.
 	viewDirty bool
 
+	// lastRecalcCost and lastRecalcAt record the most recent view
+	// recalculation, so Render can pace data-driven recalculation of large
+	// traces (see recalcWaitLocked). recalcWakeupPending is set while a timer
+	// is scheduled to render again once a deferred recalculation is due.
+	lastRecalcCost      time.Duration
+	lastRecalcAt        time.Time
+	recalcWakeupPending bool
+
 	// testsDirty and testLogSpans defer test view updates to the next frame
 	// the way viewDirty defers recalculation: testsDirty when span batches or
 	// a resize may have changed any test view (updateTestViews), testLogSpans
@@ -3651,10 +3659,16 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	}
 
 	// Coalesce deferred view updates. Multiple ExportSpans batches may
-	// have set viewDirty since the last frame — recalculate once now.
+	// have set viewDirty since the last frame — recalculate once now, unless
+	// the trace is so large that recalculating on every frame would starve
+	// the render loop, in which case it's deferred until it's due.
 	if fe.viewDirty {
-		fe.viewDirty = false
-		fe.recalculateViewLocked()
+		if wait := fe.recalcWaitLocked(time.Now()); wait > 0 {
+			fe.scheduleRecalcWakeupLocked(wait)
+		} else {
+			fe.viewDirty = false
+			fe.recalculateViewLocked()
+		}
 	}
 	fe.syncTerminalTitle()
 
@@ -4511,9 +4525,68 @@ func (fe *frontendPretty) formHeight() int {
 	return height
 }
 
+// Pacing for data-driven view recalculation. recalculateViewLocked rebuilds
+// the whole trace tree (dagui.DB.RowsView walks every visible span, collapsed
+// or not, because search, revealed spans and causal reparenting all need the
+// complete tree), so its cost grows with the trace. Spans stream in batch by
+// batch and every batch dirties the view, so on a trace with millions of spans
+// recalculating on every frame starved the render loop. Instead, once a
+// recalculation gets expensive, Render waits recalcPaceFactor times its cost
+// (capped at recalcMaxDelay) after the last one before recalculating again,
+// bounding it to roughly 1/(1+recalcPaceFactor) of the loop. Frames in between
+// keep rendering the previous rows, plus whatever the updated spans' own views
+// show. Explicit recalculations (key presses, zooms, the final render) are
+// never deferred.
+var (
+	// recalcPaceMinSpans keeps small traces -- and every test -- on the
+	// recalculate-every-frame path, independent of timing.
+	recalcPaceMinSpans = 20_000
+	// recalcPaceMinCost is the cheapest recalculation worth pacing.
+	recalcPaceMinCost = 5 * time.Millisecond
+)
+
+const (
+	recalcPaceFactor = 4
+	recalcMaxDelay   = 2 * time.Second
+)
+
+// recalcWaitLocked returns how much longer a data-driven recalculation should
+// be deferred, or <= 0 if it's due now.
+func (fe *frontendPretty) recalcWaitLocked(now time.Time) time.Duration {
+	if fe.finalRender || fe.reportOnly || fe.db == nil ||
+		fe.lastRecalcCost < recalcPaceMinCost ||
+		len(fe.db.Spans.Order) < recalcPaceMinSpans {
+		return 0
+	}
+	delay := min(fe.lastRecalcCost*recalcPaceFactor, recalcMaxDelay)
+	return fe.lastRecalcAt.Add(delay).Sub(now)
+}
+
+// scheduleRecalcWakeupLocked makes sure a frame renders once a deferred
+// recalculation is due, even if nothing else changes in the meantime.
+func (fe *frontendPretty) scheduleRecalcWakeupLocked(wait time.Duration) {
+	if fe.recalcWakeupPending {
+		return
+	}
+	fe.recalcWakeupPending = true
+	time.AfterFunc(wait, func() {
+		fe.dispatch(func() {
+			fe.recalcWakeupPending = false
+			if fe.viewDirty {
+				fe.Update()
+			}
+		})
+	})
+}
+
 //nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
+	start := time.Now()
+	defer func() {
+		fe.lastRecalcAt = time.Now()
+		fe.lastRecalcCost = fe.lastRecalcAt.Sub(start)
+	}()
 	if !fe.reportScopedSubtree && fe.RootFilter == nil {
 		// Promotion reshapes the trace around what the whole run was about: it
 		// hangs the surfaced checks/conversation/generators off the zoomed span
