@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/engine"
 )
 
 func TestNormalizeModelID(t *testing.T) {
@@ -73,7 +75,9 @@ func TestCatalogReasoningMode(t *testing.T) {
 	}
 
 	// Route carries the mode onto the endpoint; uncatalogued models stay unknown.
-	r := &LLMRouter{AnthropicAPIKey: "test"}
+	r := routerWith(t, map[string]*engine.LLMProviderConfig{
+		"anthropic": {APIKey: "env://ANTHROPIC_API_KEY"},
+	})
 	ep, err := r.Route("claude-haiku-4-5", "")
 	require.NoError(t, err)
 	assert.Equal(t, LLMReasoningBudget, ep.ReasoningMode)

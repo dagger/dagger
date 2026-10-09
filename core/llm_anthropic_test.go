@@ -112,12 +112,17 @@ func anthropicReasoningRequest(t *testing.T, model, effort string, maxTokens int
 	}))
 	t.Cleanup(srv.Close)
 
-	router := &LLMRouter{
-		AnthropicAPIKey:          "test",
-		AnthropicBaseURL:         srv.URL,
-		AnthropicReasoningEffort: effort,
-	}
+	router := routerWith(t, map[string]*engine.LLMProviderConfig{
+		"anthropic": {
+			BaseURL:         srv.URL,
+			ReasoningEffort: effort,
+		},
+	})
 	endpoint, err := router.Route(model, string(Anthropic))
+	require.NoError(t, err)
+	// Route is pure; stand in for the key Endpoint would resolve.
+	endpoint.Key = "test"
+	endpoint.Client, err = endpoint.newClient()
 	require.NoError(t, err)
 
 	history := []*LLMMessage{
