@@ -3,48 +3,915 @@
 package dagger
 
 import (
-	"dagger/engine-dev/internal/dagger/core"
+	"context"
+	"encoding/json"
+
+	"github.com/dagger/querybuilder"
 )
 
-type EngineDev = core.EngineDev
+type EngineDev struct { // engine-dev (../../../../../:0:0)
+	query *querybuilder.Selection
 
-type WithEngineDevFunc = core.WithEngineDevFunc
+	id            *ID
+	networkCidr   *string
+	publish       *Void
+	releaseDryRun *Void
+	test          *Void
+	tests         *string
+}
+type WithEngineDevFunc func(r *EngineDev) *EngineDev
+
+// With calls the provided function with current EngineDev.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *EngineDev) With(f WithEngineDevFunc) *EngineDev {
+	return f(r)
+}
+
+func (r *EngineDev) WithGraphQLQuery(q *querybuilder.Selection) *EngineDev {
+	return &EngineDev{
+		query: q,
+	}
+}
+
+func (r *EngineDev) ClientDockerConfig() *Secret {
+	q := r.query.Select("clientDockerConfig")
+
+	return &Secret{
+		query: q,
+	}
+}
 
 // EngineDevContainerOpts contains options for EngineDev.Container
-type EngineDevContainerOpts = core.EngineDevContainerOpts
+type EngineDevContainerOpts struct {
+	Platform Platform
+
+	GpuSupport bool
+
+	Version string
+}
+
+// Build the engine container
+func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container {
+	q := r.query.Select("container")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+		// `gpuSupport` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
+			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+
+	return &Container{
+		query: q,
+	}
+}
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
-type EngineDevGraphqlSchemaOpts = core.EngineDevGraphqlSchemaOpts
+type EngineDevGraphqlSchemaOpts struct {
+	Version string
+}
+
+// Introspect the engine API schema, and return it as a graphql schema
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File {
+	q := r.query.Select("graphqlSchema")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+
+	return &File{
+		query: q,
+	}
+}
+
+// A unique identifier for this EngineDev.
+func (r *EngineDev) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineDev) XXX_GraphQLType() string {
+	return "EngineDev"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineDev) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineDev) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineDev) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *EngineDev) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = EngineDev{query: selectNode(dag.query, id, "EngineDev")}
+	return nil
+}
+
+func (r *EngineDev) IncrementSubnet() *EngineDev {
+	q := r.query.Select("incrementSubnet")
+
+	return &EngineDev{
+		query: q,
+	}
+}
 
 // EngineDevInstallClientOpts contains options for EngineDev.InstallClient
-type EngineDevInstallClientOpts = core.EngineDevInstallClientOpts
+type EngineDevInstallClientOpts struct {
+	// The client container to configure
+	Client *Container
+	// The engine service to bind
+	Service *Service
+}
+
+// Configure the given client container so that it can connect to the given engine service
+func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container {
+	q := r.query.Select("installClient")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `client` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Client) {
+			q = q.Arg("client", opts[i].Client)
+		}
+		// `service` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Service) {
+			q = q.Arg("service", opts[i].Service)
+		}
+	}
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Introspect the engine API schema, and return it as a json-encoded file.
+// This file is used by SDKs to generate clients.
+func (r *EngineDev) IntrospectionJSON() *File {
+	q := r.query.Select("introspectionJson")
+
+	return &File{
+		query: q,
+	}
+}
+
+// Build the `introspect` tool which introspects the engine API
+func (r *EngineDev) IntrospectionTool() *File {
+	q := r.query.Select("introspectionTool")
+
+	return &File{
+		query: q,
+	}
+}
 
 // EngineDevLoadToDockerOpts contains options for EngineDev.LoadToDocker
-type EngineDevLoadToDockerOpts = core.EngineDevLoadToDockerOpts
+type EngineDevLoadToDockerOpts struct {
+
+	// Default: "localhost/dagger-engine.dev:latest"
+	Name string
+
+	Platform Platform
+	// Enable experimental GPU support
+	GpuSupport bool
+}
+
+// Load the engine container into a Docker engine
+func (r *EngineDev) LoadToDocker(docker *Socket, opts ...EngineDevLoadToDockerOpts) *EngineDevLoadedEngine {
+	assertNotNil("docker", docker)
+	q := r.query.Select("loadToDocker")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+		// `gpuSupport` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
+			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		}
+	}
+	q = q.Arg("docker", docker)
+
+	return &EngineDevLoadedEngine{
+		query: q,
+	}
+}
+
+func (r *EngineDev) NetworkCidr(ctx context.Context) (string, error) {
+	if r.networkCidr != nil {
+		return *r.networkCidr, nil
+	}
+	q := r.query.Select("networkCidr")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
 
 // EngineDevPublishOpts contains options for EngineDev.Publish
-type EngineDevPublishOpts = core.EngineDevPublishOpts
+type EngineDevPublishOpts struct {
+	// Image target to push to
+	//
+	// Default: "ghcr.io/dagger/engine"
+	Image string
+
+	DryRun bool
+
+	RegistryUsername string
+
+	RegistryPassword *Secret
+}
+
+// Publish all engine images to a registry
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error {
+	if r.publish != nil {
+		return nil
+	}
+	q := r.query.Select("publish")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `image` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Image) {
+			q = q.Arg("image", opts[i].Image)
+		}
+		// `dryRun` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DryRun) {
+			q = q.Arg("dryRun", opts[i].DryRun)
+		}
+		// `registryUsername` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RegistryUsername) {
+			q = q.Arg("registryUsername", opts[i].RegistryUsername)
+		}
+		// `registryPassword` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RegistryPassword) {
+			q = q.Arg("registryPassword", opts[i].RegistryPassword)
+		}
+	}
+	q = q.Arg("tag", tag)
+
+	return q.Execute(ctx)
+}
+
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error {
+	if r.releaseDryRun != nil {
+		return nil
+	}
+	q := r.query.Select("releaseDryRun")
+
+	return q.Execute(ctx)
+}
 
 // EngineDevServiceOpts contains options for EngineDev.Service
-type EngineDevServiceOpts = core.EngineDevServiceOpts
+type EngineDevServiceOpts struct {
+	GpuSupport bool
+
+	SharedCache bool
+
+	Metrics bool
+}
+
+// Create a test engine service
+func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service {
+	q := r.query.Select("service")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `gpuSupport` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
+			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		}
+		// `sharedCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SharedCache) {
+			q = q.Arg("sharedCache", opts[i].SharedCache)
+		}
+		// `metrics` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Metrics) {
+			q = q.Arg("metrics", opts[i].Metrics)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Service{
+		query: q,
+	}
+}
+
+func (r *EngineDev) Source() *Directory {
+	q := r.query.Select("source")
+
+	return &Directory{
+		query: q,
+	}
+}
 
 // EngineDevTestOpts contains options for EngineDev.Test
-type EngineDevTestOpts = core.EngineDevTestOpts
+type EngineDevTestOpts struct {
+	// Only run these tests
+	Run string
+	// Skip these tests
+	Skip string
+
+	// Default: "./..."
+	Pkg string
+	// Abort test run on first failure
+	Failfast bool
+	// How many tests to run in parallel - defaults to the number of CPUs
+	Parallel int
+	// How long before timing out the test run
+	Timeout string
+
+	Race bool
+
+	// Default: 1
+	Count int
+
+	EnvFile *Secret
+	// Enable verbose output
+	TestVerbose bool
+	// Update golden files
+	Update bool
+	// Enable the given ebpf progs in the engine during tests
+	EbpfProgs []string
+	// Enable privileged eBPF tests (Linux 6.15 or newer)
+	Ebpf bool
+	// Elapsed times after the test runner starts at which to dump engine goroutines
+	DumpAfter []string
+}
+
+// Run core engine tests
+func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
+	if r.test != nil {
+		return nil
+	}
+	q := r.query.Select("test")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `envFile` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EnvFile) {
+			q = q.Arg("envFile", opts[i].EnvFile)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `update` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Update) {
+			q = q.Arg("update", opts[i].Update)
+		}
+		// `ebpfProgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
+			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+		// `ebpf` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ebpf) {
+			q = q.Arg("ebpf", opts[i].Ebpf)
+		}
+		// `dumpAfter` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DumpAfter) {
+			q = q.Arg("dumpAfter", opts[i].DumpAfter)
+		}
+	}
+
+	return q.Execute(ctx)
+}
 
 // EngineDevTestProfileOpts contains options for EngineDev.TestProfile
-type EngineDevTestProfileOpts = core.EngineDevTestProfileOpts
+type EngineDevTestProfileOpts struct {
+	// Only run these tests
+	Run string
+	// Skip these tests
+	Skip string
+
+	// Default: "./..."
+	Pkg string
+	// Abort test run on first failure
+	Failfast bool
+	// How many tests to run in parallel - defaults to the number of CPUs
+	Parallel int
+	// How long before timing out the test run
+	Timeout string
+
+	Race bool
+
+	// Default: 1
+	Count int
+
+	EnvFile *Secret
+	// Enable verbose output
+	TestVerbose bool
+	// Enable the given ebpf progs in the engine during tests
+	EbpfProgs []string
+}
+
+// Run core engine tests against an engine recording a wcprof wall-clock
+// profile, and return the recording.
+//
+// The test engine records every session from startup (_DAGGER_WCPROF=1). The
+// dump is fetched from its debug endpoint after `go test` exits, whether or
+// not the tests passed, so a failing run still yields a profile. Benchmark
+// tests gated on _DAGGER_BENCH are opted in, since profiling is what they are
+// for: select them with `run` like any other test.
+func (r *EngineDev) TestProfile(opts ...EngineDevTestProfileOpts) *EngineDevTestProfileResult {
+	q := r.query.Select("testProfile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `envFile` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EnvFile) {
+			q = q.Arg("envFile", opts[i].EnvFile)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `ebpfProgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
+			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+	}
+
+	return &EngineDevTestProfileResult{
+		query: q,
+	}
+}
 
 // EngineDevTestTelemetryOpts contains options for EngineDev.TestTelemetry
-type EngineDevTestTelemetryOpts = core.EngineDevTestTelemetryOpts
+type EngineDevTestTelemetryOpts struct {
+	// Only run these tests
+	Run string
+	// Skip these tests
+	Skip string
 
-type EngineDevLoadedEngine = core.EngineDevLoadedEngine
+	Update bool
+
+	Failfast bool
+
+	Parallel int
+
+	Timeout string
+
+	Race bool
+
+	// Default: 1
+	Count int
+
+	EnvFile *Secret
+
+	TestVerbose bool
+	// Enable the given ebpf progs in the engine during tests
+	EbpfProgs []string
+}
+
+// Run telemetry tests
+func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset {
+	q := r.query.Select("testTelemetry")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `update` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Update) {
+			q = q.Arg("update", opts[i].Update)
+		}
+		// `failfast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Failfast) {
+			q = q.Arg("failfast", opts[i].Failfast)
+		}
+		// `parallel` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Parallel) {
+			q = q.Arg("parallel", opts[i].Parallel)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `count` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Count) {
+			q = q.Arg("count", opts[i].Count)
+		}
+		// `envFile` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EnvFile) {
+			q = q.Arg("envFile", opts[i].EnvFile)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+		// `ebpfProgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EbpfProgs) {
+			q = q.Arg("ebpfProgs", opts[i].EbpfProgs)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// List all core engine tests
+func (r *EngineDev) Tests(ctx context.Context) (string, error) {
+	if r.tests != nil {
+		return *r.tests, nil
+	}
+	q := r.query.Select("tests")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev {
+	q := r.query.Select("withEbpfprogs")
+	q = q.Arg("names", names)
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
+func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev {
+	q := r.query.Select("withEngineConfig")
+	q = q.Arg("key", key)
+	q = q.Arg("value", value)
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
+func (r *EngineDev) WithLogLevel(level string) *EngineDev {
+	q := r.query.Select("withLogLevel")
+	q = q.Arg("level", level)
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
+func (r *EngineDev) WithRace() *EngineDev {
+	q := r.query.Select("withRace")
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
+type EngineDevLoadedEngine struct { // engine-dev (../../../../../:0:0)
+	query *querybuilder.Selection
+
+	id    *ID
+	image *string
+	start *Void
+}
+
+func (r *EngineDevLoadedEngine) WithGraphQLQuery(q *querybuilder.Selection) *EngineDevLoadedEngine {
+	return &EngineDevLoadedEngine{
+		query: q,
+	}
+}
+
+// A unique identifier for this EngineDevLoadedEngine.
+func (r *EngineDevLoadedEngine) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineDevLoadedEngine) XXX_GraphQLType() string {
+	return "EngineDevLoadedEngine"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineDevLoadedEngine) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineDevLoadedEngine) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineDevLoadedEngine) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *EngineDevLoadedEngine) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = EngineDevLoadedEngine{query: selectNode(dag.query, id, "EngineDevLoadedEngine")}
+	return nil
+}
+
+func (r *EngineDevLoadedEngine) Image(ctx context.Context) (string, error) {
+	if r.image != nil {
+		return *r.image, nil
+	}
+	q := r.query.Select("image")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
 
 // EngineDevLoadedEngineStartOpts contains options for EngineDevLoadedEngine.Start
-type EngineDevLoadedEngineStartOpts = core.EngineDevLoadedEngineStartOpts
+type EngineDevLoadedEngineStartOpts struct {
+
+	// Default: "dagger-engine.dev"
+	Name string
+
+	CloudToken *Secret
+
+	CloudURL string
+
+	Debug bool
+
+	ExtraHosts []string
+}
+
+// Start the loaded engine container
+func (r *EngineDevLoadedEngine) Start(ctx context.Context, opts ...EngineDevLoadedEngineStartOpts) error {
+	if r.start != nil {
+		return nil
+	}
+	q := r.query.Select("start")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `cloudToken` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudToken) {
+			q = q.Arg("cloudToken", opts[i].CloudToken)
+		}
+		// `cloudUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CloudURL) {
+			q = q.Arg("cloudUrl", opts[i].CloudURL)
+		}
+		// `debug` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Debug) {
+			q = q.Arg("debug", opts[i].Debug)
+		}
+		// `extraHosts` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExtraHosts) {
+			q = q.Arg("extraHosts", opts[i].ExtraHosts)
+		}
+	}
+
+	return q.Execute(ctx)
+}
 
 // The result of a profiled test run: the test engine's wcprof recording, and
 // how the tests went.
-type EngineDevTestProfileResult = core.EngineDevTestProfileResult
+type EngineDevTestProfileResult struct { // engine-dev (../../../../../:0:0)
+	query *querybuilder.Selection
+
+	exitCode *int
+	id       *ID
+	output   *string
+}
+
+func (r *EngineDevTestProfileResult) WithGraphQLQuery(q *querybuilder.Selection) *EngineDevTestProfileResult {
+	return &EngineDevTestProfileResult{
+		query: q,
+	}
+}
+
+// The test engine's wcprof dump (engine/wcprof), covering every
+// session the tests opened
+func (r *EngineDevTestProfileResult) Dump() *File {
+	q := r.query.Select("dump")
+
+	return &File{
+		query: q,
+	}
+}
+
+// The exit status of `go test`
+func (r *EngineDevTestProfileResult) ExitCode(ctx context.Context) (int, error) {
+	if r.exitCode != nil {
+		return *r.exitCode, nil
+	}
+	q := r.query.Select("exitCode")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EngineDevTestProfileResult.
+func (r *EngineDevTestProfileResult) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineDevTestProfileResult) XXX_GraphQLType() string {
+	return "EngineDevTestProfileResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineDevTestProfileResult) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineDevTestProfileResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineDevTestProfileResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *EngineDevTestProfileResult) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = EngineDevTestProfileResult{query: selectNode(dag.query, id, "EngineDevTestProfileResult")}
+	return nil
+}
+
+// The tail of the test output (stdout and stderr)
+func (r *EngineDevTestProfileResult) Output(ctx context.Context) (string, error) {
+	if r.output != nil {
+		return *r.output, nil
+	}
+	q := r.query.Select("output")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
 
 // EngineDevOpts contains options for Query.EngineDev
-type EngineDevOpts = core.EngineDevOpts
+type EngineDevOpts struct {
+	// A configurable part of the IP subnet managed by the engine
+	// Change this to allow nested dagger engines
+	//
+	// Default: 89
+	SubnetNumber int
+	// A docker config file with credentials to install on clients,
+	// to ensure they can access private registries
+	ClientDockerConfig *Secret
+}
+
+func (r *Query) EngineDev(ws *Workspace, opts ...EngineDevOpts) *EngineDev { // engine-dev (../../../../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("engineDev")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `subnetNumber` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SubnetNumber) {
+			q = q.Arg("subnetNumber", opts[i].SubnetNumber)
+		}
+		// `clientDockerConfig` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ClientDockerConfig) {
+			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
+		}
+	}
+	q = q.Arg("ws", ws)
+
+	return &EngineDev{
+		query: q,
+	}
+}
