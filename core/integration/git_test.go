@@ -2595,6 +2595,54 @@ func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 	require.Equal(t, base, ref)
 }
 
+// Refs of different remotes that share history (a fork and its upstream) are
+// joined into one private repository, each copying only what the refs before
+// it lack. The answer must not depend on which ref is joined first.
+func (GitSuite) TestGitCommonAncestorForkAndUpstream(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	svc := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		With(gitUserConfig).
+		WithWorkdir("/repos").
+		WithExec([]string{"sh", "-ec", `
+			git init -b main upstream
+			cd upstream
+			for i in 1 2 3; do echo $i > file.txt; git add .; git commit -m "upstream $i"; done
+			git tag two HEAD~1
+			cd ..
+			git clone -q upstream fork
+			cd fork
+			git checkout -b feature two
+			echo feature > feature.txt
+			git add . && git commit -m feature
+		`}).
+		WithExposedPort(9418).
+		WithDefaultArgs([]string{"git", "daemon", "--export-all", "--base-path=/repos", "--reuseaddr"}).
+		AsService()
+	host, err := svc.Hostname(ctx)
+	require.NoError(t, err)
+
+	upstream := core.NewQuery(c).Git("git://"+host+"/upstream", core.GitOpts{ExperimentalServiceHost: svc})
+	fork := core.NewQuery(c).Git("git://"+host+"/fork", core.GitOpts{ExperimentalServiceHost: svc})
+	upstreamMain := upstream.Branch("main")
+	forkFeature := fork.Branch("feature")
+	// The fork branched from upstream's second commit.
+	base, err := upstream.Tag("two").CommitSHA(ctx)
+	require.NoError(t, err)
+
+	for name, pair := range map[string][2]*core.GitRef{
+		"upstream first": {upstreamMain, forkFeature},
+		"fork first":     {forkFeature, upstreamMain},
+	} {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			commit, err := pair[0].CommonAncestor(pair[1]).CommitSHA(ctx)
+			require.NoError(t, err)
+			require.Equal(t, base, commit)
+		})
+	}
+}
+
 func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

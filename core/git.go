@@ -2146,10 +2146,10 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 	eg, egCtx := errgroup.WithContext(ctx)
 	mu := sync.Mutex{} // cannot simultaneously add+fetch remotes
 	commits := make([]string, len(refs))
-	// Fetching a commit ID writes no ref, and fetch negotiates only from refs
-	// unless told otherwise: without these tips, every fetch after the first
-	// would claim to have nothing and receive the whole shared history again.
-	var fetched []string
+	// Commits whose history git already owns, guarded by mu. Fetching or
+	// packing a commit ID writes no ref, so these are what later copies
+	// exclude (the pack) or negotiate from (the fetch fallback).
+	var joined []string
 
 	for i, ref := range refs {
 		eg.Go(func() error {
@@ -2165,24 +2165,10 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 				if _, err := git.Run(egCtx, "remote", "add", remoteName, remoteURL); err != nil {
 					return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
 				}
-				// A failed pack can only leave objects of this ref's own
-				// history behind, which the fetch then completes.
-				_, err = copyGitObjects(egCtx, "join", func(ctx context.Context) error {
-					return packGitClosure(ctx, git, gitN, []string{ref.Ref.SHA})
-				}, nil, func(ctx context.Context) error {
-					args := []string{"fetch", "--no-tags", "--update-shallow"}
-					for _, sha := range fetched {
-						args = append(args, "--negotiation-tip="+sha)
-					}
-					if _, err := git.Run(ctx, append(args, remoteName, ref.Ref.SHA)...); err != nil {
-						return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
-					}
-					return nil
-				})
-				if err != nil {
-					return err
+				if err := joinGitObjects(egCtx, git, gitN, remoteName, ref.Ref.SHA, joined); err != nil {
+					return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
 				}
-				fetched = append(fetched, ref.Ref.SHA)
+				joined = append(joined, ref.Ref.SHA)
 				return nil
 			})
 		})
@@ -2192,6 +2178,30 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 		return nil, nil, nil, err
 	}
 	return git, commits, cleanup, nil
+}
+
+// joinGitObjects copies sha's history from source into git, a refJoin
+// repository that already owns the complete history of every commit in
+// joined. Joined refs usually share most of their history (a fork and its
+// upstream, two branches): the pack copies only what joined lacks rather than
+// a second full history. The fetch fallback reaches source as remoteName,
+// negotiating from joined: fetch otherwise negotiates only from refs, and git
+// has none, so it would claim to have nothing and receive the whole shared
+// history again.
+func joinGitObjects(ctx context.Context, git, source *gitutil.GitCLI, remoteName, sha string, joined []string) error {
+	// A failed pack can only leave objects of this ref's own history behind,
+	// which the fetch then completes.
+	_, err := copyGitObjects(ctx, "join", func(ctx context.Context) error {
+		return packGitClosure(ctx, git, source, []string{sha}, joined...)
+	}, nil, func(ctx context.Context) error {
+		args := []string{"fetch", "--no-tags", "--update-shallow"}
+		for _, tip := range joined {
+			args = append(args, "--negotiation-tip="+tip)
+		}
+		_, err := git.Run(ctx, append(args, remoteName, sha)...)
+		return err
+	})
+	return err
 }
 
 // visitPersistedRemoteGitRepositoryRefs walks every declared reference of a

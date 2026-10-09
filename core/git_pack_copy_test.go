@@ -3,11 +3,13 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -194,4 +196,54 @@ func TestPackGitClosureRefusesShallowDestination(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dest, "shallow"), []byte(base+"\n"), 0o644))
 	err := packGitClosure(t.Context(), gitutil.NewGitCLI(gitutil.WithGitDir(dest)), gitutil.NewGitCLI(gitutil.WithDir(source)), []string{base})
 	require.ErrorContains(t, err, "destination has shallow")
+}
+
+// Joining refs from different repositories that share history (a fork and
+// its upstream) must copy the shared history once, not once per ref.
+func TestJoinGitObjectsCopiesSharedHistoryOnce(t *testing.T) {
+	ctx := t.Context()
+	source, base, next := gitMirrorTestSource(t)
+	upstream, upstreamGit, _ := gitMirrorTestRepo(t, source)
+	gitMirrorTestFetch(t, upstream, upstreamGit, base, 0)
+	fork, forkGit, _ := gitMirrorTestRepo(t, source)
+	gitMirrorTestFetch(t, fork, forkGit, next, 0)
+
+	dir := t.TempDir()
+	git := gitutil.NewGitCLI(gitutil.WithDir(dir), gitutil.WithGitDir(filepath.Join(dir, ".git")))
+	_, err := git.Run(ctx, "init", "--quiet")
+	require.NoError(t, err)
+	var joined []string
+	for i, src := range []struct {
+		git *gitutil.GitCLI
+		sha string
+	}{{upstreamGit, base}, {forkGit, next}} {
+		remoteName := fmt.Sprintf("origin%d", i+1)
+		url, err := src.git.URL(ctx)
+		require.NoError(t, err)
+		_, err = git.Run(ctx, "remote", "add", remoteName, url)
+		require.NoError(t, err)
+		require.NoError(t, joinGitObjects(ctx, git, src.git, remoteName, src.sha, joined))
+		joined = append(joined, src.sha)
+	}
+
+	_, err = git.Run(ctx, "fsck", "--full", "--strict", "--no-dangling", base, next)
+	require.NoError(t, err)
+	mergeBase, err := git.Run(ctx, "merge-base", base, next)
+	require.NoError(t, err)
+	require.Equal(t, base, strings.TrimSpace(string(mergeBase)))
+
+	// count-objects sums every pack's object count, so an object packed twice
+	// is counted twice.
+	out, err := git.Run(ctx, "count-objects", "-v")
+	require.NoError(t, err)
+	stats := map[string]string{}
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		key, value, _ := strings.Cut(line, ": ")
+		stats[key] = value
+	}
+	distinct, err := git.Run(ctx, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)")
+	require.NoError(t, err)
+	require.Equal(t, "0", stats["count"], "the copies must be packs")
+	require.Equal(t, strconv.Itoa(len(strings.Fields(string(distinct)))), stats["in-pack"],
+		"objects of the shared history were packed more than once")
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -143,9 +144,21 @@ func newGitPackCopy(ctx context.Context, dest, source *gitutil.GitCLI) (*gitPack
 }
 
 // pack copies objects (with revs, their complete history) and verifies that
-// the destination has every one of them. It writes no refs.
-func (c *gitPackCopy) pack(ctx context.Context, objects []string, revs bool) error {
-	if err := packGitObjects(ctx, gitCLIObjectsRunner(c.dest), c.destObjects, c.sourceObjects, objects, revs); err != nil {
+// the destination has every one of them. With revs, the history of exclude
+// (commits the destination already owns completely) is left out. It writes no
+// refs.
+func (c *gitPackCopy) pack(ctx context.Context, objects []string, revs bool, exclude ...string) error {
+	input := objects
+	if len(exclude) > 0 {
+		if !revs {
+			return fmt.Errorf("exclusions require a revision walk")
+		}
+		input = slices.Clone(objects)
+		for _, object := range exclude {
+			input = append(input, "^"+object)
+		}
+	}
+	if err := packGitObjects(ctx, gitCLIObjectsRunner(c.dest), c.destObjects, c.sourceObjects, input, revs); err != nil {
 		return err
 	}
 	present, err := gitObjectsPresent(ctx, c.dest, objects)
@@ -161,13 +174,15 @@ func (c *gitPackCopy) pack(ctx context.Context, objects []string, revs bool) err
 }
 
 // packGitClosure copies the complete history of revs (object IDs) from
-// source into dest, which must already exist. It writes no refs.
-func packGitClosure(ctx context.Context, dest, source *gitutil.GitCLI, revs []string) error {
+// source into dest, which must already exist, leaving out the history of
+// exclude: commits whose complete history dest already owns. It writes no
+// refs.
+func packGitClosure(ctx context.Context, dest, source *gitutil.GitCLI, revs []string, exclude ...string) error {
 	c, err := newGitPackCopy(ctx, dest, source)
 	if err != nil {
 		return err
 	}
-	return c.pack(ctx, revs, true)
+	return c.pack(ctx, revs, true, exclude...)
 }
 
 // copyGitObjects runs pack, the pack-objects copy, falling back to fetch on
