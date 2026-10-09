@@ -2515,20 +2515,40 @@ func TestReevaluateDirective(t *testing.T) {
 		dagql.Func("reevaluatedPoint", newPoint).Reevaluate(),
 		dagql.Func("perCallPoint", newPoint).WithInput(dagql.PerCallInput),
 		dagql.Func("uncachedPoint", newPoint).DoNotCache("routing only"),
+		dagql.Func("requestedPoint", func(ctx context.Context, self Query, args struct {
+			NoCache bool `default:"false"`
+		}) (*points.Point, error) {
+			return &points.Point{X: 1, Y: 2}, nil
+		}).WithInput(dagql.RequestedCacheInput("noCache")),
+		dagql.Func("livePoint", func(ctx context.Context, self Query, args struct {
+			NoCache bool `default:"false"`
+			NoLock  bool `default:"false"`
+		}) (*points.Point, error) {
+			return &points.Point{X: 1, Y: 2}, nil
+		}).WithInput(dagql.PerCallWhen("noLock", dagql.RequestedCacheInput("noCache"))),
 	}.Install(srv)
 
 	schema := srv.SchemaForView("")
 	require.NotNil(t, schema.Directives["reevaluate"])
 	query := schema.Types["Query"]
-	for field, want := range map[string]bool{
-		"plainPoint":       false,
-		"reevaluatedPoint": true,
-		"perCallPoint":     true,
-		"uncachedPoint":    false,
+	for field, want := range map[string]string{
+		"plainPoint":       "",
+		"reevaluatedPoint": "@reevaluate",
+		"perCallPoint":     "@reevaluate",
+		"uncachedPoint":    "",
+		"requestedPoint":   `@reevaluate(when: ["noCache"])`,
+		"livePoint":        `@reevaluate(when: ["noCache","noLock"])`,
 	} {
 		def := query.Fields.ForName(field)
 		require.NotNil(t, def, field)
-		require.Equal(t, want, def.Directives.ForName("reevaluate") != nil, field)
+		got := ""
+		if dir := def.Directives.ForName("reevaluate"); dir != nil {
+			got = "@reevaluate"
+			if when := dir.Arguments.ForName("when"); when != nil {
+				got += "(when: " + when.Value.String() + ")"
+			}
+		}
+		require.Equal(t, want, got, field)
 	}
 }
 

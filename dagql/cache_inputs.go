@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 
@@ -117,7 +118,8 @@ var CurrentSchemaInput = ImplicitInput{
 // false => PerClientInput, true => PerCallInput.
 func RequestedCacheInput(argName string) ImplicitInput {
 	return ImplicitInput{
-		Name: "cacheAsRequested:" + argName,
+		Name:        "cacheAsRequested:" + argName,
+		PerCallWhen: []string{argName},
 		Resolver: func(ctx context.Context, args map[string]Input) (Input, error) {
 			noCache, err := inputBoolArg(args, argName)
 			if err != nil {
@@ -138,7 +140,8 @@ func RequestedCacheInput(argName string) ImplicitInput {
 // call itself must not be answered from an earlier one.
 func PerCallWhen(argName string, input ImplicitInput) ImplicitInput {
 	return ImplicitInput{
-		Name: input.Name,
+		Name:        input.Name,
+		PerCallWhen: append(slices.Clone(input.PerCallWhen), argName),
 		Resolver: func(ctx context.Context, args map[string]Input) (Input, error) {
 			perCall, err := inputBoolArg(args, argName)
 			if err != nil {

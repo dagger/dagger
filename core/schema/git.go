@@ -1126,7 +1126,8 @@ var gitPerClientInput = agentAddressScopedInput(dagql.PerClientInput)
 // change.
 func agentAddressScopedInput(input dagql.ImplicitInput) dagql.ImplicitInput {
 	return dagql.ImplicitInput{
-		Name: input.Name,
+		Name:        input.Name,
+		PerCallWhen: input.PerCallWhen,
 		Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
 			resolved, err := input.Resolver(ctx, args)
 			if err != nil || !core.IsAgentAddressResolution(ctx) {
@@ -1153,7 +1154,8 @@ func agentAddressScopedInput(input dagql.ImplicitInput) dagql.ImplicitInput {
 func gitLockScopedInput(argName string) dagql.ImplicitInput {
 	perClient := gitLiveInput(dagql.PerClientInput)
 	return dagql.ImplicitInput{
-		Name: "cachePerClientLock:" + argName,
+		Name:        "cachePerClientLock:" + argName,
+		PerCallWhen: perClient.PerCallWhen,
 		Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
 			if name, ok := args[argName].(dagql.String); ok {
 				base := name.String()

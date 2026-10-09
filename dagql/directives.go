@@ -117,10 +117,20 @@ func experimental(reason string) *ast.Directive {
 	}
 }
 
-func reevaluate() *ast.Directive {
-	return &ast.Directive{
-		Name: "reevaluate",
+// reevaluate returns the @reevaluate directive; with when, only calls that set
+// one of those Boolean arguments to true are reevaluated.
+func reevaluate(when []string) *ast.Directive {
+	dir := &ast.Directive{Name: "reevaluate"}
+	if len(when) > 0 {
+		list := &ast.Value{Kind: ast.ListValue}
+		for _, arg := range when {
+			list.Children = append(list.Children, &ast.ChildValue{
+				Value: &ast.Value{Kind: ast.StringValue, Raw: arg},
+			})
+		}
+		dir.Arguments = ast.ArgumentList{{Name: "when", Value: list}}
 	}
+	return dir
 }
 
 func internal() *ast.Directive {

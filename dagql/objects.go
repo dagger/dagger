@@ -989,6 +989,11 @@ type FieldSpec struct {
 	// reevaluated without setting it; see Reevaluated.
 	Reevaluate bool
 
+	// ReevaluateWhen names Boolean arguments that, when one is true, make a
+	// call reevaluated (see Reevaluate). Implicit inputs add theirs; see
+	// ReevaluateArgs.
+	ReevaluateWhen []string
+
 	// If set, the result of this field will be cached for the given TTL (in seconds).
 	TTL int64
 
@@ -1053,7 +1058,9 @@ func (spec FieldSpec) FieldDefinition(view call.View) *ast.FieldDefinition {
 		def.Directives = append(def.Directives, experimental(spec.ExperimentalReason))
 	}
 	if spec.Reevaluated() {
-		def.Directives = append(def.Directives, reevaluate())
+		def.Directives = append(def.Directives, reevaluate(nil))
+	} else if args := spec.ReevaluateArgs(); len(args) > 0 {
+		def.Directives = append(def.Directives, reevaluate(args))
 	}
 	return def
 }
@@ -1065,6 +1072,22 @@ func (spec FieldSpec) Reevaluated() bool {
 	return spec.Reevaluate || slices.ContainsFunc(spec.ImplicitInputs, func(input ImplicitInput) bool {
 		return input.Name == PerCallInput.Name
 	})
+}
+
+// ReevaluateArgs returns the Boolean arguments that, when one is true, make a
+// call of a field that is not always Reevaluated give a new result: its own
+// ReevaluateWhen and its implicit inputs' PerCallWhen. Sorted, without
+// duplicates.
+func (spec FieldSpec) ReevaluateArgs() []string {
+	if spec.Reevaluated() {
+		return nil
+	}
+	args := slices.Clone(spec.ReevaluateWhen)
+	for _, input := range spec.ImplicitInputs {
+		args = append(args, input.PerCallWhen...)
+	}
+	slices.Sort(args)
+	return slices.Compact(args)
 }
 
 func (spec *FieldSpec) resolveImplicitInputCallArgs(ctx context.Context, inputArgs map[string]Input) ([]*ResultCallArg, error) {
@@ -1524,6 +1547,10 @@ type ImplicitInputResolver func(context.Context, map[string]Input) (Input, error
 type ImplicitInput struct {
 	Name     string
 	Resolver ImplicitInputResolver
+	// PerCallWhen names Boolean arguments that, when one is true, make the
+	// input per-call (see PerCallInput), so the field is reevaluated for that
+	// call.
+	PerCallWhen []string
 }
 
 // Field defines a field of an Object type.

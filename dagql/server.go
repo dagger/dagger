@@ -424,6 +424,15 @@ var coreDirectives = []DirectiveSpec{
 			`Indicates that every evaluation of this field may give a new result or
 			repeat a side effect. A client must evaluate it again for each use: it
 			must not reuse an ID it fetched for an object built through this field.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "when",
+				Description: FormatDescription(
+					`Only calls that set one of these Boolean arguments to true are
+					reevaluated. When omitted, every call is.`),
+				Type: ArrayInput[String](nil),
+			},
+		),
 		Locations: []DirectiveLocation{
 			DirectiveLocationFieldDefinition,
 		},
