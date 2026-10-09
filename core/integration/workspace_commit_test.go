@@ -382,7 +382,7 @@ with open('/work/file.txt', 'w') as f: f.write('selected\n')
 			require.Equal(t, uint32(0o2750), manifest["rich"].Mode&0o7777)
 			require.Equal(t, uint32(0o4751), manifest["rich/data"].Mode&0o7777)
 		}},
-		{name: "incoming directory metadata and empty directories", incoming: func(d *dagger.Directory) *dagger.Directory {
+		{name: "incoming directory metadata and empty directories", incoming: func(d *core.Directory) *core.Directory {
 			return inspector.WithMountedDirectory("/work", d).WithExec([]string{"python3", "-c", `
 import os
 os.makedirs('/work/made/empty')
@@ -589,21 +589,21 @@ func (WorkspaceSuite) TestWorkspaceWithCommitNativeReconciliationTrace(ctx conte
 func (WorkspaceSuite) TestWorkspaceCommitterShapesNativeReconciliation(ctx context.Context, t *testctx.T) {
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
-	fixture := c.Directory().
+	fixture := core.NewQuery(c).Directory().
 		WithNewFile("pending.txt", "base\n").
 		WithNewFile("other/o.txt", "o\n")
 	for _, name := range []string{"a", "b", "c", "d", "e"} {
 		fixture = fixture.WithNewFile("sdk/php/src/"+name+".php", "<?php\n// "+name+"\n")
 	}
 	service, url := gitService(ctx, t, c, fixture)
-	base := snapshotWorkspace(ctx, t, c, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Head().AsWorkspace())
-	commit := func(name string, ws *dagger.Workspace, include ...string) *dagger.Workspace {
+	base := snapshotWorkspace(ctx, t, c, core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service}).Head().AsWorkspace())
+	commit := func(name string, ws *core.Workspace, include ...string) *core.Workspace {
 		t.Helper()
-		id, err := ws.WithCommit(ws.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Include: include}), name, workspaceCommitDate, dagger.WorkspaceWithCommitOpts{
+		id, err := ws.WithCommit(ws.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Include: include}), name, workspaceCommitDate, core.WorkspaceWithCommitOpts{
 			AuthorName: "Agent", AuthorEmail: "agent@example.com",
 		}).ID(ctx)
 		require.NoError(t, err, name)
-		committed := dagger.Ref[*dagger.Workspace](c, id)
+		committed := core.Ref[*core.Workspace](core.NewQuery(c), id)
 		_, err = committed.Git().Head().CommitSHA(ctx)
 		require.NoError(t, err, name)
 		return committed
@@ -622,7 +622,7 @@ new file mode 100644
 @@ -0,0 +1 @@
 +x
 `
-	patched := base.WithPatchFile(c.Directory().WithNewFile("edit.patch", patch).File("edit.patch")).
+	patched := base.WithPatchFile(core.NewQuery(c).Directory().WithNewFile("edit.patch", patch).File("edit.patch")).
 		WithNewFile("pending.txt", "keep pending\n")
 	first := commit("patched edits, filtered", patched, "sdk/php/src/**")
 	second := commit("tool edit, filtered", first.WithNewFile("sdk/php/src/b.php", "<?php\n// b changed\n"), "sdk/php/**")
@@ -789,18 +789,18 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 	hostGit("repack", "-d", "-q")
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithWorkdir(checkout))...)
-	base := snapshotWorkspace(ctx, t, c, c.CurrentWorkspace())
+	base := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
 	initialSHA := hostGit("rev-parse", "v1")
 	state, err := commitWorkspace(ctx, c, base.WithNewFile("base.txt", "next"), "next", []string{"base.txt"})
 	require.NoError(t, err)
-	next := dagger.Ref[*dagger.Workspace](c, state.ID)
+	next := core.Ref[*core.Workspace](core.NewQuery(c), state.ID)
 	// The retained full checkout of the committed head (GitRef.__fullCheckout).
 	// The Go SDK omits zero-valued depth, so use GraphQL here.
 	refID, err := next.Git().Head().ID(ctx)
 	require.NoError(t, err)
 	var fullTree struct {
 		Node struct {
-			Tree struct{ ID dagger.ID }
+			Tree struct{ ID core.ID }
 		}
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{
@@ -808,7 +808,7 @@ func (WorkspaceSuite) TestWorkspaceCommittedFullCheckoutCopyOnWrite(ctx context.
 		Variables: map[string]any{"id": refID},
 	}, &dagger.Response{Data: &fullTree}))
 	export := t.TempDir()
-	_, err = dagger.Ref[*dagger.Directory](c, fullTree.Node.Tree.ID).Export(ctx, export)
+	_, err = core.Ref[*core.Directory](core.NewQuery(c), fullTree.Node.Tree.ID).Export(ctx, export)
 	require.NoError(t, err)
 	git := func(args ...string) string {
 		t.Helper()
@@ -966,7 +966,7 @@ func (WorkspaceSuite) TestWorkspaceRetainedCheckoutFullCheckouts(ctx context.Con
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture, inspector := gitIncrementalCheckoutFixture(c)
 	repo := fixture.AsGit()
-	discard := dagger.GitRefTreeOpts{DiscardGitDir: true}
+	discard := core.GitRefTreeOpts{DiscardGitDir: true}
 	before := repo.Head().Tree(discard)
 	head := repo.Head().WithCommit(before.WithNewFile("selected.txt", "committed\n").Changes(before), "receiver", workspaceCommitDate, "Oracle", "oracle@example.com")
 	headTree := head.Tree(discard)
@@ -977,30 +977,30 @@ func (WorkspaceSuite) TestWorkspaceRetainedCheckoutFullCheckouts(ctx context.Con
 	require.NoError(t, err)
 	sourceSHA, err := source.CommitSHA(ctx)
 	require.NoError(t, err)
-	asWorkspace := dagger.GitRefAsWorkspaceOpts{Cwd: "/"}
+	asWorkspace := core.GitRefAsWorkspaceOpts{Cwd: "/"}
 	sourceID, err := source.AsWorkspace(asWorkspace).ID(ctx)
 	require.NoError(t, err)
 	// The receiver's edits ride along in the pull's directory.
 	receiverID, err := head.AsWorkspace(asWorkspace).WithNewFile("pending.txt", "receiver edit\n").ID(ctx)
 	require.NoError(t, err)
-	fullCheckout := func(id dagger.ID) *dagger.Directory {
+	fullCheckout := func(id core.ID) *core.Directory {
 		var out struct {
-			Node struct{ FullCheckout struct{ ID dagger.ID } `json:"__fullCheckout"` }
+			Node struct{ FullCheckout struct{ ID core.ID } `json:"__fullCheckout"` }
 		}
 		require.NoError(t, c.Do(ctx, &dagger.Request{
 			Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { __fullCheckout { id } } } }`,
 			Variables: map[string]any{"id": id},
 		}, &dagger.Response{Data: &out}))
-		return dagger.Ref[*dagger.Directory](c, out.Node.FullCheckout.ID)
+		return core.Ref[*core.Directory](core.NewQuery(c), out.Node.FullCheckout.ID)
 	}
 	full := fullCheckout(headID)
-	pulled := dagger.Ref[*dagger.Directory](c, selectHidden(ctx, t, c, receiverID, "Workspace", "__pullDirectory", map[string]any{
+	pulled := core.Ref[*core.Directory](core.NewQuery(c), selectHidden(ctx, t, c, receiverID, "Workspace", "__pullDirectory", map[string]any{
 		"source":         sourceID,
 		"committerName":  "Committer",
 		"committerEmail": "committer@example.com",
 	}))
 	// Git's view of a checkout: everything a fresh one determines.
-	gitState := func(dir *dagger.Directory) string {
+	gitState := func(dir *core.Directory) string {
 		out, err := inspector.WithMountedDirectory("/inspect", dir).WithWorkdir("/inspect").
 			WithExec([]string{"sh", "-ec", `
 git rev-parse HEAD
@@ -1016,7 +1016,7 @@ git fsck --no-dangling
 	}
 	for _, tc := range []struct {
 		name     string
-		contents *dagger.Directory
+		contents *core.Directory
 		sha      string
 	}{
 		{"checkout", full, headSHA},

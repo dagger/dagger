@@ -137,23 +137,23 @@ func (WorkspaceSuite) TestWorkspacePullIncrementalCheckout(ctx context.Context, 
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture, inspector := gitIncrementalCheckoutFixture(c)
-	commit := func(ws *dagger.Workspace, message string) *dagger.Workspace {
+	commit := func(ws *core.Workspace, message string) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), message, workspaceCommitDate)
 	}
 	base := snapshotWorkspace(ctx, t, c, fixture.AsGit().Head().AsWorkspace())
 	source := commit(base.WithNewFile("selected.txt", "source\n"), "source one")
 	source = commit(source.WithNewFile("added/deep.txt", "added\n").WithoutFile("delete.txt"), "source two")
 	source = snapshotWorkspace(ctx, t, c, source)
-	for name, receiver := range map[string]*dagger.Workspace{
+	for name, receiver := range map[string]*core.Workspace{
 		"fast-forward": base,
 		"cherry-pick":  snapshotWorkspace(ctx, t, c, commit(base.WithNewFile("local.txt", "local\n"), "local")),
 	} {
 		// The receiver's canonical tree is warm, as it is in a live session.
-		workspaceCommitManifest(ctx, t, inspector, receiver.Git().Head().Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}))
+		workspaceCommitManifest(ctx, t, inspector, receiver.Git().Head().Tree(core.GitRefTreeOpts{DiscardGitDir: true}))
 		pulled, err := applyWorkspacePull(ctx, c, receiver, source, nil, 100)
 		require.NoError(t, err, name)
 		head := pulled.Git().Head()
-		tree := head.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		tree := head.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
 		require.Equal(t, workspaceCommitManifest(ctx, t, inspector, gitFullCheckoutOracle(head)), workspaceCommitManifest(ctx, t, inspector, tree), name)
 		requireGitCheckoutTimes(ctx, t, inspector, tree)
 	}
@@ -202,14 +202,14 @@ func (WorkspaceSuite) TestWorkspacePullIncrementalCheckout(ctx context.Context, 
 // or a pull already materializes its HEAD's tree, so a parent is never cold.
 func (WorkspaceSuite) TestWorkspacePullColdTrees(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
-	content := c.Directory().
+	content := core.NewQuery(c).Directory().
 		WithNewFile(".gitattributes", "*.txt text eol=lf\n").
 		WithNewFile("base.txt", "base\n").
 		WithNewFile("dir/keep.txt", "keep\n")
 	// A replay on a cold engine rebuilds this repository and fetches pinned
 	// commits by SHA, as from a hosted remote: keep the commit reproducible
 	// and allow SHA wants, which git daemon refuses by default.
-	service := c.Container().From(alpineImage).
+	service := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		WithEnvVariable("GIT_AUTHOR_DATE", workspaceCommitDate).
 		WithEnvVariable("GIT_COMMITTER_DATE", workspaceCommitDate).
@@ -229,8 +229,8 @@ git -C /root/srv/repo.git config uploadpack.allowAnySHA1InWant true
 	host, err := service.Hostname(ctx)
 	require.NoError(t, err)
 	url := fmt.Sprintf("git://%s/repo.git", host)
-	base := snapshotWorkspace(ctx, t, c, c.Git(url, dagger.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace())
-	commit := func(ws *dagger.Workspace, message string) *dagger.Workspace {
+	base := snapshotWorkspace(ctx, t, c, core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: service}).Branch("main").AsWorkspace())
+	commit := func(ws *core.Workspace, message string) *core.Workspace {
 		return ws.WithCommit(ws.Git().Uncommitted(), message, workspaceCommitDate)
 	}
 	agent := base
@@ -247,11 +247,11 @@ git -C /root/srv/repo.git config uploadpack.allowAnySHA1InWant true
 	require.NoError(t, err)
 	// Commit only the new file: the pulled-in pending edit stays pending.
 	picked = picked.WithNewFile("after-pick.txt", "picked\n")
-	picked = snapshotWorkspace(ctx, t, c, picked.WithCommit(picked.Git().Uncommitted().Filter(dagger.ChangesetFilterOpts{Exclude: []string{"pending.txt"}}), "after pick", workspaceCommitDate))
+	picked = snapshotWorkspace(ctx, t, c, picked.WithCommit(picked.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Exclude: []string{"pending.txt"}}), "after pick", workspaceCommitDate))
 	forwarded, err := applyWorkspacePull(ctx, c, base, source, nil, 100)
 	require.NoError(t, err)
 	forwarded = snapshotWorkspace(ctx, t, c, commit(forwarded.WithNewFile("after-ff.txt", "forwarded\n"), "after fast-forward"))
-	requirePending := func(name string, ws *dagger.Workspace) {
+	requirePending := func(name string, ws *core.Workspace) {
 		pending, err := ws.Git().Uncommitted().AddedPaths(ctx)
 		require.NoError(t, err, name)
 		if name == "cherry-pick" {
@@ -260,11 +260,11 @@ git -C /root/srv/repo.git config uploadpack.allowAnySHA1InWant true
 			require.Empty(t, pending, name)
 		}
 	}
-	ids := map[string]dagger.ID{}
-	for name, ws := range map[string]*dagger.Workspace{"cherry-pick": picked, "fast-forward": forwarded} {
+	ids := map[string]core.ID{}
+	for name, ws := range map[string]*core.Workspace{"cherry-pick": picked, "fast-forward": forwarded} {
 		requirePending(name, ws)
 		// A replayable recipe, as a resumed session's trace records it.
-		ids[name], err = sink.captureLLMRecipe(ctx, t, c, c.LLM().WithWorkspace(ws))
+		ids[name], err = sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(ws))
 		require.NoError(t, err)
 	}
 	require.NoError(t, c.Close()) // Drain finished spans.
@@ -275,7 +275,7 @@ git -C /root/srv/repo.git config uploadpack.allowAnySHA1InWant true
 	// Replay both recipes on an engine that has forgotten everything, like a
 	// resumed session: concurrently, as restored agents are.
 	pruner := connect(ctx, t)
-	require.NoError(t, pruner.Engine().LocalCache().Prune(ctx))
+	require.NoError(t, core.NewQuery(pruner).Engine().LocalCache().Prune(ctx))
 	require.NoError(t, pruner.Close())
 	cold, coldSink := connectWithTrace(ctx, t)
 	var eg errgroup.Group
@@ -283,7 +283,7 @@ git -C /root/srv/repo.git config uploadpack.allowAnySHA1InWant true
 	var mu sync.Mutex
 	for name, id := range ids {
 		eg.Go(func() error {
-			pending, err := dagger.Ref[*dagger.LLM](cold, id).Workspace().Git().Uncommitted().AddedPaths(ctx)
+			pending, err := core.Ref[*core.LLM](core.NewQuery(cold), id).Workspace().Git().Uncommitted().AddedPaths(ctx)
 			mu.Lock()
 			replayedPending[name] = pending
 			mu.Unlock()
@@ -309,7 +309,7 @@ func (WorkspaceSuite) TestWorkspaceRetainedCheckoutTrees(ctx context.Context, t 
 	c := connect(ctx, t, append(sink.clientOpts(), dagger.WithLogOutput(io.Discard))...)
 	fixture, inspector := gitIncrementalCheckoutFixture(c)
 	repo := fixture.AsGit()
-	discard := dagger.GitRefTreeOpts{DiscardGitDir: true}
+	discard := core.GitRefTreeOpts{DiscardGitDir: true}
 	before := repo.Head().Tree(discard)
 	head := repo.Head().WithCommit(before.WithNewFile("selected.txt", "committed\n").Changes(before), "receiver", workspaceCommitDate, "Oracle", "oracle@example.com")
 	headTree := head.Tree(discard)
@@ -320,20 +320,20 @@ func (WorkspaceSuite) TestWorkspaceRetainedCheckoutTrees(ctx context.Context, t 
 	require.NoError(t, err)
 	sourceSHA, err := source.CommitSHA(ctx)
 	require.NoError(t, err)
-	asWorkspace := dagger.GitRefAsWorkspaceOpts{Cwd: "/"}
+	asWorkspace := core.GitRefAsWorkspaceOpts{Cwd: "/"}
 	sourceID, err := source.AsWorkspace(asWorkspace).ID(ctx)
 	require.NoError(t, err)
 	receiverID, err := head.AsWorkspace(asWorkspace).ID(ctx)
 	require.NoError(t, err)
 	var fullCheckout struct {
-		Node struct{ FullCheckout struct{ ID dagger.ID } `json:"__fullCheckout"` }
+		Node struct{ FullCheckout struct{ ID core.ID } `json:"__fullCheckout"` }
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{
 		Query:     `query($id: ID!) { node(id: $id) { ... on GitRef { __fullCheckout { id } } } }`,
 		Variables: map[string]any{"id": headID},
 	}, &dagger.Response{Data: &fullCheckout}))
-	full := dagger.Ref[*dagger.Directory](c, fullCheckout.Node.FullCheckout.ID)
-	pulled := dagger.Ref[*dagger.Directory](c, selectHidden(ctx, t, c, receiverID, "Workspace", "__pullDirectory", map[string]any{
+	full := core.Ref[*core.Directory](core.NewQuery(c), fullCheckout.Node.FullCheckout.ID)
+	pulled := core.Ref[*core.Directory](core.NewQuery(c), selectHidden(ctx, t, c, receiverID, "Workspace", "__pullDirectory", map[string]any{
 		"source":         sourceID,
 		"committerName":  "Committer",
 		"committerEmail": "committer@example.com",
@@ -343,9 +343,9 @@ func (WorkspaceSuite) TestWorkspaceRetainedCheckoutTrees(ctx context.Context, t 
 	require.Equal(t, sourceSHA, pulledSHA, "fast-forward")
 	for _, tc := range []struct {
 		name     string
-		contents *dagger.Directory
+		contents *core.Directory
 		sha      string
-		want     *dagger.Directory
+		want     *core.Directory
 	}{
 		{"checkout", full, headSHA, headTree},
 		{"checkout .git", full.Directory(".git"), headSHA, headTree},
