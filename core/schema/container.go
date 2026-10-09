@@ -1008,7 +1008,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
-			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
+			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").Reevaluate().
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			Args(
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),

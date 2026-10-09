@@ -261,7 +261,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("spawn", s.spawn).
 			Experimental("Agent APIs are likely to change.").
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Every spawn mints a distinct agent instance.").
+			DoNotCache("Every spawn mints a distinct agent instance.").Reevaluate().
 			Doc(`Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.`,
 				`Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.`,
 				`The loop is not started: the agent spends nothing until it is prompted or resumed, and any input pending on the conversation is stepped then.`,

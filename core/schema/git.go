@@ -297,7 +297,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		}).View(AfterVersion("v1.0.0-0")).Doc("(Internal-only) Check immutable local history for workspace export base reuse."),
 		dagql.NodeFunc("push", s.push).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Pushes to an external Git repository on each invocation.").
+			DoNotCache("Pushes to an external Git repository on each invocation.").Reevaluate().
 			NotReplayable("Requires explicit Git push authorization from the calling client").
 			Doc("Push this ref's commit and history to a remote repository using the destination's credentials.",
 				"The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.",

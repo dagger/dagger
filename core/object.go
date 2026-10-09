@@ -1411,6 +1411,9 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 			continue
 		}
 		proxySpec := *field.Spec
+		// The proxy drops the method's implicit inputs, which may carry the
+		// per-call input that marks it reevaluated; keep the marker.
+		proxySpec.Reevaluate = field.Spec.Reevaluated()
 		proxySpec.GetDynamicInput = nil
 		proxySpec.ImplicitInputs = nil
 		proxySpec.Trivial = false

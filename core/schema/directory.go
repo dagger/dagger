@@ -302,7 +302,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
-			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
+			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").Reevaluate().
 			Doc(`Opens an interactive terminal in new container with this directory mounted inside.`).
 			Args(
 				dagql.Arg("container").Doc(`If set, override the default container used for the terminal.`),

@@ -66,7 +66,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 
 		dagql.NodeFunc("snapshot", s.snapshot).
 			Experimental("Agent APIs are likely to change.").
-			DoNotCache("Reflects the loop's last committed step, which advances as the agent runs.").
+			DoNotCache("Reflects the loop's last committed step, which advances as the agent runs.").Reevaluate().
 			Doc(`The conversation as of the last committed step: immutable, branchable, persistable.`,
 				`The seed conversation if the agent never stepped.`,
 				`Branching from it does not affect the agent.`),
