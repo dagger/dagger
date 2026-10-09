@@ -646,7 +646,13 @@ func prepareGitBundleSource(ctx context.Context, source *gitutil.GitCLI, backend
 		}
 		return nil
 	}
-	var mirrorTargets []*gitBundleTarget
+	type originFetch struct {
+		url    string
+		target *gitBundleTarget
+	}
+	var refs []gitBundleMirrorRef
+	var fetches []originFetch
+	var tempRefs []string
 	for _, target := range targets {
 		fetchURL := ""
 		if remoteRepo, ok := backend.(*RemoteGitRepository); ok && target.exact.SHA != target.checkout.SHA {
@@ -654,48 +660,79 @@ func prepareGitBundleSource(ctx context.Context, source *gitutil.GitCLI, backend
 			// the annotated tag object. Fetch that exact advertised object
 			// from the configured origin with the backend's auth and network.
 			fetchURL = remoteRepo.URL.Remote()
+			// The peeled commit is in the mirror: copy it first, under a
+			// temporary ref, so the origin fetch advertises its history as
+			// haves and transfers only the tag object, not a full clone.
+			tempRef := fmt.Sprintf("refs/dagger/bundle/peeled/%d", len(tempRefs))
+			tempRefs = append(tempRefs, tempRef)
+			refs = append(refs, gitBundleMirrorRef{tempRef, target.checkout.SHA, target.exact.Name})
 		} else if !strings.HasPrefix(target.exact.Name, "refs/") {
 			// The fetch resolves an unqualified destination (HEAD) its own
 			// way; keep it rather than reproduce that resolution.
 			fetchURL = sourceURL
 		}
 		if fetchURL == "" {
-			mirrorTargets = append(mirrorTargets, target)
+			refs = append(refs, gitBundleMirrorRef{target.exact.Name, target.exact.SHA, target.exact.Name})
 			continue
 		}
-		if _, err := fetchGit.Run(ctx, "fetch", "--quiet", "--no-tags", fetchURL, target.exact.SHA+":"+target.exact.Name); err != nil {
+		fetches = append(fetches, originFetch{fetchURL, target})
+	}
+	if baseSHA != "" {
+		refs = append(refs, gitBundleMirrorRef{"refs/dagger/bundle/base", baseSHA, ""})
+	}
+	if err := copyGitBundleMirrorRefs(ctx, fetchGit, source, sourceURL, refs); err != nil {
+		return err
+	}
+	for _, fetch := range fetches {
+		target := fetch.target
+		if _, err := fetchGit.Run(ctx, "fetch", "--quiet", "--no-tags", fetch.url, target.exact.SHA+":"+target.exact.Name); err != nil {
 			return fmt.Errorf("fetch git bundle ref %s: %w", target.exact.Name, err)
 		}
 	}
-	refs := make([][2]string, 0, len(mirrorTargets)+1)
-	for _, target := range mirrorTargets {
-		refs = append(refs, [2]string{target.exact.Name, target.exact.SHA})
+	if len(tempRefs) > 0 {
+		// The bundle names only target refs, but leave nothing behind.
+		var deletes strings.Builder
+		for _, ref := range tempRefs {
+			deletes.WriteString("delete " + ref + "\n")
+		}
+		if _, err := fetchGit.RunWithStdin(ctx, strings.NewReader(deletes.String()), "update-ref", "--stdin"); err != nil {
+			return fmt.Errorf("remove temporary git bundle refs: %w", err)
+		}
 	}
-	if baseSHA != "" {
-		refs = append(refs, [2]string{"refs/dagger/bundle/base", baseSHA})
-	}
+	return nil
+}
+
+// gitBundleMirrorRef is a scratch ref copied from the mirror; what names it
+// in errors (the target it serves, or "" for the base).
+type gitBundleMirrorRef struct {
+	name, sha, what string
+}
+
+// copyGitBundleMirrorRefs copies refs' histories from the mirror (source)
+// into the scratch repository (dest) and points each ref at its object.
+func copyGitBundleMirrorRefs(ctx context.Context, dest, source *gitutil.GitCLI, sourceURL string, refs []gitBundleMirrorRef) error {
 	if len(refs) == 0 {
 		return nil
 	}
-	_, err = copyGitObjects(ctx, "bundle", func(ctx context.Context) error {
+	_, err := copyGitObjects(ctx, "bundle", func(ctx context.Context) error {
 		revs := make([]string, len(refs))
 		var updates strings.Builder
 		for i, ref := range refs {
-			revs[i] = ref[1]
-			updates.WriteString("update " + ref[0] + " " + ref[1] + "\n")
+			revs[i] = ref.sha
+			updates.WriteString("update " + ref.name + " " + ref.sha + "\n")
 		}
-		if err := packGitClosure(ctx, fetchGit, source, revs); err != nil {
+		if err := packGitClosure(ctx, dest, source, revs); err != nil {
 			return err
 		}
-		_, err := fetchGit.RunWithStdin(ctx, strings.NewReader(updates.String()), "update-ref", "--stdin")
+		_, err := dest.RunWithStdin(ctx, strings.NewReader(updates.String()), "update-ref", "--stdin")
 		return err
 	}, nil, func(ctx context.Context) error {
-		for i, ref := range refs {
-			if _, err := fetchGit.Run(ctx, "fetch", "--quiet", "--no-tags", sourceURL, ref[1]+":"+ref[0]); err != nil {
-				if baseSHA != "" && i == len(refs)-1 {
-					return fmt.Errorf("fetch git bundle base %s: %w", baseSHA, err)
+		for _, ref := range refs {
+			if _, err := dest.Run(ctx, "fetch", "--quiet", "--no-tags", sourceURL, ref.sha+":"+ref.name); err != nil {
+				if ref.what == "" {
+					return fmt.Errorf("fetch git bundle base %s: %w", ref.sha, err)
 				}
-				return fmt.Errorf("fetch git bundle ref %s: %w", ref[0], err)
+				return fmt.Errorf("fetch git bundle ref %s: %w", ref.what, err)
 			}
 		}
 		return nil

@@ -161,7 +161,8 @@ func TestCreateRemoteGitBundlePreservesAnnotatedTag(t *testing.T) {
 	origin := t.TempDir()
 	gitBundleTestRun(t, origin, "init", "--bare", "--quiet")
 	tree := gitBundleTestRun(t, origin, "mktree")
-	head := gitBundleTestRun(t, origin, "commit-tree", tree, "-m", "head")
+	root0 := gitBundleTestRun(t, origin, "commit-tree", tree, "-m", "root")
+	head := gitBundleTestRun(t, origin, "commit-tree", tree, "-p", root0, "-m", "head")
 	gitBundleTestRun(t, origin, "update-ref", "refs/heads/main", head)
 	gitBundleTestRun(t, origin, "tag", "-a", "v1", "-m", "annotation", head)
 	tag := gitBundleTestRun(t, origin, "rev-parse", "refs/tags/v1")
@@ -176,6 +177,11 @@ func TestCreateRemoteGitBundlePreservesAnnotatedTag(t *testing.T) {
 		exact: &gitutil.Ref{Name: "refs/tags/v1", SHA: tag}, checkout: &gitutil.Ref{SHA: head},
 	}}
 	require.NoError(t, prepareGitBundleSource(ctx, gitutil.NewGitCLI(gitutil.WithDir(mirror)), &RemoteGitRepository{URL: url}, root, targets, ""))
+	// The peeled history is pack-copied from the mirror before the origin
+	// fetch, which negotiates against it and so transfers (unpacks loose)
+	// only the tag object. Its temporary ref is gone.
+	require.Contains(t, gitBundleTestRun(t, gitBundleScratch(root), "count-objects", "-v"), "count: 1\n")
+	require.Equal(t, "refs/tags/v1", gitBundleTestRun(t, gitBundleScratch(root), "for-each-ref", "--format=%(refname)"))
 	// A remote bundle is packed with the mirror released: once prepared, the
 	// scratch repository must own everything it bundles.
 	require.NoError(t, os.RemoveAll(origin))
