@@ -636,34 +636,71 @@ func prepareGitBundleSource(ctx context.Context, source *gitutil.GitCLI, backend
 		gitutil.WithGitDir(""),
 		gitutil.WithWorkTree(""),
 	)
-	for _, target := range targets {
-		if local {
+	if local {
+		for _, target := range targets {
 			// --no-deref keeps a selected HEAD independent of any branch, even
 			// when that branch is also selected. All writes are private to scratch.
 			if _, err := runGitEnv(ctx, scratch, "update-ref", "--no-deref", target.exact.Name, target.exact.SHA); err != nil {
 				return fmt.Errorf("prepare git bundle ref %s: %w", target.exact.Name, err)
 			}
-			continue
 		}
-		fetchURL := sourceURL
-		if target.exact.SHA != target.checkout.SHA {
-			if remoteRepo, ok := backend.(*RemoteGitRepository); ok {
-				// A canonical mirror fetched by peeled commit need not contain
-				// the annotated tag object. Fetch that exact advertised object
-				// from the configured origin with the backend's auth and network.
-				fetchURL = remoteRepo.URL.Remote()
-			}
+		return nil
+	}
+	var mirrorTargets []*gitBundleTarget
+	for _, target := range targets {
+		fetchURL := ""
+		if remoteRepo, ok := backend.(*RemoteGitRepository); ok && target.exact.SHA != target.checkout.SHA {
+			// A canonical mirror fetched by peeled commit need not contain
+			// the annotated tag object. Fetch that exact advertised object
+			// from the configured origin with the backend's auth and network.
+			fetchURL = remoteRepo.URL.Remote()
+		} else if !strings.HasPrefix(target.exact.Name, "refs/") {
+			// The fetch resolves an unqualified destination (HEAD) its own
+			// way; keep it rather than reproduce that resolution.
+			fetchURL = sourceURL
+		}
+		if fetchURL == "" {
+			mirrorTargets = append(mirrorTargets, target)
+			continue
 		}
 		if _, err := fetchGit.Run(ctx, "fetch", "--quiet", "--no-tags", fetchURL, target.exact.SHA+":"+target.exact.Name); err != nil {
 			return fmt.Errorf("fetch git bundle ref %s: %w", target.exact.Name, err)
 		}
 	}
-	if baseSHA != "" && !local {
-		if _, err := runGitEnv(ctx, scratch, "fetch", "--quiet", "--no-tags", sourceURL, baseSHA+":refs/dagger/bundle/base"); err != nil {
-			return fmt.Errorf("fetch git bundle base %s: %w", baseSHA, err)
-		}
+	refs := make([][2]string, 0, len(mirrorTargets)+1)
+	for _, target := range mirrorTargets {
+		refs = append(refs, [2]string{target.exact.Name, target.exact.SHA})
 	}
-	return nil
+	if baseSHA != "" {
+		refs = append(refs, [2]string{"refs/dagger/bundle/base", baseSHA})
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	_, err = copyGitObjects(ctx, "bundle", func(ctx context.Context) error {
+		revs := make([]string, len(refs))
+		var updates strings.Builder
+		for i, ref := range refs {
+			revs[i] = ref[1]
+			updates.WriteString("update " + ref[0] + " " + ref[1] + "\n")
+		}
+		if err := packGitClosure(ctx, fetchGit, source, revs); err != nil {
+			return err
+		}
+		_, err := fetchGit.RunWithStdin(ctx, strings.NewReader(updates.String()), "update-ref", "--stdin")
+		return err
+	}, nil, func(ctx context.Context) error {
+		for i, ref := range refs {
+			if _, err := fetchGit.Run(ctx, "fetch", "--quiet", "--no-tags", sourceURL, ref[1]+":"+ref[0]); err != nil {
+				if baseSHA != "" && i == len(refs)-1 {
+					return fmt.Errorf("fetch git bundle base %s: %w", baseSHA, err)
+				}
+				return fmt.Errorf("fetch git bundle ref %s: %w", ref[0], err)
+			}
+		}
+		return nil
+	})
+	return err
 }
 
 // finishGitBundleFile packs the prepared scratch repository into
