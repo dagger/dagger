@@ -25,6 +25,7 @@ type JavaClientDev {
     "sdk/java/**/src/test",
     "!sdk/java/dagger-codegen-maven-plugin/src/test/",
     "sdk/java/**/target",
+    "!engine/naming/testdata/vectors.json",
   ])
 
   """
