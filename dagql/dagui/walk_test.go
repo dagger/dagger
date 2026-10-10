@@ -207,9 +207,9 @@ func describeTraceForWalk(db *DB) string {
 
 // describeTree describes a tree and everything built beneath it.
 func describeTree(tree *TraceTree, depth int, out *strings.Builder) {
-	fmt.Fprintf(out, "%s%s chained=%v running=%v revealed=%v\n",
+	fmt.Fprintf(out, "%s%s chained=%v final=%v running=%v revealed=%v\n",
 		strings.Repeat("  ", depth), tree.Span.Name,
-		tree.Chained, tree.IsRunningOrChildRunning, tree.RevealedChildren)
+		tree.Chained, tree.Final, tree.IsRunningOrChildRunning, tree.RevealedChildren)
 	for _, child := range tree.Children {
 		describeTree(child, depth+1, out)
 	}
@@ -225,7 +225,7 @@ func describeTree(tree *TraceTree, depth int, out *strings.Builder) {
 func describeSiblings(trees []*TraceTree) string {
 	var out []string
 	for _, tree := range trees {
-		out = append(out, fmt.Sprintf("%s chained=%v", tree.Span.Name, tree.Chained))
+		out = append(out, fmt.Sprintf("%s chained=%v final=%v", tree.Span.Name, tree.Chained, tree.Final))
 	}
 	return strings.Join(out, ", ")
 }
@@ -355,5 +355,65 @@ func TestWalkIsLocal(t *testing.T) {
 	}
 	if failures > 0 {
 		t.Logf("%d failures over %d views", failures, runs)
+	}
+}
+
+// TestFinalEndsChains checks TraceTree.Final: a tree is Final unless a
+// later call in its sibling list chains onto it, whether the list was built
+// up front or on demand.
+func TestFinalEndsChains(t *testing.T) {
+	traceID := TraceID{TraceID: trace.TraceID{1}}
+	start := time.Unix(100, 0)
+	root := walkTestSpanID(1)
+	parent := walkTestSpanID(2)
+	snaps := []SpanSnapshot{
+		{ID: root, TraceID: traceID, Name: "root", StartTime: start},
+		{ID: parent, ParentID: root, TraceID: traceID, Name: "parent",
+			StartTime: start.Add(time.Second), EndTime: start.Add(9 * time.Second)},
+	}
+	calls := map[string]*callpbv1.Call{}
+	// name, call digest (empty: not a call), receiver digest
+	for i, s := range [][3]string{
+		{"a", "d1", ""},
+		{"b", "d2", "d1"}, // chains onto a
+		{"c", "", ""},     // not a call: nothing chains onto it
+		{"d", "d3", "d2"}, // chains onto b, across c
+		{"e", "d4", "d1"}, // based on a, but d is the call before it
+	} {
+		snap := SpanSnapshot{
+			ID: walkTestSpanID(10 + i), ParentID: parent, TraceID: traceID, Name: s[0],
+			StartTime: start.Add(time.Duration(2+i) * time.Second),
+			EndTime:   start.Add(time.Duration(3+i) * time.Second),
+		}
+		if s[1] != "" {
+			snap.CallDigest = s[1]
+			calls[s[1]] = &callpbv1.Call{
+				Digest: s[1], Field: "f", Type: &callpbv1.Type{NamedType: "T"},
+				ReceiverDigest: s[2],
+			}
+		}
+		snaps = append(snaps, snap)
+	}
+	db := NewDB()
+	db.ImportSnapshots(snaps)
+	for _, digest := range []string{"d1", "d2", "d3", "d4"} {
+		db.addCall(digest, calls[digest])
+	}
+	db.SetPrimarySpan(root)
+
+	const want = "a chained=false final=false, " +
+		"b chained=true final=false, " +
+		"c chained=false final=true, " +
+		"d chained=true final=true, " +
+		"e chained=false final=true"
+	opts := FrontendOpts{ZoomedSpan: root}
+	for _, lazy := range []bool{false, true} {
+		view := db.rowsView(opts, lazy)
+		if len(view.Body) != 1 || view.Body[0].Span.ID != parent {
+			t.Fatalf("lazy=%v: want the parent alone at the top", lazy)
+		}
+		if got := describeSiblings(view.Body[0].ChildTrees()); got != want {
+			t.Errorf("lazy=%v:\ngot:  %s\nwant: %s", lazy, got, want)
+		}
 	}
 }

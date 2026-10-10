@@ -580,14 +580,19 @@ func (w *spanWalker) emit(list *treeList, span *Span) {
 	tree := &TraceTree{
 		Span:             span,
 		Parent:           list.parent,
+		Final:            true,
 		RevealedChildren: span.RevealedSpans.Len() > 0,
 		revealedCopy:     list.revealed,
 	}
-	// A call chains onto the call before it in the same sibling list.
+	// A call chains onto the call before it in the same sibling list, which
+	// then no longer ends its chain.
 	if prev := list.lastCall; prev != nil {
 		if base := span.Base(); base != nil {
 			tree.Chained = base.Digest == prev.Span.CallDigest ||
 				base.Digest == prev.Span.Output
+			if tree.Chained {
+				prev.Final = false
+			}
 		}
 	}
 	list.trees = append(list.trees, tree)

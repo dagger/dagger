@@ -14,8 +14,8 @@ import (
 func describeRows(rows *Rows) string {
 	var out strings.Builder
 	for _, row := range rows.Order {
-		fmt.Fprintf(&out, "%s%s chained=%v running=%v children=%v showing=%v expanded=%v\n",
-			strings.Repeat("  ", row.Depth), row.Span.Name, row.Chained,
+		fmt.Fprintf(&out, "%s%s chained=%v final=%v running=%v children=%v showing=%v expanded=%v\n",
+			strings.Repeat("  ", row.Depth), row.Span.Name, row.Chained, row.Final,
 			row.IsRunningOrChildRunning, row.HasChildren, row.ShowingChildren, row.Expanded)
 	}
 	return out.String()
@@ -26,9 +26,9 @@ func describeRows(rows *Rows) string {
 // before they're built, so a lazy tree has to work it out unbuilt.
 func describeAll(tree *TraceTree, opts FrontendOpts, depth int, out *strings.Builder) {
 	hasChildren := tree.hasVisibleChildren(opts)
-	fmt.Fprintf(out, "%s%s chained=%v running=%v revealed=%v children=%v\n",
+	fmt.Fprintf(out, "%s%s chained=%v final=%v running=%v revealed=%v children=%v\n",
 		strings.Repeat("  ", depth), tree.Span.Name,
-		tree.Chained, tree.IsRunningOrChildRunning, tree.RevealedChildren, hasChildren)
+		tree.Chained, tree.Final, tree.IsRunningOrChildRunning, tree.RevealedChildren, hasChildren)
 	for _, child := range tree.ChildTrees() {
 		describeAll(child, opts, depth+1, out)
 	}
@@ -135,7 +135,7 @@ func TestLazyRowsMatchFullTree(t *testing.T) {
 				continue
 			}
 			for want != nil {
-				if want.Span != got.Span || want.Chained != got.Chained ||
+				if want.Span != got.Span || want.Chained != got.Chained || want.Final != got.Final ||
 					want.IsRunningOrChildRunning != got.IsRunningOrChildRunning {
 					fail("HomeTree(%s) differs at %s", span.Name, want.Span.Name)
 					break

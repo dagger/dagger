@@ -22,8 +22,13 @@ type TraceTree struct {
 	Parent *TraceTree
 
 	IsRunningOrChildRunning bool
-	Chained                 bool
-	RevealedChildren        bool
+	// Chained marks a call that chains onto the call before it in its
+	// sibling list.
+	Chained bool
+	// Final marks the end of a chain: no later tree in its sibling list
+	// chains onto it. A tree that isn't a call is always Final.
+	Final            bool
+	RevealedChildren bool
 
 	// Children holds the trees of the spans placed beneath the span. A tree
 	// RowsView shows collapsed doesn't have them built: ChildTrees builds them.
@@ -62,6 +67,7 @@ type TraceRow struct {
 	NextVisual     *TraceRow `json:"-"`
 
 	Chained                 bool
+	Final                   bool
 	Depth                   int
 	IsRunningOrChildRunning bool
 	HasChildren             bool
@@ -214,6 +220,7 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 			Parent: parent,
 
 			Chained:                 tree.Chained,
+			Final:                   tree.Final,
 			Depth:                   depth,
 			IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
 
