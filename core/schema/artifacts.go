@@ -577,10 +577,12 @@ func newArtifactExpertise(ctx context.Context, a *core.Artifact, args struct {
 		e.Inputs = append(e.Inputs, value)
 		// A handle is local to an engine. A recipe is a stable, valid JSON ID
 		// across restore, and the separate typed input makes it a dependency.
-		id, err = value.RecipeID(ctx)
-		if err != nil {
-			return nil, err
+		portable, err := value.RecipeID(ctx)
+		if err == nil {
+			id = portable
 		}
+		// Session-only values keep their handle; the typed dependency makes
+		// an unavailable handle a restore error rather than silently dropping it.
 		return id.Encode()
 	})
 	if err != nil {

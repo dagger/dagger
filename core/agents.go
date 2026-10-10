@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -104,7 +105,9 @@ func (a *Expertise) Identity() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return uri + "\n" + string(a.Arguments), nil
+	// Object recipes can be large; repeat only their digest on the nested
+	// calls whose cache keys carry this owner, not the entire bound JSON.
+	return fmt.Sprintf("%s#%x", uri, sha256.Sum256(a.Arguments)), nil
 }
 
 func (a *Expertise) Run(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {

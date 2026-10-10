@@ -15,7 +15,7 @@ func (*agentsSchema) Install(srv *dagql.Server) {
 		dagql.Func("artifact", func(_ context.Context, a *core.Expertise, _ struct{}) (*core.Artifact, error) {
 			return a.Artifact.Clone(), nil
 		}).Doc("The artifact this expertise runs."),
-		dagql.Func("arguments", func(_ context.Context, a *core.Expertise, _ struct{}) (core.JSON, error) { return a.Arguments, nil }).Doc("Bound arguments besides the conversation, as a JSON object."),
+		dagql.Func("arguments", func(_ context.Context, a *core.Expertise, _ struct{}) (core.JSON, error) { return a.Arguments, nil }).Doc("Bound arguments besides the conversation, as canonical JSON. Object IDs use portable recipes when available; session-only values retain their handles."),
 		dagql.Func("name", func(_ context.Context, a *core.Expertise, _ struct{}) (string, error) { return a.Name(), nil }).Doc("The agent function's name."),
 		dagql.Func("description", func(_ context.Context, a *core.Expertise, _ struct{}) (string, error) {
 			return a.Description(), nil

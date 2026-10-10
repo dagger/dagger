@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -61,6 +62,23 @@ func TestToolStateIdentity(t *testing.T) {
 		next := makeObject(&ModuleSource{Kind: ModuleSourceKindLocal, SourceRootSubpath: "staff", Local: &LocalModuleSource{ContextDirectoryPath: "/two"}}, "staff", "Staff")
 		require.NoError(t, sameToolStateIdentity(old, next))
 	})
+}
+
+func TestExpertiseIdentity(t *testing.T) {
+	entry := &Expertise{Artifact: &Artifact{ModuleName: "staff", Path: []string{"staff", "worker"}}, Arguments: JSON(`{"name":"worker"}`)}
+	first, err := entry.Identity()
+	require.NoError(t, err)
+	cloned, err := entry.Clone().Identity()
+	require.NoError(t, err)
+	require.Equal(t, first, cloned)
+	entry.Arguments = JSON(`{"name":"other"}`)
+	other, err := entry.Identity()
+	require.NoError(t, err)
+	require.NotEqual(t, first, other)
+	entry.Arguments = JSON(`{"name":"` + strings.Repeat("large recipe", 1000) + `"}`)
+	large, err := entry.Identity()
+	require.NoError(t, err)
+	require.Len(t, large, len(first), "owner stamps must not repeat entire object recipes")
 }
 
 func TestExpertiseConversion(t *testing.T) {
