@@ -157,9 +157,10 @@ func File(name string, contents string, opts ...core.FileOpts) *core.File {
 // Format many names at once, for codegen. Returns them in input order.
 //
 // Experimental: Identifier casing APIs are likely to change.
-func FormatIdentifiers(ctx context.Context, names []string, casing dagger.Casing, opts ...dagger.FormatIdentifiersOpts) ([]string, error) {
-	client := initClient()
-	return client.FormatIdentifiers(ctx, names, casing, opts...)
+//
+// Deprecated: use dagger.io/dagger/core.FormatIdentifiers instead.
+func FormatIdentifiers(ctx context.Context, names []string, casing core.Casing, opts ...core.FormatIdentifiersOpts) ([]string, error) {
+	return core.FormatIdentifiers(ctx, names, casing, opts...)
 }
 
 // Creates a function.
@@ -209,9 +210,10 @@ func ID(ctx context.Context) (core.ID, error) {
 // Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input or input with no letters or digits.
 //
 // Experimental: Identifier casing APIs are likely to change.
-func Identifier(name string) *dagger.Identifier {
-	client := initClient()
-	return client.Identifier(name)
+//
+// Deprecated: use dagger.io/dagger/core.NewIdentifier instead.
+func Identifier(name string) *core.Identifier {
+	return core.NewIdentifier(name)
 }
 
 // Initialize a JSON value
@@ -258,9 +260,10 @@ func ModuleSource(refString string, opts ...core.ModuleSourceOpts) *core.ModuleS
 // The acronyms and terms used to parse and format identifiers.
 //
 // Experimental: Identifier casing APIs are likely to change.
-func NamingDictionary(ctx context.Context) ([]dagger.NamingTerm, error) {
-	client := initClient()
-	return client.NamingDictionary(ctx)
+//
+// Deprecated: use dagger.io/dagger/core.NamingDictionary instead.
+func NamingDictionary(ctx context.Context) ([]core.NamingTerm, error) {
+	return core.NamingDictionary(ctx)
 }
 
 // Load any object by its ID.
@@ -322,9 +325,14 @@ func SourceMap(filename string, line int, column int) *core.SourceMap {
 
 // Constructs an SSHFS volume.
 //
-// Deprecated: use dagger.io/dagger/core.SshfsVolume instead.
-func SshfsVolume(endpoint string, privateKey *core.Secret, opts ...core.SshfsVolumeOpts) *core.Volume {
-	return core.SshfsVolume(endpoint, privateKey, opts...)
+// Deprecated: use dagger.io/dagger/core.SSHFSVolume instead.
+func SSHFSVolume(endpoint string, privateKey *core.Secret, opts ...core.SSHFSVolumeOpts) *core.Volume {
+	return core.SSHFSVolume(endpoint, privateKey, opts...)
+}
+
+// Deprecated: use SSHFSVolume instead.
+func SshfsVolume(endpoint string, privateKey *core.Secret, opts ...core.SSHFSVolumeOpts) *core.Volume {
+	return SSHFSVolume(endpoint, privateKey, opts...)
 }
 
 // Create a new TypeDef.

@@ -10684,7 +10684,7 @@ func (r *GeneratedCode) MarshalJSON() ([]byte, error) {
 }
 
 // List of paths to mark generated in version control (i.e. .gitattributes).
-func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error) {
+func (r *GeneratedCode) VCSGeneratedPaths(ctx context.Context) ([]string, error) {
 	q := r.query.Select("vcsGeneratedPaths")
 
 	var response []string
@@ -10693,14 +10693,24 @@ func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error)
 	return response, q.Execute(ctx)
 }
 
+// Deprecated: use VCSGeneratedPaths instead.
+func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error) {
+	return r.VCSGeneratedPaths(ctx)
+}
+
 // List of paths to ignore in version control (i.e. .gitignore).
-func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
+func (r *GeneratedCode) VCSIgnoredPaths(ctx context.Context) ([]string, error) {
 	q := r.query.Select("vcsIgnoredPaths")
 
 	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Deprecated: use VCSIgnoredPaths instead.
+func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
+	return r.VCSIgnoredPaths(ctx)
 }
 
 // Set the list of paths to mark generated in version control.
@@ -11103,7 +11113,7 @@ func (r *GitBundleRef) Name(ctx context.Context) (string, error) {
 }
 
 // The object ID the advertised ref resolves to.
-func (r *GitBundleRef) Sha(ctx context.Context) (string, error) {
+func (r *GitBundleRef) SHA(ctx context.Context) (string, error) {
 	if r.sha != nil {
 		return *r.sha, nil
 	}
@@ -11113,6 +11123,11 @@ func (r *GitBundleRef) Sha(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Deprecated: use SHA instead.
+func (r *GitBundleRef) Sha(ctx context.Context) (string, error) {
+	return r.SHA(ctx)
 }
 
 // AsNode returns this GitBundleRef as a Node.
@@ -11372,13 +11387,18 @@ func (r *GitCommit) MessageHeadline(ctx context.Context) (string, error) {
 }
 
 // Parent commit SHAs.
-func (r *GitCommit) ParentShas(ctx context.Context) ([]string, error) {
+func (r *GitCommit) ParentSHAs(ctx context.Context) ([]string, error) {
 	q := r.query.Select("parentShas")
 
 	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Deprecated: use ParentSHAs instead.
+func (r *GitCommit) ParentShas(ctx context.Context) ([]string, error) {
+	return r.ParentSHAs(ctx)
 }
 
 // GitCommitReleaseTagOpts contains options for GitCommit.ReleaseTag
@@ -11411,7 +11431,7 @@ func (r *GitCommit) ReleaseTag(ctx context.Context, opts ...GitCommitReleaseTagO
 }
 
 // The full commit SHA.
-func (r *GitCommit) Sha(ctx context.Context) (string, error) {
+func (r *GitCommit) SHA(ctx context.Context) (string, error) {
 	if r.sha != nil {
 		return *r.sha, nil
 	}
@@ -11423,8 +11443,13 @@ func (r *GitCommit) Sha(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Deprecated: use SHA instead.
+func (r *GitCommit) Sha(ctx context.Context) (string, error) {
+	return r.SHA(ctx)
+}
+
 // The abbreviated commit SHA.
-func (r *GitCommit) ShortSha(ctx context.Context) (string, error) {
+func (r *GitCommit) ShortSHA(ctx context.Context) (string, error) {
 	if r.shortSha != nil {
 		return *r.shortSha, nil
 	}
@@ -11434,6 +11459,11 @@ func (r *GitCommit) ShortSha(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Deprecated: use ShortSHA instead.
+func (r *GitCommit) ShortSha(ctx context.Context) (string, error) {
+	return r.ShortSHA(ctx)
 }
 
 // GitCommitTreeOpts contains options for GitCommit.Tree
@@ -11591,7 +11621,7 @@ func (r *GitPushResult) Ref(ctx context.Context) (string, error) {
 }
 
 // The object ID pushed to the remote.
-func (r *GitPushResult) Sha(ctx context.Context) (string, error) {
+func (r *GitPushResult) SHA(ctx context.Context) (string, error) {
 	if r.sha != nil {
 		return *r.sha, nil
 	}
@@ -11601,6 +11631,11 @@ func (r *GitPushResult) Sha(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Deprecated: use SHA instead.
+func (r *GitPushResult) Sha(ctx context.Context) (string, error) {
+	return r.SHA(ctx)
 }
 
 // AsNode returns this GitPushResult as a Node.
@@ -13103,6 +13138,10 @@ func (r *Host) AsNode() Node {
 // A name parsed into words, which can be formatted in any casing.
 type Identifier struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	format *string
 	id     *ID
@@ -13112,6 +13151,9 @@ type Identifier struct {
 func (r *Identifier) WithGraphQLQuery(q *querybuilder.Selection) *Identifier {
 	return &Identifier{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -13153,7 +13195,13 @@ func (r *Identifier) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -13233,13 +13281,18 @@ func (r *Identifier) Words(ctx context.Context) ([]IdentifierWord, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *Identifier) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // One word of an identifier.
 type IdentifierWord struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id     *ID
 	kind   *IdentifierWordKind
@@ -13250,6 +13303,9 @@ type IdentifierWord struct {
 func (r *IdentifierWord) WithGraphQLQuery(q *querybuilder.Selection) *IdentifierWord {
 	return &IdentifierWord{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -13263,7 +13319,13 @@ func (r *IdentifierWord) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -13353,7 +13415,8 @@ func (r *IdentifierWord) Text(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *IdentifierWord) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -14619,7 +14682,7 @@ type LLMWithToolResultOpts struct {
 }
 
 // Append the result of a tool call to the message history.
-func (r *LLM) WithToolResult(callId string, content string, errored bool, opts ...LLMWithToolResultOpts) *LLM {
+func (r *LLM) WithToolResult(callID string, content string, errored bool, opts ...LLMWithToolResultOpts) *LLM {
 	q := r.query.Select("withToolResult")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `blocks` optional argument
@@ -14627,7 +14690,7 @@ func (r *LLM) WithToolResult(callId string, content string, errored bool, opts .
 			q = q.Arg("blocks", opts[i].Blocks)
 		}
 	}
-	q = q.Arg("callId", callId)
+	q = q.Arg("callId", callID)
 	q = q.Arg("content", content)
 	q = q.Arg("errored", errored)
 
@@ -17239,6 +17302,10 @@ func (r *ModuleSource) AsSyncer() Syncer {
 // An entry in the naming dictionary.
 type NamingTerm struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	capitalized *string
 	id          *ID
@@ -17248,6 +17315,9 @@ type NamingTerm struct {
 func (r *NamingTerm) WithGraphQLQuery(q *querybuilder.Selection) *NamingTerm {
 	return &NamingTerm{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -17274,7 +17344,13 @@ func (r *NamingTerm) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -17321,7 +17397,8 @@ func (r *NamingTerm) Spelling(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *NamingTerm) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -18278,7 +18355,8 @@ func (r *Query) Identifier(name string) *Identifier {
 	q = q.Arg("name", name)
 
 	return &Identifier{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -18545,8 +18623,8 @@ func (r *Query) SourceMap(filename string, line int, column int) *SourceMap {
 	}
 }
 
-// SshfsVolumeOpts contains options for Query.SshfsVolume
-type SshfsVolumeOpts struct {
+// SSHFSVolumeOpts contains options for Query.SSHFSVolume
+type SSHFSVolumeOpts struct {
 	// known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
 	KnownHosts *Secret
 	// Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
@@ -18557,8 +18635,11 @@ type SshfsVolumeOpts struct {
 	ExperimentalServiceHost *Service
 }
 
+// Deprecated: use SSHFSVolumeOpts instead.
+type SshfsVolumeOpts = SSHFSVolumeOpts
+
 // Constructs an SSHFS volume.
-func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, opts ...SshfsVolumeOpts) *Volume {
+func (r *Query) SSHFSVolume(endpoint string, privateKey *Secret, opts ...SSHFSVolumeOpts) *Volume {
 	assertNotNil("privateKey", privateKey)
 	q := r.query.Select("sshfsVolume")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -18586,6 +18667,11 @@ func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, opts ...SshfsVo
 		query:     q,
 		refetchID: r.refetchID,
 	}
+}
+
+// Deprecated: use SSHFSVolume instead.
+func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, opts ...SSHFSVolumeOpts) *Volume {
+	return r.SSHFSVolume(endpoint, privateKey, opts...)
 }
 
 // Create a new TypeDef.
@@ -21451,7 +21537,7 @@ func (r *Workspace) SDK(name string) *WorkspaceSDK {
 }
 
 // Installed SDKs.
-func (r *Workspace) Sdks(ctx context.Context) ([]WorkspaceSDK, error) {
+func (r *Workspace) SDKs(ctx context.Context) ([]WorkspaceSDK, error) {
 	q := r.query.Select("sdks")
 
 	q = q.Select("id")
@@ -21481,6 +21567,11 @@ func (r *Workspace) Sdks(ctx context.Context) ([]WorkspaceSDK, error) {
 	}
 
 	return convert(response), nil
+}
+
+// Deprecated: use SDKs instead.
+func (r *Workspace) Sdks(ctx context.Context) ([]WorkspaceSDK, error) {
+	return r.SDKs(ctx)
 }
 
 // WorkspaceSearchOpts contains options for Workspace.Search
@@ -24744,7 +24835,7 @@ func (v ImageLayerCompression) Name() string {
 		return "Gzip"
 	case ImageLayerCompressionZstd:
 		return "Zstd"
-	case ImageLayerCompressionEstarGz:
+	case ImageLayerCompressionEStarGZ:
 		return "EStarGZ"
 	case ImageLayerCompressionUncompressed:
 		return "Uncompressed"
@@ -24777,7 +24868,7 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 	case "":
 		*v = ""
 	case "EStarGZ":
-		*v = ImageLayerCompressionEstarGz
+		*v = ImageLayerCompressionEStarGZ
 	case "ESTARGZ":
 		*v = ImageLayerCompressionEstargz
 	case "Gzip":
@@ -24797,8 +24888,11 @@ const (
 
 	ImageLayerCompressionZstd ImageLayerCompression = "Zstd"
 
-	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
-	ImageLayerCompressionEstargz ImageLayerCompression = ImageLayerCompressionEstarGz
+	ImageLayerCompressionEStarGZ ImageLayerCompression = "EStarGZ"
+	ImageLayerCompressionEstargz ImageLayerCompression = ImageLayerCompressionEStarGZ
+
+	// Deprecated: use ImageLayerCompressionEStarGZ instead.
+	ImageLayerCompressionEstarGz ImageLayerCompression = ImageLayerCompressionEStarGZ
 
 	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
 )
@@ -24810,7 +24904,7 @@ func (ImageMediaTypes) IsEnum() {}
 
 func (v ImageMediaTypes) Name() string {
 	switch v {
-	case ImageMediaTypesOcimediaTypes:
+	case ImageMediaTypesOCIMediaTypes:
 		return "OCIMediaTypes"
 	case ImageMediaTypesDockerMediaTypes:
 		return "DockerMediaTypes"
@@ -24847,9 +24941,9 @@ func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
 	case "DockerMediaTypes":
 		*v = ImageMediaTypesDockerMediaTypes
 	case "OCI":
-		*v = ImageMediaTypesOci
+		*v = ImageMediaTypesOCI
 	case "OCIMediaTypes":
-		*v = ImageMediaTypesOcimediaTypes
+		*v = ImageMediaTypesOCIMediaTypes
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
@@ -24857,8 +24951,14 @@ func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCIMediaTypes"
-	ImageMediaTypesOci           ImageMediaTypes = ImageMediaTypesOcimediaTypes
+	ImageMediaTypesOCIMediaTypes ImageMediaTypes = "OCIMediaTypes"
+	ImageMediaTypesOCI           ImageMediaTypes = ImageMediaTypesOCIMediaTypes
+
+	// Deprecated: use ImageMediaTypesOCIMediaTypes instead.
+	ImageMediaTypesOcimediaTypes ImageMediaTypes = ImageMediaTypesOCIMediaTypes
+
+	// Deprecated: use ImageMediaTypesOCIMediaTypes instead.
+	ImageMediaTypesOci ImageMediaTypes = ImageMediaTypesOCIMediaTypes
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
@@ -25213,9 +25313,9 @@ func (NetworkProtocol) IsEnum() {}
 
 func (v NetworkProtocol) Name() string {
 	switch v {
-	case NetworkProtocolTcp:
+	case NetworkProtocolTCP:
 		return "TCP"
-	case NetworkProtocolUdp:
+	case NetworkProtocolUDP:
 		return "UDP"
 	default:
 		return ""
@@ -25246,9 +25346,9 @@ func (v *NetworkProtocol) UnmarshalJSON(dt []byte) error {
 	case "":
 		*v = ""
 	case "TCP":
-		*v = NetworkProtocolTcp
+		*v = NetworkProtocolTCP
 	case "UDP":
-		*v = NetworkProtocolUdp
+		*v = NetworkProtocolUDP
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
@@ -25256,9 +25356,15 @@ func (v *NetworkProtocol) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	NetworkProtocolTcp NetworkProtocol = "TCP"
+	NetworkProtocolTCP NetworkProtocol = "TCP"
 
-	NetworkProtocolUdp NetworkProtocol = "UDP"
+	// Deprecated: use NetworkProtocolTCP instead.
+	NetworkProtocolTcp NetworkProtocol = NetworkProtocolTCP
+
+	NetworkProtocolUDP NetworkProtocol = "UDP"
+
+	// Deprecated: use NetworkProtocolUDP instead.
+	NetworkProtocolUdp NetworkProtocol = NetworkProtocolUDP
 )
 
 // How to handle patch hunks that no longer apply to the target content.
@@ -25325,9 +25431,9 @@ func (RegistryProtocol) IsEnum() {}
 
 func (v RegistryProtocol) Name() string {
 	switch v {
-	case RegistryProtocolHttps:
+	case RegistryProtocolHTTPS:
 		return "HTTPS"
-	case RegistryProtocolHttp:
+	case RegistryProtocolHTTP:
 		return "HTTP"
 	default:
 		return ""
@@ -25358,9 +25464,9 @@ func (v *RegistryProtocol) UnmarshalJSON(dt []byte) error {
 	case "":
 		*v = ""
 	case "HTTP":
-		*v = RegistryProtocolHttp
+		*v = RegistryProtocolHTTP
 	case "HTTPS":
-		*v = RegistryProtocolHttps
+		*v = RegistryProtocolHTTPS
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
@@ -25368,9 +25474,15 @@ func (v *RegistryProtocol) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	RegistryProtocolHttps RegistryProtocol = "HTTPS"
+	RegistryProtocolHTTPS RegistryProtocol = "HTTPS"
 
-	RegistryProtocolHttp RegistryProtocol = "HTTP"
+	// Deprecated: use RegistryProtocolHTTPS instead.
+	RegistryProtocolHttps RegistryProtocol = RegistryProtocolHTTPS
+
+	RegistryProtocolHTTP RegistryProtocol = "HTTP"
+
+	// Deprecated: use RegistryProtocolHTTP instead.
+	RegistryProtocolHttp RegistryProtocol = RegistryProtocolHTTP
 )
 
 // Expected return type of an execution
@@ -25982,6 +26094,14 @@ func NewFile(name string, contents string, opts ...FileOpts) *File {
 	return root.File(name, contents, opts...)
 }
 
+// Format many names at once, for codegen. Returns them in input order.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func FormatIdentifiers(ctx context.Context, names []string, casing Casing, opts ...FormatIdentifiersOpts) ([]string, error) {
+	root := initRoot()
+	return root.FormatIdentifiers(ctx, names, casing, opts...)
+}
+
 // Creates a function.
 func NewFunction(name string, returnType *TypeDef) *Function {
 	root := initRoot()
@@ -26018,6 +26138,16 @@ func NewID(ctx context.Context) (ID, error) {
 	return root.ID(ctx)
 }
 
+// Parse a name in any casing into words.
+//
+// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input or input with no letters or digits.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func NewIdentifier(name string) *Identifier {
+	root := initRoot()
+	return root.Identifier(name)
+}
+
 // Initialize a JSON value
 func NewJSON() *JSONValue {
 	root := initRoot()
@@ -26052,6 +26182,14 @@ func NewModule() *Module {
 func NewModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
 	root := initRoot()
 	return root.ModuleSource(refString, opts...)
+}
+
+// The acronyms and terms used to parse and format identifiers.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func NamingDictionary(ctx context.Context) ([]NamingTerm, error) {
+	root := initRoot()
+	return root.NamingDictionary(ctx)
 }
 
 // Load any object by its ID.
@@ -26105,9 +26243,14 @@ func NewSourceMap(filename string, line int, column int) *SourceMap {
 }
 
 // Constructs an SSHFS volume.
-func SshfsVolume(endpoint string, privateKey *Secret, opts ...SshfsVolumeOpts) *Volume {
+func SSHFSVolume(endpoint string, privateKey *Secret, opts ...SSHFSVolumeOpts) *Volume {
 	root := initRoot()
-	return root.SshfsVolume(endpoint, privateKey, opts...)
+	return root.SSHFSVolume(endpoint, privateKey, opts...)
+}
+
+// Deprecated: use SSHFSVolume instead.
+func SshfsVolume(endpoint string, privateKey *Secret, opts ...SSHFSVolumeOpts) *Volume {
+	return SSHFSVolume(endpoint, privateKey, opts...)
 }
 
 // Create a new TypeDef.
