@@ -71,7 +71,7 @@ func (r *RustClientDev) WithGraphQLQuery(q *querybuilder.Selection) *RustClientD
 }
 
 // Regenerate the Rust SDK API client.
-func (r *RustClientDev) Apiclient() *Changeset { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:155:1)
+func (r *RustClientDev) Apiclient() *Changeset { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:156:1)
 	q := r.query.Select("apiclient")
 
 	return &Changeset{
@@ -88,7 +88,7 @@ func (r *RustClientDev) BaseContainer() *Container { // rust-client-dev (../../.
 }
 
 // Run cargo check on the Rust SDK
-func (r *RustClientDev) CargoCheck(ctx context.Context) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:134:1)
+func (r *RustClientDev) CargoCheck(ctx context.Context) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:135:1)
 	if r.cargoCheck != nil {
 		return nil
 	}
@@ -98,7 +98,7 @@ func (r *RustClientDev) CargoCheck(ctx context.Context) error { // rust-client-d
 }
 
 // Run cargo fmt on the Rust SDK
-func (r *RustClientDev) CargoFmt(ctx context.Context) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:124:1)
+func (r *RustClientDev) CargoFmt(ctx context.Context) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:125:1)
 	if r.cargoFmt != nil {
 		return nil
 	}
@@ -107,7 +107,7 @@ func (r *RustClientDev) CargoFmt(ctx context.Context) error { // rust-client-dev
 	return q.Execute(ctx)
 }
 
-func (r *RustClientDev) Changes() *Changeset { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:159:1)
+func (r *RustClientDev) Changes() *Changeset { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:160:1)
 	q := r.query.Select("changes")
 
 	return &Changeset{
@@ -121,12 +121,12 @@ type RustClientDevDevContainerOpts struct {
 	// Install workspace dependencies and any tools required
 	// to develop the Rust SDK.
 	//
-	RunInstall bool // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:78:2)
+	RunInstall bool // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:79:2)
 }
 
 // Return the Rust SDK workspace mounted in a dev container,
 // and working directory set to the SDK source.
-func (r *RustClientDev) DevContainer(opts ...RustClientDevDevContainerOpts) *Container { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:74:1)
+func (r *RustClientDev) DevContainer(opts ...RustClientDevDevContainerOpts) *Container { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:75:1)
 	q := r.query.Select("devContainer")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `runInstall` optional argument
@@ -194,11 +194,11 @@ type RustClientDevReleaseOpts struct {
 	//
 	// Cargo registry index URL to publish to instead of crates.io.
 	//
-	CargoRegistryIndex string // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:261:2)
+	CargoRegistryIndex string // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:266:2)
 }
 
 // Release the Rust SDK
-func (r *RustClientDev) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret, opts ...RustClientDevReleaseOpts) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:251:1)
+func (r *RustClientDev) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret, opts ...RustClientDevReleaseOpts) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:256:1)
 	assertNotNil("cargoRegistryToken", cargoRegistryToken)
 	if r.release != nil {
 		return nil
@@ -223,11 +223,11 @@ type RustClientDevReleaseDryRunOpts struct {
 	//
 	//
 	// Default: "HEAD"
-	SourceTag string // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:188:2)
+	SourceTag string // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:189:2)
 }
 
 // Test the publishing process
-func (r *RustClientDev) ReleaseDryRun(ctx context.Context, opts ...RustClientDevReleaseDryRunOpts) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:183:1)
+func (r *RustClientDev) ReleaseDryRun(ctx context.Context, opts ...RustClientDevReleaseDryRunOpts) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:184:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -243,7 +243,7 @@ func (r *RustClientDev) ReleaseDryRun(ctx context.Context, opts ...RustClientDev
 }
 
 // Source returns the source directory for the Rust SDK.
-func (r *RustClientDev) Source() *Directory { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:118:1)
+func (r *RustClientDev) Source() *Directory { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:119:1)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -252,7 +252,7 @@ func (r *RustClientDev) Source() *Directory { // rust-client-dev (../../../../..
 }
 
 // Test the Rust SDK
-func (r *RustClientDev) Test(ctx context.Context) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:144:1)
+func (r *RustClientDev) Test(ctx context.Context) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:145:1)
 	if r.test != nil {
 		return nil
 	}
@@ -261,7 +261,7 @@ func (r *RustClientDev) Test(ctx context.Context) error { // rust-client-dev (..
 	return q.Execute(ctx)
 }
 
-func (r *RustClientDev) WithGeneratedClient() *RustClientDev { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:163:1)
+func (r *RustClientDev) WithGeneratedClient() *RustClientDev { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:164:1)
 	q := r.query.Select("withGeneratedClient")
 
 	return &RustClientDev{
