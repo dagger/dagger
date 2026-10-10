@@ -33,4 +33,20 @@ defmodule Dagger.LLMContentBlockInput do
     :text,
     :tool_name
   ]
+
+  @doc false
+  def __field_names__(),
+    do: %{
+      arguments: "arguments",
+      call_id: "callId",
+      content: "content",
+      data: "data",
+      errored: "errored",
+      file: "file",
+      kind: "kind",
+      mime_type: "mimeType",
+      signature: "signature",
+      text: "text",
+      tool_name: "toolName"
+    }
 end
