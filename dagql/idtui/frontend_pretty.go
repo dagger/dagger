@@ -379,12 +379,12 @@ type frontendPretty struct {
 
 	// recalcPacing tunes how Render paces data-driven recalculation of large
 	// traces (see recalcWaitLocked). lastRecalcCost and lastRecalcAt record
-	// the most recent view recalculation. recalcWakeupPending is set while a
-	// timer is scheduled to render again once a deferred recalculation is due.
-	recalcPacing        recalcPacing
-	lastRecalcCost      time.Duration
-	lastRecalcAt        time.Time
-	recalcWakeupPending bool
+	// the most recent view recalculation. recalcWakeup is the timer, while one
+	// is scheduled, that renders again once a deferred recalculation is due.
+	recalcPacing   recalcPacing
+	lastRecalcCost time.Duration
+	lastRecalcAt   time.Time
+	recalcWakeup   *time.Timer
 
 	// testsDirty and testLogSpans defer test view updates to the next frame
 	// the way viewDirty defers recalculation: testsDirty when span batches or
@@ -2998,6 +2998,8 @@ func (fe *frontendPretty) handleEOF() {
 }
 
 func (fe *frontendPretty) doQuit() {
+	fe.stopRecalcWakeupLocked()
+
 	// Mark the frontend dirty so the final live frame observes fe.quitting and
 	// renders blank instead of reusing cached progress rows. Without this, the
 	// TUI can leave stale live output above the final render when NoExit exits
@@ -4573,18 +4575,32 @@ func (fe *frontendPretty) recalcWaitLocked(now time.Time) time.Duration {
 // scheduleRecalcWakeupLocked makes sure a frame renders once a deferred
 // recalculation is due, even if nothing else changes in the meantime.
 func (fe *frontendPretty) scheduleRecalcWakeupLocked(wait time.Duration) {
-	if fe.recalcWakeupPending {
+	if fe.recalcWakeup != nil {
 		return
 	}
-	fe.recalcWakeupPending = true
-	time.AfterFunc(wait, func() {
+	var timer *time.Timer
+	timer = time.AfterFunc(wait, func() {
 		fe.dispatch(func() {
-			fe.recalcWakeupPending = false
+			if fe.recalcWakeup != timer {
+				// Stopped (or replaced) after it had already fired.
+				return
+			}
+			fe.recalcWakeup = nil
 			if fe.viewDirty {
 				fe.Update()
 			}
 		})
 	})
+	fe.recalcWakeup = timer
+}
+
+// stopRecalcWakeupLocked cancels a scheduled recalculation wakeup, so no
+// timer outlives the frontend.
+func (fe *frontendPretty) stopRecalcWakeupLocked() {
+	if fe.recalcWakeup != nil {
+		fe.recalcWakeup.Stop()
+		fe.recalcWakeup = nil
+	}
 }
 
 //nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies

@@ -141,6 +141,16 @@ func TestStreamingRecalcPacing(t *testing.T) {
 		return id
 	}
 	require.NotNil(t, fe.rows.BySpan[rootID])
+	t.Cleanup(fe.stopRecalcWakeupLocked)
+
+	// paceNext makes the next data-driven recalculation due only far in the
+	// future (the max delay after a recalculation that just finished), however
+	// slowly the test runs.
+	paceNext := func() {
+		fe.recalcPacing.minSpans, fe.recalcPacing.minCost = 0, 0
+		fe.lastRecalcCost = time.Hour
+		fe.lastRecalcAt = time.Now()
+	}
 
 	t.Run("small traces recalculate every frame", func(t *testing.T) {
 		fe.lastRecalcCost = time.Hour
@@ -152,30 +162,36 @@ func TestStreamingRecalcPacing(t *testing.T) {
 	})
 
 	t.Run("expensive recalculation is deferred until due", func(t *testing.T) {
-		fe.recalcPacing.minSpans, fe.recalcPacing.minCost = 0, 0
-
-		fe.lastRecalcCost = 100 * time.Millisecond
-		fe.lastRecalcAt = time.Now()
+		paceNext()
 		id := stream()
 		fe.tui.Frame()
 		require.True(t, fe.viewDirty, "recalculation should be deferred")
-		require.True(t, fe.recalcWakeupPending, "a wakeup should be scheduled")
+		require.NotNil(t, fe.recalcWakeup, "a wakeup should be scheduled")
 		require.Nil(t, fe.rows.BySpan[id])
 
 		// Once the last recalculation is long enough ago, the next frame
 		// catches up.
-		fe.lastRecalcAt = time.Now().Add(-time.Second)
+		fe.lastRecalcAt = time.Now().Add(-time.Hour)
 		fe.Update()
 		fe.tui.Frame()
 		require.False(t, fe.viewDirty)
 		require.NotNil(t, fe.rows.BySpan[id])
 
 		// Explicit recalculations are never deferred.
-		fe.lastRecalcCost = time.Hour
-		fe.lastRecalcAt = time.Now()
+		paceNext()
 		id = stream()
 		fe.recalculateViewLocked()
 		require.NotNil(t, fe.rows.BySpan[id])
+	})
+
+	t.Run("a scheduled wakeup can be canceled", func(t *testing.T) {
+		fe.stopRecalcWakeupLocked()
+		paceNext()
+		stream()
+		fe.tui.Frame()
+		require.NotNil(t, fe.recalcWakeup)
+		fe.stopRecalcWakeupLocked()
+		require.Nil(t, fe.recalcWakeup)
 	})
 }
 
