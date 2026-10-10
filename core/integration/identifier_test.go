@@ -150,10 +150,15 @@ func (IdentifierSuite) TestNamingDictionary(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "3D", capitalized["3D"])
 }
 
-// The schema JSON handed to SDK codegen carries every name's words from
-// v1.0.0 on, and the live introspection path fetches the same words; older
-// clients get neither, so their codegen keeps its own conversion.
-func (IdentifierSuite) TestSchemaJSONIdentifiers(ctx context.Context, t *testctx.T) {
+// Codegen formats schema names through the engine (introspection.FormatNames)
+// when the schema has Query.formatIdentifiers, from v1.0.0 on; older clients'
+// schemas lack it, so their codegen keeps its own conversion. The schema JSON
+// handed to SDK codegen carries no words either way.
+func (IdentifierSuite) TestCodegenFormatNames(ctx context.Context, t *testctx.T) {
+	pascalCapitalized := introspection.NameFormat{
+		Casing:   introspection.CasingPascal,
+		Acronyms: introspection.AcronymsCapitalized,
+	}
 	for _, tc := range []struct {
 		name string
 		opts []dagger.ClientOpt
@@ -171,35 +176,41 @@ func (IdentifierSuite) TestSchemaJSONIdentifiers(ctx context.Context, t *testctx
 			require.NoError(t, err)
 			var raw map[string]json.RawMessage
 			require.NoError(t, json.Unmarshal([]byte(res.File.Contents), &raw))
+			require.NotContains(t, raw, "__identifiers")
 			var resp introspection.Response
 			require.NoError(t, json.Unmarshal([]byte(res.File.Contents), &resp))
+			require.Equal(t, tc.want, resp.Schema.HasFormatIdentifiers())
 
-			live, _, err := introspection.Introspect(ctx, connect(ctx, t, tc.opts...))
+			c := connect(ctx, t, tc.opts...)
+			live, _, err := introspection.Introspect(ctx, c)
 			require.NoError(t, err)
+			require.Equal(t, tc.want, live.HasFormatIdentifiers())
 
+			names := live.Names()
+			formatted, ok, err := introspection.FormatNames(ctx, c, live, append(names, "_"), introspection.CasingSnake, introspection.AcronymsUppercase)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, ok)
+			require.NoError(t, live.LoadFormattedNames(ctx, c, pascalCapitalized))
 			if !tc.want {
-				require.NotContains(t, raw, "__identifiers")
-				require.Nil(t, resp.Schema.Identifiers)
-				require.Nil(t, live.Identifiers)
+				require.Nil(t, formatted)
+				require.Nil(t, live.FormattedNames)
 				return
 			}
 
-			require.Contains(t, raw, "__identifiers")
-			require.Contains(t, resp.Schema.Identifiers, "Container")
-			id, ok := resp.Schema.Identifier("experimentalWithAllGPUs")
-			require.True(t, ok)
-			require.Equal(t, "experimental_with_all_gpus", id.Format(naming.Snake, naming.Uppercase))
-			id, ok = resp.Schema.Identifier("prerequisiteSHAs")
-			require.True(t, ok)
-			require.Equal(t, "PrerequisiteShas", id.Format(naming.Pascal, naming.Capitalized))
-
-			require.NotEmpty(t, live.Identifiers)
-			for name, words := range live.Identifiers {
-				if fromJSON, ok := resp.Schema.Identifiers[name]; ok {
-					require.Equal(t, fromJSON, words, name)
-				}
+			// Every name, but not "_", which the engine can't parse.
+			require.Len(t, formatted, len(names))
+			require.NotContains(t, formatted, "_")
+			require.Equal(t, "experimental_with_all_gpus", formatted["experimentalWithAllGPUs"])
+			require.Equal(t, "prerequisite_shas", formatted["prerequisiteSHAs"])
+			for _, name := range names {
+				id, err := naming.Parse(name)
+				require.NoError(t, err)
+				require.Equal(t, id.Format(naming.Snake, naming.Uppercase), formatted[name], name)
 			}
-			require.Equal(t, resp.Schema.Identifiers["prerequisiteSHAs"], live.Identifiers["prerequisiteSHAs"])
+
+			pascal, ok := live.FormattedName("prerequisiteSHAs", pascalCapitalized)
+			require.True(t, ok)
+			require.Equal(t, "PrerequisiteShas", pascal)
 		})
 	}
 }

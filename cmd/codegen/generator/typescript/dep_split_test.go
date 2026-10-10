@@ -215,7 +215,7 @@ func TestGenerate_SplitsDependencyFiles(t *testing.T) {
 	// that here since this test calls generate() directly.
 	generator.SetSchemaParents(schema)
 
-	state, err := generate(generator.Config{
+	state, err := generate(t.Context(), generator.Config{
 		Lang: generator.SDKLangTypeScript,
 	}, ClientGenFile, schema, "v0.21.0")
 	require.NoError(t, err)
@@ -259,7 +259,7 @@ func TestGenerate_KeepsOwnTypesInClient(t *testing.T) {
 	}
 	generator.SetSchemaParents(schema)
 
-	state, err := generate(generator.Config{
+	state, err := generate(t.Context(), generator.Config{
 		Lang:         generator.SDKLangTypeScript,
 		ModuleConfig: &generator.ModuleGeneratorConfig{ModuleName: "app"},
 	}, ClientGenFile, schema, "v0.21.0")

@@ -338,7 +338,7 @@ var pascalCaseAcronyms = map[string]string{
 }
 
 // toPascalCase is the legacy PascalCase converter, used for schemas without
-// identifier words (see pascalCase).
+// engine-formatted names (see pascalCase).
 //
 // It is a custom implementation instead of strcase.ToCamel because
 // strcase.ToCamel doesn't handle transitions between consecutive uppercase
