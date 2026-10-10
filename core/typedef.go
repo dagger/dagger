@@ -2450,6 +2450,11 @@ type FunctionCall struct {
 	// module calls. Zero when the call did not originate from an agent turn.
 	callerAgent dagql.ObjectResult[*Agent]
 
+	// expertiseOwner follows the outermost expertise run through nested client
+	// sessions, like callerAgent. It is restored from the module call's recorded
+	// internal argument, not persisted on this engine-side function-call record.
+	expertiseOwner expertiseOwner
+
 	// processSpan is the span that the processes started for this call parent
 	// their telemetry to, carried engine-side only like callerAgent. A module
 	// entrypoint sets it to the function call span: its module process is

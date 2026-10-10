@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 
 	"github.com/dagger/dagger/core"
@@ -544,26 +543,15 @@ func (s *llmSchema) withContentFile(ctx context.Context, llm *core.LLM, args str
 	return llm.WithContent([]*core.LLMContentBlock{block}, nil), nil
 }
 
-// withLLMCallerOwner records the installing module before cache lookup. Ownership
-// is a property of each contribution, not ambient state on the LLM or the bound
-// object. Explicit stamps (including empty ones) survive replay by another caller.
+// withLLMCallerOwner records the outermost expertise entry before cache lookup.
+// Ownership is a property of each contribution, not ambient state on the LLM or
+// the bound object. Explicit stamps (including empty ones) survive replay.
 func withLLMCallerOwner(field dagql.Field[*core.LLM]) dagql.Field[*core.LLM] {
 	field.Spec.GetDynamicInput = func(ctx context.Context, _ dagql.AnyResult, _ map[string]dagql.Input, _ call.View, req *dagql.CallRequest) error {
 		if owner := req.Arg("owner"); owner != nil && owner.Value != nil && owner.Value.Kind != dagql.ResultCallLiteralKindNull {
 			return nil
 		}
-		query, err := core.CurrentQuery(ctx)
-		if err != nil {
-			return err
-		}
-		mod, err := query.CurrentModule(ctx)
-		if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
-			return fmt.Errorf("resolve LLM contribution owner: %w", err)
-		}
-		owner := ""
-		if mod.Self() != nil {
-			owner = mod.Self().Name()
-		}
+		owner, _ := core.ExpertiseOwner(ctx)
 		return req.SetArgInput(ctx, "owner", dagql.Opt(dagql.String(owner)), false)
 	}
 	return field

@@ -63,17 +63,25 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		caller string
+		entry  string
 		owner  dagql.Optional[dagql.String]
 		want   string
 	}{
-		{"main client is unowned", "", dagql.Optional[dagql.String]{}, ""},
-		{"omitted uses caller A", "group-A", dagql.Optional[dagql.String]{}, "group-A"},
-		{"omitted uses caller B", "group-B", dagql.Optional[dagql.String]{}, "group-B"},
-		{"explicit empty is unowned", "group-A", dagql.Opt(dagql.String("")), ""},
-		{"explicit other owner", "group-A", dagql.Opt(dagql.String("group-B")), "group-B"},
-		{"owner prefix collision", "group-A", dagql.Opt(dagql.String("group-AB")), "group-AB"},
+		{"main client is unowned", "", "", dagql.Optional[dagql.String]{}, ""},
+		{"ordinary module is unowned", "group-A", "", dagql.Optional[dagql.String]{}, ""},
+		{"omitted uses entry A", "helper", "group-A", dagql.Optional[dagql.String]{}, "group-A"},
+		{"omitted uses entry B", "helper", "group-B", dagql.Optional[dagql.String]{}, "group-B"},
+		{"explicit empty is unowned", "helper", "group-A", dagql.Opt(dagql.String("")), ""},
+		{"explicit other owner", "helper", "group-A", dagql.Opt(dagql.String("group-B")), "group-B"},
+		{"owner prefix collision", "helper", "group-A", dagql.Opt(dagql.String("group-AB")), "group-AB"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			replayScope := core.WithExpertiseOwner(ctx, "replay-entry")
+			ctx := ctx
+			if test.entry != "" {
+				ctx = core.WithExpertiseOwner(ctx, test.entry)
+				ctx = core.WithExpertiseOwner(ctx, "nested-entry")
+			}
 			setCaller(test.caller)
 			promptArgs := []dagql.NamedInput{{Name: "prompt", Value: dagql.String("same prompt")}}
 			toolArgs := []dagql.NamedInput{{Name: "object", Value: dagql.NewAnyID(toolID)}}
@@ -113,6 +121,16 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 			var decoded call.ID
 			require.NoError(t, decoded.Decode(encoded))
+			// Replay on a cold cache, with no expertise scope inherited from the
+			// original call. The explicit stamps must restore all contributions.
+			replayCache, err := dagql.NewCache(ctx, "", nil, nil)
+			require.NoError(t, err)
+			replayCtx := dagql.ContextWithCache(replayScope, replayCache)
+			replayed, err := srv.Load(replayCtx, &decoded)
+			require.NoError(t, err)
+			restored, ok := dagql.UnwrapAs[*core.LLM](replayed)
+			require.True(t, ok)
+			require.Equal(t, test.want, restored.Messages[1].CompositionOwner)
 			require.Equal(t, []string{test.want}, compositionRecipeOwners(t, &decoded, "withTools"))
 			require.Equal(t, []string{test.want}, compositionRecipeOwners(t, &decoded, "withSkills"))
 
@@ -141,18 +159,13 @@ func TestLLMCompositionOwnerSelectorsRoundTrip(t *testing.T) {
 	_, ok = llmType.FieldSpec("__withoutComposition", "v1.0.0")
 	require.True(t, ok)
 	setCaller("")
-	// No-current-module is the normal main-client case; other errors must not
-	// silently turn a module's contributions into unowned state.
+	// Module identity is no longer consulted for contribution ownership.
 	for _, moduleErr := range []error{core.ErrNoCurrentModule, fmt.Errorf("caller lookup failed")} {
 		server.moduleErr = moduleErr
 		var result dagql.ObjectResult[*core.LLM]
 		err := srv.Select(ctx, seed, &result, dagql.Selector{Field: "withSystemPrompt", Args: []dagql.NamedInput{{Name: "prompt", Value: dagql.String("lookup")}}})
-		if moduleErr == core.ErrNoCurrentModule {
-			require.NoError(t, err)
-			require.Empty(t, result.Self().Messages[1].CompositionOwner)
-		} else {
-			require.ErrorContains(t, err, moduleErr.Error())
-		}
+		require.NoError(t, err)
+		require.Empty(t, result.Self().Messages[1].CompositionOwner)
 	}
 	server.moduleErr = nil
 	// Default and explicit versions are recorded on the original call frame.
