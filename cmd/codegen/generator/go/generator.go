@@ -70,7 +70,7 @@ func generateCode(
 ) error {
 	// Go identifiers are the schema's names as the engine formats them, when
 	// the schema has Query.formatIdentifiers (see templates/naming.go).
-	if err := schema.LoadFormattedNames(ctx, cfg.Dag, templates.NameFormats...); err != nil {
+	if err := schema.LoadFormattedNames(ctx, cfg.Dag, schemaVersion, templates.NameFormats...); err != nil {
 		return err
 	}
 

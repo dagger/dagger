@@ -71,20 +71,21 @@ func TestFormatNamesGate(t *testing.T) {
 	f := NameFormat{Casing: CasingSnake, Acronyms: AcronymsUppercase}
 
 	schema := namesTestSchema(false)
-	formatted, ok, err := FormatNames(t.Context(), nil, schema, []string{"httpClient"}, f.Casing, f.Acronyms)
+	formatted, ok, err := FormatNames(t.Context(), nil, schema, "v1.0.0", []string{"httpClient"}, f.Casing, f.Acronyms)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.Nil(t, formatted)
-	require.NoError(t, schema.LoadFormattedNames(t.Context(), nil, f))
+	require.NoError(t, schema.LoadFormattedNames(t.Context(), nil, "v1.0.0", f))
 	require.Nil(t, schema.FormattedNames)
 	_, ok = schema.FormattedName("httpClient", f)
 	require.False(t, ok)
 
 	// With it, formatting needs an engine connection.
 	schema = namesTestSchema(true)
-	_, _, err = FormatNames(t.Context(), nil, schema, []string{"httpClient"}, f.Casing, f.Acronyms)
+	_, _, err = FormatNames(t.Context(), nil, schema, "v1.0.0", []string{"httpClient"}, f.Casing, f.Acronyms)
 	require.Error(t, err)
-	require.Error(t, schema.LoadFormattedNames(t.Context(), nil, f))
+	require.Error(t, schema.LoadFormattedNames(t.Context(), nil, "v1.0.0", f))
+	require.Nil(t, schema.FormattedNames)
 }
 
 func TestFormattedName(t *testing.T) {
@@ -106,7 +107,7 @@ func TestFormattedName(t *testing.T) {
 	require.False(t, ok)
 
 	// Loaded formats are skipped, so no engine is needed for them.
-	require.NoError(t, schema.LoadFormattedNames(t.Context(), nil, snake))
+	require.NoError(t, schema.LoadFormattedNames(t.Context(), nil, "v1.0.0", snake, snake))
 
 	// Filtered schemas keep the formatted names.
 	name, ok = schema.Exclude("someModule").FormattedName("httpClient", snake)

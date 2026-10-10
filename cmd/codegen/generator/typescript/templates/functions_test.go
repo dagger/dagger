@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	currentSchema *introspection.Schema
-	currentDag    *dagger.Client
+	currentSchema        *introspection.Schema
+	currentSchemaVersion string
+	currentDag           *dagger.Client
 )
 
 func init() {
@@ -25,7 +26,7 @@ func init() {
 	}
 	currentDag = c
 
-	currentSchema, _, err = introspection.Introspect(ctx, c)
+	currentSchema, currentSchemaVersion, err = introspection.Introspect(ctx, c)
 	if err != nil {
 		panic(err)
 	}

@@ -3,16 +3,20 @@ package introspection
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
+
+	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 )
 
 // Codegen names SDK identifiers by asking the engine to format schema names,
-// with Query.formatIdentifiers, so the parsing and formatting rules (and the
-// naming dictionary of the client's engine version) live only in the engine;
-// see hack/designs/identifier-casing.md, "Formatting names in codegen".
+// with Query.formatIdentifiers and the naming dictionary of the schema's
+// engine version, so the parsing and formatting rules live only in the
+// engine; see hack/designs/identifier-casing.md, "Formatting names in
+// codegen".
 //
 // The gate is the schema being generated: a schema without
 // Query.formatIdentifiers (schema views before v1.0.0-0, or older engines)
@@ -164,19 +168,24 @@ func formattable(name string) bool {
 // request. The core schema's names fit in one.
 const formatBatchBytes = 256 << 10
 
-const formatIdentifiersQuery = `query FormatIdentifiers($names: [String!]!, $casing: Casing!, $acronyms: AcronymStyle) {
-  formatIdentifiers(names: $names, casing: $casing, acronyms: $acronyms)
+// formatIdentifiersQuery passes the schema's version, so the engine parses the
+// names with that version's naming dictionary rather than the codegen
+// connection's.
+const formatIdentifiersQuery = `query FormatIdentifiers($names: [String!]!, $casing: Casing!, $acronyms: AcronymStyle, $version: String) {
+  formatIdentifiers(names: $names, casing: $casing, acronyms: $acronyms, version: $version)
 }`
 
 // FormatNames asks the engine to format names in the given casing and acronym
 // style, and returns a map from each name to its formatted form. The engine
-// parses the names with the naming dictionary of dag's engine version.
+// parses the names with the naming dictionary of schemaVersion, the
+// __schemaVersion of the schema being generated, so the dictionary follows
+// the schema (a module's engine version) rather than the codegen client.
 //
 // It reports false, formatting nothing, when schema (the schema codegen
 // generates from) has no Query.formatIdentifiers: codegen then keeps its
 // legacy converter. Names the engine can't format (see Names) are left out of
 // the map, as are duplicates. Large inputs are sent in several requests.
-func FormatNames(ctx context.Context, dag *dagger.Client, schema *Schema, names []string, casing Casing, acronyms AcronymStyle) (map[string]string, bool, error) {
+func FormatNames(ctx context.Context, dag *dagger.Client, schema *Schema, schemaVersion string, names []string, casing Casing, acronyms AcronymStyle) (map[string]string, bool, error) {
 	if !schema.HasFormatIdentifiers() {
 		return nil, false, nil
 	}
@@ -214,6 +223,7 @@ func FormatNames(ctx context.Context, dag *dagger.Client, schema *Schema, names 
 				"names":    batch,
 				"casing":   string(casing),
 				"acronyms": string(acronyms),
+				"version":  schemaVersion,
 			},
 		}, &dagger.Response{
 			Data: &data,
@@ -231,33 +241,43 @@ func FormatNames(ctx context.Context, dag *dagger.Client, schema *Schema, names 
 }
 
 // LoadFormattedNames formats every name of the schema (see Names) in each of
-// formats through the engine (see FormatNames), and keeps the results on the
-// schema for FormattedName. Formats already loaded are skipped. A schema
-// without Query.formatIdentifiers is left as is, so FormattedName reports
-// false and codegen falls back to its legacy converters.
-func (s *Schema) LoadFormattedNames(ctx context.Context, dag *dagger.Client, formats ...NameFormat) error {
+// formats through the engine, with the naming dictionary of schemaVersion
+// (see FormatNames), and keeps the results on the schema for FormattedName.
+// Formats already loaded are skipped; the others are requested concurrently.
+// A schema without Query.formatIdentifiers is left as is, so FormattedName
+// reports false and codegen falls back to its legacy converters.
+func (s *Schema) LoadFormattedNames(ctx context.Context, dag *dagger.Client, schemaVersion string, formats ...NameFormat) error {
 	if !s.HasFormatIdentifiers() {
 		return nil
 	}
-	var names []string
+	var todo []NameFormat
 	for _, f := range formats {
-		if _, ok := s.FormattedNames[f]; ok {
+		if _, ok := s.FormattedNames[f]; ok || slices.Contains(todo, f) {
 			continue
 		}
-		if names == nil {
-			names = s.Names()
-		}
-		formatted, ok, err := FormatNames(ctx, dag, s, names, f.Casing, f.Acronyms)
-		if err != nil {
+		todo = append(todo, f)
+	}
+	if len(todo) == 0 {
+		return nil
+	}
+	names := s.Names()
+	results := make([]map[string]string, len(todo))
+	eg, egCtx := errgroup.WithContext(ctx)
+	for i, f := range todo {
+		eg.Go(func() error {
+			formatted, _, err := FormatNames(egCtx, dag, s, schemaVersion, names, f.Casing, f.Acronyms)
+			results[i] = formatted
 			return err
-		}
-		if !ok {
-			continue
-		}
-		if s.FormattedNames == nil {
-			s.FormattedNames = map[NameFormat]map[string]string{}
-		}
-		s.FormattedNames[f] = formatted
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	if s.FormattedNames == nil {
+		s.FormattedNames = map[NameFormat]map[string]string{}
+	}
+	for i, f := range todo {
+		s.FormattedNames[f] = results[i]
 	}
 	return nil
 }

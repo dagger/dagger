@@ -104,7 +104,7 @@ func TestCoreTypeNamesAreCanonical(t *testing.T) {
 		}
 		names = append(names, typ.Name)
 	}
-	formatted, ok, err := introspection.FormatNames(t.Context(), currentDag, schema, names, pascalNames.Casing, pascalNames.Acronyms)
+	formatted, ok, err := introspection.FormatNames(t.Context(), currentDag, schema, currentSchemaVersion, names, pascalNames.Casing, pascalNames.Acronyms)
 	require.NoError(t, err)
 	require.True(t, ok)
 	for _, name := range names {

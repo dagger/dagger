@@ -40,7 +40,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 
 	generator.SetSchema(schema)
 	// Before anything formats a name, including the self-call emitter below.
-	if err := schema.LoadFormattedNames(ctx, g.Config.Dag, templates.NameFormats...); err != nil {
+	if err := schema.LoadFormattedNames(ctx, g.Config.Dag, schemaVersion, templates.NameFormats...); err != nil {
 		return nil, err
 	}
 

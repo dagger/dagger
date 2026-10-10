@@ -182,15 +182,15 @@ func (IdentifierSuite) TestCodegenFormatNames(ctx context.Context, t *testctx.T)
 			require.Equal(t, tc.want, resp.Schema.HasFormatIdentifiers())
 
 			c := connect(ctx, t, tc.opts...)
-			live, _, err := introspection.Introspect(ctx, c)
+			live, version, err := introspection.Introspect(ctx, c)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, live.HasFormatIdentifiers())
 
 			names := live.Names()
-			formatted, ok, err := introspection.FormatNames(ctx, c, live, append(names, "_"), introspection.CasingSnake, introspection.AcronymsUppercase)
+			formatted, ok, err := introspection.FormatNames(ctx, c, live, version, append(names, "_"), introspection.CasingSnake, introspection.AcronymsUppercase)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, ok)
-			require.NoError(t, live.LoadFormattedNames(ctx, c, pascalCapitalized))
+			require.NoError(t, live.LoadFormattedNames(ctx, c, version, pascalCapitalized))
 			if !tc.want {
 				require.Nil(t, formatted)
 				require.Nil(t, live.FormattedNames)
