@@ -64,10 +64,11 @@ func killContainerCgroup(ctx context.Context, id, cgroupPath string) error {
 }
 
 const (
-	maxDescribedCgroups      = 32
-	maxDescribedProcs        = 8
-	maxDescribedTasksPerProc = 64
-	maxDescribedStackLines   = 12
+	maxDescribedCgroups       = 32
+	maxDescribedCgroupEntries = 1024
+	maxDescribedProcs         = 8
+	maxDescribedTasksPerProc  = 64
+	maxDescribedStackLines    = 12
 )
 
 // describeCgroupTasks names the processes left in a killed cgroup. A task
@@ -76,34 +77,45 @@ const (
 // capped, and truncation and read failures are reported as such.
 func describeCgroupTasks(path, procRoot string) string {
 	var procs, notes []string
-	cgroupsSeen := 0
-	walkErr := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+	// Breadth-first, reading each directory a bounded batch at a time, so
+	// neither the number of cgroups nor their fan-out is unbounded.
+	queue := []string{path}
+	entryBudget := maxDescribedCgroupEntries
+	for cgroups := 0; len(queue) > 0; cgroups++ {
+		if cgroups == maxDescribedCgroups {
+			notes = append(notes, fmt.Sprintf("only the first %d cgroups read", cgroups))
+			break
+		}
+		dir := queue[0]
+		queue = queue[1:]
+		pids, err := readCgroupProcs(filepath.Join(dir, "cgroup.procs"))
 		if err != nil {
-			return err
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		if cgroupsSeen == maxDescribedCgroups {
-			notes = append(notes, fmt.Sprintf("only the first %d cgroups read", maxDescribedCgroups))
-			return fs.SkipAll
-		}
-		cgroupsSeen++
-		pids, err := readCgroupProcs(filepath.Join(p, "cgroup.procs"))
-		if err != nil {
-			notes = append(notes, fmt.Sprintf("%s unreadable: %v", p, err))
-			return nil
+			notes = append(notes, fmt.Sprintf("%s unreadable: %v", dir, err))
+			continue
 		}
 		procs = append(procs, pids...)
 		if len(procs) > maxDescribedProcs {
 			notes = append(notes, fmt.Sprintf("only the first %d processes shown", maxDescribedProcs))
 			procs = procs[:maxDescribedProcs]
-			return fs.SkipAll
+			break
 		}
-		return nil
-	})
-	if walkErr != nil {
-		notes = append(notes, fmt.Sprintf("cgroup walk failed: %v", walkErr))
+		if entryBudget == 0 {
+			continue
+		}
+		entries, err := readDirHead(dir, entryBudget)
+		if err != nil {
+			notes = append(notes, fmt.Sprintf("%s unreadable: %v", dir, err))
+			continue
+		}
+		entryBudget -= len(entries)
+		if entryBudget == 0 {
+			notes = append(notes, fmt.Sprintf("only the first %d cgroup entries listed", maxDescribedCgroupEntries))
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				queue = append(queue, filepath.Join(dir, entry.Name()))
+			}
+		}
 	}
 	out := make([]string, 0, len(procs)+len(notes))
 	if len(procs) == 0 && len(notes) == 0 {
@@ -131,7 +143,12 @@ func describeProc(procDir, pid string) string {
 	}
 	for _, task := range tasks {
 		taskDir := filepath.Join(procDir, "task", task.Name())
-		if procTaskState(taskDir) != "D" {
+		state, err := procTaskState(taskDir)
+		if err != nil {
+			desc += fmt.Sprintf(", thread %s state unreadable: %v", task.Name(), err)
+			continue
+		}
+		if state != "D" {
 			continue
 		}
 		stack, err := os.ReadFile(filepath.Join(taskDir, "stack"))
@@ -182,16 +199,16 @@ func readDirHead(path string, n int) ([]fs.DirEntry, error) {
 
 // procTaskState returns the one-letter state from a /proc task's stat. The
 // command name is parenthesized and may contain spaces, so parse after it.
-func procTaskState(taskDir string) string {
+func procTaskState(taskDir string) (string, error) {
 	stat, err := os.ReadFile(filepath.Join(taskDir, "stat"))
 	if err != nil {
-		return ""
+		return "", err
 	}
 	fields := strings.Fields(string(stat[bytes.LastIndexByte(stat, ')')+1:]))
 	if len(fields) == 0 {
-		return ""
+		return "", fmt.Errorf("malformed %s", filepath.Join(taskDir, "stat"))
 	}
-	return fields[0]
+	return fields[0], nil
 }
 
 // Only accept an execution's container child. Matching an ID

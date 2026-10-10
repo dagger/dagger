@@ -178,8 +178,11 @@ func TestProcTaskState(t *testing.T) {
 	dir := t.TempDir()
 	// The command name may itself contain spaces and parentheses.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "stat"), []byte("42 (dagger (eng) x) D 1 42 42 0 -1 4194560\n"), 0o600))
-	require.Equal(t, "D", procTaskState(dir))
-	require.Empty(t, procTaskState(filepath.Join(dir, "missing")))
+	state, err := procTaskState(dir)
+	require.NoError(t, err)
+	require.Equal(t, "D", state)
+	_, err = procTaskState(filepath.Join(dir, "missing"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestDescribeCgroupTasks(t *testing.T) {
@@ -215,7 +218,30 @@ func TestDescribeCgroupTasks(t *testing.T) {
 	t.Run("unreadable is not empty", func(t *testing.T) {
 		got := describeCgroupTasks(filepath.Join(t.TempDir(), "gone"), t.TempDir())
 		require.NotContains(t, got, "no processes")
-		require.Contains(t, got, "cgroup walk failed")
+		require.Contains(t, got, "unreadable")
+	})
+
+	t.Run("unreadable thread state and long stacks are reported", func(t *testing.T) {
+		cgroup, procRoot := t.TempDir(), t.TempDir()
+		writeFile(filepath.Join(cgroup, "cgroup.procs"), "7\n")
+		writeFile(filepath.Join(procRoot, "7", "comm"), "sh\n")
+		require.NoError(t, os.MkdirAll(filepath.Join(procRoot, "7", "task", "7"), 0o700))
+		writeFile(filepath.Join(procRoot, "7", "task", "8", "stat"), "8 (sh) D 1\n")
+		writeFile(filepath.Join(procRoot, "7", "task", "8", "stack"), strings.Repeat("[<0>] frame\n", 20))
+		got := describeCgroupTasks(cgroup, procRoot)
+		require.Contains(t, got, "thread 7 state unreadable")
+		require.Equal(t, maxDescribedStackLines, strings.Count(got, "frame"))
+		require.Contains(t, got, "frame <- ...]")
+	})
+
+	t.Run("cgroup walk is capped", func(t *testing.T) {
+		cgroup := t.TempDir()
+		dir := cgroup
+		for range maxDescribedCgroups + 8 {
+			writeFile(filepath.Join(dir, "cgroup.procs"), "")
+			dir = filepath.Join(dir, "child")
+		}
+		require.Equal(t, "only the first 32 cgroups read", describeCgroupTasks(cgroup, t.TempDir()))
 	})
 
 	t.Run("process list is capped", func(t *testing.T) {
