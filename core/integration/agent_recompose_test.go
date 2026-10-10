@@ -1309,6 +1309,11 @@ func (LLMSuite) TestComposeBoundObjectAndCanonicalIdentity(ctx context.Context, 
 	canonicalDuplicate := fmt.Sprintf(`{ "agent": %q, "label": "first" }`, agentID)
 	_, err = applyBoundExpertise(ctx, c, ws, llm, "compose", "staff/attached", canonicalDuplicate)
 	require.Error(t, err)
+	ids, err := boundExpertiseIDs(ctx, c, ws, "staff/attached", args)
+	require.NoError(t, err)
+	require.Len(t, ids, 1)
+	_, err = applyExpertiseIDs(ctx, c, core.NewQuery(c).LLM().WithWorkspace(ws), "compose", []core.ID{ids[0], ids[0]})
+	require.Error(t, err, "duplicates in a single compose batch must also fail")
 	// A genuinely different binding of the same artifact is a new entry.
 	secondArgs := fmt.Sprintf(`{"agent":%q,"label":"second"}`, agentID)
 	llm, err = applyBoundExpertise(ctx, c, ws, llm, "compose", "staff/attached", secondArgs)
