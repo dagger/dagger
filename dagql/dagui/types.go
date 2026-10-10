@@ -193,7 +193,9 @@ func (db *DB) walkSpans(opts FrontendOpts, spans iter.Seq[*Span], seenHint int, 
 		return false
 	}
 	var lastTree *TraceTree
-	var lastCall *TraceTree
+	// the last call tree emitted into each sibling list, keyed by the list's
+	// parent (nil for the top level)
+	lastCallIn := map[*TraceTree]*TraceTree{}
 	seen := make(map[SpanID]bool, seenHint)
 	var walk func(*Span, *TraceTree) bool
 	// walkCauses walks a span's causal spans inline under parent, reporting
@@ -267,12 +269,12 @@ func (db *DB) walkSpans(opts FrontendOpts, spans iter.Seq[*Span], seenHint int, 
 			Span:   span,
 			Parent: parent,
 		}
-		if lastCall != nil {
+		// A call chains onto the call before it in the same sibling list, so
+		// the walk order of other subtrees never decides it.
+		if prev := lastCallIn[parent]; prev != nil {
 			if base := span.Base(); base != nil {
-				tree.Chained =
-					lastCall.Parent == tree.Parent &&
-						(base.Digest == lastCall.Span.CallDigest ||
-							base.Digest == lastCall.Span.Output)
+				tree.Chained = base.Digest == prev.Span.CallDigest ||
+					base.Digest == prev.Span.Output
 			}
 		}
 		if span.IsRunningOrEffectsRunning() {
@@ -282,7 +284,7 @@ func (db *DB) walkSpans(opts FrontendOpts, spans iter.Seq[*Span], seenHint int, 
 		f(tree)
 		lastTree = tree
 		if tree.Span.CallDigest != "" {
-			lastCall = tree
+			lastCallIn[parent] = tree
 		}
 
 		tree.RevealedChildren = span.RevealedSpans.Len() > 0
@@ -292,9 +294,6 @@ func (db *DB) walkSpans(opts FrontendOpts, spans iter.Seq[*Span], seenHint int, 
 		}
 
 		lastTree = tree
-		if tree.Span.CallDigest != "" {
-			lastCall = tree
-		}
 		return true
 	}
 	for span := range spans {
