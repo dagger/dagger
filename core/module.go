@@ -251,11 +251,8 @@ func validateGeneratorFunction(obj *ObjectTypeDef, fn *Function) error {
 	return nil
 }
 
-// validateAgentFunction enforces the @expertise contract (hack/designs/workspace-agents.md
-// §3): the function must return LLM! and must declare exactly one required
-// argument, an LLM! (the base the compose fold supplies, whatever it is
-// named). A non-LLM! return, a missing base, or any other required argument is
-// a hard error at module load.
+// validateAgentFunction requires one conversation argument. Other required
+// arguments are bound when converting the artifact to expertise.
 func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 	if !returnsCoreObject(fn, "LLM") {
 		return fmt.Errorf("object %q function %q is marked @agent but does not return LLM!; @agent functions must have the agent(base: LLM!): LLM! shape",
@@ -267,12 +264,12 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 		if !argRequired(arg) {
 			continue
 		}
-		if !baseExempted && isCoreLLMArg(arg) {
+		if isCoreLLMArg(arg) {
+			if baseExempted {
+				return fmt.Errorf("object %q function %q declares multiple required LLM arguments", obj.OriginalName, fn.OriginalName)
+			}
 			baseExempted = true
-			continue
 		}
-		return fmt.Errorf("object %q function %q is marked @agent but declares required argument %q; an @agent function may only require a single LLM! argument (the base the compose fold supplies)",
-			obj.OriginalName, fn.OriginalName, arg.OriginalName)
 	}
 	if !baseExempted {
 		return fmt.Errorf("object %q function %q is marked @agent but does not declare a required LLM! argument; @agent functions must have the agent(base: LLM!): LLM! shape (the base the compose fold supplies)",

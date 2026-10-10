@@ -499,7 +499,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 	}
 	for _, fnResult := range obj.Functions {
 		fn := fnResult.Self()
-		if functionRequiresCallerArgs(fn) {
+		if !fn.IsAgent && functionRequiresCallerArgs(fn) {
 			continue
 		}
 		add(fn.Name, fn.Description, fn.ReturnType, fn)

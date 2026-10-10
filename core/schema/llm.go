@@ -61,14 +61,26 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 	dagql.Fields[*core.LLM]{
+		dagql.Func("expertise", func(_ context.Context, llm *core.LLM, _ struct{}) (dagql.ObjectResultArray[*core.Expertise], error) {
+			return llm.Expertise, nil
+		}).View(AfterVersion("v1.0.0-0")).Doc("Expertise composed into this conversation, in order, with bound arguments. Nested composition belongs to its outer entry and is not recorded separately."),
+		dagql.Func("__withExpertise", func(ctx context.Context, llm *core.LLM, args expertiseArgs) (*core.LLM, error) {
+			entries, err := args.load(ctx)
+			if err != nil {
+				return nil, err
+			}
+			llm = llm.Clone()
+			llm.Expertise = entries
+			return llm, nil
+		}).View(AfterVersion("v1.0.0-0")),
 		dagql.NodeFunc("compose", s.compose).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Run expertise in list order, passing this conversation through each function. Retain existing contributions.").
+			Doc("Run and record expertise in list order, retaining existing contributions. An entry with the same artifact address and canonical bound arguments must not already be composed.").
 			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
 		dagql.NodeFunc("recompose", s.recompose).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.",
-				"Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.",
+			Doc("Run expertise in list order, replacing contributions of matching recorded entries and preserving compatible tool state. Record and run new entries; leave unmentioned entries untouched.",
+				"Entry identity is its artifact address with dimension keys and canonical bound arguments. Contributions made transitively while an entry runs belong to that entry, including nested composition. Contributions made outside an entry are unowned and retained. Keep this LLM's workspace.",
 				"A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.").
 			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
 		dagql.Func("__withoutComposition", func(_ context.Context, llm *core.LLM, args struct {
@@ -979,18 +991,18 @@ type expertiseArgs struct {
 	Expertise []dagql.ID[*core.Expertise]
 }
 
-func (args expertiseArgs) load(ctx context.Context) ([]*core.Expertise, error) {
+func (args expertiseArgs) load(ctx context.Context) (dagql.ObjectResultArray[*core.Expertise], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	expertise := make([]*core.Expertise, len(args.Expertise))
+	expertise := make(dagql.ObjectResultArray[*core.Expertise], len(args.Expertise))
 	for i, id := range args.Expertise {
 		entry, err := id.Load(ctx, srv)
 		if err != nil {
 			return nil, err
 		}
-		expertise[i] = entry.Self()
+		expertise[i] = entry
 	}
 	return expertise, nil
 }

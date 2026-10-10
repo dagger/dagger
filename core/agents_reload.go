@@ -14,37 +14,59 @@ import (
 // prompts and bindings, and contributions from other expertise, are retained.
 // Every replacement is recorded as a real selector, including the module-state
 // rebind, rather than an in-memory change to an old object's class.
-func RecomposeExpertise(ctx context.Context, base dagql.ObjectResult[*LLM], expertise []*Expertise) (dagql.ObjectResult[*LLM], error) {
+func RecomposeExpertise(ctx context.Context, base dagql.ObjectResult[*LLM], expertise dagql.ObjectResultArray[*Expertise]) (dagql.ObjectResult[*LLM], error) {
+	if _, nested := ExpertiseOwner(ctx); nested {
+		return ComposeExpertise(ctx, base, expertise)
+	}
 	acc := base
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return base, err
 	}
-	// Clear each module once, before running any entrypoints. Clearing before
-	// every entrypoint would erase contributions from earlier ones in the same
-	// module; checking tool state before all have run would reject their tools.
-	removed := map[string]bool{}
-	for _, entry := range expertise {
-		owner := entry.OriginalModule().Name()
-		if removed[owner] {
-			continue
-		}
-		removed[owner] = true
-		if err := srv.Select(ctx, acc, &acc, dagql.Selector{
-			Field: "__withoutComposition",
-			Args:  []dagql.NamedInput{{Name: "owner", Value: dagql.String(owner)}},
-		}); err != nil {
+	record := slices.Clone(base.Self().Expertise)
+	positions := map[string]int{}
+	for i, entry := range record {
+		key, err := entry.Self().Identity()
+		if err != nil {
 			return base, err
+		}
+		positions[key] = i
+	}
+	selected := map[string]bool{}
+	// Validate and clear all matching entries before running any replacements.
+	for _, entry := range expertise {
+		owner, err := entry.Self().Identity()
+		if err != nil {
+			return base, err
+		}
+		if selected[owner] {
+			return base, fmt.Errorf("duplicate expertise %q in recompose", entry.Self().Name())
+		}
+		selected[owner] = true
+		if i, exists := positions[owner]; exists {
+			record[i] = entry
+			if err := srv.Select(ctx, acc, &acc, dagql.Selector{
+				Field: "__withoutComposition",
+				Args:  []dagql.NamedInput{{Name: "owner", Value: dagql.String(owner)}},
+			}); err != nil {
+				return base, err
+			}
+		} else {
+			record = append(record, entry)
 		}
 	}
 	for _, entry := range expertise {
-		next, err := entry.Run(ctx, acc)
+		next, err := entry.Self().Run(ctx, acc)
 		if err != nil {
-			return base, fmt.Errorf("recompose agent %q: %w", entry.Name(), err)
+			return base, fmt.Errorf("recompose agent %q: %w", entry.Self().Name(), err)
 		}
 		acc = next
 	}
 	acc, err = preserveRecomposedTools(ctx, srv, base, acc)
+	if err != nil {
+		return base, err
+	}
+	acc, err = RecordExpertise(ctx, acc, record)
 	if err != nil {
 		return base, err
 	}

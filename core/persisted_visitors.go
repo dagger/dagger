@@ -640,7 +640,9 @@ func visitPersistedModTreeRefs(w *persistedRefWalker, tree *persistedModTree) er
 	return nil
 }
 
-var persistedArtifactsVisitor = persistedStructVisitor("", func(p *persistedArtifacts, w *persistedRefWalker) error {
+var persistedArtifactsVisitor = persistedStructVisitor("", visitPersistedArtifacts)
+
+func visitPersistedArtifacts(p *persistedArtifacts, w *persistedRefWalker) error {
 	if err := visitPersistedModTreeRefs(w.at("Tree"), &p.Tree); err != nil {
 		return err
 	}
@@ -649,6 +651,18 @@ var persistedArtifactsVisitor = persistedStructVisitor("", func(p *persistedArti
 			return err
 		}
 		if err := w.at("Entries").index(i).child("ContextWorkspace", &p.Entries[i].ContextWorkspace); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var persistedExpertiseVisitor = persistedStructVisitor("", func(p *persistedExpertise, w *persistedRefWalker) error {
+	if err := visitPersistedArtifacts(&p.persistedArtifacts, w); err != nil {
+		return err
+	}
+	for i := range p.Inputs {
+		if err := w.at("Inputs").index(i).child("", &p.Inputs[i]); err != nil {
 			return err
 		}
 	}

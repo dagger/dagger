@@ -102,6 +102,9 @@ type LLM struct {
 	// a `field:"true"` tag, since struct tag fields cannot carry a view filter.
 	Messages []*LLMMessage
 
+	// Outermost composition entries, in their original order.
+	Expertise dagql.ObjectResultArray[*Expertise]
+
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
 
@@ -1164,6 +1167,7 @@ func (llm *LLM) Clone() *LLM {
 	// clones, so they must be treated as immutable: copy-on-write via
 	// LLMMessage.Clone before modifying one.
 	cp.Messages = slices.Clone(cp.Messages)
+	cp.Expertise = slices.Clone(cp.Expertise)
 	cp.mcp = cp.mcp.Clone()
 	cp.endpointMtx = &sync.Mutex{}
 	return &cp
@@ -1190,6 +1194,14 @@ func (llm *LLM) AttachDependencyResults(
 		return nil, nil
 	}
 	var deps []dagql.AnyResult
+	for i, entry := range llm.Expertise {
+		attached, err := attach(entry)
+		if err != nil {
+			return nil, fmt.Errorf("attach llm expertise: %w", err)
+		}
+		llm.Expertise[i] = attached.(dagql.ObjectResult[*Expertise])
+		deps = append(deps, attached)
+	}
 	if llm.mcp.workspace.Self() != nil {
 		attached, err := attach(llm.mcp.workspace)
 		if err != nil {

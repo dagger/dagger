@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -55,7 +56,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		Description: "The evaluated value, or null when evaluation failed."}, s.resultValue)
 	dagql.Fields[*core.ArtifactDimensionKey]{}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
-		dagql.NodeFunc("asExpertise", s.asExpertise).Doc("Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise."),
+		dagql.NodeFunc("asExpertise", s.asExpertise).Doc("Convert the selection to expertise without running it, binding these arguments. Fail if a selected agent's required arguments are unbound.").Args(dagql.Arg("arguments").Doc("Field arguments besides the conversation, as a JSON object.")),
 		dagql.NodeFunc("asGenerators", s.asGenerators).Doc("Convert the selection to Generators without running them. Fail if any artifact is not a Generator."),
 		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks."),
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
@@ -92,9 +93,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("__generator", func(ctx context.Context, a *core.Artifact, args struct{ Arguments core.JSON }) (*core.Generator, error) {
 			return newArtifactGenerator(ctx, a, args.Arguments)
 		}),
-		dagql.Func("__expertise", func(_ context.Context, a *core.Artifact, _ struct{}) (*core.Expertise, error) {
-			return core.NewExpertise(a)
-		}),
+		dagql.Func("__expertise", newArtifactExpertise),
 		dagql.Func("__remoteCheck", s.remoteCheck),
 		dagql.Func("__failedCheck", s.failedCheck),
 		dagql.Func("loadError", s.loadError).Doc("A module load failure, or an empty string if discovery succeeded."),
@@ -443,11 +442,9 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 		err = srv.Select(ctx, parent.(dagql.AnyObjectResult), &result, dagql.Selector{Field: "__generator", Args: []dagql.NamedInput{{Name: "arguments", Value: arguments}}})
 		return result, err
 	case "Expertise":
-		if len(inputs) != 0 {
-			return nil, fmt.Errorf("artifacts of type Expertise receive their LLM through LLM.compose; artifact arguments are not supported")
-		}
-		err = srv.Select(ctx, parent.(dagql.AnyObjectResult), &result, dagql.Selector{Field: "__expertise"})
-		return result, err
+		var expertise dagql.ObjectResult[*core.Expertise]
+		err = selectArtifactExpertise(ctx, srv, parent.(dagql.AnyObjectResult), artifact, arguments, &expertise)
+		return expertise, err
 	case "Check":
 		if artifact.Node != nil && artifact.Node.Name == "stale" && artifact.Node.Parent.ObjectType() != nil && artifact.Node.Parent.ObjectType().Name == "Generator" {
 			var gen dagql.ObjectResult[*core.Generator]
@@ -500,6 +497,12 @@ func newArtifactGenerator(ctx context.Context, a *core.Artifact, arguments core.
 	if err != nil {
 		return nil, err
 	}
+	g.Inputs, err = retainArtifactInputs(ctx, inputs)
+	return g, err
+}
+
+func retainArtifactInputs(ctx context.Context, inputs []dagql.NamedInput) ([]dagql.AnyObjectResult, error) {
+	var retained []dagql.AnyObjectResult
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
@@ -516,7 +519,7 @@ func newArtifactGenerator(ctx context.Context, a *core.Artifact, arguments core.
 			if err != nil {
 				return err
 			}
-			g.Inputs = append(g.Inputs, value)
+			retained = append(retained, value)
 		case dagql.DynamicOptional:
 			if input.Valid {
 				return retain(input.Value)
@@ -535,7 +538,120 @@ func newArtifactGenerator(ctx context.Context, a *core.Artifact, arguments core.
 			return nil, err
 		}
 	}
-	return g, nil
+	return retained, nil
+}
+
+type asExpertiseArgs struct {
+	Arguments   core.JSON `default:"{}"`
+	SkipUnbound bool      `internal:"true" default:"false"`
+}
+
+func newArtifactExpertise(ctx context.Context, a *core.Artifact, args struct {
+	Arguments    core.JSON     `default:"{}"`
+	ObjectInputs []dagql.AnyID `default:"[]"`
+}) (*core.Expertise, error) {
+	e, err := core.NewExpertise(a, args.Arguments)
+	if err != nil {
+		return nil, err
+	}
+	inputs, err := core.ArtifactInputs(a, e.Arguments)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	i := 0
+	e.Arguments, err = expertiseInputJSON(inputs, func(_ dagql.IDable) (any, error) {
+		if i >= len(args.ObjectInputs) {
+			return nil, fmt.Errorf("missing expertise object dependency")
+		}
+		id, err := args.ObjectInputs[i].ID()
+		if err != nil {
+			return nil, err
+		}
+		i++
+		value, err := srv.Load(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("restore expertise argument: %w", err)
+		}
+		e.Inputs = append(e.Inputs, value)
+		// A handle is local to an engine. A recipe is a stable, valid JSON ID
+		// across restore, and the separate typed input makes it a dependency.
+		id, err = value.RecipeID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return id.Encode()
+	})
+	if err != nil {
+		return nil, err
+	}
+	if i != len(args.ObjectInputs) {
+		return nil, fmt.Errorf("unexpected expertise object dependencies")
+	}
+	return e, nil
+}
+
+func selectArtifactExpertise(ctx context.Context, srv *dagql.Server, parent dagql.AnyObjectResult, artifact *core.Artifact, arguments core.JSON, out *dagql.ObjectResult[*core.Expertise]) error {
+	inputs, err := core.ArtifactInputs(artifact, arguments)
+	if err != nil {
+		return err
+	}
+	objects := dagql.ArrayInput[dagql.AnyID]{}
+	_, err = expertiseInputJSON(inputs, func(input dagql.IDable) (any, error) {
+		id, err := input.ID()
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, dagql.NewAnyID(id))
+		return nil, nil
+	})
+	if err != nil {
+		return err
+	}
+	return srv.Select(ctx, parent, out, dagql.Selector{Field: "__expertise", Args: []dagql.NamedInput{
+		{Name: "arguments", Value: arguments}, {Name: "objectInputs", Value: objects},
+	}})
+}
+
+// Walk only typed object inputs: a scalar string that happens to look like an
+// ID is still data. Arrays and optional arguments retain the same JSON shape.
+func expertiseInputJSON(inputs []dagql.NamedInput, object func(dagql.IDable) (any, error)) (core.JSON, error) {
+	var convert func(dagql.Input) (any, error)
+	convert = func(input dagql.Input) (any, error) {
+		switch input := input.(type) {
+		case dagql.IDable:
+			return object(input)
+		case dagql.DynamicOptional:
+			if !input.Valid {
+				return nil, nil
+			}
+			return convert(input.Value)
+		case dagql.DynamicArrayInput:
+			values := make([]any, len(input.Values))
+			for i, input := range input.Values {
+				var err error
+				values[i], err = convert(input)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return values, nil
+		default:
+			return input, nil
+		}
+	}
+	values := map[string]any{}
+	for _, input := range inputs {
+		value, err := convert(input.Value)
+		if err != nil {
+			return nil, err
+		}
+		values[input.Name] = value
+	}
+	return json.Marshal(values)
 }
 
 // Object inputs need recipes on another engine. Scalar strings remain opaque.
@@ -603,42 +719,11 @@ func evaluateArtifact(ctx context.Context, artifact *core.Artifact, dest any, in
 }
 
 func (*artifactsSchema) arguments(_ context.Context, artifact *core.Artifact, _ struct{}) (dagql.ObjectResultArray[*core.FunctionArg], error) {
-	if artifact.Node != nil && artifact.Node.Parent != nil {
-		if obj := artifact.Node.Parent.ObjectType(); obj != nil {
-			if fn, ok := obj.FunctionByName(artifact.Node.Name); ok {
-				return fn.Args, nil
-			}
-		}
-	}
-	return dagql.ObjectResultArray[*core.FunctionArg]{}, nil
+	return artifact.Arguments(), nil
 }
 
-func artifactInputs(ctx context.Context, artifact *core.Artifact, raw core.JSON) ([]dagql.NamedInput, error) {
-	var values map[string]any
-	if err := json.Unmarshal(raw, &values); err != nil {
-		return nil, fmt.Errorf("artifact arguments: %w", err)
-	}
-	if len(values) == 0 {
-		return nil, nil
-	}
-	args, _ := (&artifactsSchema{}).arguments(ctx, artifact, struct{}{})
-	inputs := make([]dagql.NamedInput, 0, len(values))
-	for _, arg := range args {
-		value, ok := values[arg.Self().Name]
-		if !ok {
-			continue
-		}
-		input, err := arg.Self().TypeDef.Self().ToInput().Decoder().DecodeInput(value)
-		if err != nil {
-			return nil, fmt.Errorf("argument %s: %w", arg.Self().Name, err)
-		}
-		inputs = append(inputs, dagql.NamedInput{Name: arg.Self().Name, Value: input})
-		delete(values, arg.Self().Name)
-	}
-	if len(values) != 0 {
-		return nil, fmt.Errorf("unknown artifact arguments: %v", values)
-	}
-	return inputs, nil
+func artifactInputs(_ context.Context, artifact *core.Artifact, raw core.JSON) ([]dagql.NamedInput, error) {
+	return core.ArtifactInputs(artifact, raw)
 }
 
 func (*artifactsSchema) withoutURI(_ context.Context, parent *core.Artifacts, args struct{ URI string }) (*core.Artifacts, error) {
@@ -968,8 +1053,33 @@ func (*artifactsSchema) loadError(_ context.Context, artifact *core.Artifact, _ 
 	return "", nil
 }
 
-func (*artifactsSchema) asExpertise(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Expertise], error) {
-	return artifactValuesAs[*core.Expertise](ctx, parent)
+func (*artifactsSchema) asExpertise(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], args asExpertiseArgs) (dagql.ObjectResultArray[*core.Expertise], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var items dagql.ObjectResultArray[*core.Artifact]
+	if err := srv.Select(ctx, parent, &items, dagql.Selector{Field: "items"}); err != nil {
+		return nil, err
+	}
+	selected := make(dagql.ObjectResultArray[*core.Artifact], 0, len(items))
+	for _, item := range items {
+		_, err := core.NewExpertise(item.Self(), args.Arguments)
+		if err != nil {
+			if args.SkipUnbound && errors.Is(err, core.ErrUnboundExpertise) {
+				continue
+			}
+			return nil, err
+		}
+		selected = append(selected, item)
+	}
+	values := make(dagql.ObjectResultArray[*core.Expertise], len(selected))
+	for i, item := range selected {
+		if err := selectArtifactExpertise(ctx, srv, item, item.Self(), args.Arguments, &values[i]); err != nil {
+			return nil, err
+		}
+	}
+	return values, nil
 }
 func (*artifactsSchema) asGenerators(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Generator], error) {
 	return artifactValuesAs[*core.Generator](ctx, parent)

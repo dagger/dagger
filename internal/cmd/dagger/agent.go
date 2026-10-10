@@ -368,13 +368,25 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cm
 		return "", err
 	}
 	selection := all.FilterTypes([]string{"Expertise"})
-	expertise, err := selection.AsExpertise(ctx)
+	selectionID, err := selection.ID(ctx)
 	if err != nil {
 		return "", err
 	}
-	refs := make([]*core.Expertise, len(expertise))
-	for i := range expertise {
-		refs[i] = &expertise[i]
+	var selected struct {
+		Node struct{ AsExpertise []struct{ ID core.ID } }
+	}
+	// Parameterized entrypoints remain discoverable, but default composition
+	// cannot supply their required bindings. Explicit asExpertise is strict.
+	err = dag.Do(ctx, &dagger.Request{
+		Query:     `query($selection: ID!) { node(id: $selection) { ... on Artifacts { asExpertise(skipUnbound: true) { id } } } }`,
+		Variables: map[string]any{"selection": selectionID},
+	}, &dagger.Response{Data: &selected})
+	if err != nil {
+		return "", err
+	}
+	refs := make([]*core.Expertise, len(selected.Node.AsExpertise))
+	for i, entry := range selected.Node.AsExpertise {
+		refs[i] = core.Ref[*core.Expertise](core.NewQuery(dag), entry.ID)
 	}
 	id, err := core.NewQuery(dag).LLM().WithWorkspace(workspace).Compose(refs).ID(ctx)
 	return string(id), err
