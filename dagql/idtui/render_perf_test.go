@@ -184,6 +184,18 @@ func TestStreamingRecalcPacing(t *testing.T) {
 		require.NotNil(t, fe.rows.BySpan[id])
 	})
 
+	t.Run("the HTTP console is never paced", func(t *testing.T) {
+		// consoleSettle returns once the frame stops changing; a deferred
+		// recalculation would make it return a stale one.
+		fe.console = "127.0.0.1:0"
+		defer func() { fe.console = "" }()
+		paceNext()
+		id := stream()
+		fe.tui.Frame()
+		require.False(t, fe.viewDirty)
+		require.NotNil(t, fe.rows.BySpan[id])
+	})
+
 	t.Run("a scheduled wakeup can be canceled", func(t *testing.T) {
 		fe.stopRecalcWakeupLocked()
 		paceNext()

@@ -4565,9 +4565,13 @@ var defaultRecalcPacing = recalcPacing{
 
 // recalcWaitLocked returns how much longer a data-driven recalculation should
 // be deferred, or <= 0 if it's due now.
+//
+// The HTTP console (DAGGER_TUI_CONSOLE) is never paced: consoleSettle returns
+// a frame once it stops changing, so a deferred recalculation would hand back
+// a stable but stale frame instead of the one a key or fetch produced.
 func (fe *frontendPretty) recalcWaitLocked(now time.Time) time.Duration {
 	pacing := fe.recalcPacing
-	if fe.viewUrgent || fe.finalRender || fe.reportOnly || fe.db == nil ||
+	if fe.viewUrgent || fe.finalRender || fe.reportOnly || fe.console != "" || fe.db == nil ||
 		fe.lastRecalcCost < pacing.minCost ||
 		len(fe.db.Spans.Order) < pacing.minSpans {
 		return 0
