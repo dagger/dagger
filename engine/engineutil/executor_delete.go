@@ -1,9 +1,12 @@
 package engineutil
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -50,7 +53,70 @@ func killContainerCgroup(ctx context.Context, id, cgroupPath string) error {
 	if !validContainerCgroupPath(id, path) {
 		return fmt.Errorf("refusing cgroup recovery for container %q at %q", id, path)
 	}
-	return killAndDrainCgroup(ctx, path, cgroups.WriteFile, cgroups.ReadFile)
+	if err := killAndDrainCgroup(ctx, path, cgroups.WriteFile, cgroups.ReadFile); err != nil {
+		return fmt.Errorf("%w (still in cgroup: %s)", err, describeCgroupTasks(path))
+	}
+	return nil
+}
+
+// describeCgroupTasks names what survived a cgroup kill: a task only
+// outlives SIGKILL while it sleeps uninterruptibly in the kernel, so each
+// such thread is reported with its kernel stack.
+func describeCgroupTasks(path string) string {
+	const maxProcs, maxStackLines = 8, 12
+	var procs []string
+	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() != "cgroup.procs" {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		procs = append(procs, strings.Fields(string(data))...)
+		return nil
+	})
+	if len(procs) == 0 {
+		return "no processes"
+	}
+	var out []string
+	for i, pid := range procs {
+		if i == maxProcs {
+			out = append(out, fmt.Sprintf("%d more", len(procs)-maxProcs))
+			break
+		}
+		comm, _ := os.ReadFile(filepath.Join("/proc", pid, "comm"))
+		desc := fmt.Sprintf("pid %s (%s)", pid, strings.TrimSpace(string(comm)))
+		tids, _ := os.ReadDir(filepath.Join("/proc", pid, "task"))
+		for _, tid := range tids {
+			taskDir := filepath.Join("/proc", pid, "task", tid.Name())
+			if procTaskState(taskDir) != "D" {
+				continue
+			}
+			stack, _ := os.ReadFile(filepath.Join(taskDir, "stack"))
+			lines := strings.Split(strings.TrimSpace(string(stack)), "\n")
+			if len(lines) > maxStackLines {
+				lines = lines[:maxStackLines]
+			}
+			desc += fmt.Sprintf("; thread %s uninterruptible in [%s]", tid.Name(), strings.Join(lines, " <- "))
+		}
+		out = append(out, desc)
+	}
+	return strings.Join(out, ", ")
+}
+
+// procTaskState returns the one-letter state from a /proc task's stat. The
+// command name is parenthesized and may contain spaces, so parse after it.
+func procTaskState(taskDir string) string {
+	stat, err := os.ReadFile(filepath.Join(taskDir, "stat"))
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(stat[bytes.LastIndexByte(stat, ')')+1:]))
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
 }
 
 // Only accept an execution's container child. Matching an ID
