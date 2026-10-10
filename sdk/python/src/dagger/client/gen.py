@@ -2184,11 +2184,18 @@ class Artifacts(Type):
         _ctx = self._select("asChecks", _args)
         return await _ctx.execute_object_list(Check)
 
-    async def as_expertise(self) -> list["Expertise"]:
-        """Convert the selection to expertise without running the functions. Fail
-        if any artifact is not a source of expertise.
+    async def as_expertise(self, *, arguments: JSON | None = "{}") -> list["Expertise"]:
+        """Convert the selection to expertise without running it, binding these
+        arguments. Fail if a selected agent's required arguments are unbound.
+
+        Parameters
+        ----------
+        arguments:
+            Field arguments besides the conversation, as a JSON object.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("arguments", arguments, "{}"),
+        ]
         _ctx = self._select("asExpertise", _args)
         return await _ctx.execute_object_list(Expertise)
 
@@ -8264,7 +8271,35 @@ class ErrorValue(Type):
 
 @typecheck
 class Expertise(Type):
-    """An agent function that can modify a conversation."""
+    """An agent function with bound arguments that can modify a
+    conversation."""
+
+    async def arguments(self) -> JSON:
+        """Bound arguments besides the conversation, as canonical JSON. Object
+        IDs use portable recipes when available; session-only values retain
+        their handles.
+
+        Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("arguments", _args)
+        return await _ctx.execute(JSON)
+
+    def artifact(self) -> Artifact:
+        """The artifact this expertise runs."""
+        _args: list[Arg] = []
+        _ctx = self._select("artifact", _args)
+        return Artifact(_ctx)
 
     async def description(self) -> str:
         """The agent function's description.
@@ -12254,8 +12289,9 @@ class LLM(Type):
         return Artifacts(_ctx)
 
     def compose(self, expertise: list[Expertise]) -> Self:
-        """Run expertise in list order, passing this conversation through each
-        function. Retain existing contributions.
+        """Run and record expertise in list order, retaining existing
+        contributions. An entry with the same artifact address and canonical
+        bound arguments must not already be composed.
 
         Parameters
         ----------
@@ -12311,6 +12347,15 @@ class LLM(Type):
         _args: list[Arg] = []
         _ctx = self._select("contextWindow", _args)
         return await _ctx.execute(int | None)
+
+    async def expertise(self) -> list[Expertise]:
+        """Expertise composed into this conversation, in order, with bound
+        arguments. Nested composition belongs to its outer entry and is not
+        recorded separately.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("expertise", _args)
+        return await _ctx.execute_object_list(Expertise)
 
     def fork(self, label: str) -> Self:
         """Fork the conversation, so that otherwise-identical follow-ups evaluate
@@ -12497,12 +12542,15 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     def recompose(self, expertise: list[Expertise]) -> Self:
-        """Run expertise in list order, replacing their modules' contributions
-        and preserving compatible tool state.
+        """Run expertise in list order, replacing contributions of matching
+        recorded entries and preserving compatible tool state. Record and run
+        new entries; leave unmentioned entries untouched.
 
-        Clear each selected module's contributions once before execution.
-        Retain unowned contributions and contributions from other modules.
-        Keep this LLM's workspace.
+        Entry identity is its artifact address with dimension keys and
+        canonical bound arguments. Contributions made transitively while an
+        entry runs belong to that entry, including nested composition.
+        Contributions made outside an entry are unowned and retained. Keep
+        this LLM's workspace.
 
         A change to a tool binding's version resets its state. Removed
         bindings, changed identities, and incompatible state are errors.

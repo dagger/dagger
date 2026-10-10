@@ -303,6 +303,13 @@ export function ArtifactDimensionKindNameToValue(
       return name as ArtifactDimensionKind
   }
 }
+export type ArtifactsAsExpertiseOpts = {
+  /**
+   * Field arguments besides the conversation, as a JSON object.
+   */
+  arguments?: JSON
+}
+
 export type ArtifactsFilterDirectivesOpts = {
   /**
    * Remove the matching artifacts instead.
@@ -5662,14 +5669,17 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+   * Convert the selection to expertise without running it, binding these arguments. Fail if a selected agent's required arguments are unbound.
+   * @param opts.arguments Field arguments besides the conversation, as a JSON object.
    */
-  asExpertise = async (): Promise<Expertise[]> => {
+  asExpertise = async (
+    opts?: ArtifactsAsExpertiseOpts,
+  ): Promise<Expertise[]> => {
     type asExpertise = {
       id: ID
     }
 
-    const ctx = this._ctx.select("asExpertise").select("id")
+    const ctx = this._ctx.select("asExpertise", { ...opts }).select("id")
 
     const response: Awaited<asExpertise[]> = await ctx.execute()
 
@@ -10075,20 +10085,28 @@ export class ErrorValue extends BaseClient {
 }
 
 /**
- * An agent function that can modify a conversation.
+ * An agent function with bound arguments that can modify a conversation.
  */
 export class Expertise extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _arguments?: JSON = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _arguments?: JSON,
+    _description?: string,
+    _name?: string,
+  ) {
     super(ctx)
 
     this._id = _id
+    this._arguments = _arguments
     this._description = _description
     this._name = _name
   }
@@ -10106,6 +10124,29 @@ export class Expertise extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Bound arguments besides the conversation, as canonical JSON. Object IDs use portable recipes when available; session-only values retain their handles.
+   */
+  arguments_ = async (): Promise<JSON> => {
+    if (this._arguments) {
+      return this._arguments
+    }
+
+    const ctx = this._ctx.select("arguments")
+
+    const response: Awaited<JSON> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The artifact this expertise runs.
+   */
+  artifact = (): Artifact => {
+    const ctx = this._ctx.select("artifact")
+    return new Artifact(ctx)
   }
 
   /**
@@ -13353,7 +13394,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+   * Run and record expertise in list order, retaining existing contributions. An entry with the same artifact address and canonical bound arguments must not already be composed.
    * @param expertise The expertise to run. Each reference retains its source workspace.
    */
   compose = (expertise: Expertise[]): LLM => {
@@ -13389,6 +13430,23 @@ export class LLM extends BaseClient {
     const response: Awaited<number> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Expertise composed into this conversation, in order, with bound arguments. Nested composition belongs to its outer entry and is not recorded separately.
+   */
+  expertise = async (): Promise<Expertise[]> => {
+    type expertise = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("expertise").select("id")
+
+    const response: Awaited<expertise[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new Expertise(ctx.copy().selectNode(r.id, "Expertise")),
+    )
   }
 
   /**
@@ -13503,9 +13561,9 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
+   * Run expertise in list order, replacing contributions of matching recorded entries and preserving compatible tool state. Record and run new entries; leave unmentioned entries untouched.
    *
-   * Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
+   * Entry identity is its artifact address with dimension keys and canonical bound arguments. Contributions made transitively while an entry runs belong to that entry, including nested composition. Contributions made outside an entry are unowned and retained. Keep this LLM's workspace.
    *
    * A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
    * @param expertise The expertise to run. Each reference retains its source workspace.

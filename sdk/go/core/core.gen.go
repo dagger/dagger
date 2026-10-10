@@ -1893,9 +1893,23 @@ func (r *Artifacts) AsChecks(ctx context.Context) ([]Check, error) {
 	return convert(response), nil
 }
 
-// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
-func (r *Artifacts) AsExpertise(ctx context.Context) ([]Expertise, error) {
+// ArtifactsAsExpertiseOpts contains options for Artifacts.AsExpertise
+type ArtifactsAsExpertiseOpts struct {
+	// Field arguments besides the conversation, as a JSON object.
+	//
+	// Default: "{}"
+	Arguments JSON
+}
+
+// Convert the selection to expertise without running it, binding these arguments. Fail if a selected agent's required arguments are unbound.
+func (r *Artifacts) AsExpertise(ctx context.Context, opts ...ArtifactsAsExpertiseOpts) ([]Expertise, error) {
 	q := r.query.Select("asExpertise")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `arguments` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Arguments) {
+			q = q.Arg("arguments", opts[i].Arguments)
+		}
+	}
 
 	q = q.Select("id")
 
@@ -8989,7 +9003,7 @@ func (r *ErrorValue) AsNode() Node {
 	}
 }
 
-// An agent function that can modify a conversation.
+// An agent function with bound arguments that can modify a conversation.
 type Expertise struct {
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
@@ -8997,6 +9011,7 @@ type Expertise struct {
 	// field again.
 	refetchID bool
 
+	arguments   *JSON
 	description *string
 	id          *ID
 	name        *string
@@ -9008,6 +9023,29 @@ func (r *Expertise) WithGraphQLQuery(q *querybuilder.Selection) *Expertise {
 		// The query's origin is unknown: it may go through a field that
 		// must be reevaluated.
 		refetchID: true,
+	}
+}
+
+// Bound arguments besides the conversation, as canonical JSON. Object IDs use portable recipes when available; session-only values retain their handles.
+func (r *Expertise) Arguments(ctx context.Context) (JSON, error) {
+	if r.arguments != nil {
+		return *r.arguments, nil
+	}
+	q := r.query.Select("arguments")
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The artifact this expertise runs.
+func (r *Expertise) Artifact() *Artifact {
+	q := r.query.Select("artifact")
+
+	return &Artifact{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -13714,7 +13752,7 @@ func (r *LLM) Artifacts(opts ...LLMArtifactsOpts) *Artifacts {
 	}
 }
 
-// Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+// Run and record expertise in list order, retaining existing contributions. An entry with the same artifact address and canonical bound arguments must not already be composed.
 func (r *LLM) Compose(expertise []*Expertise) *LLM {
 	q := r.query.Select("compose")
 	q = q.Arg("expertise", expertise)
@@ -13749,6 +13787,39 @@ func (r *LLM) ContextWindow(ctx context.Context) (int, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Expertise composed into this conversation, in order, with bound arguments. Nested composition belongs to its outer entry and is not recorded separately.
+func (r *LLM) Expertise(ctx context.Context) ([]Expertise, error) {
+	q := r.query.Select("expertise")
+
+	q = q.Select("id")
+
+	type expertise struct {
+		Id ID
+	}
+
+	convert := func(fields []expertise) []Expertise {
+		out := []Expertise{}
+
+		for i := range fields {
+			val := Expertise{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Expertise")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []expertise
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
@@ -13934,9 +14005,9 @@ func (r *LLM) ReasoningEffort(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
+// Run expertise in list order, replacing contributions of matching recorded entries and preserving compatible tool state. Record and run new entries; leave unmentioned entries untouched.
 //
-// Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
+// Entry identity is its artifact address with dimension keys and canonical bound arguments. Contributions made transitively while an entry runs belong to that entry, including nested composition. Contributions made outside an entry are unowned and retained. Keep this LLM's workspace.
 //
 // A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
 func (r *LLM) Recompose(expertise []*Expertise) *LLM {

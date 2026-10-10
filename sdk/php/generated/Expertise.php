@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * An agent function that can modify a conversation.
+ * An agent function with bound arguments that can modify a conversation.
  */
 class Expertise extends Client\AbstractObject implements Client\IdAble, Node
 {
@@ -20,6 +20,24 @@ class Expertise extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * The artifact this expertise runs.
+     */
+    public function artifact(): Artifact
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('artifact');
+        return new \Dagger\Artifact($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Bound arguments besides the conversation, as canonical JSON. Object IDs use portable recipes when available; session-only values retain their handles.
+     */
+    public function arguments(): Json
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('arguments');
+        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'arguments'));
     }
 
     /**

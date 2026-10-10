@@ -23,7 +23,16 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+     * Expertise composed into this conversation, in order, with bound arguments. Nested composition belongs to its outer entry and is not recorded separately.
+     */
+    public function expertise(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('expertise');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'expertise');
+    }
+
+    /**
+     * Run and record expertise in list order, retaining existing contributions. An entry with the same artifact address and canonical bound arguments must not already be composed.
      */
     public function compose(array $expertise): LLM
     {
@@ -33,9 +42,9 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
+     * Run expertise in list order, replacing contributions of matching recorded entries and preserving compatible tool state. Record and run new entries; leave unmentioned entries untouched.
      *
-     * Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
+     * Entry identity is its artifact address with dimension keys and canonical bound arguments. Contributions made transitively while an entry runs belong to that entry, including nested composition. Contributions made outside an entry are unowned and retained. Keep this LLM's workspace.
      *
      * A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
      */

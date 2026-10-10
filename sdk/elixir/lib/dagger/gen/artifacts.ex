@@ -62,12 +62,16 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
-  Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+  Convert the selection to expertise without running it, binding these arguments. Fail if a selected agent's required arguments are unbound.
   """
-  @spec as_expertise(t()) :: {:ok, [Dagger.Expertise.t()]} | {:error, term()}
-  def as_expertise(%__MODULE__{} = artifacts) do
+  @spec as_expertise(t(), [{:arguments, Dagger.JSON.t() | nil}]) ::
+          {:ok, [Dagger.Expertise.t()]} | {:error, term()}
+  def as_expertise(%__MODULE__{} = artifacts, optional_args \\ []) do
     query_builder =
-      artifacts.query_builder |> QB.select("asExpertise") |> QB.select("id")
+      artifacts.query_builder
+      |> QB.select("asExpertise")
+      |> QB.maybe_put_arg("arguments", optional_args[:arguments])
+      |> QB.select("id")
 
     with {:ok, items} <- Client.execute(artifacts.client, query_builder) do
       {:ok,

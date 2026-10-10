@@ -23,11 +23,14 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+     * Convert the selection to expertise without running it, binding these arguments. Fail if a selected agent's required arguments are unbound.
      */
-    public function asExpertise(): array
+    public function asExpertise(?Json $arguments = null): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asExpertise');
+        if (null !== $arguments) {
+        $leafQueryBuilder->setArgument('arguments', $arguments);
+        }
         return (array)$this->queryLeaf($leafQueryBuilder, 'asExpertise');
     }
 
