@@ -581,6 +581,9 @@ type SpanTreeView struct {
 
 	// parent points to the parent SpanTreeView (nil for top-level nodes).
 	parent *SpanTreeView
+	// tree is the TraceTree this view renders, set by whoever syncs it (see
+	// syncTreeNodeInScope).
+	tree *dagui.TraceTree
 	// indexInParent is this node's position in parent.children (or in
 	// fe.topTrees for top-level nodes).
 	indexInParent int
@@ -5713,6 +5716,7 @@ func (fe *frontendPretty) syncSpanTreeState() {
 		}
 		st := fe.getOrCreateSpanTree(span.ID)
 		st.parent = nil
+		st.tree = tree
 		st.indexInParent = i
 		fe.syncTreeNode(st, prefix)
 		newTops = append(newTops, st)
@@ -5811,7 +5815,10 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 	}
 
 	// Sync children for expanded nodes
-	tree := rowsView.BySpan[st.spanID]
+	tree := st.tree
+	if tree == nil && rowsView != nil {
+		tree = rowsView.BySpan[st.spanID]
+	}
 	if tree == nil || !tree.IsExpanded(opts) {
 		// Collapsed: clear children so they get dismounted on next render
 		if len(st.children) > 0 {
@@ -5822,10 +5829,7 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 	}
 
 	// Determine visible children
-	childTrees := tree.Children
-	if tree.ShouldShowRevealedSpans(opts) {
-		childTrees = tree.Revealed
-	}
+	childTrees := tree.VisibleChildren(opts)
 
 	// Compute the gap prefix for lines between this node's children.
 	// This is the ancestor bars + this node's own bar column (always
@@ -5862,6 +5866,7 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 			}
 		}
 		child.parent = st
+		child.tree = childTree
 		child.indexInParent = i
 
 		// Compute child prefix
@@ -7724,8 +7729,8 @@ func (fe *frontendPretty) closeOrGoOut() {
 	if !fe.FocusedSpan.IsValid() {
 		return
 	}
-	tree := fe.rowsView.BySpan[fe.FocusedSpan]
-	if tree == nil || !tree.IsExpanded(fe.FrontendOpts) {
+	row := fe.rows.BySpan[fe.FocusedSpan]
+	if row == nil || !row.Expanded {
 		// already closed; move up
 		fe.goOut()
 		return
@@ -7738,8 +7743,7 @@ func (fe *frontendPretty) openOrGoIn() {
 	if !fe.FocusedSpan.IsValid() {
 		return
 	}
-	tree := fe.rowsView.BySpan[fe.FocusedSpan]
-	if tree != nil && tree.IsExpanded(fe.FrontendOpts) {
+	if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil && row.Expanded {
 		// already expanded; go in
 		fe.goIn()
 		return
@@ -8324,7 +8328,9 @@ func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer,
 }
 
 func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, rootCause *dagui.Span, statusHost statusIconHost) {
-	rootCauseTree := fe.rowsView.BySpan[rootCause.ID]
+	// The origin's home tree, for the breadcrumb of trees above it; the view
+	// may not have built it, e.g. beneath a collapsed row.
+	rootCauseTree := fe.rowsView.HomeTree(rootCause)
 	if rootCauseTree == nil {
 		// error origin has no tree, likely due to internal/hidden spans
 		// create a synthetic tree by walking span parents
