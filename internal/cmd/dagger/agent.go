@@ -156,12 +156,21 @@ func resumeServable(ctx context.Context, source archiveLookup, traceID string, c
 	// the still-connected engine must not delay exit.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
+	start := time.Now()
 	_, err := source.Unsealed(ctx, traceID)
 	var requestErr *archive.RequestError
 	if err == nil || (errors.As(err, &requestErr) && requestErr.Kind == archive.ErrorState) {
 		return true
 	}
-	return cloudConfigured(ctx)
+	if cloudConfigured(ctx) {
+		return true
+	}
+	attrs := []any{"traceID", traceID, "elapsed", time.Since(start), "err", err}
+	if requestErr != nil {
+		attrs = append(attrs, "status", requestErr.StatusCode, "state", requestErr.State)
+	}
+	slog.Debug("no resume hint: neither the engine nor Cloud can serve the trace", attrs...)
+	return false
 }
 
 // cloudTraceConfigured reports whether this run publishes its trace to Dagger
