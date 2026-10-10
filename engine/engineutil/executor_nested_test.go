@@ -24,6 +24,10 @@ type nestedTransportSessionHandler struct {
 	served     atomic.Int32
 }
 
+func (handler *nestedTransportSessionHandler) ExpectNestedExecAttachables(string, string) (func(error), func(), error) {
+	return func(error) {}, func() {}, nil
+}
+
 func (handler *nestedTransportSessionHandler) RegisterNestedClientTransportForExec(
 	_ context.Context,
 	metadata *engine.ClientMetadata,
@@ -327,6 +331,46 @@ func TestContainerNestedTransportManagerJoinsInFlightRegistration(t *testing.T) 
 		require.Same(t, outcome.transport, joined.transport)
 	}
 	require.Equal(t, int32(1), handler.registered.Load(), "concurrent requests for one ID must register once")
+}
+
+func TestContainerNestedTransportManagerCanceledRequestStopsWaiting(t *testing.T) {
+	t.Parallel()
+
+	handler := &gatedRegistrationHandler{
+		entered: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+	manager := newNestedClientTransportManager(t.Context(), handler, &engine.ClientMetadata{
+		SessionID: "session",
+		ClientID:  "proxy-template",
+	}, "parent")
+
+	// The registration waits for the exec's session helper; the request that
+	// started it is canceled meanwhile.
+	ctx, cancel := context.WithCancel(t.Context())
+	canceled := make(chan transportOutcome, 1)
+	go func() {
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/query", nil)
+		req.Header = (engine.ClientMetadata{ClientID: "first"}).AppendToHTTPHeaders(req.Header)
+		transport, _, status, err := manager.transportForRequest(req)
+		canceled <- transportOutcome{transport: transport, status: status, err: err}
+	}()
+	<-handler.entered
+	cancel()
+	select {
+	case outcome := <-canceled:
+		require.ErrorIs(t, outcome.err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("a canceled request kept waiting for the registration")
+	}
+
+	// The registration carries on for the requests that share it.
+	joiner := requestNestedTransport(manager, "first")
+	close(handler.release)
+	outcome := <-joiner
+	require.NoError(t, outcome.err)
+	require.False(t, outcome.transport.Closed())
+	require.Equal(t, int32(1), handler.registered.Load())
 }
 
 func TestContainerNestedTransportManagerDoesNotCacheFailedRegistration(t *testing.T) {

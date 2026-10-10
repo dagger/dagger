@@ -148,6 +148,12 @@ type execState struct {
 	// profiling): the op nested clients of this exec are linked to.
 	profExecOpID uint64
 
+	// sessionHelperStatus carries /.init's report that a nested client's
+	// session helper failed, and failSessionHelper fails the waits for its
+	// attachables with it (both nil unless /.init starts a helper).
+	sessionHelperStatus *sessionHelperStatus
+	failSessionHelper   func(error)
+
 	doneErr error
 	done    chan struct{}
 }
@@ -1275,6 +1281,24 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	transports.profExecOpID = state.profExecOpID
 	state.cleanups.Add("close nested client transports", cleanups.Infallible(transports.Close))
 
+	// /.init starts the session helper alongside the command rather than
+	// before it, so the client's queries wait for its attachables. Without
+	// /.init nothing starts a helper, and the default wait applies.
+	if state.execMD == nil || !state.execMD.NoInit {
+		fail, done, err := c.SessionHandler.ExpectNestedExecAttachables(state.nestedClientMetadata.SessionID, state.nestedClientMetadata.ClientID)
+		if err != nil {
+			return fmt.Errorf("expect nested client attachables: %w", err)
+		}
+		state.cleanups.Add("end nested client attachables wait", cleanups.Infallible(done))
+		status, err := newSessionHelperStatus()
+		if err != nil {
+			return err
+		}
+		state.cleanups.Add("close session helper status", cleanups.Infallible(status.close))
+		state.sessionHelperStatus = status
+		state.failSessionHelper = fail
+	}
+
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
 	state.cleanups.Add("cancel session server", cleanups.Infallible(func() {
 		srvCancel(errors.New("container cleanup"))
@@ -1442,7 +1466,7 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	}
 	if client, ok := manager.transports[clientID]; ok {
 		manager.mu.Unlock()
-		return client.await()
+		return client.await(req.Context())
 	}
 
 	// The request chooses only its fresh logical client ID. Session identity,
@@ -1457,6 +1481,17 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	manager.transports[clientID] = client
 	manager.mu.Unlock()
 
+	// The registration can wait for the exec's session helper, which starts
+	// alongside the command, so it runs for the exec rather than this request:
+	// a canceled request stops waiting without failing the registration for
+	// the requests that share it.
+	go manager.register(client)
+	return client.await(req.Context())
+}
+
+// register registers client's transport with the session and records the
+// outcome on client.
+func (manager *nestedClientTransportManager) register(client *nestedClientTransport) {
 	// Register without holding manager.mu. Close runs from exec cleanup, which
 	// can itself be waited on by the session that serves this registration, so
 	// the server call must never be able to block Close. Concurrent requests
@@ -1464,7 +1499,7 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	// registration.
 	transport, err := manager.sessionHandler.RegisterNestedClientTransportForExec(
 		manager.registrationCtx,
-		&metadata,
+		client.metadata,
 		manager.parentClientID,
 		manager.baseMetadata.ClientID,
 	)
@@ -1474,22 +1509,22 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 		// Registration is an exact, one-time binding. A failure must not send an
 		// SSE client into a retry loop or fall through to any other client, and
 		// it is not cached: a later request for the same ID registers again.
-		if manager.transports[clientID] == client {
-			delete(manager.transports, clientID)
+		if manager.transports[client.metadata.ClientID] == client {
+			delete(manager.transports, client.metadata.ClientID)
 		}
 		client.err = fmt.Errorf("register nested client transport: %w", err)
 		close(client.ready)
 		manager.mu.Unlock()
-		return nil, nil, http.StatusConflict, client.err
+		return
 	}
 	client.transport = transport
 	closedMeanwhile := manager.closed
-	close(client.ready)
 	manager.mu.Unlock()
 
 	if closedMeanwhile {
 		// Close could not see this transport while the registration was in
-		// flight, so the registering request completes the cleanup.
+		// flight, so the registration completes the cleanup, before any
+		// request can see the transport.
 		transport.Close()
 	}
 	if wcprof.Enabled(manager.registrationCtx) {
@@ -1497,16 +1532,20 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 		// The link is from the exec op itself, not the setupNestedClient phase
 		// the registration context carries: that phase ends before the
 		// container starts, so ops hung under it would sit outside the exec's
-		// run.
-		wcprof.Link(manager.registrationCtx, wcprof.LinkKindNestedClient, manager.profExecOpID, 0, metadata.ClientID, 0)
+		// run. It is recorded before any request can use the client.
+		wcprof.Link(manager.registrationCtx, wcprof.LinkKindNestedClient, manager.profExecOpID, 0, client.metadata.ClientID, 0)
 	}
-	return transport, &metadata, 0, nil
+	close(client.ready)
 }
 
 // await returns the outcome of the registration that created this entry,
-// waiting for it if it is still in flight.
-func (client *nestedClientTransport) await() (*engine.NestedClientTransport, *engine.ClientMetadata, int, error) {
-	<-client.ready
+// waiting for it if it is still in flight, or until ctx is done.
+func (client *nestedClientTransport) await(ctx context.Context) (*engine.NestedClientTransport, *engine.ClientMetadata, int, error) {
+	select {
+	case <-client.ready:
+	case <-ctx.Done():
+		return nil, nil, http.StatusServiceUnavailable, fmt.Errorf("wait for nested client transport: %w", context.Cause(ctx))
+	}
 	if client.err != nil {
 		return nil, nil, http.StatusConflict, client.err
 	}
@@ -1633,7 +1672,14 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 	defer f.Close()
 
-	if err := json.NewEncoder(f).Encode(initTiming.withEnv(state.spec)); err != nil {
+	var initFDs initFDs
+	initFDs.add(distconsts.SessionHelperStatusFDEnv, state.sessionHelperStatus.writeEnd())
+	initFDs.add(distconsts.InitTimingFDEnv, initTiming.writeEnd())
+	if state.sessionHelperStatus != nil {
+		go state.sessionHelperStatus.watch(state.failSessionHelper)
+	}
+
+	if err := json.NewEncoder(f).Encode(initFDs.withEnv(state.spec)); err != nil {
 		return fmt.Errorf("failed to encode spec: %w", err)
 	}
 	f.Close()
@@ -1927,7 +1973,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 				IO:         io,
 				ExtraArgs:  []string{"--keep"},
 				PidFile:    pidFile,
-				ExtraFiles: initTiming.extraFiles(),
+				ExtraFiles: initFDs.files,
 			})
 			return err
 		})

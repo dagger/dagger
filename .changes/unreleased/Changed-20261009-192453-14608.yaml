@@ -1,0 +1,6 @@
+kind: Changed
+body: A nested (Dagger-in-Dagger) exec no longer holds its command until the container's session helper has connected to the engine. The helper starts alongside the command, and the engine waits for it only when the command first calls Dagger. On 100 sequential nested execs this made the chain about 9% faster.
+time: 2026-10-09T19:24:53.000000000Z
+custom:
+    Author: sipsma
+    PR: "14608"

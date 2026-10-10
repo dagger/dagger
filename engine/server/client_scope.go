@@ -44,6 +44,25 @@ func (srv *Server) RegisterNestedClientTransportForExec(
 	return srv.registerNestedClientTransport(ctx, metadata, parentClientID, attachablesClientID)
 }
 
+// ExpectNestedExecAttachables records that a nested exec's session helper
+// will register attachablesClientID's attachables, starting alongside the
+// exec's command. Queries then wait for them as long as the exec runs instead
+// of a fixed timeout. fail reports that the helper will not register them, and
+// done that the exec has ended.
+func (srv *Server) ExpectNestedExecAttachables(sessionID, attachablesClientID string) (fail func(error), done func(), _ error) {
+	srv.daggerSessionsMu.RLock()
+	sess := srv.daggerSessions[sessionID]
+	srv.daggerSessionsMu.RUnlock()
+	if sess == nil {
+		return nil, nil, fmt.Errorf("session %q not found", sessionID)
+	}
+	if sess.attachables == nil {
+		return func(error) {}, func() {}, nil
+	}
+	fail, done = sess.attachables.Expect(attachablesClientID)
+	return fail, done, nil
+}
+
 func (srv *Server) registerNestedClientTransport(
 	ctx context.Context,
 	metadata *engine.ClientMetadata,
@@ -95,6 +114,14 @@ func (srv *Server) registerNestedClientTransport(
 	}
 	if !scope.CanDelegateTo(authority) {
 		return nil, fmt.Errorf("parent client scope does not belong to the current session %q", metadata.SessionID)
+	}
+	// A logical client is bound to its exec's bootstrap client, whose session
+	// helper starts alongside the exec's command: wait for the helper to
+	// connect, as queries do.
+	if attachablesClientID != metadata.ClientID && sess.attachables != nil {
+		if err := sess.attachables.WaitExpected(ctx, attachablesClientID); err != nil {
+			return nil, fmt.Errorf("attachables client %q for nested client %q: %w", attachablesClientID, metadata.ClientID, err)
+		}
 	}
 
 	sess.clientMu.RLock()
