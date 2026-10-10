@@ -699,7 +699,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("WithBase",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Initialize the base Python container\n\nWorkdir is set to the module's source directory.").
-							WithSourceMap(dag.SourceMap("main.go", 322, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 328, 1))).
 					WithFunction(
 						dag.Function("WithBaseImage",
 							dag.TypeDef().WithObject("PythonSdk")).
@@ -716,28 +716,28 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("WithInstall",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Install the module's package and dependencies").
-							WithSourceMap(dag.SourceMap("main.go", 572, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 578, 1))).
 					WithFunction(
 						dag.Function("WithSDK",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Add the SDK package to the source directory\n\nThis includes regenerating the client bindings for the current API schema\n(codegen).").
-							WithSourceMap(dag.SourceMap("main.go", 456, 1)).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 456, 50)})).
+							WithSourceMap(dag.SourceMap("main.go", 462, 1)).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 462, 50)})).
 					WithFunction(
 						dag.Function("WithSource",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Add the module's source code").
-							WithSourceMap(dag.SourceMap("main.go", 518, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 524, 1))).
 					WithFunction(
 						dag.Function("WithTemplate",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Add the template files to skaffold a new module\n\nThe following files are added:\n- /runtime\n- <source>/pyproject.toml\n- <source>/src/<package_name>/__init__.py\n- <source>/src/<package_name>/main.py").
-							WithSourceMap(dag.SourceMap("main.go", 384, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 390, 1))).
 					WithFunction(
 						dag.Function("WithUpdates",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Make any updates to current source").
-							WithSourceMap(dag.SourceMap("main.go", 535, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 541, 1))).
 					WithFunction(
 						dag.Function("WithUv",
 							dag.TypeDef().WithObject("PythonSdk")).

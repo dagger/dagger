@@ -7,27 +7,21 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Khan/genqlient/graphql"
-
 	"python-sdk/internal/dagger"
 )
 
 // Codegen names fields and arguments with names the engine formatted (see
 // hack/designs/identifier-casing.md, "Formatting names in codegen"). It runs
 // without an engine session, so the runtime formats the names of the
-// module's schema here and hands them to codegen as a names file, the same
+// module's schema here, with Query.formatIdentifiers and the version of the
+// schema being generated, and hands them to codegen as a names file, the same
 // sidecar `codegen introspect --names-out` writes for the client.
-//
-// The runtime's own session is served at its engineVersion, which can be
-// older than the module's and lack Query.formatIdentifiers, so it calls
-// Query.__formatIdentifiers, which every view has, with the version of the
-// schema being generated: names are parsed with that version's dictionary.
 
 // namesFormat is the name format codegen reads: snake_case.
 const (
-	namesCasing   = "SNAKE"
-	namesAcronyms = "UPPERCASE"
-	namesFormat   = namesCasing + ":" + namesAcronyms
+	namesCasing   = dagger.CasingSnake
+	namesAcronyms = dagger.AcronymStyleUppercase
+	namesFormat   = string(namesCasing) + ":" + string(namesAcronyms)
 )
 
 // NamesPath is where codegen reads the names file from.
@@ -35,10 +29,6 @@ const NamesPath = "/names.json"
 
 // formatNamesBatchBytes bounds the size of the names sent per request.
 const formatNamesBatchBytes = 256 << 10
-
-const formatNamesQuery = `query FormatIdentifiers($names: [String!]!, $casing: String!, $acronyms: String, $version: String!) {
-  __formatIdentifiers(names: $names, casing: $casing, acronyms: $acronyms, version: $version)
-}`
 
 // introspectionSchema is the part of an introspection result codegen names
 // come from.
@@ -187,25 +177,17 @@ func schemaNamesFile(ctx context.Context, introspectionJSON []byte, format forma
 	return json.Marshal(map[string]map[string]string{namesFormat: formatted})
 }
 
-// formatNamesWithEngine formats names with Query.__formatIdentifiers.
+// formatNamesWithEngine formats names with Query.formatIdentifiers, parsing
+// them with the naming dictionary of version.
 func formatNamesWithEngine(ctx context.Context, names []string, version string) ([]string, error) {
-	var data struct {
-		FormatIdentifiers []string `json:"__formatIdentifiers"`
-	}
-	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
-		Query:  formatNamesQuery,
-		OpName: "FormatIdentifiers",
-		Variables: map[string]any{
-			"names":    names,
-			"casing":   namesCasing,
-			"acronyms": namesAcronyms,
-			"version":  version,
-		},
-	}, &graphql.Response{Data: &data})
+	formatted, err := dag.FormatIdentifiers(ctx, names, namesCasing, dagger.FormatIdentifiersOpts{
+		Acronyms: namesAcronyms,
+		Version:  version,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("format names: %w", err)
 	}
-	return data.FormatIdentifiers, nil
+	return formatted, nil
 }
 
 // codegenNames returns the names file codegen reads for a module's schema,
