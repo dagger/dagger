@@ -140,7 +140,29 @@ func (AgentsSuite) TestDiscoverySkipsUnboundRequiredArg(ctx context.Context, t *
 	_, err = modGen.With(daggerExec("agent", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
 	ws := agentFixtureWorkspace(modGen)
-	llm := composeRecomposeFixture(ctx, t, c, ws, nil)
+	wsID, err := ws.ID(ctx)
+	require.NoError(t, err)
+	var selected struct {
+		Node struct {
+			Artifacts struct {
+				FilterTypes struct{ AsExpertise []struct{ ID core.ID } }
+			}
+		}
+	}
+	// Use the CLI's compose-all discovery mode. Explicit asExpertise calls
+	// remain strict about unbound required arguments.
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query: `query($ws: ID!) { node(id: $ws) { ... on Workspace { artifacts {
+			filterTypes(types: ["Expertise"]) { asExpertise(skipUnbound: true) { id } }
+		} } } }`,
+		Variables: map[string]any{"ws": wsID},
+	}, &dagger.Response{Data: &selected}))
+	var ids []core.ID
+	for _, entry := range selected.Node.Artifacts.FilterTypes.AsExpertise {
+		ids = append(ids, entry.ID)
+	}
+	llm, err := applyExpertiseIDs(ctx, c, core.NewQuery(c).LLM().WithWorkspace(ws), "compose", ids)
+	require.NoError(t, err)
 	entries := recordedExpertise(ctx, t, c, llm)
 	require.Len(t, entries, 1)
 	require.Contains(t, entries[0].Artifact.URI, "editor/agent")

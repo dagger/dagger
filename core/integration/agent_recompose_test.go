@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -1303,7 +1304,18 @@ func (LLMSuite) TestComposeBoundObjectAndCanonicalIdentity(ctx context.Context, 
 	require.Equal(t, []string{"Attached first: " + handle}, recomposeSystemPrompts(ctx, t, c, llm))
 	entries := recordedExpertise(ctx, t, c, llm)
 	require.Len(t, entries, 1)
-	require.JSONEq(t, args, entries[0].Arguments)
+	// Object inputs are canonicalized to portable IDs. Compare the Agent
+	// they resolve to rather than the source session's engine handle encoding.
+	assertBinding := func(arguments, label string) {
+		t.Helper()
+		var bound struct{ Agent, Label string }
+		require.NoError(t, json.Unmarshal([]byte(arguments), &bound))
+		require.Equal(t, label, bound.Label)
+		boundHandle, err := core.Ref[*core.Agent](core.NewQuery(c), core.ID(bound.Agent)).Handle(ctx)
+		require.NoError(t, err)
+		require.Equal(t, handle, boundHandle)
+	}
+	assertBinding(entries[0].Arguments, "first")
 
 	// Whitespace and key order do not create a distinct composition entry.
 	canonicalDuplicate := fmt.Sprintf(`{ "agent": %q, "label": "first" }`, agentID)
@@ -1320,8 +1332,8 @@ func (LLMSuite) TestComposeBoundObjectAndCanonicalIdentity(ctx context.Context, 
 	require.NoError(t, err)
 	entries = recordedExpertise(ctx, t, c, llm)
 	require.Len(t, entries, 2)
-	require.JSONEq(t, args, entries[0].Arguments)
-	require.JSONEq(t, secondArgs, entries[1].Arguments)
+	assertBinding(entries[0].Arguments, "first")
+	assertBinding(entries[1].Arguments, "second")
 
 	// Only the selected binding is refreshed, even within one function/module.
 	source, err := ws.File("../staff/main.dang").Contents(ctx)
