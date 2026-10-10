@@ -93,7 +93,7 @@ class InterfaceVisitor extends AbstractVisitor {
 
         MethodSpec method = methodBuilder.build();
         interfaceBuilder.addMethod(method);
-        // A method renamed by identifier words keeps its old name as a deprecated default
+        // A method renamed by a formatted name keeps its old name as a deprecated default
         // method, so implementations don't need to provide it.
         String legacyName = Helpers.legacyName(field);
         if (!legacyName.equals(method.name()) && !methodNames.contains(legacyName)) {

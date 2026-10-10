@@ -61,7 +61,7 @@ class InputVisitor extends AbstractVisitor {
     for (int i = 0; i < methods.size(); i++) {
       MethodSpec method = methods.get(i);
       classBuilder.addMethod(method);
-      // Accessors renamed by identifier words keep their old names as deprecated aliases.
+      // Accessors renamed by formatted names keep their old names as deprecated aliases.
       String legacyName = legacyNames.get(i);
       if (!legacyName.equals(method.name()) && !methodNames.contains(legacyName)) {
         classBuilder.addMethod(Helpers.deprecatedAlias(method, legacyName));
@@ -90,11 +90,11 @@ class InputVisitor extends AbstractVisitor {
   }
 
   /**
-   * The Java field of an input field: from its identifier words when the schema JSON has them, else
-   * the schema name as is.
+   * The Java field of an input field: its engine-formatted name when there is one, else the schema
+   * name as is.
    */
   private static String fieldName(InputObject inputObject) {
-    if (inputObject.getWords() == null || inputObject.getWords().isEmpty()) {
+    if (inputObject.getFormattedName() == null || inputObject.getFormattedName().isEmpty()) {
       return inputObject.getName();
     }
     return Helpers.formatName(inputObject);

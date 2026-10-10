@@ -154,24 +154,25 @@ public class Helpers {
 
   /**
    * The Java spelling of a field, argument or input field name: camelCase with acronyms written
-   * like words ({@code asJson}, {@code withGpu}) when the schema JSON has the name's words, else
-   * the schema name as is. Strings sent to the API always use the schema name.
+   * like words ({@code asJson}, {@code withGpu}) as the engine formatted it (see {@link
+   * FormattedNames}), else the schema name as is. Strings sent to the API always use the schema
+   * name.
    */
-  static String javaName(String name, List<IdentifierWord> words) {
-    if (words == null || words.isEmpty()) {
+  static String javaName(String name, String formattedName) {
+    if (formattedName == null || formattedName.isEmpty()) {
       return name;
     }
-    return Identifiers.format(words, Identifiers.Casing.CAMEL, true);
+    return formattedName;
   }
 
   /** The Java method name of a field. */
   static String formatName(Field field) {
-    return escapeMethodName(field, javaName(field.getName(), field.getWords()));
+    return escapeMethodName(field, javaName(field.getName(), field.getFormattedName()));
   }
 
   /**
-   * The Java method name of a field before identifier words: the schema name, escaped. When it
-   * differs from {@link #formatName(Field)}, it's kept as a deprecated alias.
+   * The Java method name of a field before engine-formatted names: the schema name, escaped. When
+   * it differs from {@link #formatName(Field)}, it's kept as a deprecated alias.
    */
   static String legacyName(Field field) {
     return escapeMethodName(field, field.getName());
@@ -190,7 +191,7 @@ public class Helpers {
 
   /**
    * The class holding a field's optional arguments. It keeps the name derived from the schema name:
-   * like other class names, it doesn't follow the identifier words, and an alias differing only in
+   * like other class names, it doesn't follow the formatted names, and an alias differing only in
    * case would clash with it on case-insensitive file systems.
    */
   static String argumentsClassName(Field field) {
@@ -199,7 +200,7 @@ public class Helpers {
 
   /** The Java variable name of an argument or input field. */
   static String formatName(InputObject arg) {
-    return escapeVariableName(javaName(arg.getName(), arg.getWords()));
+    return escapeVariableName(javaName(arg.getName(), arg.getFormattedName()));
   }
 
   private static String escapeVariableName(String name) {
@@ -212,16 +213,16 @@ public class Helpers {
 
   /** The name of the "with" setter of an argument or input field. */
   static String withSetterName(InputObject var) {
-    return "with" + capitalize(javaName(var.getName(), var.getWords()));
+    return "with" + capitalize(javaName(var.getName(), var.getFormattedName()));
   }
 
-  /** The name of the "with" setter of an argument or input field before identifier words. */
+  /** The name of the "with" setter of an argument or input field before formatted names. */
   static String legacyWithSetterName(InputObject var) {
     return "with" + capitalize(var.getName());
   }
 
   /**
-   * A deprecated method under a name the generator used before identifier words, forwarding to the
+   * A deprecated method under a name the generator used before formatted names, forwarding to the
    * method that replaces it.
    */
   static MethodSpec deprecatedAlias(MethodSpec target, String legacyName, Modifier... modifiers) {

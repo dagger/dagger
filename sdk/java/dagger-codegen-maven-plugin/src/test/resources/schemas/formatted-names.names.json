@@ -1,0 +1,26 @@
+{
+  "CAMEL:CAPITALIZED": {
+    "Boolean": "boolean",
+    "BuildArg": "buildArg",
+    "Container": "container",
+    "Default": "default",
+    "FunctionCachePolicy": "functionCachePolicy",
+    "ID": "id",
+    "Node": "node",
+    "PerSession": "perSession",
+    "Query": "query",
+    "String": "string",
+    "asJSON": "asJson",
+    "container": "container",
+    "devices": "devices",
+    "htmlURL": "htmlUrl",
+    "id": "id",
+    "import": "import",
+    "insecureSkipTLSVerify": "insecureSkipTlsVerify",
+    "name": "name",
+    "prerequisiteSHAs": "prerequisiteShas",
+    "source": "source",
+    "withGPU": "withGpu",
+    "withMCPServer": "withMcpServer"
+  }
+}

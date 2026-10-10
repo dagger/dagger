@@ -213,7 +213,7 @@ class ObjectVisitor extends AbstractVisitor {
   }
 
   /**
-   * Adds a field's method, and when identifier words renamed it, its old name as a deprecated alias
+   * Adds a field's method, and when a formatted name renamed it, its old name as a deprecated alias
    * (unless another field now has that name).
    */
   private static void addFieldMethod(

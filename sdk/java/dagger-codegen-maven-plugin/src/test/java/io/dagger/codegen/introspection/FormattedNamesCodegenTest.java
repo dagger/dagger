@@ -2,27 +2,25 @@ package io.dagger.codegen.introspection;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import jakarta.json.Json;
-import jakarta.json.JsonObject;
-import jakarta.json.JsonReader;
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Codegen from a schema JSON with identifier words (__identifiers): Java identifiers follow the
- * words, while everything sent to the API keeps the schema's names.
+ * Codegen with names the engine formatted (a names file, as {@code codegen introspect --names-out}
+ * writes it): Java identifiers follow the formatted names, while everything sent to the API keeps
+ * the schema's names.
  */
-class IdentifierWordsCodegenTest {
+class FormattedNamesCodegenTest {
   @TempDir Path output;
 
   @Test
-  void namesJavaIdentifiersFromWords() throws Exception {
-    generate(fixture(true));
+  void namesJavaIdentifiersFromFormattedNames() throws Exception {
+    generate(true);
 
     String container = read("Container");
     // Methods are camelCase with acronyms written like words, and select the schema's fields.
@@ -96,8 +94,8 @@ class IdentifierWordsCodegenTest {
   }
 
   @Test
-  void keepsSchemaNamesWithoutWords() throws Exception {
-    generate(fixture(false));
+  void keepsSchemaNamesWithoutFormattedNames() throws Exception {
+    generate(false);
 
     assertThat(read("Container"))
         .contains("public String htmlURL()")
@@ -118,26 +116,45 @@ class IdentifierWordsCodegenTest {
         .doesNotContain("@Deprecated");
   }
 
-  private void generate(String json) throws Exception {
-    Schema schema =
-        Schema.initialize(
-            new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)), "v1.0.0");
+  @Test
+  void keepsSchemaNamesMissingFromTheNames() throws Exception {
+    Map<String, String> names = names();
+    names.remove("withMCPServer");
+    generate(names);
+
+    // Its argument is still renamed.
+    assertThat(read("Container"))
+        .contains("public Container withMCPServer(String name)")
+        .contains("public static class WithMCPServerArguments")
+        .contains("private Boolean insecureSkipTlsVerify;")
+        .contains("public Container withGpu(List<String> devices)")
+        .doesNotContain("withMcpServer");
+  }
+
+  private void generate(boolean withNames) throws Exception {
+    generate(withNames ? names() : null);
+  }
+
+  private void generate(Map<String, String> names) throws Exception {
+    Schema schema;
+    try (InputStream in = resource("formatted-names.json")) {
+      schema = Schema.initialize(in, "v1.0.0");
+    }
+    schema.setFormattedNames(names);
     schema.visit(new CodegenVisitor(schema, output, StandardCharsets.UTF_8));
+  }
+
+  private static Map<String, String> names() throws Exception {
+    try (InputStream in = resource("formatted-names.names.json")) {
+      return FormattedNames.read(in);
+    }
   }
 
   private String read(String className) throws Exception {
     return Files.readString(output.resolve("io/dagger/client/" + className + ".java"));
   }
 
-  private static String fixture(boolean withWords) throws Exception {
-    try (InputStream in =
-            IdentifierWordsCodegenTest.class.getResourceAsStream("/schemas/identifier-words.json");
-        JsonReader reader = Json.createReader(in)) {
-      JsonObject json = reader.readObject();
-      if (!withWords) {
-        json = Json.createObjectBuilder(json).remove("__identifiers").build();
-      }
-      return json.toString();
-    }
+  private static InputStream resource(String name) {
+    return FormattedNamesCodegenTest.class.getResourceAsStream("/schemas/" + name);
   }
 }

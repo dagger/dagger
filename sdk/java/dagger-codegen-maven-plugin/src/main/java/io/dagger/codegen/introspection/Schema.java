@@ -4,7 +4,6 @@ import static java.util.Comparator.comparing;
 
 import jakarta.json.bind.JsonbBuilder;
 import jakarta.json.bind.annotation.JsonbProperty;
-import jakarta.json.bind.annotation.JsonbTransient;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -22,13 +21,6 @@ public class Schema {
     @JsonbProperty("__schema")
     private Schema schema;
 
-    /**
-     * The words of every name in the schema, keyed by name. Only engine views v1.0.0-0 and above
-     * write it; without it, codegen keeps converting names itself.
-     */
-    @JsonbProperty("__identifiers")
-    private Map<String, List<IdentifierWord>> identifiers;
-
     protected SchemaContainer() {}
 
     public Schema getSchema() {
@@ -37,14 +29,6 @@ public class Schema {
 
     public void setSchema(Schema schema) {
       this.schema = schema;
-    }
-
-    public Map<String, List<IdentifierWord>> getIdentifiers() {
-      return identifiers;
-    }
-
-    public void setIdentifiers(Map<String, List<IdentifierWord>> identifiers) {
-      this.identifiers = identifiers;
     }
   }
 
@@ -60,7 +44,6 @@ public class Schema {
             type.getFields().forEach(field -> field.setParentObject(type));
           }
         });
-    schema.setIdentifiers(container.getIdentifiers());
     schema.version = version;
     return schema;
     // Json.createReader(schema.getJsonObject("__schema").)
@@ -72,36 +55,29 @@ public class Schema {
 
   private List<Type> types;
 
-  @JsonbTransient private Map<String, List<IdentifierWord>> identifiers;
-
   /**
-   * Attaches the words of field, argument and input field names, so they can be formatted as Java
-   * identifiers. A name without an entry keeps today's conversion.
+   * Attaches the Java names the engine formatted (see {@link FormattedNames}) to fields, arguments
+   * and input fields, keyed by schema name. A name without an entry, or a null map (the schema has
+   * no Query.formatIdentifiers), keeps the schema name.
    */
-  void setIdentifiers(Map<String, List<IdentifierWord>> identifiers) {
-    this.identifiers = identifiers;
-    if (identifiers == null || types == null) {
+  public void setFormattedNames(Map<String, String> names) {
+    if (names == null || types == null) {
       return;
     }
     for (Type type : types) {
       if (type.getFields() != null) {
         for (Field field : type.getFields()) {
-          field.setWords(identifiers.get(field.getName()));
+          field.setFormattedName(names.get(field.getName()));
           if (field.getArgs() != null) {
-            field.getArgs().forEach(arg -> arg.setWords(identifiers.get(arg.getName())));
+            field.getArgs().forEach(arg -> arg.setFormattedName(names.get(arg.getName())));
           }
         }
       }
       if (type.getInputFields() != null) {
         type.getInputFields()
-            .forEach(inputField -> inputField.setWords(identifiers.get(inputField.getName())));
+            .forEach(inputField -> inputField.setFormattedName(names.get(inputField.getName())));
       }
     }
-  }
-
-  /** Returns true if the schema JSON has identifier words (engine views v1.0.0-0 and above). */
-  public boolean hasIdentifiers() {
-    return identifiers != null;
   }
 
   public QueryType getQueryType() {

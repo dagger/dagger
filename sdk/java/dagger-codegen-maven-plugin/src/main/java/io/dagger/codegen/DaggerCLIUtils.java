@@ -1,7 +1,7 @@
 package io.dagger.codegen;
 
 import com.ongres.process.FluentProcess;
-import io.dagger.codegen.introspection.IdentifierFetcher;
+import io.dagger.codegen.introspection.FormattedNames;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -45,6 +45,15 @@ public class DaggerCLIUtils {
 
   public static InputStream query(InputStream query, String binPath)
       throws IOException, InterruptedException {
+    return query(query, binPath, null);
+  }
+
+  /**
+   * Runs a GraphQL query with {@code dagger query}, with its variables as JSON (or null), and
+   * returns the response data as JSON.
+   */
+  public static InputStream query(InputStream query, String binPath, String variables)
+      throws IOException, InterruptedException {
     if (query == null) {
       throw new IOException("missing introspection query resource");
     }
@@ -61,7 +70,7 @@ public class DaggerCLIUtils {
     envVars.remove("OTEL_EXPORTER_OTLP_ENDPOINT");
     envVars.remove("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT");
 
-    ProcessBuilder builder = new ProcessBuilder(binPath, "query", "-s", "-M");
+    ProcessBuilder builder = new ProcessBuilder(queryCommand(binPath, variables));
     builder.environment().clear();
     builder.environment().putAll(envVars);
 
@@ -110,20 +119,35 @@ public class DaggerCLIUtils {
     return new ByteArrayInputStream(out.toByteArray());
   }
 
-  /**
-   * Runs the introspection query against the dagger CLI and returns the schema JSON, with the words
-   * of its names under "__identifiers" when the engine provides them (engine views v1.0.0-0 and
-   * above), as in the schema JSON the engine hands to modules.
-   */
-  public static InputStream introspect(Class<?> anchorClass, String binPath)
+  /** The {@code dagger query} command line, passing variables (when not null) as JSON. */
+  static List<String> queryCommand(String binPath, String variables) {
+    List<String> command = new ArrayList<>(List.of(binPath, "query", "-s", "-M"));
+    if (variables != null) {
+      command.add("--var-json");
+      command.add(variables);
+    }
+    return command;
+  }
+
+  /** Runs the introspection query against the dagger CLI and returns the schema JSON. */
+  public static byte[] introspect(Class<?> anchorClass, String binPath)
       throws IOException, InterruptedException {
-    byte[] schema = query(introspectionQuery(anchorClass), binPath).readAllBytes();
-    schema =
-        IdentifierFetcher.addIdentifiers(
-            schema,
-            graphql ->
-                query(new ByteArrayInputStream(graphql.getBytes(StandardCharsets.UTF_8)), binPath));
-    return new ByteArrayInputStream(schema);
+    return query(introspectionQuery(anchorClass), binPath).readAllBytes();
+  }
+
+  /**
+   * Formats the names of a schema through the dagger CLI's engine, for Java identifiers. Returns
+   * null when the schema has no Query.formatIdentifiers (see {@link FormattedNames#fetch}).
+   */
+  public static Map<String, String> formatNames(byte[] schemaJson, String binPath)
+      throws IOException, InterruptedException {
+    return FormattedNames.fetch(
+        schemaJson,
+        (graphql, variables) ->
+            query(
+                new ByteArrayInputStream(graphql.getBytes(StandardCharsets.UTF_8)),
+                binPath,
+                variables));
   }
 
   public static InputStream introspectionQuery(Class<?> anchorClass) throws IOException {
