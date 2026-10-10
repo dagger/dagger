@@ -3566,6 +3566,11 @@ export type ClientFormatIdentifiersOpts = {
    * How to write acronyms and terms where a word starts with a capital.
    */
   acronyms?: AcronymStyle
+
+  /**
+   * The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
+   */
+  version?: string
 }
 
 export type ClientGitOpts = {
@@ -16852,6 +16857,7 @@ export class Client extends BaseClient {
    * @param names The names to format, in any casing.
    * @param casing The casing to format the names in.
    * @param opts.acronyms How to write acronyms and terms where a word starts with a capital.
+   * @param opts.version The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
    * @experimental
    */
   formatIdentifiers = async (
