@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
-using System.Text.Json.Nodes;
+using Dagger.SDK.SourceGenerator.Code;
 using Dagger.SDK.SourceGenerator.Types;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -40,21 +40,18 @@ public static class Fixtures
     }
 
     /// <summary>
-    /// The core schema JSON (descriptions stripped), with the words the
-    /// engine writes to __identifiers.
+    /// The core schema JSON, descriptions stripped. Fixtures/generate.go
+    /// regenerates it from docs/docs-graphql/schema.graphqls.
     /// </summary>
     public static string CoreSchema => Read("core-schema.json");
 
     /// <summary>
-    /// The core schema JSON without __identifiers, as an engine before
-    /// v1.0.0 would write it.
+    /// The names file for the core schema, in the formats the source
+    /// generator reads, as the engine formats them. Fixtures/generate.go
+    /// regenerates it with the engine's naming package.
     /// </summary>
-    public static string CoreSchemaWithoutIdentifiers()
-    {
-        var node = JsonNode.Parse(CoreSchema)!.AsObject();
-        node.Remove("__identifiers");
-        return node.ToJsonString();
-    }
+    public static Dictionary<string, Dictionary<string, string>> CoreNames() =>
+        Namer.ParseNames(Read("core-names.json"));
 
     public static Introspection Parse(string json) =>
         JsonSerializer.Deserialize<Introspection>(json)!;
