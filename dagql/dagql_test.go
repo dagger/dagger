@@ -123,6 +123,37 @@ func newCache(t *testing.T) *dagql.Cache {
 	return baseCache
 }
 
+// The elements of a list of plain values are rendered straight from the list
+// when they're leaves of the query: they get no cache entries of their own,
+// which would cost a copy of the list's call (with its arguments) each.
+func TestLeafListElements(t *testing.T) {
+	cache := newCache(t)
+	srv := newExternalDagqlServerForTest(t, Query{})
+	dagql.Fields[Query]{
+		dagql.Func("echo", func(ctx context.Context, self Query, args struct {
+			Names []string
+		}) (dagql.Array[dagql.Nullable[dagql.String]], error) {
+			out := make(dagql.Array[dagql.Nullable[dagql.String]], len(args.Names))
+			for i, name := range args.Names {
+				if name == "" {
+					out[i] = dagql.Null[dagql.String]()
+				} else {
+					out[i] = dagql.NonNull(dagql.String(name))
+				}
+			}
+			return out, nil
+		}),
+	}.Install(srv)
+	gql := newTestClientWithCache(srv, cache)
+
+	var res struct {
+		Echo []*string
+	}
+	req(t, gql, `query { echo(names: ["a", "", "c"]) }`, &res)
+	assert.DeepEqual(t, []*string{new("a"), nil, new("c")}, res.Echo)
+	assert.Equal(t, 1, cache.Size())
+}
+
 func TestBasic(t *testing.T) {
 	cache := newCache(t)
 	srv := newExternalDagqlServerForTest(t, Query{})
