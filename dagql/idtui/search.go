@@ -16,11 +16,15 @@ type searchMatch struct {
 	toolArgs bool
 }
 
-// buildSearchMatches walks ALL spans in the trace tree (not just visible
-// rows) and populates fe.searchMatches with every hit for the current
-// searchQuery. Reads midterm's cached search results (populated by
-// syncVtermSearchHighlights). Results are ordered by tree position so
-// n/N navigation follows a logical sequence.
+// buildSearchMatches finds every span in the view whose name or logs match
+// the current searchQuery, not just those on visible rows, and populates
+// fe.searchMatches with every hit. Reads midterm's cached search results
+// (populated by syncVtermSearchHighlights). Results are ordered by tree
+// position so n/N navigation follows a logical sequence.
+//
+// The view only builds the trees its rows show, so rather than walk a tree of
+// every span, it looks for matching spans in the DB and builds just the trees
+// on the way down to each (RowsView.HomeTree).
 func (fe *frontendPretty) buildSearchMatches() {
 	fe.searchMatches = fe.searchMatches[:0]
 	fe.searchMatchSpans = make(map[dagui.SpanID]bool)
@@ -31,44 +35,102 @@ func (fe *frontendPretty) buildSearchMatches() {
 
 	query := strings.ToLower(fe.searchQuery)
 
-	// Walk the full tree in depth-first order.
+	// Find the home tree of every span with a match.
+	matched := map[*dagui.TraceTree]bool{}
+	add := func(span *dagui.Span) {
+		if tree := fe.rowsView.HomeTree(span); tree != nil {
+			matched[tree] = true
+		}
+	}
+	for _, span := range fe.searchNameMatches(query) {
+		add(span)
+	}
+	for toolArgs, logs := range map[bool]map[dagui.SpanID]*Vterm{false: fe.logs.Logs, true: fe.logs.ToolArgs} {
+		for spanID, vt := range logs {
+			if len(vt.Term().SearchMatchRows()) == 0 {
+				continue
+			}
+			span := fe.db.Spans.Map[spanID]
+			if span == nil || (toolArgs && fe.spanVerbosity(span) < toolArgsVerbosity) {
+				continue
+			}
+			add(span)
+		}
+	}
+	if len(matched) == 0 {
+		return
+	}
+
+	// Visit them in depth-first order. Every match's tree is built, and so
+	// is the path down to it.
 	var walkTree func(trees []*dagui.TraceTree)
 	walkTree = func(trees []*dagui.TraceTree) {
 		for _, tree := range trees {
 			spanID := tree.Span.ID
 
-			// 1. Span name match.
-			if strings.Contains(strings.ToLower(tree.Span.Name), query) {
-				fe.searchMatches = append(fe.searchMatches, searchMatch{
-					spanID: spanID,
-					logRow: -1,
-				})
-				fe.searchMatchSpans[spanID] = true
-			}
-
-			// 2. Vterm log content matches — reads midterm's cached results.
-			appendLogMatches := func(logs *Vterm, toolArgs bool) {
-				if logs == nil {
-					return
-				}
-				for _, r := range logs.Term().SearchMatchRows() {
+			if matched[tree] {
+				// 1. Span name match.
+				if strings.Contains(strings.ToLower(tree.Span.Name), query) {
 					fe.searchMatches = append(fe.searchMatches, searchMatch{
-						spanID:   spanID,
-						logRow:   r,
-						toolArgs: toolArgs,
+						spanID: spanID,
+						logRow: -1,
 					})
 					fe.searchMatchSpans[spanID] = true
 				}
-			}
-			appendLogMatches(fe.logs.Logs[spanID], false)
-			if fe.spanVerbosity(tree.Span) >= toolArgsVerbosity {
-				appendLogMatches(fe.logs.ToolArgs[spanID], true)
+
+				// 2. Vterm log content matches — reads midterm's cached results.
+				appendLogMatches := func(logs *Vterm, toolArgs bool) {
+					if logs == nil {
+						return
+					}
+					for _, r := range logs.Term().SearchMatchRows() {
+						fe.searchMatches = append(fe.searchMatches, searchMatch{
+							spanID:   spanID,
+							logRow:   r,
+							toolArgs: toolArgs,
+						})
+						fe.searchMatchSpans[spanID] = true
+					}
+				}
+				appendLogMatches(fe.logs.Logs[spanID], false)
+				if fe.spanVerbosity(tree.Span) >= toolArgsVerbosity {
+					appendLogMatches(fe.logs.ToolArgs[spanID], true)
+				}
 			}
 
+			// Only what's built: the rest holds no match.
 			walkTree(tree.Children)
 		}
 	}
 	walkTree(fe.rowsView.Body)
+}
+
+// searchNameMatches returns the spans whose name contains query (already
+// lowercased). It only scans the DB again once its spans have changed.
+func (fe *frontendPretty) searchNameMatches(query string) []*dagui.Span {
+	at := fe.db.MutationCount()
+	if fe.searchNames.query == query && fe.searchNames.at == at && fe.searchNames.db == fe.db {
+		return fe.searchNames.spans
+	}
+	// Span names repeat heavily (a call span is named for its Type.field),
+	// so match each distinct name once.
+	byName := map[string]bool{}
+	var spans []*dagui.Span
+	for _, span := range fe.db.Spans.Order {
+		match, seen := byName[span.Name]
+		if !seen {
+			match = strings.Contains(strings.ToLower(span.Name), query)
+			byName[span.Name] = match
+		}
+		if match {
+			spans = append(spans, span)
+		}
+	}
+	fe.searchNames.query = query
+	fe.searchNames.at = at
+	fe.searchNames.db = fe.db
+	fe.searchNames.spans = spans
+	return spans
 }
 
 // searchNext moves to the next match after the current one (wrapping).
@@ -247,19 +309,15 @@ func (fe *frontendPretty) goToSearchMatch(idx int) {
 	}
 }
 
-// expandToSpan expands all ancestor spans so that spanID becomes visible
-// in the flat row list.
+// expandToSpan expands every tree above spanID's in the view, so that it
+// becomes visible in the flat row list.
 func (fe *frontendPretty) expandToSpan(spanID dagui.SpanID) {
-	for id := spanID; id.IsValid(); {
-		span := fe.db.Spans.Map[id]
-		if span == nil {
-			break
+	if span := fe.db.Spans.Map[spanID]; span != nil {
+		if tree := fe.rowsView.HomeTree(span); tree != nil {
+			for parent := tree.Parent; parent != nil; parent = parent.Parent {
+				fe.setExpanded(parent.Span.ID, true)
+			}
 		}
-		if !span.ParentID.IsValid() {
-			break
-		}
-		fe.setExpanded(span.ParentID, true)
-		id = span.ParentID
 	}
 	fe.recalculateViewLocked()
 }

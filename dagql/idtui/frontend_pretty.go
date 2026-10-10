@@ -406,6 +406,14 @@ type frontendPretty struct {
 	searchMatchSpans     map[dagui.SpanID]bool // fast lookup: does this span have any match?
 	prevSearchMatchSpans map[dagui.SpanID]bool // previous frame's matchSpans for diff-based dirtying
 	searchIdx            int                   // current match index (-1 = none)
+	// searchNames memoizes the spans whose name matches the search, until
+	// the query or the DB's spans change (see searchNameMatches).
+	searchNames struct {
+		query string
+		db    *dagui.DB
+		at    uint64
+		spans []*dagui.Span
+	}
 
 	// test view state
 	testsMode        bool
