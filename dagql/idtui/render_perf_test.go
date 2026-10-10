@@ -29,6 +29,15 @@ func perfSpanID(n uint64) dagui.SpanID {
 // hiding a big collapsed subtree. It returns the frontend and the IDs of the
 // deepest spans, under which streamed spans can land.
 func newLargeTraceFrontend(tb testing.TB, tops, fanout, depth int) (*frontendPretty, []dagui.SpanID, *uint64) {
+	return newLargeTraceFrontendShaped(tb, tops, fanout, depth, false)
+}
+
+// newLargeTraceFrontendShaped is newLargeTraceFrontend, but with agent set
+// each top-level row is a conversation turn instead: a user prompt and an
+// assistant reply, with a tool call under the reply hiding the subtree. The
+// frontend promotes the conversation onto the root, as it does in a `dagger
+// agent` session.
+func newLargeTraceFrontendShaped(tb testing.TB, tops, fanout, depth int, agent bool) (*frontendPretty, []dagui.SpanID, *uint64) {
 	tb.Helper()
 	db := dagui.NewDB()
 	traceID := dagui.TraceID{TraceID: trace.TraceID{1}}
@@ -61,10 +70,30 @@ func newLargeTraceFrontend(tb testing.TB, tops, fanout, depth int) (*frontendPre
 	}
 	for range tops {
 		id := newID()
-		snaps = append(snaps, dagui.SpanSnapshot{
-			ID: id, TraceID: traceID, ParentID: rootID, Name: "top",
-			StartTime: start, EndTime: start.Add(time.Second),
-		})
+		if agent {
+			snaps = append(snaps, dagui.SpanSnapshot{
+				ID: id, TraceID: traceID, ParentID: rootID, Name: "prompt",
+				LLMRole: "user", Message: "do the thing",
+				StartTime: start, EndTime: start.Add(time.Second),
+			})
+			replyID := newID()
+			snaps = append(snaps, dagui.SpanSnapshot{
+				ID: replyID, TraceID: traceID, ParentID: rootID, Name: "reply",
+				LLMRole: "assistant", Message: "on it",
+				StartTime: start, EndTime: start.Add(time.Second),
+			})
+			id = newID()
+			snaps = append(snaps, dagui.SpanSnapshot{
+				ID: id, TraceID: traceID, ParentID: replyID, Name: "tool",
+				LLMRole: "assistant", LLMTool: "run",
+				StartTime: start, EndTime: start.Add(time.Second),
+			})
+		} else {
+			snaps = append(snaps, dagui.SpanSnapshot{
+				ID: id, TraceID: traceID, ParentID: rootID, Name: "top",
+				StartTime: start, EndTime: start.Add(time.Second),
+			})
+		}
 		grow(id, 0)
 	}
 	db.ImportSnapshots(snaps)
@@ -82,22 +111,34 @@ func newLargeTraceFrontend(tb testing.TB, tops, fanout, depth int) (*frontendPre
 // large trace: every frameGap a batch lands (marking the view dirty, as
 // ExportSpans does) and the TUI renders. ns/op is the render-loop time per
 // frame (the gaps aren't timed); recalcs/frame is how many of those frames
-// rebuilt the whole trace tree. The unpaced variant disables recalculation
-// pacing, recalculating on every frame as the TUI used to.
+// rebuilt the view. The unpaced variant disables recalculation pacing,
+// recalculating on every frame as the TUI used to.
+//
+// The zoomed shape zooms to the root, as SetPrimary does for every CLI
+// command; agent is a `dagger agent` session, its conversation promoted onto
+// the root; unzoomed lists every span as a top-level candidate.
 func BenchmarkStreamingFrame(b *testing.B) {
-	b.Run("paced", func(b *testing.B) {
-		benchmarkStreamingFrame(b, defaultRecalcPacing)
-	})
-	b.Run("unpaced", func(b *testing.B) {
-		unpaced := defaultRecalcPacing
-		unpaced.minSpans = math.MaxInt
-		benchmarkStreamingFrame(b, unpaced)
-	})
+	for _, shape := range []string{"zoomed", "agent", "unzoomed"} {
+		b.Run(shape, func(b *testing.B) {
+			b.Run("paced", func(b *testing.B) {
+				benchmarkStreamingFrame(b, shape, defaultRecalcPacing)
+			})
+			b.Run("unpaced", func(b *testing.B) {
+				unpaced := defaultRecalcPacing
+				unpaced.minSpans = math.MaxInt
+				benchmarkStreamingFrame(b, shape, unpaced)
+			})
+		})
+	}
 }
 
-func benchmarkStreamingFrame(b *testing.B, pacing recalcPacing) {
+func benchmarkStreamingFrame(b *testing.B, shape string, pacing recalcPacing) {
 	const frameGap = 25 * time.Millisecond
-	fe, leaves, next := newLargeTraceFrontend(b, 50, 10, 4) // ~555k spans
+	fe, leaves, next := newLargeTraceFrontendShaped(b, 50, 10, 4, shape == "agent") // ~555k spans
+	if shape == "zoomed" {
+		fe.ZoomedSpan = perfSpanID(0)
+		fe.recalculateViewLocked()
+	}
 	fe.recalcPacing = pacing
 	traceID := dagui.TraceID{TraceID: trace.TraceID{1}}
 	start := time.Unix(100, 0)
