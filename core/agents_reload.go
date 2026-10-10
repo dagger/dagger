@@ -98,8 +98,14 @@ func preserveRecomposedTools(ctx context.Context, srv *dagql.Server, previous, c
 		if !exists {
 			return candidate, fmt.Errorf("reload would discard tool state for %q; use a fresh composition to reset it explicitly", old.typeName())
 		}
-		if old.Owner != "" && next.Owner != "" && old.Owner != next.Owner {
-			return candidate, fmt.Errorf("reload would replace tool binding %q owned by other expertise", old.typeName())
+		if old.Owner != next.Owner {
+			label := func(owner string) string {
+				if owner == "" {
+					return "unowned"
+				}
+				return fmt.Sprintf("expertise %q", owner)
+			}
+			return candidate, fmt.Errorf("reload would replace tool binding %q owned by other expertise: %s -> %s; use a fresh composition to replace it explicitly", old.typeName(), label(old.Owner), label(next.Owner))
 		}
 		if stableIDDigest(old.id) == stableIDDigest(next.id) && old.Version == next.Version {
 			continue

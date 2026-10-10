@@ -2,6 +2,7 @@ package core
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -62,6 +63,27 @@ func TestToolStateIdentity(t *testing.T) {
 		next := makeObject(&ModuleSource{Kind: ModuleSourceKindLocal, SourceRootSubpath: "staff", Local: &LocalModuleSource{ContextDirectoryPath: "/two"}}, "staff", "Staff")
 		require.NoError(t, sameToolStateIdentity(old, next))
 	})
+}
+
+func TestRecomposeCannotClaimUnownedTools(t *testing.T) {
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	installModuleObjectTestModuleClass(srv)
+	dagql.Fields[*LLM]{}.Install(srv)
+	tool := newTypeDefDetachedResult(t, srv, "tools", &Module{NameField: "tools"})
+	makeLLM := func(owner string) dagql.ObjectResult[*LLM] {
+		return newTypeDefDetachedResult(t, srv, "llm", &LLM{mcp: &MCP{mu: new(sync.Mutex), boundTools: []boundTool{{object: tool, Owner: owner}}}})
+	}
+	for _, owners := range [][2]string{{"", "new-entry"}, {"old-entry", ""}, {"old-entry", "new-entry"}} {
+		_, err := preserveRecomposedTools(t.Context(), srv, makeLLM(owners[0]), makeLLM(owners[1]))
+		require.ErrorContains(t, err, `tool binding "Module"`)
+		require.ErrorContains(t, err, "use a fresh composition")
+		for _, owner := range owners {
+			if owner == "" {
+				owner = "unowned"
+			}
+			require.ErrorContains(t, err, owner)
+		}
+	}
 }
 
 func TestExpertiseIdentity(t *testing.T) {
