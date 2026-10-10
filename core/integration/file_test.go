@@ -10,6 +10,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -20,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -504,7 +504,7 @@ func (FileSuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 	ls, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedFile("/file", file).
-		WithEnvVariable("RANDOM", identity.NewID()).
+		WithEnvVariable("RANDOM", rand.Text()).
 		WithExec([]string{"stat", "/file"}).
 		Stdout(ctx)
 	require.NoError(t, err)

@@ -3,6 +3,7 @@ package schema
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,7 +18,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/snapshots/config"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -113,7 +113,7 @@ func writeFixtureJSON(ctx context.Context, root *os.Root, path string, value any
 	if err := root.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	tmp := filepath.Join(filepath.Dir(path), ".tmp-"+identity.NewID())
+	tmp := filepath.Join(filepath.Dir(path), ".tmp-"+rand.Text())
 	file, err := root.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -472,7 +472,7 @@ func runRemoteCacheFixture(ctx context.Context, q *core.Query, path string, args
 			return nil, openErr
 		}
 		defer root.Close()
-		err = writeFixtureJSON(ctx, root, identity.NewID()+".json", entry)
+		err = writeFixtureJSON(ctx, root, rand.Text()+".json", entry)
 		response = entry
 	}
 	if err != nil {

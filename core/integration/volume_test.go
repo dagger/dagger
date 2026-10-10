@@ -6,6 +6,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +18,6 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -31,9 +31,9 @@ func TestVolume(t *testing.T) {
 
 func (VolumeSuite) TestEngineVolumeLiveMount(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	engineState := core.NewQuery(c).CacheVolume("engine-volume-state-" + identity.NewID())
-	groupData := core.NewQuery(c).CacheVolume("engine-volume-group-" + identity.NewID())
-	nestedData := core.NewQuery(c).CacheVolume("engine-volume-nested-" + identity.NewID())
+	engineState := core.NewQuery(c).CacheVolume("engine-volume-state-" + rand.Text())
+	groupData := core.NewQuery(c).CacheVolume("engine-volume-group-" + rand.Text())
+	nestedData := core.NewQuery(c).CacheVolume("engine-volume-nested-" + rand.Text())
 
 	_, err := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/state", engineState).
@@ -418,7 +418,7 @@ func queryEngineVolumeID(ctx context.Context, client *dagger.Client, name string
 }
 
 func execWithEngineVolume(ctx context.Context, client *dagger.Client, volumeID core.ID, readonly bool, args []string) (string, error) {
-	return execWithEngineVolumeCached(ctx, client, volumeID, readonly, args, identity.NewID())
+	return execWithEngineVolumeCached(ctx, client, volumeID, readonly, args, rand.Text())
 }
 
 func execWithEngineVolumeCached(ctx context.Context, client *dagger.Client, volumeID core.ID, readonly bool, args []string, cacheBuster string) (string, error) {
@@ -502,7 +502,7 @@ func (VolumeSuite) TestSSHFSVolumeRejectsWrongKnownHosts(ctx context.Context, t 
 	_, err = core.NewQuery(c).Container().
 		From(alpineImage).
 		WithMountedVolume("/mnt", fixture.VolumeWithKnownHosts(c, core.NewQuery(c).SetSecret(
-			"sshfs-test-wrong-known-hosts-"+identity.NewID(),
+			"sshfs-test-wrong-known-hosts-"+rand.Text(),
 			fixture.wrongKnownHosts,
 		))).
 		WithExec([]string{"cat", "/mnt/hello.txt"}).
@@ -539,7 +539,7 @@ func (VolumeSuite) TestSSHFSVolumeCachedExecDoesNotRereadRemoteContents(ctx cont
 
 	freshRead, err := core.NewQuery(c).Container().
 		From(alpineImage).
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithMountedVolume("/mnt", vol, core.ContainerWithMountedVolumeOpts{ReadOnly: true}).
 		WithExec([]string{"cat", "/mnt/hello.txt"}).
 		Stdout(ctx)
@@ -674,7 +674,7 @@ exec "$(which sshd)" -D -e -f /etc/ssh/sshd_config
 		WithNewFile("/seed/hello.txt", contents).
 		// Keep remote writes across service restarts; use a unique key so
 		// parallel tests and prior runs cannot inherit each other's contents.
-		WithMountedCache("/data", core.NewQuery(c).CacheVolume("sshfs-test-data-"+identity.NewID())).
+		WithMountedCache("/data", core.NewQuery(c).CacheVolume("sshfs-test-data-"+rand.Text())).
 		WithMountedFile("/root/start.sh", setupScript).
 		WithExposedPort(sshPort).
 		WithDefaultArgs([]string{"sh", "/root/start.sh"}).
@@ -682,9 +682,9 @@ exec "$(which sshd)" -D -e -f /etc/ssh/sshd_config
 
 	return sshfsVolumeFixture{
 		endpoint:   fmt.Sprintf("sshfs://root@%s:%d/data", logicalHost, sshPort),
-		privateKey: core.NewQuery(c).SetSecret("sshfs-test-private-key-"+identity.NewID(), userPrivateKey),
+		privateKey: core.NewQuery(c).SetSecret("sshfs-test-private-key-"+rand.Text(), userPrivateKey),
 		knownHosts: core.NewQuery(c).SetSecret(
-			"sshfs-test-known-hosts-"+identity.NewID(),
+			"sshfs-test-known-hosts-"+rand.Text(),
 			fmt.Sprintf("[%s]:%d %s", logicalHost, sshPort, strings.TrimSpace(hostPubKey)),
 		),
 		service:  service,

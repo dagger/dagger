@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -24,7 +25,6 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/dagger/dagger/internal/buildkit/session/auth/authprovider"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
@@ -255,11 +255,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
 	}
 	if c.ID == "" {
-		c.ID = identity.NewID()
+		c.ID = rand.Text()
 	}
 	configuredSessionID := c.SessionID
 	if c.SessionID == "" {
-		c.SessionID = identity.NewID()
+		c.SessionID = rand.Text()
 	}
 	if c.SecretToken == "" {
 		c.SecretToken = uuid.New().String()
@@ -428,10 +428,10 @@ func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ 
 		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
 	}
 	if c.ID == "" {
-		c.ID = identity.NewID()
+		c.ID = rand.Text()
 	}
 	if c.SessionID == "" {
-		c.SessionID = identity.NewID()
+		c.SessionID = rand.Text()
 	}
 	if c.SecretToken == "" {
 		c.SecretToken = uuid.New().String()

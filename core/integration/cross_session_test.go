@@ -27,7 +27,6 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -39,7 +38,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		callMod := func(c *dagger.Client) (string, error) {
 			return moduleFixture(t, c, "go/cross-session-function-basic").
-				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				WithEnvVariable("CACHEBUSTER", rand.Text()).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 		}
@@ -68,7 +67,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 				args = append(args, "--s", *s)
 			}
 			return moduleFixture(t, c, "go/cross-session-function-args").
-				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				WithEnvVariable("CACHEBUSTER", rand.Text()).
 				With(daggerCall(args...)).
 				Stdout(ctx)
 		}
@@ -156,7 +155,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 		// the fact that IDs include the module ResultID, verify that behavior works as expected
 		callMod := func(c *dagger.Client, fixture string) (string, error) {
 			return moduleFixture(t, c, fixture).
-				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				WithEnvVariable("CACHEBUSTER", rand.Text()).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 		}
@@ -194,7 +193,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 
 		require.NotEqual(t, modID1, modID2)
 
-		rand := identity.NewID()
+		randArg := rand.Text()
 
 		err = mod1.Serve(ctx)
 		require.NoError(t, err)
@@ -202,7 +201,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 			Test struct {
 				Fn string
 			}
-		}](c1, t, `{test{fn(rand: "`+rand+`")}}`, nil)
+		}](c1, t, `{test{fn(rand: "`+randArg+`")}}`, nil)
 		require.NoError(t, err)
 		require.NotEmpty(t, res1.Test.Fn)
 
@@ -213,7 +212,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 			Test struct {
 				Fn string
 			}
-		}](c2, t, `{test{fn(rand: "`+rand+`")}}`, nil)
+		}](c2, t, `{test{fn(rand: "`+randArg+`")}}`, nil)
 		require.NoError(t, err)
 		require.NotEmpty(t, res2A.Test.Fn)
 
@@ -223,12 +222,12 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 		err = os.RemoveAll(tmpdir1)
 		require.NoError(t, err)
 
-		rand = identity.NewID()
+		randArg = rand.Text()
 		res2B, err := testutil.QueryWithClient[struct {
 			Test struct {
 				Fn string
 			}
-		}](c2, t, `{test{fn(rand: "`+rand+`")}}`, nil)
+		}](c2, t, `{test{fn(rand: "`+randArg+`")}}`, nil)
 		require.NoError(t, err)
 		require.NotEmpty(t, res2B.Test.Fn)
 
@@ -248,17 +247,17 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 func (ModuleSuite) TestCrossSessionPrivateFieldResultRetention(ctx context.Context, t *testctx.T) {
 	// The same seed in both sessions makes the second holder call a cache hit
 	// while keeping this test run isolated from any earlier engine state.
-	seed := identity.NewID()
+	seed := rand.Text()
 	callMod := func(c *dagger.Client, salt string) (string, error) {
 		return moduleFixture(t, c, "go/cross-session-private-field").
 			With(withModuleFixture(t, c, "cred", "go/cross-session-private-field-cred")).
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			With(daggerCall("holder", "--seed", seed, "use", "--salt", salt)).
 			Stdout(ctx)
 	}
 
 	c1 := connect(ctx, t)
-	salt1 := identity.NewID()
+	salt1 := rand.Text()
 	out1, err := callMod(c1, salt1)
 	require.NoError(t, err)
 	gotSalt1, token1, ok := strings.Cut(strings.TrimSpace(out1), ":")
@@ -272,7 +271,7 @@ func (ModuleSuite) TestCrossSessionPrivateFieldResultRetention(ctx context.Conte
 	require.NoError(t, c1.Close())
 
 	c2 := connect(ctx, t)
-	salt2 := identity.NewID()
+	salt2 := rand.Text()
 	out2, err := callMod(c2, salt2)
 	require.NoError(t, err)
 	gotSalt2, token2, ok := strings.Cut(strings.TrimSpace(out2), ":")
@@ -291,12 +290,12 @@ func (ModuleSuite) TestCrossSessionPrivateFieldResultRetention(ctx context.Conte
 // the operational context that must survive: currentModule, a contextual
 // default path, and a module-scoped cache volume.
 func (ModuleSuite) TestCrossSessionHolderRuntimeAfterSessionClose(ctx context.Context, t *testctx.T) {
-	seed := identity.NewID()
+	seed := rand.Text()
 	callMod := func(c *dagger.Client, salt string) (string, error) {
 		return moduleFixture(t, c, "go/cross-session-holder-runtime").
 			WithNewFile("marker.txt", "marker-"+seed).
 			WithNewFile("data/hello.txt", "hello-"+seed).
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			With(daggerCall("holder", "--seed", seed, "use", "--salt", salt)).
 			Stdout(ctx)
 	}
@@ -311,7 +310,7 @@ func (ModuleSuite) TestCrossSessionHolderRuntimeAfterSessionClose(ctx context.Co
 	}
 
 	c1 := connect(ctx, t)
-	salt1 := identity.NewID()
+	salt1 := rand.Text()
 	out1, err := callMod(c1, salt1)
 	require.NoError(t, err)
 	first := parse(out1)
@@ -327,7 +326,7 @@ func (ModuleSuite) TestCrossSessionHolderRuntimeAfterSessionClose(ctx context.Co
 	require.NoError(t, c1.Close())
 
 	c2 := connect(ctx, t)
-	salt2 := identity.NewID()
+	salt2 := rand.Text()
 	out2, err := callMod(c2, salt2)
 	require.NoError(t, err)
 	second := parse(out2)
@@ -352,13 +351,13 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 		}
 
 		c1 := connect(ctx, t)
-		rand1 := identity.NewID()
+		rand1 := rand.Text()
 		out1, err := callMod(c1, rand1)
 		require.NoError(t, err)
 		require.Equal(t, rand1, out1)
 
 		c2 := connect(ctx, t)
-		rand2 := identity.NewID()
+		rand2 := rand.Text()
 		out2, err := callMod(c2, rand2)
 		require.NoError(t, err)
 		require.Equal(t, rand2, out2)
@@ -368,7 +367,7 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 		require.NoError(t, c1.Close())
 
 		c3 := connect(ctx, t)
-		rand3 := identity.NewID()
+		rand3 := rand.Text()
 		out3, err := callMod(c3, rand3)
 		require.NoError(t, err)
 		require.Equal(t, rand3, out3)
@@ -406,13 +405,13 @@ func (ModuleSuite) TestCrossSessionContextDirectoryDefaultPath(ctx context.Conte
 	}
 
 	c1 := connect(ctx, t)
-	entries1 := callEntries(c1, identity.NewID())
+	entries1 := callEntries(c1, rand.Text())
 	require.Contains(t, entries1, "dagger.json")
 	require.Contains(t, entries1, "foo.txt")
 	require.NoError(t, c1.Close())
 
 	c2 := connect(ctx, t)
-	entries2 := callEntries(c2, identity.NewID())
+	entries2 := callEntries(c2, rand.Text())
 	require.Contains(t, entries2, "dagger.json")
 	require.Contains(t, entries2, "foo.txt")
 }
@@ -432,7 +431,7 @@ func (ModuleSuite) TestCrossSessionWorkspaceDockerfileRecipe(ctx context.Context
 	copyTestdataFixture(ctx, t, filepath.Join(root, "service-ref-consumer"), "services", "service-ref-consumer")
 	app := filepath.Join(root, "app")
 	require.NoError(t, os.MkdirAll(filepath.Join(app, "context"), 0o755))
-	unique := identity.NewID()
+	unique := rand.Text()
 	require.NoError(t, os.WriteFile(filepath.Join(app, "marker.txt"), []byte(unique), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(app, "context", "Dockerfile"), []byte("FROM scratch\nCOPY marker.txt /marker.txt\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(app, "context", "marker.txt"), []byte(unique), 0o644))
@@ -466,7 +465,7 @@ func (SecretSuite) TestCrossSessionGitAuthScoping(ctx context.Context, t *testct
 			// sanity test fail when no auth given
 			c1 := connect(ctx, t)
 			_, err = goGitBase(t, c1).
-				WithEnvVariable("CACHEBUST", identity.NewID()).
+				WithEnvVariable("CACHEBUST", rand.Text()).
 				With(daggerExecRaw("core",
 					"git",
 					"--url", testCase.gitTestRepoRef,
@@ -481,7 +480,7 @@ func (SecretSuite) TestCrossSessionGitAuthScoping(ctx context.Context, t *testct
 			withRepo, withRepoCleanup := privateRepoSetup(c2, t, testCase)
 			t.Cleanup(withRepoCleanup)
 			_, err = goGitBase(t, c2).
-				WithEnvVariable("CACHEBUST", identity.NewID()).
+				WithEnvVariable("CACHEBUST", rand.Text()).
 				With(withRepo).
 				With(daggerExecRaw("core",
 					"git",
@@ -495,7 +494,7 @@ func (SecretSuite) TestCrossSessionGitAuthScoping(ctx context.Context, t *testct
 			// try again with no auth, should fail
 			c3 := connect(ctx, t)
 			_, err = goGitBase(t, c3).
-				WithEnvVariable("CACHEBUST", identity.NewID()).
+				WithEnvVariable("CACHEBUST", rand.Text()).
 				With(daggerExecRaw("core",
 					"git",
 					"--url", testCase.gitTestRepoRef,
@@ -509,7 +508,7 @@ func (SecretSuite) TestCrossSessionGitAuthScoping(ctx context.Context, t *testct
 			withRepo, withRepoCleanup = privateRepoSetup(c3, t, testCase)
 			t.Cleanup(withRepoCleanup)
 			_, err = goGitBase(t, c3).
-				WithEnvVariable("CACHEBUST", identity.NewID()).
+				WithEnvVariable("CACHEBUST", rand.Text()).
 				With(withRepo).
 				With(daggerExecRaw("core",
 					"git",
@@ -546,7 +545,7 @@ func (SecretSuite) TestCrossSessionGitAuthScoping(ctx context.Context, t *testct
 			// sanity test fail when no auth given
 			c1 := connect(ctx, t)
 			_, err = moduleFixture(t, c1, fixture).
-				WithEnvVariable("CACHEBUST", identity.NewID()).
+				WithEnvVariable("CACHEBUST", rand.Text()).
 				With(daggerCallAt(".", "fn")).
 				Sync(ctx)
 			requireErrOut(t, err, expectedErr)
@@ -556,7 +555,7 @@ func (SecretSuite) TestCrossSessionGitAuthScoping(ctx context.Context, t *testct
 			withRepo, withRepoCleanup := privateRepoSetup(c2, t, testCase)
 			t.Cleanup(withRepoCleanup)
 			_, err = moduleFixture(t, c2, fixture).
-				WithEnvVariable("CACHEBUST", identity.NewID()).
+				WithEnvVariable("CACHEBUST", rand.Text()).
 				With(withRepo).
 				With(daggerCallAt(".", "fn")).
 				Sync(ctx)
@@ -565,7 +564,7 @@ func (SecretSuite) TestCrossSessionGitAuthScoping(ctx context.Context, t *testct
 			// try again with no auth, should fail
 			c3 := connect(ctx, t)
 			_, err = moduleFixture(t, c3, fixture).
-				WithEnvVariable("CACHEBUST", identity.NewID()).
+				WithEnvVariable("CACHEBUST", rand.Text()).
 				With(daggerCallAt(".", "fn")).
 				Sync(ctx)
 			requireErrOut(t, err, expectedErr)
@@ -574,7 +573,7 @@ func (SecretSuite) TestCrossSessionGitAuthScoping(ctx context.Context, t *testct
 			withRepo, withRepoCleanup = privateRepoSetup(c3, t, testCase)
 			t.Cleanup(withRepoCleanup)
 			_, err = moduleFixture(t, c3, fixture).
-				WithEnvVariable("CACHEBUST", identity.NewID()).
+				WithEnvVariable("CACHEBUST", rand.Text()).
 				With(withRepo).
 				With(daggerCallAt(".", "fn")).
 				Sync(ctx)
@@ -724,7 +723,7 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 	t.Run("cached set-secret transfers", func(ctx context.Context, t *testctx.T) {
 		callMod := func(c *dagger.Client) (string, error) {
 			return moduleFixture(t, c, "go/cross-session-secret-set").
-				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				WithEnvVariable("CACHEBUSTER", rand.Text()).
 				With(daggerCall("make", "plaintext")).
 				Stdout(ctx)
 		}
@@ -759,13 +758,13 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 		}
 
 		c1 := connect(ctx, t)
-		randVal1 := identity.NewID()
+		randVal1 := rand.Text()
 		out1, err := callMod(c1, randVal1)
 		require.NoError(t, err)
 		require.Equal(t, randVal1, out1)
 
 		c2 := connect(ctx, t)
-		randVal2 := identity.NewID()
+		randVal2 := rand.Text()
 		out2, err := callMod(c2, randVal2)
 		require.NoError(t, err)
 		require.Equal(t, randVal2, out2)
@@ -797,7 +796,7 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 		ctr1, err := core.Load[*core.Container](ctx, core.NewQuery(c1), ctrID1)
 		require.NoError(t, err)
 		_, err = ctr1.
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			WithExec([]string{"true"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -825,7 +824,7 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 		ctr2, err := core.Load[*core.Container](ctx, core.NewQuery(c2), ctrID2)
 		require.NoError(t, err)
 		_, err = ctr2.
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			WithExec([]string{"true"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -844,12 +843,12 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 		}
 
 		c1 := connect(ctx, t)
-		randVal1 := identity.NewID()
+		randVal1 := rand.Text()
 		_, err := callMod(c1, randVal1)
 		require.NoError(t, err)
 
 		c2 := connect(ctx, t)
-		randVal2 := identity.NewID()
+		randVal2 := rand.Text()
 		_, err = callMod(c2, randVal2)
 		require.NoError(t, err)
 	})
@@ -871,12 +870,12 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 		}
 
 		c1 := connect(ctx, t)
-		randVal1 := identity.NewID()
+		randVal1 := rand.Text()
 		_, err := callMod(c1, randVal1)
 		require.NoError(t, err)
 
 		c2 := connect(ctx, t)
-		randVal2 := identity.NewID()
+		randVal2 := rand.Text()
 		_, err = callMod(c2, randVal2)
 		require.NoError(t, err)
 	})
@@ -907,7 +906,7 @@ func (ModuleSuite) TestCrossSessionContextualDirWithPrivate(ctx context.Context,
 
 	err := os.MkdirAll(filepath.Join(modDir, "crap"), 0755)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(identity.NewID()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(rand.Text()), 0644))
 
 	c1 := connect(ctx, t)
 	mod1, err := core.NewQuery(c1).ModuleSource(modDir).AsModule().Sync(ctx)
@@ -957,7 +956,7 @@ func (ModuleSuite) TestCrossSessionContextualDirChange(ctx context.Context, t *t
 
 	err := os.MkdirAll(filepath.Join(modDir, "crap"), 0755)
 	require.NoError(t, err)
-	rand1 := identity.NewID()
+	rand1 := rand.Text()
 	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(rand1), 0644))
 
 	c1 := connect(ctx, t)
@@ -976,7 +975,7 @@ func (ModuleSuite) TestCrossSessionContextualDirChange(ctx context.Context, t *t
 	require.NoError(t, err)
 	require.Equal(t, rand1, res1.Test.Obj.Foo)
 
-	rand2 := identity.NewID()
+	rand2 := rand.Text()
 	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(rand2), 0644))
 
 	c2 := connect(ctx, t)
@@ -1002,7 +1001,7 @@ func (ModuleSuite) TestCrossSessionContextualDirCacheHit(ctx context.Context, t 
 
 	err := os.MkdirAll(filepath.Join(modDir, "crap"), 0755)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(identity.NewID()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(rand.Text()), 0644))
 
 	c1 := connect(ctx, t)
 	mod1, err := core.NewQuery(c1).ModuleSource(modDir).AsModule().Sync(ctx)
@@ -1034,7 +1033,7 @@ func (ModuleSuite) TestCrossSessionContextualDirCacheHit(ctx context.Context, t 
 
 	require.Equal(t, res1.Test.Rand, res2.Test.Rand)
 
-	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(identity.NewID()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(rand.Text()), 0644))
 
 	c3 := connect(ctx, t)
 	mod3, err := core.NewQuery(c3).ModuleSource(modDir).AsModule().Sync(ctx)
@@ -1068,7 +1067,7 @@ func (SecretSuite) TestCrossSessionSecretURIRecipeReplay(ctx context.Context, t 
 			})
 			opts := core.SecretOpts{}
 			if customCacheKey {
-				opts.CacheKey = identity.NewID()
+				opts.CacheKey = rand.Text()
 			}
 			secret := core.NewQuery(source).Secret("env://REPLAY_SECRET", opts)
 			secretID, err := secret.ID(ctx)
@@ -1208,7 +1207,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 		err = core.NewQuery(c2).ModuleSource(modDir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
-		cacheKey := identity.NewID()
+		cacheKey := rand.Text()
 
 		s1 := core.NewQuery(c1).Secret("env://FOO", core.SecretOpts{CacheKey: cacheKey})
 		s1id, err := s1.ID(ctx)
@@ -1298,8 +1297,8 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			c1 := connect(ctx, t)
 			c2 := connect(ctx, t)
 
-			cacheKey := identity.NewID()
-			plaintext := identity.NewID()
+			cacheKey := rand.Text()
+			plaintext := rand.Text()
 			{
 				out, err := goGitBase(t, c1).
 					WithMountedDirectory("/src", core.NewQuery(c1).Host().Directory(modDir)).
@@ -1316,7 +1315,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 				out, err := goGitBase(t, c2).
 					WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(modDir)).
 					WithWorkdir("/src").
-					WithEnvVariable("FOO", identity.NewID()).
+					WithEnvVariable("FOO", rand.Text()).
 					With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+cacheKey, "stdout")).
 					Stdout(ctx)
 				require.NoError(t, err, out)
@@ -1332,8 +1331,8 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			c1 := connect(ctx, t)
 			c2 := connect(ctx, t)
 
-			cacheKey := identity.NewID()
-			plaintext := identity.NewID()
+			cacheKey := rand.Text()
+			plaintext := rand.Text()
 			{
 				out, err := goGitBase(t, c1).
 					WithMountedDirectory("/src", core.NewQuery(c1).Host().Directory(modDir)).
@@ -1350,7 +1349,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 				out, err := goGitBase(t, c2).
 					WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(modDir)).
 					WithWorkdir("/src").
-					WithNewFile("/bar.txt", identity.NewID()).
+					WithNewFile("/bar.txt", rand.Text()).
 					With(daggerCallAt(".", "fn-2", "--secret", "file:///bar.txt?cacheKey="+cacheKey, "stdout")).
 					Stdout(ctx)
 				require.NoError(t, err, out)
@@ -1364,8 +1363,8 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 			c1 := connect(ctx, t)
 			c2 := connect(ctx, t)
 
-			cacheKey := identity.NewID()
-			plaintext := identity.NewID()
+			cacheKey := rand.Text()
+			plaintext := rand.Text()
 			{
 				secretCommand := "echo -n " + plaintext
 				out, err := goGitBase(t, c1).
@@ -1379,7 +1378,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 				require.Equal(t, plaintext, string(outDecoded))
 			}
 			{
-				secretCommand := "echo -n " + identity.NewID()
+				secretCommand := "echo -n " + rand.Text()
 				out, err := goGitBase(t, c2).
 					WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(modDir)).
 					WithWorkdir("/src").
@@ -1402,7 +1401,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 				WithMountedDirectory("/src", core.NewQuery(c1).Host().Directory(modDir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "1").
-				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+identity.NewID(), "stdout")).
+				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+rand.Text(), "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err, out)
 			outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -1414,7 +1413,7 @@ func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *test
 				WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(modDir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "2").
-				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+identity.NewID(), "stdout")).
+				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+rand.Text(), "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err, out)
 			outDecoded, err := base64.StdEncoding.DecodeString(out)

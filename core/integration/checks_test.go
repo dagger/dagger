@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,6 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -590,7 +590,7 @@ func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
 	modGen = modGen.WithWorkdir("hello-with-checks")
 	// run all checks with --failfast; should fail because there are failing checks
 	out, err := modGen.
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		With(daggerExecFail("--progress=report", "check", "--failfast")).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
@@ -651,7 +651,7 @@ func (ChecksSuite) TestChecksParallel(ctx context.Context, t *testctx.T) {
 	// at once. bust.txt keys the run, so no result is cached between runs.
 	fixture := func() *core.Container {
 		return workspaceFixture(t, c, "parallel-checks").
-			WithNewFile("bust.txt", identity.NewID())
+			WithNewFile("bust.txt", rand.Text())
 	}
 
 	t.Run("the limit bounds concurrent checks", func(ctx context.Context, t *testctx.T) {

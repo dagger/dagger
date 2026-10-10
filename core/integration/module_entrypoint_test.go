@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"strconv"
@@ -11,7 +12,6 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -388,7 +388,7 @@ func (ModuleSuite) TestModuleEntrypointSpanTree(ctx context.Context, t *testctx.
 source = ".dagger/modules/traced"
 `).
 		// Body is never cached and its execs read this, so every run runs the module process.
-		WithNewFile("run-id", identity.NewID()).
+		WithNewFile("run-id", rand.Text()).
 		WithNewFile(".dagger/modules/traced/dagger-module.toml", `name = "traced"
 
 [entrypoint]

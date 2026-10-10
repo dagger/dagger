@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,7 +20,6 @@ import (
 	enginecore "github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -206,8 +206,8 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		return count
 	}
 	aDir := newCheckout(t)
-	aVolume := core.NewQuery(outer).CacheVolume("b2-transfer-a-" + identity.NewID())
-	a := start(t, "b2-transfer-a-state-"+identity.NewID(), aVolume, aDir)
+	aVolume := core.NewQuery(outer).CacheVolume("b2-transfer-a-" + rand.Text())
+	a := start(t, "b2-transfer-a-state-"+rand.Text(), aVolume, aDir)
 	defer discard(t, a)
 	require.NoError(t, core.NewQuery(a.client).ModuleSource(".").AsModule().Serve(ctx))
 	aID, aArtifactID := callReport(t, a.client, "same")
@@ -229,8 +229,8 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 	for _, order := range orders {
 		t.Run(order, func(ctx context.Context, t *testctx.T) {
 			bDir := newCheckout(t)
-			bVolume := core.NewQuery(outer).CacheVolume("b2-transfer-b-" + identity.NewID())
-			bState := "b2-transfer-b-state-" + identity.NewID()
+			bVolume := core.NewQuery(outer).CacheVolume("b2-transfer-b-" + rand.Text())
+			bState := "b2-transfer-b-state-" + rand.Text()
 			b := start(t, bState, bVolume, bDir)
 			defer func() { discard(t, b) }()
 			var operational *core.Module
@@ -267,7 +267,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				require.NoError(t, operational.Serve(ctx))
 			}
 			_, err = core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
-				WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/report.json /destination/bundles/report.json; cp -a /source/blobs /destination/"}).Sync(ctx)
+				WithEnvVariable("COPY", rand.Text()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/report.json /destination/bundles/report.json; cp -a /source/blobs /destination/"}).Sync(ctx)
 			require.NoError(t, err)
 			var imported []transferFixtureMapping
 			require.NoError(t, transferFixture(ctx, b.client, "import", "report.json", []string{}, &imported))
@@ -354,13 +354,13 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				// pressure; the default policy and imported root remain unchanged.
 				pressure := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/fixture", bVolume)
 				defer func() {
-					_, err := pressure.WithEnvVariable("CLEANUP", identity.NewID()).WithExec([]string{"rm", "-f", "/fixture/gc-pressure"}).Sync(context.WithoutCancel(ctx))
+					_, err := pressure.WithEnvVariable("CLEANUP", rand.Text()).WithExec([]string{"rm", "-f", "/fixture/gc-pressure"}).Sync(context.WithoutCancel(ctx))
 					require.NoError(t, err)
 				}()
 				minimum, err := core.NewQuery(b.client).Engine().LocalCache().MinFreeSpace(ctx)
 				require.NoError(t, err)
 				require.Positive(t, minimum, "default disk policy must define its free-space target")
-				stats, err := pressure.WithEnvVariable("STAT", identity.NewID()).WithExec([]string{"stat", "-f", "-c", "%a %S", "/fixture"}).Stdout(ctx)
+				stats, err := pressure.WithEnvVariable("STAT", rand.Text()).WithExec([]string{"stat", "-f", "-c", "%a %S", "/fixture"}).Stdout(ctx)
 				require.NoError(t, err)
 				var blocks, blockSize int64
 				_, err = fmt.Sscanf(stats, "%d %d", &blocks, &blockSize)
@@ -372,7 +372,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 					t.Skip("default-policy diagnostic would exceed its 8 GiB temporary disk allocation cap")
 				}
 				count := (pressureBytes + (1 << 20) - 1) / (1 << 20)
-				_, err = pressure.WithEnvVariable("PRESSURE", identity.NewID()).WithExec([]string{"dd", "if=/dev/zero", "of=/fixture/gc-pressure", "bs=1048576", "count=" + strconv.FormatInt(count, 10), "conv=fsync"}).Sync(ctx)
+				_, err = pressure.WithEnvVariable("PRESSURE", rand.Text()).WithExec([]string{"dd", "if=/dev/zero", "of=/fixture/gc-pressure", "bs=1048576", "count=" + strconv.FormatInt(count, 10), "conv=fsync"}).Sync(ctx)
 				require.NoError(t, err)
 			}
 			// Stop cleanly: the restart below checks the shutdown marker.
@@ -464,8 +464,8 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		return
 	}
 	t.Run("foreign context", func(ctx context.Context, t *testctx.T) {
-		volume := core.NewQuery(outer).CacheVolume("b2-transfer-foreign-" + identity.NewID())
-		foreign := start(t, "b2-transfer-foreign-state-"+identity.NewID(), volume, newCheckout(t))
+		volume := core.NewQuery(outer).CacheVolume("b2-transfer-foreign-" + rand.Text())
+		foreign := start(t, "b2-transfer-foreign-state-"+rand.Text(), volume, newCheckout(t))
 		defer discard(t, foreign)
 		// This bare client also uses addendum 2's runtime preparation; it never
 		// serves the Module, so schema recovery has no installed candidates.
@@ -473,7 +473,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		require.NoError(t, err)
 		require.Equal(t, uint64(0), countBody(t, foreign.client, "report"))
 		raw, err := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).
-			WithEnvVariable("READ", identity.NewID()).WithExec([]string{"cat", "/source/bundles/report.json"}).Stdout(ctx)
+			WithEnvVariable("READ", rand.Text()).WithExec([]string{"cat", "/source/bundles/report.json"}).Stdout(ctx)
 		require.NoError(t, err)
 		var bundle dagql.ValueBundle
 		require.NoError(t, json.Unmarshal([]byte(raw), &bundle))
@@ -484,7 +484,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			encoded, err := json.Marshal(bundle)
 			require.NoError(t, err)
 			_, err = core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/destination", volume).
-				WithNewFile("/bundle.json", string(encoded)).WithEnvVariable("WRITE", identity.NewID()).
+				WithNewFile("/bundle.json", string(encoded)).WithEnvVariable("WRITE", rand.Text()).
 				WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /bundle.json /destination/bundles/" + name}).Sync(ctx)
 			require.NoError(t, err)
 			var imported []transferFixtureMapping

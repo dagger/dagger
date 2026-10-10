@@ -14,6 +14,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"os"
 	"testing"
@@ -22,7 +23,6 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,7 +76,7 @@ func (CallIDRebuildSuite) TestArrayMemberSubSelection(ctx context.Context, t *te
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, sink.clientOpts()...)
 
-	marker := "member marker " + identity.NewID()
+	marker := "member marker " + rand.Text()
 
 	// One array, one sub-selection per member. No image pull: a scratch
 	// container carries exactly the environment this query puts on it.

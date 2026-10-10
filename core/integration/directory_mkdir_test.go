@@ -2,9 +2,9 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 
 	"dagger.io/dagger/core"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -84,7 +84,7 @@ func (DirectorySuite) TestWithNewDirectoryPaths(ctx context.Context, t *testctx.
 
 func (DirectorySuite) TestWithNewDirectoryNoopCache(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	parent := core.NewQuery(c).Directory().WithNewFile("existing/keep.txt", identity.NewID())
+	parent := core.NewQuery(c).Directory().WithNewFile("existing/keep.txt", rand.Text())
 	run := func(dir *core.Directory) string {
 		out, err := core.NewQuery(c).Container().From(alpineImage).
 			WithMountedDirectory("/input", dir).

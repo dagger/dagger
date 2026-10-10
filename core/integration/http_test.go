@@ -8,6 +8,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"net"
@@ -18,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/opencontainers/go-digest"
@@ -342,7 +342,7 @@ func (HTTPSuite) TestHTTPETag(ctx context.Context, t *testctx.T) {
 }
 
 func (HTTPSuite) TestHTTPServiceStableDigest(ctx context.Context, t *testctx.T) {
-	content := identity.NewID()
+	content := rand.Text()
 	hostname := func(c *dagger.Client) string {
 		svc, url := httpService(ctx, t, c, content)
 

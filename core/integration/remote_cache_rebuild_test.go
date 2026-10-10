@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -13,7 +14,6 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -56,7 +56,7 @@ func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func
 		require.NoError(t, err)
 		return e
 	}
-	id := identity.NewID()
+	id := rand.Text()
 	aVolume := core.NewQuery(outer).CacheVolume("rebuild-a-" + id)
 	bVolume := core.NewQuery(outer).CacheVolume("rebuild-b-" + id)
 	a := start("rebuild-a-state-"+id, aVolume)
@@ -83,13 +83,13 @@ func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func
 		require.NotEmpty(t, exported, name)
 	}
 	_, err := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
-		WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/rebuild-*.json /destination/bundles/"}).Sync(ctx)
+		WithEnvVariable("COPY", rand.Text()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/rebuild-*.json /destination/bundles/"}).Sync(ctx)
 	require.NoError(t, err)
 	records := map[string]dagql.PersistedRecord{}
 	rootOrdinals := map[string]dagql.TransferOrdinal{}
 	for name := range roots {
 		raw, err := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).
-			WithEnvVariable("READ", identity.NewID()).WithExec([]string{"cat", "/source/bundles/rebuild-" + name + ".json"}).Stdout(ctx)
+			WithEnvVariable("READ", rand.Text()).WithExec([]string{"cat", "/source/bundles/rebuild-" + name + ".json"}).Stdout(ctx)
 		require.NoError(t, err, name)
 		var bundle dagql.ValueBundle
 		require.NoError(t, json.Unmarshal([]byte(raw), &bundle), name)
@@ -243,7 +243,7 @@ func syncedID[T interface {
 // The image files of a container are rebuilt on another engine when their
 // blobs are missing.
 func (RemoteCacheTransferSuite) TestRebuildContainerImageFiles(ctx context.Context, t *testctx.T) {
-	seed := identity.NewID()
+	seed := rand.Text()
 	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
 		ctr := core.NewQuery(c).Container().From(alpineImage).WithNewFile("/data", "rebuilt "+seed)
 		tarball, err := ctr.AsTarball().Sync(ctx)
@@ -268,7 +268,7 @@ func (RemoteCacheTransferSuite) TestRebuildContainerImageFiles(ctx context.Conte
 
 // A Docker build is rebuilt on another engine when its blob is missing.
 func (RemoteCacheTransferSuite) TestRebuildDockerBuild(ctx context.Context, t *testctx.T) {
-	seed := identity.NewID()
+	seed := rand.Text()
 	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
 		built, err := core.NewQuery(c).Directory().
 			WithNewFile("Dockerfile", "FROM "+alpineImage+"\nRUN echo "+seed+" > /built\n").
@@ -290,7 +290,7 @@ func (RemoteCacheTransferSuite) TestRebuildDockerBuild(ctx context.Context, t *t
 // manifest from it: it builds its own, and every blob that manifest names is
 // available through layer.
 func (RemoteCacheTransferSuite) TestManifestStaysOnEngine(ctx context.Context, t *testctx.T) {
-	seed := identity.NewID()
+	seed := rand.Text()
 	manifestOf := func(c *dagger.Client) (*core.Container, *core.File) {
 		ctr := core.NewQuery(c).Container().From(alpineImage).WithNewFile("/data", "per engine "+seed)
 		return ctr, ctr.Manifest()
@@ -329,7 +329,7 @@ func (RemoteCacheTransferSuite) TestManifestStaysOnEngine(ctx context.Context, t
 
 // Changeset.asPatch is rebuilt on another engine when its blob is missing.
 func (RemoteCacheTransferSuite) TestRebuildChangesetPatch(ctx context.Context, t *testctx.T) {
-	seed := identity.NewID()
+	seed := rand.Text()
 	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
 		before := core.NewQuery(c).Directory().WithNewFile("data", "before\n")
 		patch, err := before.WithNewFile("data", seed+"\n").Changes(before).AsPatch().ID(ctx)
@@ -348,7 +348,7 @@ func (RemoteCacheTransferSuite) TestRebuildChangesetPatch(ctx context.Context, t
 
 // Changeset merges are rebuilt on another engine when their blob is missing.
 func (RemoteCacheTransferSuite) TestRebuildChangesetMerges(ctx context.Context, t *testctx.T) {
-	seed := identity.NewID()
+	seed := rand.Text()
 	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
 		change := func(path string) core.ID {
 			before := core.NewQuery(c).Directory().WithNewFile(path, "0\n")
@@ -394,7 +394,7 @@ func (RemoteCacheTransferSuite) TestRebuildChangesetMerges(ctx context.Context, 
 // merges saved their operation.
 func (RemoteCacheTransferSuite) TestChangesetMergeConflictAtCall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	seed := identity.NewID()
+	seed := rand.Text()
 	change := func(contents string) *core.Changeset {
 		before := core.NewQuery(c).Directory().WithNewFile("data", "base "+seed+"\n")
 		return before.WithNewFile("data", contents).Changes(before)
@@ -444,7 +444,7 @@ func requireRebuiltCommit(ctx context.Context, t *testctx.T, dir *core.Directory
 // GitRef.withCommit's Git storage is rebuilt on another engine when its blob is
 // missing, with the same commit.
 func (RemoteCacheTransferSuite) TestRebuildGitCommitDirectory(ctx context.Context, t *testctx.T) {
-	seed := identity.NewID()
+	seed := rand.Text()
 	var sha string
 	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
 		head := rebuildGitRepo(c, seed)
@@ -472,7 +472,7 @@ func (RemoteCacheTransferSuite) TestRebuildGitCommitDirectory(ctx context.Contex
 // Workspace.__pullDirectory is rebuilt on another engine when its blob is
 // missing, with the same history.
 func (RemoteCacheTransferSuite) TestRebuildWorkspacePullDirectory(ctx context.Context, t *testctx.T) {
-	seed := identity.NewID()
+	seed := rand.Text()
 	var sha string
 	records := rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
 		head := rebuildGitRepo(c, seed)
@@ -502,7 +502,7 @@ func (RemoteCacheTransferSuite) TestRebuildWorkspacePullDirectory(ctx context.Co
 // A file write and metadata edits over evaluated parents are rebuilt on
 // another engine when the written bytes are not available there.
 func (RemoteCacheTransferSuite) TestRebuildContainerMutations(ctx context.Context, t *testctx.T) {
-	seed := identity.NewID()
+	seed := rand.Text()
 	rebuildOnAnotherEngine(ctx, t, func(c *dagger.Client) map[string]core.ID {
 		written, err := core.NewQuery(c).Container().WithNewFile("/data", seed).Sync(ctx)
 		require.NoError(t, err)
@@ -527,7 +527,7 @@ func (RemoteCacheTransferSuite) TestRebuildContainerMutations(ctx context.Contex
 // keep their saved operation, so another engine rebuilds them; a Dockerfile
 // compat mount keeps it over a pending parent too, and runs on first read.
 func (RemoteCacheTransferSuite) TestRebuildContainerWritesOverEvaluatedParent(ctx context.Context, t *testctx.T) {
-	seed := identity.NewID()
+	seed := rand.Text()
 	paths := map[string]string{
 		"evaluated-withDirectory":                     "/d/source",
 		"evaluated-withFile":                          "/f",
@@ -589,7 +589,7 @@ func (RemoteCacheTransferSuite) TestRebuildContainerWritesOverEvaluatedParent(ct
 // that made it, and on another engine after it is merged there, because the
 // file's content digest travels with the result.
 func (RemoteCacheTransferSuite) TestUnchangedFileFromChangedSourceHitsOnAnotherEngine(ctx context.Context, t *testctx.T) {
-	seed := identity.NewID()
+	seed := rand.Text()
 	// goModSource is evaluated first, as a host directory is.
 	goModSource := func(c *dagger.Client, variant string) *core.Directory {
 		src, err := core.NewQuery(c).Directory().

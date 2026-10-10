@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
@@ -204,7 +203,7 @@ func (HostSuite) TestDirectoryHome(ctx context.Context, t *testctx.T) {
 	home, err := os.UserHomeDir()
 	require.NoError(t, err)
 
-	subdir := filepath.Join(".cache", "dagger-test-"+identity.NewID())
+	subdir := filepath.Join(".cache", "dagger-test-"+rand.Text())
 
 	require.NoError(t, os.MkdirAll(filepath.Join(home, subdir), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(home, subdir, "some-file"), []byte("hello"), 0o600))
@@ -439,7 +438,7 @@ func (HostSuite) TestDirectoryCacheBehavior(ctx context.Context, t *testctx.T) {
 
 	for _, test := range tests {
 		setup := func() (string, *core.Directory) {
-			dir := filepath.Join(baseDir, identity.NewID())
+			dir := filepath.Join(baseDir, rand.Text())
 			require.NoError(t, os.MkdirAll(dir, 0o755))
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("1"), 0o600))
 

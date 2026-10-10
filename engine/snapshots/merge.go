@@ -2,12 +2,12 @@ package snapshots
 
 import (
 	"context"
+	"crypto/rand"
 	"strconv"
 
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/moby/sys/userns"
 	"github.com/pkg/errors"
@@ -113,7 +113,7 @@ func (sn *mergeSnapshotter) Merge(ctx context.Context, key string, diffs []Diff,
 		ctx = leaseCtx
 	}
 
-	prepareKey := identity.NewID()
+	prepareKey := rand.Text()
 	if err := sn.Prepare(ctx, prepareKey, baseKey); err != nil {
 		return errors.Wrapf(err, "failed to prepare %q", key)
 	}

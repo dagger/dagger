@@ -7,6 +7,7 @@ https://github.com/dagger/dagger/internal/buildkit/blob/08180a774253a8199ebdb629
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -29,7 +30,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	gatewayapi "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
-	randid "github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
@@ -166,7 +166,7 @@ func (c *Client) Run(
 	nestedClientFunctionCall dagql.Typed,
 ) (rerr error) {
 	if id == "" {
-		id = randid.NewID()
+		id = rand.Text()
 	}
 
 	if err := c.validateEntitlements(procInfo.Meta); err != nil {
@@ -373,7 +373,7 @@ func (c *Client) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 		close(state.done)
 	}))
 
-	id := randid.NewID()
+	id := rand.Text()
 	c.runningMu.Lock()
 	c.running[id] = state
 	c.runningMu.Unlock()

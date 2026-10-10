@@ -10,13 +10,13 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	_ "embed"
 	"io"
 	"testing"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -227,7 +227,7 @@ func (SecretSuite) TestBigScrubbed(ctx context.Context, t *testctx.T) {
 func (SecretSuite) TestEmptySecretPlaintext(ctx context.Context, t *testctx.T) {
 	callMod := func(c *dagger.Client) (string, error) {
 		return moduleFixture(t, c, "go/secret-empty-plaintext").
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			With(daggerCallAt(".", "test")).
 			Stdout(ctx)
 	}
@@ -240,7 +240,7 @@ func (SecretSuite) TestEmptySecretPlaintext(ctx context.Context, t *testctx.T) {
 func (SecretSuite) TestSetSecretInModuleCaching(ctx context.Context, t *testctx.T) {
 	callMod := func(c *dagger.Client) (string, error) {
 		return moduleFixture(t, c, "go/set-secret-caching").
-			With(daggerCallAt(".", "fn", "--rand", identity.NewID())).
+			With(daggerCallAt(".", "fn", "--rand", rand.Text())).
 			Stdout(ctx)
 	}
 

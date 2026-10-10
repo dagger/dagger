@@ -8,13 +8,13 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -54,7 +54,7 @@ func (CacheSuite) TestVolumeWithSubmount(ctx context.Context, t *testctx.T) {
 	t.Run("file mount", func(ctx context.Context, t *testctx.T) {
 		subfile := core.NewQuery(c).Directory().WithNewFile("foo", "bar").File("foo")
 		ctr := core.NewQuery(c).Container().From(alpineImage).
-			WithMountedCache("/cache", core.NewQuery(c).CacheVolume(identity.NewID())).
+			WithMountedCache("/cache", core.NewQuery(c).CacheVolume(rand.Text())).
 			WithMountedFile("/cache/subfile", subfile)
 
 		out, err := ctr.WithExec([]string{"cat", "/cache/subfile"}).Stdout(ctx)
@@ -69,7 +69,7 @@ func (CacheSuite) TestVolumeWithSubmount(ctx context.Context, t *testctx.T) {
 	t.Run("dir mount", func(ctx context.Context, t *testctx.T) {
 		subdir := core.NewQuery(c).Directory().WithNewFile("foo", "bar").WithNewFile("baz", "qux")
 		ctr := core.NewQuery(c).Container().From(alpineImage).
-			WithMountedCache("/cache", core.NewQuery(c).CacheVolume(identity.NewID())).
+			WithMountedCache("/cache", core.NewQuery(c).CacheVolume(rand.Text())).
 			WithMountedDirectory("/cache/subdir", subdir)
 
 		for fileName, expectedContents := range map[string]string{
@@ -96,7 +96,7 @@ func (CacheSuite) TestVolumeWithSubmount(ctx context.Context, t *testctx.T) {
 func (CacheSuite) TestLockedCacheVolumeSerializesWriters(ctx context.Context, t *testctx.T) {
 	const writers = 3
 
-	cacheKey := "locked-cache-" + identity.NewID()
+	cacheKey := "locked-cache-" + rand.Text()
 	clients := make([]*dagger.Client, writers)
 	for i := range clients {
 		clients[i] = connect(ctx, t)
@@ -112,7 +112,7 @@ func (CacheSuite) TestLockedCacheVolumeSerializesWriters(ctx context.Context, t 
 				Container().
 				From(alpineImage).
 				WithEnvVariable("RUN_ID", fmt.Sprint(i)).
-				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				WithEnvVariable("CACHEBUSTER", rand.Text()).
 				WithMountedCache("/cache", core.NewQuery(clients[i]).CacheVolume(cacheKey, core.CacheVolumeOpts{
 					Sharing: core.CacheSharingModeLocked,
 				})).

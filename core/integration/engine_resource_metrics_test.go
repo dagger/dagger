@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"net"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
@@ -54,7 +54,7 @@ func (EngineResourceMetricsSuite) TestExport(ctx context.Context, t *testctx.T) 
 		t.Cleanup(func() { _, _ = service.Stop(context.WithoutCancel(ctx)) })
 	}
 
-	engineName := "resource-metrics-" + identity.NewID()
+	engineName := "resource-metrics-" + rand.Text()
 	engineContainer := devEngineContainer(c,
 		engineWithConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg config.Config) config.Config {
 			cfg.Telemetry.ResourceMetrics = true
@@ -102,7 +102,7 @@ exec /usr/local/bin/dagger-entrypoint.sh "$@"
 	for range 2 {
 		client := engineClientContainer(ctx, t, c, engineService).
 			WithServiceBinding("otel-clients", clientOTLPService).
-			WithEnvVariable("CLIENT_NONCE", identity.NewID()).
+			WithEnvVariable("CLIENT_NONCE", rand.Text()).
 			WithEnvVariable("TEST_CLIENT_METRICS_ENDPOINT", fmt.Sprintf("http://otel-clients:%d/v1/metrics", otlpPort)).
 			WithExec([]string{"sh", "-c", `
 export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="$TEST_CLIENT_METRICS_ENDPOINT"
@@ -160,7 +160,7 @@ exec dagger query
 	require.NoError(t, err)
 	engineRunning = true
 	_, err = engineClientContainer(ctx, t, c, engineService).
-		WithEnvVariable("CLIENT_NONCE", identity.NewID()).
+		WithEnvVariable("CLIENT_NONCE", rand.Text()).
 		WithExec([]string{"dagger", "core", "version"}, core.ContainerWithExecOpts{
 			DisableDaggerInDagger: true,
 		}).

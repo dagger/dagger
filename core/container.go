@@ -31,7 +31,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/dockerfile2llb"
 	dockerfileparser "github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/parser"
-	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerui"
 	"github.com/dagger/dagger/util/containerutil"
 	"github.com/dagger/dagger/util/hashutil"
@@ -2469,7 +2468,7 @@ func (lazy *ContainerWithoutEnvVariableLazy) EvaluateContainerGroup(ctx context.
 		_, err := container.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
 			newEnv := []string{}
 			WalkEnv(cfg.Env, func(k, _, env string) {
-				if !shell.EqualEnvKeys(k, lazy.Name) {
+				if k != lazy.Name {
 					newEnv = append(newEnv, env)
 				}
 			})
@@ -6458,7 +6457,7 @@ func (container *Container) WithSecretVariable(
 
 	var replaced bool
 	for i, existing := range container.Secrets {
-		if shell.EqualEnvKeys(existing.EnvName, name) {
+		if existing.EnvName == name {
 			container.Secrets[i] = newSecret
 			replaced = true
 			break
@@ -6489,7 +6488,7 @@ func (container *Container) WithVolatileVariable(name string, value string) *Con
 func (container *Container) WithoutVolatileVariable(name string) *Container {
 	newEnv := []string{}
 	WalkEnv(container.VolatileEnv, func(k, _, env string) {
-		if !shell.EqualEnvKeys(k, name) {
+		if k != name {
 			newEnv = append(newEnv, env)
 		}
 	})

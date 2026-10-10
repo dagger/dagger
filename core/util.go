@@ -15,7 +15,6 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/sys/user"
 	"golang.org/x/mod/semver"
@@ -95,7 +94,7 @@ func AddEnv(env []string, name, value string) []string {
 
 	for i, envVar := range env {
 		k, _, _ := strings.Cut(envVar, "=")
-		if shell.EqualEnvKeys(k, name) {
+		if k == name {
 			env[i] = fmt.Sprintf("%s=%s", name, value)
 			gotOne = true
 			break
@@ -113,7 +112,7 @@ func AddEnv(env []string, name, value string) []string {
 func LookupEnv(env []string, name string) (string, bool) {
 	for _, envVar := range env {
 		k, v, _ := strings.Cut(envVar, "=")
-		if shell.EqualEnvKeys(k, name) {
+		if k == name {
 			return v, true
 		}
 	}

@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"net/url"
@@ -16,7 +17,6 @@ import (
 	ctrdmount "github.com/containerd/containerd/v2/core/mount"
 	ctrdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/moby/sys/userns"
 	"golang.org/x/sys/unix"
 
@@ -266,14 +266,14 @@ func mountSSHFSVolume(ctx context.Context, readonly bool, cfg *SSHFSVolumeConfig
 	if err = os.Mkdir(mountDir, 0o700); err != nil {
 		return nil, nil, fmt.Errorf("create sshfs mountpoint: %w", err)
 	}
-	keyPath := filepath.Join(workDir, identity.NewID())
+	keyPath := filepath.Join(workDir, rand.Text())
 	if err = os.WriteFile(keyPath, privateKey, 0o600); err != nil {
 		return nil, nil, fmt.Errorf("write sshfs private key: %w", err)
 	}
 
 	var knownHostsPath string
 	if len(knownHosts) > 0 {
-		knownHostsPath = filepath.Join(workDir, identity.NewID())
+		knownHostsPath = filepath.Join(workDir, rand.Text())
 		if err = os.WriteFile(knownHostsPath, knownHosts, 0o600); err != nil {
 			return nil, nil, fmt.Errorf("write sshfs known_hosts: %w", err)
 		}

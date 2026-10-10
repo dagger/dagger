@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"slices"
 	"strings"
 
@@ -9,8 +10,6 @@ import (
 	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
-
-	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
 // Changesets and directory diffs between two snapshots of one lineage walk
@@ -55,7 +54,7 @@ ln -s keep.txt link
 		return core.NewQuery(c).Container().From(alpineImage).
 			WithExec([]string{"sh", "-c", baseScript}).
 			// Nothing computed for these trees may come from an earlier run.
-			WithNewFile("/src/nonce.txt", identity.NewID())
+			WithNewFile("/src/nonce.txt", rand.Text())
 	}
 
 	t.Run("one exec", func(ctx context.Context, t *testctx.T) {
@@ -188,7 +187,7 @@ put upper-added/y.txt new
 			WithNewFile("olddir/a.txt", "olddir a").
 			WithNewFile("remade/keep.txt", "remade keep").
 			WithNewFile("remade/sub/y.txt", "remade y").
-			WithNewFile("nonce.txt", identity.NewID())
+			WithNewFile("nonce.txt", rand.Text())
 		// Each operation is a layer. Removing a directory and making it again
 		// (as Workspace.withNewDirectory does) leaves a whiteout in one layer
 		// and the new directory in the next.

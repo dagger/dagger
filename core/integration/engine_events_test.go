@@ -22,7 +22,6 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -202,16 +201,16 @@ func (ClientSuite) TestEngineEventsToCloud(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	cloud := newTelemetrySplitCloud(t, c)
 	cli := daggerCliFile(t, c)
-	state := "dagger-engine-events-state-" + identity.NewID()
+	state := "dagger-engine-events-state-" + rand.Text()
 	query := func(engine *core.Service, query string) {
 		_, err := telemetrySplitClient(ctx, t, c, cli, engine, cloud).
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			WithNewFile("/query.graphql", query).
 			WithExec([]string{"/bin/dagger", "query", "--doc", "/query.graphql"}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
 			Sync(ctx)
 		require.NoError(t, err)
 	}
-	pipeline := fmt.Sprintf(`{ container { from(address: %q) { withExec(args: ["sh", "-c", "echo $0 > /marker", %q]) { file(path: "/marker") { contents } } } } }`, alpineImage, identity.NewID())
+	pipeline := fmt.Sprintf(`{ container { from(address: %q) { withExec(args: ["sh", "-c", "echo $0 > /marker", %q]) { file(path: "/marker") { contents } } } } }`, alpineImage, rand.Text())
 
 	engine := engineEventsEngine(ctx, t, c, cloud, state)
 	query(engine, pipeline)
@@ -226,7 +225,7 @@ func (ClientSuite) TestEngineEventsToCloud(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	_, err = cloud.reader.
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithExec([]string{"test", "-e", fmt.Sprintf("/events/%s/v1/logs.json.engine-events-refused", cloud.eventsID)}).
 		Sync(ctx)
 	require.NoError(t, err, "the fake Cloud refused one event export")
@@ -439,7 +438,7 @@ func (ClientSuite) TestCacheSpanCountsPerSessionInSharedTrace(ctx context.Contex
 		WithMountedCache("/events", cloud.events).
 		WithEnvVariable("SPANS", "/events/"+cloud.eventsID+"/v1/traces.json.spans").
 		WithEnvVariable("IMAGE", alpineImage).
-		WithEnvVariable("MARKER", identity.NewID()).
+		WithEnvVariable("MARKER", rand.Text()).
 		WithEnvVariable("SEQUENTIAL", "00-"+sequentialTrace+"-"+randomHex(t, 8)+"-01").
 		WithEnvVariable("OVERLAPPING", "00-"+overlappingTrace+"-"+randomHex(t, 8)+"-01").
 		WithExec([]string{"sh", "-c", sharedTraceScript}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
@@ -537,7 +536,7 @@ func (ProvisionSuite) TestImageDriverEngineEventsNeedEnable(ctx context.Context,
 	entrypoint := fmt.Sprintf("#!/bin/sh\nexec /usr/local/bin/dagger-entrypoint.sh \"$@\" --network-name %s --network-cidr %s\n", deviceName, cidr)
 
 	provision := func(tag string, enable bool) (eventsID string) {
-		eventsID = identity.NewID()
+		eventsID = rand.Text()
 		cloudURL := "http://" + cloudHost + ":8080/" + eventsID
 		engineImage := core.NewQuery(c).Container().Import(core.NewQuery(c).Host().File(tarPath)).
 			WithNewFile("/usr/local/bin/dagger-test-entrypoint.sh", entrypoint, core.ContainerWithNewFileOpts{Permissions: 0o755}).
@@ -552,7 +551,7 @@ func (ProvisionSuite) TestImageDriverEngineEventsNeedEnable(ctx context.Context,
 		}))
 		require.NoError(t, err)
 
-		marker := identity.NewID()
+		marker := rand.Text()
 		out, err := ctr.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "image+docker://"+tag).
 			WithEnvVariable("DAGGER_CLOUD_TOKEN", "test").
@@ -575,7 +574,7 @@ func (ProvisionSuite) TestImageDriverEngineEventsNeedEnable(ctx context.Context,
 	// under eventsID.
 	events := func(eventsID, script string) string {
 		out, err := cloud.reader.
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			WithWorkdir("/events/"+eventsID+"/v1").
 			WithExec([]string{"sh", "-c", script}, core.ContainerWithExecOpts{
 				Expect: core.ReturnTypeAny,
@@ -608,7 +607,7 @@ func stopProvisionedEngine(ctx context.Context, t *testctx.T, dockerc *core.Cont
 	stopped := make(chan error, 1)
 	go func() {
 		_, err := dockerc.
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			WithExec([]string{"sh", "-c", "docker stop -t 60 $(docker ps -q)"}).
 			Sync(ctx)
 		stopped <- err
@@ -667,7 +666,7 @@ if [ -n "$FAILED" ]; then
 fi
 `
 	ctr := dockerc.
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithEnvVariable("IMAGE", engineImage)
 	if failed {
 		ctr = ctr.WithEnvVariable("FAILED", "1")

@@ -24,7 +24,6 @@ import (
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	utilsystem "github.com/dagger/dagger/internal/buildkit/util/system"
 	"github.com/moby/sys/userns"
@@ -1200,7 +1199,7 @@ func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error,
 		return cleanupDir()
 	}
 
-	fp := filepath.Join(dir, identity.NewID())
+	fp := filepath.Join(dir, rand.Text())
 	if err := os.WriteFile(fp, secret.secret.data, 0o600); err != nil {
 		_ = cleanup()
 		return nil, nil, err
@@ -2251,7 +2250,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 		var nestedClientMetadata *engine.ClientMetadata
 		if opts.ExperimentalPrivilegedNesting {
 			nestedClientMetadata = &engine.ClientMetadata{
-				ClientID:              identity.NewID(),
+				ClientID:              rand.Text(),
 				ClientVersion:         engine.Version,
 				SessionID:             clientMetadata.SessionID,
 				AllowedLLMModules:     slices.Clone(clientMetadata.AllowedLLMModules),

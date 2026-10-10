@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"strings"
 	"time"
@@ -14,7 +15,6 @@ import (
 
 	"dagger.io/dagger"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 )
 
@@ -58,7 +58,7 @@ func (LocalCacheSuite) TestConcurrentSessionsShareOneEntry(ctx context.Context, 
 	racing, control := sessions[:2], sessions[2]
 
 	// The exec gives up after a minute, so the test cannot hang on it.
-	barrier := "concurrent-sessions-barrier-" + identity.NewID()
+	barrier := "concurrent-sessions-barrier-" + rand.Text()
 	withBarrier := func(session *dagger.Client) *core.Container {
 		return core.NewQuery(session).Container().From(image).WithMountedCache("/barrier", core.NewQuery(session).CacheVolume(barrier))
 	}
@@ -119,7 +119,7 @@ head -c 16 /dev/urandom | base64`
 	readSnapshot := func() snapshot {
 		raw, err := core.NewQuery(c).Container().From(alpineImage).
 			WithServiceBinding("dev-engine", devEngine).
-			WithEnvVariable("READ", identity.NewID()).
+			WithEnvVariable("READ", rand.Text()).
 			WithExec([]string{"wget", "-qO-", "http://dev-engine:6060/debug/dagql/cache"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -152,7 +152,7 @@ head -c 16 /dev/urandom | base64`
 		}
 	}
 	_, err = withBarrier(control).
-		WithEnvVariable("OPEN", identity.NewID()).
+		WithEnvVariable("OPEN", rand.Text()).
 		WithExec([]string{"touch", "/barrier/open"}).
 		Sync(ctx)
 	require.NoError(t, err)

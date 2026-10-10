@@ -8,6 +8,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -15,7 +16,6 @@ import (
 	"time"
 
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -493,7 +493,7 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 	_, err = core.NewQuery(seedClient).
 		Container().
 		From(alpineImage).
-		WithEnvVariable("GC_PRESSURE_SEED", identity.NewID()).
+		WithEnvVariable("GC_PRESSURE_SEED", rand.Text()).
 		WithExec([]string{
 			"sh", "-ec",
 			fmt.Sprintf("dd if=/dev/zero of=/seed bs=1M count=%d status=none", seedMB),
@@ -515,7 +515,7 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 	activePressure, err := core.NewQuery(activeClient).
 		Container().
 		From(alpineImage).
-		WithEnvVariable("GC_PRESSURE_ACTIVE", identity.NewID()).
+		WithEnvVariable("GC_PRESSURE_ACTIVE", rand.Text()).
 		WithExec([]string{
 			"sh", "-ec",
 			fmt.Sprintf("dd if=/dev/zero of=/pressure bs=1M count=%d status=none", pressureMB),
@@ -600,7 +600,7 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
 
 	getMetrics := func() (map[string]float64, error) {
 		out, err := metricsCtr.
-			WithEnvVariable("CACHEBUST", identity.NewID()).
+			WithEnvVariable("CACHEBUST", rand.Text()).
 			WithExec([]string{
 				"sh", "-ec",
 				`curl --fail --silent --show-error http://dev-engine:9090/metrics | grep -E '^(dagger_connected_clients|dagger_dagql_cache_metadata_estimated_bytes|dagger_local_cache_total_disk_size_bytes) '`,
@@ -680,7 +680,7 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
 
 	var query strings.Builder
 	query.WriteByte('{')
-	patternPrefix := identity.NewID()
+	patternPrefix := rand.Text()
 	for i := range workloadCalls {
 		fmt.Fprintf(&query, "g%d:directory{glob(pattern:%q)}", i, fmt.Sprintf("%s-%d-*", patternPrefix, i))
 	}
@@ -1131,7 +1131,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropZstdTarballLayerContent(ctx
 	_, err = core.NewQuery(ballastClient).
 		Container().
 		From(alpineImage).
-		WithEnvVariable("ZSTD_PRUNE_BALLAST", identity.NewID()).
+		WithEnvVariable("ZSTD_PRUNE_BALLAST", rand.Text()).
 		WithExec([]string{
 			"sh",
 			"-ec",
@@ -1186,7 +1186,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropPreparedContainerImageMetad
 	producer := newNestedClient()
 	t.Cleanup(func() { _ = producer.Close() })
 
-	metadataValue := identity.NewID()
+	metadataValue := rand.Text()
 	ctr := core.NewQuery(producer).
 		Container().
 		From(alpineImage).
@@ -1206,7 +1206,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropPreparedContainerImageMetad
 	_, err = core.NewQuery(ballastClient).
 		Container().
 		From(alpineImage).
-		WithEnvVariable("PREPARED_IMAGE_PRUNE_BALLAST", identity.NewID()).
+		WithEnvVariable("PREPARED_IMAGE_PRUNE_BALLAST", rand.Text()).
 		WithExec([]string{"sh", "-c", "echo ballast > /ballast"}).
 		Sync(ctx)
 	require.NoError(t, err)
@@ -1468,7 +1468,7 @@ func (LocalCacheSuite) TestLocalCacheEntryRecordType(ctx context.Context, t *tes
 
 	_, err := core.NewQuery(c).Container().
 		From(alpineImage).
-		WithMountedCache("/cache", core.NewQuery(c).CacheVolume("record-type-"+identity.NewID())).
+		WithMountedCache("/cache", core.NewQuery(c).CacheVolume("record-type-"+rand.Text())).
 		WithExec([]string{"sh", "-c", "echo cache mount > /cache/output.txt"}).
 		Sync(ctx)
 	require.NoError(t, err)

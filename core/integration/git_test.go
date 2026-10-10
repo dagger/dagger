@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -27,7 +28,6 @@ import (
 
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -757,7 +757,7 @@ func (GitSuite) TestMirrorLockTelemetry(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, sink.clientOpts()...)
 
 	// Unique content: a fresh remote, so the mirror has to fetch.
-	content := core.NewQuery(c).Directory().WithNewFile("README.md", identity.NewID())
+	content := core.NewQuery(c).Directory().WithNewFile("README.md", rand.Text())
 	daemon, url := gitService(ctx, t, c, content)
 	_, err := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).
 		Branch("main").
@@ -1141,7 +1141,7 @@ func (GitSuite) TestSSHAuthSockResumeFromCheckout(ctx context.Context, t *testct
 
 	// A fresh session caches nothing the capture produced, so replaying the
 	// recipe scopes an SSH agent again, and none is running.
-	resumed := "resumed-" + identity.NewID()
+	resumed := "resumed-" + rand.Text()
 	_, err = checkout(connect(ctx, t)).
 		With(daggerQuery(`{ node(id: %q) { ... on LLM {
 			spawn(handle: %q, name: %q, state: IDLE, error: "", parentHandle: "")
@@ -1513,7 +1513,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 	password := "secretpass"
 
 	t.Run("loads username and password from client", func(ctx context.Context, t *testctx.T) {
-		hostname := "my-git-repo" + identity.NewID()
+		hostname := "my-git-repo" + rand.Text()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
 		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
@@ -1522,7 +1522,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
 		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, user!"), "main",
-			username, core.NewQuery(c).SetSecret("secret"+identity.NewID(), password),
+			username, core.NewQuery(c).SetSecret("secret"+rand.Text(), password),
 		)
 
 		dt, err := core.NewQuery(c).Git(gitServiceURL, core.GitOpts{
@@ -1537,7 +1537,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("incorrect username fails", func(ctx context.Context, t *testctx.T) {
-		hostname := "my-git-repo" + identity.NewID()
+		hostname := "my-git-repo" + rand.Text()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
 		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
@@ -1546,7 +1546,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
 		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, bad username!"), "main",
-			username+"XXX", core.NewQuery(c).SetSecret("secret"+identity.NewID(), password),
+			username+"XXX", core.NewQuery(c).SetSecret("secret"+rand.Text(), password),
 		)
 
 		_, err = core.NewQuery(c).Git(gitServiceURL, core.GitOpts{
@@ -1561,7 +1561,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("incorrect password fails", func(ctx context.Context, t *testctx.T) {
-		hostname := "my-git-repo" + identity.NewID()
+		hostname := "my-git-repo" + rand.Text()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
 		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
@@ -1570,7 +1570,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
 		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, bad password!"), "main",
-			username, core.NewQuery(c).SetSecret("secret"+identity.NewID(), password+"XXX"),
+			username, core.NewQuery(c).SetSecret("secret"+rand.Text(), password+"XXX"),
 		)
 
 		_, err = core.NewQuery(c).Git(gitServiceURL, core.GitOpts{
@@ -1589,7 +1589,7 @@ func (GitSuite) TestSubmoduleAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Cleanup(func() { _ = c.Close() })
 
-	authToken := core.NewQuery(c).SetSecret("submodule-test-token", "test-token-"+identity.NewID())
+	authToken := core.NewQuery(c).SetSecret("submodule-test-token", "test-token-"+rand.Text())
 
 	submoduleContent := core.NewQuery(c).Directory().WithNewFile("submodule.txt", "This is the submodule content")
 	parentContent := core.NewQuery(c).Directory().WithNewFile("parent.txt", "This is the parent content")
@@ -1696,7 +1696,7 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+rand.Text()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
@@ -1740,7 +1740,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+rand.Text()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
@@ -1789,7 +1789,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestRemoteUpdatesNoLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+rand.Text()))
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -1854,7 +1854,7 @@ func (GitSuite) TestRemoteUpdatesNoLock(ctx context.Context, t *testctx.T) {
 }
 
 func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
-	content := identity.NewID()
+	content := rand.Text()
 	hostname := func(c *dagger.Client) string {
 		svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("content", content))
 
@@ -1920,7 +1920,7 @@ func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
-		svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+		svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+rand.Text()))
 		repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: svc})
 
 		full, err := repo.Branch("main").CommitSHA(ctx)
@@ -1954,7 +1954,7 @@ func (GitSuite) TestRefRevisionSuffixes(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/src").
 		WithExec([]string{"sh", "-c", `set -e
 git init -q -b main
-echo ` + identity.NewID() + ` > f && git add f && git commit -qm root
+echo ` + rand.Text() + ` > f && git add f && git commit -qm root
 echo a > f && git commit -qam a
 git checkout -qb side
 echo 1 > s && git add s && git commit -qm side1

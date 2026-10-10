@@ -2,13 +2,13 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"os"
 	"path/filepath"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -53,12 +53,12 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 		return e
 	}
 
-	aVolume := core.NewQuery(outer).CacheVolume("b6-share-a-" + identity.NewID())
-	bVolume := core.NewQuery(outer).CacheVolume("b6-share-b-" + identity.NewID())
+	aVolume := core.NewQuery(outer).CacheVolume("b6-share-a-" + rand.Text())
+	bVolume := core.NewQuery(outer).CacheVolume("b6-share-b-" + rand.Text())
 	aDir, bDir := checkout(), checkout()
-	a := start("b6-share-a-state-"+identity.NewID(), aVolume, aDir)
+	a := start("b6-share-a-state-"+rand.Text(), aVolume, aDir)
 	defer stop(a)
-	bState := "b6-share-b-state-" + identity.NewID()
+	bState := "b6-share-b-state-" + rand.Text()
 	b := start(bState, bVolume, bDir)
 	defer func() { stop(b) }()
 
@@ -86,7 +86,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.NotEmpty(t, donorRef)
 
 	_, err = core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
-		WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/share.json /destination/bundles/; cp -a /source/blobs /destination/"}).Sync(ctx)
+		WithEnvVariable("COPY", rand.Text()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/share.json /destination/bundles/; cp -a /source/blobs /destination/"}).Sync(ctx)
 	require.NoError(t, err)
 	var imported []transferFixtureMapping
 	require.NoError(t, transferFixture(ctx, b.client, "import", "share.json", []string{}, &imported))

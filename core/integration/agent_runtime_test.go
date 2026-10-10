@@ -40,6 +40,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -55,7 +56,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/assert"
@@ -467,7 +467,7 @@ func unmintedAgent(ctx context.Context, t *testctx.T, c *dagger.Client, handle, 
 func slowToolContainer(c *dagger.Client, vol *sdkcore.CacheVolume, sleepSecs int) *sdkcore.Container {
 	return sdkcore.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/sync", vol).
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithExec([]string{"sh", "-c",
 			fmt.Sprintf("touch /sync/started && sleep %d && echo TOOL-DONE", sleepSecs)})
 }
@@ -479,7 +479,7 @@ func waitForSlowTool(ctx context.Context, t *testctx.T, c *dagger.Client, vol *s
 	t.Helper()
 	_, err := sdkcore.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/sync", vol).
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithExec([]string{"sh", "-c",
 			"for i in $(seq 1 600); do [ -f /sync/started ] && exit 0; sleep 0.1; done; echo 'slow tool never started'; exit 1"}).
 		Sync(ctx)
@@ -638,7 +638,7 @@ func (AgentRuntimeSuite) TestSendAwait(ctx context.Context, t *testctx.T) {
 func (AgentRuntimeSuite) TestSpawnInstances(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	vol := sdkcore.NewQuery(c).CacheVolume("agent-spawn-" + identity.NewID())
+	vol := sdkcore.NewQuery(c).CacheVolume("agent-spawn-" + rand.Text())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
@@ -840,8 +840,8 @@ func (AgentRuntimeSuite) TestSeed(ctx context.Context, t *testctx.T) {
 
 	// A restored instance's seed is the conversation the restore adopted:
 	// its earlier history belongs to the session that published it.
-	restored := "restored history " + identity.NewID()
-	r, err := rehydrateAgent(ctx, c, llmWithPrompt(ctx, t, c, emptyReplayModel, restored), identity.NewID(), "restored", "IDLE", "")
+	restored := "restored history " + rand.Text()
+	r, err := rehydrateAgent(ctx, c, llmWithPrompt(ctx, t, c, emptyReplayModel, restored), rand.Text(), "restored", "IDLE", "")
 	require.NoError(t, err)
 	require.Contains(t, r.mustRun(ctx, t, `seed { transcript }`).Get("seed.transcript").String(), restored)
 }
@@ -1082,7 +1082,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("refuses an instance with no runtime", func(ctx context.Context, t *testctx.T) {
-		h := unmintedAgent(ctx, t, c, identity.NewID(), "ghost")
+		h := unmintedAgent(ctx, t, c, rand.Text(), "ghost")
 		convo, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: emptyReplayModel}).ID(ctx)
 		require.NoError(t, err)
 		err = h.reseedAgent(ctx, t, string(convo))
@@ -1090,7 +1090,7 @@ func (AgentRuntimeSuite) TestReseed(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("refuses an in-flight step and rewinds a suspended turn", func(ctx context.Context, t *testctx.T) {
-		vol := sdkcore.NewQuery(c).CacheVolume("agent-reseed-" + identity.NewID())
+		vol := sdkcore.NewQuery(c).CacheVolume("agent-reseed-" + rand.Text())
 		ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 		require.NoError(t, err)
 		const (
@@ -1247,10 +1247,10 @@ func agentContentRecordingModel(ctx context.Context, t *testctx.T, c *dagger.Cli
 
 func (AgentRuntimeSuite) TestSendContentMidTurn(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	vol := sdkcore.NewQuery(c).CacheVolume("agent-media-gate-" + identity.NewID())
+	vol := sdkcore.NewQuery(c).CacheVolume("agent-media-gate-" + rand.Text())
 	gate := sdkcore.NewQuery(c).Container().From(alpineImage).
 		WithMountedCache("/sync", vol).
-		WithEnvVariable("CACHEBUSTER", identity.NewID())
+		WithEnvVariable("CACHEBUSTER", rand.Text())
 	tool := gate.WithExec([]string{"sh", "-c", "touch /sync/started; for i in $(seq 1 600); do [ -f /sync/release ] && { echo TOOL-DONE; exit 0; }; sleep 0.1; done; exit 1"})
 	toolID, err := tool.ID(ctx)
 	require.NoError(t, err)
@@ -1446,7 +1446,7 @@ func (AgentRuntimeSuite) TestSteering(ctx context.Context, t *testctx.T) {
 	// result, which is exactly where the loop drains a mid-turn message
 	// (the step boundary), so the replayed history matches by
 	// construction.
-	vol := sdkcore.NewQuery(c).CacheVolume("agent-steer-" + identity.NewID())
+	vol := sdkcore.NewQuery(c).CacheVolume("agent-steer-" + rand.Text())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, true))
@@ -1493,7 +1493,7 @@ func (AgentRuntimeSuite) TestSteering(ctx context.Context, t *testctx.T) {
 func (AgentRuntimeSuite) TestInterruptMidStep(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	vol := sdkcore.NewQuery(c).CacheVolume("agent-interrupt-" + identity.NewID())
+	vol := sdkcore.NewQuery(c).CacheVolume("agent-interrupt-" + rand.Text())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
@@ -1593,7 +1593,7 @@ func (AgentRuntimeSuite) TestInterruptModuleToolCall(ctx context.Context, t *tes
 
 	blockerID := queryID(ctx, t, c, `{ blocker { id } }`, "blocker.id")
 
-	volName := "agent-modtool-" + identity.NewID()
+	volName := "agent-modtool-" + rand.Text()
 
 	const (
 		blockPrompt = "start the module slow work"
@@ -1601,7 +1601,7 @@ func (AgentRuntimeSuite) TestInterruptModuleToolCall(ctx context.Context, t *tes
 	)
 	args, err := json.Marshal(map[string]string{
 		"volume": volName,
-		"bust":   identity.NewID(),
+		"bust":   rand.Text(),
 	})
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
@@ -1635,7 +1635,7 @@ func (AgentRuntimeSuite) TestInterruptModuleToolCall(ctx context.Context, t *tes
 				Query: `query($volume: String!, $bust: String!) {
 					blocker { peek(volume: $volume, bust: $bust) }
 				}`,
-				Variables: map[string]any{"volume": volName, "bust": identity.NewID()},
+				Variables: map[string]any{"volume": volName, "bust": rand.Text()},
 			},
 			&dagger.Response{Data: &res},
 		))
@@ -1692,7 +1692,7 @@ func (AgentRuntimeSuite) TestInterruptModuleToolCall(ctx context.Context, t *tes
 func (AgentRuntimeSuite) TestResponseIdempotency(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	vol := sdkcore.NewQuery(c).CacheVolume("agent-response-" + identity.NewID())
+	vol := sdkcore.NewQuery(c).CacheVolume("agent-response-" + rand.Text())
 	ctrID, err := slowToolContainer(c, vol, 3).ID(ctx)
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
@@ -1718,7 +1718,7 @@ func (AgentRuntimeSuite) TestResponseIdempotency(ctx context.Context, t *testctx
 func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	vol := sdkcore.NewQuery(c).CacheVolume("agent-msgid-" + identity.NewID())
+	vol := sdkcore.NewQuery(c).CacheVolume("agent-msgid-" + rand.Text())
 	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
 	require.NoError(t, err)
 	model := cannedRecordingModel(ctx, t, c, slowToolConversation(c, false))
@@ -1791,7 +1791,7 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	// the bare agent(handle:, name:) lookup, since spawn creates the entry
 	// it mints (see TestRuntimeVerbsRequireRuntime for why a miss must never
 	// be a constructor).
-	ghost := unmintedAgent(ctx, t, c, identity.NewID(), "never-ran")
+	ghost := unmintedAgent(ctx, t, c, rand.Text(), "never-ran")
 	_, err = ghost.run(ctx, t, `message(ref: "#99") { delivery }`)
 	require.ErrorContains(t, err, "no runtime entry")
 }
@@ -1912,7 +1912,7 @@ func (AgentRuntimeSuite) TestRosterAddressing(ctx context.Context, t *testctx.T)
 
 	// A per-run marker, so "the reconstructed handle sees this runtime"
 	// cannot pass by coincidence.
-	marker := "roster marker " + identity.NewID()
+	marker := "roster marker " + rand.Text()
 	delivery, err := h.sendNoWait(ctx, t, marker)
 	require.NoError(t, err)
 	require.Equal(t, "STARTED", delivery)
@@ -2020,7 +2020,7 @@ func (AgentRuntimeSuite) TestRosterAddressingFromModule(ctx context.Context, t *
 
 	// A per-run marker, so "the reconstructed handle sees this runtime"
 	// cannot pass by coincidence.
-	marker := "module marker " + identity.NewID()
+	marker := "module marker " + rand.Text()
 	res, err := testutil.QueryWithClient[struct {
 		Hirer struct {
 			Hire string
@@ -2142,7 +2142,7 @@ func (AgentRuntimeSuite) TestSendAfterSpawnerReleased(ctx context.Context, t *te
 	)
 	// A per-run marker in the task, so the transcript assertion cannot pass
 	// by coincidence.
-	task := "hire task " + identity.NewID()
+	task := "hire task " + rand.Text()
 
 	// Unlike the roster test's empty recording, this one SUCCEEDS turn 1
 	// and holds a second exchange for the post-hire send. It deliberately
@@ -2262,7 +2262,7 @@ func (AgentRuntimeSuite) TestAgentArgumentAfterSpawnerReleased(ctx context.Conte
 		secondPrompt = "second prompt through the handle argument"
 		secondReply  = "the second recorded reply"
 	)
-	task := "hire task " + identity.NewID()
+	task := "hire task " + rand.Text()
 
 	model := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
 		WithPrompt(task).
@@ -2434,7 +2434,7 @@ func (AgentRuntimeSuite) TestRosterAddressingHostWorkspace(ctx context.Context, 
 
 			// A per-run marker, so "the reconstructed handle sees this
 			// runtime" cannot pass by coincidence.
-			marker := "roster marker " + identity.NewID()
+			marker := "roster marker " + rand.Text()
 			delivery, err := h.sendNoWait(ctx, t, marker)
 			require.NoError(t, err)
 			require.Equal(t, "STARTED", delivery)
@@ -2532,7 +2532,7 @@ func (AgentRuntimeSuite) TestResumeAnchorRecords(ctx context.Context, t *testctx
 
 	// A per-run marker: it is on the committed conversation and on nothing
 	// else, so an anchor pointing at the seed cannot pass by coincidence.
-	marker := "resume marker " + identity.NewID()
+	marker := "resume marker " + rand.Text()
 	delivery, err := h.sendNoWait(ctx, t, marker)
 	require.NoError(t, err)
 	require.Equal(t, "STARTED", delivery)
@@ -2585,9 +2585,9 @@ func (AgentRuntimeSuite) TestResumeAnchorRecords(ctx context.Context, t *testctx
 func (AgentRuntimeSuite) TestRehydrateAdoptsConversation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	restored := "restored history " + identity.NewID()
+	restored := "restored history " + rand.Text()
 	snapshot := llmWithPrompt(ctx, t, c, emptyReplayModel, restored)
-	handle := identity.NewID()
+	handle := rand.Text()
 
 	h, err := rehydrateAgent(ctx, c, snapshot, handle, "restored", "IDLE", "")
 	require.NoError(t, err)
@@ -2611,7 +2611,7 @@ func (AgentRuntimeSuite) TestRehydrateAdoptsConversation(ctx context.Context, t 
 	// Prompting continues that conversation. The empty recording fails the
 	// model call, so the turn lands in FAILED — but the message was drained
 	// onto the snapshot first, which is what continuity looks like here.
-	next := "continuing after the restore " + identity.NewID()
+	next := "continuing after the restore " + rand.Text()
 	delivery, err := h.sendNoWait(ctx, t, next)
 	require.NoError(t, err)
 	require.Equal(t, "STARTED", delivery,
@@ -2633,11 +2633,11 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 	c := connect(ctx, t)
 
 	newSnapshot := func(t *testctx.T) string {
-		return llmWithPrompt(ctx, t, c, emptyReplayModel, "restored "+identity.NewID())
+		return llmWithPrompt(ctx, t, c, emptyReplayModel, "restored "+rand.Text())
 	}
 
 	t.Run("paused queues mail behind the pause", func(ctx context.Context, t *testctx.T) {
-		h, err := rehydrateAgent(ctx, c, newSnapshot(t), identity.NewID(), "parked", "PAUSED", "")
+		h, err := rehydrateAgent(ctx, c, newSnapshot(t), rand.Text(), "parked", "PAUSED", "")
 		require.NoError(t, err)
 		require.Equal(t, "PAUSED", h.state(ctx, t))
 
@@ -2647,8 +2647,8 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 	})
 
 	t.Run("failed preserves the error a resume retries past", func(ctx context.Context, t *testctx.T) {
-		loopErr := "provider refused the request " + identity.NewID()
-		h, err := rehydrateAgent(ctx, c, newSnapshot(t), identity.NewID(), "broken", "FAILED", loopErr)
+		loopErr := "provider refused the request " + rand.Text()
+		h, err := rehydrateAgent(ctx, c, newSnapshot(t), rand.Text(), "broken", "FAILED", loopErr)
 		require.NoError(t, err)
 		require.Equal(t, "FAILED", h.state(ctx, t))
 
@@ -2662,7 +2662,7 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 
 	t.Run("stopped preserves a restartable snapshot", func(ctx context.Context, t *testctx.T) {
 		snapshot := newSnapshot(t)
-		h, err := rehydrateAgent(ctx, c, snapshot, identity.NewID(), "dismissed", "STOPPED", "")
+		h, err := rehydrateAgent(ctx, c, snapshot, rand.Text(), "dismissed", "STOPPED", "")
 		require.NoError(t, err)
 		require.Equal(t, "STOPPED", h.state(ctx, t))
 
@@ -2683,12 +2683,12 @@ func (AgentRuntimeSuite) TestRehydrateStates(ctx context.Context, t *testctx.T) 
 		// and a roster redisplaying it as running would be lying. The client
 		// maps it to IDLE with the interrupted turn's input still pending;
 		// the engine refuses to be told otherwise.
-		_, err := rehydrateAgent(ctx, c, newSnapshot(t), identity.NewID(), "zombie", "RUNNING", "")
+		_, err := rehydrateAgent(ctx, c, newSnapshot(t), rand.Text(), "zombie", "RUNNING", "")
 		require.ErrorContains(t, err, "cannot be spawned as RUNNING")
 	})
 
 	t.Run("an error without FAILED is refused", func(ctx context.Context, t *testctx.T) {
-		_, err := rehydrateAgent(ctx, c, newSnapshot(t), identity.NewID(), "confused", "IDLE", "boom")
+		_, err := rehydrateAgent(ctx, c, newSnapshot(t), rand.Text(), "confused", "IDLE", "boom")
 		require.ErrorContains(t, err, "only be spawned with state FAILED")
 	})
 }
@@ -2752,7 +2752,7 @@ func (AgentRuntimeSuite) TestRuntimeVerbsRequireRuntime(ctx context.Context, t *
 
 	for name, run := range tests {
 		t.Run(name, func(ctx context.Context, t *testctx.T) {
-			handle := identity.NewID()
+			handle := rand.Text()
 			ghost := unmintedAgent(ctx, t, c, handle, "ghost-"+name)
 
 			// Read projections remain useful for reconstructed trace handles.
@@ -2787,9 +2787,9 @@ func (AgentRuntimeSuite) TestRehydratePublishesIdentity(ctx context.Context, t *
 	sink := newAgentTraceSink(t)
 	c := connect(ctx, t, sink.clientOpts()...)
 
-	restored := "restored history " + identity.NewID()
+	restored := "restored history " + rand.Text()
 	snapshot := llmWithPrompt(ctx, t, c, emptyReplayModel, restored)
-	handle := identity.NewID()
+	handle := rand.Text()
 
 	_, err := rehydrateAgent(ctx, c, snapshot, handle, "restored", "IDLE", "")
 	require.NoError(t, err)

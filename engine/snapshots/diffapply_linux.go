@@ -2,6 +2,7 @@ package snapshots
 
 import (
 	"context"
+	"crypto/rand"
 	gofs "io/fs"
 	"os"
 	"path/filepath"
@@ -17,7 +18,6 @@ import (
 	"github.com/containerd/continuity/sysx"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/dagger/dagger/engine/wcprof"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/hashicorp/go-multierror"
@@ -50,7 +50,7 @@ func (sn *mergeSnapshotter) diffApply(ctx context.Context, dest MountableRef, di
 			if info, err := sn.Stat(ctx, diff.Lower); err != nil {
 				return snapshots.Usage{}, errors.Wrapf(err, "failed to stat lower snapshot %s", diff.Lower)
 			} else if info.Kind == snapshots.KindCommitted {
-				lowerMntable, err = sn.View(ctx, identity.NewID(), diff.Lower)
+				lowerMntable, err = sn.View(ctx, rand.Text(), diff.Lower)
 				if err != nil {
 					return snapshots.Usage{}, errors.Wrapf(err, "failed to mount lower snapshot view %s", diff.Lower)
 				}
@@ -66,7 +66,7 @@ func (sn *mergeSnapshotter) diffApply(ctx context.Context, dest MountableRef, di
 			if info, err := sn.Stat(ctx, diff.Upper); err != nil {
 				return snapshots.Usage{}, errors.Wrapf(err, "failed to stat upper snapshot %s", diff.Upper)
 			} else if info.Kind == snapshots.KindCommitted {
-				upperMntable, err = sn.View(ctx, identity.NewID(), diff.Upper)
+				upperMntable, err = sn.View(ctx, rand.Text(), diff.Upper)
 				if err != nil {
 					return snapshots.Usage{}, errors.Wrapf(err, "failed to mount upper snapshot view %s", diff.Upper)
 				}
@@ -77,7 +77,7 @@ func (sn *mergeSnapshotter) diffApply(ctx context.Context, dest MountableRef, di
 				}
 			}
 		} else {
-			upperMntable, err = sn.View(ctx, identity.NewID(), "")
+			upperMntable, err = sn.View(ctx, rand.Text(), "")
 			if err != nil {
 				return snapshots.Usage{}, errors.Wrapf(err, "failed to mount empty upper snapshot view %s", diff.Upper)
 			}
@@ -846,7 +846,7 @@ func opaqueXattr(userxattr bool) string {
 // a temporary new snapshot and test using its root, which works because single layer snapshots will
 // use bind-mounts even when created by an overlay based snapshotter.
 func needsUserXAttr(ctx context.Context, sn Snapshotter, lm leases.Manager) (bool, error) {
-	key := identity.NewID()
+	key := rand.Text()
 
 	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
 		leaseCtx, err := EnsureLease(ctx)
