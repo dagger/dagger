@@ -462,9 +462,9 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 
 // archiveManifest looks up an archive for a request from sess. A session
 // registers its own archive only when its first agent control record reaches
-// the session exporter, behind the control lane's batching, so until then a
-// miss flushes the session's telemetry and looks again: the CLI's exit-time
-// lookup right after a short session must still find it.
+// the session exporter, after the agent's publisher and the control lane's
+// batching, so until then a miss drains both and looks again: the CLI's
+// exit-time lookup right after a short session must still find it.
 func (srv *Server) archiveManifest(ctx context.Context, sess *daggerSession, traceID string) (archive.Manifest, error) {
 	m, err := srv.archives.Manifest(traceID)
 	var failure *archive.Failure
@@ -474,12 +474,17 @@ func (srv *Server) archiveManifest(ctx context.Context, sess *daggerSession, tra
 	sess.archiveMu.Lock()
 	settled := sess.archiveManifest != nil || sess.archiveRegisterErr != nil
 	sess.archiveMu.Unlock()
-	if settled {
-		return m, err
+	if !settled {
+		if sess.agents != nil {
+			if err := sess.agents.FlushControl(ctx); err != nil {
+				slog.Debug("flush agent control for archive lookup", "err", err)
+			}
+		}
+		if err := sess.FlushTelemetry(ctx, "archive lookup"); err != nil {
+			slog.Debug("flush session telemetry for archive lookup", "err", err)
+		}
 	}
-	if err := sess.FlushTelemetry(ctx, "archive lookup"); err != nil {
-		slog.Debug("flush session telemetry for archive lookup", "err", err)
-	}
+	// Registration may also have landed since the first miss.
 	return srv.archives.Manifest(traceID)
 }
 

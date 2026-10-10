@@ -995,6 +995,7 @@ func TestArchiveLookupFindsItsSessionsPendingRegistration(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, sess.loggerProvider.Shutdown(context.Background()))
 		require.NoError(t, sess.tracerProvider.Shutdown(context.Background()))
+		require.NoError(t, client.closeTelemetryDB())
 	})
 
 	ctx := engine.ContextWithClientMetadata(t.Context(), md)
