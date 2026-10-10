@@ -26,6 +26,12 @@ type TraceTree struct {
 	RevealedChildren        bool
 
 	Children []*TraceTree
+
+	// Revealed holds the trees of the span's revealed spans, built beneath
+	// it, when it shows them in place of its children (see
+	// ShouldShowRevealedSpans). They're copies: a revealed span also has a
+	// tree of its own wherever its home is, usually among Children.
+	Revealed []*TraceTree
 }
 
 // TraceRow is the flattened representation of the tree so we can easily walk
@@ -53,6 +59,8 @@ type TraceRow struct {
 type RowsView struct {
 	Zoomed *Span
 	Body   []*TraceTree
+	// BySpan maps each span to its tree; for a revealed span, the tree at its
+	// home, if it has one, rather than its copy beneath a revealing span.
 	BySpan map[SpanID]*TraceTree
 }
 
@@ -121,7 +129,12 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 		return view
 	}
 	view.Zoomed = zoomed
-	w.emitted = func(tree *TraceTree) {
+	w.emitted = func(tree *TraceTree, revealedCopy bool) {
+		// A span's home tree takes the place of a revealed copy of it, which
+		// takes the place of nothing else.
+		if _, ok := view.BySpan[tree.Span.ID]; revealedCopy && ok {
+			return
+		}
 		view.BySpan[tree.Span.ID] = tree
 	}
 	view.Body = w.walk()
@@ -161,29 +174,17 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 		rows.BySpan[tree.Span.ID] = row
 		if row.Expanded {
 			var lastChild *TraceRow
-
+			children := tree.Children
 			if tree.ShouldShowRevealedSpans(opts) {
-				// Show revealed spans directly, finding their TraceTrees
-				for _, revealedSpan := range tree.Span.RevealedSpans.Spans() {
-					if revealedTree, ok := lv.BySpan[revealedSpan.ID]; ok {
-						childRow := walk(revealedTree, row, depth+1)
-						if lastChild != nil {
-							childRow.Previous = lastChild
-							lastChild.Next = childRow
-						}
-						lastChild = childRow
-					}
+				children = tree.Revealed
+			}
+			for _, child := range children {
+				childRow := walk(child, row, depth+1)
+				if lastChild != nil {
+					childRow.Previous = lastChild
+					lastChild.Next = childRow
 				}
-			} else {
-				// Show direct children
-				for _, child := range tree.Children {
-					childRow := walk(child, row, depth+1)
-					if lastChild != nil {
-						childRow.Previous = lastChild
-						lastChild.Next = childRow
-					}
-					lastChild = childRow
-				}
+				lastChild = childRow
 			}
 			row.ShowingChildren = row.HasChildren
 		}

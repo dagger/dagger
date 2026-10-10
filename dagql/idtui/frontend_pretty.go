@@ -5822,15 +5822,9 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 	}
 
 	// Determine visible children
-	var childTrees []*dagui.TraceTree
+	childTrees := tree.Children
 	if tree.ShouldShowRevealedSpans(opts) {
-		for _, revealedSpan := range tree.Span.RevealedSpans.Spans() {
-			if revealedTree, ok := rowsView.BySpan[revealedSpan.ID]; ok {
-				childTrees = append(childTrees, revealedTree)
-			}
-		}
-	} else {
-		childTrees = tree.Children
+		childTrees = tree.Revealed
 	}
 
 	// Compute the gap prefix for lines between this node's children.

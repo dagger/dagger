@@ -51,7 +51,8 @@ func randomTraceDB(rng *rand.Rand) (*DB, []SpanID) {
 			StartTime: start.Add(time.Duration(i*4+rng.Intn(6)) * time.Second),
 		}
 		if i == 0 {
-			// the root runs throughout, so nothing gets canceled
+			// the root runs throughout, so nothing gets canceled; as a
+			// passthrough, a view zoomed to it lists its revealed spans
 			snap.Passthrough = rng.Intn(4) == 0
 			snaps[i] = snap
 			continue
@@ -193,6 +194,12 @@ func describeTree(tree *TraceTree, depth int, out *strings.Builder) {
 	for _, child := range tree.Children {
 		describeTree(child, depth+1, out)
 	}
+	if tree.Revealed != nil {
+		fmt.Fprintf(out, "%s(revealed)\n", strings.Repeat("  ", depth+1))
+		for _, child := range tree.Revealed {
+			describeTree(child, depth+1, out)
+		}
+	}
 }
 
 // describeSiblings describes a sibling list without what's beneath it.
@@ -204,9 +211,17 @@ func describeSiblings(trees []*TraceTree) string {
 	return strings.Join(out, ", ")
 }
 
-// walkPath walks the view building only the trees along path, a span at each
-// level down from the top, and everything beneath the last.
-func walkPath(t *testing.T, db *DB, opts FrontendOpts, path []*Span) (lists [][]*TraceTree, target *TraceTree) {
+// pathStep is a step down a view: a tree's span, and whether it's among its
+// parent's revealed copies rather than its children.
+type pathStep struct {
+	span     *Span
+	revealed bool
+}
+
+// walkPath walks the view building only the trees along path, and
+// everything beneath its end. It returns the sibling list at each step, and
+// the tree at the end.
+func walkPath(t *testing.T, db *DB, opts FrontendOpts, path []pathStep) (lists [][]*TraceTree, target *TraceTree) {
 	t.Helper()
 	w, _, ok := db.newSpanWalker(opts)
 	if !ok {
@@ -214,17 +229,22 @@ func walkPath(t *testing.T, db *DB, opts FrontendOpts, path []*Span) (lists [][]
 	}
 	w.descend = func(tree *TraceTree) bool {
 		if depth := tree.Depth(); depth < len(path) {
-			return tree.Span == path[depth]
+			// a span both among its parent's children and its revealed
+			// copies is built in both on the path; that's just extra work
+			return tree.Span == path[depth].span
 		}
-		// beneath the last span on the path
+		// beneath the end of the path
 		return true
 	}
 	trees := w.walk()
-	for _, span := range path {
+	for i, step := range path {
+		if step.revealed && target != nil {
+			trees = target.Revealed
+		}
 		lists = append(lists, trees)
 		target = nil
 		for _, tree := range trees {
-			if tree.Span == span {
+			if tree.Span == step.span {
 				target = tree
 				break
 			}
@@ -232,7 +252,9 @@ func walkPath(t *testing.T, db *DB, opts FrontendOpts, path []*Span) (lists [][]
 		if target == nil {
 			return lists, nil
 		}
-		trees = target.Children
+		if i+1 < len(path) {
+			trees = target.Children
+		}
 	}
 	return lists, target
 }
@@ -242,7 +264,8 @@ func walkPath(t *testing.T, db *DB, opts FrontendOpts, path []*Span) (lists [][]
 // whether the walk builds the whole view or only that path. A walk that
 // builds only the trees a view shows relies on this to match the full walk.
 //
-// It also checks that the walk places every span it reaches exactly once.
+// It also checks that the walk places every span it reaches exactly once,
+// not counting revealed copies.
 func TestWalkIsLocal(t *testing.T) {
 	const runs = 3000
 	failures := 0
@@ -283,25 +306,18 @@ func TestWalkIsLocal(t *testing.T) {
 			}
 		}
 
-		var check func(trees []*TraceTree, path []*Span)
-		check = func(trees []*TraceTree, path []*Span) {
+		var check func(trees []*TraceTree, revealed bool, path []pathStep, lists [][]*TraceTree)
+		check = func(trees []*TraceTree, revealed bool, path []pathStep, lists [][]*TraceTree) {
+			lists = append(lists[:len(lists):len(lists)], trees)
 			for _, tree := range trees {
-				path := append(path[:len(path):len(path)], tree.Span)
-				lists, got := walkPath(t, db, opts, path)
+				path := append(path[:len(path):len(path)], pathStep{tree.Span, revealed})
+				gotLists, got := walkPath(t, db, opts, path)
 				if got == nil {
 					fail("walking only %s's path doesn't build it", tree.Span.Name)
 					continue
 				}
-				var fullLists [][]*TraceTree
-				for at := tree; at != nil; at = at.Parent {
-					if at.Parent == nil {
-						fullLists = append(fullLists, full.Body)
-					} else {
-						fullLists = append(fullLists, at.Parent.Children)
-					}
-				}
-				for i, list := range lists {
-					want := describeSiblings(fullLists[len(fullLists)-1-i])
+				for i, list := range gotLists {
+					want := describeSiblings(lists[i])
 					if got := describeSiblings(list); got != want {
 						fail("siblings at depth %d on %s's path differ:\nfull: %s\npath: %s", i, tree.Span.Name, want, got)
 					}
@@ -312,10 +328,11 @@ func TestWalkIsLocal(t *testing.T) {
 				if want.String() != have.String() {
 					fail("trees beneath %s differ:\nfull:\n%s\npath:\n%s", tree.Span.Name, want.String(), have.String())
 				}
-				check(tree.Children, path)
+				check(tree.Children, false, path, lists)
+				check(tree.Revealed, true, path, lists)
 			}
 		}
-		check(full.Body, nil)
+		check(full.Body, false, nil, nil)
 	}
 	if failures > 0 {
 		t.Logf("%d failures over %d views", failures, runs)

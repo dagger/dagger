@@ -57,8 +57,10 @@ type spanWalker struct {
 	// spans with cause links and the ancestors of their causes.
 	infos map[*Span]*walkInfo
 
-	// emitted is called with each tree the walk builds, parents first.
-	emitted func(*TraceTree)
+	// emitted is called with each tree the walk builds, parents first, and
+	// whether it's a copy built for a span that reveals it (see
+	// TraceTree.Revealed).
+	emitted func(tree *TraceTree, revealedCopy bool)
 
 	// descend, if set, decides whether the walk builds a tree's children;
 	// without it, it builds them all.
@@ -451,6 +453,8 @@ type treeList struct {
 	trees  []*TraceTree
 	// lastCall is the last call tree in the list, for Chained.
 	lastCall *TraceTree
+	// revealed is set within revealed copies.
+	revealed bool
 }
 
 // walk builds the view's top-level trees.
@@ -559,16 +563,34 @@ func (w *spanWalker) emit(list *treeList, span *Span) {
 		list.lastCall = tree
 	}
 	if w.emitted != nil {
-		w.emitted(tree)
+		w.emitted(tree, list.revealed)
 	}
 	if w.descend != nil && !w.descend(tree) {
 		tree.IsRunningOrChildRunning = span.IsRunningOrEffectsRunning()
 		return
 	}
 
-	children := treeList{parent: tree}
-	w.fill(&children, span)
-	tree.Children = children.trees
+	children := treeList{parent: tree, revealed: list.revealed}
+	showsRevealed := tree.RevealedChildren && tree.ShouldShowRevealedSpans(w.opts)
+	if !list.revealed || !showsRevealed {
+		// Within a revealed copy, a span showing its own revealed spans
+		// doesn't need its children too: only rows show the copy, and they
+		// show the revealed spans instead. (Elsewhere they're the home trees
+		// of the spans beneath, which BySpan and a full-tree reader want.)
+		w.fill(&children, span)
+		tree.Children = children.trees
+	}
+
+	if showsRevealed {
+		revealed := treeList{parent: tree, revealed: true}
+		for _, span := range span.RevealedSpans.Spans() {
+			if w.mode(span) == modeBuild && w.reachable(span, true) &&
+				!revealedBy(tree, span) {
+				w.emit(&revealed, span)
+			}
+		}
+		tree.Revealed = revealed.trees
+	}
 
 	running := span.IsRunningOrEffectsRunning()
 	for _, child := range tree.Children {
@@ -577,5 +599,22 @@ func (w *spanWalker) emit(list *treeList, span *Span) {
 		}
 		running = child.IsRunningOrChildRunning
 	}
+	for _, child := range tree.Revealed {
+		if running {
+			break
+		}
+		running = child.IsRunningOrChildRunning
+	}
 	tree.IsRunningOrChildRunning = running
+}
+
+// revealedBy reports whether span is tree's span or an ancestor's, which
+// would reveal itself without end.
+func revealedBy(tree *TraceTree, span *Span) bool {
+	for at := tree; at != nil; at = at.Parent {
+		if at.Span == span {
+			return true
+		}
+	}
+	return false
 }
