@@ -7,7 +7,7 @@ namespace Dagger\Tests\Unit\Codegen;
 use Dagger\Attribute\GraphQLType;
 use Dagger\Codegen\Introspection\IntrospectionType;
 use Dagger\Codegen\Introspection\NewCodegenVisitor;
-use Dagger\Codegen\Naming\Identifiers;
+use Dagger\Codegen\Naming\FormattedNames;
 use Nette\PhpGenerator\ClassType;
 use Nette\PhpGenerator\EnumCase;
 use Nette\PhpGenerator\EnumType;
@@ -64,9 +64,9 @@ class NewCodegenVisitorTest extends TestCase
     }
 
     #[Test]
-    public function itNamesMethodsAndArgsFromWords(): void
+    public function itNamesMethodsAndArgsFromFormattedNames(): void
     {
-        $class = $this->generate(self::objectType(), self::identifiers());
+        $class = $this->generate(self::objectType(), self::names());
 
         self::assertTrue($class->hasMethod('withGpu'));
         $method = $class->getMethod('withGpu');
@@ -91,7 +91,7 @@ class NewCodegenVisitorTest extends TestCase
     #[Test]
     public function itForwardsMethodsRenamedBeyondCase(): void
     {
-        $class = $this->generate(self::objectType(), self::identifiers());
+        $class = $this->generate(self::objectType(), self::names());
 
         self::assertSame('fooBar', $class->getMethod('fooBar')->getName());
         $legacy = $class->getMethods()['foo_bar'];
@@ -100,10 +100,15 @@ class NewCodegenVisitorTest extends TestCase
     }
 
     #[Test]
-    public function itKeepsSchemaNamesWithoutWords(): void
+    public function itKeepsSchemaNamesWithoutFormattedNames(): void
     {
-        foreach ([null, Identifiers::fromArray([])] as $identifiers) {
-            $class = $this->generate(self::objectType(), $identifiers);
+        // no names at all, no names in the format, or no entry for the name
+        $partial = new FormattedNames([
+            'CAMEL:UPPERCASE' => ['withGPU' => 'withGPU', 'callID' => 'callID'],
+            'CAMEL:CAPITALIZED' => ['Artifacts' => 'artifacts'],
+        ]);
+        foreach ([null, new FormattedNames(), $partial] as $names) {
+            $class = $this->generate(self::objectType(), $names);
 
             $method = $class->getMethods()['withGPU'];
             self::assertSame(['insecureSkipTLSVerify', 'callID'], array_keys($method->getParameters()));
@@ -116,7 +121,7 @@ class NewCodegenVisitorTest extends TestCase
     }
 
     #[Test]
-    public function itNamesEnumCasesFromWords(): void
+    public function itNamesEnumCasesFromFormattedNames(): void
     {
         $type = IntrospectionType::fromArray([
             'kind' => 'ENUM',
@@ -129,7 +134,7 @@ class NewCodegenVisitorTest extends TestCase
             ],
         ]);
 
-        $enum = $this->generate($type, self::identifiers());
+        $enum = $this->generate($type, self::names());
         self::assertInstanceOf(EnumType::class, $enum);
 
         $cases = array_map(
@@ -160,9 +165,9 @@ class NewCodegenVisitorTest extends TestCase
     {
         $jsonValue = IntrospectionType::fromArray(['kind' => 'OBJECT', 'name' => 'JSONValue', 'fields' => []]);
         $artifacts = IntrospectionType::fromArray(['kind' => 'OBJECT', 'name' => 'Artifacts', 'fields' => []]);
-        $words = Identifiers::fromArray([]);
+        $names = new FormattedNames();
 
-        $class = $this->generate($jsonValue, $words);
+        $class = $this->generate($jsonValue, $names);
         self::assertSame('JsonValue', $class->getName());
         $attributes = $class->getAttributes();
         self::assertCount(1, $attributes);
@@ -170,18 +175,18 @@ class NewCodegenVisitorTest extends TestCase
         self::assertSame(['JSONValue'], $attributes[0]->getArguments());
 
         // named like the GraphQL type: nothing to say
-        self::assertSame([], $this->generate($artifacts, $words)->getAttributes());
+        self::assertSame([], $this->generate($artifacts, $names)->getAttributes());
 
-        // without words, the generated code stays as it was
+        // without formatted names, the generated code stays as it was
         self::assertSame([], $this->generate($jsonValue)->getAttributes());
     }
 
     private function generate(
         IntrospectionType $type,
-        ?Identifiers $identifiers = null,
+        ?FormattedNames $names = null,
     ): ClassType|EnumType|InterfaceType {
         $visitor = $this->getMockBuilder(NewCodegenVisitor::class)
-            ->setConstructorArgs(['unused', true, [], $identifiers])
+            ->setConstructorArgs(['unused', true, [], $names])
             ->onlyMethods(['write'])
             ->getMock();
         $written = null;
@@ -224,26 +229,23 @@ class NewCodegenVisitorTest extends TestCase
         ]);
     }
 
-    private static function identifiers(): Identifiers
+    private static function names(): FormattedNames
     {
-        $word = static fn(string $text) => [
-            'kind' => 'WORD', 'text' => $text, 'suffix' => '', 'capitalized' => ucfirst($text),
-        ];
-        $acronym = static fn(string $text) => [
-            'kind' => 'ACRONYM', 'text' => $text, 'suffix' => '', 'capitalized' => ucfirst(strtolower($text)),
-        ];
-
-        return Identifiers::fromArray([
-            'Artifacts' => [$word('artifacts')],
-            'withGPU' => [$word('with'), $acronym('GPU')],
-            'insecureSkipTLSVerify' => [$word('insecure'), $word('skip'), $acronym('TLS'), $word('verify')],
-            'callID' => [$word('call'), $acronym('ID')],
-            'foo_bar' => [$word('foo'), $word('bar')],
-            'Compression' => [$word('compression')],
-            'Gzip' => [$word('gzip')],
-            'GZIP' => [$acronym('GZIP')],
-            'PerSession' => [$word('per'), $word('session')],
-            'Default' => [$word('default')],
+        return new FormattedNames([
+            'CAMEL:CAPITALIZED' => [
+                'Artifacts' => 'artifacts',
+                'withGPU' => 'withGpu',
+                'insecureSkipTLSVerify' => 'insecureSkipTlsVerify',
+                'callID' => 'callId',
+                'foo_bar' => 'fooBar',
+            ],
+            'SCREAMING_SNAKE:UPPERCASE' => [
+                'Compression' => 'COMPRESSION',
+                'Gzip' => 'GZIP',
+                'GZIP' => 'GZIP',
+                'PerSession' => 'PER_SESSION',
+                'Default' => 'DEFAULT',
+            ],
         ]);
     }
 }

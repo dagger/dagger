@@ -12,8 +12,9 @@ use Dagger\Client\AbstractObject;
 use Dagger\Client\AbstractScalar;
 use Dagger\Client\IdAble;
 use Dagger\Codegen\CodeWriter;
+use Dagger\Codegen\Naming\AcronymStyle;
 use Dagger\Codegen\Naming\Casing;
-use Dagger\Codegen\Naming\Identifiers;
+use Dagger\Codegen\Naming\FormattedNames;
 use Nette\PhpGenerator\ClassType;
 use Nette\PhpGenerator\EnumType;
 use Nette\PhpGenerator\InterfaceType;
@@ -24,8 +25,8 @@ use Nette\PhpGenerator\Method;
  * Codegen visitor that works with raw introspection data,
  * supporting @expectedType directives and first-class interfaces.
  *
- * When the schema carries the engine's identifier words (engine views
- * v1.0.0 and above), PHP names are formatted from them:
+ * When the engine formatted the schema's names (engine views v1.0.0 and
+ * above, which have Query.formatIdentifiers), PHP names are the engine's:
  *
  *   - methods and their parameters: CAMEL / CAPITALIZED, acronyms written
  *     like words as Symfony and Laravel do (filterUri, withGpu, callId);
@@ -45,14 +46,26 @@ use Nette\PhpGenerator\Method;
 class NewCodegenVisitor extends CodeWriter
 {
     /**
+     * The name formats the generator uses, for the engine to format the
+     * schema's names in.
+     *
+     * @var list<array{Casing, AcronymStyle}>
+     */
+    public const NAME_FORMATS = [
+        [Casing::CAMEL, AcronymStyle::CAPITALIZED],
+        [Casing::SCREAMING_SNAKE, AcronymStyle::UPPERCASE],
+    ];
+
+    /**
      * @param string[] $interfaceNames names of the schema's interface types
-     * @param ?Identifiers $identifiers the words of the schema's names, if it has them
+     * @param ?FormattedNames $names the schema's names as the engine
+     *   formatted them, if it did
      */
     public function __construct(
         string $targetDirectory,
         private readonly bool $supportsNullableObjects = true,
         private readonly array $interfaceNames = [],
-        private readonly ?Identifiers $identifiers = null,
+        private readonly ?FormattedNames $names = null,
     ) {
         parent::__construct($targetDirectory);
     }
@@ -565,12 +578,12 @@ class NewCodegenVisitor extends CodeWriter
     /**
      * Names the GraphQL type a class stands for when its PHP name differs
      * (JsonValue for JSONValue), so the runtime needn't guess it from the
-     * class name. Only for schemas with identifier words, so older schemas
-     * generate byte-identical code.
+     * class name. Only for schemas whose names the engine formatted, so
+     * older schemas generate byte-identical code.
      */
     private function addGraphQLType(ClassType|EnumType|InterfaceType $class, string $graphQLTypeName): void
     {
-        if ($this->identifiers === null || $class->getName() === $graphQLTypeName) {
+        if ($this->names === null || $class->getName() === $graphQLTypeName) {
             return;
         }
         $class->addAttribute(GraphQLType::class, [$graphQLTypeName]);
@@ -581,7 +594,7 @@ class NewCodegenVisitor extends CodeWriter
      */
     private function methodName(string $fieldName): string
     {
-        return $this->identifiers?->format($fieldName, Casing::CAMEL, true) ?? $fieldName;
+        return $this->names?->format($fieldName, Casing::CAMEL, AcronymStyle::CAPITALIZED) ?? $fieldName;
     }
 
     /**
@@ -589,7 +602,7 @@ class NewCodegenVisitor extends CodeWriter
      */
     private function argName(string $argName): string
     {
-        return $this->identifiers?->format($argName, Casing::CAMEL, true) ?? $argName;
+        return $this->names?->format($argName, Casing::CAMEL, AcronymStyle::CAPITALIZED) ?? $argName;
     }
 
     /**
@@ -607,7 +620,8 @@ class NewCodegenVisitor extends CodeWriter
 
         $formatted = [];
         foreach ($values as $value) {
-            $formatted[$value] = $this->identifiers?->format($value, Casing::SCREAMING_SNAKE) ?? $value;
+            $formatted[$value] = $this->names?->format($value, Casing::SCREAMING_SNAKE, AcronymStyle::UPPERCASE)
+                ?? $value;
         }
         $counts = array_count_values($formatted);
 
