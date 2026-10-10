@@ -108,6 +108,25 @@ func (p *agentControlPublisher) run() {
 	}
 }
 
+// sync waits, bounded by ctx, until everything enqueued before it has been
+// emitted. A closed publisher has nothing pending.
+func (p *agentControlPublisher) sync(ctx context.Context) error {
+	ack := make(chan struct{})
+	select {
+	case p.flush <- ack:
+	case <-p.done:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+	select {
+	case <-ack:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
 // close stops the publisher after a final drain and waits, bounded by ctx, for
 // it to exit. The stop is signaled even when ctx is already done. Work
 // enqueued afterwards is dropped: nothing blocks on a closed publisher.
@@ -173,6 +192,25 @@ func (rt *AgentRuntime) associateConversationLocked(ctx context.Context) {
 		rt.controlDigest = digest.String()
 	}
 	rt.controlActivity = time.Now().UTC()
+}
+
+// FlushControl waits, bounded by ctx, until every publisher has emitted the
+// revisions pending when it was called. Unlike CloseControl it leaves
+// publication open: the server uses it to order a lookup of the session's
+// archive after the records that register it.
+func (ars *AgentRuntimes) FlushControl(ctx context.Context) error {
+	ars.mu.Lock()
+	publishers := make([]*agentControlPublisher, 0, len(ars.entries))
+	for _, rt := range ars.entries {
+		publishers = append(publishers, rt.control)
+	}
+	ars.mu.Unlock()
+	for _, p := range publishers {
+		if err := p.sync(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CloseControl is the producer-side finality barrier. It closes admission,
