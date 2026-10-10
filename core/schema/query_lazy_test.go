@@ -29,7 +29,7 @@ func TestSchemaFileLazy(t *testing.T) {
 	lazy := result.Self().Lazy.(*core.FileBlobLazy)
 	require.False(t, lazy.IsEvaluated())
 	require.Zero(t, observed.calls.Load(), "constructing a schema File must not open scratch")
-	expected, err := getSchemaJSON(ctx, nil, nil, srv.View, srv)
+	expected, err := getSchemaJSON(nil, nil, srv.View, srv)
 	require.NoError(t, err)
 	require.Equal(t, expected, lazy.Contents)
 	require.Equal(t, "schema.json", lazy.Filename)

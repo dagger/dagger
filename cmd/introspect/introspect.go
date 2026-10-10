@@ -70,7 +70,6 @@ func getIntrospection(ctx context.Context) (*introspection.Response, error) {
 		schemaTypes = append(schemaTypes, schemaType)
 	}
 	schemaResp.Schema.Types = schemaTypes
-	schemaResp.Schema.Identifiers = schema.SchemaIdentifiers(ctx, dag.View, schemaResp.Schema)
 
 	return &schemaResp, nil
 }
