@@ -5,7 +5,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/naming"
 )
 
 // schemaToolsSchema exposes the schema-merge tool that operates on GraphQL
@@ -54,13 +53,5 @@ func (s *schemaToolsSchema) merge(ctx context.Context, self *core.Schema, args s
 	ModuleTypes core.JSON
 	ModuleName  string
 }) (*core.Schema, error) {
-	merged, err := self.Merge(args.ModuleTypes, args.ModuleName)
-	if err != nil {
-		return nil, err
-	}
-	// The merged schema is handed to codegen like the schema JSON, so give
-	// the module's names words too, if the schema has them, with the
-	// dictionary of the schema's version, which parsed the rest of it.
-	merged.AddIdentifiers(naming.DictionaryFor(merged.Introspection.SchemaVersion))
-	return merged, nil
+	return self.Merge(args.ModuleTypes, args.ModuleName)
 }

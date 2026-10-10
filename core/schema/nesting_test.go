@@ -180,8 +180,8 @@ func TestNestingSchemaVersions(t *testing.T) {
 		{version: "v1.0.0", defaultOn: true, deprecated: true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
-			ctx, dag := newNestingTestServer(t, call.View(engine.APIViewVersion(tc.version)))
-			data, err := getSchemaJSON(ctx, nil, nil, dag.View, dag)
+			_, dag := newNestingTestServer(t, call.View(engine.APIViewVersion(tc.version)))
+			data, err := getSchemaJSON(nil, nil, dag.View, dag)
 			require.NoError(t, err)
 			schema := decodeSchemaResponse(t, data).Schema
 			for _, target := range [][2]string{
