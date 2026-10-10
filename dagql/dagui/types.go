@@ -25,13 +25,26 @@ type TraceTree struct {
 	Chained                 bool
 	RevealedChildren        bool
 
+	// Children holds the trees of the spans placed beneath the span. A tree
+	// RowsView shows collapsed doesn't have them built: ChildTrees builds them.
 	Children []*TraceTree
 
 	// Revealed holds the trees of the span's revealed spans, built beneath
 	// it, when it shows them in place of its children (see
 	// ShouldShowRevealedSpans). They're copies: a revealed span also has a
-	// tree of its own wherever its home is, usually among Children.
+	// tree of its own wherever its home is, usually among Children. Like
+	// Children, they may not be built yet: RevealedTrees builds them.
 	Revealed []*TraceTree
+
+	// lazy is the walk that built the tree, if it built only the trees its
+	// view shows; it builds Children and Revealed on demand.
+	lazy                         *spanWalker
+	childrenBuilt, revealedBuilt bool
+	// revealedCopy marks a copy of a revealed span, or a tree beneath one.
+	revealedCopy bool
+	// hasChildren memoizes whether unbuilt Children would be empty: 0 when
+	// unknown, 1 if they would, 2 if not.
+	hasChildren uint8
 }
 
 // TraceRow is the flattened representation of the tree so we can easily walk
@@ -61,7 +74,15 @@ type RowsView struct {
 	Body   []*TraceTree
 	// BySpan maps each span to its tree; for a revealed span, the tree at its
 	// home, if it has one, rather than its copy beneath a revealing span.
+	//
+	// A view built lazily (see rowsView) only builds the trees its rows show,
+	// so BySpan only holds those, plus whatever has been built on demand
+	// since. A span whose home tree isn't built maps to a revealed copy of
+	// it, if one is. HomeTree finds or builds any span's home tree.
 	BySpan map[SpanID]*TraceTree
+
+	// walker built the view, and builds more of it on demand.
+	walker *spanWalker
 }
 
 func (db *DB) AllSpans() iter.Seq[*Span] {
@@ -117,7 +138,21 @@ func (db *DB) RegeneratedModuleSpans() map[string]*Span {
 	return out
 }
 
+// RowsView builds the trees of the view opts selects.
 func (db *DB) RowsView(opts FrontendOpts) *RowsView {
+	return db.rowsView(opts, false)
+}
+
+// rowsView builds a RowsView: every tree in it, or lazily, only the trees
+// its rows show. A lazy view doesn't build the Children (or Revealed) of a
+// tree Rows(opts) shows collapsed, so a rebuild costs what the view shows,
+// not what it holds; they're built on demand (see ChildTrees), by Rows too,
+// when another opts expands it.
+//
+// Where each span goes depends only on local rules (see spanWalker), so the
+// trees built on demand, and the running state and children a collapsed tree
+// reports, are what building every tree would give.
+func (db *DB) rowsView(opts FrontendOpts, lazy bool) *RowsView {
 	view := &RowsView{
 		BySpan: make(map[SpanID]*TraceTree),
 	}
@@ -128,7 +163,9 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 		// this happens when we create a span and immediately zoom to it
 		return view
 	}
+	w.lazy = lazy
 	view.Zoomed = zoomed
+	view.walker = w
 	w.emitted = func(tree *TraceTree, revealedCopy bool) {
 		// A span's home tree takes the place of a revealed copy of it, which
 		// takes the place of nothing else.
@@ -139,6 +176,22 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	}
 	view.Body = w.walk()
 	return view
+}
+
+// HomeTree returns the tree of span's home in the view (see spanWalker),
+// building the trees on its way down from the top if they aren't built yet,
+// or nil if the view doesn't place span.
+func (lv *RowsView) HomeTree(span *Span) *TraceTree {
+	if lv == nil {
+		return nil
+	}
+	if tree := lv.BySpan[span.ID]; tree != nil && !tree.revealedCopy {
+		return tree
+	}
+	if lv.walker == nil {
+		return nil
+	}
+	return lv.walker.homeTree(lv.Body, span)
 }
 
 type Rows struct {
@@ -174,11 +227,7 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 		rows.BySpan[tree.Span.ID] = row
 		if row.Expanded {
 			var lastChild *TraceRow
-			children := tree.Children
-			if tree.ShouldShowRevealedSpans(opts) {
-				children = tree.Revealed
-			}
-			for _, child := range children {
+			for _, child := range tree.VisibleChildren(opts) {
 				childRow := walk(child, row, depth+1)
 				if lastChild != nil {
 					childRow.Previous = lastChild
@@ -203,19 +252,60 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 }
 
 func (row *TraceTree) ShouldShowRevealedSpans(opts FrontendOpts) bool {
+	return row.RevealedChildren && showsRevealedSpans(row.Span, opts)
+}
+
+// showsRevealedSpans is ShouldShowRevealedSpans for a span with revealed
+// spans.
+func showsRevealedSpans(span *Span, opts FrontendOpts) bool {
 	verbosity := opts.Verbosity
-	if v, ok := opts.SpanVerbosity[row.Span.ID]; ok {
+	if v, ok := opts.SpanVerbosity[span.ID]; ok {
 		verbosity = v
 	}
-	return row.RevealedChildren && !opts.RevealNoisySpans && verbosity < ShowSpammyVerbosity
+	return !opts.RevealNoisySpans && verbosity < ShowSpammyVerbosity
+}
+
+// ChildTrees returns the trees of the spans placed beneath the tree's span
+// (its Children), building them first if they aren't yet.
+func (row *TraceTree) ChildTrees() []*TraceTree {
+	if row.lazy != nil && !row.childrenBuilt {
+		row.lazy.buildOnDemand(row, false)
+	}
+	return row.Children
+}
+
+// RevealedTrees returns the copies of the span's revealed spans beneath the
+// tree (its Revealed), building them first if they aren't yet.
+func (row *TraceTree) RevealedTrees() []*TraceTree {
+	if row.lazy != nil && !row.revealedBuilt {
+		row.lazy.buildOnDemand(row, true)
+	}
+	return row.Revealed
+}
+
+// VisibleChildren returns the trees Rows shows beneath the tree when it's
+// expanded under opts: its revealed spans' copies or its children.
+func (row *TraceTree) VisibleChildren(opts FrontendOpts) []*TraceTree {
+	if row.ShouldShowRevealedSpans(opts) {
+		return row.RevealedTrees()
+	}
+	return row.ChildTrees()
 }
 
 func (row *TraceTree) hasVisibleChildren(opts FrontendOpts) bool {
 	if row.ShouldShowRevealedSpans(opts) {
 		return row.Span.RevealedSpans.Len() > 0
-	} else {
-		return len(row.Children) > 0
 	}
+	if row.lazy != nil && !row.childrenBuilt {
+		if row.hasChildren == 0 {
+			row.hasChildren = 1
+			if row.lazy.hasChildren(row) {
+				row.hasChildren = 2
+			}
+		}
+		return row.hasChildren == 2
+	}
+	return len(row.Children) > 0
 }
 
 func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {

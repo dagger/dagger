@@ -640,7 +640,7 @@ func TestResumeOutputReparentsRuntimeSpanUnderCreator(t *testing.T) {
 	}
 
 	rowsView := db.RowsView(FrontendOpts{})
-	runtimeTree := rowsView.BySpan[runtimeID]
+	runtimeTree := rowsView.HomeTree(runtime)
 	if runtimeTree == nil {
 		t.Fatal("expected runtime tree")
 	}

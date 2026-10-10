@@ -273,7 +273,7 @@ func TestWalkIsLocal(t *testing.T) {
 		rng := rand.New(rand.NewSource(int64(seed)))
 		db, ids := randomTraceDB(rng)
 		opts := randomViewOpts(rng, ids)
-		full := db.RowsView(opts)
+		full := db.rowsView(opts, false)
 
 		fail := func(format string, args ...any) {
 			t.Helper()

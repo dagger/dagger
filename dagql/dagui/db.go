@@ -259,6 +259,16 @@ type DB struct {
 	// (see isIndexedKind), so they don't read every span on every rebuild.
 	kindSpans *SpanSet
 
+	// runningSpans holds every span that's running or has running effects
+	// (Span.IsRunningOrEffectsRunning), and maybe some that no longer are:
+	// a lazy RowsView works out which collapsed rows hold running work from
+	// these (see spanWalker.runningEdges).
+	runningSpans map[*Span]struct{}
+
+	// revealers maps each revealed span to the spans that reveal it, the
+	// reverse of Span.RevealedSpans.
+	revealers map[*Span]*SpanSet
+
 	// Rewinds are session-wide for the same reason as the roster, and their
 	// memo doubles as the superseded-message index (see DB.Rewinds).
 	rewinds     []*Rewind
@@ -522,6 +532,7 @@ func (db *DB) deferSpanOrder() (settle func()) {
 func (db *DB) update(span *Span) {
 	db.mutations++
 	db.noteTestSpanUpdated(span)
+	db.noteRunning(span)
 	if span.Final {
 		// don't bump versions for final spans; leave the remote as the
 		// source of truth, lest we stray forward and miss an actual version bump
@@ -1360,6 +1371,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// Last, so the indexes only ever hold spans the DB itself holds.
 	db.indexAgentSpan(span)
 	db.indexKindSpan(span)
+	db.noteRunning(span)
 }
 
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {
@@ -1759,9 +1771,9 @@ func WalkTree(tree []*TraceTree, f func(*TraceTree, int) WalkDecision) {
 		for _, row := range rows {
 			switch f(row, depth) {
 			case WalkContinue:
-				walk(row.Children, depth+1)
+				walk(row.ChildTrees(), depth+1)
 			case WalkPassthrough:
-				walk(row.Children, depth)
+				walk(row.ChildTrees(), depth)
 			case WalkSkip:
 				continue
 			case WalkStop:

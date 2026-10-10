@@ -144,13 +144,25 @@ func removeFromSpanSet(set **SpanSet, span *Span) bool {
 // AddRevealedSpan adds a span to RevealedSpans, reporting whether it was
 // added.
 func (span *Span) AddRevealedSpan(revealed *Span) bool {
-	return addToSpanSet(&span.RevealedSpans, revealed)
+	if !addToSpanSet(&span.RevealedSpans, revealed) {
+		return false
+	}
+	if span.db != nil {
+		span.db.noteRevealed(span, revealed, true)
+	}
+	return true
 }
 
 // RemoveRevealedSpan removes a span from RevealedSpans, reporting whether it
 // was there.
 func (span *Span) RemoveRevealedSpan(revealed *Span) bool {
-	return removeFromSpanSet(&span.RevealedSpans, revealed)
+	if !removeFromSpanSet(&span.RevealedSpans, revealed) {
+		return false
+	}
+	if span.db != nil {
+		span.db.noteRevealed(span, revealed, false)
+	}
+	return true
 }
 
 // AddErrorOrigin adds a span to ErrorOrigins, reporting whether it was
