@@ -193,11 +193,13 @@ func (UpSuite) TestUpServiceBinding(ctx context.Context, t *testctx.T) {
 func (UpSuite) TestUpModuleWiring(ctx context.Context, t *testctx.T) {
 	// A module's constructor can receive another module's function output via a
 	// plain-string module reference in workspace settings:
-	// settings.<arg> = "<module>:<function>". These strings route through the
+	// settings.<arg> = "dag://<module>/<function>". These strings route through the
 	// Address decoders (see core/schema/address.go: resolveModuleRef, wired
 	// into the corresponding Address object decoders). Supported for Service
-	// (+up functions), Container, Directory, File, and Workspace. The same
-	// decoders back CLI object flags, so a constructor arg like
+	// (+up functions), Container, Directory, File, and Workspace, and for lists
+	// of those objects ([File!] and friends), where each element of the
+	// settings array resolves through the same decoders. The same decoders
+	// back CLI object flags, so a constructor arg like
 	// --app=<module>:<function> resolves identically.
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)
@@ -385,6 +387,28 @@ settings.sourceWorkspace = "dag://container-provider/workspace"
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "container-provider", strings.TrimSpace(out))
+	})
+
+	t.Run("object list refs via settings", func(ctx context.Context, t *testctx.T) {
+		// A constructor arg typed as a list of objects ([]*File, i.e. [File!])
+		// wires the same way as a single object: the setting is a TOML array
+		// of dag:// address strings, and each element resolves through the
+		// Address decoders — here two module references to distinct functions.
+		ctr := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.files = ["dag://container-provider/file", "dag://container-provider/other-file"]
+`)
+
+		out, err := ctr.
+			With(daggerExec("call", "service-ref-consumer", "files-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "container-provider\ncontainer-provider-other", strings.TrimSpace(out))
 	})
 
 	t.Run("provider with required Workspace arg", func(ctx context.Context, t *testctx.T) {
