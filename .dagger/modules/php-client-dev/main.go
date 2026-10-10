@@ -28,7 +28,7 @@ type PhpClientDev struct {
 func New(
 	// A directory with all the files needed to develop the SDK
 	// +defaultPath="/"
-	// +ignore=["*", "!sdk/php", "sdk/php/.changes", "!engine/naming/testdata/vectors.json"]
+	// +ignore=["*", "!sdk/php", "sdk/php/.changes"]
 	workspaceDir *dagger.Directory,
 	// The path of the SDK source in the workspace
 	// +default="sdk/php"

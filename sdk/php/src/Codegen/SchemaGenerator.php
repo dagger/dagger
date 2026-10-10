@@ -3,13 +3,21 @@
 namespace Dagger\Codegen;
 
 use Dagger\Codegen\Introspection\IntrospectionSchema;
+use Dagger\Codegen\Introspection\NewCodegenVisitor;
+use Dagger\Codegen\Naming\FormattedNames;
 use GraphQL\Client;
 use RuntimeException;
 
 class SchemaGenerator
 {
-    /** Bounds the number of names parsed per identifier request. */
-    private const IDENTIFIER_BATCH_SIZE = 500;
+    /** Bounds the size of the names sent per formatIdentifiers request. */
+    private const FORMAT_BATCH_BYTES = 256 << 10;
+
+    private const FORMAT_IDENTIFIERS_QUERY = <<<'GRAPHQL'
+        query FormatIdentifiers($names: [String!]!, $casing: Casing!, $acronyms: AcronymStyle) {
+          formatIdentifiers(names: $names, casing: $casing, acronyms: $acronyms)
+        }
+        GRAPHQL;
 
     private array $schemaArray;
     private IntrospectionSchema $schema;
@@ -46,109 +54,81 @@ class SchemaGenerator
 
         $this->schemaArray = $this->client->runRawQuery($introspectionQuery, true)->getData();
         $this->schema = IntrospectionSchema::fromArray($this->schemaArray);
-
-        $identifiers = $this->fetchIdentifiers();
-        if ($identifiers !== null) {
-            $this->schemaArray['__identifiers'] = $identifiers;
-            $this->schema = IntrospectionSchema::fromArray($this->schemaArray);
-        }
+        $this->schema->names = $this->formatNames();
     }
 
     /**
-     * Fetches the words of the schema's names from the engine's
-     * Query.identifier API, in the shape of the schema JSON's "__identifiers"
-     * map, since the introspection query can't carry them. The engine parses
-     * them with the dictionary for the client's version.
+     * Has the engine format the schema's names, with Query.formatIdentifiers,
+     * in each format the generator uses. The engine parses them with the
+     * dictionary for the client's version.
      *
-     * Returns null when the schema has no Query.identifier (engine views
-     * before v1.0.0), so codegen keeps its own conversion.
-     *
-     * @return array<string, list<array{kind: string, text: string, suffix: string, capitalized: string}>>|null
+     * Returns null when the schema has no Query.formatIdentifiers (engine
+     * views before v1.0.0), so codegen keeps its legacy conversion.
      */
-    private function fetchIdentifiers(): ?array
+    private function formatNames(): ?FormattedNames
     {
-        $query = $this->schema->getType('Query');
-        if ($query === null || !$query->hasField('identifier')) {
+        if (!$this->schema->hasFormatIdentifiers()) {
             return null;
         }
 
-        $identifiers = [];
-        foreach (array_chunk($this->identifierNames(), self::IDENTIFIER_BATCH_SIZE) as $batch) {
-            $fields = [];
-            foreach ($batch as $i => $name) {
-                $fields[] = sprintf(
-                    'i%d: identifier(name: %s) { words { kind text suffix term { spelling capitalized } } }',
-                    $i,
-                    json_encode($name, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
-                );
-            }
-            $data = $this->client
-                ->runRawQuery('query Identifiers { ' . implode(' ', $fields) . ' }', true)
-                ->getData();
+        $names = $this->schema->names();
+        $formatted = [];
+        foreach (NewCodegenVisitor::NAME_FORMATS as [$casing, $acronyms]) {
+            $key = FormattedNames::key($casing, $acronyms);
+            $formatted[$key] = [];
+            foreach ($this->batches($names) as $batch) {
+                // The client JSON-encodes any variables, despite documenting
+                // them as array<string, string>.
+                // @phpstan-ignore argument.type
+                $result = $this->client->runRawQuery(self::FORMAT_IDENTIFIERS_QUERY, true, [
+                    'names' => $batch,
+                    'casing' => $casing->value,
+                    'acronyms' => $acronyms->value,
+                ])->getData();
 
-            foreach ($batch as $i => $name) {
-                $result = $data["i{$i}"] ?? null;
-                if (!is_array($result)) {
-                    throw new RuntimeException("identifier query: no result for \"{$name}\"");
+                $values = $result['formatIdentifiers'] ?? null;
+                if (!is_array($values) || count($values) !== count($batch)) {
+                    throw new RuntimeException(sprintf(
+                        'format names as %s: sent %d names, got %d back',
+                        $key,
+                        count($batch),
+                        is_array($values) ? count($values) : 0,
+                    ));
                 }
-                $words = [];
-                foreach ($result['words'] ?? [] as $word) {
-                    $words[] = [
-                        'kind' => $word['kind'],
-                        'text' => $word['text'],
-                        'suffix' => $word['suffix'],
-                        // The word's CAPITALIZED form: the dictionary entry's,
-                        // else the first letter capitalized and the rest
-                        // lowercase.
-                        'capitalized' => $word['term']['capitalized'] ?? ucfirst(strtolower($word['text'])),
-                    ];
+                foreach ($batch as $i => $name) {
+                    $formatted[$key][$name] = (string)$values[$i];
                 }
-                $identifiers[$name] = $words;
             }
         }
 
-        return $identifiers;
+        return new FormattedNames($formatted);
     }
 
     /**
-     * The distinct type, field, argument, input field and enum value names
-     * in the schema, sorted, leaving out introspection names ("__" prefix)
-     * and names with no letters or digits.
+     * Splits names into batches of at most FORMAT_BATCH_BYTES (but at least
+     * one name each). The core schema's names fit in one.
      *
-     * @return list<string>
+     * @param list<string> $names
+     * @return list<list<string>>
      */
-    private function identifierNames(): array
+    private function batches(array $names): array
     {
-        $names = [];
-        $add = static function (string $name) use (&$names): void {
-            if (str_starts_with($name, '__') || preg_match('/[A-Za-z0-9]/', $name) !== 1) {
-                return;
+        $batches = [];
+        $batch = [];
+        $size = 0;
+        foreach ($names as $name) {
+            if ($batch !== [] && $size + strlen($name) > self::FORMAT_BATCH_BYTES) {
+                $batches[] = $batch;
+                $batch = [];
+                $size = 0;
             }
-            $names[$name] = true;
-        };
-
-        foreach ($this->schema->types as $type) {
-            if (str_starts_with($type->name, '__')) {
-                continue;
-            }
-            $add($type->name);
-            foreach ($type->fields as $field) {
-                $add($field->name);
-                foreach ($field->args as $arg) {
-                    $add($arg->name);
-                }
-            }
-            foreach ($type->inputFields as $inputField) {
-                $add($inputField->name);
-            }
-            foreach ($type->enumValues as $enumValue) {
-                $add($enumValue->name);
-            }
+            $batch[] = $name;
+            $size += strlen($name);
+        }
+        if ($batch !== []) {
+            $batches[] = $batch;
         }
 
-        $names = array_map('strval', array_keys($names));
-        sort($names, SORT_STRING);
-
-        return $names;
+        return $batches;
     }
 }
