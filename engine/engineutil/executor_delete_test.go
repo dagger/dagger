@@ -172,3 +172,17 @@ func TestDeleteContainerRecoveryLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestProcTaskState(t *testing.T) {
+	dir := t.TempDir()
+	// The command name may itself contain spaces and parentheses.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "stat"), []byte("42 (dagger (eng) x) D 1 42 42 0 -1 4194560\n"), 0o600))
+	require.Equal(t, "D", procTaskState(dir))
+	require.Empty(t, procTaskState(filepath.Join(dir, "missing")))
+}
+
+func TestDescribeCgroupTasksWithoutProcesses(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "cgroup.procs"), nil, 0o600))
+	require.Equal(t, "no processes", describeCgroupTasks(dir))
+}
