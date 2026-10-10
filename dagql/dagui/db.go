@@ -1256,7 +1256,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		spans := db.Intervals[span.CallDigest]
 		i := slices.IndexFunc(spans, func(other *Span) bool {
 			// ==, not Equal: the key equality a map[time.Time] used
-			return other.StartTime == span.StartTime
+			return other.StartTime == span.StartTime //nolint:staticcheck // QF1009: deliberately ==, see above
 		})
 		if i >= 0 {
 			spans[i] = span
@@ -1549,10 +1549,8 @@ func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
 func (db *DB) MostInterestingSpan(dig string) *Span {
 	var earliest *Span
 	var earliestCached bool
-	vs := make([]*Span, 0, len(db.Intervals[dig]))
-	for _, span := range db.Intervals[dig] {
-		vs = append(vs, span)
-	}
+	// a copy: sorting it must not reorder db.Intervals
+	vs := slices.Clone(db.Intervals[dig])
 	sort.Slice(vs, func(i, j int) bool {
 		return vs[i].StartTime.Before(vs[j].StartTime)
 	})

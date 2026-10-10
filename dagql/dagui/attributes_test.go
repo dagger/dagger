@@ -85,7 +85,22 @@ func TestSpanAttributes(t *testing.T) {
 		t.Fatalf("JSON = %s, want %s", gotJSON, wantJSON)
 	}
 
-	// and both JSON and gob round-trip through a snapshot
+	testSpanAttributesRoundTrip(t, snapshot, want)
+
+	// no attributes: omitted from JSON like an empty map
+	empty, err := json.Marshal(SpanSnapshot{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(empty, []byte("ExtraAttributes")) {
+		t.Fatalf("empty attributes should be omitted: %s", empty)
+	}
+}
+
+// testSpanAttributesRoundTrip checks that a snapshot's attributes survive
+// both JSON and gob round trips.
+func testSpanAttributesRoundTrip(t *testing.T, snapshot SpanSnapshot, want map[string]json.RawMessage) {
+	t.Helper()
 	snapJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatal(err)
@@ -112,14 +127,5 @@ func TestSpanAttributes(t *testing.T) {
 		if str, ok := decoded.String("z.str"); !ok || str != "goodbye <world>" {
 			t.Errorf("decoded String(z.str) = %q, %v", str, ok)
 		}
-	}
-
-	// no attributes: omitted from JSON like an empty map
-	empty, err := json.Marshal(SpanSnapshot{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(empty, []byte("ExtraAttributes")) {
-		t.Fatalf("empty attributes should be omitted: %s", empty)
 	}
 }
