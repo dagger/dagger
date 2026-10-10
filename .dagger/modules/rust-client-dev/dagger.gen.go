@@ -387,17 +387,17 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Release",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Release the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 251, 1)).
-							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to release", SourceMap: dag.SourceMap("main.go", 255, 2)}).
-							WithArg("cargoRegistryToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 257, 2)}).
-							WithArg("cargoRegistryIndex", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Cargo registry index URL to publish to instead of crates.io.", SourceMap: dag.SourceMap("main.go", 261, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 252, 1)).
+							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to release", SourceMap: dag.SourceMap("main.go", 256, 2)}).
+							WithArg("cargoRegistryToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 258, 2)}).
+							WithArg("cargoRegistryIndex", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Cargo registry index URL to publish to instead of crates.io.", SourceMap: dag.SourceMap("main.go", 262, 2)})).
 					WithFunction(
 						dag.Function("ReleaseDryRun",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Test the publishing process").
-							WithSourceMap(dag.SourceMap("main.go", 183, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 184, 1)).
 							WithCheck().
-							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to fake-release", SourceMap: dag.SourceMap("main.go", 188, 2), DefaultValue: dagger.JSON("\"HEAD\"")})).
+							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to fake-release", SourceMap: dag.SourceMap("main.go", 189, 2), DefaultValue: dagger.JSON("\"HEAD\"")})).
 					WithFunction(
 						dag.Function("Source",
 							dag.TypeDef().WithObject("Directory")).

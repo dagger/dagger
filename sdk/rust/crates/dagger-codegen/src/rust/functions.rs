@@ -12,13 +12,13 @@ use crate::utility::OptionExt;
 use super::templates::object_tmpl::render_optional_field_args;
 
 /// The Rust type name for a schema name, guessing its words. Used when the
-/// schema has no identifier words.
+/// schema has no engine-formatted names.
 pub fn format_name(s: &str) -> String {
     s.to_case(Case::Pascal)
 }
 
 /// The Rust function, argument or field name for a schema name, guessing its
-/// words. Used when the schema has no identifier words.
+/// words. Used when the schema has no engine-formatted names.
 pub fn format_struct_name(s: &str) -> String {
     escape_keyword(s.to_case(Case::Snake))
 }
@@ -37,8 +37,8 @@ fn escape_keyword(s: String) -> String {
 }
 
 /// The Rust type name for a schema type: PascalCase with capitalized
-/// acronyms (`JsonValue`, `LlmTokenUsage`), from the schema's identifier
-/// words when it has them.
+/// acronyms (`JsonValue`, `LlmTokenUsage`), as the engine formatted it when
+/// the schema has engine-formatted names.
 pub fn type_name(names: &Names, s: &str) -> String {
     if let Some(name) = names.format(s, Casing::Pascal, Acronyms::Capitalized) {
         return name;
@@ -53,8 +53,8 @@ pub fn type_name(names: &Names, s: &str) -> String {
     format_name(s)
 }
 
-/// The Rust name for a schema field, argument or input field: snake_case,
-/// from the schema's identifier words when it has them.
+/// The Rust name for a schema field, argument or input field: snake_case, as
+/// the engine formatted it when the schema has engine-formatted names.
 pub fn member_name(names: &Names, s: &str) -> String {
     match names.format(s, Casing::Snake, Acronyms::Uppercase) {
         Some(name) => escape_keyword(name),
@@ -82,8 +82,8 @@ pub fn field_options_struct_name(
         .map(|(parent_name, field_name)| format!("{parent_name}{field_name}Opts"))
 }
 
-/// The options struct name the field had before identifier words, when it
-/// differs from today's.
+/// The options struct name the field had before engine-formatted names, when
+/// it differs from today's.
 pub fn legacy_field_options_struct_name(
     funcs: &CommonFunctions,
     field: &FullTypeFields,
@@ -101,8 +101,8 @@ pub fn legacy_field_options_struct_name(
     }
 }
 
-/// The name the function had before identifier words, when it differs from
-/// today's.
+/// The name the function had before engine-formatted names, when it differs
+/// from today's.
 pub fn legacy_function_name(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<String> {
     let name = field.name.as_ref()?;
     let legacy = format_struct_name(name);
@@ -149,8 +149,8 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
 
     let output_type = render_field_output_type(funcs, field);
 
-    // Keep the name the method had before identifier words as a deprecated
-    // alias.
+    // Keep the name the method had before engine-formatted names as a
+    // deprecated alias.
     let deprecated = legacy_function_name(funcs, field).map(|legacy| {
         let note = format!("use {fn_name}");
         let has_opts = matches!(&args, Some((_, _, true)));

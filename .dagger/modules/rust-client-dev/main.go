@@ -45,7 +45,7 @@ func New(
 	clientDockerConfig *dagger.Secret,
 ) *RustClientDev {
 	rustSrc := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
-		Exclude: []string{"*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml", "!engine/naming/testdata/vectors.json"},
+		Exclude: []string{"*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml"},
 	})
 
 	baseContainer := dag.Container().
@@ -163,7 +163,8 @@ func (t *RustClientDev) Changes() *dagger.Changeset {
 func (t *RustClientDev) WithGeneratedClient() *RustClientDev {
 	relLayer := t.DevContainer(true).
 		WithMountedFile("/introspection.json", dag.DaggerEngine(t.Ws).IntrospectionJSON()).
-		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--output", rustGeneratedClientFilePath}).
+		WithMountedFile("/names.json", dag.DaggerEngine(t.Ws).IntrospectionNames([]string{"PASCAL:CAPITALIZED", "SNAKE:UPPERCASE"})).
+		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--names", "/names.json", "--output", rustGeneratedClientFilePath}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
 		WithExec([]string{"cargo", "fmt"}).
 		Directory(".").

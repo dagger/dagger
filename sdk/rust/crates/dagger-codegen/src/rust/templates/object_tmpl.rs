@@ -154,7 +154,7 @@ fn render_optional_arg(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
     let _phantom_data = rust::import("std::marker", "PhantomData");
 
     if let Some((fields, contains_lifetime)) = fields {
-        // Keep the name the struct had before identifier words as a
+        // Keep the name the struct had before engine-formatted names as a
         // deprecated alias.
         let legacy_alias = legacy_field_options_struct_name(funcs, field).map(|legacy| {
             let note = format!("use {}", output_type.as_deref().unwrap_or_default());

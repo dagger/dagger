@@ -1,34 +1,40 @@
-//! Format identifiers from the words the engine parsed them into.
+//! Format identifiers with the names the engine formatted.
 //!
-//! The engine parses every schema name into words and writes them to the
-//! schema JSON under `__identifiers`. Formatting those words, instead of
+//! Codegen doesn't parse or format schema names itself: the online step that
+//! writes the introspection JSON (`codegen introspect --names-out`) asks the
+//! engine to format every schema name with `Query.formatIdentifiers`, and
+//! writes the results to a names file next to it. Using those, instead of
 //! guessing at word boundaries, keeps acronyms and dictionary terms intact:
 //! `prerequisiteSHAs` becomes `prerequisite_shas`, not `prerequisite_sh_as`.
 //!
-//! The rules mirror `engine/naming` and are checked against its shared test
-//! vectors (`engine/naming/testdata/vectors.json`).
+//! A schema without `Query.formatIdentifiers` (before v1.0.0), a format the
+//! file doesn't have, or a name missing from it gets the legacy converter.
 
-use dagger_sdk::core::introspection::{IdentifierWord, Identifiers};
+use std::collections::HashMap;
 
-/// A convention for joining words into an identifier.
+use dagger_sdk::core::introspection::Schema;
+
+/// A convention for joining words into an identifier: a value of the
+/// engine's `Casing` enum.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Casing {
     /// Every word capitalized: `HTTPClient`.
     Pascal,
-    /// First word lowercase, the rest capitalized: `httpClient`.
-    Camel,
     /// Lowercase, joined with `_`: `http_client`.
     Snake,
-    /// Uppercase, joined with `_`: `HTTP_CLIENT`.
-    ScreamingSnake,
-    /// Lowercase, joined with `-`: `http-client`.
-    Kebab,
-    /// Lowercase, no separator: `httpclient`.
-    Flat,
 }
 
-/// How acronyms and terms are written where a word starts with a capital.
-/// Only affects [`Casing::Pascal`] and [`Casing::Camel`].
+impl Casing {
+    fn as_str(self) -> &'static str {
+        match self {
+            Casing::Pascal => "PASCAL",
+            Casing::Snake => "SNAKE",
+        }
+    }
+}
+
+/// How acronyms and terms are written where a word starts with a capital: a
+/// value of the engine's `AcronymStyle` enum.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Acronyms {
     /// `HTTPClient`, `IPv6Address`, `GitHubRepo`.
@@ -37,239 +43,156 @@ pub enum Acronyms {
     Capitalized,
 }
 
-const KIND_WORD: &str = "WORD";
-const KIND_ACRONYM: &str = "ACRONYM";
-const KIND_TERM: &str = "TERM";
-
-fn upper_first(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
-}
-
-fn lower(w: &IdentifierWord) -> String {
-    format!("{}{}", w.text, w.suffix).to_lowercase()
-}
-
-fn upper(w: &IdentifierWord) -> String {
-    format!("{}{}", w.text, w.suffix).to_uppercase()
-}
-
-/// The word's form where it starts with a capital, suffix included.
-fn title(w: &IdentifierWord, acronyms: Acronyms) -> String {
-    let text = if w.kind == KIND_WORD || acronyms == Acronyms::Capitalized {
-        if w.capitalized.is_empty() {
-            upper_first(&w.text.to_lowercase())
-        } else {
-            w.capitalized.clone()
+impl Acronyms {
+    fn as_str(self) -> &'static str {
+        match self {
+            Acronyms::Uppercase => "UPPERCASE",
+            Acronyms::Capitalized => "CAPITALIZED",
         }
-    } else {
-        upper_first(&w.text)
-    };
-    text + &w.suffix
-}
-
-/// Format an identifier's words in a casing.
-pub fn format_words(words: &[IdentifierWord], casing: Casing, acronyms: Acronyms) -> String {
-    match casing {
-        Casing::Pascal => words.iter().map(|w| title(w, acronyms)).collect(),
-        Casing::Camel => match words.split_first() {
-            Some((first, rest)) => {
-                lower(first) + &rest.iter().map(|w| title(w, acronyms)).collect::<String>()
-            }
-            None => String::new(),
-        },
-        Casing::Snake => words.iter().map(lower).collect::<Vec<_>>().join("_"),
-        Casing::ScreamingSnake => words.iter().map(upper).collect::<Vec<_>>().join("_"),
-        Casing::Kebab => words.iter().map(lower).collect::<Vec<_>>().join("-"),
-        Casing::Flat => words.iter().map(lower).collect(),
     }
 }
 
-/// The words of a schema's names, when the engine provided them.
+/// The name formats Rust codegen uses, as `CASING:ACRONYMS` keys of a names
+/// file: types and enum variants, then functions, arguments and fields.
+pub const NAME_FORMATS: &[&str] = &["PASCAL:CAPITALIZED", "SNAKE:UPPERCASE"];
+
+/// A names file, as `codegen introspect --names-out` writes it: each
+/// `CASING:ACRONYMS` format mapped to the schema's names formatted in it.
+pub type NamesFile = HashMap<String, HashMap<String, String>>;
+
+/// The schema's names, as the engine formatted them.
 #[derive(Clone, Debug, Default)]
 pub struct Names {
-    identifiers: Option<Identifiers>,
+    formats: NamesFile,
 }
 
 impl Names {
-    pub fn new(identifiers: Option<Identifiers>) -> Self {
-        Self { identifiers }
-    }
-
-    /// The words of `name`, or `None` when the schema has none for it: the
-    /// schema predates identifier words, the name is an introspection name,
-    /// or a word has a kind this formatter doesn't know. Callers fall back
-    /// to their own conversion then.
-    pub fn words(&self, name: &str) -> Option<&[IdentifierWord]> {
-        let words = self.identifiers.as_ref()?.get(name)?;
-        if words.is_empty()
-            || !words
-                .iter()
-                .all(|w| matches!(w.kind.as_str(), KIND_WORD | KIND_ACRONYM | KIND_TERM))
-        {
-            return None;
+    /// Names from a names file, for a schema with `Query.formatIdentifiers`.
+    /// For a schema without it, names are empty: older schemas keep the
+    /// legacy converter, whatever the file has.
+    pub fn new(schema: &Schema, file: NamesFile) -> Self {
+        if !has_format_identifiers(schema) {
+            return Self::default();
         }
-        Some(words)
+        Self { formats: file }
     }
 
-    /// Format `name` from its words, or `None` when it has none.
+    /// `name` as the engine formatted it in a casing and acronym style, or
+    /// `None` when it wasn't: the schema predates `Query.formatIdentifiers`,
+    /// the format wasn't requested, or the name isn't one of the schema's.
+    /// Callers fall back to their own conversion then.
     pub fn format(&self, name: &str, casing: Casing, acronyms: Acronyms) -> Option<String> {
-        self.words(name)
-            .map(|words| format_words(words, casing, acronyms))
+        let key = format!("{}:{}", casing.as_str(), acronyms.as_str());
+        self.formats
+            .get(&key)?
+            .get(name)
+            .filter(|formatted| !formatted.is_empty())
+            .cloned()
     }
+}
+
+/// Whether the schema has `Query.formatIdentifiers`: the gate for naming
+/// with engine-formatted names.
+pub fn has_format_identifiers(schema: &Schema) -> bool {
+    let query = schema
+        .query_type
+        .as_ref()
+        .and_then(|q| q.name.as_deref())
+        .unwrap_or("Query");
+    schema
+        .types
+        .iter()
+        .flatten()
+        .flatten()
+        .filter(|t| t.full_type.name.as_deref() == Some(query))
+        .flat_map(|t| t.full_type.fields.iter().flatten())
+        .any(|f| f.name.as_deref() == Some("formatIdentifiers"))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    use dagger_sdk::core::introspection::IdentifierWord;
+    use dagger_sdk::core::introspection::IntrospectionResponse;
     use pretty_assertions::assert_eq;
 
-    use super::{format_words, Acronyms, Casing, Names};
+    use super::{Acronyms, Casing, Names, NamesFile};
 
-    /// Locate the engine's shared test vectors: `$DAGGER_NAMING_VECTORS`, or
-    /// `engine/naming/testdata/vectors.json` in the repository.
-    fn vectors_path() -> PathBuf {
-        if let Ok(path) = std::env::var("DAGGER_NAMING_VECTORS") {
-            return PathBuf::from(path);
-        }
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../../engine/naming/testdata/vectors.json")
+    fn schema(query_fields: &str) -> dagger_sdk::core::introspection::Schema {
+        let json = format!(
+            r#"{{"__schema": {{
+              "queryType": {{"name": "Query"}},
+              "mutationType": null, "subscriptionType": null,
+              "types": [{{
+                "kind": "OBJECT", "name": "Query", "description": null,
+                "fields": [{query_fields}],
+                "inputFields": null, "interfaces": [],
+                "enumValues": null, "possibleTypes": null
+              }}],
+              "directives": []
+            }}}}"#
+        );
+        serde_json::from_str::<IntrospectionResponse>(&json)
+            .unwrap()
+            .into_schema()
+            .schema
+            .unwrap()
     }
 
-    const FORMATS: &[(&str, Casing, Acronyms)] = &[
-        ("PASCAL", Casing::Pascal, Acronyms::Uppercase),
-        ("PASCAL_CAPITALIZED", Casing::Pascal, Acronyms::Capitalized),
-        ("CAMEL", Casing::Camel, Acronyms::Uppercase),
-        ("CAMEL_CAPITALIZED", Casing::Camel, Acronyms::Capitalized),
-        ("SNAKE", Casing::Snake, Acronyms::Uppercase),
-        (
-            "SCREAMING_SNAKE",
-            Casing::ScreamingSnake,
-            Acronyms::Uppercase,
-        ),
-        ("KEBAB", Casing::Kebab, Acronyms::Uppercase),
-        ("FLAT", Casing::Flat, Acronyms::Uppercase),
-    ];
-
-    #[test]
-    fn vectors() {
-        let path = vectors_path();
-        let data = std::fs::read_to_string(&path)
-            .unwrap_or_else(|err| panic!("read naming vectors {}: {err}", path.display()));
-        let vectors: Vec<serde_json::Value> = serde_json::from_str(&data).unwrap();
-
-        let mut checked = 0;
-        let mut failures = Vec::new();
-        for vector in &vectors {
-            let input = vector["input"].as_str().unwrap();
-            // Vectors for names that don't parse have no words.
-            let Some(words) = vector.get("words").filter(|w| !w.is_null()) else {
-                continue;
-            };
-            let words: Vec<IdentifierWord> = serde_json::from_value(words.clone()).unwrap();
-            for (key, casing, acronyms) in FORMATS {
-                let Some(expected) = vector["formats"][key].as_str() else {
-                    continue;
-                };
-                let got = format_words(&words, *casing, *acronyms);
-                if got != expected {
-                    failures.push(format!("{input} {key}: got {got:?}, want {expected:?}"));
-                }
-                checked += 1;
-            }
-        }
-        assert!(checked > 0, "no vectors in {}", path.display());
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    fn field(name: &str) -> String {
+        format!(
+            r#"{{"name": "{name}", "description": null, "args": [],
+                "type": {{"kind": "SCALAR", "name": "String", "ofType": null}},
+                "isDeprecated": false, "deprecationReason": null}}"#
+        )
     }
 
-    fn word(kind: &str, text: &str, suffix: &str, capitalized: &str) -> IdentifierWord {
-        IdentifierWord {
-            kind: kind.into(),
-            text: text.into(),
-            suffix: suffix.into(),
-            capitalized: capitalized.into(),
-        }
+    fn file() -> NamesFile {
+        serde_json::from_str(
+            r#"{
+              "PASCAL:CAPITALIZED": {"httpClient": "HttpClient", "empty": ""},
+              "SNAKE:UPPERCASE": {"httpClient": "http_client"}
+            }"#,
+        )
+        .unwrap()
     }
 
     #[test]
-    fn format_words_cases() {
-        let list_prs = [
-            word("WORD", "list", "", "List"),
-            word("ACRONYM", "PR", "s", "Pr"),
-        ];
-        assert_eq!(
-            format_words(&list_prs, Casing::Camel, Acronyms::Uppercase),
-            "listPRs"
-        );
-        assert_eq!(
-            format_words(&list_prs, Casing::Pascal, Acronyms::Capitalized),
-            "ListPrs"
-        );
-        assert_eq!(
-            format_words(&list_prs, Casing::ScreamingSnake, Acronyms::Uppercase),
-            "LIST_PRS"
-        );
-        assert_eq!(
-            format_words(&list_prs, Casing::Snake, Acronyms::Uppercase),
-            "list_prs"
-        );
-        // A missing capitalized form falls back to the first letter uppercased.
-        assert_eq!(
-            format_words(
-                &[word("ACRONYM", "HTTPX", "", "")],
-                Casing::Pascal,
-                Acronyms::Capitalized
-            ),
-            "Httpx"
-        );
-        assert_eq!(format_words(&[], Casing::Camel, Acronyms::Uppercase), "");
-    }
-
-    #[test]
-    fn names_fall_back_when_words_are_missing() {
-        let none = Names::new(None);
-        assert_eq!(
-            none.format("httpClient", Casing::Snake, Acronyms::Uppercase),
-            None
-        );
-
-        let names = Names::new(Some(
-            [
-                (
-                    "httpClient".to_string(),
-                    vec![
-                        word("ACRONYM", "HTTP", "", "Http"),
-                        word("WORD", "client", "", "Client"),
-                    ],
-                ),
-                ("empty".to_string(), vec![]),
-                (
-                    "future".to_string(),
-                    vec![word("SOMETHING", "future", "", "Future")],
-                ),
-            ]
-            .into_iter()
-            .collect(),
-        ));
+    fn names_from_the_file() {
+        let names = Names::new(&schema(&field("formatIdentifiers")), file());
         assert_eq!(
             names.format("httpClient", Casing::Pascal, Acronyms::Capitalized),
             Some("HttpClient".to_string())
+        );
+        assert_eq!(
+            names.format("httpClient", Casing::Snake, Acronyms::Uppercase),
+            Some("http_client".to_string())
+        );
+        // A format the file doesn't have, a name it doesn't have, and an
+        // empty name all fall back.
+        assert_eq!(
+            names.format("httpClient", Casing::Pascal, Acronyms::Uppercase),
+            None
         );
         assert_eq!(
             names.format("missing", Casing::Snake, Acronyms::Uppercase),
             None
         );
         assert_eq!(
-            names.format("empty", Casing::Snake, Acronyms::Uppercase),
+            names.format("empty", Casing::Pascal, Acronyms::Capitalized),
             None
         );
+    }
+
+    #[test]
+    fn names_need_format_identifiers() {
+        let names = Names::new(&schema(&field("version")), file());
         assert_eq!(
-            names.format("future", Casing::Snake, Acronyms::Uppercase),
+            names.format("httpClient", Casing::Snake, Acronyms::Uppercase),
+            None
+        );
+
+        let names = Names::new(&schema(&field("formatIdentifiers")), NamesFile::new());
+        assert_eq!(
+            names.format("httpClient", Casing::Snake, Acronyms::Uppercase),
             None
         );
     }

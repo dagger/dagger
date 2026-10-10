@@ -50,7 +50,7 @@ impl CommonFunctions {
         }
     }
 
-    /// The words of the schema's names, for formatting identifiers.
+    /// The schema's names as the engine formatted them, for identifiers.
     pub fn names(&self) -> &Names {
         &self.names
     }

@@ -194,11 +194,11 @@ type RustClientDevReleaseOpts struct {
 	//
 	// Cargo registry index URL to publish to instead of crates.io.
 	//
-	CargoRegistryIndex string // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:261:2)
+	CargoRegistryIndex string // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:262:2)
 }
 
 // Release the Rust SDK
-func (r *RustClientDev) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret, opts ...RustClientDevReleaseOpts) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:251:1)
+func (r *RustClientDev) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret, opts ...RustClientDevReleaseOpts) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:252:1)
 	assertNotNil("cargoRegistryToken", cargoRegistryToken)
 	if r.release != nil {
 		return nil
@@ -223,11 +223,11 @@ type RustClientDevReleaseDryRunOpts struct {
 	//
 	//
 	// Default: "HEAD"
-	SourceTag string // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:188:2)
+	SourceTag string // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:189:2)
 }
 
 // Test the publishing process
-func (r *RustClientDev) ReleaseDryRun(ctx context.Context, opts ...RustClientDevReleaseDryRunOpts) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:183:1)
+func (r *RustClientDev) ReleaseDryRun(ctx context.Context, opts ...RustClientDevReleaseDryRunOpts) error { // rust-client-dev (../../../../../.dagger/modules/rust-client-dev/main.go:184:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
