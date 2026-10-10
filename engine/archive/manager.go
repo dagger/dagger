@@ -114,9 +114,10 @@ type Manager struct {
 	removeStore func(string) (bool, error)
 	storeSize   func(string) (int64, error)
 
-	// writeMu serializes manifest writers. mu guards the index and is held
-	// only to read or swap it, never across a write's disk syncs, so lookups
-	// do not stall behind a slow disk. The index changes only under both.
+	// writeMu serializes manifest writers. mu guards the index; updates to
+	// an existing archive hold it only to swap the index, never across their
+	// disk syncs, so lookups do not stall behind a slow disk. A registration
+	// holds it across its first write. The index changes only under both.
 	writeMu sync.Mutex
 	mu      sync.RWMutex
 	entries map[string]*Manifest
@@ -283,7 +284,7 @@ func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
 		return Manifest{}, err
 	}
 	// Every session that inherits the trace registers it from its telemetry
-	// export, so a later registration fails without waiting on writes.
+	// export, so a later registration fails without waiting on updates.
 	m.mu.RLock()
 	err := m.registrableLocked(traceID)
 	m.mu.RUnlock()
