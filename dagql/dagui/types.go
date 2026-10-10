@@ -79,7 +79,7 @@ func (db *DB) HasChecksForSpan(root *Span) bool {
 }
 
 func (db *DB) HasGenerateReport() bool {
-	for _, span := range db.Spans.Order {
+	for span := range db.kindSpanIter() {
 		if span.GenerateSkipped {
 			return true
 		}
@@ -93,7 +93,7 @@ func (db *DB) HasGenerateReport() bool {
 // section so they survive the live tree collapsing on a successful run.
 func (db *DB) SkippedModuleSpans() []*Span {
 	var out []*Span
-	for _, span := range db.Spans.Order {
+	for span := range db.kindSpanIter() {
 		if span.GenerateSkipped {
 			out = append(out, span)
 		}
@@ -109,7 +109,7 @@ func (db *DB) SkippedModuleSpans() []*Span {
 // pre-generation load error it supersedes.
 func (db *DB) RegeneratedModuleSpans() map[string]*Span {
 	out := map[string]*Span{}
-	for _, span := range db.Spans.Order {
+	for span := range db.kindSpanIter() {
 		if span.GenerateRegenerated {
 			out[span.Name] = span
 		}

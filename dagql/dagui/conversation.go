@@ -73,7 +73,7 @@ func (db *DB) buildSurfacedConversation(root *Span) []*MessageNode {
 		parentID SpanID
 	}
 	byID := map[SpanID]*info{}
-	for span := range db.Spans.Iter() {
+	for span := range db.kindSpanIter() {
 		if span.LLMRole == "" || span.Internal {
 			continue
 		}
