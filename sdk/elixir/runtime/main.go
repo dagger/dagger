@@ -18,6 +18,7 @@ const (
 	sdkSrc           = "/sdk"
 	genDir           = "dagger_sdk"
 	schemaPath       = "/schema.json"
+	namesPath        = "/names.json"
 	elixirImage      = "elixir:1.19.5-otp-28-alpine@sha256:1747b3595b6742d2273d18608203457d5b925000cd38aca40c76e23c64d44def"
 )
 
@@ -52,6 +53,9 @@ type ElixirSdk struct {
 	Container *dagger.Container
 	// An error during processing.
 	err error
+	// The module schema's names as the engine formatted them, for codegen:
+	// nil for a schema without Query.formatIdentifiers.
+	names *dagger.File
 }
 
 func (m *ElixirSdk) ModuleRuntime(
@@ -123,6 +127,10 @@ func (m *ElixirSdk) Common(ctx context.Context,
 	subPath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
 		return nil, err
+	}
+	m.names, err = formattedNamesFile(ctx, introspectionJSON)
+	if err != nil {
+		return nil, fmt.Errorf("format schema names: %w", err)
 	}
 	m = m.Base(modSource, subPath).
 		WithSDK(introspectionJSON).
@@ -220,13 +228,19 @@ func (m *ElixirSdk) WithDaggerCodegen() *dagger.Container {
 }
 
 func (m *ElixirSdk) GenerateCode(introspectionJSON *dagger.File) *dagger.Directory {
-	return m.WithDaggerCodegen().
-		WithMountedFile(schemaPath, introspectionJSON).
-		WithExec([]string{
-			"mix", "dagger.codegen", "generate",
-			"--outdir", "/gen",
-			"--introspection", schemaPath,
-		}).
+	codegen := []string{
+		"mix", "dagger.codegen", "generate",
+		"--outdir", "/gen",
+		"--introspection", schemaPath,
+	}
+	ctr := m.WithDaggerCodegen().
+		WithMountedFile(schemaPath, introspectionJSON)
+	if m.names != nil {
+		ctr = ctr.WithMountedFile(namesPath, m.names)
+		codegen = append(codegen, "--names", namesPath)
+	}
+	return ctr.
+		WithExec(codegen).
 		Directory("/gen")
 }
 
