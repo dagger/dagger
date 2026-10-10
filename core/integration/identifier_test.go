@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
@@ -25,7 +26,7 @@ func TestIdentifier(t *testing.T) {
 }
 
 func (IdentifierSuite) TestWords(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c := core.NewQuery(connect(ctx, t))
 
 	id := c.Identifier("prerequisiteSHAs")
 	name, err := id.Name(ctx)
@@ -41,7 +42,7 @@ func (IdentifierSuite) TestWords(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "prerequisite", text)
 	kind, err := words[0].Kind(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.IdentifierWordKindWord, kind)
+	require.Equal(t, core.IdentifierWordKindWord, kind)
 	term, err := words[0].Term(ctx)
 	require.NoError(t, err)
 	require.Nil(t, term)
@@ -54,7 +55,7 @@ func (IdentifierSuite) TestWords(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "s", suffix)
 	kind, err = words[1].Kind(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.IdentifierWordKindAcronym, kind)
+	require.Equal(t, core.IdentifierWordKindAcronym, kind)
 	term, err = words[1].Term(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, term)
@@ -67,7 +68,7 @@ func (IdentifierSuite) TestWords(ctx context.Context, t *testctx.T) {
 	require.Len(t, words, 2)
 	kind, err = words[0].Kind(ctx)
 	require.NoError(t, err)
-	require.Equal(t, dagger.IdentifierWordKindTerm, kind)
+	require.Equal(t, core.IdentifierWordKindTerm, kind)
 	term, err = words[0].Term(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, term)
@@ -77,49 +78,49 @@ func (IdentifierSuite) TestWords(ctx context.Context, t *testctx.T) {
 }
 
 func (IdentifierSuite) TestFormat(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c := core.NewQuery(connect(ctx, t))
 
 	id := c.Identifier("http_api_client")
 	for _, tc := range []struct {
-		casing   dagger.Casing
-		acronyms dagger.AcronymStyle
+		casing   core.Casing
+		acronyms core.AcronymStyle
 		want     string
 	}{
-		{dagger.CasingPascal, "", "HTTPAPIClient"},
-		{dagger.CasingPascal, dagger.AcronymStyleCapitalized, "HttpApiClient"},
-		{dagger.CasingCamel, dagger.AcronymStyleUppercase, "httpAPIClient"},
-		{dagger.CasingSnake, "", "http_api_client"},
-		{dagger.CasingScreamingSnake, "", "HTTP_API_CLIENT"},
-		{dagger.CasingKebab, "", "http-api-client"},
-		{dagger.CasingFlat, "", "httpapiclient"},
+		{core.CasingPascal, "", "HTTPAPIClient"},
+		{core.CasingPascal, core.AcronymStyleCapitalized, "HttpApiClient"},
+		{core.CasingCamel, core.AcronymStyleUppercase, "httpAPIClient"},
+		{core.CasingSnake, "", "http_api_client"},
+		{core.CasingScreamingSnake, "", "HTTP_API_CLIENT"},
+		{core.CasingKebab, "", "http-api-client"},
+		{core.CasingFlat, "", "httpapiclient"},
 	} {
-		got, err := id.Format(ctx, tc.casing, dagger.IdentifierFormatOpts{Acronyms: tc.acronyms})
+		got, err := id.Format(ctx, tc.casing, core.IdentifierFormatOpts{Acronyms: tc.acronyms})
 		require.NoError(t, err)
 		require.Equal(t, tc.want, got, "%s/%s", tc.casing, tc.acronyms)
 	}
 }
 
 func (IdentifierSuite) TestFormatIdentifiers(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c := core.NewQuery(connect(ctx, t))
 
 	names := []string{"HTTPClient", "userIds", "GitHubRepo", "E2ETest", "md5sum"}
-	got, err := c.FormatIdentifiers(ctx, names, dagger.CasingPascal)
+	got, err := c.FormatIdentifiers(ctx, names, core.CasingPascal)
 	require.NoError(t, err)
 	require.Equal(t, []string{"HTTPClient", "UserIDs", "GitHubRepo", "E2ETest", "MD5Sum"}, got)
 
-	got, err = c.FormatIdentifiers(ctx, names, dagger.CasingPascal, dagger.FormatIdentifiersOpts{
-		Acronyms: dagger.AcronymStyleCapitalized,
+	got, err = c.FormatIdentifiers(ctx, names, core.CasingPascal, core.FormatIdentifiersOpts{
+		Acronyms: core.AcronymStyleCapitalized,
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"HttpClient", "UserIds", "GitHubRepo", "E2eTest", "Md5Sum"}, got)
 
-	got, err = c.FormatIdentifiers(ctx, names, dagger.CasingSnake)
+	got, err = c.FormatIdentifiers(ctx, names, core.CasingSnake)
 	require.NoError(t, err)
 	require.Equal(t, []string{"http_client", "user_ids", "github_repo", "e2e_test", "md5_sum"}, got)
 }
 
 func (IdentifierSuite) TestErrors(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c := core.NewQuery(connect(ctx, t))
 
 	_, err := c.Identifier("Café").Name(ctx)
 	require.ErrorContains(t, err, "identifier must be ASCII")
@@ -127,12 +128,12 @@ func (IdentifierSuite) TestErrors(ctx context.Context, t *testctx.T) {
 	_, err = c.Identifier("__").Name(ctx)
 	require.ErrorContains(t, err, "identifier must contain a letter or digit")
 
-	_, err = c.FormatIdentifiers(ctx, []string{"ok", "Café"}, dagger.CasingSnake)
+	_, err = c.FormatIdentifiers(ctx, []string{"ok", "Café"}, core.CasingSnake)
 	require.ErrorContains(t, err, "identifier must be ASCII")
 }
 
 func (IdentifierSuite) TestNamingDictionary(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c := core.NewQuery(connect(ctx, t))
 
 	terms, err := c.NamingDictionary(ctx)
 	require.NoError(t, err)
