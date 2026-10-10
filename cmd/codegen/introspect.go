@@ -34,10 +34,6 @@ func Introspect(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("introspection query: %w", err)
 	}
-	// Offline SDK codegen reads the words from this file.
-	if err := introspection.FetchIdentifiers(ctx, dag, data.Schema); err != nil {
-		return err
-	}
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal introspection json: %w", err)

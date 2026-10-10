@@ -6,14 +6,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/generator/typescript/templates"
+	"github.com/dagger/dagger/cmd/codegen/internal/testnames"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/engine/naming"
 )
 
-// identifierSchemaJSON has names the identifier words recase: a field
-// (shortSha), a required arg (callId), an optional arg (pushUrl), a field
-// whose Opts type is recased (http), and an input object field (callId),
-// which goes over the wire as is.
+// identifierSchemaJSON has names the engine recases: a field (shortSha), a
+// required arg (callId), an optional arg (pushUrl), a field whose Opts type is
+// recased (http), and an input object field (callId), which goes over the
+// wire as is.
 const identifierSchemaJSON = `
 [
   {
@@ -83,19 +84,18 @@ const identifierSchemaJSON = `
 ]
 `
 
-func identifierSchema(t *testing.T, withWords bool) *introspection.Schema {
+func identifierSchema(t *testing.T, engineNames bool) *introspection.Schema {
 	t.Helper()
 	schema := objectsInit(t, identifierSchemaJSON)
-	if withWords {
-		schema.Identifiers = introspection.Identifiers{}
-		schema.Identifiers.AddSchema(naming.Latest, &schema)
+	if engineNames {
+		testnames.Load(&schema, templates.NameFormats...)
 	}
 	generator.SetSchema(&schema)
 	t.Cleanup(func() { generator.SetSchema(nil) })
 	return &schema
 }
 
-func TestIdentifierWordsNames(t *testing.T) {
+func TestEngineFormattedNames(t *testing.T) {
 	got := renderAPI(t, identifierSchema(t, true), "v1.0.0")
 
 	// methods, with a deprecated alias under the old name
@@ -132,7 +132,7 @@ func TestIdentifierWordsNames(t *testing.T) {
 	require.Contains(t, got, "export function NetworkProtocolValueToName(")
 }
 
-func TestIdentifierWordsNamesFallback(t *testing.T) {
+func TestEngineFormattedNamesFallback(t *testing.T) {
 	got := renderAPI(t, identifierSchema(t, false), "v1.0.0")
 
 	require.Contains(t, got, "shortSha = async (): Promise<string> => {")

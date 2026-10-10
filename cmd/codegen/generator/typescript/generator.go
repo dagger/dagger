@@ -23,22 +23,29 @@ type TypeScriptGenerator struct {
 }
 
 // Generate will generate the TypeScript SDK code and might modify the schema to reorder types in a alphanumeric fashion.
-func (g *TypeScriptGenerator) GenerateModule(_ context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+func (g *TypeScriptGenerator) GenerateModule(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	target := filepath.Join(g.Config.ModuleConfig.ModuleSourcePath, "sdk/src/api", ClientGenFile)
 
-	return generate(g.Config, target, schema, schemaVersion)
+	return generate(ctx, g.Config, target, schema, schemaVersion)
 }
 
 func (g *TypeScriptGenerator) GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
-	return generate(g.Config, ClientGenFile, schema, schemaVersion)
+	return generate(ctx, g.Config, ClientGenFile, schema, schemaVersion)
 }
 
 func (g *TypeScriptGenerator) GenerateLibrary(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
-	return generate(g.Config, ClientGenFile, schema, schemaVersion)
+	return generate(ctx, g.Config, ClientGenFile, schema, schemaVersion)
 }
 
-func generate(config generator.Config, target string, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+func generate(ctx context.Context, config generator.Config, target string, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
+
+	// TypeScript identifiers are the schema's names as the engine formats
+	// them, when the schema has Query.formatIdentifiers (see
+	// templates/naming.go).
+	if err := schema.LoadFormattedNames(ctx, config.Dag, templates.NameFormats...); err != nil {
+		return nil, err
+	}
 
 	sort.SliceStable(schema.Types, func(i, j int) bool {
 		return schema.Types[i].Name < schema.Types[j].Name

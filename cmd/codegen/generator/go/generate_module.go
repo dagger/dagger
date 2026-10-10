@@ -39,6 +39,10 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	moduleConfig := g.Config.ModuleConfig
 
 	generator.SetSchema(schema)
+	// Before anything formats a name, including the self-call emitter below.
+	if err := schema.LoadFormattedNames(ctx, g.Config.Dag, templates.NameFormats...); err != nil {
+		return nil, err
+	}
 
 	// 1. if no go.mod, generate go.mod
 	// 2. if no .go files, bootstrap package main

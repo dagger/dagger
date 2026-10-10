@@ -5,13 +5,12 @@ import (
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/engine/naming"
 )
 
 // TypeScript identifiers for schema names.
 //
-// When the schema carries the engine's identifier words (schema views at
-// v1.0.0 and above), names are formatted from those words:
+// When the schema has Query.formatIdentifiers (schema views at v1.0.0-0 and
+// above), names are the schema's names as the engine formats them:
 //
 //   - methods, args and opts keys: CAMEL / UPPERCASE (httpClient, withGPU);
 //   - "Opts" types and enum converters: PASCAL / UPPERCASE (ClientHTTPOpts);
@@ -25,35 +24,45 @@ import (
 // names in select, arg keys, input object fields, enum values) and every type
 // name stays exactly as the schema has it: the runtime looks generated classes
 // up by their GraphQL type name (clientGen[typedef.name], __loadCoreObject),
-// and type names in views that carry words are already canonical anyway.
+// and type names in views with Query.formatIdentifiers are already canonical
+// anyway.
 
-// identifier returns the engine's words for a schema name, if the schema has
-// them. Names with a leading underscore (internal names, like
-// _DirectiveApplication) keep it: words don't carry it.
-func (funcs typescriptTemplateFuncs) identifier(name string) (naming.Identifier, bool) {
+var (
+	camelNames             = introspection.NameFormat{Casing: introspection.CasingCamel, Acronyms: introspection.AcronymsUppercase}
+	pascalNames            = introspection.NameFormat{Casing: introspection.CasingPascal, Acronyms: introspection.AcronymsUppercase}
+	pascalCapitalizedNames = introspection.NameFormat{Casing: introspection.CasingPascal, Acronyms: introspection.AcronymsCapitalized}
+)
+
+// NameFormats are the formats TypeScript codegen asks the engine for: load
+// them onto the schema with LoadFormattedNames before rendering.
+var NameFormats = []introspection.NameFormat{camelNames, pascalNames, pascalCapitalizedNames}
+
+// engineName returns a schema name as the engine formatted it in f, if the
+// schema has engine formats. Names with a leading underscore (internal names,
+// like _DirectiveApplication) keep the legacy conversion, which keeps the
+// underscore.
+func (funcs typescriptTemplateFuncs) engineName(name string, f introspection.NameFormat) (string, bool) {
 	if strings.HasPrefix(name, "_") {
-		return naming.Identifier{}, false
+		return "", false
 	}
 	schema := funcs.fullSchema
 	if schema == nil {
 		schema = generator.GetSchema()
 	}
-	if schema == nil {
-		return naming.Identifier{}, false
-	}
-	return schema.Identifier(name)
+	return schema.FormattedName(name, f)
 }
 
 // formatMethodName returns the TS name of the method generated for a field.
 func (funcs typescriptTemplateFuncs) formatMethodName(name string) string {
-	if id, ok := funcs.identifier(name); ok {
-		return funcs.formatName(id.Format(naming.Camel, naming.Uppercase))
+	if formatted, ok := funcs.engineName(name, camelNames); ok {
+		return funcs.formatName(formatted)
 	}
 	return funcs.formatName(name)
 }
 
 // legacyMethodName returns the TS name the generator gave a field's method
-// before identifier words, kept as a deprecated alias when it differs.
+// before the engine formatted names, kept as a deprecated alias when it
+// differs.
 func (funcs typescriptTemplateFuncs) legacyMethodName(name string) string {
 	return funcs.formatName(name)
 }
@@ -61,8 +70,8 @@ func (funcs typescriptTemplateFuncs) legacyMethodName(name string) string {
 // argName returns the TS name of an argument, unescaped: it is the key of the
 // argument in the method's Opts type.
 func (funcs typescriptTemplateFuncs) argName(name string) string {
-	if id, ok := funcs.identifier(name); ok {
-		return id.Format(naming.Camel, naming.Uppercase)
+	if formatted, ok := funcs.engineName(name, camelNames); ok {
+		return formatted
 	}
 	return name
 }
@@ -77,8 +86,8 @@ func (funcs typescriptTemplateFuncs) formatArgName(name string) string {
 // the names the generator derives from schema names: "<Parent><Field>Opts"
 // types and the "<Enum>ValueToName" / "<Enum>NameToValue" converters.
 func (funcs typescriptTemplateFuncs) pascalCase(name string) string {
-	if id, ok := funcs.identifier(name); ok {
-		return id.Format(naming.Pascal, naming.Uppercase)
+	if formatted, ok := funcs.engineName(name, pascalNames); ok {
+		return formatted
 	}
 	return toPascalCase(name)
 }
@@ -90,15 +99,16 @@ func (funcs typescriptTemplateFuncs) optsTypeName(parent, field string) string {
 }
 
 // legacyOptsTypeName returns the name the generator gave a field's Opts type
-// before identifier words, kept as a deprecated alias when it differs.
+// before the engine formatted names, kept as a deprecated alias when it
+// differs.
 func (funcs typescriptTemplateFuncs) legacyOptsTypeName(parent, field string) string {
 	return parent + toPascalCase(field) + "Opts"
 }
 
 // formatEnum returns the TS name of an enum member.
 func (funcs typescriptTemplateFuncs) formatEnum(name string) string {
-	if id, ok := funcs.identifier(name); ok {
-		return id.Format(naming.Pascal, naming.Capitalized)
+	if formatted, ok := funcs.engineName(name, pascalCapitalizedNames); ok {
+		return formatted
 	}
 	return toPascalCase(name)
 }

@@ -6,18 +6,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/dagger/dagger/cmd/codegen/internal/testnames"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/engine/naming"
 )
 
+// identifierFuncs returns template funcs for a schema whose names the engine
+// formatted.
 func identifierFuncs(names ...string) typescriptTemplateFuncs {
-	ids := introspection.Identifiers{}
-	for _, name := range names {
-		ids.Add(naming.Latest, name)
+	schema := &introspection.Schema{FormattedNames: map[introspection.NameFormat]map[string]string{}}
+	for _, f := range NameFormats {
+		schema.FormattedNames[f] = testnames.Format(names, f)
 	}
-	return typescriptTemplateFuncs{
-		fullSchema: &introspection.Schema{Identifiers: ids},
-	}
+	return typescriptTemplateFuncs{fullSchema: schema}
 }
 
 func TestIdentifierNames(t *testing.T) {
@@ -67,7 +67,8 @@ func TestIdentifierNames(t *testing.T) {
 	require.Equal(t, "pushUrl", renamed[0].Name)
 }
 
-// Without identifier words, every name goes through the legacy converters.
+// Without engine-formatted names, every name goes through the legacy
+// converters.
 func TestIdentifierNamesFallback(t *testing.T) {
 	for _, funcs := range []typescriptTemplateFuncs{
 		{},
@@ -88,22 +89,25 @@ func TestIdentifierNamesFallback(t *testing.T) {
 
 // Generated classes are named after their GraphQL type, and the runtime looks
 // them up by that name, so the generator never reformats type names. That is
-// only consistent because type names in schemas that carry identifier words
-// are already canonical: formatting them is a no-op.
+// only consistent because type names in schemas with Query.formatIdentifiers
+// are already canonical: the engine formats them unchanged.
 func TestCoreTypeNamesAreCanonical(t *testing.T) {
 	schema := currentSchema
-	if schema.Identifiers == nil {
-		t.Skip("engine schema has no identifier words")
+	if !schema.HasFormatIdentifiers() {
+		t.Skip("engine schema has no Query.formatIdentifiers")
 	}
+	var names []string
 	for _, typ := range schema.Types {
 		if strings.HasPrefix(typ.Name, "_") {
 			// internal types, never generated
 			continue
 		}
-		id, ok := schema.Identifier(typ.Name)
-		if !ok {
-			continue
-		}
-		require.Equal(t, typ.Name, id.Format(naming.Pascal, naming.Uppercase))
+		names = append(names, typ.Name)
+	}
+	formatted, ok, err := introspection.FormatNames(t.Context(), currentDag, schema, names, pascalNames.Casing, pascalNames.Acronyms)
+	require.NoError(t, err)
+	require.True(t, ok)
+	for _, name := range names {
+		require.Equal(t, name, formatted[name])
 	}
 }

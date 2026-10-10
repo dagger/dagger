@@ -11,7 +11,10 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
-var currentSchema *introspection.Schema
+var (
+	currentSchema *introspection.Schema
+	currentDag    *dagger.Client
+)
 
 func init() {
 	ctx := context.Background()
@@ -20,6 +23,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	currentDag = c
 
 	currentSchema, _, err = introspection.Introspect(ctx, c)
 	if err != nil {

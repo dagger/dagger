@@ -297,7 +297,8 @@ func formatParamName(s string) string {
 func (funcs goTemplateFuncs) formatEnum(parent string, s string) string {
 	if parent == "" {
 		// legacy path - terrible, removes all the casing :(
-		// Only used for schemas before v0.15.0, which have no identifier words.
+		// Only used for schemas before v0.15.0, which have no
+		// Query.formatIdentifiers.
 		return strcase.ToCamel(strings.ToLower(s))
 	}
 	return parent + enumValueName(s)
@@ -305,8 +306,8 @@ func (funcs goTemplateFuncs) formatEnum(parent string, s string) string {
 
 func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
 	// This feeds UnmarshalJSON's cases, keyed by wire name: keep the legacy
-	// deduplication even with identifier words, which may give more values
-	// the same Go name, so no wire name loses its case.
+	// deduplication even with engine-formatted names, which may give more
+	// values the same Go name, so no wire name loses its case.
 	s = slices.Clone(s)
 	slices.SortStableFunc(s, func(x, y introspection.EnumValue) int {
 		return cmp.Compare(strcase.ToCamel(x.Name), strcase.ToCamel(y.Name))
@@ -401,8 +402,8 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 }
 
 // fieldLegacyWrapper returns a deprecated method under the name a field's
-// method had before identifier words, forwarding to the current one, or ""
-// when the name didn't change. See legacyMethodName.
+// method had before the engine formatted names, forwarding to the current
+// one, or "" when the name didn't change. See legacyMethodName.
 func (funcs goTemplateFuncs) fieldLegacyWrapper(f introspection.Field, topLevel bool, supportsVoid bool, scopes ...string) (string, error) {
 	legacy, ok := legacyMethodName(f)
 	if !ok {
@@ -461,8 +462,8 @@ func (funcs goTemplateFuncs) forwardedArgs(f introspection.Field) []string {
 }
 
 // legacyFieldOptionsStructName returns the name a field's options struct had
-// before identifier words, when it differs from the current one, so it can be
-// kept as a deprecated alias.
+// before the engine formatted names, when it differs from the current one, so
+// it can be kept as a deprecated alias.
 func (funcs goTemplateFuncs) legacyFieldOptionsStructName(f introspection.Field) string {
 	legacy := legacyFormatName(f.Name) + "Opts"
 	if f.ParentObject.Name != generator.QueryStructName {
