@@ -13,6 +13,8 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/codes"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
@@ -235,6 +237,101 @@ func TestToolCallReportOptsHideTreeButReadTraceKeepsIt(t *testing.T) {
 	}
 	require.True(t, readTraceReportOpts().OwnOutputOnly)
 	require.True(t, readTraceReportOpts().ExpandWrappers)
+}
+
+// TestToolCallReportOmitsSubAgentConversation is the regression for a tool
+// that runs a nested LLM loop -- a module function doing
+// `llm.withPrompt(bigPage).loop.lastReply` to summarize a page. Conversation
+// surfacing is relative to the tool call, so the sub-agent's whole transcript,
+// prompt included, used to land in the caller's tool result as a CONVERSATION
+// section: the very context the tool was called to save. The tool result must
+// leave it out (with a pointer), while ReadTrace keeps showing it.
+func TestToolCallReportOmitsSubAgentConversation(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		toolID
+		fnID
+		loopID
+		promptID
+		replyID
+		otherID
+		otherWorkID
+	)
+	start := time.Unix(100, 0)
+	snap := func(id byte, name string, parent byte) dagui.SpanSnapshot {
+		s := dagui.SpanSnapshot{
+			ID:        traceTargetSpanID(id),
+			TraceID:   dagui.TraceID{TraceID: trace.TraceID{1}},
+			Name:      name,
+			StartTime: start.Add(time.Duration(id) * time.Second),
+			EndTime:   start.Add(10 * time.Second),
+			Final:     true,
+		}
+		if parent != 0 {
+			s.ParentID = traceTargetSpanID(parent)
+		}
+		return s
+	}
+
+	root := snap(rootID, "agent", 0)
+	// The caller's tool-call display span (displayPhases.StartToolCall), which
+	// the tool result's report is scoped to.
+	tool := snap(toolID, "summarize", rootID)
+	tool.LLMTool = "summarize"
+	tool.LLMRole = "assistant"
+	tool.Boundary = true
+	tool.RollUpLogs = true
+	tool.RollUpSpans = true
+	// The module function the tool invoked, running its own LLM loop.
+	fn := snap(fnID, "Summarizer.summarize", toolID)
+	loop := snap(loopID, "LLM.loop", fnID)
+	loop.Passthrough = true
+	prompt := snap(promptID, "LLM prompt", loopID)
+	prompt.LLMRole = "user"
+	reply := snap(replyID, "LLM response", loopID)
+	reply.LLMRole = "assistant"
+	// A sibling tool call with no nested conversation.
+	other := snap(otherID, "lint", rootID)
+	other.LLMTool = "lint"
+	other.LLMRole = "assistant"
+	other.Boundary = true
+	otherWork := snap(otherWorkID, "Linter.lint", otherID)
+
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{root, tool, fn, loop, prompt, reply, other, otherWork})
+	session := idtui.NewReportSession(db)
+	var records []sdklog.Record
+	for id, body := range map[dagui.SpanID]string{
+		prompt.ID: "SUB-AGENT-PROMPT: summarize this enormous page\n",
+		reply.ID:  "SUB-AGENT-REPLY: the summary\n",
+	} {
+		var rec sdklog.Record
+		rec.SetSpanID(id.SpanID)
+		rec.SetBody(otellog.StringValue(body))
+		records = append(records, rec)
+	}
+	require.NoError(t, session.LogExporter().Export(t.Context(), records))
+
+	toolResult, err := renderTraceReportSession(session, tool.ID.String(), toolCallReportOpts())
+	require.NoError(t, err)
+	require.NotContains(t, toolResult.body, "SUB-AGENT-PROMPT")
+	require.NotContains(t, toolResult.body, "SUB-AGENT-REPLY")
+	require.NotContains(t, toolResult.body, "CONVERSATION")
+	require.Equal(t, subAgentConversationPointer(tool.ID.String()), strings.TrimSpace(toolResult.body),
+		"the omitted conversation should cost exactly one pointer line")
+
+	// ReadTrace, where the pointer sends the reader, still renders it.
+	readTrace, err := renderTraceReportSession(session, tool.ID.String(), readTraceReportOpts())
+	require.NoError(t, err)
+	require.Contains(t, readTrace.body, "CONVERSATION")
+	require.Contains(t, readTrace.body, "SUB-AGENT-PROMPT")
+	require.Contains(t, readTrace.body, "SUB-AGENT-REPLY")
+	require.NotContains(t, readTrace.body, subAgentConversationPointer(tool.ID.String()))
+
+	// A tool call that ran no nested conversation gets no pointer.
+	plain, err := renderTraceReportSession(session, other.ID.String(), toolCallReportOpts())
+	require.NoError(t, err)
+	require.NotContains(t, plain.body, "sub-agent conversation")
 }
 
 func TestTraceReportHidesInternalSpans(t *testing.T) {

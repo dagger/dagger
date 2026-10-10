@@ -3465,6 +3465,9 @@ func readTraceReportOpts() traceReportOpts {
 	// ReadTrace is the "show me the shape of what ran" tool: it keeps the span
 	// tree the tool-call result drops.
 	opts.HideSpanTree = false
+	// ...and the nested conversation, which is where the tool-call result's
+	// sub-agent pointer sends the reader.
+	opts.HideConversation = false
 	return opts
 }
 

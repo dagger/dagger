@@ -91,8 +91,22 @@ type traceReportOpts struct {
 	//
 	// Everything the surfacing sections themselves show (CHECKS, CONVERSATION,
 	// SERVICES, GENERATORS) is now rolled up relative to the zoomed span, so
-	// none of them need this flag any more.
+	// none of them need this flag any more. In particular it does NOT keep a
+	// conversation that ran beneath root out of the report; HideConversation
+	// does.
 	Scoped bool
+
+	// HideConversation drops the CONVERSATION section -- the LLM transcript
+	// surfaced beneath root -- leaving a one-line pointer to it instead.
+	//
+	// Set for a tool call's own result. The enclosing agent's own transcript
+	// never surfaces there (it sits above root), but a tool that runs a nested
+	// LLM loop -- a module function that has a small model summarize a page, a
+	// delegated sub-agent -- would otherwise have that sub-agent's whole
+	// conversation, prompt included, rendered into the caller's context: the
+	// very context the tool was called to save. ReadTrace, which the pointer
+	// names, never sets it.
+	HideConversation bool
 
 	// NestedLogLines bounds the log lines rendered per nested row; 0 leaves
 	// them unbounded.
@@ -153,6 +167,13 @@ func readTraceRerunSuggestion(db *dagui.DB, names []string) (string, []string) {
 type traceReportResult struct {
 	body     string
 	failures string
+}
+
+// subAgentConversationPointer is what a HideConversation report says in place
+// of the CONVERSATION section it dropped: that a nested LLM conversation ran
+// beneath root, and how to read it. ReadTrace on root renders that section.
+func subAgentConversationPointer(root string) string {
+	return fmt.Sprintf("... sub-agent conversation omitted; ReadTrace(span: %q) to read its transcript ...", root)
 }
 
 // renderTraceReport materializes root's telemetry scope from the client's
@@ -329,11 +350,12 @@ func renderTraceReportSession(session *idtui.ReportSession, root string, opt tra
 		// (tests/checks/...) exists.
 		Verbosity: dagui.ShowCompletedVerbosity,
 		// Whether to leave completed steps expanded.
-		ExpandCompleted: true,
-		NestedLogLimit:  opt.NestedLogLines,
-		ScopedSubtree:   opt.Scoped,
-		Root:            primary,
-		HideSpanTree:    opt.HideSpanTree,
+		ExpandCompleted:  true,
+		NestedLogLimit:   opt.NestedLogLines,
+		ScopedSubtree:    opt.Scoped,
+		Root:             primary,
+		HideSpanTree:     opt.HideSpanTree,
+		HideConversation: opt.HideConversation,
 		// Every report rendered here is assembled for an LLM: a tool call's own
 		// result, or the ReadTrace builtin. Inside the engine there is no agent
 		// env var to sniff (it's a daemon), so say so explicitly, per render.
@@ -379,6 +401,16 @@ func renderTraceReportSession(session *idtui.ReportSession, root string, opt tra
 		if !errors.As(err, &exitErr) {
 			return traceReportResult{}, fmt.Errorf("render trace report: %w", err)
 		}
+	}
+	if opt.HideConversation && db.HasConversationForSpan(db.Spans.Map[primary]) {
+		// Leave a breadcrumb rather than nothing: the reader should know a
+		// sub-agent ran, and where to look if it wants the transcript.
+		body := strings.TrimRight(buf.String(), "\n")
+		if body != "" {
+			body += "\n\n"
+		}
+		buf.Reset()
+		buf.WriteString(body + subAgentConversationPointer(root) + "\n")
 	}
 	return traceReportResult{
 		body:     buf.String(),
