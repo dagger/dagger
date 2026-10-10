@@ -92,7 +92,11 @@ type DotnetClientDev {
   Run source generator tests without compiling the generated SDK client.
   """
   pub sourceGeneratorTest: Void @check {
-    devContainer
+    # The tests need no engine: don't start one.
+    container
+      .from(dotnetSdkImage)
+      .withMountedDirectory("/src", workspaceDir)
+      .withWorkdir("/src/" + sourcePath)
       .withExec([
         "dotnet",
         "test",
