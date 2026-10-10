@@ -138,9 +138,11 @@ func (db *DB) RegeneratedModuleSpans() map[string]*Span {
 	return out
 }
 
-// RowsView builds the trees of the view opts selects.
+// RowsView builds the trees of the view opts selects that its rows show: the
+// top level, and the trees beneath every tree Rows(opts) shows expanded. See
+// rowsView.
 func (db *DB) RowsView(opts FrontendOpts) *RowsView {
-	return db.rowsView(opts, false)
+	return db.rowsView(opts, true)
 }
 
 // rowsView builds a RowsView: every tree in it, or lazily, only the trees
