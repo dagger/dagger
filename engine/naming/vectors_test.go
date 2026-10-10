@@ -36,8 +36,8 @@ var sharedVectorExtras = []string{
 	"insecureSkipTLSVerify", "sshfsVolume",
 }
 
-// vectorWord is the JSON form of a word, as in the engine's schema JSON
-// __identifiers: SDKs format these without a dictionary.
+// vectorWord is the JSON form of a word in testdata/vectors.json: kind, text
+// and suffix as in the core API's IdentifierWord, plus its CAPITALIZED form.
 type vectorWord struct {
 	Kind   string `json:"kind"`
 	Text   string `json:"text"`
@@ -100,8 +100,8 @@ func sharedVectors(t *testing.T) []vector {
 	return vectors
 }
 
-// TestSharedVectors keeps testdata/vectors.json, the formatting test vectors
-// SDKs share, in sync with the package. Regenerate it with:
+// TestSharedVectors keeps testdata/vectors.json, the shared formatting test
+// vectors, in sync with the package. Regenerate it with:
 //
 //	go test ./engine/naming -run TestSharedVectors -update
 func TestSharedVectors(t *testing.T) {
@@ -129,9 +129,8 @@ func TestSharedVectors(t *testing.T) {
 	}
 }
 
-// formatVectorWords formats words with only the fields in the JSON, the way
-// an SDK without a dictionary does (hack/designs/identifier-casing.md,
-// "Schema JSON words").
+// formatVectorWords formats words with only the fields in the JSON, without a
+// dictionary.
 func formatVectorWords(words []vectorWord, casing string) string {
 	lower := func(w vectorWord) string { return strings.ToLower(w.Text + w.Suffix) }
 	capForm := func(w vectorWord, capitalized bool) string {
