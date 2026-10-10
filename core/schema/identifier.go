@@ -20,12 +20,11 @@ const identifierExperimental = "Identifier casing APIs are likely to change."
 // engine.
 const identifierVersion = "v1.0.0-0"
 
-// formatIdentifiersDoNotCache is why formatIdentifiers and __formatIdentifiers
-// skip the cache: they're pure and fast, and caching costs far more than
-// formatting. For the core schema's ~960 names, formatting takes about a
-// millisecond, but publishing the result to the cache took over 200ms. Nor
-// would a cache hit help much: codegen makes one call per name format, each
-// with different arguments.
+// formatIdentifiersDoNotCache is why formatIdentifiers skips the cache: it's
+// pure and fast, and caching costs far more than formatting. For the core
+// schema's ~960 names, formatting takes about a millisecond, but publishing
+// the result to the cache took over 200ms. Nor would a cache hit help much:
+// codegen makes one call per name format, each with different arguments.
 const formatIdentifiersDoNotCache = "Formatting is pure and much cheaper than caching a result with a large list argument."
 
 func (s identifierSchema) Install(srv *dagql.Server) {
@@ -68,25 +67,6 @@ func (s identifierSchema) Install(srv *dagql.Server) {
 			View(view).
 			Experimental(identifierExperimental).
 			Doc(`The acronyms and terms used to parse and format identifiers.`),
-	}.Install(srv)
-
-	dagql.Fields[*core.Query]{
-		// formatIdentifiers for module runtimes, which run codegen for a
-		// module's schema but are served at their own engine version, where
-		// formatIdentifiers may not exist: installed in every view, hidden
-		// from introspection by the __ prefix, and parsing with the dictionary
-		// of the given version rather than the caller's. Its casing and
-		// acronyms are strings, since the Casing and AcronymStyle enums aren't
-		// in older views.
-		dagql.Func("__formatIdentifiers", s.formatIdentifiersForVersion).
-			DoNotCache(formatIdentifiersDoNotCache).
-			Doc(`(Internal-only) Format many names at once, for codegen, with the naming dictionary of an engine version. Returns them in input order.`).
-			Args(
-				dagql.Arg("names").Doc("The names to format, in any casing."),
-				dagql.Arg("casing").Doc("The casing to format the names in: a Casing value."),
-				dagql.Arg("acronyms").Doc("How to write acronyms and terms where a word starts with a capital: an AcronymStyle value."),
-				dagql.Arg("version").Doc("The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of the schema being generated."),
-			),
 	}.Install(srv)
 
 	dagql.Fields[*core.Identifier]{
@@ -154,15 +134,6 @@ func (s identifierSchema) formatIdentifiers(ctx context.Context, _ *core.Query, 
 		dict = naming.DictionaryFor(string(args.Version.Value))
 	}
 	return formatNames(dict, args.Names, args.Casing, args.Acronyms)
-}
-
-func (s identifierSchema) formatIdentifiersForVersion(_ context.Context, _ *core.Query, args struct {
-	Names    []string
-	Casing   string
-	Acronyms string `default:"UPPERCASE"`
-	Version  string
-}) ([]dagql.String, error) {
-	return formatNames(naming.DictionaryFor(args.Version), args.Names, core.Casing(args.Casing), core.AcronymStyle(args.Acronyms))
 }
 
 // formatNames parses names with dict and formats them in a casing and
