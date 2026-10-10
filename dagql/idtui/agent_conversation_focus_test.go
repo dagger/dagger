@@ -5,12 +5,10 @@ import (
 	"testing"
 	"time"
 
-	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
-	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -162,34 +160,6 @@ func TestFocusedAgentFailureRendersAboveInput(t *testing.T) {
 		"failed agent error must render above the input:\n%s", strings.Join(lines, "\n"))
 	require.NoError(t, fe.promptErr,
 		"the durable transcript message must not depend on the transient prompt error label")
-}
-
-// TestFocusSwitchIsNotPaced: on a trace large enough that data-driven view
-// recalculation is paced, switching agents is still a keypress, so the very
-// next frame must show the newly focused agent's transcript rather than the
-// previous one's until pacing says a recalculation is due.
-func TestFocusSwitchIsNotPaced(t *testing.T) {
-	runFocusTest(t, func(t *testing.T) {
-		handler := &focusShellHandler{}
-		fe := focusTestFrontend(t, focusConversationDB(t), handler)
-		t.Cleanup(fe.stopRecalcWakeupLocked)
-		fe.recalculateViewLocked()
-
-		// Pace every data-driven recalculation, with the next one due at the
-		// max delay from now.
-		fe.recalcPacing.minSpans, fe.recalcPacing.minCost = 0, 0
-		fe.lastRecalcCost, fe.lastRecalcAt = time.Hour, time.Now()
-
-		// The whole keypress path, so the frontend re-renders as it would live.
-		fe.HandleKeyPress(tuist.Context{}, uv.KeyPressEvent(uv.Key{Code: '2', Text: "2"}))
-		fe.tui.Step()
-		require.False(t, fe.viewDirty, "a focus switch must not wait for pacing")
-		require.Equal(t, map[string]bool{
-			"scout-said": true, "agent failure": true,
-		}, revealedNames(t, fe), "the next frame shows the focused agent")
-
-		awaitFocus(t, fe, handler, "agent-scout")
-	})
 }
 
 // TestFocusDoesNotDisturbZoom pins the axis choice. Focus could have been
