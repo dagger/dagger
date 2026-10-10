@@ -14,5 +14,20 @@ defmodule Dagger.Core.QueryBuilderTest do
 
       assert q == "query{container{withExposedPort(protocol:TCP)}}"
     end
+
+    test "encode input object with schema field names" do
+      q =
+        QB.query()
+        |> QB.select("withOrigin")
+        |> QB.put_arg("origin", %Dagger.LLMMessageOriginInput{
+          agent_name: "bot",
+          kind: :AGENT,
+          reply_to: "msg-1"
+        })
+        |> QB.build()
+
+      assert q ==
+               ~s|query{withOrigin(origin:{agentName:"bot",kind:AGENT,ref:null,replyTo:"msg-1"})}|
+    end
   end
 end

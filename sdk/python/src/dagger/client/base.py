@@ -41,6 +41,11 @@ class Input(Object):
 
     __slots__ = ()
 
+    @classmethod
+    def _graphql_field_names(cls) -> dict[str, str]:
+        """Map of Python attribute names to their GraphQL field names."""
+        return {}
+
 
 class Type(Object):
     """Object type."""

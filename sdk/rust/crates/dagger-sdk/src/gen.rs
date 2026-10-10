@@ -104,39 +104,61 @@ impl Void {
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
+    #[serde(rename = "name")]
     pub name: String,
+    #[serde(rename = "value")]
     pub value: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct LlmContentBlockInput {
+    #[serde(rename = "arguments")]
     pub arguments: Json,
+    #[serde(rename = "callId")]
     pub call_id: String,
+    #[serde(rename = "content")]
     pub content: Vec<LlmContentBlockInput>,
+    #[serde(rename = "data")]
     pub data: Bytes,
+    #[serde(rename = "errored")]
     pub errored: bool,
+    #[serde(rename = "file")]
     pub file: Id,
+    #[serde(rename = "kind")]
     pub kind: LlmContentBlockKind,
+    #[serde(rename = "mimeType")]
     pub mime_type: String,
+    #[serde(rename = "signature")]
     pub signature: String,
+    #[serde(rename = "text")]
     pub text: String,
+    #[serde(rename = "toolName")]
     pub tool_name: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct LlmMessageOriginInput {
+    #[serde(rename = "agentName")]
     pub agent_name: String,
+    #[serde(rename = "kind")]
     pub kind: LlmMessageOriginKind,
+    #[serde(rename = "ref")]
     pub r#ref: String,
+    #[serde(rename = "replyTo")]
     pub reply_to: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PipelineLabel {
+    #[serde(rename = "name")]
     pub name: String,
+    #[serde(rename = "value")]
     pub value: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PortForward {
+    #[serde(rename = "backend")]
     pub backend: isize,
+    #[serde(rename = "frontend")]
     pub frontend: isize,
+    #[serde(rename = "protocol")]
     pub protocol: NetworkProtocol,
 }
 /// An object that can be exported to the host.
