@@ -878,7 +878,7 @@ type LLMMessage struct {
 	// since absent is the common case.
 	Origin *LLMMessageOrigin `json:"origin,omitempty"`
 
-	// CompositionOwner identifies the module that installed a system
+	// CompositionOwner identifies the expertise entry that installed a system
 	// prompt. Empty means caller-owned/unowned. This is independent of mailbox
 	// Origin and is never sent to a model as prompt text or attribution.
 	CompositionOwner string `json:"composition_owner,omitempty"`

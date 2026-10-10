@@ -74,8 +74,8 @@ func RecomposeExpertise(ctx context.Context, base dagql.ObjectResult[*LLM], expe
 	return acc, nil
 }
 
-// compositionOwnerMatches compares flat module identities. Empty owners are
-// always unowned, never a module selected for recomposition.
+// compositionOwnerMatches compares entry identities. Empty owners are always
+// unowned, never an entry selected for recomposition.
 func compositionOwnerMatches(contribution, owner string) bool {
 	return owner != "" && contribution == owner
 }
