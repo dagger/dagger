@@ -59,6 +59,10 @@ func (s identifierSchema) Install(srv *dagql.Server) {
 				dagql.Arg("names").Doc("The names to format, in any casing."),
 				dagql.Arg("casing").Doc("The casing to format the names in."),
 				dagql.Arg("acronyms").Doc("How to write acronyms and terms where a word starts with a capital."),
+				dagql.Arg("version").Doc(
+					`The engine version whose naming dictionary to parse the names with,
+					e.g. the __schemaVersion of a schema being generated. Defaults to the
+					caller's engine version.`),
 			),
 		dagql.Func("namingDictionary", s.namingDictionary).
 			View(view).
@@ -143,8 +147,13 @@ func (s identifierSchema) formatIdentifiers(ctx context.Context, _ *core.Query, 
 	Names    []string
 	Casing   core.Casing
 	Acronyms core.AcronymStyle `default:"UPPERCASE"`
+	Version  dagql.Optional[dagql.String]
 }) ([]dagql.String, error) {
-	return formatNames(namingDictionaryFor(ctx), args.Names, args.Casing, args.Acronyms)
+	dict := namingDictionaryFor(ctx)
+	if args.Version.Valid && args.Version.Value != "" {
+		dict = naming.DictionaryFor(string(args.Version.Value))
+	}
+	return formatNames(dict, args.Names, args.Casing, args.Acronyms)
 }
 
 func (s identifierSchema) formatIdentifiersForVersion(_ context.Context, _ *core.Query, args struct {
