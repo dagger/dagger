@@ -98,14 +98,24 @@ func (m *PhpSdk) CodegenBase(
 		// Needed to run codegen
 		WithExec([]string{"composer", "install", "--no-dev"})
 
-	sdkDir := ctr.
-		WithMountedFile("/schema.json", introspectionJSON).
-		WithExec([]string{
-			"scripts/codegen.php",
-			"dagger:codegen",
-			"--schema-file",
-			"/schema.json",
-		}).
+	names, err := formattedNamesFile(ctx, introspectionJSON)
+	if err != nil {
+		return nil, fmt.Errorf("format schema names: %w", err)
+	}
+	codegen := []string{
+		"scripts/codegen.php",
+		"dagger:codegen",
+		"--schema-file",
+		"/schema.json",
+	}
+	codegenCtr := ctr.WithMountedFile("/schema.json", introspectionJSON)
+	if names != nil {
+		codegenCtr = codegenCtr.WithMountedFile("/names.json", names)
+		codegen = append(codegen, "--names-file", "/names.json")
+	}
+
+	sdkDir := codegenCtr.
+		WithExec(codegen).
 		WithoutDirectory("vendor").
 		WithoutDirectory("scripts").
 		WithoutFile("composer.lock").
