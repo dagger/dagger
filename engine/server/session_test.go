@@ -29,7 +29,6 @@ import (
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
@@ -2802,7 +2801,6 @@ func TestSessionTeardownFlushesTraceTelemetryAfterMetricShutdown(t *testing.T) {
 		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
 		services:           core.NewServices(),
 		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
-		containers:         map[bkgw.Container]struct{}{},
 		shutdownCh:         make(chan struct{}),
 		telemetryPubSub:    srv.telemetryPubSub,
 	}
@@ -2932,7 +2930,6 @@ func newStrandedTeardownSession(t *testing.T, srv *Server, sessionID string) (*d
 		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
 		services:           core.NewServices(),
 		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
-		containers:         map[bkgw.Container]struct{}{},
 		shutdownCh:         make(chan struct{}),
 		telemetryPubSub:    srv.telemetryPubSub,
 	}

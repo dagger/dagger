@@ -33,7 +33,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
-	"github.com/dagger/dagger/internal/buildkit/util/stack"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/moby/sys/signal"
 	"github.com/opencontainers/go-digest"
@@ -522,7 +521,7 @@ func exitError(ctx context.Context, exitCodePath string, err error, validExitCod
 		exitErr.Err = fmt.Errorf("%s: %w", exitErr.Error(), context.Cause(ctx))
 		return exitErr
 	default:
-		return stack.Enable(exitErr)
+		return exitErr
 	}
 }
 
