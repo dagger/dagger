@@ -85,7 +85,7 @@ func (db *DB) SupersededBy(span *Span) *Rewind {
 
 func (db *DB) buildRewinds() ([]*Rewind, map[SpanID]*Rewind) {
 	var markers []*Span
-	for span := range db.Spans.Iter() {
+	for span := range db.kindSpanIter() {
 		if span.AgentRewindMarker() {
 			markers = append(markers, span)
 		}
@@ -117,7 +117,7 @@ func (db *DB) buildRewinds() ([]*Rewind, map[SpanID]*Rewind) {
 			answeredAt = marker.AgentRewindTo
 		}
 		owner := nearestAgentID(marker)
-		for span := range db.Spans.Iter() {
+		for span := range db.kindSpanIter() {
 			if span.LLMRole == "" || span.Internal || span.AgentRewindMarker() {
 				continue
 			}

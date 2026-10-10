@@ -2424,6 +2424,7 @@ func (v *TestSpanChildrenView) sync() bool {
 	for i, tree := range rowsView.Body {
 		st := v.fe.getOrCreateSpanTreeInScope(tree.Span.ID, &v.scope)
 		st.parent = nil
+		st.tree = tree
 		st.indexInParent = i
 		v.fe.syncTreeNodeInScope(st, treePrefix{}, &v.scope)
 		children = append(children, st)
@@ -2616,8 +2617,7 @@ func (v *TestSpanChildrenView) CloseOrGoOut(fe *frontendPretty) bool {
 	if row == nil {
 		return false
 	}
-	tree := v.scope.rowsView.BySpan[v.focusedSpan]
-	if tree != nil && tree.IsExpanded(v.scope.opts) {
+	if row.Expanded {
 		fe.setExpanded(v.focusedSpan, false)
 		v.sync()
 		v.FocusSpan(fe, row.Span.ID)
@@ -2637,8 +2637,7 @@ func (v *TestSpanChildrenView) OpenOrGoIn(fe *frontendPretty) bool {
 	if row == nil {
 		return false
 	}
-	tree := v.scope.rowsView.BySpan[v.focusedSpan]
-	if tree != nil && tree.IsExpanded(v.scope.opts) {
+	if row.Expanded {
 		idx := row.Index + 1
 		if idx < len(v.scope.rows.Order) && v.scope.rows.Order[idx].Depth > row.Depth {
 			return v.FocusSpan(fe, v.scope.rows.Order[idx].Span.ID)

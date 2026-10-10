@@ -816,6 +816,8 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 
 	if span.db != nil {
 		span.db.noteTestSpanUpdated(span)
+		// the span's own Activity may have changed above
+		span.db.noteRunning(span)
 	}
 }
 
