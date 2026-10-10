@@ -965,3 +965,50 @@ func TestArchiveHTTPUnsealedRefusesSealedAndActive(t *testing.T) {
 	_, err = c.Unsealed(t.Context(), archiveTestTrace)
 	require.ErrorIs(t, err, archive.ErrState, "a sealed archive uses its bootstrap")
 }
+
+// TestArchiveLookupFindsItsSessionsPendingRegistration: a session's archive is
+// registered when its first agent control record reaches the session
+// exporter, after the protected control lane's coalescing delay. A lookup the
+// session makes before then (the CLI's exit-time resume check, right after a
+// short session) must still find the archive.
+func TestArchiveLookupFindsItsSessionsPendingRegistration(t *testing.T) {
+	srv := newTeardownTestServer(t)
+	root := t.TempDir()
+	srv.clientDBs = clientdb.NewDBs(filepath.Join(root, "stores"))
+	manager, err := archive.NewManager(archive.Config{Root: filepath.Join(root, "archives")})
+	require.NoError(t, err)
+	srv.archives = manager
+	srv.telemetryPubSub = NewPubSub(srv)
+
+	md := &engine.ClientMetadata{SessionID: "session", ClientID: "main", ClientSecretToken: "secret"}
+	client := &clientRuntime{clientRecord: &clientRecord{clientID: "main", clientMetadata: md, shutdownCh: make(chan struct{})}}
+	sess := &daggerSession{
+		sessionID:          md.SessionID,
+		mainClientCallerID: md.ClientID,
+		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
+		telemetryPubSub:    srv.telemetryPubSub,
+	}
+	client.daggerSession = sess
+	installTestClientRecords(sess)
+	require.NoError(t, client.retainTelemetryDB(t.Context()))
+	srv.initializeSessionTelemetry(sess, nil)
+	t.Cleanup(func() {
+		require.NoError(t, sess.loggerProvider.Shutdown(context.Background()))
+		require.NoError(t, sess.tracerProvider.Shutdown(context.Background()))
+	})
+
+	ctx := engine.ContextWithClientMetadata(t.Context(), md)
+	ctx = trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}}))
+	sess.loggerProvider.Logger("dagger.io/agent").Emit(ctx, archiveAgent().Record())
+
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := srv.serveArchiveHTTP(w, r, sess.clientRecords["main"]); err != nil {
+			t.Errorf("archive HTTP: %v", err)
+		}
+	}))
+	defer httpServer.Close()
+	c, err := archive.NewClientWithURL(httpServer.Client(), httpServer.URL)
+	require.NoError(t, err)
+	_, err = c.Unsealed(t.Context(), archiveTestTrace)
+	require.ErrorIs(t, err, archive.ErrState, "the session's own active archive must be found")
+}
