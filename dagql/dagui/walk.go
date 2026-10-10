@@ -165,13 +165,7 @@ func (db *DB) newSpanWalker(opts FrontendOpts) (*spanWalker, *Span, bool) {
 	if opts.StrictSubtree && zoomed != nil {
 		w.scopeRoot = zoomed
 	}
-	// Walking every span considers every span, so size the memo of their
-	// modes up front rather than growing it through rehashes.
-	modesHint := 0
-	if w.allRoots {
-		modesHint = len(db.Spans.Order)
-	}
-	w.modes = make(map[*Span]spanMode, modesHint)
+	w.modes = map[*Span]spanMode{}
 	return w, zoomed, true
 }
 
@@ -478,6 +472,20 @@ func (w *spanWalker) walk() []*TraceTree {
 		return top.trees
 	}
 	for _, span := range w.roots {
+		if w.allRoots {
+			// Every span is a candidate, so rule most of them out by their
+			// parent alone (see homeIsRoot): a parent that isn't dropped
+			// holds its children. Only the parent's mode is needed for that,
+			// so a view whose spans are mostly shown only works out the
+			// modes of spans with children. Nothing is inlined.
+			if parent := span.ParentSpan; parent != nil && w.mode(parent) != modeDrop {
+				continue
+			}
+			if w.host(span) == nil {
+				w.emit(top, span)
+			}
+			continue
+		}
 		if span.causesViaLinks.Len() > 0 && w.slotAtRoot(span) {
 			w.inlineCauses(top, span)
 		}
