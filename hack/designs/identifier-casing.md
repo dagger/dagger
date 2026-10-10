@@ -520,10 +520,12 @@ commands get the legacy name as an alias. So `E2ETest` is `--e2e-test`, and
 
 ## SDK Integration
 
-Codegen formats names from the words the engine writes into the schema JSON
-(see [Schema JSON words](#schema-json-words)); Go codegen, written in Go, uses
-`engine/naming` directly. Each SDK keeps its old converter only as the fallback
-for schemas without words, so older schemas generate byte-identical code.
+Codegen asks the engine to format the schema's names, with
+`Query.formatIdentifiers` (see
+[Formatting names in codegen](#formatting-names-in-codegen)), so the formatting
+rules and the dictionary live only in the engine. Each SDK keeps its old
+converter only as the fallback for schemas without `formatIdentifiers`, so
+older schemas generate byte-identical code.
 
 The principle is **"when in Rome"**: each SDK follows its own language's
 acronym convention, not one house style. Go writes initialisms in capitals
@@ -611,52 +613,68 @@ rules start at, so older modules keep the conversion they always used. Go
 module codegen mirrors `Namer` instead (see
 [Which namer applies](#which-namer-applies)).
 
-### Schema JSON words
+### Formatting names in codegen
 
-Most SDK codegen runs offline from the introspection JSON the engine hands it
-(the .NET source generator, the Java Maven plugin, PHP, Python), so it can't
-call `formatIdentifiers`. Instead the engine writes each name's words into
-that JSON, next to `__schema` and `__schemaVersion`:
+SDK codegen doesn't format names itself: it asks the engine. It collects the
+schema's names (every type, field, argument, input field and enum value name,
+except introspection names with a `__` prefix and names with no letters or
+digits) and calls `formatIdentifiers(names, casing, acronyms)` once for each
+casing and acronym style it uses, which gives it a map from each name to its
+SDK identifier. The engine parses the names with the dictionary of the codegen
+client's engine version, like any other call. A run makes one to three such
+calls (Go asks for `PASCAL` and `CAMEL` with `UPPERCASE`; TypeScript also for
+`PASCAL` with `CAPITALIZED`), each cacheable in the session, so this costs
+about the same as formatting locally.
+
+That works because codegen nearly always has an engine connection, or reads
+its input from a step that has one:
+
+- Go and TypeScript codegen (`cmd/codegen`) run in an engine session.
+- The PHP and Java generators run the introspection query against the engine.
+- Python, Rust and Elixir read the JSON an online step writes
+  (`codegen introspect`).
+- Only .NET's Roslyn source generator runs without one, and its input also
+  comes from an online step.
+
+In Go, `cmd/codegen/introspection` has the helpers: `Schema.Names` collects the
+names, `FormatNames` makes the calls (in batches, if the list gets large), and
+`Schema.LoadFormattedNames` / `Schema.FormattedName` keep the maps on the
+schema for the generators. `cmd/codegen` connects to the engine whenever it
+generates from introspection JSON that has `Query.formatIdentifiers`.
+
+**Gate:** the schema being generated. If it has no `Query.formatIdentifiers`
+(schema views before `v1.0.0-0`, the identifier API's gate, or older engines),
+codegen formats nothing through the engine and keeps its legacy converter, so
+older modules and clients regenerate byte-identical code. A name missing from a
+map (one that isn't among the schema's names) also gets the legacy converter.
+
+**Offline generators** get the names from the online step, as a sidecar file
+next to the introspection JSON, which stays unchanged:
+
+```shell
+codegen introspect -o schema.json \
+  --names-out names.json --names SNAKE:UPPERCASE,PASCAL:CAPITALIZED
+```
 
 ```json
-"__identifiers": {
-  "httpClient": [
-    {"kind": "ACRONYM", "text": "HTTP", "suffix": "", "capitalized": "Http"},
-    {"kind": "WORD", "text": "client", "suffix": "", "capitalized": "Client"}
-  ]
+{
+  "PASCAL:CAPITALIZED": {"httpClient": "HttpClient", "withGPU": "WithGpu"},
+  "SNAKE:UPPERCASE": {"httpClient": "http_client", "withGPU": "with_gpu"}
 }
 ```
 
-- **Keys:** every type, field, argument, input field and enum value name in
-  the JSON, except introspection names (`__` prefix) and names with no letters
-  or digits. Parsing is context-free, so each distinct name appears once.
-- **Words:** `kind`, `text` and `suffix` as in `IdentifierWord`; `capitalized`
-  is the word's `CAPITALIZED`-style form without the suffix (the entry's
-  `capitalized` for dictionary words, else the first letter capitalized and
-  the rest lowercase).
+Each key is a `CASING:ACRONYMS` pair of `Casing` and `AcronymStyle` values, and
+maps every schema name to its formatted form. A schema without
+`Query.formatIdentifiers` gets `{}`. A generator uses its legacy converter for a
+format or name the file doesn't have, so the same gate applies.
 
-An SDK formats the words itself, which needs no dictionary:
-
-- `SNAKE`, `KEBAB`, `FLAT`, and the first word of `CAMEL`: lowercase
-  `text + suffix`. `SCREAMING_SNAKE`: uppercase `text + suffix`.
-- Capitalized form (`PASCAL`, the other words of `CAMEL`): with `CAPITALIZED`,
-  or for a `WORD`, `capitalized`; otherwise `text` with its first letter
-  uppercased. Then the suffix.
-
-`engine/naming/testdata/vectors.json` lists inputs with their words and every
-format, for testing these formatters. Each SDK's formatter tests run against
-it.
-
-The JSON comes from `__schemaJSONFile` (so module and client introspection
-JSON), `Schema.merge` (which adds the words of the names it merges in), and
-`cmd/introspect`. Codegen that runs the GraphQL introspection query itself
-(`codegen introspect`, and the PHP and Java client generators) fetches the
-words from `Query.identifier`, in batches, since the query can't carry them.
-
-**Gate:** `__identifiers` appears only for schema views at `v1.0.0-0` and
-above, the identifier API's gate, parsed with the caller's dictionary. When it
-is absent, SDKs keep their current converters, so older modules regenerate
-unchanged.
+An earlier revision of this design had the engine write each name's words into
+the schema JSON (`__identifiers`) and every SDK format them, on the premise
+that codegen runs offline. That premise was mostly false, and it put a copy of
+the formatting rules into each SDK. The engine no longer writes the words, and
+the per-SDK formatters are being removed SDK by SDK: until an SDK moves to
+`formatIdentifiers` (or the sidecar), it finds no words and keeps its legacy
+converter.
 
 ## Versioning and Compatibility
 
@@ -688,6 +706,16 @@ Known gaps:
   the engine like the runtimes do (see [Module runtimes](#module-runtimes)).
 - CLI naming follows the CLI's engine version, not each module's (see
   [CLI](#cli)).
+- Go module codegen (`module_naming.go`) still names the module's own types,
+  fields and arguments with the `engine/naming` it was built with, using
+  `DictionaryFor` of the module's schema version. It compares words, not just
+  formatted strings (namespacing checks whether a type's words start with the
+  module's), and it needs the dictionary of the module's engine version,
+  whereas `formatIdentifiers` uses the codegen connection's. A codegen binary
+  older than the engine could therefore miss dictionary additions once there
+  is more than one dictionary. Where the codegen connection is served at the
+  module's engine version, fetching `Query.namingDictionary` into
+  `naming.NewDictionary` would close that gap.
 
 ### What changes for module authors (on bump)
 
@@ -826,8 +854,9 @@ schema has no other case.
 
 ## Test Vectors
 
-These start the shared test-case file that every implementation (the engine
-package, plus any SDK that keeps a local copy for offline use) must pass.
+These start the shared test-case file, `engine/naming/testdata/vectors.json`,
+which the `engine/naming` tests check the package against. SDKs don't need a
+copy: they get formatted names from the engine.
 `^` marks `ACRONYM`, `*` marks `TERM`, `+` a suffix.
 
 | input | words | `PASCAL` | `CAMEL` | `SNAKE` | `PASCAL` / `CAPITALIZED` |
@@ -886,11 +915,15 @@ package, plus any SDK that keeps a local copy for offline use) must pass.
    added later without breaking anyone.
 2. **Renaming the 8 non-canonical core names** before 1.0, with deprecated
    aliases, or keeping them on an allowlist.
-3. **Offline codegen.** Some SDK codegen paths run without an engine session.
-   Resolved: the engine ships each name's words in the introspection JSON it
-   already hands to codegen (see [Schema JSON words](#schema-json-words)), and
-   SDKs only format them, which needs no dictionary, so SDKs don't need a
-   local parser.
+3. **Offline codegen.** Some SDK codegen paths were thought to run without an
+   engine session. Resolved: nearly all codegen has an engine connection, or
+   reads its input from a step that has one, so codegen asks the engine to
+   format names with `formatIdentifiers`, and SDKs need neither a parser nor a
+   formatter. The one generator that runs truly offline, .NET's source
+   generator, reads names the online `codegen introspect` step formatted (see
+   [Formatting names in codegen](#formatting-names-in-codegen)). An earlier
+   answer, writing each name's words into the schema JSON for SDKs to format,
+   is gone.
 4. **Splitting all-caps input** (`E2EAPI`) by full dictionary cover, as for
    caps pieces. Resolved: each chunk of all-caps input splits only if
    dictionary entries (and digit runs) cover it completely; lowercase input
@@ -923,10 +956,14 @@ package, plus any SDK that keeps a local copy for offline use) must pass.
    `withFinalTypeName` re-normalization workaround for the legacy path only;
    delete them once modules below the gate are no longer supported.
 5. Add the core-schema canonical-name test with the allowlist.
-6. Write each name's words into the schema JSON, and move SDK codegen to
-   format from them one SDK at a time: Python, Rust and Elixir (the visible
-   plural bugs), Go (golint list), TypeScript, PHP, Java and .NET.
+6. Move SDK codegen to names the engine formats (`formatIdentifiers`, or the
+   `codegen introspect --names-out` sidecar for offline generators), one SDK at
+   a time: Go and TypeScript, then Python, Rust and Elixir (the visible plural
+   bugs), PHP, Java and .NET, removing the word formatters they gained when
+   the engine wrote words into the schema JSON.
 7. Resolve the names module runtimes build themselves (Python and TypeScript
    interface calls) through `formatIdentifiers`.
 
-Steps 1–7 are done; step 4's deletion waits on the legacy path.
+Steps 1–5 and 7 are done. Step 6 is done for Go and TypeScript; the other SDKs
+fall back to their legacy converters until theirs land. Step 4's deletion waits
+on the legacy path.
