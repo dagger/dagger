@@ -6409,6 +6409,13 @@ type Query implements Node {
 
     """How to write acronyms and terms where a word starts with a capital."""
     acronyms: AcronymStyle = UPPERCASE
+
+    """
+    The engine version whose naming dictionary to parse the names with, e.g. the
+    __schemaVersion of a schema being generated. Defaults to the caller's engine
+    version.
+    """
+    version: String
   ): [String!]! @experimental(reason: "Identifier casing APIs are likely to change.")
 
   """The acronyms and terms used to parse and format identifiers."""

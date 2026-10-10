@@ -16686,6 +16686,8 @@ type FormatIdentifiersOpts struct {
 	//
 	// Default: UPPERCASE
 	Acronyms AcronymStyle
+	// The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
+	Version string
 }
 
 // Format many names at once, for codegen. Returns them in input order.
@@ -16697,6 +16699,10 @@ func (r *Query) FormatIdentifiers(ctx context.Context, names []string, casing Ca
 		// `acronyms` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Acronyms) {
 			q = q.Arg("acronyms", opts[i].Acronyms)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
 		}
 	}
 	q = q.Arg("names", names)
