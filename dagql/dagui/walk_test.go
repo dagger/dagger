@@ -28,7 +28,28 @@ func walkTestSpanID(n int) SpanID {
 // already exists. Start times are shuffled a little, though, so causes don't
 // always start first.
 func randomTraceDB(rng *rand.Rand) (*DB, []SpanID) {
+	rt := newRandomTrace(rng)
 	db := NewDB()
+	db.ImportSnapshots(rt.snaps)
+	for _, digest := range rt.digests {
+		db.addCall(digest, rt.calls[digest])
+	}
+	db.SetPrimarySpan(rt.ids[0])
+	return db, rt.ids
+}
+
+// randomTrace is a random trace's spans (see randomTraceDB), not yet in a
+// DB.
+type randomTrace struct {
+	ids   []SpanID
+	snaps []SpanSnapshot
+	// calls holds each call span's call, by digest; digests lists them in
+	// the order their spans were created.
+	calls   map[string]*callpbv1.Call
+	digests []string
+}
+
+func newRandomTrace(rng *rand.Rand) randomTrace {
 	traceID := TraceID{TraceID: trace.TraceID{1}}
 	start := time.Unix(100, 0)
 	n := 10 + rng.Intn(40)
@@ -105,12 +126,7 @@ func randomTraceDB(rng *rand.Rand) (*DB, []SpanID) {
 		}
 		snaps[i] = snap
 	}
-	db.ImportSnapshots(snaps)
-	for _, digest := range digests {
-		db.addCall(digest, calls[digest])
-	}
-	db.SetPrimarySpan(ids[0])
-	return db, ids
+	return randomTrace{ids: ids, snaps: snaps, calls: calls, digests: digests}
 }
 
 func randomViewOpts(rng *rand.Rand, ids []SpanID) FrontendOpts {
@@ -140,7 +156,10 @@ func randomViewOpts(rng *rand.Rand, ids []SpanID) FrontendOpts {
 		opts.RootFilter = func(db *DB, _ *Span) []*Span {
 			spans := make([]*Span, 0, len(roots))
 			for _, id := range roots {
-				spans = append(spans, db.Spans.Map[id])
+				// a trace still streaming in may not have it yet
+				if span := db.Spans.Map[id]; span != nil {
+					spans = append(spans, span)
+				}
 			}
 			return spans
 		}
