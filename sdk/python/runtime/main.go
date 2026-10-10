@@ -289,8 +289,11 @@ func (m *PythonSdk) Common(
 	if err != nil {
 		return nil, err
 	}
+	_, err = m.WithSDK(ctx, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
 	return m.
-		WithSDK(introspectionJSON).
 		WithTemplate().
 		WithSource().
 		WithUpdates(), nil
@@ -450,7 +453,7 @@ func (m *PythonSdk) withRuntimeScript() *PythonSdk {
 //
 // This includes regenerating the client bindings for the current API schema
 // (codegen).
-func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
+func (m *PythonSdk) WithSDK(ctx context.Context, introspectionJSON *dagger.File) (*PythonSdk, error) {
 	if m.VendorPath != "" {
 		src := m.SdkSourceDir
 		// If not vendoring we don't care to remove this
@@ -481,10 +484,20 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 			}
 		}
 
+		genCmd := append(cmd, "generate", "-i", SchemaPath, "-o", "/gen.py")
+		names, err := codegenNames(ctx, introspectionJSON)
+		if err != nil {
+			return nil, err
+		}
+		if names != nil {
+			ctr = ctr.WithMountedFile(NamesPath, names)
+			genCmd = append(genCmd, "-n", NamesPath)
+		}
+
 		genFile := ctr.
 			// mounted schema as late as possible because it varies more often
 			WithMountedFile(SchemaPath, introspectionJSON).
-			WithExec(append(cmd, "generate", "-i", SchemaPath, "-o", "/gen.py")).
+			WithExec(genCmd).
 			File("/gen.py")
 
 		genPath := UserGenPath
@@ -498,7 +511,7 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 		m.AddFile(genPath, genFile)
 	}
 
-	return m
+	return m, nil
 }
 
 // Add the module's source code
