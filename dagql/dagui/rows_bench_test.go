@@ -11,6 +11,14 @@ import (
 // newLargeDB builds a DB of fanout^1 + ... + fanout^depth completed spans
 // under a running root, returning the DB and the root's ID.
 func newLargeDB(tb testing.TB, fanout, depth int) (*DB, SpanID) {
+	return newLargeLinkedDB(tb, fanout, depth, 0)
+}
+
+// newLargeLinkedDB is newLargeDB with a cause link on every linkEvery'th
+// span (none if 0), to the span created linkEvery spans before it -- usually
+// in another subtree, like a resumed span linking to the call that created
+// it. Every other linked span is a passthrough, like a lazy resume.
+func newLargeLinkedDB(tb testing.TB, fanout, depth, linkEvery int) (*DB, SpanID) {
 	tb.Helper()
 	db := NewDB()
 	traceID := TraceID{TraceID: trace.TraceID{1}}
@@ -24,14 +32,21 @@ func newLargeDB(tb testing.TB, fanout, depth int) (*DB, SpanID) {
 	}
 	rootID := newID()
 	snaps := []SpanSnapshot{{ID: rootID, TraceID: traceID, Name: "root", StartTime: start}}
+	var ids []SpanID
 	var grow func(parent SpanID, level int)
 	grow = func(parent SpanID, level int) {
 		for range fanout {
 			id := newID()
-			snaps = append(snaps, SpanSnapshot{
+			snap := SpanSnapshot{
 				ID: id, TraceID: traceID, ParentID: parent, Name: "step",
 				StartTime: start, EndTime: start.Add(time.Second),
-			})
+			}
+			if linkEvery > 0 && len(ids)%linkEvery == linkEvery-1 {
+				snap.Links = []SpanLink{causeLink(ids[len(ids)-linkEvery+1])}
+				snap.Passthrough = len(ids)%(2*linkEvery) == linkEvery-1
+			}
+			ids = append(ids, id)
+			snaps = append(snaps, snap)
 			if level+1 < depth {
 				grow(id, level+1)
 			}
@@ -52,6 +67,14 @@ func BenchmarkRowsView(b *testing.B) {
 		}
 	})
 	b.Run("zoomed", func(b *testing.B) {
+		opts := opts
+		opts.ZoomedSpan = rootID
+		for b.Loop() {
+			db.RowsView(opts).Rows(opts)
+		}
+	})
+	b.Run("linked", func(b *testing.B) {
+		db, rootID := newLargeLinkedDB(b, 10, 5, 20)
 		opts := opts
 		opts.ZoomedSpan = rootID
 		for b.Loop() {
