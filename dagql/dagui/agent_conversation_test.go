@@ -140,17 +140,17 @@ func TestDemoteConversationNodesFromWithdrawsPromotion(t *testing.T) {
 
 	chief := db.SurfacedConversationForAgent(agentByID(t, db, "agent-chief"))
 	db.PromoteConversationNodesTo(host, chief)
-	require.NotZero(t, len(host.RevealedSpans.Order), "promotion reveals the chief's turns")
+	require.NotZero(t, len(host.RevealedSpans.Spans()), "promotion reveals the chief's turns")
 
 	// The nested half: the worker's turn is revealed under the tool call, not
 	// under the host, so a withdrawal that only cleared the host would leave it.
 	toolCall := db.Spans.Map[spanID(4)]
 	require.NotNil(t, toolCall)
-	require.NotZero(t, len(toolCall.RevealedSpans.Order),
+	require.NotZero(t, len(toolCall.RevealedSpans.Spans()),
 		"the sub-agent's turn is revealed under the tool call")
 
 	db.DemoteConversationNodesFrom(host, chief)
-	require.Zero(t, len(host.RevealedSpans.Order), "withdrawal clears the host")
-	require.Zero(t, len(toolCall.RevealedSpans.Order),
+	require.Zero(t, len(host.RevealedSpans.Spans()), "withdrawal clears the host")
+	require.Zero(t, len(toolCall.RevealedSpans.Spans()),
 		"withdrawal reaches nested reveals too")
 }

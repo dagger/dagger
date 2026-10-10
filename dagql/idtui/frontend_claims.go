@@ -175,7 +175,7 @@ func (claims *renderClaims) claimTestReport(span *dagui.Span, view *dagui.TestVi
 		return
 	}
 	if span != nil {
-		for _, origin := range span.ErrorOrigins.Order {
+		for _, origin := range span.ErrorOrigins.Spans() {
 			if origin == nil || origin.ID == span.ID {
 				continue
 			}

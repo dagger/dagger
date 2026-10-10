@@ -3,6 +3,8 @@ package dagui
 import (
 	"sort"
 	"testing"
+	"time"
+	"unsafe"
 )
 
 // rootSubscription is the filter a remote frontend that only subscribed to
@@ -26,6 +28,49 @@ func forwardedNames(t *testing.T, db *DB, snapshots []SpanSnapshot) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// Spans with the same name share one copy of it.
+func TestSpanNamesInterned(t *testing.T) {
+	db := NewDB()
+	name := func() string { return string([]byte("Container.withExec")) }
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: spanID(1), Name: name()},
+		{ID: spanID(2), Name: name()},
+	})
+	a, b := db.Spans.Map[spanID(1)].Name, db.Spans.Map[spanID(2)].Name
+	if a != "Container.withExec" || b != a {
+		t.Fatalf("names = %q, %q", a, b)
+	}
+	if unsafe.StringData(a) != unsafe.StringData(b) {
+		t.Fatal("spans with the same name should share it")
+	}
+}
+
+// db.Intervals keeps one span per call digest and start time: re-exports of
+// a span replace it, while another run of the same call adds to it.
+func TestIntervalsOneSpanPerStartTime(t *testing.T) {
+	start := time.Unix(100, 0)
+	snap := func(id byte, start time.Time, done bool) SpanSnapshot {
+		s := SpanSnapshot{ID: spanID(id), Name: "call", CallDigest: "xxh3:call", StartTime: start}
+		if done {
+			s.EndTime = start.Add(time.Second)
+		}
+		return s
+	}
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{snap(1, start, false)})
+	db.ImportSnapshots([]SpanSnapshot{snap(1, start, true)})
+	if got := db.Intervals["xxh3:call"]; len(got) != 1 || got[0] != db.Spans.Map[spanID(1)] {
+		t.Fatalf("re-export should replace the span, got %v", got)
+	}
+	db.ImportSnapshots([]SpanSnapshot{snap(2, start.Add(time.Minute), true)})
+	if got := db.Intervals["xxh3:call"]; len(got) != 2 {
+		t.Fatalf("a second run should add a span, got %d", len(got))
+	}
+	if got := db.MostInterestingSpan("xxh3:call"); got != db.Spans.Map[spanID(1)] {
+		t.Fatalf("most interesting span = %v, want the earliest", got)
+	}
 }
 
 func assertForwarded(t *testing.T, names []string, want []string, notWant []string) {

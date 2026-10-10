@@ -38,7 +38,9 @@ func NewOrderedSet[K comparable, V any](keyFunc func(V) K, vs ...V) *OrderedSet[
 	return set
 }
 
-func NewSpanSet(spans ...*Span) *OrderedSet[SpanID, *Span] {
+// newSpanIndex returns an ordered set of spans by start time, indexed by ID:
+// the shape of DB.Spans.
+func newSpanIndex() *OrderedSet[SpanID, *Span] {
 	set := NewOrderedSet(spanKeyFunc)
 	set.LessFunc = byStartTime
 	return set

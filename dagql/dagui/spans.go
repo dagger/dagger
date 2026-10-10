@@ -1,7 +1,6 @@
 package dagui
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -18,8 +17,6 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 )
-
-type SpanSet = *OrderedSet[SpanID, *Span]
 
 // spanStateCategory represents the primary state of a span for rollup counting
 type spanStateCategory uint8
@@ -92,43 +89,73 @@ func (st *RollUpState) decrementCategory(cat spanStateCategory) {
 type Span struct {
 	SpanSnapshot
 
-	ParentSpan    *Span   `json:"-"`
-	ChildSpans    SpanSet `json:"-"`
-	RunningSpans  SpanSet `json:"-"`
-	FailedLinks   SpanSet `json:"-"`
-	CanceledLinks SpanSet `json:"-"`
-	RevealedSpans SpanSet `json:"-"`
-	ErrorOrigins  SpanSet `json:"-"`
+	// The span's relations to other spans. Each is nil while empty (see
+	// SpanSet), which most of them are.
+	ParentSpan    *Span    `json:"-"`
+	ChildSpans    *SpanSet `json:"-"`
+	RunningSpans  *SpanSet `json:"-"`
+	FailedLinks   *SpanSet `json:"-"`
+	CanceledLinks *SpanSet `json:"-"`
+	RevealedSpans *SpanSet `json:"-"`
+	ErrorOrigins  *SpanSet `json:"-"`
 
 	// ProgressSpans tracks descendant spans carrying progress, so rows
 	// representing a subtree (collapsed, or with hidden descendants) can
 	// render it.
-	ProgressSpans SpanSet `json:"-"`
+	ProgressSpans *SpanSet `json:"-"`
 
-	// A span name can change while the span is live. The OTel SDK's start
-	// snapshot cannot carry that later mutation, so a semantic log record keeps
-	// the latest name authoritative over repeated frozen live snapshots.
-	nameFromLog    string
-	hasNameFromLog bool
-
-	callCache *callpbv1.Call
-	baseCache *callpbv1.Call
-
-	causesViaLinks  SpanSet
-	effectsViaLinks SpanSet
-
-	// Indicates that this span was actually exported to the database, and not
-	// just allocated due to a span parent or other relationship.
-	Received bool
+	causesViaLinks  *SpanSet
+	effectsViaLinks *SpanSet
 
 	// Pre-computed RollUp state for rendering progress bars
 	// Maintained incrementally for all spans, not just those marked RollUp
 	rollUpState *RollUpState
 
+	db *DB
+
+	// Indicates that this span was actually exported to the database, and not
+	// just allocated due to a span parent or other relationship.
+	Received bool
+
+	// callPayloadElided is set once integrateSpan has decoded the span's
+	// CallPayload into db.Calls and dropped it; Snapshot re-encodes it.
+	callPayloadElided bool
+
+	// updateQueued marks the span as listed in db.updatedSpans.
+	updateQueued bool
+
 	// Cached state classification for incremental updates
 	lastRollUpCategory spanStateCategory
 
-	db *DB
+	// NOTE: a name updated by a log record lives in db.namesFromLog, and the
+	// Call/Base cache in db.spanCalls, not here: few spans need either. Mind
+	// the size of this struct, which is multiplied by every span in a trace:
+	// it fits the 1024-byte allocation size class, malloc header included
+	// (see TestSpanSize).
+}
+
+// spanCalls caches a span's Call and Base.
+type spanCalls struct {
+	call *callpbv1.Call
+	base *callpbv1.Call
+}
+
+// cachedCalls returns the span's Call/Base cache.
+func (span *Span) cachedCalls() spanCalls {
+	if span.db == nil {
+		return spanCalls{}
+	}
+	return span.db.spanCalls[span]
+}
+
+// cacheCalls updates the span's Call/Base cache.
+func (span *Span) cacheCalls(update func(*spanCalls)) {
+	calls := span.db.spanCalls[span]
+	update(&calls)
+	if span.db.spanCalls == nil {
+		span.db.spanCalls = map[*Span]spanCalls{}
+	}
+	span.db.spanCalls[span] = calls
 }
 
 // Snapshot returns a snapshot of the span's current state.
@@ -144,18 +171,29 @@ func (span *Span) Snapshot() SpanSnapshot {
 	snapshot := span.SpanSnapshot
 	snapshot.Final = true // NOTE: applied to copy
 	snapshot.Progress = span.Progress.Clone()
+	if span.callPayloadElided && snapshot.CallPayload == "" && span.db != nil {
+		// hand the frontend the payload the span arrived with
+		if call := span.db.Calls[snapshot.CallDigest]; call != nil {
+			if payload, err := call.Encode(); err == nil {
+				snapshot.CallPayload = payload
+			}
+		}
+	}
 	return snapshot
 }
 
 func (span *Span) Call() *callpbv1.Call {
-	if span.callCache != nil {
-		return span.callCache
+	if cached := span.cachedCalls().call; cached != nil {
+		return cached
 	}
 	if span.CallDigest == "" {
 		return nil
 	}
-	span.callCache = span.db.Call(span.CallDigest)
-	return span.callCache
+	call := span.db.Call(span.CallDigest)
+	if call != nil {
+		span.cacheCalls(func(calls *spanCalls) { calls.call = call })
+	}
+	return call
 }
 
 // CallID rebuilds the ID of the call this span reports on. It is the DB-level
@@ -169,8 +207,8 @@ func (span *Span) CallID() (*call.ID, error) {
 }
 
 func (span *Span) Base() *callpbv1.Call {
-	if span.baseCache != nil {
-		return span.baseCache
+	if cached := span.cachedCalls().base; cached != nil {
+		return cached
 	}
 
 	call := span.Call()
@@ -187,29 +225,33 @@ func (span *Span) Base() *callpbv1.Call {
 			if span.Name != "" && strings.HasSuffix(span.Name, suffix) {
 				baseName := strings.TrimSuffix(span.Name, suffix)
 				if baseName != "" {
-					span.baseCache = &callpbv1.Call{
+					base := &callpbv1.Call{
 						Digest: call.ReceiverDigest,
 						Type: &callpbv1.Type{
 							NamedType: baseName,
 						},
 					}
-					return span.baseCache
+					span.cacheCalls(func(calls *spanCalls) { calls.base = base })
+					return base
 				}
 			}
 		}
 		parentCall = span.db.MustCall(call.ReceiverDigest)
 		if parentCall != nil {
-			span.baseCache = span.db.Simplify(parentCall, span.Internal)
-			return span.baseCache
+			base := span.db.Simplify(parentCall, span.Internal)
+			if base != nil {
+				span.cacheCalls(func(calls *spanCalls) { calls.base = base })
+			}
+			return base
 		}
 	}
 
 	return nil
 }
 
-func countChildren(set SpanSet, opts FrontendOpts) int {
+func countChildren(set *SpanSet, opts FrontendOpts) int {
 	count := 0
-	for _, child := range set.Order {
+	for _, child := range set.Spans() {
 		if child.Passthrough && !opts.Debug {
 			count += countChildren(child.ChildSpans, opts)
 		} else {
@@ -220,36 +262,44 @@ func countChildren(set SpanSet, opts FrontendOpts) int {
 }
 
 type SpanSnapshot struct {
+	// NOTE: fields are grouped to avoid alignment padding (the bools sit
+	// together below), since this struct is multiplied by every span in a
+	// trace. Keep it that way when adding fields; see TestSpanSize.
+
 	// Monotonically increasing number for each update seen for this span.
 	Version int
 
-	// Indicates that this snapshot is in its final state and should be trusted
-	// over any state derived from the local state.
-	// This is used for snapshots that come from a remote server.
-	Final bool
+	ID       SpanID
+	TraceID  TraceID
+	ParentID SpanID `json:",omitzero"`
 
-	ID        SpanID
-	TraceID   TraceID
 	Name      string
 	StartTime time.Time
 	EndTime   time.Time
 
 	Activity Activity `json:",omitzero"`
 
-	ParentID SpanID     `json:",omitzero"`
-	Links    []SpanLink `json:",omitempty"`
+	Links []SpanLink `json:",omitempty"`
 
 	Status sdktrace.Status `json:",omitzero"`
 
-	// statuses derived from the span and any causal continuations
-	Failed_         bool     `json:",omitempty"`
+	// reasons for the statuses derived from the span and any causal
+	// continuations (Failed_, Cached_, Pending_ and Canceled_ below)
 	FailedReason_   []string `json:",omitempty"`
-	Cached_         bool     `json:",omitempty"`
 	CachedReason_   []string `json:",omitempty"`
-	Pending_        bool     `json:",omitempty"`
 	PendingReason_  []string `json:",omitempty"`
-	Canceled_       bool     `json:",omitempty"`
 	CanceledReason_ []string `json:",omitempty"`
+
+	// Indicates that this snapshot is in its final state and should be trusted
+	// over any state derived from the local state.
+	// This is used for snapshots that come from a remote server.
+	Final bool
+
+	// statuses derived from the span and any causal continuations
+	Failed_   bool `json:",omitempty"`
+	Cached_   bool `json:",omitempty"`
+	Pending_  bool `json:",omitempty"`
+	Canceled_ bool `json:",omitempty"`
 
 	// statuses reported by the span via attributes
 	Canceled bool `json:",omitempty"`
@@ -277,23 +327,13 @@ type SpanSnapshot struct {
 	Encapsulated bool `json:",omitempty"`
 	Passthrough  bool `json:",omitempty"`
 	Ignore       bool `json:",omitempty"`
+	Boundary     bool `json:",omitempty"`
+	Reveal       bool `json:",omitempty"`
+	RollUpLogs   bool `json:",omitempty"`
+	RollUpSpans  bool `json:",omitempty"`
 
-	// Test attributes
-	TestCaseName  string     `json:",omitempty"`
-	TestSuiteName string     `json:",omitempty"`
-	TestStatus    TestStatus `json:",omitempty"`
-
-	Boundary    bool `json:",omitempty"`
-	Reveal      bool `json:",omitempty"`
-	RollUpLogs  bool `json:",omitempty"`
-	RollUpSpans bool `json:",omitempty"`
-
-	// Check name + status
-	CheckName   string `json:",omitempty"`
-	CheckPassed bool   `json:",omitempty"`
-
-	// Generator name
-	GeneratorName string `json:",omitempty"`
+	// Check status (see CheckName)
+	CheckPassed bool `json:",omitempty"`
 
 	// Set on a span reporting a workspace module that best-effort generate
 	// skipped because it could not be loaded.
@@ -308,6 +348,25 @@ type SpanSnapshot struct {
 	// that installed the Service value).
 	Service bool `json:",omitempty"`
 
+	// Agent marks the long-lived loop span of a started agent runtime (see
+	// AgentID).
+	Agent bool `json:",omitempty"`
+
+	LLMThinking bool `json:",omitempty"`
+
+	HasLogs bool `json:",omitempty"`
+
+	// Test attributes
+	TestCaseName  string     `json:",omitempty"`
+	TestSuiteName string     `json:",omitempty"`
+	TestStatus    TestStatus `json:",omitempty"`
+
+	// Check name (see CheckPassed)
+	CheckName string `json:",omitempty"`
+
+	// Generator name
+	GeneratorName string `json:",omitempty"`
+
 	// Service name
 	ServiceName string `json:",omitempty"`
 
@@ -318,14 +377,13 @@ type SpanSnapshot struct {
 	// renderServiceURLs).
 	ServiceURLs []string `json:",omitempty"`
 
-	// Agent marks the long-lived loop span of a started agent runtime
-	// (running exactly while the loop does; its subtree carries the agent's
-	// turns). AgentID is the spawn-minted runtime handle that identifies the
-	// agent ACROSS loop spans — a resume-retry relaunches the loop, so one
-	// agent can own several. AgentCallDigest is the digest of the call that
-	// produced the agent value, from which a client can reconstruct a
-	// sendable handle.
-	Agent           bool   `json:",omitempty"`
+	// The Agent flag marks the long-lived loop span of a started agent
+	// runtime (running exactly while the loop does; its subtree carries the
+	// agent's turns). AgentID is the spawn-minted runtime handle that
+	// identifies the agent ACROSS loop spans — a resume-retry relaunches the
+	// loop, so one agent can own several. AgentCallDigest is the digest of
+	// the call that produced the agent value, from which a client can
+	// reconstruct a sendable handle.
 	AgentID         string `json:",omitempty"`
 	AgentName       string `json:",omitempty"`
 	AgentCallDigest string `json:",omitempty"`
@@ -344,7 +402,6 @@ type SpanSnapshot struct {
 	ContentType string `json:",omitempty"`
 
 	LLMRole          string   `json:",omitempty"`
-	LLMThinking      bool     `json:",omitempty"`
 	LLMTool          string   `json:",omitempty"`
 	LLMToolServer    string   `json:",omitempty"`
 	LLMToolArgNames  []string `json:",omitempty"`
@@ -380,15 +437,14 @@ type SpanSnapshot struct {
 	CallPayload string `json:",omitempty"`
 	CallScope   string `json:",omitempty"`
 
-	ChildCount int  `json:",omitempty"`
-	HasLogs    bool `json:",omitempty"`
+	ChildCount int `json:",omitempty"`
 
 	// Progress holds streaming-progress items attributed directly to this
 	// span, folded from progress log records. It lives in the snapshot so
 	// remote frontends receive it without reprocessing the raw records.
 	Progress *SpanProgress `json:",omitempty"`
 
-	ExtraAttributes map[string]json.RawMessage `json:",omitempty"`
+	ExtraAttributes SpanAttributes `json:",omitempty"`
 }
 
 type SpanLink struct {
@@ -641,15 +697,10 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 		snapshot.Encapsulated = true
 
 	default:
-		if snapshot.ExtraAttributes == nil {
-			snapshot.ExtraAttributes = make(map[string]json.RawMessage)
-		}
-		payload, err := json.Marshal(val)
-		if err != nil {
+		if err := snapshot.ExtraAttributes.setValue(name, val); err != nil {
 			slog.Warn("failed to marshal attribute", "attribute", name, "val", val)
 			return
 		}
-		snapshot.ExtraAttributes[name] = json.RawMessage(payload)
 	}
 }
 
@@ -693,30 +744,30 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	propagate := func(parent *Span, causal, activity bool) bool {
 		var changed bool
 		if span.IsRunningOrEffectsRunning() {
-			changed = parent.RunningSpans.Add(span)
+			changed = addToSpanSet(&parent.RunningSpans, span)
 		} else {
-			changed = parent.RunningSpans.Remove(span)
+			changed = removeFromSpanSet(&parent.RunningSpans, span)
 		}
 		if causal && span.IsFailed() && !span.Blocked {
 			// Blocked resumptions carry a cascaded prerequisite failure, not a
 			// failure of the parent's own work; they don't mark the parent
 			// caused-failed. The prerequisite's own resume span propagates the
 			// real failure to its own causal targets.
-			changed = parent.FailedLinks.Add(span) || changed
+			changed = addToSpanSet(&parent.FailedLinks, span) || changed
 			// Propagate error origins across explicit causal links so the
 			// caused-failed span renders the leaf error rather than its own
 			// (possibly cascaded) status description. Self-references are
 			// dropped — renderStepError treats any non-empty ErrorOrigins as
 			// "errored elsewhere, don't repeat".
-			for _, origin := range span.ErrorOrigins.Order {
+			for _, origin := range span.ErrorOrigins.Spans() {
 				if origin.ID == parent.ID {
 					continue
 				}
-				changed = parent.ErrorOrigins.Add(origin) || changed
+				changed = parent.AddErrorOrigin(origin) || changed
 			}
 		}
 		if causal && span.IsCanceled() {
-			changed = parent.CanceledLinks.Add(span) || changed
+			changed = addToSpanSet(&parent.CanceledLinks, span) || changed
 		}
 		if activity && parent.Activity.Add(span) {
 			changed = true
@@ -750,7 +801,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	// Handle revealed spans propagation separately to stop at revealed parents
 	if span.Reveal {
 		for parent := range span.Parents {
-			if parent.RevealedSpans.Add(span) {
+			if parent.AddRevealedSpan(span) {
 				span.db.update(parent)
 			}
 
@@ -879,7 +930,7 @@ func (span *Span) Descendants(f func(*Span) bool) {
 	var collect func(*Span) bool
 	collect = func(s *Span) bool {
 		// Use ChildSpans directly since we don't have opts here
-		for _, child := range s.ChildSpans.Order {
+		for _, child := range s.ChildSpans.Spans() {
 			if !f(child) {
 				return false
 			}
@@ -899,12 +950,12 @@ func (span *Span) RollUpState() *RollUpState {
 	return span.rollUpState
 }
 
-func (span *Span) ChildOrRevealedSpans(opts FrontendOpts) (SpanSet, bool) {
+func (span *Span) ChildOrRevealedSpans(opts FrontendOpts) (*SpanSet, bool) {
 	verbosity := opts.Verbosity
 	if v, ok := opts.SpanVerbosity[span.ID]; ok {
 		verbosity = v
 	}
-	if len(span.RevealedSpans.Order) > 0 && !opts.RevealNoisySpans && verbosity < ShowSpammyVerbosity {
+	if span.RevealedSpans.Len() > 0 && !opts.RevealNoisySpans && verbosity < ShowSpammyVerbosity {
 		return span.RevealedSpans, true
 	} else {
 		return span.ChildSpans, false
@@ -925,22 +976,22 @@ func (span *Span) IsUnset() bool {
 
 // Errors returns the individual errored spans contributing to the span's
 // Failed or CausedFailure status.
-func (span *Span) Errors() SpanSet {
+func (span *Span) Errors() *SpanSet {
 	errs := NewSpanSet()
 	if span.IsFailed() {
-		errs.Add(span)
+		errs.add(span)
 	}
-	if len(errs.Order) > 0 {
+	if errs.Len() > 0 {
 		return errs
 	}
-	for _, failed := range span.FailedLinks.Order {
-		errs.Add(failed)
+	for _, failed := range span.FailedLinks.Spans() {
+		errs.add(failed)
 	}
 	return errs
 }
 
 func (span *Span) IsFailedOrCausedFailure() bool {
-	return span.IsFailed() || (span.FailedLinks != nil && len(span.FailedLinks.Order) > 0) || (span.Final && span.Failed_)
+	return span.IsFailed() || span.FailedLinks.Len() > 0 || (span.Final && span.Failed_)
 }
 
 func (span *Span) FailedReason() (bool, []string) {
@@ -948,7 +999,7 @@ func (span *Span) FailedReason() (bool, []string) {
 	if span.IsFailed() {
 		reasons = append(reasons, "span itself errored")
 	}
-	for _, failed := range span.FailedLinks.Order {
+	for _, failed := range span.FailedLinks.Spans() {
 		reasons = append(reasons, "span has failed link: "+failed.Name)
 	}
 	if len(reasons) == 0 && span.Final && span.Failed_ {
@@ -958,7 +1009,7 @@ func (span *Span) FailedReason() (bool, []string) {
 }
 
 func (span *Span) IsCanceled() bool {
-	return span.Canceled || len(span.CanceledLinks.Order) > 0
+	return span.Canceled || span.CanceledLinks.Len() > 0
 }
 
 func (span *Span) CanceledReason() (bool, []string) {
@@ -971,7 +1022,7 @@ func (span *Span) CanceledReason() (bool, []string) {
 	} else if span.Canceled {
 		reasons = append(reasons, "span says it is canceled")
 	}
-	for _, canceled := range span.CanceledLinks.Order {
+	for _, canceled := range span.CanceledLinks.Spans() {
 		reasons = append(reasons, "span has canceled link: "+canceled.Name)
 	}
 	return len(reasons) > 0, reasons
@@ -1051,7 +1102,7 @@ func (span *Span) IsRunning() bool {
 
 // CausalSpans iterates over the spans that directly cause this span.
 func (span *Span) CausalSpans(f func(*Span) bool) {
-	if len(span.causesViaLinks.Order) == 0 {
+	if span.causesViaLinks.Len() == 0 {
 		// Most spans have no causes; skip allocating the recursive visitor.
 		return
 	}
@@ -1067,7 +1118,7 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 		}
 		return true
 	}
-	for _, cause := range span.causesViaLinks.Order {
+	for _, cause := range span.causesViaLinks.Spans() {
 		if !visit(cause) {
 			return
 		}
@@ -1075,7 +1126,7 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 }
 
 func (span *Span) EffectSpans(f func(*Span) bool) {
-	for _, span := range span.effectsViaLinks.Order {
+	for _, span := range span.effectsViaLinks.Spans() {
 		if !f(span) {
 			return
 		}
@@ -1106,7 +1157,7 @@ func (span *Span) IsPending() bool {
 // actually finished all deferred work. Blocked resumptions and successful
 // partial resumptions do not count: the work is still pending.
 func (span *Span) hasResolvedEffects() bool {
-	for _, effect := range span.effectsViaLinks.Order {
+	for _, effect := range span.effectsViaLinks.Spans() {
 		// This remains an any test. A partial effect may remain recorded after
 		// a sibling finishes, but that later non-partial effect resolves pending.
 		if !effect.Blocked && !effect.Partial {
@@ -1122,7 +1173,7 @@ func (span *Span) PendingReason() (bool, []string) {
 		if span.IsRunning() {
 			reasons = append(reasons, "span is running")
 		}
-		for _, running := range span.RunningSpans.Order {
+		for _, running := range span.RunningSpans.Spans() {
 			reasons = append(reasons, "span has running link: "+running.Name)
 		}
 		return false, reasons
@@ -1131,7 +1182,7 @@ func (span *Span) PendingReason() (bool, []string) {
 		if span.hasResolvedEffects() {
 			return false, []string{"span has resumed via causal continuation"}
 		}
-		if len(span.effectsViaLinks.Order) > 0 {
+		if span.effectsViaLinks.Len() > 0 {
 			return true, []string{"span only has incomplete resumptions; work is still pending"}
 		}
 		return true, []string{"span says it is pending"}

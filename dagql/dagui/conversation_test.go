@@ -297,7 +297,7 @@ func TestPromoteConversationToWiresRevealedSpans(t *testing.T) {
 
 	// The host surfaces both top-level turns.
 	var topNames []string
-	for _, s := range root.RevealedSpans.Order {
+	for _, s := range root.RevealedSpans.Spans() {
 		topNames = append(topNames, s.Name)
 	}
 	if len(topNames) != 2 || topNames[0] != "prompt" || topNames[1] != "spawn" {
@@ -306,15 +306,15 @@ func TestPromoteConversationToWiresRevealedSpans(t *testing.T) {
 
 	// The sub-agent turn nests under the tool call, not the host.
 	toolSpan := db.Spans.Map[spanID(toolCallID)]
-	if len(toolSpan.RevealedSpans.Order) != 1 || toolSpan.RevealedSpans.Order[0].Name != "sub-prompt" {
-		t.Fatalf("tool call RevealedSpans = %v, want [sub-prompt]", toolSpan.RevealedSpans.Order)
+	if len(toolSpan.RevealedSpans.Spans()) != 1 || toolSpan.RevealedSpans.Spans()[0].Name != "sub-prompt" {
+		t.Fatalf("tool call RevealedSpans = %v, want [sub-prompt]", toolSpan.RevealedSpans.Spans())
 	}
 
 	// Idempotent: a second promotion (e.g. a later render frame) doesn't
 	// duplicate entries.
 	db.PromoteConversationTo(root)
-	if len(root.RevealedSpans.Order) != 2 {
-		t.Fatalf("host RevealedSpans after re-promote = %d, want 2", len(root.RevealedSpans.Order))
+	if len(root.RevealedSpans.Spans()) != 2 {
+		t.Fatalf("host RevealedSpans after re-promote = %d, want 2", len(root.RevealedSpans.Spans()))
 	}
 }
 

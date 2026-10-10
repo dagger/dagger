@@ -26,7 +26,7 @@ func (node *ServiceNode) Name() string {
 // the service span's cause links. It returns nil when a partial trace does not
 // contain a named origin span.
 func (node *ServiceNode) Origin() *Span {
-	for _, cause := range node.Span.causesViaLinks.Order {
+	for _, cause := range node.Span.causesViaLinks.Spans() {
 		if cause.Name != "" {
 			return cause
 		}

@@ -301,11 +301,11 @@ func TestRenderProgressSpanRows(t *testing.T) {
 		{Name: "layer-2", Current: 5_000_000, Total: 10_000_000, Unit: "bytes"},
 	}}
 	from := db.Spans.Map[fromID]
-	from.ProgressSpans.Add(pulling)
-	from.ProgressSpans.Add(unpacking)
+	from.AddProgressSpan(pulling)
+	from.AddProgressSpan(unpacking)
 	root := db.Spans.Map[rootID]
-	root.ProgressSpans.Add(pulling)
-	root.ProgressSpans.Add(unpacking)
+	root.AddProgressSpan(pulling)
+	root.AddProgressSpan(unpacking)
 
 	render := func(expand bool) string {
 		fe := NewWithDB(io.Discard, db)
@@ -485,8 +485,8 @@ func TestRenderProgressSpanRowsAutoHideKeepsFailuresSeparate(t *testing.T) {
 		src.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
 			{Name: "layer-1", Current: 5_000_000, Total: 10_000_000, Unit: "bytes"},
 		}}
-		db.Spans.Map[fromID].ProgressSpans.Add(src)
-		db.Spans.Map[rootID].ProgressSpans.Add(src)
+		db.Spans.Map[fromID].AddProgressSpan(src)
+		db.Spans.Map[rootID].AddProgressSpan(src)
 	}
 
 	fe := NewWithDB(io.Discard, db)
@@ -580,8 +580,8 @@ func TestRenderProgressSpanRowsAutoHide(t *testing.T) {
 		src.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
 			{Name: "layer-1", Current: 5_000_000, Total: 10_000_000, Unit: "bytes"},
 		}}
-		db.Spans.Map[fromID].ProgressSpans.Add(src)
-		db.Spans.Map[rootID].ProgressSpans.Add(src)
+		db.Spans.Map[fromID].AddProgressSpan(src)
+		db.Spans.Map[rootID].AddProgressSpan(src)
 	}
 
 	fe := NewWithDB(io.Discard, db)
@@ -689,8 +689,8 @@ func TestRenderProgressMergedRollup(t *testing.T) {
 		src.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
 			{Name: "blob", Current: 1024, Total: 1024, Unit: "bytes"},
 		}}
-		install.ProgressSpans.Add(src)
-		root.ProgressSpans.Add(src)
+		install.AddProgressSpan(src)
+		root.AddProgressSpan(src)
 	}
 
 	fe := NewWithDB(io.Discard, db)

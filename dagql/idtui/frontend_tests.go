@@ -501,7 +501,7 @@ func (tv *TestView) FocusedNodeCanFocusDetail() bool {
 	if node == nil || node.Kind == dagui.TestNodeVirtualSuite || node.Span == nil {
 		return false
 	}
-	return node.Span.ChildSpans != nil && len(node.Span.ChildSpans.Order) > 0
+	return node.Span.ChildSpans.Len() > 0
 }
 
 func (tv *TestView) CurrentActionSpan() *dagui.Span {

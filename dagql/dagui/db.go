@@ -146,11 +146,13 @@ type DB struct {
 
 	Calls map[string]*callpbv1.Call
 
-	Outputs   map[string]map[string]struct{}
-	OutputOf  map[string]map[string]struct{}
-	Intervals map[string]map[time.Time]*Span
+	// Intervals holds the spans seen for each call digest, one per distinct
+	// start time (a later span with the same start time replaces the
+	// earlier), in no particular order. Usually there's just the one, so
+	// it's a slice rather than a map keyed on start time.
+	Intervals map[string][]*Span
 
-	CreatorSpans map[string]SpanSet
+	CreatorSpans map[string]*SpanSet
 
 	// Map of call digest -> metric name -> data points
 	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
@@ -162,22 +164,43 @@ type DB struct {
 	// to drive the status line's cost/context display.
 	LLMTokenMetrics *LLMTokenMetrics
 
-	// updatedSpans is a set of spans that have been updated since the last
+	// updatedSpans lists the spans that have been updated since the last
 	// sync, which includes any parent spans whose overall active time intervals
-	// or status were modified via a child or linked span.
-	updatedSpans SpanSet
+	// or status were modified via a child or linked span, in the order they
+	// were first updated. Span.updateQueued marks membership.
+	//
+	// Nothing drains it unless the DB serves a remote frontend through
+	// UpdatedSnapshots, so it ends up holding every span: a slice keeps that
+	// to a pointer apiece.
+	updatedSpans []*Span
 
 	// seenSpans keeps track of which spans have been observed via
 	// UpdatedSnapshots so that we can know whether we need to send them when we
 	// finally see them
 	seenSpans map[SpanID]struct{}
 
+	// namesFromLog holds span names updated by span.name log records. A
+	// span name can change while the span is live. The OTel SDK's start
+	// snapshot cannot carry that later mutation, so a semantic log record
+	// keeps the latest name authoritative over repeated frozen live
+	// snapshots, until the completed span arrives with its final name.
+	namesFromLog map[SpanID]string
+
+	// spanCalls caches Span.Call and Span.Base for the spans that have been
+	// asked (mostly rendered ones), rather than every span carrying room for
+	// them. addCall invalidates provisional entries.
+	spanCalls map[*Span]spanCalls
+
+	// names interns span names, which repeat heavily: a dagql call span is
+	// named for its Type.field.
+	names map[string]string
+
 	// unsentAncestors holds ancestors of surfaced spans (see
 	// Span.IsSurfacedKind) that UpdatedSnapshots needed to send but couldn't,
 	// because they hadn't been received yet; they're sent once they arrive.
 	unsentAncestors map[SpanID]struct{}
 
-	pendingResumeOutputs map[resumeOutputKey]SpanSet
+	pendingResumeOutputs map[resumeOutputKey]*SpanSet
 	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
 	resolvedLogsBySpan   map[SpanID][]sdklog.Record
 
@@ -257,23 +280,20 @@ func NewDB() *DB {
 	return &DB{
 		PrimaryLogs: make(map[SpanID][]sdklog.Record),
 
-		Spans:     NewSpanSet(),
+		Spans:     newSpanIndex(),
 		Resources: make(map[attribute.Distinct]*resource.Resource),
 
 		Calls: make(map[string]*callpbv1.Call),
 
-		OutputOf:  make(map[string]map[string]struct{}),
-		Outputs:   make(map[string]map[string]struct{}),
-		Intervals: make(map[string]map[time.Time]*Span),
+		Intervals: make(map[string][]*Span),
 
-		CreatorSpans: make(map[string]SpanSet),
+		CreatorSpans: make(map[string]*SpanSet),
 
-		updatedSpans: NewOrderedSet(spanKeyFunc),
-		seenSpans:    make(map[SpanID]struct{}),
+		seenSpans: make(map[SpanID]struct{}),
 
 		unsentAncestors: make(map[SpanID]struct{}),
 
-		pendingResumeOutputs: make(map[resumeOutputKey]SpanSet),
+		pendingResumeOutputs: make(map[resumeOutputKey]*SpanSet),
 		pendingLogsByOutput:  make(map[resumeOutputKey][]sdklog.Record),
 		resolvedLogsBySpan:   make(map[SpanID][]sdklog.Record),
 
@@ -285,6 +305,32 @@ func (db *DB) seen(spanID SpanID) {
 	db.seenSpans[spanID] = struct{}{}
 }
 
+// maxInternedNames bounds db.names, so a trace of uniquely named spans
+// can't grow it without limit; past it, names are kept as they came.
+const maxInternedNames = 1 << 14
+
+// maxInternedNameLen skips interning long names, which are rarely repeated.
+const maxInternedNameLen = 64
+
+// internName returns a shared copy of a span name, so spans with the same
+// name don't each keep their own.
+func (db *DB) internName(name string) string {
+	if len(name) > maxInternedNameLen {
+		return name
+	}
+	if interned, ok := db.names[name]; ok {
+		return interned
+	}
+	if len(db.names) >= maxInternedNames {
+		return name
+	}
+	if db.names == nil {
+		db.names = map[string]string{}
+	}
+	db.names[name] = name
+	return name
+}
+
 func (db *DB) hasSeen(spanID SpanID) bool {
 	_, seen := db.seenSpans[spanID]
 	return seen
@@ -293,7 +339,7 @@ func (db *DB) hasSeen(spanID SpanID) bool {
 func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 	// updatedSpans is kept in insertion order, since every span update lands
 	// in it; sort it by start time only here, when it's read
-	updated := slices.Clone(db.updatedSpans.Order)
+	updated := slices.Clone(db.updatedSpans)
 	slices.SortStableFunc(updated, func(a, b *Span) int {
 		return a.StartTime.Compare(b.StartTime)
 	})
@@ -313,11 +359,11 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			// deep-dive.
 			return true
 		}
-		if span.Reveal || len(span.RevealedSpans.Order) > 0 {
+		if span.Reveal || span.RevealedSpans.Len() > 0 {
 			// always include revealed spans and their parents
 			return true
 		}
-		if span.HasProgress() || len(span.ProgressSpans.Order) > 0 {
+		if span.HasProgress() || span.ProgressSpans.Len() > 0 {
 			// always include progress-carrying spans and their ancestor
 			// chain, so remote frontends can place them in the tree even
 			// when they're deep inside unsubscribed subtrees
@@ -326,7 +372,7 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 		if span.Passthrough {
 			// include any passthrough spans to ensure failures are collected.
 			// the POST /query span for example never fails on its own.
-			for _, child := range span.ChildSpans.Order {
+			for _, child := range span.ChildSpans.Spans() {
 				if child.IsFailedOrCausedFailure() {
 					return true
 				}
@@ -375,7 +421,10 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			delete(db.unsentAncestors, snapshot.ID)
 		}
 	}
-	db.updatedSpans = NewOrderedSet(spanKeyFunc)
+	for _, span := range db.updatedSpans {
+		span.updateQueued = false
+	}
+	db.updatedSpans = nil
 	return snapshots
 }
 
@@ -423,21 +472,21 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 		span := db.findOrAllocSpan(snapshot.ID)
 		span.Received = true
 		snapshot.Version += span.Version // don't reset the version
+		snapshot.Name = db.internName(snapshot.Name)
 		if snapshot.Progress == nil {
 			// don't lose locally ingested progress to a snapshot that
 			// predates it
 			snapshot.Progress = span.Progress
 		}
-		if span.hasNameFromLog && snapshot.EndTime.Before(snapshot.StartTime) {
+		if name, ok := db.namesFromLog[span.ID]; ok && snapshot.EndTime.Before(snapshot.StartTime) {
 			// Live name updates arrive on logs because repeated in-flight span
 			// exports retain their start-time name. Do not let one roll the newer
 			// name back.
-			snapshot.Name = span.nameFromLog
+			snapshot.Name = name
 		} else if !snapshot.EndTime.Before(snapshot.StartTime) {
 			// A completed snapshot carries the span's actual ending name and
 			// becomes authoritative over the live-log bridge.
-			span.nameFromLog = ""
-			span.hasNameFromLog = false
+			delete(db.namesFromLog, span.ID)
 		}
 		span.SpanSnapshot = snapshot
 		db.integrateSpan(span)
@@ -475,7 +524,10 @@ func (db *DB) update(span *Span) {
 		return
 	}
 	span.Version++
-	db.updatedSpans.Add(span)
+	if !span.updateQueued {
+		span.updateQueued = true
+		db.updatedSpans = append(db.updatedSpans, span)
+	}
 }
 
 // Matches returns true if the span matches the filter, looking through
@@ -625,8 +677,10 @@ func (db *DB) ingestSpanName(record sdklog.Record) bool {
 		return true
 	}
 	span := db.initSpan(spanID)
-	span.nameFromLog = name
-	span.hasNameFromLog = true
+	if db.namesFromLog == nil {
+		db.namesFromLog = map[SpanID]string{}
+	}
+	db.namesFromLog[span.ID] = name
 	if span.Name != name {
 		span.Name = name
 		db.update(span)
@@ -888,16 +942,9 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		SpanSnapshot: SpanSnapshot{
 			ID: spanID,
 		},
-		ChildSpans:      NewSpanSet(),
-		RunningSpans:    NewSpanSet(),
-		RevealedSpans:   NewSpanSet(),
-		FailedLinks:     NewSpanSet(),
-		CanceledLinks:   NewSpanSet(),
-		ErrorOrigins:    NewSpanSet(),
-		ProgressSpans:   NewSpanSet(),
-		causesViaLinks:  NewSpanSet(),
-		effectsViaLinks: NewSpanSet(),
-		db:              db,
+		// The relation sets (ChildSpans and so on) stay nil until the
+		// first span is added: most of them stay empty.
+		db: db,
 	}
 }
 
@@ -916,13 +963,12 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	spanData.Received = true
 	spanData.TraceID = TraceID{span.SpanContext().TraceID()}
 	spanData.ParentID.SpanID = span.Parent().SpanID()
-	spanData.Name = span.Name()
-	if spanData.hasNameFromLog && span.StartTime().After(span.EndTime()) {
-		spanData.Name = spanData.nameFromLog
+	spanData.Name = db.internName(span.Name())
+	if name, ok := db.namesFromLog[spanID]; ok && span.StartTime().After(span.EndTime()) {
+		spanData.Name = name
 	} else if !span.StartTime().After(span.EndTime()) {
 		// The completed span's final export carries its actual ending name.
-		spanData.nameFromLog = ""
-		spanData.hasNameFromLog = false
+		delete(db.namesFromLog, spanID)
 	}
 	spanData.StartTime = span.StartTime()
 	spanData.EndTime = span.EndTime()
@@ -1035,6 +1081,9 @@ func (activity *Activity) Add(span *Span) bool {
 	wasEarliest := span.StartTime.Equal(activity.EarliestRunning)
 	delete(activity.AllRunning, span.ID)
 	if len(activity.AllRunning) == 0 {
+		// Go maps never shrink: drop it rather than pin storage sized for
+		// every span that ever ran beneath this one.
+		activity.AllRunning = nil
 		if !activity.EarliestRunning.IsZero() {
 			activity.EarliestRunning = time.Time{}
 			changed = true
@@ -1149,7 +1198,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// associate the span to its parent
 	if span.ParentID.IsValid() {
 		span.ParentSpan = db.initSpan(span.ParentID)
-		if span.ParentSpan.ChildSpans.Add(span) {
+		if addToSpanSet(&span.ParentSpan.ChildSpans, span) {
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
 		}
@@ -1173,9 +1222,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			// (Otherwise the linking span could just be a child span.)
 			"":
 			linked := db.initSpan(linkedCtx.SpanID)
-			linked.ChildSpans.Add(span)
-			linked.effectsViaLinks.Add(span)
-			span.causesViaLinks.Add(linked)
+			addToSpanSet(&linked.ChildSpans, span)
+			addToSpanSet(&linked.effectsViaLinks, span)
+			addToSpanSet(&span.causesViaLinks, linked)
 		case telemetry.LinkPurposeErrorOrigin:
 			if linkedCtx.SpanID == span.ID {
 				// defense in depth; it's technically possible to link to yourself, and
@@ -1184,7 +1233,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				continue
 			}
 			linked := db.initSpan(linkedCtx.SpanID)
-			span.ErrorOrigins.Add(linked)
+			span.AddErrorOrigin(linked)
 		}
 	}
 
@@ -1198,27 +1247,44 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				continue
 			}
 			linked := db.initSpan(originID)
-			span.ErrorOrigins.Add(linked)
+			span.AddErrorOrigin(linked)
 		}
 	}
 
-	// keep track of intervals seen for a digest
+	// keep track of intervals seen for a digest, one span per start time
 	if span.CallDigest != "" {
-		if db.Intervals[span.CallDigest] == nil {
-			db.Intervals[span.CallDigest] = make(map[time.Time]*Span)
+		spans := db.Intervals[span.CallDigest]
+		i := slices.IndexFunc(spans, func(other *Span) bool {
+			// ==, not Equal: the key equality a map[time.Time] used
+			return other.StartTime == span.StartTime //nolint:staticcheck // QF1009: deliberately ==, see above
+		})
+		if i >= 0 {
+			spans[i] = span
+		} else {
+			db.Intervals[span.CallDigest] = append(spans, span)
 		}
-		db.Intervals[span.CallDigest][span.StartTime] = span
 	}
 
 	if span.CallDigest != "" && span.CallPayload != "" {
 		// Span channel: a spanned call carries its base64 payload on the span
 		// itself. Decode eagerly into the same store the log channel fills so
 		// nothing downstream has to know which channel carried a call.
-		var spanCall callpbv1.Call
-		if err := spanCall.Decode(span.CallPayload); err == nil {
-			db.addCall(span.CallDigest, &spanCall)
+		//
+		// Then let go of the payload: it's the bulk of a call span's
+		// attributes, and db.Calls holds the call now. Snapshot encodes it
+		// again for a frontend that needs it.
+		if _, known := db.Calls[span.CallDigest]; known {
+			span.CallPayload = ""
+			span.callPayloadElided = true
 		} else {
-			slog.Warn("failed to decode span call payload", "digest", span.CallDigest, "err", err)
+			var spanCall callpbv1.Call
+			if err := spanCall.Decode(span.CallPayload); err == nil {
+				db.addCall(span.CallDigest, &spanCall)
+				span.CallPayload = ""
+				span.callPayloadElided = true
+			} else {
+				slog.Warn("failed to decode span call payload", "digest", span.CallDigest, "err", err)
+			}
 		}
 	}
 
@@ -1257,23 +1323,13 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	}
 
 	if span.CallDigest != "" && span.Output != "" {
-		// parent -> child
-		if db.Outputs[span.CallDigest] == nil {
-			db.Outputs[span.CallDigest] = make(map[string]struct{})
+		// output -> creator (usually just the one)
+		creators := db.CreatorSpans[span.Output]
+		if creators == nil {
+			creators = &SpanSet{}
+			db.CreatorSpans[span.Output] = creators
 		}
-		db.Outputs[span.CallDigest][span.Output] = struct{}{}
-
-		// child -> parent
-		if db.OutputOf[span.Output] == nil {
-			db.OutputOf[span.Output] = make(map[string]struct{})
-		}
-		db.OutputOf[span.Output][span.CallDigest] = struct{}{}
-
-		// output -> creator
-		if db.CreatorSpans[span.Output] == nil {
-			db.CreatorSpans[span.Output] = NewSpanSet()
-		}
-		db.CreatorSpans[span.Output].Add(span)
+		creators.add(span)
 
 		db.resolvePendingResumeOutputs(span.Output, span.TraceID)
 		db.resolvePendingLogs(span.Output, span.TraceID)
@@ -1302,9 +1358,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 }
 
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {
-	changed := creator.ChildSpans.Add(span)
-	creator.effectsViaLinks.Add(span)
-	span.causesViaLinks.Add(creator)
+	changed := addToSpanSet(&creator.ChildSpans, span)
+	addToSpanSet(&creator.effectsViaLinks, span)
+	addToSpanSet(&span.causesViaLinks, creator)
 	if changed {
 		db.update(creator)
 	}
@@ -1317,7 +1373,7 @@ func (db *DB) creatorSpanForDigestInTrace(dig string, traceID trace.TraceID) *Sp
 	}
 
 	var best *Span
-	for _, creator := range creators.Order {
+	for _, creator := range creators.Spans() {
 		if creator.TraceID.TraceID != traceID {
 			continue
 		}
@@ -1341,9 +1397,9 @@ func (db *DB) maybeResumeOutput(span *Span) {
 			Output:  span.ResumeOutput,
 		}
 		if db.pendingResumeOutputs[key] == nil {
-			db.pendingResumeOutputs[key] = NewSpanSet()
+			db.pendingResumeOutputs[key] = &SpanSet{}
 		}
-		db.pendingResumeOutputs[key].Add(span)
+		db.pendingResumeOutputs[key].add(span)
 		return
 	}
 
@@ -1364,7 +1420,7 @@ func (db *DB) resolvePendingResumeOutputs(output string, traceID TraceID) {
 		return
 	}
 	delete(db.pendingResumeOutputs, key)
-	for _, span := range pending.Order {
+	for _, span := range pending.Spans() {
 		db.linkResumedOutput(span, creator)
 		span.PropagateStatusToParentsAndLinks()
 		db.update(span)
@@ -1493,10 +1549,8 @@ func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
 func (db *DB) MostInterestingSpan(dig string) *Span {
 	var earliest *Span
 	var earliestCached bool
-	vs := make([]*Span, 0, len(db.Intervals[dig]))
-	for _, span := range db.Intervals[dig] {
-		vs = append(vs, span)
-	}
+	// a copy: sorting it must not reorder db.Intervals
+	vs := slices.Clone(db.Intervals[dig])
 	sort.Slice(vs, func(i, j int) bool {
 		return vs[i].StartTime.Before(vs[j].StartTime)
 	})
@@ -1574,7 +1628,7 @@ func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
 		}
 		seen[dig] = true
 		// Try each creator in order
-		for _, creator := range creators.Order {
+		for _, creator := range creators.Spans() {
 			if seen[creator.CallDigest] {
 				continue
 			}
@@ -1673,7 +1727,7 @@ func (db *DB) Simplify(call *callpbv1.Call, force bool) *callpbv1.Call {
 		return call
 	}
 
-	for _, creator := range creators.Order {
+	for _, creator := range creators.Spans() {
 		if creator.CallDigest == "" {
 			continue
 		}

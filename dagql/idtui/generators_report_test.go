@@ -120,12 +120,12 @@ func TestGeneratorsPromoteLive(t *testing.T) {
 		t.Fatal("host must be marked Passthrough so RowsView surfaces the generators")
 	}
 	found := false
-	for _, revealed := range host.RevealedSpans.Order {
+	for _, revealed := range host.RevealedSpans.Spans() {
 		if revealed.GeneratorName == "viztest:gen" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("generator span missing from host.RevealedSpans: %+v", host.RevealedSpans.Order)
+		t.Fatalf("generator span missing from host.RevealedSpans: %+v", host.RevealedSpans.Spans())
 	}
 }

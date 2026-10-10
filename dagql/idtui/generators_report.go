@@ -66,7 +66,7 @@ func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput,
 	// instead would repeat the generator's own row and surface runtime
 	// internals (e.g. exec.processRun's runc exit status).
 	if node.Failed() && !node.HasFailedChild() {
-		if origins := node.Span.ErrorOrigins.Order; len(origins) > 0 {
+		if origins := node.Span.ErrorOrigins.Spans(); len(origins) > 0 {
 			for _, origin := range origins {
 				if !origin.Received {
 					// Incremental --full may not have loaded the origin (or its

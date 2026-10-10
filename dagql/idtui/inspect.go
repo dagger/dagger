@@ -158,7 +158,7 @@ func RenderSpanDetail(db *dagui.DB, id dagui.SpanID) (string, bool) {
 	if sp.IsFailed() && sp.Status.Description != "" {
 		fmt.Fprintf(&b, "error:    %s\n", strings.ReplaceAll(sp.Status.Description, "\n", "\n          "))
 	}
-	if origins := sp.ErrorOrigins.Order; len(origins) > 0 {
+	if origins := sp.ErrorOrigins.Spans(); len(origins) > 0 {
 		fmt.Fprintf(&b, "error origins:\n")
 		for _, origin := range origins {
 			fmt.Fprintf(&b, "  %s  %s\n", origin.ID, origin.Name)
@@ -206,8 +206,8 @@ func RenderSpanDetail(db *dagui.DB, id dagui.SpanID) (string, bool) {
 	// ChildSpans folds cause-linked children in (dagui treats a cause link
 	// as a parent→child edge), so this is the same containment the tree
 	// renders; only loaded children are known.
-	children := make([]*dagui.Span, 0, len(sp.ChildSpans.Order))
-	for _, child := range sp.ChildSpans.Order {
+	children := make([]*dagui.Span, 0, len(sp.ChildSpans.Spans()))
+	for _, child := range sp.ChildSpans.Spans() {
 		if child.Received {
 			children = append(children, child)
 		}

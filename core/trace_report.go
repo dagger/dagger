@@ -297,7 +297,7 @@ func ingestSpanRows(ctx context.Context, db *dagui.DB, rows []clientdb.Span) err
 func unreceivedErrorOrigins(db *dagui.DB) map[string]struct{} {
 	missing := map[string]struct{}{}
 	for span := range db.Spans.Iter() {
-		for _, origin := range span.ErrorOrigins.Order {
+		for _, origin := range span.ErrorOrigins.Spans() {
 			if !origin.Received {
 				missing[origin.ID.String()] = struct{}{}
 			}
@@ -408,12 +408,12 @@ func failureReportExpansion(db *dagui.DB, root *dagui.Span) map[dagui.SpanID]boo
 	for _, span := range db.Spans.Order {
 		if (span.TestCaseName != "" && (span.TestStatus.IsFailing() || span.IsFailedOrCausedFailure())) || (span.CheckName != "" && span.IsFailedOrCausedFailure()) {
 			mark(span)
-			for _, origin := range span.ErrorOrigins.Order {
+			for _, origin := range span.ErrorOrigins.Spans() {
 				mark(origin)
 			}
 		}
 	}
-	for _, origin := range root.ErrorOrigins.Order {
+	for _, origin := range root.ErrorOrigins.Spans() {
 		mark(origin)
 	}
 	return expanded
@@ -443,7 +443,7 @@ func traceFailureNavigation(db *dagui.DB, root *dagui.Span) string {
 		}
 		visited[span.ID] = true
 		failedCheckBelow := false
-		for _, child := range span.ChildSpans.Order {
+		for _, child := range span.ChildSpans.Spans() {
 			failedCheckBelow = walk(child) || failedCheckBelow
 		}
 		if span.TestCaseName != "" && (span.TestStatus.IsFailing() || span.IsFailedOrCausedFailure()) {
@@ -466,7 +466,7 @@ func traceFailureNavigation(db *dagui.DB, root *dagui.Span) string {
 	// Only recorded error-origin edges establish causality. Failed descendants
 	// (including expected probes) are not evidence that they caused this error.
 	addOrigins := func(span *dagui.Span) {
-		for _, origin := range span.ErrorOrigins.Order {
+		for _, origin := range span.ErrorOrigins.Spans() {
 			if !seen[origin.ID] {
 				seen[origin.ID] = true
 				origins = append(origins, entry{"origin", origin.Name, origin})
@@ -570,7 +570,7 @@ func expandedSpans(db *dagui.DB, root dagui.SpanID) map[dagui.SpanID]bool {
 	// ChildSpans already includes cause-linked children (dagui folds those
 	// edges in), so this follows the same containment the report renders.
 	expanded[rootSpan.ID] = true
-	queue := append([]*dagui.Span{}, rootSpan.ChildSpans.Order...)
+	queue := append([]*dagui.Span{}, rootSpan.ChildSpans.Spans()...)
 	for len(queue) > 0 {
 		span := queue[0]
 		queue = queue[1:]
@@ -580,7 +580,7 @@ func expandedSpans(db *dagui.DB, root dagui.SpanID) map[dagui.SpanID]bool {
 		expanded[span.ID] = true
 		if isReportWrapperSpan(span) {
 			// A pure frame: keep descending toward the actual work.
-			queue = append(queue, span.ChildSpans.Order...)
+			queue = append(queue, span.ChildSpans.Spans()...)
 		}
 		// Otherwise stop: this is the tool's own work, and its children are
 		// nested work that the normal expansion rules govern.
@@ -608,7 +608,7 @@ func isReportWrapperSpan(span *dagui.Span) bool {
 	if span.HasLogs || span.RollUpLogs || span.RollUpSpans || span.LLMTool != "" {
 		return false
 	}
-	return len(span.ChildSpans.Order) == 1
+	return len(span.ChildSpans.Spans()) == 1
 }
 
 // reportNoiseFilter prunes what a tool-call-scoped report has no use for.

@@ -290,7 +290,7 @@ func toolCallExecSpan(display *dagui.Span) *dagui.Span {
 	if display.LLMTool == "" {
 		return nil
 	}
-	for _, child := range display.ChildSpans.Order {
+	for _, child := range display.ChildSpans.Spans() {
 		if child.LLMRole == "" && child.LLMTool != "" {
 			return child
 		}

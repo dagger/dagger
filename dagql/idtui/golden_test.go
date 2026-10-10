@@ -411,7 +411,8 @@ entrypoint = true
 }
 
 func strAttr(t testing.TB, s *dagui.Span, name string) string {
-	return unmarshalAs[string](t, s.ExtraAttributes[name])
+	raw, _ := s.ExtraAttributes.Get(name)
+	return unmarshalAs[string](t, raw)
 }
 
 func unmarshalAs[T any](t testing.TB, data json.RawMessage) T {

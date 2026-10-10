@@ -72,8 +72,7 @@ func (db *DB) addCall(digest string, decoded *callpbv1.Call) bool {
 	}
 	db.Calls[digest] = decoded
 	for _, span := range db.Intervals[digest] {
-		span.callCache = nil
-		span.baseCache = nil
+		delete(db.spanCalls, span)
 	}
 	return true
 }
