@@ -335,7 +335,8 @@ defmodule Dagger.Client do
   > "Identifier casing APIs are likely to change."
   """
   @spec format_identifiers(t(), [String.t()], Dagger.Casing.t(), [
-          {:acronyms, Dagger.AcronymStyle.t() | nil}
+          {:acronyms, Dagger.AcronymStyle.t() | nil},
+          {:version, String.t() | nil}
         ]) :: {:ok, [String.t()]} | {:error, term()}
   def format_identifiers(%__MODULE__{} = client, names, casing, optional_args \\ []) do
     query_builder =
@@ -344,6 +345,7 @@ defmodule Dagger.Client do
       |> QB.put_arg("names", names)
       |> QB.put_arg("casing", casing)
       |> QB.maybe_put_arg("acronyms", optional_args[:acronyms])
+      |> QB.maybe_put_arg("version", optional_args[:version])
 
     Client.execute(client.client, query_builder)
   end
