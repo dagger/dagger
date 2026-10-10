@@ -2,8 +2,10 @@ package schema
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
+	"github.com/99designs/gqlgen/client"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/core"
@@ -87,5 +89,27 @@ func TestFormatIdentifiersForVersion(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, want, got, string(tc.casing)+":"+string(tc.acronyms))
 		}
+	})
+
+	t.Run("over GraphQL", func(t *testing.T) {
+		// A runtime declaring an old engineVersion calls it with variables
+		// of builtin types only, in a view without the Casing enum.
+		ctx, dag := newNestingTestServer(t, "v0.21.0")
+		h := dagql.NewDefaultHandler(dag)
+		gql := client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r.WithContext(ctx))
+		}))
+		var res struct {
+			FormatIdentifiers []string `json:"__formatIdentifiers"`
+		}
+		require.NoError(t, gql.Post(`query FormatIdentifiers($names: [String!]!, $casing: String!, $acronyms: String, $version: String!) {
+			__formatIdentifiers(names: $names, casing: $casing, acronyms: $acronyms, version: $version)
+		}`, &res,
+			client.Var("names", []string{"withGPU", "callID"}),
+			client.Var("casing", "CAMEL"),
+			client.Var("acronyms", "CAPITALIZED"),
+			client.Var("version", "v1.0.0"),
+		))
+		require.Equal(t, []string{"withGpu", "callId"}, res.FormatIdentifiers)
 	})
 }
