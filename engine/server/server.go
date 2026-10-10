@@ -938,8 +938,10 @@ func (srv *Server) Clients() []string {
 	return slices.Collect(maps.Keys(clients))
 }
 
-// GracefulStop attempts to close all boltdbs and do a final syncfs since all the DBs
-// run with NoSync=true (plus NoFreelistSync/NoGrowSync) for performance reasons.
+// GracefulStop stops sessions, persists the dagql cache and closes the engine's
+// DBs. The DBs run without syncing (bolt NoSync=true plus
+// NoFreelistSync/NoGrowSync, SQLite synchronous=OFF) for performance, and the
+// stop does not sync them either; see the comment at the end.
 func (srv *Server) GracefulStop(ctx context.Context) error {
 	srv.BeginGracefulStop()
 
@@ -1079,33 +1081,25 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 
 	// Buffered, so the closing goroutine can finish after GracefulStop returns
 	// through ctx.Done().
+	//
+	// There is deliberately no final sync. Closing the DBs leaves their
+	// writes in the page cache, which survives the engine process; only a
+	// host crash before writeback loses them, and the engine wipes local
+	// cache state it finds corrupt or not marked clean on the next start.
+	// syncfs would also flush every other writer's dirty data on the
+	// filesystem holding the engine state, which is often shared (a host
+	// volume, or a nested engine's cache volume in CI): minutes on a busy
+	// disk, in uninterruptible sleep that not even SIGKILL can cut short.
+	// Syncing only the DB files is no better on ext4, where fsync commits
+	// the journal and so waits for other files' ordered data.
 	doneClosingCh := make(chan error, 1)
 	go func() {
 		defer close(doneClosingCh)
-
-		var dbErr, syncErr error
-		defer func() {
-			doneClosingCh <- errors.Join(dbErr, syncErr)
-		}()
+		var dbErr error
 		stopPhase("close metadata DBs", func() {
 			dbErr = eg.Wait()
 		})
-
-		// all the DBs closed, do a final sync of the engine state filesystem.
-		// Use a guaranteed child of the state root rather than the mountpoint
-		// itself so path resolution is unambiguously inside the mounted tree.
-		stopPhase("sync engine state filesystem", func() {
-			f, err := os.Open(srv.workerRootDir)
-			if err != nil {
-				syncErr = fmt.Errorf("failed to open root dir for final sync: %w", err)
-				return
-			}
-			defer f.Close()
-
-			if err := unix.Syncfs(int(f.Fd())); err != nil {
-				syncErr = fmt.Errorf("failed to syncfs for final sync: %w", err)
-			}
-		})
+		doneClosingCh <- dbErr
 	}()
 
 	select {
