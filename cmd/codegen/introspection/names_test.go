@@ -1,6 +1,7 @@
 package introspection
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -111,4 +112,22 @@ func TestFormattedName(t *testing.T) {
 	name, ok = schema.Exclude("someModule").FormattedName("httpClient", snake)
 	require.True(t, ok)
 	require.Equal(t, "http_client", name)
+}
+
+func TestNamesFile(t *testing.T) {
+	schema := namesTestSchema(false)
+	data, err := json.Marshal(schema.NamesFile())
+	require.NoError(t, err)
+	require.JSONEq(t, `{}`, string(data))
+
+	schema.FormattedNames = map[NameFormat]map[string]string{
+		{Casing: CasingSnake, Acronyms: AcronymsUppercase}:     {"httpClient": "http_client"},
+		{Casing: CasingPascal, Acronyms: AcronymsCapitalized}: {"httpClient": "HttpClient"},
+	}
+	data, err = json.Marshal(schema.NamesFile())
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"SNAKE:UPPERCASE": {"httpClient": "http_client"},
+		"PASCAL:CAPITALIZED": {"httpClient": "HttpClient"}
+	}`, string(data))
 }

@@ -273,3 +273,21 @@ func (s *Schema) FormattedName(name string, f NameFormat) (string, bool) {
 	formatted, ok := s.FormattedNames[f][name]
 	return formatted, ok
 }
+
+// NamesFile is the JSON sidecar `codegen introspect --names-out` writes for
+// SDK codegen that runs without an engine connection: the text form of each
+// name format ("SNAKE:UPPERCASE") maps to the schema's names formatted in it.
+// A format without a key wasn't formatted (the schema has no
+// Query.formatIdentifiers), and a name missing from a format's map isn't
+// formattable: codegen uses its legacy converter for both.
+type NamesFile map[string]map[string]string
+
+// NamesFile returns the formatted names loaded on the schema (see
+// LoadFormattedNames) as a NamesFile. It is empty, not nil, when none are.
+func (s *Schema) NamesFile() NamesFile {
+	file := NamesFile{}
+	for f, names := range s.FormattedNames {
+		file[f.String()] = names
+	}
+	return file
+}
