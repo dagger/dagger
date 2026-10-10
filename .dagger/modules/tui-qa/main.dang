@@ -24,6 +24,25 @@
 let defaultWorkdir = "/src"
 let defaultPort = 7777
 
+# The `fetch` helper's script: GET $1 with the remaining "name=value" args
+# URL-encoded as query params, into /out/body; fail with the body on stderr
+# unless the response is 200.
+let fetchScript = ```
+  set -eu
+  url="$1"
+  shift
+  n=$#
+  for p in "$@"; do set -- "$@" --data-urlencode "$p"; done
+  shift "$n"
+  mkdir -p /out
+  code=$(curl -sS --get --retry 15 --retry-delay 2 --retry-connrefused --max-time 300 -o /out/body -w '%{http_code}' "$@" "$url")
+  if [ "$code" != 200 ]; then
+    echo "HTTP $code from $url:" >&2
+    cat /out/body >&2
+    exit 1
+  fi
+```
+
 # Where forwarded Dagger Cloud credentials are mounted. The CLI reads its
 # credentials from $XDG_CONFIG_HOME/dagger/credentials.json (see configRoot in
 # internal/cloud/auth/auth.go), so pointing XDG_CONFIG_HOME at a directory we
@@ -394,6 +413,8 @@ type TuiQa {
   JSON with stable handles, names, observed states, parent handles, and span IDs.
   With `dagger trace <id> -E`, the first extraction request downloads and caches
   the full trace payloads (may take minutes); no engine or agent restore is needed.
+  If that download fails, the roster comes from the telemetry already loaded
+  for rendering, with `"source": "loaded-telemetry"` and a warning.
   In live sessions only loaded telemetry is represented. States in a recorded
   trace are historical, not live runtimes. Never starts or focuses an agent.
   """
@@ -410,9 +431,17 @@ type TuiQa {
   """
   Read an agent's committed transcript as JSON: text, thinking, tool calls,
   results, and message origins. With `dagger trace <id> -E`, decodes the recorded
-  checkpoint directly, never evaluating workspace/tool/module recipes. Missing
-  or unsupported message data is an error, not silently omitted. In an engine
-  session, reads Agent.snapshot without sending, resuming, or invoking tools.
+  checkpoint directly, never evaluating workspace/tool/module recipes. In an
+  engine session, reads Agent.snapshot without sending, resuming, or invoking
+  tools.
+
+  When that isn't possible -- the trace download fails, the engine has no
+  snapshot, or a restore came back empty -- the transcript is decoded
+  best-effort from the telemetry the TUI already loaded: the result has
+  `"partial": true`, a `warning`, and `gaps`, each also in place as a GAP
+  message (a frame that never arrived, a step that isn't message data). Gaps
+  are explicit, never silent omissions. To recover an agent's work, use
+  `salvage`.
 
   Filters apply before pagination; checkpoint message indexes and the snapshot
   digest (recorded) or ID (live) are returned. Tool filters select whole messages.
@@ -426,7 +455,7 @@ type TuiQa {
     """
     agent: String!,
     """
-    user, assistant, or system. Empty includes all non-system messages.
+    user, assistant, system, or gap. Empty includes all non-system messages.
     """
     role: String! = "",
     """
@@ -532,7 +561,7 @@ type TuiQa {
   full argument literals searched before display truncation. Long strings show
   bounded excerpts, and responses are size-limited. The tool for "which call
   references this path/image/value" and for walking a chain by grepping the
-  digest another line names.
+  digest another line names. Read a match in full with `call`.
   """
   calls(grep: String!): String! @cache(policy: FunctionCachePolicy.Never) {
     get("/calls?grep=" + grep
@@ -541,6 +570,86 @@ type TuiQa {
       .replace(" ", "%20")
       .replace("#", "%23")
       .replace("&", "%26"))
+  }
+
+  """
+  Write one ingested call, with every argument in full, into the workspace:
+  tmp/calls/<hash>.json holds its field, type, receiver, module and arguments
+  (ID-valued ones as {"call": "<digest>"}, ready for the next `call`). With
+  `arg`, tmp/calls/<hash>.<arg> holds just that argument -- a string raw, e.g.
+  a file's contents or a diff exactly as recorded. Returns the path. Works
+  for any call the TUI has seen, even when its receiver never arrived and
+  `callId` can't rebuild it. Digests come from `calls` and `transcript`.
+  """
+  call(
+    source: Workspace!,
+    digest: String!,
+    """
+    Argument to extract on its own. Empty writes the whole call as JSON.
+    """
+    arg: String! = "",
+  ): Workspace! @cache(policy: FunctionCachePolicy.Never) {
+    if (url == "") {
+      print("No active TUI session. Call the tui-qa start tool first.")
+      return source
+    }
+    let params = if (arg == "") {
+      ["dig=" + digest]
+    } else {
+      ["dig=" + digest, "arg=" + arg]
+    }
+    let fetched = fetch("/call", params)
+    if (fetched.exitCode != 0) {
+      print(fetched.stderr)
+      source
+    } else {
+      let base = "tmp/calls/" + safeName(digest.replace("xxh3:", ""))
+      let path = if (arg == "") { base + ".json" } else { base + "." + safeName(arg) }
+      print(path)
+      source.withFile(path, fetched.file("/out/body"))
+    }
+  }
+
+  """
+  Recover an agent's work from telemetry alone -- no restore, nothing
+  evaluated -- even when its trace is too broken to resume. Writes
+  tmp/salvage/<agent>/ into the workspace and prints its index.md:
+
+  - index.md: where the transcript came from (recorded checkpoint, engine
+    snapshot, or a best-effort decode of the loaded telemetry), its gaps, and
+    every tool call that changed the agent's workspace or history (edits,
+    writes, removals, commits, checkouts, ...), in order, errored ones marked.
+  - transcript.md: the whole conversation, untruncated.
+  - steps/NNNN-<tool>.json: each such call's full arguments and result -- an
+    edit's oldText/newText, a write's contents. steps/NNNN-<tool>.patch: the
+    diff its result reported, when it did.
+
+  To reapply the work, replay the steps in order with your editor, skipping
+  errored ones, and read transcript.md for anything the agent reverted later.
+  Use it after starting `dagger trace <id> -E` or `dagger agent -E -r <id>`.
+  """
+  salvage(
+    source: Workspace!,
+    """
+    Stable handle from `agents`, or a unique display name.
+    """
+    agent: String!,
+  ): Workspace! @cache(policy: FunctionCachePolicy.Never) {
+    if (url == "") {
+      print("No active TUI session. Call the tui-qa start tool first.")
+      return source
+    }
+    let fetched = fetch("/salvage", ["agent=" + agent])
+    if (fetched.exitCode != 0) {
+      print(fetched.stderr)
+      source
+    } else {
+      let unpacked = fetched.withExec(["sh", "-c", "mkdir -p /salvage && tar -xf /out/body -C /salvage"])
+      let path = "tmp/salvage/" + safeName(agent)
+      print(path + "/")
+      print(unpacked.file("/salvage/index.md").contents)
+      source.withNewDirectory(path, unpacked.directory("/salvage"))
+    }
   }
 
   # ---- profiling the live TUI process (via its PPROF debug server; same
@@ -649,6 +758,23 @@ type TuiQa {
         url + path,
       ])
       .stdout
+  }
+
+  # GET a console endpoint into /out/body, URL-encoding each "name=value"
+  # param, so large or binary responses (full call payloads, salvage tarballs)
+  # land in a file instead of a truncated tool result. Exits non-zero, with
+  # the console's error on stderr, unless the console answered 200.
+  let fetch(path: String!, params: [String!]!): Container! {
+    client
+      .withEnvVariable("TUI_QA_NONCE", Random.string)
+      .withExec(
+        ["sh", "-c", fetchScript, "fetch", url + path] + params,
+        expect: ReturnType.ANY,
+      )
+  }
+
+  let safeName(s: String!): String! {
+    s.replace("/", "_").replace(" ", "_").replace(":", "_")
   }
 
   # GET a text endpoint from the CLI's PPROF debug server (goroutine dumps
