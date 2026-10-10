@@ -2662,6 +2662,23 @@ func (fe *frontendPretty) requestSubtree(id dagui.SpanID) {
 	fe.spanProvider(id)
 }
 
+// urgeRequestedChildrenLocked marks the view urgent (unpaced) when a batch of
+// spans brings children of a span the user asked to load by expanding or
+// zooming it (requestSubtree), so the row fills in on the next frame instead
+// of when recalculation pacing says it's due. Only `dagger trace` registers a
+// span provider, so live sessions never take this path.
+func (fe *frontendPretty) urgeRequestedChildrenLocked(ids []dagui.SpanID) {
+	if len(fe.requestedSpans) == 0 || fe.viewUrgent {
+		return
+	}
+	for _, id := range ids {
+		if span := fe.db.Spans.Map[id]; span != nil && fe.requestedSpans[span.ParentID] {
+			fe.viewUrgent = true
+			return
+		}
+	}
+}
+
 // ImportSnapshots folds a batch of span snapshots into the DB and refreshes the
 // view. It's the snapshot-based counterpart to the OTLP ExportSpans path, for
 // callers that already hold dagui snapshots (a remote frontend, tests).
@@ -2692,6 +2709,7 @@ func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple batches into one recalculate per frame.
 		fe.viewDirty = true
+		fe.urgeRequestedChildrenLocked(ids)
 		fe.Update()
 	})
 }
@@ -3147,6 +3165,7 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple ExportSpans batches into one recalculate per frame.
 		fe.viewDirty = true
+		fe.urgeRequestedChildrenLocked(spanIDs)
 		fe.Update()
 	})
 	return nil

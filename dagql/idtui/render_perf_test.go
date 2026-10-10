@@ -196,6 +196,32 @@ func TestStreamingRecalcPacing(t *testing.T) {
 		require.NotNil(t, fe.rows.BySpan[id])
 	})
 
+	t.Run("children of a span the user asked for are never paced", func(t *testing.T) {
+		requested := perfSpanID(1) // one of the root's "top" spans
+		fe.spanProvider = func(dagui.SpanID) {}
+		defer func() { fe.spanProvider, fe.requestedSpans = nil, nil }()
+		fe.requestSubtree(requested)
+		require.True(t, fe.requestedSpans[requested])
+
+		// Unrelated streamed spans are still paced...
+		paceNext()
+		stream()
+		fe.tui.Step()
+		require.True(t, fe.viewDirty)
+
+		// ...but the requested span's children land on the next frame.
+		id := perfSpanID(*next)
+		*next++
+		fe.ImportSnapshots([]dagui.SpanSnapshot{{
+			ID: id, TraceID: traceID, ParentID: requested, Name: "fetched",
+			StartTime: start, EndTime: start.Add(time.Second),
+		}})
+		fe.tui.Step()
+		require.False(t, fe.viewDirty)
+		require.False(t, fe.viewUrgent)
+		require.NotNil(t, fe.db.Spans.Map[id])
+	})
+
 	t.Run("a scheduled wakeup can be canceled", func(t *testing.T) {
 		fe.stopRecalcWakeupLocked()
 		paceNext()
