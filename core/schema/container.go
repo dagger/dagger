@@ -2574,6 +2574,7 @@ type containerWithMountedDirectoryArgs struct {
 	Expand       bool   `default:"false"`
 }
 
+//nolint:dupl // symmetric with withMountedFile; sharing hides the Directory vs File source and lazy types
 func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedDirectoryArgs) (_ *core.Container, rerr error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return nil, err
@@ -2802,6 +2803,7 @@ type containerWithMountedFileArgs struct {
 	ReadOnly     bool   `default:"false"`
 }
 
+//nolint:dupl // symmetric with withMountedDirectory; sharing hides the File vs Directory source and lazy types
 func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedFileArgs) (_ *core.Container, rerr error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return nil, err
