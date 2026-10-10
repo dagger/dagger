@@ -1,0 +1,6 @@
+kind: Changed
+body: Reading files from a cached step's output no longer waits for the read-only mount to be unmounted and its view lease deleted; that cleanup now runs in the background. A first per-package Go build of yq through a Dagger module was about 2% faster.
+time: 2026-10-09T17:04:51Z
+custom:
+    Author: sipsma
+    PR: "14604"

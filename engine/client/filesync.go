@@ -818,15 +818,14 @@ func globHostPath(ctx context.Context, root string, pattern string) ([]string, e
 		patternChars += `\`
 	}
 	patStr := pat.String()
-	// Strip trailing ** or * glob
-	for strings.HasSuffix(patStr, string(filepath.Separator)+"**") {
-		patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"**")
+	// Strip one trailing ** or * glob. Stripping more could turn "a/*/**" or
+	// "a/*/*" into the literal "a", which does not cover a/b.
+	for _, suffix := range []string{string(filepath.Separator) + "**", string(filepath.Separator) + "*", "**", "*"} {
+		if trimmed, ok := strings.CutSuffix(patStr, suffix); ok {
+			patStr = trimmed
+			break
+		}
 	}
-	patStr = strings.TrimSuffix(patStr, "**")
-	for strings.HasSuffix(patStr, string(filepath.Separator)+"*") {
-		patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
-	}
-	patStr = strings.TrimSuffix(patStr, "*")
 	onlyPrefixIncludes := !strings.ContainsAny(patStr, patternChars)
 
 	var matches []string

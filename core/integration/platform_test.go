@@ -8,13 +8,13 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"strings"
 	"sync"
 	"testing"
 
 	engineconfig "github.com/dagger/dagger/engine/config"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/assert"
@@ -87,7 +87,7 @@ func (PlatformSuite) TestFromSinglePlatformTagWithoutExplicitPlatform(ctx contex
 
 	registrySvc := core.NewQuery(c).Container().
 		From("registry:3").
-		WithMountedCache("/var/lib/registry", core.NewQuery(c).CacheVolume("platform-single-tag-registry-"+identity.NewID())).
+		WithMountedCache("/var/lib/registry", core.NewQuery(c).CacheVolume("platform-single-tag-registry-"+rand.Text())).
 		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
 		AsService()
 
@@ -136,7 +136,7 @@ func (PlatformSuite) TestFromSinglePlatformTagWithoutExplicitPlatform(ctx contex
 	pushClient, cleanupPushEngine := startFreshEngine(ctx, t)
 	for _, platform := range platforms {
 		marker := "hello from " + string(platform)
-		ref := registryHost + "/platform-single-tag-" + strings.ReplaceAll(string(platform), "/", "-") + ":" + identity.NewID()
+		ref := registryHost + "/platform-single-tag-" + strings.ReplaceAll(string(platform), "/", "-") + ":" + rand.Text()
 
 		_, err := core.NewQuery(pushClient).Container(core.ContainerOpts{Platform: platform}).
 			WithRootfs(core.NewQuery(pushClient).Directory().WithNewFile("platform.txt", marker)).
@@ -173,7 +173,7 @@ func (PlatformSuite) TestFromMultiPlatformTagWithFreshPullEngines(ctx context.Co
 
 	registrySvc := core.NewQuery(c).Container().
 		From("registry:3").
-		WithMountedCache("/var/lib/registry", core.NewQuery(c).CacheVolume("platform-multi-tag-registry-"+identity.NewID())).
+		WithMountedCache("/var/lib/registry", core.NewQuery(c).CacheVolume("platform-multi-tag-registry-"+rand.Text())).
 		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
 		AsService()
 
@@ -227,7 +227,7 @@ func (PlatformSuite) TestFromMultiPlatformTagWithFreshPullEngines(ctx context.Co
 		markers[platform] = marker
 	}
 
-	ref := registryHost + "/platform-multi-tag:" + identity.NewID()
+	ref := registryHost + "/platform-multi-tag:" + rand.Text()
 	_, err := core.NewQuery(pushClient).Container().Publish(ctx, ref, core.ContainerPublishOpts{
 		PlatformVariants: variants,
 	})
@@ -357,7 +357,7 @@ func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 func (PlatformSuite) TestCacheMounts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	randomID := identity.NewID()
+	randomID := rand.Text()
 
 	cache := core.NewQuery(c).CacheVolume("test-platform-cache-mount")
 

@@ -1000,6 +1000,13 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		err = errors.Join(err, srv.clientDBs.Close())
 	}
 
+	// Shared read-only mounts nobody is using, and the releases running in
+	// the background, are released before the final collection and before
+	// the metadata DBs close.
+	if releaser, ok := srv.workerCache.(bkcache.ReadOnlyMountReleaser); ok {
+		releaser.WaitForBackgroundReleases()
+	}
+
 	if srv.engineCache != nil && srv.localCacheGCEnabled {
 		if gcErr := srv.gcLocked(ctx, localCacheGCGracefulShutdown); gcErr != nil {
 			err = errors.Join(err, fmt.Errorf("failed to prune local cache during graceful shutdown: %w", gcErr))

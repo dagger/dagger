@@ -10,6 +10,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -87,6 +88,7 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
 	srv.metadataPruneMonitorBlocked.Store(false)
+	srv.releaseIdleSharedMounts(ctx)
 
 	pruneDisk, pruneMetadata := engineLocalCachePruneModes(opts, srv.localCacheGCEnabled)
 	var maximumEstimatedBytes, targetEstimatedBytes int64
@@ -344,6 +346,7 @@ func (srv *Server) gcLocked(ctx context.Context, reason localCacheGCReason) erro
 		return nil
 	}
 
+	srv.releaseIdleSharedMounts(ctx)
 	rerr := srv.pruneLocalCacheLocked(ctx, reason)
 
 	// A prune collects garbage itself when it removes entries, but leases
@@ -357,6 +360,19 @@ func (srv *Server) gcLocked(ctx context.Context, reason localCacheGCReason) erro
 		rerr = errors.Join(rerr, fmt.Errorf("collect snapshot garbage: %w", err))
 	}
 	return rerr
+}
+
+// releaseIdleSharedMounts releases the shared read-only mounts nobody is
+// using before a collection: their views hold their snapshots, which the
+// collection could otherwise not reclaim until the mounts' linger ran out.
+func (srv *Server) releaseIdleSharedMounts(ctx context.Context) {
+	releaser, ok := srv.workerCache.(bkcache.ReadOnlyMountReleaser)
+	if !ok {
+		return
+	}
+	if err := releaser.ReleaseIdleSharedMounts(); err != nil {
+		bklog.G(ctx).WithError(err).Error("failed to release idle shared read-only mounts")
+	}
 }
 
 func (srv *Server) pruneLocalCacheLocked(ctx context.Context, reason localCacheGCReason) error {

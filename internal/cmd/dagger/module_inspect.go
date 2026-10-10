@@ -634,6 +634,7 @@ func (m *moduleDef) loadTypeDef(typeDef *modTypeDef) error {
 	typeDef.Kind = canonical.Kind
 	typeDef.Optional = optional
 	typeDef.AsObject = canonical.AsObject
+	typeDef.AsCollection = canonical.AsCollection
 	typeDef.AsInterface = canonical.AsInterface
 	typeDef.AsInput = canonical.AsInput
 	typeDef.AsList = canonical.AsList
@@ -692,21 +693,30 @@ func (m *moduleDef) LoadFunctionTypeDefs(fn *modFunction) error {
 
 // modTypeDef is a representation of core.TypeDef.
 type modTypeDef struct {
-	TypeName    string `json:"name"`
-	Kind        core.TypeDefKind
-	Optional    bool
-	AsObject    *modObject
-	AsInterface *modInterface
-	AsInput     *modInput
-	AsList      *modList
-	AsScalar    *modScalar
-	AsEnum      *modEnum
+	TypeName     string `json:"name"`
+	Kind         core.TypeDefKind
+	Optional     bool
+	AsObject     *modObject
+	AsCollection *modCollection
+	AsInterface  *modInterface
+	AsInput      *modInput
+	AsList       *modList
+	AsScalar     *modScalar
+	AsEnum       *modEnum
 
 	// once protects concurrent update from LoadTypeDef
 	once    sync.Once
 	loadErr error
 
 	owner *moduleDef
+}
+
+// modCollection is the author collection metadata kept alongside the public
+// object projection.
+type modCollection struct {
+	KeyType   *modTypeDef
+	ValueType *modTypeDef
+	BatchType *modTypeDef
 }
 
 func (t *modTypeDef) String() string {
@@ -1041,6 +1051,31 @@ type modFunction struct {
 	Args             []*modFunctionArg
 	cmdName          string
 	once             sync.Once
+
+	// These fields belong only to command-local clones. Canonical
+	// introspection values never carry CLI traversal state.
+	commandPath      *functionCommandPath
+	collectionRoute  *collectionCallRoute
+	collectionRoutes []*collectionCallRoute
+}
+
+func (f *modFunction) commandClone() *modFunction {
+	clone := &modFunction{
+		Name:             f.Name,
+		Description:      f.Description,
+		SourceModuleName: f.SourceModuleName,
+		ReturnType:       f.ReturnType,
+		Args:             f.Args,
+		collectionRoute:  f.collectionRoute,
+		collectionRoutes: slices.Clone(f.collectionRoutes),
+	}
+	if f.commandPath != nil {
+		clone.commandPath = &functionCommandPath{
+			Module: f.commandPath.Module,
+			Fields: slices.Clone(f.commandPath.Fields),
+		}
+	}
+	return clone
 }
 
 func (f *modFunction) CmdName() string {

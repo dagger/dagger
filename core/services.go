@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/rand"
 	stderrors "errors"
 	"fmt"
 	"slices"
@@ -17,7 +18,6 @@ import (
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/engine/wcprof"
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/network"
 	telemetry "github.com/dagger/otel-go"
@@ -744,7 +744,7 @@ func (ss *Services) StartInteractive(
 		SessionID:  clientMetadata.SessionID,
 		ClientID:   clientMetadata.ClientID,
 		Kind:       ServiceRuntimeInteractive,
-		InstanceID: identity.NewID(),
+		InstanceID: rand.Text(),
 	}
 	return ss.startWithKey(ctx, key, svc, ServiceStartOpts{
 		ClientSpecific: true,

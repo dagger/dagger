@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -106,6 +107,38 @@ func TestOwnedShallowPromotion(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(shallow, "shallow"), []byte(value), 0644))
 		_, err := ownedShallowBoundary(shallow, anchor)
 		require.ErrorContains(t, err, "boundary")
+	}
+}
+
+// Promotion borrows the locked mirror only for copyRemoteCommitBase. Once the
+// closure is packed, finishing must not depend on the mirror: poison it (a
+// different history at the same path) and then delete it before finishing.
+func TestRemoteCommitBaseIndependentAfterCopy(t *testing.T) {
+	for _, depth := range []int{0, 1} {
+		t.Run(strconv.Itoa(depth), func(t *testing.T) {
+			ctx := t.Context()
+			source, _, anchor := gitMirrorTestSource(t)
+			gitMirrorTestRun(t, source, "gc")
+			dest := t.TempDir()
+			require.NoError(t, copyRemoteCommitBase(ctx, source, dest, anchor, depth))
+
+			require.NoError(t, os.RemoveAll(source))
+			require.NoError(t, os.MkdirAll(source, 0o755))
+			gitMirrorTestRun(t, source, "init", "--quiet", "--bare")
+			remotes := []GitRemote{{Name: "origin", URL: "https://fetch.test/repo", PushURL: "ssh://push.test/repo"}}
+			require.NoError(t, finishRemoteCommitBase(ctx, dest, anchor, remotes))
+			require.NoError(t, os.RemoveAll(source))
+
+			require.NoFileExists(t, filepath.Join(dest, "objects", "info", "alternates"))
+			gitMirrorTestRun(t, dest, "fsck", "--full", "--strict")
+			require.Equal(t, anchor, gitMirrorTestRun(t, dest, "rev-parse", "HEAD"))
+			require.Equal(t, "ssh://push.test/repo", gitMirrorTestRun(t, dest, "remote", "get-url", "--push", "origin"))
+			want := "3"
+			if depth == 1 {
+				want = "1"
+			}
+			require.Equal(t, want, gitMirrorTestRun(t, dest, "rev-list", "--count", "HEAD"))
+		})
 	}
 }
 

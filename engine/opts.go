@@ -182,6 +182,12 @@ type ClientMetadata struct {
 	// no user-level config is consulted.
 	UserConfigPath string `json:"user_config_path,omitempty"`
 
+	// LLMConfig is this client's LLM routing configuration, assembled by the
+	// client from its config file, environment and .env. Credentials in it
+	// are secret URIs resolved against this client's session. See
+	// hack/designs/llm-config-transport.md.
+	LLMConfig *LLMConfig `json:"llm_config,omitempty"`
+
 	// WorkspaceModuleScope hints at the workspace module this client's first
 	// schema introspection targets: the leading CLI command token, unresolved
 	// (it may name a module, an entrypoint-proxied function, or a typo). The

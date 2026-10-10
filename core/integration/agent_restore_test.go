@@ -20,6 +20,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"net"
@@ -43,7 +44,6 @@ import (
 	"github.com/dagger/dagger/engine/archive"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/internal/cloud/otlpstream"
@@ -244,7 +244,7 @@ func (AgentRestoreSuite) TestRestoreFromTrace(ctx context.Context, t *testctx.T)
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
 	defer cancel()
 
-	run := identity.NewID()
+	run := rand.Text()
 	var (
 		chiefPrompt1 = "chief opening " + run
 		chiefReply1  = "chief remembers " + run
@@ -423,7 +423,7 @@ func (AgentRestoreSuite) TestRestoreFromTraceRefusesAnUnrestorableAgent(ctx cont
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
 
-	run := identity.NewID()
+	run := rand.Text()
 	prompt, answer := "lonely prompt "+run, "lonely reply "+run
 
 	sink := newAgentTraceSink(t)
@@ -566,7 +566,7 @@ func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *te
 		WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "new completion noted"}}))
 	chief := spawnAgent(ctx, t, source, spawnOpts{model: chiefModel, name: "chief"})
 	chiefID := chief.mustRun(ctx, t, "handle").Get("handle").String()
-	worker := spawnAgent(ctx, t, source, spawnOpts{model: workerModel, name: "worker", parentHandle: chiefID, handle: identity.NewID()})
+	worker := spawnAgent(ctx, t, source, spawnOpts{model: workerModel, name: "worker", parentHandle: chiefID, handle: rand.Text()})
 	observer := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "observer"})
 	removed := spawnAgent(ctx, t, source, spawnOpts{model: emptyReplayModel, name: "removed"})
 	_, reply, err := worker.sendAndWait(ctx, t, "old task")
@@ -711,7 +711,7 @@ func (AgentRestoreSuite) TestArchiveSurvivesEngineRestart(ctx context.Context, t
 	require.NoError(t, err)
 	// A different service identity makes this a process restart, not a second
 	// connection to a still-running engine. The mounted state cache is unchanged.
-	_, _, endpoint = startArchiveEngine(ctx, t, host, engine.WithEnvVariable("ARCHIVE_RESTART", identity.NewID()))
+	_, _, endpoint = startArchiveEngine(ctx, t, host, engine.WithEnvVariable("ARCHIVE_RESTART", rand.Text()))
 	targetCtx, targetSpan := provider.Tracer("archive-acceptance").Start(ctx, "archive destination", trace.WithNewRoot())
 	defer targetSpan.End()
 	target, targetSink := connectWithTrace(targetCtx, t, engineconn.Config{RunnerHost: endpoint})
@@ -775,7 +775,7 @@ func (AgentRestoreSuite) TestArchiveUnsealedAfterEngineCrash(ctx context.Context
 	_ = source.Close()
 	sourceSpan.End()
 
-	_, _, endpoint = startArchiveEngine(ctx, t, host, engine.WithEnvVariable("ARCHIVE_CRASH_RESTART", identity.NewID()))
+	_, _, endpoint = startArchiveEngine(ctx, t, host, engine.WithEnvVariable("ARCHIVE_CRASH_RESTART", rand.Text()))
 	targetCtx, targetSpan := provider.Tracer("archive-acceptance").Start(ctx, "crash recovery", trace.WithNewRoot())
 	defer targetSpan.End()
 	target, targetSink := connectWithTrace(targetCtx, t, engineconn.Config{RunnerHost: endpoint})

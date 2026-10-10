@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/engine"
 )
 
 func TestNormalizeModelID(t *testing.T) {
@@ -48,6 +50,40 @@ func TestLookupCatalogModel(t *testing.T) {
 	assert.False(t, ok)
 	_, ok = lookupCatalogModel(Anthropic, "totally-unknown-model")
 	assert.False(t, ok)
+}
+
+func TestCatalogReasoningMode(t *testing.T) {
+	for _, tc := range []struct {
+		provider LLMProvider
+		model    string
+		want     LLMReasoningMode
+	}{
+		// Effort levels listed: takes effort natively.
+		{Anthropic, "claude-sonnet-4-6", LLMReasoningEffort},
+		{OpenAI, "gpt-5.4-mini", LLMReasoningEffort},
+		{Google, "gemini-3-flash-preview", LLMReasoningEffort},
+		// Reasons, but no effort levels: takes a thinking budget.
+		{Anthropic, "claude-haiku-4-5-20251001", LLMReasoningBudget},
+		{Anthropic, "claude-sonnet-4-5", LLMReasoningBudget},
+		{Google, "gemini-2.5-flash", LLMReasoningBudget},
+		// Can't reason.
+		{OpenAI, "gpt-4o", LLMReasoningUnsupported},
+	} {
+		m, ok := lookupCatalogModel(tc.provider, tc.model)
+		require.True(t, ok, "%s/%s not in catalog", tc.provider, tc.model)
+		assert.Equal(t, tc.want, catalogReasoningMode(m), "%s/%s", tc.provider, tc.model)
+	}
+
+	// Route carries the mode onto the endpoint; uncatalogued models stay unknown.
+	r := routerWith(t, map[string]*engine.LLMProviderConfig{
+		"anthropic": {APIKey: "env://ANTHROPIC_API_KEY"},
+	})
+	ep, err := r.Route("claude-haiku-4-5", "")
+	require.NoError(t, err)
+	assert.Equal(t, LLMReasoningBudget, ep.ReasoningMode)
+	ep, err = r.Route("claude-unreleased-model", "")
+	require.NoError(t, err)
+	assert.Equal(t, LLMReasoningUnknown, ep.ReasoningMode)
 }
 
 func TestClampMaxTokensToContext(t *testing.T) {

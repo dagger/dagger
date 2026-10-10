@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"net"
@@ -16,7 +17,6 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -176,7 +176,7 @@ func newWorkspaceRemoteHistoryFixture(ctx context.Context, t *testctx.T, c *dagg
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		WithEnvVariable("GIT_AUTHOR_DATE", workspaceCommitDate).
 		WithEnvVariable("GIT_COMMITTER_DATE", workspaceCommitDate).
-		WithNewFile("/fixture-id", identity.NewID()).
+		WithNewFile("/fixture-id", rand.Text()).
 		WithWorkdir("/repo").
 		WithExec([]string{"sh", "-ec", `
  git init -b main
@@ -208,7 +208,7 @@ func newWorkspaceRemoteHistoryFixture(ctx context.Context, t *testctx.T, c *dagg
 	// The sentinel survives service restarts. Removing repo.git below therefore
 	// makes the remote genuinely unavailable, unlike merely stopping a service
 	// which the Git backend is allowed to restart automatically.
-	server := oracle.WithMountedCache("/srv", core.NewQuery(c).CacheVolume(identity.NewID())).
+	server := oracle.WithMountedCache("/srv", core.NewQuery(c).CacheVolume(rand.Text())).
 		WithExec([]string{"sh", "-ec", "if [ ! -e /srv/initialized ]; then cp -a /seed.git /srv/repo.git; touch /srv/initialized; fi"})
 	service := server.WithExposedPort(9418).
 		WithDefaultArgs([]string{"git", "daemon", "--verbose", "--export-all", "--base-path=/srv"}).AsService()
@@ -632,7 +632,7 @@ func newWorkspaceHostHistoryFixture(ctx context.Context, t *testctx.T) workspace
 	for _, setting := range [][2]string{{"user.name", "Oracle"}, {"user.email", "oracle@example.com"}, {"commit.gpgsign", "false"}, {"core.hooksPath", "/dev/null"}, {"gc.auto", "0"}} {
 		git("config", setting[0], setting[1])
 	}
-	write("fixture-id", identity.NewID())
+	write("fixture-id", rand.Text())
 	write("ancient.txt", "root\n")
 	write("selected.txt", "base\n")
 	git("add", ".")
@@ -656,7 +656,7 @@ func newWorkspaceHostHistoryFixture(ctx context.Context, t *testctx.T) workspace
 	// Packing the donor's entire object store would leak all of these objects.
 	git("checkout", "--orphan", "unrelated")
 	git("rm", "-rf", ".")
-	write("unrelated.txt", identity.NewID())
+	write("unrelated.txt", rand.Text())
 	git("add", ".")
 	git("commit", "-m", "unrelated")
 	straySHA := git("rev-parse", "HEAD")
@@ -812,7 +812,7 @@ func (WorkspaceSuite) TestWorkspaceApprovedHostHistoryMovedCheckout(ctx context.
 	head := fixture.commit(ctx, t)
 	headSHA, err := head.CommitSHA(ctx)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(fixture.checkout, "after.txt"), []byte(identity.NewID()), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(fixture.checkout, "after.txt"), []byte(rand.Text()), 0o600))
 	fixture.git("add", "after.txt")
 	fixture.git("commit", "-m", "after capture")
 	afterSHA := fixture.git("rev-parse", "HEAD")

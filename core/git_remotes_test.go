@@ -145,8 +145,8 @@ type containsTestRepository struct {
 	git *gitutil.GitCLI
 }
 
-func (repo *containsTestRepository) mount(ctx context.Context, _ int, _ bool, _ []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
-	return fn(repo.git)
+func (repo *containsTestRepository) mount(ctx context.Context, _ int, _ bool, _ []GitRefBackend, fn func(context.Context, *gitutil.GitCLI) error) error {
+	return fn(ctx, repo.git)
 }
 
 func TestGitContainsCachedRefs(t *testing.T) {

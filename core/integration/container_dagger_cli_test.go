@@ -2,13 +2,13 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"strings"
 	"time"
 
 	sdkcore "dagger.io/dagger/core"
 	"github.com/containerd/platforms"
 	"github.com/creack/pty"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -72,7 +72,7 @@ func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 		out, err := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
 			WithNewFile("/clients.graphql", `{ engine { clients } }`).
-			WithEnvVariable("ID", identity.NewID()).
+			WithEnvVariable("ID", rand.Text()).
 			WithExec([]string{"sh", "-ec", nestedMainClientCheck + `
 				command -v dagger
 				echo "$PATH"

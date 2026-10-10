@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,7 +27,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -662,7 +662,7 @@ func (svc *Service) startContainer(
 	}
 	cache := query.SnapshotManager()
 
-	svcID := identity.NewID()
+	svcID := rand.Text()
 	serviceResourceLeaseID := "dagger-service-" + svcID
 	_, err = query.LeaseManager().Create(ctx,
 		ctdleases.WithID(serviceResourceLeaseID),
@@ -832,7 +832,7 @@ func (svc *Service) startContainer(
 	var nestedClientMetadata *engine.ClientMetadata
 	if svc.ExperimentalPrivilegedNesting {
 		nestedClientMetadata = &engine.ClientMetadata{
-			ClientID:          identity.NewID(),
+			ClientID:          rand.Text(),
 			ClientVersion:     engine.Version,
 			SessionID:         clientMetadata.SessionID,
 			AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),

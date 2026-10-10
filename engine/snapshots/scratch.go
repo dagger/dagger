@@ -2,11 +2,11 @@ package snapshots
 
 import (
 	"context"
+	"crypto/rand"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/pkg/errors"
 )
 
@@ -42,7 +42,7 @@ func (cm *snapshotManager) createScratchSnapshot(ctx context.Context) error {
 		return err
 	}
 
-	key := scratchSnapshotID + "-" + identity.NewID()
+	key := scratchSnapshotID + "-" + rand.Text()
 	leaseCtx := leases.WithLease(ctx, scratchLeaseID)
 	if err := cm.Snapshotter.Prepare(leaseCtx, key, ""); err != nil {
 		return errors.Wrap(err, "prepare scratch snapshot")

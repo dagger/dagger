@@ -2983,7 +2983,7 @@ func selectGitReleaseTag(ctx context.Context, commit *core.GitCommit, includePre
 	}
 
 	var selected *gitReleaseTag
-	err := commit.Mount(ctx, depth, false, func(git *gitutil.GitCLI) error {
+	err := commit.Mount(ctx, depth, false, func(ctx context.Context, git *gitutil.GitCLI) error {
 		localTags := map[string]string{}
 		if _, ok := commit.Repo.Self().Backend.(*core.LocalGitRepository); ok {
 			var err error

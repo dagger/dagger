@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -21,11 +22,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger/core"
 
 	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -744,6 +747,61 @@ done
 	require.Contains(t, lines[len(lines)-1], "commit 1")
 }
 
+// TestMirrorLockTelemetry checks that the work done while holding a remote's
+// mirror lock is traced inside the hold span, rather than beside it: the
+// mirror fetch and the checkout's object copy are its descendants. The hold
+// span is passthrough, not internal, so the fetch span (which carries clone
+// progress) is not pruned from the default view along with it.
+func (GitSuite) TestMirrorLockTelemetry(ctx context.Context, t *testctx.T) {
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, sink.clientOpts()...)
+
+	// Unique content: a fresh remote, so the mirror has to fetch.
+	content := core.NewQuery(c).Directory().WithNewFile("README.md", rand.Text())
+	daemon, url := gitService(ctx, t, c, content)
+	_, err := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).
+		Branch("main").
+		Tree().
+		Entries(ctx)
+	require.NoError(t, err)
+
+	holdName := "holding git mirror lock: " + url
+	underHold := func(span *dagui.Span) *dagui.Span {
+		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
+			if p.Name == holdName {
+				return p
+			}
+		}
+		return nil
+	}
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		sink.read(func(db *dagui.DB) {
+			var fetching, copying *dagui.Span
+			for _, span := range db.Spans.Order {
+				switch span.Name {
+				case "fetching " + url:
+					fetching = span
+				case "copying git objects: checkout":
+					if underHold(span) != nil {
+						copying = span
+					}
+				}
+			}
+			if !assert.NotNil(ct, fetching, "mirror fetch span") {
+				return
+			}
+			hold := fetching.ParentSpan
+			if assert.NotNil(ct, hold) {
+				assert.Equal(ct, holdName, hold.Name, "the mirror fetch runs under the hold span")
+				assert.True(ct, hold.Passthrough, "the hold span renders its children in its place")
+				assert.False(ct, hold.Internal, "an internal hold span would prune the fetch span's progress")
+				assert.True(ct, dagui.FrontendOpts{}.ShouldShow(db, hold), "the hold span must not hide its subtree")
+			}
+			assert.NotNil(ct, copying, "the checkout's object copy runs under the hold span")
+		})
+	}, time.Minute, 100*time.Millisecond)
+}
+
 func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {
 	c, sink := connectWithTrace(ctx, t)
 
@@ -1083,7 +1141,7 @@ func (GitSuite) TestSSHAuthSockResumeFromCheckout(ctx context.Context, t *testct
 
 	// A fresh session caches nothing the capture produced, so replaying the
 	// recipe scopes an SSH agent again, and none is running.
-	resumed := "resumed-" + identity.NewID()
+	resumed := "resumed-" + rand.Text()
 	_, err = checkout(connect(ctx, t)).
 		With(daggerQuery(`{ node(id: %q) { ... on LLM {
 			spawn(handle: %q, name: %q, state: IDLE, error: "", parentHandle: "")
@@ -1455,7 +1513,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 	password := "secretpass"
 
 	t.Run("loads username and password from client", func(ctx context.Context, t *testctx.T) {
-		hostname := "my-git-repo" + identity.NewID()
+		hostname := "my-git-repo" + rand.Text()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
 		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
@@ -1464,7 +1522,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
 		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, user!"), "main",
-			username, core.NewQuery(c).SetSecret("secret"+identity.NewID(), password),
+			username, core.NewQuery(c).SetSecret("secret"+rand.Text(), password),
 		)
 
 		dt, err := core.NewQuery(c).Git(gitServiceURL, core.GitOpts{
@@ -1479,7 +1537,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("incorrect username fails", func(ctx context.Context, t *testctx.T) {
-		hostname := "my-git-repo" + identity.NewID()
+		hostname := "my-git-repo" + rand.Text()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
 		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
@@ -1488,7 +1546,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
 		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, bad username!"), "main",
-			username+"XXX", core.NewQuery(c).SetSecret("secret"+identity.NewID(), password),
+			username+"XXX", core.NewQuery(c).SetSecret("secret"+rand.Text(), password),
 		)
 
 		_, err = core.NewQuery(c).Git(gitServiceURL, core.GitOpts{
@@ -1503,7 +1561,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("incorrect password fails", func(ctx context.Context, t *testctx.T) {
-		hostname := "my-git-repo" + identity.NewID()
+		hostname := "my-git-repo" + rand.Text()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
 		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
@@ -1512,7 +1570,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
 
 		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello, bad password!"), "main",
-			username, core.NewQuery(c).SetSecret("secret"+identity.NewID(), password+"XXX"),
+			username, core.NewQuery(c).SetSecret("secret"+rand.Text(), password+"XXX"),
 		)
 
 		_, err = core.NewQuery(c).Git(gitServiceURL, core.GitOpts{
@@ -1531,7 +1589,7 @@ func (GitSuite) TestSubmoduleAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Cleanup(func() { _ = c.Close() })
 
-	authToken := core.NewQuery(c).SetSecret("submodule-test-token", "test-token-"+identity.NewID())
+	authToken := core.NewQuery(c).SetSecret("submodule-test-token", "test-token-"+rand.Text())
 
 	submoduleContent := core.NewQuery(c).Directory().WithNewFile("submodule.txt", "This is the submodule content")
 	parentContent := core.NewQuery(c).Directory().WithNewFile("parent.txt", "This is the parent content")
@@ -1638,7 +1696,7 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+rand.Text()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
@@ -1682,7 +1740,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+rand.Text()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
@@ -1731,7 +1789,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestRemoteUpdatesNoLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+	svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+rand.Text()))
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -1796,7 +1854,7 @@ func (GitSuite) TestRemoteUpdatesNoLock(ctx context.Context, t *testctx.T) {
 }
 
 func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
-	content := identity.NewID()
+	content := rand.Text()
 	hostname := func(c *dagger.Client) string {
 		svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("content", content))
 
@@ -1862,7 +1920,7 @@ func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
-		svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+		svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+rand.Text()))
 		repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: svc})
 
 		full, err := repo.Branch("main").CommitSHA(ctx)
@@ -1896,7 +1954,7 @@ func (GitSuite) TestRefRevisionSuffixes(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/src").
 		WithExec([]string{"sh", "-c", `set -e
 git init -q -b main
-echo ` + identity.NewID() + ` > f && git add f && git commit -qm root
+echo ` + rand.Text() + ` > f && git add f && git commit -qm root
 echo a > f && git commit -qam a
 git checkout -qb side
 echo 1 > s && git add s && git commit -qm side1
@@ -2467,6 +2525,88 @@ func (GitSuite) TestGitLogBoundedRemoteHistory(ctx context.Context, t *testctx.T
 	require.Equal(t, "commit6", message)
 }
 
+func (GitSuite) TestGitLogDuringCheckout(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Block only the submodule's pack transfer, after the main checkout has
+	// copied its objects out of the mirror. History reads must not wait for
+	// this unrelated worktree operation to finish.
+	svc := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon", "python3"}).
+		With(gitUserConfig).
+		WithWorkdir("/repos").
+		WithExec([]string{"sh", "-ec", `
+			git init sub
+			cd sub
+			echo sub > file.txt
+			git add . && git commit -m sub
+			sha=$(git rev-parse HEAD)
+			git config --system uploadpack.packObjectsHook /gate.sh
+			cd ..
+			git init main
+			cd main
+			printf '[submodule "sub"]\n path = sub\n url = ../sub\n' > .gitmodules
+			git add .gitmodules
+			git update-index --add --cacheinfo 160000,$sha,sub
+			git commit -m main
+		`}).
+		WithNewFile("/gate.sh", `#!/bin/sh
+set -eu
+case "$PWD" in
+    */sub/.git)
+        touch /started
+        while ! test -e /released; do sleep 0.1; done
+        ;;
+esac
+exec "$@"
+`, core.ContainerWithNewFileOpts{Permissions: 0755}).
+		WithNewFile("/gate.py", `from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/release":
+            Path("/released").touch()
+        self.send_response(200 if self.path == "/release" or Path("/started").exists() else 404)
+        self.end_headers()
+HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+`).
+		WithExposedPort(9418).
+		WithExposedPort(8080).
+		WithDefaultArgs([]string{"sh", "-ec", "git daemon --export-all --base-path=/repos & exec python3 /gate.py"}).
+		AsService()
+	host, err := svc.Hostname(ctx)
+	require.NoError(t, err)
+	_, err = svc.Start(ctx)
+	require.NoError(t, err)
+	defer svc.Stop(ctx)
+	repo := core.NewQuery(c).Git("git://"+host+"/main", core.GitOpts{ExperimentalServiceHost: svc})
+
+	checkoutCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	checkoutDone := make(chan error, 1)
+	go func() {
+		_, err := repo.Head().Tree().Sync(checkoutCtx)
+		checkoutDone <- err
+	}()
+
+	gate := core.NewQuery(c).Container().From(alpineImage).WithServiceBinding("git", svc)
+	_, err = gate.WithExec([]string{"sh", "-ec", "until wget -q -O /dev/null http://git:8080/started; do sleep 0.1; done"}).Sync(checkoutCtx)
+	require.NoError(t, err)
+
+	logCtx, cancelLog := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelLog()
+	commits, logErr := repo.Head().Log(logCtx, core.GitRefLogOpts{Limit: 3})
+	// Always unblock the checkout, including when a lock regression times out.
+	_, err = gate.WithExec([]string{"wget", "-q", "-O", "/dev/null", "http://git:8080/release"}).Sync(ctx)
+	require.NoError(t, err)
+	require.NoError(t, <-checkoutDone)
+	require.NoError(t, logErr, "log must not wait for submodule checkout")
+	require.Len(t, commits, 1)
+	message, err := commits[0].Message(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "main", message)
+}
+
 func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -2510,6 +2650,54 @@ func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 	ref, err = mergeBase.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, base, ref)
+}
+
+// Refs of different remotes that share history (a fork and its upstream) are
+// joined into one private repository, each copying only what the refs before
+// it lack. The answer must not depend on which ref is joined first.
+func (GitSuite) TestGitCommonAncestorForkAndUpstream(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	svc := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		With(gitUserConfig).
+		WithWorkdir("/repos").
+		WithExec([]string{"sh", "-ec", `
+			git init -b main upstream
+			cd upstream
+			for i in 1 2 3; do echo $i > file.txt; git add .; git commit -m "upstream $i"; done
+			git tag two HEAD~1
+			cd ..
+			git clone -q upstream fork
+			cd fork
+			git checkout -b feature two
+			echo feature > feature.txt
+			git add . && git commit -m feature
+		`}).
+		WithExposedPort(9418).
+		WithDefaultArgs([]string{"git", "daemon", "--export-all", "--base-path=/repos", "--reuseaddr"}).
+		AsService()
+	host, err := svc.Hostname(ctx)
+	require.NoError(t, err)
+
+	upstream := core.NewQuery(c).Git("git://"+host+"/upstream", core.GitOpts{ExperimentalServiceHost: svc})
+	fork := core.NewQuery(c).Git("git://"+host+"/fork", core.GitOpts{ExperimentalServiceHost: svc})
+	upstreamMain := upstream.Branch("main")
+	forkFeature := fork.Branch("feature")
+	// The fork branched from upstream's second commit.
+	base, err := upstream.Tag("two").CommitSHA(ctx)
+	require.NoError(t, err)
+
+	for name, pair := range map[string][2]*core.GitRef{
+		"upstream first": {upstreamMain, forkFeature},
+		"fork first":     {forkFeature, upstreamMain},
+	} {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			commit, err := pair[0].CommonAncestor(pair[1]).CommitSHA(ctx)
+			require.NoError(t, err)
+			require.Equal(t, base, commit)
+		})
+	}
 }
 
 func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {

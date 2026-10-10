@@ -15,6 +15,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// artifactCallTarget carries the item type a call's selectors resolve to, so
+// the shared artifact helpers can narrow to it.
+const artifactCallTarget = "dagger.io/artifact-call-target"
+
 func commandArtifactTypes(cmd *cobra.Command) []string {
 	switch cmd.Name() {
 	case "check":
@@ -27,6 +31,12 @@ func commandArtifactTypes(cmd *cobra.Command) []string {
 		return []string{"Expertise"}
 	case "shell":
 		return []string{"Container", "Directory"}
+	case "call":
+		// Only while a selection is being resolved: a call names a collection
+		// item by dimension, and that item's type is the artifact it selects.
+		if typ := cmd.Annotations[artifactCallTarget]; typ != "" {
+			return []string{typ}
+		}
 	}
 	return nil
 }

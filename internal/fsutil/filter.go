@@ -468,9 +468,12 @@ func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {
 	// We use filepath.Separator here because patternmatcher.Pattern patterns
 	// get transformed to use the native path separator:
 	// https://github.com/moby/patternmatcher/blob/130b41bafc16209dc1b52a103fdac1decad04f1a/patternmatcher.go#L52
-	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"**")
-	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
-	return patStr
+	// Strip only one trailing glob: stripping both would turn "a/*/**" into
+	// the literal "a", which does not cover a/b.
+	if trimmed, ok := strings.CutSuffix(patStr, string(filepath.Separator)+"**"); ok {
+		return trimmed
+	}
+	return strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
 }
 
 func isNotExist(err error) bool {

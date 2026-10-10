@@ -1,0 +1,6 @@
+kind: Fixed
+body: Host directory includes and excludes, Directory.glob and Workspace.glob no longer drop files matched by patterns with a wildcard directory before a trailing glob, such as a/*/**.
+time: 2026-10-09T17:20:52+00:00
+custom:
+    Author: sipsma
+    PR: "14606"

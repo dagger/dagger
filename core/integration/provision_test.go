@@ -24,7 +24,6 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -187,7 +186,7 @@ FAKE CERTIFICATE DATA
 func (ProvisionSuite) TestImageDriverGarbageCollectEngines(ctx context.Context, t *testctx.T) {
 	dockerPs := func(ctx context.Context, t *testctx.T, dockerc *core.Container, cli string) []string {
 		out, err := dockerc.
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			WithExec([]string{cli, "ps", "-q"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -410,7 +409,7 @@ func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts con
 		With(mountDockerConfig(dag)).
 		WithServiceBinding("docker", dockerd).
 		WithEnvVariable("DOCKER_HOST", dockerHost).
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithWorkdir("/work")
 
 	t.Cleanup(func() {
@@ -456,7 +455,7 @@ func podmanSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts con
 		With(mountDockerConfig(dag)).
 		WithServiceBinding("podman", podman).
 		WithEnvVariable("CONTAINER_HOST", podmanHost).
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithWorkdir("/work")
 
 	t.Cleanup(func() {
@@ -523,7 +522,7 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 	t.Cleanup(func() {
 		opts := core.ContainerWithExecOpts{Expect: core.ReturnTypeAny, InsecureRootCapabilities: true}
 		_, err := ctr.
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			WithExec([]string{"sh", "-c", "nerdctl rm -f $(nerdctl ps -aq)"}, opts).
 			WithExec([]string{"sh", "-c", "ctr image rm $(ctr image ls -q)"}, opts).
 			WithExec([]string{"sh", "-c", "ctr content rm $(ctr content ls -q)"}, opts).
@@ -611,7 +610,7 @@ func mountDockerConfig(dag *dagger.Client) core.WithContainerFunc {
 		}
 
 		return ctr.WithMountedSecret(
-			"/root/.docker/config.json", core.NewQuery(dag).SetSecret("docker-config-"+identity.NewID(), string(content)),
+			"/root/.docker/config.json", core.NewQuery(dag).SetSecret("docker-config-"+rand.Text(), string(content)),
 		)
 	}
 }

@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,7 +23,6 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
@@ -392,7 +392,7 @@ func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 	t.Run("cache volume args", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		volName := identity.NewID()
+		volName := rand.Text()
 
 		modGen := moduleFixture(t, c, "go/call-cache-volume")
 

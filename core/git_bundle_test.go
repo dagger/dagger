@@ -5,11 +5,14 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -18,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestRunGitEnvTelemetryPrivacy(t *testing.T) {
@@ -157,7 +161,8 @@ func TestCreateRemoteGitBundlePreservesAnnotatedTag(t *testing.T) {
 	origin := t.TempDir()
 	gitBundleTestRun(t, origin, "init", "--bare", "--quiet")
 	tree := gitBundleTestRun(t, origin, "mktree")
-	head := gitBundleTestRun(t, origin, "commit-tree", tree, "-m", "head")
+	root0 := gitBundleTestRun(t, origin, "commit-tree", tree, "-m", "root")
+	head := gitBundleTestRun(t, origin, "commit-tree", tree, "-p", root0, "-m", "head")
 	gitBundleTestRun(t, origin, "update-ref", "refs/heads/main", head)
 	gitBundleTestRun(t, origin, "tag", "-a", "v1", "-m", "annotation", head)
 	tag := gitBundleTestRun(t, origin, "rev-parse", "refs/tags/v1")
@@ -171,9 +176,19 @@ func TestCreateRemoteGitBundlePreservesAnnotatedTag(t *testing.T) {
 	targets := []*gitBundleTarget{{
 		exact: &gitutil.Ref{Name: "refs/tags/v1", SHA: tag}, checkout: &gitutil.Ref{SHA: head},
 	}}
-	require.NoError(t, createGitBundleFromSource(ctx, gitutil.NewGitCLI(gitutil.WithDir(mirror)), &RemoteGitRepository{URL: url}, root, targets, ""))
+	require.NoError(t, prepareGitBundleSource(ctx, gitutil.NewGitCLI(gitutil.WithDir(mirror)), &RemoteGitRepository{URL: url}, root, targets, ""))
+	// The peeled history is pack-copied from the mirror before the origin
+	// fetch, which negotiates against it and so transfers (unpacks loose)
+	// only the tag object. Its temporary ref is gone.
+	require.Contains(t, gitBundleTestRun(t, gitBundleScratch(root), "count-objects", "-v"), "count: 1\n")
+	require.Equal(t, "refs/tags/v1", gitBundleTestRun(t, gitBundleScratch(root), "for-each-ref", "--format=%(refname)"))
+	// A remote bundle is packed with the mirror released: once prepared, the
+	// scratch repository must own everything it bundles.
 	require.NoError(t, os.RemoveAll(origin))
 	require.NoError(t, os.RemoveAll(mirror))
+	require.NoFileExists(t, filepath.Join(gitBundleScratch(root), "objects", "info", "alternates"))
+	require.NoError(t, finishGitBundleFile(ctx, root, targets, ""))
+	require.NoDirExists(t, gitBundleScratch(root))
 	dest := t.TempDir()
 	gitBundleTestRun(t, dest, "init", "--bare", "--quiet")
 	bundlePath := filepath.Join(root, "repository.bundle")
@@ -182,6 +197,112 @@ func TestCreateRemoteGitBundlePreservesAnnotatedTag(t *testing.T) {
 	require.Equal(t, tag, gitBundleTestRun(t, dest, "rev-parse", "refs/tags/v1"))
 	require.Contains(t, gitBundleTestRun(t, dest, "cat-file", "-p", tag), "annotation")
 	gitBundleTestRun(t, dest, "fsck", "--full", "--strict")
+}
+
+func gitBundleTestRefs(bundle *GitBundle) []string {
+	refs := make([]string, len(bundle.Refs))
+	for i, ref := range bundle.Refs {
+		refs[i] = ref.Name + " " + ref.SHA
+	}
+	return refs
+}
+
+// Bundling a remote repository copies its refs out of the mirror with
+// pack-objects; the bundle must be the one the fetch produced, and creating
+// it must not need the mirror once prepared. An unqualified HEAD target stays
+// on the fetch, which resolves its destination its own way.
+func TestCreateRemoteGitBundlePackMatchesFetch(t *testing.T) {
+	ctx := t.Context()
+	source, base, next := gitMirrorTestSource(t)
+	first := gitMirrorTestRun(t, source, "rev-list", "--max-parents=0", base)
+	targets := []*gitBundleTarget{
+		{exact: &gitutil.Ref{Name: "HEAD", SHA: base}, checkout: &gitutil.Ref{SHA: base}},
+		{exact: &gitutil.Ref{Name: "refs/heads/main", SHA: next}, checkout: &gitutil.Ref{Name: "refs/heads/main", SHA: next}},
+		{exact: &gitutil.Ref{Name: "refs/tags/base", SHA: base}, checkout: &gitutil.Ref{Name: "refs/tags/base", SHA: base}},
+	}
+	url := &gitutil.GitURL{Scheme: "file", Path: source}
+	bundle := func(t *testing.T, pack bool) (*GitBundle, string) {
+		repo, git, mirror := gitMirrorTestRepo(t, source)
+		gitMirrorTestFetch(t, repo, git, next, 0)
+		mirrorGit := gitutil.NewGitCLI(gitutil.WithDir(mirror))
+		if !pack {
+			mirrorGit = mirrorGit.New(gitutil.WithExec(func(_ context.Context, cmd *exec.Cmd) error {
+				if slices.Contains(cmd.Args, "pack-objects") {
+					return errors.New("injected pack failure")
+				}
+				return cmd.Run()
+			}))
+		}
+		root := t.TempDir()
+		require.NoError(t, prepareGitBundleSource(ctx, mirrorGit, &RemoteGitRepository{URL: url}, root, targets, first))
+		// These small fetches unpack to loose objects; only the copy packs.
+		packs, err := filepath.Glob(filepath.Join(gitBundleScratch(root), "objects", "pack", "*.pack"))
+		require.NoError(t, err)
+		require.Equal(t, pack, len(packs) == 1, "packs: %v", packs)
+		require.NoFileExists(t, filepath.Join(gitBundleScratch(root), "objects", "info", "alternates"))
+		require.NoError(t, os.RemoveAll(mirror))
+		require.NoError(t, finishGitBundleFile(ctx, root, targets, first))
+		path := filepath.Join(root, "repository.bundle")
+		header, err := inspectGitBundleFile(path)
+		require.NoError(t, err)
+		// Unbundle onto the prerequisite to compare the exact object sets.
+		dest := t.TempDir()
+		gitBundleTestRun(t, dest, "init", "--bare", "--quiet")
+		gitBundleTestRun(t, dest, "fetch", "--quiet", "--no-tags", "file://"+source, first+":refs/prerequisite")
+		require.NoError(t, fetchGitBundleRefs(ctx, dest, path, header.Refs))
+		gitBundleTestRun(t, dest, "fsck", "--full", "--strict")
+		objects := strings.Split(gitBundleTestRun(t, dest, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)"), "\n")
+		sort.Strings(objects)
+		return header, strings.Join(objects, "\n")
+	}
+	fetchedHeader, fetchedObjects := bundle(t, false)
+	packedHeader, packedObjects := bundle(t, true)
+	require.Equal(t, gitBundleTestRefs(fetchedHeader), gitBundleTestRefs(packedHeader))
+	require.True(t, gitBundleHeadersEqual(fetchedHeader, packedHeader))
+	require.Equal(t, []string{first}, packedHeader.PrerequisiteSHAs)
+	require.Equal(t, fetchedObjects, packedObjects)
+}
+
+// Importing a bundle borrows its source (for a remote, the locked mirror) only
+// to copy the prerequisites' history. Verifying, unbundling and normalizing
+// run with the source released, so deleting it in between must not matter.
+func TestGitBundleImportIndependentAfterPrerequisites(t *testing.T) {
+	ctx := context.Background()
+	source := t.TempDir()
+	gitBundleTestRun(t, source, "init", "--quiet", "--initial-branch=main")
+	require.NoError(t, os.WriteFile(filepath.Join(source, "file"), []byte("base\n"), 0o600))
+	gitBundleTestRun(t, source, "add", ".")
+	gitBundleTestRun(t, source, "commit", "--quiet", "-m", "base")
+	base := gitBundleTestRun(t, source, "rev-parse", "HEAD")
+	require.NoError(t, os.WriteFile(filepath.Join(source, "file"), []byte("head\n"), 0o600))
+	gitBundleTestRun(t, source, "commit", "--quiet", "-am", "head")
+	head := gitBundleTestRun(t, source, "rev-parse", "HEAD")
+	gitBundleTestRun(t, source, "gc", "--quiet")
+	bundlePath := filepath.Join(t.TempDir(), "repository.bundle")
+	gitBundleTestRun(t, source, "bundle", "create", "--version=3", bundlePath, "refs/heads/main", "^"+base)
+	header, err := inspectGitBundleFile(bundlePath)
+	require.NoError(t, err)
+	require.Equal(t, []string{base}, header.PrerequisiteSHAs)
+
+	root := t.TempDir()
+	gitBundleTestRun(t, root, "init", "--bare", "--quiet")
+	prerequisites := []*gitutil.Ref{{SHA: base}}
+	method, err := copyGitBundlePrerequisites(ctx, gitutil.NewGitCLI(gitutil.WithDir(source)), root, prerequisites)
+	require.NoError(t, err)
+	fetched := 0
+	if method == "fetch" {
+		fetched = len(prerequisites)
+	}
+
+	require.NoError(t, os.RemoveAll(source))
+	remotes := []GitRemote{{Name: "origin", URL: "https://example.com/repo", Implicit: true}}
+	require.NoError(t, finishGitBundleImport(ctx, trace.SpanFromContext(ctx), root, bundlePath, header.Refs, fetched, remotes, "origin"))
+	require.NoFileExists(t, filepath.Join(root, "objects", "info", "alternates"))
+	gitBundleTestRun(t, root, "fsck", "--full", "--strict")
+	require.Equal(t, head, gitBundleTestRun(t, root, "rev-parse", "refs/heads/main"))
+	require.Equal(t, "base", gitBundleTestRun(t, root, "log", "-1", "--format=%s", "refs/heads/main^"))
+	require.Equal(t, "refs/heads/main", gitBundleTestRun(t, root, "for-each-ref", "--format=%(refname)"), "temporary prerequisite refs must not survive")
+	require.Equal(t, "https://example.com/repo", gitBundleTestRun(t, root, "remote", "get-url", "origin"))
 }
 
 func TestCreateLocalGitBundleQuotesAlternatePath(t *testing.T) {

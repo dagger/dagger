@@ -20,6 +20,7 @@ var providerCatalogIDs = map[string]catwalk.InferenceProvider{
 	"anthropic":    catwalk.InferenceProviderAnthropic,
 	"openai":       catwalk.InferenceProviderOpenAI,
 	"openai-codex": catwalk.InferenceProviderOpenAI,
+	"openrouter":   catwalk.InferenceProviderOpenRouter,
 	"google":       catwalk.InferenceProviderGemini,
 }
 

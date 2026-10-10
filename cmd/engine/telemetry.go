@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,7 +17,6 @@ import (
 	"github.com/dagger/dagger/engine/telemetry/cgroupmetrics"
 	"github.com/dagger/dagger/engine/telemetry/networkmetrics"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -55,7 +55,7 @@ func init() {
 		// use the hostname
 		hostname, err := os.Hostname()
 		if err != nil {
-			engineName = "rand-" + identity.NewID() // random ID as a fallback
+			engineName = "rand-" + rand.Text() // random ID as a fallback
 		} else {
 			engineName = hostname
 		}

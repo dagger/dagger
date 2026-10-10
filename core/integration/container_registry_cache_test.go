@@ -2,12 +2,12 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/config"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -105,7 +105,7 @@ func resetCountingOCIRegistry(ctx context.Context, t *testctx.T, c *dagger.Clien
 	_, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding(countingRegistryHost, registrySvc).
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithExec([]string{"wget", "-qO-", "http://" + countingRegistryHost + ":5000/_reset"}).
 		Sync(ctx)
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func pushCountingOCIRegistryImage(ctx context.Context, t *testctx.T, c *dagger.C
 		WithNewFile("/src/main.go", countingOCIRegistryPusherSource).
 		WithMountedCache("/tmp/go-cache", core.NewQuery(c).CacheVolume("counting-oci-registry-pusher-go-cache")).
 		WithEnvVariable("GOCACHE", "/tmp/go-cache").
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithExec([]string{"go", "run", "/src/main.go", marker}).
 		Sync(ctx)
 	require.NoError(t, err)
@@ -130,7 +130,7 @@ func readCountingOCIRegistryCounts(ctx context.Context, t *testctx.T, c *dagger.
 	out, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding(countingRegistryHost, registrySvc).
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithExec([]string{"wget", "-qO-", "http://" + countingRegistryHost + ":5000/_counts"}).
 		Stdout(ctx)
 	require.NoError(t, err)

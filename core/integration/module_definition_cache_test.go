@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -12,7 +13,6 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -90,8 +90,8 @@ type definitionEngine struct {
 
 func startDefinitionEngine(ctx context.Context, t *testctx.T, outer *dagger.Client, name string) *definitionEngine {
 	t.Helper()
-	e := &definitionEngine{name: name, volume: core.NewQuery(outer).CacheVolume("module-definition-" + name + "-" + identity.NewID())}
-	ctr := devEngineContainerWithStateKey(outer, "module-definition-"+name+"-state-"+identity.NewID(), func(ctr *core.Container) *core.Container {
+	e := &definitionEngine{name: name, volume: core.NewQuery(outer).CacheVolume("module-definition-" + name + "-" + rand.Text())}
+	ctr := devEngineContainerWithStateKey(outer, "module-definition-"+name+"-state-"+rand.Text(), func(ctr *core.Container) *core.Container {
 		return ctr.WithMountedCache("/transfer-fixture", e.volume).
 			WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture").
 			WithEntrypoint([]string{"sh", "-c", `exec /usr/local/bin/dagger-entrypoint.sh "$@" 2>>/transfer-fixture/engine.log`, "dagger-engine"})
@@ -124,7 +124,7 @@ func (e *definitionEngine) connect(ctx context.Context, t *testctx.T, dir string
 func (e *definitionEngine) log(ctx context.Context, t *testctx.T, outer *dagger.Client) string {
 	t.Helper()
 	out, err := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/fixture", e.volume).
-		WithEnvVariable("READ", identity.NewID()).
+		WithEnvVariable("READ", rand.Text()).
 		WithExec([]string{"sh", "-c", "cat /fixture/engine.log 2>/dev/null || true"}).Stdout(ctx)
 	require.NoError(t, err)
 	return out
@@ -337,7 +337,7 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 
 	b := startDefinitionEngine(ctx, t, outer, "b")
 	_, err := core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", a.volume).WithMountedCache("/destination", b.volume).
-		WithEnvVariable("COPY", identity.NewID()).
+		WithEnvVariable("COPY", rand.Text()).
 		WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/definition.json /destination/bundles/definition.json; cp -a /source/blobs /destination/"}).Sync(ctx)
 	require.NoError(t, err)
 	importer := b.connect(ctx, t, checkout)

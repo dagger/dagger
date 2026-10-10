@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 const runAsInitEnv = "_DAGGER_INIT_TEST_RUN_AS_INIT"
@@ -51,7 +51,7 @@ func TestInitReportsTiming(t *testing.T) {
 	defer r.Close()
 
 	cmd := exec.Command(os.Args[0], "sh", "-c", `sleep 0.2; env; test -e /proc/$$/fd/3 && echo fd3-leaked; exit 3`)
-	cmd.Env = initEnv(engine.InitTimingFDEnv + "=3")
+	cmd.Env = initEnv(distconsts.InitTimingFDEnv + "=3")
 	cmd.ExtraFiles = []*os.File{w}
 	before := monotonicNS()
 	out, err := cmd.Output()
@@ -60,7 +60,7 @@ func TestInitReportsTiming(t *testing.T) {
 	var exitErr *exec.ExitError
 	require.ErrorAs(t, err, &exitErr)
 	require.Equal(t, 3, exitErr.ExitCode(), "the command's exit status passes through")
-	require.NotContains(t, string(out), engine.InitTimingFDEnv, "the command doesn't inherit the variable")
+	require.NotContains(t, string(out), distconsts.InitTimingFDEnv, "the command doesn't inherit the variable")
 	require.NotContains(t, string(out), "fd3-leaked", "the command doesn't inherit the fd")
 
 	var started, spawned, exited int64
@@ -75,9 +75,38 @@ func TestInitReportsTiming(t *testing.T) {
 func TestInitWithoutTiming(t *testing.T) {
 	cmd := exec.Command(os.Args[0], "sh", "-c", `env`)
 	// An fd below 3 is never a timing pipe.
-	cmd.Env = initEnv(engine.InitTimingFDEnv + "=1")
+	cmd.Env = initEnv(distconsts.InitTimingFDEnv + "=1")
 	out, err := cmd.Output()
 	require.NoError(t, err)
-	require.NotContains(t, string(out), engine.InitTimingFDEnv)
+	require.NotContains(t, string(out), distconsts.InitTimingFDEnv)
 	require.NotRegexp(t, `^\d+ \d+ \d+\n`, string(out), "nothing is written to stdout")
+}
+
+// /.init runs before every exec's command, so all its dependencies'
+// initialization is paid per exec: keep it to the standard library and
+// x/sys. The session attachables live in cmd/init-session.
+func TestInitImportsStayMinimal(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}{{end}}", ".").Output()
+	require.NoError(t, err)
+	for _, pkg := range strings.Fields(string(out)) {
+		switch {
+		case pkg == "github.com/dagger/dagger/cmd/init",
+			pkg == "github.com/dagger/dagger/engine/distconsts",
+			strings.HasPrefix(pkg, "golang.org/x/sys/"):
+		default:
+			t.Errorf("/.init depends on %s", pkg)
+		}
+	}
+}
+
+func TestInitWithoutSessionHelper(t *testing.T) {
+	// The command's env names a session, but the engine mounted no session
+	// helper (it only does for nested clients): the command still runs.
+	cmd := exec.Command(os.Args[0], "sh", "-c", `echo ran; exit 4`)
+	cmd.Env = initEnv("DAGGER_SESSION_TOKEN=token", "DAGGER_SESSION_PORT=1")
+	out, err := cmd.Output()
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, 4, exitErr.ExitCode())
+	require.Equal(t, "ran\n", string(out))
 }

@@ -8,6 +8,7 @@ package dangshared
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +22,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/propagation"
@@ -143,10 +143,10 @@ func NewNestedClientMetadata(ctx context.Context) (*engine.ClientMetadata, error
 	}
 
 	nestedClientMetadata := &engine.ClientMetadata{
-		ClientID:          identity.NewID(),
-		ClientSecretToken: identity.NewID(),
+		ClientID:          rand.Text(),
+		ClientSecretToken: rand.Text(),
 		SessionID:         clientMetadata.SessionID,
-		ClientStableID:    identity.NewID(),
+		ClientStableID:    rand.Text(),
 		ClientVersion:     engine.Version,
 		AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
 	}

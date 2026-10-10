@@ -14,6 +14,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"sort"
@@ -25,7 +26,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
 // benchEnv opts benchmark-style integration tests in.
@@ -200,7 +200,7 @@ func (s benchSample) String() string {
 func runChangesetBench(ctx context.Context, t *testctx.T, repoID core.ID, scenario string, captureRecipe bool) benchSample {
 	c, sink := connectWithTrace(ctx, t)
 	ws := core.Ref[*core.Directory](core.NewQuery(c), repoID).
-		WithNewFile("NONCE", identity.NewID()).
+		WithNewFile("NONCE", rand.Text()).
 		WithNewFile("dagger.toml", "[modules.bench]\nsource = \"modules/bench\"\n").
 		WithNewFile("modules/bench/dagger.json", `{"name":"bench","engineVersion":"v1.0.0-0","sdk":"dang"}`).
 		WithNewFile("modules/bench/main.dang", benchModule()).

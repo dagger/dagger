@@ -63,8 +63,8 @@ func TestNativeParentHistoryProvenance(t *testing.T) {
 
 func dirHistorySource(dir string, donor bool, anchor string) *donorHistorySource {
 	src := &donorHistorySource{donor: donor, anchor: anchor, gitDir: donorGitDir}
-	src.mount = func(_ context.Context, fn func(*gitutil.GitCLI) error) error {
-		return fn(gitutil.NewGitCLI(gitutil.WithDir(dir)))
+	src.mount = func(ctx context.Context, fn func(context.Context, *gitutil.GitCLI) error) error {
+		return fn(ctx, gitutil.NewGitCLI(gitutil.WithDir(dir)))
 	}
 	if !donor {
 		src.gitDir = func(ctx context.Context, root string) (string, error) {

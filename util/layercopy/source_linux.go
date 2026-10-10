@@ -27,6 +27,10 @@ type source struct {
 	baseMinLayer int
 	baseCached   bool
 	cache        *sourceCache
+
+	// onReadDir, if set, is called with each directory the copy reads. Tests
+	// use it to check which directories a filtered copy walks.
+	onReadDir func(rel string)
 }
 
 type sourceEntry struct {
@@ -115,6 +119,9 @@ func (s *source) readDir(rel string, minLayer int) ([]sourceEntry, error) {
 		return nil, err
 	}
 	rel = cleanRel(rel)
+	if s.onReadDir != nil {
+		s.onReadDir(rel)
+	}
 	if !s.overlay {
 		return s.readBindDir(rel)
 	}

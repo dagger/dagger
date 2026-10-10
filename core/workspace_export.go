@@ -56,7 +56,7 @@ func (ref *GitRef) WorkspaceExportBaseReady(ctx context.Context) (bool, error) {
 	if err := repo.ValidateSelfContained(ctx); err != nil {
 		return false, ctx.Err()
 	}
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err := repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 		return workspaceExportBaseStorageReady(ctx, git, ref.Ref.SHA)
 	})
 	if err != nil {
@@ -203,7 +203,7 @@ func WorkspaceSaveDirectory(ctx context.Context, repo dagql.ObjectResult[*Direct
 			head := base
 			if ref != nil {
 				head = ref.Ref.SHA
-				if err := ref.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{ref.Backend}, func(remote *gitutil.GitCLI) error {
+				if err := ref.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{ref.Backend}, func(ctx context.Context, remote *gitutil.GitCLI) error {
 					url, err := remote.URL(ctx)
 					if err != nil {
 						return err

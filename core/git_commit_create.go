@@ -340,7 +340,7 @@ func GitCommitChangesetNative(ctx context.Context, parent dagql.ObjectResult[*Gi
 		if err != nil {
 			return err
 		}
-		return local.mount(ctx, 0, false, nil, func(source *gitutil.GitCLI) error {
+		return local.mount(ctx, 0, false, nil, func(ctx context.Context, source *gitutil.GitCLI) error {
 			objects, err := source.Run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			if err != nil {
 				return err

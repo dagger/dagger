@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,7 +35,6 @@ import (
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	randid "github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bknetwork "github.com/dagger/dagger/internal/buildkit/util/network"
@@ -410,6 +410,15 @@ func (c *Client) injectInit(_ context.Context, state *execState) error {
 		Readonly: true,
 	})
 	state.procInfo.Meta.Args = append([]string{initPath}, state.procInfo.Meta.Args...)
+
+	// nested clients' /.init starts the session attachables helper
+	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
+		state.mounts = append(state.mounts, executor.Mount{
+			Src:      hostBindMount{srcPath: distconsts.DaggerInitSessionPath},
+			Dest:     distconsts.InitSessionContainerPath,
+			Readonly: true,
+		})
+	}
 
 	return nil
 }
@@ -1216,7 +1225,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	}
 
 	if state.nestedClientMetadata.ClientSecretToken == "" {
-		state.nestedClientMetadata.ClientSecretToken = randid.NewID()
+		state.nestedClientMetadata.ClientSecretToken = rand.Text()
 	}
 	if state.nestedClientMetadata.ClientHostname == "" {
 		state.nestedClientMetadata.ClientHostname = state.spec.Hostname
@@ -1228,7 +1237,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+state.nestedClientMetadata.ClientSecretToken)
 	state.spec.Process.Env = append(state.spec.Process.Env, engine.NestedClientIDEnv+"="+state.nestedClientMetadata.ClientID)
 
-	state.nestedClientMetadata.ClientStableID = randid.NewID()
+	state.nestedClientMetadata.ClientStableID = rand.Text()
 
 	parentClientID, err := engine.NestedClientParentID(ctx, state.nestedClientMetadata.SessionID)
 	if err != nil {
@@ -1530,7 +1539,7 @@ func (c *Client) installCACerts(ctx context.Context, state *execState) error {
 	caInstaller, err := cacerts.NewInstaller(ctx, state.spec, func(ctx context.Context, args ...string) error {
 		output := new(bytes.Buffer)
 		caExecState := &execState{
-			id: randid.NewID(),
+			id: rand.Text(),
 			procInfo: &executor.ProcessInfo{
 				Stdout: nopCloser{output},
 				Stderr: nopCloser{output},

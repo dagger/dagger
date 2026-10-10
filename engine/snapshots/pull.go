@@ -2,6 +2,7 @@ package snapshots
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	telemetry "github.com/dagger/otel-go"
@@ -441,7 +441,7 @@ func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs
 	if provider == nil {
 		return chainError(ctx, chainMode, desc, "provider", errors.Wrapf(cerrdefs.ErrNotFound, "missing local layer %s", desc.Digest))
 	}
-	ref := "snapshot-import-" + identity.NewID()
+	ref := "snapshot-import-" + rand.Text()
 	writer, err := content.OpenWriter(ctx, cm.ContentStore, content.WithRef(ref), content.WithDescriptor(desc))
 	if cerrdefs.IsAlreadyExists(err) {
 		return nil
@@ -489,7 +489,7 @@ func (cm *snapshotManager) copyBuiltinLayer(ctx context.Context, desc ocispecs.D
 	if info.Size != desc.Size {
 		return false, errors.Errorf("builtin image store has %s with size %d, the layer says %d", desc.Digest, info.Size, desc.Size)
 	}
-	ref := "builtin-layer-" + identity.NewID()
+	ref := "builtin-layer-" + rand.Text()
 	writer, err := content.OpenWriter(ctx, cm.ContentStore, content.WithRef(ref), content.WithDescriptor(desc))
 	if cerrdefs.IsAlreadyExists(err) {
 		return cm.pinBuiltinLayer(ctx, desc)

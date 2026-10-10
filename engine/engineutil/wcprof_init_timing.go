@@ -12,12 +12,12 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // initTiming is a pipe on which the injected /.init reports when it started,
-// spawned the user's command and reaped it (see engine.InitTimingFDEnv). It
+// spawned the user's command and reaped it (see distconsts.InitTimingFDEnv). It
 // splits exec.processRun in wcprof into the init's start-up, the command's
 // spawn, the command itself, and the exit (init exit, runc exit and stdio
 // drain), which the engine can't observe on its own.
@@ -50,7 +50,7 @@ func (t *initTiming) withEnv(spec *specs.Spec) *specs.Spec {
 	}
 	cp := *spec
 	proc := *spec.Process
-	proc.Env = append(slices.Clip(proc.Env), fmt.Sprintf("%s=%d", engine.InitTimingFDEnv, initTimingFD))
+	proc.Env = append(slices.Clip(proc.Env), fmt.Sprintf("%s=%d", distconsts.InitTimingFDEnv, initTimingFD))
 	cp.Process = &proc
 	return &cp
 }
@@ -60,7 +60,7 @@ func (t *initTiming) withEnv(spec *specs.Spec) *specs.Spec {
 // container start from that spec but get neither the fd nor /.init.
 func withoutInitTimingEnv(env []string) []string {
 	return slices.DeleteFunc(env, func(kv string) bool {
-		return strings.HasPrefix(kv, engine.InitTimingFDEnv+"=")
+		return strings.HasPrefix(kv, distconsts.InitTimingFDEnv+"=")
 	})
 }
 

@@ -22,6 +22,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -41,7 +42,6 @@ import (
 	"dagger.io/dagger/core"
 
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/stretchr/testify/require"
@@ -112,7 +112,7 @@ func (ServiceSuite) TestNestingNewSession(ctx context.Context, t *testctx.T) {
 	// main client of every session on the engine.
 	newSessionService := func(c *dagger.Client, clientID string) *core.Container {
 		block := fmt.Sprintf(`{ container { from(address: %q) { withEnvVariable(name: "BUST", value: %q) { withExec(args: ["sleep", "3600"]) { sync } } } } }`,
-			alpineImage, identity.NewID())
+			alpineImage, rand.Text())
 		return core.NewQuery(c).Container().From(busyboxImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithNewFile("/block.graphql", block).
@@ -123,7 +123,7 @@ func (ServiceSuite) TestNestingNewSession(ctx context.Context, t *testctx.T) {
 
 	t.Run("asService", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		clientID := identity.NewID()
+		clientID := rand.Text()
 		svc, err := newSessionService(c, clientID).
 			AsService(core.ContainerAsServiceOpts{
 				Args:                     []string{"sh", "-c", serve},
@@ -146,7 +146,7 @@ func (ServiceSuite) TestNestingNewSession(ctx context.Context, t *testctx.T) {
 		// close that client and observe from another one.
 		c := connect(ctx, t)
 		observer := connect(ctx, t)
-		clientID := identity.NewID()
+		clientID := rand.Text()
 		upCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		upErr := make(chan error, 1)
@@ -731,12 +731,12 @@ func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *te
 
 	script := core.NewQuery(c).Container().
 		From(alpineImage).
-		WithNewFile("script", "#!/bin/sh\nwhile true; do echo -n cool | nc -l -p 1337; done").
+		WithNewFile("script", "#!/bin/sh\nmkdir -p /www && echo -n cool > /www/index.html && exec httpd -f -p 1337 -h /www").
 		WithExec([]string{"/bin/sh", "-c", "chmod +x script"}).
 		File("script")
 
 	srv := core.NewQuery(c).Container().
-		From(alpineImage).
+		From(busyboxImage).
 		WithFile("/bin/app", script).
 		WithSymlink("doesnt", "matter"). // WithSymlink runs as a dagOp, so this covers services built from dagOp-produced containers
 		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
@@ -746,7 +746,7 @@ func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *te
 	s, err := core.NewQuery(c).Container().
 		From(alpineImage).
 		WithServiceBinding("coolserver", srv.AsService()).
-		WithExec([]string{"sh", "-c", "nc coolserver 1337"}).
+		WithExec([]string{"sh", "-c", "wget -q -O- http://coolserver:1337"}).
 		Stdout(ctx)
 
 	require.NoError(t, err)
@@ -802,7 +802,7 @@ func (ServiceSuite) TestExecServiceExitShortCircuits(ctx context.Context, t *tes
 
 	_, err = core.NewQuery(c).Container().
 		From(alpineImage).
-		WithEnvVariable("CACHEBUST", identity.NewID()).
+		WithEnvVariable("CACHEBUST", rand.Text()).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"sh", "-c", "sleep 10; echo should-not-run"}).
 		Sync(ctx)
@@ -819,7 +819,7 @@ func (ServiceSuite) TestServiceDependencyExitShortCircuits(ctx context.Context, 
 	// already been returned as running and the exit must propagate through it.
 	// The watchdog exits with a different code so a missing signal can't pass
 	// for the intended crash.
-	gate := core.NewQuery(c).CacheVolume("service-dependency-exit-" + identity.NewID())
+	gate := core.NewQuery(c).CacheVolume("service-dependency-exit-" + rand.Text())
 
 	dep := core.NewQuery(c).Container().
 		From(alpineImage).
@@ -842,7 +842,7 @@ func (ServiceSuite) TestServiceDependencyExitShortCircuits(ctx context.Context, 
 
 	_, err = core.NewQuery(c).Container().
 		From(alpineImage).
-		WithEnvVariable("CACHEBUST", identity.NewID()).
+		WithEnvVariable("CACHEBUST", rand.Text()).
 		WithMountedCache("/gate", gate).
 		WithServiceBinding("app", srv).
 		WithExec([]string{"sh", "-c", "touch /gate/consumer-started; sleep 10; echo should-not-run"}).
@@ -978,7 +978,7 @@ func (ServiceSuite) TestExecServicesDeduping(ctx context.Context, t *testctx.T) 
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("www", srv).
-		WithEnvVariable("CACHEBUST", identity.NewID())
+		WithEnvVariable("CACHEBUST", rand.Text())
 
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
@@ -1036,7 +1036,7 @@ func (ServiceSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
-	content := identity.NewID()
+	content := rand.Text()
 	srv, svcURL := httpService(ctx, t, c, content)
 
 	fileContent, err := core.NewQuery(c).Container().
@@ -1066,7 +1066,7 @@ func (ServiceSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
-	content := identity.NewID()
+	content := rand.Text()
 	srv, svcURL := httpService(ctx, t, c, content)
 
 	fileContent, err := core.NewQuery(c).Container().
@@ -1100,7 +1100,7 @@ func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T)
 		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
-	content := identity.NewID()
+	content := rand.Text()
 	srv, svcURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("/index.html", content))
 
 	fileContent, err := core.NewQuery(c).Container().
@@ -1125,7 +1125,7 @@ func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T)
 func (ServiceSuite) TestExportServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 	srv, httpURL := httpService(ctx, t, c, content)
 
 	client := core.NewQuery(c).Container().
@@ -1166,7 +1166,7 @@ func (ServiceSuite) TestMultiPlatformExportServices(ctx context.Context, t *test
 func (ServiceSuite) TestContainerPublish(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 	srv, url := httpService(ctx, t, c, content)
 
 	testRef := registryRef("services-container-publish")
@@ -1188,7 +1188,7 @@ func (ServiceSuite) TestContainerPublish(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestRootFSServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 	srv, url := httpService(ctx, t, c, content)
 
 	fileContent, err := core.NewQuery(c).Container().
@@ -1207,7 +1207,7 @@ func (ServiceSuite) TestRootFSServices(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestWithRootFSServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 	srv, url := httpService(ctx, t, c, content)
 
 	gitDaemon, repoURL := gitService(ctx, t, c, core.
@@ -1238,7 +1238,7 @@ func (ServiceSuite) TestWithRootFSServices(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestDirectoryServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 	srv, url := httpService(ctx, t, c, content)
 
 	wget := core.NewQuery(c).Container().
@@ -1281,7 +1281,7 @@ func (ServiceSuite) TestDirectoryServices(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestFileServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 	srv, url := httpService(ctx, t, c, content)
 
 	client := core.NewQuery(c).Container().
@@ -1298,7 +1298,7 @@ func (ServiceSuite) TestFileServices(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestWithServiceFileDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	response := identity.NewID()
+	response := rand.Text()
 	srv, httpURL := httpService(ctx, t, c, response)
 	httpFile := core.NewQuery(c).HTTP(httpURL, core.HTTPOpts{
 		ExperimentalServiceHost: srv,
@@ -1343,7 +1343,7 @@ func (ServiceSuite) TestWithServiceFileDirectory(ctx context.Context, t *testctx
 func (ServiceSuite) TestDirectoryEntries(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 
 	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
@@ -1359,7 +1359,7 @@ func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
 	t.Run("triggers error", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		content := identity.NewID()
+		content := rand.Text()
 		gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 		_, err := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 			Branch("foobar").
@@ -1371,7 +1371,7 @@ func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
 	t.Run("with chaining", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		content := identity.NewID()
+		content := rand.Text()
 		gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 		repo, err := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).
 			Branch("main").
@@ -1388,7 +1388,7 @@ func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestDirectoryTimestamp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
 	ts := time.Date(1991, 6, 3, 0, 0, 0, 0, time.UTC)
@@ -1408,7 +1408,7 @@ func (ServiceSuite) TestDirectoryTimestamp(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestWithDirectoryFileServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 
 	gitSrv, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
@@ -1430,7 +1430,7 @@ func (ServiceSuite) TestWithDirectoryFileServices(ctx context.Context, t *testct
 func (ServiceSuite) TestDirectoryExport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 
 	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
@@ -1451,7 +1451,7 @@ func (ServiceSuite) TestDirectoryExport(ctx context.Context, t *testctx.T) {
 func (FileSuite) TestServiceContents(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 
 	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
@@ -1468,7 +1468,7 @@ func (FileSuite) TestServiceSync(ctx context.Context, t *testctx.T) {
 	t.Run("triggers error", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		content := identity.NewID()
+		content := rand.Text()
 		httpSrv, httpURL := httpService(ctx, t, c, content)
 
 		_, err := core.NewQuery(c).HTTP(httpURL+"/foobar", core.HTTPOpts{
@@ -1482,7 +1482,7 @@ func (FileSuite) TestServiceSync(ctx context.Context, t *testctx.T) {
 	t.Run("with chaining", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		content := identity.NewID()
+		content := rand.Text()
 		httpSrv, httpURL := httpService(ctx, t, c, content)
 
 		file, err := core.NewQuery(c).HTTP(httpURL, core.HTTPOpts{
@@ -1499,7 +1499,7 @@ func (FileSuite) TestServiceSync(ctx context.Context, t *testctx.T) {
 func (FileSuite) TestServiceExport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 
 	gitDaemon, repoURL := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", content))
 
@@ -1522,7 +1522,7 @@ func (FileSuite) TestServiceExport(ctx context.Context, t *testctx.T) {
 func (FileSuite) TestServiceTimestamp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 
 	httpSrv, httpURL := httpService(ctx, t, c, content)
 
@@ -1545,14 +1545,14 @@ func (FileSuite) TestServiceTimestamp(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestStartStop(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 
 	httpSrv, httpURL := httpService(ctx, t, c, content)
 
 	fetch := func() (string, error) {
 		return core.NewQuery(c).Container().
 			From(alpineImage).
-			WithEnvVariable("BUST", identity.NewID()).
+			WithEnvVariable("BUST", rand.Text()).
 			WithExec([]string{"wget", "-O-", httpURL}).
 			Stdout(ctx)
 	}
@@ -1587,7 +1587,7 @@ func (ServiceSuite) TestStartStopKill(ctx context.Context, t *testctx.T) {
 	fetch := func() (string, error) {
 		return core.NewQuery(c).Container().
 			From(alpineImage).
-			WithEnvVariable("BUST", identity.NewID()).
+			WithEnvVariable("BUST", rand.Text()).
 			WithExec([]string{"wget", "-O-", httpURL + "/signals.txt"}).
 			Stdout(ctx)
 	}
@@ -1642,14 +1642,14 @@ func (ServiceSuite) TestNoCrossTalk(ctx context.Context, t *testctx.T) {
 	c2 := connect(ctx, t)
 	defer c2.Close()
 
-	content1 := identity.NewID()
+	content1 := rand.Text()
 
 	httpSrv1, httpURL1 := httpService(ctx, t, c1, content1)
 
 	fetch := func(c *dagger.Client) (string, error) {
 		return core.NewQuery(c).Container().
 			From(alpineImage).
-			WithEnvVariable("BUST", identity.NewID()).
+			WithEnvVariable("BUST", rand.Text()).
 			WithExec([]string{"wget", "-O-", httpURL1}).
 			Stdout(ctx)
 	}
@@ -1669,7 +1669,7 @@ func (ServiceSuite) TestNoCrossTalk(ctx context.Context, t *testctx.T) {
 func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	content := identity.NewID()
+	content := rand.Text()
 
 	t.Run("no options means bind to random", func(ctx context.Context, t *testctx.T) {
 		srv := core.NewQuery(c).Container().
@@ -2137,7 +2137,7 @@ server {
 		WithNewFile("/etc/nginx/conf.d/default.conf", config.String()).
 		WithMountedDirectory("/usr/share/nginx/html", dir).
 		WithEnvVariable("CACHE_BUSTER", fmt.Sprintf("%s-%d", username, time.Now().UnixNano())).
-		WithMountedSecret("/usr/share/nginx/htpasswd", core.NewQuery(c).SetSecret("htpasswd-"+identity.NewID(), username+":{PLAIN}"+tokenPlaintext), core.ContainerWithMountedSecretOpts{
+		WithMountedSecret("/usr/share/nginx/htpasswd", core.NewQuery(c).SetSecret("htpasswd-"+rand.Text(), username+":{PLAIN}"+tokenPlaintext), core.ContainerWithMountedSecretOpts{
 			Owner: "nginx",
 		}).
 		WithExposedPort(80).
@@ -2217,7 +2217,7 @@ test -x /usr/lib/git-core/git-http-backend
 
 	if token != nil {
 		ctr = ctr.WithMountedSecret(
-			"/usr/share/nginx/htpasswd", core.NewQuery(c).SetSecret("htpasswd-"+identity.NewID(), username+":{PLAIN}"+tokenPlaintext), core.ContainerWithMountedSecretOpts{Owner: "nginx"},
+			"/usr/share/nginx/htpasswd", core.NewQuery(c).SetSecret("htpasswd-"+rand.Text(), username+":{PLAIN}"+tokenPlaintext), core.ContainerWithMountedSecretOpts{Owner: "nginx"},
 		)
 	}
 

@@ -60,14 +60,6 @@ const (
 	// client's refresher hook may do a network round trip inside it, so without
 	// a bound a wedged token endpoint would hang the LLM call indefinitely.
 	credentialResolveTimeout = 30 * time.Second
-
-	// credentialExpiryEnvSuffix names the variable carrying a token's expiry:
-	// ANTHROPIC_AUTH_TOKEN -> ANTHROPIC_AUTH_TOKEN_EXPIRES_AT. The value is RFC
-	// 3339 UTC and is the true expiry with no safety margin baked in (the
-	// margin is applied here, at check time, so it can be tuned without
-	// rewriting what the client persisted). Absent, empty or unparseable means
-	// "unknown".
-	credentialExpiryEnvSuffix = "_EXPIRES_AT"
 )
 
 // Credential is a provider credential as observed at one point in time.
@@ -145,7 +137,7 @@ func (src *CredentialSource) Credential(ctx context.Context) (Credential, error)
 	}
 
 	if src.rejected != "" {
-		ctx = secretprovider.ContextWithRejectedEnvValue(ctx, src.rejected)
+		ctx = secretprovider.ContextWithRejectedSecretValue(ctx, src.rejected)
 	}
 	cred, err := src.resolve(ctx)
 	if err != nil {
@@ -209,40 +201,42 @@ func credentialHorizon(now time.Time, cred Credential) time.Time {
 	return capped
 }
 
-// credentialReloader re-runs getenv for an OAuth token variable and for the
-// companion variable carrying its expiry.
+// credentialReloader resolves an OAuth token's secret URI and, when one is
+// configured, the companion URI carrying its expiry.
 //
 // The two are read in that order, in one resolution, on purpose: the client's
-// refresher hook fires on the *token* lookup and rewrites both variables, so
+// resolver may rotate the token on the *token* read and rewrite both, so
 // reading the expiry first would pair a fresh token with the outgoing one's
 // expiry — expiring the cache an hour early at best, and pinning a stale
 // lifetime onto a new token at worst.
 //
-// The returned resolver carries no client identity of its own: LoadClientConfig
-// binds getenv to the client whose configuration supplied the token, so a
-// reload resolves against that same client. That is what lets a nested `dagger
-// agent` use the session's LLM auth without ever holding credentials itself.
-func credentialReloader(getenv func(context.Context, string) (string, error), tokenKey string) credentialResolver {
+// resolve is bound to the client whose configuration supplied the token, so a
+// reload resolves against that same client whoever is making the request.
+// That is what lets a nested `dagger agent` use the session's LLM auth without
+// ever holding credentials itself.
+func credentialReloader(resolve func(context.Context, string) (string, error), tokenURI, expiryURI string) credentialResolver {
 	return func(ctx context.Context) (Credential, error) {
-		token, err := getenv(ctx, tokenKey)
+		token, err := resolve(ctx, tokenURI)
 		if err != nil {
-			return Credential{}, fmt.Errorf("get %q: %w", tokenKey, err)
+			return Credential{}, fmt.Errorf("resolve auth token: %w", err)
 		}
 		if token == "" {
 			return Credential{}, nil
 		}
 		// An expiry we cannot read is "unknown", not "expired": the token is
 		// the credential, and failing an LLM request over its metadata would
-		// break every client older than the expiry contract.
-		expiry, expiryErr := getenv(ctx, tokenKey+credentialExpiryEnvSuffix)
-		if expiryErr != nil {
-			expiry = ""
+		// break every client that cannot say when its token expires.
+		var expiry string
+		if expiryURI != "" {
+			if v, err := resolve(ctx, expiryURI); err == nil {
+				expiry = v
+			}
 		}
 		return Credential{Token: token, ExpiresAt: parseCredentialExpiry(expiry)}, nil
 	}
 }
 
-// parseCredentialExpiry reads a *_EXPIRES_AT value: RFC 3339, UTC, the true
+// parseCredentialExpiry reads an expiry value: RFC 3339, UTC, the true
 // expiry. Anything unreadable is reported as unknown rather than as expired —
 // a malformed value must degrade to the TTL fallback, not turn every single
 // request into a resolution (and, client-side, a refresh attempt).
@@ -265,7 +259,7 @@ func parseCredentialExpiry(value string) time.Time {
 // base outlives that call's cancellation, but still carries the call's released
 // client lease. Use base only for session identity and cancellation. Each
 // resolution borrows a fresh scope from the active request or agent turn;
-// LoadClientConfig separately pins the client supplying the credential.
+// the route separately pins the client supplying the credential.
 func (resolve credentialResolver) detach(base context.Context) credentialResolver {
 	if resolve == nil {
 		return nil

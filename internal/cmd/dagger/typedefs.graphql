@@ -49,6 +49,17 @@ query TypeDefs($hideCore: Boolean) {
 				...FieldParts
 			}
 		}
+		asCollection {
+			keyType {
+				...TypeDefRefParts
+			}
+			valueType {
+				...TypeDefRefParts
+			}
+			batchType {
+				...TypeDefRefParts
+			}
+		}
 		asScalar {
 			name
 			description

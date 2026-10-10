@@ -125,7 +125,8 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 	if _, err := local.Run(prepareCtx, "init", "--bare", "--object-format="+format); err != nil {
 		return nil, err
 	}
-	err = ref.Repo.Self().Backend.mount(prepareCtx, 0, false, []GitRefBackend{ref.Backend}, func(source *gitutil.GitCLI) error {
+	// The callback's ctx descends from prepareCtx, keeping its deadline.
+	err = ref.Repo.Self().Backend.mount(prepareCtx, 0, false, []GitRefBackend{ref.Backend}, func(prepareCtx context.Context, source *gitutil.GitCLI) error {
 		url, err := source.URL(prepareCtx)
 		if err != nil {
 			return err

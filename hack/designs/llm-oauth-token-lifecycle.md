@@ -16,23 +16,30 @@ wired; it just never gets a chance to fire.
 
 ## How it works today
 
+> Updated for the LLM config transport cut-over
+> (`hack/designs/llm-config-transport.md`): the CLI no longer exports
+> anything into its environment. The table below describes the current path;
+> the audit further down describes the env-var path it replaced.
+
 | Step | Where |
 |---|---|
-| Creds persisted in `~/.config/dagger/config.toml` (`auth_token`, `refresh_token`, `token_expiry`) | `internal/cmd/dagger/llmconfig/config.go` `Provider` |
-| Refresh-if-expired at CLI start, then `os.Setenv("ANTHROPIC_AUTH_TOKEN", …)` | `internal/cmd/dagger/llm_config.go` `applyLLMConfigEnv` (via `cobra.OnInitialize`) |
-| Refresh-on-demand hook | `internal/cmd/dagger/llm_config.go` `secretprovider.RegisterEnvRefresher(…)` |
-| Hook fires inside every `env://` resolution | `engine/client/secretprovider/env.go` `envProvider` |
-| Engine asks the client `secret(uri:"env://X"){plaintext}` | `core/llm.go` `LLMRouter.LoadClientConfig` → `loadSecret` |
-| Resolution RPC engine→client | `core/secret.go` `Secret.plaintext` → `secrets.GetSecret` |
-| Lands as a plain string on the router | `core/llm.go` `LLMRouter.AnthropicAuthToken` / `OpenAICodexAuthToken` |
+| Creds persisted in `~/.config/dagger/config.toml` (`auth_token`, `refresh_token`, `token_expires_at`) | `internal/cmd/dagger/llmconfig/config.go` `Provider` |
+| CLI sends `llmconfig://<provider>/auth_token` + `…/auth_token_expires_at` URIs in `ClientMetadata.LLMConfig`, no network I/O | `internal/cmd/dagger/llmconfig/wire.go` `Assemble`, via `applyWorkspaceClientParams` |
+| Refresh-on-demand (due, or rejected by fingerprint) and persist | `internal/cmd/dagger/llmconfig/wire.go` `ResolveSecret`, registered with `secretprovider.RegisterLLMConfigResolver` |
+| Proactive refresh ahead of expiry | `internal/cmd/dagger/llm_config.go` `startOAuthTokenRefresher` |
+| Engine resolves the URIs against the supplying client, only for the routed provider | `core/llm.go` `loadLLMRouter` → `core/llm_credential.go` `CredentialSource` |
+| Resolution RPC engine→client, bypassing dagql | `core.resolveClientSecret` → `Secret.Plaintext` → `secrets.GetSecret` |
 | Router → endpoint | `core/llm.go` `routeAnthropicModel` / `routeCodexModel` |
-| **Baked into the SDK client at construction** | `core/llm_anthropic.go` `option.WithAuthToken`; `core/llm_openai_codex.go` `option.WithAPIKey` + `chatgpt-account-id` from the JWT |
-| **Memoized for the rest of the conversation** | `core/llm.go` `(*LLM).Endpoint`, and `Clone` copies the pointer |
+| Token handed to the SDK client per request | `core/llm_credential.go` `newCredentialTransport` |
 
-Everything *upstream* of the last two rows already re-resolves correctly:
+The audit below was written against the previous path, where the CLI
+exported `ANTHROPIC_AUTH_TOKEN` from `applyLLMConfigEnv` and a
+`secretprovider.RegisterEnvRefresher` hook refreshed it inside every `env://`
+resolution, and the engine read it with `secret(uri:"env://X"){plaintext}`.
+At the time, everything *upstream* of the SDK client re-resolved correctly:
 `secret` is `dagql.PerCallInput` (`core/schema/secret.go`), `plaintext` is
-`DoNotCache`, so every `LoadClientConfig` genuinely round-trips to the client
-and the CLI-side refresher genuinely runs.
+`DoNotCache`, so every `LoadClientConfig` genuinely round-tripped to the
+client and the CLI-side refresher genuinely ran.
 
 ## Root cause
 
@@ -197,6 +204,12 @@ with a 10s timeout, plumbed from the env-refresher hook; `envProvider` logs and
 records a span event instead of swallowing the error; `Enabled` is honored; and
 an explicitly-exported token is never clobbered (we track what we exported).
 
+*Since the config transport cut-over:* the env-refresher hook is gone. The
+same refresh runs inside the `llmconfig://<provider>/auth_token` resolver
+(`llmconfig.ResolveSecret`), with the request's context. An explicitly
+exported token is sent as `env://ANTHROPIC_AUTH_TOKEN` and never reaches that
+resolver, so there is nothing to clobber and no export bookkeeping.
+
 ### Step 2 — de-prototype the credential source (engine) — DONE
 
 The TTL closure became a `CredentialSource` value with an `Invalidate` entry
@@ -227,6 +240,13 @@ unknown (never as expired), and caches to
 A 30s per-provider refresh floor keeps a token whose whole lifetime is shorter
 than the margin from refreshing on every resolution.
 
+*Since the config transport cut-over:* the expiry is served by
+`llmconfig://<provider>/auth_token_expires_at` (RFC 3339 UTC, empty when
+unknown), re-read from the file at every resolution, so the read that follows
+a rotating token read sees the rotated expiry. The `_EXPIRES_AT` variables are
+only sent (as `env://` URIs) when the user exports them next to an explicit
+token; the CLI no longer exports them.
+
 ### Step 4 — proactive refresh — DONE
 
 A background goroutine started from `rootCmd.PersistentPreRunE` (stopped via
@@ -237,6 +257,11 @@ period resumes correctly), polls every 10 minutes when the expiry is unknown,
 floors the delay at 30s, and starts no goroutine at all unless a subscription
 provider is configured and enabled. The push design was **not** built, per the
 decision recorded above. The on-demand hook remains the fallback.
+
+*Since the config transport cut-over:* the goroutine only refreshes and
+persists the config file; there are no variables to update; the engine's next
+`llmconfig://` lookup reads the fresh token. The on-demand refresh in that
+resolver is the fallback.
 
 ## Options considered and rejected
 

@@ -283,7 +283,7 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 // fetched to answer the expansion.
 func (repo *RemoteGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
 	var sha string
-	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+	err := repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 		var err error
 		sha, err = git.ResolveShortSHA(ctx, prefix)
 		return err
@@ -461,8 +461,8 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
 }
 
-func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) (retErr error) {
-	return repo.initRemote(ctx, func(remote string) (rerr error) {
+func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(context.Context, *gitutil.GitCLI) error) (retErr error) {
+	return repo.initRemote(ctx, func(ctx context.Context, remote string) (rerr error) {
 		git, cleanup, err := repo.setup(ctx)
 		if err != nil {
 			return err
@@ -486,7 +486,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 			return fmt.Errorf("failed to expire reflog for remote %s: %w", repo.URL.Remote(), err)
 		}
 
-		return fn(git)
+		return fn(ctx, git)
 	})
 }
 
@@ -774,22 +774,39 @@ func namedFetchRefSpecs(refs []*RemoteGitRef) []string {
 	return refSpecs
 }
 
-func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string) error) (retErr error) {
+func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(ctx context.Context, dir string) error) (retErr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
 	}
 	locker := query.Locker()
 	lockKey := remoteGitLockPrefix + repo.URL.Remote()
+	// Traces and profiles are shared: identify the lock without the URL's
+	// userinfo, which may carry credentials.
+	lockIdent := remoteGitLockPrefix + repo.URL.RedactedRemote()
 	var profWait *wcprof.Wait
 	if wcprof.Enabled(ctx) {
-		// Profiles are dumped and shared: identify the lock without the
-		// URL's userinfo, which may carry credentials.
-		profWait = wcprof.BeginWaitIdent(ctx, remoteGitLockPrefix+repo.URL.RedactedRemote(), wcprof.WaitReasonLock)
+		profWait = wcprof.BeginWaitIdent(ctx, lockIdent, wcprof.WaitReasonLock)
 	}
+	_, waitSpan := Tracer(ctx).Start(ctx, "waiting for git mirror lock: "+repo.URL.RedactedRemote(), telemetry.Internal())
 	locker.Lock(lockKey)
+	waitSpan.End()
 	profWait.End()
 	defer locker.Unlock(lockKey)
+
+	// Everything until the unlock holds the mirror for every other consumer
+	// of this remote, across sessions: callers keep only the work that reads
+	// or updates the mirror inside fn, and finish in their private copy after.
+	//
+	// fn runs in the holding ctx, so the fetch and the caller's mirror work
+	// nest under the hold span and the git.mirror.locked op instead of
+	// beside them. The span is passthrough rather than internal: dagui prunes
+	// an internal span's whole subtree, which would hide the "fetching" span
+	// and its clone progress.
+	ctx, holdSpan := Tracer(ctx).Start(ctx, "holding git mirror lock: "+repo.URL.RedactedRemote(), telemetry.Passthrough())
+	defer telemetry.EndWithCause(holdSpan, &retErr)
+	ctx, holdOp := wcprof.BeginOp(ctx, wcprof.OpKindIO, "git.mirror.locked", wcprof.OpOpts{Ident: lockIdent, WorkType: wcprof.WorkTypeEngine})
+	defer func() { holdOp.EndErr(retErr) }()
 
 	if repo.Mirror.Self() == nil {
 		return fmt.Errorf("remote git mirror is nil for %s", repo.URL.Remote())
@@ -797,19 +814,24 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 	if err := EnsureBackingSnapshot(ctx, repo.Mirror); err != nil {
 		return err
 	}
-	remoteRef, releaseMirror, err := repo.Mirror.Self().acquire(ctx, query)
+	acquireCtx, acquireSpan := Tracer(ctx).Start(ctx, "acquiring git mirror: "+repo.URL.RedactedRemote(), telemetry.Internal())
+	remoteRef, releaseMirror, err := repo.Mirror.Self().acquire(acquireCtx, query)
+	telemetry.EndWithCause(acquireSpan, &err)
 	if err != nil {
 		return err
 	}
 	defer releaseMirror()
 
-	mount, err := remoteRef.Mount(ctx, false)
+	mountCtx, mountSpan := Tracer(ctx).Start(ctx, "mounting git mirror: "+repo.URL.RedactedRemote(), telemetry.Internal())
+	mount, err := remoteRef.Mount(mountCtx, false)
 	if err != nil {
+		telemetry.EndWithCause(mountSpan, &err)
 		return err
 	}
 
 	lm := bkcache.LocalMounter(mount)
 	dir, err := lm.Mount()
+	telemetry.EndWithCause(mountSpan, &err)
 	if err != nil {
 		return err
 	}
@@ -838,7 +860,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 		}
 	}
 
-	return fn(dir)
+	return fn(ctx, dir)
 }
 
 func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool, remotes []GitRemote, upstreamRemote *string) (_ *Directory, rerr error) {
@@ -860,51 +882,63 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		}
 	}()
 
-	err = ref.mount(ctx, depth, includeTags, func(git *gitutil.GitCLI) error {
-		gitURL, err := git.URL(ctx)
-		if err != nil {
-			return fmt.Errorf("could not find git dir: %w", err)
-		}
+	// Keep checkout credentials and network setup alive independently of the
+	// mirror mount: only the object-copy phase needs the mirror's lock, and
+	// submodule clones after it still need auth, known hosts and DNS.
+	git, cleanup, err := ref.repo.setup(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
-		checkoutRef, err = cache.New(ctx, nil,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
-			bkcache.WithDescription(fmt.Sprintf("git checkout for %s (%s %s)", ref.repo.URL.Remote(), ref.Name, ref.SHA)))
+	checkoutRef, err = cache.New(ctx, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
+		bkcache.WithDescription(fmt.Sprintf("git checkout for %s (%s %s)", ref.repo.URL.Remote(), ref.Name, ref.SHA)))
+	if err != nil {
+		return nil, err
+	}
+
+	err = MountRef(ctx, checkoutRef, func(checkoutDir string, _ *ctdmount.Mount) error {
+		checkoutDirGit := filepath.Join(checkoutDir, ".git")
+		if err := os.MkdirAll(checkoutDir, 0711); err != nil {
+			return err
+		}
+		checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
+
+		var tmpref string
+		err := ref.mount(ctx, depth, includeTags, func(ctx context.Context, mirrorGit *gitutil.GitCLI) error {
+			var err error
+			tmpref, _, err = copyGitCheckout(ctx, checkoutGit, mirrorGit, checkoutDirGit, ref.Ref, depth)
+			return err
+		})
 		if err != nil {
 			return err
 		}
 
-		err = MountRef(ctx, checkoutRef, func(checkoutDir string, _ *ctdmount.Mount) error {
-			checkoutDirGit := filepath.Join(checkoutDir, ".git")
-			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
-				return err
-			}
-			checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
+		// The checkout owns its objects now: checking out files, slow
+		// submodule clones and timestamp normalization must not hold the mirror.
+		ctx, span := Tracer(ctx).Start(ctx, "finishing git checkout (mirror released)", telemetry.Internal())
+		defer telemetry.EndWithCause(span, &err)
 
-			// The clone URL is the remote itself, so it doubles as the
-			// checkout's origin; registered remotes overlay it.
-			checkoutRemotes := MergeGitRemotes(
-				[]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote(), Implicit: true}},
-				remotes,
-			)
-			if upstreamRemote != nil {
-				checkoutRemotes = MergeGitRemotes(nil, remotes)
-			}
-			if err := doGitCheckout(ctx, checkoutGit, checkoutRemotes, gitURL, ref.Ref, depth, discardGitDir); err != nil {
-				return err
-			}
-			if !discardGitDir && upstreamRemote != nil {
-				return writeGitRemoteSelection(ctx, checkoutGit, checkoutRemotes, *upstreamRemote)
-			}
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed to checkout %s in %s: %w", ref.Name, ref.repo.URL.Remote(), err)
+		// The clone URL is the remote itself, so it doubles as the
+		// checkout's origin; registered remotes overlay it.
+		checkoutRemotes := MergeGitRemotes(
+			[]GitRemote{{Name: "origin", URL: ref.repo.URL.Remote(), Implicit: true}},
+			remotes,
+		)
+		if upstreamRemote != nil {
+			checkoutRemotes = MergeGitRemotes(nil, remotes)
 		}
-
-		return nil
+		if err = finishGitCheckout(ctx, checkoutGit, checkoutRemotes, ref.repo.URL.Remote(), ref.Ref, discardGitDir, tmpref, gitCheckoutFresh); err != nil {
+			return err
+		}
+		if !discardGitDir && upstreamRemote != nil {
+			err = writeGitRemoteSelection(ctx, checkoutGit, checkoutRemotes, *upstreamRemote)
+		}
+		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to checkout %s in %s: %w", ref.Name, ref.repo.URL.Remote(), err)
 	}
 
 	snap, err := checkoutRef.Commit(ctx)
@@ -927,7 +961,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	return dir, nil
 }
 
-func (ref *RemoteGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+func (ref *RemoteGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(context.Context, *gitutil.GitCLI) error) error {
 	return ref.repo.mount(ctx, depth, includeTags, []GitRefBackend{ref}, fn)
 }
 

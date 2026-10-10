@@ -270,8 +270,9 @@ func (p *Provider) TokenExpiresAtTime() time.Time {
 }
 
 // TokenExpiresAtRFC3339 formats the true access-token expiry as RFC 3339 in
-// UTC — the wire format of the *_AUTH_TOKEN_EXPIRES_AT variables the engine
-// reads alongside the token — or "" when the expiry is unknown.
+// UTC — the wire format of the llmconfig://<provider>/auth_token_expires_at
+// secret the engine reads alongside the token — or "" when the expiry is
+// unknown.
 func (p *Provider) TokenExpiresAtRFC3339() string {
 	expiresAt := p.TokenExpiresAtTime()
 	if expiresAt.IsZero() {

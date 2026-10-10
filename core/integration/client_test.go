@@ -8,17 +8,23 @@ package core
 // - suite_test.go: shared connection setup used by integration tests.
 
 import (
+	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/koron-go/prefixw"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -54,7 +60,7 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 		},
 	})
 
-	eventsVol := core.NewQuery(c).CacheVolume("dagger-silent-session-events-" + identity.NewID())
+	eventsVol := core.NewQuery(c).CacheVolume("dagger-silent-session-events-" + rand.Text())
 	base := core.NewQuery(c).Container().
 		From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
@@ -68,7 +74,7 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 		WithExposedPort(8080).
 		AsService()
 
-	eventsID := identity.NewID()
+	eventsID := rand.Text()
 	// The engine publishes the session's telemetry to the same Cloud.
 	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding("cloud", fakeCloud)
@@ -134,7 +140,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 	}
 
-	c1msg := identity.NewID()
+	c1msg := rand.Text()
 	echo(ctx1, c1, c1msg)
 	require.Eventually(t, func() bool {
 		return strings.Contains(out1.String(), "echoed: "+c1msg)
@@ -149,7 +155,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 	defer cancelTimeout()
 	c2, out2 := newClient(timeoutCtx2, "client 2")
 
-	c2msg := identity.NewID()
+	c2msg := rand.Text()
 	echo(ctx2, c2, c2msg)
 	require.Eventually(t, func() bool {
 		return strings.Contains(out2.String(), "echoed: "+c2msg)
@@ -161,7 +167,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 	defer cancelTimeout()
 	c3, out3 := newClient(timeoutCtx3, "client 3")
 
-	c3msg := identity.NewID()
+	c3msg := rand.Text()
 	echo(ctx3, c3, c3msg)
 	require.Eventually(t, func() bool {
 		return strings.Contains(out3.String(), "echoed: "+c3msg)
@@ -224,6 +230,87 @@ func (ClientSuite) TestQuerySchemaVersion(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "v123.456.789", v.SchemaVersion)
 }
 
+// TestSessionRetiredByEngineReportsCause stops a `dagger session` process long
+// enough for the engine to retire its session for missed health checks, then
+// resumes it. Requests on the retired session must explain what happened,
+// instead of failing with the engine's generic "already used and released"
+// error, and the process must exit with that cause.
+func (ClientSuite) TestSessionRetiredByEngineReportsCause(ctx context.Context, t *testctx.T) {
+	cmd := exec.Command(daggerCliPath(t), "session")
+	cleanupExec(t, cmd)
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if key == "DAGGER_SESSION_PORT" || key == "DAGGER_SESSION_TOKEN" {
+			continue
+		}
+		cmd.Env = append(cmd.Env, entry)
+	}
+	stdin, err := cmd.StdinPipe()
+	require.NoError(t, err)
+	stdout, err := cmd.StdoutPipe()
+	require.NoError(t, err)
+	var stderr safeBuffer
+	cmd.Stderr = &stderr
+	require.NoError(t, cmd.Start())
+	// Never leave a stopped process behind, even if the test fails.
+	t.Cleanup(func() { _ = cmd.Process.Signal(syscall.SIGCONT) })
+
+	line, err := bufio.NewReader(stdout).ReadString('\n')
+	require.NoError(t, err, "session params; stderr: %s", stderr.String())
+	var params struct {
+		Port         int    `json:"port"`
+		SessionToken string `json:"session_token"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(line), &params))
+	query := func() (int, string) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			fmt.Sprintf("http://127.0.0.1:%d/query", params.Port),
+			strings.NewReader(`{"query":"{ version }"}`))
+		require.NoError(t, err)
+		req.SetBasicAuth(params.SessionToken, "")
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp.StatusCode, string(body)
+	}
+	code, body := query()
+	require.Equal(t, http.StatusOK, code, body)
+
+	// The engine checks the client every 5s and gives up after two failed
+	// checks with 30s and 45s timeouts, about 80s after the client stops.
+	require.NoError(t, cmd.Process.Signal(syscall.SIGSTOP))
+	select {
+	case <-time.After(2 * time.Minute):
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	require.NoError(t, cmd.Process.Signal(syscall.SIGCONT))
+
+	// The resumed process notices the closed connection right away; poll
+	// briefly so a request racing that detection is not a failure.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		code, body = query()
+		if strings.Contains(body, "engine closed session") || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	require.Equal(t, http.StatusOK, code, body)
+	require.Contains(t, body, "engine closed session")
+	require.Contains(t, body, "fails its health checks")
+	require.NotContains(t, body, "already used and released")
+	t.Logf("response on the retired session: %s", body)
+
+	require.NoError(t, stdin.Close())
+	err = cmd.Wait()
+	require.Error(t, err, "stderr: %s", stderr.String())
+	require.Contains(t, stderr.String(), "engine closed session")
+}
+
 func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -267,7 +354,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 		},
 	})
 
-	eventsVol := core.NewQuery(c).CacheVolume("dagger-dev-engine-events-" + identity.NewID())
+	eventsVol := core.NewQuery(c).CacheVolume("dagger-dev-engine-events-" + rand.Text())
 
 	withCode := core.NewQuery(c).Container().
 		From(golangImage).
@@ -284,7 +371,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 		WithExposedPort(8080).
 		AsService()
 
-	eventsID := identity.NewID()
+	eventsID := rand.Text()
 	// The engine publishes the session's telemetry to the same Cloud.
 	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
 		return ctr.WithServiceBinding("cloud", fakeCloud)

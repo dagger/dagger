@@ -28,7 +28,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/distconsts"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -143,7 +142,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 	readSnapshotRows := func(ctx context.Context, t *testctx.T, c *dagger.Client, svc *core.Service) map[uint64]savedSnapshotRow {
 		t.Helper()
 		raw, err := core.NewQuery(c).Container().From(alpineImage).WithServiceBinding("snapshot-engine", svc).
-			WithEnvVariable("READ_NUMBER", identity.NewID()).
+			WithEnvVariable("READ_NUMBER", rand.Text()).
 			WithExec([]string{"wget", "-qO-", "http://snapshot-engine:6060/debug/dagql/cache"}).Stdout(ctx)
 		require.NoError(t, err)
 		var snapshot struct {
@@ -187,7 +186,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		source := core.NewQuery(c).Host().Service([]core.PortForward{{Backend: port, Frontend: port}}).WithHostname(hostname)
 		opts := snapshotTestOptions(ctx, t)
 		opts = append(opts, func(ctr *core.Container) *core.Container { return ctr.WithServiceBinding(hostname, source) })
-		stateKey := "lazy-operations-" + identity.NewID()
+		stateKey := "lazy-operations-" + rand.Text()
 		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
 		file := core.NewQuery(a).HTTP(fmt.Sprintf("http://%s:%d/data", hostname, port))
@@ -246,7 +245,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 	t.Run("changeset merge operation survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "changeset-operation-" + identity.NewID()
+		stateKey := "changeset-operation-" + rand.Text()
 		opts := snapshotTestOptions(ctx, t)
 		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
@@ -336,7 +335,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 	t.Run("directory and file restore without opening", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "directory-file-" + identity.NewID()
+		stateKey := "directory-file-" + rand.Text()
 		opts := snapshotTestOptions(ctx, t)
 		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
 		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
@@ -452,12 +451,12 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 	t.Run("module function directory list survives repeated restarts", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "directory-list-" + identity.NewID()
+		stateKey := "directory-list-" + rand.Text()
 		opts := snapshotTestOptions(ctx, t)
 		request := func(client *dagger.Client, fields string) []string {
 			t.Helper()
 			raw, err := moduleFixture(t, client, "go/persisted-directory-list").
-				WithEnvVariable("REQUEST_NUMBER", identity.NewID()).
+				WithEnvVariable("REQUEST_NUMBER", rand.Text()).
 				With(daggerQueryAt(".", "{directories{"+fields+"}} ")).Stdout(ctx)
 			require.NoError(t, err)
 			var response struct {
@@ -540,7 +539,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 	t.Run("module core metadata returns survive restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "core-metadata-returns-" + identity.NewID()
+		stateKey := "core-metadata-returns-" + rand.Text()
 		opts := snapshotTestOptions(ctx, t)
 		type response struct {
 			EnvVar struct {
@@ -565,7 +564,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		request := func(client *dagger.Client) response {
 			t.Helper()
 			raw, err := moduleFixture(t, client, "go/persisted-core-returns").
-				WithEnvVariable("REQUEST_NUMBER", identity.NewID()).
+				WithEnvVariable("REQUEST_NUMBER", rand.Text()).
 				With(daggerQueryAt(".", "{envVar{id name value} ports{id port description} schema{id} clients{id generator directory}}")).Stdout(ctx)
 			require.NoError(t, err)
 			var res response
@@ -654,7 +653,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 	t.Run("container parts preserve mutations and unopened snapshots", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "container-parts-" + identity.NewID()
+		stateKey := "container-parts-" + rand.Text()
 		opts := []func(*core.Container) *core.Container{
 			engineWithPersistenceTestGC(ctx, t),
 			engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
@@ -686,7 +685,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 			t.Helper()
 			raw, err := core.NewQuery(c).Container().From(alpineImage).
 				WithServiceBinding("part-engine", svc).
-				WithEnvVariable("READ_NUMBER", identity.NewID()).
+				WithEnvVariable("READ_NUMBER", rand.Text()).
 				WithExec([]string{"wget", "-qO-", "http://part-engine:6060/debug/dagql/cache"}).Stdout(ctx)
 			require.NoError(t, err)
 			var snapshot struct {
@@ -872,7 +871,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 	t.Run("local cache survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-local-cache-state-" + identity.NewID()
+		stateKey := "persist-local-cache-state-" + rand.Text()
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
@@ -903,7 +902,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 	t.Run("lazy imported snapshot links count toward local cache usage and max-used prune", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-lazy-import-cache-usage-state-" + identity.NewID()
+		stateKey := "persist-lazy-import-cache-usage-state-" + rand.Text()
 
 		runWorkload := func(ctx context.Context, t *testctx.T, client *dagger.Client) string {
 			t.Helper()
@@ -970,7 +969,7 @@ printf "%s" "$token"`,
 
 	t.Run("unclean shutdown discards local cache state and recovers", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-unclean-reset-state-" + identity.NewID()
+		stateKey := "persist-unclean-reset-state-" + rand.Text()
 		const sentinelPath = "/state/worker/reset-sentinel"
 		randomScript := `
 set -eu
@@ -1034,7 +1033,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 				Container().
 				From(alpineImage).
 				WithMountedCache("/state", core.NewQuery(c).CacheVolume(stateKey)).
-				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				WithEnvVariable("CACHEBUSTER", rand.Text()).
 				WithExec([]string{"sh", "-ec", "ls -d /state/worker-trash-* 2>/dev/null | wc -l"}).
 				Stdout(ctx)
 			if err != nil {
@@ -1065,7 +1064,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("container withNewFile hit survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-container-with-new-file-state-" + identity.NewID()
+		stateKey := "persist-container-with-new-file-state-" + rand.Text()
 		const newFilePath = "/tmp/persisted-new-file.txt"
 		const newFileContents = "persisted withNewFile\n"
 
@@ -1096,7 +1095,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("container selector lazy dependencies survive restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-container-selector-lazy-state-" + identity.NewID()
+		stateKey := "persist-container-selector-lazy-state-" + rand.Text()
 		const fileContents = "selector lazy persisted\n"
 
 		buildRetainedGraph := func(engineClient *dagger.Client) *core.Directory {
@@ -1145,7 +1144,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("directory search result list survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-directory-search-result-state-" + identity.NewID()
+		stateKey := "persist-directory-search-result-state-" + rand.Text()
 		const pattern = `^\s*//\s*workspace:include\s+\S+\s*$`
 
 		runSearch := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) []string {
@@ -1204,7 +1203,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("changeset diff stat list survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-changeset-diff-stat-state-" + identity.NewID()
+		stateKey := "persist-changeset-diff-stat-state-" + rand.Text()
 
 		runDiffStats := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) []string {
 			t.Helper()
@@ -1263,8 +1262,8 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("service-bound graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-service-binding-state-" + identity.NewID()
-		serviceScript := "#!/bin/sh\nwhile true; do cat /work/service-random.txt | nc -l -p 8080; done\n"
+		stateKey := "persist-service-binding-state-" + rand.Text()
+		serviceScript := "#!/bin/sh\nexec httpd -f -p 8080 -h /work\n"
 		serviceSetupScript := `
 set -eu
 mkdir -p /work
@@ -1273,7 +1272,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/service-random.txt
 		serviceRunScript := `
 set -eu
 mkdir -p /work
-nc sidecar 8080 > /work/service.txt
+wget -q -O /work/service.txt http://sidecar:8080/service-random.txt
 head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/client-random.txt
 `
 
@@ -1287,7 +1286,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/client-random.txt
 
 			service := core.NewQuery(engineClient).
 				Container().
-				From(alpineImage).
+				From(busyboxImage).
 				WithExec([]string{"sh", "-ec", serviceSetupScript}).
 				WithNewFile("/bin/app", serviceScript, core.ContainerWithNewFileOpts{Permissions: 0o755}).
 				WithExposedPort(8080).
@@ -1337,14 +1336,14 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/client-random.txt
 		require.Equal(t, outA.serviceRandom, outB.serviceRandom, "service container output should survive engine restart")
 		require.Equal(t, outA.clientRandom, outB.clientRandom, "service-bound client output should survive engine restart")
 
-		outC := runServiceBound(ctx, t, engineClientB, identity.NewID())
+		outC := runServiceBound(ctx, t, engineClientB, rand.Text())
 		require.Equal(t, outA.serviceRandom, outC.serviceRandom, "service container output should still be cached when only the client container is invalidated")
 		require.NotEqual(t, outA.clientRandom, outC.clientRandom, "client container output should be recomputed after invalidation")
 	})
 
 	t.Run("generator group graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-generator-group-state-" + identity.NewID()
+		stateKey := "persist-generator-group-state-" + rand.Text()
 		// Copy the fixture out of the repo tree before pointing the client
 		// workdir at it. The repo root now carries its own dagger.toml
 		// workspace, so an in-repo workdir makes workspace detection walk up
@@ -1407,13 +1406,13 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("private field handle survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-private-field-handle-state-" + identity.NewID()
-		seed := identity.NewID()
+		stateKey := "persist-private-field-handle-state-" + rand.Text()
+		seed := rand.Text()
 
 		callHolderUse := func(client *dagger.Client, salt string) (string, error) {
 			return moduleFixture(t, client, "go/cross-session-private-field").
 				With(withModuleFixture(t, client, "cred", "go/cross-session-private-field-cred")).
-				WithEnvVariable("CACHE_BUST", identity.NewID()).
+				WithEnvVariable("CACHE_BUST", rand.Text()).
 				With(daggerCall("holder", "--seed", seed, "use", "--salt", salt)).
 				Stdout(ctx)
 		}
@@ -1421,7 +1420,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
-		outA, err := callHolderUse(engineClientA, "salt-a-"+identity.NewID())
+		outA, err := callHolderUse(engineClientA, "salt-a-"+rand.Text())
 		require.NoError(t, err)
 		_, tokenA, ok := strings.Cut(strings.TrimSpace(outA), ":")
 		require.True(t, ok, "unexpected output %q", outA)
@@ -1433,7 +1432,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
-		outB, err := callHolderUse(engineClientB, "salt-b-"+identity.NewID())
+		outB, err := callHolderUse(engineClientB, "salt-b-"+rand.Text())
 		require.NoError(t, err)
 		_, tokenB, ok := strings.Cut(strings.TrimSpace(outB), ":")
 		require.True(t, ok, "unexpected output %q", outB)
@@ -1442,14 +1441,14 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-function-cache-state-" + identity.NewID()
+		stateKey := "persist-function-cache-state-" + rand.Text()
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		modA := moduleFixture(t, engineClientA, "go/cache-random")
 		outA, err := modA.
-			WithEnvVariable("CACHE_BUST", identity.NewID()).
+			WithEnvVariable("CACHE_BUST", rand.Text()).
 			With(daggerCallAt(".", "test-always-cache")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -1463,7 +1462,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 		modB := moduleFixture(t, engineClientB, "go/cache-random")
 		outB, err := modB.
-			WithEnvVariable("CACHE_BUST", identity.NewID()).
+			WithEnvVariable("CACHE_BUST", rand.Text()).
 			With(daggerCallAt(".", "test-always-cache")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -1472,14 +1471,14 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("typescript function cache control survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-typescript-function-cache-state-" + identity.NewID()
+		stateKey := "persist-typescript-function-cache-state-" + rand.Text()
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		modA := moduleFixture(t, engineClientA, "typescript/runtime-cache-control")
 		outA, err := modA.
-			WithEnvVariable("CACHE_BUST", identity.NewID()).
+			WithEnvVariable("CACHE_BUST", rand.Text()).
 			With(daggerCallAt(".", "test-always-cache")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -1493,7 +1492,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 		modB := moduleFixture(t, engineClientB, "typescript/runtime-cache-control")
 		outB, err := modB.
-			WithEnvVariable("CACHE_BUST", identity.NewID()).
+			WithEnvVariable("CACHE_BUST", rand.Text()).
 			With(daggerCallAt(".", "test-always-cache")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -1502,7 +1501,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("contextual function cache survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-contextual-function-cache-state-" + identity.NewID()
+		stateKey := "persist-contextual-function-cache-state-" + rand.Text()
 
 		getMod := func(client *dagger.Client) *core.Container {
 			return moduleFixture(t, client, "go/contextual-cache").
@@ -1548,7 +1547,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("container withExec output on host mount survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-container-host-mount-state-" + identity.NewID()
+		stateKey := "persist-container-host-mount-state-" + rand.Text()
 
 		hostDirA := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(hostDirA, "input.txt"), []byte("same-content\n"), 0o600))
@@ -1592,7 +1591,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("container withExec output on host mounted file survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-container-host-file-state-" + identity.NewID()
+		stateKey := "persist-container-host-file-state-" + rand.Text()
 
 		hostDirA := t.TempDir()
 		hostFileA := filepath.Join(hostDirA, "input.txt")
@@ -1638,7 +1637,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("container child exec during concurrent mounted directory parent eval", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-mounted-dir-parent-eval-race-state-" + identity.NewID()
+		stateKey := "persist-mounted-dir-parent-eval-race-state-" + rand.Text()
 
 		hostDir := t.TempDir()
 		gitDir := filepath.Join(hostDir, ".git")
@@ -1657,13 +1656,13 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		base, err = base.Sync(ctx)
 		require.NoError(t, err)
 
-		secret := core.NewQuery(engineClient).SetSecret("mounted-dir-parent-eval-race-"+identity.NewID(), "secret")
+		secret := core.NewQuery(engineClient).SetSecret("mounted-dir-parent-eval-race-"+rand.Text(), "secret")
 		source := core.NewQuery(engineClient).Host().Directory(gitDir)
 
 		for attempt := range 50 {
 			parent := base.
-				WithMountedCache("/root/.cache/uv", core.NewQuery(engineClient).CacheVolume("persist-race-uv-"+identity.NewID())).
-				WithMountedCache("/var/cache/foobar/plugins", core.NewQuery(engineClient).CacheVolume("persist-race-foobar-"+identity.NewID())).
+				WithMountedCache("/root/.cache/uv", core.NewQuery(engineClient).CacheVolume("persist-race-uv-"+rand.Text())).
+				WithMountedCache("/var/cache/foobar/plugins", core.NewQuery(engineClient).CacheVolume("persist-race-foobar-"+rand.Text())).
 				WithWorkdir("/work").
 				WithMountedDirectory(".git", source).
 				WithSecretVariable("FOOBAR_TOKEN", secret)
@@ -1706,7 +1705,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 	t.Run("git repository and ref survive restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-git-restart-state-" + identity.NewID()
+		stateKey := "persist-git-restart-state-" + rand.Text()
 		repoDir := t.TempDir()
 
 		runGit := func(args ...string) {
@@ -1819,7 +1818,7 @@ printf 'layered\n' > /work/layered.txt
 
 	t.Run("git commit changes survive restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "git-commit-changes-restart-" + identity.NewID()
+		stateKey := "git-commit-changes-restart-" + rand.Text()
 		upstreamA, serviceA, clientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamA, serviceA, clientA) })
 
@@ -1885,7 +1884,7 @@ git commit -am next
 
 	t.Run("engine-dev container build survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-engine-dev-build-state-" + identity.NewID()
+		stateKey := "persist-engine-dev-build-state-" + rand.Text()
 		// Workspace detection anchors on the git root, but the repo tree's .git
 		// varies by environment (a full dir in local checkouts, absent when the
 		// outer check runs from a remote git workspace whose clone discards it).
@@ -2048,9 +2047,9 @@ grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app
 
 	t.Run("cache volume survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-cache-volume-state-" + identity.NewID()
-		cacheKey := "persist-cache-volume-data-" + identity.NewID()
-		cacheValue := identity.NewID()
+		stateKey := "persist-cache-volume-state-" + rand.Text()
+		cacheKey := "persist-cache-volume-data-" + rand.Text()
+		cacheValue := rand.Text()
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
@@ -2087,8 +2086,8 @@ grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app
 
 	t.Run("source-backed cache volume supports concurrent mounts after restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		stateKey := "persist-source-cache-volume-state-" + identity.NewID()
-		cacheKey := "persist-source-cache-volume-data-" + identity.NewID()
+		stateKey := "persist-source-cache-volume-state-" + rand.Text()
+		cacheKey := "persist-source-cache-volume-data-" + rand.Text()
 
 		cacheSource := func(client *dagger.Client) *core.Directory {
 			return core.NewQuery(client).

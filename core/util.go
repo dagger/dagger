@@ -15,7 +15,6 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/sys/user"
 	"golang.org/x/mod/semver"
@@ -95,7 +94,7 @@ func AddEnv(env []string, name, value string) []string {
 
 	for i, envVar := range env {
 		k, _, _ := strings.Cut(envVar, "=")
-		if shell.EqualEnvKeys(k, name) {
+		if k == name {
 			env[i] = fmt.Sprintf("%s=%s", name, value)
 			gotOne = true
 			break
@@ -113,7 +112,7 @@ func AddEnv(env []string, name, value string) []string {
 func LookupEnv(env []string, name string) (string, bool) {
 	for _, envVar := range env {
 		k, v, _ := strings.Cut(envVar, "=")
-		if shell.EqualEnvKeys(k, name) {
+		if k == name {
 			return v, true
 		}
 	}
@@ -196,7 +195,6 @@ func ptr[T any](v T) *T {
 
 type mountRefOpt struct {
 	readOnly bool
-	shared   bool
 }
 
 type mountRefOptFn func(opt *mountRefOpt)
@@ -205,29 +203,11 @@ func mountRefAsReadOnly(opt *mountRefOpt) {
 	opt.readOnly = true
 }
 
-// mountRefShared makes MountRef, within a read mount scope (see
-// withReadMountScope), use the scope's read-only mount of an immutable
-// snapshot instead of mounting it again. f must only read.
-func mountRefShared(opt *mountRefOpt) {
-	opt.shared = true
-}
-
 // MountRef is a utility for easily mounting a ref.
 //
 // To simplify external logic, when the ref is nil, i.e. scratch, the callback
 // just receives a tmpdir that gets deleted when the function completes.
 func MountRef(ctx context.Context, ref bkcache.Ref, f func(string, *mount.Mount) error, optFns ...mountRefOptFn) error {
-	var opt mountRefOpt
-	for _, optFn := range optFns {
-		optFn(&opt)
-	}
-	if scope := readMountScopeFrom(ctx); opt.shared && scope != nil {
-		if immutable, ok := ref.(bkcache.ImmutableRef); ok && immutable != nil {
-			if ok, err := scope.mountShared(ctx, immutable, f); ok {
-				return err
-			}
-		}
-	}
 	dir, m, closer, err := MountRefCloser(ctx, ref, optFns...)
 	if err != nil {
 		return err
@@ -261,6 +241,18 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, optFns ...mountRefOptF
 		}
 		return dir, nil, func() error {
 			return os.RemoveAll(dir)
+		}, nil
+	}
+	if shared, ok := ref.(bkcache.SharedMounter); ok {
+		// An immutable snapshot's mounts are read-only views, whatever the
+		// caller asked for; its readers share one.
+		dir, m, release, err := shared.MountShared(ctx)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		return dir, &m, func() error {
+			release()
+			return nil
 		}, nil
 	}
 	mountable, err := ref.Mount(ctx, opt.readOnly)

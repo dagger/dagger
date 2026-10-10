@@ -2,12 +2,12 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -18,7 +18,7 @@ import (
 func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t *testctx.T) {
 	outer := connect(ctx, t)
 	start := func(volume *core.CacheVolume) *dagger.Client {
-		ctr := devEngineContainerWithStateKey(outer, "b4-mixed-state-"+identity.NewID(), func(ctr *core.Container) *core.Container {
+		ctr := devEngineContainerWithStateKey(outer, "b4-mixed-state-"+rand.Text(), func(ctr *core.Container) *core.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
 		})
 		ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
@@ -34,8 +34,8 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 		})
 		return client
 	}
-	aVolume := core.NewQuery(outer).CacheVolume("b4-mixed-a-" + identity.NewID())
-	bVolume := core.NewQuery(outer).CacheVolume("b4-mixed-b-" + identity.NewID())
+	aVolume := core.NewQuery(outer).CacheVolume("b4-mixed-a-" + rand.Text())
+	bVolume := core.NewQuery(outer).CacheVolume("b4-mixed-b-" + rand.Text())
 	a, b := start(aVolume), start(bVolume)
 	parent := core.NewQuery(a).Container().From(alpineImage)
 	executed := parent.WithExec([]string{"sh", "-ec", "printf 'downloaded filesystem' > /payload; printf 'private exec metadata'"})
@@ -49,7 +49,7 @@ func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t 
 	var exported []transferFixtureMapping
 	require.NoError(t, transferFixtureSelected(ctx, a, "mixed.json", []string{string(aID)}, []string{string(aID), string(parentID)}, &exported))
 	_, err = core.NewQuery(outer).Container().From(alpineImage).WithMountedCache("/source", aVolume).WithMountedCache("/destination", bVolume).
-		WithEnvVariable("COPY", identity.NewID()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/mixed.json /destination/bundles/; cp -a /source/blobs /destination/"}).Sync(ctx)
+		WithEnvVariable("COPY", rand.Text()).WithExec([]string{"sh", "-ec", "mkdir -p /destination/bundles; cp /source/bundles/mixed.json /destination/bundles/; cp -a /source/blobs /destination/"}).Sync(ctx)
 	require.NoError(t, err)
 	var imported []transferFixtureMapping
 	require.NoError(t, transferFixture(ctx, b, "import", "mixed.json", []string{}, &imported))

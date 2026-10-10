@@ -2,6 +2,7 @@ package snapshots
 
 import (
 	"context"
+	"crypto/rand"
 	"sync"
 	"time"
 
@@ -9,11 +10,11 @@ import (
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/metadata"
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/moby/locker"
 	digest "github.com/opencontainers/go-digest"
@@ -41,6 +42,15 @@ type SnapshotManagerOpt struct {
 	// MetadataDB is the containerd metadata database behind LeaseManager.
 	// When set, AttachLease makes its lease writes in one transaction.
 	MetadataDB metadata.Transactor
+	// LocalMounter mounts a snapshot's mounts on a local directory for
+	// shared read-only mounts; nil means LocalMounterWithMounts. Tests use
+	// one that needs no privileges.
+	LocalMounter func([]mount.Mount) Mounter
+	// SharedMountLinger and MaxIdleSharedMounts bound the shared read-only
+	// mounts nobody is using that are kept; zero means
+	// DefaultSharedMountLinger and DefaultMaxIdleSharedMounts.
+	SharedMountLinger   time.Duration
+	MaxIdleSharedMounts int
 }
 
 type ImportedImage struct {
@@ -135,6 +145,11 @@ type snapshotManager struct {
 	importLayerLocker      keyedLocker
 	exportLayerLocker      keyedLocker
 	ownerLeaseLocker       *locker.Locker
+	// backgroundReleases releases read-only mounts off their callers' paths.
+	backgroundReleases *backgroundReleases
+	// sharedMounts keeps one read-only mount per snapshot for its readers.
+	sharedMounts *sharedMounts
+	localMounter func([]mount.Mount) Mounter
 
 	mountPool sharableMountPool
 }
@@ -155,7 +170,13 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		importedLayerByDiff:    make(map[ImportedLayerDiffKey]string),
 		snapshotOwnerLeases:    make(map[string]map[string]struct{}),
 		ownerLeaseLocker:       locker.New(),
+		backgroundReleases:     newBackgroundReleases(maxPendingReleases),
+		localMounter:           opt.LocalMounter,
 	}
+	if cm.localMounter == nil {
+		cm.localMounter = func(ms []mount.Mount) Mounter { return LocalMounterWithMounts(ms) }
+	}
+	cm.sharedMounts = newSharedMounts(opt.SharedMountLinger, opt.MaxIdleSharedMounts, cm.backgroundReleases.run)
 
 	p, err := newSharableMountPool(opt.MountPoolRoot)
 	if err != nil {
@@ -183,6 +204,7 @@ func (cm *snapshotManager) init(ctx context.Context) error {
 // Close closes the manager and releases the metadata database lock. No other
 // method should be called after Close.
 func (cm *snapshotManager) Close() error {
+	cm.WaitForBackgroundReleases()
 	return cm.metadataStore.close()
 }
 
@@ -399,7 +421,7 @@ func (cm *snapshotManager) getRecord(ctx context.Context, id string, opts ...Ref
 }
 
 func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefOption) (mr MutableRef, err error) {
-	id := identity.NewID()
+	id := rand.Text()
 
 	var parentSnapshotID string
 	if s != nil {
@@ -542,7 +564,7 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 		return cm.GetBySnapshotID(ctx, upper.SnapshotID(), append(opts, NoUpdateLastUsed)...)
 	}
 
-	id := identity.NewID()
+	id := rand.Text()
 	snapshotID := id
 
 	var diffs []Diff
@@ -617,7 +639,7 @@ func (cm *snapshotManager) Merge(ctx context.Context, parents []ImmutableRef, op
 		return cm.GetBySnapshotID(ctx, normalized[0].SnapshotID(), append(opts, NoUpdateLastUsed)...)
 	}
 
-	id := identity.NewID()
+	id := rand.Text()
 	snapshotID := id
 
 	diffs := make([]Diff, 0, len(normalized))

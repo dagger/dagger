@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"dagger.io/dagger/core"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -125,8 +124,8 @@ func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testc
 		c1 := connect(ctx, t)
 		c2 := connect(ctx, t)
 
-		cacheKey := identity.NewID()
-		plaintext := identity.NewID()
+		cacheKey := rand.Text()
+		plaintext := rand.Text()
 		{
 			out, err := goGitBase(t, c1).
 				WithMountedDirectory("/src", core.NewQuery(c1).Host().Directory(tmpdir)).
@@ -143,7 +142,7 @@ func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testc
 			out, err := goGitBase(t, c2).
 				WithMountedDirectory("/src", core.NewQuery(c2).Host().Directory(tmpdir)).
 				WithWorkdir("/src").
-				WithEnvVariable("FOO", identity.NewID()).
+				WithEnvVariable("FOO", rand.Text()).
 				With(daggerExecRaw("-s", "-c", "fn-2 $(secret env://FOO --cache-key "+cacheKey+") | stdout")).
 				Stdout(ctx)
 			require.NoError(t, err, out)

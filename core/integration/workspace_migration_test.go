@@ -8,6 +8,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,6 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -1020,7 +1020,7 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateUserFeedback(ctx context.Cont
 	}
 
 	withFreshMigrationProgress := func(ctr *core.Container) *core.Container {
-		workdir := "/work-" + identity.NewID()
+		workdir := "/work-" + rand.Text()
 		return ctr.
 			WithExec([]string{"mv", "/work", workdir}).
 			WithWorkdir(workdir).

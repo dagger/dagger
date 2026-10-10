@@ -35,7 +35,6 @@ import (
 	"github.com/containerd/platforms"
 	engineconfig "github.com/dagger/dagger/engine/config"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -486,14 +485,14 @@ func (ContainerSuite) TestExecRedirectNotLogged(ctx context.Context, t *testctx.
 	}
 
 	t.Run("legacy view logs redirected output", func(ctx context.Context, t *testctx.T) {
-		logs := execLogs(t, engineconn.Config{VersionOverride: "v0.21.5"}, identity.NewID())
+		logs := execLogs(t, engineconn.Config{VersionOverride: "v0.21.5"}, rand.Text())
 		require.Contains(t, logs, "ERR-LOGGED")
 		require.Contains(t, logs, "OUT-LOGGED")
 		require.Contains(t, logs, "OUT-REDIRECTED")
 		require.Contains(t, logs, "ERR-REDIRECTED")
 	})
 
-	cacheBuster := identity.NewID()
+	cacheBuster := rand.Text()
 	logs := execLogs(t, engineconn.Config{}, cacheBuster)
 	require.Contains(t, logs, "ERR-LOGGED")
 	require.Contains(t, logs, "OUT-LOGGED")
@@ -1135,8 +1134,8 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 			return strings.TrimSpace(out)
 		}
 
-		out1 := run(identity.NewID())
-		out2 := run(identity.NewID())
+		out1 := run(rand.Text())
+		out2 := run(rand.Text())
 		require.Equal(t, out1, out2, "execution was re-run when only a volatile variable changed")
 	})
 
@@ -1152,8 +1151,8 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 			return strings.TrimSpace(out)
 		}
 
-		out1 := run(identity.NewID())
-		out2 := run(identity.NewID())
+		out1 := run(rand.Text())
+		out2 := run(rand.Text())
 		require.Equal(t, out1, out2, "execution was re-run when only a volatile variable changed below from")
 	})
 
@@ -1254,7 +1253,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 
 	t.Run("export excludes volatile vars", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		imagePath := filepath.Join(t.TempDir(), identity.NewID()+".tar")
+		imagePath := filepath.Join(t.TempDir(), rand.Text()+".tar")
 
 		ctr := sdkcore.NewQuery(c).Container().
 			From(alpineImage).
@@ -1783,7 +1782,7 @@ func (ContainerSuite) TestWithMountedCache(ctx context.Context, t *testctx.T) {
 
 	saveCache := preventCacheMountPrune(c, t, cache)
 
-	rand1 := identity.NewID()
+	rand1 := rand.Text()
 	out1, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		With(saveCache).
@@ -1794,7 +1793,7 @@ func (ContainerSuite) TestWithMountedCache(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, rand1+"\n", out1)
 
-	rand2 := identity.NewID()
+	rand2 := rand.Text()
 	out2, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		With(saveCache).
@@ -1817,7 +1816,7 @@ func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *
 
 	saveCache := preventCacheMountPrune(c, t, cache, sdkcore.ContainerWithMountedCacheOpts{Source: srcDir})
 
-	rand1 := identity.NewID()
+	rand1 := rand.Text()
 	out1, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		With(saveCache).
@@ -1830,7 +1829,7 @@ func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *
 	require.NoError(t, err)
 	require.Equal(t, "initial-content\n"+rand1+"\n", out1)
 
-	rand2 := identity.NewID()
+	rand2 := rand.Text()
 	out2, err := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		With(saveCache).
@@ -3432,7 +3431,7 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 	t.Run("to absolute dir", func(ctx context.Context, t *testctx.T) {
 		for _, useAsTarball := range []bool{true, false} {
 			t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(ctx context.Context, t *testctx.T) {
-				imagePath := filepath.Join(dest, identity.NewID()+".tar")
+				imagePath := filepath.Join(dest, rand.Text()+".tar")
 
 				if useAsTarball {
 					tarFile := ctr.AsTarball()
@@ -3475,7 +3474,7 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("to workdir", func(ctx context.Context, t *testctx.T) {
-		relPath := "./" + identity.NewID() + ".tar"
+		relPath := "./" + rand.Text() + ".tar"
 		actual, err := ctr.Export(ctx, relPath)
 		require.NoError(t, err)
 		require.Equal(t, filepath.Join(wd, relPath), actual)
@@ -3492,7 +3491,7 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("to subdir", func(ctx context.Context, t *testctx.T) {
-		relPath := "./foo/" + identity.NewID() + ".tar"
+		relPath := "./foo/" + rand.Text() + ".tar"
 		actual, err := ctr.Export(ctx, relPath)
 		require.NoError(t, err)
 		require.Equal(t, filepath.Join(wd, relPath), actual)
@@ -3960,7 +3959,7 @@ func (ContainerSuite) TestWithRegistryAuthDoesNotInvalidateCache(ctx context.Con
 		{name: "after from"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			cacheKey := identity.NewID()
+			cacheKey := rand.Text()
 			run := func() string {
 				c := connect(ctx, t)
 				ctr := sdkcore.NewQuery(c).Container()
@@ -4096,7 +4095,7 @@ func credentials(r *http.Request) (string, string, bool) {
 `
 	)
 
-	tokenLogs := sdkcore.NewQuery(c).CacheVolume("bearer-token-auth-logs-" + identity.NewID())
+	tokenLogs := sdkcore.NewQuery(c).CacheVolume("bearer-token-auth-logs-" + rand.Text())
 	tokenAuthSvc := sdkcore.NewQuery(c).Container().
 		From("golang:1.26-alpine").
 		WithNewFile("/src/main.go", tokenAuthServer).
@@ -4106,7 +4105,7 @@ func credentials(r *http.Request) (string, string, bool) {
 		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
 		AsService()
 
-	registryLogs := sdkcore.NewQuery(c).CacheVolume("bearer-registry-logs-" + identity.NewID())
+	registryLogs := sdkcore.NewQuery(c).CacheVolume("bearer-registry-logs-" + rand.Text())
 	registrySvc := sdkcore.NewQuery(c).Container().
 		From("registry:3").
 		WithNewFile("/etc/distribution/config.yml", registryConfig).
@@ -4145,7 +4144,7 @@ func credentials(r *http.Request) (string, string, bool) {
 		)
 	}
 
-	publicRef := "registry:5000/public:" + identity.NewID()
+	publicRef := "registry:5000/public:" + rand.Text()
 	seedClient := connectNested()
 	_, err = sdkcore.NewQuery(seedClient).Container().
 		From(alpineImage).
@@ -4162,7 +4161,7 @@ func credentials(r *http.Request) (string, string, bool) {
 	require.NoError(t, err)
 	require.Equal(t, "public", strings.TrimSpace(out))
 
-	privateRef := "registry:5000/private:" + identity.NewID()
+	privateRef := "registry:5000/private:" + rand.Text()
 	_, err = sdkcore.NewQuery(reproClient).Container().
 		From(alpineImage).
 		WithNewFile("/private.txt", "private").
@@ -4265,7 +4264,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 		registryCert, registryKey := certGen.newServerCerts("bound-registry")
 		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
-			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-https-"+identity.NewID())).
+			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-https-"+rand.Text())).
 			WithFile("/certs/domain.crt", registryCert).
 			WithFile("/certs/domain.key", registryKey).
 			WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
@@ -4287,7 +4286,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 			}),
 		))
 
-		ref := "bound-registry:5000/service-binding-https:" + identity.NewID()
+		ref := "bound-registry:5000/service-binding-https:" + rand.Text()
 
 		out, err := module(ctx, t, devEngine).
 			WithServiceBinding("bound-registry", registry).
@@ -4304,7 +4303,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 	t.Run("plain http engine config", func(ctx context.Context, t *testctx.T) {
 		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
-			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-"+identity.NewID())).
+			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-"+rand.Text())).
 			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
 			AsService()
 
@@ -4317,7 +4316,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 			}),
 		))
 
-		ref := "bound-registry:5000/service-binding-http:" + identity.NewID()
+		ref := "bound-registry:5000/service-binding-http:" + rand.Text()
 
 		out, err := module(ctx, t, devEngine).
 			WithServiceBinding("bound-registry", registry).
@@ -4334,13 +4333,13 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 	t.Run("registry api option plain http", func(ctx context.Context, t *testctx.T) {
 		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
-			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-api-"+identity.NewID())).
+			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-api-"+rand.Text())).
 			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
 
-		ref := "bound-registry:5000/service-binding-http-api:" + identity.NewID()
+		ref := "bound-registry:5000/service-binding-http-api:" + rand.Text()
 
 		out, err := module(ctx, t, devEngine).
 			WithServiceBinding("bound-registry", registry).
@@ -4359,7 +4358,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 		registryCert, registryKey := certGen.newServerCerts("bound-registry")
 		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
-			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-https-insecure-api-"+identity.NewID())).
+			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-https-insecure-api-"+rand.Text())).
 			WithFile("/certs/domain.crt", registryCert).
 			WithFile("/certs/domain.key", registryKey).
 			WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
@@ -4369,7 +4368,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
 
-		ref := "bound-registry:5000/service-binding-https-insecure-api:" + identity.NewID()
+		ref := "bound-registry:5000/service-binding-https-insecure-api:" + rand.Text()
 
 		out, err := module(ctx, t, devEngine).
 			WithServiceBinding("bound-registry", registry).
@@ -4386,13 +4385,13 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 	t.Run("registry api option rejects http with insecure skip tls verify", func(ctx context.Context, t *testctx.T) {
 		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
-			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-invalid-api-"+identity.NewID())).
+			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-invalid-api-"+rand.Text())).
 			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
 
-		ref := "bound-registry:5000/service-binding-http-invalid-api:" + identity.NewID()
+		ref := "bound-registry:5000/service-binding-http-invalid-api:" + rand.Text()
 
 		stderr, err := module(ctx, t, devEngine).
 			WithServiceBinding("bound-registry", registry).
@@ -4435,7 +4434,7 @@ func (ContainerSuite) TestWithRegistryAuthFileAndDirectoryAccess(ctx context.Con
 	))
 
 	const authFile = `{"auths":{"registry:5000":{"auth":"am9objp4RmxlamFQZGpydDI1RHZy"}}}` // john:xFlejaPdjrt25Dvr
-	imageRef := "registry:5000/test:" + identity.NewID()
+	imageRef := "registry:5000/test:" + rand.Text()
 
 	clientCtr := func() *sdkcore.Container {
 		return engineClientContainer(ctx, t, c, devEngine).
@@ -4609,7 +4608,7 @@ func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context
 	// verify the root capabilities setting works by executing dockerd with it and
 	// testing it can startup, create containers and bind mount from its filesystem to
 	// them.
-	randID := identity.NewID()
+	randID := rand.Text()
 	dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: "provisioner", version: "23.0.1", middleware: middleware})
 	out, err := dockerc.
 		WithExec([]string{"sh", "-e", "-c", strings.Join([]string{
@@ -5357,11 +5356,11 @@ func (ContainerSuite) TestNestedExecNewSession(ctx context.Context, t *testctx.T
 	t.Run("each client is a new session", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := base(c).
-			WithEnvVariable("ID1", identity.NewID()).
-			WithEnvVariable("ID2", identity.NewID()).
-			WithEnvVariable("ID3", identity.NewID()).
-			WithEnvVariable("ID4", identity.NewID()).
-			WithEnvVariable("ID5", identity.NewID())
+			WithEnvVariable("ID1", rand.Text()).
+			WithEnvVariable("ID2", rand.Text()).
+			WithEnvVariable("ID3", rand.Text()).
+			WithEnvVariable("ID4", rand.Text()).
+			WithEnvVariable("ID5", rand.Text())
 
 		// Two clients one after the other, then two at once.
 		_, err := ctr.WithExec([]string{"sh", "-ec", nestedMainClientCheck + `
@@ -5805,7 +5804,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		output, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").
-			WithEnvVariable("CACHEBUST", identity.NewID()).
+			WithEnvVariable("CACHEBUST", rand.Text()).
 			WithMountedSecret(
 				"/${foo}.mysecret",
 				secret,
@@ -5824,7 +5823,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		secret := sdkcore.NewQuery(c).SetSecret("gitea-token", "password2")
 		_, err := sdkcore.NewQuery(c).Container().
 			From("alpine:latest").
-			WithEnvVariable("CACHEBUST", identity.NewID()).
+			WithEnvVariable("CACHEBUST", rand.Text()).
 			WithSecretVariable("GITEA_TOKEN", secret).
 			WithExec([]string{"sh", "-c", "test ${GITEA_TOKEN} = \"password\""}, sdkcore.ContainerWithExecOpts{Expand: true}).
 			Sync(ctx)
@@ -6250,7 +6249,7 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 		WithExec([]string{"dagger", "core", "version"}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 	t.Run("docker-image driver", func(ctx context.Context, t *testctx.T) {
-		imageName := "foobar:" + identity.NewID()
+		imageName := "foobar:" + rand.Text()
 		_, err := dockerc.WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).Sync(ctx)
 		require.NoError(t, err)
 
@@ -6266,7 +6265,7 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 		alt := dockerc.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://dagger.test")
 
-		imageName := "foobar:" + identity.NewID()
+		imageName := "foobar:" + rand.Text()
 		_, err := alt.WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).Sync(ctx)
 		require.NoError(t, err)
 
@@ -6282,7 +6281,7 @@ func (ContainerSuite) TestSaveHostDocker(ctx context.Context, t *testctx.T) {
 		alt := dockerc.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://docker:1234")
 
-		imageName := "foobar:" + identity.NewID()
+		imageName := "foobar:" + rand.Text()
 		_, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "docker-image").
 			WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).
@@ -6329,7 +6328,7 @@ EOF`})
 		alt := nerdctl.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://containerd:1234")
 
-		imageName := "foobar:" + identity.NewID()
+		imageName := "foobar:" + rand.Text()
 		_, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "containerd").
 			WithExec([]string{"dagger", "script", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true}).
@@ -6359,7 +6358,7 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 		WithExec([]string{"dagger", "core", "version"}, sdkcore.ContainerWithExecOpts{DisableDaggerInDagger: true})
 
 	t.Run("docker-image driver", func(ctx context.Context, t *testctx.T) {
-		imageName := "foobar:" + identity.NewID()
+		imageName := "foobar:" + rand.Text()
 		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, sdkcore.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
 		require.NoError(t, err)
 
@@ -6372,7 +6371,7 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 		alt := dockerc.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://dagger.test")
 
-		imageName := "foobar:" + identity.NewID()
+		imageName := "foobar:" + rand.Text()
 		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, sdkcore.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
 		require.NoError(t, err)
 
@@ -6385,7 +6384,7 @@ func (ContainerSuite) TestLoadHostDocker(ctx context.Context, t *testctx.T) {
 		alt := dockerc.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://docker:1234")
 
-		imageName := "foobar:" + identity.NewID()
+		imageName := "foobar:" + rand.Text()
 		_, err := dockerc.WithExec([]string{"docker", "build", "-t", imageName, "-"}, sdkcore.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).Sync(ctx)
 		require.NoError(t, err)
 
@@ -6415,7 +6414,7 @@ func (ContainerSuite) TestLoadHostContainerd(ctx context.Context, t *testctx.T) 
 		alt := nerdctl.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://containerd:1234")
 
-		imageName := "foobar:" + identity.NewID()
+		imageName := "foobar:" + rand.Text()
 		_, err := alt.WithExec([]string{"nerdctl", "pull", "alpine"}).Sync(ctx)
 		require.NoError(t, err)
 
@@ -6453,7 +6452,7 @@ func (ContainerSuite) TestLoadSaveNone(ctx context.Context, t *testctx.T) {
 	alt := dockerc.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://docker:1234")
 
-	imageName := "foobar:" + identity.NewID()
+	imageName := "foobar:" + rand.Text()
 	out, err := alt.WithExec([]string{
 		"dagger", "script", "-c",
 		`container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`,
@@ -6611,7 +6610,7 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 		t.Helper()
 
 		dir := t.TempDir()
-		fileData := identity.NewID()
+		fileData := rand.Text()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(fileData), 0o600))
 
 		// This tests three back-to-back runs, using different clients, to test that caching works.
@@ -6648,7 +6647,7 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, fileData, fileData1)
 
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "this-is-not-used"), []byte(identity.NewID()), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "this-is-not-used"), []byte(rand.Text()), 0o600))
 
 		fileData2, randData2, err := fn()
 		require.NoError(t, err)
@@ -6656,7 +6655,7 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 		require.Equal(t, randData1, randData2, "command was re-executed when it should have been cached")
 
 		// change the used file, to ensure it busts the cache
-		newFileData := identity.NewID()
+		newFileData := rand.Text()
 		require.NotEqual(t, fileData, newFileData)
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(newFileData), 0o600))
 
@@ -6759,7 +6758,7 @@ func (ContainerSuite) TestWithMountedDirectoryCaching(ctx context.Context, t *te
 	}()
 
 	// This single buster value is shared between the two clients
-	buster := identity.NewID()
+	buster := rand.Text()
 
 	getContainer := func(c *dagger.Client) *sdkcore.Container {
 		return sdkcore.NewQuery(c).Container().From(alpineImage).
@@ -6875,7 +6874,7 @@ func (ContainerSuite) TestHealthcheckDefaults(ctx context.Context, t *testctx.T)
 func (ContainerSuite) TestHealthcheckIsExported(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	imagePath := filepath.Join(t.TempDir(), identity.NewID()+".tar")
+	imagePath := filepath.Join(t.TempDir(), rand.Text()+".tar")
 	ctr := sdkcore.NewQuery(c).Container().
 		From(alpineImage).
 		WithDockerHealthcheck([]string{"sh", "-c", "echo ok"})

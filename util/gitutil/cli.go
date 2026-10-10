@@ -38,6 +38,8 @@ type GitCLI struct {
 	config      map[string]string
 
 	indexFile string
+
+	env []string
 }
 
 // Option provides a variadic option for configuring the git client.
@@ -180,6 +182,15 @@ func WithIndexFile(indexFile string) Option {
 	}
 }
 
+// WithEnv adds KEY=VALUE environment variables to the git commands, after
+// the client's own environment, e.g. GIT_ALTERNATE_OBJECT_DIRECTORIES for an
+// operation-local alternate.
+func WithEnv(env ...string) Option {
+	return func(b *GitCLI) {
+		b.env = append(b.env, env...)
+	}
+}
+
 // New initializes a new git client
 func NewGitCLI(opts ...Option) *GitCLI {
 	c := &GitCLI{}
@@ -194,6 +205,7 @@ func NewGitCLI(opts ...Option) *GitCLI {
 func (cli *GitCLI) New(opts ...Option) *GitCLI {
 	clone := *cli
 	clone.args = slices.Clone(cli.args)
+	clone.env = slices.Clone(cli.env)
 
 	for _, opt := range opts {
 		opt(&clone)
@@ -312,6 +324,7 @@ func (cli *GitCLI) RunWithStdin(ctx context.Context, stdin io.Reader, args ...st
 	if cli.indexFile != "" {
 		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+cli.indexFile)
 	}
+	cmd.Env = append(cmd.Env, cli.env...)
 
 	finishNetwork := enginetelemetry.PrepareCommandNetwork(ctx, cmd)
 	defer finishNetwork()
