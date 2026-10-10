@@ -1,0 +1,40 @@
+type Staff {
+  agent(base: LLM!): LLM! @agent {
+    base.withSystemPrompt("Chief role.").withTools(currentNode.{{... on Dagger.Staff!}}.chief)
+  }
+
+  worker(base: LLM!, name: String!): LLM! @agent {
+    base.withSystemPrompt("Worker role: " + name).withTools(currentNode.{{... on Dagger.Staff!}}.peers(name))
+  }
+
+  attached(base: LLM!, agent: Agent!, label: String!): LLM! @agent {
+    base.withSystemPrompt("Attached " + label + ": " + agent.handle)
+  }
+
+  chief: Chief! { Chief() }
+  peers(name: String!): Peers! { Peers(name) }
+}
+
+type Chief {
+  chiefOnly: String! { "Chief capability." }
+}
+
+type Peers {
+  let name: String!
+  let counter: Int! = 0
+
+  new(name: String!) {
+    self.name = name
+    self
+  }
+
+  advance: Peers! {
+    counter += 1
+    self
+  }
+
+  """Original peer implementation."""
+  peerState: String! {
+    "original peer " + name + "; counter: " + toString(counter)
+  }
+}

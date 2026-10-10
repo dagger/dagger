@@ -130,16 +130,29 @@ func (AgentsSuite) TestNestedDiscovery(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "dag+expertise://?expertise=nested/tools/agent")
 }
 
-func (AgentsSuite) TestValidationRejectsExtraRequiredArg(ctx context.Context, t *testctx.T) {
+func (AgentsSuite) TestDiscoverySkipsUnboundRequiredArg(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	modGen, err := installAgents(t, c, "badagent")
+	modGen, err := installAgents(t, c, "badagent", "editor")
 	require.NoError(t, err)
 
-	// badagent's @agent declares a required `extra: String!` beyond its LLM base,
-	// which must be rejected at module load.
-	out, err := modGen.With(daggerExecFail("agent", "-l")).CombinedOutput(ctx)
+	// Required extra arguments are valid module signatures, but compose-all
+	// must skip entries it cannot invoke without an explicit binding.
+	_, err = modGen.With(daggerExec("agent", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "may only require a single LLM! argument")
+	ws := agentFixtureWorkspace(modGen)
+	llm := composeRecomposeFixture(ctx, t, c, ws, nil)
+	entries := recordedExpertise(ctx, t, c, llm)
+	require.Len(t, entries, 1)
+	require.Contains(t, entries[0].Artifact.URI, "editor/agent")
+	tools, err := llm.Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, tools, "## readFile")
+
+	// The skipped entry remains available when the caller supplies its arg.
+	llm, err = applyBoundExpertise(ctx, c, ws, llm, "compose", "badagent/agent", `{"extra":"explicitly bound"}`)
+	require.NoError(t, err)
+	require.Contains(t, recomposeSystemPrompts(ctx, t, c, llm), "explicitly bound")
+	require.Len(t, recordedExpertise(ctx, t, c, llm), 2)
 }
 
 func (AgentsSuite) TestValidationRejectsMissingBaseArg(ctx context.Context, t *testctx.T) {
