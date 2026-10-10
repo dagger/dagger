@@ -76,7 +76,7 @@ func Introspect(cmd *cobra.Command, args []string) error {
 	}
 
 	if namesOut != "" {
-		if err := data.Schema.LoadFormattedNames(ctx, dag, formats...); err != nil {
+		if err := data.Schema.LoadFormattedNames(ctx, dag, data.SchemaVersion, formats...); err != nil {
 			return err
 		}
 		namesData, err := json.MarshalIndent(data.Schema.NamesFile(), "", "  ")

@@ -43,7 +43,7 @@ func generate(ctx context.Context, config generator.Config, target string, schem
 	// TypeScript identifiers are the schema's names as the engine formats
 	// them, when the schema has Query.formatIdentifiers (see
 	// templates/naming.go).
-	if err := schema.LoadFormattedNames(ctx, config.Dag, templates.NameFormats...); err != nil {
+	if err := schema.LoadFormattedNames(ctx, config.Dag, schemaVersion, templates.NameFormats...); err != nil {
 		return nil, err
 	}
 
