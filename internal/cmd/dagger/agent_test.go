@@ -32,6 +32,25 @@ func (c agentTestConn) Do(req *http.Request) (*http.Response, error) {
 	return c.do(req)
 }
 
+func TestAgentRequiresBindings(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		arg  modFunctionArg
+		want bool
+	}{
+		{name: "scalar", arg: modFunctionArg{TypeDef: &modTypeDef{Kind: core.TypeDefKindStringKind}}, want: true},
+		{name: "optional", arg: modFunctionArg{TypeDef: &modTypeDef{Optional: true}}},
+		{name: "default", arg: modFunctionArg{TypeDef: &modTypeDef{}, DefaultValue: `"default"`}},
+		{name: "contextual", arg: modFunctionArg{TypeDef: &modTypeDef{}, DefaultPath: "."}},
+		{name: "conversation", arg: modFunctionArg{TypeDef: &modTypeDef{Kind: core.TypeDefKindObjectKind, AsObject: &modObject{Name: "LLM"}}}},
+		{name: "workspace", arg: modFunctionArg{TypeDef: &modTypeDef{Kind: core.TypeDefKindObjectKind, AsObject: &modObject{Name: "Workspace"}}}},
+		{name: "agent", arg: modFunctionArg{TypeDef: &modTypeDef{Kind: core.TypeDefKindObjectKind, AsObject: &modObject{Name: "Agent"}}}, want: true},
+		{name: "module object", arg: modFunctionArg{TypeDef: &modTypeDef{Kind: core.TypeDefKindObjectKind, AsObject: &modObject{Name: "LLM", SourceModuleName: "custom"}}}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) { require.Equal(t, tc.want, agentRequiresBindings([]*modFunctionArg{&tc.arg})) })
+	}
+}
+
 func TestResumeServable(t *testing.T) {
 	const traceID = "0123456789abcdef0123456789abcdef"
 	archiveReply := func(status int, body string) *archive.Client {

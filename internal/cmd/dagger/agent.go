@@ -410,7 +410,7 @@ func defaultAgentExpertise(ctx context.Context, dag *dagger.Client, selection *c
 	}
 	for _, item := range result.Node.Items {
 		if agentRequiresBindings(item.Arguments) {
-			selection = selection.WithoutUri(item.URI)
+			selection = selection.WithoutURI(item.URI)
 		}
 	}
 	return selection, nil
