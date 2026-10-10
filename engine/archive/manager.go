@@ -114,6 +114,11 @@ type Manager struct {
 	removeStore func(string) (bool, error)
 	storeSize   func(string) (int64, error)
 
+	// writeMu serializes manifest writers. mu guards the index; updates to
+	// an existing archive hold it only to swap the index, never across their
+	// disk syncs, so lookups do not stall behind a slow disk. A registration
+	// holds it across its first write. The index changes only under both.
+	writeMu sync.Mutex
 	mu      sync.RWMutex
 	entries map[string]*Manifest
 	corrupt map[string]error
@@ -152,6 +157,7 @@ func NewManager(cfg Config) (*Manager, error) {
 	return m, nil
 }
 
+// findLocked requires mu or writeMu.
 func (m *Manager) findLocked(traceID string) (*Manifest, error) {
 	if manifest, ok := m.entries[traceID]; ok {
 		return manifest, nil
@@ -277,14 +283,23 @@ func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
 	if err := validateManifest(manifest); err != nil {
 		return Manifest{}, err
 	}
+	// Every session that inherits the trace registers it from its telemetry
+	// export, so a later registration fails without waiting on updates.
+	m.mu.RLock()
+	err := m.registrableLocked(traceID)
+	m.mu.RUnlock()
+	if err != nil {
+		return Manifest{}, err
+	}
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+	if err := m.registrableLocked(traceID); err != nil {
+		return Manifest{}, err
+	}
+	// Unlike updates, the first write holds mu: a lookup racing a new
+	// archive waits to find it rather than missing it.
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, exists := m.entries[traceID]; exists {
-		return Manifest{}, fmt.Errorf("archive for trace %s is already registered", traceID)
-	}
-	if err := m.corrupt[traceID]; err != nil {
-		return Manifest{}, &Failure{Kind: FailureCorrupt, Err: err}
-	}
 	if err := m.writeManifest(manifest); err != nil {
 		return Manifest{}, err
 	}
@@ -292,9 +307,20 @@ func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
 	return manifest, nil
 }
 
+// registrableLocked requires mu or writeMu.
+func (m *Manager) registrableLocked(traceID string) error {
+	if _, exists := m.entries[traceID]; exists {
+		return fmt.Errorf("archive for trace %s is already registered", traceID)
+	}
+	if err := m.corrupt[traceID]; err != nil {
+		return &Failure{Kind: FailureCorrupt, Err: err}
+	}
+	return nil
+}
+
 func (m *Manager) BeginFinalizing(traceID string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
 	current, err := m.mutable(traceID, StateActive)
 	if err != nil {
 		return err
@@ -304,7 +330,7 @@ func (m *Manager) BeginFinalizing(traceID string) error {
 	if err := m.writeManifest(next); err != nil {
 		return err
 	}
-	*current = next
+	m.publish(current, next)
 	return nil
 }
 
@@ -319,8 +345,8 @@ type FinalizeInput struct {
 }
 
 func (m *Manager) Finalize(traceID string, in FinalizeInput) (Manifest, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
 	ent, err := m.mutable(traceID, StateFinalizing)
 	if err != nil {
 		return Manifest{}, err
@@ -334,36 +360,42 @@ func (m *Manager) Finalize(traceID string, in FinalizeInput) (Manifest, error) {
 	if err := atomicWrite(filepath.Join(m.root, sidecar), in.BootstrapBytes, 0o600); err != nil {
 		return Manifest{}, fmt.Errorf("write archive bootstrap: %w", err)
 	}
-	ent.State = StateClosed
-	ent.ClosedAt = &now
-	ent.ExpiresAt = now.Add(m.ttl)
-	ent.SealAt = &sealAt
-	ent.HighWater = in.HighWater
-	ent.Bootstrap = Bootstrap{File: sidecar, Records: in.BootstrapRecords}
-	ent.SizeBytes = in.StoreSizeBytes + int64(len(in.BootstrapBytes))
-	ent.Failure = ""
-	if err := m.writeManifest(*ent); err != nil {
-		ent.State = StateIncomplete
-		ent.Failure = err.Error()
-		_ = m.writeManifest(*ent)
+	next := *ent
+	next.State = StateClosed
+	next.ClosedAt = &now
+	next.ExpiresAt = now.Add(m.ttl)
+	next.SealAt = &sealAt
+	next.HighWater = in.HighWater
+	next.Bootstrap = Bootstrap{File: sidecar, Records: in.BootstrapRecords}
+	next.SizeBytes = in.StoreSizeBytes + int64(len(in.BootstrapBytes))
+	next.Failure = ""
+	if err := m.writeManifest(next); err != nil {
+		next.State = StateIncomplete
+		next.Failure = err.Error()
+		_ = m.writeManifest(next)
+		m.publish(ent, next)
 		return Manifest{}, err
 	}
-	return *ent, nil
+	m.publish(ent, next)
+	return next, nil
 }
 
 func (m *Manager) MarkIncomplete(traceID string, cause error) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
 	ent, err := m.findLocked(traceID)
 	if err != nil {
 		return err
 	}
-	ent.State = StateIncomplete
+	next := *ent
+	next.State = StateIncomplete
 	if cause != nil {
-		ent.Failure = cause.Error()
+		next.Failure = cause.Error()
 	}
-	m.recordStoreSize(ent)
-	return m.writeManifest(*ent)
+	m.recordStoreSize(&next)
+	err = m.writeManifest(next)
+	m.publish(ent, next)
+	return err
 }
 
 // SetTitle records the session title the main client published into an active
@@ -372,8 +404,8 @@ func (m *Manager) MarkIncomplete(traceID string, cause error) error {
 // sanitized first; an unchanged or empty title writes nothing.
 func (m *Manager) SetTitle(traceID, title string) error {
 	title = SanitizeTitle(title)
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
 	ent, err := m.mutable(traceID, StateActive)
 	if err != nil {
 		return err
@@ -386,7 +418,7 @@ func (m *Manager) SetTitle(traceID, title string) error {
 	if err := m.writeManifest(next); err != nil {
 		return err
 	}
-	*ent = next
+	m.publish(ent, next)
 	return nil
 }
 
@@ -426,6 +458,13 @@ func SanitizeTitle(title string) string {
 		runes = runes[:MaxTitleRunes-1]
 	}
 	return strings.TrimSpace(string(runes)) + "…"
+}
+
+// publish swaps a written manifest into the index. Callers hold writeMu.
+func (m *Manager) publish(ent *Manifest, next Manifest) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	*ent = next
 }
 
 func (m *Manager) mutable(traceID string, want State) (*Manifest, error) {
@@ -565,9 +604,11 @@ func (m *Manager) delete(manifest Manifest) error {
 	}
 	result = errors.Join(result, removeAndSync(filepath.Join(m.root, manifest.TraceID+".json")))
 	if result == nil {
+		m.writeMu.Lock()
 		m.mu.Lock()
 		delete(m.entries, manifest.TraceID)
 		m.mu.Unlock()
+		m.writeMu.Unlock()
 	}
 	return result
 }
