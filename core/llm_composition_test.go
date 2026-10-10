@@ -144,17 +144,18 @@ func TestLLMCompositionOwnerBindingsAndReplay(t *testing.T) {
 	require.Empty(t, compositionSelectorOwner(t, changedOwnerDelta[0]))
 
 	srv.InstallObject(dagql.NewClass[*LLM](srv))
-	// Recomposition must not transfer bindings between distinct module owners,
-	// regardless of whether both modules are being recomposed.
+	// Recomposition must not transfer bindings between entry owners or claim
+	// unowned bindings, regardless of which entries are being recomposed.
 	for _, tc := range []struct {
 		name, previous, candidate string
 		conflict                  bool
 	}{
-		{"different modules", "inner", "outer", true},
+		{"different entries", "inner", "outer", true},
 		{"prefix collision", "outerish", "outer", true},
 		{"no subtree identity", "outer\ninner", "outer", true},
-		{"same module", "outer", "outer", false},
-		{"unowned migration", "", "outer", false},
+		{"same entry", "outer", "outer", false},
+		{"unowned migration", "", "outer", true},
+		{"owner removed", "outer", "", true},
 		{"unowned retained", "", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
