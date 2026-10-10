@@ -15897,6 +15897,7 @@ class Query(Root):
         casing: Casing,
         *,
         acronyms: AcronymStyle | None = AcronymStyle.UPPERCASE,
+        version: str | None = None,
     ) -> list[str]:
         """Format many names at once, for codegen. Returns them in input order.
 
@@ -15912,6 +15913,10 @@ class Query(Root):
         acronyms:
             How to write acronyms and terms where a word starts with a
             capital.
+        version:
+            The engine version whose naming dictionary to parse the names
+            with, e.g. the __schemaVersion of a schema being generated.
+            Defaults to the caller's engine version.
 
         Returns
         -------
@@ -15931,6 +15936,7 @@ class Query(Root):
             Arg("names", names),
             Arg("casing", casing),
             Arg("acronyms", acronyms, AcronymStyle.UPPERCASE),
+            Arg("version", version, None),
         ]
         _ctx = self._select("formatIdentifiers", _args)
         return await _ctx.execute(list[str])

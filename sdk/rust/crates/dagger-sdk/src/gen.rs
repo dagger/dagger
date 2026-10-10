@@ -15628,10 +15628,13 @@ pub struct QueryLlmOpts<'a> {
     pub provider: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryFormatIdentifiersOpts {
+pub struct QueryFormatIdentifiersOpts<'a> {
     /// How to write acronyms and terms where a word starts with a capital.
     #[builder(setter(into, strip_option), default)]
     pub acronyms: Option<AcronymStyle>,
+    /// The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
+    #[builder(setter(into, strip_option), default)]
+    pub version: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryEnvFileOpts {
@@ -16520,11 +16523,11 @@ impl Query {
     /// * `names` - The names to format, in any casing.
     /// * `casing` - The casing to format the names in.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn format_identifiers_opts(
+    pub async fn format_identifiers_opts<'a>(
         &self,
         names: Vec<impl Into<String>>,
         casing: Casing,
-        opts: QueryFormatIdentifiersOpts,
+        opts: QueryFormatIdentifiersOpts<'a>,
     ) -> Result<Vec<String>, DaggerError> {
         let mut query = self.selection.select("formatIdentifiers");
         query = query.arg(
@@ -16534,6 +16537,9 @@ impl Query {
         query = query.arg("casing", casing);
         if let Some(acronyms) = opts.acronyms {
             query = query.arg("acronyms", acronyms);
+        }
+        if let Some(version) = opts.version {
+            query = query.arg("version", version);
         }
         query.execute(self.graphql_client.clone()).await
     }

@@ -526,13 +526,20 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     /**
      * Format many names at once, for codegen. Returns them in input order.
      */
-    public function formatIdentifiers(array $names, Casing $casing, ?AcronymStyle $acronyms = null): array
-    {
+    public function formatIdentifiers(
+        array $names,
+        Casing $casing,
+        ?AcronymStyle $acronyms = null,
+        ?string $version = null,
+    ): array {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('formatIdentifiers');
         $leafQueryBuilder->setArgument('names', $names);
         $leafQueryBuilder->setArgument('casing', $casing);
         if (null !== $acronyms) {
         $leafQueryBuilder->setArgument('acronyms', $acronyms);
+        }
+        if (null !== $version) {
+        $leafQueryBuilder->setArgument('version', $version);
         }
         return (array)$this->queryLeaf($leafQueryBuilder, 'formatIdentifiers');
     }
