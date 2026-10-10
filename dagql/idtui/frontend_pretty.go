@@ -376,6 +376,10 @@ type frontendPretty struct {
 	// cleared by recalculateViewLocked in Render. This coalesces multiple
 	// data updates into a single recalculate per render frame.
 	viewDirty bool
+	// viewUrgent marks a dirty view whose recalculation must not be paced
+	// (see recalcWaitLocked): the change came from the user, e.g. focusing
+	// another agent, not from streamed data. Cleared with viewDirty.
+	viewUrgent bool
 
 	// recalcPacing tunes how Render paces data-driven recalculation of large
 	// traces (see recalcWaitLocked). lastRecalcCost and lastRecalcAt record
@@ -4563,7 +4567,7 @@ var defaultRecalcPacing = recalcPacing{
 // be deferred, or <= 0 if it's due now.
 func (fe *frontendPretty) recalcWaitLocked(now time.Time) time.Duration {
 	pacing := fe.recalcPacing
-	if fe.finalRender || fe.reportOnly || fe.db == nil ||
+	if fe.viewUrgent || fe.finalRender || fe.reportOnly || fe.db == nil ||
 		fe.lastRecalcCost < pacing.minCost ||
 		len(fe.db.Spans.Order) < pacing.minSpans {
 		return 0
@@ -4605,7 +4609,8 @@ func (fe *frontendPretty) stopRecalcWakeupLocked() {
 
 //nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies
 func (fe *frontendPretty) recalculateViewLocked() {
-	fe.viewDirty = false // clear in case called directly from event handlers
+	// clear in case called directly from event handlers
+	fe.viewDirty, fe.viewUrgent = false, false
 	start := time.Now()
 	defer func() {
 		fe.lastRecalcAt = time.Now()
@@ -5328,7 +5333,9 @@ func (fe *frontendPretty) updateAgentRoster() {
 	// covers state flags, which change often and do not move the transcript.
 	if focused := fe.focusedAgentID(); focused != fe.lastRosterFocus {
 		fe.lastRosterFocus = focused
-		fe.viewDirty = true
+		// Focus moves only by a keypress (see focusAgent), so the tree must
+		// follow on the next frame, however large the trace.
+		fe.viewDirty, fe.viewUrgent = true, true
 		// Sections describing an agent (the Changes bubble, and the diff
 		// viewer browsing it) must not show the previous agent's content
 		// while the new one's loads; see sectionStale.
