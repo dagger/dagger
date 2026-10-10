@@ -295,12 +295,14 @@ func (m *Manager) Register(traceID, mainClientID string) (Manifest, error) {
 	if err := m.registrableLocked(traceID); err != nil {
 		return Manifest{}, err
 	}
+	// Unlike updates, the first write holds mu: a lookup racing a new
+	// archive waits to find it rather than missing it.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if err := m.writeManifest(manifest); err != nil {
 		return Manifest{}, err
 	}
-	m.mu.Lock()
 	m.entries[traceID] = &manifest
-	m.mu.Unlock()
 	return manifest, nil
 }
 
