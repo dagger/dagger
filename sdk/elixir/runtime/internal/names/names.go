@@ -9,10 +9,8 @@
 //
 //	{"CAMEL:CAPITALIZED": {"withGPU": "withGpu", ...}, ...}
 //
-// The runtime's own session is served at its engineVersion, where
-// Query.formatIdentifiers may not exist, so it calls the internal
-// Query.__formatIdentifiers, which every view has, with the dictionary of the
-// module schema's version.
+// The runtime formats them with Query.formatIdentifiers, passing the module
+// schema's version so the names are parsed with that version's dictionary.
 package names
 
 import (
@@ -21,8 +19,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/Khan/genqlient/graphql"
 )
 
 // Format is a casing with an acronym style, as values of the engine's Casing
@@ -40,33 +36,6 @@ func (f Format) String() string {
 // FormatFunc formats a batch of names in a format with the naming dictionary
 // of an engine version, returning them in input order.
 type FormatFunc func(ctx context.Context, names []string, format Format, version string) ([]string, error)
-
-const formatIdentifiersQuery = `query FormatIdentifiers($names: [String!]!, $casing: String!, $acronyms: String, $version: String!) {
-  __formatIdentifiers(names: $names, casing: $casing, acronyms: $acronyms, version: $version)
-}`
-
-// Engine formats names with the engine's Query.__formatIdentifiers.
-func Engine(client graphql.Client) FormatFunc {
-	return func(ctx context.Context, names []string, format Format, version string) ([]string, error) {
-		var data struct {
-			FormatIdentifiers []string `json:"__formatIdentifiers"`
-		}
-		err := client.MakeRequest(ctx, &graphql.Request{
-			Query:  formatIdentifiersQuery,
-			OpName: "FormatIdentifiers",
-			Variables: map[string]any{
-				"names":    names,
-				"casing":   format.Casing,
-				"acronyms": format.Acronyms,
-				"version":  version,
-			},
-		}, &graphql.Response{Data: &data})
-		if err != nil {
-			return nil, err
-		}
-		return data.FormatIdentifiers, nil
-	}
-}
 
 // batchBytes bounds the size of the names sent per request. The core
 // schema's names fit in one.

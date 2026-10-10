@@ -12,8 +12,8 @@ import (
 // elixirNameFormats are the name formats the Elixir codegen uses: see
 // Dagger.Codegen.Naming.formats/0.
 var elixirNameFormats = []names.Format{
-	{Casing: "PASCAL", Acronyms: "UPPERCASE"},
-	{Casing: "SNAKE", Acronyms: "UPPERCASE"},
+	{Casing: string(dagger.CasingPascal), Acronyms: string(dagger.AcronymStyleUppercase)},
+	{Casing: string(dagger.CasingSnake), Acronyms: string(dagger.AcronymStyleUppercase)},
 }
 
 // formattedNamesFile formats the names of the module schema in
@@ -25,7 +25,7 @@ func formattedNamesFile(ctx context.Context, introspectionJSON *dagger.File) (*d
 	if err != nil {
 		return nil, fmt.Errorf("read introspection JSON: %w", err)
 	}
-	file, err := names.File(ctx, []byte(schemaJSON), elixirNameFormats, names.Engine(dag.GraphQLClient()))
+	file, err := names.File(ctx, []byte(schemaJSON), elixirNameFormats, formatIdentifiers)
 	if err != nil {
 		return nil, err
 	}
@@ -37,4 +37,13 @@ func formattedNamesFile(ctx context.Context, introspectionJSON *dagger.File) (*d
 		return nil, err
 	}
 	return dag.Directory().WithNewFile("names.json", string(contents)).File("names.json"), nil
+}
+
+// formatIdentifiers formats names with Query.formatIdentifiers, parsing them
+// with the naming dictionary of version.
+func formatIdentifiers(ctx context.Context, batch []string, format names.Format, version string) ([]string, error) {
+	return dag.FormatIdentifiers(ctx, batch, dagger.Casing(format.Casing), dagger.FormatIdentifiersOpts{
+		Acronyms: dagger.AcronymStyle(format.Acronyms),
+		Version:  version,
+	})
 }
