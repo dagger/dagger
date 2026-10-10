@@ -412,6 +412,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
+				dagql.Arg("readOnly").Doc(`Mount the file read-only.`).
+					View(AfterVersion("v1.0.0-beta.17")),
 			),
 
 		dagql.NodeFunc("__withMountedPathDockerfileCompat", s.withMountedPathDockerfileCompat).
@@ -2572,6 +2574,7 @@ type containerWithMountedDirectoryArgs struct {
 	Expand       bool   `default:"false"`
 }
 
+//nolint:dupl // symmetric with withMountedFile; sharing hides the Directory vs File source and lazy types
 func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedDirectoryArgs) (_ *core.Container, rerr error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return nil, err
@@ -2797,8 +2800,10 @@ type containerWithMountedFileArgs struct {
 	Owner        string `default:""`
 	InheritOwner bool   `default:"false"`
 	Expand       bool   `default:"false"`
+	ReadOnly     bool   `default:"false"`
 }
 
+//nolint:dupl // symmetric with withMountedDirectory; sharing hides the File vs Directory source and lazy types
 func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedFileArgs) (_ *core.Container, rerr error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return nil, err
@@ -2834,11 +2839,11 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 		Target:    target,
 		Source:    file,
 		Owner:     owner,
-		Readonly:  false,
+		Readonly:  args.ReadOnly,
 	}
 	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
 		Target:     target,
-		Readonly:   false,
+		Readonly:   args.ReadOnly,
 		FileSource: new(core.LazyAccessor[*core.File, *core.Container]),
 	})
 	return ctr, nil

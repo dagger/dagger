@@ -1460,6 +1460,9 @@ type Container implements Exportable & Node & Syncer {
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
     expand: Boolean = false
+
+    """Mount the file read-only."""
+    readOnly: Boolean = false
   ): Container!
 
   """
