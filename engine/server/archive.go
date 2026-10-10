@@ -380,13 +380,13 @@ func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB,
 	return archive.BuildBootstrap(header, signals)
 }
 
+// archiveRequestRecord authenticates an archive API request. Any client of the
+// session may read archives, including a nested `dagger` CLI run from a
+// container, which is how an agent resumes a trace this engine recorded.
 func (srv *Server) archiveRequestRecord(clientID, sessionID, token string) (*clientRecord, error) {
 	record, err := srv.clientRecordFromIDs(sessionID, clientID)
 	if err != nil {
 		return nil, err
-	}
-	if record.clientID != record.daggerSession.mainClientCallerID {
-		return nil, errors.New("archive API requires main client authority")
 	}
 	record.daggerSession.scopeMu.Lock()
 	stored := ""
