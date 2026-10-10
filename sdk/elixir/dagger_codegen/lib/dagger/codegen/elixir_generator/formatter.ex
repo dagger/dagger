@@ -2,11 +2,11 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
   @moduledoc """
   Formats schema names into Elixir names.
 
-  Names are formatted from the words the engine parsed them into when the
-  schema has them (see `Dagger.Codegen.Naming`): modules in PascalCase with
-  uppercase acronyms (`Dagger.JSONValue`), functions, arguments and variables
-  in snake_case. Older schemas have no words, so names fall back to the
-  legacy `Macro` conversion, which keeps their output unchanged.
+  Names are the engine's when it formatted them (see `Dagger.Codegen.Naming`):
+  modules in PascalCase with uppercase acronyms (`Dagger.JSONValue`),
+  functions, arguments and variables in snake_case. Older schemas have no
+  formatted names, so names fall back to the legacy `Macro` conversion, which
+  keeps their output unchanged.
 
   Only Elixir identifiers are formatted here: the names sent to the API
   (selected fields, arguments, enum values, type names) are always the
@@ -19,9 +19,9 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
   def format_module("Query"), do: format_module("Client")
 
   def format_module(name) do
-    case Naming.words(name) do
+    case Naming.format(name, :pascal, :uppercase) do
       nil -> legacy_module(name)
-      words -> "Dagger." <> Naming.format(words, :pascal, :uppercase)
+      formatted -> "Dagger." <> formatted
     end
   end
 
@@ -34,9 +34,9 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
   def format_var_name("Query"), do: format_var_name("Client")
 
   def format_var_name(name) do
-    case Naming.words(name) do
+    case Naming.format(name, :snake, :uppercase) do
       nil -> legacy_var_name(name)
-      words -> Naming.format(words, :snake)
+      formatted -> formatted
     end
   end
 
@@ -48,15 +48,16 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
   def legacy_var_name(name), do: Macro.underscore(name)
 
   def format_function_name(name) do
-    case Naming.words(name) do
+    case Naming.format(name, :snake, :uppercase) do
       nil -> legacy_function_name(name)
-      words -> words |> Naming.format(:snake) |> normalize_reserved_word() |> question_mark()
+      formatted -> formatted |> normalize_reserved_word() |> question_mark()
     end
   end
 
   @doc """
-  The function name `format_function_name/1` gives `name` when the schema has
-  no identifier words, to keep renamed functions as deprecated aliases.
+  The function name `format_function_name/1` gives `name` when the engine
+  didn't format the schema's names, to keep renamed functions as deprecated
+  aliases.
   """
   def legacy_function_name(name) do
     name

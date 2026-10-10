@@ -1,112 +1,81 @@
 defmodule Dagger.Codegen.Naming do
   @moduledoc """
-  Formats schema names from the words the engine parsed them into.
+  Looks up schema names as the engine formatted them.
 
-  Engines with schema views at v1.0.0 and above write each schema name's
-  words into the introspection JSON, under the top-level `__identifiers` key
-  (see `hack/designs/identifier-casing.md`, "Schema JSON words"). Codegen
-  formats those words itself instead of guessing word boundaries, so
-  acronyms and plurals come out right (`prerequisiteSHAs` is
-  `prerequisite_shas`, not `prerequisite_sh_as`).
+  Codegen doesn't format names itself: the engine does, with
+  `Query.formatIdentifiers`, so the formatting rules and the naming
+  dictionary live only in the engine (see `hack/designs/identifier-casing.md`,
+  "Formatting names in codegen"). Codegen has no engine session, so it reads
+  the names from a file the online step writes next to the introspection
+  JSON (`codegen introspect --names-out`), which maps each name format to the
+  schema's names formatted in it:
 
-  The words of the schema being generated are kept in the calling process
-  (see `put_identifiers/1`), so the formatter can look them up by name. When
-  a schema has no words (older engines), `words/1` returns `nil` and codegen
-  keeps its own conversion.
+      %{"SNAKE:UPPERCASE" => %{"prerequisiteSHAs" => "prerequisite_shas"}}
+
+  The names of the schema being generated are kept in the calling process
+  (see `put_names/1`), so the formatter can look them up. For a format or
+  name the file doesn't have, or a schema without `Query.formatIdentifiers`
+  (older engines), `format/3` returns `nil` and codegen keeps its legacy
+  conversion.
   """
-
-  @typedoc "A word of a schema name, as in the schema JSON."
-  @type word :: %{
-          kind: String.t(),
-          text: String.t(),
-          suffix: String.t(),
-          capitalized: String.t()
-        }
 
   @type casing :: :pascal | :camel | :snake | :screaming_snake | :kebab | :flat
   @type acronyms :: :uppercase | :capitalized
+  @typedoc "Formatted names by name format (`\"SNAKE:UPPERCASE\"`), then by schema name."
+  @type names :: %{String.t() => %{String.t() => String.t()}}
 
-  @key {__MODULE__, :identifiers}
+  # The name formats the Elixir generator uses: modules in PascalCase,
+  # everything else in snake_case.
+  @formats [{:pascal, :uppercase}, {:snake, :uppercase}]
+
+  @key {__MODULE__, :names}
 
   @doc """
-  Decode the `__identifiers` map of the schema JSON. Returns `nil` when it is
-  absent.
+  The name formats the Elixir generator uses, as `CASING:ACRONYMS` keys of
+  the names file.
   """
-  @spec from_map(map() | nil) :: %{String.t() => [word()]} | nil
+  @spec formats() :: [String.t()]
+  def formats, do: Enum.map(@formats, fn {casing, acronyms} -> key(casing, acronyms) end)
+
+  @doc "The names file key of a format: `key(:snake, :uppercase)` is `\"SNAKE:UPPERCASE\"`."
+  @spec key(casing(), acronyms()) :: String.t()
+  def key(casing, acronyms), do: String.upcase("#{casing}:#{acronyms}")
+
+  @doc """
+  Decode the names file. Returns `nil` for `nil`; formats that aren't maps,
+  and names that aren't non-empty strings, are left out.
+  """
+  @spec from_map(map() | nil) :: names() | nil
   def from_map(nil), do: nil
 
-  def from_map(identifiers) when is_map(identifiers) do
-    Map.new(identifiers, fn {name, words} -> {name, Enum.map(words, &word_from_map/1)} end)
-  end
-
-  @doc "Decode one word of the schema JSON."
-  @spec word_from_map(map()) :: word()
-  def word_from_map(word) do
-    %{
-      kind: Map.fetch!(word, "kind"),
-      text: Map.fetch!(word, "text"),
-      suffix: Map.get(word, "suffix", ""),
-      capitalized: Map.fetch!(word, "capitalized")
-    }
-  end
-
-  @doc """
-  Use `identifiers` (from `from_map/1`, or `nil` for none) to format names in
-  the calling process.
-  """
-  @spec put_identifiers(%{String.t() => [word()]} | nil) :: :ok
-  def put_identifiers(identifiers) do
-    Process.put(@key, identifiers)
-    :ok
-  end
-
-  @doc """
-  The words of `name` in the calling process's identifiers, or `nil` when
-  there are none: the schema predates identifier words, or the name has no
-  entry.
-  """
-  @spec words(String.t()) :: [word()] | nil
-  def words(name) do
-    case Process.get(@key) do
-      %{^name => [_ | _] = words} -> words
-      _ -> nil
+  def from_map(names) when is_map(names) do
+    for {format, formatted} when is_map(formatted) <- names, into: %{} do
+      {format, Map.filter(formatted, fn {_name, value} -> is_binary(value) and value != "" end)}
     end
   end
 
   @doc """
-  Format `words` in `casing`. `acronyms` selects how `:pascal` and `:camel`
-  write acronyms and terms: `:uppercase` (`HTTPClient`) or `:capitalized`
-  (`HttpClient`).
+  Use `names` (from `from_map/1`, or `nil` for none) to format names in the
+  calling process.
   """
-  @spec format([word()], casing(), acronyms()) :: String.t()
-  def format(words, casing, acronyms \\ :uppercase)
-
-  def format(words, :snake, _), do: join_lower(words, "_")
-  def format(words, :kebab, _), do: join_lower(words, "-")
-  def format(words, :flat, _), do: join_lower(words, "")
-
-  def format(words, :screaming_snake, _) do
-    Enum.map_join(words, "_", &String.upcase(&1.text <> &1.suffix))
+  @spec put_names(names() | nil) :: :ok
+  def put_names(names) do
+    Process.put(@key, names)
+    :ok
   end
 
-  def format(words, :pascal, acronyms) do
-    Enum.map_join(words, &capitalized_form(&1, acronyms))
+  @doc """
+  `name` as the engine formatted it in `casing` and `acronyms`, from the
+  calling process's names, or `nil` when it has none: the schema predates
+  `Query.formatIdentifiers`, or the format or name has no entry.
+  """
+  @spec format(String.t(), casing(), acronyms()) :: String.t() | nil
+  def format(name, casing, acronyms \\ :uppercase) do
+    key = key(casing, acronyms)
+
+    case Process.get(@key) do
+      %{^key => %{^name => formatted}} -> formatted
+      _ -> nil
+    end
   end
-
-  def format([], :camel, _), do: ""
-
-  def format([first | rest], :camel, acronyms) do
-    String.downcase(first.text <> first.suffix) <> format(rest, :pascal, acronyms)
-  end
-
-  defp join_lower(words, sep) do
-    Enum.map_join(words, sep, &String.downcase(&1.text <> &1.suffix))
-  end
-
-  defp capitalized_form(%{kind: "WORD"} = word, _), do: word.capitalized <> word.suffix
-  defp capitalized_form(word, :capitalized), do: word.capitalized <> word.suffix
-  defp capitalized_form(word, :uppercase), do: upcase_first(word.text) <> word.suffix
-
-  defp upcase_first(<<first::utf8, rest::binary>>), do: String.upcase(<<first::utf8>>) <> rest
-  defp upcase_first(""), do: ""
 end

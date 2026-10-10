@@ -5,6 +5,9 @@ defmodule Mix.Tasks.Dagger.Codegen do
 
   use Mix.Task
 
+  alias Dagger.Codegen.Introspection.Types.Schema
+  alias Dagger.Codegen.Naming
+
   def run(args) do
     :argparse.run(Enum.map(args, &String.to_charlist/1), cli(), %{progname: :dagger_codegen})
   end
@@ -25,6 +28,14 @@ defmodule Mix.Tasks.Dagger.Codegen do
               type: :binary,
               long: ~c"-introspection",
               required: true
+            },
+            # The schema's names as the engine formatted them, from
+            # `codegen introspect --names-out` (see Dagger.Codegen.Naming).
+            %{
+              name: :names,
+              type: :binary,
+              long: ~c"-names",
+              required: false
             }
           ],
           handler: &handle_generate/1
@@ -33,8 +44,14 @@ defmodule Mix.Tasks.Dagger.Codegen do
     }
   end
 
-  def handle_generate(%{outdir: outdir, introspection: introspection}) do
+  def handle_generate(%{outdir: outdir, introspection: introspection} = args) do
     schema = introspection |> File.read!() |> JSON.decode!()
+
+    names =
+      case args do
+        %{names: path} -> path |> File.read!() |> JSON.decode!() |> Naming.from_map()
+        _ -> nil
+      end
 
     IO.puts("Generate code to #{outdir}")
 
@@ -42,7 +59,7 @@ defmodule Mix.Tasks.Dagger.Codegen do
 
     Dagger.Codegen.generate(
       Dagger.Codegen.ElixirGenerator,
-      Dagger.Codegen.Introspection.Types.Schema.from_map(schema)
+      schema |> Schema.from_map() |> Schema.put_names(names)
     )
     |> Task.async_stream(
       fn {:ok, {file, code}} ->

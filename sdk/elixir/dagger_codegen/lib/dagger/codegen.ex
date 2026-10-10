@@ -10,11 +10,11 @@ defmodule Dagger.Codegen do
 
   def generate(generator, introspection_schema) do
     supports_nullable_objects = supports_nullable_objects?(introspection_schema.version)
-    identifiers = introspection_schema.identifiers
+    names = introspection_schema.names
 
     visit(introspection_schema, fn type ->
-      # Each type generates in its own process: give it the schema's words.
-      Naming.put_identifiers(identifiers)
+      # Each type generates in its own process: give it the schema's names.
+      Naming.put_names(names)
 
       code =
         do_generate(%{type | supports_nullable_objects: supports_nullable_objects}, generator)
