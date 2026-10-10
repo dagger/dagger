@@ -1061,6 +1061,20 @@ class Input(ObjectHandler[GraphQLInputObjectType]):
             for args in cast(GraphQLInputFieldMap, t.fields).items()
         )
 
+    @joiner
+    def render_body(self, t: GraphQLInputObjectType) -> Iterator[str]:
+        yield super().render_body(t)
+
+        # Explicit Python-to-GraphQL field name mapping, used when
+        # serializing so `call_id` is sent as `callId`.
+        fields = sorted(self.fields(t), key=lambda f: f.graphql_name)
+        yield ""
+        yield "@classmethod"
+        yield "def _graphql_field_names(cls) -> dict[str, str]:"
+        yield indent("return {")
+        yield from (indent(f'    "{f.name}": "{f.graphql_name}",') for f in fields)
+        yield indent("}")
+
 
 @dataclass
 class InterfaceProtocol(Handler[GraphQLInterfaceType]):
