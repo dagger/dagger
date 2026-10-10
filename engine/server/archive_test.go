@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -26,7 +25,6 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -646,13 +644,11 @@ func TestArchiveInitFailureIsNotFatal(t *testing.T) {
 	require.NotNil(t, srv.clientDBs, "live telemetry stores do not depend on archives")
 }
 
-type failingReleaseContainer struct{}
+type failingCloseTracker struct{}
 
-func (failingReleaseContainer) Start(context.Context, bkgw.StartRequest) (bkgw.ContainerProcess, error) {
-	return nil, errors.New("unused")
-}
-func (failingReleaseContainer) Release(context.Context) error {
-	return errors.New("container release failed")
+func (failingCloseTracker) Capture(context.Context, string, map[string]string) {}
+func (failingCloseTracker) Close() error {
+	return errors.New("analytics close failed")
 }
 
 // TestArchiveSealsDespiteUnrelatedTeardownError: only teardown errors that
@@ -673,8 +669,7 @@ func TestArchiveSealsDespiteUnrelatedTeardownError(t *testing.T) {
 		mainClientCallerID: md.ClientID,
 		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
 		services:           core.NewServices(),
-		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
-		containers:         map[bkgw.Container]struct{}{failingReleaseContainer{}: {}},
+		analytics:          failingCloseTracker{},
 		shutdownCh:         make(chan struct{}),
 		telemetryPubSub:    srv.telemetryPubSub,
 	}
@@ -687,7 +682,7 @@ func TestArchiveSealsDespiteUnrelatedTeardownError(t *testing.T) {
 	require.NoError(t, sess.ensureArchive(archiveTestTrace))
 	sess.archiveExpected = agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{}, Subscriptions: map[agentcontrol.EdgeKey]int64{}}
 
-	require.ErrorContains(t, srv.removeDaggerSession(t.Context(), sess), "container release failed")
+	require.ErrorContains(t, srv.removeDaggerSession(t.Context(), sess), "analytics close failed")
 	m, err := srv.archives.Manifest(archiveTestTrace)
 	require.NoError(t, err)
 	require.Equal(t, archive.StateClosed, m.State, "failure: %s", m.Failure)

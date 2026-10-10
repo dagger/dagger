@@ -12,7 +12,6 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -126,7 +125,6 @@ func TestSessionRemovalEndsMainClientAttachables(t *testing.T) {
 		clientRuntimes:     map[string]*clientRuntime{client.clientID: client},
 		services:           core.NewServices(),
 		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
-		containers:         map[bkgw.Container]struct{}{},
 		shutdownCh:         make(chan struct{}),
 		attachables:        newSessionAttachableManager(),
 	}
