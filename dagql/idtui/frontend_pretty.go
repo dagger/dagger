@@ -4559,10 +4559,20 @@ func (fe *frontendPretty) formHeight() int {
 // batch and every batch dirties the view, so on a trace with millions of spans
 // recalculating on every frame starved the render loop. Instead, once a
 // recalculation gets expensive, Render waits factor times its cost (capped at
-// maxDelay) after the last one before recalculating again, bounding it to
-// roughly 1/(1+factor) of the loop. Frames in between keep rendering the
-// previous rows, plus whatever the updated spans' own views show. Explicit
-// recalculations (key presses, zooms, the final render) are never deferred.
+// maxDelay) after the last one finished before recalculating again. Frames in
+// between keep rendering the previous rows, plus whatever the updated spans'
+// own views show.
+//
+// Below the cap, that bounds recalculation to 1/(1+factor) of the render loop.
+// Past it -- a recalculation costing more than maxDelay/factor, which
+// BenchmarkStreamingFrame's shape reaches at around 700k spans -- the share is
+// cost/(cost+maxDelay) instead, and every recalculation still blocks the loop
+// (input included) for its whole cost: pacing makes the freezes rarer, not
+// shorter.
+//
+// Explicit recalculations (key presses, zooms, the final render) call
+// recalculateViewLocked directly and are never deferred, and neither is a
+// dirty view marked viewUrgent (an agent switch, children the user fetched).
 type recalcPacing struct {
 	// minSpans keeps small traces -- and every test -- on the
 	// recalculate-every-frame path, independent of timing.
