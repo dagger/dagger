@@ -125,17 +125,21 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 		}); err != nil {
 			return inst, err
 		}
-		remainingID, err := remaining.ID()
+		// The working tree is the old HEAD's tree plus edits, so a recipe
+		// holding remaining by reference would still check out the commits
+		// being discarded on replay, and fail once they cannot be rebuilt
+		// with the same hashes. Nothing remaining needs no overlay at all;
+		// otherwise record it as content where a patch can carry it.
+		empty, err := remaining.Self().IsEmpty(ctx)
 		if err != nil {
 			return inst, err
 		}
-		var overlaid dagql.ObjectResult[*core.Workspace]
-		if err := srv.Select(ctx, inst, &overlaid, dagql.Selector{
-			Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](remainingID)}},
-		}); err != nil {
-			return inst, err
+		if !empty {
+			inst, err = workspaceWithChangesAsPatch(ctx, srv, inst, remaining, "workspace-reset.patch")
+			if err != nil {
+				return inst, fmt.Errorf("preserve working tree: %w", err)
+			}
 		}
-		inst = overlaid
 	}
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, frozen.Self(), frozen.Self().SelectedEnv())
 }
