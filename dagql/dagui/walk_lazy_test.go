@@ -3,8 +3,10 @@ package dagui
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 // describeRows describes rows as Rows renders them: every field a frontend
@@ -148,5 +150,156 @@ func TestLazyRowsMatchFullTree(t *testing.T) {
 	}
 	if failures > 0 {
 		t.Logf("%d failures over %d views", failures, runs)
+	}
+}
+
+// streamRandomTrace splits a random trace into the batches of snapshots a
+// frontend would receive it in: each span first as it starts (running, and
+// maybe not yet revealed), then, if it ends or is revealed later, as it ends.
+// Spans arrive in random order, so children and effects often come before
+// their parents and causes, and a span's ending can come any time after its
+// start. Sometimes the root span ends too, which cancels whatever is still
+// running then, and whatever starts after.
+func streamRandomTrace(rng *rand.Rand, rt randomTrace) [][]SpanSnapshot {
+	type event struct {
+		snap SpanSnapshot
+		at   float64
+	}
+	var events []event
+	for _, snap := range rt.snaps {
+		if snap.ID == rt.ids[0] && rng.Intn(3) == 0 {
+			snap.EndTime = snap.StartTime.Add(time.Hour)
+		}
+		started := snap
+		started.EndTime = time.Time{}
+		if snap.Reveal && rng.Intn(2) == 0 {
+			started.Reveal = false
+		}
+		at := rng.Float64()
+		events = append(events, event{started, at})
+		if !snap.EndTime.IsZero() || started.Reveal != snap.Reveal {
+			events = append(events, event{snap, at + rng.Float64()})
+		}
+	}
+	sort.SliceStable(events, func(i, j int) bool {
+		return events[i].at < events[j].at
+	})
+	var batches [][]SpanSnapshot
+	for len(events) > 0 {
+		n := min(1+rng.Intn(4), len(events))
+		batch := make([]SpanSnapshot, n)
+		for i := range batch {
+			batch[i] = events[i].snap
+		}
+		batches = append(batches, batch)
+		events = events[n:]
+	}
+	return batches
+}
+
+// checkDBIndexes checks the DB's running and revealer indexes against its
+// spans: every running span is indexed as running, and nothing else, so the
+// index doesn't keep spans that stopped; every revealer is indexed, and only
+// those.
+func checkDBIndexes(db *DB) error {
+	for _, span := range db.Spans.Order {
+		if _, indexed := db.runningSpans[span]; span.IsRunningOrEffectsRunning() && !indexed {
+			return fmt.Errorf("running span %s isn't indexed", span.Name)
+		}
+	}
+	for span := range db.runningSpans {
+		if !span.IsRunningOrEffectsRunning() {
+			return fmt.Errorf("span %s is indexed as running, but isn't", span.Name)
+		}
+	}
+	revealers := 0
+	for _, span := range db.Spans.Order {
+		for _, revealed := range span.RevealedSpans.Spans() {
+			revealers++
+			if !db.revealers[revealed].Has(span.ID) {
+				return fmt.Errorf("%s reveals %s, but isn't indexed", span.Name, revealed.Name)
+			}
+		}
+	}
+	indexed := 0
+	for _, set := range db.revealers {
+		indexed += set.Len()
+	}
+	if indexed != revealers {
+		return fmt.Errorf("%d revealers indexed, want %d", indexed, revealers)
+	}
+	return nil
+}
+
+// TestLazyRowsMatchFullTreeStreaming is TestLazyRowsMatchFullTree with the
+// trace streamed in (see streamRandomTrace) rather than imported at once:
+// after every batch, a lazy view must render the rows, and hold the trees, a
+// full one does, under a few random views. The DB indexes a lazy view reads
+// (running spans, revealers) are kept up to date span by span, so this holds
+// them to that as spans start, finish, and get revealed, in any order.
+func TestLazyRowsMatchFullTreeStreaming(t *testing.T) {
+	const runs = 1000
+	failures, views := 0, 0
+	for seed := range runs {
+		rng := rand.New(rand.NewSource(int64(seed)))
+		rt := newRandomTrace(rng)
+		db := NewDB()
+		db.SetPrimarySpan(rt.ids[0])
+		callsAdded := map[string]bool{}
+		var imported []string
+		for b, batch := range streamRandomTrace(rng, rt) {
+			// a call arrives with its span
+			for _, snap := range batch {
+				if snap.CallDigest != "" && !callsAdded[snap.CallDigest] {
+					callsAdded[snap.CallDigest] = true
+					db.addCall(snap.CallDigest, rt.calls[snap.CallDigest])
+				}
+			}
+			db.ImportSnapshots(batch)
+			for _, snap := range batch {
+				state := "start"
+				if !snap.EndTime.IsZero() {
+					state = "end"
+				}
+				imported = append(imported, fmt.Sprintf("%s:%s", snap.Name, state))
+			}
+
+			fail := func(format string, args ...any) {
+				t.Helper()
+				failures++
+				if failures <= 3 {
+					t.Errorf("seed %d, batch %d: %s\nimported: %s\ntrace:\n%s",
+						seed, b, fmt.Sprintf(format, args...), strings.Join(imported, " "), describeTraceForWalk(db))
+				}
+			}
+			if err := checkDBIndexes(db); err != nil {
+				fail("%s", err)
+				break
+			}
+			for range 3 {
+				views++
+				opts := randomExpansion(rng, rt.ids, randomViewOpts(rng, rt.ids))
+				full := db.rowsView(opts, false)
+				want := describeRows(full.Rows(opts))
+				if got := describeRows(db.rowsView(opts, true).Rows(opts)); got != want {
+					fail("rows differ:\nfull:\n%s\nlazy:\n%s", want, got)
+					break
+				}
+				var fullTrees, lazyTrees strings.Builder
+				for _, tree := range full.Body {
+					describeAll(tree, opts, 0, &fullTrees)
+				}
+				for _, tree := range db.rowsView(opts, true).Body {
+					describeAll(tree, opts, 0, &lazyTrees)
+				}
+				if fullTrees.String() != lazyTrees.String() {
+					fail("trees differ:\nfull:\n%s\nlazy:\n%s", fullTrees.String(), lazyTrees.String())
+					break
+				}
+			}
+		}
+	}
+	if failures > 0 {
+		t.Logf("%d failures over %d views", failures, views)
 	}
 }
