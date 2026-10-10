@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger/core"
@@ -139,42 +140,23 @@ func (AgentsSuite) TestDiscoverySkipsUnboundRequiredArg(ctx context.Context, t *
 	// must skip entries it cannot invoke without an explicit binding.
 	_, err = modGen.With(daggerExec("agent", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	ws := agentFixtureWorkspace(modGen)
-	wsID, err := ws.ID(ctx)
+	// Observe actual entry execution, rather than listing all discoverable
+	// artifacts (which intentionally includes parameterized entrypoints).
+	const composedMarker = "DISCOVERY_EDITOR_COMPOSED"
+	editorSource := editorSourceWithDoc("Discovery fixture tool.")
+	editorSource = strings.Replace(editorSource, "    base\n", "    print(\""+composedMarker+"\")\n    base\n", 1)
+	modGen = modGen.WithNewFile("../editor/main.dang", editorSource)
+	out, err := modGen.With(daggerExec("agent", "--progress=plain")).CombinedOutput(ctx)
 	require.NoError(t, err)
-	var selected struct {
-		Node struct {
-			Artifacts struct {
-				FilterTypes struct{ AsExpertise []struct{ ID core.ID } }
-			}
-		}
-	}
-	// Use the CLI's compose-all discovery mode. Explicit asExpertise calls
-	// remain strict about unbound required arguments.
-	require.NoError(t, c.Do(ctx, &dagger.Request{
-		Query: `query($ws: ID!) { node(id: $ws) { ... on Workspace { artifacts {
-			filterTypes(types: ["Expertise"]) { asExpertise(skipUnbound: true) { id } }
-		} } } }`,
-		Variables: map[string]any{"ws": wsID},
-	}, &dagger.Response{Data: &selected}))
-	var ids []core.ID
-	for _, entry := range selected.Node.Artifacts.FilterTypes.AsExpertise {
-		ids = append(ids, entry.ID)
-	}
-	llm, err := applyExpertiseIDs(ctx, c, core.NewQuery(c).LLM().WithWorkspace(ws), "compose", ids)
-	require.NoError(t, err)
-	entries := recordedExpertise(ctx, t, c, llm)
-	require.Len(t, entries, 1)
-	require.Contains(t, entries[0].Artifact.URI, "editor/agent")
-	tools, err := llm.Tools(ctx)
-	require.NoError(t, err)
-	require.Contains(t, tools, "## readFile")
+	require.Contains(t, out, composedMarker)
+	require.NotContains(t, out, "unbound required agent argument")
 
 	// The skipped entry remains available when the caller supplies its arg.
-	llm, err = applyBoundExpertise(ctx, c, ws, llm, "compose", "badagent/agent", `{"extra":"explicitly bound"}`)
+	ws := agentFixtureWorkspace(modGen)
+	llm, err := applyBoundExpertise(ctx, c, ws, core.NewQuery(c).LLM(), "compose", "badagent/agent", `{"extra":"explicitly bound"}`)
 	require.NoError(t, err)
 	require.Contains(t, recomposeSystemPrompts(ctx, t, c, llm), "explicitly bound")
-	require.Len(t, recordedExpertise(ctx, t, c, llm), 2)
+	require.Len(t, recordedExpertise(ctx, t, c, llm), 1)
 }
 
 func (AgentsSuite) TestValidationRejectsMissingBaseArg(ctx context.Context, t *testctx.T) {

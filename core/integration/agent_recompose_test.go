@@ -1344,13 +1344,17 @@ func (LLMSuite) TestComposeBoundObjectAndCanonicalIdentity(ctx context.Context, 
 	require.ElementsMatch(t, []string{"Refreshed first: " + handle, "Attached second: " + handle}, recomposeSystemPrompts(ctx, t, c, llm))
 	require.Equal(t, entries, recordedExpertise(ctx, t, c, llm))
 
-	portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
-	require.NoError(t, err)
-	target := connect(ctx, t)
-	restored := core.Ref[*core.LLM](core.NewQuery(target), portable)
-	require.Equal(t, entries, recordedExpertise(ctx, t, target, restored))
-	restored = recomposeRecordedExpertise(ctx, t, target, restored.Workspace(), restored)
-	require.ElementsMatch(t, []string{"Refreshed first: " + handle, "Refreshed second: " + handle}, recomposeSystemPrompts(ctx, t, target, restored))
+	t.Run("portable replay", func(ctx context.Context, t *testctx.T) {
+		portable, err := sink.captureLLMRecipe(ctx, t, c, llm)
+		require.NoError(t, err)
+		target := connect(ctx, t)
+		restored := core.Ref[*core.LLM](core.NewQuery(target), portable)
+		require.Equal(t, entries, recordedExpertise(ctx, t, target, restored),
+			"portable replay retains ordered entries and canonical scalar/object arguments")
+		restored = recomposeRecordedExpertise(ctx, t, target, restored.Workspace(), restored)
+		require.Equal(t, entries, recordedExpertise(ctx, t, target, restored))
+		require.ElementsMatch(t, []string{"Refreshed first: " + handle, "Refreshed second: " + handle}, recomposeSystemPrompts(ctx, t, target, restored))
+	})
 }
 
 func (LLMSuite) TestRecomposeDirectCallerLeavesForeignToolsUnowned(ctx context.Context, t *testctx.T) {

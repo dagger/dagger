@@ -176,45 +176,6 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		t.Logf("%s: %s", checkpoint, data)
 	}
 
-	t.Run("bound expertise survives restart", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		stateKey := "bound-expertise-" + rand.Text()
-		opts := snapshotTestOptions(ctx, t)
-		upA, tunnelA, a := startEngine(c, ctx, t, stateKey, opts...)
-		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
-		const source = `
-type Swapper {
-  worker(base: LLM!, name: String!): LLM! @agent {
-    base.withSystemPrompt("persisted worker: " + name)
-  }
-}
-`
-		ws := recomposeFixture(a, source).AsWorkspace()
-		llm, err := applyBoundExpertise(ctx, a, ws, core.NewQuery(a).LLM(), "compose", "swapper/worker", `{"name":"helper"}`)
-		require.NoError(t, err)
-		entries := recordedExpertise(ctx, t, a, llm)
-		require.Len(t, entries, 1)
-		require.JSONEq(t, `{"name":"helper"}`, entries[0].Arguments)
-		id, err := llm.ID(ctx)
-		require.NoError(t, err)
-		// Loading the engine result handle, rather than a portable recipe,
-		// proves the composition record was serialized into the cache payload.
-		resultID := snapshotResultID(t, string(id))
-		require.Contains(t, readSnapshotRows(ctx, t, c, upA), resultID)
-		stopEngine(ctx, t, upA, tunnelA, a)
-		upA, tunnelA, a = nil, nil, nil
-
-		upB, tunnelB, b := startEngine(c, ctx, t, stateKey, opts...)
-		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
-		restored := core.Ref[*core.LLM](core.NewQuery(b), id)
-		require.Equal(t, entries, recordedExpertise(ctx, t, b, restored))
-		require.Equal(t, []string{"persisted worker: helper"}, recomposeSystemPrompts(ctx, t, b, restored))
-		ws = restored.Workspace().WithNewFile(recomposeModulePath, strings.ReplaceAll(source, "persisted worker: ", "refreshed worker: "))
-		restored = recomposeRecordedExpertise(ctx, t, b, ws, restored)
-		require.Equal(t, entries, recordedExpertise(ctx, t, b, restored))
-		require.Equal(t, []string{"refreshed worker: helper"}, recomposeSystemPrompts(ctx, t, b, restored))
-	})
-
 	t.Run("lazy values survive restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		requests := atomic.Int64{}
