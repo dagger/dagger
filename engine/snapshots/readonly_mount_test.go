@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/leases"
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -16,21 +17,51 @@ import (
 // viewLeases returns the leases that hold a read-only mount's view snapshot.
 func viewLeases(t *testing.T, store *testutil.Store) []string {
 	t.Helper()
+	views, err := listViews(store)
+	require.NoError(t, err)
+	ids := make([]string, 0, len(views))
+	for id := range views {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// listViews returns, for each lease that holds a read-only mount's view
+// snapshot, the snapshot the view is of. A lease or view removed while it
+// lists, as when a shared mount released in the background deletes its view
+// lease, is left out.
+func listViews(store *testutil.Store) (map[string]string, error) {
 	ctx := context.Background()
 	all, err := store.Leases.List(ctx)
-	require.NoError(t, err)
-	var ids []string
+	if err != nil {
+		return nil, err
+	}
+	views := map[string]string{}
 	for _, l := range all {
 		resources, err := store.Leases.ListResources(ctx, l)
-		require.NoError(t, err)
+		if cerrdefs.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
 		for _, r := range resources {
-			if strings.HasSuffix(r.ID, "-view") {
-				ids = append(ids, l.ID)
+			if !strings.HasSuffix(r.ID, "-view") {
+				continue
+			}
+			info, err := store.Snapshots.Stat(ctx, r.ID)
+			if cerrdefs.IsNotFound(err) {
 				break
 			}
+			if err != nil {
+				return nil, err
+			}
+			views[l.ID] = info.Parent
+			break
 		}
 	}
-	return ids
+	return views, nil
 }
 
 func leaseIDs(t *testing.T, store *testutil.Store) []string {
