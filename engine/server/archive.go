@@ -425,8 +425,9 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	if r.Method != http.MethodGet {
 		return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
 	}
-	m, err := srv.archives.Manifest(parts[0])
+	m, err := srv.archiveManifest(r.Context(), record.daggerSession, parts[0])
 	if err != nil {
+		slog.Debug("archive lookup failed", "traceID", parts[0], "session", record.daggerSession.sessionID, "err", err)
 		return writeArchiveFailure(w, err)
 	}
 	// An unsealed archive (interrupted or incomplete) has no bootstrap or
@@ -457,6 +458,29 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	default:
 		return httpErr(errors.New("unknown archive endpoint"), http.StatusNotFound)
 	}
+}
+
+// archiveManifest looks up an archive for a request from sess. A session
+// registers its own archive only when its first agent control record reaches
+// the session exporter, behind the control lane's batching, so until then a
+// miss flushes the session's telemetry and looks again: the CLI's exit-time
+// lookup right after a short session must still find it.
+func (srv *Server) archiveManifest(ctx context.Context, sess *daggerSession, traceID string) (archive.Manifest, error) {
+	m, err := srv.archives.Manifest(traceID)
+	var failure *archive.Failure
+	if !errors.As(err, &failure) || failure.Kind != archive.FailureNotFound {
+		return m, err
+	}
+	sess.archiveMu.Lock()
+	settled := sess.archiveManifest != nil || sess.archiveRegisterErr != nil
+	sess.archiveMu.Unlock()
+	if settled {
+		return m, err
+	}
+	if err := sess.FlushTelemetry(ctx, "archive lookup"); err != nil {
+		slog.Debug("flush session telemetry for archive lookup", "err", err)
+	}
+	return srv.archives.Manifest(traceID)
 }
 
 // unsealedArchiveCut is the current end of an unsealed archive's store. Its
