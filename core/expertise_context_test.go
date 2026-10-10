@@ -62,7 +62,7 @@ func TestExpertiseOwnerCallCacheAndReplay(t *testing.T) {
 		calls++
 		ctx = expertiseCallContext(ctx, &CallOpts{
 			useRecordedExpertiseOwner: true,
-			Inputs:                   []CallInput{{Name: expertiseOwnerArg, Value: args.Owner}},
+			Inputs:                    []CallInput{{Name: expertiseOwnerArg, Value: args.Owner}},
 		})
 		owner, _ := ExpertiseOwner(ctx)
 		return &Module{NameField: owner}, nil

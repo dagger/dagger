@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -542,8 +541,7 @@ func retainArtifactInputs(ctx context.Context, inputs []dagql.NamedInput) ([]dag
 }
 
 type asExpertiseArgs struct {
-	Arguments   core.JSON `default:"{}"`
-	SkipUnbound bool      `internal:"true" default:"false"`
+	Arguments core.JSON `default:"{}"`
 }
 
 func newArtifactExpertise(ctx context.Context, a *core.Artifact, args struct {
@@ -1066,9 +1064,6 @@ func (*artifactsSchema) asExpertise(ctx context.Context, parent dagql.ObjectResu
 	for _, item := range items {
 		_, err := core.NewExpertise(item.Self(), args.Arguments)
 		if err != nil {
-			if args.SkipUnbound && errors.Is(err, core.ErrUnboundExpertise) {
-				continue
-			}
 			return nil, err
 		}
 		selected = append(selected, item)
