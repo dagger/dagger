@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -5743,4 +5744,35 @@ func TestIsCoreRootFieldCoversEveryCoreQueryField(t *testing.T) {
 	// `id` is core on Query, but a module function named `id` is rejected by
 	// name, and that error needs the module loaded to be produced at all.
 	require.False(t, isCoreRootField("id"))
+}
+
+func TestHTTPHandlerFuncLabelsGraphQLErrorsJSON(t *testing.T) {
+	handler := httpHandlerFunc(func(http.ResponseWriter, *http.Request, struct{}) error {
+		return gqlErr(errors.New("loading modules: boom"), http.StatusInternalServerError)
+	}, struct{}{})
+	for _, http2 := range []bool{false, true} {
+		t.Run(fmt.Sprintf("http2=%t", http2), func(t *testing.T) {
+			srv := httptest.NewUnstartedServer(handler)
+			if http2 {
+				srv.EnableHTTP2 = true
+				srv.StartTLS()
+			} else {
+				srv.Start()
+			}
+			defer srv.Close()
+			resp, err := srv.Client().Get(srv.URL)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			require.Equal(t, http2, resp.ProtoMajor == 2)
+			require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+			var body struct {
+				Errors []struct {
+					Message string `json:"message"`
+				} `json:"errors"`
+			}
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+			require.Len(t, body.Errors, 1)
+			require.Equal(t, "loading modules: boom", body.Errors[0].Message)
+		})
+	}
 }
