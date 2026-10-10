@@ -65,6 +65,16 @@ type spanWalker struct {
 	// descend, if set, decides whether the walk builds a tree's children;
 	// without it, it builds them all.
 	descend func(*TraceTree) bool
+
+	// lazy builds only the trees the view's rows show: see DB.rowsView and
+	// walk_lazy.go.
+	lazy bool
+	// shallow stops a lazy walk from building beneath the trees it builds,
+	// for building one list on demand.
+	shallow bool
+	// running is, for each span the walk may place, the spans placed beneath
+	// it on the way to a running span (see runningEdges); built on first use.
+	running map[*Span][]runningEdge
 }
 
 // spanMode is how the walk treats a span.
@@ -455,6 +465,9 @@ type treeList struct {
 	lastCall *TraceTree
 	// revealed is set within revealed copies.
 	revealed bool
+	// probe makes the list build nothing, only note in found whether it
+	// would hold any tree.
+	probe, found bool
 }
 
 // walk builds the view's top-level trees.
@@ -487,6 +500,9 @@ func (w *spanWalker) slotAtRoot(span *Span) bool {
 // effects that it hosts, each preceded by any causes inlined beside it.
 func (w *spanWalker) fill(list *treeList, span *Span) {
 	for _, child := range span.ChildSpans.Spans() {
+		if list.found {
+			return
+		}
 		if child == w.container {
 			// reached when an ancestor of the zoomed span is inlined; what it
 			// holds is the top level
@@ -523,6 +539,9 @@ func (w *spanWalker) inlineCauses(list *treeList, effect *Span) {
 
 func (w *spanWalker) inlineCausesOf(list *treeList, slot, span *Span, visited *[]*Span) {
 	for _, cause := range span.causesViaLinks.Spans() {
+		if list.found {
+			return
+		}
 		if w.inliner(cause) != slot ||
 			// a diamond of links reaches a cause more than once
 			slices.Contains(*visited, cause) {
@@ -546,10 +565,15 @@ func (w *spanWalker) emit(list *treeList, span *Span) {
 		w.fill(list, span)
 		return
 	}
+	if list.probe {
+		list.found = true
+		return
+	}
 	tree := &TraceTree{
 		Span:             span,
 		Parent:           list.parent,
 		RevealedChildren: span.RevealedSpans.Len() > 0,
+		revealedCopy:     list.revealed,
 	}
 	// A call chains onto the call before it in the same sibling list.
 	if prev := list.lastCall; prev != nil {
@@ -565,32 +589,17 @@ func (w *spanWalker) emit(list *treeList, span *Span) {
 	if w.emitted != nil {
 		w.emitted(tree, list.revealed)
 	}
+	if w.lazy {
+		w.emitLazy(tree)
+		return
+	}
 	if w.descend != nil && !w.descend(tree) {
 		tree.IsRunningOrChildRunning = span.IsRunningOrEffectsRunning()
 		return
 	}
 
-	children := treeList{parent: tree, revealed: list.revealed}
-	showsRevealed := tree.RevealedChildren && tree.ShouldShowRevealedSpans(w.opts)
-	if !list.revealed || !showsRevealed {
-		// Within a revealed copy, a span showing its own revealed spans
-		// doesn't need its children too: only rows show the copy, and they
-		// show the revealed spans instead. (Elsewhere they're the home trees
-		// of the spans beneath, which BySpan and a full-tree reader want.)
-		w.fill(&children, span)
-		tree.Children = children.trees
-	}
-
-	if showsRevealed {
-		revealed := treeList{parent: tree, revealed: true}
-		for _, span := range span.RevealedSpans.Spans() {
-			if w.mode(span) == modeBuild && w.reachable(span, true) &&
-				!revealedBy(tree, span) {
-				w.emit(&revealed, span)
-			}
-		}
-		tree.Revealed = revealed.trees
-	}
+	w.buildChildren(tree)
+	w.buildRevealed(tree)
 
 	running := span.IsRunningOrEffectsRunning()
 	for _, child := range tree.Children {
@@ -606,6 +615,38 @@ func (w *spanWalker) emit(list *treeList, span *Span) {
 		running = child.IsRunningOrChildRunning
 	}
 	tree.IsRunningOrChildRunning = running
+}
+
+// buildChildren builds the trees of the spans placed beneath tree's span.
+func (w *spanWalker) buildChildren(tree *TraceTree) {
+	tree.childrenBuilt = true
+	if tree.revealedCopy && tree.ShouldShowRevealedSpans(w.opts) {
+		// Within a revealed copy, a span showing its own revealed spans
+		// doesn't need its children too: only rows show the copy, and they
+		// show the revealed spans instead. (Elsewhere they're the home trees
+		// of the spans beneath, which BySpan and a full-tree reader want.)
+		return
+	}
+	children := treeList{parent: tree, revealed: tree.revealedCopy}
+	w.fill(&children, tree.Span)
+	tree.Children = children.trees
+}
+
+// buildRevealed builds copies of the span's revealed spans beneath tree, if
+// it shows them in place of its children.
+func (w *spanWalker) buildRevealed(tree *TraceTree) {
+	tree.revealedBuilt = true
+	if !tree.ShouldShowRevealedSpans(w.opts) {
+		return
+	}
+	revealed := treeList{parent: tree, revealed: true}
+	for _, span := range tree.Span.RevealedSpans.Spans() {
+		if w.mode(span) == modeBuild && w.reachable(span, true) &&
+			!revealedBy(tree, span) {
+			w.emit(&revealed, span)
+		}
+	}
+	tree.Revealed = revealed.trees
 }
 
 // revealedBy reports whether span is tree's span or an ancestor's, which
