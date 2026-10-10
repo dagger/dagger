@@ -57,6 +57,24 @@ func (s identifierSchema) Install(srv *dagql.Server) {
 			Doc(`The acronyms and terms used to parse and format identifiers.`),
 	}.Install(srv)
 
+	dagql.Fields[*core.Query]{
+		// formatIdentifiers for module runtimes, which run codegen for a
+		// module's schema but are served at their own engine version, where
+		// formatIdentifiers may not exist: installed in every view, hidden
+		// from introspection by the __ prefix, and parsing with the dictionary
+		// of the given version rather than the caller's. Its casing and
+		// acronyms are strings, since the Casing and AcronymStyle enums aren't
+		// in older views.
+		dagql.Func("__formatIdentifiers", s.formatIdentifiersForVersion).
+			Doc(`(Internal-only) Format many names at once, for codegen, with the naming dictionary of an engine version. Returns them in input order.`).
+			Args(
+				dagql.Arg("names").Doc("The names to format, in any casing."),
+				dagql.Arg("casing").Doc("The casing to format the names in: a Casing value."),
+				dagql.Arg("acronyms").Doc("How to write acronyms and terms where a word starts with a capital: an AcronymStyle value."),
+				dagql.Arg("version").Doc("The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of the schema being generated."),
+			),
+	}.Install(srv)
+
 	dagql.Fields[*core.Identifier]{
 		dagql.Func("format", s.format).
 			Doc(`Format the identifier in a casing.`).
@@ -116,18 +134,32 @@ func (s identifierSchema) formatIdentifiers(ctx context.Context, _ *core.Query, 
 	Casing   core.Casing
 	Acronyms core.AcronymStyle `default:"UPPERCASE"`
 }) ([]dagql.String, error) {
-	casing, style, err := identifierFormatArgs{Casing: args.Casing, Acronyms: args.Acronyms}.naming()
+	return formatNames(namingDictionaryFor(ctx), args.Names, args.Casing, args.Acronyms)
+}
+
+func (s identifierSchema) formatIdentifiersForVersion(_ context.Context, _ *core.Query, args struct {
+	Names    []string
+	Casing   string
+	Acronyms string `default:"UPPERCASE"`
+	Version  string
+}) ([]dagql.String, error) {
+	return formatNames(naming.DictionaryFor(args.Version), args.Names, core.Casing(args.Casing), core.AcronymStyle(args.Acronyms))
+}
+
+// formatNames parses names with dict and formats them in a casing and
+// acronym style, in input order.
+func formatNames(dict *naming.Dictionary, names []string, casing core.Casing, acronyms core.AcronymStyle) ([]dagql.String, error) {
+	namingCasing, style, err := identifierFormatArgs{Casing: casing, Acronyms: acronyms}.naming()
 	if err != nil {
 		return nil, err
 	}
-	dict := namingDictionaryFor(ctx)
-	formatted := make([]dagql.String, len(args.Names))
-	for i, name := range args.Names {
+	formatted := make([]dagql.String, len(names))
+	for i, name := range names {
 		id, err := dict.Parse(name)
 		if err != nil {
 			return nil, err
 		}
-		formatted[i] = dagql.String(id.Format(casing, style))
+		formatted[i] = dagql.String(id.Format(namingCasing, style))
 	}
 	return formatted, nil
 }
