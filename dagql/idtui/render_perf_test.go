@@ -85,17 +85,20 @@ func newLargeTraceFrontend(tb testing.TB, tops, fanout, depth int) (*frontendPre
 // rebuilt the whole trace tree. The unpaced variant disables recalculation
 // pacing, recalculating on every frame as the TUI used to.
 func BenchmarkStreamingFrame(b *testing.B) {
-	b.Run("paced", benchmarkStreamingFrame)
+	b.Run("paced", func(b *testing.B) {
+		benchmarkStreamingFrame(b, defaultRecalcPacing)
+	})
 	b.Run("unpaced", func(b *testing.B) {
-		defer func(prev int) { recalcPaceMinSpans = prev }(recalcPaceMinSpans)
-		recalcPaceMinSpans = math.MaxInt
-		benchmarkStreamingFrame(b)
+		unpaced := defaultRecalcPacing
+		unpaced.minSpans = math.MaxInt
+		benchmarkStreamingFrame(b, unpaced)
 	})
 }
 
-func benchmarkStreamingFrame(b *testing.B) {
+func benchmarkStreamingFrame(b *testing.B, pacing recalcPacing) {
 	const frameGap = 25 * time.Millisecond
 	fe, leaves, next := newLargeTraceFrontend(b, 50, 10, 4) // ~555k spans
+	fe.recalcPacing = pacing
 	traceID := dagui.TraceID{TraceID: trace.TraceID{1}}
 	start := time.Unix(100, 0)
 	recalcs := 0
@@ -149,10 +152,7 @@ func TestStreamingRecalcPacing(t *testing.T) {
 	})
 
 	t.Run("expensive recalculation is deferred until due", func(t *testing.T) {
-		defer func(spans int, cost time.Duration) {
-			recalcPaceMinSpans, recalcPaceMinCost = spans, cost
-		}(recalcPaceMinSpans, recalcPaceMinCost)
-		recalcPaceMinSpans, recalcPaceMinCost = 0, 0
+		fe.recalcPacing.minSpans, fe.recalcPacing.minCost = 0, 0
 
 		fe.lastRecalcCost = 100 * time.Millisecond
 		fe.lastRecalcAt = time.Now()

@@ -377,10 +377,11 @@ type frontendPretty struct {
 	// data updates into a single recalculate per render frame.
 	viewDirty bool
 
-	// lastRecalcCost and lastRecalcAt record the most recent view
-	// recalculation, so Render can pace data-driven recalculation of large
-	// traces (see recalcWaitLocked). recalcWakeupPending is set while a timer
-	// is scheduled to render again once a deferred recalculation is due.
+	// recalcPacing tunes how Render paces data-driven recalculation of large
+	// traces (see recalcWaitLocked). lastRecalcCost and lastRecalcAt record
+	// the most recent view recalculation. recalcWakeupPending is set while a
+	// timer is scheduled to render again once a deferred recalculation is due.
+	recalcPacing        recalcPacing
 	lastRecalcCost      time.Duration
 	lastRecalcAt        time.Time
 	recalcWakeupPending bool
@@ -1200,6 +1201,7 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 		tuiTerm:            term,
 		claims:             newRenderClaims(),
 		promptColorProfile: promptProfile,
+		recalcPacing:       defaultRecalcPacing,
 	}
 	tui.AddInputListener(fe.handlePromptBackground)
 	tui.AddInputListener(fe.handleHUDKey)
@@ -4531,34 +4533,40 @@ func (fe *frontendPretty) formHeight() int {
 // complete tree), so its cost grows with the trace. Spans stream in batch by
 // batch and every batch dirties the view, so on a trace with millions of spans
 // recalculating on every frame starved the render loop. Instead, once a
-// recalculation gets expensive, Render waits recalcPaceFactor times its cost
-// (capped at recalcMaxDelay) after the last one before recalculating again,
-// bounding it to roughly 1/(1+recalcPaceFactor) of the loop. Frames in between
-// keep rendering the previous rows, plus whatever the updated spans' own views
-// show. Explicit recalculations (key presses, zooms, the final render) are
-// never deferred.
-var (
-	// recalcPaceMinSpans keeps small traces -- and every test -- on the
+// recalculation gets expensive, Render waits factor times its cost (capped at
+// maxDelay) after the last one before recalculating again, bounding it to
+// roughly 1/(1+factor) of the loop. Frames in between keep rendering the
+// previous rows, plus whatever the updated spans' own views show. Explicit
+// recalculations (key presses, zooms, the final render) are never deferred.
+type recalcPacing struct {
+	// minSpans keeps small traces -- and every test -- on the
 	// recalculate-every-frame path, independent of timing.
-	recalcPaceMinSpans = 20_000
-	// recalcPaceMinCost is the cheapest recalculation worth pacing.
-	recalcPaceMinCost = 5 * time.Millisecond
-)
+	minSpans int
+	// minCost is the cheapest recalculation worth pacing.
+	minCost time.Duration
+	// factor is how many times its cost a recalculation waits after the last.
+	factor int
+	// maxDelay caps that wait.
+	maxDelay time.Duration
+}
 
-const (
-	recalcPaceFactor = 4
-	recalcMaxDelay   = 2 * time.Second
-)
+var defaultRecalcPacing = recalcPacing{
+	minSpans: 20_000,
+	minCost:  5 * time.Millisecond,
+	factor:   4,
+	maxDelay: 2 * time.Second,
+}
 
 // recalcWaitLocked returns how much longer a data-driven recalculation should
 // be deferred, or <= 0 if it's due now.
 func (fe *frontendPretty) recalcWaitLocked(now time.Time) time.Duration {
+	pacing := fe.recalcPacing
 	if fe.finalRender || fe.reportOnly || fe.db == nil ||
-		fe.lastRecalcCost < recalcPaceMinCost ||
-		len(fe.db.Spans.Order) < recalcPaceMinSpans {
+		fe.lastRecalcCost < pacing.minCost ||
+		len(fe.db.Spans.Order) < pacing.minSpans {
 		return 0
 	}
-	delay := min(fe.lastRecalcCost*recalcPaceFactor, recalcMaxDelay)
+	delay := min(fe.lastRecalcCost*time.Duration(pacing.factor), pacing.maxDelay)
 	return fe.lastRecalcAt.Add(delay).Sub(now)
 }
 
