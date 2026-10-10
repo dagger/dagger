@@ -351,6 +351,12 @@ extend type Query {
     names: [String!]!
     casing: Casing!
     acronyms: AcronymStyle = UPPERCASE
+    """
+    The engine version whose naming dictionary to parse the names with, e.g.
+    the __schemaVersion of a schema being generated. Defaults to the caller's
+    engine version.
+    """
+    version: String
   ): [String!]!
 
   """The acronyms and terms used to parse and format identifiers."""
@@ -442,7 +448,13 @@ Notes:
   objects one ID at a time, so a list of `Identifier`s would cost a round trip
   per name. Codegen formats thousands of names.
 - `identifier` and `namingDictionary` follow the caller's engine version, like
-  the rest of the schema.
+  the rest of the schema. So does `formatIdentifiers`, unless given a
+  `version`: codegen passes the `__schemaVersion` of the schema it generates,
+  so a module's names are parsed with the dictionary of the module's engine
+  version, whatever version the codegen connection is served at.
+- `formatIdentifiers` isn't cached: it's pure and fast, and caching costs more
+  than formatting (see
+  [Formatting names in codegen](#formatting-names-in-codegen)).
 - `Casing` and `AcronymStyle` can gain values later without breaking anyone.
 - Like every object in the schema, `IdentifierWord` and `NamingTerm` also
   implement `Node`.
@@ -618,13 +630,13 @@ module codegen mirrors `Namer` instead (see
 SDK codegen doesn't format names itself: it asks the engine. It collects the
 schema's names (every type, field, argument, input field and enum value name,
 except introspection names with a `__` prefix and names with no letters or
-digits) and calls `formatIdentifiers(names, casing, acronyms)` once for each
-casing and acronym style it uses, which gives it a map from each name to its
-SDK identifier. The engine parses the names with the dictionary of the codegen
-client's engine version, like any other call. A run makes one to three such
-calls (Go asks for `PASCAL` and `CAMEL` with `UPPERCASE`; TypeScript also for
-`PASCAL` with `CAPITALIZED`), each cacheable in the session, so this costs
-about the same as formatting locally.
+digits) and calls `formatIdentifiers(names, casing, acronyms, version)` once
+for each casing and acronym style it uses, which gives it a map from each name
+to its SDK identifier. `version` is the generated schema's `__schemaVersion`,
+so the engine parses the names with the dictionary of the schema's engine
+version (a module's `engineVersion`), not the codegen client's. A run makes one
+to three such calls (Go asks for `PASCAL` and `CAMEL` with `UPPERCASE`;
+TypeScript also for `PASCAL` with `CAPITALIZED`), concurrently.
 
 That works because codegen nearly always has an engine connection, or reads
 its input from a step that has one:
@@ -668,6 +680,38 @@ maps every schema name to its formatted form. A schema without
 `Query.formatIdentifiers` gets `{}`. A generator uses its legacy converter for a
 format or name the file doesn't have, so the same gate applies.
 
+**Module runtimes** hand their codegen the same sidecar. The Python, PHP and
+Elixir runtimes run codegen in an exec without an engine session, so the
+runtime formats the module schema's names itself and mounts the file for
+codegen (Python asks for `SNAKE:UPPERCASE`; PHP and Elixir for the formats
+their generators use). The runtimes' own sessions are served at their
+`engineVersion`, `v0.21.9` today, where `formatIdentifiers` doesn't exist, so
+for now they call an internal `Query.__formatIdentifiers(names, casing:
+String!, acronyms: String, version: String!)`: installed in every view, hidden
+from introspection by its `__` prefix, taking strings since older views have
+no `Casing` or `AcronymStyle`, and parsing with the dictionary of `version`
+(the module schema's `__schemaVersion`). It's a stopgap: the runtimes will
+bump their `engineVersion` to v1 and call the public `formatIdentifiers` with
+`version`, after which `__formatIdentifiers` is removed.
+
+**Performance.** Formatting is cheap: parsing and formatting the core schema's
+961 names takes about 0.7ms. Through the API, it first cost about 780ms per
+call in the engine (measured with wcprof on a dev engine, one call with the
+961 names): about 1ms formatting, 210ms publishing the result to the cache,
+250ms giving each of the 961 returned strings a cache entry of its own, and
+the rest copying the call (with its 961-element argument) once per element and
+other per-element overhead. Two changes cut a call to about 11ms, most of it
+the fixed cost of a request (a call formatting one name takes about 8ms):
+
+- `formatIdentifiers` isn't cached. A hit wouldn't help much anyway: each
+  call of a codegen run asks for a different format.
+- dagql renders the leaf elements of a list of plain values straight from the
+  list, without a result per element (`valueEnumerable` in `dagql`). This
+  helps every field returning a list of scalars.
+
+Codegen also sends its one to three calls concurrently, so formatting costs a
+codegen run roughly one round trip.
+
 An earlier revision of this design had the engine write each name's words into
 the schema JSON (`__identifiers`) and every SDK format them, on the premise
 that codegen runs offline. That premise was mostly false, and it put a copy of
@@ -710,12 +754,12 @@ Known gaps:
   fields and arguments with the `engine/naming` it was built with, using
   `DictionaryFor` of the module's schema version. It compares words, not just
   formatted strings (namespacing checks whether a type's words start with the
-  module's), and it needs the dictionary of the module's engine version,
-  whereas `formatIdentifiers` uses the codegen connection's. A codegen binary
-  older than the engine could therefore miss dictionary additions once there
-  is more than one dictionary. Where the codegen connection is served at the
-  module's engine version, fetching `Query.namingDictionary` into
-  `naming.NewDictionary` would close that gap.
+  module's), which `formatIdentifiers` can't answer. A codegen binary older
+  than the engine could therefore miss dictionary additions once there is more
+  than one dictionary. Fetching the dictionary of the module's version from
+  the engine into `naming.NewDictionary` would close that gap (today
+  `Query.namingDictionary` follows the caller's version; it could take a
+  `version` like `formatIdentifiers`).
 
 ### What changes for module authors (on bump)
 
@@ -963,7 +1007,10 @@ copy: they get formatted names from the engine.
    the engine wrote words into the schema JSON.
 7. Resolve the names module runtimes build themselves (Python and TypeScript
    interface calls) through `formatIdentifiers`.
+8. Bump the Python, PHP and Elixir runtimes' `engineVersion` to v1, move their
+   codegen sidecars from `__formatIdentifiers` to `formatIdentifiers` with
+   `version`, and remove `__formatIdentifiers`.
 
 Steps 1–5 and 7 are done. Step 6 is done for Go and TypeScript; the other SDKs
 fall back to their legacy converters until theirs land. Step 4's deletion waits
-on the legacy path.
+on the legacy path. Step 8 is a follow-up.
