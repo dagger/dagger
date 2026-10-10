@@ -1457,6 +1457,15 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 	manager.transports[clientID] = client
 	manager.mu.Unlock()
 
+	// A CLI can supply its own local attachables (including interactive
+	// prompts) as its first request. Bind that fresh identity to its own
+	// channel, not the exec bootstrap's. Once registered, the cached transport
+	// above keeps this choice immutable; later requests cannot rebind it.
+	attachablesClientID := manager.baseMetadata.ClientID
+	if req.URL.Path == engine.SessionAttachablesEndpoint {
+		attachablesClientID = clientID
+	}
+
 	// Register without holding manager.mu. Close runs from exec cleanup, which
 	// can itself be waited on by the session that serves this registration, so
 	// the server call must never be able to block Close. Concurrent requests
@@ -1466,7 +1475,7 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 		manager.registrationCtx,
 		&metadata,
 		manager.parentClientID,
-		manager.baseMetadata.ClientID,
+		attachablesClientID,
 	)
 
 	manager.mu.Lock()
