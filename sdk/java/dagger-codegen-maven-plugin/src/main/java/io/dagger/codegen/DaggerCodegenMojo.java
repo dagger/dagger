@@ -1,6 +1,7 @@
 package io.dagger.codegen;
 
 import io.dagger.codegen.introspection.CodegenVisitor;
+import io.dagger.codegen.introspection.FormattedNames;
 import io.dagger.codegen.introspection.Schema;
 import io.dagger.codegen.introspection.SchemaVisitor;
 import io.dagger.codegen.introspection.Type;
@@ -41,6 +42,14 @@ public class DaggerCodegenMojo extends AbstractMojo {
   @Parameter(property = "dagger.introspectionJson")
   protected String introspectionJson;
 
+  /**
+   * The names file written with the introspection JSON, for codegen without an engine connection
+   * (see {@link FormattedNames#read}). Only read with {@code introspectionJson}: without it,
+   * codegen asks the engine for the names.
+   */
+  @Parameter(property = "dagger.namesJson")
+  protected String namesJson;
+
   /** Specify output directory where the Java files are generated. */
   @Parameter(defaultValue = "${project.build.directory}/generated-sources/dagger")
   private File outputDirectory;
@@ -59,8 +68,8 @@ public class DaggerCodegenMojo extends AbstractMojo {
     }
 
     Path dest = outputDir.toPath();
-    try (InputStream in = getInstrospectionJson()) {
-      Schema schema = Schema.initialize(in, version);
+    try {
+      Schema schema = loadSchema();
       SchemaVisitor codegen = new CodegenVisitor(schema, dest, Charset.forName(outputEncoding));
       schema.visit(
           new SchemaVisitor() {
@@ -116,25 +125,38 @@ public class DaggerCodegenMojo extends AbstractMojo {
     }
   }
 
-  private InputStream getInstrospectionJson()
-      throws IOException, MojoFailureException, InterruptedException {
+  /**
+   * Loads the schema, with the Java names the engine formatted for it: from the names file next to
+   * an introspection JSON file, or from the engine along with the schema.
+   */
+  private Schema loadSchema() throws IOException, MojoFailureException, InterruptedException {
     if (this.introspectionJson != null && !this.introspectionJson.isEmpty()) {
       File f = new File(this.introspectionJson);
       if (f.exists()) {
-        return new FileInputStream(f);
+        Schema schema;
+        try (InputStream in = new FileInputStream(f)) {
+          schema = Schema.initialize(in, version);
+        }
+        if (this.namesJson != null && !this.namesJson.isEmpty()) {
+          File names = new File(this.namesJson);
+          if (names.exists()) {
+            try (InputStream in = new FileInputStream(names)) {
+              schema.setFormattedNames(FormattedNames.read(in));
+            }
+          }
+        }
+        return schema;
       }
     }
     this.bin = DaggerCLIUtils.getBinary(this.bin);
-    return daggerSchema();
-  }
-
-  private InputStream daggerSchema()
-      throws IOException, InterruptedException, MojoFailureException {
     String actualVersion = DaggerCLIUtils.getVersion(this.bin);
     getLog()
         .info(String.format("Querying local dagger CLI for schema (version=%s)", actualVersion));
     this.version = actualVersion;
-    return DaggerCLIUtils.introspect(getClass(), this.bin);
+    byte[] schemaJson = DaggerCLIUtils.introspect(getClass(), this.bin);
+    Schema schema = Schema.initialize(new ByteArrayInputStream(schemaJson), this.version);
+    schema.setFormattedNames(DaggerCLIUtils.formatNames(schemaJson, this.bin));
+    return schema;
   }
 
   public File getOutputDirectory() {

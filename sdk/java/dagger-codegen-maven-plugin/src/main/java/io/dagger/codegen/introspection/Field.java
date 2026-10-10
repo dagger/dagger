@@ -25,15 +25,15 @@ public class Field {
 
   private Type parentObject;
 
-  /** The name's words from the schema JSON's __identifiers, or null. */
-  @JsonbTransient private List<IdentifierWord> words;
+  /** The Java name the engine formatted for this field's name, or null. */
+  @JsonbTransient private String formattedName;
 
-  public List<IdentifierWord> getWords() {
-    return words;
+  public String getFormattedName() {
+    return formattedName;
   }
 
-  public void setWords(List<IdentifierWord> words) {
-    this.words = words;
+  public void setFormattedName(String formattedName) {
+    this.formattedName = formattedName;
   }
 
   public String getName() {
