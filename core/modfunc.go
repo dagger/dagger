@@ -675,7 +675,7 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 ) error {
 	// Partition every module call, not just those taking an LLM: a function can
 	// create one itself or carry one in its receiver or a nested argument.
-	if err := stampExpertiseOwner(ctx, req); err != nil {
+	if err := StampExpertiseOwner(ctx, req); err != nil {
 		return err
 	}
 	var ctxArgs []*FunctionArg

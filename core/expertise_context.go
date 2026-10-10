@@ -52,7 +52,9 @@ func expertiseOwnerInputSpec() dagql.InputSpec {
 	}
 }
 
-func stampExpertiseOwner(ctx context.Context, req *dagql.CallRequest) error {
+// StampExpertiseOwner records the current entry scope before cache lookup. On
+// replay, even an absent scope is retained rather than inherited from the caller.
+func StampExpertiseOwner(ctx context.Context, req *dagql.CallRequest) error {
 	if req.Replay {
 		// Absence is meaningful too: an unowned recipe must remain unowned.
 		return nil
@@ -68,11 +70,18 @@ func stampExpertiseOwner(ctx context.Context, req *dagql.CallRequest) error {
 	return req.SetArgInput(ctx, expertiseOwnerArg, dagql.Opt(dagql.String(owner)), false)
 }
 
+// RestoreExpertiseOwner restores a recorded call scope, overriding any ambient
+// entry. An empty key masks the caller's entry but permits a new expertise run.
+// Unlike WithExpertiseOwner, this is for replay/dispatch, not entering expertise.
+func RestoreExpertiseOwner(ctx context.Context, key string) context.Context {
+	return context.WithValue(ctx, expertiseOwnerContextKey{}, expertiseOwner{key: key, valid: key != ""})
+}
+
 func expertiseCallContext(ctx context.Context, opts *CallOpts) context.Context {
 	if opts.useRecordedExpertiseOwner {
 		// Schema calls have already stamped any fresh ambient owner. An absent
 		// stamp therefore means unowned, including when replayed inside an entry.
-		ctx = context.WithValue(ctx, expertiseOwnerContextKey{}, expertiseOwner{})
+		ctx = RestoreExpertiseOwner(ctx, "")
 	}
 	for _, input := range opts.Inputs {
 		if input.Name != expertiseOwnerArg {
@@ -83,7 +92,7 @@ func expertiseCallContext(ctx context.Context, opts *CallOpts) context.Context {
 			// Replay restores the recorded scope even when invoked under another
 			// entry. An empty stamp masks the replay caller but leaves the call
 			// free to start its own composition run.
-			return context.WithValue(ctx, expertiseOwnerContextKey{}, expertiseOwner{key: key, valid: key != ""})
+			return RestoreExpertiseOwner(ctx, key)
 		}
 	}
 	return ctx

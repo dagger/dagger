@@ -73,11 +73,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			llm.Expertise = entries
 			return llm, nil
 		}).View(AfterVersion("v1.0.0-0")),
-		dagql.NodeFunc("compose", s.compose).
+		withLLMExpertiseOwner(dagql.NodeFunc("compose", s.compose)).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Run and record expertise in list order, retaining existing contributions. An entry with the same artifact address and canonical bound arguments must not already be composed.").
 			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
-		dagql.NodeFunc("recompose", s.recompose).
+		withLLMExpertiseOwner(dagql.NodeFunc("recompose", s.recompose)).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Run expertise in list order, replacing contributions of matching recorded entries and preserving compatible tool state. Record and run new entries; leave unmentioned entries untouched.",
 				"Entry identity is its artifact address with dimension keys and canonical bound arguments. Contributions made transitively while an entry runs belong to that entry, including nested composition. Contributions made outside an entry are unowned and retained. Keep this LLM's workspace.",
@@ -1007,16 +1007,32 @@ func (args expertiseArgs) load(ctx context.Context) (dagql.ObjectResultArray[*co
 	return expertise, nil
 }
 
-func (*llmSchema) compose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args expertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
-	expertise, err := args.load(ctx)
+// withLLMExpertiseOwner partitions composition itself, before a cache hit can
+// bypass entry execution and reuse another scope's contributions or record.
+func withLLMExpertiseOwner(field dagql.Field[*core.LLM]) dagql.Field[*core.LLM] {
+	field.Spec.GetDynamicInput = func(ctx context.Context, _ dagql.AnyResult, _ map[string]dagql.Input, _ call.View, req *dagql.CallRequest) error {
+		return core.StampExpertiseOwner(ctx, req)
+	}
+	return field
+}
+
+type composeExpertiseArgs struct {
+	Expertise []dagql.ID[*core.Expertise]
+	Owner     dagql.Optional[dagql.String] `name:"_expertiseOwner" internal:"true"`
+}
+
+func (*llmSchema) compose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args composeExpertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
+	ctx = core.RestoreExpertiseOwner(ctx, string(args.Owner.Value))
+	expertise, err := (expertiseArgs{Expertise: args.Expertise}).load(ctx)
 	if err != nil {
 		return base, err
 	}
 	return core.ComposeExpertise(ctx, base, expertise)
 }
 
-func (*llmSchema) recompose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args expertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
-	expertise, err := args.load(ctx)
+func (*llmSchema) recompose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args composeExpertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
+	ctx = core.RestoreExpertiseOwner(ctx, string(args.Owner.Value))
+	expertise, err := (expertiseArgs{Expertise: args.Expertise}).load(ctx)
 	if err != nil {
 		return base, err
 	}
