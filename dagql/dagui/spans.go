@@ -1051,6 +1051,10 @@ func (span *Span) IsRunning() bool {
 
 // CausalSpans iterates over the spans that directly cause this span.
 func (span *Span) CausalSpans(f func(*Span) bool) {
+	if len(span.causesViaLinks.Order) == 0 {
+		// Most spans have no causes; skip allocating the recursive visitor.
+		return
+	}
 	var visit func(*Span) bool
 	visit = func(s *Span) bool {
 		if !f(s) {
