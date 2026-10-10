@@ -1082,16 +1082,21 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// Buffered, so the closing goroutine can finish after GracefulStop returns
 	// through ctx.Done().
 	//
-	// There is deliberately no final sync. Closing the DBs leaves their
-	// writes in the page cache, which survives the engine process; only a
-	// host crash before writeback loses them, and the engine wipes local
-	// cache state it finds corrupt or not marked clean on the next start.
-	// syncfs would also flush every other writer's dirty data on the
-	// filesystem holding the engine state, which is often shared (a host
-	// volume, or a nested engine's cache volume in CI): minutes on a busy
-	// disk, in uninterruptible sleep that not even SIGKILL can cut short.
-	// Syncing only the DB files is no better on ext4, where fsync commits
-	// the journal and so waits for other files' ordered data.
+	// There is deliberately no final sync, so the engine's writes reach disk
+	// through ordinary kernel writeback. They stay in the page cache, which
+	// outlives the engine process, so a restart on the same kernel sees them;
+	// a host crash before writeback, even after a reported successful stop,
+	// can lose them. The next start wipes local cache state only when a bolt
+	// DB fails to open or the dagql store is unclean or fails to import, so
+	// stale or partial state can go undetected. That was already possible for
+	// a crash during the old sync, since the clean marker is written before
+	// it; dropping the sync extends that window to the writeback delay.
+	// syncfs flushed every other writer's dirty data on the filesystem
+	// holding the engine state, which is often shared (a host volume, or a
+	// nested engine's cache volume in CI): minutes on a busy disk, in
+	// uninterruptible sleep that not even SIGKILL can cut short. Syncing only
+	// the DB files can still wait on other files' data on ext4, where fsync
+	// commits the journal and the commit writes out ordered data first.
 	doneClosingCh := make(chan error, 1)
 	go func() {
 		defer close(doneClosingCh)
