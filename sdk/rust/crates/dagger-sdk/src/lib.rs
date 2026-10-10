@@ -82,4 +82,29 @@ mod tests {
         assert_eq!(from_opts.protocol, Some(RegistryProtocol::Https));
         assert_eq!(publish_opts.protocol, Some(RegistryProtocol::Http));
     }
+
+    #[tokio::test]
+    async fn input_object_fields_use_schema_names() {
+        use crate::{LlmMessageOriginInput, LlmMessageOriginKind};
+
+        let origin = LlmMessageOriginInput {
+            agent_name: "bot".to_string(),
+            kind: LlmMessageOriginKind::Agent,
+            r#ref: "ref-1".to_string(),
+            reply_to: "msg-1".to_string(),
+        };
+
+        let query = crate::querybuilder::query()
+            .select("withOrigin")
+            .arg("origin", origin)
+            .build()
+            .await
+            .unwrap();
+
+        assert!(query.contains(r#"agentName:"bot""#), "{query}");
+        assert!(query.contains(r#"replyTo:"msg-1""#), "{query}");
+        assert!(query.contains(r#"ref:"ref-1""#), "{query}");
+        assert!(!query.contains("agent_name"), "{query}");
+        assert!(!query.contains("reply_to"), "{query}");
+    }
 }
