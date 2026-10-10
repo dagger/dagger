@@ -39,7 +39,7 @@ pub fn render_input_fields(
 pub fn render_input_field(funcs: &CommonFunctions, field: &FullTypeInputFields) -> rust::Tokens {
     let name = member_name(funcs.names(), &field.input_value.name);
     // serde derives the field's wire name from its Rust name. Keep the wire
-    // name it had before identifier words.
+    // name it had before engine-formatted names.
     let legacy = format_struct_name(&field.input_value.name);
     let rename = if name != legacy {
         Some(quote! {

@@ -1,7 +1,5 @@
 #![allow(non_camel_case_types)]
 
-use std::collections::HashMap;
-
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Clone, Debug)]
@@ -270,11 +268,6 @@ pub struct SchemaDirectives {
 pub struct Schema {
     #[serde(skip)]
     pub schema_version: Option<String>,
-    /// The words of the schema's names, from the top-level `__identifiers`
-    /// key of the schema JSON. `None` when the engine doesn't provide them
-    /// (schema views before v1.0.0).
-    #[serde(skip)]
-    pub identifiers: Option<Identifiers>,
     pub query_type: Option<SchemaQueryType>,
     pub mutation_type: Option<SchemaMutationType>,
     pub subscription_type: Option<SchemaSubscriptionType>,
@@ -315,34 +308,12 @@ impl DirectivesExt for Option<Vec<DirectiveApplication>> {
     }
 }
 
-/// One word of a schema name, as the engine parsed it.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct IdentifierWord {
-    /// `WORD`, `ACRONYM` or `TERM`.
-    pub kind: String,
-    /// The word's standard spelling, without its suffix: `client`, `HTTP`,
-    /// `GitHub`.
-    pub text: String,
-    /// A plural `s` and/or trailing digits glued to the word.
-    #[serde(default)]
-    pub suffix: String,
-    /// The word's form in the `CAPITALIZED` acronym style, without its
-    /// suffix: `Client`, `Http`, `GitHub`.
-    #[serde(default)]
-    pub capitalized: String,
-}
-
-/// Schema names mapped to their words.
-pub type Identifiers = HashMap<String, Vec<IdentifierWord>>;
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct SchemaContainer {
     #[serde(rename = "__schemaVersion", default)]
     pub schema_version: Option<String>,
     #[serde(rename = "__schema")]
     pub schema: Option<Schema>,
-    #[serde(rename = "__identifiers", default)]
-    pub identifiers: Option<Identifiers>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -372,7 +343,6 @@ impl IntrospectionResponse {
         };
         if let Some(schema) = container.schema.as_mut() {
             schema.schema_version = container.schema_version.clone();
-            schema.identifiers = container.identifiers.clone();
         }
         container
     }

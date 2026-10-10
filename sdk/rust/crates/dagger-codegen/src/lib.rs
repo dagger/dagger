@@ -34,13 +34,18 @@ mod tests {
     use dagger_sdk::core::introspection::IntrospectionResponse;
 
     use super::generate;
+    use crate::naming::NamesFile;
     use crate::rust::RustGenerator;
 
     fn generate_from_json(json: &str) -> String {
+        generate_from_json_with_names(json, NamesFile::new())
+    }
+
+    fn generate_from_json_with_names(json: &str, names: NamesFile) -> String {
         let schema = serde_json::from_str::<IntrospectionResponse>(json).unwrap();
         generate(
             schema.into_schema().schema.unwrap(),
-            Arc::new(RustGenerator {}),
+            Arc::new(RustGenerator::with_names(names)),
         )
         .unwrap()
     }
@@ -811,89 +816,69 @@ mod tests {
         );
     }
 
-    /// Schema whose names the guessing converter splits badly, with the
-    /// words the engine parsed them into under `__identifiers`.
-    fn identifier_words_schema() -> String {
-        fn words(words: &[(&str, &str, &str, &str)]) -> String {
-            let words = words
+    /// The names of [`engine_names_schema`] as the engine formats them, in the
+    /// formats Rust codegen uses: a names file.
+    fn engine_names() -> NamesFile {
+        let pascal = [
+            ("ID", "Id"),
+            ("Query", "Query"),
+            ("JSONValue", "JsonValue"),
+            ("jsonValue", "JsonValue"),
+            ("prerequisiteSHAs", "PrerequisiteShas"),
+            ("experimentalWithAllGPUs", "ExperimentalWithAllGpus"),
+            ("insecureSkipTLSVerify", "InsecureSkipTlsVerify"),
+            ("LLMInput", "LlmInput"),
+            ("ImageMediaTypes", "ImageMediaTypes"),
+            ("OCI", "Oci"),
+            ("ref", "Ref"),
+            ("formatIdentifiers", "FormatIdentifiers"),
+        ];
+        let snake = [
+            ("ID", "id"),
+            ("Query", "query"),
+            ("JSONValue", "json_value"),
+            ("jsonValue", "json_value"),
+            ("prerequisiteSHAs", "prerequisite_shas"),
+            ("experimentalWithAllGPUs", "experimental_with_all_gpus"),
+            ("insecureSkipTLSVerify", "insecure_skip_tls_verify"),
+            ("LLMInput", "llm_input"),
+            ("ImageMediaTypes", "image_media_types"),
+            ("OCI", "oci"),
+            ("ref", "ref"),
+            ("formatIdentifiers", "format_identifiers"),
+        ];
+        let map = |names: &[(&str, &str)]| {
+            names
                 .iter()
-                .map(|(kind, text, suffix, capitalized)| {
-                    format!(
-                        r#"{{"kind":"{kind}","text":"{text}","suffix":"{suffix}","capitalized":"{capitalized}"}}"#
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(",");
-            format!("[{words}]")
-        }
-        let identifiers = [
-            ("ID", words(&[("ACRONYM", "ID", "", "Id")])),
-            ("Query", words(&[("WORD", "query", "", "Query")])),
-            (
-                "JSONValue",
-                words(&[
-                    ("ACRONYM", "JSON", "", "Json"),
-                    ("WORD", "value", "", "Value"),
-                ]),
-            ),
-            (
-                "jsonValue",
-                words(&[
-                    ("ACRONYM", "JSON", "", "Json"),
-                    ("WORD", "value", "", "Value"),
-                ]),
-            ),
-            (
-                "prerequisiteSHAs",
-                words(&[
-                    ("WORD", "prerequisite", "", "Prerequisite"),
-                    ("ACRONYM", "SHA", "s", "Sha"),
-                ]),
-            ),
-            (
-                "experimentalWithAllGPUs",
-                words(&[
-                    ("WORD", "experimental", "", "Experimental"),
-                    ("WORD", "with", "", "With"),
-                    ("WORD", "all", "", "All"),
-                    ("ACRONYM", "GPU", "s", "Gpu"),
-                ]),
-            ),
-            (
-                "insecureSkipTLSVerify",
-                words(&[
-                    ("WORD", "insecure", "", "Insecure"),
-                    ("WORD", "skip", "", "Skip"),
-                    ("ACRONYM", "TLS", "", "Tls"),
-                    ("WORD", "verify", "", "Verify"),
-                ]),
-            ),
-            (
-                "LLMInput",
-                words(&[
-                    ("ACRONYM", "LLM", "", "Llm"),
-                    ("WORD", "input", "", "Input"),
-                ]),
-            ),
-            (
-                "ImageMediaTypes",
-                words(&[
-                    ("WORD", "image", "", "Image"),
-                    ("WORD", "media", "", "Media"),
-                    ("WORD", "type", "s", "Type"),
-                ]),
-            ),
-            ("OCI", words(&[("ACRONYM", "OCI", "", "Oci")])),
-            ("ref", words(&[("WORD", "ref", "", "Ref")])),
+                .map(|(name, formatted)| (name.to_string(), formatted.to_string()))
+                .collect()
+        };
+        [
+            ("PASCAL:CAPITALIZED".to_string(), map(&pascal)),
+            ("SNAKE:UPPERCASE".to_string(), map(&snake)),
         ]
-        .iter()
-        .map(|(name, words)| format!(r#""{name}":{words}"#))
-        .collect::<Vec<_>>()
-        .join(",");
+        .into_iter()
+        .collect()
+    }
+
+    /// Schema whose names the guessing converter splits badly. With
+    /// `format_identifiers`, its Query has `formatIdentifiers`, the gate for
+    /// engine-formatted names.
+    fn engine_names_schema(format_identifiers: bool) -> String {
+        let query_fields = if format_identifiers {
+            r#",
+          {
+            "name": "formatIdentifiers", "description": null, "args": [],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null
+          }"#
+        } else {
+            ""
+        };
 
         format!(
             r#"{{
-  "__identifiers": {{{identifiers}}},
   "__schema": {{
     "queryType": {{"name": "Query"}},
     "mutationType": null,
@@ -986,7 +971,7 @@ mod tests {
             "type": {{"kind": "NON_NULL", "name": null,
               "ofType": {{"kind": "OBJECT", "name": "JSONValue", "ofType": null}}}},
             "isDeprecated": false, "deprecationReason": null
-          }}
+          }}{query_fields}
         ],
         "inputFields": null, "interfaces": [],
         "enumValues": null, "possibleTypes": null
@@ -1014,16 +999,20 @@ mod tests {
         squash(code).contains(&squash(needle))
     }
 
+    fn generate_with_engine_names() -> String {
+        generate_from_json_with_names(&engine_names_schema(true), engine_names())
+    }
+
     #[test]
-    fn identifier_words_name_rust_identifiers() {
-        let code = generate_from_json(&identifier_words_schema());
+    fn engine_names_name_rust_identifiers() {
+        let code = generate_with_engine_names();
 
         // Types: PascalCase with capitalized acronyms.
         assert!(has(&code, "pub struct JsonValue {"), "{code}");
         assert!(has(&code, "pub struct LlmInput {"), "{code}");
         assert!(has(&code, "pub enum ImageMediaTypes {"), "{code}");
         assert!(has(&code, "Oci,"), "{}", lines_with(&code, "Oci"));
-        // Methods and arguments: snake_case from the words.
+        // Methods and arguments: snake_case, as the engine formats them.
         assert!(
             has(&code, "pub async fn prerequisite_shas(&self"),
             "{}",
@@ -1053,8 +1042,8 @@ mod tests {
     }
 
     #[test]
-    fn identifier_words_keep_wire_names() {
-        let code = generate_from_json(&identifier_words_schema());
+    fn engine_names_keep_wire_names() {
+        let code = generate_with_engine_names();
 
         // Selections and arguments use the schema's names.
         assert!(has(&code, r#"self.selection.select("prerequisiteSHAs")"#));
@@ -1095,8 +1084,8 @@ mod tests {
     }
 
     #[test]
-    fn identifier_words_keep_old_names_as_deprecated_aliases() {
-        let code = generate_from_json(&identifier_words_schema());
+    fn engine_names_keep_old_names_as_deprecated_aliases() {
+        let code = generate_with_engine_names();
 
         assert!(
             has(
@@ -1148,24 +1137,34 @@ mod tests {
         assert_eq!(code.matches("fn json_value(").count(), 1);
     }
 
-    #[test]
-    fn missing_identifier_words_keep_guessed_names() {
-        let code = generate_from_json(&identifier_words_schema().replacen(
-            "\"__identifiers\"",
-            "\"__unused\"",
-            1,
-        ));
-
-        assert!(has(&code, "pub async fn prerequisite_sh_as(&self"));
-        assert!(has(&code, "pub fn experimental_with_all_gp_us(&self"));
+    /// Code generated with the legacy converter: no engine-formatted names,
+    /// no aliases, no renames.
+    fn assert_guessed_names(code: &str) {
+        assert!(has(code, "pub async fn prerequisite_sh_as(&self"));
+        assert!(has(code, "pub fn experimental_with_all_gp_us(&self"));
         assert!(has(
-            &code,
+            code,
             "pub struct JsonValueExperimentalWithAllGpUsOpts {"
         ));
-        assert!(has(&code, "pub prerequisite_sh_as: String,"));
+        assert!(has(code, "pub prerequisite_sh_as: String,"));
         assert!(!code.contains("deprecated"));
         assert!(!code.contains("serde(rename = \"prerequisite"));
         assert!(!code.contains("prerequisite_shas"));
-        assert!(has(&code, "pub struct JsonValue {"));
+        assert!(has(code, "pub struct JsonValue {"));
+    }
+
+    #[test]
+    fn missing_engine_names_keep_guessed_names() {
+        assert_guessed_names(&generate_from_json(&engine_names_schema(true)));
+    }
+
+    #[test]
+    fn engine_names_need_format_identifiers() {
+        // A schema without Query.formatIdentifiers keeps the legacy
+        // converter, even with names.
+        assert_guessed_names(&generate_from_json_with_names(
+            &engine_names_schema(false),
+            engine_names(),
+        ));
     }
 }
