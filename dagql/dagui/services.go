@@ -144,7 +144,7 @@ func (db *DB) ServiceDisplaySpans(root *Span) []*Span {
 		return db.serviceDisplays
 	}
 	var displays []*Span
-	for span := range db.Spans.Iter() {
+	for span := range db.kindSpanIter() {
 		if !isServiceDisplaySpan(span) || !span.Received {
 			continue
 		}

@@ -104,7 +104,7 @@ func (db *DB) LLMMessageCall(span *Span) *callpbv1.Call {
 	}
 	owner := nearestAgentID(span)
 	var peers []*Span
-	for candidate := range db.Spans.Iter() {
+	for candidate := range db.kindSpanIter() {
 		if !candidate.Internal && candidate.LLMRole == telemetry.LLMRoleUser &&
 			candidate.LLMCallDigest == digest && nearestAgentID(candidate) == owner {
 			peers = append(peers, candidate)

@@ -255,6 +255,10 @@ type DB struct {
 	agentControl    agentcontrol.Index
 	agentControlErr error
 
+	// kindSpans indexes the spans the whole-trace surfacing scans look for
+	// (see isIndexedKind), so they don't read every span on every rebuild.
+	kindSpans *SpanSet
+
 	// Rewinds are session-wide for the same reason as the roster, and their
 	// memo doubles as the superseded-message index (see DB.Rewinds).
 	rewinds     []*Rewind
@@ -1353,8 +1357,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	db.mutations++
 	db.noteTestSpanUpdated(span)
 
-	// Last, so the index only ever holds spans the DB itself holds.
+	// Last, so the indexes only ever hold spans the DB itself holds.
 	db.indexAgentSpan(span)
+	db.indexKindSpan(span)
 }
 
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {
