@@ -414,3 +414,56 @@ func TestRecordCacheEvidenceCacheState(t *testing.T) {
 	assert.Equal(t, 2, len(mapped), "no retention, expiry or empty parts are stamped")
 	assert.DeepEqual(t, []string{`{"part":"fs"}`}, mapped[1].Value.AsStringSlice())
 }
+
+// evidenceTestChain builds a result whose frame has a receiver chain of n
+// inline calls with an argument each, like a container built up step by step.
+func evidenceTestChain(t testing.TB, n int, content digest.Digest) dagql.AnyResult {
+	t.Helper()
+	var receiver *dagql.ResultCallRef
+	for i := range n {
+		step := evidenceTestFrame("step" + strconv.Itoa(i))
+		step.Receiver = receiver
+		step.Args = []*dagql.ResultCallArg{{Name: "value", Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindString, StringValue: strings.Repeat("v", 64)}}}
+		receiver = &dagql.ResultCallRef{Call: step}
+	}
+	frame := evidenceTestFrame("final")
+	frame.Receiver = receiver
+	if content != "" {
+		frame.ExtraDigests = []call.ExtraDigest{{Label: call.ExtraDigestLabelContent, Digest: content}}
+	}
+	res, err := dagql.NewResultForCall(dagql.NewInt(1), frame)
+	assert.NilError(t, err)
+	return res
+}
+
+// ResultFrameFacts reads the same facts as cloning the frame with ResultCall,
+// which recordCacheEvidence used to do for every recorded span.
+func TestResultFrameFacts(t *testing.T) {
+	t.Parallel()
+	contentDig := digest.FromString("frame-facts-content")
+	for _, content := range []digest.Digest{"", contentDig} {
+		res := evidenceTestChain(t, 8, content)
+		frame, err := res.ResultCall()
+		assert.NilError(t, err)
+		gotContent, gotType, ok := dagql.ResultFrameFacts(res)
+		assert.Assert(t, ok)
+		assert.Equal(t, frame.ContentDigest(), gotContent)
+		assert.Equal(t, frame.Type.NamedType, gotType)
+		assert.Equal(t, content, gotContent)
+		assert.Equal(t, "Int", gotType)
+	}
+
+	_, _, ok := dagql.ResultFrameFacts(nil)
+	assert.Assert(t, !ok)
+}
+
+func BenchmarkRecordCacheEvidence(b *testing.B) {
+	res := evidenceTestChain(b, 32, digest.FromString("bench-content"))
+	ev := &dagql.CacheDecision{Outcome: dagql.CacheOutcomeHit, HitRoute: dagql.CacheHitRouteStructural, MissUnknownInputIndex: -1}
+	ctx := context.Background()
+	span := tracenoop.Span{}
+	b.ReportAllocs()
+	for b.Loop() {
+		recordCacheEvidence(ctx, span, ev, res)
+	}
+}

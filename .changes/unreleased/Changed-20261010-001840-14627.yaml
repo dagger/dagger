@@ -1,0 +1,6 @@
+kind: Changed
+body: Recording cache evidence on a call span no longer copies the call's whole recipe, which made it expensive on long chains of calls.
+time: 2026-10-10T00:18:40Z
+custom:
+  Author: sipsma
+  PR: "14627"
