@@ -123,6 +123,8 @@ func (d DynamicArrayOutput) NthValue(i int, call *ResultCall) (AnyResult, error)
 	return newDetachedResult(elemCall, t), nil
 }
 
+func (DynamicArrayOutput) valueEnumerable() {}
+
 func (d DynamicArrayOutput) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Values)
 }
