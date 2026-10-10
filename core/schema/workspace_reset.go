@@ -57,17 +57,24 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 	if err := requireWorkspaceResetReachable(ctx, srv, base, sha); err != nil {
 		return inst, fmt.Errorf("commit %s is not in this workspace's repository: %w", args.Commit, err)
 	}
+	var head dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, frozen, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
+		return inst, err
+	}
 	var dir dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, base, &dir,
+	if ancestor, ok := workspaceResetAncestor(head, sha); ok {
+		// Check the target out through its own recipe, so the result does
+		// not depend on the commits being discarded (see
+		// workspaceResetAncestor).
+		if err := srv.Select(ctx, ancestor, &dir, dagql.Selector{Field: "__fullCheckout"}); err != nil {
+			return inst, fmt.Errorf("check out commit %s: %w", args.Commit, err)
+		}
+	} else if err := srv.Select(ctx, base, &dir,
 		dagql.Selector{Field: "asGit"},
 		dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.NewString(sha)}}},
 		dagql.Selector{Field: "tree", Args: []dagql.NamedInput{{Name: "depth", Value: dagql.NewInt(0)}}},
 	); err != nil {
 		return inst, fmt.Errorf("commit %s is not in this workspace's repository: %w", args.Commit, err)
-	}
-	var head dagql.ObjectResult[*core.GitRef]
-	if err := srv.Select(ctx, frozen, &head, dagql.Selector{Field: "git"}, dagql.Selector{Field: "head"}); err != nil {
-		return inst, err
 	}
 	repo, err := gitRepositoryWithContents(ctx, srv, head.Self().Repo, dir)
 	if err != nil {
@@ -131,6 +138,32 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 		inst = overlaid
 	}
 	return checkpointWorkspaceMetadataComposition(ctx, srv, inst, frozen.Self(), frozen.Self().SelectedEnv())
+}
+
+// workspaceResetAncestor finds the exact recipe of the reset target sha among
+// the checkout bases head's repository retains: GitRef.withCommit and
+// Workspace.withCommitsFrom keep the ref they built on (see
+// core.GitCheckoutBase), and that ref's repository keeps its own, back to the
+// first commit made in the engine.
+//
+// Checking the target out from head's checkout instead (asGit.ref(sha)) would
+// tie the reset to the commits it discards: replaying it rebuilds them first,
+// and a commit whose content is not reproducible (say, a file written by an
+// uncached exec) comes back with another hash, so the recorded ref names a
+// commit that no longer exists. The target's own recipe never depended on
+// them.
+func workspaceResetAncestor(head dagql.ObjectResult[*core.GitRef], sha string) (dagql.ObjectResult[*core.GitRef], bool) {
+	for ref := head; ref.Self() != nil && ref.Self().Repo.Self() != nil; {
+		local, ok := ref.Self().Repo.Self().Backend.(*core.LocalGitRepository)
+		if !ok || local.CheckoutBase == nil {
+			break
+		}
+		ref = local.CheckoutBase.Parent
+		if ref.Self() != nil && ref.Self().Ref != nil && ref.Self().Ref.SHA == sha {
+			return ref, true
+		}
+	}
+	return dagql.ObjectResult[*core.GitRef]{}, false
 }
 
 // requireWorkspaceResetReachable rejects a target the frozen checkout's HEAD
