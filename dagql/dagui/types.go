@@ -24,7 +24,6 @@ type TraceTree struct {
 
 	IsRunningOrChildRunning bool
 	Chained                 bool
-	Final                   bool
 	RevealedChildren        bool
 
 	Children []*TraceTree
@@ -45,7 +44,6 @@ type TraceRow struct {
 	NextVisual     *TraceRow `json:"-"`
 
 	Chained                 bool
-	Final                   bool
 	Depth                   int
 	IsRunningOrChildRunning bool
 	HasChildren             bool
@@ -248,15 +246,8 @@ func (db *DB) walkSpans(opts FrontendOpts, spans iter.Seq[*Span], seenHint int, 
 			switch opts.Filter(span) {
 			case WalkContinue:
 			case WalkSkip, WalkStop:
-				if lastTree != nil {
-					lastTree.Final = true
-				}
 				return false
 			case WalkPassthrough:
-				// TODO: this Final field is a bit tedious...
-				if lastTree != nil {
-					lastTree.Final = true
-				}
 				for _, child := range span.ChildSpans.Spans() {
 					walk(child, parent)
 				}
@@ -276,18 +267,12 @@ func (db *DB) walkSpans(opts FrontendOpts, spans iter.Seq[*Span], seenHint int, 
 			Span:   span,
 			Parent: parent,
 		}
-		if lastTree != nil {
-			if lastTree.Span.Call() != nil && span.Call() == nil {
-				lastTree.Final = true
-			}
-		}
 		if lastCall != nil {
 			if base := span.Base(); base != nil {
 				tree.Chained =
 					lastCall.Parent == tree.Parent &&
 						(base.Digest == lastCall.Span.CallDigest ||
 							base.Digest == lastCall.Span.Output)
-				lastCall.Final = !tree.Chained
 			}
 		}
 		if span.IsRunningOrEffectsRunning() {
@@ -306,9 +291,6 @@ func (db *DB) walkSpans(opts FrontendOpts, spans iter.Seq[*Span], seenHint int, 
 			walk(child, tree)
 		}
 
-		if lastTree != nil {
-			lastTree.Final = true
-		}
 		lastTree = tree
 		if tree.Span.CallDigest != "" {
 			lastCall = tree
@@ -317,9 +299,6 @@ func (db *DB) walkSpans(opts FrontendOpts, spans iter.Seq[*Span], seenHint int, 
 	}
 	for span := range spans {
 		walk(span, nil)
-	}
-	if lastTree != nil {
-		lastTree.Final = true
 	}
 }
 
@@ -341,7 +320,6 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 			Parent: parent,
 
 			Chained:                 tree.Chained,
-			Final:                   tree.Final,
 			Depth:                   depth,
 			IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
 
