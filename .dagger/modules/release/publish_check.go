@@ -48,8 +48,9 @@ type publishCheckEnv struct {
 	verdaccio   *dagger.Service
 	mockSvc     *dagger.Service
 
-	certs       *releaseCheckCerts
-	mockRecords *dagger.CacheVolume
+	certs           *releaseCheckCerts
+	mockRecords     *dagger.CacheVolume
+	registryStorage *dagger.CacheVolume
 
 	platform        dagger.Platform
 	platformArchive string
@@ -57,8 +58,6 @@ type publishCheckEnv struct {
 
 // Exercise the release publish path against local mock endpoints.
 // +check
-//
-//nolint:gocyclo
 func (r *Release) PublishWithMockEndpoints(
 	ctx context.Context,
 
@@ -66,8 +65,35 @@ func (r *Release) PublishWithMockEndpoints(
 	// service and invokes release through a nested engine using that git ref.
 	// +defaultPath="/"
 	source *dagger.Directory,
+) error {
+	return r.publishWithMockEndpoints(ctx, source, false)
+}
+
+// Exercise the stable release publish path against local mock endpoints.
+//
+// Same as publish-with-mock-endpoints, but the tagged publish uses the Helm
+// chart version without its prerelease suffix (e.g. v1.0.0 for
+// 1.0.0-beta.17), so the stable-only steps run: the root GitHub release,
+// package managers, docs, and the latest_version/versions pointers.
+// +check
+func (r *Release) PublishStableWithMockEndpoints(
+	ctx context.Context,
+
+	// Source tree to publish. The check commits this exact tree to a local git
+	// service and invokes release through a nested engine using that git ref.
+	// +defaultPath="/"
+	source *dagger.Directory,
+) error {
+	return r.publishWithMockEndpoints(ctx, source, true)
+}
+
+//nolint:gocyclo
+func (r *Release) publishWithMockEndpoints(
+	ctx context.Context,
+	source *dagger.Directory,
+	stable bool,
 ) (rerr error) {
-	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"), r.Workspace)
+	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"), r.Workspace, stable)
 	if err != nil {
 		return err
 	}
@@ -91,6 +117,7 @@ func (r *Release) PublishWithMockEndpoints(
 		return err
 	}
 
+	initialStart := time.Now()
 	initialOut, err := env.runReleasePublish(ctx, engine, "main")
 	if err != nil {
 		return err
@@ -99,6 +126,9 @@ func (r *Release) PublishWithMockEndpoints(
 		return err
 	}
 	if err := requireContains(initialOut, "- [x] 🚗 CLI", "initial main publish should publish the CLI"); err != nil {
+		return err
+	}
+	if err := env.assertPublishOrder(ctx, "main", initialStart); err != nil {
 		return err
 	}
 	if err := env.assertInitialCLIReleaseOutputs(ctx); err != nil {
@@ -113,6 +143,7 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		return err
 	}
 
+	taggedStart := time.Now()
 	taggedOut, err := env.runReleasePublish(ctx, engine, env.releaseTag)
 	if err != nil {
 		return err
@@ -144,6 +175,9 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		}
 	}
 	if err := requireNotContains(taggedOut, "Error while publishing", "release publish should complete against mock endpoints"); err != nil {
+		return err
+	}
+	if err := env.assertPublishOrder(ctx, env.releaseTag, taggedStart); err != nil {
 		return err
 	}
 
@@ -195,7 +229,7 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	return nil
 }
 
-func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagger.Workspace) (*publishCheckEnv, error) {
+func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagger.Workspace, stable bool) (*publishCheckEnv, error) {
 	platform, platformArchive, err := publishCheckPlatform(ctx)
 	if err != nil {
 		return nil, err
@@ -204,11 +238,20 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagge
 	if err != nil {
 		return nil, err
 	}
+	if stable && semver.Prerelease(releaseTag) != "" {
+		stableTag := strings.TrimSuffix(semver.Canonical(releaseTag), semver.Prerelease(releaseTag))
+		stableVersion := strings.TrimPrefix(stableTag, "v")
+		source, err = withPublishCheckVersion(ctx, source, releaseVersion, stableVersion)
+		if err != nil {
+			return nil, err
+		}
+		releaseTag, releaseVersion = stableTag, stableVersion
+	}
 
 	// A stable release reads release notes from a changelog file per published
 	// component: the root .changes/<tag>.md for the engine and CLI (cli-dev's
 	// publish step), and <component>/.changes/<tag>.md for each SDK and the Helm
-	// chart (Changelog.lookupEntry, used when cutting their GitHub releases). The
+	// chart (Changie.lookupEntry, used when cutting their GitHub releases). The
 	// pre-release working tree under test carries none of these until the release
 	// is actually cut, so stub them all.
 	//
@@ -307,8 +350,12 @@ git rev-parse HEAD
 	}
 	env.moduleRef = env.repoURL + "@" + env.commit
 
+	// The registry's storage lives on a cache volume so assertPublishOrder can
+	// read when each engine tag was pushed.
+	env.registryStorage = dag.CacheVolume("release-registry-storage-" + randomID())
 	env.registrySvc = dag.Container().
 		From("registry:3").
+		WithMountedCache("/var/lib/registry", env.registryStorage).
 		WithNewFile("/auth/htpasswd", publishCheckRegistryUser+":$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC").
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
@@ -369,6 +416,41 @@ func publishCheckRelease(ctx context.Context, source *dagger.Directory) (tag, ve
 		return "", "", fmt.Errorf("helm chart version %q does not produce a valid release tag", version)
 	}
 	return tag, strings.TrimPrefix(tag, "v"), nil
+}
+
+// publishCheckVersionFiles are the files that name the release version in a
+// commit a release is cut from: internal/version/VERSION, the Go SDK file
+// generated from it, and the files the *-target-version generators own (the
+// Java SDK is left out because release doesn't publish it).
+var publishCheckVersionFiles = []string{
+	"internal/version/VERSION",
+	"sdk/go/engineconn/version.gen.go",
+	"helm/dagger/Chart.yaml",
+	"docs/current_docs/partials/version.js",
+	"sdk/python/src/dagger/_engine/_version.py",
+	"sdk/typescript/src/provisioning/default.ts",
+	"sdk/php/src/Connection/version.php",
+	"sdk/elixir/lib/dagger/core/version.ex",
+	"sdk/rust/crates/dagger-sdk/src/core/version.rs",
+	"sdk/rust/Cargo.toml",
+	"sdk/rust/Cargo.lock",
+}
+
+// withPublishCheckVersion makes source look like the commit a release of
+// version would be cut from, by replacing from with version in every
+// publishCheckVersionFiles entry.
+func withPublishCheckVersion(ctx context.Context, source *dagger.Directory, from, version string) (*dagger.Directory, error) {
+	for _, path := range publishCheckVersionFiles {
+		contents, err := source.File(path).Contents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read release version file: %w", err)
+		}
+		if !strings.Contains(contents, from) {
+			return nil, fmt.Errorf("release version file %s does not mention version %s", path, from)
+		}
+		source = source.WithNewFile(path, strings.ReplaceAll(contents, from, version))
+	}
+	return source, nil
 }
 
 func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service, error) {
@@ -617,6 +699,97 @@ func (env *publishCheckEnv) assertMockEvents(ctx context.Context) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// assertPublishOrder checks that nothing user-visible went out before the
+// engine image it depends on: every S3 object written and every write request
+// the mock endpoints received since the publish started must come no earlier
+// than the last engine tag pushed during that publish. All mock services run
+// on the same host, so their clocks agree; S3 LastModified has one-second
+// resolution, so times are compared in whole seconds.
+func (env *publishCheckEnv) assertPublishOrder(ctx context.Context, ref string, since time.Time) error {
+	out, err := env.awsCLI().
+		WithExec([]string{"apk", "add", "python3"}).
+		WithMountedCache("/records", env.mockRecords).
+		WithMountedCache("/registry", env.registryStorage).
+		WithEnvVariable("AWS_BUCKET", env.awsBucket).
+		WithEnvVariable("PUBLISH_REF", ref).
+		WithEnvVariable("PUBLISH_SINCE", fmt.Sprint(since.Unix())).
+		WithExec([]string{"sh", "-ec", `
+set -eu
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 --bucket "$AWS_BUCKET" > /tmp/s3-objects.json
+python3 - <<'PY'
+import datetime
+import glob
+import json
+import os
+import sys
+
+def fail(msg):
+    print(msg, file=sys.stderr)
+    raise SystemExit(1)
+
+def utc(ts):
+    return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%H:%M:%S")
+
+ref = os.environ["PUBLISH_REF"]
+since = int(os.environ["PUBLISH_SINCE"])
+
+engine_tags = {}
+for link in glob.glob("/registry/docker/registry/v2/repositories/dagger/engine/_manifests/tags/*/current/link"):
+    pushed = int(os.stat(link).st_mtime)
+    if pushed >= since:
+        engine_tags[link.split("/")[-3]] = pushed
+
+writes = []
+listing = json.load(open("/tmp/s3-objects.json", encoding="utf-8"))
+for obj in listing.get("Contents") or []:
+    modified = int(datetime.datetime.fromisoformat(obj["LastModified"].replace("Z", "+00:00")).timestamp())
+    if modified >= since:
+        writes.append((modified, "s3://" + obj["Key"]))
+s3_writes = len(writes)
+# The mock server creates its records file on its first request, which a main
+# publish may never make.
+events = []
+if os.path.exists("/records/events.jsonl"):
+    with open("/records/events.jsonl", encoding="utf-8") as f:
+        events = [json.loads(line) for line in f if line.strip()]
+for event in events:
+    if event.get("method") not in ("POST", "PUT", "PATCH", "DELETE"):
+        continue
+    at = int(event.get("time", 0))
+    if at >= since:
+        writes.append((at, event.get("method") + " " + event.get("path", "")))
+writes.sort()
+
+if not writes:
+    fail(f"{ref} publish: expected S3 objects or mock endpoint writes, found none")
+if not engine_tags:
+    fail(f"{ref} publish: {len(writes)} writes went public but no engine tag was pushed; first: {writes[0][1]} at {utc(writes[0][0])}")
+
+engine_done = max(engine_tags.values())
+early = [w for w in writes if w[0] < engine_done]
+if early:
+    lines = [f"  {utc(at)} {what}" for at, what in early[:10]]
+    fail(
+        f"{ref} publish: {len(early)} of {len(writes)} writes went public before the last engine tag was pushed at {utc(engine_done)} "
+        f"(tags: {', '.join(sorted(engine_tags))}); earliest:\n" + "\n".join(lines)
+    )
+print(
+    f"{ref} publish order ok: engine tags {', '.join(sorted(engine_tags))} pushed by {utc(engine_done)}; "
+    f"{s3_writes} S3 objects and {len(writes) - s3_writes} mock endpoint writes from {utc(writes[0][0])} "
+    f"({writes[0][1]}, {writes[0][0] - engine_done}s after) to {utc(writes[-1][0])}"
+)
+for at, what in writes:
+    print(f"  {utc(at)} {what}")
+PY
+`}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("check %s publish order: %w", ref, err)
+	}
+	fmt.Println(strings.TrimSpace(out))
 	return nil
 }
 
@@ -1719,7 +1892,12 @@ func (env *publishCheckEnv) assertEngineVersion(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("check engine version in published image: %w", err)
 	}
-	return requireContains(version, env.releaseTag, "published engine binary should report release tag")
+	// dagger-engine --version prints "<version> <tag> <platform>".
+	lines := strings.Split(strings.TrimSpace(version), "\n")
+	if fields := strings.Fields(lines[len(lines)-1]); len(fields) == 0 || fields[0] != env.releaseTag {
+		return fmt.Errorf("published engine binary should report version %s, got %q", env.releaseTag, version)
+	}
+	return nil
 }
 
 func (env *publishCheckEnv) assertCLIVersion(ctx context.Context) error {
@@ -1735,7 +1913,12 @@ tar -xzf /tmp/dagger.tgz -C /tmp/dagger
 	if err != nil {
 		return fmt.Errorf("check CLI version in published archive: %w", err)
 	}
-	return requireContains(version, env.releaseTag, "published CLI binary should report release tag")
+	for _, line := range strings.Split(version, "\n") {
+		if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "version:" && fields[1] == env.releaseTag {
+			return nil
+		}
+	}
+	return fmt.Errorf("published CLI binary should report version %s, got %q", env.releaseTag, version)
 }
 
 func (env *publishCheckEnv) assertNpmVersion(
