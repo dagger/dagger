@@ -1,0 +1,36 @@
+{
+  "PASCAL:UPPERCASE": {
+    "CommitSet": "CommitSet",
+    "HTTPClient": "HTTPClient",
+    "HTTPHeader": "HTTPHeader",
+    "LLMID": "LLMID",
+    "PARENT_SHAS": "ParentSHAs",
+    "ParentSHAs": "ParentSHAs",
+    "Query": "Query",
+    "baseURL": "BaseURL",
+    "formatIdentifiers": "FormatIdentifiers",
+    "httpClient": "HTTPClient",
+    "isTLS": "IsTLS",
+    "name": "Name",
+    "names": "Names",
+    "prerequisiteSHAs": "PrerequisiteSHAs",
+    "sourceSHAs": "SourceSHAs"
+  },
+  "SNAKE:UPPERCASE": {
+    "CommitSet": "commit_set",
+    "HTTPClient": "http_client",
+    "HTTPHeader": "http_header",
+    "LLMID": "llm_id",
+    "PARENT_SHAS": "parent_shas",
+    "ParentSHAs": "parent_shas",
+    "Query": "query",
+    "baseURL": "base_url",
+    "formatIdentifiers": "format_identifiers",
+    "httpClient": "http_client",
+    "isTLS": "is_tls",
+    "name": "name",
+    "names": "names",
+    "prerequisiteSHAs": "prerequisite_shas",
+    "sourceSHAs": "source_shas"
+  }
+}

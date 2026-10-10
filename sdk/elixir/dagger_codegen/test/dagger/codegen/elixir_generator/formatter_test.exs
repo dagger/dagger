@@ -33,22 +33,23 @@ defmodule Dagger.Codegen.ElixirGenerator.FormatterTest do
              "A simple document that reference to `some_function`"
   end
 
-  describe "with identifier words" do
-    # Each test runs in its own process, so the words don't leak.
+  describe "with formatted names" do
+    # Each test runs in its own process, so the names don't leak.
     setup do
-      Naming.put_identifiers(%{
-        "prerequisiteSHAs" => [word("WORD", "prerequisite"), word("ACRONYM", "SHA", "s")],
-        "experimentalWithAllGPUs" => [
-          word("WORD", "experimental"),
-          word("WORD", "with"),
-          word("WORD", "all"),
-          word("ACRONYM", "GPU", "s")
-        ],
-        "isEmpty" => [word("WORD", "is"), word("WORD", "empty")],
-        "do" => [word("WORD", "do")],
-        "JSONValue" => [word("ACRONYM", "JSON"), word("WORD", "value")],
-        "LLMID" => [word("ACRONYM", "LLM"), word("ACRONYM", "ID")],
-        "GitHubRepo" => [word("TERM", "GitHub"), word("WORD", "repo")]
+      Naming.put_names(%{
+        "PASCAL:UPPERCASE" => %{
+          "JSONValue" => "JSONValue",
+          "LLMID" => "LLMID",
+          "GitHubRepo" => "GitHubRepo"
+        },
+        "SNAKE:UPPERCASE" => %{
+          "prerequisiteSHAs" => "prerequisite_shas",
+          "experimentalWithAllGPUs" => "experimental_with_all_gpus",
+          "isEmpty" => "is_empty",
+          "do" => "do",
+          "LLMID" => "llm_id",
+          "GitHubRepo" => "github_repo"
+        }
       })
     end
 
@@ -57,7 +58,7 @@ defmodule Dagger.Codegen.ElixirGenerator.FormatterTest do
       assert Formatter.format_module("LLMID") == "Dagger.LLMID"
       assert Formatter.format_module("GitHubRepo") == "Dagger.GitHubRepo"
       assert Formatter.format_module("Query") == "Dagger.Client"
-      # Names without words keep the legacy conversion.
+      # Names without an entry keep the legacy conversion.
       assert Formatter.format_module("Container") == "Dagger.Container"
     end
 
@@ -68,7 +69,7 @@ defmodule Dagger.Codegen.ElixirGenerator.FormatterTest do
       assert Formatter.format_var_name("CacheVolume") == "cache_volume"
     end
 
-    test "legacy_var_name/1 ignores the words" do
+    test "legacy_var_name/1 ignores the names" do
       assert Formatter.legacy_var_name("LLMID") == "llmid"
     end
 
@@ -82,7 +83,7 @@ defmodule Dagger.Codegen.ElixirGenerator.FormatterTest do
       assert Formatter.format_function_name("do") == "do_"
     end
 
-    test "legacy_function_name/1 ignores the words" do
+    test "legacy_function_name/1 ignores the names" do
       assert Formatter.legacy_function_name("prerequisiteSHAs") == "prerequisite_sh_as"
 
       assert Formatter.legacy_function_name("experimentalWithAllGPUs") ==
@@ -93,10 +94,6 @@ defmodule Dagger.Codegen.ElixirGenerator.FormatterTest do
       assert Formatter.format_doc("Use `prerequisiteSHAs` instead") ==
                "Use `prerequisite_shas` instead"
     end
-  end
-
-  defp word(kind, text, suffix \\ "") do
-    %{kind: kind, text: text, suffix: suffix, capitalized: String.capitalize(text)}
   end
 
   test "format_type/1" do

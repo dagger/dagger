@@ -3,6 +3,7 @@ defmodule Dagger.CodegenTest do
   doctest Dagger.Codegen
 
   alias Dagger.Codegen.Introspection.Types.Schema
+  alias Dagger.Codegen.Naming
 
   defmodule VersionGenerator do
     def generate_object(type), do: type.supports_nullable_objects
@@ -48,13 +49,21 @@ defmodule Dagger.CodegenTest do
     end
   end
 
-  describe "identifier words" do
+  describe "formatted names" do
     setup do
-      %{json: "test/fixtures/schemas/identifier-words.json" |> File.read!() |> JSON.decode!()}
+      read = fn path -> path |> File.read!() |> JSON.decode!() end
+
+      %{
+        json: read.("test/fixtures/schemas/formatted-names.json"),
+        names: read.("test/fixtures/schemas/formatted-names.names.json")
+      }
     end
 
-    test "format Elixir names, leaving API names as the schema has them", %{json: json} do
-      files = generate(json)
+    test "format Elixir names, leaving API names as the schema has them", %{
+      json: json,
+      names: names
+    } do
+      files = generate(json, names)
 
       assert Enum.sort(Map.keys(files)) ==
                ["client.ex", "commit_set.ex", "http_client.ex", "http_header.ex", "llm_id.ex"]
@@ -93,29 +102,61 @@ defmodule Dagger.CodegenTest do
       assert files["llm_id.ex"] =~ "defmodule Dagger.LLMID do"
     end
 
-    test "fall back to the legacy conversion without words", %{json: json} do
-      files = json |> Map.delete("__identifiers") |> generate()
+    test "fall back to the legacy conversion without names", %{json: json, names: names} do
+      without_format_identifiers = update_in(json, ["__schema", "types"], &drop_format_identifiers/1)
 
-      assert Enum.sort(Map.keys(files)) ==
-               ["client.ex", "commit_set.ex", "http_client.ex", "http_header.ex", "llmid.ex"]
+      # no names, names with no formats, or names for a schema without
+      # Query.formatIdentifiers
+      for {json, names} <- [{json, nil}, {json, %{}}, {without_format_identifiers, names}] do
+        files = generate(json, names)
 
-      assert files["client.ex"] =~
-               ~s|QB.maybe_put_arg("sourceSHAs", optional_args[:source_sh_as])|
+        assert "llmid.ex" in Map.keys(files)
+        refute "llm_id.ex" in Map.keys(files)
 
-      http_client = files["http_client.ex"]
+        assert files["client.ex"] =~
+                 ~s|QB.maybe_put_arg("sourceSHAs", optional_args[:source_sh_as])|
+
+        http_client = files["http_client.ex"]
+        assert http_client =~ "def prerequisite_sh_as(%__MODULE__{} = http_client)"
+        refute http_client =~ "prerequisite_shas"
+        refute http_client =~ "@deprecated"
+
+        commit_set = files["commit_set.ex"]
+        assert commit_set =~ "def parent_shas(), do: :PARENT_SHAS"
+        assert commit_set =~ "def parent_sh_as(), do: :ParentSHAs"
+        refute commit_set =~ "@deprecated"
+      end
+    end
+
+    test "fall back to the legacy conversion for names without an entry", %{
+      json: json,
+      names: names
+    } do
+      names = update_in(names, ["SNAKE:UPPERCASE"], &Map.delete(&1, "prerequisiteSHAs"))
+      http_client = generate(json, names)["http_client.ex"]
+
       assert http_client =~ "def prerequisite_sh_as(%__MODULE__{} = http_client)"
       refute http_client =~ "prerequisite_shas"
-      refute http_client =~ "@deprecated"
-
-      commit_set = files["commit_set.ex"]
-      assert commit_set =~ "def parent_shas(), do: :PARENT_SHAS"
-      assert commit_set =~ "def parent_sh_as(), do: :ParentSHAs"
-      refute commit_set =~ "@deprecated"
+      assert http_client =~ "def tls?(%__MODULE__{} = http_client)"
     end
   end
 
-  defp generate(json) do
-    Dagger.Codegen.generate(Dagger.Codegen.ElixirGenerator, Schema.from_map(json))
+  defp drop_format_identifiers(types) do
+    Enum.map(types, fn
+      %{"name" => "Query"} = query ->
+        Map.update!(query, "fields", fn fields ->
+          Enum.reject(fields, &(&1["name"] == "formatIdentifiers"))
+        end)
+
+      type ->
+        type
+    end)
+  end
+
+  defp generate(json, names) do
+    schema = json |> Schema.from_map() |> Schema.put_names(Naming.from_map(names))
+
+    Dagger.Codegen.generate(Dagger.Codegen.ElixirGenerator, schema)
     |> Map.new(fn {:ok, {file, code}} -> {file, IO.iodata_to_binary(code)} end)
   end
 end

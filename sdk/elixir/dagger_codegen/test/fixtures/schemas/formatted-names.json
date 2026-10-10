@@ -58,6 +58,38 @@
                 "ofType": null
               }
             }
+          },
+          {
+            "args": [
+              {
+                "defaultValue": null,
+                "description": "The names to format.",
+                "name": "names",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              }
+            ],
+            "deprecationReason": null,
+            "description": "Format names, for codegen.",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "formatIdentifiers",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
           }
         ],
         "inputFields": [],
@@ -195,58 +227,6 @@
         "name": "LLMID",
         "possibleTypes": []
       }
-    ]
-  },
-  "__identifiers": {
-    "CommitSet": [
-      {"kind": "WORD", "text": "commit", "suffix": "", "capitalized": "Commit"},
-      {"kind": "WORD", "text": "set", "suffix": "", "capitalized": "Set"}
-    ],
-    "HTTPClient": [
-      {"kind": "ACRONYM", "text": "HTTP", "suffix": "", "capitalized": "Http"},
-      {"kind": "WORD", "text": "client", "suffix": "", "capitalized": "Client"}
-    ],
-    "HTTPHeader": [
-      {"kind": "ACRONYM", "text": "HTTP", "suffix": "", "capitalized": "Http"},
-      {"kind": "WORD", "text": "header", "suffix": "", "capitalized": "Header"}
-    ],
-    "LLMID": [
-      {"kind": "ACRONYM", "text": "LLM", "suffix": "", "capitalized": "Llm"},
-      {"kind": "ACRONYM", "text": "ID", "suffix": "", "capitalized": "Id"}
-    ],
-    "PARENT_SHAS": [
-      {"kind": "WORD", "text": "parent", "suffix": "", "capitalized": "Parent"},
-      {"kind": "ACRONYM", "text": "SHA", "suffix": "s", "capitalized": "Sha"}
-    ],
-    "ParentSHAs": [
-      {"kind": "WORD", "text": "parent", "suffix": "", "capitalized": "Parent"},
-      {"kind": "ACRONYM", "text": "SHA", "suffix": "s", "capitalized": "Sha"}
-    ],
-    "Query": [
-      {"kind": "WORD", "text": "query", "suffix": "", "capitalized": "Query"}
-    ],
-    "baseURL": [
-      {"kind": "WORD", "text": "base", "suffix": "", "capitalized": "Base"},
-      {"kind": "ACRONYM", "text": "URL", "suffix": "", "capitalized": "Url"}
-    ],
-    "httpClient": [
-      {"kind": "ACRONYM", "text": "HTTP", "suffix": "", "capitalized": "Http"},
-      {"kind": "WORD", "text": "client", "suffix": "", "capitalized": "Client"}
-    ],
-    "isTLS": [
-      {"kind": "WORD", "text": "is", "suffix": "", "capitalized": "Is"},
-      {"kind": "ACRONYM", "text": "TLS", "suffix": "", "capitalized": "Tls"}
-    ],
-    "name": [
-      {"kind": "WORD", "text": "name", "suffix": "", "capitalized": "Name"}
-    ],
-    "prerequisiteSHAs": [
-      {"kind": "WORD", "text": "prerequisite", "suffix": "", "capitalized": "Prerequisite"},
-      {"kind": "ACRONYM", "text": "SHA", "suffix": "s", "capitalized": "Sha"}
-    ],
-    "sourceSHAs": [
-      {"kind": "WORD", "text": "source", "suffix": "", "capitalized": "Source"},
-      {"kind": "ACRONYM", "text": "SHA", "suffix": "s", "capitalized": "Sha"}
     ]
   }
 }

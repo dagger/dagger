@@ -8,7 +8,6 @@ type ElixirClientDev {
     @ignorePatterns(patterns: [
       "*",
       "!sdk/elixir",
-      "!engine/naming/testdata/vectors.json",
     ])
 
   pub sourcePath: String! = "sdk/elixir"
@@ -48,9 +47,20 @@ type ElixirClientDev {
     let before = directory
       .withDirectory(sourcePath, source)
 
+    let engine = daggerEngine(ws: self.ws)
+    # The schema's names as the engine formats them, in the formats the
+    # generator uses (Dagger.Codegen.Naming.formats/0): codegen has no engine
+    # session to ask.
+    let names = engine.introspectionNames(formats: ["PASCAL:UPPERCASE", "SNAKE:UPPERCASE"])
     let gen = withCodegen(devContainer)
-      .withMountedFile("/schema.json", daggerEngine(ws: self.ws).introspectionJson)
-      .withExec(["mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"])
+      .withMountedFile("/schema.json", engine.introspectionJson)
+      .withMountedFile("/names.json", names)
+      .withExec([
+        "mix", "dagger.codegen", "generate",
+        "--introspection", "/schema.json",
+        "--names", "/names.json",
+        "--outdir", "gen",
+      ])
       .withExec(["mix", "format", "gen/*.ex"])
       .directory("gen")
 
@@ -185,12 +195,6 @@ type ElixirClientDev {
 
   let withCodegen(ctr: Container!): Container! {
     ctr
-      # Shared identifier test vectors, for the codegen tests.
-      .withMountedFile(
-        "/engine/naming/testdata/vectors.json",
-        workspaceDir.file("engine/naming/testdata/vectors.json"),
-      )
-      .withEnvVariable("DAGGER_NAMING_VECTORS", "/engine/naming/testdata/vectors.json")
       .withWorkdir("dagger_codegen")
       .withExec(["mix", "deps.get"])
   }
