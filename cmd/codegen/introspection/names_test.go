@@ -121,7 +121,7 @@ func TestNamesFile(t *testing.T) {
 	require.JSONEq(t, `{}`, string(data))
 
 	schema.FormattedNames = map[NameFormat]map[string]string{
-		{Casing: CasingSnake, Acronyms: AcronymsUppercase}:     {"httpClient": "http_client"},
+		{Casing: CasingSnake, Acronyms: AcronymsUppercase}:    {"httpClient": "http_client"},
 		{Casing: CasingPascal, Acronyms: AcronymsCapitalized}: {"httpClient": "HttpClient"},
 	}
 	data, err = json.Marshal(schema.NamesFile())

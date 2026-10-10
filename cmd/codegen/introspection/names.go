@@ -81,7 +81,7 @@ func ParseNameFormats(s string) ([]NameFormat, error) {
 
 func isEnumName(s string) bool {
 	for _, r := range s {
-		if !('A' <= r && r <= 'Z' || r == '_' || '0' <= r && r <= '9') {
+		if (r < 'A' || r > 'Z') && r != '_' && (r < '0' || r > '9') {
 			return false
 		}
 	}
