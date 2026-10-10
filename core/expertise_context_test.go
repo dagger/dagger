@@ -34,9 +34,10 @@ func TestExpertiseOwnerContext(t *testing.T) {
 		assertOwner(WithExpertiseOwner(outer, "nested"), "outer", true)
 	}
 
-	replayed := expertiseCallContext(outer, []CallInput{{Name: expertiseOwnerArg, Value: dagql.Opt(dagql.String("recorded"))}})
+	assertOwner(expertiseCallContext(outer, &CallOpts{}), "outer", true)
+	replayed := expertiseCallContext(outer, &CallOpts{Inputs: []CallInput{{Name: expertiseOwnerArg, Value: dagql.Opt(dagql.String("recorded"))}}})
 	assertOwner(replayed, "recorded", true)
-	unowned := expertiseCallContext(outer, []CallInput{{Name: expertiseOwnerArg, Value: dagql.Opt(dagql.String(""))}})
+	unowned := expertiseCallContext(outer, &CallOpts{useRecordedExpertiseOwner: true})
 	assertOwner(unowned, "", false)
 	assertOwner(WithExpertiseOwner(unowned, "new-entry"), "new-entry", true)
 	assertOwner(WithExpertiseOwner(WithExpertiseOwner(ctx, ""), "inner"), "", true)
@@ -59,7 +60,10 @@ func TestExpertiseOwnerCallCacheAndReplay(t *testing.T) {
 		Owner dagql.Optional[dagql.String] `name:"_expertiseOwner" internal:"true"`
 	}) (*Module, error) {
 		calls++
-		ctx = expertiseCallContext(ctx, []CallInput{{Name: expertiseOwnerArg, Value: args.Owner}})
+		ctx = expertiseCallContext(ctx, &CallOpts{
+			useRecordedExpertiseOwner: true,
+			Inputs:                   []CallInput{{Name: expertiseOwnerArg, Value: args.Owner}},
+		})
 		owner, _ := ExpertiseOwner(ctx)
 		return &Module{NameField: owner}, nil
 	})
@@ -83,7 +87,18 @@ func TestExpertiseOwnerCallCacheAndReplay(t *testing.T) {
 			require.Equal(t, before+1, calls, "each owner has its own reusable cache entry")
 			recipe, err := result.RecipeID(callCtx)
 			require.NoError(t, err)
-			require.Equal(t, owner, recipe.Arg(expertiseOwnerArg).Value().ToInput())
+			if owner == "" {
+				require.Nil(t, recipe.Arg(expertiseOwnerArg))
+				legacy := call.New().Append((&Module{}).Type(), "owner")
+				require.Equal(t, legacy.Digest(), recipe.Digest(), "unowned module-call identity is unchanged")
+				legacyID, err := legacy.Encode()
+				require.NoError(t, err)
+				recipeID, err := recipe.Encode()
+				require.NoError(t, err)
+				require.Equal(t, legacyID, recipeID)
+			} else {
+				require.Equal(t, owner, recipe.Arg(expertiseOwnerArg).Value().ToInput())
+			}
 			encoded, err := recipe.Encode()
 			require.NoError(t, err)
 			var decoded call.ID

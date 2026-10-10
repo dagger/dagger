@@ -53,15 +53,28 @@ func expertiseOwnerInputSpec() dagql.InputSpec {
 }
 
 func stampExpertiseOwner(ctx context.Context, req *dagql.CallRequest) error {
+	if req.Replay {
+		// Absence is meaningful too: an unowned recipe must remain unowned.
+		return nil
+	}
 	if owner := req.Arg(expertiseOwnerArg); owner != nil && owner.Value != nil && owner.Value.Kind != dagql.ResultCallLiteralKindNull {
 		return nil
 	}
 	owner, _ := ExpertiseOwner(ctx)
+	if owner == "" {
+		// Leave ordinary module calls' existing IDs and cache keys unchanged.
+		return nil
+	}
 	return req.SetArgInput(ctx, expertiseOwnerArg, dagql.Opt(dagql.String(owner)), false)
 }
 
-func expertiseCallContext(ctx context.Context, inputs []CallInput) context.Context {
-	for _, input := range inputs {
+func expertiseCallContext(ctx context.Context, opts *CallOpts) context.Context {
+	if opts.useRecordedExpertiseOwner {
+		// Schema calls have already stamped any fresh ambient owner. An absent
+		// stamp therefore means unowned, including when replayed inside an entry.
+		ctx = context.WithValue(ctx, expertiseOwnerContextKey{}, expertiseOwner{})
+	}
+	for _, input := range opts.Inputs {
 		if input.Name != expertiseOwnerArg {
 			continue
 		}

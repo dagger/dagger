@@ -110,6 +110,10 @@ type CallOpts struct {
 	ParentFields   map[string]any
 	SkipSelfSchema bool
 	Server         *dagql.Server
+
+	// Schema dispatch uses the recorded scope, including an absent owner.
+	// Direct engine calls without a selector inherit their caller's scope.
+	useRecordedExpertiseOwner bool
 }
 
 type CallInput struct {
@@ -1008,7 +1012,7 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRunt
 }
 
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) {
-	ctx = expertiseCallContext(ctx, opts.Inputs)
+	ctx = expertiseCallContext(ctx, opts)
 	mod := fn.mod.Self()
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)

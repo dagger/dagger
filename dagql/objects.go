@@ -655,6 +655,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 		TTL:                  field.Spec.TTL,
 		DoNotCache:           field.Spec.DoNotCache != "",
 		IsPersistable:        field.Spec.IsPersistable,
+		Replay:               sel.replay,
 		PassthroughTelemetry: field.Spec.PassthroughTelemetry,
 		// The immediate receiver's type name is free here (r is the receiver);
 		// core.AroundFunc reads it to make the static profile-skip decision without

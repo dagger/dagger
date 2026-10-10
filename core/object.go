@@ -1318,10 +1318,11 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				})
 			}
 			return fn.Call(ctx, &CallOpts{
-				Inputs:       callInput,
-				ParentTyped:  nil,
-				ParentFields: nil,
-				Server:       dag,
+				useRecordedExpertiseOwner: true,
+				Inputs:                    callInput,
+				ParentTyped:               nil,
+				ParentFields:              nil,
+				Server:                    dag,
 			})
 		},
 	)
@@ -1687,9 +1688,10 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 			opts := &CallOpts{
-				ParentTyped:    obj,
-				ParentFields:   obj.Self().Fields,
-				SkipSelfSchema: false,
+				useRecordedExpertiseOwner: true,
+				ParentTyped:               obj,
+				ParentFields:              obj.Self().Fields,
+				SkipSelfSchema:            false,
 				// Only applies ignore patterns to Directory args, which any
 				// server with the core schema can do.
 				Server: installed.orCurrent(ctx),

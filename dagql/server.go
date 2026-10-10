@@ -1982,10 +1982,11 @@ func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyO
 		args = append(args, NamedInput{Name: argSpec.Name, Value: input})
 	}
 	return Selector{
-		Field: frame.Field,
-		Args:  args,
-		Nth:   int(frame.Nth),
-		View:  view,
+		Field:  frame.Field,
+		Args:   args,
+		Nth:    int(frame.Nth),
+		View:   view,
+		replay: true,
 	}, nil
 }
 
@@ -2719,6 +2720,10 @@ type Selector struct {
 	Args  []NamedInput
 	Nth   int
 	View  call.View
+
+	// Set only by recipe loading, scoped to this selector rather than inherited
+	// through the context by fresh calls made during its execution.
+	replay bool
 }
 
 func (sel Selector) String() string {
