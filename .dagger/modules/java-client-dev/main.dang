@@ -75,6 +75,19 @@ type JavaClientDev {
   }
 
   """
+  Test the codegen Maven plugin, without an engine
+  """
+  codegenTest: Void @check {
+    mavenImage
+      .withDirectory(workspacePath, workspaceDir)
+      .withWorkdir(workspacePath + "/" + sourcePath)
+      .withExec(["mvn", "--projects", "dagger-codegen-maven-plugin", "--also-make", "test"])
+      .sync
+
+    null
+  }
+
+  """
   Lint the Java SDK
   """
   lint: Void @check {
