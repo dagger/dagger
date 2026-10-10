@@ -192,6 +192,22 @@ func (r *DaggerEngine) IntrospectionJSON() *File { // dagger-engine (../../../..
 	}
 }
 
+// Format the engine API schema's names with the engine, and return them as a
+// json-encoded file, for SDK codegen that runs without an engine connection.
+//
+// The file maps each format to every schema name formatted in it, e.g.
+// {"SNAKE:UPPERCASE": {"httpClient": "http_client", ...}}, and is empty ({})
+// when the schema has no Query.formatIdentifiers. It goes with the schema of
+// IntrospectionJSON; see `codegen introspect --help`.
+func (r *DaggerEngine) IntrospectionNames(formats []string) *File { // dagger-engine (../../../../../.dagger/modules/engine-dev/main.go:501:1)
+	q := r.query.Select("introspectionNames")
+	q = q.Arg("formats", formats)
+
+	return &File{
+		query: q,
+	}
+}
+
 // Build the `introspect` tool which introspects the engine API
 func (r *DaggerEngine) IntrospectionTool() *File { // dagger-engine (../../../../../.dagger/modules/engine-dev/main.go:347:1)
 	q := r.query.Select("introspectionTool")
