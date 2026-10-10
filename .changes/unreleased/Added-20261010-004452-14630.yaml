@@ -1,0 +1,6 @@
+kind: Added
+body: Container.withMountedFile has a readOnly argument, like withMountedDirectory. A read-only file mount can't be written, and a withExec no longer snapshots and commits it as an output.
+time: 2026-10-10T00:44:52+00:00
+custom:
+    Author: sipsma
+    PR: "14630"
