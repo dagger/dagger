@@ -376,19 +376,6 @@ type frontendPretty struct {
 	// cleared by recalculateViewLocked in Render. This coalesces multiple
 	// data updates into a single recalculate per render frame.
 	viewDirty bool
-	// viewUrgent marks a dirty view whose recalculation must not be paced
-	// (see recalcWaitLocked): the change came from the user, e.g. focusing
-	// another agent, not from streamed data. Cleared with viewDirty.
-	viewUrgent bool
-
-	// recalcPacing tunes how Render paces data-driven recalculation of large
-	// traces (see recalcWaitLocked). lastRecalcCost and lastRecalcAt record
-	// the most recent view recalculation. recalcWakeup is the timer, while one
-	// is scheduled, that renders again once a deferred recalculation is due.
-	recalcPacing   recalcPacing
-	lastRecalcCost time.Duration
-	lastRecalcAt   time.Time
-	recalcWakeup   *time.Timer
 
 	// testsDirty and testLogSpans defer test view updates to the next frame
 	// the way viewDirty defers recalculation: testsDirty when span batches or
@@ -1216,7 +1203,6 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 		tuiTerm:            term,
 		claims:             newRenderClaims(),
 		promptColorProfile: promptProfile,
-		recalcPacing:       defaultRecalcPacing,
 	}
 	tui.AddInputListener(fe.handlePromptBackground)
 	tui.AddInputListener(fe.handleHUDKey)
@@ -2673,23 +2659,6 @@ func (fe *frontendPretty) requestSubtree(id dagui.SpanID) {
 	fe.spanProvider(id)
 }
 
-// urgeRequestedChildrenLocked marks the view urgent (unpaced) when a batch of
-// spans brings children of a span the user asked to load by expanding or
-// zooming it (requestSubtree), so the row fills in on the next frame instead
-// of when recalculation pacing says it's due. Only `dagger trace` registers a
-// span provider, so live sessions never take this path.
-func (fe *frontendPretty) urgeRequestedChildrenLocked(ids []dagui.SpanID) {
-	if len(fe.requestedSpans) == 0 || fe.viewUrgent {
-		return
-	}
-	for _, id := range ids {
-		if span := fe.db.Spans.Map[id]; span != nil && fe.requestedSpans[span.ParentID] {
-			fe.viewUrgent = true
-			return
-		}
-	}
-}
-
 // ImportSnapshots folds a batch of span snapshots into the DB and refreshes the
 // view. It's the snapshot-based counterpart to the OTLP ExportSpans path, for
 // callers that already hold dagui snapshots (a remote frontend, tests).
@@ -2720,7 +2689,6 @@ func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple batches into one recalculate per frame.
 		fe.viewDirty = true
-		fe.urgeRequestedChildrenLocked(ids)
 		fe.Update()
 	})
 }
@@ -3031,8 +2999,6 @@ func (fe *frontendPretty) handleEOF() {
 }
 
 func (fe *frontendPretty) doQuit() {
-	fe.stopRecalcWakeupLocked()
-
 	// Mark the frontend dirty so the final live frame observes fe.quitting and
 	// renders blank instead of reusing cached progress rows. Without this, the
 	// TUI can leave stale live output above the final render when NoExit exits
@@ -3176,7 +3142,6 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple ExportSpans batches into one recalculate per frame.
 		fe.viewDirty = true
-		fe.urgeRequestedChildrenLocked(spanIDs)
 		fe.Update()
 	})
 	return nil
@@ -3697,16 +3662,10 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	}
 
 	// Coalesce deferred view updates. Multiple ExportSpans batches may
-	// have set viewDirty since the last frame — recalculate once now, unless
-	// the trace is so large that recalculating on every frame would starve
-	// the render loop, in which case it's deferred until it's due.
+	// have set viewDirty since the last frame — recalculate once now.
 	if fe.viewDirty {
-		if wait := fe.recalcWaitLocked(time.Now()); wait > 0 {
-			fe.scheduleRecalcWakeupLocked(wait)
-		} else {
-			fe.viewDirty = false
-			fe.recalculateViewLocked()
-		}
+		fe.viewDirty = false
+		fe.recalculateViewLocked()
 	}
 	fe.syncTerminalTitle()
 
@@ -4563,103 +4522,9 @@ func (fe *frontendPretty) formHeight() int {
 	return height
 }
 
-// Pacing for data-driven view recalculation. recalculateViewLocked rebuilds
-// the whole trace tree (dagui.DB.RowsView walks every visible span, collapsed
-// or not, because search, revealed spans and causal reparenting all need the
-// complete tree), so its cost grows with the trace. Spans stream in batch by
-// batch and every batch dirties the view, so on a trace with millions of spans
-// recalculating on every frame starved the render loop. Instead, once a
-// recalculation gets expensive, Render waits factor times its cost (capped at
-// maxDelay) after the last one finished before recalculating again. Frames in
-// between keep rendering the previous rows, plus whatever the updated spans'
-// own views show.
-//
-// Below the cap, that bounds recalculation to 1/(1+factor) of the render loop.
-// Past it -- a recalculation costing more than maxDelay/factor, which
-// BenchmarkStreamingFrame's shape reaches at around 700k spans -- the share is
-// cost/(cost+maxDelay) instead, and every recalculation still blocks the loop
-// (input included) for its whole cost: pacing makes the freezes rarer, not
-// shorter.
-//
-// Explicit recalculations (key presses, zooms, the final render) call
-// recalculateViewLocked directly and are never deferred, and neither is a
-// dirty view marked viewUrgent (an agent switch, children the user fetched).
-type recalcPacing struct {
-	// minSpans keeps small traces -- and every test -- on the
-	// recalculate-every-frame path, independent of timing.
-	minSpans int
-	// minCost is the cheapest recalculation worth pacing.
-	minCost time.Duration
-	// factor is how many times its cost a recalculation waits after the last.
-	factor int
-	// maxDelay caps that wait.
-	maxDelay time.Duration
-}
-
-var defaultRecalcPacing = recalcPacing{
-	minSpans: 20_000,
-	minCost:  5 * time.Millisecond,
-	factor:   4,
-	maxDelay: 2 * time.Second,
-}
-
-// recalcWaitLocked returns how much longer a data-driven recalculation should
-// be deferred, or <= 0 if it's due now.
-//
-// The HTTP console (DAGGER_TUI_CONSOLE) is never paced: consoleSettle returns
-// a frame once it stops changing, so a deferred recalculation would hand back
-// a stable but stale frame instead of the one a key or fetch produced.
-func (fe *frontendPretty) recalcWaitLocked(now time.Time) time.Duration {
-	pacing := fe.recalcPacing
-	if fe.viewUrgent || fe.finalRender || fe.reportOnly || fe.console != "" || fe.db == nil ||
-		fe.lastRecalcCost < pacing.minCost ||
-		len(fe.db.Spans.Order) < pacing.minSpans {
-		return 0
-	}
-	delay := min(fe.lastRecalcCost*time.Duration(pacing.factor), pacing.maxDelay)
-	return fe.lastRecalcAt.Add(delay).Sub(now)
-}
-
-// scheduleRecalcWakeupLocked makes sure a frame renders once a deferred
-// recalculation is due, even if nothing else changes in the meantime.
-func (fe *frontendPretty) scheduleRecalcWakeupLocked(wait time.Duration) {
-	if fe.recalcWakeup != nil {
-		return
-	}
-	var timer *time.Timer
-	timer = time.AfterFunc(wait, func() {
-		fe.dispatch(func() {
-			if fe.recalcWakeup != timer {
-				// Stopped (or replaced) after it had already fired.
-				return
-			}
-			fe.recalcWakeup = nil
-			if fe.viewDirty {
-				fe.Update()
-			}
-		})
-	})
-	fe.recalcWakeup = timer
-}
-
-// stopRecalcWakeupLocked cancels a scheduled recalculation wakeup, so no
-// timer outlives the frontend.
-func (fe *frontendPretty) stopRecalcWakeupLocked() {
-	if fe.recalcWakeup != nil {
-		fe.recalcWakeup.Stop()
-		fe.recalcWakeup = nil
-	}
-}
-
 //nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies
 func (fe *frontendPretty) recalculateViewLocked() {
-	// clear in case called directly from event handlers
-	fe.viewDirty, fe.viewUrgent = false, false
-	start := time.Now()
-	defer func() {
-		fe.lastRecalcAt = time.Now()
-		fe.lastRecalcCost = fe.lastRecalcAt.Sub(start)
-	}()
+	fe.viewDirty = false // clear in case called directly from event handlers
 	if !fe.reportScopedSubtree && fe.RootFilter == nil {
 		// Promotion reshapes the trace around what the whole run was about: it
 		// hangs the surfaced checks/conversation/generators off the zoomed span
@@ -5377,9 +5242,7 @@ func (fe *frontendPretty) updateAgentRoster() {
 	// covers state flags, which change often and do not move the transcript.
 	if focused := fe.focusedAgentID(); focused != fe.lastRosterFocus {
 		fe.lastRosterFocus = focused
-		// Focus moves only by a keypress (see focusAgent), so the tree must
-		// follow on the next frame, however large the trace.
-		fe.viewDirty, fe.viewUrgent = true, true
+		fe.viewDirty = true
 		// Sections describing an agent (the Changes bubble, and the diff
 		// viewer browsing it) must not show the previous agent's content
 		// while the new one's loads; see sectionStale.
