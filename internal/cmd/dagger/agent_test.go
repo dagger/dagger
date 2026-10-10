@@ -128,9 +128,15 @@ func (DaggerCMDSuite) TestTraceRestoreRuntimeQueries(ctx context.Context, t *tes
 	id, err := core.NewQuery(dag).LLM(core.LLMOpts{Model: "openai/gpt-4o"}).WithSystemPrompt("traced configuration").ID(ctx)
 	require.NoError(t, err)
 	target := &sessionRestore{dag: dag}
-	chief, err := target.Rehydrate(ctx, dagui.AgentRestore{ID: "cli-restore-chief", Name: "chief", State: "IDLE"}, string(id))
+	chiefEntry := dagui.AgentRestore{ID: "cli-restore-chief", Name: "chief", State: "IDLE"}
+	workerEntry := dagui.AgentRestore{ID: "cli-restore-worker", Name: "worker", ParentAgentID: "cli-restore-chief", State: "FAILED", Error: "original failure"}
+	chiefLLM, err := target.Load(ctx, chiefEntry, string(id))
 	require.NoError(t, err)
-	worker, err := target.Rehydrate(ctx, dagui.AgentRestore{ID: "cli-restore-worker", Name: "worker", ParentAgentID: "cli-restore-chief", State: "FAILED", Error: "original failure"}, string(id))
+	workerLLM, err := target.Load(ctx, workerEntry, string(id))
+	require.NoError(t, err)
+	chief, err := target.Rehydrate(ctx, chiefEntry, chiefLLM)
+	require.NoError(t, err)
+	worker, err := target.Rehydrate(ctx, workerEntry, workerLLM)
 	require.NoError(t, err)
 	require.NoError(t, target.Subscribe(ctx, worker, chief, []string{"FAILED", "IDLE"}))
 	chiefState, err := core.Ref[*core.Agent](core.NewQuery(dag), core.ID(chief)).State(ctx)
