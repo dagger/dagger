@@ -114,6 +114,7 @@ func (v *SpanListView) sync() bool {
 		tree := rowsView.Body[i]
 		spanTree := v.fe.getOrCreateSpanTreeInScope(tree.Span.ID, &v.scope)
 		spanTree.parent = nil
+		spanTree.tree = tree
 		spanTree.indexInParent = len(children)
 		v.fe.syncTreeNodeInScope(spanTree, treePrefix{}, &v.scope)
 		children = append(children, spanTree)
