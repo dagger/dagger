@@ -1,10 +1,12 @@
 package engineutil
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -53,56 +55,129 @@ func killContainerCgroup(ctx context.Context, id, cgroupPath string) error {
 	if !validContainerCgroupPath(id, path) {
 		return fmt.Errorf("refusing cgroup recovery for container %q at %q", id, path)
 	}
-	if err := killAndDrainCgroup(ctx, path, cgroups.WriteFile, cgroups.ReadFile); err != nil {
-		return fmt.Errorf("%w (still in cgroup: %s)", err, describeCgroupTasks(path))
+	err = killAndDrainCgroup(ctx, path, cgroups.WriteFile, cgroups.ReadFile)
+	if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		// The kill was written but the cgroup never emptied.
+		return fmt.Errorf("%w (left in cgroup after kill: %s)", err, describeCgroupTasks(path, "/proc"))
 	}
-	return nil
+	return err
 }
 
-// describeCgroupTasks names what survived a cgroup kill: a task only
-// outlives SIGKILL while it sleeps uninterruptibly in the kernel, so each
-// such thread is reported with its kernel stack.
-func describeCgroupTasks(path string) string {
-	const maxProcs, maxStackLines = 8, 12
-	var procs []string
-	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || d.Name() != "cgroup.procs" {
-			return nil
-		}
-		data, err := os.ReadFile(p)
+const (
+	maxDescribedCgroups      = 32
+	maxDescribedProcs        = 8
+	maxDescribedTasksPerProc = 64
+	maxDescribedStackLines   = 12
+)
+
+// describeCgroupTasks names the processes left in a killed cgroup. A task
+// outlives SIGKILL only while it sleeps uninterruptibly in the kernel, so
+// each such thread is reported with its kernel stack. Every list it reads is
+// capped, and truncation and read failures are reported as such.
+func describeCgroupTasks(path, procRoot string) string {
+	var procs, notes []string
+	cgroupsSeen := 0
+	walkErr := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
 			return nil
 		}
-		procs = append(procs, strings.Fields(string(data))...)
+		if cgroupsSeen == maxDescribedCgroups {
+			notes = append(notes, fmt.Sprintf("only the first %d cgroups read", maxDescribedCgroups))
+			return fs.SkipAll
+		}
+		cgroupsSeen++
+		pids, err := readCgroupProcs(filepath.Join(p, "cgroup.procs"))
+		if err != nil {
+			notes = append(notes, fmt.Sprintf("%s unreadable: %v", p, err))
+			return nil
+		}
+		procs = append(procs, pids...)
+		if len(procs) > maxDescribedProcs {
+			notes = append(notes, fmt.Sprintf("only the first %d processes shown", maxDescribedProcs))
+			procs = procs[:maxDescribedProcs]
+			return fs.SkipAll
+		}
 		return nil
 	})
-	if len(procs) == 0 {
-		return "no processes"
+	if walkErr != nil {
+		notes = append(notes, fmt.Sprintf("cgroup walk failed: %v", walkErr))
 	}
-	var out []string
-	for i, pid := range procs {
-		if i == maxProcs {
-			out = append(out, fmt.Sprintf("%d more", len(procs)-maxProcs))
-			break
-		}
-		comm, _ := os.ReadFile(filepath.Join("/proc", pid, "comm"))
-		desc := fmt.Sprintf("pid %s (%s)", pid, strings.TrimSpace(string(comm)))
-		tids, _ := os.ReadDir(filepath.Join("/proc", pid, "task"))
-		for _, tid := range tids {
-			taskDir := filepath.Join("/proc", pid, "task", tid.Name())
-			if procTaskState(taskDir) != "D" {
-				continue
-			}
-			stack, _ := os.ReadFile(filepath.Join(taskDir, "stack"))
-			lines := strings.Split(strings.TrimSpace(string(stack)), "\n")
-			if len(lines) > maxStackLines {
-				lines = lines[:maxStackLines]
-			}
-			desc += fmt.Sprintf("; thread %s uninterruptible in [%s]", tid.Name(), strings.Join(lines, " <- "))
-		}
-		out = append(out, desc)
+	out := make([]string, 0, len(procs)+len(notes))
+	if len(procs) == 0 && len(notes) == 0 {
+		out = append(out, "no processes")
 	}
-	return strings.Join(out, ", ")
+	for _, pid := range procs {
+		out = append(out, describeProc(filepath.Join(procRoot, pid), pid))
+	}
+	return strings.Join(append(out, notes...), "; ")
+}
+
+func describeProc(procDir, pid string) string {
+	comm, err := os.ReadFile(filepath.Join(procDir, "comm"))
+	if err != nil {
+		return fmt.Sprintf("pid %s (unreadable: %v)", pid, err)
+	}
+	desc := fmt.Sprintf("pid %s (%s)", pid, strings.TrimSpace(string(comm)))
+	tasks, err := readDirHead(filepath.Join(procDir, "task"), maxDescribedTasksPerProc+1)
+	if err != nil {
+		return desc + fmt.Sprintf(", threads unreadable: %v", err)
+	}
+	if len(tasks) > maxDescribedTasksPerProc {
+		desc += fmt.Sprintf(", only the first %d threads read", maxDescribedTasksPerProc)
+		tasks = tasks[:maxDescribedTasksPerProc]
+	}
+	for _, task := range tasks {
+		taskDir := filepath.Join(procDir, "task", task.Name())
+		if procTaskState(taskDir) != "D" {
+			continue
+		}
+		stack, err := os.ReadFile(filepath.Join(taskDir, "stack"))
+		if err != nil {
+			desc += fmt.Sprintf(", thread %s uninterruptible (stack unreadable: %v)", task.Name(), err)
+			continue
+		}
+		lines := strings.Split(strings.TrimSpace(string(stack)), "\n")
+		if len(lines) > maxDescribedStackLines {
+			lines = append(lines[:maxDescribedStackLines], "...")
+		}
+		desc += fmt.Sprintf(", thread %s uninterruptible in [%s]", task.Name(), strings.Join(lines, " <- "))
+	}
+	return desc
+}
+
+// readCgroupProcs reads the PIDs from a cgroup.procs file, at most enough
+// for one more than the described processes.
+func readCgroupProcs(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var pids []string
+	scanner := bufio.NewScanner(f)
+	for len(pids) <= maxDescribedProcs && scanner.Scan() {
+		if pid := strings.TrimSpace(scanner.Text()); pid != "" {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, scanner.Err()
+}
+
+// readDirHead reads at most n entries of a directory.
+func readDirHead(path string, n int) ([]fs.DirEntry, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	entries, err := f.ReadDir(n)
+	if errors.Is(err, io.EOF) {
+		err = nil
+	}
+	return entries, err
 }
 
 // procTaskState returns the one-letter state from a /proc task's stat. The

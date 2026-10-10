@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -181,8 +182,52 @@ func TestProcTaskState(t *testing.T) {
 	require.Empty(t, procTaskState(filepath.Join(dir, "missing")))
 }
 
-func TestDescribeCgroupTasksWithoutProcesses(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "cgroup.procs"), nil, 0o600))
-	require.Equal(t, "no processes", describeCgroupTasks(dir))
+func TestDescribeCgroupTasks(t *testing.T) {
+	writeFile := func(path, data string) {
+		t.Helper()
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(data), 0o600))
+	}
+	proc := func(root, pid string, states map[string]string) {
+		writeFile(filepath.Join(root, pid, "comm"), "dagger-engine\n")
+		for tid, state := range states {
+			writeFile(filepath.Join(root, pid, "task", tid, "stat"), tid+" (dagger-engine) "+state+" 1 1 1\n")
+			writeFile(filepath.Join(root, pid, "task", tid, "stack"), "[<0>] wb_wait_for_completion+0x5a/0x90\n[<0>] sync_inodes_sb+0xd4/0x2b0\n")
+		}
+	}
+
+	t.Run("uninterruptible threads with their stacks", func(t *testing.T) {
+		cgroup, procRoot := t.TempDir(), t.TempDir()
+		writeFile(filepath.Join(cgroup, "cgroup.procs"), "")
+		writeFile(filepath.Join(cgroup, "engine", "cgroup.procs"), "42\n")
+		proc(procRoot, "42", map[string]string{"42": "S", "43": "D"})
+		require.Equal(t,
+			"pid 42 (dagger-engine), thread 43 uninterruptible in [[<0>] wb_wait_for_completion+0x5a/0x90 <- [<0>] sync_inodes_sb+0xd4/0x2b0]",
+			describeCgroupTasks(cgroup, procRoot))
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		cgroup := t.TempDir()
+		writeFile(filepath.Join(cgroup, "cgroup.procs"), "")
+		require.Equal(t, "no processes", describeCgroupTasks(cgroup, t.TempDir()))
+	})
+
+	t.Run("unreadable is not empty", func(t *testing.T) {
+		got := describeCgroupTasks(filepath.Join(t.TempDir(), "gone"), t.TempDir())
+		require.NotContains(t, got, "no processes")
+		require.Contains(t, got, "cgroup walk failed")
+	})
+
+	t.Run("process list is capped", func(t *testing.T) {
+		cgroup, procRoot := t.TempDir(), t.TempDir()
+		pids := ""
+		for pid := 100; pid < 120; pid++ {
+			pids += fmt.Sprintf("%d\n", pid)
+			proc(procRoot, fmt.Sprint(pid), map[string]string{fmt.Sprint(pid): "S"})
+		}
+		writeFile(filepath.Join(cgroup, "cgroup.procs"), pids)
+		got := describeCgroupTasks(cgroup, procRoot)
+		require.Equal(t, maxDescribedProcs, strings.Count(got, "pid "))
+		require.Contains(t, got, "only the first 8 processes shown")
+	})
 }
