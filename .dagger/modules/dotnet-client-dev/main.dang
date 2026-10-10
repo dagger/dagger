@@ -8,6 +8,12 @@ type DotnetClientDev {
   """
   let dotnetSdkImage = "mcr.microsoft.com/dotnet/sdk:8.0-alpine3.20@sha256:d04ba63aae736552b2b03bf0e63efa46d0c765726c831b401044543319d63219"
 
+  """
+  The name formats the source generator reads from names.json: PascalCase
+  members and camelCase parameters, with acronyms written like words.
+  """
+  let nameFormats: [String!]! = ["PASCAL:CAPITALIZED", "CAMEL:CAPITALIZED"]
+
   ################################################
   #### ### #### Implicit constructor #### ### ####
   """
@@ -24,7 +30,6 @@ type DotnetClientDev {
       "!sdk/dotnet/sdk/**/*.cs",
       "!sdk/dotnet/sdk/**/*.csproj",
       "!sdk/dotnet/sdk/Dagger.SDK.SourceGenerator.Tests/Fixtures/*.json",
-      "!engine/naming/testdata/vectors.json",
     ])
 
   """
@@ -74,6 +79,7 @@ type DotnetClientDev {
   pub test: Void @check {
     devContainer
       .withFile("Dagger.SDK/introspection.json", engineDev(ws: self.ws).introspectionJson)
+      .withFile("Dagger.SDK/names.json", engineDev(ws: self.ws).introspectionNames(formats: nameFormats))
       .withExec(["dotnet", "restore"])
       .withExec(["dotnet", "build", "--no-restore"])
       .withExec(["dagger", "run", "dotnet", "test", "--no-build"])
@@ -100,8 +106,8 @@ type DotnetClientDev {
   """
   Install the SDK locally so it can be imported.
 
-  This function generate `introspection.json` which allows using
-  SDK from a local checkout.
+  This function generate `introspection.json`, and the `names.json` the
+  engine formatted for it, which allows using SDK from a local checkout.
 
   Since the SDK at this moment cannot be published or installed, the
   standard function does not need to exist.
@@ -116,10 +122,15 @@ type DotnetClientDev {
       .withoutDirectory(sourcePath)
       .withDirectory(
         sourcePath,
-        directory.withFile(
-          "Dagger.SDK/introspection.json",
-          engineDev(ws: self.ws).introspectionJson,
-        ),
+        directory
+          .withFile(
+            "Dagger.SDK/introspection.json",
+            engineDev(ws: self.ws).introspectionJson,
+          )
+          .withFile(
+            "Dagger.SDK/names.json",
+            engineDev(ws: self.ws).introspectionNames(formats: nameFormats),
+          ),
       )
 
     self

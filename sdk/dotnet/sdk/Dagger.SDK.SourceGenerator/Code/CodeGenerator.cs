@@ -12,7 +12,15 @@ public class CodeGenerator(ICodeRenderer renderer)
 {
     private readonly string[] _primitiveTypes = ["ID", "String", "Int", "Float", "Boolean"];
 
-    public string Generate(Introspection introspection)
+    /// <summary>
+    /// Generates the client for a schema, naming members with the names the
+    /// engine formatted for it (a names file, see <see cref="Namer"/>), or
+    /// with the legacy conversion without them.
+    /// </summary>
+    public string Generate(
+        Introspection introspection,
+        IReadOnlyDictionary<string, Dictionary<string, string>>? names = null
+    )
     {
         // Collect type name sets for the renderer
         if (renderer is CodeRenderer codeRenderer)
@@ -26,7 +34,7 @@ public class CodeGenerator(ICodeRenderer renderer)
             codeRenderer.InterfaceTypes = introspection
                 .Schema.Types.Where(t => t.Kind == "INTERFACE")
                 .ToDictionary(t => t.Name);
-            codeRenderer.Namer = new Namer(introspection.Identifiers);
+            codeRenderer.Namer = Namer.FromNames(names);
         }
 
         var builder = new StringBuilder(renderer.RenderPre());

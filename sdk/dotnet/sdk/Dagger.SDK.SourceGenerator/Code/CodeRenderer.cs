@@ -26,7 +26,7 @@ public class CodeRenderer : ICodeRenderer
     public Dictionary<string, Type> InterfaceTypes { get; set; } = new();
 
     /// <summary>
-    /// Names C# members. Set from the schema JSON's identifier words, if any.
+    /// Names C# members. Set from the names the engine formatted, if any.
     /// </summary>
     public Namer Namer { get; set; } = Namer.Legacy;
 
@@ -70,7 +70,7 @@ public class CodeRenderer : ICodeRenderer
             """
         );
 
-        // Keep properties renamed by identifier words under their legacy
+        // Keep properties renamed by formatted names under their legacy
         // names too.
         var propertyNames = new HashSet<string>(
             type.InputFields.Select(field => Namer.Property(field.Name))
@@ -634,7 +634,7 @@ public class CodeRenderer : ICodeRenderer
     }
 
     /// <summary>
-    /// Methods renamed by identifier words keep their legacy names, and
+    /// Methods renamed by formatted names keep their legacy names, and
     /// legacy parameter names, as obsolete forwarders. On an interface they
     /// are default implementations.
     /// </summary>
