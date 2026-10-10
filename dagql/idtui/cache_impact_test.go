@@ -1,0 +1,164 @@
+package idtui
+
+import (
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+)
+
+func TestCacheImpactUsesWorkflowMakespan(t *testing.T) {
+	oldPath := cacheImpactFile
+	cacheImpactFile = filepath.Join(t.TempDir(), "cache-impact.json")
+	t.Cleanup(func() { cacheImpactFile = oldPath })
+
+	cold := cacheImpactTestDB(t, 10*time.Second, 8*time.Second,
+		telemetryattrs.CacheOutcomeExecuted, telemetryattrs.CacheOutcomeExecuted)
+	cold.MetricsByCall = cacheImpactTestMetrics(90*time.Second, 900_000_000, 300_000_000)
+	addMemoryTestSeries(cold.MetricsByCall, "branch-a", 2, startForCacheImpactTest(), 10*time.Second, 4_000_000_000)
+	addMemoryTestSeries(cold.MetricsByCall, "branch-b", 3, startForCacheImpactTest(), 8*time.Second, 2_000_000_000)
+	coldFE := NewWithDB(io.Discard, cold)
+	coldFE.prepareCacheImpact()
+	if coldFE.cacheImpact != nil {
+		t.Fatal("cold run unexpectedly has cache impact")
+	}
+
+	// The 10s branch becomes a hit while unrelated 8s work remains. The saved
+	// wall time is therefore 2s, not the cold branch's full 10s duration.
+	warm := cacheImpactTestDB(t, 100*time.Millisecond, 8*time.Second,
+		telemetryattrs.CacheOutcomeHit, telemetryattrs.CacheOutcomeExecuted)
+	warm.MetricsByCall = cacheImpactTestMetrics(30*time.Second, 100_000_000, 100_000_000)
+	addMemoryTestSeries(warm.MetricsByCall, "branch-b", 3, startForCacheImpactTest(), 8*time.Second, 2_000_000_000)
+	warmFE := NewWithDB(io.Discard, warm)
+	warmFE.prepareCacheImpact()
+
+	impact := warmFE.cacheImpact
+	if impact == nil {
+		t.Fatal("warm run has no cache impact")
+	}
+	if impact.Elapsed != 2*time.Second {
+		t.Fatalf("elapsed saved = %s, want 2s", impact.Elapsed)
+	}
+	if impact.CPU != 60*time.Second {
+		t.Fatalf("CPU saved = %s, want 1m", impact.CPU)
+	}
+	if impact.NetworkRxBytes != 800_000_000 {
+		t.Fatalf("network rx saved = %d, want 800000000", impact.NetworkRxBytes)
+	}
+	if impact.NetworkTxBytes != 200_000_000 {
+		t.Fatalf("network tx saved = %d, want 200000000", impact.NetworkTxBytes)
+	}
+	if impact.MemoryPeakBytes != 4_000_000_000 {
+		t.Fatalf("peak memory saved = %d bytes, want 4000000000", impact.MemoryPeakBytes)
+	}
+
+	got := strings.Join(warmFE.cacheReport(false), "\n")
+	want := "♻️ Cache hits 1/2 (50%) ⚡ Saved ~2s wall · ~1m CPU · ~4.0 GB peak memory · ~800 MB net rx · ~200 MB net tx"
+	if got != want {
+		t.Fatalf("cache report = %q, want %q", got, want)
+	}
+}
+
+func TestSaveCacheImpactProfileReplacesCorruptStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache-impact.json")
+	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := cacheRunProfile{Key: "workflow", Elapsed: time.Second, RecordedAt: time.Now()}
+	if err := saveCacheImpactProfile(path, want); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := loadCacheImpactProfile(path, want.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || got.Elapsed != want.Elapsed {
+		t.Fatalf("profile = %+v, found %v", got, found)
+	}
+}
+
+func TestPeakMemoryBytesDoesNotAddNonConcurrentPeaks(t *testing.T) {
+	start := time.Unix(100, 0)
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: prettyTestSpanID(2), TraceID: prettyTestTraceID(), StartTime: start, EndTime: start.Add(5 * time.Second), Final: true},
+		{ID: prettyTestSpanID(3), TraceID: prettyTestTraceID(), StartTime: start.Add(5 * time.Second), EndTime: start.Add(10 * time.Second), Final: true},
+	})
+	db.MetricsByCall = map[string]map[string][]metricdata.DataPoint[int64]{}
+	addMemoryTestSeries(db.MetricsByCall, "branch-a", 2, start, 5*time.Second, 4_000_000_000)
+	addMemoryTestSeries(db.MetricsByCall, "branch-b", 3, start.Add(5*time.Second), 5*time.Second, 3_000_000_000)
+
+	got, available := peakMemoryBytes(db)
+	if !available || got != 4_000_000_000 {
+		t.Fatalf("peak memory = %d, available %v; want 4000000000, true", got, available)
+	}
+}
+
+func TestPeakMemoryBytesTreatsNoContainersAsZero(t *testing.T) {
+	db := dagui.NewDB()
+	got, available := peakMemoryBytes(db)
+	if !available || got != 0 {
+		t.Fatalf("peak memory = %d, available %v; want zero, true", got, available)
+	}
+}
+
+func cacheImpactTestDB(t *testing.T, first, second time.Duration, firstOutcome, secondOutcome string) *dagui.DB {
+	t.Helper()
+	db := dagui.NewDB()
+	start := startForCacheImpactTest()
+	root := prettyTestSpanID(1)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: root, TraceID: prettyTestTraceID(), Name: "workflow", StartTime: start, EndTime: start.Add(max(first, second)), Final: true},
+		{
+			ID: prettyTestSpanID(2), TraceID: prettyTestTraceID(), ParentID: root,
+			StartTime: start, EndTime: start.Add(first), Final: true,
+			CacheContract: telemetryattrs.CacheContractV1, CacheOutcome: firstOutcome,
+		},
+		{
+			ID: prettyTestSpanID(3), TraceID: prettyTestTraceID(), ParentID: root,
+			StartTime: start, EndTime: start.Add(second), Final: true,
+			CacheContract: telemetryattrs.CacheContractV1, CacheOutcome: secondOutcome,
+		},
+	})
+	db.SetPrimarySpan(root)
+	return db
+}
+
+func startForCacheImpactTest() time.Time {
+	return time.Unix(100, 0)
+}
+
+func cacheImpactTestMetrics(cpu time.Duration, networkRx, networkTx int64) map[string]map[string][]metricdata.DataPoint[int64] {
+	return map[string]map[string][]metricdata.DataPoint[int64]{
+		"call": {
+			telemetry.CPUStatUsage:   {{Value: cpu.Microseconds()}},
+			telemetry.NetstatRxBytes: {{Value: networkRx}},
+			telemetry.NetstatTxBytes: {{Value: networkTx}},
+		},
+	}
+}
+
+func addMemoryTestSeries(
+	metrics map[string]map[string][]metricdata.DataPoint[int64],
+	call string,
+	spanID byte,
+	start time.Time,
+	duration time.Duration,
+	bytes int64,
+) {
+	attrs := attribute.NewSet(attribute.String(telemetry.MetricsSpanIDAttr, prettyTestSpanID(spanID).String()))
+	metrics[call] = map[string][]metricdata.DataPoint[int64]{
+		telemetry.MemoryCurrentBytes: {
+			{Attributes: attrs, Time: start.Add(min(5*time.Second, duration)), Value: bytes},
+			{Attributes: attrs, Time: start.Add(duration), Value: bytes},
+		},
+	}
+}
