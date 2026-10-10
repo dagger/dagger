@@ -671,6 +671,8 @@ func (term *Vterm) PrintTail(n int) ([]string, int) {
 	}
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	// The bounded terminal cache may have evicted the rendered state.
+	term.materializeLocked()
 	// Print writes rows 0 through used+1, as far as the content goes.
 	rows := min(term.vt.UsedHeight()+2, len(term.vt.Content))
 	if rows == 0 {

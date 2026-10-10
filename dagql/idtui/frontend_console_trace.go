@@ -733,7 +733,7 @@ func inferCheckpointDigest(db *dagui.DB, agentID string) string {
 	seen := map[string]bool{}
 	var walk func(*dagui.Span)
 	walk = func(span *dagui.Span) {
-		for _, child := range span.ChildSpans.Order {
+		for _, child := range span.ChildSpans.Spans() {
 			if child.Agent && child.AgentID != "" && child.AgentID != agentID {
 				continue
 			}
