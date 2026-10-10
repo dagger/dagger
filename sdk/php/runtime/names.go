@@ -12,8 +12,8 @@ import (
 // phpNameFormats are the name formats the PHP codegen uses: see
 // NewCodegenVisitor::NAME_FORMATS.
 var phpNameFormats = []names.Format{
-	{Casing: "CAMEL", Acronyms: "CAPITALIZED"},
-	{Casing: "SCREAMING_SNAKE", Acronyms: "UPPERCASE"},
+	{Casing: string(dagger.CasingCamel), Acronyms: string(dagger.AcronymStyleCapitalized)},
+	{Casing: string(dagger.CasingScreamingSnake), Acronyms: string(dagger.AcronymStyleUppercase)},
 }
 
 // formattedNamesFile formats the names of the module schema in
@@ -25,7 +25,7 @@ func formattedNamesFile(ctx context.Context, introspectionJSON *dagger.File) (*d
 	if err != nil {
 		return nil, fmt.Errorf("read introspection JSON: %w", err)
 	}
-	file, err := names.File(ctx, []byte(schemaJSON), phpNameFormats, names.Engine(dag.GraphQLClient()))
+	file, err := names.File(ctx, []byte(schemaJSON), phpNameFormats, formatIdentifiers)
 	if err != nil {
 		return nil, err
 	}
@@ -37,4 +37,13 @@ func formattedNamesFile(ctx context.Context, introspectionJSON *dagger.File) (*d
 		return nil, err
 	}
 	return dag.Directory().WithNewFile("names.json", string(contents)).File("names.json"), nil
+}
+
+// formatIdentifiers formats names with Query.formatIdentifiers, parsing them
+// with the naming dictionary of version.
+func formatIdentifiers(ctx context.Context, batch []string, format names.Format, version string) ([]string, error) {
+	return dag.FormatIdentifiers(ctx, batch, dagger.Casing(format.Casing), dagger.FormatIdentifiersOpts{
+		Acronyms: dagger.AcronymStyle(format.Acronyms),
+		Version:  version,
+	})
 }
