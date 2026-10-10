@@ -20,6 +20,14 @@ const identifierExperimental = "Identifier casing APIs are likely to change."
 // engine.
 const identifierVersion = "v1.0.0-0"
 
+// formatIdentifiersDoNotCache is why formatIdentifiers and __formatIdentifiers
+// skip the cache: they're pure and fast, and caching costs far more than
+// formatting. For the core schema's ~960 names, formatting takes about a
+// millisecond, but publishing the result to the cache took over 200ms. Nor
+// would a cache hit help much: codegen makes one call per name format, each
+// with different arguments.
+const formatIdentifiersDoNotCache = "Formatting is pure and much cheaper than caching a result with a large list argument."
+
 func (s identifierSchema) Install(srv *dagql.Server) {
 	view := AfterVersion(identifierVersion)
 
@@ -44,6 +52,7 @@ func (s identifierSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("formatIdentifiers", s.formatIdentifiers).
 			View(view).
+			DoNotCache(formatIdentifiersDoNotCache).
 			Experimental(identifierExperimental).
 			Doc(`Format many names at once, for codegen. Returns them in input order.`).
 			Args(
@@ -66,6 +75,7 @@ func (s identifierSchema) Install(srv *dagql.Server) {
 		// acronyms are strings, since the Casing and AcronymStyle enums aren't
 		// in older views.
 		dagql.Func("__formatIdentifiers", s.formatIdentifiersForVersion).
+			DoNotCache(formatIdentifiersDoNotCache).
 			Doc(`(Internal-only) Format many names at once, for codegen, with the naming dictionary of an engine version. Returns them in input order.`).
 			Args(
 				dagql.Arg("names").Doc("The names to format, in any casing."),
