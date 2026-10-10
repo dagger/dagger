@@ -754,6 +754,10 @@ func (ss *Services) StartInteractive(
 
 // StartBindings starts each of the bound services in parallel and returns a
 // function that will detach from all of them after 10 seconds.
+//
+// A pinned service (see Service.Pinned) is started like the rest but never
+// detached: its binding keeps it running for the rest of the session, as if
+// Service.start had been called on it.
 func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
 	if err := engine.CheckSnapshotSharePreparation(ctx, "start service bindings"); err != nil {
 		return nil, nil, err
@@ -764,10 +768,11 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 		detachOnce.Do(func() {
 			go func() {
 				<-time.After(DetachGracePeriod)
-				for _, svc := range running {
-					if svc != nil {
-						ss.Detach(ctx, svc)
+				for i, svc := range running {
+					if svc == nil || bindings[i].Service.Self().Pinned {
+						continue
 					}
+					ss.Detach(ctx, svc)
 				}
 			}()
 		})
