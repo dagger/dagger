@@ -22,6 +22,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -1776,6 +1777,103 @@ func (WorkspaceSuite) TestWorkspaceWithResetPreservesTree(ctx context.Context, t
 			require.NoError(t, err)
 			require.Equal(t, []string{"src/change.txt"}, modified)
 		})
+	}
+}
+
+// A reset must not depend on the commits it discards. Rebuilding one whose
+// content is not reproducible, like a profile written by an uncached test
+// run, gives it another hash, so a recipe that checks out the old HEAD (or
+// names a discarded commit) fails to replay.
+func (WorkspaceSuite) TestWorkspaceWithResetForgetsDiscardedCommits(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	daemon, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("base.txt", "base"))
+	ws := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: daemon}).Branch("main").AsWorkspace()
+	baseSHA, err := ws.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	output := core.NewQuery(c).Container().From(alpineImage).
+		WithEnvVariable("CACHEBUST", cryptorand.Text()).
+		WithExec([]string{"sh", "-ec", "mkdir /out; head -c 32 /dev/urandom | od -An -tx1 > /out/random.txt"}).
+		Directory("/out")
+	first := ws.WithDirectory("tmp", output).WithNewFile("pending.txt", "pending").With(func(ws *core.Workspace) *core.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Include: []string{"tmp/random.txt"}}), "random output", workspaceCommitDate)
+	})
+	firstSHA, err := first.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	random, err := first.File("tmp/random.txt").Contents(ctx)
+	require.NoError(t, err)
+	second := first.WithNewFile("second.txt", "second").With(func(ws *core.Workspace) *core.Workspace {
+		return ws.WithCommit(ws.Git().Uncommitted().Filter(core.ChangesetFilterOpts{Include: []string{"second.txt"}}), "second", workspaceCommitDate)
+	})
+	secondSHA, err := second.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name      string
+		from      *core.Workspace
+		target    string
+		discarded []string
+	}{
+		{"parent", first, baseSHA, []string{firstSHA}},
+		{"grandparent", second, baseSHA, []string{firstSHA, secondSHA}},
+		{"parent of second", second, firstSHA, []string{secondSHA}},
+	} {
+		for _, hard := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s hard=%t", tc.name, hard), func(ctx context.Context, t *testctx.T) {
+				reset := tc.from.WithReset(tc.target, core.WorkspaceWithResetOpts{Hard: hard})
+				sha, err := reset.Git().Head().CommitSHA(ctx)
+				require.NoError(t, err)
+				require.Equal(t, tc.target, sha)
+				contents, err := reset.File("tmp/random.txt").Contents(ctx)
+				if hard && tc.target == baseSHA {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+					require.Equal(t, random, contents)
+				}
+				if !hard {
+					pending, err := reset.File("pending.txt").Contents(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "pending", pending)
+				}
+
+				recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(reset))
+				require.NoError(t, err)
+				id := new(call.ID)
+				require.NoError(t, id.Decode(string(recipe)))
+				dag, err := id.ToProto()
+				require.NoError(t, err)
+				for _, vertex := range dag.GetRecipe().CallsByDigest {
+					for _, arg := range vertex.GetArgs() {
+						for _, discarded := range tc.discarded {
+							require.NotContains(t, recipeLiteralStrings(arg.GetValue()), discarded,
+								"%s(%s:) names discarded commit %s", vertex.GetField(), arg.GetName(), discarded)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+// recipeLiteralStrings returns every string in a recipe argument literal.
+func recipeLiteralStrings(lit *callpbv1.Literal) []string {
+	switch {
+	case lit == nil:
+		return nil
+	case lit.GetList() != nil:
+		var out []string
+		for _, item := range lit.GetList().GetValues() {
+			out = append(out, recipeLiteralStrings(item)...)
+		}
+		return out
+	case lit.GetObject() != nil:
+		var out []string
+		for _, field := range lit.GetObject().GetValues() {
+			out = append(out, recipeLiteralStrings(field.GetValue())...)
+		}
+		return out
+	default:
+		return []string{lit.GetString_()}
 	}
 }
 
