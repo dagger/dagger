@@ -2205,8 +2205,19 @@ func ContextWithCall(ctx context.Context, call *ResultCall) context.Context {
 	return context.WithValue(ctx, callCtx{}, call)
 }
 
+// ContextWithTrivialField marks ctx as belonging to a trivial field's call.
+// The mark is scoped to that call: every object call sets or clears it for
+// its own field, so calls nested in a trivial field's resolver don't inherit it.
 func ContextWithTrivialField(ctx context.Context) context.Context {
 	return context.WithValue(ctx, trivialFieldCtx{}, true)
+}
+
+// ContextWithoutTrivialField clears the mark set by ContextWithTrivialField.
+func ContextWithoutTrivialField(ctx context.Context) context.Context {
+	if !CurrentFieldIsTrivial(ctx) {
+		return ctx
+	}
+	return context.WithValue(ctx, trivialFieldCtx{}, false)
 }
 
 func CurrentFieldIsTrivial(ctx context.Context) bool {
