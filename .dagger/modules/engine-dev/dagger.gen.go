@@ -367,6 +367,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*EngineDev).IntrospectionJSON(&parent, ctx)
+		case "IntrospectionNames":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var formats []string
+			if inputArgs["formats"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["formats"]), &formats)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg formats", err))
+				}
+			}
+			return (*EngineDev).IntrospectionNames(&parent, ctx, formats)
 		case "IntrospectionTool":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -949,6 +963,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Introspect the engine API schema, and return it as a json-encoded file.\nThis file is used by SDKs to generate clients.").
 							WithSourceMap(dag.SourceMap("main.go", 313, 1))).
+					WithFunction(
+						dag.Function("IntrospectionNames",
+							dag.TypeDef().WithObject("File")).
+							WithDescription("Format the engine API schema's names with the engine, and return them as a\njson-encoded file, for SDK codegen that runs without an engine connection.\n\nThe file maps each format to every schema name formatted in it, e.g.\n{\"SNAKE:UPPERCASE\": {\"httpClient\": \"http_client\", ...}}, and is empty ({})\nwhen the schema has no Query.formatIdentifiers. It goes with the schema of\nIntrospectionJSON; see `codegen introspect --help`.").
+							WithSourceMap(dag.SourceMap("main.go", 501, 1)).
+							WithArg("formats", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{Description: "Name formats, as CASING:ACRONYMS values of the Casing and AcronymStyle\nenums, e.g. [\"SNAKE:UPPERCASE\", \"PASCAL:CAPITALIZED\"]", SourceMap: dag.SourceMap("main.go", 505, 2)})).
 					WithFunction(
 						dag.Function("IntrospectionTool",
 							dag.TypeDef().WithObject("File")).
