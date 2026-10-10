@@ -680,19 +680,15 @@ maps every schema name to its formatted form. A schema without
 `Query.formatIdentifiers` gets `{}`. A generator uses its legacy converter for a
 format or name the file doesn't have, so the same gate applies.
 
-**Module runtimes** hand their codegen the same sidecar. The Python, PHP and
-Elixir runtimes run codegen in an exec without an engine session, so the
-runtime formats the module schema's names itself and mounts the file for
+**Module runtimes** hand their codegen the same sidecar. The Python, PHP,
+Elixir and Java runtimes run codegen in an exec without an engine session, so
+the runtime formats the module schema's names itself and mounts the file for
 codegen (Python asks for `SNAKE:UPPERCASE`; PHP and Elixir for the formats
-their generators use). The runtimes' own sessions are served at their
-`engineVersion`, `v0.21.9` today, where `formatIdentifiers` doesn't exist, so
-for now they call an internal `Query.__formatIdentifiers(names, casing:
-String!, acronyms: String, version: String!)`: installed in every view, hidden
-from introspection by its `__` prefix, taking strings since older views have
-no `Casing` or `AcronymStyle`, and parsing with the dictionary of `version`
-(the module schema's `__schemaVersion`). It's a stopgap: the runtimes will
-bump their `engineVersion` to v1 and call the public `formatIdentifiers` with
-`version`, after which `__formatIdentifiers` is removed.
+their generators use; Java for `CAMEL:CAPITALIZED`, in
+`sdk/java/runtime/names.go`). The runtime modules declare `engineVersion`
+v1.0.0, so their own sessions have `formatIdentifiers`; they call it with
+`version` set to the module schema's `__schemaVersion`, so the names are parsed
+with the dictionary of the module's version, not the runtime's.
 
 **Performance.** Formatting is cheap: parsing and formatting the core schema's
 961 names takes about 0.7ms. Through the API, it first cost about 780ms per
@@ -1007,10 +1003,9 @@ copy: they get formatted names from the engine.
    the engine wrote words into the schema JSON.
 7. Resolve the names module runtimes build themselves (Python and TypeScript
    interface calls) through `formatIdentifiers`.
-8. Bump the Python, PHP and Elixir runtimes' `engineVersion` to v1, move their
-   codegen sidecars from `__formatIdentifiers` to `formatIdentifiers` with
-   `version`, and remove `__formatIdentifiers`.
+8. Bump the Python, PHP, Elixir and Java runtimes' `engineVersion` to v1, and
+   format their codegen sidecars with `formatIdentifiers` and `version`.
 
-Steps 1–5 and 7 are done. Step 6 is done for Go and TypeScript; the other SDKs
-fall back to their legacy converters until theirs land. Step 4's deletion waits
-on the legacy path. Step 8 is a follow-up.
+Steps 1–5, 7 and 8 are done. Step 6 is done for Go and TypeScript; the other
+SDKs fall back to their legacy converters until theirs land. Step 4's deletion
+waits on the legacy path.
