@@ -146,7 +146,13 @@ func (AgentsSuite) TestDiscoverySkipsUnboundRequiredArg(ctx context.Context, t *
 	editorSource := editorSourceWithDoc("Discovery fixture tool.")
 	editorSource = strings.Replace(editorSource, "    base\n", "    print(\""+composedMarker+"\")\n    base\n", 1)
 	modGen = modGen.WithNewFile("../editor/main.dang", editorSource)
-	out, err := modGen.With(daggerExec("agent", "--progress=plain")).CombinedOutput(ctx)
+	// EOF exits the prompt without inference. Give initialization an inert
+	// endpoint so this exercises composition without real provider credentials.
+	out, err := modGen.
+		WithEnvVariable("OPENAI_API_KEY", "unused").
+		WithEnvVariable("OPENAI_MODEL", "unused").
+		WithEnvVariable("OPENAI_BASE_URL", "http://127.0.0.1:1").
+		With(daggerExec("agent", "--progress=plain")).CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, composedMarker)
 	require.NotContains(t, out, "unbound required agent argument")

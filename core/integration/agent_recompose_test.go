@@ -1414,4 +1414,18 @@ type Owner {
 	tools, err = llm.Tools(ctx)
 	require.NoError(t, err)
 	require.Contains(t, tools, "## ping\n", "unowned foreign binding survives refresh")
+
+	// Merely sharing a type does not authorize an entry to take over a
+	// manually installed binding. Ownership cannot change during refresh.
+	claiming := ws.WithNewFile("owner/main.dang", `
+type Owner {
+  agent(base: LLM!): LLM! @agent { base.withTools(donor) }
+}
+`)
+	_, err = recomposeLLM(ctx, c, claiming, llm, "owner")
+	require.ErrorContains(t, err, "owned by other expertise")
+	require.ErrorContains(t, err, "unowned -> expertise")
+	tools, err = llm.Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, tools, "## ping\n", "rejected ownership transfer leaves the original binding usable")
 }
