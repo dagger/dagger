@@ -26,6 +26,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 const (
@@ -1053,9 +1054,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	fnCall := newFunctionCall(FunctionCall{
-		Name:      fn.metadata.OriginalName,
-		Parent:    parentJSON,
-		InputArgs: callInputs,
+		Name:              fn.metadata.OriginalName,
+		Parent:            parentJSON,
+		InputArgs:         callInputs,
+		workloadSpan:      enginetel.ActiveWorkloadSpan(ctx),
+		workloadReference: enginetel.WorkloadReferenceOnly(ctx),
 	})
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName

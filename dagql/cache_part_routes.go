@@ -17,6 +17,12 @@ type PartDelegation struct {
 	Address        PersistedPartAddress
 }
 
+// WorkloadPartRouter identifies groups that only copy an unchanged parent
+// part. Accounting follows that part's producer instead of pricing the copy.
+type WorkloadPartRouter interface {
+	WorkloadPartDelegation(PersistedPayloadVisit, LazyGroupKey) (*PartDelegation, error)
+}
+
 type PersistedPartRouter interface {
 	RouteParts(PersistedPayloadVisit, PartKey) (LazyOperationRoute, error)
 }

@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync/atomic"
 
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/engine"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 // HasPartHost binds a typed adapter to the stable owning row. Binding never
@@ -63,13 +65,38 @@ func (host *PartHost) Evaluate(ctx context.Context, parts ...PartKey) error {
 		}
 		eg, groupCtx := errgroup.WithContext(ctx)
 		for _, group := range groups {
-			eg.Go(func() error {
-				return host.cache.RunLazyTask(groupCtx, root, lazyEvaluationTaskKey(LazyGroupAddress{OutputPath: host.path, Group: group}), LazyTaskSpec{Body: func(ctx context.Context) error {
+			eg.Go(func() (rerr error) {
+				var entered atomic.Bool
+				if enginetel.HasWorkloadSpans(groupCtx) && workloadHasEvaluation(value) {
+					defer func() {
+						if rerr == nil && !entered.Load() {
+							address := LazyGroupAddress{OutputPath: host.path, Group: group}
+							span := beginWorkloadEvaluation(groupCtx, host.row, address, "joined")
+							endWorkloadEvaluation(context.WithoutCancel(groupCtx), span, host.row, address, nil)
+						}
+					}()
+				}
+				return host.cache.RunLazyTask(groupCtx, root, lazyEvaluationTaskKey(LazyGroupAddress{OutputPath: host.path, Group: group}), LazyTaskSpec{Body: func(ctx context.Context) (rerr error) {
+					entered.Store(true)
 					var body LazyEvalFunc
 					if isRefined {
 						body = refined.LazyEvalFuncForGroup(group)
 					} else {
 						body = lazyEvalFuncOfResult(value)
+					}
+					if enginetel.HasWorkloadSpans(ctx) && workloadHasEvaluation(value) {
+						address := LazyGroupAddress{OutputPath: host.path, Group: group}
+						outcome := "executed"
+						if body == nil {
+							outcome = "hit"
+						}
+						span := beginWorkloadEvaluation(ctx, host.row, address, outcome)
+						if span != nil {
+							ctx = enginetel.WithWorkloadParent(ctx, span.SpanContext())
+							defer func() {
+								endWorkloadEvaluation(context.WithoutCancel(ctx), span, host.row, address, rerr)
+							}()
+						}
 					}
 					if body != nil {
 						return body(ctx)
@@ -85,6 +112,24 @@ func (host *PartHost) Evaluate(ctx context.Context, parts ...PartKey) error {
 		watch.refused(err)
 	}
 }
+
+// RecordPreparedGroup keeps the cost of an opportunistic part copy as a
+// reference. Preparation is not a consumer demand and is outside the caller's
+// cost tree. Calls and evaluations inside the copy still provide evidence.
+func (host *PartHost) RecordPreparedGroup(ctx context.Context, group LazyGroupKey, body func(context.Context) error) (rerr error) {
+	if !enginetel.HasWorkloadSpans(ctx) {
+		return body(ctx)
+	}
+	ctx = enginetel.WithWorkloadReference(ctx)
+	address := LazyGroupAddress{OutputPath: host.path, Group: group}
+	span := beginWorkloadEvaluation(enginetel.WithWorkloadRoot(ctx), host.row, address, "executed")
+	if span != nil {
+		ctx = enginetel.WithWorkloadParent(ctx, span.SpanContext())
+		defer func() { endWorkloadEvaluation(context.WithoutCancel(ctx), span, host.row, address, rerr) }()
+	}
+	return body(ctx)
+}
+
 func (host *PartHost) Admitted(ctx context.Context) bool {
 	token := PartTaskFromContext(ctx)
 	return token != nil && token.row == host.row && token.active.Load()

@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -20,19 +21,48 @@ import (
 type workloadSpanProcessor struct {
 	next     sdktrace.SpanProcessor
 	resource *resource.Resource
+	states   sync.Map // span ID -> workload-only projection state
 }
 
-// OnStart sends nothing: each span is sent once, when it ends. Work that never
-// ends, for example because the engine stopped, has no span; its resource
-// readings still carry its execution ID.
-func (*workloadSpanProcessor) OnStart(context.Context, sdktrace.ReadWriteSpan) {}
+type workloadSpanState struct {
+	parent       trace.SpanContext
+	overridden   bool
+	presentation bool
+}
+
+// OnStart retains private projection state. Each span is sent once, when it
+// ends. Unfinished executions still have resource readings.
+func (p *workloadSpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
+	parent, overridden := workloadParentFromContext(ctx)
+	if root, _ := ctx.Value(workloadRootKey{}).(bool); root {
+		parent, overridden = trace.SpanContext{}, true
+	}
+	presentation := HasWorkloadSpans(ctx) && span.InstrumentationScope().Name == "dagger.io/core"
+	if overridden || presentation {
+		p.states.Store(span.SpanContext().SpanID(), workloadSpanState{parent: parent, overridden: overridden, presentation: presentation})
+	}
+}
 
 func (p *workloadSpanProcessor) OnEnd(span sdktrace.ReadOnlySpan) {
+	parent := span.Parent()
+	var state workloadSpanState
+	if stored, ok := p.states.LoadAndDelete(span.SpanContext().SpanID()); ok {
+		state = stored.(workloadSpanState)
+		if state.overridden {
+			parent = state.parent
+		}
+	}
 	var attrs []attribute.KeyValue
 	for _, attr := range span.Attributes() {
 		if workloadSpanAttribute(attr.Key) {
 			attrs = append(attrs, attr)
 		}
+	}
+	if state.presentation {
+		attrs = append(attrs,
+			attribute.String(telemetryattrs.WorkloadContractAttr, telemetryattrs.WorkloadContractV1),
+			attribute.String(telemetryattrs.WorkloadScopeAttr, "presentation"),
+		)
 	}
 	var links []sdktrace.Link
 	for _, link := range span.Links() {
@@ -53,7 +83,7 @@ func (p *workloadSpanProcessor) OnEnd(span sdktrace.ReadOnlySpan) {
 	}
 	p.next.OnEnd(workloadSpan{
 		name: span.Name(), sc: span.SpanContext().WithTraceState(trace.TraceState{}),
-		parent: span.Parent().WithTraceState(trace.TraceState{}), start: span.StartTime(), end: span.EndTime(),
+		parent: parent.WithTraceState(trace.TraceState{}), start: span.StartTime(), end: span.EndTime(),
 		attrs: attrs, links: links, status: sdktrace.Status{Code: span.Status().Code},
 		scope: instrumentation.Scope{Name: span.InstrumentationScope().Name}, resource: p.resource,
 	})
@@ -61,13 +91,16 @@ func (p *workloadSpanProcessor) OnEnd(span sdktrace.ReadOnlySpan) {
 
 func (*workloadSpanProcessor) ForceFlush(context.Context) error { return nil }
 
-func (*workloadSpanProcessor) Shutdown(context.Context) error { return nil }
+func (p *workloadSpanProcessor) Shutdown(context.Context) error {
+	p.states.Clear()
+	return nil
+}
 
 func workloadSpanAttribute(key attribute.Key) bool {
 	switch string(key) {
 	case telemetry.DagDigestAttr, telemetry.CachedAttr, telemetry.PendingAttr, telemetry.UIInternalAttr,
 		telemetryattrs.DagContentPreferredDigestAttr, telemetryattrs.DagPartialAttr, telemetryattrs.DagBlockedAttr,
-		telemetryattrs.CacheContractAttr,
+		telemetryattrs.CacheContractAttr, telemetryattrs.WorkloadContractAttr, telemetryattrs.WorkloadScopeAttr, telemetryattrs.WorkloadReferenceAttr,
 		telemetryattrs.CacheOutcomeAttr, telemetryattrs.CacheHitRouteAttr, telemetryattrs.CacheResultIDAttr,
 		telemetryattrs.WcprofOpKindAttr, telemetryattrs.WcprofParentAttr,
 		telemetryattrs.TelemetryOriginClientIDAttr, ExecutionIDAttr, ExecutionInternalAttr,

@@ -35,9 +35,9 @@ const (
 // callback, which maps it onto the caller's already-existing span as the
 // dagger.io/cache.* attribute vocabulary (engine/telemetryattrs).
 //
-// Ownership: core allocates it onto CallRequest.CacheEvidence exactly when the
-// call's span records and the call is not ProfileSkip-classified; dagql only
-// ever fills a non-nil carrier (nil means "record nothing" and costs nothing).
+// Ownership: core allocates it for recorded presentation spans. Workload
+// accounting also allocates it when presentation is suppressed. The cache
+// fills only a non-nil carrier; nil means "record nothing".
 // Every write happens on the invoking goroutine with values already in hand —
 // the carrier adds no locking and never alters any cache decision. Population
 // is best-effort: a fact whose derivation fails is dropped, never failing the

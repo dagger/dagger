@@ -2462,6 +2462,23 @@ type FunctionCall struct {
 	// to its own span, so that its module process's dependency loading lands
 	// there too (see WithModuleProcessRequest).
 	plumbingSpan trace.SpanContext
+
+	// workloadSpan carries accounting ownership across nested client requests.
+	// It is engine-side only and does not change cache or API serialization.
+	workloadSpan      trace.SpanContext
+	workloadReference bool
+}
+
+// WorkloadSpanContext returns the private operation that owns this function.
+func (fnCall *FunctionCall) WorkloadSpanContext() trace.SpanContext {
+	if fnCall == nil {
+		return trace.SpanContext{}
+	}
+	return fnCall.workloadSpan
+}
+
+func (fnCall *FunctionCall) WorkloadReferenceOnly() bool {
+	return fnCall != nil && fnCall.workloadReference
 }
 
 // PlumbingSpanContext returns the span holding the work that runs this call

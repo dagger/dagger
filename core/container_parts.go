@@ -434,6 +434,8 @@ func (container *Container) runLazyGroupAdmitted(ctx context.Context, op LazyCon
 	}
 	// Keep the sweep inside the attempt callback. It must finish before the
 	// cache retires the attempt and decides whether its resume span is partial.
+	// Copying an already final sibling is preparation, not a consumer's
+	// demand for that sibling's execution result.
 	if err := container.consumeFinalParentDelegations(ctx, op); err != nil {
 		return err
 	}
@@ -472,7 +474,15 @@ func (container *Container) consumeFinalParentDelegations(ctx context.Context, o
 		if !final {
 			continue
 		}
-		if err := op.EvaluateContainerGroup(ctx, container, delegation); err != nil {
+		copyPart := func(ctx context.Context) error {
+			return op.EvaluateContainerGroup(ctx, container, delegation)
+		}
+		if host := container.partHost.Load(); host != nil {
+			err = host.RecordPreparedGroup(ctx, delegation, copyPart)
+		} else {
+			err = copyPart(ctx)
+		}
+		if err != nil {
 			return err
 		}
 	}

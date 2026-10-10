@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/dagger/dagger/engine"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -140,7 +141,32 @@ func (c *Cache) joinPartInstallation(ctx context.Context, res AnyResult, token *
 }
 
 //nolint:gocyclo // Intrinsically long demand state machine: probe, route, select, obtain, delegate, run.
-func (c *Cache) demandPart(ctx context.Context, res AnyResult, address PersistedPartAddress) error {
+func (c *Cache) demandPart(ctx context.Context, res AnyResult, address PersistedPartAddress) (rerr error) {
+	// Observe each consumer outside the shared acquisition task. Joiners do
+	// not execute that task's body, but still demand its completed output.
+	var entered atomic.Bool
+	if enginetel.HasWorkloadSpans(ctx) {
+		defer func() {
+			if rerr != nil {
+				return
+			}
+			row := res.cacheSharedResult()
+			record, _, _, err := c.probePart(ctx, row, address)
+			if err != nil {
+				return
+			}
+			route, err := routePartRecord(record, address)
+			if err != nil || !route.HasLazyOperation || route.NeedsMetadata {
+				return
+			}
+			outcome := "hit"
+			if !entered.Load() {
+				outcome = "joined"
+			}
+			span := beginWorkloadEvaluation(ctx, row, route.Group, outcome)
+			endWorkloadEvaluation(context.WithoutCancel(ctx), span, row, route.Group, nil)
+		}()
+	}
 	if err := engine.CheckSnapshotSharePreparation(ctx, "demand part"); err != nil {
 		return err
 	}
@@ -155,6 +181,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 	for {
 		outer.again(ctx, res.cacheSharedResult(), address)
 		err := c.RunLazyTask(ctx, res, partTaskKey("acquire", address), LazyTaskSpec{Body: func(ctx context.Context) error {
+			entered.Store(true)
 			watch := partReselectWatch{loop: "demandPart acquire"}
 			// retry notes a refusal in the reselect class that is about to be
 			// retried. It returns an error when the progress rule forbids the
@@ -486,6 +513,13 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 				return err
 			}
 			c.recordPartFixture(row, address, "lazy-enter")
+			workloadSpan := beginWorkloadEvaluation(ctx, row, route.Group, "executed")
+			if workloadSpan != nil {
+				ctx = enginetel.WithWorkloadParent(ctx, workloadSpan.SpanContext())
+				defer func() {
+					endWorkloadEvaluation(context.WithoutCancel(ctx), workloadSpan, row, route.Group, rerr)
+				}()
+			}
 			if err := invocation.Run(ctx); err != nil {
 				return err
 			}

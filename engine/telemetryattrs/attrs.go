@@ -1,6 +1,15 @@
 package telemetryattrs
 
 const (
+	// WorkloadContractAttr separates invocation work from deferred evaluation.
+	// Successful executed invocations can have a known zero execution cost;
+	// evaluation groups have independent references even for the same digest.
+	WorkloadContractAttr  = "dagger.io/workload.contract"
+	WorkloadContractV1    = "1"
+	WorkloadScopeAttr     = "dagger.io/workload.scope"
+	WorkloadCallScope     = "call"
+	WorkloadReferenceAttr = "dagger.io/workload.reference_only"
+
 	// DagContentPreferredDigestAttr is the operation's content-preferred identity
 	// at span completion (string). Prefer its recorded output content digest;
 	// otherwise hash its recipe using recursively content-preferred inputs.

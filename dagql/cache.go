@@ -32,6 +32,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -4600,6 +4601,7 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 	shared.lazyMu.Lock()
 	if shared.lazyEvalComplete {
 		shared.lazyMu.Unlock()
+		recordCompletedWorkloadEvaluation(ctx, res, shared, parts)
 		return nil
 	}
 	shared.lazyMu.Unlock()
@@ -4784,6 +4786,11 @@ const maxLazySessionRetries = 3
 
 //nolint:gocyclo // Keep joining, cancellation, and retirement in one shared attempt loop.
 func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedResult, group LazyGroupKey, partsVal HasLazyEvaluationParts, spec *LazyTaskSpec) (rerr error) {
+	var workloadAddress LazyGroupAddress
+	var workloadEnabled bool
+	if spec == nil {
+		workloadAddress, workloadEnabled = workloadEvaluationAddress(ctx, res, shared, group)
+	}
 	stack := lazyEvalStackFromContext(ctx)
 	if stack != nil && lazyEvalStackContains(stack, shared.id, group) {
 		return fmt.Errorf("recursive lazy evaluation detected")
@@ -4802,6 +4809,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		shared.lazyMu.Lock()
 		if spec == nil && (shared.lazyEvalComplete || g.complete) {
 			shared.lazyMu.Unlock()
+			if workloadEnabled {
+				recordWorkloadEvaluationHit(ctx, shared, workloadAddress)
+			}
 			return nil
 		}
 		if spec != nil && spec.NoJoin && (g.attempt != nil || g.syncPending) {
@@ -4834,7 +4844,12 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			producerSkip := shared.profileSkip()
 			profWait := wcprof.BeginWait(stackCtx, lazyOpID, wcprof.WaitReasonLazy)
 			otelWaitStartNS := time.Now().UnixNano()
+			var workloadWait trace.Span
+			if workloadEnabled {
+				workloadWait = beginWorkloadEvaluation(stackCtx, shared, workloadAddress, "joined")
+			}
 			retry, waitErr := c.waitForLazyEvaluation(stackCtx, shared, attempt)
+			endWorkloadEvaluation(context.WithoutCancel(stackCtx), workloadWait, shared, workloadAddress, waitErr)
 			profWait.End()
 			// OTel joiner wait edge: the load-bearing edge — the lazy op is in the
 			// leader's subtree, not this joiner's, so this wait is the joiner's only
@@ -4887,6 +4902,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			}
 		} else if prepareLazyGroupEvalLocked(res, shared, g, group, partsVal) {
 			shared.lazyMu.Unlock()
+			if workloadEnabled {
+				recordWorkloadEvaluationHit(ctx, shared, workloadAddress)
+			}
 			return nil
 		}
 
@@ -4968,6 +4986,17 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		if OTelProfActive(evalCtx) && !producerSkip {
 			lazyCallbackCtx, lazySpan, lazyIsResume = c.beginOTelLazyOp(evalCtx, shared.id, group, resultCall, storedPart)
 			attempt.spanCtx = lazySpan.SpanContext()
+		}
+		var workloadSpan trace.Span
+		if workloadEnabled && lazyEval != nil && !g.syncPending {
+			outcome := "executed"
+			if storedPart != "" {
+				outcome = "hit"
+			}
+			workloadSpan = beginWorkloadEvaluation(stackCtx, shared, workloadAddress, outcome)
+			if workloadSpan != nil {
+				lazyCallbackCtx = enginetel.WithWorkloadParent(lazyCallbackCtx, workloadSpan.SpanContext())
+			}
 		}
 		g.attempt = attempt
 		shared.lazyMu.Unlock()
@@ -5060,6 +5089,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				}
 				endOTelLazyOp(lazySpan, lazyIsResume, shared.id, partial, abandoned, storedPart, cacheState, &err)
 			}
+			endWorkloadEvaluation(context.WithoutCancel(lazyCallbackCtx), workloadSpan, shared, workloadAddress, err)
 			if c.testAfterLazyEvalFinish != nil {
 				c.testAfterLazyEvalFinish(attempt)
 			}
@@ -5677,7 +5707,7 @@ func (c *Cache) publishUsageMeasurementsLocked(snapshot *cacheUsageSnapshot, ide
 }
 
 // Core cache lookup/insert flow is intentionally centralized here.
-func (c *Cache) GetOrInitCall(
+func (c *Cache) getOrInitSessionCall(
 	ctx context.Context,
 	sessionID string,
 	resolver TypeResolver,

@@ -633,7 +633,7 @@ func (s *directorySchema) withDirectoryDockerfileCompatContentHashed(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Directory],
 	args WithDirectoryDockerfileCompatArgs,
-) (dagql.ObjectResult[*core.Directory], error) {
+) (result dagql.ObjectResult[*core.Directory], rerr error) {
 	res, err := s.withDirectoryDockerfileCompat(ctx, parent, args)
 	if err != nil {
 		return res, err
@@ -641,6 +641,8 @@ func (s *directorySchema) withDirectoryDockerfileCompatContentHashed(
 	if res.Self() == nil {
 		return res, fmt.Errorf("failed to content hash dockerfile copy: nil directory result")
 	}
+	ctx, finishPreparation := dagql.BeginWorkloadPreparation(ctx)
+	defer func() { finishPreparation(result, rerr) }()
 	// On errors past this point the result may hold a committed snapshot that
 	// dagql never attached, so release it instead of leaking the ref.
 	releaseErr := func(err error) (dagql.ObjectResult[*core.Directory], error) {
@@ -860,7 +862,7 @@ type dirFileArgs struct {
 	Path string
 }
 
-func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirFileArgs) (inst dagql.ObjectResult[*core.File], _ error) {
+func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirFileArgs) (inst dagql.ObjectResult[*core.File], rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
@@ -881,6 +883,8 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return fileResult, nil
 	}
 
+	ctx, finishPreparation := dagql.BeginWorkloadPreparation(ctx)
+	defer func() { finishPreparation(inst, rerr) }()
 	if lazy := fileResult.Self().LazyEvalFunc(); lazy != nil {
 		if err := lazy(ctx); err != nil {
 			return inst, err
@@ -2054,7 +2058,7 @@ func (s *directorySchema) chown(
 func maintainContentHashing[A any](
 	fn dagql.NodeFuncHandler[*core.Directory, A, dagql.ObjectResult[*core.Directory]],
 ) dagql.NodeFuncHandler[*core.Directory, A, dagql.ObjectResult[*core.Directory]] {
-	return func(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args A) (dagql.ObjectResult[*core.Directory], error) {
+	return func(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args A) (result dagql.ObjectResult[*core.Directory], rerr error) {
 		res, err := fn(ctx, parent, args)
 		if err != nil {
 			return res, err
@@ -2068,6 +2072,8 @@ func maintainContentHashing[A any](
 			if res.Self() == nil {
 				return res, fmt.Errorf("failed to make directory content hashed: nil directory result")
 			}
+			ctx, finishPreparation := dagql.BeginWorkloadPreparation(ctx)
+			defer func() { finishPreparation(result, rerr) }()
 			if lazy := res.Self().LazyEvalFunc(); lazy != nil {
 				if err := lazy(ctx); err != nil {
 					return res, fmt.Errorf("failed to make directory content hashed: %w", err)
