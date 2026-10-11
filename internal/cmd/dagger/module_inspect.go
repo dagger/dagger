@@ -485,15 +485,32 @@ func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunc
 }
 
 func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modFunction, error) {
-	for _, fn := range fp.GetFunctions() {
-		if fn.Name == functionName || fn.CmdName() == functionName {
-			if err := m.LoadFunctionTypeDefs(fn); err != nil {
-				return nil, err
-			}
-			return fn, nil
+	fn := findFunctionByCmdName(fp.GetFunctions(), functionName)
+	if fn == nil {
+		return nil, fmt.Errorf("no function %q in type %q", functionName, fp.ProviderName())
+	}
+	if err := m.LoadFunctionTypeDefs(fn); err != nil {
+		return nil, err
+	}
+	return fn, nil
+}
+
+// findFunctionByCmdName finds the function a user named: by its schema name
+// or command name, or else by the legacy (strcase) spelling of its command
+// name that CLIs printed before engine/naming (fn-2 for fn2), so commands and
+// scripts written against older modules keep working.
+func findFunctionByCmdName(fns []*modFunction, name string) *modFunction {
+	for _, fn := range fns {
+		if fn.Name == name || fn.CmdName() == name {
+			return fn
 		}
 	}
-	return nil, fmt.Errorf("no function %q in type %q", functionName, fp.ProviderName())
+	for _, fn := range fns {
+		if legacyCLIName(fn.Name) == name {
+			return fn
+		}
+	}
+	return nil
 }
 
 // GetInterface retrieves a saved interface type definition from the module.

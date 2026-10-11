@@ -29,3 +29,19 @@ func TestCLIFlagNormalization(t *testing.T) {
 	require.Equal(t, "json", normalizeFlagName("json"))
 	require.Equal(t, "shell-on-error", normalizeFlagName("shell-on-error"))
 }
+
+func TestFindFunctionByCmdName(t *testing.T) {
+	fn2 := &modFunction{Name: "fn2"}
+	fnTwo := &modFunction{Name: "fnTwo"}
+	fns := []*modFunction{fn2, fnTwo}
+	require.Equal(t, "fn2", fn2.CmdName())
+	require.Same(t, fn2, findFunctionByCmdName(fns, "fn2"))
+	// the legacy (strcase) spelling older CLIs printed
+	require.Same(t, fn2, findFunctionByCmdName(fns, "fn-2"))
+	require.Same(t, fnTwo, findFunctionByCmdName(fns, "fn-two"))
+	require.Nil(t, findFunctionByCmdName(fns, "fn-3"))
+
+	// a current spelling wins over another function's legacy one
+	legacyClash := &modFunction{Name: "fn-2"}
+	require.Same(t, legacyClash, findFunctionByCmdName([]*modFunction{fn2, legacyClash}, "fn-2"))
+}
