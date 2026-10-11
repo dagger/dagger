@@ -2,7 +2,9 @@ package core
 
 // Module type, field, function and argument names are normalized by the
 // naming rules of the engine version a module declares: engine/naming from
-// v1.0.0, strcase before. See hack/designs/identifier-casing.md.
+// core.IdentifierNamingVersion (compared as a full version, so released
+// v1.0.0 prereleases before it keep strcase), strcase before. See
+// hack/designs/identifier-casing.md.
 
 import (
 	"context"
@@ -131,25 +133,31 @@ func (ModuleNamingSuite) TestGoAcronyms(ctx context.Context, t *testctx.T) {
 }
 
 func (ModuleNamingSuite) TestGoAcronymsLegacy(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	// Modules older than core.IdentifierNamingVersion keep the strcase names
+	// they always had, including those that declare an earlier v1.0.0
+	// prerelease, which share the v1.0.0 API view.
+	for _, version := range []string{"v0.21.9", "v1.0.0-beta.16", "v1.0.0-0"} {
+		t.Run(version, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
-	// Modules older than v1.0.0 keep the strcase names they always had.
-	modGen := legacySDKModule(t, c, "go", namingGoSource, "v0.21.9")
-	schema := currentSchema(ctx, t, modGen)
+			modGen := legacySDKModule(t, c, "go", namingGoSource, version)
+			schema := currentSchema(ctx, t, modGen)
 
-	client := schema.Types.Get("TestHttpclient")
-	require.NotNil(t, client, "legacy modules keep their strcase names")
-	require.Nil(t, schema.Types.Get("TestHTTPClient"))
-	require.ElementsMatch(t, []string{"baseUrl", "getUrl", "id"}, namingFieldNames(client))
+			client := schema.Types.Get("TestHttpclient")
+			require.NotNil(t, client, "legacy modules keep their strcase names")
+			require.Nil(t, schema.Types.Get("TestHTTPClient"))
+			require.ElementsMatch(t, []string{"baseUrl", "getUrl", "id"}, namingFieldNames(client))
 
-	test := schema.Types.Get("Test")
-	require.NotNil(t, test)
-	require.Equal(t, "baseUrl", namingField(t, test, "client").Args[0].Name)
-	require.Equal(t, "e2ETest", namingField(t, test, "run").Args[0].Name)
+			test := schema.Types.Get("Test")
+			require.NotNil(t, test)
+			require.Equal(t, "baseUrl", namingField(t, test, "client").Args[0].Name)
+			require.Equal(t, "e2ETest", namingField(t, test, "run").Args[0].Name)
 
-	out, err := modGen.With(daggerQuery(`{client(baseUrl:"https://example.com"){getUrl(path:"/x")}}`)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"client":{"getUrl":"https://example.com/x"}}`, out)
+			out, err := modGen.With(daggerQuery(`{client(baseUrl:"https://example.com"){getUrl(path:"/x")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"client":{"getUrl":"https://example.com/x"}}`, out)
+		})
+	}
 }
 
 // TestCLIFlags checks the CLI's spelling of an E2E-style argument. The CLI
