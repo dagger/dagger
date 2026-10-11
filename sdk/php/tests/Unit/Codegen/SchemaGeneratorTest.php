@@ -39,6 +39,7 @@ class SchemaGeneratorTest extends TestCase
         ];
         self::assertSame([
             ['names' => $sorted, 'casing' => 'CAMEL', 'acronyms' => 'CAPITALIZED'],
+            ['names' => $sorted, 'casing' => 'PASCAL', 'acronyms' => 'CAPITALIZED'],
             ['names' => $sorted, 'casing' => 'SCREAMING_SNAKE', 'acronyms' => 'UPPERCASE'],
         ], $requests);
 
