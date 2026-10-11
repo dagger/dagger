@@ -558,8 +558,8 @@ acronym convention, not one house style. Go writes initialisms in capitals
 | Elixir | `PASCAL`/`UPPERCASE` | `SNAKE` | `SNAKE` | schema-value atoms (`SNAKE` functions) |
 | Rust | `PASCAL`/`CAPITALIZED` | `SNAKE` | `SNAKE` | `PASCAL`/`CAPITALIZED` |
 | PHP | `PASCAL`/`CAPITALIZED` (`#[GraphQLType]`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
-| .NET | schema name (`ID` written `Id`) | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | schema value |
-| Java | schema name (`PASCAL`/`UPPERCASE`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | schema value |
+| .NET | `PASCAL`/`CAPITALIZED` | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `PASCAL`/`CAPITALIZED` |
+| Java | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
 
 Only SDK identifiers change. Selected fields, argument names, input object
 keys, enum values and GraphQL type names go over the wire as the schema has
@@ -567,11 +567,11 @@ them. Where an SDK serializes an input object field by its own name, a
 renamed field is mapped back to its wire name (`#[serde(rename)]` in Rust,
 `@JsonbProperty` in Java; Elixir keeps the legacy struct keys).
 
-Type names stay as the schema has them, or as the SDK's existing converter
-writes them, in SDKs whose runtime looks types up by name (TypeScript, Python,
-Java) or where a case-only rename can't be aliased (Java class files, .NET
-types across assemblies). Enum values stay put where they are serialized by
-member name (Java, .NET).
+Type names stay as the schema has them in SDKs whose runtime looks types up by
+name (TypeScript, Python). Go, Rust and Elixir already write them by their own
+conventions; PHP, Java and .NET name types and enum members by their own
+conventions too, and carry the GraphQL names the wire needs alongside (see
+below).
 
 Python names enum members `SCREAMING_SNAKE`, as PEP 8 writes constants
 (`FunctionCachePolicy.PER_SESSION`, `ImageLayerCompression.GZIP`). A member's
@@ -588,26 +588,46 @@ Members follow the schema's `UPPERCASE` (`filterURI`, `callID`), and enum
 members keep the `PASCAL`/`CAPITALIZED` form the generator always wrote
 (`Tcp`, `Oci`).
 
-.NET follows the Framework Design Guidelines for members: methods and input
-object properties are PascalCase and parameters camelCase, with acronyms
-written like words (`WithMcpServer`, `insecureSkipTlsVerify`). The guidelines'
-two-letter exception (`IOStream`) is left out: the only two-letter acronym in
-the core schema besides `ID` (which the guidelines write `Id`) is `GZ`, in an
-enum value, so it changes no C# name. Classes keep the schema's names. Generated
-code writes GraphQL type names as literals, so renaming classes would be safe on
-the wire, but it would break every user of `LLM`, `JSON`, `JSONValue` and the
-like with no alias: enums, input structs and return types can't be aliased
-across assemblies. Enum members keep the schema's values, because
-`JsonStringEnumConverter` and argument serialization write a member's C# name.
-Renamed methods and properties keep their old names as `[Obsolete]` forwarders
-(default interface methods on interfaces). Renamed parameters can't be
-aliased, since C# can't overload on parameter names.
+.NET follows the Framework Design Guidelines: types, methods, input object
+properties and enum members are PascalCase and parameters camelCase, with
+acronyms written like words (`JsonValue`, `Llm`, `WithMcpServer`,
+`insecureSkipTlsVerify`, `Tcp`), all from the names file's `PASCAL:CAPITALIZED`
+and `CAMEL:CAPITALIZED`. The guidelines' two-letter exception (`IOStream`) is
+left out: the only two-letter acronym in the core schema besides `ID` (which the
+guidelines write `Id`) is `GZ`, in an enum value, so it changes no C# name.
+Generated code writes GraphQL type names as literals (node lookups, inline
+fragments), so renamed types are safe on the wire. Enum members carry the schema
+values they stand for in `[GraphQLValue("TCP")]`, which `GraphQLEnumConverter<T>`
+and `GraphQLEnum.ToValue` read for results, arguments and input fields
+(System.Text.Json 8 has no per-member names); a value and its alias share a
+member (`Gzip` for `Gzip` and `GZIP`). Renamed methods and properties keep their
+old names as `[Obsolete]` forwarders (default interface methods on interfaces),
+and renamed enum members as `[Obsolete]` aliases (`TCP = Tcp`). Renamed
+parameters can't be aliased, since C# can't overload on parameter names, and
+neither can renamed types: enums, input structs and return types can't be
+aliased across assemblies, and an obsolete subclass would only work where the
+old type is passed in, not where it's returned.
 
-Java follows Google Java Style for members (`asJson`, `withGpu`), keeping the
-old spellings as deprecated forwarders. Its classes and enum constants keep the
-schema's names: the runtime uses a class's simple name as its GraphQL type and
-serializes enum constants by name, and a class renamed only in case can't keep
-a deprecated alias next to it on case-insensitive file systems.
+Java follows Google Java Style: classes are PascalCase with acronyms written
+like words (`JsonValue`, `Llm`, `Json`, `Id`), members camelCase likewise
+(`asJson`, `withGpu`), and enum constants `SCREAMING_SNAKE` (`PER_SESSION`,
+`E_STAR_GZ`), from the names file's `PASCAL:CAPITALIZED`, `CAMEL:CAPITALIZED`
+and `SCREAMING_SNAKE:UPPERCASE` (or one aliased `formatIdentifiers` request when
+the codegen plugin asks the engine). A class named apart from its GraphQL type
+carries `@GraphQLType("JSONValue")`, which `Client.loadObjectFromID` and the
+module annotation processor read; everything else already sends the type name
+as a literal. An enum whose constants are named apart from its values implements
+`GraphQLEnum`: each constant carries its schema values (a value and its alias
+share one, `GZIP("Gzip", "GZIP")`), and `GraphQLEnums`, `JsonConverter`,
+`Arguments`, `QueryBuilder` and the enum's JSON-B (de)serializers convert by
+value. Renamed members keep their old spellings as deprecated forwarders and
+renamed enum constants as deprecated static aliases
+(`FunctionCachePolicy.PerSession`), but a class renamed only in case can't keep
+a deprecated alias next to it on case-insensitive file systems (`JSON.java` and
+`Json.java`), so class renames are hard breaks. The annotation processor finds
+the ID and JSON scalar classes under either spelling (`Id` or `ID`, `Json` or
+`JSON`), since it is compiled against SDKs generated from old and new schemas
+alike.
 
 PHP follows the Symfony and Laravel convention of writing acronyms like words
 in members (`filterUri`, `withGpu`) and PSR-1's in classes (`Llm`,
@@ -703,11 +723,12 @@ format or name the file doesn't have, so the same gate applies.
 Elixir and Java runtimes run codegen in an exec without an engine session, so
 the runtime formats the module schema's names itself and mounts the file for
 codegen (Python asks for `SNAKE:UPPERCASE`; PHP and Elixir for the formats
-their generators use; Java for `CAMEL:CAPITALIZED`, in
-`sdk/java/runtime/names.go`). The runtime modules declare `engineVersion`
-v1.0.0, so their own sessions have `formatIdentifiers`; they call it with
-`version` set to the module schema's `__schemaVersion`, so the names are parsed
-with the dictionary of the module's version, not the runtime's.
+their generators use; Java for `CAMEL:CAPITALIZED`, `PASCAL:CAPITALIZED` and
+`SCREAMING_SNAKE:UPPERCASE`, in `sdk/java/runtime/names.go`). The runtime
+modules declare `engineVersion` v1.0.0, so their own sessions have
+`formatIdentifiers`; they call it with `version` set to the module schema's
+`__schemaVersion`, so the names are parsed with the dictionary of the module's
+version, not the runtime's.
 
 **Performance.** Formatting is cheap: parsing and formatting the core schema's
 961 names takes about 0.7ms. Through the API, it first cost about 780ms per
@@ -968,20 +989,35 @@ code it generated before:
 - **Java**: the same 19 case-only method renames as PHP (`asJSON` → `asJson`,
   `withGPU` → `withGpu`, ...), plus optional-argument setters
   (`withInsecureSkipTLSVerify` → `withInsecureSkipTlsVerify`), all kept as
-  deprecated forwarders. Parameter names don't affect Java callers. No class
-  or enum constant changes.
+  deprecated forwarders. Parameter names don't affect Java callers. 17 classes
+  are renamed with no alias: `ID` → `Id`, `JSON` → `Json`, `JSONValue` →
+  `JsonValue`, the 11 `LLM*` types (`LLM` → `Llm`, `LLMContentBlock` →
+  `LlmContentBlock`, ...), `SDKConfig` → `SdkConfig`, `HTTPState` → `HttpState`
+  and `WorkspaceSDK` → `WorkspaceSdk`. Enum constants named like legacy values
+  become `SCREAMING_SNAKE` (`FunctionCachePolicy.PER_SESSION`,
+  `ImageLayerCompression.E_STAR_GZ`, `ImageMediaTypes.OCI_MEDIA_TYPES`, ...),
+  with the old names as deprecated static aliases; they still serialize to the
+  schema's values.
 - **.NET**: 3 methods — `WithVcsgeneratedPaths` → `WithVcsGeneratedPaths`
   (and `WithVcsignoredPaths`), `WithMcpserver` → `WithMcpServer` — kept as
   obsolete forwarders; 3 parameters — `insecureSkipTLSVerify` →
   `insecureSkipTlsVerify` on `From` and `PublishAsync`, `expectedRemoteSHA` →
   `expectedRemoteSha` on `GitRef.Push` — which break named-argument callers.
-  No type, property or enum member changes.
+  16 types are renamed with no alias: `JSON` → `Json`, `JSONValue` →
+  `JsonValue`, the 11 `LLM*` types, `SDKConfig` → `SdkConfig`, `HTTPState` →
+  `HttpState` and `WorkspaceSDK` → `WorkspaceSdk` (`ID` was already `Id`). Enum
+  members become PascalCase (`NetworkProtocol.Tcp`, `TypeDefKind.StringKind`,
+  `FunctionCachePolicy.PerSession`, ...), with the old names as `[Obsolete]`
+  aliases; they still serialize to the schema's values.
 
 Renamed identifiers stay as deprecated aliases wherever the language allows
 one. The hard breaks are:
 
 - the PHP and .NET parameter renames above: neither language can alias a
   parameter name;
+- the Java and .NET type renames: a Java class can't sit next to its
+  case-only alias on case-insensitive file systems, and .NET types can't be
+  aliased across assemblies;
 - Python enum members' `name`: an alias resolves to the new member, so code
   that reads `.name` (or lists an enum's members) sees `PER_SESSION`, not
   `PerSession`;
@@ -1109,7 +1145,9 @@ copy: they get formatted names from the engine.
 5. **Java and PHP class names.** Strict "when in Rome" would write them
    `CAPITALIZED` (`JsonValue`, `Llm` in Java; `JsonValue` throughout in PHP).
    A case-only class rename can't keep a deprecated alias, so this would be a
-   breaking change, best left for a major version.
+   breaking change, best left for a major version. Resolved for Java (and
+   .NET): taken before 1.0, as hard breaks (see
+   [What changes for SDK users](#what-changes-for-sdk-users)).
 6. **TypeScript's convention.** The ecosystem writes acronyms both ways. The
    generator uses `UPPERCASE` members and `CAPITALIZED` enum members today;
    confirm with the TypeScript maintainers.
