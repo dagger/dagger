@@ -95,8 +95,8 @@ func evalDangSource(
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
 	if src := modSource.Self(); src != nil {
-		// Name the module's typedefs by the rules of its engine version.
-		ctx = dangshared.WithModuleNaming(ctx, src.EngineVersion)
+		// Name the module's typedefs by the module's naming rules.
+		ctx = dangshared.WithModuleNaming(ctx, src)
 	}
 	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, inertAttachables, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		var intro introspection.Response
@@ -309,7 +309,7 @@ func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource,
 		return
 	}
 
-	namer := core.NamerForEngineVersion(src.EngineVersion)
+	namer := src.Namer()
 	for _, localName := range moduleDeclaredTypeNames(namer, modSrcDir, moduleName) {
 		schemaName := namer.NamespaceObject(localName, moduleName, src.ModuleOriginalName)
 		if schema.Types.Get(schemaName) != nil {

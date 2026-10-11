@@ -6,13 +6,13 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 )
 
 type namingViewKey struct{}
 
-// WithModuleNaming records, for NamingSelectors, the engine version of the
-// module whose typedefs the Dang runtime is about to register.
+// WithModuleNaming records, for NamingSelectors, the naming view of the
+// module whose typedefs the Dang runtime is about to register (see
+// core.ModuleSource.NamingView).
 //
 // A module's runtime normally registers its typedefs over the API, at the
 // view of the engine version the module declares, and the typedef
@@ -20,8 +20,8 @@ type namingViewKey struct{}
 // core.NamerFromContext). The Dang runtime runs in the engine and selects
 // those constructors directly, which records no view unless the selector
 // carries one.
-func WithModuleNaming(ctx context.Context, engineVersion string) context.Context {
-	return context.WithValue(ctx, namingViewKey{}, call.View(engine.APIViewVersion(engineVersion)))
+func WithModuleNaming(ctx context.Context, src *core.ModuleSource) context.Context {
+	return context.WithValue(ctx, namingViewKey{}, src.NamingView())
 }
 
 // ModuleNamer is the naming rules of the module recorded by

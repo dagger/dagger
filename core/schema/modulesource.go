@@ -1098,6 +1098,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 
 	engineVersion := modCfg.EngineVersion
 	if modCfg.Entrypoint != nil {
+		// An entrypoint module declares no engine version: it gets the
+		// engine's API, but not its naming rules (see
+		// core.ModuleSource.LegacyNaming).
 		engineVersion = engine.Version
 	}
 	switch engineVersion {

@@ -79,7 +79,7 @@ func evalDangSource(
 ) ([]byte, error) {
 	if src := modSource.Self(); src != nil {
 		// Name the module's typedefs by the rules of its engine version.
-		ctx = dangshared.WithModuleNaming(ctx, src.EngineVersion)
+		ctx = dangshared.WithModuleNaming(ctx, src)
 	}
 	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, inertAttachables, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		var intro introspection.Response

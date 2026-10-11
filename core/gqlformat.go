@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/iancoleman/strcase"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -56,18 +57,143 @@ var (
 )
 
 // NamerForView returns the Namer for an API view. The empty view is the
-// latest, as it is for AfterVersion.
+// latest, as it is for AfterVersion. A view marked by LegacyNamingView gets
+// the legacy rules.
 func NamerForView(view call.View) Namer {
+	if IsLegacyNamingView(view) {
+		return LegacyNamer
+	}
 	if !AfterVersion(IdentifierNamingVersion).Contains(view) {
 		return LegacyNamer
 	}
 	return Namer{dict: naming.DictionaryFor(string(view))}
 }
 
+// legacyNamingBuild is the semver build metadata that marks a view as naming
+// with the legacy rules (see LegacyNamingView).
+const legacyNamingBuild = "+legacy-naming"
+
+// LegacyNamingView marks view so that the typedef constructors called in it
+// name declarations by the legacy strcase rules, whatever its version, while
+// it stays the same API view: views compare by semver precedence, which
+// ignores build metadata, so every view filter treats the marked view like
+// view. The mark is part of the view, and so of the call and its cache key:
+// a typedef loaded from its ID is named the same way again.
+//
+// Module entrypoints (manifest v2) are served at the engine's API view but
+// keep the legacy naming rules; see ModuleSource.NamingView. The empty
+// (latest) view can't be marked, and is returned as is.
+func LegacyNamingView(view call.View) call.View {
+	if view == "" || !semver.IsValid(string(view)) {
+		return view
+	}
+	base := strings.TrimSuffix(string(view), semver.Build(string(view)))
+	return call.View(base + legacyNamingBuild)
+}
+
+// IsLegacyNamingView reports whether view was marked by LegacyNamingView.
+func IsLegacyNamingView(view call.View) bool {
+	return semver.Build(string(view)) == legacyNamingBuild
+}
+
 // NamerForEngineVersion returns the Namer for a module that declares
 // engineVersion in its dagger.json.
 func NamerForEngineVersion(engineVersion string) Namer {
 	return NamerForView(call.View(engine.APIViewVersion(engineVersion)))
+}
+
+// LegacyNaming reports whether the engine names the module's declarations by
+// the legacy rules whatever its engine version: true for a module entrypoint
+// (manifest v2).
+//
+// An entrypoint module declares no engineVersion: the engine serves it at its
+// own version. Naming it by that version would rename an existing module's
+// functions and arguments (getUrl to getURL) when the engine ships the naming
+// rules, and again with each dictionary addition, while its entrypoint's
+// calls and its callers keep the names it was generated with. Its names have
+// to be pinned when the entrypoint is generated instead; until the manifest
+// can say so, it keeps the legacy rules. See
+// hack/designs/identifier-casing.md, "Module entrypoints".
+func (src *ModuleSource) LegacyNaming() bool {
+	return src != nil && src.Entrypoint != nil
+}
+
+// NamingView is the view whose naming rules name the module's declarations:
+// the API view of its engine version, marked by LegacyNamingView for a module
+// with LegacyNaming.
+func (src *ModuleSource) NamingView() call.View {
+	if src == nil {
+		return ""
+	}
+	view := call.View(engine.APIViewVersion(src.EngineVersion))
+	if src.LegacyNaming() {
+		view = LegacyNamingView(view)
+	}
+	return view
+}
+
+// Namer normalizes the names the module declares: the rules of NamingView.
+func (src *ModuleSource) Namer() Namer {
+	if src.LegacyNaming() {
+		return LegacyNamer
+	}
+	return NamerForView(src.NamingView())
+}
+
+// namingFields are the typedef constructors that normalize a name they're
+// given, by type and field: the rules come from the view of their call (see
+// NamerFromContext), so they record it (View(AllVersion) or another view
+// filter).
+var namingFields = map[string]map[string]bool{
+	"Query":    {"function": true},
+	"Function": {"withArg": true},
+	"TypeDef": {
+		"withObject":          true,
+		"withInterface":       true,
+		"withEnum":            true,
+		"withScalar":          true,
+		"withField":           true,
+		"withEnumMember":      true,
+		"withCollectionKeys":  true,
+		"withCollectionGet":   true,
+		"withCollectionDelta": true,
+	},
+}
+
+// IsNamingField reports whether typeName.field is a typedef constructor that
+// normalizes a name with the naming rules of its call's view.
+func IsNamingField(typeName, field string) bool {
+	return namingFields[typeName][field]
+}
+
+// NamingSelectorView is the view a typedef constructor call records when a
+// module's runtime makes it: the call's API view, marked by LegacyNamingView
+// when the module keeps the legacy naming rules (ModuleSource.LegacyNaming).
+// Other fields, and calls from other modules, keep view.
+func NamingSelectorView(src *ModuleSource, typeName, field string, view call.View) call.View {
+	if view == "" || !src.LegacyNaming() || !IsNamingField(typeName, field) {
+		return view
+	}
+	return LegacyNamingView(view)
+}
+
+// namingSelectorView is the dagql selector view hook (see
+// dagql.Server.SetSelectorView) that names the typedefs a module's runtime
+// declares over the API by the module's naming rules, which can differ from
+// the API view the runtime's client is served at.
+func namingSelectorView(ctx context.Context, typeName string, sel dagql.Selector) call.View {
+	if !IsNamingField(typeName, sel.Field) {
+		return sel.View
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil || query.Server == nil {
+		return sel.View
+	}
+	mod, err := query.CurrentModule(ctx)
+	if err != nil || mod.Self() == nil {
+		return sel.View
+	}
+	return NamingSelectorView(mod.Self().GetSource(), typeName, sel.Field, sel.View)
 }
 
 // CallerView is the API view of the caller of the current field: the view
