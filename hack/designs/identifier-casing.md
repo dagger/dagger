@@ -554,10 +554,10 @@ acronym convention, not one house style. Go writes initialisms in capitals
 | GraphQL schema | `PASCAL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `SCREAMING_SNAKE` |
 | Go | `PASCAL`/`UPPERCASE` | `PASCAL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `PASCAL`/`UPPERCASE` |
 | TypeScript | schema name (`PASCAL`/`UPPERCASE`) | `CAMEL`/`UPPERCASE` | `CAMEL`/`UPPERCASE` | `PASCAL`/`CAPITALIZED` |
-| Python | schema name | `SNAKE` | `SNAKE` | schema value |
+| Python | schema name | `SNAKE` | `SNAKE` | `SCREAMING_SNAKE` (value: schema value) |
 | Elixir | `PASCAL`/`UPPERCASE` | `SNAKE` | `SNAKE` | schema-value atoms (`SNAKE` functions) |
 | Rust | `PASCAL`/`CAPITALIZED` | `SNAKE` | `SNAKE` | `PASCAL`/`CAPITALIZED` |
-| PHP | existing converter (`JsonValue`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
+| PHP | `PASCAL`/`CAPITALIZED` (`#[GraphQLType]`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | `SCREAMING_SNAKE` |
 | .NET | schema name (`ID` written `Id`) | `PASCAL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | schema value |
 | Java | schema name (`PASCAL`/`UPPERCASE`) | `CAMEL`/`CAPITALIZED` | `CAMEL`/`CAPITALIZED` | schema value |
 
@@ -569,9 +569,19 @@ renamed field is mapped back to its wire name (`#[serde(rename)]` in Rust,
 
 Type names stay as the schema has them, or as the SDK's existing converter
 writes them, in SDKs whose runtime looks types up by name (TypeScript, Python,
-Java, PHP) or where a case-only rename can't be aliased (Java and PHP class
-files, .NET types across assemblies). Enum values stay put where they are
-serialized by member name (Python, Java, .NET).
+Java) or where a case-only rename can't be aliased (Java class files, .NET
+types across assemblies). Enum values stay put where they are serialized by
+member name (Java, .NET).
+
+Python names enum members `SCREAMING_SNAKE`, as PEP 8 writes constants
+(`FunctionCachePolicy.PER_SESSION`, `ImageLayerCompression.GZIP`). A member's
+value is the schema value it stands for, which goes over the wire: such
+enums extend `ValueEnum`, which the client sends by value rather than by
+member name. The schema's other spellings of a value (the legacy
+`PerSession`, `Gzip`, `OCIMediaTypes`) stay as deprecated aliases, so old code
+keeps working and a value the API returns is still found by name. The module
+runtime also sends the module's own enum members by their schema names in
+calls through its interfaces (the engine names them `SCREAMING_SNAKE`).
 
 TypeScript's own convention is ambiguous (`XMLHttpRequest`, `innerHTML`).
 Members follow the schema's `UPPERCASE` (`filterURI`, `callID`), and enum
@@ -600,13 +610,18 @@ serializes enum constants by name, and a class renamed only in case can't keep
 a deprecated alias next to it on case-insensitive file systems.
 
 PHP follows the Symfony and Laravel convention of writing acronyms like words
-in members (`filterUri`, `withGpu`). PHP method names are case-insensitive, so
-those changes are cosmetic; parameter names matter for named arguments. Classes
-keep today's converter (`ID`/`JSON` written `Id`/`Json`, the rest as the schema
-has them), since a case-only class rename only breaks PSR-4 autoloading of the
-old spelling. A class whose name differs from its GraphQL type carries
-`#[GraphQLType('JSONValue')]`, which the runtime reads when loading objects by
-ID and registering module types. Renamed enum cases keep their old names as
+in members (`filterUri`, `withGpu`) and PSR-1's in classes (`Llm`,
+`SdkConfig`, `HttpState`, `JsonValue`). PHP method names are case-insensitive,
+so member changes are cosmetic; parameter names matter for named arguments.
+Class names are case-insensitive too, so a class renamed in letter case only
+is still the same class under its old spelling; but PSR-4 autoloading looks
+for the old file name, which a case-sensitive filesystem doesn't find, and a
+`class_alias` can't help, since to PHP both spellings are the same name. The
+SDK registers `LegacyClassNames` after Composer's autoloader: it finds the
+generated file ignoring case, and reports the old spelling as deprecated. A
+class whose name differs from its GraphQL type carries
+`#[GraphQLType('LLM')]`, which the runtime reads when loading objects by ID and
+registering module types. Renamed enum cases keep their old names as
 deprecated constants.
 
 ### Module runtimes
@@ -921,7 +936,14 @@ code it generated before:
   `callID`. No type or enum member changes.
 - **Python**: 2 methods — `prerequisite_sh_as` → `prerequisite_shas`,
   `experimental_with_all_gp_us` → `experimental_with_all_gpus` — kept as
-  deprecated aliases.
+  deprecated aliases. Enum members are `SCREAMING_SNAKE`:
+  `FunctionCachePolicy.DEFAULT`, `NEVER` and `PER_SESSION`,
+  `ImageLayerCompression.ESTARGZ`, `GZIP`, `UNCOMPRESSED` and `ZSTD`,
+  `ImageMediaTypes.DOCKER` and `OCI`, which used to be aliases of the legacy
+  members, are now the canonical members, and the legacy names their
+  deprecated aliases. Values don't change for core enums. A dependency
+  module's enum member now holds its schema value (`READY`) rather than the
+  module's underlying value (`"ready"`).
 - **Rust**: the same 2 methods as Python, kept as deprecated aliases. No type
   changes (`JsonValue` stays).
 - **Elixir**: 1 function — `prerequisite_sh_as` → `prerequisite_shas` — kept
@@ -938,7 +960,11 @@ code it generated before:
   `ImageMediaTypes::OCI_MEDIA_TYPES`, ...) with the old names as deprecated
   constants. 3 parameters — `insecureSkipTLSVerify` → `insecureSkipTlsVerify`
   on `from` and `publish`, `expectedRemoteSHA` → `expectedRemoteSha` on
-  `GitRef::push` — break named-argument callers. No class changes.
+  `GitRef::push` — break named-argument callers. Classes with acronyms are
+  renamed in letter case (`LLM` → `Llm`, `LLMContent` → `LlmContent` and the
+  other `LLM*` types, `SDKConfig` → `SdkConfig`, `HTTPState` → `HttpState`,
+  `WorkspaceSDK` → `WorkspaceSdk`); their old spellings still load, as
+  deprecated.
 - **Java**: the same 19 case-only method renames as PHP (`asJSON` → `asJson`,
   `withGPU` → `withGpu`, ...), plus optional-argument setters
   (`withInsecureSkipTLSVerify` → `withInsecureSkipTlsVerify`), all kept as
@@ -952,8 +978,15 @@ code it generated before:
   No type, property or enum member changes.
 
 Renamed identifiers stay as deprecated aliases wherever the language allows
-one. The only hard breaks are the PHP and .NET parameter renames above: neither
-language can alias a parameter name.
+one. The hard breaks are:
+
+- the PHP and .NET parameter renames above: neither language can alias a
+  parameter name;
+- Python enum members' `name`: an alias resolves to the new member, so code
+  that reads `.name` (or lists an enum's members) sees `PER_SESSION`, not
+  `PerSession`;
+- Python dependency module enums' `value`, now the schema value instead of the
+  module's underlying value.
 
 ## Guarantees
 
