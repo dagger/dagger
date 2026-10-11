@@ -4,15 +4,16 @@ using System.Text.Json;
 namespace Dagger.SDK.SourceGenerator.Code;
 
 /// <summary>
-/// Names C# members after schema names.
+/// Names C# types and members after schema names.
 ///
 /// With names the engine formatted (a names.json next to introspection.json,
 /// as <c>codegen introspect --names-out</c> writes it for schemas from
-/// v1.0.0), names follow the .NET Framework Design Guidelines: methods and
-/// properties PascalCase, parameters camelCase, acronyms written like words
-/// (WithGpu, InsecureSkipTlsVerify). For a name the file doesn't have, or
-/// without the file, the legacy conversion in <see cref="Formatter"/>
-/// applies, so older schemas generate the same code as before.
+/// v1.0.0), names follow the .NET Framework Design Guidelines: types,
+/// methods, properties and enum members PascalCase, parameters camelCase,
+/// acronyms written like words (JsonValue, WithGpu, InsecureSkipTlsVerify,
+/// Tcp). For a name the file doesn't have, or without the file, the legacy
+/// conversion in <see cref="Formatter"/> applies, so older schemas generate
+/// the same code as before.
 ///
 /// Only C# identifiers change: selected fields, argument names, input object
 /// fields, enum values and GraphQL type names stay as the schema has them.
@@ -23,7 +24,7 @@ public class Namer(
 )
 {
     /// <summary>
-    /// The names file format of methods and properties.
+    /// The names file format of types, methods, properties and enum members.
     /// </summary>
     public const string PascalFormat = "PASCAL:CAPITALIZED";
 
@@ -78,6 +79,26 @@ public class Namer(
     /// The name of the parameter for an argument or input object field.
     /// </summary>
     public string Var(string name) => Formatter.FormatVarName(Lookup(camel, name) ?? name);
+
+    /// <summary>
+    /// The name of the C# type for a GraphQL type. The built-in scalars keep
+    /// their C# types (<c>string</c>, <c>Id</c>, ...).
+    /// </summary>
+    public string Type(string name) =>
+        Formatter.IsBuiltinType(name)
+            ? Formatter.FormatType(name)
+            : Lookup(pascal, name) ?? Formatter.FormatType(name);
+
+    /// <summary>
+    /// Whether enum members are named by the formatted names, carrying the
+    /// schema values they stand for, rather than like the schema values.
+    /// </summary>
+    public bool NamesEnumMembers => pascal != null;
+
+    /// <summary>
+    /// The name of the enum member for an enum value.
+    /// </summary>
+    public string EnumMember(string value) => Lookup(pascal, value) ?? value;
 
     private static string? Lookup(IReadOnlyDictionary<string, string>? names, string name) =>
         names != null && names.TryGetValue(name, out var formatted) && formatted.Length > 0

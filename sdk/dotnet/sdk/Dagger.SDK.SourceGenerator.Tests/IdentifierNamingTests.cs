@@ -54,10 +54,84 @@ public class IdentifierNamingTests
         // Input object properties are PascalCase.
         StringAssert.Contains(code, "public string CommitSha { get; } = commitSha;");
 
-        // Types and enum values keep the schema's names.
+        // Types are PascalCase too, with the GraphQL type names on the wire.
         StringAssert.Contains(code, "public class Container(");
-        StringAssert.Contains(code, "public enum NetworkProtocol");
-        StringAssert.Contains(code, "TCP");
+        StringAssert.Contains(code, "public class JsonValue(");
+        Assert.IsFalse(code.Contains("class JSONValue"));
+        StringAssert.Contains(code, "[JsonConverter(typeof(ScalarIdConverter<Json>))]");
+        StringAssert.Contains(code, "public class Json : Scalar");
+        StringAssert.Contains(code, "public async Task<Json> ContentsAsync(");
+        StringAssert.Contains(code, "public async Task<JsonValue[]> ValuesAsync(");
+        StringAssert.Contains(
+            code,
+            "new JsonValue(Object.NodeQueryBuilder(id.Value, \"JSONValue\")"
+        );
+    }
+
+    [TestMethod]
+    public void NamesEnumMembersFromFormattedNames()
+    {
+        var code = Generate(NamesSchema, Names());
+
+        // Members are PascalCase, carrying the schema values they go over
+        // the wire as; the old members stay as obsolete aliases.
+        var protocol = EnumDecl(code, "NetworkProtocol");
+        StringAssert.Contains(
+            protocol.AttributeLists.ToString(),
+            "JsonConverter(typeof(GraphQLEnumConverter<NetworkProtocol>))"
+        );
+        CollectionAssert.AreEqual(
+            new[] { "Tcp", "Udp", "TCP", "UDP" },
+            protocol.Members.Select(m => m.Identifier.ValueText).ToArray()
+        );
+        Assert.AreEqual("[GraphQLValue(\"TCP\")]", protocol.Members[0].AttributeLists.ToString());
+        Assert.AreEqual(
+            "[Obsolete(\"Use Tcp instead.\")]",
+            protocol.Members[2].AttributeLists.ToString()
+        );
+        Assert.AreEqual("Tcp", protocol.Members[2].EqualsValue!.Value.ToString());
+
+        // A value and its alias share a member, sent as the first value.
+        var compression = EnumDecl(code, "ImageLayerCompression");
+        CollectionAssert.AreEqual(
+            new[] { "Gzip", "GZIP" },
+            compression.Members.Select(m => m.Identifier.ValueText).ToArray()
+        );
+        Assert.AreEqual(
+            "[GraphQLValue(\"Gzip\", \"GZIP\")]",
+            compression.Members[0].AttributeLists.ToString()
+        );
+
+        // Arguments go as the members' schema values, and defaults name the
+        // new members.
+        StringAssert.Contains(code, "new StringValue(GraphQLEnum.ToValue(compression))");
+        StringAssert.Contains(code, "NetworkProtocol? protocol = NetworkProtocol.Tcp");
+
+        var errors = Fixtures.CompileWithRuntime(code);
+        Assert.AreEqual(0, errors.Length, string.Join("\n", errors.Take(20)));
+    }
+
+    [TestMethod]
+    public void KeepsSchemaTypesAndEnumValuesWithoutFormattedNames()
+    {
+        var code = Generate(NamesSchema);
+
+        StringAssert.Contains(code, "public class JSONValue(");
+        StringAssert.Contains(code, "public class JSON : Scalar");
+        StringAssert.Contains(
+            code,
+            "JsonConverter(typeof(JsonStringEnumConverter<NetworkProtocol>))"
+        );
+        CollectionAssert.AreEqual(
+            new[] { "TCP", "UDP" },
+            EnumDecl(code, "NetworkProtocol").Members.Select(m => m.Identifier.ValueText).ToArray()
+        );
+        StringAssert.Contains(code, "new StringValue(compression.ToString())");
+        StringAssert.Contains(code, "NetworkProtocol? protocol = NetworkProtocol.TCP");
+        Assert.IsFalse(code.Contains("GraphQLValue"));
+
+        var errors = Fixtures.CompileWithRuntime(code);
+        Assert.AreEqual(0, errors.Length, string.Join("\n", errors.Take(20)));
     }
 
     [TestMethod]
@@ -201,6 +275,14 @@ public class IdentifierNamingTests
     private static MethodDeclarationSyntax Method(string code, string type, string name) =>
         Methods(code, type, name).Single();
 
+    private static EnumDeclarationSyntax EnumDecl(string code, string name) =>
+        CSharpSyntaxTree
+            .ParseText(code)
+            .GetRoot()
+            .DescendantNodes()
+            .OfType<EnumDeclarationSyntax>()
+            .Single(e => e.Identifier.ValueText == name);
+
     private static Dictionary<string, Dictionary<string, string>> Names() =>
         Namer.ParseNames(NamesFile);
 
@@ -210,13 +292,19 @@ public class IdentifierNamingTests
             {"kind": "SCALAR", "name": "ID"},
             {"kind": "SCALAR", "name": "String"},
             {"kind": "SCALAR", "name": "Boolean"},
+            {"kind": "SCALAR", "name": "JSON"},
             {"kind": "ENUM", "name": "NetworkProtocol", "enumValues": [{"name": "TCP"}, {"name": "UDP"}]},
+            {"kind": "ENUM", "name": "ImageLayerCompression", "enumValues": [{"name": "Gzip"}, {"name": "GZIP"}]},
             {"kind": "INPUT_OBJECT", "name": "CommitInput", "inputFields": [
               {"name": "commitSHA", "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "String"}}},
               {"name": "skipTLSVerify", "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "Boolean"}}}
             ]},
             {"kind": "OBJECT", "name": "Query", "fields": [
               {"name": "container", "type": {"kind": "NON_NULL", "ofType": {"kind": "OBJECT", "name": "Container"}}}
+            ]},
+            {"kind": "OBJECT", "name": "JSONValue", "fields": [
+              {"name": "id", "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "ID"}}},
+              {"name": "contents", "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "JSON"}}}
             ]},
             {"kind": "INTERFACE", "name": "Runner", "fields": [
               {"name": "id", "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "ID"}}},
@@ -225,6 +313,12 @@ public class IdentifierNamingTests
             {"kind": "OBJECT", "name": "Container", "interfaces": [{"kind": "INTERFACE", "name": "Runner"}], "fields": [
               {"name": "id", "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "ID"}}},
               {"name": "runE2ETest", "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "String"}}},
+              {"name": "values", "type": {"kind": "NON_NULL", "ofType": {"kind": "LIST", "ofType": {"kind": "NON_NULL", "ofType": {"kind": "OBJECT", "name": "JSONValue"}}}}},
+              {"name": "withCompression", "type": {"kind": "NON_NULL", "ofType": {"kind": "OBJECT", "name": "Container"}},
+               "args": [
+                 {"name": "compression", "type": {"kind": "NON_NULL", "ofType": {"kind": "ENUM", "name": "ImageLayerCompression"}}},
+                 {"name": "protocol", "type": {"kind": "ENUM", "name": "NetworkProtocol"}, "defaultValue": "TCP"}
+               ]},
               {"name": "withMCPServer", "type": {"kind": "NON_NULL", "ofType": {"kind": "OBJECT", "name": "Container"}},
                "args": [
                  {"name": "name", "type": {"kind": "NON_NULL", "ofType": {"kind": "SCALAR", "name": "String"}}},
@@ -242,7 +336,12 @@ public class IdentifierNamingTests
             "Boolean": "Boolean",
             "CommitInput": "CommitInput",
             "Container": "Container",
+            "GZIP": "Gzip",
+            "Gzip": "Gzip",
             "ID": "Id",
+            "ImageLayerCompression": "ImageLayerCompression",
+            "JSON": "Json",
+            "JSONValue": "JsonValue",
             "NetworkProtocol": "NetworkProtocol",
             "Query": "Query",
             "Runner": "Runner",
@@ -250,19 +349,29 @@ public class IdentifierNamingTests
             "TCP": "Tcp",
             "UDP": "Udp",
             "commitSHA": "CommitSha",
+            "compression": "Compression",
             "container": "Container",
+            "contents": "Contents",
             "id": "Id",
             "insecureSkipTLSVerify": "InsecureSkipTlsVerify",
             "name": "Name",
+            "protocol": "Protocol",
             "runE2ETest": "RunE2eTest",
             "skipTLSVerify": "SkipTlsVerify",
+            "values": "Values",
+            "withCompression": "WithCompression",
             "withMCPServer": "WithMcpServer"
           },
           "CAMEL:CAPITALIZED": {
             "Boolean": "boolean",
             "CommitInput": "commitInput",
             "Container": "container",
+            "GZIP": "gzip",
+            "Gzip": "gzip",
             "ID": "id",
+            "ImageLayerCompression": "imageLayerCompression",
+            "JSON": "json",
+            "JSONValue": "jsonValue",
             "NetworkProtocol": "networkProtocol",
             "Query": "query",
             "Runner": "runner",
@@ -270,12 +379,17 @@ public class IdentifierNamingTests
             "TCP": "tcp",
             "UDP": "udp",
             "commitSHA": "commitSha",
+            "compression": "compression",
             "container": "container",
+            "contents": "contents",
             "id": "id",
             "insecureSkipTLSVerify": "insecureSkipTlsVerify",
             "name": "name",
+            "protocol": "protocol",
             "runE2ETest": "runE2eTest",
             "skipTLSVerify": "skipTlsVerify",
+            "values": "values",
+            "withCompression": "withCompression",
             "withMCPServer": "withMcpServer"
           }
         }

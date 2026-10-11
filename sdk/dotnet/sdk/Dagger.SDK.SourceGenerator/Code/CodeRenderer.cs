@@ -47,7 +47,11 @@ public class CodeRenderer : ICodeRenderer
 
     public string RenderEnum(Type type)
     {
-        var typeName = Formatter.FormatType(type.Name);
+        var typeName = Namer.Type(type.Name);
+        if (Namer.NamesEnumMembers)
+        {
+            return RenderNamedEnum(type, typeName);
+        }
         var evs = type.EnumValues.Select(ev => ev.Name);
         return $$"""
             {{RenderDocComment(type)}}
@@ -58,6 +62,65 @@ public class CodeRenderer : ICodeRenderer
             }
             """;
     }
+
+    /// <summary>
+    /// An enum whose members are named by the formatted names (Tcp for TCP),
+    /// each carrying the schema values it stands for: values formatted alike,
+    /// a value and its alias (Gzip and GZIP), share a member, sent as the
+    /// first one's value. The members the schema values used to name stay as
+    /// obsolete aliases.
+    /// </summary>
+    private string RenderNamedEnum(Type type, string typeName)
+    {
+        var members = new List<(string Name, List<string> Values)>();
+        foreach (var ev in type.EnumValues)
+        {
+            var name = EnumMemberName(ev.Name);
+            var member = members.FindIndex(m => m.Name == name);
+            if (member < 0)
+            {
+                members.Add((name, new List<string> { ev.Name }));
+            }
+            else
+            {
+                members[member].Values.Add(ev.Name);
+            }
+        }
+
+        var taken = new HashSet<string>(members.Select(m => m.Name));
+        var declarations = members.Select(m =>
+            $"[GraphQLValue({string.Join(", ", m.Values.Select(v => SymbolDisplay.FormatLiteral(v, true)))})] {m.Name}"
+        );
+        var aliases = members
+            .SelectMany(m => m.Values.Select(legacy => (Member: m.Name, Legacy: legacy)))
+            .Where(alias => IsIdentifier(alias.Legacy) && taken.Add(alias.Legacy))
+            .Select(alias =>
+                $"[Obsolete(\"Use {alias.Member} instead.\")] {alias.Legacy} = {alias.Member}"
+            )
+            .ToList();
+
+        return $$"""
+            {{RenderDocComment(type)}}
+            [JsonConverter(typeof(GraphQLEnumConverter<{{typeName}}>))]
+            public enum {{typeName}}
+            {
+                {{string.Join(",", declarations.Concat(aliases))}}
+            }
+            """;
+    }
+
+    /// <summary>
+    /// The enum member for an enum value: its formatted name, or the value
+    /// itself when that isn't a usable identifier.
+    /// </summary>
+    private string EnumMemberName(string value)
+    {
+        var name = Namer.EnumMember(value);
+        return IsIdentifier(name) ? name : value;
+    }
+
+    private static bool IsIdentifier(string name) =>
+        SyntaxFacts.IsValidIdentifier(name) && SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None;
 
     public string RenderInputObject(Type type)
     {
@@ -115,7 +178,7 @@ public class CodeRenderer : ICodeRenderer
 
         return $$"""
             {{RenderDocComment(type)}}
-            public struct {{Formatter.FormatType(type.Name)}}({{string.Join(
+            public struct {{Namer.Type(type.Name)}}({{string.Join(
                 ", ",
                 constructorFields
             )}}) : IInputObject
@@ -134,7 +197,7 @@ public class CodeRenderer : ICodeRenderer
 
     public string RenderInterface(Type type)
     {
-        var interfaceName = Formatter.FormatType(type.Name);
+        var interfaceName = Namer.Type(type.Name);
 
         // Generate the C# interface
         // Skip the "id" field since IId already declares IdAsync
@@ -183,9 +246,7 @@ public class CodeRenderer : ICodeRenderer
 
     private string RenderObjectOrInterfaceClient(Type type, bool isInterface)
     {
-        var className = isInterface
-            ? $"{Formatter.FormatType(type.Name)}Client"
-            : Formatter.FormatType(type.Name);
+        var className = isInterface ? $"{Namer.Type(type.Name)}Client" : Namer.Type(type.Name);
 
         var methods = type.Fields.Select(field =>
         {
@@ -223,7 +284,7 @@ public class CodeRenderer : ICodeRenderer
         // For interface client classes, implement the interface
         if (isInterface)
         {
-            implementsList.Add(Formatter.FormatType(type.Name));
+            implementsList.Add(Namer.Type(type.Name));
         }
         else
         {
@@ -233,7 +294,7 @@ public class CodeRenderer : ICodeRenderer
                 var ifaceName = iface.GetType_().Name;
                 if (!string.IsNullOrEmpty(ifaceName) && ifaceName != "Node")
                 {
-                    implementsList.Add(Formatter.FormatType(ifaceName));
+                    implementsList.Add(Namer.Type(ifaceName));
                 }
             }
         }
@@ -257,11 +318,11 @@ public class CodeRenderer : ICodeRenderer
 
     public string RenderScalar(Type type)
     {
-        var t = Formatter.FormatType(type.Name);
+        var t = Namer.Type(type.Name);
         return $$"""
             {{RenderDocComment(type)}}
             [JsonConverter(typeof(ScalarIdConverter<{{t}}>))]
-            public class {{Formatter.FormatType(t)}} : Scalar
+            public class {{t}} : Scalar
             {
             }
             """;
@@ -317,9 +378,9 @@ public class CodeRenderer : ICodeRenderer
             var tr = arg.Type.GetType_();
             if (tr.IsList())
             {
-                return $"{Formatter.FormatType(expectedType)}[]";
+                return $"{Namer.Type(expectedType)}[]";
             }
-            return Formatter.FormatType(expectedType);
+            return Namer.Type(expectedType);
         }
 
         return GetNormalizedTypeName(arg);
@@ -333,15 +394,15 @@ public class CodeRenderer : ICodeRenderer
         var expectedType = arg.GetExpectedType();
         if (expectedType != null)
         {
-            return Formatter.FormatType(expectedType);
+            return Namer.Type(expectedType);
         }
 
         var tr = arg.Type.GetType_();
         if (tr.IsList())
         {
-            return tr.OfType!.GetTypeName();
+            return tr.OfType!.GetTypeName(Namer);
         }
-        return tr.GetTypeName();
+        return tr.GetTypeName(Namer);
     }
 
     /// <summary>
@@ -407,12 +468,12 @@ public class CodeRenderer : ICodeRenderer
             """;
     }
 
-    private static string GetNormalizedTypeName(InputValue arg)
+    private string GetNormalizedTypeName(InputValue arg)
     {
         return GetNormalizedTypeName(arg.Type, arg.Name);
     }
 
-    private static string GetNormalizedTypeName(TypeRef typeRef, string name)
+    private string GetNormalizedTypeName(TypeRef typeRef, string name)
     {
         var tr = typeRef.GetType_();
         if (tr.IsList())
@@ -420,7 +481,7 @@ public class CodeRenderer : ICodeRenderer
             return $"{GetNormalizedTypeName(tr.OfType!, name)}[]";
         }
 
-        var type = tr.GetTypeName();
+        var type = tr.GetTypeName(Namer);
         return type;
     }
 
@@ -464,7 +525,10 @@ public class CodeRenderer : ICodeRenderer
 
             if (arg.Type.IsEnum() && !string.IsNullOrWhiteSpace(arg.DefaultValue.Trim('"')))
             {
-                return $"{nullableType} {varName} = {GetArgTypeName(arg)}.{arg.DefaultValue}";
+                var member = Namer.NamesEnumMembers
+                    ? EnumMemberName(arg.DefaultValue.Trim('"'))
+                    : arg.DefaultValue;
+                return $"{nullableType} {varName} = {GetArgTypeName(arg)}.{member}";
             }
 
             return $"{nullableType} {varName} = {arg.DefaultValue}";
@@ -480,21 +544,21 @@ public class CodeRenderer : ICodeRenderer
         // sync-like: @expectedType matches parent → async, returns parent type
         if (IsSyncLikeField(field, parentTypeName))
         {
-            var formatted = Formatter.FormatType(parentTypeName);
+            var formatted = Namer.Type(parentTypeName);
             return $"async Task<{formatted}>";
         }
 
         if (type.IsLeaf() || type.IsList())
         {
-            return $"async Task<{type.GetTypeName()}>";
+            return $"async Task<{type.GetTypeName(Namer)}>";
         }
 
         if (IsNullableObject(type))
         {
-            return $"async Task<{type.GetTypeName()}?>";
+            return $"async Task<{type.GetTypeName(Namer)}?>";
         }
 
-        return type.GetTypeName();
+        return type.GetTypeName(Namer);
     }
 
     private string RenderReturnValue(Field field, string parentTypeName)
@@ -504,7 +568,7 @@ public class CodeRenderer : ICodeRenderer
         // sync-like: @expectedType matches parent → execute query to get ID, return new object via node(id:)
         if (IsSyncLikeField(field, parentTypeName))
         {
-            var formatted = Formatter.FormatType(parentTypeName);
+            var formatted = Namer.Type(parentTypeName);
             var className = InterfaceTypes.ContainsKey(parentTypeName)
                 ? $"{formatted}Client"
                 : formatted;
@@ -513,13 +577,13 @@ public class CodeRenderer : ICodeRenderer
 
         if (type.IsLeaf())
         {
-            return $"await QueryExecutor.ExecuteAsync<{field.Type.GetTypeName()}>(GraphQLClient, queryBuilder, cancellationToken)";
+            return $"await QueryExecutor.ExecuteAsync<{field.Type.GetTypeName(Namer)}>(GraphQLClient, queryBuilder, cancellationToken)";
         }
 
         if (type.IsList() && type.GetType_().OfType!.IsObjectOrInterface())
         {
             var typeName = type.GetType_().OfType!.GetType_().Name;
-            var formattedName = Formatter.FormatType(typeName);
+            var formattedName = Namer.Type(typeName);
             // Use the client class for interface types
             var clientClassName = InterfaceTypes.ContainsKey(typeName)
                 ? $"{formattedName}Client"
@@ -538,14 +602,14 @@ public class CodeRenderer : ICodeRenderer
 
         if (type.IsList() && type.GetType_().OfType!.IsScalar())
         {
-            var typeName = type.GetType_().OfType!.GetTypeName();
+            var typeName = type.GetType_().OfType!.GetTypeName(Namer);
             return $"await QueryExecutor.ExecuteListAsync<{typeName}>(GraphQLClient, queryBuilder, cancellationToken)";
         }
 
         if (IsNullableObject(type))
         {
             var typeName = type.GetType_().Name;
-            var formattedName = Formatter.FormatType(typeName);
+            var formattedName = Namer.Type(typeName);
             var clientClassName = InterfaceTypes.ContainsKey(typeName)
                 ? $"{formattedName}Client"
                 : formattedName;
@@ -556,11 +620,11 @@ public class CodeRenderer : ICodeRenderer
         if (type.IsInterface())
         {
             var typeName = type.GetType_().Name;
-            var clientClassName = $"{Formatter.FormatType(typeName)}Client";
+            var clientClassName = $"{Namer.Type(typeName)}Client";
             return $"new {clientClassName}(queryBuilder, GraphQLClient)";
         }
 
-        return $"new {field.Type.GetTypeName()}(queryBuilder, GraphQLClient)";
+        return $"new {field.Type.GetTypeName(Namer)}(queryBuilder, GraphQLClient)";
     }
 
     private IEnumerable<string> RenderInterfaceAdapters(Type type)
@@ -608,7 +672,7 @@ public class CodeRenderer : ICodeRenderer
                 var asyncKeyword = isAsync ? "async " : "";
 
                 yield return $$"""
-                    {{asyncKeyword}}{{returnType}} {{Formatter.FormatType(
+                    {{asyncKeyword}}{{returnType}} {{Namer.Type(
                         interfaceName
                     )}}.{{methodName}}({{string.Join(",", args)}})
                     {
@@ -625,7 +689,10 @@ public class CodeRenderer : ICodeRenderer
     private string FormatMethodName(Field field, string parentTypeName, Namer? namer = null)
     {
         var methodName = (namer ?? Namer).Method(field.Name);
-        if (parentTypeName.Equals(field.Name, StringComparison.CurrentCultureIgnoreCase))
+        if (
+            parentTypeName.Equals(field.Name, StringComparison.CurrentCultureIgnoreCase)
+            || methodName == Namer.Type(parentTypeName)
+        )
         {
             methodName = $"{methodName}_";
         }
@@ -761,7 +828,7 @@ public class CodeRenderer : ICodeRenderer
 
         if (arg.Type.IsScalar())
         {
-            var type = arg.Type.GetTypeName();
+            var type = arg.Type.GetTypeName(Namer);
             var token = SyntaxFacts.GetKeywordKind(type);
 
             switch (token)
@@ -782,7 +849,9 @@ public class CodeRenderer : ICodeRenderer
 
         if (arg.Type.IsEnum())
         {
-            return $"new StringValue({argName}.ToString())";
+            return Namer.NamesEnumMembers
+                ? $"new StringValue(GraphQLEnum.ToValue({argName}))"
+                : $"new StringValue({argName}.ToString())";
         }
 
         if (arg.Type.IsInputObject())
@@ -796,7 +865,7 @@ public class CodeRenderer : ICodeRenderer
 
             if (tr.IsScalar())
             {
-                var value = tr.GetTypeName() switch
+                var value = tr.GetTypeName(Namer) switch
                 {
                     "string" => "new StringValue(v)",
                     "int" => "new IntValue(v)",
@@ -815,7 +884,8 @@ public class CodeRenderer : ICodeRenderer
 
             if (tr.IsEnum())
             {
-                return $"new ListValue({argName}.Select(v => new StringValue(v.ToString()) as Value).ToList())";
+                var value = Namer.NamesEnumMembers ? "GraphQLEnum.ToValue(v)" : "v.ToString()";
+                return $"new ListValue({argName}.Select(v => new StringValue({value}) as Value).ToList())";
             }
 
             throw new Exception(
