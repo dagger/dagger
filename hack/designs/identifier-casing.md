@@ -460,7 +460,9 @@ Notes:
 - Like every object in the schema, `IdentifierWord` and `NamingTerm` also
   implement `Node`.
 - The API is `@experimental` and visible to clients at engine version
-  `v1.0.0-0` and above, so prereleases see it.
+  `v1.0.0-0` and above, so prereleases see it, except that
+  `formatIdentifiers` is hidden from the views of modules that keep the legacy
+  naming rules (see [The gate](#the-gate)).
 
 ## Engine Integration
 
@@ -485,12 +487,13 @@ the old strcase code byte for byte:
   `withEnum`, `__withCollectionMember`, ...) are installed with
   `View(AllVersion)`, so the caller's view is part of the call and its cache
   key, and they normalize with `NamerFromContext` (the namer for the current
-  call's view). A module runtime connects at its `engineVersion`, so its
-  typedefs are named by its version. Public constructors pass the view on to
-  the internal `__*` selects they make; the in-engine Dang runtime stamps its
-  module's view on its naming selectors (`core/sdk/dang/shared/naming.go`).
-  A module entrypoint's calls get a view marked for legacy naming (see
-  [Module entrypoints](#module-entrypoints)).
+  call's view). A module runtime's client is served at the module's view
+  (`ModuleSource.NamingView`), so its typedefs are named by the module's
+  rules. Public constructors pass the view on to the internal `__*` selects
+  they make; the in-engine Dang runtime stamps its module's view on its naming
+  selectors (`core/sdk/dang/shared/naming.go`). A module that keeps the legacy
+  rules at a view that has the new ones is served at that view marked for
+  legacy naming (see [The gate](#the-gate)).
 - **Module-level naming** (`namespaceObject`, type and constructor lookups,
   validation) uses `Module.Namer()`, chosen by the module source's
   `engineVersion` (`ModuleSource.Namer`; legacy for a module entrypoint).
@@ -510,8 +513,9 @@ the old strcase code byte for byte:
 - **SDK runtime arguments.** SDK modules at the new version receive the
   `introspectionJSON` argument instead of `introspectionJson`.
 - **Go module codegen** (`cmd/codegen`) can't import `core`, so
-  `module_naming.go` mirrors `Namer`, gated by the introspection JSON's
-  `__schemaVersion`.
+  `module_naming.go` mirrors `Namer`. It gates like SDK codegen, on
+  `Query.formatIdentifiers` being in the schema it generates from, so it can't
+  disagree with the engine (see [The gate](#the-gate)).
 
 ### CLI
 
@@ -658,10 +662,10 @@ interfaces, they ask the engine with `Query.formatIdentifiers`, in batches, and
 use the results for selections, argument keys and `node(id:)` type names (the
 TypeScript runtime namespaces each interface the way the engine does,
 comparing words). The gate is
-the field itself: a runtime's session is served at its module's engine
-version, and `formatIdentifiers` exists exactly from the version the naming
-rules start at, so older modules keep the conversion they always used. Go
-module codegen mirrors `Namer` instead (see
+the field itself: a runtime's session is served at its module's view, which
+has `formatIdentifiers` exactly when the engine names the module by the new
+rules (see [The gate](#the-gate)), so older modules keep the conversion they
+always used. Go module codegen mirrors `Namer` instead (see
 [Which namer applies](#which-namer-applies)).
 
 ### Formatting names in codegen
@@ -694,10 +698,11 @@ schema for the generators. `cmd/codegen` connects to the engine whenever it
 generates from introspection JSON that has `Query.formatIdentifiers`.
 
 **Gate:** the schema being generated. If it has no `Query.formatIdentifiers`
-(schema views before `v1.0.0-0`, the identifier API's gate, or older engines),
-codegen formats nothing through the engine and keeps its legacy converter, so
-older modules and clients regenerate byte-identical code. A name missing from a
-map (one that isn't among the schema's names) also gets the legacy converter.
+(schema views before `v1.0.0-0`, the identifier API's gate, views of modules
+that keep the legacy naming rules, or older engines), codegen formats nothing
+through the engine and keeps its legacy converter, so older modules and
+clients regenerate byte-identical code. A name missing from a map (one that
+isn't among the schema's names) also gets the legacy converter.
 
 **Offline generators** get the names from the online step, as a sidecar file
 next to the introspection JSON, which stays unchanged:
@@ -774,9 +779,50 @@ existing view mechanism (`AfterVersion` / `BeforeVersion` in `core/util.go`):
 selects: no version means the latest dictionary, and a version below
 `naming.FirstVersion` (`v1.0.0`), or an invalid one, gets `naming.Initial`.
 Each dictionary release adds an entry to the list in
-`engine/naming/version.go`. Module normalization is gated separately, at
-`IdentifierNamingVersion` (`v1.0.0-0`, so prereleases opt in): below it, the
-`Namer` uses strcase.
+`engine/naming/version.go`.
+
+Module normalization is gated separately, at `IdentifierNamingVersion`
+(`core/gqlformat.go`): a module keeps the strcase rules unless the
+`engineVersion` it declares is at least that version, comparing full versions,
+prerelease included (`ModuleSource.LegacyNaming`). It's `v1.0.0-beta.17`, the
+first engine to ship these rules; it moves to whichever release they first
+ship in. A view gate wouldn't do: API views are base-version granular, so
+every v1.0.0 prerelease (`v1.0.0-beta.1` to `v1.0.0-beta.16`, and the `v1.0.0-0`
+the repo's own modules declare) shares the `v1.0.0` view, and a view gate
+would rename every module released against those betas.
+
+Such a module still gets the v1.0.0 API, so its rules travel apart from its
+view: `LegacyNamingView` marks a view with `+legacy-naming` build metadata.
+Semver precedence ignores build metadata, so every view filter treats the
+marked view like the plain one (same fields, same arguments), while
+`NamerForView` gives it the legacy rules. `ModuleSource.NamingView` is the
+module's view, marked when the module keeps the legacy rules and its view
+would otherwise have the new ones (views before `v1.0.0` need no mark, so
+older modules keep sharing results with clients at their view). The engine
+serves everything about the module at that view:
+
+- its runtime's client (`engine/server/session.go`), so the typedef
+  constructors it calls record the marked view and name by the legacy rules.
+  The mark is part of the call, so it keys the cache, and a typedef loaded
+  again from its ID is named the same way. The rest of the module's calls are
+  keyed apart from other clients' too, which costs some sharing between them
+  and clients at the plain view;
+- its dependencies' schema (`loadDependencyModules`), which its codegen
+  generates from;
+- the in-engine Dang runtime's direct selects (`dangshared.WithModuleNaming`).
+
+The marked view hides `Query.formatIdentifiers`, the one gate SDK codegen, Go
+module codegen and the Python and TypeScript runtimes check, so a
+legacy-naming module's codegen keeps its legacy converters (byte-identical to
+what it generated before) and its runtime keeps predicting the names the
+engine gives it. `__schemaVersion` reports the version without the mark: SDK
+codegen parses it for other gates, not always as semver (PHP's
+`version_compare` would order `v1.0.0+legacy-naming` before
+`v1.0.0-beta.10`).
+
+`NamerForView` gives the new rules to every unmarked view from `v1.0.0`, which
+only matters for clients that aren't modules: the typedefs they construct
+themselves.
 
 Known gaps:
 
@@ -839,21 +885,11 @@ their schema is byte-identical to what engines before this design gave them:
 - `ModuleSource.LegacyNaming` is true for an entrypoint source, and
   `ModuleSource.Namer` (so `Module.Namer`) is the legacy `Namer`: namespacing,
   the constructor name, validation, CLI paths.
-- The typedef constructors the entrypoint calls name by their call's view,
-  and the entrypoint's client is served at the engine's API view
-  (`engine/server/session.go`). So the naming rules travel apart from the API
-  view: `LegacyNamingView` marks a view with `+legacy-naming` build metadata.
-  Semver precedence ignores build metadata, so every view filter treats the
-  marked view like the plain one (same fields, same arguments), while
-  `NamerForView` gives it the legacy rules. A selector view hook
-  (`dagql.Server.SetSelectorView`, installed by `InstallCoreSchemaLoaders`)
-  marks the typedef constructor calls (`core.IsNamingField`) of a client whose
-  module has `LegacyNaming`. The mark is part of the call: it keys the cache,
-  so the same call from a v1 module keeps its own result, and a typedef
-  loaded again from its ID is named the same way. Other fields aren't marked,
-  so an entrypoint module's other calls share the cache with everyone.
-- The in-engine Dang runtime's direct selects use the same naming view
-  (`ModuleSource.NamingView`).
+- The entrypoint's client is served at the engine's API view marked for legacy
+  naming, like a module that declares an older v1.0.0 prerelease (see
+  [The gate](#the-gate)): the typedef constructors the entrypoint calls name
+  by the legacy rules, and the module's codegen sees no
+  `Query.formatIdentifiers`.
 
 Re-normalizing an entrypoint module's typedefs from their original names
 when the module is assembled would also work, but needs an internal rename for
@@ -884,8 +920,8 @@ never renames anything. Two options:
 
 We recommend (B), as a key in the `[entrypoint]` table. It reuses the
 mechanism end to end: `ModuleSource.NamingView` returns the declared
-version's view instead of the legacy mark, and the selector hook already
-carries it to the typedef constructors. The rules stay in the engine, the
+version's view instead of the marked one, and the session already serves the
+module's client at it. The rules stay in the engine, the
 generator only writes a version string, and the derived names come along for
 free. A manifest key also works for a shared remote entrypoint, which a field
 generated into `types.dang` doesn't: a remote entrypoint has no generate step
@@ -898,8 +934,10 @@ only ships the gate.
 
 ### What changes for module authors (on bump)
 
-Module type, field and argument names that contain runs of capitals or
-dictionary terms get their real casing back:
+A module that bumps its `engineVersion` to `IdentifierNamingVersion` or later
+(`latest`, or anything from `v1.0.0-beta.17` on) gets the new rules. Module
+type, field and argument names that contain runs of capitals or dictionary
+terms get their real casing back:
 
 - `MyModHttpclient` → `MyModHTTPClient`
 - `Llmmessage` → `LLMMessage`, and references to core `LLM*` / `JSON*` types
