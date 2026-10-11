@@ -48,6 +48,18 @@ const IdentifierNamingVersion = "v1.0.0-beta.17"
 // LegacyNamingView instead (see ModuleSource.NamingView).
 var identifierNamingView = AfterVersion(engine.BaseVersion(IdentifierNamingVersion) + "-0")
 
+// NameAliases returns hidden aliases (dagql.Aliases) for the old spellings of
+// a type, field or argument that the new naming rules renamed. They're
+// accepted only in the views that have the new rules (identifierNamingView):
+// before those, the old spelling is the name.
+//
+// Every alias kept for the transition goes through here, so ending it is
+// deleting this function and its callers. See
+// hack/designs/identifier-casing.md, "Transition aliases".
+func NameAliases(names ...string) dagql.Aliases {
+	return dagql.Aliases{Names: names, View: identifierNamingView}
+}
+
 // Namer normalizes module-declared names (types, fields, functions,
 // arguments, enum members) into schema names, and schema names into CLI
 // names.
