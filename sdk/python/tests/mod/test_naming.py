@@ -1,3 +1,4 @@
+import enum
 import types
 import typing
 
@@ -27,17 +28,27 @@ ENGINE_NAMES = {
         "name": "name",
         "fetch": "fetch",
         "from": "from",
+        "wait": "wait",
+        "status": "status",
+        "statuses": "statuses",
     },
     "SNAKE": {
         "Pond": "pond",
         "HttpFetcher": "http_fetcher",
         "PondSpeaker": "pond_speaker",
+        "Waiter": "waiter",
     },
     "PASCAL": {
         "HttpFetcher": "HTTPFetcher",
         "PondSpeaker": "PondSpeaker",
         "Pond_HttpFetcher": "PondHTTPFetcher",
         "Pond_PondSpeaker": "PondPondSpeaker",
+        "Waiter": "Waiter",
+        "Pond_Waiter": "PondWaiter",
+    },
+    "SCREAMING_SNAKE": {
+        "Ready": "READY",
+        "HttpOk": "HTTP_OK",
     },
 }
 
@@ -179,8 +190,8 @@ async def test_interface_call_renamed_arg(mod: Module):
 
 
 async def test_load_schema_names(mod: Module, monkeypatch: pytest.MonkeyPatch):
-    async def resolve(main_name, ifaces):
-        return await resolve_schema_names(main_name, ifaces, engine_formatter)
+    async def resolve(main_name, ifaces, **kwargs):
+        return await resolve_schema_names(main_name, ifaces, engine_formatter, **kwargs)
 
     monkeypatch.setattr("dagger.mod._module.resolve_schema_names", resolve)
     stale = to_interface_impl(interface(mod, "HttpFetcher"))
@@ -190,6 +201,51 @@ async def test_load_schema_names(mod: Module, monkeypatch: pytest.MonkeyPatch):
     impl = to_interface_impl(interface(mod, "HttpFetcher"))
     assert impl is not stale
     assert impl.__name__ == "PondHTTPFetcher"
+
+
+async def test_interface_call_enum_members():
+    # The engine names a module's enum members SCREAMING_SNAKE (Ready is
+    # READY), so a call through an interface sends that, not the Python name.
+    m = Module("Pond")
+
+    @m.enum_type
+    class Status(enum.Enum):
+        Ready = "ready"
+        HttpOk = "ok"
+        DONE = "done"
+
+    @m.interface
+    class Waiter(typing.Protocol):
+        @m.function
+        def wait(self, status: Status, statuses: list[Status]) -> Self: ...
+
+    @m.object_type
+    class Pond:
+        waiter: Waiter = dagger.field()
+
+    names = await resolve_schema_names(
+        "Pond", interfaces(m), engine_formatter, enums=[Status]
+    )
+    assert names is not None
+    assert names.enum_members == {
+        Status: {"Ready": "READY", "HttpOk": "HTTP_OK", "DONE": "DONE"},
+    }
+
+    for schema_names, expected in [
+        # older modules: the client sends a member by its Python name
+        (SchemaNames(), (Status.Ready, [Status.HttpOk, Status.DONE])),
+        (names, ("READY", ["HTTP_OK", "DONE"])),
+    ]:
+        m._schema_names = schema_names
+        to_interface_impl.cache_clear()
+        obj = to_interface_impl(interface(m, "Waiter"))(Context())
+        call = obj.wait(status=Status.Ready, statuses=[Status.HttpOk, Status.DONE])
+        _, _, args = selection(call)
+        assert (args["status"], args["statuses"]) == (
+            obj._ctx.converter.unstructure(expected[0]),
+            obj._ctx.converter.unstructure(expected[1]),
+        )
+    to_interface_impl.cache_clear()
 
 
 def query_error() -> dagger.QueryError:

@@ -13,7 +13,9 @@ Older modules don't have that API, and keep the conversion they always had.
 """
 
 import dataclasses
+import enum
 import logging
+import re
 import typing
 from collections.abc import Awaitable, Callable, Iterable
 
@@ -29,9 +31,13 @@ logger = logging.getLogger(__package__)
 CAMEL = "CAMEL"
 PASCAL = "PASCAL"
 SNAKE = "SNAKE"
+SCREAMING_SNAKE = "SCREAMING_SNAKE"
 
 Formatter: typing.TypeAlias = Callable[[list[str], str], Awaitable[list[str]]]
-"""Format names in a casing (``CAMEL``, ``PASCAL`` or ``SNAKE``)."""
+"""Format names in a casing (``CAMEL``, ``PASCAL``, ``SNAKE`` or
+``SCREAMING_SNAKE``)."""
+
+_CONVENTIONAL_ENUM_MEMBER = re.compile(r"[A-Z][A-Z0-9_]*")
 
 
 @dataclasses.dataclass(slots=True)
@@ -48,6 +54,12 @@ class SchemaNames:
     types: dict[type, str] = dataclasses.field(default_factory=dict)
     """Interface type names, from the interface's class."""
 
+    enum_members: dict[type, dict[str, str]] = dataclasses.field(
+        default_factory=dict
+    )
+    """Member names of the module's own enums, by enum class, from the
+    member's Python name."""
+
     def field_name(self, name: str) -> str:
         """The schema name of a function or argument."""
         return self.fields.get(name) or to_camel_case(name)
@@ -56,13 +68,32 @@ class SchemaNames:
         """The schema name of an interface declared in the module."""
         return self.types.get(proto) or main_name + proto.__name__
 
+    def enum_value(self, value: typing.Any) -> typing.Any:
+        """A value as it goes over the wire in a call through an interface.
+
+        A member of one of the module's own enums is sent by its schema name,
+        which the engine formats (``Ready`` is ``READY``); anything else, and
+        any member not found here, is left for the client to convert, which
+        sends a member by its Python name.
+        """
+        if isinstance(value, list | tuple):
+            return [self.enum_value(v) for v in value]
+        if isinstance(value, enum.Enum):
+            if name := self.enum_members.get(type(value), {}).get(value.name):
+                return name
+        return value
+
 
 async def resolve_schema_names(
     main_name: str,
     interfaces: Iterable["ObjectType"],
     formatter: Formatter | None = None,
+    enums: Iterable[type[enum.Enum]] = (),
 ) -> SchemaNames | None:
     """Ask the engine for the schema names of the module's interfaces.
+
+    The member names of the module's own ``enums`` are resolved too, since
+    calls through an interface can pass them.
 
     Returns None if the engine doesn't format the module's names with its
     naming rules (modules older than v1.0.0).
@@ -106,7 +137,40 @@ async def resolve_schema_names(
         else:
             types[proto] = pascal[len(protos) + i]
 
-    return SchemaNames(fields=dict(zip(names, camel, strict=True)), types=types)
+    return SchemaNames(
+        fields=dict(zip(names, camel, strict=True)),
+        types=types,
+        enum_members=await _enum_member_names(enums, formatter),
+    )
+
+
+async def _enum_member_names(
+    enums: Iterable[type[enum.Enum]],
+    formatter: Formatter,
+) -> dict[type, dict[str, str]]:
+    """The schema names of the members of the module's enums, by enum class.
+
+    Like the engine, members already named in GraphQL's convention (``READY``,
+    ``HTTP2``) keep their name; the others are formatted SCREAMING_SNAKE.
+    """
+    enums = list(enums)
+    todo = sorted(
+        {
+            member.name
+            for cls in enums
+            for member in cls
+            if not _CONVENTIONAL_ENUM_MEMBER.fullmatch(member.name)
+        }
+    )
+    formatted = (
+        dict(zip(todo, await formatter(todo, SCREAMING_SNAKE), strict=True))
+        if todo
+        else {}
+    )
+    return {
+        cls: {member.name: formatted.get(member.name, member.name) for member in cls}
+        for cls in enums
+    }
 
 
 async def supports_identifiers() -> bool:

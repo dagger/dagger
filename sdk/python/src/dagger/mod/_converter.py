@@ -136,7 +136,7 @@ def make_method(  # noqa: C901
     def select(obj: Interface, *args, **kwargs):
         bound = func.signature.bind(obj, *args, **kwargs)
         args = [
-            Arg(name=gql_arg_names[arg_name], value=arg_value)
+            Arg(name=gql_arg_names[arg_name], value=names.enum_value(arg_value))
             for arg_name, arg_value in bound.arguments.items()
             if arg_name != "self"
         ]

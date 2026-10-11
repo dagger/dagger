@@ -110,7 +110,11 @@ class Module:
         interfaces = [obj for obj in self._objects.values() if obj.interface]
         if not interfaces:
             return
-        names = await resolve_schema_names(self.main_cls.__name__, interfaces)
+        names = await resolve_schema_names(
+            self.main_cls.__name__,
+            interfaces,
+            enums=self._enums.values(),
+        )
         if names is not None:
             self._schema_names = names
             # Bindings built before now used the older conversion.
