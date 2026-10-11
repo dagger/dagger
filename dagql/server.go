@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"runtime/debug"
 	"slices"
@@ -54,6 +55,11 @@ type Server struct {
 	schemaDigests map[call.View]digest.Digest
 	schemaOnces   map[call.View]*sync.Once
 	schemaLock    *sync.Mutex
+
+	// aliasSchemas are the schemas with their hidden aliases added, and
+	// nameAliases index those aliases; see Aliases. Built with schemas.
+	aliasSchemas map[call.View]*ast.Schema
+	nameAliases  map[call.View]*nameAliases
 
 	installLock  *sync.RWMutex
 	installHooks []InstallHook
@@ -237,6 +243,8 @@ func newBlankServer() *Server {
 		schemaDigests:  make(map[call.View]digest.Digest),
 		schemaOnces:    make(map[call.View]*sync.Once),
 		schemaLock:     &sync.Mutex{},
+		aliasSchemas:   make(map[call.View]*ast.Schema),
+		nameAliases:    make(map[call.View]*nameAliases),
 	}
 	srv.self = weak.Make(srv)
 	return srv
@@ -328,10 +336,17 @@ func (s *Server) invalidateSchemaCache() {
 	clear(s.schemas)
 	clear(s.schemaDigests)
 	clear(s.schemaOnces)
+	clear(s.aliasSchemas)
+	clear(s.nameAliases)
 	s.schemaLock.Unlock()
 }
 
 func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
+	if dag, ok := es.(*Server); ok {
+		// gqlgen validates queries against es.Schema(): give it the schema
+		// that accepts hidden aliases.
+		es = withAliasValidation{dag}
+	}
 	// TODO: avoid this deprecated method, and customize the options
 	srv := handler.NewDefaultServer(es)
 
@@ -957,7 +972,51 @@ func (s *Server) Schema() *ast.Schema {
 	return s.SchemaForView(s.View)
 }
 
+// SchemaForView returns the server's schema in view. It never has hidden
+// aliases (see Aliases): it is what introspection, codegen and the schema
+// JSON file show.
 func (s *Server) SchemaForView(view call.View) *ast.Schema {
+	schema, _, _ := s.schemasForView(view)
+	return schema
+}
+
+// SchemaWithAliases returns the current schema with its hidden aliases added.
+// See SchemaWithAliasesForView.
+func (s *Server) SchemaWithAliases() *ast.Schema {
+	return s.SchemaWithAliasesForView(s.View)
+}
+
+// SchemaWithAliasesForView returns the server's schema in view with the
+// hidden aliases accepted in view added, each marked @deprecated: queries
+// are validated against it. Type aliases are copies of their type; see
+// TypeAliasesForView. It's the schema itself when there are no aliases.
+//
+// Never show it to clients that generate code from it: it's meant for
+// validation, and for runtimes that typecheck against a schema without
+// generating anything from it.
+func (s *Server) SchemaWithAliasesForView(view call.View) *ast.Schema {
+	_, schema, _ := s.schemasForView(view)
+	return schema
+}
+
+// TypeAliasesForView maps the type aliases accepted in view to their
+// canonical type names.
+func (s *Server) TypeAliasesForView(view call.View) map[string]string {
+	_, _, aliases := s.schemasForView(view)
+	return maps.Clone(aliases.Types)
+}
+
+// withAliasValidation is a Server whose Schema is SchemaWithAliases, for
+// gqlgen to validate queries against.
+type withAliasValidation struct {
+	*Server
+}
+
+func (s withAliasValidation) Schema() *ast.Schema {
+	return s.SchemaWithAliases()
+}
+
+func (s *Server) schemasForView(view call.View) (*ast.Schema, *ast.Schema, *nameAliases) {
 	s.reconcileInterfaceImplsIfDirty()
 	s.installLock.RLock()
 	defer s.installLock.RUnlock()
@@ -1041,11 +1100,18 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 		}
 		h := xxh3.New()
 		json.NewEncoder(h).Encode(schema)
+		aliases := s.collectNameAliasesLocked(view, schema)
+		if !aliases.empty() {
+			// Aliases are part of what the schema accepts.
+			json.NewEncoder(h).Encode(aliases)
+		}
 		s.schemas[view] = schema
 		s.schemaDigests[view] = digest.NewDigest(hashutil.XXH3, h)
+		s.aliasSchemas[view] = aliases.schema(schema)
+		s.nameAliases[view] = aliases
 	})
 
-	return s.schemas[view]
+	return s.schemas[view], s.aliasSchemas[view], s.nameAliases[view]
 }
 
 // withoutDirectives returns dirs without the directives named in hidden.
@@ -1146,7 +1212,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (r
 		// nolintlint report the directive as unused in CI while local runs
 		// need it), so the bare directive flaps.
 		//nolint:staticcheck,nolintlint // annoying, but we can't easily switch to this without inconsistencies
-		listErr := validator.Validate(s.Schema(), gqlOp.Doc)
+		listErr := validator.Validate(s.SchemaWithAliases(), gqlOp.Doc)
 		if len(listErr) != 0 {
 			for _, e := range listErr {
 				errcode.Set(e, errcode.ValidationFailed)
@@ -1155,6 +1221,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (r
 		}
 	}
 	results = make(map[string]any)
+	_, _, aliases := s.schemasForView(s.View)
 	for _, op := range gqlOp.Doc.Operations {
 		switch op.Operation {
 		case ast.Query:
@@ -1162,7 +1229,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (r
 				continue
 			}
 			var sels []Selection
-			sels, rerr = s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
+			sels, rerr = s.parseASTSelections(ctx, gqlOp, aliases, s.root.Type(), op.SelectionSet)
 			if rerr != nil {
 				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, rerr)
 			}
@@ -2596,7 +2663,10 @@ func (s *Server) typeConditionMatches(condition string, objectTypeName string) b
 	return false
 }
 
-func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
+// parseASTSelections parses the selections of a query on self into
+// selectors. Aliases (see Aliases) are rewritten to their canonical names
+// here, so the selectors are the ones the canonical query gives.
+func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, aliases *nameAliases, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
 
 	// fieldParser is the common interface for parsing fields from objects and interfaces.
@@ -2630,20 +2700,24 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 				})
 				continue
 			}
-			sel, resType, err := parser.ParseField(ctx, s.View, x, vars)
+			astField, err := aliases.field(ctx, self.Name(), x)
+			if err != nil {
+				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
+			}
+			sel, resType, err := parser.ParseField(ctx, s.View, astField, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
 			}
 			var subsels []Selection
 			if len(x.SelectionSet) > 0 {
-				subsels, err = s.parseASTSelections(ctx, gqlOp, resType, x.SelectionSet)
+				subsels, err = s.parseASTSelections(ctx, gqlOp, aliases, resType, x.SelectionSet)
 				if err != nil {
 					return nil, err
 				}
 			}
 
 			sels = append(sels, Selection{
-				Alias:         x.Alias,
+				Alias:         astField.Alias,
 				Selector:      sel,
 				Subselections: subsels,
 			})
@@ -2652,39 +2726,41 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			if fragment == nil {
 				return nil, fmt.Errorf("unknown fragment: %s", x.Name)
 			}
+			typeCondition := aliases.typeName(ctx, fragment.TypeCondition)
 			// Check type condition: only include if the fragment's type matches
 			// the current object type (or is empty / matches an interface).
-			if s.typeConditionMatches(fragment.TypeCondition, self.Name()) {
+			if s.typeConditionMatches(typeCondition, self.Name()) {
 				if len(fragment.SelectionSet) > 0 {
 					// Parse against the fragment's type condition if it differs
 					// from the current context (e.g. narrowing from an interface).
 					fragSelf := self
-					if fragment.TypeCondition != "" && fragment.TypeCondition != self.Name() {
-						fragSelf = &ast.Type{NamedType: fragment.TypeCondition, NonNull: true}
+					if typeCondition != "" && typeCondition != self.Name() {
+						fragSelf = &ast.Type{NamedType: typeCondition, NonNull: true}
 					}
-					subsels, err := s.parseASTSelections(ctx, gqlOp, fragSelf, fragment.SelectionSet)
+					subsels, err := s.parseASTSelections(ctx, gqlOp, aliases, fragSelf, fragment.SelectionSet)
 					if err != nil {
 						return nil, err
 					}
-					subsels = addTypeCondition(subsels, fragment.TypeCondition)
+					subsels = addTypeCondition(subsels, typeCondition)
 					sels = append(sels, subsels...)
 				}
 			}
 		case *ast.InlineFragment:
+			typeCondition := aliases.typeName(ctx, x.TypeCondition)
 			// If the type condition matches (or is empty), recurse into its selections.
-			if x.TypeCondition == "" || s.typeConditionMatches(x.TypeCondition, self.Name()) {
+			if typeCondition == "" || s.typeConditionMatches(typeCondition, self.Name()) {
 				if len(x.SelectionSet) > 0 {
 					// Parse against the type condition if it narrows from the
 					// current context (e.g. `... on Point` within a Node).
 					fragSelf := self
-					if x.TypeCondition != "" && x.TypeCondition != self.Name() {
-						fragSelf = &ast.Type{NamedType: x.TypeCondition, NonNull: true}
+					if typeCondition != "" && typeCondition != self.Name() {
+						fragSelf = &ast.Type{NamedType: typeCondition, NonNull: true}
 					}
-					subsels, err := s.parseASTSelections(ctx, gqlOp, fragSelf, x.SelectionSet)
+					subsels, err := s.parseASTSelections(ctx, gqlOp, aliases, fragSelf, x.SelectionSet)
 					if err != nil {
 						return nil, err
 					}
-					subsels = addTypeCondition(subsels, x.TypeCondition)
+					subsels = addTypeCondition(subsels, typeCondition)
 					sels = append(sels, subsels...)
 				}
 			}

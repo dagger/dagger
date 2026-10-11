@@ -32,6 +32,7 @@ type Class[T Typed] struct {
 	// Shared across value copies, like fields; cloned when the class is forked.
 	fieldOrder *[]string
 	view       ViewFilter
+	aliases    Aliases
 
 	// interfaces records the interfaces this class implements.
 	// Uses a map (reference type) so it's shared across value copies of Class.
@@ -96,6 +97,10 @@ type ClassOpts[T Typed] struct {
 
 	// View limits the object type and its generated ID/load fields to a schema view.
 	View ViewFilter
+
+	// Aliases are hidden alternate names of the object type, accepted in
+	// fragment type conditions. See Aliases.
+	Aliases Aliases
 }
 
 // NewClass returns a new empty class for a given type.
@@ -118,6 +123,10 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		if o.View != nil {
 			opts.View = o.View
 		}
+
+		if len(o.Aliases.Names) > 0 {
+			opts.Aliases = o.Aliases
+		}
 	}
 
 	class := Class[T]{
@@ -128,6 +137,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		interfaces: map[string]*Interface{},
 		sourceMap:  opts.SourceMap,
 		view:       opts.View,
+		aliases:    opts.Aliases,
 		server:     srv.self,
 	}
 	if !opts.NoIDs {
@@ -229,6 +239,11 @@ func (class Class[T]) View(view ViewFilter) Class[T] {
 
 func (class Class[T]) ViewFilter() ViewFilter {
 	return class.view
+}
+
+// TypeAliases returns the hidden alternate names of the object type.
+func (class Class[T]) TypeAliases() Aliases {
+	return class.aliases
 }
 
 func (class Class[T]) Field(name string, view call.View) (Field[T], bool) {
@@ -973,6 +988,8 @@ type FieldSpec struct {
 	ModuleProvider FieldModuleProvider
 	// Directives is the list of GraphQL directives attached to this field.
 	Directives []*ast.Directive
+	// Aliases are hidden alternate names of the field. See Aliases.
+	Aliases Aliases
 
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
@@ -1142,6 +1159,9 @@ type InputSpec struct {
 	Sensitive bool
 	// Directives is the list of GraphQL directives attached to this input.
 	Directives []*ast.Directive
+	// Aliases are hidden alternate names of the argument. See Aliases. Only
+	// field arguments have them, not input object fields.
+	Aliases Aliases
 
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
@@ -1194,6 +1214,9 @@ func (spec *InputSpec) merge(other *InputSpec) {
 	if other.ViewFilter != nil {
 		spec.ViewFilter = other.ViewFilter
 	}
+	if len(other.Aliases.Names) > 0 {
+		spec.Aliases = other.Aliases
+	}
 	if other.Internal {
 		spec.Internal = other.Internal
 	}
@@ -1244,6 +1267,12 @@ func (arg Argument) Default(input Input) Argument {
 
 func (arg Argument) View(view ViewFilter) Argument {
 	arg.Spec.ViewFilter = view
+	return arg
+}
+
+// WithAliases gives the argument hidden alternate names. See Aliases.
+func (arg Argument) WithAliases(aliases Aliases) Argument {
+	arg.Spec.Aliases = aliases
 	return arg
 }
 
@@ -1692,6 +1721,15 @@ func (field Field[T]) Deprecated(paras ...string) Field[T] {
 	}
 	reason := FormatDescription(paras...)
 	field.Spec.DeprecatedReason = &reason
+	return field
+}
+
+// WithAliases gives the field hidden alternate names. See Aliases.
+func (field Field[T]) WithAliases(aliases Aliases) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.Aliases = aliases
 	return field
 }
 

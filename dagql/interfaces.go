@@ -31,6 +31,7 @@ type Interface struct {
 	relationsL *sync.RWMutex
 	directives []*ast.Directive
 	view       ViewFilter
+	aliases    Aliases
 
 	// implementors tracks which object types implement this interface.
 	// Keys are type names.
@@ -84,6 +85,18 @@ func (iface *Interface) View(view ViewFilter) *Interface {
 
 func (iface *Interface) ViewFilter() ViewFilter {
 	return iface.view
+}
+
+// WithAliases gives the interface type hidden alternate names, accepted in
+// fragment type conditions. See Aliases.
+func (iface *Interface) WithAliases(aliases Aliases) *Interface {
+	iface.aliases = aliases
+	return iface
+}
+
+// TypeAliases returns the hidden alternate names of the interface type.
+func (iface *Interface) TypeAliases() Aliases {
+	return iface.aliases
 }
 
 // AddField adds a field spec to the interface.
