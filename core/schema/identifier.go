@@ -5,7 +5,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/naming"
 )
 
@@ -18,9 +17,9 @@ const identifierExperimental = "Identifier casing APIs are likely to change."
 // identifierVersion is the first engine version with the identifier API. SDK
 // codegen gates on Query.formatIdentifiers being in the schema it generates
 // from, so this is also where codegen starts formatting names through the
-// engine, except at views of modules that keep the legacy naming rules (see
-// formatIdentifiersView).
-const identifierVersion = "v1.0.0-0"
+// engine: the version from which the engine formats module names with its
+// naming rules (core.IdentifierNamingVersion).
+const identifierVersion = core.IdentifierNamingVersion
 
 // formatIdentifiersDoNotCache is why formatIdentifiers skips the cache: it's
 // pure and fast, and caching costs far more than formatting. For the core
@@ -28,19 +27,6 @@ const identifierVersion = "v1.0.0-0"
 // the result to the cache took over 200ms. Nor would a cache hit help much:
 // codegen makes one call per name format, each with different arguments.
 const formatIdentifiersDoNotCache = "Formatting is pure and much cheaper than caching a result with a large list argument."
-
-// formatIdentifiersView is the view filter of Query.formatIdentifiers: the
-// identifier API's views, except those marked for the legacy naming rules
-// (core.LegacyNamingView), which serve modules the engine names with them.
-// formatIdentifiers is the gate SDK codegen and module runtimes use to tell
-// whether names are formatted by the engine's rules, so hiding it there makes
-// a legacy-naming module's codegen and runtime keep the legacy conversion,
-// agreeing with the engine.
-type formatIdentifiersView struct{}
-
-func (formatIdentifiersView) Contains(view call.View) bool {
-	return AfterVersion(identifierVersion).Contains(view) && !core.IsLegacyNamingView(view)
-}
 
 func (s identifierSchema) Install(srv *dagql.Server) {
 	view := AfterVersion(identifierVersion)
@@ -65,7 +51,7 @@ func (s identifierSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("The name to parse."),
 			),
 		dagql.Func("formatIdentifiers", s.formatIdentifiers).
-			View(formatIdentifiersView{}).
+			View(view).
 			DoNotCache(formatIdentifiersDoNotCache).
 			Experimental(identifierExperimental).
 			Doc(`Format many names at once, for codegen. Returns them in input order.`).

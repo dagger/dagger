@@ -147,9 +147,9 @@ func TestNameAliasesView(t *testing.T) {
 	}
 }
 
-// A module keeps the legacy naming rules unless its full engine version,
-// prerelease included, is at least IdentifierNamingVersion: released v1.0.0
-// prereleases were built against strcase.
+// A module gets the new naming rules from the v1.0.0 view on: the gate is
+// base-version granular like every API view, so every v1.0.0 prerelease has
+// them.
 func TestNamerForEngineVersion(t *testing.T) {
 	t.Parallel()
 
@@ -159,9 +159,9 @@ func TestNamerForEngineVersion(t *testing.T) {
 	}{
 		{"v0.19.4", true},
 		{"v0.21.9", true},
-		{"v1.0.0-0", true},
-		{"v1.0.0-beta.15", true},
-		{"v1.0.0-beta.16", true},
+		{"v1.0.0-0", false},
+		{"v1.0.0-beta.15", false},
+		{"v1.0.0-beta.16", false},
 		{"v1.0.0-beta.17", false},
 		{"v1.0.0-beta.17-dev-123", false},
 		{"v1.0.0-dev-123", false},
@@ -172,69 +172,12 @@ func TestNamerForEngineVersion(t *testing.T) {
 	} {
 		require.Equal(t, tc.legacy, NamerForEngineVersion(tc.engineVersion).Legacy(), "engine version %q", tc.engineVersion)
 		src := &ModuleSource{EngineVersion: tc.engineVersion}
-		require.Equal(t, tc.legacy, src.LegacyNaming(), "engine version %q", tc.engineVersion)
 		require.Equal(t, tc.legacy, src.Namer().Legacy(), "engine version %q", tc.engineVersion)
 	}
 }
 
-// A view marked for legacy naming is still the same API view (build metadata
-// is ignored by semver precedence), but names by the legacy rules.
-func TestLegacyNamingView(t *testing.T) {
+func TestIsNamingField(t *testing.T) {
 	t.Parallel()
-
-	for _, view := range []call.View{"v1.0.0", "v1.0.0-beta.17", "v1.2.3+abc"} {
-		marked := LegacyNamingView(view)
-		require.True(t, IsLegacyNamingView(marked), "view %q", view)
-		require.Equal(t, marked, LegacyNamingView(marked), "view %q", view)
-		require.True(t, NamerForView(marked).Legacy(), "view %q", view)
-		require.False(t, NamerForView(view).Legacy(), "view %q", view)
-
-		for _, filter := range []dagql.ViewFilter{
-			AfterVersion("v1.0.0-0"),
-			AfterVersion("v1.0.0-beta.15"),
-			BeforeVersion("v1.0.0-0"),
-			BeforeVersion("v2.0.0"),
-			AllVersion,
-		} {
-			require.Equal(t, filter.Contains(view), filter.Contains(marked), "view %q, filter %v", view, filter)
-		}
-	}
-	require.Equal(t, call.View("v1.0.0+legacy-naming"), LegacyNamingView("v1.0.0"))
-
-	// The latest view and a non-semver view can't be marked.
-	require.Equal(t, call.View(""), LegacyNamingView(""))
-	require.False(t, IsLegacyNamingView(""))
-	require.False(t, IsLegacyNamingView("v1.0.0+other"))
-
-	// __schemaVersion reports the version without the mark.
-	require.Equal(t, call.View("v1.0.0"), UnmarkedView(LegacyNamingView("v1.0.0")))
-	require.Equal(t, call.View("v1.0.0"), UnmarkedView("v1.0.0"))
-	require.Equal(t, call.View(""), UnmarkedView(""))
-}
-
-// A module that keeps the legacy naming rules at a view that has the new
-// ones is served at the marked view; older views need no mark.
-func TestModuleNamingView(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range []struct {
-		engineVersion string
-		entrypoint    bool
-		view          call.View
-	}{
-		{"v1.0.0-beta.17", false, "v1.0.0"},
-		{"v1.0.0", false, "v1.0.0"},
-		{"v1.0.0-beta.16", false, "v1.0.0+legacy-naming"},
-		{"v1.0.0-0", false, "v1.0.0+legacy-naming"},
-		{"v1.0.0-beta.17", true, "v1.0.0+legacy-naming"},
-		{"v0.21.9", false, "v0.21.9"},
-		{"v0.21.9", true, "v0.21.9"},
-	} {
-		require.Equal(t, tc.view, ModuleNamingView(tc.engineVersion, tc.entrypoint),
-			"engine version %q, entrypoint %v", tc.engineVersion, tc.entrypoint)
-		require.True(t, NamerForView(tc.view).Legacy() == (tc.entrypoint || legacyNamingEngineVersion(tc.engineVersion)),
-			"engine version %q, entrypoint %v", tc.engineVersion, tc.entrypoint)
-	}
 
 	for _, tc := range []struct{ typeName, field string }{
 		{"Query", "function"},
@@ -253,8 +196,9 @@ func TestModuleNamingView(t *testing.T) {
 	}
 }
 
-// A module entrypoint (manifest v2) is served at the engine's version, but
-// keeps the legacy naming rules: its names must not change with the engine.
+// A module is served at the view of its engine version, and named by its
+// rules. A module entrypoint (manifest v2) is served at the engine's version,
+// so it gets the new rules too.
 func TestModuleSourceNaming(t *testing.T) {
 	t.Parallel()
 
@@ -262,30 +206,24 @@ func TestModuleSourceNaming(t *testing.T) {
 		EngineVersion: "v1.0.0",
 		Entrypoint:    &modules.ModuleEntrypointConfig{Kind: "dang", Source: "./sdk/entrypoint"},
 	}
-	require.True(t, entrypoint.LegacyNaming())
-	require.True(t, entrypoint.Namer().Legacy())
-	require.Equal(t, call.View("v1.0.0+legacy-naming"), entrypoint.NamingView())
-	require.Equal(t, "getUrl", entrypoint.Namer().FieldName("getUrl"))
-	require.Equal(t, "MyModHttpClient", entrypoint.Namer().NamespaceObject("HttpClient", "my-mod", "my-mod"))
-
-	v1 := &ModuleSource{EngineVersion: "v1.0.0"}
-	require.False(t, v1.LegacyNaming())
-	require.False(t, v1.Namer().Legacy())
-	require.Equal(t, call.View("v1.0.0"), v1.NamingView())
-	require.Equal(t, "getURL", v1.Namer().FieldName("getUrl"))
+	require.False(t, entrypoint.Namer().Legacy())
+	require.Equal(t, call.View("v1.0.0"), entrypoint.NamingView())
+	require.Equal(t, "getURL", entrypoint.Namer().FieldName("getUrl"))
+	require.Equal(t, "MyModHTTPClient", entrypoint.Namer().NamespaceObject("HttpClient", "my-mod", "my-mod"))
 
 	beta := &ModuleSource{EngineVersion: "v1.0.0-beta.16"}
-	require.True(t, beta.LegacyNaming())
-	require.Equal(t, call.View("v1.0.0+legacy-naming"), beta.NamingView())
-	require.Equal(t, "getUrl", beta.Namer().FieldName("getUrl"))
+	require.False(t, beta.Namer().Legacy())
+	require.Equal(t, call.View("v1.0.0"), beta.NamingView())
+	require.Equal(t, "getURL", beta.Namer().FieldName("getUrl"))
 
 	legacy := &ModuleSource{EngineVersion: "v0.21.9"}
-	require.True(t, legacy.LegacyNaming())
 	require.True(t, legacy.Namer().Legacy())
 	require.Equal(t, call.View("v0.21.9"), legacy.NamingView())
+	require.Equal(t, "getUrl", legacy.Namer().FieldName("getUrl"))
 
 	var none *ModuleSource
-	require.False(t, none.LegacyNaming())
+	require.Equal(t, call.View(""), none.NamingView())
+	require.False(t, none.Namer().Legacy())
 
 	require.False(t, (&Module{}).Namer().Legacy(), "a module without a source is named by the latest rules")
 }

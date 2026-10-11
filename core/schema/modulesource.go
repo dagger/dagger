@@ -1099,8 +1099,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	engineVersion := modCfg.EngineVersion
 	if modCfg.Entrypoint != nil {
 		// An entrypoint module declares no engine version: it gets the
-		// engine's API, but not its naming rules (see
-		// core.ModuleSource.LegacyNaming).
+		// engine's API and naming rules.
 		engineVersion = engine.Version
 	}
 	switch engineVersion {
@@ -4403,7 +4402,7 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
-	deps, err := s.defaultSchemaBuilderForView(ctx, core.ModuleNamingView(engineVersion, src.Self().Entrypoint != nil))
+	deps, err := s.defaultSchemaBuilderForView(ctx, call.View(engine.APIViewVersion(engineVersion)))
 	if err != nil {
 		return nil, err
 	}

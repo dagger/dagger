@@ -203,7 +203,7 @@ func buildSchemaJSON(hiddenTypes, hiddenFields []string, view call.View, srv *da
 	dagqlSchema := introspection.WrapSchema(schema)
 
 	introspectionResponse := codegenintrospection.Response{
-		SchemaVersion: string(core.UnmarkedView(view)),
+		SchemaVersion: string(view),
 		Schema:        &codegenintrospection.Schema{},
 	}
 	if queryName := dagqlSchema.QueryType().Name(); queryName != nil {

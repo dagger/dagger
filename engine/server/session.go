@@ -1569,9 +1569,8 @@ func (srv *Server) initializeClientRuntime(
 
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from: the view of the
-		// engine version it declares, marked when it keeps the legacy naming
-		// rules (see core.ModuleSource.NamingView), so the typedefs its
-		// runtime declares are named by those rules
+		// engine version it declares, whose naming rules the typedefs its
+		// runtime declares are named by (see core.ModuleSource.NamingView)
 		coreView = client.mod.Self().Source.Value.Self().NamingView()
 		client.dag.View = coreView
 		coreMod = coreSchemaBase.CoreMod(coreView)

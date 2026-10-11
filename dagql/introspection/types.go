@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
-	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -24,18 +23,12 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		}).WithInput(dagql.PerCallInput),
 
 		// custom dagger field
-		//
-		// It reports the view without build metadata: a view's build metadata
-		// distinguishes otherwise equal API views (Dagger marks the views of
-		// modules that keep legacy naming rules), and consumers parse this as
-		// the engine version the schema stands for.
 		dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
 			call := dagql.CurrentCall(ctx)
 			if call == nil {
 				return "", fmt.Errorf("missing current call")
 			}
-			view := string(call.View)
-			return strings.TrimSuffix(view, semver.Build(view)), nil
+			return string(call.View), nil
 		}).View(dagql.AllView{}),
 
 		dagql.Func("__type", func(ctx context.Context, self T, args struct {

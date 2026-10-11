@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/iancoleman/strcase"
-	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -29,24 +28,21 @@ func formatGqlDescription(desc string) string {
 	return "\n" + strings.TrimSpace(desc) + "\n"
 }
 
-// IdentifierNamingVersion is the first engine version whose modules have
-// their names normalized by engine/naming. Modules that declare an older
-// engineVersion keep the strcase rules they were built against, byte for
-// byte. See hack/designs/identifier-casing.md, "The gate".
+// IdentifierNamingVersion is the first engine version whose names are
+// normalized by engine/naming: modules that declare it or later in their
+// engineVersion, and modules served at the engine's own version (manifest v2
+// entrypoints). Modules that declare an older engineVersion keep the strcase
+// rules they were built against, byte for byte. See
+// hack/designs/identifier-casing.md, "The gate".
 //
-// It's compared with a module's full engineVersion, prerelease included
-// (v1.0.0-beta.16 is older), unlike API views, which are base-version
-// granular: modules that declare a released prerelease of v1.0.0 were built
-// against the strcase rules and must keep them. Bump it to the first release
-// that contains identifier naming if this lands later.
-const IdentifierNamingVersion = "v1.0.0-beta.17"
+// The gate is an API view, so it's base-version granular like every view
+// (engine.APIViewVersion): every v1.0.0 prerelease shares the v1.0.0 view and
+// gets the new rules.
+const IdentifierNamingVersion = "v1.0.0-0"
 
-// identifierNamingView is the API view from which the typedef constructors
-// name with engine/naming: the view of IdentifierNamingVersion. Views are
-// base-version granular, so it contains every v1.0.0 prerelease; a module
-// older than IdentifierNamingVersion is served at a view marked by
-// LegacyNamingView instead (see ModuleSource.NamingView).
-var identifierNamingView = AfterVersion(engine.BaseVersion(IdentifierNamingVersion) + "-0")
+// identifierNamingView is the API views whose names follow engine/naming:
+// the views of IdentifierNamingVersion and later.
+var identifierNamingView = AfterVersion(IdentifierNamingVersion)
 
 // NameAliases returns hidden aliases (dagql.Aliases) for the old spellings of
 // a type, field or argument that the new naming rules renamed. They're
@@ -82,120 +78,32 @@ var (
 )
 
 // NamerForView returns the Namer for an API view. The empty view is the
-// latest, as it is for AfterVersion. A view marked by LegacyNamingView gets
-// the legacy rules.
+// latest, as it is for AfterVersion.
 func NamerForView(view call.View) Namer {
-	if IsLegacyNamingView(view) {
-		return LegacyNamer
-	}
 	if !identifierNamingView.Contains(view) {
 		return LegacyNamer
 	}
 	return Namer{dict: naming.DictionaryFor(string(view))}
 }
 
-// legacyNamingBuild is the semver build metadata that marks a view as naming
-// with the legacy rules (see LegacyNamingView).
-const legacyNamingBuild = "+legacy-naming"
-
-// LegacyNamingView marks view so that the typedef constructors called in it
-// name declarations by the legacy strcase rules, whatever its version, while
-// it stays the same API view: views compare by semver precedence, which
-// ignores build metadata, so every view filter treats the marked view like
-// view. The mark is part of the view, and so of the call and its cache key:
-// a typedef loaded from its ID is named the same way again.
-//
-// A module that keeps the legacy naming rules at a view that has the new ones
-// (a module entrypoint, or a module that declares a v1.0.0 prerelease older
-// than IdentifierNamingVersion) is served at the marked view; see
-// ModuleSource.NamingView. The empty (latest) view can't be marked, and is
-// returned as is.
-func LegacyNamingView(view call.View) call.View {
-	if view == "" || !semver.IsValid(string(view)) {
-		return view
-	}
-	return UnmarkedView(view) + legacyNamingBuild
-}
-
-// IsLegacyNamingView reports whether view was marked by LegacyNamingView.
-func IsLegacyNamingView(view call.View) bool {
-	return semver.Build(string(view)) == legacyNamingBuild
-}
-
-// UnmarkedView is view without a LegacyNamingView mark (or any other build
-// metadata): the engine version it stands for, as __schemaVersion reports
-// it. SDK codegen parses that version, not always as semver.
-func UnmarkedView(view call.View) call.View {
-	return call.View(strings.TrimSuffix(string(view), semver.Build(string(view))))
-}
-
 // NamerForEngineVersion returns the Namer for a module that declares
 // engineVersion in its dagger.json.
 func NamerForEngineVersion(engineVersion string) Namer {
-	if legacyNamingEngineVersion(engineVersion) {
-		return LegacyNamer
-	}
 	return NamerForView(call.View(engine.APIViewVersion(engineVersion)))
 }
 
-// legacyNamingEngineVersion reports whether a module that declares
-// engineVersion keeps the legacy naming rules: it's older than
-// IdentifierNamingVersion, comparing full versions, prerelease included, or
-// it isn't a valid version. Not a view comparison: views are base-version
-// granular, and every v1.0.0 prerelease shares the v1.0.0 view.
-func legacyNamingEngineVersion(engineVersion string) bool {
-	version := engine.NormalizeVersion(engineVersion)
-	if !semver.IsValid(version) {
-		return true
-	}
-	return semver.Compare(version, IdentifierNamingVersion) < 0
-}
-
-// LegacyNaming reports whether the engine names the module's declarations by
-// the legacy rules: true for a module that declares an engine version older
-// than IdentifierNamingVersion, and for a module entrypoint (manifest v2).
-//
-// An entrypoint module declares no engineVersion: the engine serves it at its
-// own version. Naming it by that version would rename an existing module's
-// functions and arguments (getUrl to getURL) when the engine ships the naming
-// rules, and again with each dictionary addition, while its entrypoint's
-// calls and its callers keep the names it was generated with. Its names have
-// to be pinned when the entrypoint is generated instead; until the manifest
-// can say so, it keeps the legacy rules. See
-// hack/designs/identifier-casing.md, "Module entrypoints".
-func (src *ModuleSource) LegacyNaming() bool {
-	return src != nil && (src.Entrypoint != nil || legacyNamingEngineVersion(src.EngineVersion))
-}
-
 // NamingView is the API view the module is served at, and whose naming rules
-// name its declarations: the view of its engine version, marked by
-// LegacyNamingView when the module keeps the legacy naming rules (see
-// LegacyNaming) and that view would otherwise have the new ones. Views older
-// than the naming rules need no mark, so modules that declare them keep
-// sharing results with every other client at their view.
+// name its declarations: the view of its engine version. A module entrypoint
+// (manifest v2) declares none: it's served at the engine's own version.
 func (src *ModuleSource) NamingView() call.View {
 	if src == nil {
 		return ""
 	}
-	return ModuleNamingView(src.EngineVersion, src.Entrypoint != nil)
-}
-
-// ModuleNamingView is ModuleSource.NamingView for a module that declares
-// engineVersion, or is a module entrypoint.
-func ModuleNamingView(engineVersion string, entrypoint bool) call.View {
-	view := call.View(engine.APIViewVersion(engineVersion))
-	legacy := entrypoint || legacyNamingEngineVersion(engineVersion)
-	if legacy && !NamerForView(view).Legacy() {
-		view = LegacyNamingView(view)
-	}
-	return view
+	return call.View(engine.APIViewVersion(src.EngineVersion))
 }
 
 // Namer normalizes the names the module declares: the rules of NamingView.
 func (src *ModuleSource) Namer() Namer {
-	if src.LegacyNaming() {
-		return LegacyNamer
-	}
 	return NamerForView(src.NamingView())
 }
 
