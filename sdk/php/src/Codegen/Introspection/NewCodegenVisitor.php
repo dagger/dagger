@@ -28,16 +28,16 @@ use Nette\PhpGenerator\Method;
  * When the engine formatted the schema's names (engine views v1.0.0 and
  * above, which have Query.formatIdentifiers), PHP names are the engine's:
  *
+ *   - classes: PASCAL / CAPITALIZED (Llm, SdkConfig, JsonValue), with a
+ *     #[GraphQLType] attribute naming the type they stand for when it's
+ *     spelled differently (see className());
  *   - methods and their parameters: CAMEL / CAPITALIZED, acronyms written
  *     like words as Symfony and Laravel do (filterUri, withGpu, callId);
  *   - enum cases: SCREAMING_SNAKE (PER_SESSION), keeping the schema name
  *     where that would collide with another value's case (Gzip vs GZIP).
  *
  * Otherwise every name falls back to the legacy conversion, so older
- * schemas generate byte-identical code. Class names always use the legacy
- * conversion: PHP class names are case-insensitive, so reformatting them
- * would only rename files, which breaks PSR-4 autoloading of the old
- * spelling on case-sensitive filesystems.
+ * schemas generate byte-identical code.
  *
  * Only PHP identifiers change. Everything sent over the wire (field names,
  * argument names, input object fields, enum values) and every GraphQL type
@@ -53,6 +53,7 @@ class NewCodegenVisitor extends CodeWriter
      */
     public const NAME_FORMATS = [
         [Casing::CAMEL, AcronymStyle::CAPITALIZED],
+        [Casing::PASCAL, AcronymStyle::CAPITALIZED],
         [Casing::SCREAMING_SNAKE, AcronymStyle::UPPERCASE],
     ];
 
@@ -667,12 +668,33 @@ class NewCodegenVisitor extends CodeWriter
 
     private function formatPhpClassName(string $objectName): string
     {
-        $objectName = str_replace(['ID', 'JSON'], ['Id', 'Json'], $objectName);
+        $objectName = $this->className($objectName);
 
         return match ($objectName) {
             'Function' => 'Function_',
             default => $objectName,
         };
+    }
+
+    /**
+     * The PHP name of the class generated for a type: PASCAL / CAPITALIZED,
+     * acronyms written like words as PSR-1 code does (Llm, SdkConfig,
+     * HttpState), when the engine formatted the schema's names. Otherwise,
+     * the legacy conversion: ID and JSON written Id and Json, the rest as
+     * the schema has it.
+     *
+     * Only letter case ever changes. PHP class names are case-insensitive,
+     * so the old spelling still names the same class; LegacyClassNames
+     * finds its file on case-sensitive filesystems.
+     */
+    private function className(string $typeName): string
+    {
+        $formatted = $this->names?->format($typeName, Casing::PASCAL, AcronymStyle::CAPITALIZED);
+        if ($formatted !== null && strcasecmp($formatted, $typeName) === 0) {
+            return $formatted;
+        }
+
+        return str_replace(['ID', 'JSON'], ['Id', 'Json'], $typeName);
     }
 
     private function formatPhpFqcn(string $className): string

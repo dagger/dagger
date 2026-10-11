@@ -13,6 +13,7 @@ import (
 // NewCodegenVisitor::NAME_FORMATS.
 var phpNameFormats = []names.Format{
 	{Casing: string(dagger.CasingCamel), Acronyms: string(dagger.AcronymStyleCapitalized)},
+	{Casing: string(dagger.CasingPascal), Acronyms: string(dagger.AcronymStyleCapitalized)},
 	{Casing: string(dagger.CasingScreamingSnake), Acronyms: string(dagger.AcronymStyleUppercase)},
 }
 

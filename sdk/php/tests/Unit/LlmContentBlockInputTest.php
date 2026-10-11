@@ -5,31 +5,31 @@ declare(strict_types=1);
 namespace Dagger\Tests\Unit;
 
 use Dagger\Bytes;
-use Dagger\LLMContentBlockInput;
-use Dagger\LLMContentBlockKind;
+use Dagger\LlmContentBlockInput;
+use Dagger\LlmContentBlockKind;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 #[Group('unit')]
-#[CoversClass(LLMContentBlockInput::class)]
-class LLMContentBlockInputTest extends TestCase
+#[CoversClass(LlmContentBlockInput::class)]
+class LlmContentBlockInputTest extends TestCase
 {
     #[Test]
     public function itAcceptsAListOfToolResultContentBlocks(): void
     {
-        $text = new LLMContentBlockInput(
-            LLMContentBlockKind::TEXT, 'caption', '', '', null, false, '',
+        $text = new LlmContentBlockInput(
+            LlmContentBlockKind::TEXT, 'caption', '', '', null, false, '',
             '', null, null, null,
         );
-        $image = new LLMContentBlockInput(
-            LLMContentBlockKind::IMAGE, '', '', '', null, false, '',
+        $image = new LlmContentBlockInput(
+            LlmContentBlockKind::IMAGE, '', '', '', null, false, '',
             'image/png', new Bytes('aW1hZ2U='), null, null,
         );
         foreach ([null, [], [$text], [$text, $image]] as $content) {
-            $result = new LLMContentBlockInput(
-                LLMContentBlockKind::TOOL_RESULT, '', 'call-id', '', null, false, '',
+            $result = new LlmContentBlockInput(
+                LlmContentBlockKind::TOOL_RESULT, '', 'call-id', '', null, false, '',
                 '', null, null, $content,
             );
 

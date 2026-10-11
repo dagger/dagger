@@ -181,6 +181,62 @@ class NewCodegenVisitorTest extends TestCase
         self::assertSame([], $this->generate($jsonValue)->getAttributes());
     }
 
+    #[Test]
+    public function itNamesClassesFromFormattedNames(): void
+    {
+        $string = ['kind' => 'SCALAR', 'name' => 'String'];
+        $llm = IntrospectionType::fromArray([
+            'kind' => 'OBJECT',
+            'name' => 'LLM',
+            'fields' => [
+                [
+                    'name' => 'sdk',
+                    'type' => ['kind' => 'NON_NULL', 'ofType' => ['kind' => 'OBJECT', 'name' => 'SDKConfig']],
+                ],
+                [
+                    'name' => 'state',
+                    'type' => ['kind' => 'OBJECT', 'name' => 'HTTPState'],
+                ],
+                ['name' => 'model', 'type' => ['kind' => 'NON_NULL', 'ofType' => $string]],
+            ],
+        ]);
+        $names = new FormattedNames([
+            'PASCAL:CAPITALIZED' => [
+                'LLM' => 'Llm',
+                'SDKConfig' => 'SdkConfig',
+                'HTTPState' => 'HttpState',
+                // not just a change of case: keep the legacy conversion
+                'model' => 'Model',
+                'Artifacts' => 'ArtifactS_',
+            ],
+        ]);
+
+        $class = $this->generate($llm, $names);
+        self::assertSame('Llm', $class->getName());
+        $attributes = $class->getAttributes();
+        self::assertCount(1, $attributes);
+        self::assertSame(GraphQLType::class, $attributes[0]->getName());
+        self::assertSame(['LLM'], $attributes[0]->getArguments());
+
+        self::assertStringEndsWith('Dagger\SdkConfig', (string)$class->getMethod('sdk')->getReturnType());
+        // a nullable object is loaded by ID under its GraphQL type name
+        $state = $class->getMethod('state');
+        self::assertStringEndsWith('Dagger\HttpState', (string)$state->getReturnType());
+        self::assertStringContainsString(
+            "loadObjectFromId(\\Dagger\\HttpState::class, new \\Dagger\\Id((string)\$id), 'HTTPState')",
+            $state->getBody(),
+        );
+
+        $artifacts = IntrospectionType::fromArray(['kind' => 'OBJECT', 'name' => 'Artifacts', 'fields' => []]);
+        self::assertSame('Artifacts', $this->generate($artifacts, $names)->getName());
+
+        // older schemas keep the class names they had
+        $legacy = $this->generate($llm);
+        self::assertSame('LLM', $legacy->getName());
+        self::assertStringEndsWith('Dagger\SDKConfig', (string)$legacy->getMethod('sdk')->getReturnType());
+        self::assertSame([], $legacy->getAttributes());
+    }
+
     private function generate(
         IntrospectionType $type,
         ?FormattedNames $names = null,
