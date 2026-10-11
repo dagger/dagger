@@ -14,19 +14,19 @@ import (
 // the schema. naming.go formats Go identifiers from schema names; this is the
 // other direction, from Go source names to schema names.
 
-// identifierNamingVersion is the first engine version whose modules the
-// engine names with engine/naming (core.IdentifierNamingVersion); older
-// modules keep the strcase rules. The -0 prerelease floor includes every
-// v1.0.0 prerelease, like the engine's view gate.
-const identifierNamingVersion = "v1.0.0-0"
-
 // moduleNamer names the module's own types, fields, arguments and enum
-// members the way the engine does for the module's engine version (see
-// core.Namer in core/gqlformat.go): engine/naming from
-// identifierNamingVersion, strcase before. The bindings the module calls
-// itself through, and the schema it merges its types into, must use the
-// engine's names or the references break. cmd/codegen cannot import core
-// (core imports cmd/codegen/introspection), so keep this in sync.
+// members the way the engine does for the module (see core.Namer in
+// core/gqlformat.go): engine/naming with the dictionary of the module's
+// schema version when the engine names the module with it, strcase
+// otherwise. The bindings the module calls itself through, and the schema it
+// merges its types into, must use the engine's names or the references break.
+// cmd/codegen cannot import core (core imports cmd/codegen/introspection), so
+// keep this in sync.
+//
+// The engine serves a module it names by the legacy rules at a view without
+// Query.formatIdentifiers, so that field's presence in the schema the module
+// is generated from is the gate, the same one SDK codegen and the module
+// runtimes use, and the engine and codegen can't disagree.
 //
 // The zero moduleNamer is the legacy strcase one.
 type moduleNamer struct {
@@ -41,13 +41,10 @@ func (funcs goTemplateFuncs) moduleNamer() moduleNamer {
 	if schema == nil {
 		schema = funcs.schema
 	}
-	if funcs.schemaVersion == "" || funcs.CommonFunctions == nil {
-		// No version is the latest, as for the engine's views.
-		return moduleNamer{dict: naming.Latest, schema: schema}
-	}
-	if !funcs.CheckVersionCompatibility(identifierNamingVersion) {
+	if !schema.HasFormatIdentifiers() {
 		return moduleNamer{schema: schema}
 	}
+	// No version is the latest, as for the engine's views.
 	return moduleNamer{dict: naming.DictionaryFor(funcs.schemaVersion), schema: schema}
 }
 
