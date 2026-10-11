@@ -2,11 +2,14 @@ package io.dagger.codegen.introspection;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
+import com.palantir.javapoet.AnnotationSpec;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterSpec;
 import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import javax.lang.model.element.Modifier;
 
@@ -74,16 +77,76 @@ public class Helpers {
 
   static ClassName convertScalarToObject(String typeName, String expectedType) {
     if (expectedType != null && !expectedType.isEmpty()) {
-      return ClassName.bestGuess(expectedType);
+      return className(expectedType);
     }
     if (typeName.endsWith("ID") && typeName.length() > 2) {
-      return ClassName.bestGuess(typeName.substring(0, typeName.length() - 2));
+      return className(typeName.substring(0, typeName.length() - 2));
     }
-    return ClassName.bestGuess(typeName);
+    return className(typeName);
   }
 
   static ClassName convertScalarToObject(String typeName) {
     return convertScalarToObject(typeName, null);
+  }
+
+  /**
+   * The class names the engine formatted for the schema's types (PascalCase with acronyms written
+   * like words, see {@link FormattedNames#TYPES}), keyed by GraphQL type name; empty when the
+   * schema isn't formatted. Set with the schema's formatted names (see {@link
+   * Schema#setFormattedNames}).
+   */
+  private static Map<String, String> javaTypeNames = Map.of();
+
+  static void setJavaTypeNames(Map<String, String> names) {
+    javaTypeNames = names == null ? Map.of() : names;
+  }
+
+  /** Whether class names follow Java's convention, from formatted names. */
+  static boolean formatsTypeNames() {
+    return !javaTypeNames.isEmpty();
+  }
+
+  /**
+   * The Java class name of a GraphQL type: the name the engine formatted ({@code JsonValue} for
+   * {@code JSONValue}), else the schema name. The Query type is the {@code Client} class. Strings
+   * sent to the API (inline fragments, node lookups, typedefs) always use the GraphQL type name.
+   */
+  static String javaTypeName(String typeName) {
+    if ("Query".equals(typeName)) {
+      return "Client";
+    }
+    String formatted = javaTypeNames.get(typeName);
+    if (formatted == null || formatted.isEmpty()) {
+      return capitalize(typeName);
+    }
+    return formatted;
+  }
+
+  /** The class of a GraphQL type (see {@link #javaTypeName}). */
+  static ClassName className(String typeName) {
+    return ClassName.bestGuess(javaTypeName(typeName));
+  }
+
+  /**
+   * The class instantiated for values of a GraphQL type: the type's class, or for an interface the
+   * {@code FooClient} class implementing it.
+   */
+  static String instanceClassName(String typeName, boolean isInterface) {
+    return isInterface ? javaTypeName(typeName) + "Client" : javaTypeName(typeName);
+  }
+
+  /**
+   * Marks a generated class with the GraphQL type it stands for, when its name differs from the
+   * type's: the runtime reads it wherever it sends a class's type name to the API.
+   */
+  static void addGraphQLType(TypeSpec.Builder builder, String typeName, String className) {
+    if ("Query".equals(typeName) || typeName.equals(className)) {
+      return;
+    }
+    builder.addAnnotation(
+        AnnotationSpec.builder(ClassName.get("io.dagger.client", "GraphQLType"))
+            .addMember("value", "$S", typeName)
+            .build());
   }
 
   /**
@@ -145,11 +208,7 @@ public class Helpers {
   }
 
   static String formatName(Type type) {
-    if ("Query".equals(type.getName())) {
-      return "Client";
-    } else {
-      return capitalize(type.getName());
-    }
+    return javaTypeName(type.getName());
   }
 
   /**

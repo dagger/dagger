@@ -14,8 +14,6 @@ import com.palantir.javapoet.TypeSpec;
 import io.dagger.client.Dagger;
 import io.dagger.client.FunctionCall;
 import io.dagger.client.FunctionCallArgValue;
-import io.dagger.client.ID;
-import io.dagger.client.JSON;
 import io.dagger.client.JsonConverter;
 import io.dagger.client.TypeDef;
 import io.dagger.client.exception.DaggerExecException;
@@ -374,11 +372,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   }
 
   static JavaFile generate(ModuleInfo moduleInfo) {
+    ClassName idClass = DaggerType.ID_CLASS;
+    ClassName jsonClass = DaggerType.JSON_CLASS;
     try {
       var rm =
           MethodSpec.methodBuilder("register")
               .addModifiers(Modifier.PRIVATE)
-              .returns(ID.class)
+              .returns(idClass)
               .addException(ExecutionException.class)
               .addException(DaggerQueryException.class)
               .addException(InterruptedException.class)
@@ -449,13 +449,15 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       var im =
           MethodSpec.methodBuilder("invoke")
               .addModifiers(Modifier.PRIVATE)
-              .returns(JSON.class)
+              .returns(jsonClass)
               .addException(Exception.class)
-              .addParameter(JSON.class, "parentJson")
+              .addParameter(jsonClass, "parentJson")
               .addParameter(String.class, "parentName")
               .addParameter(String.class, "fnName")
               .addParameter(
-                  ParameterizedTypeName.get(Map.class, String.class, JSON.class), "inputArgs");
+                  ParameterizedTypeName.get(
+                      ClassName.get(Map.class), ClassName.get(String.class), jsonClass),
+                  "inputArgs");
       var firstObj = true;
       for (var objectInfo : moduleInfo.objects()) {
         if (firstObj) {
@@ -537,7 +539,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .beginControlFlow("try")
                               .addStatement("$T parentName = fnCall.parentName()", String.class)
                               .addStatement("$T fnName = fnCall.name()", String.class)
-                              .addStatement("$T parentJson = fnCall.parent()", JSON.class)
+                              .addStatement("$T parentJson = fnCall.parent()", jsonClass)
                               .addStatement(
                                   "$T fnArgs = fnCall.inputArgs()",
                                   ParameterizedTypeName.get(List.class, FunctionCallArgValue.class))
@@ -545,16 +547,16 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                   "$T<$T, $T> inputArgs = new $T<>()",
                                   Map.class,
                                   String.class,
-                                  JSON.class,
+                                  jsonClass,
                                   HashMap.class)
                               .beginControlFlow(
                                   "for ($T fnArg : fnArgs)", FunctionCallArgValue.class)
                               .addStatement("inputArgs.put(fnArg.name(), fnArg.value())")
                               .endControlFlow()
                               .addCode("\n")
-                              .addStatement("$T result", JSON.class)
+                              .addStatement("$T result", jsonClass)
                               .beginControlFlow("if (parentName.isEmpty())")
-                              .addStatement("$T modID = register()", ID.class)
+                              .addStatement("$T modID = register()", idClass)
                               .addStatement("result = $T.toJSON(modID)", JsonConverter.class)
                               .nextControlFlow("else")
                               .addStatement(
@@ -744,7 +746,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         }
         if (hasDefaultValue) {
           code.add(
-              ".withDefaultValue($T.from($S))", JSON.class, parameterInfo.defaultValue().get());
+              ".withDefaultValue($T.from($S))",
+              DaggerType.JSON_CLASS,
+              parameterInfo.defaultValue().get());
         }
         if (hasDefaultPath) {
           code.add(".withDefaultPath($S)", parameterInfo.defaultPath().get());

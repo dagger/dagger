@@ -89,8 +89,61 @@ class FormattedNamesCodegenTest {
         .contains("private String name;")
         .doesNotContain("@JsonbProperty(\"name\")");
 
-    // Enum constants are serialized by name: they keep the schema's values.
-    assertThat(read("FunctionCachePolicy")).contains("PerSession").doesNotContain("PER_SESSION");
+    // Enum constants are SCREAMING_SNAKE_CASE, carrying the schema values they go over the wire as.
+    // The old constants stay as deprecated aliases.
+    assertThat(read("FunctionCachePolicy"))
+        .contains("public enum FunctionCachePolicy implements GraphQLEnum")
+        .contains("@JsonbTypeSerializer(GraphQLEnumSerializer.class)")
+        .contains("@JsonbTypeDeserializer(GraphQLEnumDeserializer.class)")
+        .contains("DEFAULT(\"Default\")")
+        .contains("PER_SESSION(\"PerSession\")")
+        .contains("public static final FunctionCachePolicy PerSession = PER_SESSION;")
+        .contains("public static final FunctionCachePolicy Default = DEFAULT;")
+        .contains("@deprecated Use {@link #PER_SESSION} instead.")
+        .contains("public String graphQLValue()")
+        .contains("public boolean hasGraphQLValue(String value)")
+        .doesNotContain("@GraphQLType");
+    // A value and its alias share a constant, sent as the first value and read back as either.
+    assertThat(read("ImageLayerCompression"))
+        .contains("GZIP(\"Gzip\", \"GZIP\")")
+        .contains("TCP(\"TCP\")")
+        .contains("public static final ImageLayerCompression Gzip = GZIP;")
+        .doesNotContain("ImageLayerCompression GZIP =")
+        .doesNotContain("ImageLayerCompression TCP =");
+    // Enums returned by fields are still read by class.
+    assertThat(container)
+        .contains("public ImageLayerCompression compression()")
+        .contains("return nextQueryBuilder.executeQuery(ImageLayerCompression.class)");
+
+    // Classes follow Java's convention, and name their GraphQL type when it differs.
+    assertThat(read("JsonValue"))
+        .contains("@GraphQLType(\"JSONValue\")")
+        .contains("public class JsonValue implements IDAble<Id>")
+        .contains("public Json contents()")
+        .contains("nodeQueryBuilder(\"JSONValue\", new Id(id))");
+    assertThat(read("Json"))
+        .contains("@GraphQLType(\"JSON\")")
+        .contains("public class Json extends Scalar<String>");
+    assertThat(read("Id")).contains("@GraphQLType(\"ID\")").contains("public class Id extends");
+    assertThat(read("Container"))
+        .contains("public class Container implements Node, IDAble<Id>")
+        .doesNotContain("@GraphQLType")
+        // Lists of objects instantiate the classes, but select the GraphQL type.
+        .contains("public List<JsonValue> values()")
+        .contains("nextQueryBuilder.executeObjectListQuery(\"JSONValue\")")
+        .contains("new JsonValue(qb)");
+    assertThat(read("BuildArg")).doesNotContain("@GraphQLType");
+    // Loading by ID reads the class's GraphQL type.
+    assertThat(read("Client"))
+        .contains("public <T> T loadObjectFromID(Class<T> clazz, Id id)")
+        .contains("GraphQLType graphQLType = clazz.getAnnotation(GraphQLType.class);")
+        .contains("this.queryBuilder.chainNode(typeName, id)")
+        .doesNotContain("@GraphQLType");
+    // JSON conversions go through the enums' values.
+    assertThat(read("JsonConverter"))
+        .contains("public static Json toJSON(Object object)")
+        .contains("GraphQLEnums.value((Enum<?>) object)")
+        .contains("GraphQLEnums.valueOf(clazz, jsonb.fromJson(json, String.class))");
   }
 
   @Test
@@ -106,6 +159,9 @@ class FormattedNamesCodegenTest {
         .contains(
             "public WithMCPServerArguments withInsecureSkipTLSVerify(Boolean insecureSkipTLSVerify)")
         .contains("public Container importTarball(String source)")
+        .contains("public class Container implements Node, IDAble<ID>")
+        .contains("public List<JSONValue> values()")
+        .contains("new JSONValue(qb)")
         .doesNotContain("htmlUrl")
         .doesNotContain("@Deprecated");
     assertThat(read("Node")).contains("String htmlURL() throws").doesNotContain("default");
@@ -114,12 +170,30 @@ class FormattedNamesCodegenTest {
         .contains("map.put(\"insecureSkipTLSVerify\", this.insecureSkipTLSVerify)")
         .doesNotContain("JsonbProperty")
         .doesNotContain("@Deprecated");
+    // Classes and enum constants keep the schema's names.
+    assertThat(read("JSONValue")).contains("public class JSONValue").doesNotContain("GraphQLType");
+    assertThat(read("JSON")).contains("public class JSON").doesNotContain("GraphQLType");
+    assertThat(read("ID")).contains("public class ID").doesNotContain("GraphQLType");
+    assertThat(read("FunctionCachePolicy"))
+        .contains("PerSession")
+        .doesNotContain("PER_SESSION")
+        .doesNotContain("GraphQLEnum");
+    assertThat(read("ImageLayerCompression")).contains("Gzip,").contains("GZIP");
+    assertThat(read("Client"))
+        .contains("this.queryBuilder.chainNode(clazz.getSimpleName(), id)")
+        .doesNotContain("GraphQLType");
+    assertThat(read("JsonConverter"))
+        .contains("public static JSON toJSON(Object object)")
+        .doesNotContain("GraphQLEnums");
+    assertThat(output.resolve("io/dagger/client/Json.java")).doesNotExist();
   }
 
   @Test
   void keepsSchemaNamesMissingFromTheNames() throws Exception {
-    Map<String, String> names = names();
-    names.remove("withMCPServer");
+    Map<String, Map<String, String>> names = names();
+    names.get(FormattedNames.MEMBERS).remove("withMCPServer");
+    names.get(FormattedNames.TYPES).remove("JSONValue");
+    names.get(FormattedNames.ENUM_VALUES).remove("PerSession");
     generate(names);
 
     // Its argument is still renamed.
@@ -128,14 +202,39 @@ class FormattedNamesCodegenTest {
         .contains("public static class WithMCPServerArguments")
         .contains("private Boolean insecureSkipTlsVerify;")
         .contains("public Container withGpu(List<String> devices)")
+        .contains("public List<JSONValue> values()")
         .doesNotContain("withMcpServer");
+    assertThat(read("JSONValue")).doesNotContain("GraphQLType").contains("IDAble<Id>");
+    assertThat(read("FunctionCachePolicy"))
+        .contains("DEFAULT(\"Default\")")
+        .contains("PerSession(\"PerSession\")")
+        .doesNotContain("PER_SESSION");
+  }
+
+  @Test
+  void keepsTheFormatsMissingFromTheNames() throws Exception {
+    // A names file with member names only (as written before class and constant names were
+    // formatted) keeps the schema's class names and enum constants.
+    Map<String, Map<String, String>> names = names();
+    names.remove(FormattedNames.TYPES);
+    names.remove(FormattedNames.ENUM_VALUES);
+    generate(names);
+
+    assertThat(read("Container"))
+        .contains("public String htmlUrl()")
+        .contains("public class Container implements Node, IDAble<ID>");
+    assertThat(read("JSONValue")).doesNotContain("GraphQLType");
+    assertThat(read("FunctionCachePolicy"))
+        .contains("Default,")
+        .contains("PerSession\n")
+        .doesNotContain("GraphQLEnum");
   }
 
   private void generate(boolean withNames) throws Exception {
     generate(withNames ? names() : null);
   }
 
-  private void generate(Map<String, String> names) throws Exception {
+  private void generate(Map<String, Map<String, String>> names) throws Exception {
     Schema schema;
     try (InputStream in = resource("formatted-names.json")) {
       schema = Schema.initialize(in, "v1.0.0");
@@ -144,7 +243,7 @@ class FormattedNamesCodegenTest {
     schema.visit(new CodegenVisitor(schema, output, StandardCharsets.UTF_8));
   }
 
-  private static Map<String, String> names() throws Exception {
+  private static Map<String, Map<String, String>> names() throws Exception {
     try (InputStream in = resource("formatted-names.names.json")) {
       return FormattedNames.read(in);
     }

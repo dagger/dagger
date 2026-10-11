@@ -25,6 +25,7 @@ class InputVisitor extends AbstractVisitor {
             .addJavadoc(Helpers.escapeJavadoc(type.getDescription()))
             .addModifiers(Modifier.PUBLIC)
             .addSuperinterface(ClassName.bestGuess("InputValue"));
+    Helpers.addGraphQLType(classBuilder, type.getName(), Helpers.formatName(type));
 
     List<MethodSpec> methods = new ArrayList<>();
     List<String> legacyNames = new ArrayList<>();

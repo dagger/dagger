@@ -83,7 +83,7 @@ public class TypeDefTest {
 
   @Test
   public void testTypeDefEnum() throws ClassNotFoundException {
-    var v = ImageMediaTypes.DockerMediaTypes;
+    var v = ImageMediaTypes.DOCKER_MEDIA_TYPES;
     assertThat(
             DaggerType.of(new TypeInfo(v.getClass().getCanonicalName(), TypeKind.DECLARED.name()))
                 .toDaggerTypeDef()
@@ -92,8 +92,23 @@ public class TypeDefTest {
   }
 
   @Test
+  public void testTypeDefRenamedClass() throws ClassNotFoundException {
+    // SDK classes named by Java's convention register as their GraphQL types.
+    assertThat(
+            DaggerType.of(new TypeInfo("io.dagger.client.JsonValue", TypeKind.DECLARED.name()))
+                .toDaggerTypeDef()
+                .toString())
+        .isEqualTo("io.dagger.client.Dagger.dag().typeDef().withObject(\"JSONValue\")");
+    assertThat(
+            DaggerType.of(new TypeInfo("io.dagger.client.Json", TypeKind.DECLARED.name()))
+                .toDaggerTypeDef()
+                .toString())
+        .isEqualTo("io.dagger.client.Dagger.dag().typeDef().withScalar(\"JSON\")");
+  }
+
+  @Test
   public void testTypeDefUserDefinedEnum() throws ClassNotFoundException {
-    var v = ImageMediaTypes.DockerMediaTypes;
+    var v = ImageMediaTypes.DOCKER_MEDIA_TYPES;
     Set<String> enums = new HashSet<>();
     enums.add("io.dagger.java.module.Severity");
     DaggerType.setKnownEnums(enums);

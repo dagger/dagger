@@ -32,10 +32,11 @@ class ObjectVisitor extends AbstractVisitor {
                 FieldSpec.builder(
                         ClassName.bestGuess("QueryBuilder"), "queryBuilder", Modifier.PRIVATE)
                     .build());
+    Helpers.addGraphQLType(classBuilder, type.getName(), Helpers.formatName(type));
 
     // Add implements for any interfaces this object implements
     for (String ifaceName : type.getImplementedInterfaceNames()) {
-      classBuilder.addSuperinterface(ClassName.bestGuess(ifaceName));
+      classBuilder.addSuperinterface(Helpers.className(ifaceName));
     }
 
     if ("Query".equals(type.getName())) {
@@ -62,25 +63,7 @@ class ObjectVisitor extends AbstractVisitor {
       classBuilder.addMethod(closeMethod);
 
       // loadObjectFromID: load any object by its ID using node(id:) + inline fragment
-      classBuilder.addMethod(
-          MethodSpec.methodBuilder("loadObjectFromID")
-              .addModifiers(Modifier.PUBLIC)
-              .addTypeVariable(TypeVariableName.get("T"))
-              .returns(TypeVariableName.get("T"))
-              .addParameter(
-                  ParameterizedTypeName.get(ClassName.get(Class.class), TypeVariableName.get("T")),
-                  "clazz")
-              .addParameter(ClassName.bestGuess("ID"), "id")
-              .addJavadoc("Load any object by its ID using node(id:) with an inline fragment.\n")
-              .beginControlFlow("try")
-              .addStatement(
-                  "QueryBuilder qb = this.queryBuilder.chainNode(clazz.getSimpleName(), id)")
-              .addStatement(
-                  "return clazz.getDeclaredConstructor(QueryBuilder.class).newInstance(qb)")
-              .nextControlFlow("catch (Exception e)")
-              .addStatement("throw new RuntimeException(\"Failed to load object from ID\", e)")
-              .endControlFlow()
-              .build());
+      classBuilder.addMethod(loadObjectFromID());
 
       // nodeQueryBuilder: create a QueryBuilder for node(id:) + inline fragment
       classBuilder.addMethod(
@@ -88,7 +71,7 @@ class ObjectVisitor extends AbstractVisitor {
               .addModifiers(Modifier.PUBLIC)
               .returns(ClassName.bestGuess("QueryBuilder"))
               .addParameter(ClassName.get(String.class), "typeName")
-              .addParameter(ClassName.bestGuess("ID"), "id")
+              .addParameter(Helpers.className("ID"), "id")
               .addJavadoc(
                   "Create a QueryBuilder for node(id:) scoped to the given type via an inline fragment.\n")
               .addStatement("return this.queryBuilder.chainNode(typeName, id)")
@@ -106,7 +89,7 @@ class ObjectVisitor extends AbstractVisitor {
       if (type.providesId()) {
         // With unified IDs, id() returns the ID scalar type
         classBuilder.addSuperinterface(
-            ParameterizedTypeName.get(ClassName.bestGuess("IDAble"), ClassName.bestGuess("ID")));
+            ParameterizedTypeName.get(ClassName.bestGuess("IDAble"), Helpers.className("ID")));
         classBuilder.addAnnotation(
             AnnotationSpec.builder(JsonbTypeSerializer.class)
                 .addMember("value", "$T.class", ClassName.bestGuess("IDAbleSerializer"))
@@ -141,7 +124,7 @@ class ObjectVisitor extends AbstractVisitor {
                             ClassName.bestGuess(Helpers.formatName(type)),
                             ClassName.bestGuess("io.dagger.client.Dagger"),
                             type.getName(),
-                            ClassName.bestGuess("ID"))
+                            Helpers.className("ID"))
                         .addStatement("return o")
                         .build())
                 .build());
@@ -190,6 +173,41 @@ class ObjectVisitor extends AbstractVisitor {
     return classBuilder.build();
   }
 
+  /**
+   * Client.loadObjectFromID: loads any object by its ID with node(id:) and an inline fragment on
+   * the class's GraphQL type. Classes named apart from their type carry it in {@code @GraphQLType}.
+   */
+  private static MethodSpec loadObjectFromID() {
+    MethodSpec.Builder builder =
+        MethodSpec.methodBuilder("loadObjectFromID")
+            .addModifiers(Modifier.PUBLIC)
+            .addTypeVariable(TypeVariableName.get("T"))
+            .returns(TypeVariableName.get("T"))
+            .addParameter(
+                ParameterizedTypeName.get(ClassName.get(Class.class), TypeVariableName.get("T")),
+                "clazz")
+            .addParameter(Helpers.className("ID"), "id")
+            .addJavadoc("Load any object by its ID using node(id:) with an inline fragment.\n")
+            .beginControlFlow("try");
+    if (Helpers.formatsTypeNames()) {
+      ClassName graphQLType = ClassName.get("io.dagger.client", "GraphQLType");
+      builder
+          .addStatement("$T graphQLType = clazz.getAnnotation($T.class)", graphQLType, graphQLType)
+          .addStatement(
+              "String typeName = graphQLType != null ? graphQLType.value() : clazz.getSimpleName()")
+          .addStatement("QueryBuilder qb = this.queryBuilder.chainNode(typeName, id)");
+    } else {
+      builder.addStatement(
+          "QueryBuilder qb = this.queryBuilder.chainNode(clazz.getSimpleName(), id)");
+    }
+    return builder
+        .addStatement("return clazz.getDeclaredConstructor(QueryBuilder.class).newInstance(qb)")
+        .nextControlFlow("catch (Exception e)")
+        .addStatement("throw new RuntimeException(\"Failed to load object from ID\", e)")
+        .endControlFlow()
+        .build();
+  }
+
   private TypeName resolveArgType(InputObject arg, Field field) {
     // For Query.node(id: ID!), keep as raw ID scalar type
     if ("Query".equals(field.getParentObject().getName()) && "id".equals(arg.getName())) {
@@ -206,7 +224,7 @@ class ObjectVisitor extends AbstractVisitor {
     }
     if (Helpers.isIdToConvert(field)) {
       // ID handle: return the object the ID resolves to
-      return ClassName.bestGuess(Helpers.idHandleType(field));
+      return Helpers.className(Helpers.idHandleType(field));
     }
     String expectedType = field.getExpectedType();
     return field.getTypeRef().formatInput(expectedType);
@@ -285,10 +303,10 @@ class ObjectVisitor extends AbstractVisitor {
     }
 
     if (field.getTypeRef().isListOfObject()) {
-      String objName = field.getTypeRef().getListElementType().getName();
+      TypeRef elementType = field.getTypeRef().getListElementType();
+      String objName = elementType.getName();
       // For interface list elements, use the client class
-      String clientClassName =
-          field.getTypeRef().getListElementType().isInterface() ? objName + "Client" : objName;
+      String clientClassName = Helpers.instanceClassName(objName, elementType.isInterface());
       fieldMethodBuilder.addStatement(
           "nextQueryBuilder = nextQueryBuilder.chain(List.of($S))", "id");
       fieldMethodBuilder.addStatement(
@@ -302,7 +320,7 @@ class ObjectVisitor extends AbstractVisitor {
     } else if (field.getTypeRef().isList()) {
       fieldMethodBuilder.addStatement(
           "return nextQueryBuilder.executeListQuery($L.class)",
-          field.getTypeRef().getListElementType().getName());
+          Helpers.javaTypeName(field.getTypeRef().getListElementType().getName()));
       fieldMethodBuilder
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)
@@ -311,11 +329,12 @@ class ObjectVisitor extends AbstractVisitor {
       // Resolve the ID, then address the object it names through node(id:)
       fieldMethodBuilder.addStatement(
           "$T objectID = nextQueryBuilder.executeQuery($T.class)",
-          ClassName.bestGuess("ID"),
-          ClassName.bestGuess("ID"));
+          Helpers.className("ID"),
+          Helpers.className("ID"));
       // Interfaces are instantiated through their client class, like object returns
       String handleType = Helpers.idHandleType(field);
-      String handleClass = getSchema().isInterface(handleType) ? handleType + "Client" : handleType;
+      String handleClass =
+          Helpers.instanceClassName(handleType, getSchema().isInterface(handleType));
       fieldMethodBuilder.addStatement(
           "return new $T(this.queryBuilder.chainNode($S, objectID))",
           ClassName.bestGuess(handleClass),
@@ -330,7 +349,7 @@ class ObjectVisitor extends AbstractVisitor {
       String graphqlTypeName = field.getTypeRef().getTypeName();
       String clientClassName =
           field.getTypeRef().isInterface()
-              ? graphqlTypeName + "Client"
+              ? Helpers.instanceClassName(graphqlTypeName, true)
               : objectReturnType.toString();
       fieldMethodBuilder.addStatement(
           "QueryBuilder objectQueryBuilder = nextQueryBuilder.executeNullableObjectQuery($S)",
@@ -346,7 +365,8 @@ class ObjectVisitor extends AbstractVisitor {
       // For interface return types, instantiate the client class
       if (field.getTypeRef().isInterface()) {
         String ifaceName = field.getTypeRef().getTypeName();
-        fieldMethodBuilder.addStatement("return new $LClient(nextQueryBuilder)", ifaceName);
+        fieldMethodBuilder.addStatement(
+            "return new $L(nextQueryBuilder)", Helpers.instanceClassName(ifaceName, true));
       } else {
         fieldMethodBuilder.addStatement("return new $L(nextQueryBuilder)", returnType);
       }

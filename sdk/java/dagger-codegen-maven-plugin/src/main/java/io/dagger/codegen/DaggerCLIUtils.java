@@ -136,10 +136,11 @@ public class DaggerCLIUtils {
   }
 
   /**
-   * Formats the names of a schema through the dagger CLI's engine, for Java identifiers. Returns
-   * null when the schema has no Query.formatIdentifiers (see {@link FormattedNames#fetch}).
+   * Formats the names of a schema through the dagger CLI's engine, for Java identifiers, keyed by
+   * format. Returns null when the schema has no Query.formatIdentifiers (see {@link
+   * FormattedNames#fetch}).
    */
-  public static Map<String, String> formatNames(byte[] schemaJson, String binPath)
+  public static Map<String, Map<String, String>> formatNames(byte[] schemaJson, String binPath)
       throws IOException, InterruptedException {
     return FormattedNames.fetch(
         schemaJson,

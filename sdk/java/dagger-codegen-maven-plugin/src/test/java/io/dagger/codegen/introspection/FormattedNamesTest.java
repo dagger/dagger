@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import jakarta.json.Json;
 import jakarta.json.JsonArrayBuilder;
 import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
 import jakarta.json.JsonReader;
 import jakarta.json.JsonString;
 import jakarta.json.JsonValue;
@@ -25,36 +26,43 @@ class FormattedNamesTest {
   private record Request(String query, JsonObject variables) {}
 
   /**
-   * Fakes the engine: answers formatIdentifiers with each name prefixed by "fmt_", and records the
-   * requests.
+   * Fakes the engine: answers each formatIdentifiers alias (f0, f1, ...) with each name prefixed by
+   * the alias, and records the requests.
    */
   private static FormattedNames.QueryRunner engine(List<Request> requests) {
     return (query, variables) -> {
       JsonObject vars = read(variables);
       requests.add(new Request(query, vars));
-      JsonArrayBuilder out = Json.createArrayBuilder();
-      for (JsonValue name : vars.getJsonArray("names")) {
-        out.add("fmt_" + ((JsonString) name).getString());
+      JsonObjectBuilder data = Json.createObjectBuilder();
+      for (int i = 0; i < FormattedNames.FORMATS.size(); i++) {
+        JsonArrayBuilder out = Json.createArrayBuilder();
+        for (JsonValue name : vars.getJsonArray("names")) {
+          out.add("f" + i + "_" + ((JsonString) name).getString());
+        }
+        data.add("f" + i, out);
       }
-      return stream(Json.createObjectBuilder().add("formatIdentifiers", out).build().toString());
+      return stream(data.build().toString());
     };
   }
 
   @Test
   void formatsNamesWhenTheSchemaHasFormatIdentifiers() throws Exception {
     List<Request> requests = new ArrayList<>();
-    Map<String, String> names = FormattedNames.fetch(schema(true), engine(requests));
+    Map<String, Map<String, String>> names = FormattedNames.fetch(schema(true), engine(requests));
 
     assertThat(requests).hasSize(1);
     Request request = requests.get(0);
-    // The names go as a variable, in one camelCase request with acronyms written like words.
+    // The names go as a variable, in one request formatting them in every format Java uses:
+    // camelCase members and PascalCase classes with acronyms written like words, and
+    // SCREAMING_SNAKE_CASE enum constants.
     assertThat(request.query())
         .contains("$names: [String!]!")
-        .contains("$casing: Casing!")
-        .contains("$acronyms: AcronymStyle")
-        .contains("formatIdentifiers(names: $names, casing: $casing, acronyms: $acronyms)");
-    assertThat(request.variables().getString("casing")).isEqualTo("CAMEL");
-    assertThat(request.variables().getString("acronyms")).isEqualTo("CAPITALIZED");
+        .contains("f0: formatIdentifiers(names: $names, casing: CAMEL, acronyms: CAPITALIZED)")
+        .contains("f1: formatIdentifiers(names: $names, casing: PASCAL, acronyms: CAPITALIZED)")
+        .contains(
+            "f2: formatIdentifiers(names: $names, casing: SCREAMING_SNAKE, acronyms: UPPERCASE)");
+    assertThat(FormattedNames.FORMATS)
+        .containsExactly(FormattedNames.MEMBERS, FormattedNames.TYPES, FormattedNames.ENUM_VALUES);
     // Type, field, argument and enum value names, sorted, leaving out introspection names and
     // names with no letters or digits.
     assertThat(request.variables().getJsonArray("names").getValuesAs(JsonString::getString))
@@ -68,16 +76,21 @@ class FormattedNamesTest {
             "htmlURL",
             "names");
 
-    // Results map back to the names in input order.
-    assertThat(names)
-        .containsEntry("htmlURL", "fmt_htmlURL")
-        .containsEntry("SHARED", "fmt_SHARED")
+    // Results map back to the names in input order, keyed by format like a names file.
+    assertThat(names).containsOnlyKeys(FormattedNames.FORMATS);
+    assertThat(names.get("CAMEL:CAPITALIZED"))
+        .containsEntry("htmlURL", "f0_htmlURL")
+        .containsEntry("SHARED", "f0_SHARED")
+        .hasSize(8);
+    assertThat(names.get("PASCAL:CAPITALIZED")).containsEntry("Kind", "f1_Kind").hasSize(8);
+    assertThat(names.get("SCREAMING_SNAKE:UPPERCASE"))
+        .containsEntry("SHARED", "f2_SHARED")
         .hasSize(8);
   }
 
   @Test
   void formatsNothingWithoutFormatIdentifiers() throws Exception {
-    Map<String, String> names =
+    Map<String, Map<String, String>> names =
         FormattedNames.fetch(
             schema(false),
             (query, variables) -> {
@@ -99,7 +112,7 @@ class FormattedNamesTest {
             + fields
             + "]}]}}";
     List<Request> requests = new ArrayList<>();
-    Map<String, String> names =
+    Map<String, Map<String, String>> names =
         FormattedNames.fetch(json.getBytes(StandardCharsets.UTF_8), engine(requests));
 
     assertThat(requests).hasSize(2);
@@ -108,7 +121,7 @@ class FormattedNamesTest {
           .isLessThanOrEqualTo(FormattedNames.BATCH_BYTES);
     }
     // Query, formatIdentifiers and field0..field3999.
-    assertThat(names).hasSize(4002).containsEntry("Query", "fmt_Query");
+    assertThat(names.get(FormattedNames.MEMBERS)).hasSize(4002).containsEntry("Query", "f0_Query");
   }
 
   @Test
@@ -123,19 +136,32 @@ class FormattedNamesTest {
     assertThatThrownBy(
             () ->
                 FormattedNames.fetch(
-                    schema(true), (query, variables) -> stream("{\"formatIdentifiers\":[\"x\"]}")))
+                    schema(true),
+                    (query, variables) -> stream("{\"f0\":[\"x\"],\"f1\":[\"x\"],\"f2\":[\"x\"]}")))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("sent 8 names, got 1 back");
   }
 
   @Test
   void readsTheNamesFile() throws Exception {
-    Map<String, String> names =
+    Map<String, Map<String, String>> names =
         FormattedNames.read(
             stream(
                 "{\"CAMEL:CAPITALIZED\":{\"withGPU\":\"withGpu\"},"
+                    + "\"PASCAL:CAPITALIZED\":{\"JSONValue\":\"JsonValue\"},"
+                    + "\"SCREAMING_SNAKE:UPPERCASE\":{\"PerSession\":\"PER_SESSION\"},"
                     + "\"SNAKE:UPPERCASE\":{\"withGPU\":\"with_gpu\"}}"));
-    assertThat(names).containsExactly(Map.entry("withGPU", "withGpu"));
+    // The formats Java codegen uses, leaving the others out.
+    assertThat(names).containsOnlyKeys(FormattedNames.FORMATS);
+    assertThat(names.get(FormattedNames.MEMBERS)).containsExactly(Map.entry("withGPU", "withGpu"));
+    assertThat(names.get(FormattedNames.TYPES))
+        .containsExactly(Map.entry("JSONValue", "JsonValue"));
+    assertThat(names.get(FormattedNames.ENUM_VALUES))
+        .containsExactly(Map.entry("PerSession", "PER_SESSION"));
+
+    // A file with only some of the formats has only those.
+    assertThat(FormattedNames.read(stream("{\"CAMEL:CAPITALIZED\":{\"a\":\"a\"}}")))
+        .containsOnlyKeys(FormattedNames.MEMBERS);
 
     // The names file of a schema without Query.formatIdentifiers is empty.
     assertThat(FormattedNames.read(stream("{}"))).isNull();

@@ -90,6 +90,32 @@
             ],
             "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "OBJECT", "name": "Container", "ofType": null}},
             "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "values", "description": "The container's values.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "LIST", "name": null, "ofType": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "OBJECT", "name": "JSONValue", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "compression", "description": "The container's compression.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "ENUM", "name": "ImageLayerCompression", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          }
+        ]
+      },
+      {
+        "kind": "OBJECT", "name": "JSONValue", "description": "A JSON value.",
+        "interfaces": [],
+        "fields": [
+          {
+            "name": "id", "description": "The value's ID.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "contents", "description": "The value as JSON.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "JSON", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
           }
         ]
       },
@@ -113,7 +139,16 @@
           {"name": "PerSession", "description": "Once per session.", "isDeprecated": false, "deprecationReason": null}
         ]
       },
+      {
+        "kind": "ENUM", "name": "ImageLayerCompression", "description": "A compression.",
+        "enumValues": [
+          {"name": "Gzip", "description": "Gzip.", "isDeprecated": false, "deprecationReason": null},
+          {"name": "TCP", "description": "Not a compression.", "isDeprecated": false, "deprecationReason": null},
+          {"name": "GZIP", "description": "Gzip, again.", "isDeprecated": false, "deprecationReason": null}
+        ]
+      },
       {"kind": "SCALAR", "name": "ID", "description": "An ID."},
+      {"kind": "SCALAR", "name": "JSON", "description": "A JSON value."},
       {"kind": "SCALAR", "name": "String", "description": "A string."},
       {"kind": "SCALAR", "name": "Boolean", "description": "A boolean."}
     ]

@@ -1,6 +1,7 @@
 package io.dagger.codegen.introspection;
 
 import jakarta.json.bind.annotation.JsonbProperty;
+import jakarta.json.bind.annotation.JsonbTransient;
 
 public class EnumValue {
 
@@ -11,6 +12,17 @@ public class EnumValue {
   private boolean deprecated; // isDeprecated
 
   private String DeprecationReason;
+
+  /** The Java constant name the engine formatted for this value, or null. */
+  @JsonbTransient private String formattedName;
+
+  public String getFormattedName() {
+    return formattedName;
+  }
+
+  public void setFormattedName(String formattedName) {
+    this.formattedName = formattedName;
+  }
 
   public String getName() {
     return name;

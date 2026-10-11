@@ -38,13 +38,14 @@ class InterfaceVisitor extends AbstractVisitor {
         TypeSpec.interfaceBuilder(Helpers.formatName(type))
             .addJavadoc(Helpers.escapeJavadoc(type.getDescription()))
             .addModifiers(Modifier.PUBLIC);
+    Helpers.addGraphQLType(interfaceBuilder, type.getName(), Helpers.formatName(type));
 
     // With unified IDs, an interface exposing an id field is IDAble like any
     // object, so interface-typed values (e.g. Node args) marshal by ID through
     // the existing Arguments.Builder overloads.
     if (type.providesId()) {
       interfaceBuilder.addSuperinterface(
-          ParameterizedTypeName.get(ClassName.bestGuess("IDAble"), ClassName.bestGuess("ID")));
+          ParameterizedTypeName.get(ClassName.bestGuess("IDAble"), Helpers.className("ID")));
     }
 
     if (type.getFields() != null) {
@@ -119,6 +120,7 @@ class InterfaceVisitor extends AbstractVisitor {
                 FieldSpec.builder(
                         ClassName.bestGuess("QueryBuilder"), "queryBuilder", Modifier.PRIVATE)
                     .build());
+    Helpers.addGraphQLType(classBuilder, type.getName(), Helpers.formatName(type));
 
     // Constructor
     MethodSpec constructor =
@@ -187,9 +189,9 @@ class InterfaceVisitor extends AbstractVisitor {
     }
 
     if (field.getTypeRef().isListOfObject()) {
-      String objName = field.getTypeRef().getListElementType().getName();
-      String clientClassName =
-          field.getTypeRef().getListElementType().isInterface() ? objName + "Client" : objName;
+      TypeRef elementType = field.getTypeRef().getListElementType();
+      String objName = elementType.getName();
+      String clientClassName = Helpers.instanceClassName(objName, elementType.isInterface());
       fieldMethodBuilder.addStatement(
           "nextQueryBuilder = nextQueryBuilder.chain(List.of($S))", "id");
       fieldMethodBuilder.addStatement(
@@ -203,7 +205,7 @@ class InterfaceVisitor extends AbstractVisitor {
     } else if (field.getTypeRef().isList()) {
       fieldMethodBuilder.addStatement(
           "return nextQueryBuilder.executeListQuery($L.class)",
-          field.getTypeRef().getListElementType().getName());
+          Helpers.javaTypeName(field.getTypeRef().getListElementType().getName()));
       fieldMethodBuilder
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)
@@ -212,11 +214,12 @@ class InterfaceVisitor extends AbstractVisitor {
       // Resolve the ID, then address the object it names through node(id:)
       fieldMethodBuilder.addStatement(
           "$T objectID = nextQueryBuilder.executeQuery($T.class)",
-          ClassName.bestGuess("ID"),
-          ClassName.bestGuess("ID"));
+          Helpers.className("ID"),
+          Helpers.className("ID"));
       // Interfaces are instantiated through their client class, like object returns
       String handleType = Helpers.idHandleType(field);
-      String handleClass = getSchema().isInterface(handleType) ? handleType + "Client" : handleType;
+      String handleClass =
+          Helpers.instanceClassName(handleType, getSchema().isInterface(handleType));
       fieldMethodBuilder.addStatement(
           "return new $T(this.queryBuilder.chainNode($S, objectID))",
           ClassName.bestGuess(handleClass),
@@ -231,7 +234,7 @@ class InterfaceVisitor extends AbstractVisitor {
       String graphqlTypeName = field.getTypeRef().getTypeName();
       String clientClassName =
           field.getTypeRef().isInterface()
-              ? graphqlTypeName + "Client"
+              ? Helpers.instanceClassName(graphqlTypeName, true)
               : objectReturnType.toString();
       fieldMethodBuilder.addStatement(
           "QueryBuilder objectQueryBuilder = nextQueryBuilder.executeNullableObjectQuery($S)",
@@ -248,7 +251,8 @@ class InterfaceVisitor extends AbstractVisitor {
       // For interface return types, instantiate the client class
       if (field.getTypeRef().isInterface()) {
         fieldMethodBuilder.addStatement(
-            "return new $LClient(nextQueryBuilder)", field.getTypeRef().getTypeName());
+            "return new $L(nextQueryBuilder)",
+            Helpers.instanceClassName(field.getTypeRef().getTypeName(), true));
       } else {
         fieldMethodBuilder.addStatement("return new $L(nextQueryBuilder)", objectType);
       }
@@ -273,7 +277,7 @@ class InterfaceVisitor extends AbstractVisitor {
     }
     if (Helpers.isIdToConvert(field)) {
       // ID handle: return the object the ID resolves to
-      return ClassName.bestGuess(Helpers.idHandleType(field));
+      return Helpers.className(Helpers.idHandleType(field));
     }
     String expectedType = field.getExpectedType();
     return field.getTypeRef().formatInput(expectedType);

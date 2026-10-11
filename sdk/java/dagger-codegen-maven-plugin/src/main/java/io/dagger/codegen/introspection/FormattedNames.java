@@ -17,10 +17,12 @@ import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
- * Schema names formatted by the engine, for the Java names of members, parameters, setters and
- * accessors: camelCase with acronyms written like words ({@code asJson}, {@code withGpu}). Codegen
- * doesn't parse names itself; it asks the engine with {@code Query.formatIdentifiers}, or reads the
- * names file an online step wrote (see "Formatting names in codegen" in
+ * Schema names formatted by the engine, for Java identifiers in Java's own conventions: members,
+ * parameters, setters and accessors in camelCase with acronyms written like words ({@code asJson},
+ * {@code withGpu}), classes in PascalCase with acronyms written like words ({@code JsonValue},
+ * {@code Llm}), and enum constants in SCREAMING_SNAKE_CASE ({@code PER_SESSION}). Codegen doesn't
+ * parse names itself; it asks the engine with {@code Query.formatIdentifiers}, or reads the names
+ * file an online step wrote (see "Formatting names in codegen" in
  * hack/designs/identifier-casing.md).
  *
  * <p>The gate is the schema being generated: without {@code Query.formatIdentifiers} (schema views
@@ -28,14 +30,17 @@ import java.util.regex.Pattern;
  */
 public final class FormattedNames {
 
-  /** The casing of the names Java codegen uses: a value of the engine's Casing enum. */
-  public static final String CASING = "CAMEL";
+  /** The key of the member names (methods, parameters, accessors) in a names file. */
+  public static final String MEMBERS = "CAMEL:CAPITALIZED";
 
-  /** The acronym style of the names Java codegen uses: an AcronymStyle value. */
-  public static final String ACRONYMS = "CAPITALIZED";
+  /** The key of the class names in a names file. */
+  public static final String TYPES = "PASCAL:CAPITALIZED";
 
-  /** The key of the names Java codegen uses in a names file. */
-  public static final String FORMAT = CASING + ":" + ACRONYMS;
+  /** The key of the enum constant names in a names file. */
+  public static final String ENUM_VALUES = "SCREAMING_SNAKE:UPPERCASE";
+
+  /** The formats Java codegen uses, keyed like a names file: {@code CASING:ACRONYMS}. */
+  public static final List<String> FORMATS = List.of(MEMBERS, TYPES, ENUM_VALUES);
 
   /**
    * Bounds the size of the names sent per request. The names go to {@code dagger query} as a
@@ -43,13 +48,28 @@ public final class FormattedNames {
    */
   static final int BATCH_BYTES = 64 << 10;
 
-  static final String QUERY =
-      "query FormatIdentifiers($names: [String!]!, $casing: Casing!, $acronyms: AcronymStyle) {"
-          + " formatIdentifiers(names: $names, casing: $casing, acronyms: $acronyms) }";
+  /** Formats a batch of names in every format of {@link #FORMATS}, one alias per format. */
+  static final String QUERY = query();
 
   private static final Pattern HAS_ALNUM = Pattern.compile("[A-Za-z0-9]");
 
   private FormattedNames() {}
+
+  private static String query() {
+    StringBuilder query = new StringBuilder("query FormatIdentifiers($names: [String!]!) {");
+    for (int i = 0; i < FORMATS.size(); i++) {
+      String[] format = FORMATS.get(i).split(":");
+      query
+          .append(" f")
+          .append(i)
+          .append(": formatIdentifiers(names: $names, casing: ")
+          .append(format[0])
+          .append(", acronyms: ")
+          .append(format[1])
+          .append(")");
+    }
+    return query.append(" }").toString();
+  }
 
   /** Runs a GraphQL query with variables against the engine and returns its data as JSON. */
   @FunctionalInterface
@@ -58,39 +78,45 @@ public final class FormattedNames {
   }
 
   /**
-   * Formats the names of a schema through the engine, in batches. Returns null, formatting nothing,
-   * when the schema has no {@code Query.formatIdentifiers}.
+   * Formats the names of a schema through the engine, in batches, in every format Java codegen
+   * uses. Returns the names keyed by format ({@link #MEMBERS}, {@link #TYPES}, {@link
+   * #ENUM_VALUES}), like a names file, or null, formatting nothing, when the schema has no {@code
+   * Query.formatIdentifiers}.
    */
-  public static Map<String, String> fetch(byte[] schemaJson, QueryRunner runner)
+  public static Map<String, Map<String, String>> fetch(byte[] schemaJson, QueryRunner runner)
       throws IOException, InterruptedException {
     JsonObject root = read(schemaJson);
     if (!hasFormatIdentifiers(root)) {
       return null;
     }
-    Map<String, String> formatted = new HashMap<>();
+    Map<String, Map<String, String>> formatted = new HashMap<>();
+    for (String format : FORMATS) {
+      formatted.put(format, new HashMap<>());
+    }
     for (List<String> batch : batches(names(root), BATCH_BYTES)) {
       String variables =
           Json.createObjectBuilder()
               .add("names", Json.createArrayBuilder(batch))
-              .add("casing", CASING)
-              .add("acronyms", ACRONYMS)
               .build()
               .toString();
       JsonObject data;
       try (InputStream in = runner.query(QUERY, variables)) {
         data = read(in.readAllBytes());
       }
-      JsonValue result = data.get("formatIdentifiers");
-      if (!(result instanceof JsonArray)) {
-        throw new IOException("format names: no formatIdentifiers in the response");
-      }
-      JsonArray out = (JsonArray) result;
-      if (out.size() != batch.size()) {
-        throw new IOException(
-            "format names: sent " + batch.size() + " names, got " + out.size() + " back");
-      }
-      for (int i = 0; i < batch.size(); i++) {
-        formatted.put(batch.get(i), out.getString(i));
+      for (int i = 0; i < FORMATS.size(); i++) {
+        JsonValue result = data.get("f" + i);
+        if (!(result instanceof JsonArray)) {
+          throw new IOException("format names: no formatIdentifiers in the response");
+        }
+        JsonArray out = (JsonArray) result;
+        if (out.size() != batch.size()) {
+          throw new IOException(
+              "format names: sent " + batch.size() + " names, got " + out.size() + " back");
+        }
+        Map<String, String> names = formatted.get(FORMATS.get(i));
+        for (int j = 0; j < batch.size(); j++) {
+          names.put(batch.get(j), out.getString(j));
+        }
       }
     }
     return formatted;
@@ -98,22 +124,28 @@ public final class FormattedNames {
 
   /**
    * Reads the names Java codegen uses from a names file, as {@code codegen introspect --names-out}
-   * writes it: {@code {"CAMEL:CAPITALIZED": {"withGPU": "withGpu", ...}}}. Returns null when the
-   * file doesn't have them (the schema has no {@code Query.formatIdentifiers}).
+   * writes it: {@code {"CAMEL:CAPITALIZED": {"withGPU": "withGpu", ...}, "PASCAL:CAPITALIZED":
+   * {...}, ...}}, keyed by format. Formats Java codegen doesn't use are left out, and a format the
+   * file doesn't have keeps the schema's names. Returns null when the file has none of them (the
+   * schema has no {@code Query.formatIdentifiers}).
    */
-  public static Map<String, String> read(InputStream namesJson) throws IOException {
+  public static Map<String, Map<String, String>> read(InputStream namesJson) throws IOException {
     JsonObject root = read(namesJson.readAllBytes());
-    JsonValue names = root.get(FORMAT);
-    if (!(names instanceof JsonObject)) {
-      return null;
-    }
-    Map<String, String> formatted = new HashMap<>();
-    for (Map.Entry<String, JsonValue> e : ((JsonObject) names).entrySet()) {
-      if (e.getValue() instanceof JsonString) {
-        formatted.put(e.getKey(), ((JsonString) e.getValue()).getString());
+    Map<String, Map<String, String>> formatted = new HashMap<>();
+    for (String format : FORMATS) {
+      JsonValue names = root.get(format);
+      if (!(names instanceof JsonObject)) {
+        continue;
       }
+      Map<String, String> byName = new HashMap<>();
+      for (Map.Entry<String, JsonValue> e : ((JsonObject) names).entrySet()) {
+        if (e.getValue() instanceof JsonString) {
+          byName.put(e.getKey(), ((JsonString) e.getValue()).getString());
+        }
+      }
+      formatted.put(format, byName);
     }
-    return formatted;
+    return formatted.isEmpty() ? null : formatted;
   }
 
   static boolean hasFormatIdentifiers(JsonObject root) {

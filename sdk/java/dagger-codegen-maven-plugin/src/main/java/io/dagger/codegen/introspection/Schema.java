@@ -45,6 +45,8 @@ public class Schema {
           }
         });
     schema.version = version;
+    // Class names follow the schema until formatted names are set.
+    Helpers.setJavaTypeNames(null);
     return schema;
     // Json.createReader(schema.getJsonObject("__schema").)
   }
@@ -55,29 +57,51 @@ public class Schema {
 
   private List<Type> types;
 
+  /** Whether enum constants follow Java's convention, from formatted names. */
+  private boolean formattedEnumValues;
+
   /**
-   * Attaches the Java names the engine formatted (see {@link FormattedNames}) to fields, arguments
-   * and input fields, keyed by schema name. A name without an entry, or a null map (the schema has
-   * no Query.formatIdentifiers), keeps the schema name.
+   * Attaches the Java names the engine formatted (see {@link FormattedNames}), keyed by format and
+   * then by schema name: member names to fields, arguments and input fields, class names to types,
+   * and constant names to enum values. A name without an entry, a format without names, or a null
+   * map (the schema has no Query.formatIdentifiers) keeps the schema name.
    */
-  public void setFormattedNames(Map<String, String> names) {
-    if (names == null || types == null) {
+  public void setFormattedNames(Map<String, Map<String, String>> formats) {
+    if (formats == null || types == null) {
       return;
     }
+    Map<String, String> members = formats.getOrDefault(FormattedNames.MEMBERS, Map.of());
+    Map<String, String> typeNames = formats.get(FormattedNames.TYPES);
+    Map<String, String> enumValues = formats.get(FormattedNames.ENUM_VALUES);
     for (Type type : types) {
       if (type.getFields() != null) {
         for (Field field : type.getFields()) {
-          field.setFormattedName(names.get(field.getName()));
+          field.setFormattedName(members.get(field.getName()));
           if (field.getArgs() != null) {
-            field.getArgs().forEach(arg -> arg.setFormattedName(names.get(arg.getName())));
+            field.getArgs().forEach(arg -> arg.setFormattedName(members.get(arg.getName())));
           }
         }
       }
       if (type.getInputFields() != null) {
         type.getInputFields()
-            .forEach(inputField -> inputField.setFormattedName(names.get(inputField.getName())));
+            .forEach(inputField -> inputField.setFormattedName(members.get(inputField.getName())));
+      }
+      if (enumValues != null && type.getEnumValues() != null) {
+        for (EnumValue value : type.getEnumValues()) {
+          value.setFormattedName(enumValues.get(value.getName()));
+        }
       }
     }
+    Helpers.setJavaTypeNames(typeNames);
+    formattedEnumValues = enumValues != null;
+  }
+
+  /**
+   * Whether enum constants follow Java's convention (SCREAMING_SNAKE_CASE, carrying their schema
+   * values), rather than the schema's values.
+   */
+  public boolean formatsEnumValues() {
+    return formattedEnumValues;
   }
 
   public QueryType getQueryType() {
