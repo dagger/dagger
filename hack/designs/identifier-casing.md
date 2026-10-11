@@ -932,6 +932,68 @@ Either option needs a signal in the manifest v2 contract (a naming version,
 or a marker that names are final), which #14038's authors own; this design
 only ships the gate.
 
+### Transition aliases
+
+A rename breaks every caller that still uses the old name: an external SDK
+module's Dang code (go-sdk calls sdk-helpers'
+`.generate(ws, lock: …, legacyJson: …)`), committed generated bindings, and
+hand-written queries. For a transition window the engine accepts the old
+spellings as hidden aliases (`dagql.Aliases`):
+
+- **Declaring.** A field (`Field.WithAliases`, `FieldSpec.Aliases`), a field
+  argument (`Arg(...).WithAliases`, `InputSpec.Aliases`), an object type
+  (`ClassOpts.Aliases`) or an interface (`Interface.WithAliases`) lists its
+  aliases, optionally limited to some views. `core.NameAliases` limits them to
+  the views with the new rules, where the old spelling is no longer the name;
+  every transition alias goes through it, so ending the transition is
+  deleting it and its callers.
+- **Hidden.** `Schema` and `SchemaForView` never have aliases, so neither do
+  introspection (`__schema`, `__type`), `__schemaJSONFile` or anything
+  generated from them. Visible aliases would collide in SDK generators
+  (`legacyJson` and `legacyJSON` are both `LegacyJSON` in a Go opts struct,
+  `shortSha` and `shortSHA` both `short_sha` in Python), and the external SDK
+  repos' forked generators can't be fixed in lockstep.
+- **Validated.** Queries are validated against `SchemaWithAliasesForView`
+  (gqlgen's handler via `NewDefaultHandler`, and `Server.Query`), which adds
+  each alias as a copy of its field, argument or type, marked `@deprecated`.
+  A required argument with aliases is optional there, since a query may give
+  it by either name; the call still requires it.
+- **Canonical.** `parseASTSelections` rewrites an alias to its canonical name
+  before building the selector, so an aliased query makes the canonical
+  query's calls: same IDs, same cache entries. The response keeps the name the
+  query used. Giving one argument by both names is an error.
+- **Types.** A type alias works in fragment type conditions, which is how
+  generated clients load objects (`node(id:) { ... on OldName { ... } }` in
+  Go's `selectNode`, TypeScript's `Context.selectNode` and Python's
+  `Context.select_id`). `__typename` reports the canonical name: the server
+  can't know which spelling a client expects. Go bindings dispatch on it in
+  an interface's `Concrete()` (`interface.go.tmpl`,
+  `legacy_interface.go.tmpl`), which compares it to the implementation names
+  they were generated with, so old bindings fail with "unknown …
+  implementation" for a renamed implementation until regenerated. `Load`
+  only checks that `__typename` isn't empty; TypeScript and Python don't
+  dispatch on it.
+- **Signal.** Each use adds a `dagger.io/dag.alias` event to the current span,
+  naming the alias and its canonical name, and logs at debug level.
+- **Collisions.** An alias that names a real type, field or argument of its
+  scope, or that two names claim, is ignored with a warning. Aliases count
+  toward the schema digest.
+
+The in-engine Dang runtime typechecks callers against its dependencies'
+schema JSON, so it gets a JSON with the field and argument aliases, marked
+deprecated (`SchemaIntrospectionJSONFileForDang`, the internal
+`includeAliases` argument of `__schemaJSONFile`); Dang generates nothing from
+it that could collide. Other SDKs keep the alias-free JSON. Limits:
+
+- type aliases aren't in it: a copy of a type is a different type to Dang, so
+  a Dang annotation naming an old type doesn't typecheck;
+- a required argument with aliases is optional in it, so a Dang caller that
+  omits it fails when called rather than when typechecked.
+
+Other gaps: enum values and input object fields have no aliases; alias names
+can show up in validation's "Did you mean …" suggestions; and module renames
+don't declare aliases yet.
+
 ### What changes for module authors (on bump)
 
 A module that bumps its `engineVersion` to `IdentifierNamingVersion` or later
