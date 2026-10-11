@@ -184,7 +184,7 @@ func getSchemaJSON(hiddenTypes, hiddenFields []string, view call.View, srv *dagq
 	dagqlSchema := introspection.WrapSchema(srv.SchemaForView(view))
 
 	introspectionResponse := codegenintrospection.Response{
-		SchemaVersion: string(view),
+		SchemaVersion: string(core.UnmarkedView(view)),
 		Schema:        &codegenintrospection.Schema{},
 	}
 	if queryName := dagqlSchema.QueryType().Name(); queryName != nil {

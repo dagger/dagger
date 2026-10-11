@@ -26,10 +26,6 @@ func InstallCoreSchemaLoaders(dag *dagql.Server) {
 	// the shared result, so this hook only fires on the cold path (decode, or
 	// loads that bypassed class capture).
 	dag.SetResultServerForCall(serverForResultCall)
-	// Typedef constructor calls from a module's runtime name its declarations
-	// by the module's rules, which an entrypoint module keeps apart from the
-	// API view its client is served at.
-	dag.SetSelectorView(namingSelectorView)
 	dag.SetNodeLoader(func(ctx context.Context, id *call.ID) (dagql.AnyObjectResult, error) {
 		if id == nil || !id.IsHandle() || id.EngineResultID() == 0 {
 			return dag.Load(ctx, id)

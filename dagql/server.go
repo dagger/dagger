@@ -98,10 +98,6 @@ type Server struct {
 	// shared so subsequent reconstructions skip the hook. Cold recipe loads
 	// also use this hook to select the defining module's schema before dispatch.
 	resultServerForCall func(ctx context.Context, resultCall *ResultCall) (*Server, error)
-
-	// selectorView, if set, picks the view a GraphQL request records for a
-	// view-scoped field selection (see SetSelectorView).
-	selectorView func(ctx context.Context, typeName string, sel Selector) call.View
 }
 
 func (s *Server) Canonical() *Server {
@@ -128,20 +124,6 @@ func (s *Server) SetNodeLoader(loader func(ctx context.Context, id *call.ID) (An
 // field doc on Server.resultServerForCall for the full role.
 func (s *Server) SetResultServerForCall(loader func(ctx context.Context, resultCall *ResultCall) (*Server, error)) {
 	s.resultServerForCall = loader
-}
-
-// SetSelectorView installs a hook that picks the view a GraphQL request
-// records for each view-scoped field it selects, instead of the server's
-// View. It's called with the type and the parsed selector, whose View is the
-// server's, and runs only for fields with a view filter (the others record no
-// view). The view it returns is used to look up the field and its arguments,
-// and is recorded in the call, so it keys the cache: it must select the same
-// fields and arguments as the one it's given. Forks inherit it.
-//
-// Dagger uses it to give a module's typedef constructor calls the naming
-// rules of the module, which can differ from its API view.
-func (s *Server) SetSelectorView(fn func(ctx context.Context, typeName string, sel Selector) call.View) {
-	s.selectorView = fn
 }
 
 type InstallHook interface {
@@ -270,7 +252,6 @@ func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 	out.canonical = s.canonical
 	out.nodeLoader = s.nodeLoader
 	out.resultServerForCall = s.resultServerForCall
-	out.selectorView = s.selectorView
 
 	s.installLock.RLock()
 	defer s.installLock.RUnlock()
@@ -2652,9 +2633,6 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			sel, resType, err := parser.ParseField(ctx, s.View, x, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
-			}
-			if s.selectorView != nil && sel.View != "" {
-				sel.View = s.selectorView(ctx, self.Name(), sel)
 			}
 			var subsels []Selection
 			if len(x.SelectionSet) > 0 {

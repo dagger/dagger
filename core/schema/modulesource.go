@@ -4403,7 +4403,7 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
-	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, engineVersion)
+	deps, err := s.defaultSchemaBuilderForView(ctx, core.ModuleNamingView(engineVersion, src.Self().Entrypoint != nil))
 	if err != nil {
 		return nil, err
 	}
@@ -4415,20 +4415,21 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 }
 
 // loadDefaultSchemaBuilder returns a SchemaBuilder seeded with only the default
-// (core) dependencies, with the core module pinned to src's engine version
-// view. Callers append the user modules they want to expose.
+// (core) dependencies, with the core module pinned to src's view (see
+// core.ModuleSource.NamingView). Callers append the user modules they want to
+// expose.
 func (s *moduleSourceSchema) loadDefaultSchemaBuilder(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
 ) (*core.SchemaBuilder, error) {
-	return s.defaultSchemaBuilderForEngineVersion(ctx, src.Self().EngineVersion)
+	return s.defaultSchemaBuilderForView(ctx, src.Self().NamingView())
 }
 
-// defaultSchemaBuilderForEngineVersion is loadDefaultSchemaBuilder for an
-// explicit engine version.
-func (s *moduleSourceSchema) defaultSchemaBuilderForEngineVersion(
+// defaultSchemaBuilderForView is loadDefaultSchemaBuilder for an explicit
+// view.
+func (s *moduleSourceSchema) defaultSchemaBuilderForView(
 	ctx context.Context,
-	engineVersion string,
+	view call.View,
 ) (*core.SchemaBuilder, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -4441,7 +4442,7 @@ func (s *moduleSourceSchema) defaultSchemaBuilderForEngineVersion(
 	baseMods := defaultDeps.Mods()
 	for i, depMod := range baseMods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
-			baseMods[i] = coreMod.WithView(call.View(engine.APIViewVersion(engineVersion)))
+			baseMods[i] = coreMod.WithView(view)
 		}
 	}
 	return core.NewSchemaBuilder(query, baseMods), nil

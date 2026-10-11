@@ -131,9 +131,13 @@ func (mod *Module) EngineView() call.View {
 }
 
 // Namer normalizes the module's own names: the rules of the engine version
-// it declares (see ModuleSource.Namer).
+// it declares (see ModuleSource.Namer), or of SourceOverrides' when set.
 func (mod *Module) Namer() Namer {
-	if src := mod.GetSource(); src != nil {
+	src := mod.GetSource()
+	if mod.SourceOverrides != nil {
+		return NamerForView(ModuleNamingView(mod.SourceOverrides.EngineVersion, src != nil && src.Entrypoint != nil))
+	}
+	if src != nil {
 		return src.Namer()
 	}
 	return NamerForView(mod.EngineView())

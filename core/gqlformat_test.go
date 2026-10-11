@@ -126,8 +126,36 @@ func TestNamerForView(t *testing.T) {
 	} {
 		require.Equal(t, tc.legacy, NamerForView(tc.view).Legacy(), "view %q", tc.view)
 	}
-	require.False(t, NamerForEngineVersion("v1.0.0-beta.15").Legacy())
-	require.True(t, NamerForEngineVersion("v0.19.4").Legacy())
+}
+
+// A module keeps the legacy naming rules unless its full engine version,
+// prerelease included, is at least IdentifierNamingVersion: released v1.0.0
+// prereleases were built against strcase.
+func TestNamerForEngineVersion(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		engineVersion string
+		legacy        bool
+	}{
+		{"v0.19.4", true},
+		{"v0.21.9", true},
+		{"v1.0.0-0", true},
+		{"v1.0.0-beta.15", true},
+		{"v1.0.0-beta.16", true},
+		{"v1.0.0-beta.17", false},
+		{"v1.0.0-beta.17-dev-123", false},
+		{"v1.0.0-dev-123", false},
+		{"v1.0.0-rc.1", false},
+		{"v1.0.0", false},
+		{"v1.2.3", false},
+		{"not-a-version", true},
+	} {
+		require.Equal(t, tc.legacy, NamerForEngineVersion(tc.engineVersion).Legacy(), "engine version %q", tc.engineVersion)
+		src := &ModuleSource{EngineVersion: tc.engineVersion}
+		require.Equal(t, tc.legacy, src.LegacyNaming(), "engine version %q", tc.engineVersion)
+		require.Equal(t, tc.legacy, src.Namer().Legacy(), "engine version %q", tc.engineVersion)
+	}
 }
 
 // A view marked for legacy naming is still the same API view (build metadata
@@ -158,6 +186,52 @@ func TestLegacyNamingView(t *testing.T) {
 	require.Equal(t, call.View(""), LegacyNamingView(""))
 	require.False(t, IsLegacyNamingView(""))
 	require.False(t, IsLegacyNamingView("v1.0.0+other"))
+
+	// __schemaVersion reports the version without the mark.
+	require.Equal(t, call.View("v1.0.0"), UnmarkedView(LegacyNamingView("v1.0.0")))
+	require.Equal(t, call.View("v1.0.0"), UnmarkedView("v1.0.0"))
+	require.Equal(t, call.View(""), UnmarkedView(""))
+}
+
+// A module that keeps the legacy naming rules at a view that has the new
+// ones is served at the marked view; older views need no mark.
+func TestModuleNamingView(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		engineVersion string
+		entrypoint    bool
+		view          call.View
+	}{
+		{"v1.0.0-beta.17", false, "v1.0.0"},
+		{"v1.0.0", false, "v1.0.0"},
+		{"v1.0.0-beta.16", false, "v1.0.0+legacy-naming"},
+		{"v1.0.0-0", false, "v1.0.0+legacy-naming"},
+		{"v1.0.0-beta.17", true, "v1.0.0+legacy-naming"},
+		{"v0.21.9", false, "v0.21.9"},
+		{"v0.21.9", true, "v0.21.9"},
+	} {
+		require.Equal(t, tc.view, ModuleNamingView(tc.engineVersion, tc.entrypoint),
+			"engine version %q, entrypoint %v", tc.engineVersion, tc.entrypoint)
+		require.True(t, NamerForView(tc.view).Legacy() == (tc.entrypoint || legacyNamingEngineVersion(tc.engineVersion)),
+			"engine version %q, entrypoint %v", tc.engineVersion, tc.entrypoint)
+	}
+
+	for _, tc := range []struct{ typeName, field string }{
+		{"Query", "function"},
+		{"Function", "withArg"},
+		{"TypeDef", "withObject"},
+		{"TypeDef", "withCollectionKeys"},
+	} {
+		require.True(t, IsNamingField(tc.typeName, tc.field), "%s.%s", tc.typeName, tc.field)
+	}
+	for _, tc := range []struct{ typeName, field string }{
+		{"Container", "withExec"},
+		{"Module", "withObject"},
+		{"TypeDef", "withFunction"},
+	} {
+		require.False(t, IsNamingField(tc.typeName, tc.field), "%s.%s", tc.typeName, tc.field)
+	}
 }
 
 // A module entrypoint (manifest v2) is served at the engine's version, but
@@ -181,52 +255,20 @@ func TestModuleSourceNaming(t *testing.T) {
 	require.Equal(t, call.View("v1.0.0"), v1.NamingView())
 	require.Equal(t, "getURL", v1.Namer().FieldName("getUrl"))
 
+	beta := &ModuleSource{EngineVersion: "v1.0.0-beta.16"}
+	require.True(t, beta.LegacyNaming())
+	require.Equal(t, call.View("v1.0.0+legacy-naming"), beta.NamingView())
+	require.Equal(t, "getUrl", beta.Namer().FieldName("getUrl"))
+
 	legacy := &ModuleSource{EngineVersion: "v0.21.9"}
-	require.False(t, legacy.LegacyNaming())
+	require.True(t, legacy.LegacyNaming())
 	require.True(t, legacy.Namer().Legacy())
+	require.Equal(t, call.View("v0.21.9"), legacy.NamingView())
 
 	var none *ModuleSource
 	require.False(t, none.LegacyNaming())
 
 	require.False(t, (&Module{}).Namer().Legacy(), "a module without a source is named by the latest rules")
-}
-
-// Only typedef constructor calls from an entrypoint module get the legacy
-// naming mark; other fields and other modules keep their view.
-func TestNamingSelectorView(t *testing.T) {
-	t.Parallel()
-
-	entrypoint := &ModuleSource{
-		EngineVersion: "v1.0.0",
-		Entrypoint:    &modules.ModuleEntrypointConfig{Kind: "dang", Source: "./sdk/entrypoint"},
-	}
-	v1 := &ModuleSource{EngineVersion: "v1.0.0"}
-	const view = call.View("v1.0.0")
-
-	for _, tc := range []struct{ typeName, field string }{
-		{"Query", "function"},
-		{"Function", "withArg"},
-		{"TypeDef", "withObject"},
-		{"TypeDef", "withInterface"},
-		{"TypeDef", "withEnum"},
-		{"TypeDef", "withScalar"},
-		{"TypeDef", "withField"},
-		{"TypeDef", "withEnumMember"},
-		{"TypeDef", "withCollectionKeys"},
-	} {
-		require.Equal(t, LegacyNamingView(view), NamingSelectorView(entrypoint, tc.typeName, tc.field, view), "%s.%s", tc.typeName, tc.field)
-		require.Equal(t, view, NamingSelectorView(v1, tc.typeName, tc.field, view), "%s.%s", tc.typeName, tc.field)
-		require.Equal(t, view, NamingSelectorView(nil, tc.typeName, tc.field, view), "%s.%s", tc.typeName, tc.field)
-	}
-	for _, tc := range []struct{ typeName, field string }{
-		{"Container", "withExec"},
-		{"Module", "withObject"},
-		{"TypeDef", "withFunction"},
-		{"Query", "typeDef"},
-	} {
-		require.Equal(t, view, NamingSelectorView(entrypoint, tc.typeName, tc.field, view), "%s.%s", tc.typeName, tc.field)
-	}
-	require.Equal(t, call.View(""), NamingSelectorView(entrypoint, "Query", "function", ""))
 }
 
 func TestNamerNames(t *testing.T) {
