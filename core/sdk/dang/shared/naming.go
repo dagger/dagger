@@ -33,34 +33,38 @@ func ModuleNamer(ctx context.Context) core.Namer {
 	return core.LatestNamer
 }
 
-// namingFields are the typedef constructors that normalize the name they're
-// given, and so need the module's view.
-var namingFields = map[string]bool{
-	"function":       true,
-	"withArg":        true,
-	"withObject":     true,
-	"withInterface":  true,
-	"withEnum":       true,
-	"withScalar":     true,
-	"withField":      true,
-	"withEnumMember": true,
-}
-
 // NamingSelectors stamps the view recorded by WithModuleNaming on the
-// selectors of typedef constructors that normalize names, so they name the
-// module's types, fields and arguments by the rules of its engine version.
-// Other selectors are left alone.
-func NamingSelectors(ctx context.Context, sels ...dagql.Selector) []dagql.Selector {
+// selectors of typedef constructors that normalize names (see
+// core.IsNamingField), so they name the module's types, fields and arguments
+// by its naming rules. sels is a chain selected from srv's root; other
+// selectors are left alone.
+func NamingSelectors(ctx context.Context, srv *dagql.Server, sels ...dagql.Selector) []dagql.Selector {
 	view, ok := ctx.Value(namingViewKey{}).(call.View)
 	if !ok {
 		return sels
 	}
+	typeName := srv.Root().Type().Name()
 	out := make([]dagql.Selector, len(sels))
 	for i, sel := range sels {
-		if namingFields[sel.Field] && sel.View == "" {
+		if core.IsNamingField(typeName, sel.Field) && sel.View == "" {
 			sel.View = view
 		}
 		out[i] = sel
+		typeName = selectedTypeName(srv, typeName, sel)
 	}
 	return out
+}
+
+// selectedTypeName is the name of the type sel selects from typeName, or ""
+// if it isn't an object field srv knows.
+func selectedTypeName(srv *dagql.Server, typeName string, sel dagql.Selector) string {
+	objType, ok := srv.ObjectType(typeName)
+	if !ok {
+		return ""
+	}
+	spec, ok := objType.FieldSpec(sel.Field, sel.View)
+	if !ok {
+		return ""
+	}
+	return spec.Type.Type().Name()
 }
