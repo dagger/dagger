@@ -810,7 +810,10 @@ type parseState struct {
 	fset              *token.FileSet
 	moduleName        string
 	legacyGoSDKCompat bool
-	objs              []types.Object
+	// namer names the module's types and fields in the schema, as the engine
+	// does for the module's engine version.
+	namer moduleNamer
+	objs  []types.Object
 
 	methods map[string][]method
 
@@ -825,7 +828,7 @@ type parseState struct {
 }
 
 func (ps *parseState) isMainModuleObject(name string) bool {
-	return strcase.ToCamel(ps.moduleName) == strcase.ToCamel(name)
+	return ps.namer.objectName(ps.moduleName) == ps.namer.objectName(name)
 }
 
 // pkgDoc returns the package level documentation comment, if any,

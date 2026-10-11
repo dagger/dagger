@@ -4,15 +4,14 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/iancoleman/strcase"
 )
 
 // Self-call bindings must use the same collection schema as engine clients.
-func introspectCollection(spec *parsedObjectType) (*introspection.Type, *introspection.Type, error) {
+func introspectCollection(n moduleNamer, spec *parsedObjectType) (*introspection.Type, *introspection.Type, error) {
 	var keys *fieldSpec
 	var get *funcTypeSpec
 	for _, field := range spec.fields {
-		if !field.isPrivate && strcase.ToLowerCamel(field.name) == "keys" {
+		if !field.isPrivate && n.fieldName(field.name) == "keys" {
 			keys = field
 		}
 	}
@@ -22,7 +21,7 @@ func introspectCollection(spec *parsedObjectType) (*introspection.Type, *introsp
 		}
 	}
 	for _, method := range spec.methods {
-		if strcase.ToLowerCamel(method.name) == "get" {
+		if n.fieldName(method.name) == "get" {
 			get = method
 		}
 	}
@@ -34,15 +33,15 @@ func introspectCollection(spec *parsedObjectType) (*introspection.Type, *introsp
 	if keys == nil || get == nil {
 		return nil, nil, fmt.Errorf("collection %q requires a stored keys field and a get function", spec.name)
 	}
-	lookup := introspectMethod(get)
+	lookup := introspectMethod(n, get)
 	if len(lookup.Args) != 1 {
 		return nil, nil, fmt.Errorf("collection %q get function requires one argument", spec.name)
 	}
 	lookup.Name = "get"
 	lookup.Args[0].Name = "key"
-	name := introspectTypeName(spec.name, spec.moduleName)
+	name := n.typeName(spec.name, spec.moduleName)
 	self := &introspection.TypeRef{Kind: introspection.TypeKindNonNull, OfType: &introspection.TypeRef{Kind: introspection.TypeKindObject, Name: name}}
-	keyList := introspectTypeRef(keys.typeSpec)
+	keyList := introspectTypeRef(n, keys.typeSpec)
 	collection := &introspection.Type{Kind: introspection.TypeKindObject, Name: name, Description: spec.doc, Interfaces: []*introspection.Type{},
 		Fields: []*introspection.Field{
 			{Name: "keys", TypeRef: keyList, Args: introspection.InputValues{}},
@@ -59,7 +58,7 @@ func introspectCollection(spec *parsedObjectType) (*introspection.Type, *introsp
 		if batch == nil {
 			batch = &introspection.Type{Kind: introspection.TypeKindObject, Name: name + "_Batch", Interfaces: []*introspection.Type{}}
 		}
-		batch.Fields = append(batch.Fields, introspectMethod(method))
+		batch.Fields = append(batch.Fields, introspectMethod(n, method))
 	}
 	if batch != nil {
 		batch.Fields = append(batch.Fields, introspectNodeIDField(batch.Name))
