@@ -349,7 +349,7 @@ EOF
 		name, err := tag.Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "refs/tags/v1.0.0", name)
-		sha, err := tag.Sha(ctx)
+		sha, err := tag.SHA(ctx)
 		require.NoError(t, err)
 		require.Equal(t, tagSHA, sha)
 
