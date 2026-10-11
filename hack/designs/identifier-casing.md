@@ -460,9 +460,8 @@ Notes:
 - Like every object in the schema, `IdentifierWord` and `NamingTerm` also
   implement `Node`.
 - The API is `@experimental` and visible to clients at engine version
-  `v1.0.0-0` and above, so prereleases see it, except that
-  `formatIdentifiers` is hidden from the views of modules that keep the legacy
-  naming rules (see [The gate](#the-gate)).
+  `v1.0.0-0` and above, so prereleases see it: the same views whose modules
+  are named by the new rules (see [The gate](#the-gate)).
 
 ## Engine Integration
 
@@ -491,15 +490,13 @@ the old strcase code byte for byte:
   (`ModuleSource.NamingView`), so its typedefs are named by the module's
   rules. Public constructors pass the view on to the internal `__*` selects
   they make; the in-engine Dang runtime stamps its module's view on its naming
-  selectors (`core/sdk/dang/shared/naming.go`). A module that keeps the legacy
-  rules at a view that has the new ones is served at that view marked for
-  legacy naming (see [The gate](#the-gate)).
+  selectors (`core/sdk/dang/shared/naming.go`).
 - **Module-level naming** (`namespaceObject`, type and constructor lookups,
   validation) uses `Module.Namer()`, chosen by the module source's
-  `engineVersion` (`ModuleSource.Namer`; legacy for a module entrypoint).
-  Module tree CLI paths (checks, generators, artifacts) use
-  the namer of the module that declared the node, so a legacy dependency keeps
-  its old paths inside a new workspace.
+  `engineVersion` (`ModuleSource.Namer`; a module entrypoint is served at the
+  engine's own version). Module tree CLI paths (checks, generators, artifacts)
+  use the namer of the module that declared the node, so a legacy dependency
+  keeps its old paths inside a new workspace.
 - **Mixed versions.** A dependency's types are installed with *its* rules, so
   a module at a different version may spell a reference differently
   (`HttpClient` vs `HTTPClient`). `namespaceTypeName` falls back to a
@@ -698,11 +695,11 @@ schema for the generators. `cmd/codegen` connects to the engine whenever it
 generates from introspection JSON that has `Query.formatIdentifiers`.
 
 **Gate:** the schema being generated. If it has no `Query.formatIdentifiers`
-(schema views before `v1.0.0-0`, the identifier API's gate, views of modules
-that keep the legacy naming rules, or older engines), codegen formats nothing
-through the engine and keeps its legacy converter, so older modules and
-clients regenerate byte-identical code. A name missing from a map (one that
-isn't among the schema's names) also gets the legacy converter.
+(schema views before `v1.0.0-0`, the identifier API's gate, or older
+engines), codegen formats nothing through the engine and keeps its legacy
+converter, so older modules and clients regenerate byte-identical code. A
+name missing from a map (one that isn't among the schema's names) also gets
+the legacy converter.
 
 **Offline generators** get the names from the online step, as a sidecar file
 next to the introspection JSON, which stays unchanged:
@@ -768,9 +765,10 @@ The algorithm and the dictionary are selected by engine version through the
 existing view mechanism (`AfterVersion` / `BeforeVersion` in `core/util.go`):
 
 - A module's own names are parsed with the version its `engineVersion` selects.
-  Existing modules keep strcase behavior until they bump. A module entrypoint
-  (manifest v2), which declares no `engineVersion`, keeps strcase behavior
-  (see [Module entrypoints](#module-entrypoints)).
+  Modules below `v1.0.0` keep strcase behavior until they bump. A module
+  entrypoint (manifest v2), which declares no `engineVersion`, is served at the
+  engine's own version and gets its rules (see
+  [Module entrypoints](#module-entrypoints)).
 - A client's codegen uses the version the client connects with.
 - A dictionary addition lands with an engine version and applies only to
   modules and clients at or above it.
@@ -781,48 +779,36 @@ selects: no version means the latest dictionary, and a version below
 Each dictionary release adds an entry to the list in
 `engine/naming/version.go`.
 
-Module normalization is gated separately, at `IdentifierNamingVersion`
-(`core/gqlformat.go`): a module keeps the strcase rules unless the
-`engineVersion` it declares is at least that version, comparing full versions,
-prerelease included (`ModuleSource.LegacyNaming`). It's `v1.0.0-beta.17`, the
-first engine to ship these rules; it moves to whichever release they first
-ship in. A view gate wouldn't do: API views are base-version granular, so
-every v1.0.0 prerelease (`v1.0.0-beta.1` to `v1.0.0-beta.16`, and the `v1.0.0-0`
-the repo's own modules declare) shares the `v1.0.0` view, and a view gate
-would rename every module released against those betas.
+Module normalization is gated on the API view, at `IdentifierNamingVersion`
+(`v1.0.0-0`, `core/gqlformat.go`): `NamerForView` gives the strcase rules to
+views before it and engine/naming to the rest, and a module is named by the
+rules of its view (`ModuleSource.NamingView`, `engine.APIViewVersion` of its
+`engineVersion`). Views are base-version granular, so every v1.0.0 prerelease
+(`v1.0.0-beta.1` onwards, and the `v1.0.0-0` the repo's own modules declare)
+shares the `v1.0.0` view and gets the new rules. The same view gates
+`Query.formatIdentifiers`, which SDK codegen, Go module codegen and the Python
+and TypeScript runtimes check, so a module's codegen and runtime always agree
+with the engine on its names.
 
-Such a module still gets the v1.0.0 API, so its rules travel apart from its
-view: `LegacyNamingView` marks a view with `+legacy-naming` build metadata.
-Semver precedence ignores build metadata, so every view filter treats the
-marked view like the plain one (same fields, same arguments), while
-`NamerForView` gives it the legacy rules. `ModuleSource.NamingView` is the
-module's view, marked when the module keeps the legacy rules and its view
-would otherwise have the new ones (views before `v1.0.0` need no mark, so
-older modules keep sharing results with clients at their view). The engine
-serves everything about the module at that view:
+That renames modules released against those betas: a Go module's
+`legacyJSON` argument, which strcase made `legacyJson`, is now `legacyJSON`,
+and the `daggerCli` constructor of a module named `dagger-cli` is now
+`daggerCLI`. Callers built against the old names (other modules' Dang code,
+committed generated bindings, hand-written queries) keep working through
+[transition aliases](#transition-aliases): wherever the engine names a
+module's type, function, field or argument by the new rules and the strcase
+rules would have named it differently, it installs the strcase name as a
+hidden alias.
 
-- its runtime's client (`engine/server/session.go`), so the typedef
-  constructors it calls record the marked view and name by the legacy rules.
-  The mark is part of the call, so it keys the cache, and a typedef loaded
-  again from its ID is named the same way. The rest of the module's calls are
-  keyed apart from other clients' too, which costs some sharing between them
-  and clients at the plain view;
-- its dependencies' schema (`loadDependencyModules`), which its codegen
-  generates from;
-- the in-engine Dang runtime's direct selects (`dangshared.WithModuleNaming`).
+An earlier version of this design gated on the full `engineVersion`,
+prerelease included, and served older v1.0.0 prereleases at their view marked
+with `+legacy-naming` build metadata. It couldn't work: external SDK modules
+that declare `engineVersion = "v1.0.0"` (go-sdk, sdk-helpers) would have
+been renamed at release anyway, and the marked views fragmented the cache and
+had to hide `formatIdentifiers` and rewrite `__schemaVersion`.
 
-The marked view hides `Query.formatIdentifiers`, the one gate SDK codegen, Go
-module codegen and the Python and TypeScript runtimes check, so a
-legacy-naming module's codegen keeps its legacy converters (byte-identical to
-what it generated before) and its runtime keeps predicting the names the
-engine gives it. `__schemaVersion` reports the version without the mark: SDK
-codegen parses it for other gates, not always as semver (PHP's
-`version_compare` would order `v1.0.0+legacy-naming` before
-`v1.0.0-beta.10`).
-
-`NamerForView` gives the new rules to every unmarked view from `v1.0.0`, which
-only matters for clients that aren't modules: the typedefs they construct
-themselves.
+`NamerForView` gives the new rules to every view from `v1.0.0`, which also
+names the typedefs that clients that aren't modules construct themselves.
 
 Known gaps:
 
@@ -859,47 +845,27 @@ constructor calls, e.g. python-sdk's `sdk/tests/mod/golden/types.dang`), or
 the module points at a shared remote entrypoint that describes its types when
 it loads.
 
-**Why load-time naming is wrong for them.** An entrypoint module gets the
-engine's own version as its `EngineVersion` (`initFromModConfig` in
-`core/schema/modulesource.go`), and so the engine's API. If that also chose
-its naming rules, the schema names of its declarations would be decided
-afresh by whichever engine loads it:
+**Naming.** An entrypoint module gets the engine's own version as its
+`EngineVersion` (`initFromModConfig` in `core/schema/modulesource.go`), and so
+the engine's API and naming rules, like any module on a v1 view: its client is
+served at that view, so the typedef constructors its entrypoint calls name by
+the new rules, `Module.Namer` names its namespaced types, constructor and CLI
+paths by them, and its codegen sees `Query.formatIdentifiers`. Dispatch
+doesn't care, since calls carry original names.
 
-- Shipping this design would rename existing entrypoint modules. An SDK that
-  registers `getUrl` (Python's own `snake_to_camel` of `get_url`) would see it
-  become `getURL`, and break the code, generated clients and CLI flags of
-  everyone calling it.
-- Every dictionary addition would rename them again on upgrade, which is what
-  versioning the dictionary (`DictionaryFor`) exists to prevent: a module's
-  names follow the version it declares, and an entrypoint module declares
-  none.
+Shipping this design renames existing entrypoint modules' acronyms: an SDK
+that registers `getUrl` (Python's own `snake_to_camel` of `get_url`) sees it
+become `getURL`, and a module `tiny`'s `HttpClient` type becomes
+`TinyHTTPClient` (was `TinyHttpClient`). Their old spellings stay accepted as
+[transition aliases](#transition-aliases), like every module rename, so
+existing callers, generated clients and queries keep working.
 
-Dispatch doesn't care, since calls carry original names, but every name a
-caller sees does: constructor fields, namespaced types, functions, arguments,
-CLI paths.
-
-**The gate.** Until an entrypoint can pin its naming, entrypoint modules keep
-the legacy (strcase) rules everywhere the engine names their declarations, so
-their schema is byte-identical to what engines before this design gave them:
-
-- `ModuleSource.LegacyNaming` is true for an entrypoint source, and
-  `ModuleSource.Namer` (so `Module.Namer`) is the legacy `Namer`: namespacing,
-  the constructor name, validation, CLI paths.
-- The entrypoint's client is served at the engine's API view marked for legacy
-  naming, like a module that declares an older v1.0.0 prerelease (see
-  [The gate](#the-gate)): the typedef constructors the entrypoint calls name
-  by the legacy rules, and the module's codegen sees no
-  `Query.formatIdentifiers`.
-
-Re-normalizing an entrypoint module's typedefs from their original names
-when the module is assembled would also work, but needs an internal rename for
-every typedef kind and member, and leaves the cached typedefs named the other
-way; marking the view keeps the decision in the call, like every other naming
-decision.
-
-**Opting in: pinned naming.** Entrypoint modules should get the new rules,
-but decided at `dagger generate`, never at load, so that upgrading the engine
-never renames anything. Two options:
+**Pinned naming.** Aliases only bridge the legacy rules to the new ones. A
+later dictionary addition would rename an entrypoint module again on engine
+upgrade, which is what versioning the dictionary (`DictionaryFor`) exists to
+prevent: a module's names follow the version it declares, and an entrypoint
+module declares none. Its names should be decided at `dagger generate`, never
+at load. Two options:
 
 - **(A) Final names in the entrypoint.** The generator calls
   `formatIdentifiers` at `dagger generate` and writes final schema names into
@@ -920,17 +886,17 @@ never renames anything. Two options:
 
 We recommend (B), as a key in the `[entrypoint]` table. It reuses the
 mechanism end to end: `ModuleSource.NamingView` returns the declared
-version's view instead of the marked one, and the session already serves the
-module's client at it. The rules stay in the engine, the
-generator only writes a version string, and the derived names come along for
-free. A manifest key also works for a shared remote entrypoint, which a field
-generated into `types.dang` doesn't: a remote entrypoint has no generate step
-and describes its types at load, so it can only pin through the module's own
-manifest, and stays on the legacy rules until the module declares a version.
+version's view, and the session already serves the module's client at it. The
+rules stay in the engine, the generator only writes a version string, and the
+derived names come along for free. A manifest key also works for a shared
+remote entrypoint, which a field generated into `types.dang` doesn't: a remote
+entrypoint has no generate step and describes its types at load, so it can
+only pin through the module's own manifest, and follows the engine's version
+until the module declares one.
 
 Either option needs a signal in the manifest v2 contract (a naming version,
-or a marker that names are final), which #14038's authors own; this design
-only ships the gate.
+or a marker that names are final), which #14038's authors own. Nothing needs
+pinning until the first dictionary addition.
 
 ### Transition aliases
 
@@ -945,8 +911,9 @@ spellings as hidden aliases (`dagql.Aliases`):
   (`ClassOpts.Aliases`) or an interface (`Interface.WithAliases`) lists its
   aliases, optionally limited to some views. `core.NameAliases` limits them to
   the views with the new rules, where the old spelling is no longer the name;
-  every transition alias goes through it, so ending the transition is
-  deleting it and its callers.
+  `core.ModuleNameAliases` accepts them in every view, for module renames
+  (below). Every transition alias goes through one of them, so ending the
+  transition is deleting them and their callers.
 - **Hidden.** `Schema` and `SchemaForView` never have aliases, so neither do
   introspection (`__schema`, `__type`), `__schemaJSONFile` or anything
   generated from them. Visible aliases would collide in SDK generators
@@ -990,16 +957,38 @@ it that could collide. Other SDKs keep the alias-free JSON. Limits:
 - a required argument with aliases is optional in it, so a Dang caller that
   omits it fails when called rather than when typechecked.
 
-Other gaps: enum values and input object fields have no aliases; alias names
-can show up in validation's "Did you mean …" suggestions; and module renames
-don't declare aliases yet.
+**Module renames.** Wherever the engine names a module's declaration by the
+new rules and the strcase rules would have named it differently, it installs
+the strcase name as an alias: object and interface types (the namespaced name
+`legacyNamespaceObject` gives, `Module.TypeNameAliases`), the constructor field
+(`Module.ConstructorNameAliases`), functions, fields and arguments
+(`NameAliases` on `Function`, `FieldTypeDef` and `FunctionArg`, from their
+original names), on objects, interfaces and entrypoint proxies alike. Unlike
+core renames, they're accepted in every view (`core.ModuleNameAliases`): a
+module's names follow its own engine version, not its caller's view, so a
+caller at an older view sees the new names too. Modules named by the strcase
+rules have none.
+
+Other gaps:
+
+- Enum values and input object fields have no aliases. Module enum values do
+  change where digits or dictionary terms are involved (`ARM_64` → `ARM64`,
+  `I_PV_6` → `IPV6`, `GIT_HUB` → `GITHUB`, `E_2_E_TEST` → `E2E_TEST`),
+  so a caller passing the old literal breaks. Enum types have no type
+  aliases either, which only matters for queries that declare variables of a
+  renamed enum type.
+- Alias names can show up in validation's "Did you mean …" suggestions.
+- Aliases cover names on the wire, not identifiers SDK codegen derives from
+  them: a Go module whose dependency was renamed gets `DaggerCLI` and
+  `DaggerCLIOpts{VCSCommit: …}` where its code says `DaggerCli` and
+  `VcsCommit`, and has to be updated when it's regenerated.
 
 ### What changes for module authors (on bump)
 
-A module that bumps its `engineVersion` to `IdentifierNamingVersion` or later
-(`latest`, or anything from `v1.0.0-beta.17` on) gets the new rules. Module
-type, field and argument names that contain runs of capitals or dictionary
-terms get their real casing back:
+A module that declares an `engineVersion` of `v1.0.0` or later (`latest`, or
+any v1.0.0 prerelease) gets the new rules. Module type, field and argument
+names that contain runs of capitals or dictionary terms get their real casing
+back:
 
 - `MyModHttpclient` → `MyModHTTPClient`
 - `Llmmessage` → `LLMMessage`, and references to core `LLM*` / `JSON*` types
@@ -1008,7 +997,9 @@ terms get their real casing back:
   accepted).
 - Python arguments: `com_url` → `comURL` (was `comUrl`).
 
-Names that were already canonical don't change.
+Names that were already canonical don't change. The old schema names of the
+others stay accepted as hidden aliases (see
+[Transition aliases](#transition-aliases)).
 
 ### Core schema
 
@@ -1063,8 +1054,8 @@ code it generated before:
   `ImageMediaTypes.DOCKER` and `OCI`, which used to be aliases of the legacy
   members, are now the canonical members, and the legacy names their
   deprecated aliases. Values don't change for core enums. A dependency
-  module's enum member now holds its schema value (`READY`) rather than the
-  module's underlying value (`"ready"`).
+  module's enum, whose members hold the module's own values (`ACTIVE` holds
+  `"ACTIVE value"`), keeps the members it always had, sent by name.
 - **Rust**: the same 2 methods as Python, kept as deprecated aliases. No type
   changes (`JsonValue` stays).
 - **Elixir**: 1 function — `prerequisite_sh_as` → `prerequisite_shas` — kept
@@ -1120,9 +1111,7 @@ one. The hard breaks are:
   aliased across assemblies;
 - Python enum members' `name`: an alias resolves to the new member, so code
   that reads `.name` (or lists an enum's members) sees `PER_SESSION`, not
-  `PerSession`;
-- Python dependency module enums' `value`, now the schema value instead of the
-  module's underlying value.
+  `PerSession`.
 
 ## Guarantees
 
@@ -1299,11 +1288,12 @@ manifest v2 entrypoints, where pinned naming would land (see
    interface calls) through `formatIdentifiers`.
 8. Bump the Python, PHP, Elixir and Java runtimes' `engineVersion` to v1, and
    format their codegen sidecars with `formatIdentifiers` and `version`.
-9. Keep manifest v2 entrypoint modules on the legacy rules, then let a
+9. Name every module on a v1 view by the new rules, manifest v2 entrypoint
+   modules included, keeping their legacy names as hidden aliases; then let a
    generated entrypoint pin its naming version (see
    [Module entrypoints](#module-entrypoints)).
 
 Steps 1–8 are done for the in-repo SDKs, except step 4's deletion, which waits
-on the legacy path. Step 9's gate is done; pinning waits on a manifest v2
+on the legacy path. Step 9's aliases are done; pinning waits on a manifest v2
 signal. Porting to the extracted SDKs is a follow-up (see
 [SDK Extraction](#sdk-extraction)).
