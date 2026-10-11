@@ -3457,7 +3457,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
     ) -> "File":
         """Package the container state as an OCI image, and return it as a tar
         archive
@@ -3488,7 +3488,7 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
         ]
         _ctx = self._select("asTarball", _args)
         return File(_ctx)
@@ -3758,7 +3758,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
         expand: bool | None = False,
     ) -> str:
         """Writes the container as an OCI tarball to the destination file path on
@@ -3814,7 +3814,7 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("export", _args)
@@ -3826,7 +3826,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
     ) -> Void:
         """Exports the container as an image to the host's container image store.
 
@@ -3872,7 +3872,7 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
         ]
         _ctx = self._select("exportImage", _args)
         await _ctx.execute()
@@ -4073,7 +4073,7 @@ class Container(Type):
         id: str,
         *,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
     ) -> "File":
         """Returns the image layer or configuration blob with the given digest as
         a File.
@@ -4097,7 +4097,7 @@ class Container(Type):
         _args = [
             Arg("id", id),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
         ]
         _ctx = self._select("layer", _args)
         return File(_ctx)
@@ -4106,7 +4106,7 @@ class Container(Type):
         self,
         *,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
     ) -> "File":
         """Computes and returns the manifest for this container as a File.
 
@@ -4125,7 +4125,7 @@ class Container(Type):
         """
         _args = [
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
         ]
         _ctx = self._select("manifest", _args)
         return File(_ctx)
@@ -4178,7 +4178,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
         insecure_skip_tls_verify: bool | None = False,
@@ -4243,7 +4243,7 @@ class Container(Type):
                 [],
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
             Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),

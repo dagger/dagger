@@ -841,6 +841,24 @@ def test_generate_enum_names():
     assert "PerSession = 'PerSession'" in code
 
 
+def test_generate_enum_default_names():
+    # A default value names the canonical member, not a deprecated alias.
+    sdl = """
+        enum Policy { Default PerSession }
+        type Query {
+            run(policy: Policy = PerSession): String!
+            %s
+        }
+    """
+    names = {"Default": "default", "PerSession": "per_session", "run": "run"}
+
+    code = generate(build_schema(sdl % _FORMAT_IDENTIFIERS), names=names)
+    assert "policy: Policy | None = Policy.PER_SESSION" in code
+
+    legacy = generate(build_schema(sdl % ""), names=names)
+    assert "policy: Policy | None = Policy.PerSession" in legacy
+
+
 def test_generate_enum_without_names():
     # Older schemas generate the code they always did.
     schema = build_schema(_ENUM_SCHEMA % "")

@@ -737,13 +737,13 @@ class _InputField:
             self.has_default = True
 
         if default_value and is_enum_type(self.named_type):
+            enum_t = self.named_type
+            member = partial(Enum(self.ctx).python_member, enum_t)
             if isinstance(default_value, list):
-                members = ", ".join(
-                    f"{self.named_type.name}.{v}" for v in default_value
-                )
+                members = ", ".join(f"{enum_t.name}.{member(v)}" for v in default_value)
                 self.default_value = f"[{members}]"
             else:
-                self.default_value = f"{self.named_type.name}.{default_value}"
+                self.default_value = f"{enum_t.name}.{member(default_value)}"
         else:
             self.default_value = repr(default_value)
 
@@ -1099,6 +1099,20 @@ class Scalar(Handler[GraphQLScalarType]):
         return super().render_body(t) or "..."
 
 
+@dataclass(frozen=True, slots=True)
+class _EnumMember:
+    """A member of an enum named by Python's convention."""
+
+    name: str
+    """The Python name."""
+    wire: str
+    """The value: the schema value it stands for, sent over the wire."""
+    schema_name: str
+    """The schema value name it was named after."""
+    alias_of: str | None
+    """The member it's a deprecated alias of, if any."""
+
+
 @dataclass
 class Enum(Handler[GraphQLEnumType]):
     predicate: ClassVar[Predicate] = staticmethod(is_enum_type)
@@ -1112,9 +1126,7 @@ class Enum(Handler[GraphQLEnumType]):
         if body := super().render_body(t):
             yield body
 
-        by_value = defaultdict(list)
-        for name, value in t.values.items():
-            by_value[self._get_value(value)].append(name)
+        by_value = self._by_value(t)
 
         if self.ctx.names is not None:
             yield from self._render_conventional(t, by_value)
@@ -1147,10 +1159,40 @@ class Enum(Handler[GraphQLEnumType]):
         old code working and let a value the API returns be looked up by
         name.
         """
+        for group in self._conventional_members(by_value, t):
+            yield ""
+            for member in group:
+                yield f"{member.name} = {member.wire!r}"
+                if member.alias_of is None:
+                    yield from self._member_doc(t, member.schema_name)
+                else:
+                    yield doc(f".. deprecated:: Use {member.alias_of} instead.")
+
+    def python_member(self, t: GraphQLEnumType, schema_name: str) -> str:
+        """The Python member to write for a schema value, as a default value:
+        its group's canonical member, not a deprecated alias."""
+        if self.ctx.names is None:
+            return schema_name
+        for group in self._conventional_members(self._by_value(t), t):
+            for member in group:
+                if member.schema_name == schema_name:
+                    return member.alias_of or member.name
+        return schema_name
+
+    def _by_value(self, t: GraphQLEnumType) -> dict[str, list[str]]:
+        by_value = defaultdict(list)
+        for name, value in t.values.items():
+            by_value[self._get_value(value)].append(name)
+        return by_value
+
+    def _conventional_members(
+        self,
+        by_value: Mapping[str, list[str]],
+        t: GraphQLEnumType,
+    ) -> Iterator[list["_EnumMember"]]:
+        """The members of each group of schema values that share a value."""
         emitted: set[str] = set()
         for val, names in sorted(by_value.items()):
-            yield ""
-
             # The schema's own SCREAMING_SNAKE names, else the first name,
             # formatted.
             canonical = [n for n in names if is_conventional_enum_name(n)]
@@ -1158,6 +1200,7 @@ class Enum(Handler[GraphQLEnumType]):
                 canonical = names[:1]
             wire = val if val in t.values else canonical[0]
 
+            group: list[_EnumMember] = []
             first: str | None = None
             for name in canonical:
                 member = self.member_name(name)
@@ -1165,15 +1208,15 @@ class Enum(Handler[GraphQLEnumType]):
                     continue
                 emitted.add(member)
                 first = first or member
-                yield f"{member} = {wire!r}"
-                yield from self._member_doc(t, name)
+                group.append(_EnumMember(member, wire, name, None))
 
             for name in names:
                 if name in emitted:
                     continue
                 emitted.add(name)
-                yield f"{name} = {wire!r}"
-                yield doc(f".. deprecated:: Use {first or name} instead.")
+                group.append(_EnumMember(name, wire, name, first or name))
+
+            yield group
 
     def member_name(self, name: str) -> str:
         """The Python name of a schema enum value: SCREAMING_SNAKE.
