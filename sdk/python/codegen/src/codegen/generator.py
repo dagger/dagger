@@ -400,8 +400,10 @@ _CONVENTIONAL_ENUM_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
 
 
 def is_conventional_enum_name(name: str) -> bool:
-    """Whether an enum value name is already in GraphQL's SCREAMING_SNAKE
-    convention (``PER_SESSION``, ``HTTP2``), like the engine's check."""
+    """Whether an enum value name is in SCREAMING_SNAKE convention.
+
+    E.g. ``PER_SESSION`` or ``HTTP2``, like the engine's check.
+    """
     return _CONVENTIONAL_ENUM_NAME.fullmatch(name) is not None
 
 
@@ -1149,10 +1151,10 @@ class Enum(Handler[GraphQLEnumType]):
         t: GraphQLEnumType,
         by_value: Mapping[str, list[str]],
     ) -> Iterator[str]:
-        """Members named by Python's convention, for schemas whose names the
-        engine formatted.
+        """Members named by Python's convention.
 
-        Members are SCREAMING_SNAKE. A member's value is the schema value it
+        For schemas whose names the engine formatted. Members are
+        SCREAMING_SNAKE. A member's value is the schema value it
         stands for, which is what goes over the wire (see `ValueEnum`).
         Schema values written another way (the legacy ``Gzip``,
         ``PerSession``, ``Default``) stay as deprecated aliases, which keep
@@ -1169,8 +1171,10 @@ class Enum(Handler[GraphQLEnumType]):
                     yield doc(f".. deprecated:: Use {member.alias_of} instead.")
 
     def python_member(self, t: GraphQLEnumType, schema_name: str) -> str:
-        """The Python member to write for a schema value, as a default value:
-        its group's canonical member, not a deprecated alias."""
+        """The Python member to write for a schema value, as a default value.
+
+        That's its group's canonical member, not a deprecated alias.
+        """
         if self.ctx.names is None:
             return schema_name
         for group in self._conventional_members(self._by_value(t), t):

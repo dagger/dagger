@@ -54,9 +54,7 @@ class SchemaNames:
     types: dict[type, str] = dataclasses.field(default_factory=dict)
     """Interface type names, from the interface's class."""
 
-    enum_members: dict[type, dict[str, str]] = dataclasses.field(
-        default_factory=dict
-    )
+    enum_members: dict[type, dict[str, str]] = dataclasses.field(default_factory=dict)
     """Member names of the module's own enums, by enum class, from the
     member's Python name."""
 
@@ -78,9 +76,10 @@ class SchemaNames:
         """
         if isinstance(value, list | tuple):
             return [self.enum_value(v) for v in value]
-        if isinstance(value, enum.Enum):
-            if name := self.enum_members.get(type(value), {}).get(value.name):
-                return name
+        if isinstance(value, enum.Enum) and (
+            name := self.enum_members.get(type(value), {}).get(value.name)
+        ):
+            return name
         return value
 
 
