@@ -1712,6 +1712,9 @@ type EnumValue[T enumValue] struct {
 	Underlying  T
 	Description string
 	View        ViewFilter
+	// Aliases are hidden alternate names of the value, accepted as inputs.
+	// See Aliases and WithAliases.
+	Aliases Aliases
 }
 
 // EnumValues is a list of possible values for an Enum.
@@ -1817,7 +1820,46 @@ func (e *EnumValues[T]) Lookup(val string) (T, error) {
 			return possible.Value, nil
 		}
 	}
+	if canonical, ok := e.EnumValueAliases().Resolve(val); ok {
+		return e.Lookup(canonical)
+	}
 	return zero, fmt.Errorf("invalid enum member %q for %T", val, zero)
+}
+
+var _ EnumValueAliased = (*EnumValues[String])(nil)
+
+// EnumValueAliases returns the enum's values and their hidden aliases. See
+// EnumValueAliased.
+func (e *EnumValues[T]) EnumValueAliases() EnumValueAliases {
+	var aliases EnumValueAliases
+	for _, possible := range *e {
+		aliases.Values = append(aliases.Values, string(possible.Value))
+		if len(possible.Aliases.Names) == 0 {
+			continue
+		}
+		if aliases.Aliases == nil {
+			aliases.Aliases = map[string]Aliases{}
+		}
+		aliases.Aliases[string(possible.Value)] = possible.Aliases
+	}
+	return aliases
+}
+
+// WithAliases gives the value val hidden alternate names, accepted as inputs
+// and decoded to val. Unlike Alias, they're in no schema a client can read.
+// See Aliases.
+func (e *EnumValues[T]) WithAliases(val T, aliases Aliases) T {
+	found := false
+	for i, v := range *e {
+		if v.Value == val {
+			(*e)[i].Aliases = aliases
+			found = true
+		}
+	}
+	if !found {
+		panic(fmt.Sprintf("cannot find enum %q", val))
+	}
+	return val
 }
 
 func (e *EnumValues[T]) Register(val T, desc ...string) T {

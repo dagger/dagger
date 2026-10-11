@@ -16,15 +16,18 @@ import (
 )
 
 // Aliases are hidden alternate names of an object or interface type, a field,
-// or a field argument: old spellings that keep working for a while after a
-// rename.
+// a field argument or an enum value: old spellings that keep working for a
+// while after a rename.
 //
 // Queries may use an alias wherever the canonical name is accepted, but no
 // schema a client can read shows it: Schema, SchemaForView, introspection and
 // everything generated from them (SDK codegen, the schema JSON file) only have
 // the canonical name. Only validation sees aliases (see SchemaWithAliases),
 // and a query that uses one is rewritten to the canonical name when it's
-// parsed, so its calls, IDs and cache keys are the canonical call's.
+// parsed, so its calls, IDs and cache keys are the canonical call's. An enum
+// value alias is an input only: the enum's decoder turns it into the
+// canonical value (see EnumValueAliased), and outputs have the canonical
+// name.
 //
 // An alias that collides with a real name, or that two names claim, is
 // ignored.
@@ -53,6 +56,52 @@ type typeAliased interface {
 	TypeAliases() Aliases
 }
 
+// EnumValueAliased is implemented by enum types whose values have hidden
+// aliases (see Aliases).
+//
+// Since an enum value reaches a field as an input (an inline literal, a
+// variable, a string from a CLI flag or a JSON document) and is decoded by
+// the enum's own decoder, the decoder is what accepts the aliases: it must
+// decode an alias to its canonical value, as EnumValueAliases.Resolve
+// resolves it, so the value's literal, and so the call's ID and cache key,
+// are the canonical ones. The server only adds the aliases to the schema
+// queries are validated against, and notes their uses.
+type EnumValueAliased interface {
+	EnumValueAliases() EnumValueAliases
+}
+
+// EnumValueAliases are the values of an enum and their hidden aliases.
+type EnumValueAliases struct {
+	// Values are the names of all the enum's values, in every view.
+	Values []string
+	// Aliases are the aliases of the values, by value name.
+	Aliases map[string]Aliases
+}
+
+// Resolve returns the value name is a hidden alias of. A name that is a
+// value itself, or that two values claim, is no alias, whatever the views
+// of the values and the aliases.
+//
+// It doesn't check the aliases' views: decoders have no view, and a query
+// that uses an alias outside its views fails validation before anything
+// decodes it.
+func (e EnumValueAliases) Resolve(name string) (string, bool) {
+	if len(e.Aliases) == 0 || slices.Contains(e.Values, name) {
+		return "", false
+	}
+	canonical := ""
+	for _, value := range e.Values {
+		if value == canonical || !slices.Contains(e.Aliases[value].Names, name) {
+			continue
+		}
+		if canonical != "" {
+			return "", false
+		}
+		canonical = value
+	}
+	return canonical, canonical != ""
+}
+
 // nameAliases indexes the aliases accepted in one view of a schema, each
 // mapped to its canonical name.
 type nameAliases struct {
@@ -63,10 +112,16 @@ type nameAliases struct {
 	// Args maps a type name and a canonical field name to its argument
 	// aliases.
 	Args map[string]map[string]map[string]string `json:"args,omitempty"`
+	// EnumValues maps an enum type name to its value aliases.
+	EnumValues map[string]map[string]string `json:"enumValues,omitempty"`
+
+	// types are the schema's types, to find the enum values in arguments
+	// when there are enum value aliases.
+	types map[string]*ast.Definition
 }
 
 func (idx *nameAliases) empty() bool {
-	return idx == nil || (len(idx.Types) == 0 && len(idx.Fields) == 0 && len(idx.Args) == 0)
+	return idx == nil || (len(idx.Types) == 0 && len(idx.Fields) == 0 && len(idx.Args) == 0 && len(idx.EnumValues) == 0)
 }
 
 // typeName returns the canonical name of a type name that may be an alias.
@@ -132,6 +187,75 @@ func (idx *nameAliases) field(ctx context.Context, typeName string, astField *as
 	return &rewritten, nil
 }
 
+// noteEnumValueAliases notes the enum value aliases the arguments of
+// astField, a field of typeName with canonical names, use. They need no
+// rewriting: the enums' decoders take them to their canonical values (see
+// EnumValueAliased).
+func (idx *nameAliases) noteEnumValueAliases(ctx context.Context, typeName string, astField *ast.Field, vars map[string]any) {
+	if idx == nil || len(idx.EnumValues) == 0 || len(astField.Arguments) == 0 {
+		return
+	}
+	def := idx.types[typeName]
+	if def == nil {
+		return
+	}
+	fieldDef := def.Fields.ForName(astField.Name)
+	if fieldDef == nil {
+		return
+	}
+	for _, arg := range astField.Arguments {
+		argDef := fieldDef.Arguments.ForName(arg.Name)
+		if argDef == nil {
+			continue
+		}
+		val, err := arg.Value.Value(vars)
+		if err != nil {
+			continue
+		}
+		idx.noteEnumValueAliasesIn(ctx, argDef.Type, val)
+	}
+}
+
+// noteEnumValueAliasesIn notes the enum value aliases val, an input of type
+// t, uses: in itself, in its list elements or in its input object fields.
+func (idx *nameAliases) noteEnumValueAliasesIn(ctx context.Context, t *ast.Type, val any) {
+	if t == nil || val == nil {
+		return
+	}
+	if t.Elem != nil {
+		if list, ok := val.([]any); ok {
+			for _, elem := range list {
+				idx.noteEnumValueAliasesIn(ctx, t.Elem, elem)
+			}
+			return
+		}
+		// A single value is coerced to a list of it.
+		idx.noteEnumValueAliasesIn(ctx, t.Elem, val)
+		return
+	}
+	if aliases, ok := idx.EnumValues[t.NamedType]; ok {
+		if name, ok := val.(string); ok {
+			if canonical, ok := aliases[name]; ok {
+				noteAliasUse(ctx, "enumValue", t.NamedType, name, canonical)
+			}
+		}
+		return
+	}
+	def := idx.types[t.NamedType]
+	if def == nil || def.Kind != ast.InputObject {
+		return
+	}
+	fields, ok := val.(map[string]any)
+	if !ok {
+		return
+	}
+	for _, field := range def.Fields {
+		if v, ok := fields[field.Name]; ok {
+			idx.noteEnumValueAliasesIn(ctx, field.Type, v)
+		}
+	}
+}
+
 // noteAliasUse records that a query used a deprecated alias: as an event on
 // the current span, and in the debug log.
 func noteAliasUse(ctx context.Context, kind, parent, alias, canonical string) {
@@ -179,8 +303,9 @@ func (c *aliasClaims) claim(alias, canonical string) {
 }
 
 // collectNameAliasesLocked indexes the aliases of the object and interface
-// types in schema, the server's schema for view. An alias that collides with a
-// name of its scope is ignored. The caller holds installLock.
+// types and of the enum values in schema, the server's schema for view. An
+// alias that collides with a name of its scope is ignored. The caller holds
+// installLock.
 func (s *Server) collectNameAliasesLocked(view call.View, schema *ast.Schema) *nameAliases {
 	idx := &nameAliases{}
 	types := aliasClaims{scope: "types"}
@@ -262,15 +387,60 @@ func (s *Server) collectNameAliasesLocked(view call.View, schema *ast.Schema) *n
 		collect(name, iface, iface.FieldSpecs(view))
 	}
 	idx.Types = types.claims
+	for _, name := range slices.Sorted(maps.Keys(s.scalars)) {
+		aliased, ok := s.scalars[name].(EnumValueAliased)
+		if !ok {
+			continue
+		}
+		def := schema.Types[name]
+		if def == nil || def.Kind != ast.Enum {
+			continue
+		}
+		valueAliases := aliased.EnumValueAliases()
+		claims := map[string]string{}
+		refused := map[string]bool{}
+		for _, value := range slices.Sorted(maps.Keys(valueAliases.Aliases)) {
+			if def.EnumValues.ForName(value) == nil {
+				continue
+			}
+			for _, alias := range valueAliases.Aliases[value].namesIn(view) {
+				if alias == value || refused[alias] {
+					continue
+				}
+				// Resolve as the enum's decoder does, in every view, so
+				// validation accepts what decoding does.
+				if canonical, ok := valueAliases.Resolve(alias); ok && canonical == value {
+					claims[alias] = value
+					continue
+				}
+				refused[alias] = true
+				if slices.Contains(valueAliases.Values, alias) {
+					slog.Warn("ignoring name alias that collides with an enum value", "enum", name, "value", value, "alias", alias)
+				} else {
+					slog.Warn("ignoring ambiguous name alias", "scope", name, "alias", alias)
+				}
+			}
+		}
+		if len(claims) > 0 {
+			if idx.EnumValues == nil {
+				idx.EnumValues = map[string]map[string]string{}
+			}
+			idx.EnumValues[name] = claims
+		}
+	}
+	if len(idx.EnumValues) > 0 {
+		idx.types = schema.Types
+	}
 	return idx
 }
 
 // schema returns base with the aliases added, each marked @deprecated with
 // its canonical name: field aliases as copies of their field, argument
 // aliases as copies of their argument, type aliases as copies of their type
-// that match wherever it does. A required argument with aliases is optional
-// in it, since a query may give it by either name; the call still requires it.
-// Returns base itself when there are no aliases.
+// that match wherever it does, enum value aliases as copies of their value.
+// A required argument with aliases is optional in it, since a query may give
+// it by either name; the call still requires it. Returns base itself when
+// there are no aliases.
 func (idx *nameAliases) schema(base *ast.Schema) *ast.Schema {
 	if idx.empty() {
 		return base
@@ -309,6 +479,29 @@ func (idx *nameAliases) schema(base *ast.Schema) *ast.Schema {
 		// The alias stands for the canonical type: a fragment on it is valid
 		// wherever one on the canonical type is.
 		out.PossibleTypes[alias] = slices.Clone(out.PossibleTypes[canonical])
+	}
+	for name, valueAliases := range idx.EnumValues {
+		if def := out.Types[name]; def != nil {
+			out.Types[name] = withEnumValueAliases(def, valueAliases)
+		}
+	}
+	return &out
+}
+
+// withEnumValueAliases returns def, an enum, with the aliases of its values
+// added after each, as copies of it.
+func withEnumValueAliases(def *ast.Definition, valueAliases map[string]string) *ast.Definition {
+	byValue := aliasesByCanonical(valueAliases)
+	out := *def
+	out.EnumValues = make(ast.EnumValueList, 0, len(def.EnumValues)+len(valueAliases))
+	for _, value := range def.EnumValues {
+		out.EnumValues = append(out.EnumValues, value)
+		for _, alias := range byValue[value.Name] {
+			aliasValue := *value
+			aliasValue.Name = alias
+			aliasValue.Directives = withAliasDeprecation(value.Directives, value.Name)
+			out.EnumValues = append(out.EnumValues, &aliasValue)
+		}
 	}
 	return &out
 }

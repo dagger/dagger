@@ -2665,7 +2665,8 @@ func (s *Server) typeConditionMatches(condition string, objectTypeName string) b
 
 // parseASTSelections parses the selections of a query on self into
 // selectors. Aliases (see Aliases) are rewritten to their canonical names
-// here, so the selectors are the ones the canonical query gives.
+// here, so the selectors are the ones the canonical query gives; enum value
+// aliases are only noted, since the enums' decoders canonicalize them.
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, aliases *nameAliases, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
 
@@ -2704,6 +2705,7 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
 			}
+			aliases.noteEnumValueAliases(ctx, self.Name(), astField, vars)
 			sel, resType, err := parser.ParseField(ctx, s.View, astField, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
