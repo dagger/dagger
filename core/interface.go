@@ -281,7 +281,9 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 
 	// Create a dagql.Interface instead of a Class — this is the first-class
 	// interface representation that produces ast.Interface definitions.
-	dagqlIface := dagql.NewInterface(ifaceName, formatGqlDescription(ifaceTypeDef.Description))
+	dagqlIface := dagql.NewInterface(ifaceName, formatGqlDescription(ifaceTypeDef.Description)).
+		WithAliases(iface.mod.Self().TypeNameAliases(ifaceName, ifaceTypeDef.OriginalName))
+	namer := iface.mod.Self().Namer()
 
 	// Add an "id" field so SDKs can generate proper ID handling methods
 	// (e.g. XXX_GraphQLType, MarshalJSON) for interface types.
@@ -302,7 +304,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	// We keep the validation that return/arg types aren't from external deps.
 	for _, fnTypeDefRes := range iface.typeDef.Functions {
 		fnTypeDef := fnTypeDefRes.Self()
-		fnName := iface.mod.Self().Namer().FieldName(fnTypeDef.Name)
+		fnName := namer.FieldName(fnTypeDef.Name)
 
 		// check whether this is a pre-existing object from a dependency module
 		returnModType, ok, err := iface.mod.Self().Deps.ModTypeFor(ctx, fnTypeDef.ReturnType.Self())
@@ -334,6 +336,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 		fieldSpec := dagql.InterfaceFieldSpec{
 			FieldSpec: dagql.FieldSpec{
 				Name:             fnName,
+				Aliases:          namer.legacyNameAliases(fnName, LegacyNamer.functionName(fnTypeDef.OriginalName)),
 				Description:      formatGqlDescription(fnTypeDef.Description),
 				Type:             fnTypeDef.ReturnType.Self().ToTyped(),
 				Module:           moduleID,
@@ -374,8 +377,10 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				}
 			}
 
+			argName := namer.ArgName(argMetadata.Name)
 			inputSpec := dagql.InputSpec{
-				Name:             iface.mod.Self().Namer().ArgName(argMetadata.Name),
+				Name:             argName,
+				Aliases:          namer.legacyNameAliases(argName, LegacyNamer.ArgName(argMetadata.OriginalName)),
 				Description:      formatGqlDescription(argMetadata.Description),
 				Type:             argMetadata.TypeDef.Self().ToInput(),
 				DeprecatedReason: argMetadata.Deprecated,

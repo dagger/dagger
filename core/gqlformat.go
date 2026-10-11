@@ -37,7 +37,8 @@ func formatGqlDescription(desc string) string {
 //
 // The gate is an API view, so it's base-version granular like every view
 // (engine.APIViewVersion): every v1.0.0 prerelease shares the v1.0.0 view and
-// gets the new rules.
+// gets the new rules. The old spellings of the module names they changed stay
+// accepted as hidden aliases (see ModuleNameAliases).
 const IdentifierNamingVersion = "v1.0.0-0"
 
 // identifierNamingView is the API views whose names follow engine/naming:
@@ -49,11 +50,31 @@ var identifierNamingView = AfterVersion(IdentifierNamingVersion)
 // accepted only in the views that have the new rules (identifierNamingView):
 // before those, the old spelling is the name.
 //
-// Every alias kept for the transition goes through here, so ending it is
-// deleting this function and its callers. See
+// Every alias kept for the transition goes through here or
+// ModuleNameAliases, so ending it is deleting them and their callers. See
 // hack/designs/identifier-casing.md, "Transition aliases".
 func NameAliases(names ...string) dagql.Aliases {
 	return dagql.Aliases{Names: names, View: identifierNamingView}
+}
+
+// ModuleNameAliases is NameAliases for the name of a module's declaration (a
+// type, function, field or argument), which the module's naming rules
+// renamed: they're accepted in every view. A module's names follow its own
+// engine version, not its caller's view, so a caller at any view sees the new
+// name, and may have been generated with the old one.
+func ModuleNameAliases(names ...string) dagql.Aliases {
+	return dagql.Aliases{Names: names}
+}
+
+// legacyNameAliases returns the transition aliases of name, which n, a
+// module's naming rules, gave one of its declarations: legacy, the name the
+// legacy strcase rules gave the same declaration, when it's a different one.
+// Modules named by the legacy rules have none.
+func (n Namer) legacyNameAliases(name, legacy string) dagql.Aliases {
+	if n.Legacy() || legacy == "" || legacy == name {
+		return dagql.Aliases{}
+	}
+	return ModuleNameAliases(legacy)
 }
 
 // Namer normalizes module-declared names (types, fields, functions,
@@ -94,7 +115,9 @@ func NamerForEngineVersion(engineVersion string) Namer {
 
 // NamingView is the API view the module is served at, and whose naming rules
 // name its declarations: the view of its engine version. A module entrypoint
-// (manifest v2) declares none: it's served at the engine's own version.
+// (manifest v2) declares none: it's served at the engine's own version. The
+// old spellings of the names the new rules changed stay accepted as aliases
+// (see ModuleNameAliases).
 func (src *ModuleSource) NamingView() call.View {
 	if src == nil {
 		return ""

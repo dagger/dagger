@@ -72,17 +72,29 @@ func NewFunction(name string, returnType dagql.ObjectResult[*TypeDef]) *Function
 
 // NewFunction creates a function, normalizing its name with n.
 func (n Namer) NewFunction(name string, returnType dagql.ObjectResult[*TypeDef]) *Function {
-	gqlName := n.FieldName(name)
-	// strcase writes the ID acronym as "Id"; keep loadFooFromID's spelling.
-	// engine/naming spells it right already.
-	if n.Legacy() && strings.HasPrefix(name, "load") && strings.HasSuffix(name, "FromID") && strings.HasSuffix(gqlName, "FromId") {
-		gqlName = strings.TrimSuffix(gqlName, "FromId") + "FromID"
-	}
 	return &Function{
-		Name:         gqlName,
+		Name:         n.functionName(name),
 		ReturnType:   returnType,
 		OriginalName: name,
 	}
+}
+
+// functionName is the schema name of a function: FieldName, but by the
+// legacy rules a loadFooFromID function keeps its spelling of ID, which
+// strcase writes "Id". engine/naming spells it right already.
+func (n Namer) functionName(name string) string {
+	gqlName := n.FieldName(name)
+	if n.Legacy() && strings.HasPrefix(name, "load") && strings.HasSuffix(name, "FromID") && strings.HasSuffix(gqlName, "FromId") {
+		gqlName = strings.TrimSuffix(gqlName, "FromId") + "FromID"
+	}
+	return gqlName
+}
+
+// NameAliases returns the transition aliases of the function's name, for a
+// module named by n: its name by the legacy rules, if n renamed it. See
+// ModuleNameAliases.
+func (fn *Function) NameAliases(n Namer) dagql.Aliases {
+	return n.legacyNameAliases(fn.Name, LegacyNamer.functionName(fn.OriginalName))
 }
 
 func (*Function) Type() *ast.Type {
@@ -263,6 +275,13 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 	}
 	spec.Module = module
 	spec.ModuleProvider = moduleProvider
+	// Accept the names the legacy rules gave the function and its arguments,
+	// for callers built against them.
+	namer := LegacyNamer
+	if modInst := mod.ModuleResult(); modInst.Self() != nil {
+		namer = modInst.Self().Namer()
+	}
+	spec.Aliases = fn.NameAliases(namer)
 	if fn.SourceMap.Valid && fn.SourceMap.Value.Self() != nil {
 		spec.Directives = append(spec.Directives, fn.SourceMap.Value.Self().TypeDirective())
 	}
@@ -305,6 +324,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 			Type:             input,
 			Default:          defaultVal,
 			DeprecatedReason: argSelf.Deprecated,
+			Aliases:          argSelf.NameAliases(namer),
 		}
 		// Add @expectedType directive for ID-typed arguments (objects and interfaces).
 		// Walk through list wrappers to find the underlying object/interface type.
@@ -515,6 +535,13 @@ func (n Namer) NewFunctionArg(name string, typeDef dagql.ObjectResult[*TypeDef],
 		Deprecated:     deprecated,
 		OriginalName:   name,
 	}
+}
+
+// NameAliases returns the transition aliases of the argument's name, for a
+// module named by n: its name by the legacy rules, if n renamed it. See
+// ModuleNameAliases.
+func (arg *FunctionArg) NameAliases(n Namer) dagql.Aliases {
+	return n.legacyNameAliases(arg.Name, LegacyNamer.ArgName(arg.OriginalName))
 }
 
 type FunctionCachePolicy string
@@ -1549,6 +1576,13 @@ func (n Namer) NewFieldTypeDef(name string, typeDef dagql.ObjectResult[*TypeDef]
 		Deprecated:   deprecated,
 		OriginalName: name,
 	}
+}
+
+// NameAliases returns the transition aliases of the field's name, for a
+// module named by n: its name by the legacy rules, if n renamed it. See
+// ModuleNameAliases.
+func (field *FieldTypeDef) NameAliases(n Namer) dagql.Aliases {
+	return n.legacyNameAliases(field.Name, LegacyNamer.FieldName(field.OriginalName))
 }
 
 func (*FieldTypeDef) Type() *ast.Type {

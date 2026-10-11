@@ -1160,7 +1160,8 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	}
 
 	classOpts := dagql.ClassOpts[*ModuleObject]{
-		Typed: obj,
+		Typed:   obj,
+		Aliases: obj.typeNameAliases(),
 	}
 
 	installDirectives := []*ast.Directive{}
@@ -1217,6 +1218,20 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	return nil
 }
 
+// typeNameAliases returns the transition aliases of the object's type name
+// (see Module.TypeNameAliases), for a collection's batch type too.
+func (obj *ModuleObject) typeNameAliases() dagql.Aliases {
+	aliases := obj.Module.Self().TypeNameAliases(obj.TypeDef.Name, obj.TypeDef.OriginalName)
+	if obj.CollectionBatch && len(aliases.Names) > 0 {
+		names := make([]string, len(aliases.Names))
+		for i, name := range aliases.Names {
+			names[i] = name + "_Batch"
+		}
+		aliases.Names = names
+	}
+	return aliases
+}
+
 func (obj *ModuleObject) isMainObject() bool {
 	if obj.CollectionBatch {
 		return false
@@ -1247,6 +1262,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		}
 		spec := dagql.FieldSpec{
 			Name:             mod.ConstructorName(),
+			Aliases:          mod.ConstructorNameAliases(),
 			Description:      desc,
 			Type:             obj,
 			Module:           moduleID,
@@ -1296,6 +1312,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
 	spec.Name = mod.ConstructorName()
+	spec.Aliases = mod.ConstructorNameAliases()
 	if spec.Description == "" {
 		spec.Description = formatGqlDescription(objDef.Description)
 	}
@@ -1559,6 +1576,7 @@ func objField(mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field
 	}
 	spec := &dagql.FieldSpec{
 		Name:             field.Name,
+		Aliases:          field.NameAliases(mod.Self().Namer()),
 		Description:      field.Description,
 		Type:             field.TypeDef.Self().ToTyped(),
 		Module:           moduleID,

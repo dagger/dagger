@@ -100,11 +100,11 @@ func (ModuleSuite) TestDangModuleEntrypointEnumRoundtrip(ctx context.Context, t 
 }
 
 // A module entrypoint (manifest v2) declares no engineVersion, so the engine
-// serves it at its own version, but it keeps the legacy naming rules: shipping
-// the engine's naming rules, or a later dictionary addition, must not rename
-// an existing entrypoint module's types, functions or arguments. See
-// hack/designs/identifier-casing.md, "Module entrypoints".
-func (ModuleSuite) TestModuleEntrypointKeepsLegacyNames(ctx context.Context, t *testctx.T) {
+// serves it at its own version, naming rules included. The names those rules
+// changed keep their legacy spellings as hidden aliases, so callers built
+// against them keep working. See hack/designs/identifier-casing.md, "Module
+// entrypoints" and "Transition aliases".
+func (ModuleSuite) TestModuleEntrypointLegacyNameAliases(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := goGitBase(t, c).
 		WithNewFile("dagger.toml", "[modules.tiny]\nsource = \"tiny\"\n").
@@ -137,10 +137,13 @@ func (ModuleSuite) TestModuleEntrypointKeepsLegacyNames(ctx context.Context, t *
 }`).
 		With(daggerQueryAt("tiny", `{
   tiny {
+    getURL(comURL: "https://example.com")
     getUrl(comUrl: "https://example.com")
     httpClient {
       __typename
+      baseURL
       baseUrl
+      ... on TinyHttpClient { legacyFragment: baseUrl }
     }
   }
   legacy: __type(name: "TinyHttpClient") { name }
@@ -150,14 +153,17 @@ func (ModuleSuite) TestModuleEntrypointKeepsLegacyNames(ctx context.Context, t *
 	require.NoError(t, err)
 	require.JSONEq(t, `{
   "tiny": {
+    "getURL": "https://example.com",
     "getUrl": "https://example.com",
     "httpClient": {
-      "__typename": "TinyHttpClient",
-      "baseUrl": "https://example.com"
+      "__typename": "TinyHTTPClient",
+      "baseURL": "https://example.com",
+      "baseUrl": "https://example.com",
+      "legacyFragment": "https://example.com"
     }
   },
-  "legacy": {"name": "TinyHttpClient"},
-  "latest": null
+  "legacy": null,
+  "latest": {"name": "TinyHTTPClient"}
 }`, out)
 }
 

@@ -148,6 +148,24 @@ func (mod *Module) ConstructorName() string {
 	return mod.Namer().FieldName(mod.Name())
 }
 
+// ConstructorNameAliases returns the transition aliases of the module's
+// constructor field: its name by the legacy rules, if the module's rules
+// renamed it (daggerCli for module dagger-cli). See ModuleNameAliases.
+func (mod *Module) ConstructorNameAliases() dagql.Aliases {
+	return mod.Namer().legacyNameAliases(mod.ConstructorName(), LegacyNamer.FieldName(mod.Name()))
+}
+
+// TypeNameAliases returns the transition aliases of the schema name of one of
+// the module's types (object, interface or enum), declared as originalName:
+// its namespaced name by the legacy rules, if the module's rules renamed it.
+// See ModuleNameAliases.
+func (mod *Module) TypeNameAliases(name, originalName string) dagql.Aliases {
+	if originalName == "" {
+		return dagql.Aliases{}
+	}
+	return mod.Namer().legacyNameAliases(name, legacyNamespaceObject(originalName, mod.Name(), mod.OriginalName))
+}
+
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 	if src := mod.GetSource(); src != nil && src.Entrypoint != nil {
 		for _, objDef := range mod.ObjectDefs {

@@ -2,9 +2,9 @@ package core
 
 // Module type, field, function and argument names are normalized by the
 // naming rules of the engine version a module declares: engine/naming from
-// core.IdentifierNamingVersion (compared as a full version, so released
-// v1.0.0 prereleases before it keep strcase), strcase before. See
-// hack/designs/identifier-casing.md.
+// core.IdentifierNamingVersion (an API view, so every v1.0.0 prerelease),
+// strcase before. Names the new rules changed keep their legacy spellings as
+// hidden aliases. See hack/designs/identifier-casing.md.
 
 import (
 	"context"
@@ -130,13 +130,39 @@ func (ModuleNamingSuite) TestGoAcronyms(ctx context.Context, t *testctx.T) {
 	out, err = modGen.With(daggerCall("client", "--base-url=https://example.com", "get-url", "--path=/y")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/y", strings.TrimSpace(out))
+
+	// The legacy spellings stay accepted as hidden aliases, the type's too.
+	out, err = modGen.With(daggerQuery(`{client(baseUrl:"https://example.com"){getUrl(path:"/x") ... on TestHttpclient { baseUrl }}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"client":{"getUrl":"https://example.com/x","baseUrl":"https://example.com"}}`, out)
+}
+
+func (ModuleNamingSuite) TestGoAcronymsV1Prerelease(ctx context.Context, t *testctx.T) {
+	// The naming gate is an API view, so a module that declares any v1.0.0
+	// prerelease gets the new names, and keeps its legacy ones as aliases.
+	for _, version := range []string{"v1.0.0-beta.16", "v1.0.0-0"} {
+		t.Run(version, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := legacySDKModule(t, c, "go", namingGoSource, version)
+			schema := currentSchema(ctx, t, modGen)
+
+			client := schema.Types.Get("TestHTTPClient")
+			require.NotNil(t, client)
+			require.Nil(t, schema.Types.Get("TestHttpclient"), "aliases are hidden")
+			require.ElementsMatch(t, []string{"baseURL", "getURL", "id"}, namingFieldNames(client))
+
+			out, err := modGen.With(daggerQuery(`{client(baseUrl:"https://example.com"){getUrl(path:"/x")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"client":{"getUrl":"https://example.com/x"}}`, out)
+		})
+	}
 }
 
 func (ModuleNamingSuite) TestGoAcronymsLegacy(ctx context.Context, t *testctx.T) {
 	// Modules older than core.IdentifierNamingVersion keep the strcase names
-	// they always had, including those that declare an earlier v1.0.0
-	// prerelease, which share the v1.0.0 API view.
-	for _, version := range []string{"v0.21.9", "v1.0.0-beta.16", "v1.0.0-0"} {
+	// they always had.
+	for _, version := range []string{"v0.21.9"} {
 		t.Run(version, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
