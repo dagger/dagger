@@ -11,7 +11,8 @@ namespace Dagger;
 /**
  * The role that generated a message.
  */
-enum LLMMessageRole: string
+#[Attribute\GraphQLType('LLMMessageRole')]
+enum LlmMessageRole: string
 {
     /** A user prompt or tool response. */
     case USER = 'USER';

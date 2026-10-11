@@ -452,7 +452,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     /**
      * The SDK configuration of the module.
      */
-    public function sdk(): ?SDKConfig
+    public function sdk(): ?SdkConfig
     {
         $objectQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
         $objectQueryBuilder->selectField('id');
@@ -460,7 +460,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
         if ($id === null) {
             return null;
         }
-        return $this->client->loadObjectFromId(\Dagger\SDKConfig::class, new \Dagger\Id((string)$id), 'SDKConfig');
+        return $this->client->loadObjectFromId(\Dagger\SdkConfig::class, new \Dagger\Id((string)$id), 'SDKConfig');
     }
 
     /**

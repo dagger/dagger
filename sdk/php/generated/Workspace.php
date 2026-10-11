@@ -820,11 +820,11 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * An installed SDK, by name.
      */
-    public function sdk(string $name): WorkspaceSDK
+    public function sdk(string $name): WorkspaceSdk
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
         $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\WorkspaceSDK($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\WorkspaceSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

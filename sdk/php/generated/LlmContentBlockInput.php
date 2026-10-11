@@ -11,10 +11,11 @@ namespace Dagger;
 /**
  * A content block within an LLM message.
  */
-class LLMContentBlockInput extends Client\AbstractInputObject
+#[Attribute\GraphQLType('LLMContentBlockInput')]
+class LlmContentBlockInput extends Client\AbstractInputObject
 {
     public function __construct(
-        public LLMContentBlockKind $kind,
+        public LlmContentBlockKind $kind,
         public ?string $text = '',
         public ?string $callId = '',
         public ?string $toolName = '',

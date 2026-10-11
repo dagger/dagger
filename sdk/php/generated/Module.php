@@ -183,7 +183,7 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
     /**
      * The SDK config used by this module.
      */
-    public function sdk(): ?SDKConfig
+    public function sdk(): ?SdkConfig
     {
         $objectQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
         $objectQueryBuilder->selectField('id');
@@ -191,7 +191,7 @@ class Module extends Client\AbstractObject implements Client\IdAble, Node, Synce
         if ($id === null) {
             return null;
         }
-        return $this->client->loadObjectFromId(\Dagger\SDKConfig::class, new \Dagger\Id((string)$id), 'SDKConfig');
+        return $this->client->loadObjectFromId(\Dagger\SdkConfig::class, new \Dagger\Id((string)$id), 'SDKConfig');
     }
 
     /**

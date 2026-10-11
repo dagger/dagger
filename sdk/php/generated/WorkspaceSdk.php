@@ -11,7 +11,8 @@ namespace Dagger;
 /**
  * An installed SDK: a module marked for scaffolding other modules and clients.
  */
-class WorkspaceSDK extends Client\AbstractObject implements Client\IdAble, Node
+#[Attribute\GraphQLType('WorkspaceSDK')]
+class WorkspaceSdk extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this WorkspaceSDK.

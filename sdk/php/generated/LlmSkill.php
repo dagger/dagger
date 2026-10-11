@@ -11,7 +11,8 @@ namespace Dagger;
 /**
  * A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill.
  */
-class LLMSkill extends Client\AbstractObject implements Client\IdAble, Node
+#[Attribute\GraphQLType('LLMSkill')]
+class LlmSkill extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this LLMSkill.
