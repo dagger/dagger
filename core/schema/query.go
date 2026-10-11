@@ -181,7 +181,26 @@ func (s *querySchema) clientFilesyncMirror(ctx context.Context, parent dagql.Obj
 }
 
 func getSchemaJSON(hiddenTypes, hiddenFields []string, view call.View, srv *dagql.Server) ([]byte, error) {
-	dagqlSchema := introspection.WrapSchema(srv.SchemaForView(view))
+	return buildSchemaJSON(hiddenTypes, hiddenFields, view, srv, false)
+}
+
+// buildSchemaJSON serializes the schema in view, without hiddenTypes and
+// hiddenFields. With includeAliases, it adds the hidden field and argument
+// aliases (see dagql.Aliases), marked deprecated, as SchemaWithAliasesForView
+// has them, but not type aliases: a copy of a type would be a different type
+// to whatever reads the JSON.
+//
+// Only a runtime that typechecks callers against the JSON without generating
+// code from it (the in-engine Dang runtime) wants the aliases: SDK
+// generators would collide on them.
+func buildSchemaJSON(hiddenTypes, hiddenFields []string, view call.View, srv *dagql.Server, includeAliases bool) ([]byte, error) {
+	schema := srv.SchemaForView(view)
+	var typeAliases map[string]string
+	if includeAliases {
+		schema = srv.SchemaWithAliasesForView(view)
+		typeAliases = srv.TypeAliasesForView(view)
+	}
+	dagqlSchema := introspection.WrapSchema(schema)
 
 	introspectionResponse := codegenintrospection.Response{
 		SchemaVersion: string(core.UnmarkedView(view)),
@@ -191,6 +210,9 @@ func getSchemaJSON(hiddenTypes, hiddenFields []string, view call.View, srv *dagq
 		introspectionResponse.Schema.QueryType.Name = *queryName
 	}
 	for _, dagqlType := range dagqlSchema.Types() {
+		if name := dagqlType.Name(); name != nil && typeAliases[*name] != "" {
+			continue
+		}
 		codeGenType, err := core.DagqlToCodegenType(dagqlType)
 		if err != nil {
 			return nil, err
@@ -230,6 +252,9 @@ func getSchemaJSON(hiddenTypes, hiddenFields []string, view call.View, srv *dagq
 type schemaJSONArgs struct {
 	HiddenTypes  []string `default:"[]"`
 	HiddenFields []string `default:"[]"`
+	// IncludeAliases adds hidden aliases to the JSON; see buildSchemaJSON.
+	// Internal: only the engine asks for it, for the in-engine Dang runtime.
+	IncludeAliases bool `default:"false" internal:"true"`
 }
 
 func (s *querySchema) schemaJSONFile(
@@ -245,7 +270,7 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
-	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, args.HiddenFields, dag.View, dag)
+	moduleSchemaJSON, err := buildSchemaJSON(args.HiddenTypes, args.HiddenFields, dag.View, dag, args.IncludeAliases)
 	if err != nil {
 		return inst, err
 	}
