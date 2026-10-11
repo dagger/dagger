@@ -784,6 +784,75 @@ def test_enum_render(type_, expected, ctx: Context):
     assert handler.render(type_) == expected
 
 
+def test_enum_render_conventional():
+    # With engine-formatted names, members are SCREAMING_SNAKE and their
+    # values the API's values, which go over the wire; the API's other
+    # spellings stay as deprecated aliases.
+    ctx = Context(names={"Default": "default", "PerSession": "per_session"})
+    type_ = GraphQLEnumType(
+        "Compression",
+        {
+            "Gzip": GraphQLEnumValue("Gzip", description="Legacy."),
+            "GZIP": GraphQLEnumValue("Gzip", description="Gzip."),
+            "PerSession": GraphQLEnumValue("PerSession"),
+            "Default": GraphQLEnumValue("Default"),
+            "HTTP2": GraphQLEnumValue("HTTP2"),
+        },
+    )
+    assert EnumHandler(ctx).render(type_) == dedent(
+        '''
+        class Compression(ValueEnum):
+
+            DEFAULT = 'Default'
+            Default = 'Default'
+            """.. deprecated:: Use DEFAULT instead."""
+
+            GZIP = 'Gzip'
+            """Gzip."""
+            Gzip = 'Gzip'
+            """.. deprecated:: Use GZIP instead."""
+
+            HTTP2 = 'HTTP2'
+
+            PER_SESSION = 'PerSession'
+            PerSession = 'PerSession'
+            """.. deprecated:: Use PER_SESSION instead."""
+        ''',
+    )
+
+
+_ENUM_SCHEMA = """
+    enum Policy { Default PerSession }
+    type Query {
+        policy: Policy!
+        %s
+    }
+"""
+
+
+def test_generate_enum_names():
+    schema = build_schema(_ENUM_SCHEMA % _FORMAT_IDENTIFIERS)
+
+    code = generate(schema, names={"Default": "default", "PerSession": "per_session"})
+
+    assert "from dagger.client.base import Input, Root, Scalar, Type, ValueEnum" in code
+    assert "class Policy(ValueEnum):" in code
+    assert "PER_SESSION = 'PerSession'" in code
+    assert "PerSession = 'PerSession'" in code
+
+
+def test_generate_enum_without_names():
+    # Older schemas generate the code they always did.
+    schema = build_schema(_ENUM_SCHEMA % "")
+
+    code = generate(schema, names={"Default": "default", "PerSession": "per_session"})
+
+    assert "from dagger.client.base import Enum, Input, Root, Scalar, Type" in code
+    assert "class Policy(Enum):" in code
+    assert "PerSession = 'PerSession'" in code
+    assert "PER_SESSION" not in code
+
+
 @pytest.mark.parametrize(
     ("original", "expected"),
     [

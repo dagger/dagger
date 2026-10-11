@@ -9,7 +9,7 @@ from typing_extensions import Self
 
 from dagger.client._core import Arg
 from dagger.client._guards import typecheck
-from dagger.client.base import Enum, Input, Root, Scalar, Type
+from dagger.client.base import Input, Root, Scalar, Type, ValueEnum
 
 
 class Bytes(Scalar):
@@ -31,7 +31,7 @@ class Void(Scalar):
     resolvers that do not return anything."""
 
 
-class AcronymStyle(Enum):
+class AcronymStyle(ValueEnum):
     """How acronyms and terms are written where a word starts with a
     capital."""
 
@@ -42,7 +42,7 @@ class AcronymStyle(Enum):
     """HTTPClient, IPv6Address, GitHubRepo"""
 
 
-class AgentMessageDelivery(Enum):
+class AgentMessageDelivery(ValueEnum):
     """EXPERIMENTAL: Agent APIs are likely to change.  How a message
     landed in an agent's evaluation."""
 
@@ -56,7 +56,7 @@ class AgentMessageDelivery(Enum):
     """The message was absorbed into the in-flight turn at a step boundary, steering it."""
 
 
-class AgentState(Enum):
+class AgentState(ValueEnum):
     """EXPERIMENTAL: Agent APIs are likely to change.  Computed lifecycle
     state of an agent."""
 
@@ -79,7 +79,7 @@ class AgentState(Enum):
     """Blocked on input from the user."""
 
 
-class ArtifactDimensionKind(Enum):
+class ArtifactDimensionKind(ValueEnum):
     COLLECTION = "COLLECTION"
 
     MODULE = "MODULE"
@@ -87,7 +87,7 @@ class ArtifactDimensionKind(Enum):
     TYPE = "TYPE"
 
 
-class CacheSharingMode(Enum):
+class CacheSharingMode(ValueEnum):
     """Sharing mode of the cache volume."""
 
     LOCKED = "LOCKED"
@@ -100,7 +100,7 @@ class CacheSharingMode(Enum):
     """Shares the cache volume amongst many build pipelines"""
 
 
-class Casing(Enum):
+class Casing(ValueEnum):
     """A convention for joining words into an identifier."""
 
     CAMEL = "CAMEL"
@@ -122,7 +122,7 @@ class Casing(Enum):
     """http_client"""
 
 
-class ChangesetMergeConflict(Enum):
+class ChangesetMergeConflict(ValueEnum):
     """Strategy to use when merging changesets with conflicting
     changes."""
 
@@ -142,7 +142,7 @@ class ChangesetMergeConflict(Enum):
     """The conflict is resolved by applying the version of the other changeset"""
 
 
-class ChangesetsMergeConflict(Enum):
+class ChangesetsMergeConflict(ValueEnum):
     """Strategy to use when merging multiple changesets with git octopus
     merge."""
 
@@ -153,7 +153,7 @@ class ChangesetsMergeConflict(Enum):
     """Fail before attempting merge if file-level conflicts are detected between any changesets"""
 
 
-class DiffStatKind(Enum):
+class DiffStatKind(ValueEnum):
     """The type of change for a diff stat entry."""
 
     ADDED = "ADDED"
@@ -169,7 +169,7 @@ class DiffStatKind(Enum):
     """A file was renamed."""
 
 
-class ExistsType(Enum):
+class ExistsType(ValueEnum):
     """File type."""
 
     DIRECTORY_TYPE = "DIRECTORY_TYPE"
@@ -182,7 +182,7 @@ class ExistsType(Enum):
     """Tests path is a symlink"""
 
 
-class FileType(Enum):
+class FileType(ValueEnum):
     """File type."""
 
     DIRECTORY = "DIRECTORY"
@@ -204,17 +204,23 @@ class FileType(Enum):
     """unknown file type"""
 
 
-class FunctionCachePolicy(Enum):
+class FunctionCachePolicy(ValueEnum):
     """The behavior configured for function result caching."""
 
+    DEFAULT = "Default"
     Default = "Default"
+    """.. deprecated:: Use DEFAULT instead."""
 
+    NEVER = "Never"
     Never = "Never"
+    """.. deprecated:: Use NEVER instead."""
 
+    PER_SESSION = "PerSession"
     PerSession = "PerSession"
+    """.. deprecated:: Use PER_SESSION instead."""
 
 
-class GitPushDisposition(Enum):
+class GitPushDisposition(ValueEnum):
     """How a Git push updated the remote ref."""
 
     CREATED = "CREATED"
@@ -230,7 +236,7 @@ class GitPushDisposition(Enum):
     """The remote ref already pointed to this commit."""
 
 
-class IdentifierWordKind(Enum):
+class IdentifierWordKind(ValueEnum):
     """The kind of a word in an identifier."""
 
     ACRONYM = "ACRONYM"
@@ -243,33 +249,39 @@ class IdentifierWordKind(Enum):
     """An ordinary word."""
 
 
-class ImageLayerCompression(Enum):
+class ImageLayerCompression(ValueEnum):
     """Compression algorithm to use for image layers."""
 
-    EStarGZ = "EStarGZ"
     ESTARGZ = "EStarGZ"
+    EStarGZ = "EStarGZ"
+    """.. deprecated:: Use ESTARGZ instead."""
 
-    Gzip = "Gzip"
     GZIP = "Gzip"
+    Gzip = "Gzip"
+    """.. deprecated:: Use GZIP instead."""
 
-    Uncompressed = "Uncompressed"
     UNCOMPRESSED = "Uncompressed"
+    Uncompressed = "Uncompressed"
+    """.. deprecated:: Use UNCOMPRESSED instead."""
 
-    Zstd = "Zstd"
     ZSTD = "Zstd"
+    Zstd = "Zstd"
+    """.. deprecated:: Use ZSTD instead."""
 
 
-class ImageMediaTypes(Enum):
+class ImageMediaTypes(ValueEnum):
     """Mediatypes to use in published or exported image metadata."""
 
-    DockerMediaTypes = "DockerMediaTypes"
     DOCKER = "DockerMediaTypes"
+    DockerMediaTypes = "DockerMediaTypes"
+    """.. deprecated:: Use DOCKER instead."""
 
-    OCIMediaTypes = "OCIMediaTypes"
     OCI = "OCIMediaTypes"
+    OCIMediaTypes = "OCIMediaTypes"
+    """.. deprecated:: Use OCI instead."""
 
 
-class LLMContentBlockKind(Enum):
+class LLMContentBlockKind(ValueEnum):
     """The kind of content in a message block."""
 
     AUDIO = "AUDIO"
@@ -294,7 +306,7 @@ class LLMContentBlockKind(Enum):
     """A tool/function result."""
 
 
-class LLMMessageOriginKind(Enum):
+class LLMMessageOriginKind(ValueEnum):
     """EXPERIMENTAL: Agent APIs are likely to change.  Who put a message
     on the conversation record."""
 
@@ -308,7 +320,7 @@ class LLMMessageOriginKind(Enum):
     """The user: a prompt submitted by a client rather than sent by an agent."""
 
 
-class LLMMessageRole(Enum):
+class LLMMessageRole(ValueEnum):
     """The role that generated a message."""
 
     ASSISTANT = "ASSISTANT"
@@ -321,14 +333,14 @@ class LLMMessageRole(Enum):
     """A user prompt or tool response."""
 
 
-class ModuleSourceExperimentalFeature(Enum):
+class ModuleSourceExperimentalFeature(ValueEnum):
     """Experimental features of a module"""
 
     SELF_CALLS = "SELF_CALLS"
     """Self calls"""
 
 
-class ModuleSourceKind(Enum):
+class ModuleSourceKind(ValueEnum):
     """The kind of module source."""
 
     DIR_SOURCE = "DIR_SOURCE"
@@ -341,7 +353,7 @@ class ModuleSourceKind(Enum):
     LOCAL = "LOCAL_SOURCE"
 
 
-class NetworkProtocol(Enum):
+class NetworkProtocol(ValueEnum):
     """Transport layer network protocol associated to a port."""
 
     TCP = "TCP"
@@ -349,7 +361,7 @@ class NetworkProtocol(Enum):
     UDP = "UDP"
 
 
-class PatchConflict(Enum):
+class PatchConflict(ValueEnum):
     """How to handle patch hunks that no longer apply to the target
     content."""
 
@@ -360,7 +372,7 @@ class PatchConflict(Enum):
     """Apply the hunks that fit and insert conflict markers where hunks no longer match, instead of failing."""
 
 
-class RegistryProtocol(Enum):
+class RegistryProtocol(ValueEnum):
     """Transport protocol to use for registry operations."""
 
     HTTP = "HTTP"
@@ -368,7 +380,7 @@ class RegistryProtocol(Enum):
     HTTPS = "HTTPS"
 
 
-class ReturnType(Enum):
+class ReturnType(ValueEnum):
     """Expected return type of an execution"""
 
     ANY = "ANY"
@@ -381,7 +393,7 @@ class ReturnType(Enum):
     """A successful execution (exit code 0)"""
 
 
-class TypeDefKind(Enum):
+class TypeDefKind(ValueEnum):
     """Distinguishes the different kinds of TypeDefs."""
 
     BOOLEAN_KIND = "BOOLEAN_KIND"
@@ -470,7 +482,7 @@ class TypeDefKind(Enum):
     """
 
 
-class WorkspaceCommitPickReason(Enum):
+class WorkspaceCommitPickReason(ValueEnum):
     """Why a source commit cannot be pulled."""
 
     CONTENT = "CONTENT"
@@ -483,7 +495,7 @@ class WorkspaceCommitPickReason(Enum):
     """No conflict."""
 
 
-class WorkspaceCommitPickStatus(Enum):
+class WorkspaceCommitPickStatus(ValueEnum):
     """Whether a source commit can be pulled."""
 
     CONFLICT = "CONFLICT"
