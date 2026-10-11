@@ -22,6 +22,7 @@ Tracking: [dagger/dagger#13668 (comment)](https://github.com/dagger/dagger/issue
 - [Known Limitations](#known-limitations)
 - [Test Vectors](#test-vectors)
 - [Open Questions](#open-questions)
+- [SDK Extraction](#sdk-extraction)
 - [Implementation Plan](#implementation-plan)
 
 ## Summary
@@ -488,9 +489,12 @@ the old strcase code byte for byte:
   typedefs are named by its version. Public constructors pass the view on to
   the internal `__*` selects they make; the in-engine Dang runtime stamps its
   module's view on its naming selectors (`core/sdk/dang/shared/naming.go`).
+  A module entrypoint's calls get a view marked for legacy naming (see
+  [Module entrypoints](#module-entrypoints)).
 - **Module-level naming** (`namespaceObject`, type and constructor lookups,
   validation) uses `Module.Namer()`, chosen by the module source's
-  `engineVersion`. Module tree CLI paths (checks, generators, artifacts) use
+  `engineVersion` (`ModuleSource.Namer`; legacy for a module entrypoint).
+  Module tree CLI paths (checks, generators, artifacts) use
   the namer of the module that declared the node, so a legacy dependency keeps
   its old paths inside a new workspace.
 - **Mixed versions.** A dependency's types are installed with *its* rules, so
@@ -712,9 +716,8 @@ An earlier revision of this design had the engine write each name's words into
 the schema JSON (`__identifiers`) and every SDK format them, on the premise
 that codegen runs offline. That premise was mostly false, and it put a copy of
 the formatting rules into each SDK. The engine no longer writes the words, and
-the per-SDK formatters are being removed SDK by SDK: until an SDK moves to
-`formatIdentifiers` (or the sidecar), it finds no words and keeps its legacy
-converter.
+every in-repo SDK has moved to `formatIdentifiers` (or the sidecar) in place of
+its word formatter.
 
 ## Versioning and Compatibility
 
@@ -724,7 +727,9 @@ The algorithm and the dictionary are selected by engine version through the
 existing view mechanism (`AfterVersion` / `BeforeVersion` in `core/util.go`):
 
 - A module's own names are parsed with the version its `engineVersion` selects.
-  Existing modules keep strcase behavior until they bump.
+  Existing modules keep strcase behavior until they bump. A module entrypoint
+  (manifest v2), which declares no `engineVersion`, keeps strcase behavior
+  (see [Module entrypoints](#module-entrypoints)).
 - A client's codegen uses the version the client connects with.
 - A dictionary addition lands with an engine version and applies only to
   modules and clients at or above it.
@@ -756,6 +761,104 @@ Known gaps:
   the engine into `naming.NewDictionary` would close that gap (today
   `Query.namingDictionary` follows the caller's version; it could take a
   `version` like `formatIdentifiers`).
+
+### Module entrypoints
+
+Manifest v2 modules (#14038, `future/module-manifest-v2/spec.md`) have a
+`dagger-module.toml` with a `name` and an `[entrypoint]` table, and no
+`engineVersion`. The engine evaluates the entrypoint, a Dang program, in
+process (`core/sdk/dang/v2/entrypoint.go`): its `types` builds the module's
+typedefs with the typedef constructors (`typeDef.withObject(...)`,
+`function(...)`, `withArg(...)`), and its `call` receives each call by
+original names (`receiverType`, `fnName`, the keys of `fnArgs`). An SDK
+generates the entrypoint at `dagger generate` (`sdk/entrypoint/types.dang`,
+`main.dang` and `build.dang`, with `types.dang` a literal list of typedef
+constructor calls, e.g. python-sdk's `sdk/tests/mod/golden/types.dang`), or
+the module points at a shared remote entrypoint that describes its types when
+it loads.
+
+**Why load-time naming is wrong for them.** An entrypoint module gets the
+engine's own version as its `EngineVersion` (`initFromModConfig` in
+`core/schema/modulesource.go`), and so the engine's API. If that also chose
+its naming rules, the schema names of its declarations would be decided
+afresh by whichever engine loads it:
+
+- Shipping this design would rename existing entrypoint modules. An SDK that
+  registers `getUrl` (Python's own `snake_to_camel` of `get_url`) would see it
+  become `getURL`, and break the code, generated clients and CLI flags of
+  everyone calling it.
+- Every dictionary addition would rename them again on upgrade, which is what
+  versioning the dictionary (`DictionaryFor`) exists to prevent: a module's
+  names follow the version it declares, and an entrypoint module declares
+  none.
+
+Dispatch doesn't care, since calls carry original names, but every name a
+caller sees does: constructor fields, namespaced types, functions, arguments,
+CLI paths.
+
+**The gate.** Until an entrypoint can pin its naming, entrypoint modules keep
+the legacy (strcase) rules everywhere the engine names their declarations, so
+their schema is byte-identical to what engines before this design gave them:
+
+- `ModuleSource.LegacyNaming` is true for an entrypoint source, and
+  `ModuleSource.Namer` (so `Module.Namer`) is the legacy `Namer`: namespacing,
+  the constructor name, validation, CLI paths.
+- The typedef constructors the entrypoint calls name by their call's view,
+  and the entrypoint's client is served at the engine's API view
+  (`engine/server/session.go`). So the naming rules travel apart from the API
+  view: `LegacyNamingView` marks a view with `+legacy-naming` build metadata.
+  Semver precedence ignores build metadata, so every view filter treats the
+  marked view like the plain one (same fields, same arguments), while
+  `NamerForView` gives it the legacy rules. A selector view hook
+  (`dagql.Server.SetSelectorView`, installed by `InstallCoreSchemaLoaders`)
+  marks the typedef constructor calls (`core.IsNamingField`) of a client whose
+  module has `LegacyNaming`. The mark is part of the call: it keys the cache,
+  so the same call from a v1 module keeps its own result, and a typedef
+  loaded again from its ID is named the same way. Other fields aren't marked,
+  so an entrypoint module's other calls share the cache with everyone.
+- The in-engine Dang runtime's direct selects use the same naming view
+  (`ModuleSource.NamingView`).
+
+Re-normalizing an entrypoint module's typedefs from their original names
+when the module is assembled would also work, but needs an internal rename for
+every typedef kind and member, and leaves the cached typedefs named the other
+way; marking the view keeps the decision in the call, like every other naming
+decision.
+
+**Opting in: pinned naming.** Entrypoint modules should get the new rules,
+but decided at `dagger generate`, never at load, so that upgrading the engine
+never renames anything. Two options:
+
+- **(A) Final names in the entrypoint.** The generator calls
+  `formatIdentifiers` at `dagger generate` and writes final schema names into
+  `types.dang`, and the engine takes an entrypoint's names as declared. It
+  needs a signal that the names are final (an older entrypoint's names must
+  still be normalized), a way to declare both a name and its original name
+  (calls carry original names), and pinned names for what the engine derives
+  rather than declares: namespaced type names, the constructor field, CLI
+  paths.
+- **(B) A declared naming version.** The generated entrypoint declares the
+  engine version it was generated with, as an optional key in the
+  `[entrypoint]` table (say `namingVersion = "v1.0.0"`) or a field on the
+  `ModuleEntrypoint` interface, and the engine names the module with
+  `NamerForEngineVersion` of that version, as it does with a `dagger.json`
+  `engineVersion`. A newer engine keeps naming by the declared version's
+  dictionary; the next `dagger generate` re-pins, the way an `engineVersion`
+  bump does today.
+
+We recommend (B), as a key in the `[entrypoint]` table. It reuses the
+mechanism end to end: `ModuleSource.NamingView` returns the declared
+version's view instead of the legacy mark, and the selector hook already
+carries it to the typedef constructors. The rules stay in the engine, the
+generator only writes a version string, and the derived names come along for
+free. A manifest key also works for a shared remote entrypoint, which a field
+generated into `types.dang` doesn't: a remote entrypoint has no generate step
+and describes its types at load, so it can only pin through the module's own
+manifest, and stays on the legacy rules until the module declares a version.
+
+Either option needs a signal in the manifest v2 contract (a naming version,
+or a marker that names are final), which #14038's authors own; this design
+only ships the gate.
 
 ### What changes for module authors (on bump)
 
@@ -983,6 +1086,26 @@ copy: they get formatted names from the engine.
    wire names without changing behavior; the underlying bugs are a separate
    fix.
 
+## SDK Extraction
+
+The SDKs are moving out of this repository, to
+`github.com/dagger/{go,python,typescript,php,java,dang}-sdk`
+(`core/sdk/sdkmeta/sdks.json`). The in-repo `cmd/codegen` and `sdk/*` stay the
+reference implementation of this design, which the external repositories
+vendor or port from:
+
+- typescript-sdk vendors `sdk/typescript` at a tag (see its
+  `library/VENDOR.md`);
+- go-sdk has its own fork of the Go generator, `cmd/dagger-go-sdk-codegen`;
+- python-sdk has its own codegen, `sdk/codegen`.
+
+Porting engine-formatted names (`formatIdentifiers` or the names sidecar, with
+the legacy fallback) to each of them is a follow-up per repository. Until an
+SDK has it, it keeps its legacy converter, which the gate makes byte-identical
+for schemas without `formatIdentifiers` anyway. Those SDKs also generate the
+manifest v2 entrypoints, where pinned naming would land (see
+[Module entrypoints](#module-entrypoints)).
+
 ## Implementation Plan
 
 1. Write the `engine/naming` package: parser, formatter, dictionary, and the
@@ -1005,7 +1128,11 @@ copy: they get formatted names from the engine.
    interface calls) through `formatIdentifiers`.
 8. Bump the Python, PHP, Elixir and Java runtimes' `engineVersion` to v1, and
    format their codegen sidecars with `formatIdentifiers` and `version`.
+9. Keep manifest v2 entrypoint modules on the legacy rules, then let a
+   generated entrypoint pin its naming version (see
+   [Module entrypoints](#module-entrypoints)).
 
-Steps 1–5, 7 and 8 are done. Step 6 is done for Go and TypeScript; the other
-SDKs fall back to their legacy converters until theirs land. Step 4's deletion
-waits on the legacy path.
+Steps 1–8 are done for the in-repo SDKs, except step 4's deletion, which waits
+on the legacy path. Step 9's gate is done; pinning waits on a manifest v2
+signal. Porting to the extracted SDKs is a follow-up (see
+[SDK Extraction](#sdk-extraction)).
