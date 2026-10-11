@@ -83,8 +83,8 @@ func TestAliasesQuery(t *testing.T) {
 
 	var res struct {
 		OldThing struct {
-			Name   string
-			GetUrl string //nolint:revive,staticcheck // the alias is the response key
+			Name      string
+			OldGetURL string `json:"getUrl"`
 		}
 		Thing struct {
 			GetURL string
@@ -95,7 +95,7 @@ func TestAliasesQuery(t *testing.T) {
 		thing(shortSHA: "def") { getURL }
 	}`, &res)
 	require.Equal(t, "abc+json", res.OldThing.Name)
-	require.Equal(t, "https://example.com/abc+json", res.OldThing.GetUrl)
+	require.Equal(t, "https://example.com/abc+json", res.OldThing.OldGetURL)
 	require.Equal(t, "https://example.com/def", res.Thing.GetURL)
 
 	// GraphQL aliases keep working on top.
@@ -261,8 +261,8 @@ func TestAliasesFragmentTypeCondition(t *testing.T) {
 
 	var loaded struct {
 		Node struct {
-			Name   string
-			GetUrl string //nolint:revive,staticcheck // the alias is the response key
+			Name      string
+			OldGetURL string `json:"getUrl"`
 		}
 	}
 	// Load it from its recipe, as a generated client would.
@@ -273,7 +273,7 @@ func TestAliasesFragmentTypeCondition(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(mustJSON(t, data), &loaded))
 	require.Equal(t, "abc", loaded.Node.Name)
-	require.Equal(t, "https://example.com/abc", loaded.Node.GetUrl)
+	require.Equal(t, "https://example.com/abc", loaded.Node.OldGetURL)
 
 	// __typename reports the canonical name.
 	data, err = srv.Query(ctx, `query($id: ID!) { node(id: $id) { ... on AliasThingOld { __typename } } }`, map[string]any{"id": res.Thing.ID})
