@@ -119,22 +119,36 @@ func TestBatchNames(t *testing.T) {
 	}
 }
 
+func TestFormatNamesQuery(t *testing.T) {
+	for _, alias := range []string{
+		"f0: formatIdentifiers(names: $names, casing: CAMEL, acronyms: CAPITALIZED, version: $version)",
+		"f1: formatIdentifiers(names: $names, casing: PASCAL, acronyms: CAPITALIZED, version: $version)",
+		"f2: formatIdentifiers(names: $names, casing: SCREAMING_SNAKE, acronyms: UPPERCASE, version: $version)",
+	} {
+		if !strings.Contains(formatNamesQuery, alias) {
+			t.Errorf("query lacks %q:\n%s", alias, formatNamesQuery)
+		}
+	}
+}
+
 func TestSchemaNamesFile(t *testing.T) {
 	ctx := context.Background()
 	var calls int
-	camel := func(_ context.Context, names []string, version string) ([]string, error) {
+	prefixed := func(_ context.Context, names []string, version string) (map[string][]string, error) {
 		calls++
 		if version != "v1.0.0" {
 			t.Errorf("version: got %q", version)
 		}
-		out := make([]string, len(names))
-		for i, name := range names {
-			out[i] = "camel_" + name
+		out := map[string][]string{}
+		for _, f := range namesFormats {
+			for _, name := range names {
+				out[f.key()] = append(out[f.key()], f.casing+"_"+name)
+			}
 		}
 		return out, nil
 	}
 
-	data, err := schemaNamesFile(ctx, namesTestJSON(true), camel)
+	data, err := schemaNamesFile(ctx, namesTestJSON(true), prefixed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,32 +159,41 @@ func TestSchemaNamesFile(t *testing.T) {
 	if err := json.Unmarshal(data, &file); err != nil {
 		t.Fatal(err)
 	}
-	if len(file) != 1 {
-		t.Errorf("formats: got %d, want 1", len(file))
+	if len(file) != 3 {
+		t.Errorf("formats: got %d, want 3", len(file))
 	}
-	names, ok := file["CAMEL:CAPITALIZED"]
-	if !ok {
-		t.Fatalf("no CAMEL:CAPITALIZED names in %s", data)
-	}
-	for name, want := range map[string]string{
-		"prerequisiteSHAs": "camel_prerequisiteSHAs",
-		"withGPU":          "camel_withGPU",
-		"NetworkProtocol":  "camel_NetworkProtocol",
+	for format, want := range map[string]map[string]string{
+		"CAMEL:CAPITALIZED": {
+			"prerequisiteSHAs": "CAMEL_prerequisiteSHAs",
+			"withGPU":          "CAMEL_withGPU",
+		},
+		"PASCAL:CAPITALIZED": {
+			"NetworkProtocol": "PASCAL_NetworkProtocol",
+		},
+		"SCREAMING_SNAKE:UPPERCASE": {
+			"TCP": "SCREAMING_SNAKE_TCP",
+		},
 	} {
-		if got := names[name]; got != want {
-			t.Errorf("%s: got %q, want %q", name, got, want)
+		names, ok := file[format]
+		if !ok {
+			t.Fatalf("no %s names in %s", format, data)
 		}
-	}
-	for _, name := range []string{"_", "café", "possibleTypes", "__Type"} {
-		if _, ok := names[name]; ok {
-			t.Errorf("unexpected name %q", name)
+		for name, formatted := range want {
+			if got := names[name]; got != formatted {
+				t.Errorf("%s %s: got %q, want %q", format, name, got, formatted)
+			}
+		}
+		for _, name := range []string{"_", "café", "possibleTypes", "__Type"} {
+			if _, ok := names[name]; ok {
+				t.Errorf("%s: unexpected name %q", format, name)
+			}
 		}
 	}
 
 	// A schema without Query.formatIdentifiers formats nothing: codegen
 	// keeps its legacy conversion.
 	calls = 0
-	data, err = schemaNamesFile(ctx, namesTestJSON(false), camel)
+	data, err = schemaNamesFile(ctx, namesTestJSON(false), prefixed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,15 +205,15 @@ func TestSchemaNamesFile(t *testing.T) {
 	}
 
 	// A short answer is an error, not a partial map.
-	_, err = schemaNamesFile(ctx, namesTestJSON(true), func(context.Context, []string, string) ([]string, error) {
-		return []string{"x"}, nil
+	_, err = schemaNamesFile(ctx, namesTestJSON(true), func(context.Context, []string, string) (map[string][]string, error) {
+		return map[string][]string{"CAMEL:CAPITALIZED": {"x"}}, nil
 	})
 	if err == nil || !strings.Contains(err.Error(), "got 1 back") {
 		t.Errorf("short answer: got error %v", err)
 	}
 
 	// Invalid JSON is an error.
-	if _, err := schemaNamesFile(ctx, []byte("{"), camel); err == nil {
+	if _, err := schemaNamesFile(ctx, []byte("{"), prefixed); err == nil {
 		t.Error("expected an error for invalid JSON")
 	}
 }

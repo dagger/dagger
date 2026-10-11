@@ -12,24 +12,38 @@ import (
 	"java-sdk/internal/dagger"
 )
 
-// Codegen names members, parameters, setters and accessors with names the
-// engine formatted (see hack/designs/identifier-casing.md, "Formatting names
-// in codegen"). The codegen plugin runs in an exec without an engine session,
-// so the runtime formats the names of the module's schema here and hands them
-// to the plugin as a names file (daggerengine.names), the same sidecar
-// `codegen introspect --names-out` writes for the client.
+// Codegen names Java identifiers with names the engine formatted (see
+// hack/designs/identifier-casing.md, "Formatting names in codegen"). The
+// codegen plugin runs in an exec without an engine session, so the runtime
+// formats the names of the module's schema here and hands them to the plugin
+// as a names file (daggerengine.names), the same sidecar `codegen introspect
+// --names-out` writes for the client.
 //
 // The runtime's own session is served at its engineVersion, which has
 // Query.formatIdentifiers; it passes the version of the schema being
 // generated, so names are parsed with that version's dictionary.
 
-// The name format the Java codegen plugin reads: camelCase with acronyms
-// written like words (asJson, withGpu).
-const (
-	namesCasing   = "CAMEL"
-	namesAcronyms = "CAPITALIZED"
-	namesFormat   = namesCasing + ":" + namesAcronyms
-)
+// nameFormat is a casing and acronym style, as the engine's Casing and
+// AcronymStyle values.
+type nameFormat struct {
+	casing   string
+	acronyms string
+}
+
+// key is the format's key in a names file: CASING:ACRONYMS.
+func (f nameFormat) key() string {
+	return f.casing + ":" + f.acronyms
+}
+
+// namesFormats are the name formats the Java codegen plugin reads: members in
+// camelCase and classes in PascalCase, both with acronyms written like words
+// (asJson, JsonValue), and enum constants in SCREAMING_SNAKE_CASE
+// (PER_SESSION).
+var namesFormats = []nameFormat{
+	{"CAMEL", "CAPITALIZED"},
+	{"PASCAL", "CAPITALIZED"},
+	{"SCREAMING_SNAKE", "UPPERCASE"},
+}
 
 // NamesPath is where the codegen plugin reads the names file from.
 const NamesPath = "/names.json"
@@ -37,9 +51,17 @@ const NamesPath = "/names.json"
 // formatNamesBatchBytes bounds the size of the names sent per request.
 const formatNamesBatchBytes = 256 << 10
 
-const formatNamesQuery = `query FormatIdentifiers($names: [String!]!, $casing: Casing!, $acronyms: AcronymStyle, $version: String) {
-  formatIdentifiers(names: $names, casing: $casing, acronyms: $acronyms, version: $version)
-}`
+// formatNamesQuery formats a batch of names in every format of namesFormats,
+// one alias (f0, f1, ...) per format.
+var formatNamesQuery = func() string {
+	var query strings.Builder
+	query.WriteString("query FormatIdentifiers($names: [String!]!, $version: String) {\n")
+	for i, f := range namesFormats {
+		fmt.Fprintf(&query, "  f%d: formatIdentifiers(names: $names, casing: %s, acronyms: %s, version: $version)\n", i, f.casing, f.acronyms)
+	}
+	query.WriteString("}")
+	return query.String()
+}()
 
 // introspectionSchema is the part of an introspection result codegen names
 // come from.
@@ -158,12 +180,14 @@ func batchNames(names []string, maxBytes int) [][]string {
 	return batches
 }
 
-// formatNamesFunc formats a batch of names, returning them in input order.
-type formatNamesFunc func(ctx context.Context, names []string, version string) ([]string, error)
+// formatNamesFunc formats a batch of names in every format of namesFormats,
+// returning them in input order, keyed by format key.
+type formatNamesFunc func(ctx context.Context, names []string, version string) (map[string][]string, error)
 
 // schemaNamesFile returns the names file for an introspection result: its
-// names formatted in namesFormat, as {"CAMEL:CAPITALIZED": {name: formatted}}.
-// It returns nil for a schema without Query.formatIdentifiers.
+// names formatted in every format of namesFormats, as {"CAMEL:CAPITALIZED":
+// {name: formatted}, ...}. It returns nil for a schema without
+// Query.formatIdentifiers.
 func schemaNamesFile(ctx context.Context, introspectionJSON []byte, format formatNamesFunc) ([]byte, error) {
 	var schema introspectionSchema
 	if err := json.Unmarshal(introspectionJSON, &schema); err != nil {
@@ -172,31 +196,34 @@ func schemaNamesFile(ctx context.Context, introspectionJSON []byte, format forma
 	if !schema.hasFormatIdentifiers() {
 		return nil, nil
 	}
-	formatted := map[string]string{}
+	file := map[string]map[string]string{}
+	for _, f := range namesFormats {
+		file[f.key()] = map[string]string{}
+	}
 	for _, batch := range batchNames(schema.names(), formatNamesBatchBytes) {
 		out, err := format(ctx, batch, schema.SchemaVersion)
 		if err != nil {
 			return nil, err
 		}
-		if len(out) != len(batch) {
-			return nil, fmt.Errorf("format names: sent %d names, got %d back", len(batch), len(out))
-		}
-		for i, name := range batch {
-			formatted[name] = out[i]
+		for _, f := range namesFormats {
+			formatted := out[f.key()]
+			if len(formatted) != len(batch) {
+				return nil, fmt.Errorf("format names as %s: sent %d names, got %d back", f.key(), len(batch), len(formatted))
+			}
+			for i, name := range batch {
+				file[f.key()][name] = formatted[i]
+			}
 		}
 	}
-	return json.Marshal(map[string]map[string]string{namesFormat: formatted})
+	return json.Marshal(file)
 }
 
-// formatNamesWithEngine formats names with Query.formatIdentifiers.
-func formatNamesWithEngine(ctx context.Context, names []string, version string) ([]string, error) {
-	var data struct {
-		FormatIdentifiers []string `json:"formatIdentifiers"`
-	}
+// formatNamesWithEngine formats names with Query.formatIdentifiers, in one
+// request for every format.
+func formatNamesWithEngine(ctx context.Context, names []string, version string) (map[string][]string, error) {
+	var data map[string][]string
 	vars := map[string]any{
-		"names":    names,
-		"casing":   namesCasing,
-		"acronyms": namesAcronyms,
+		"names": names,
 	}
 	if version != "" {
 		vars["version"] = version
@@ -209,7 +236,11 @@ func formatNamesWithEngine(ctx context.Context, names []string, version string) 
 	if err != nil {
 		return nil, fmt.Errorf("format names: %w", err)
 	}
-	return data.FormatIdentifiers, nil
+	out := map[string][]string{}
+	for i, f := range namesFormats {
+		out[f.key()] = data[fmt.Sprintf("f%d", i)]
+	}
+	return out, nil
 }
 
 // codegenNames returns the names file the codegen plugin reads for a module's
