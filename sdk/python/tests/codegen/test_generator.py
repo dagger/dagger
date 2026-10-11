@@ -859,6 +859,44 @@ def test_generate_enum_default_names():
     assert "policy: Policy | None = Policy.PerSession" in legacy
 
 
+def test_generate_module_enum_values():
+    # A dependency module's enum keeps its members as they always were:
+    # named by schema value, holding the module's value, and sent by name,
+    # since its values aren't schema values.
+    sdl = """
+        directive @enumValue(value: String!) on ENUM_VALUE
+        enum Policy { Default PerSession }
+        enum DepStatus {
+            ACTIVE @enumValue(value: "ACTIVE value")
+            INACTIVE @enumValue(value: "INACTIVE value")
+        }
+        type Query {
+            policy: Policy!
+            status(status: DepStatus = ACTIVE): DepStatus!
+            %s
+        }
+    """
+    names = {
+        "Default": "default",
+        "PerSession": "per_session",
+        "ACTIVE": "active",
+        "INACTIVE": "inactive",
+        "status": "status",
+    }
+
+    code = generate(build_schema(sdl % _FORMAT_IDENTIFIERS), names=names)
+
+    assert (
+        "from dagger.client.base import Enum, Input, Root, Scalar, Type, ValueEnum"
+        in code
+    )
+    assert "class Policy(ValueEnum):" in code
+    assert "class DepStatus(Enum):" in code
+    assert "ACTIVE = 'ACTIVE value'" in code
+    assert "INACTIVE = 'INACTIVE value'" in code
+    assert "status: DepStatus | None = DepStatus.ACTIVE" in code
+
+
 def test_generate_enum_without_names():
     # Older schemas generate the code they always did.
     schema = build_schema(_ENUM_SCHEMA % "")
