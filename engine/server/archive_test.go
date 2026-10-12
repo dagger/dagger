@@ -728,6 +728,13 @@ func TestArchiveHTTPBootstrapBeforeHistoryAndAuthentication(t *testing.T) {
 	require.Error(t, err)
 	record, err := srv.archiveRequestRecord("main", "session", "secret")
 	require.NoError(t, err)
+	// A nested client, e.g. a `dagger` CLI run from a container, can read
+	// archives with its own token.
+	sess.clientRecords["nested"] = &clientRecord{daggerSession: sess, clientID: "nested", parentClientIDs: []string{"main"}, clientMetadata: &engine.ClientMetadata{ClientSecretToken: "nested-secret"}}
+	_, err = srv.archiveRequestRecord("nested", "session", "secret")
+	require.Error(t, err)
+	_, err = srv.archiveRequestRecord("nested", "session", "nested-secret")
+	require.NoError(t, err)
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { require.NoError(t, srv.serveArchiveHTTP(w, r, record)) }))
 	defer httpServer.Close()
 	c, err := archive.NewClientWithURL(httpServer.Client(), httpServer.URL)

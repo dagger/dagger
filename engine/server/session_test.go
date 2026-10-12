@@ -2357,6 +2357,55 @@ func TestTelemetryStreamInterruptsOnFetchError(t *testing.T) {
 	require.Empty(t, resp.Body.Bytes())
 }
 
+// TestHTTPHandlerFuncErrorStatus checks that a handler's error reaches the
+// client with its own status code, not a 200 committed before it was written.
+func TestHTTPHandlerFuncErrorStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "http", err: httpErr(errors.New("denied"), http.StatusUnauthorized), want: http.StatusUnauthorized},
+		{name: "graphql", err: gqlErr(errors.New("closing"), http.StatusServiceUnavailable), want: http.StatusServiceUnavailable},
+		{name: "plain", err: errors.New("boom"), want: http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(httpHandlerFunc(func(http.ResponseWriter, *http.Request, struct{}) error {
+				return tc.err
+			}, struct{}{}))
+			defer srv.Close()
+			resp, err := srv.Client().Get(srv.URL)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, resp.StatusCode)
+			require.Contains(t, string(body), tc.err.Error())
+		})
+	}
+}
+
+// TestHTTPHandlerFuncHijackedError checks that an error returned after the
+// handler hijacked the connection writes nothing more to it.
+func TestHTTPHandlerFuncHijackedError(t *testing.T) {
+	srv := httptest.NewServer(httpHandlerFunc(func(w http.ResponseWriter, _ *http.Request, _ struct{}) error {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		if _, err := io.WriteString(conn, "HTTP/1.1 204 No Content\r\n\r\n"); err != nil {
+			return err
+		}
+		return hijackedError{errors.New("after hijack")}
+	}, struct{}{}))
+	defer srv.Close()
+	resp, err := srv.Client().Get(srv.URL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+}
+
 func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 	t.Parallel()
 
