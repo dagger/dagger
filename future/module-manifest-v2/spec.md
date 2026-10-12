@@ -195,7 +195,10 @@ object IDs. It does not copy these objects between client schemas.
 
 The engine passes the same module workspace to `types` and `call`. The
 workspace boundary can be above the module directory. Thus, the entrypoint can
-read a file such as `go.mod` above the module directory.
+read a file such as `go.mod` above the module directory. A file that the
+entrypoint reads from the workspace is not part of the module digest, so a
+function result with the default cache policy does not follow a change to it.
+List such files in `resources` instead.
 
 ### Module context in the entrypoint
 
@@ -212,10 +215,75 @@ An SDK that resolves relative paths, such as a path dependency on
 it. The workspace cannot replace these fields: a Git or directory module is not
 in the workspace, and the module digest does not cover workspace files.
 
-For a local or Git module, `contextDirectory` holds the manifest and the
-module directory, at their paths from the context root. A local module context
-applies `.gitignore`. A directory module source keeps the whole directory that
-its caller passed.
+For a local or Git module, `contextDirectory` holds the manifest, the module
+directory and the files that `resources` lists, at their paths from the context
+root. A local module context applies `.gitignore`. A directory module source
+keeps the whole directory that its caller passed.
+
+### Module resources
+
+The entrypoint type can declare one optional member, `resources`, outside the
+`ModuleEntrypoint` interface:
+
+```dang
+pub resources: [String!]! {
+  ["../lib/go.mod", "../lib/greet", "!../lib/greet/testdata"]
+}
+```
+
+`resources` lists the files outside the module directory that the module
+needs. The engine adds them to the module context while it loads the module
+source, before anything reads the module digest. The listed files are then
+part of `contextDirectory` and of the module digest, so they reach the cache
+key of every function call. A change to a listed file gives a new call key.
+
+The member is a function with no required argument. The engine passes no
+argument. A value field, such as `pub resources: [String!]! = [...]`, is an
+error, and so is a required argument.
+
+A pattern uses the grammar of `include` in `dagger.json`:
+
+- A pattern is relative to the module directory.
+- A leading `!` excludes. The last matching pattern decides.
+- A directory pattern includes the whole directory.
+- `*` and `**` are globs.
+
+The engine refuses a pattern that is empty, has more than one leading `!`,
+starts with `/`, names the whole context root, or leaves the context root. A
+local module with no `.git` above it has the module directory as its context
+root, so a pattern such as `../lib` leaves it. A pattern that matches nothing
+is not an error. A list holds at most 1,000 patterns. An empty list means the
+same as no member.
+
+When the list is not empty, the engine also excludes every `.git` directory and
+file from the context. `.git/config` can hold credentials, and `.git` changes
+on every fetch.
+
+The engine evaluates `resources` only when a type that implements
+`ModuleEntrypoint` in a top-level `.dang` file of the entrypoint directory
+declares a public member with that name. A comment, a string, a private member
+or a member of another type does not count. A program that does not parse
+declares nothing, and its error surfaces when the module loads its types.
+
+The evaluation has no Dagger API access. Building a query is allowed. Reading a
+result, such as `contents`, fails with
+`entrypoint resources must not call the Dagger API`. The result thus depends on
+the program text only. The engine caches it on the entrypoint directory and
+the schema, so an edit of another module file does not evaluate it again.
+
+`resources` needs a local entrypoint. An entrypoint named by a module reference
+or an address that declares the member fails when the module loads its types.
+
+The engine reads the listed files from the module's own source: the checkout of
+a local module, the workspace of a workspace module, or the commit of a Git
+module. It never reads them from the caller's workspace. A Git module context
+does not apply `.gitignore`.
+
+A module that declares `resources` is trusted with every file under its context
+root that its patterns match. The module author writes the list. The caller
+cannot narrow it, and the manifest does not show it. A pattern can name a
+dotfile such as `../.env`; a local module context drops it when `.gitignore`
+ignores it.
 
 ### Type rules
 
@@ -393,6 +461,7 @@ All new GraphQL fields and types use the v1 schema view gate.
 | --- | --- |
 | Manifest | Read and write the three fields. Select the format by the presence of the `entrypoint` table. Reject missing or invalid values. Reject a `manifestVersion` key in a version 2 manifest and an `entrypoint` value in `dagger.json`. |
 | Context | Expose the module context and the module subpath through `currentModule.contextDirectory` and `currentModule.sourceSubpath`. Keep `currentModule.source` narrowed to the module directory. |
+| Resources | Evaluate a declared `resources` member while the module source loads, without API access, and add its patterns to the module context. Change the module digest when a listed file changes. Load a module without the member as before. Reject a value field, a required argument, a malformed or escaping pattern, an API read, and the member on a non-local entrypoint. |
 | Source | Resolve module-relative local paths, module references, and module-returned directories. Keep a module reference on the directory it names. Reject paths that leave the module directory. |
 | Dang driver | Load a directory without a manifest. Require one empty-constructible `ModuleEntrypoint`. Reject dependencies. |
 | Types | Bind name-only module and core type references. Reject invalid or duplicate definitions. |
