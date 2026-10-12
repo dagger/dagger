@@ -963,9 +963,19 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	defer logFile.Close()
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	require.NoError(t, cmd.Start())
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	defer func() { stop(); <-done }()
+	// exited closes once waitErr is set, so every reader sees the one result
+	// and a failed assertion cannot leave the deferred wait without one.
+	var waitErr error
+	exited := make(chan struct{})
+	go func() { waitErr = cmd.Wait(); close(exited) }()
+	defer func() {
+		stop()
+		select {
+		case <-exited:
+		case <-time.After(time.Minute):
+			t.Error("CLI did not exit after cancellation")
+		}
+	}()
 	defer func() {
 		if t.Failed() {
 			data, _ := os.ReadFile(logFile.Name())
@@ -1026,9 +1036,8 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	status, body = request(http.MethodPost, "/key", "ctrl+d")
 	require.Equal(t, http.StatusOK, status, "%s", body)
 	select {
-	case err := <-done:
-		require.NoError(t, err, "Ctrl+D must exit cleanly")
-		done <- err // for the deferred wait
+	case <-exited:
+		require.NoError(t, waitErr, "Ctrl+D must exit cleanly")
 	case <-time.After(time.Minute):
 		t.Fatal("CLI did not exit after Ctrl+D")
 	}
