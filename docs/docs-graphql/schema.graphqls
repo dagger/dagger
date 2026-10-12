@@ -2575,6 +2575,15 @@ type CurrentModule implements Node {
   """A unique identifier for this CurrentModule."""
   id: ID!
 
+  """
+  The module's context directory loaded into the engine (plus any generated code that may have been created).
+
+  It holds the module's source code and every other file the engine loaded for
+  the module, at their paths relative to the context root. Use sourceSubpath to
+  locate the source code in it.
+  """
+  contextDirectory: Directory!
+
   """The dependencies of the module."""
   dependencies: [Module!]!
 
@@ -2591,6 +2600,11 @@ type CurrentModule implements Node {
   any generated code that may have been created).
   """
   source: Directory!
+
+  """
+  The path to the directory containing the module's source code, relative to the context directory.
+  """
+  sourceSubpath: String!
 
   """
   Load a directory from the module's scratch working directory, including any

@@ -1,0 +1,38 @@
+# Reports the module context the way an SDK entrypoint reads it: the source
+# subpath locates the module inside the context directory.
+type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Probe")
+        .withConstructor(function("", typeDef.withObject("Probe")))
+        .withFunction(function("ContextFiles", typeDef.withKind(TypeDefKind.STRING_KIND)))
+        .withFunction(function("SourceFiles", typeDef.withKind(TypeDefKind.STRING_KIND)))
+        .withFunction(function("SourceSubpath", typeDef.withKind(TypeDefKind.STRING_KIND)))
+        .withFunction(function("Shared", typeDef.withKind(TypeDefKind.STRING_KIND))),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else if (fnName == "ContextFiles") {
+      (JSON.encode(currentModule.contextDirectory.glob("**").join("\n")) :: JSON!)
+    } else if (fnName == "SourceFiles") {
+      (JSON.encode(currentModule.source.glob("**").join("\n")) :: JSON!)
+    } else if (fnName == "SourceSubpath") {
+      (JSON.encode(currentModule.sourceSubpath) :: JSON!)
+    } else if (fnName == "Shared") {
+      let path = currentModule.sourceSubpath + "/../shared/value.txt"
+      (JSON.encode(currentModule.contextDirectory.file(path).contents) :: JSON!)
+    } else {
+      raise "unknown function: " + fnName
+    }
+  }
+}

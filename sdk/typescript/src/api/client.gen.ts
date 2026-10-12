@@ -8225,15 +8225,22 @@ export class Container extends BaseClient {
 export class CurrentModule extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _name?: string = undefined
+  private readonly _sourceSubpath?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID, _name?: string) {
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _name?: string,
+    _sourceSubpath?: string,
+  ) {
     super(ctx)
 
     this._id = _id
     this._name = _name
+    this._sourceSubpath = _sourceSubpath
   }
 
   /**
@@ -8249,6 +8256,16 @@ export class CurrentModule extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * The module's context directory loaded into the engine (plus any generated code that may have been created).
+   *
+   * It holds the module's source code and every other file the engine loaded for the module, at their paths relative to the context root. Use sourceSubpath to locate the source code in it.
+   */
+  contextDirectory = (): Directory => {
+    const ctx = this._ctx.select("contextDirectory")
+    return new Directory(ctx)
   }
 
   /**
@@ -8297,6 +8314,21 @@ export class CurrentModule extends BaseClient {
   source = (): Directory => {
     const ctx = this._ctx.select("source")
     return new Directory(ctx)
+  }
+
+  /**
+   * The path to the directory containing the module's source code, relative to the context directory.
+   */
+  sourceSubpath = async (): Promise<string> => {
+    if (this._sourceSubpath) {
+      return this._sourceSubpath
+    }
+
+    const ctx = this._ctx.select("sourceSubpath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**

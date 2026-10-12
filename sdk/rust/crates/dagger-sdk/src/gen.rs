@@ -6347,6 +6347,16 @@ impl CurrentModule {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The module's context directory loaded into the engine (plus any generated code that may have been created).
+    /// It holds the module's source code and every other file the engine loaded for the module, at their paths relative to the context root. Use sourceSubpath to locate the source code in it.
+    pub fn context_directory(&self) -> Directory {
+        let query = self.selection.select("contextDirectory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The dependencies of the module.
     pub async fn dependencies(&self) -> Result<Vec<Module>, DaggerError> {
         let query = self.selection.select("dependencies");
@@ -6386,6 +6396,11 @@ impl CurrentModule {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// The path to the directory containing the module's source code, relative to the context directory.
+    pub async fn source_subpath(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceSubpath");
+        query.execute(self.graphql_client.clone()).await
     }
     /// Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
     ///

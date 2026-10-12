@@ -407,6 +407,11 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
+		dagql.NodeFunc("contextDirectory", s.currentModuleContextDirectory).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The module's context directory loaded into the engine (plus any generated code that may have been created).`,
+				`It holds the module's source code and every other file the engine loaded for the module, at their paths relative to the context root. Use sourceSubpath to locate the source code in it.`),
+
 		dagql.Func("dependencies", s.currentModuleDependencies).
 			Doc(`The dependencies of the module.`),
 
@@ -418,6 +423,10 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.NodeFunc("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
+
+		dagql.Func("sourceSubpath", s.currentModuleSourceSubpath).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The path to the directory containing the module's source code, relative to the context directory.`),
 
 		dagql.NodeFunc("workdir", s.currentModuleWorkdir).
 			WithInput(dagql.PerClientInput).
@@ -2947,43 +2956,28 @@ func (s *moduleSchema) currentModuleDependencies(
 	return depMods, nil
 }
 
+func (s *moduleSchema) currentModuleContextDirectory(
+	ctx context.Context,
+	curMod dagql.ObjectResult[*core.CurrentModule],
+	args struct{},
+) (inst dagql.Result[*core.Directory], err error) {
+	err = s.selectCurrentModuleGeneratedContext(ctx, curMod, &inst)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get context directory: %w", err)
+	}
+	return inst, nil
+}
+
 func (s *moduleSchema) currentModuleSource(
 	ctx context.Context,
 	curMod dagql.ObjectResult[*core.CurrentModule],
 	args struct{},
 ) (inst dagql.Result[*core.Directory], err error) {
-	dag, err := core.CurrentDagqlServer(ctx)
+	srcSubpath, err := s.currentModuleSourceSubpath(ctx, curMod.Self(), struct{}{})
 	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
+		return inst, err
 	}
-
-	curSrc := curMod.Self().Module.Self().Source.Value
-	if curSrc.Self() == nil {
-		return inst, errors.New("invalid unset current module source")
-	}
-
-	srcSubpath := curSrc.Self().SourceSubpath
-	if srcSubpath == "" {
-		srcSubpath = curSrc.Self().SourceRootSubpath
-	}
-
-	generatedDiff, err := s.currentModuleGeneratedDiff(ctx, curMod)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get generated context directory: %w", err)
-	}
-	generatedDiffID, err := generatedDiff.ID()
-	if err != nil {
-		return inst, fmt.Errorf("failed to get generated context directory ID: %w", err)
-	}
-
-	err = dag.Select(ctx, curSrc.Self().ContextDirectory, &inst,
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String("/")},
-				{Name: "source", Value: dagql.NewID[*core.Directory](generatedDiffID)},
-			},
-		},
+	err = s.selectCurrentModuleGeneratedContext(ctx, curMod, &inst,
 		dagql.Selector{
 			Field: "directory",
 			Args: []dagql.NamedInput{
@@ -2994,8 +2988,60 @@ func (s *moduleSchema) currentModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source directory: %w", err)
 	}
+	return inst, nil
+}
 
-	return inst, err
+func (s *moduleSchema) currentModuleSourceSubpath(
+	ctx context.Context,
+	curMod *core.CurrentModule,
+	args struct{},
+) (string, error) {
+	curSrc := curMod.Module.Self().Source.Value
+	if curSrc.Self() == nil {
+		return "", errors.New("invalid unset current module source")
+	}
+	if curSrc.Self().SourceSubpath == "" {
+		return curSrc.Self().SourceRootSubpath, nil
+	}
+	return curSrc.Self().SourceSubpath, nil
+}
+
+// selectCurrentModuleGeneratedContext applies sels to the module's context
+// directory with its generated files on top.
+func (s *moduleSchema) selectCurrentModuleGeneratedContext(
+	ctx context.Context,
+	curMod dagql.ObjectResult[*core.CurrentModule],
+	dest any,
+	sels ...dagql.Selector,
+) error {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	curSrc := curMod.Self().Module.Self().Source.Value
+	if curSrc.Self() == nil {
+		return errors.New("invalid unset current module source")
+	}
+
+	generatedDiff, err := s.currentModuleGeneratedDiff(ctx, curMod)
+	if err != nil {
+		return fmt.Errorf("failed to get generated context directory: %w", err)
+	}
+	generatedDiffID, err := generatedDiff.ID()
+	if err != nil {
+		return fmt.Errorf("failed to get generated context directory ID: %w", err)
+	}
+
+	return dag.Select(ctx, curSrc.Self().ContextDirectory, dest,
+		append([]dagql.Selector{{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("/")},
+				{Name: "source", Value: dagql.NewID[*core.Directory](generatedDiffID)},
+			},
+		}}, sels...)...,
+	)
 }
 
 func (s *moduleSchema) currentModuleWorkdir(

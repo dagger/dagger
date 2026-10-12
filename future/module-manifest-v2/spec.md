@@ -197,6 +197,26 @@ The engine passes the same module workspace to `types` and `call`. The
 workspace boundary can be above the module directory. Thus, the entrypoint can
 read a file such as `go.mod` above the module directory.
 
+### Module context in the entrypoint
+
+The entrypoint reads the module context through `currentModule`:
+
+| Field | Value |
+| --- | --- |
+| `source` | The module directory, with generated files applied. |
+| `contextDirectory` | The module context at the context root, with generated files applied. |
+| `sourceSubpath` | The path of the module directory inside `contextDirectory`. |
+
+An SDK that resolves relative paths, such as a path dependency on
+`../shared`, mounts `contextDirectory` and builds from `sourceSubpath` inside
+it. The workspace cannot replace these fields: a Git or directory module is not
+in the workspace, and the module digest does not cover workspace files.
+
+For a local or Git module, `contextDirectory` holds the manifest and the
+module directory, at their paths from the context root. A local module context
+applies `.gitignore`. A directory module source keeps the whole directory that
+its caller passed.
+
 ### Type rules
 
 `types` returns every type defined by the module. This includes each object
@@ -372,6 +392,7 @@ All new GraphQL fields and types use the v1 schema view gate.
 | Area | Required behavior |
 | --- | --- |
 | Manifest | Read and write the three fields. Select the format by the presence of the `entrypoint` table. Reject missing or invalid values. Reject a `manifestVersion` key in a version 2 manifest and an `entrypoint` value in `dagger.json`. |
+| Context | Expose the module context and the module subpath through `currentModule.contextDirectory` and `currentModule.sourceSubpath`. Keep `currentModule.source` narrowed to the module directory. |
 | Source | Resolve module-relative local paths, module references, and module-returned directories. Keep a module reference on the directory it names. Reject paths that leave the module directory. |
 | Dang driver | Load a directory without a manifest. Require one empty-constructible `ModuleEntrypoint`. Reject dependencies. |
 | Types | Bind name-only module and core type references. Reject invalid or duplicate definitions. |

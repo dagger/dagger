@@ -5855,6 +5855,18 @@ class Container(Type):
 class CurrentModule(Type):
     """Reflective module API provided to functions at runtime."""
 
+    def context_directory(self) -> "Directory":
+        """The module's context directory loaded into the engine (plus any
+        generated code that may have been created).
+
+        It holds the module's source code and every other file the engine
+        loaded for the module, at their paths relative to the context root.
+        Use sourceSubpath to locate the source code in it.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("contextDirectory", _args)
+        return Directory(_ctx)
+
     async def dependencies(self) -> list["Module"]:
         """The dependencies of the module."""
         _args: list[Arg] = []
@@ -5925,6 +5937,28 @@ class CurrentModule(Type):
         _args: list[Arg] = []
         _ctx = self._select("source", _args)
         return Directory(_ctx)
+
+    async def source_subpath(self) -> str:
+        """The path to the directory containing the module's source code,
+        relative to the context directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceSubpath", _args)
+        return await _ctx.execute(str)
 
     def workdir(
         self,
