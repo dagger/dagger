@@ -2,7 +2,6 @@ package dagui
 
 import (
 	"iter"
-	"slices"
 	"time"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -24,10 +23,15 @@ type TraceTree struct {
 
 	IsRunningOrChildRunning bool
 	Chained                 bool
-	Final                   bool
 	RevealedChildren        bool
 
 	Children []*TraceTree
+
+	// Revealed holds the trees of the span's revealed spans, built beneath
+	// it, when it shows them in place of its children (see
+	// ShouldShowRevealedSpans). They're copies: a revealed span also has a
+	// tree of its own wherever its home is, usually among Children.
+	Revealed []*TraceTree
 }
 
 // TraceRow is the flattened representation of the tree so we can easily walk
@@ -45,7 +49,6 @@ type TraceRow struct {
 	NextVisual     *TraceRow `json:"-"`
 
 	Chained                 bool
-	Final                   bool
 	Depth                   int
 	IsRunningOrChildRunning bool
 	HasChildren             bool
@@ -56,6 +59,8 @@ type TraceRow struct {
 type RowsView struct {
 	Zoomed *Span
 	Body   []*TraceTree
+	// BySpan maps each span to its tree; for a revealed span, the tree at its
+	// home, if it has one, rather than its copy beneath a revealing span.
 	BySpan map[SpanID]*TraceTree
 }
 
@@ -116,211 +121,24 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	view := &RowsView{
 		BySpan: make(map[SpanID]*TraceTree),
 	}
-	if opts.ZoomedSpan.IsValid() {
-		if zoomed, ok := db.Spans.Map[opts.ZoomedSpan]; ok {
-			view.Zoomed = zoomed
-		} else {
-			// we haven't received the zoomed span yet, so don't render anything
-			//
-			// this happens when we create a span and immediately zoom to it
-			return view
-		}
+	w, zoomed, ok := db.newSpanWalker(opts)
+	if !ok {
+		// we haven't received the zoomed span yet, so don't render anything
+		//
+		// this happens when we create a span and immediately zoom to it
+		return view
 	}
-	var spans iter.Seq[*Span]
-	// Walking every span visits (and marks seen) every span in the DB, so the
-	// walk's seen set can be sized up front instead of growing through
-	// rehashes, which dominated large traces' walks.
-	seenHint := 0
-	if view.Zoomed != nil {
-		if view.Zoomed.RevealedSpans.Len() > 0 &&
-			// Revealed spans bubble up all the way to the root span. By default, we
-			// want to preserve the top-level context (i.e. spans immediately beneath
-			// root). So, we only prioritize revealed spans if the zoomed span is also
-			// marked Passthrough. That's how shell mode is able to take over the
-			// top-level UI: it creates a `shell` span with `passthrough: true` and
-			// zooms it.
-			//
-			// We could consider making this default later even for the root span.
-			// Maybe it's slick to see only the intentionally revealed stuff? But you
-			// probably wouldn't that for Errored spans which are auto-revealed.
-			view.Zoomed.Passthrough {
-			spans = view.Zoomed.RevealedSpans.Iter()
-		} else {
-			spans = view.Zoomed.ChildSpans.Iter()
-		}
-	} else {
-		spans = db.AllSpans()
-		seenHint = len(db.Spans.Order)
-	}
-	if opts.RootFilter != nil && (!opts.ZoomedSpan.IsValid() || opts.ZoomedSpan == db.PrimarySpan) {
-		if roots := opts.RootFilter(db, view.Zoomed); len(roots) > 0 {
-			spans = slices.Values(roots)
-			seenHint = 0
-		}
-	}
-
-	db.walkSpans(opts, spans, seenHint, func(tree *TraceTree) {
-		if tree.Parent != nil {
-			tree.Parent.Children = append(tree.Parent.Children, tree)
-		} else {
-			view.Body = append(view.Body, tree)
+	view.Zoomed = zoomed
+	w.emitted = func(tree *TraceTree, revealedCopy bool) {
+		// A span's home tree takes the place of a revealed copy of it, which
+		// takes the place of nothing else.
+		if _, ok := view.BySpan[tree.Span.ID]; revealedCopy && ok {
+			return
 		}
 		view.BySpan[tree.Span.ID] = tree
-	})
+	}
+	view.Body = w.walk()
 	return view
-}
-
-func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceTree)) {
-	db.walkSpans(opts, spans, 0, f)
-}
-
-// walkSpans is WalkSpans with a capacity hint for the set of visited spans.
-func (db *DB) walkSpans(opts FrontendOpts, spans iter.Seq[*Span], seenHint int, f func(*TraceTree)) { //nolint:gocyclo
-	// Strict scoping: the walk root a span must descend from by real
-	// parentage. See FrontendOpts.StrictSubtree -- this is what makes a scoped
-	// report render exactly the root span's own subtree.
-	var scopeRoot *Span
-	if opts.StrictSubtree && opts.ZoomedSpan.IsValid() {
-		scopeRoot = db.Spans.Map[opts.ZoomedSpan]
-	}
-	inScope := func(span *Span) bool {
-		if scopeRoot == nil {
-			return true
-		}
-		for p := span; p != nil; p = p.ParentSpan {
-			if p == scopeRoot {
-				return true
-			}
-		}
-		return false
-	}
-	var lastTree *TraceTree
-	var lastCall *TraceTree
-	seen := make(map[SpanID]bool, seenHint)
-	var walk func(*Span, *TraceTree) bool
-	// walkCauses walks a span's causal spans inline under parent, reporting
-	// whether the last one walked was collected (so the span reparents under
-	// it). It's its own closure, rather than a range-over-func loop inside
-	// walk, so walk's locals aren't captured -- that moved them to the heap on
-	// every call, a handful of allocations per span on every rebuild.
-	walkCauses := func(span *Span, parent *TraceTree) bool {
-		reparent := false
-		for cause := range span.CausalSpans {
-			if !span.HasParent(cause) {
-				reparent = walk(cause, parent)
-			}
-		}
-		return reparent
-	}
-	walk = func(span *Span, parent *TraceTree) bool {
-		spanID := span.ID
-		if seen[spanID] {
-			return false
-		}
-		seen[spanID] = true
-
-		// Strictly-scoped walks never leave the root's own subtree: a span
-		// attached by a link (cause/effect) or reached via the inline-cause
-		// walk below can live anywhere in the trace.
-		if !inScope(span) {
-			return false
-		}
-
-		// If the span should be hidden, don't even collect it into the tree so we
-		// can track relationships between rows accurately (e.g. chaining pipeline
-		// calls).
-		if !opts.ShouldShow(db, span) {
-			return false
-		}
-
-		if (span.Passthrough && !opts.Debug) ||
-			// We inserted a stub for this span, but never received data for it. This
-			// can happen if we're within a larger trace - we'll allocate our parent,
-			// but not actually see it, so just move along to its children.
-			!span.Received {
-			for _, child := range span.ChildSpans.Spans() {
-				walk(child, parent)
-			}
-			return false
-		}
-
-		if opts.Filter != nil {
-			switch opts.Filter(span) {
-			case WalkContinue:
-			case WalkSkip, WalkStop:
-				if lastTree != nil {
-					lastTree.Final = true
-				}
-				return false
-			case WalkPassthrough:
-				// TODO: this Final field is a bit tedious...
-				if lastTree != nil {
-					lastTree.Final = true
-				}
-				for _, child := range span.ChildSpans.Spans() {
-					walk(child, parent)
-				}
-				return false
-			}
-		}
-
-		// display causal spans inline (always only one, but the data is many:many)
-		reparent := span.causesViaLinks.Len() > 0 && walkCauses(span, parent)
-
-		// reparent
-		if reparent {
-			parent = lastTree
-		}
-
-		tree := &TraceTree{
-			Span:   span,
-			Parent: parent,
-		}
-		if lastTree != nil {
-			if lastTree.Span.Call() != nil && span.Call() == nil {
-				lastTree.Final = true
-			}
-		}
-		if lastCall != nil {
-			if base := span.Base(); base != nil {
-				tree.Chained =
-					lastCall.Parent == tree.Parent &&
-						(base.Digest == lastCall.Span.CallDigest ||
-							base.Digest == lastCall.Span.Output)
-				lastCall.Final = !tree.Chained
-			}
-		}
-		if span.IsRunningOrEffectsRunning() {
-			tree.setRunning()
-		}
-
-		f(tree)
-		lastTree = tree
-		if tree.Span.CallDigest != "" {
-			lastCall = tree
-		}
-
-		tree.RevealedChildren = span.RevealedSpans.Len() > 0
-
-		for _, child := range span.ChildSpans.Spans() {
-			walk(child, tree)
-		}
-
-		if lastTree != nil {
-			lastTree.Final = true
-		}
-		lastTree = tree
-		if tree.Span.CallDigest != "" {
-			lastCall = tree
-		}
-		return true
-	}
-	for span := range spans {
-		walk(span, nil)
-	}
-	if lastTree != nil {
-		lastTree.Final = true
-	}
 }
 
 type Rows struct {
@@ -341,7 +159,6 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 			Parent: parent,
 
 			Chained:                 tree.Chained,
-			Final:                   tree.Final,
 			Depth:                   depth,
 			IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
 
@@ -357,29 +174,17 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 		rows.BySpan[tree.Span.ID] = row
 		if row.Expanded {
 			var lastChild *TraceRow
-
+			children := tree.Children
 			if tree.ShouldShowRevealedSpans(opts) {
-				// Show revealed spans directly, finding their TraceTrees
-				for _, revealedSpan := range tree.Span.RevealedSpans.Spans() {
-					if revealedTree, ok := lv.BySpan[revealedSpan.ID]; ok {
-						childRow := walk(revealedTree, row, depth+1)
-						if lastChild != nil {
-							childRow.Previous = lastChild
-							lastChild.Next = childRow
-						}
-						lastChild = childRow
-					}
+				children = tree.Revealed
+			}
+			for _, child := range children {
+				childRow := walk(child, row, depth+1)
+				if lastChild != nil {
+					childRow.Previous = lastChild
+					lastChild.Next = childRow
 				}
-			} else {
-				// Show direct children
-				for _, child := range tree.Children {
-					childRow := walk(child, row, depth+1)
-					if lastChild != nil {
-						childRow.Previous = lastChild
-						lastChild.Next = childRow
-					}
-					lastChild = childRow
-				}
+				lastChild = childRow
 			}
 			row.ShowingChildren = row.HasChildren
 		}
@@ -455,16 +260,6 @@ func (row *TraceTree) Depth() int {
 func (row *TraceTree) Rows(opts FrontendOpts) []*TraceRow {
 	view := &RowsView{Body: []*TraceTree{row}}
 	return view.Rows(opts).Order
-}
-
-func (row *TraceTree) setRunning() {
-	if row.IsRunningOrChildRunning {
-		return
-	}
-	row.IsRunningOrChildRunning = true
-	if row.Parent != nil && !row.Parent.IsRunningOrChildRunning {
-		row.Parent.setRunning()
-	}
 }
 
 func (row *TraceRow) Root() *TraceRow {
