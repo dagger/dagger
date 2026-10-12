@@ -545,7 +545,10 @@ func (fe *frontendPlain) renderRow(tree *dagui.TraceTree) {
 
 	// render all the children - it's important that we render the children
 	// details first to avoid unnecessary context switches
-	for _, child := range tree.Children {
+	//
+	// The plain frontend prints every span as it goes, collapsed or not, so
+	// it builds every tree the view holds.
+	for _, child := range tree.ChildTrees() {
 		fe.renderRow(child)
 	}
 

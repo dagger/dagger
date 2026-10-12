@@ -21,7 +21,7 @@ type surfacedTreeMemo[N any] struct {
 func (m *surfacedTreeMemo[N]) get(db *DB, root *Span, isCandidate func(*Span) bool, build func(candidates []*Span, root *Span) []*N) []*N {
 	if !m.init || m.at != db.mutations {
 		m.candidates = m.candidates[:0]
-		for span := range db.Spans.Iter() {
+		for span := range db.kindSpanIter() {
 			if isCandidate(span) {
 				m.candidates = append(m.candidates, span)
 			}
