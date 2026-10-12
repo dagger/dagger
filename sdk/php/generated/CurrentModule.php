@@ -23,6 +23,17 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The module's context directory loaded into the engine (plus any generated code that may have been created).
+     *
+     * It holds the module's source code and every other file the engine loaded for the module, at their paths relative to the context root. Use sourceSubpath to locate the source code in it.
+     */
+    public function contextDirectory(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('contextDirectory');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The dependencies of the module.
      */
     public function dependencies(): array
@@ -56,6 +67,15 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('source');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The path to the directory containing the module's source code, relative to the context directory.
+     */
+    public function sourceSubpath(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceSubpath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceSubpath');
     }
 
     /**

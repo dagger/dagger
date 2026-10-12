@@ -12,6 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -291,6 +292,90 @@ include = ["keep/**", "!keep/drop/**"]
 		require.Contains(t, files, "keep/kept.txt")
 		require.NotContains(t, files, "dropped.txt")
 		require.NotContains(t, files, "ignored.txt")
+	})
+}
+
+func moduleContextFixture(c *dagger.Client, entrypointDir string) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("shared/value.txt", "from the shared sibling\n").
+		WithNewFile("other/unlisted.txt", "unlisted\n").
+		WithNewFile("m/dagger-module.toml", `name = "m"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`).
+		WithDirectory("m/entrypoint", core.NewQuery(c).Host().Directory(entrypointDir))
+}
+
+// An entrypoint finds its module inside currentModule.contextDirectory through
+// currentModule.sourceSubpath. currentModule.source stays narrowed to the
+// module directory.
+func (ModuleSuite) TestModuleEntrypointContextDirectory(ctx context.Context, t *testctx.T) {
+	probeFixture := func(c *dagger.Client) *core.Directory {
+		return moduleContextFixture(c, "./testdata/modules/dang/module-entrypoint-context")
+	}
+	call := func(ctx context.Context, t *testctx.T, ctr *core.Container, ref, fn string) string {
+		t.Helper()
+		out, err := ctr.With(daggerCallAt(ref, fn)).Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	requireModuleContext := func(ctx context.Context, t *testctx.T, ctr *core.Container, ref string) {
+		t.Helper()
+		require.Equal(t, "m", call(ctx, t, ctr, ref, "source-subpath"))
+
+		contextFiles := strings.Fields(call(ctx, t, ctr, ref, "context-files"))
+		require.Contains(t, contextFiles, "m/dagger-module.toml")
+		require.Contains(t, contextFiles, "m/entrypoint/main.dang")
+		for _, file := range contextFiles {
+			require.True(t, strings.HasPrefix(file, "m/"), "%s is outside the module directory", file)
+		}
+
+		sourceFiles := strings.Fields(call(ctx, t, ctr, ref, "source-files"))
+		require.Contains(t, sourceFiles, "dagger-module.toml")
+		require.Contains(t, sourceFiles, "entrypoint/main.dang")
+		require.NotContains(t, sourceFiles, "m/dagger-module.toml")
+	}
+
+	t.Run("local module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := goGitBase(t, c).WithDirectory(".", probeFixture(c))
+		requireModuleContext(ctx, t, ctr, "./m")
+	})
+
+	t.Run("git module at a subpath", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		gitDaemon, repoURL := gitService(ctx, t, c, probeFixture(c))
+		gitHost, err := gitDaemon.Hostname(ctx)
+		require.NoError(t, err)
+
+		ctr := goGitBase(t, c).WithServiceBinding(gitHost, gitDaemon)
+		requireModuleContext(ctx, t, ctr, repoURL+"#main:m")
+	})
+
+	// A directory source carries the whole directory it was given as its
+	// context, so the source subpath is the only way to find the module in it.
+	t.Run("directory module below the context root", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		require.NoError(t, core.NewQuery(c).Directory().
+			WithDirectory("pkgs", probeFixture(c)).
+			AsModuleSource(core.DirectoryAsModuleSourceOpts{SourceRootPath: "pkgs/m"}).
+			AsModule().
+			Serve(ctx))
+
+		res, err := testutil.QueryWithClient[struct {
+			M struct {
+				SourceSubpath string
+				Shared        string
+			}
+		}](c, t, `{m{sourceSubpath shared}}`, nil)
+		require.NoError(t, err)
+		require.Equal(t, "pkgs/m", res.M.SourceSubpath)
+		require.Equal(t, "from the shared sibling", strings.TrimSpace(res.M.Shared))
 	})
 }
 

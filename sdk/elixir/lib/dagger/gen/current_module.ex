@@ -16,6 +16,22 @@ defmodule Dagger.CurrentModule do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The module's context directory loaded into the engine (plus any generated code that may have been created).
+
+  It holds the module's source code and every other file the engine loaded for the module, at their paths relative to the context root. Use sourceSubpath to locate the source code in it.
+  """
+  @spec context_directory(t()) :: Dagger.Directory.t()
+  def context_directory(%__MODULE__{} = current_module) do
+    query_builder =
+      current_module.query_builder |> QB.select("contextDirectory")
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: current_module.client
+    }
+  end
+
+  @doc """
   The dependencies of the module.
   """
   @spec dependencies(t()) :: {:ok, [Dagger.Module.t()]} | {:error, term()}
@@ -86,6 +102,17 @@ defmodule Dagger.CurrentModule do
       query_builder: query_builder,
       client: current_module.client
     }
+  end
+
+  @doc """
+  The path to the directory containing the module's source code, relative to the context directory.
+  """
+  @spec source_subpath(t()) :: {:ok, String.t()} | {:error, term()}
+  def source_subpath(%__MODULE__{} = current_module) do
+    query_builder =
+      current_module.query_builder |> QB.select("sourceSubpath")
+
+    Client.execute(current_module.client, query_builder)
   end
 
   @doc """

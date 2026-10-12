@@ -6140,8 +6140,9 @@ type CurrentModule struct {
 	// field again.
 	refetchID bool
 
-	id   *ID
-	name *string
+	id            *ID
+	name          *string
+	sourceSubpath *string
 }
 
 func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModule {
@@ -6150,6 +6151,18 @@ func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModu
 		// The query's origin is unknown: it may go through a field that
 		// must be reevaluated.
 		refetchID: true,
+	}
+}
+
+// The module's context directory loaded into the engine (plus any generated code that may have been created).
+//
+// It holds the module's source code and every other file the engine loaded for the module, at their paths relative to the context root. Use sourceSubpath to locate the source code in it.
+func (r *CurrentModule) ContextDirectory() *Directory {
+	q := r.query.Select("contextDirectory")
+
+	return &Directory{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -6263,6 +6276,19 @@ func (r *CurrentModule) Source() *Directory {
 		query:     q,
 		refetchID: r.refetchID,
 	}
+}
+
+// The path to the directory containing the module's source code, relative to the context directory.
+func (r *CurrentModule) SourceSubpath(ctx context.Context) (string, error) {
+	if r.sourceSubpath != nil {
+		return *r.sourceSubpath, nil
+	}
+	q := r.query.Select("sourceSubpath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // CurrentModuleWorkdirOpts contains options for CurrentModule.Workdir

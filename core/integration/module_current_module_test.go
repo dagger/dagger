@@ -61,6 +61,37 @@ func (ModuleSuite) TestCurrentModuleAPI(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "nice", strings.TrimSpace(out))
 	})
 
+	t.Run("contextDirectory and sourceSubpath", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := goGitBase(t, c).
+			WithNewFile("shared/value.txt", "from the shared sibling").
+			WithNewFile("other/unlisted.txt", "unlisted").
+			WithNewFile("m/dagger.json", `{
+  "name": "probe",
+  "engineVersion": "latest",
+  "sdk": {"source": "dang"},
+  "include": ["../shared"]
+}`).
+			WithNewFile("m/main.dang", `type Probe {
+  pub sourceSubpath: String! { currentModule.sourceSubpath }
+  pub shared: String! { currentModule.contextDirectory.file("shared/value.txt").contents }
+  pub contextEntries: [String!]! { currentModule.contextDirectory.entries }
+}`)
+
+		out, err := ctr.With(daggerCallAt("./m", "source-subpath")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "m", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCallAt("./m", "shared")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "from the shared sibling", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCallAt("./m", "context-entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"m/", "shared/"}, strings.Fields(out))
+	})
+
 	t.Run("workdir", func(ctx context.Context, t *testctx.T) {
 		t.Run("dir", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)

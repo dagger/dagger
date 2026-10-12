@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  A Dang module entrypoint can declare a `resources` member listing files outside its directory; the engine adds them to the module context and digest, so changing a listed file invalidates cached results instead of serving a stale one.
+time: 2026-10-12T16:07:36Z
+custom:
+  Author: eunomie
+  PR: "14639"

@@ -126,6 +126,24 @@ func TestModuleSourcePersistenceRetainsSelfCallsCapability(t *testing.T) {
 	require.True(t, decodedSrc.SelfCallsEnabled())
 }
 
+func TestModuleSourcePersistenceRetainsEntrypointResourcesLoaded(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	for _, loaded := range []bool{false, true} {
+		src := &ModuleSource{EntrypointResourcesLoaded: loaded}
+		encoded, err := src.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(nil, 0, nil))
+		require.NoError(t, err)
+
+		decoded, err := (&ModuleSource{}).DecodePersistedObject(ctx, dagql.NewPersistDecodeContext(nil, 0, nil), encoded.JSON)
+		require.NoError(t, err)
+		decodedSrc, ok := decoded.(*ModuleSource)
+		require.True(t, ok)
+		require.Equal(t, loaded, decodedSrc.EntrypointResourcesLoaded)
+		require.Equal(t, loaded, decodedSrc.Clone().EntrypointResourcesLoaded)
+	}
+}
+
 func TestGitModuleSourceSymbolic(t *testing.T) {
 	testCases := []struct {
 		name         string
