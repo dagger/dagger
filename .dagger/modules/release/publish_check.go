@@ -58,6 +58,8 @@ type publishCheckEnv struct {
 
 // Exercise the release publish path against local mock endpoints.
 // +check
+//
+//nolint:gocyclo
 func (r *Release) PublishWithMockEndpoints(
 	ctx context.Context,
 
@@ -65,35 +67,8 @@ func (r *Release) PublishWithMockEndpoints(
 	// service and invokes release through a nested engine using that git ref.
 	// +defaultPath="/"
 	source *dagger.Directory,
-) error {
-	return r.publishWithMockEndpoints(ctx, source, false)
-}
-
-// Exercise the stable release publish path against local mock endpoints.
-//
-// Same as publish-with-mock-endpoints, but the tagged publish uses the Helm
-// chart version without its prerelease suffix (e.g. v1.0.0 for
-// 1.0.0-beta.17), so the stable-only steps run: the root GitHub release,
-// package managers, docs, and the latest_version/versions pointers.
-// +check
-func (r *Release) PublishStableWithMockEndpoints(
-	ctx context.Context,
-
-	// Source tree to publish. The check commits this exact tree to a local git
-	// service and invokes release through a nested engine using that git ref.
-	// +defaultPath="/"
-	source *dagger.Directory,
-) error {
-	return r.publishWithMockEndpoints(ctx, source, true)
-}
-
-//nolint:gocyclo
-func (r *Release) publishWithMockEndpoints(
-	ctx context.Context,
-	source *dagger.Directory,
-	stable bool,
 ) (rerr error) {
-	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"), r.Workspace, stable)
+	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"), r.Workspace)
 	if err != nil {
 		return err
 	}
@@ -229,7 +204,7 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	return nil
 }
 
-func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagger.Workspace, stable bool) (*publishCheckEnv, error) {
+func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagger.Workspace) (*publishCheckEnv, error) {
 	platform, platformArchive, err := publishCheckPlatform(ctx)
 	if err != nil {
 		return nil, err
@@ -237,15 +212,6 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagge
 	releaseTag, releaseVersion, err := publishCheckRelease(ctx, source)
 	if err != nil {
 		return nil, err
-	}
-	if stable && semver.Prerelease(releaseTag) != "" {
-		stableTag := strings.TrimSuffix(semver.Canonical(releaseTag), semver.Prerelease(releaseTag))
-		stableVersion := strings.TrimPrefix(stableTag, "v")
-		source, err = withPublishCheckVersion(ctx, source, releaseVersion, stableVersion)
-		if err != nil {
-			return nil, err
-		}
-		releaseTag, releaseVersion = stableTag, stableVersion
 	}
 
 	// A stable release reads release notes from a changelog file per published
@@ -416,41 +382,6 @@ func publishCheckRelease(ctx context.Context, source *dagger.Directory) (tag, ve
 		return "", "", fmt.Errorf("helm chart version %q does not produce a valid release tag", version)
 	}
 	return tag, strings.TrimPrefix(tag, "v"), nil
-}
-
-// publishCheckVersionFiles are the files that name the release version in a
-// commit a release is cut from: internal/version/VERSION, the Go SDK file
-// generated from it, and the files the *-target-version generators own (the
-// Java SDK is left out because release doesn't publish it).
-var publishCheckVersionFiles = []string{
-	"internal/version/VERSION",
-	"sdk/go/engineconn/version.gen.go",
-	"helm/dagger/Chart.yaml",
-	"docs/current_docs/partials/version.js",
-	"sdk/python/src/dagger/_engine/_version.py",
-	"sdk/typescript/src/provisioning/default.ts",
-	"sdk/php/src/Connection/version.php",
-	"sdk/elixir/lib/dagger/core/version.ex",
-	"sdk/rust/crates/dagger-sdk/src/core/version.rs",
-	"sdk/rust/Cargo.toml",
-	"sdk/rust/Cargo.lock",
-}
-
-// withPublishCheckVersion makes source look like the commit a release of
-// version would be cut from, by replacing from with version in every
-// publishCheckVersionFiles entry.
-func withPublishCheckVersion(ctx context.Context, source *dagger.Directory, from, version string) (*dagger.Directory, error) {
-	for _, path := range publishCheckVersionFiles {
-		contents, err := source.File(path).Contents(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("read release version file: %w", err)
-		}
-		if !strings.Contains(contents, from) {
-			return nil, fmt.Errorf("release version file %s does not mention version %s", path, from)
-		}
-		source = source.WithNewFile(path, strings.ReplaceAll(contents, from, version))
-	}
-	return source, nil
 }
 
 func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service, error) {
