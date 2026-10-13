@@ -289,6 +289,8 @@ func init() {
 		moduleClientAddCmd,
 		moduleClientRemoveCmd,
 		moduleClientUpdateCmd,
+		workspaceDoctorCmd,
+		doctorAliasCmd,
 	} {
 		setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline)
 	}
