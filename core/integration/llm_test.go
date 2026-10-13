@@ -80,7 +80,7 @@ const (
 
 // llmMessagesSelection selects everything a conversation recording needs from a
 // conversation: the same JSON shape core.decodeRecordedMessages consumes.
-const llmMessagesSelection = `role content{kind text callId toolName arguments errored signature} tokenUsage{inputTokens outputTokens cachedTokenReads cachedTokenWrites totalTokens}`
+const llmMessagesSelection = `role content{kind text callID toolName arguments errored signature} tokenUsage{inputTokens outputTokens cachedTokenReads cachedTokenWrites totalTokens}`
 
 type recordedTokenUsage struct {
 	InputTokens       int64 `json:"inputTokens,omitempty"`
@@ -93,7 +93,7 @@ type recordedTokenUsage struct {
 type recordedBlock struct {
 	Kind      string `json:"kind"`
 	Text      string `json:"text,omitempty"`
-	CallID    string `json:"callId,omitempty"`
+	CallID    string `json:"callID,omitempty"`
 	ToolName  string `json:"toolName,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
 	Errored   bool   `json:"errored,omitempty"`

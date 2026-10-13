@@ -650,15 +650,15 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
 	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts {
     dimensionDefinitions { identifier name }
-    collection: filterUri(uri: "items") { items { uri dimensionKeys { dimension key } } }
-    selected: filterUri(uri: "items?collections-items-item=a") { items { uri dimensionKeys { dimension key } } }
-    files: filterUri(uri: "items/file?collections-items-item=a") { items { uri value { ... on File { contents } } } }
-    evaluated: filterUri(uri: "items/file?collections-items-item=a") { values { artifact { uri } value { ... on File { contents } } error { message } } }
-    excluded: filterUri(uri: "items/file?collections-items-item=a&collections-items-item=b") { withoutUri(uri: "items/file?collections-items-item=a") { items { uri } } }
-    lazy: filterUri(uri: "items/broken?collections-items-item=b") { items { uri } }
-    nested: filterUri(uri: "items/parts?collections-items-item=a&collections-items-part=x") { items { uri dimensionKeys { dimension key } } }
-    emptyKey: filterUri(uri: "items/parts?collections-items-item=a&collections-items-part=") { items { uri } }
-    childKeys: filterUri(uri: "items/parts?collections-items-item=a&collections-items-part") { dimensionKeys(dimension: "collections-items-part") }
+    collection: filterURI(uri: "items") { items { uri dimensionKeys { dimension key } } }
+    selected: filterURI(uri: "items?collections-items-item=a") { items { uri dimensionKeys { dimension key } } }
+    files: filterURI(uri: "items/file?collections-items-item=a") { items { uri value { ... on File { contents } } } }
+    evaluated: filterURI(uri: "items/file?collections-items-item=a") { values { artifact { uri } value { ... on File { contents } } error { message } } }
+    excluded: filterURI(uri: "items/file?collections-items-item=a&collections-items-item=b") { withoutURI(uri: "items/file?collections-items-item=a") { items { uri } } }
+    lazy: filterURI(uri: "items/broken?collections-items-item=b") { items { uri } }
+    nested: filterURI(uri: "items/parts?collections-items-item=a&collections-items-part=x") { items { uri dimensionKeys { dimension key } } }
+    emptyKey: filterURI(uri: "items/parts?collections-items-item=a&collections-items-part=") { items { uri } }
+    childKeys: filterURI(uri: "items/parts?collections-items-item=a&collections-items-part") { dimensionKeys(dimension: "collections-items-part") }
     first: filterDimensionKeys(dimension: "collections-items-item", keys: ["c"]) {
       filterPath(path: ["items", "file"]) { uri items { uri } }
     }
@@ -690,7 +690,7 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
   "selected":{"items":[{"uri":"dag://?artifact-collections-item=items&collections-items-item=a","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"type:CollectionsItem","key":"items"}]}]},
   "files":{"items":[{"uri":"dag://?file=items/file&collections-items-item=a","value":{"contents":"item:a"}}]},
   "evaluated":{"values":[{"artifact":{"uri":"dag://?file=items/file&collections-items-item=a"},"value":{"contents":"item:a"},"error":null}]},
-  "excluded":{"withoutUri":{"items":[{"uri":"dag://?file=items/file&collections-items-item=b"}]}},
+  "excluded":{"withoutURI":{"items":[{"uri":"dag://?file=items/file&collections-items-item=b"}]}},
   "lazy":{"items":[{"uri":"dag://?container=items/broken&collections-items-item=b"}]},
   "nested":{"items":[{"uri":"dag://?artifact-collections-part=items/parts&collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}]},
   "emptyKey":{"items":[{"uri":"dag://?artifact-collections-part=items/parts&collections-items-item=a&collections-items-part="}]},
@@ -714,17 +714,17 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts {
-    selected: filterUri(uri: "items/parts?collections-items-item=a&collections-items-item=b&collections-items-part=x") {
+    selected: filterURI(uri: "items/parts?collections-items-item=a&collections-items-item=b&collections-items-part=x") {
       parents: dimensionItems(dimension: "collections-items-item") { uri(typeAssertion: true) description path dimensionKeys { dimension key } }
       children: dimensionItems(dimension: "collections-items-part") { uri dimensionKeys { dimension key } }
       keys: dimensionKeys(dimension: "collections-items-part")
     }
-    lazy: filterUri(uri: "items/broken?collections-items-item=b") { dimensionItems(dimension: "collections-items-item") { uri value { __typename } } }
-    batch: filterUri(uri: "items/delta-check?collections-items-item=b") { dimensionItems(dimension: "collections-items-item") { uri value { __typename } } }
+    lazy: filterURI(uri: "items/broken?collections-items-item=b") { dimensionItems(dimension: "collections-items-item") { uri value { __typename } } }
+    batch: filterURI(uri: "items/delta-check?collections-items-item=b") { dimensionItems(dimension: "collections-items-item") { uri value { __typename } } }
     fields: filterTypes(types: ["CollectionsItem"]) {
       dimensionItems(dimension: "collections-other") { uri }
     }
-    direct: filterUri(uri: "items?collections-items-item=a") { filterTypes(types: ["CollectionsItem"]) { items { description } } }
+    direct: filterURI(uri: "items?collections-items-item=a") { filterTypes(types: ["CollectionsItem"]) { items { description } } }
     unknown: dimensionItems(dimension: "missing") { uri }
   } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": ws}})

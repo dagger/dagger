@@ -249,16 +249,16 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 	})
 
 	t.Run("the artifact API resolves the address it reports", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{currentWorkspace{artifacts{filterUri(uri:"**/stale"){items{uri path}}}}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{currentWorkspace{artifacts{filterURI(uri:"**/stale"){items{uri path}}}}}`)).Stdout(ctx)
 		require.NoError(t, err)
-		listed := gjson.Get(out, "currentWorkspace.artifacts.filterUri.items").Array()
+		listed := gjson.Get(out, "currentWorkspace.artifacts.filterURI.items").Array()
 		require.Len(t, listed, 2)
 		for _, check := range listed {
 			uri := check.Get("uri").String()
 			require.Contains(t, []string{"dag://?check=empty-generate/stale", "dag://?check=non-empty-generate/stale"}, uri)
-			out, err := modGen.With(daggerQuery(`{currentWorkspace{artifacts{filterUri(uri:%q){one{uri}}}}}`, uri)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{currentWorkspace{artifacts{filterURI(uri:%q){one{uri}}}}}`, uri)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, uri, gjson.Get(out, "currentWorkspace.artifacts.filterUri.one.uri").String())
+			require.Equal(t, uri, gjson.Get(out, "currentWorkspace.artifacts.filterURI.one.uri").String())
 		}
 	})
 

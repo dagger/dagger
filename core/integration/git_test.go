@@ -612,7 +612,7 @@ func (GitSuite) TestWithRemote(ctx context.Context, t *testctx.T) {
 	require.NoError(t, c.Do(ctx, &dagger.Request{
 		Query: `query($url: String!, $service: ID!, $upstream: String!, $push: String!) {
 			git(url: $url, experimentalServiceHost: $service) {
-				withRemote(name: "upstream", url: $upstream, pushUrl: $push) {
+				withRemote(name: "upstream", url: $upstream, pushURL: $push) {
 					head { tree { id } }
 				}
 			}

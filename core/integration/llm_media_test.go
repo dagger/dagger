@@ -23,7 +23,7 @@ const mediaWAV = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="
 const mediaPDF = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n"
 
 const mediaMessagesSelection = `messages { role content {
-	kind text data mimeType callId errored
+	kind text data mimeType callID errored
 	content { kind text data mimeType }
 } }`
 
@@ -32,7 +32,7 @@ type mediaBlock struct {
 	Text     string       `json:"text"`
 	Data     string       `json:"data"`
 	MIMEType string       `json:"mimeType"`
-	CallID   string       `json:"callId"`
+	CallID   string       `json:"callID"`
 	Errored  bool         `json:"errored"`
 	Content  []mediaBlock `json:"content"`
 }
@@ -214,7 +214,7 @@ func (LLMSuite) TestMediaReturnedConversationDisplay(ctx context.Context, t *tes
 			Messages json.RawMessage `json:"messages"`
 		} `json:"node"`
 	}](c, t, `query($id: ID!) { node(id: $id) { ... on LLM {
-		messages { role content { kind text callId toolName arguments data mimeType } }
+		messages { role content { kind text callID toolName arguments data mimeType } }
 	} } }`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
 	require.NoError(t, err)
 	model := "recording/" + base64.StdEncoding.EncodeToString(recorded.Node.Messages)
@@ -341,7 +341,7 @@ func (LLMSuite) TestMediaToolReturnedContent(ctx context.Context, t *testctx.T) 
 			Messages json.RawMessage `json:"messages"`
 		} `json:"node"`
 	}](c, t, `query($id: ID!) { node(id: $id) { ... on LLM {
-		messages { role content { kind text callId toolName arguments errored data mimeType content { kind text data mimeType } } }
+		messages { role content { kind text callID toolName arguments errored data mimeType content { kind text data mimeType } } }
 	} } }`, &testutil.QueryOptions{Variables: map[string]any{"id": id}})
 	require.NoError(t, err)
 	model := "recording/" + base64.StdEncoding.EncodeToString(recorded.Node.Messages)
@@ -385,7 +385,7 @@ func (LLMSuite) TestMediaInvalidContent(ctx context.Context, t *testctx.T) {
 		{"wrong MIME kind", map[string]any{"kind": "IMAGE", "mimeType": "application/pdf", "data": mediaPNG}},
 		{"unsupported MIME", map[string]any{"kind": "DOCUMENT", "mimeType": "application/octet-stream", "data": mediaPNG}},
 		{"text carrying media", map[string]any{"kind": "TEXT", "text": "caption", "data": mediaPNG}},
-		{"tool call as user content", map[string]any{"kind": "TOOL_CALL", "callId": "call", "toolName": "read"}},
+		{"tool call as user content", map[string]any{"kind": "TOOL_CALL", "callID": "call", "toolName": "read"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			_, err := testutil.QueryWithClient[map[string]any](c, t,
