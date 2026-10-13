@@ -47,9 +47,13 @@ func TestInitTimingRead(t *testing.T) {
 	_, err = fmt.Fprintf(timing.w, "%d %d %d\n", started, spawned, exited)
 	require.NoError(t, err)
 
+	readStart := wcprof.NowNS()
 	gotStarted, gotSpawned, gotExited, ok := timing.read()
+	readEnd := wcprof.NowNS()
 	require.True(t, ok)
-	require.GreaterOrEqual(t, gotStarted, before)
+	// read() converts with two clock reads, and a delay between them makes
+	// the result early by as much; that delay is within [readStart, readEnd].
+	require.GreaterOrEqual(t, gotStarted, before-(readEnd-readStart))
 	require.LessOrEqual(t, gotStarted, wcprof.NowNS())
 	require.Equal(t, int64(time.Millisecond), gotSpawned-gotStarted)
 	require.Equal(t, int64(5*time.Millisecond), gotExited-gotStarted)
