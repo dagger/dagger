@@ -44,7 +44,7 @@ func (ContainerSuite) TestNestedDaggerCLI(ctx context.Context, t *testctx.T) {
 			From(alpineImage).
 			WithNewFile("/data/hello.txt", "hello from the container").
 			WithEnvVariable("NESTED_SECRET", "from the env").
-			WithEnvVariable("ID", identity.NewID())
+			WithEnvVariable("ID", rand.Text())
 		out, err := ctr.WithExec([]string{"dagger", "-c", "host | file /data/hello.txt | contents"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello from the container", strings.TrimSpace(out))
