@@ -4403,7 +4403,7 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
-	deps, err := s.defaultSchemaBuilderForView(ctx, call.View(engine.APIViewVersion(engineVersion)))
+	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, engineVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -4423,6 +4423,15 @@ func (s *moduleSourceSchema) loadDefaultSchemaBuilder(
 	src dagql.ObjectResult[*core.ModuleSource],
 ) (*core.SchemaBuilder, error) {
 	return s.defaultSchemaBuilderForView(ctx, src.Self().NamingView())
+}
+
+// defaultSchemaBuilderForEngineVersion is loadDefaultSchemaBuilder for the
+// view of an explicit engine version.
+func (s *moduleSourceSchema) defaultSchemaBuilderForEngineVersion(
+	ctx context.Context,
+	engineVersion string,
+) (*core.SchemaBuilder, error) {
+	return s.defaultSchemaBuilderForView(ctx, call.View(engine.APIViewVersion(engineVersion)))
 }
 
 // defaultSchemaBuilderForView is loadDefaultSchemaBuilder for an explicit
