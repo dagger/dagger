@@ -2705,7 +2705,7 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
 			}
-			aliases.noteEnumValueAliases(ctx, self.Name(), astField, vars)
+			aliases.noteInputAliases(ctx, self.Name(), astField, vars)
 			sel, resType, err := parser.ParseField(ctx, s.View, astField, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
@@ -2877,7 +2877,11 @@ func (InputObject[T]) Decoder() InputDecoder {
 			return nil, fmt.Errorf("expected map[string]any, got %T", val)
 		}
 		var obj T
-		fields, err := setInputObjectFields(&obj, vals)
+		var aliases map[string]Aliases
+		if aliased, ok := any(obj).(InputFieldAliased); ok {
+			aliases = aliased.InputFieldAliases()
+		}
+		fields, err := setInputObjectFields(&obj, vals, aliases)
 		if err != nil {
 			return nil, err
 		}
@@ -2897,7 +2901,10 @@ func (input InputObject[T]) resultCallInputObjectFields() []inputObjectField {
 	return input.fields
 }
 
-func setInputObjectFields(obj any, vals map[string]any) ([]inputObjectField, error) {
+// setInputObjectFields decodes vals into obj, a pointer to an input object
+// struct, taking a field given by one of its aliases (see InputFieldAliased)
+// as the field itself.
+func setInputObjectFields(obj any, vals map[string]any, aliases map[string]Aliases) ([]inputObjectField, error) {
 	objT := reflect.TypeOf(obj).Elem()
 	objV := reflect.ValueOf(obj)
 	if objT.Kind() != reflect.Struct {
@@ -2919,7 +2926,7 @@ func setInputObjectFields(obj any, vals map[string]any) ([]inputObjectField, err
 		if fieldT.Anonymous {
 			// embedded struct
 			val := reflect.New(fieldT.Type)
-			embeddedFields, err := setInputObjectFields(val.Interface(), vals)
+			embeddedFields, err := setInputObjectFields(val.Interface(), vals, aliases)
 			if err != nil {
 				return nil, err
 			}
@@ -2932,7 +2939,11 @@ func setInputObjectFields(obj any, vals map[string]any) ([]inputObjectField, err
 			return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
 		}
 		var input Input
-		if val, ok := vals[name]; ok {
+		val, ok, err := inputObjectFieldValue(vals, name, aliases[name])
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			var err error
 			input, err = zeroInput.Decoder().DecodeInput(val)
 			if err != nil {
@@ -2955,6 +2966,28 @@ func setInputObjectFields(obj any, vals map[string]any) ([]inputObjectField, err
 		}
 	}
 	return fields, nil
+}
+
+// inputObjectFieldValue returns the value vals gives the input object field
+// name, by its name or one of its aliases, in any view. Giving it by more
+// than one is an error.
+func inputObjectFieldValue(vals map[string]any, name string, aliases Aliases) (any, bool, error) {
+	val, ok := vals[name]
+	given := name
+	for _, alias := range aliases.Names {
+		if alias == name {
+			continue
+		}
+		v, aliasOK := vals[alias]
+		if !aliasOK {
+			continue
+		}
+		if ok {
+			return nil, false, fmt.Errorf("input field %q given twice, as %q and %q", name, given, alias)
+		}
+		val, ok, given = v, true, alias
+	}
+	return val, ok, nil
 }
 
 func (input InputObject[T]) ToLiteral() call.Literal {

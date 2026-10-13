@@ -1159,8 +1159,8 @@ type InputSpec struct {
 	Sensitive bool
 	// Directives is the list of GraphQL directives attached to this input.
 	Directives []*ast.Directive
-	// Aliases are hidden alternate names of the argument. See Aliases. Only
-	// field arguments have them, not input object fields.
+	// Aliases are hidden alternate names of the argument or input object
+	// field. See Aliases and InputFieldAliased.
 	Aliases Aliases
 
 	// ViewFilter is filter that specifies under which views this field is

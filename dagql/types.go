@@ -1986,6 +1986,14 @@ func MustInputSpec(val Type) InputObjectSpec {
 	if err != nil {
 		panic(fmt.Errorf("input specs for %T: %w", val, err))
 	}
+	if aliased, ok := val.(InputFieldAliased); ok {
+		aliases := aliased.InputFieldAliases()
+		for i, input := range inputs.raw {
+			if a, ok := aliases[input.Name]; ok {
+				inputs.raw[i].Aliases = a
+			}
+		}
+	}
 	spec.Fields = inputs
 	return spec
 }

@@ -16,8 +16,8 @@ import (
 )
 
 // Aliases are hidden alternate names of an object or interface type, a field,
-// a field argument or an enum value: old spellings that keep working for a
-// while after a rename.
+// a field argument, an input object field or an enum value: old spellings
+// that keep working for a while after a rename.
 //
 // Queries may use an alias wherever the canonical name is accepted, but no
 // schema a client can read shows it: Schema, SchemaForView, introspection and
@@ -27,7 +27,8 @@ import (
 // parsed, so its calls, IDs and cache keys are the canonical call's. An enum
 // value alias is an input only: the enum's decoder turns it into the
 // canonical value (see EnumValueAliased), and outputs have the canonical
-// name.
+// name. So is an input object field alias: the input object's decoder takes
+// it as the canonical field (see InputFieldAliased).
 //
 // An alias that collides with a real name, or that two names claim, is
 // ignored.
@@ -68,6 +69,20 @@ type typeAliased interface {
 // queries are validated against, and notes their uses.
 type EnumValueAliased interface {
 	EnumValueAliases() EnumValueAliases
+}
+
+// InputFieldAliased is implemented by input object types whose fields have
+// hidden aliases (see Aliases), by field name. MustInputSpec puts them in the
+// type's InputObjectSpec, for validation.
+//
+// Like enum value aliases, they reach the input object's decoder (in an
+// inline object, a variable or a JSON document), which takes an aliased field
+// as its canonical field, so the decoded object, and so the call's ID and
+// cache key, are the canonical ones. Decoders have no view: they accept the
+// aliases in every view, but a query that uses one outside its views fails
+// validation before anything decodes it.
+type InputFieldAliased interface {
+	InputFieldAliases() map[string]Aliases
 }
 
 // EnumValueAliases are the values of an enum and their hidden aliases.
@@ -126,14 +141,16 @@ type nameAliases struct {
 	Args map[string]map[string]map[string]string `json:"args,omitempty"`
 	// EnumValues maps an enum type name to its value aliases.
 	EnumValues map[string]map[string]string `json:"enumValues,omitempty"`
+	// InputFields maps an input object type name to its field aliases.
+	InputFields map[string]map[string]string `json:"inputFields,omitempty"`
 
-	// types are the schema's types, to find the enum values in arguments
-	// when there are enum value aliases.
+	// types are the schema's types, to find the enum values and input
+	// object fields in arguments when there are aliases of them.
 	types map[string]*ast.Definition
 }
 
 func (idx *nameAliases) empty() bool {
-	return idx == nil || (len(idx.Types) == 0 && len(idx.Fields) == 0 && len(idx.Args) == 0 && len(idx.EnumValues) == 0)
+	return idx == nil || (len(idx.Types) == 0 && len(idx.Fields) == 0 && len(idx.Args) == 0 && len(idx.EnumValues) == 0 && len(idx.InputFields) == 0)
 }
 
 // typeName returns the canonical name of a type name that may be an alias.
@@ -199,12 +216,13 @@ func (idx *nameAliases) field(ctx context.Context, typeName string, astField *as
 	return &rewritten, nil
 }
 
-// noteEnumValueAliases notes the enum value aliases the arguments of
-// astField, a field of typeName with canonical names, use. They need no
-// rewriting: the enums' decoders take them to their canonical values (see
-// EnumValueAliased).
-func (idx *nameAliases) noteEnumValueAliases(ctx context.Context, typeName string, astField *ast.Field, vars map[string]any) {
-	if idx == nil || len(idx.EnumValues) == 0 || len(astField.Arguments) == 0 {
+// noteInputAliases notes the enum value and input object field aliases the
+// arguments of astField, a field of typeName with canonical names, use. They
+// need no rewriting: the enums' decoders take them to their canonical values
+// (see EnumValueAliased), and input objects' decoders take aliased fields as
+// their canonical fields (see InputFieldAliased).
+func (idx *nameAliases) noteInputAliases(ctx context.Context, typeName string, astField *ast.Field, vars map[string]any) {
+	if idx == nil || (len(idx.EnumValues) == 0 && len(idx.InputFields) == 0) || len(astField.Arguments) == 0 {
 		return
 	}
 	def := idx.types[typeName]
@@ -224,25 +242,26 @@ func (idx *nameAliases) noteEnumValueAliases(ctx context.Context, typeName strin
 		if err != nil {
 			continue
 		}
-		idx.noteEnumValueAliasesIn(ctx, argDef.Type, val)
+		idx.noteInputAliasesIn(ctx, argDef.Type, val)
 	}
 }
 
-// noteEnumValueAliasesIn notes the enum value aliases val, an input of type
-// t, uses: in itself, in its list elements or in its input object fields.
-func (idx *nameAliases) noteEnumValueAliasesIn(ctx context.Context, t *ast.Type, val any) {
+// noteInputAliasesIn notes the enum value and input object field aliases
+// val, an input of type t, uses: in itself, in its list elements or in its
+// input object fields.
+func (idx *nameAliases) noteInputAliasesIn(ctx context.Context, t *ast.Type, val any) {
 	if t == nil || val == nil {
 		return
 	}
 	if t.Elem != nil {
 		if list, ok := val.([]any); ok {
 			for _, elem := range list {
-				idx.noteEnumValueAliasesIn(ctx, t.Elem, elem)
+				idx.noteInputAliasesIn(ctx, t.Elem, elem)
 			}
 			return
 		}
 		// A single value is coerced to a list of it.
-		idx.noteEnumValueAliasesIn(ctx, t.Elem, val)
+		idx.noteInputAliasesIn(ctx, t.Elem, val)
 		return
 	}
 	if aliases, ok := idx.EnumValues[t.NamedType]; ok {
@@ -261,9 +280,14 @@ func (idx *nameAliases) noteEnumValueAliasesIn(ctx context.Context, t *ast.Type,
 	if !ok {
 		return
 	}
-	for _, field := range def.Fields {
-		if v, ok := fields[field.Name]; ok {
-			idx.noteEnumValueAliasesIn(ctx, field.Type, v)
+	for _, name := range slices.Sorted(maps.Keys(fields)) {
+		fieldName := name
+		if canonical, ok := idx.InputFields[t.NamedType][name]; ok {
+			noteAliasUse(ctx, "inputField", t.NamedType, name, canonical)
+			fieldName = canonical
+		}
+		if field := def.Fields.ForName(fieldName); field != nil {
+			idx.noteInputAliasesIn(ctx, field.Type, fields[name])
 		}
 	}
 }
@@ -400,7 +424,49 @@ func (s *Server) collectNameAliasesLocked(view call.View, schema *ast.Schema) *n
 	}
 	idx.Types = types.claims
 	s.collectEnumValueAliasesLocked(view, schema, idx)
+	s.collectInputFieldAliasesLocked(view, schema, idx)
+	if len(idx.EnumValues) > 0 || len(idx.InputFields) > 0 {
+		idx.types = schema.Types
+	}
 	return idx
+}
+
+// collectInputFieldAliasesLocked adds the aliases of the fields of the input
+// objects in schema, the server's schema for view, to idx. An alias that
+// collides with a field, or that two fields claim, is ignored. The caller
+// holds installLock.
+func (s *Server) collectInputFieldAliasesLocked(view call.View, schema *ast.Schema, idx *nameAliases) {
+	for _, name := range slices.Sorted(maps.Keys(s.typeDefs)) {
+		spec, ok := s.typeDefs[name].(InputObjectSpec)
+		if !ok {
+			continue
+		}
+		def := schema.Types[name]
+		if def == nil || def.Kind != ast.InputObject {
+			continue
+		}
+		fields := aliasClaims{scope: name}
+		for _, field := range spec.Fields.Inputs(view) {
+			if def.Fields.ForName(field.Name) == nil {
+				continue
+			}
+			for _, alias := range field.Aliases.namesIn(view) {
+				switch {
+				case alias == field.Name:
+				case def.Fields.ForName(alias) != nil:
+					slog.Warn("ignoring name alias that collides with an input field", "type", name, "field", field.Name, "alias", alias)
+				default:
+					fields.claim(alias, field.Name)
+				}
+			}
+		}
+		if len(fields.claims) > 0 {
+			if idx.InputFields == nil {
+				idx.InputFields = map[string]map[string]string{}
+			}
+			idx.InputFields[name] = fields.claims
+		}
+	}
 }
 
 // collectEnumValueAliasesLocked adds the aliases of the values of the enums
@@ -422,9 +488,6 @@ func (s *Server) collectEnumValueAliasesLocked(view call.View, schema *ast.Schem
 			}
 			idx.EnumValues[name] = claims
 		}
-	}
-	if len(idx.EnumValues) > 0 {
-		idx.types = schema.Types
 	}
 }
 
@@ -476,10 +539,11 @@ func enumValueAliasClaims(view call.View, def *ast.Definition, valueAliases Enum
 // schema returns base with the aliases added, each marked @deprecated with
 // its canonical name: field aliases as copies of their field, argument
 // aliases as copies of their argument, type aliases as copies of their type
-// that match wherever it does, enum value aliases as copies of their value.
-// A required argument with aliases is optional in it, since a query may give
-// it by either name; the call still requires it. Returns base itself when
-// there are no aliases.
+// that match wherever it does, enum value aliases as copies of their value,
+// input object field aliases as copies of their field.
+// A required argument or input field with aliases is optional in it, since a
+// query may give it by either name; the call still requires it. Returns base
+// itself when there are no aliases.
 func (idx *nameAliases) schema(base *ast.Schema) *ast.Schema {
 	if idx.empty() {
 		return base
@@ -522,6 +586,42 @@ func (idx *nameAliases) schema(base *ast.Schema) *ast.Schema {
 	for name, valueAliases := range idx.EnumValues {
 		if def := out.Types[name]; def != nil {
 			out.Types[name] = withEnumValueAliases(def, valueAliases)
+		}
+	}
+	for name, fieldAliases := range idx.InputFields {
+		if def := out.Types[name]; def != nil {
+			out.Types[name] = withInputFieldAliases(def, fieldAliases)
+		}
+	}
+	return &out
+}
+
+// withInputFieldAliases returns def, an input object, with the aliases of
+// its fields added after each, as copies of it. A required field with
+// aliases is optional in it, since an input may give it by either name; the
+// decoder still requires it.
+func withInputFieldAliases(def *ast.Definition, fieldAliases map[string]string) *ast.Definition {
+	byField := aliasesByCanonical(fieldAliases)
+	out := *def
+	out.Fields = make(ast.FieldList, 0, len(def.Fields)+len(fieldAliases))
+	for _, field := range def.Fields {
+		aliases := byField[field.Name]
+		if len(aliases) == 0 {
+			out.Fields = append(out.Fields, field)
+			continue
+		}
+		canonical := *field
+		if canonical.Type.NonNull && canonical.DefaultValue == nil {
+			optional := *canonical.Type
+			optional.NonNull = false
+			canonical.Type = &optional
+		}
+		out.Fields = append(out.Fields, &canonical)
+		for _, alias := range aliases {
+			aliasField := canonical
+			aliasField.Name = alias
+			aliasField.Directives = withAliasDeprecation(field.Directives, field.Name)
+			out.Fields = append(out.Fields, &aliasField)
 		}
 	}
 	return &out
