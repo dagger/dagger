@@ -1001,9 +1001,21 @@ Other gaps:
   enum type.
 - Alias names can show up in validation's "Did you mean …" suggestions.
 - Aliases cover names on the wire, not identifiers SDK codegen derives from
-  them: a Go module whose dependency was renamed gets `DaggerCLI` and
-  `DaggerCLIOpts{VCSCommit: …}` where its code says `DaggerCli` and
-  `VcsCommit`, and has to be updated when it's regenerated.
+  them. In-repo Go codegen (`cmd/codegen`, which builds `dagger.json` Go
+  modules at every load and generates Go clients) keeps a dependency's old Go
+  identifiers as deprecated aliases: wrapper methods, type aliases
+  (`DaggerCli`), option struct aliases (`DaggerCliOpts`), deprecated option
+  struct fields (`VcsCommit` next to `VCSCommit`) and enum constants, also
+  re-exported from a module's `internal/dagger` package. It can't see the
+  engine's hidden aliases, so it recovers a module's old schema names by
+  applying the legacy strcase namer to the current ones, when the new rules
+  spell them as they are (`daggerCLI` → `daggerCli`, `DaggerCLIHTTPClient` →
+  `DaggerCliHttpclient` for module `dagger-cli`); core names are left alone.
+  Where the heuristic misses, there's no alias. Go modules with a
+  `dagger-module.toml` build from committed bindings that the external go-sdk
+  generates with its own lint-based converter: their old names keep working on
+  the wire, but regenerating them gives `DaggerCLI` where callers say
+  `DaggerCli`, until the go-sdk port does the same.
 
 ### What changes for module authors (on bump)
 
