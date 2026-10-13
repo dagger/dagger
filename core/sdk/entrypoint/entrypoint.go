@@ -43,23 +43,12 @@ func ResolveSource(
 		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("resolve module entrypoint source %q: %w", address, err)
 	}
 
-	entrySrcResult, err := dagql.NewObjectResultForCurrentCall(ctx, dag, SourceForDirectory(src.Self(), directory))
-	if err != nil {
-		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("attach module entrypoint source: %w", err)
-	}
-	return entrySrcResult, workspace, nil
-}
-
-// SourceForDirectory returns a clone of src whose whole context is the
-// entrypoint directory.
-func SourceForDirectory(src *core.ModuleSource, directory dagql.ObjectResult[*core.Directory]) *core.ModuleSource {
-	entrySrc := src.Clone()
+	entrySrc := src.Self().Clone()
 	entrySrc.ContextDirectory = directory
 	entrySrc.SourceRootSubpath = "."
 	entrySrc.SourceSubpath = "."
 	entrySrc.IncludePaths = nil
 	entrySrc.RebasedIncludePaths = nil
-	entrySrc.EntrypointResourcesLoaded = false
 	entrySrc.ConfigDependencies = nil
 	entrySrc.Dependencies = nil
 	entrySrc.ConfigBlueprint = nil
@@ -70,45 +59,12 @@ func SourceForDirectory(src *core.ModuleSource, directory dagql.ObjectResult[*co
 	entrySrc.Git = nil
 	entrySrc.DirSrc = &core.DirModuleSource{OriginalContextDir: directory}
 	entrySrc.Kind = core.ModuleSourceKindDir
-	return entrySrc
-}
 
-// LocalDirectory returns the entrypoint directory when entrypoint.source is a
-// path inside the module that exists in its context. For an address, a module
-// reference, or a path that is invalid or missing, it returns false and leaves
-// any error to the module's types call.
-func LocalDirectory(
-	ctx context.Context,
-	dag *dagql.Server,
-	src *core.ModuleSource,
-) (dagql.ObjectResult[*core.Directory], bool, error) {
-	var directory dagql.ObjectResult[*core.Directory]
-	local, err := IsLocalSource(ctx, src)
-	if err != nil || !local {
-		return directory, false, err
+	entrySrcResult, err := dagql.NewObjectResultForCurrentCall(ctx, dag, entrySrc)
+	if err != nil {
+		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("attach module entrypoint source: %w", err)
 	}
-	subpath, err := sourceSubpath(src, src.Entrypoint.Source)
-	if err != nil || src.ContextDirectory.Self() == nil {
-		return directory, false, nil //nolint:nilerr
-	}
-	_, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: src.ContextDirectory}, subpath)
-	if err != nil || !exists {
-		return directory, false, err
-	}
-	err = dag.Select(ctx, src.ContextDirectory, &directory, dagql.Selector{
-		Field: "directory",
-		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(subpath)}},
-	})
-	return directory, err == nil, err
-}
-
-// IsLocalSource reports whether entrypoint.source is a path inside the module.
-func IsLocalSource(ctx context.Context, src *core.ModuleSource) (bool, error) {
-	if src.Entrypoint == nil {
-		return false, nil
-	}
-	kind, err := classifySource(ctx, src, src.Entrypoint.Source)
-	return kind == sourceKindLocal, err
+	return entrySrcResult, workspace, nil
 }
 
 // Workspace returns the workspace to pass to a module entrypoint, with its
@@ -200,7 +156,7 @@ func resolveSourceDirectory(
 ) (dagql.ObjectResult[*core.Directory], error) {
 	var directory dagql.ObjectResult[*core.Directory]
 
-	kind, err := classifySource(ctx, src.Self(), address)
+	kind, err := classifySource(ctx, src, address)
 	if err != nil {
 		return directory, err
 	}
@@ -255,7 +211,7 @@ const (
 // otherwise.
 func classifySource(
 	ctx context.Context,
-	src *core.ModuleSource,
+	src dagql.ObjectResult[*core.ModuleSource],
 	source string,
 ) (sourceKind, error) {
 	if strings.HasPrefix(source, ".") || strings.HasPrefix(source, "/") {
@@ -273,15 +229,15 @@ func classifySource(
 	case core.ModuleSourceKindGit:
 		return sourceKindModuleRef, nil
 	}
-	if src == nil || src.ContextDirectory.Self() == nil {
+	if src.Self() == nil || src.Self().ContextDirectory.Self() == nil {
 		return sourceKindModuleRef, nil
 	}
-	subpath, err := sourceSubpath(src, source)
+	subpath, err := sourceSubpath(src.Self(), source)
 	if err != nil {
 		// not a usable local path, so it is a module reference
 		return sourceKindModuleRef, nil //nolint:nilerr
 	}
-	contextDir := src.ContextDirectory
+	contextDir := src.Self().ContextDirectory
 	_, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: contextDir}, subpath)
 	if err != nil {
 		return sourceKindLocal, fmt.Errorf("stat %q in module directory: %w", source, err)

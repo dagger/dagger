@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,7 +38,7 @@ func TestClassifySource(t *testing.T) {
 	t.Parallel()
 
 	// Values that the heuristics settle without a module context directory.
-	var src *core.ModuleSource
+	src := dagql.ObjectResult[*core.ModuleSource]{}
 	for source, want := range map[string]sourceKind{
 		".":                          sourceKindLocal,
 		"./entrypoint":               sourceKindLocal,
