@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bufio"
 	"fmt"
 	"log/slog"
-	"path/filepath"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/moby/sys/mountinfo"
@@ -14,14 +16,9 @@ import (
 // fsync can wait on journal and device work shared with them, so whether it
 // is shared helps explain slow syncs.
 func logStateFilesystem(path string) {
-	mounts, err := mountinfo.GetMounts(nil)
+	m, err := stateMount(path)
 	if err != nil {
 		slog.Warn("engine state filesystem unknown", "path", path, "error", err)
-		return
-	}
-	m := containingMount(mounts, path)
-	if m == nil {
-		slog.Warn("engine state filesystem unknown", "path", path, "error", "no mount contains it")
 		return
 	}
 	slog.Info("engine state filesystem", "path", path, "mountpoint", m.Mountpoint,
@@ -29,20 +26,45 @@ func logStateFilesystem(path string) {
 		"root", m.Root, "options", m.Options, "superOptions", m.VFSOptions)
 }
 
-// containingMount returns the deepest mount whose mountpoint is path or one of
-// its ancestors, comparing whole path components. When several mounts share
-// a mountpoint, the last one listed is the one on top.
-func containingMount(mounts []*mountinfo.Info, path string) *mountinfo.Info {
-	path = filepath.Clean(path)
-	var best *mountinfo.Info
-	for _, m := range mounts {
-		mp := filepath.Clean(m.Mountpoint)
-		if mp != "/" && path != mp && !strings.HasPrefix(path, mp+"/") {
-			continue
-		}
-		if best == nil || len(mp) >= len(filepath.Clean(best.Mountpoint)) {
-			best = m
+// stateMount asks the kernel which mount an open path is on, rather than
+// guessing from mountpoint strings, which can't see overmounts.
+func stateMount(path string) (*mountinfo.Info, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	fdinfo, err := os.Open(fmt.Sprintf("/proc/self/fdinfo/%d", f.Fd()))
+	if err != nil {
+		return nil, err
+	}
+	defer fdinfo.Close()
+	id, err := parseFdinfoMountID(fdinfo)
+	if err != nil {
+		return nil, err
+	}
+	mounts, err := mountinfo.GetMounts(func(m *mountinfo.Info) (skip, stop bool) {
+		return m.ID != id, m.ID == id
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(mounts) == 0 {
+		return nil, fmt.Errorf("mount %d not in mountinfo", id)
+	}
+	return mounts[0], nil
+}
+
+// parseFdinfoMountID reads the mnt_id field of a /proc/<pid>/fdinfo/<fd> file.
+func parseFdinfoMountID(fdinfo *os.File) (int, error) {
+	scanner := bufio.NewScanner(fdinfo)
+	for scanner.Scan() {
+		if value, ok := strings.CutPrefix(scanner.Text(), "mnt_id:"); ok {
+			return strconv.Atoi(strings.TrimSpace(value))
 		}
 	}
-	return best
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+	return 0, fmt.Errorf("no mnt_id in %s", fdinfo.Name())
 }
