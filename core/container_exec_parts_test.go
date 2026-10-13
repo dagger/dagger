@@ -208,6 +208,51 @@ func TestContainerExecReadOnlyMountStaysPending(t *testing.T) {
 	require.True(t, dagql.HasPendingLazyEvaluation(childRes))
 }
 
+// A read-only file mount is not an output of the exec: its part
+// delegates to the parent's mount and the exec never runs, while a
+// writable file mount's part is the exec's output.
+func TestContainerExecReadOnlyFileMountIsNotOutput(t *testing.T) {
+	t.Parallel()
+	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)
+
+	baseOp := &containerPartsTestBaseOp{
+		LazyState:    NewLazyState(),
+		mountTargets: []string{"/ro"},
+	}
+	base := &Container{
+		FS:           new(LazyAccessor[*Directory, *Container]),
+		MetaSnapshot: new(LazyAccessor[bkcache.ImmutableRef, *Container]),
+		Mounts: ContainerMounts{
+			{Target: "/ro", Readonly: true, FileSource: new(LazyAccessor[*File, *Container])},
+			{Target: "/rw", FileSource: new(LazyAccessor[*File, *Container])},
+		},
+		Lazy: baseOp,
+	}
+	baseRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "exec-parts-ro-file-base", base)
+
+	child := newExecPartsTestChild(t, baseRes, base)
+	childRes := attachContainerPartsTestResult(t, ctx, cache, srv, sessionID, "exec-parts-ro-file-child", child)
+
+	exec := child.Lazy.(*ContainerExecLazy)
+	groups, err := exec.ContainerLazyGroups(ctx, child, []dagql.PartKey{ContainerPartMount("/ro")})
+	require.NoError(t, err)
+	require.Equal(t, []dagql.LazyGroupKey{containerDelegationGroup(ContainerPartMount("/ro"))}, groups)
+	groups, err = exec.ContainerLazyGroups(ctx, child, []dagql.PartKey{ContainerPartMount("/rw")})
+	require.NoError(t, err)
+	require.Equal(t, []dagql.LazyGroupKey{ContainerLazyGroupExecOutputs}, groups)
+
+	require.NoError(t, cache.EvaluateParts(ctx, childRes, ContainerPartMount("/ro")))
+	require.Equal(t, 1, baseOp.mountRunsFor("/ro"))
+	require.Equal(t, int32(0), baseOp.fsRuns.Load())
+	roFile, ok := child.mountAt("/ro").FileSource.Peek()
+	require.True(t, ok)
+	roPath, _ := roFile.File.Peek()
+	require.Equal(t, "/ro", roPath)
+	_, rwSet := child.mountAt("/rw").FileSource.Peek()
+	require.False(t, rwSet)
+	require.True(t, dagql.HasPendingLazyEvaluation(childRes))
+}
+
 func TestContainerExecEvaluatesParentMountsConcurrently(t *testing.T) {
 	t.Parallel()
 	ctx, cache, srv, sessionID := newContainerPartsTestCtx(t)

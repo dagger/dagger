@@ -1262,6 +1262,11 @@ export type ContainerWithMountedFileOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
+
+  /**
+   * Mount the file read-only.
+   */
+  readOnly?: boolean
 }
 
 export type ContainerWithMountedSecretOpts = {
@@ -7776,6 +7781,7 @@ export class Container extends BaseClient {
    * If the group is omitted, it defaults to the same as the user.
    * @param opts.inheritOwner Set the owner to the container's current user.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * @param opts.readOnly Mount the file read-only.
    */
   withMountedFile = (
     path: string,

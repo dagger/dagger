@@ -35,8 +35,8 @@ type containerPartsTestBaseOp struct {
 	platform       Platform
 	metaSnapshot   bkcache.ImmutableRef
 	mountSnapshots map[string]bkcache.ImmutableRef
-	// mountTargets are read-only directory mounts whose sources this op
-	// fills, each in its own group. mountRuns counts per target.
+	// mountTargets are read-only directory or file mounts whose sources
+	// this op fills, each in its own group. mountRuns counts per target.
 	mountTargets []string
 	mountRunsMu  sync.Mutex
 	mountRuns    map[string]int
@@ -172,20 +172,28 @@ func (op *containerPartsTestBaseOp) EvaluateContainerGroup(ctx context.Context, 
 				}
 				op.mountRuns[target]++
 				op.mountRunsMu.Unlock()
-				dir := &Directory{
-					Dir:      new(LazyAccessor[string, *Directory]),
-					Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
-				}
-				dir.Dir.SetValue("/")
-				dir.Snapshot.SetValue(nil)
-				if snapshot := op.mountSnapshots[target]; snapshot != nil {
-					dir.Snapshot.SetValue(snapshot)
-				}
 				mnt := ctr.mountAt(target)
 				if mnt == nil {
 					return fmt.Errorf("test base op: no mount at %q", target)
 				}
-				mnt.DirectorySource.SetValue(dir)
+				snapshot := op.mountSnapshots[target]
+				if mnt.FileSource != nil {
+					file := &File{
+						File:     new(LazyAccessor[string, *File]),
+						Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+					}
+					file.File.SetValue(target)
+					file.Snapshot.SetValue(snapshot)
+					mnt.FileSource.SetValue(file)
+				} else {
+					dir := &Directory{
+						Dir:      new(LazyAccessor[string, *Directory]),
+						Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+					}
+					dir.Dir.SetValue("/")
+					dir.Snapshot.SetValue(snapshot)
+					mnt.DirectorySource.SetValue(dir)
+				}
 				if op.mountBodyHook != nil {
 					op.mountBodyHook(target)
 				}

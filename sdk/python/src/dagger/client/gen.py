@@ -5061,6 +5061,7 @@ class Container(Type):
         owner: str | None = "",
         inherit_owner: bool | None = False,
         expand: bool | None = False,
+        read_only: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a file mounted at the given path.
 
@@ -5081,6 +5082,8 @@ class Container(Type):
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo.txt").
+        read_only:
+            Mount the file read-only.
         """
         _args = [
             Arg("path", path),
@@ -5088,6 +5091,7 @@ class Container(Type):
             Arg("owner", owner, ""),
             Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
+            Arg("readOnly", read_only, False),
         ]
         _ctx = self._select("withMountedFile", _args)
         return Container(_ctx)

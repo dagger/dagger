@@ -1723,6 +1723,36 @@ func (ContainerSuite) TestWithMountedDirectoryPropagation(ctx context.Context, t
 		execRes.Container.From.WithMountedDirectory.WithExec.WithExec.WithExec.WithMountedDirectory.WithExec.WithExec.Stdout)
 }
 
+func (ContainerSuite) TestWithMountedFileReadOnly(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	file := sdkcore.NewQuery(c).Directory().WithNewFile("some-file", "some-content").File("some-file")
+	write := []string{"sh", "-c", "if echo more >> /mnt/some-file 2>/dev/null; then echo writable; else echo readonly; fi; cat /mnt/some-file"}
+
+	t.Run("read-only", func(ctx context.Context, t *testctx.T) {
+		out, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithMountedFile("/mnt/some-file", file, sdkcore.ContainerWithMountedFileOpts{ReadOnly: true}).
+			WithExec(write).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "readonly\nsome-content", out)
+	})
+
+	t.Run("writable by default", func(ctx context.Context, t *testctx.T) {
+		out, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+			WithMountedFile("/mnt/some-file", file).
+			WithExec(write).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "writable\nsome-contentmore\n", out)
+	})
+
+	t.Run("source unchanged", func(ctx context.Context, t *testctx.T) {
+		contents, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "some-content", contents)
+	})
+}
+
 func (ContainerSuite) TestWithMountedFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	dirRes, err := testutil.QueryWithClient[struct {
