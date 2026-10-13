@@ -57,10 +57,10 @@ Most modules use suitable default settings. List the available settings:
 dagger module settings
 ```
 
-Change a setting when the default does not match the project. For example, if you installed ESLint and the project uses Yarn:
+Change a setting when the default does not match the project. For example, if you installed ESLint and the project runs on Node 22:
 
 ```shell
-dagger module settings eslint packageManager yarn
+dagger module settings eslint baseImageAddress node:22-alpine
 ```
 
 Settings are stored in `dagger.toml`, so they apply to all users of the workspace.
@@ -86,6 +86,8 @@ List the Checks:
 ```shell
 dagger check -l
 ```
+
+A `*` in a row stands for every item the module found, such as each Go package or each test file. Add `--all` to list one row per item. A module that lists no items with `--all` found nothing to check, which usually means the project lacks the config file the module looks for, such as `.golangci.yml`.
 
 If no Check validates your project, install another suitable module. If at least one does, run the Checks:
 
