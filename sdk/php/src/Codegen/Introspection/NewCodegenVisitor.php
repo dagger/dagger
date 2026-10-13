@@ -15,6 +15,7 @@ use Dagger\Codegen\CodeWriter;
 use Dagger\Codegen\Naming\AcronymStyle;
 use Dagger\Codegen\Naming\Casing;
 use Dagger\Codegen\Naming\FormattedNames;
+use Dagger\Codegen\Naming\RenamedCoreNames;
 use Nette\PhpGenerator\ClassType;
 use Nette\PhpGenerator\EnumType;
 use Nette\PhpGenerator\InterfaceType;
@@ -100,6 +101,9 @@ class NewCodegenVisitor extends CodeWriter
 
         $constructor = $inputObjectClass->addMethod('__construct');
 
+        // A renamed core field keeps its old property name, so named
+        // arguments still work, and is sent under its new name.
+        $fieldNames = [];
         foreach ($type->inputFields as $field) {
             $fieldType = $field->type;
             if ($fieldType->isList()) {
@@ -110,7 +114,12 @@ class NewCodegenVisitor extends CodeWriter
                     : $this->formatPhpFqcn($this->formatOutputTypeName($fieldType));
             }
 
-            $constructorParameter = $constructor->addPromotedParameter($field->name);
+            $propertyName = RenamedCoreNames::legacyName($type->name, $field->name);
+            if ($propertyName !== $field->name) {
+                $fieldNames[$propertyName] = $field->name;
+            }
+
+            $constructorParameter = $constructor->addPromotedParameter($propertyName);
             $constructorParameter->setType($phpParameterType);
             $constructorParameter->setNullable(!$field->isRequired());
             $constructorParameter->setPublic();
@@ -118,6 +127,11 @@ class NewCodegenVisitor extends CodeWriter
             if ($field->defaultValue !== null && $fieldType->isBuiltinScalar()) {
                 $constructorParameter->setDefaultValue(json_decode($field->defaultValue, true));
             }
+        }
+        if ($fieldNames !== []) {
+            $inputObjectClass->addConstant('FIELD_NAMES', $fieldNames)
+                ->setProtected()
+                ->addComment('Schema names of the properties named otherwise.');
         }
 
         $this->write($inputObjectClass);
@@ -142,6 +156,7 @@ class NewCodegenVisitor extends CodeWriter
         }
 
         // Keep renamed cases reachable under their old name.
+        $constants = [];
         foreach ($type->enumValues as $value) {
             $caseName = $caseNames[$value->name];
             if ($caseName === $value->name) {
@@ -149,6 +164,19 @@ class NewCodegenVisitor extends CodeWriter
             }
             $enumClass->addConstant($value->name, new Literal('self::' . $caseName))
                 ->addComment("@deprecated Use {$caseName} instead.");
+            $constants[$value->name] = true;
+        }
+
+        // And a renamed core value under its old schema name.
+        foreach ($type->enumValues as $value) {
+            $legacy = RenamedCoreNames::legacyName($type->name, $value->name);
+            if ($legacy === $value->name || isset($constants[$legacy]) || in_array($legacy, $caseNames, true)) {
+                continue;
+            }
+            $caseName = $caseNames[$value->name];
+            $enumClass->addConstant($legacy, new Literal('self::' . $caseName))
+                ->addComment("@deprecated Use {$caseName} instead.");
+            $constants[$legacy] = true;
         }
 
         $this->write($enumClass);

@@ -22,7 +22,7 @@ enum FunctionCachePolicy: string
     /** @deprecated Use NEVER instead. */
     public const Never = self::NEVER;
 
-    case DEFAULT = 'Default';
-    case PER_SESSION = 'PerSession';
-    case NEVER = 'Never';
+    case DEFAULT = 'DEFAULT';
+    case PER_SESSION = 'PER_SESSION';
+    case NEVER = 'NEVER';
 }

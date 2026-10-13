@@ -46,8 +46,8 @@ class LlmContentBlock extends Client\AbstractObject implements Client\IdAble, No
      */
     public function callId(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('callId');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'callId');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('callID');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'callID');
     }
 
     /**

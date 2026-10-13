@@ -163,7 +163,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('url', $url);
         if (null !== $pushUrl) {
-        $innerQueryBuilder->setArgument('pushUrl', $pushUrl);
+        $innerQueryBuilder->setArgument('pushURL', $pushUrl);
         }
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
