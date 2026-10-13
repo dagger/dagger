@@ -67,6 +67,11 @@ func TestLegacyModuleSchemaNames(t *testing.T) {
 	core := &introspection.Type{Kind: introspection.TypeKindObject, Name: "GitCommit"}
 	require.Equal(t, "parentShas", legacyFieldSchemaName(introspection.Field{Name: "parentShas", ParentObject: core}))
 	require.Equal(t, "LLMContent", legacyTypeSchemaName(&introspection.Type{Kind: introspection.TypeKindObject, Name: "LLMContent"}))
+	// ...unless they were renamed since: then they had their old names.
+	require.Equal(t, "parentShas", legacyFieldSchemaName(introspection.Field{Name: "parentSHAs", ParentObject: core}))
+	withRemote := introspection.Field{Name: "withRemote", ParentObject: &introspection.Type{Kind: introspection.TypeKindObject, Name: "GitRepository"}}
+	require.Equal(t, "pushUrl", legacyArgSchemaName(withRemote, introspection.InputValue{Name: "pushURL"}))
+	require.Equal(t, "url", legacyArgSchemaName(withRemote, introspection.InputValue{Name: "url"}))
 	// ...unless a module adds them to a core type.
 	require.Equal(t, "asDaggerCli", legacyFieldSchemaName(introspection.Field{
 		Name: "asDaggerCLI", ParentObject: core, Directives: sourceMapDirectives("dagger-cli"),
