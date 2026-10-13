@@ -127,6 +127,9 @@ func startEbpfProgram(ctx context.Context, prog ebpfProgram) func() {
 	}
 }
 
+// engineLogWriter carries the engine's log output to stderr once set up.
+var engineLogWriter *slog.Writer
+
 func addFlags(app *cli.App) {
 	defaultConf, err := defaultBuildkitConfig()
 	if err != nil {
@@ -468,7 +471,20 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		// Engine logs go through one queue, written to stderr by a background
+		// goroutine in the order they were logged, so hot paths don't wait on
+		// each other's writes. WARN and worse wait until written, and the queue
+		// is flushed on exit.
+		engineLogWriter = slog.NewWriter(os.Stderr, 1<<20)
+		engineLogWriter.SyncWarn = true
+		defer engineLogWriter.Flush()
+		logrus.RegisterExitHandler(func() { _ = engineLogWriter.Flush() })
+		logrus.SetOutput(engineLogWriter)
+		// The writer is safe for concurrent use, so logrus needn't format
+		// every entry under its global lock.
+		logrus.StandardLogger().SetNoLock()
+		noiseReduceHook.ignoreLogger.SetNoLock()
+		slog.SetDefault(slog.New(slog.NewTextHandler(engineLogWriter, &slog.HandlerOptions{
 			Level: slogLevel,
 		})))
 
@@ -680,6 +696,9 @@ func main() { //nolint:gocyclo
 	}
 
 	if err := app.Run(os.Args); err != nil {
+		if engineLogWriter != nil {
+			engineLogWriter.Flush()
+		}
 		fmt.Fprintf(os.Stderr, "dagger-engine: %+v\n", err)
 		os.Exit(1)
 	}
