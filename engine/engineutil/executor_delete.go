@@ -68,6 +68,7 @@ const (
 	maxDescribedCgroupEntries = 1024
 	maxDescribedProcs         = 8
 	maxDescribedTasksPerProc  = 64
+	maxDescribedOwnTasks      = 1024
 	maxDescribedStackLines    = 12
 )
 
@@ -122,24 +123,35 @@ func describeCgroupTasks(path, procRoot string) string {
 		out = append(out, "no processes")
 	}
 	for _, pid := range procs {
-		out = append(out, describeProc(filepath.Join(procRoot, pid), pid))
+		out = append(out, describeProc(filepath.Join(procRoot, pid), pid, maxDescribedTasksPerProc))
 	}
 	return strings.Join(append(out, notes...), "; ")
 }
 
-func describeProc(procDir, pid string) string {
+// DescribeUninterruptibleThreads reports the threads of the process at
+// procDir (such as /proc/self) that sleep uninterruptibly in the kernel, each
+// with its kernel stack.
+func DescribeUninterruptibleThreads(procDir string) string {
+	desc := describeProc(procDir, filepath.Base(procDir), maxDescribedOwnTasks)
+	if !strings.Contains(desc, "thread ") {
+		desc += ", no uninterruptible threads"
+	}
+	return desc
+}
+
+func describeProc(procDir, pid string, maxTasks int) string {
 	comm, err := os.ReadFile(filepath.Join(procDir, "comm"))
 	if err != nil {
 		return fmt.Sprintf("pid %s (unreadable: %v)", pid, err)
 	}
 	desc := fmt.Sprintf("pid %s (%s)", pid, strings.TrimSpace(string(comm)))
-	tasks, err := readDirHead(filepath.Join(procDir, "task"), maxDescribedTasksPerProc+1)
+	tasks, err := readDirHead(filepath.Join(procDir, "task"), maxTasks+1)
 	if err != nil {
 		return desc + fmt.Sprintf(", threads unreadable: %v", err)
 	}
-	if len(tasks) > maxDescribedTasksPerProc {
-		desc += fmt.Sprintf(", only the first %d threads read", maxDescribedTasksPerProc)
-		tasks = tasks[:maxDescribedTasksPerProc]
+	if len(tasks) > maxTasks {
+		desc += fmt.Sprintf(", only the first %d threads read", maxTasks)
+		tasks = tasks[:maxTasks]
 	}
 	for _, task := range tasks {
 		taskDir := filepath.Join(procDir, "task", task.Name())

@@ -257,3 +257,19 @@ func TestDescribeCgroupTasks(t *testing.T) {
 		require.Contains(t, got, "only the first 8 processes shown")
 	})
 }
+
+func TestDescribeUninterruptibleThreads(t *testing.T) {
+	writeFile := func(path, data string) {
+		t.Helper()
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(data), 0o600))
+	}
+	self := filepath.Join(t.TempDir(), "self")
+	writeFile(filepath.Join(self, "comm"), "dagger-engine\n")
+	writeFile(filepath.Join(self, "task", "1", "stat"), "1 (dagger-engine) S 0\n")
+	require.Equal(t, "pid self (dagger-engine), no uninterruptible threads", DescribeUninterruptibleThreads(self))
+
+	writeFile(filepath.Join(self, "task", "2", "stat"), "2 (dagger-engine) D 0\n")
+	writeFile(filepath.Join(self, "task", "2", "stack"), "[<0>] sync_inodes_sb+0xd4/0x2b0\n")
+	require.Equal(t, "pid self (dagger-engine), thread 2 uninterruptible in [[<0>] sync_inodes_sb+0xd4/0x2b0]", DescribeUninterruptibleThreads(self))
+}

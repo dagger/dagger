@@ -306,6 +306,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err := srv.initRootPaths(); err != nil {
 		return nil, err
 	}
+	logStateFilesystem(srv.rootDir)
 
 	// Opened before the local cache state: the snapshot manager takes the
 	// builtin store at construction, for chain imports of builtin layers.
@@ -880,6 +881,10 @@ func (srv *Server) initBoltDBs() (err error) {
 
 var errServerShuttingDown = errors.New("engine is shutting down")
 
+// slowGracefulStopPhase is how long a graceful stop stage runs before the
+// engine reports which of its threads are waiting in the kernel.
+const slowGracefulStopPhase = 15 * time.Second
+
 func (srv *Server) BeginGracefulStop() {
 	if srv.shuttingDown.CompareAndSwap(false, true) && srv.shutdownCancel != nil {
 		srv.shutdownCancel(errServerShuttingDown)
@@ -954,7 +959,14 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	stopPhase := func(name string, fn func()) {
 		slog.Debug("graceful stop phase starting", "phase", name)
 		start := time.Now()
+		// A stage that runs long is usually waiting in the kernel; name the
+		// threads doing so while they still are.
+		slow := time.AfterFunc(slowGracefulStopPhase, func() {
+			slog.Warn("graceful stop phase is slow", "phase", name, "elapsed", time.Since(start),
+				"threads", engineutil.DescribeUninterruptibleThreads("/proc/self"))
+		})
 		fn()
+		slow.Stop()
 		slog.Info("graceful stop phase done", "phase", name, "duration", time.Since(start))
 	}
 	defer func() {
