@@ -6,6 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 	gqlparser "github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/gqlerror"
+	"github.com/vektah/gqlparser/v2/validator/rules"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -72,6 +74,12 @@ func enumValueNames(def *ast.Definition) []string {
 	return names
 }
 
+// validationErrors validates query against schema.
+func validationErrors(schema *ast.Schema, query string) gqlerror.List {
+	_, errs := gqlparser.LoadQueryWithRules(schema, query, rules.NewDefaultRules())
+	return errs
+}
+
 // The v1 views have the canonical names, with the old spellings as hidden
 // aliases: in no schema clients read, but in the one queries are validated
 // against, deprecated.
@@ -105,10 +113,8 @@ func TestCoreRenamedNames(t *testing.T) {
 		`query($id: ID!) { node(id: $id) { ... on Workspace { withSDK(ref: "r", asSdkName: "s") { id } } } }`,
 		`query($id: ID!) { node(id: $id) { ... on Function { withCachePolicy(policy: PerSession) { id } } } }`,
 	} {
-		_, errs := gqlparser.LoadQuery(aliased, query)
-		require.Empty(t, errs, query)
-		_, errs = gqlparser.LoadQuery(schema, query)
-		require.NotEmpty(t, errs, "the schema itself doesn't accept %s", query)
+		require.Empty(t, validationErrors(aliased, query), query)
+		require.NotEmpty(t, validationErrors(schema, query), "the schema itself doesn't accept %s", query)
 	}
 
 	// Both spellings of a policy decode to the same value, and so the same
@@ -151,6 +157,6 @@ func TestCoreRenamedNamesPreV1(t *testing.T) {
 		require.Nil(t, coreSchemaName(schema, name.typeName, name.canonical), "%s.%s is a v1 name", name.typeName, name.canonical)
 		require.Nil(t, coreSchemaName(schema, name.typeName, name.old), "%s.%s is only in v1 views", name.typeName, name.old)
 	}
-	_, errs := gqlparser.LoadQuery(aliased, `query($id: ID!) { node(id: $id) { ... on Function { withCachePolicy(policy: PER_SESSION) { id } } } }`)
-	require.NotEmpty(t, errs, "the new names aren't in the old views")
+	require.NotEmpty(t, validationErrors(aliased, `query($id: ID!) { node(id: $id) { ... on Function { withCachePolicy(policy: PER_SESSION) { id } } } }`),
+		"the new names aren't in the old views")
 }
