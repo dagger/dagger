@@ -3,9 +3,12 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -15,19 +18,40 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
-const runAsInitEnv = "_DAGGER_INIT_TEST_RUN_AS_INIT"
+const (
+	runAsInitEnv = "_DAGGER_INIT_TEST_RUN_AS_INIT"
+	// testHelperEnv sets how this test binary behaves when /.init starts it as
+	// the session helper: "hang" or "exit:<status>".
+	testHelperEnv = "_DAGGER_INIT_TEST_SESSION_HELPER"
+)
 
 // TestMain runs the test binary as /.init when a test starts it with
-// runAsInitEnv set; its remaining arguments are the command.
+// runAsInitEnv set; its remaining arguments are the command. With
+// testHelperEnv set, that /.init starts this binary again as its session
+// helper, which acts as testHelperEnv says; without it, there is no helper.
 func TestMain(m *testing.M) {
 	if os.Getenv(runAsInitEnv) != "" {
 		os.Unsetenv(runAsInitEnv)
+		if _, ok := os.LookupEnv(testHelperEnv); ok {
+			sessionHelperPath = os.Args[0]
+		}
 		os.Args = append([]string{"/.init"}, os.Args[1:]...)
 		if err := mainInit(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
+	}
+	if helper, ok := os.LookupEnv(testHelperEnv); ok {
+		if status, ok := strings.CutPrefix(helper, "exit:"); ok {
+			code, _ := strconv.Atoi(status)
+			os.Exit(code)
+		}
+		// Never ready: keep running, without holding the test's pipes open.
+		os.Stdout.Close()
+		os.Stderr.Close()
+		time.Sleep(time.Minute)
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }
@@ -109,4 +133,41 @@ func TestInitWithoutSessionHelper(t *testing.T) {
 	require.ErrorAs(t, err, &exitErr)
 	require.Equal(t, 4, exitErr.ExitCode())
 	require.Equal(t, "ran\n", string(out))
+}
+
+// /.init starts the session helper alongside the command: the command runs
+// even though the helper never gets ready.
+func TestInitDoesNotWaitForSessionHelper(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "sh", "-c", "echo ran")
+	cmd.Env = initEnv("DAGGER_SESSION_TOKEN=token", "DAGGER_SESSION_PORT=1", testHelperEnv+"=hang")
+	start := time.Now()
+	out, err := cmd.Output()
+	require.NoError(t, err)
+	require.Equal(t, "ran\n", string(out))
+	require.Less(t, time.Since(start), 10*time.Second, "the command waited for the session helper")
+}
+
+// When the session helper exits, /.init reports its status to the engine,
+// and the command keeps running.
+func TestInitReportsSessionHelperExit(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	defer r.Close()
+
+	cmd := exec.Command(os.Args[0], "sh", "-c", "sleep 1; echo ran")
+	cmd.Env = initEnv(
+		"DAGGER_SESSION_TOKEN=token", "DAGGER_SESSION_PORT=1", testHelperEnv+"=exit:3",
+		distconsts.SessionHelperStatusFDEnv+"=3",
+	)
+	cmd.ExtraFiles = []*os.File{w}
+	out, err := cmd.Output()
+	w.Close()
+	require.NoError(t, err)
+	require.Equal(t, "ran\n", string(out))
+
+	report, err := bufio.NewReader(r).ReadString('\n')
+	require.NoError(t, err)
+	require.Equal(t, "exited 3\n", report)
 }

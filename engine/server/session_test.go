@@ -223,6 +223,70 @@ func TestNestedTransportRegistrationBindsExactExecAttachables(t *testing.T) {
 	require.ErrorContains(t, err, "different secret token")
 }
 
+func TestNestedTransportRegistrationWaitsForExpectedAttachables(t *testing.T) {
+	t.Parallel()
+
+	srv, sess, parent, ctx, requestScope := newNestedTransportTestFixture(t)
+	defer requestScope.Lease().Release()
+	sess.attachables = newSessionAttachableManager()
+
+	// The exec's session helper starts alongside its command, so a logical
+	// client can register before the helper has connected.
+	bootstrapMetadata := nestedTransportTestMetadata("bootstrap")
+	_, done := sess.attachables.Expect(bootstrapMetadata.ClientID)
+	defer done()
+	logicalMetadata := nestedTransportTestMetadata("logical")
+	logicalMetadata.ClientSecretToken = bootstrapMetadata.ClientSecretToken
+	type result struct {
+		transport *engine.NestedClientTransport
+		err       error
+	}
+	registered := make(chan result, 1)
+	go func() {
+		transport, err := srv.RegisterNestedClientTransportForExec(ctx, logicalMetadata, parent.clientID, bootstrapMetadata.ClientID)
+		registered <- result{transport, err}
+	}()
+	waitForAttachablesWaiter(t, sess.attachables, bootstrapMetadata.ClientID)
+
+	bootstrap, err := srv.RegisterNestedClientTransport(ctx, bootstrapMetadata, parent.clientID)
+	require.NoError(t, err)
+	defer bootstrap.Close()
+	sess.attachables.mu.Lock()
+	sess.attachables.callers[bootstrapMetadata.ClientID] = &sessionAttachableCaller{ctx: context.Background(), supported: map[string]struct{}{}}
+	sess.attachables.wakeWaitersLocked(bootstrapMetadata.ClientID)
+	sess.attachables.mu.Unlock()
+
+	got := <-registered
+	require.NoError(t, got.err)
+	defer got.transport.Close()
+
+	// A helper that fails fails the waiting registration.
+	failedMetadata := nestedTransportTestMetadata("failed-bootstrap")
+	fail, failedDone := sess.attachables.Expect(failedMetadata.ClientID)
+	defer failedDone()
+	orphan := nestedTransportTestMetadata("orphan")
+	orphan.ClientSecretToken = failedMetadata.ClientSecretToken
+	failed := make(chan error, 1)
+	go func() {
+		_, err := srv.RegisterNestedClientTransportForExec(ctx, orphan, parent.clientID, failedMetadata.ClientID)
+		failed <- err
+	}()
+	waitForAttachablesWaiter(t, sess.attachables, failedMetadata.ClientID)
+	fail(errors.New("the Dagger session helper in this container exited with status 1"))
+	require.ErrorContains(t, <-failed, "exited with status 1")
+}
+
+// waitForAttachablesWaiter waits until something waits for clientID's
+// attachables.
+func waitForAttachablesWaiter(t *testing.T, m *sessionAttachableManager, clientID string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return len(m.waiters[clientID]) > 0
+	}, 5*time.Second, time.Millisecond)
+}
+
 func TestNestedTransportRegistrationRequiresExactHeldParentScope(t *testing.T) {
 	t.Parallel()
 

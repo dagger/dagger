@@ -2,10 +2,7 @@ package engineutil
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
-	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
@@ -33,10 +29,7 @@ func TestInitTimingOnlyWhenProfilingInit(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, timing)
 	defer timing.close()
-	spec := timing.withEnv(initSpec)
-	require.Equal(t, []string{"A=1", distconsts.InitTimingFDEnv + "=3"}, spec.Process.Env)
-	require.Equal(t, []string{"A=1"}, initSpec.Process.Env, "the exec's own spec is unchanged")
-	require.Len(t, timing.extraFiles(), 1)
+	require.NotNil(t, timing.writeEnd())
 }
 
 func TestInitTimingRead(t *testing.T) {
@@ -108,25 +101,6 @@ func TestInitTimingReadLeakedWriter(t *testing.T) {
 		unix.Close(leaked)
 		timing.close()
 	}
-}
-
-func TestReadBundleSpecWithoutInitTimingEnv(t *testing.T) {
-	wcprof.EnsureRecorder()
-	ctx := wcprof.ContextWithProfiling(t.Context())
-	spec := &specs.Spec{Process: &specs.Process{Args: []string{initPath, "sleep", "100"}, Env: []string{"A=1", "PATH=/bin"}}}
-	timing, err := newInitTiming(ctx, spec)
-	require.NoError(t, err)
-	defer timing.close()
-
-	// The bundle's config.json is written with the variable; a process
-	// exec'd into the running container starts from it without /.init.
-	bundle := t.TempDir()
-	b, err := json.Marshal(timing.withEnv(spec))
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(bundle, "config.json"), b, 0o600))
-	got, err := readBundleSpec(bundle)
-	require.NoError(t, err)
-	require.Equal(t, []string{"A=1", "PATH=/bin"}, got.Process.Env)
 }
 
 // phases returns the exec_phase ops recorded under parent, by class.
