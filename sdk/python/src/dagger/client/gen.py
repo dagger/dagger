@@ -207,16 +207,16 @@ class FileType(ValueEnum):
 class FunctionCachePolicy(ValueEnum):
     """The behavior configured for function result caching."""
 
-    DEFAULT = "Default"
-    Default = "Default"
+    DEFAULT = "DEFAULT"
+    Default = "DEFAULT"
     """.. deprecated:: Use DEFAULT instead."""
 
-    NEVER = "Never"
-    Never = "Never"
+    NEVER = "NEVER"
+    Never = "NEVER"
     """.. deprecated:: Use NEVER instead."""
 
-    PER_SESSION = "PerSession"
-    PerSession = "PerSession"
+    PER_SESSION = "PER_SESSION"
+    PerSession = "PER_SESSION"
     """.. deprecated:: Use PER_SESSION instead."""
 
 
@@ -2468,7 +2468,7 @@ class Artifacts(Type):
         _args = [
             Arg("uri", uri),
         ]
-        _ctx = self._select("filterUri", _args)
+        _ctx = self._select("filterURI", _args)
         return Artifacts(_ctx)
 
     async def id(self) -> str:
@@ -2559,7 +2559,7 @@ class Artifacts(Type):
         return await _ctx.execute_object_list(TypeDef)
 
     async def uri(self) -> str:
-        """The DAG address that selects this whole selection: filterUri(uri)
+        """The DAG address that selects this whole selection: filterURI(uri)
         selects the same set.
 
         Returns
@@ -2623,7 +2623,7 @@ class Artifacts(Type):
         _args = [
             Arg("uri", uri),
         ]
-        _ctx = self._select("withoutUri", _args)
+        _ctx = self._select("withoutURI", _args)
         return Artifacts(_ctx)
 
     def with_(self, cb: Callable[["Artifacts"], "Artifacts"]) -> "Artifacts":
@@ -10349,7 +10349,7 @@ class GitCommit(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("parentShas", _args)
+        _ctx = self._select("parentSHAs", _args)
         return await _ctx.execute(list[str])
 
     async def release_tag(
@@ -10409,7 +10409,7 @@ class GitCommit(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("shortSha", _args)
+        _ctx = self._select("shortSHA", _args)
         return await _ctx.execute(str)
 
     def tree(
@@ -11436,7 +11436,7 @@ class GitRepository(Type):
         _args = [
             Arg("name", name),
             Arg("url", url),
-            Arg("pushUrl", push_url, ""),
+            Arg("pushURL", push_url, ""),
         ]
         _ctx = self._select("withRemote", _args)
         return GitRepository(_ctx)
@@ -12555,7 +12555,7 @@ class LLM(Type):
 
         Tool arguments that take an address resolve it here: a DAG address to
         one object, or, for Artifacts and Artifact arguments, a selection
-        filtered like filterUri.
+        filtered like filterURI.
 
         .. caution::
             Experimental: Agent APIs are likely to change.
@@ -13259,7 +13259,7 @@ class LLM(Type):
             Ordered text and media returned by the tool
         """
         _args = [
-            Arg("callId", call_id),
+            Arg("callID", call_id),
             Arg("content", content),
             Arg("errored", errored),
             Arg("blocks", [] if blocks is None else blocks, []),
@@ -13497,7 +13497,7 @@ class LLMContentBlock(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("callId", _args)
+        _ctx = self._select("callID", _args)
         return await _ctx.execute(str)
 
     async def content(self) -> list["LLMContentBlock"]:
@@ -18960,7 +18960,7 @@ class Workspace(Type):
         """Resolve an address in this workspace.
 
         A DAG address (dag://<path>) selects exactly one workspace artifact:
-        artifacts.filterUri(value).one(). Its typed loaders use that artifact
+        artifacts.filterURI(value).one(). Its typed loaders use that artifact
         and never fall back to external resolution.
 
         A value without the dag:// scheme keeps its external meaning, such as
@@ -19695,7 +19695,7 @@ class Workspace(Type):
             Arg("ref", ref),
             Arg("name", name, ""),
             Arg("here", here, False),
-            Arg("asSdkName", as_sdk_name, ""),
+            Arg("asSDKName", as_sdk_name, ""),
         ]
         _ctx = self._select("withSDK", _args)
         return Workspace(_ctx)
