@@ -1715,6 +1715,9 @@ type EnumValue[T enumValue] struct {
 	// Aliases are hidden alternate names of the value, accepted as inputs.
 	// See Aliases and WithAliases.
 	Aliases Aliases
+	// Renamed marks a value that is another value's name in its views (see
+	// RenameView): it decodes to Underlying, but the schema doesn't say so.
+	Renamed bool
 }
 
 // EnumValues is a list of possible values for an Enum.
@@ -1775,7 +1778,7 @@ func (e *EnumValues[T]) PossibleValues(view call.View) ast.EnumValueList {
 			Name:        string(val.Value),
 			Description: val.Description,
 		}
-		if val.Value != val.Underlying {
+		if val.Value != val.Underlying && !val.Renamed {
 			def.Directives = append(def.Directives, enumValueDirectives(val.Underlying)...)
 		}
 		values = append(values, def)
@@ -1832,8 +1835,15 @@ var _ EnumValueAliased = (*EnumValues[String])(nil)
 // EnumValueAliased.
 func (e *EnumValues[T]) EnumValueAliases() EnumValueAliases {
 	var aliases EnumValueAliases
+	var zero T
 	for _, possible := range *e {
 		aliases.Values = append(aliases.Values, string(possible.Value))
+		if possible.Underlying != zero && possible.Underlying != possible.Value {
+			if aliases.Decoded == nil {
+				aliases.Decoded = map[string]string{}
+			}
+			aliases.Decoded[string(possible.Value)] = string(possible.Underlying)
+		}
 		if len(possible.Aliases.Names) == 0 {
 			continue
 		}
@@ -1880,6 +1890,20 @@ func (e *EnumValues[T]) Alias(val T, target T) T {
 }
 
 func (e *EnumValues[T]) AliasView(val T, target T, view ViewFilter) T {
+	return e.aliasView(val, target, view, false)
+}
+
+// RenameView registers name as the name of the value val in view: a value of
+// its own there, which decodes to val. Unlike AliasView, the schema doesn't
+// say so (no @enumValue directive): it's for a value renamed in later views,
+// whose old name, val, is registered with RegisterView for the other views.
+// To keep accepting the old name in view, make it a hidden alias of name
+// (WithAliases): it may be, since it decodes to the same value.
+func (e *EnumValues[T]) RenameView(name T, val T, view ViewFilter) T {
+	return e.aliasView(name, val, view, true)
+}
+
+func (e *EnumValues[T]) aliasView(val T, target T, view ViewFilter, renamed bool) T {
 	for _, v := range *e {
 		if v.Value == target {
 			*e = append(*e, EnumValue[T]{
@@ -1887,6 +1911,7 @@ func (e *EnumValues[T]) AliasView(val T, target T, view ViewFilter) T {
 				Underlying:  v.Value,
 				Description: v.Description,
 				View:        view,
+				Renamed:     renamed,
 			})
 			return val
 		}

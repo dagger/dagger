@@ -76,6 +76,18 @@ type EnumValueAliases struct {
 	Values []string
 	// Aliases are the aliases of the values, by value name.
 	Aliases map[string]Aliases
+	// Decoded maps the values that decode to another value (see
+	// EnumValues.AliasView and RenameView) to that value.
+	Decoded map[string]string
+}
+
+// decodesTo returns the value the enum's decoder turns value, one of Values,
+// into.
+func (e EnumValueAliases) decodesTo(value string) string {
+	if decoded, ok := e.Decoded[value]; ok {
+		return decoded
+	}
+	return value
 }
 
 // Resolve returns the value name is a hidden alias of. A name that is a
@@ -419,7 +431,11 @@ func (s *Server) collectEnumValueAliasesLocked(view call.View, schema *ast.Schem
 // enumValueAliasClaims maps the value aliases of def, an enum, accepted in
 // view to their values. An alias the enum's decoder wouldn't resolve to its
 // value (one that names a value, or that two values claim, in any view) is
-// ignored with a warning, so validation accepts what decoding does.
+// ignored with a warning, so validation accepts what decoding does. The one
+// exception is a value of other views that decodes to the same value as the
+// one it's an alias of, like the old name of a value renamed in this view
+// (see EnumValues.RenameView): the decoder takes it as itself, which is the
+// same thing.
 func enumValueAliasClaims(view call.View, def *ast.Definition, valueAliases EnumValueAliases) map[string]string {
 	claims := map[string]string{}
 	refused := map[string]bool{}
@@ -433,6 +449,17 @@ func enumValueAliasClaims(view call.View, def *ast.Definition, valueAliases Enum
 			}
 			if canonical, ok := valueAliases.Resolve(alias); ok && canonical == value {
 				claims[alias] = value
+				continue
+			}
+			if def.EnumValues.ForName(alias) == nil && slices.Contains(valueAliases.Values, alias) &&
+				valueAliases.decodesTo(alias) == valueAliases.decodesTo(value) {
+				if _, ok := claims[alias]; !ok {
+					claims[alias] = value
+					continue
+				}
+				delete(claims, alias)
+				refused[alias] = true
+				slog.Warn("ignoring ambiguous name alias", "scope", def.Name, "alias", alias)
 				continue
 			}
 			refused[alias] = true
