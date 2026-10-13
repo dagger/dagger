@@ -52,7 +52,8 @@ func (m *Test) Run(e2eTest string) string {
 `
 
 // namingGoCoreTypesSource extends namingGoSource with functions that
-// reference core types whose names start with an acronym.
+// reference core types whose names start with an acronym, and an enum whose
+// members the new rules name differently than strcase did.
 const namingGoCoreTypesSource = namingGoSource + `
 func (m *Test) Value() *dagger.JSONValue {
 	return dag.JSON().NewString("hi")
@@ -64,6 +65,31 @@ func (m *Test) Echo(msg *dagger.LLMMessage) *dagger.LLMMessage {
 
 func (m *Test) Usage(usage *dagger.LLMTokenUsage) *dagger.LLMTokenUsage {
 	return usage
+}
+
+type Arch string
+
+const (
+	Arm64   Arch = "arm64"
+	IPv6    Arch = "ipv6"
+	GitHub  Arch = "github"
+	E2ETest Arch = "e2e"
+)
+
+func (m *Test) FromArch(arch Arch) string {
+	return string(arch)
+}
+
+func (m *Test) FromArchs(archs []Arch) string {
+	var out string
+	for _, arch := range archs {
+		out += string(arch) + ","
+	}
+	return out
+}
+
+func (m *Test) DefaultArch() Arch {
+	return Arm64
 }
 `
 
@@ -135,6 +161,32 @@ func (ModuleNamingSuite) TestGoAcronyms(ctx context.Context, t *testctx.T) {
 	out, err = modGen.With(daggerQuery(`{client(baseUrl:"https://example.com"){getUrl(path:"/x") ... on TestHttpclient { baseUrl }}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"client":{"getUrl":"https://example.com/x","baseUrl":"https://example.com"}}`, out)
+
+	// Enum members too: the schema has the new names only, but the legacy
+	// literals are accepted, as inputs only.
+	arch := schema.Types.Get("TestArch")
+	require.NotNil(t, arch)
+	var archValues []string
+	for _, value := range arch.EnumValues {
+		archValues = append(archValues, value.Name)
+	}
+	require.ElementsMatch(t, []string{"ARM64", "IPV6", "GITHUB", "E2E_TEST"}, archValues)
+	out, err = modGen.With(daggerQuery(`{
+		new: fromArch(arch: ARM64)
+		old: fromArch(arch: ARM_64)
+		ipv6: fromArch(arch: I_PV_6)
+		list: fromArchs(archs: [GIT_HUB, E_2_E_TEST, GITHUB])
+		defaultArch
+	}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"new":"arm64","old":"arm64","ipv6":"ipv6","list":"github,e2e,github,","defaultArch":"ARM64"}`, out)
+
+	out, err = modGen.With(daggerCall("from-arch", "--arch=ARM_64")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "arm64", strings.TrimSpace(out))
+	out, err = modGen.With(daggerCall("from-archs", "--archs=GIT_HUB,E_2_E_TEST")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "github,e2e,", strings.TrimSpace(out))
 }
 
 func (ModuleNamingSuite) TestGoAcronymsV1Prerelease(ctx context.Context, t *testctx.T) {
