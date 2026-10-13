@@ -908,8 +908,10 @@ spellings as hidden aliases (`dagql.Aliases`):
 
 - **Declaring.** A field (`Field.WithAliases`, `FieldSpec.Aliases`), a field
   argument (`Arg(...).WithAliases`, `InputSpec.Aliases`), an object type
-  (`ClassOpts.Aliases`) or an interface (`Interface.WithAliases`) lists its
-  aliases, optionally limited to some views. `core.NameAliases` limits them to
+  (`ClassOpts.Aliases`), an interface (`Interface.WithAliases`) or an enum
+  value (`EnumValues.WithAliases` for a core enum; any enum type implementing
+  `dagql.EnumValueAliased`, as `core.ModuleEnum` does) lists its aliases,
+  optionally limited to some views. `core.NameAliases` limits them to
   the views with the new rules, where the old spelling is no longer the name;
   `core.ModuleNameAliases` accepts them in every view, for module renames
   (below). Every transition alias goes through one of them, so ending the
@@ -922,13 +924,24 @@ spellings as hidden aliases (`dagql.Aliases`):
   repos' forked generators can't be fixed in lockstep.
 - **Validated.** Queries are validated against `SchemaWithAliasesForView`
   (gqlgen's handler via `NewDefaultHandler`, and `Server.Query`), which adds
-  each alias as a copy of its field, argument or type, marked `@deprecated`.
-  A required argument with aliases is optional there, since a query may give
-  it by either name; the call still requires it.
+  each alias as a copy of its field, argument, type or enum value, marked
+  `@deprecated`. A required argument with aliases is optional there, since a
+  query may give it by either name; the call still requires it.
 - **Canonical.** `parseASTSelections` rewrites an alias to its canonical name
   before building the selector, so an aliased query makes the canonical
   query's calls: same IDs, same cache entries. The response keeps the name the
   query used. Giving one argument by both names is an error.
+- **Enum values.** An enum value alias is an input only, and reaches a field
+  as an inline literal, a variable, a list element, an input object field or
+  a plain string (a CLI flag, JSON), so it isn't rewritten in the query: the
+  enum's decoder resolves it to the canonical value
+  (`EnumValueAliases.Resolve`), whose literal makes the canonical call's ID
+  and cache key. Decoders have no view, so they accept an alias in every view;
+  validation still rejects one outside its views. Outputs always have the
+  canonical name. The CLI checks enum flags and collection keys against the
+  typedef's members before calling, so it also takes a member whose name
+  matches once case, `_` and `-` are ignored (if only one does), and sends
+  the canonical name.
 - **Types.** A type alias works in fragment type conditions, which is how
   generated clients load objects (`node(id:) { ... on OldName { ... } }` in
   Go's `selectNode`, TypeScript's `Context.selectNode` and Python's
@@ -941,16 +954,22 @@ spellings as hidden aliases (`dagql.Aliases`):
   only checks that `__typename` isn't empty; TypeScript and Python don't
   dispatch on it.
 - **Signal.** Each use adds a `dagger.io/dag.alias` event to the current span,
-  naming the alias and its canonical name, and logs at debug level.
-- **Collisions.** An alias that names a real type, field or argument of its
-  scope, or that two names claim, is ignored with a warning. Aliases count
-  toward the schema digest.
+  naming the alias and its canonical name, and logs at debug level. Enum
+  value aliases (kind `enumValue`, parent the enum type) are noted for the
+  arguments of a query, variables included; a value decoded any other way
+  (a direct `Select`, a recipe) isn't.
+- **Collisions.** An alias that names a real type, field, argument or enum
+  value of its scope, or that two names claim, is ignored with a warning. For
+  enum values both checks span every view, since the decoders that resolve
+  them have none. Aliases count toward the schema digest.
 
 The in-engine Dang runtime typechecks callers against its dependencies'
-schema JSON, so it gets a JSON with the field and argument aliases, marked
-deprecated (`SchemaIntrospectionJSONFileForDang`, the internal
+schema JSON, so it gets a JSON with the field, argument and enum value
+aliases, marked deprecated (`SchemaIntrospectionJSONFileForDang`, the internal
 `includeAliases` argument of `__schemaJSONFile`); Dang generates nothing from
-it that could collide. Other SDKs keep the alias-free JSON. Limits:
+it that could collide, and a Dang caller passing an old enum value typechecks
+and is decoded to the canonical one. Other SDKs keep the alias-free JSON.
+Limits:
 
 - type aliases aren't in it: a copy of a type is a different type to Dang, so
   a Dang annotation naming an old type doesn't typecheck;
@@ -963,7 +982,13 @@ the strcase name as an alias: object and interface types (the namespaced name
 `legacyNamespaceObject` gives, `Module.TypeNameAliases`), the constructor field
 (`Module.ConstructorNameAliases`), functions, fields and arguments
 (`NameAliases` on `Function`, `FieldTypeDef` and `FunctionArg`, from their
-original names), on objects, interfaces and entrypoint proxies alike. Unlike
+original names), on objects, interfaces and entrypoint proxies alike, and enum
+members (`ARM_64` for `ARM64`, `I_PV_6` for `IPV6`, `GIT_HUB` for `GITHUB`,
+`E_2_E_TEST` for `E2E_TEST`). An enum member's legacy name is worked out when
+it's created, by its module's naming rules, and kept on it
+(`EnumMemberTypeDef.LegacyName`): `ModuleEnum` decoders are built from the
+typedef alone, wherever the enum is used. The declaring module's own runtime
+decodes the members' original names, with no aliases. Unlike
 core renames, they're accepted in every view (`core.ModuleNameAliases`): a
 module's names follow its own engine version, not its caller's view, so a
 caller at an older view sees the new names too. Modules named by the strcase
@@ -971,12 +996,9 @@ rules have none.
 
 Other gaps:
 
-- Enum values and input object fields have no aliases. Module enum values do
-  change where digits or dictionary terms are involved (`ARM_64` → `ARM64`,
-  `I_PV_6` → `IPV6`, `GIT_HUB` → `GITHUB`, `E_2_E_TEST` → `E2E_TEST`),
-  so a caller passing the old literal breaks. Enum types have no type
-  aliases either, which only matters for queries that declare variables of a
-  renamed enum type.
+- Input object fields have no aliases. Enum types have no type aliases
+  either, which only matters for queries that declare variables of a renamed
+  enum type.
 - Alias names can show up in validation's "Did you mean …" suggestions.
 - Aliases cover names on the wire, not identifiers SDK codegen derives from
   them: a Go module whose dependency was renamed gets `DaggerCLI` and
@@ -996,6 +1018,8 @@ back:
 - CLI flags: `E2ETest` → `--e2e-test` (was `--e-2-e-test`, which is still
   accepted).
 - Python arguments: `com_url` → `comURL` (was `comUrl`).
+- Enum members with digits or dictionary terms: `ARM_64` → `ARM64`,
+  `GIT_HUB` → `GITHUB`.
 
 Names that were already canonical don't change. The old schema names of the
 others stay accepted as hidden aliases (see
