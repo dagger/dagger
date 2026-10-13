@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -12,23 +12,23 @@ import (
 
 func (WorkspaceSuite) TestDoctorCLI(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	base := c.Container().From(alpineImage).
+	base := core.NewQuery(c).Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithEnvVariable("DAGGER_NO_UPDATE_CHECK", "1").
 		WithEnvVariable("DAGGER_CLOUD_TOKEN", "").
-		WithWorkdir("/work").WithDirectory("/work", c.Directory().WithNewDirectory(".git"))
+		WithWorkdir("/work").WithDirectory("/work", core.NewQuery(c).Directory().WithNewDirectory(".git"))
 	for _, tc := range []struct {
 		name    string
 		config  string
 		lock    string
 		command []string
-		expect  dagger.ReturnType
+		expect  core.ReturnType
 		want    []string
 	}{
-		{"missing files", "", "", []string{"workspace", "doctor"}, dagger.ReturnTypeSuccess, []string{"WARN Workspace config", "WARN Lockfile", "PASS Engine", "WARN Cloud login"}},
-		{"unloadable module fails", "[modules.broken]\nsource = \"does-not-exist\"\n", "[[\"version\",\"2\"]]\n", []string{"workspace", "doctor"}, dagger.ReturnTypeFailure, []string{"PASS Workspace config", "PASS Lockfile", "PASS Engine", `FAIL Module loading "broken"`}},
-		{"hidden alias", "", "", []string{"doctor"}, dagger.ReturnTypeSuccess, []string{"WARN Workspace config", "PASS Engine"}},
-		{"invalid files", "[broken", "broken", []string{"workspace", "doctor"}, dagger.ReturnTypeFailure, []string{"FAIL Workspace config", "FAIL Lockfile", "PASS Engine", "WARN Cloud login"}},
+		{"missing files", "", "", []string{"workspace", "doctor"}, core.ReturnTypeSuccess, []string{"WARN Workspace config", "WARN Lockfile", "PASS Engine", "WARN Cloud login"}},
+		{"unloadable module fails", "[modules.broken]\nsource = \"does-not-exist\"\n", "[[\"version\",\"2\"]]\n", []string{"workspace", "doctor"}, core.ReturnTypeFailure, []string{"PASS Workspace config", "PASS Lockfile", "PASS Engine", `FAIL Module loading "broken"`}},
+		{"hidden alias", "", "", []string{"doctor"}, core.ReturnTypeSuccess, []string{"WARN Workspace config", "PASS Engine"}},
+		{"invalid files", "[broken", "broken", []string{"workspace", "doctor"}, core.ReturnTypeFailure, []string{"FAIL Workspace config", "FAIL Lockfile", "PASS Engine", "WARN Cloud login"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			ctr := base
@@ -38,7 +38,7 @@ func (WorkspaceSuite) TestDoctorCLI(ctx context.Context, t *testctx.T) {
 			if tc.lock != "" {
 				ctr = ctr.WithNewFile("/work/dagger.lock", tc.lock)
 			}
-			out, err := ctr.WithExec(append([]string{"dagger", "--progress=plain"}, tc.command...), dagger.ContainerWithExecOpts{
+			out, err := ctr.WithExec(append([]string{"dagger", "--progress=plain"}, tc.command...), core.ContainerWithExecOpts{
 				Expect: tc.expect,
 			}).Stderr(ctx)
 			require.NoError(t, err)
@@ -60,7 +60,7 @@ func (WorkspaceSuite) TestDoctorCLI(ctx context.Context, t *testctx.T) {
 		}
 	})
 	t.Run("remote workspace", func(ctx context.Context, t *testctx.T) {
-		source := c.Directory().WithNewFile("dagger.toml", "")
+		source := core.NewQuery(c).Directory().WithNewFile("dagger.toml", "")
 		ref := workspaceSelectionRemoteRef(ctx, t, c, source)
 		out, err := base.With(workspaceSelectionDaggerExec("--progress=plain", "-W", ref, "workspace", "doctor")).Stderr(ctx)
 		require.NoError(t, err)
