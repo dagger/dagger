@@ -132,6 +132,27 @@ func shareTestHolds(c *Cache, res AnyResult) int64 {
 	return res.cacheSharedResult().incomingOwnershipCount
 }
 
+// shareTestAwaitHolds waits for res's incoming holds to return to want. A
+// lazy attempt releases its hold on the attempt's goroutine after signalling
+// done, potentially after its caller returns, so a hold can still be pending
+// when a pass ends. A count that does not return to want within the bound
+// fails the test: that is how a leaked hold shows, though a blocked or badly
+// delayed release fails the same way.
+func shareTestAwaitHolds(t *testing.T, c *Cache, res AnyResult, want int64) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		got := shareTestHolds(c, res)
+		if got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the receiver still has %d holds; expected the baseline %d", got, want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // shareTestEncodedReceiver makes res an encoded, imported row with a pending
 // snapshot part, which is what an imported row looks like before any demand.
 func shareTestEncodedReceiver(t *testing.T, ctx context.Context, c *Cache, res AnyResult) {
@@ -1229,7 +1250,6 @@ func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
 	c.egraphMu.Unlock()
 	partTestEquivalent(t, c, receiver, donor)
 	receiverHolds := shareTestHolds(c, receiver)
-	attemptReleased := armLazyAttemptReleased(c)
 
 	// Commit's last act, after every lock is released, is its fixture event.
 	// Holding the fixture's mutex parks the Body between publication and its
@@ -1264,8 +1284,14 @@ func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
 	require.True(t, publishedInTime, "the slot never published")
 	require.False(t, completedEarly, "the pass completed while its Body still held an undelivered receipt")
 	require.Equal(t, 1, barrier.awaitPass(t))
-	// The pass joins the launcher, not the worker's deferred receiver release.
-	waitLazyAttemptReleased(t, attemptReleased)
+	// The pass joins the slot's launcher, not the deferred receiver release of
+	// a lazy attempt. The receiver has one attempt or two: the slot's obtain
+	// attempt and, when that attempt has already retired by the time the pass
+	// finishes the receipt, a fresh attempt FinishReadyPart leads to confirm
+	// the task settled. Each releases its hold on its own goroutine after
+	// signalling done, potentially after its caller returns, so wait for the
+	// count itself: the receipt's and the task's receiver holds end.
+	shareTestAwaitHolds(t, c, receiver, receiverHolds)
 
 	key, _ := partAddressKey(PersistedPartAddress{Part: "fs"})
 	gate := row.partGate.gate.Load()
@@ -1274,7 +1300,6 @@ func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
 	gate.mu.Unlock()
 	require.Equal(t, PartComplete, phase, "the delivered receipt was finished and the output settled")
 	require.Equal(t, "fs-snap", receiverValue.Parts["fs"].Snapshot)
-	require.Equal(t, receiverHolds, shareTestHolds(c, receiver), "the receipt's and the task's receiver holds ended")
 	require.Equal(t, int32(1), manager.released.Load(), "the installed part's protection was released once")
 }
 
