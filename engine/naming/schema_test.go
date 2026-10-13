@@ -11,17 +11,11 @@ import (
 )
 
 // Core schema names are written by hand, not normalized, so they're the
-// largest real-world corpus of canonical names. These are the field and
-// argument names that aren't canonical with the Initial dictionary.
-var nonCanonicalCoreNames = map[string]bool{
-	"asSdkName":  true,
-	"callId":     true,
-	"filterUri":  true,
-	"parentShas": true,
-	"pushUrl":    true,
-	"shortSha":   true,
-	"withoutUri": true,
-}
+// largest real-world corpus of canonical names. Every field and argument name
+// is canonical with the Initial dictionary: the ones that weren't (asSdkName,
+// callId, filterUri, parentShas, pushUrl, shortSha, withoutUri) were renamed,
+// their old spellings kept as hidden aliases (core.NameAliases).
+var nonCanonicalCoreNames = map[string]bool{}
 
 func loadCoreSchema(t *testing.T) *ast.SchemaDocument {
 	t.Helper()
