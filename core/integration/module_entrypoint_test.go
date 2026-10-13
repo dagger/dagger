@@ -135,16 +135,16 @@ func (ModuleSuite) TestModuleEntrypointLegacyNameAliases(ctx context.Context, t 
     }
   }
 }`).
+		// -m serves the module as the entrypoint: its main object's functions
+		// are proxied onto Query, aliases included.
 		With(daggerQueryAt("tiny", `{
-  tiny {
-    getURL(comURL: "https://example.com")
-    getUrl(comUrl: "https://example.com")
-    httpClient {
-      __typename
-      baseURL
-      baseUrl
-      ... on TinyHttpClient { legacyFragment: baseUrl }
-    }
+  getURL(comURL: "https://example.com")
+  getUrl(comUrl: "https://example.com")
+  httpClient {
+    __typename
+    baseURL
+    baseUrl
+    ... on TinyHttpClient { legacyFragment: baseUrl }
   }
   legacy: __type(name: "TinyHttpClient") { name }
   latest: __type(name: "TinyHTTPClient") { name }
@@ -152,15 +152,13 @@ func (ModuleSuite) TestModuleEntrypointLegacyNameAliases(ctx context.Context, t 
 	out, err := ctr.Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{
-  "tiny": {
-    "getURL": "https://example.com",
-    "getUrl": "https://example.com",
-    "httpClient": {
-      "__typename": "TinyHTTPClient",
-      "baseURL": "https://example.com",
-      "baseUrl": "https://example.com",
-      "legacyFragment": "https://example.com"
-    }
+  "getURL": "https://example.com",
+  "getUrl": "https://example.com",
+  "httpClient": {
+    "__typename": "TinyHTTPClient",
+    "baseURL": "https://example.com",
+    "baseUrl": "https://example.com",
+    "legacyFragment": "https://example.com"
   },
   "legacy": null,
   "latest": {"name": "TinyHTTPClient"}
