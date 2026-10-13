@@ -2296,9 +2296,9 @@ export type FunctionWithDeprecatedOpts = {
  * The behavior configured for function result caching.
  */
 export enum FunctionCachePolicy {
-  Default = "Default",
-  Never = "Never",
-  PerSession = "PerSession",
+  Default = "DEFAULT",
+  Never = "NEVER",
+  PerSession = "PER_SESSION",
 }
 
 /**
@@ -2310,11 +2310,11 @@ export function FunctionCachePolicyValueToName(
 ): string {
   switch (value) {
     case FunctionCachePolicy.Default:
-      return "Default"
+      return "DEFAULT"
     case FunctionCachePolicy.Never:
-      return "Never"
+      return "NEVER"
     case FunctionCachePolicy.PerSession:
-      return "PerSession"
+      return "PER_SESSION"
     default:
       return value
   }
@@ -2328,11 +2328,11 @@ export function FunctionCachePolicyNameToValue(
   name: string,
 ): FunctionCachePolicy {
   switch (name) {
-    case "Default":
+    case "DEFAULT":
       return FunctionCachePolicy.Default
-    case "Never":
+    case "NEVER":
       return FunctionCachePolicy.Never
-    case "PerSession":
+    case "PER_SESSION":
       return FunctionCachePolicy.PerSession
     default:
       return name as FunctionCachePolicy
@@ -3000,6 +3000,11 @@ export type LLMContentBlockInput = {
 
   /**
    * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+   */
+  callID?: string
+
+  /**
+   * @deprecated use callID instead.
    */
   callId?: string
 
@@ -6099,7 +6104,7 @@ export class Artifacts extends BaseClient {
    * @param uri A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]
    */
   filterURI = (uri: string): Artifacts => {
-    const ctx = this._ctx.select("filterUri", { uri })
+    const ctx = this._ctx.select("filterURI", { uri })
     return new Artifacts(ctx)
   }
 
@@ -6190,7 +6195,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+   * The DAG address that selects this whole selection: filterURI(uri) selects the same set.
    */
   uri = async (): Promise<string> => {
     if (this._uri) {
@@ -6236,7 +6241,7 @@ export class Artifacts extends BaseClient {
    * Remove artifacts selected by a DAG address.
    */
   withoutURI = (uri: string): Artifacts => {
-    const ctx = this._ctx.select("withoutUri", { uri })
+    const ctx = this._ctx.select("withoutURI", { uri })
     return new Artifacts(ctx)
   }
 
@@ -11877,7 +11882,7 @@ export class GitCommit extends BaseClient {
   private readonly _messageBody?: string = undefined
   private readonly _messageHeadline?: string = undefined
   private readonly _sha?: string = undefined
-  private readonly _shortSha?: string = undefined
+  private readonly _shortSHA?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -11895,7 +11900,7 @@ export class GitCommit extends BaseClient {
     _messageBody?: string,
     _messageHeadline?: string,
     _sha?: string,
-    _shortSha?: string,
+    _shortSHA?: string,
   ) {
     super(ctx)
 
@@ -11910,7 +11915,7 @@ export class GitCommit extends BaseClient {
     this._messageBody = _messageBody
     this._messageHeadline = _messageHeadline
     this._sha = _sha
-    this._shortSha = _shortSha
+    this._shortSHA = _shortSHA
   }
 
   /**
@@ -12095,7 +12100,7 @@ export class GitCommit extends BaseClient {
    * Parent commit SHAs.
    */
   parentSHAs = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("parentShas")
+    const ctx = this._ctx.select("parentSHAs")
 
     const response: Awaited<string[]> = await ctx.execute()
 
@@ -12143,11 +12148,11 @@ export class GitCommit extends BaseClient {
    * The abbreviated commit SHA.
    */
   shortSHA = async (): Promise<string> => {
-    if (this._shortSha) {
-      return this._shortSha
+    if (this._shortSHA) {
+      return this._shortSHA
     }
 
-    const ctx = this._ctx.select("shortSha")
+    const ctx = this._ctx.select("shortSHA")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -12849,8 +12854,8 @@ export class GitRepository extends BaseClient {
       name,
       url,
       ...opts,
-      pushURL: undefined,
-      pushUrl: opts?.pushURL ?? opts?.pushUrl,
+      pushUrl: undefined,
+      pushURL: opts?.pushURL ?? opts?.pushUrl,
     })
     return new GitRepository(ctx)
   }
@@ -13840,7 +13845,7 @@ export class LLM extends BaseClient {
    *
    * The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.
    *
-   * Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.
+   * Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterURI.
    * @param opts.include Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.
    * @experimental
    */
@@ -14244,7 +14249,7 @@ export class LLM extends BaseClient {
     opts?: LLMWithToolResultOpts,
   ): LLM => {
     const ctx = this._ctx.select("withToolResult", {
-      callId: callID,
+      callID,
       content,
       errored,
       ...opts,
@@ -14409,7 +14414,7 @@ export class LLMContent extends BaseClient {
 export class LLMContentBlock extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _arguments?: JSON = undefined
-  private readonly _callId?: string = undefined
+  private readonly _callID?: string = undefined
   private readonly _data?: Bytes = undefined
   private readonly _errored?: boolean = undefined
   private readonly _kind?: LLMContentBlockKind = undefined
@@ -14425,7 +14430,7 @@ export class LLMContentBlock extends BaseClient {
     ctx?: Context,
     _id?: ID,
     _arguments?: JSON,
-    _callId?: string,
+    _callID?: string,
     _data?: Bytes,
     _errored?: boolean,
     _kind?: LLMContentBlockKind,
@@ -14438,7 +14443,7 @@ export class LLMContentBlock extends BaseClient {
 
     this._id = _id
     this._arguments = _arguments
-    this._callId = _callId
+    this._callID = _callID
     this._data = _data
     this._errored = _errored
     this._kind = _kind
@@ -14482,11 +14487,11 @@ export class LLMContentBlock extends BaseClient {
    * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
    */
   callID = async (): Promise<string> => {
-    if (this._callId) {
-      return this._callId
+    if (this._callID) {
+      return this._callID
     }
 
-    const ctx = this._ctx.select("callId")
+    const ctx = this._ctx.select("callID")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -19049,7 +19054,7 @@ export class Workspace extends BaseClient {
   /**
    * Resolve an address in this workspace.
    *
-   * A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+   * A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterURI(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
    *
    * A value without the dag:// scheme keeps its external meaning, such as a container image reference.
    *
@@ -19443,8 +19448,8 @@ export class Workspace extends BaseClient {
     const ctx = this._ctx.select("withSDK", {
       ref,
       ...opts,
-      asSDKName: undefined,
-      asSdkName: opts?.asSDKName ?? opts?.asSdkName,
+      asSdkName: undefined,
+      asSDKName: opts?.asSDKName ?? opts?.asSdkName,
     })
     return new Workspace(ctx)
   }
