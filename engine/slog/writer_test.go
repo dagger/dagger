@@ -344,3 +344,89 @@ func TestWriterWaitersReleased(t *testing.T) {
 		t.Fatalf("%d waiters still registered", n)
 	}
 }
+
+// WARN and worse lines written through the public Write get the
+// destination's error and the count of their bytes that were written.
+func TestWriterWarnErrors(t *testing.T) {
+	for _, level := range []string{"WARN", "warning", "ERROR"} {
+		t.Run(level, func(t *testing.T) {
+			p := logrusLine(level)
+			w := NewWriter(&failing{n: 3, failAfter: 3}, 1<<20)
+			w.SyncWarn = true
+			if n, err := w.Write(p); n != 3 || !errors.Is(err, errSink) {
+				t.Fatalf("partial Write = %d, %v; want 3, %v", n, err, errSink)
+			}
+			w = NewWriter(fullCountErr{}, 1<<20)
+			w.SyncWarn = true
+			if n, err := w.Write(p); n != len(p) || !errors.Is(err, errSink) {
+				t.Fatalf("full-count Write = %d, %v; want %d, %v", n, err, len(p), errSink)
+			}
+		})
+	}
+}
+
+// gatedFailing blocks every write until released, then fails it.
+type gatedFailing struct {
+	gate, entered chan struct{}
+	once          sync.Once
+}
+
+func (g *gatedFailing) Write(p []byte) (int, error) {
+	g.once.Do(func() { close(g.entered) })
+	<-g.gate
+	return 0, errSink
+}
+
+func waitForWaiters(t *testing.T, w *Writer, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		w.mu.Lock()
+		n := len(w.waiters)
+		w.mu.Unlock()
+		if n == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d waiters, want %d", n, want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// A Flush and many WARN lines waiting on failing batches all get the error,
+// and none of them stays registered.
+func TestWriterFlushAndWarnErrorFanout(t *testing.T) {
+	sink := &gatedFailing{gate: make(chan struct{}), entered: make(chan struct{})}
+	var once sync.Once
+	release := func() { once.Do(func() { close(sink.gate) }) }
+	defer release()
+	w := NewWriter(sink, 1<<20)
+	w.SyncWarn = true
+	w.Write(logrusLine("info"))
+	<-sink.entered
+	const calls = 64
+	results := make(chan error, calls+1)
+	go func() { results <- w.Flush() }()
+	waitForWaiters(t, w, 1)
+	for range calls {
+		go func() {
+			n, err := w.Write(logrusLine("warning"))
+			if n != 0 {
+				t.Errorf("count = %d, want 0", n)
+			}
+			results <- err
+		}()
+	}
+	waitForWaiters(t, w, calls+1)
+	release()
+	for range calls + 1 {
+		if err := <-results; !errors.Is(err, errSink) {
+			t.Errorf("result = %v, want %v", err, errSink)
+		}
+	}
+	waitForWaiters(t, w, 0)
+	if err := w.Flush(); err != nil {
+		t.Errorf("Flush after completion = %v, want nil", err)
+	}
+}
