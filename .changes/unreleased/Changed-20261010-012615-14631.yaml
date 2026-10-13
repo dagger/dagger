@@ -1,0 +1,6 @@
+kind: Changed
+body: The engine no longer caches `TypeDef.asCollection` per session, so each CLI invocation stops rebuilding one result per typedef at start-up, like the other typedef accessors.
+time: 2026-10-10T01:26:15Z
+custom:
+  Author: sipsma
+  PR: "14631"
