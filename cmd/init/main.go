@@ -104,9 +104,9 @@ func mainInit() error {
 	// The session helper starts alongside the command: the engine waits for
 	// its attachables when the command first calls Dagger, and this process
 	// reports on helperStatus if the helper fails.
-	var helperPid int
+	var helper *sessionHelper
 	if _, ok := os.LookupEnv("DAGGER_SESSION_TOKEN"); ok {
-		helperPid, err = startSessionSubprocess()
+		helper, err = startSessionSubprocess()
 		if err != nil {
 			if helperStatus != nil {
 				fmt.Fprintf(helperStatus, "start-failed %s\n", err)
@@ -114,34 +114,14 @@ func mainInit() error {
 			return err
 		}
 	}
+	// The helper is only needed while the command runs, so every exit from
+	// here on stops it first. Don't leave it to the kernel's teardown of the
+	// container: once this process exits, the kernel refuses new threads in
+	// the container, which a helper still starting up can crash on.
 
-	// run the child in a new session
-	sysProcAttr := syscall.SysProcAttr{
-		Setsid: true,
-	}
-	if haveTTY {
-		sysProcAttr.Setctty = true
-		sysProcAttr.Ctty = 0
-	}
-
-	// start the child process
-	fullPath := os.Args[1]
-	if filepath.Base(fullPath) == fullPath {
-		// search for the executable in $PATH
-		fullPath, err = exec.LookPath(fullPath)
-		if errors.Is(err, exec.ErrDot) {
-			// NOTE: backwards compat with dumb-init
-			err = nil
-		}
-		if err != nil {
-			return err
-		}
-	}
-	child, err := os.StartProcess(fullPath, os.Args[1:], &os.ProcAttr{
-		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
-		Sys:   &sysProcAttr,
-	})
+	child, err := startCommand(haveTTY)
 	if err != nil {
+		helper.stop()
 		return err
 	}
 	spawnedNS := monotonicNS()
@@ -175,12 +155,15 @@ func mainInit() error {
 				if err != nil || deadPid == 0 {
 					break
 				}
-				if deadPid == helperPid && helperStatus != nil {
-					status := ws.ExitStatus()
-					if status == -1 {
-						status = 128 + int(ws.Signal())
+				if helper != nil && deadPid == helper.pid {
+					helper.reaped = true
+					if helperStatus != nil {
+						status := ws.ExitStatus()
+						if status == -1 {
+							status = 128 + int(ws.Signal())
+						}
+						fmt.Fprintf(helperStatus, "exited %d\n", status)
 					}
-					fmt.Fprintf(helperStatus, "exited %d\n", status)
 				}
 				if deadPid == child.Pid {
 					exitedNS := monotonicNS()
@@ -198,6 +181,7 @@ func mainInit() error {
 					}
 
 					// goodbye
+					helper.stop()
 					os.Exit(exitStatus)
 				}
 			}
@@ -213,7 +197,40 @@ func mainInit() error {
 		}
 	}
 
+	helper.stop()
 	return nil
+}
+
+// startCommand starts the command in os.Args[1:] in a new session, with
+// this process's stdio.
+func startCommand(haveTTY bool) (*os.Process, error) {
+	// run the child in a new session
+	sysProcAttr := syscall.SysProcAttr{
+		Setsid: true,
+	}
+	if haveTTY {
+		sysProcAttr.Setctty = true
+		sysProcAttr.Ctty = 0
+	}
+
+	// start the child process
+	fullPath := os.Args[1]
+	if filepath.Base(fullPath) == fullPath {
+		// search for the executable in $PATH
+		var err error
+		fullPath, err = exec.LookPath(fullPath)
+		if errors.Is(err, exec.ErrDot) {
+			// NOTE: backwards compat with dumb-init
+			err = nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return os.StartProcess(fullPath, os.Args[1:], &os.ProcAttr{
+		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
+		Sys:   &sysProcAttr,
+	})
 }
 
 // engineFile returns the fd the engine passed for reporting to it, named in
@@ -247,10 +264,32 @@ func monotonicNS() int64 {
 // point it at a stand-in.
 var sessionHelperPath = distconsts.InitSessionContainerPath
 
+// sessionHelper is the session subprocess /.init started.
+type sessionHelper struct {
+	pid    int
+	reaped bool
+}
+
+// stop kills the helper and reaps it, unless it has already exited. It's
+// safe to call on a nil helper and more than once.
+func (h *sessionHelper) stop() {
+	if h == nil || h.reaped {
+		return
+	}
+	unix.Kill(h.pid, unix.SIGKILL)
+	var ws unix.WaitStatus
+	for {
+		if _, err := unix.Wait4(h.pid, &ws, 0, nil); err != unix.EINTR {
+			break
+		}
+	}
+	h.reaped = true
+}
+
 // startSessionSubprocess starts the session helper, which connects this
-// container's session attachables to the engine, and returns its pid, or 0 if
-// the exec has no helper.
-func startSessionSubprocess() (int, error) {
+// container's session attachables to the engine, or returns nil if the exec
+// has no helper.
+func startSessionSubprocess() (*sessionHelper, error) {
 	cmd := exec.Command(sessionHelperPath)
 
 	// forwarding our stdio ensures that a panic in the child process won't get hidden and any other logging works too
@@ -265,10 +304,10 @@ func startSessionSubprocess() (int, error) {
 		// Not a nested client, though the command's env names a session: the
 		// engine only mounts the helper for nested clients. Run the command
 		// without session attachables, as when the helper fails at once.
-		return 0, nil
+		return nil, nil
 	}
 	if err != nil {
-		return 0, fmt.Errorf("failed to start session subprocess: %w", err)
+		return nil, fmt.Errorf("failed to start session subprocess: %w", err)
 	}
-	return cmd.Process.Pid, nil
+	return &sessionHelper{pid: cmd.Process.Pid}, nil
 }
