@@ -46,9 +46,9 @@ const IdentifierNamingVersion = "v1.0.0-0"
 var identifierNamingView = AfterVersion(IdentifierNamingVersion)
 
 // NameAliases returns hidden aliases (dagql.Aliases) for the old spellings of
-// a type, field or argument that the new naming rules renamed. They're
-// accepted only in the views that have the new rules (identifierNamingView):
-// before those, the old spelling is the name.
+// a type, field, argument or enum value that the new naming rules renamed.
+// They're accepted only in the views that have the new rules
+// (identifierNamingView): before those, the old spelling is the name.
 //
 // Every alias kept for the transition goes through here or
 // ModuleNameAliases, so ending it is deleting them and their callers. See
@@ -58,10 +58,10 @@ func NameAliases(names ...string) dagql.Aliases {
 }
 
 // ModuleNameAliases is NameAliases for the name of a module's declaration (a
-// type, function, field or argument), which the module's naming rules
-// renamed: they're accepted in every view. A module's names follow its own
-// engine version, not its caller's view, so a caller at any view sees the new
-// name, and may have been generated with the old one.
+// type, function, field, argument or enum member), which the module's naming
+// rules renamed: they're accepted in every view. A module's names follow its
+// own engine version, not its caller's view, so a caller at any view sees the
+// new name, and may have been generated with the old one.
 func ModuleNameAliases(names ...string) dagql.Aliases {
 	return dagql.Aliases{Names: names}
 }

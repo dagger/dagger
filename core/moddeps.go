@@ -318,11 +318,11 @@ func (b *SchemaBuilder) SchemaIntrospectionJSONFileForModule(ctx context.Context
 }
 
 // SchemaIntrospectionJSONFileForDang is SchemaIntrospectionJSONFileForModule
-// with the hidden field and argument aliases added, marked deprecated (see
-// dagql.Aliases), for the in-engine Dang runtime: it typechecks its callers
-// against the JSON, so callers using old names keep typechecking, and it
-// generates nothing from it that could collide on them. Other SDKs' codegen
-// must keep the JSON without aliases.
+// with the hidden field, argument and enum value aliases added, marked
+// deprecated (see dagql.Aliases), for the in-engine Dang runtime: it
+// typechecks its callers against the JSON, so callers using old names keep
+// typechecking, and it generates nothing from it that could collide on them.
+// Other SDKs' codegen must keep the JSON without aliases.
 func (b *SchemaBuilder) SchemaIntrospectionJSONFileForDang(ctx context.Context) (dagql.Result[*File], error) {
 	dag, err := b.Schema(ctx)
 	if err != nil {

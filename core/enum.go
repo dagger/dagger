@@ -228,8 +228,38 @@ func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {
 			}, nil
 		}
 	}
+	if canonical, ok := e.EnumValueAliases().Resolve(val); ok {
+		return &ModuleEnum{
+			TypeDef: e.TypeDef,
+			Name:    canonical,
+		}, nil
+	}
 
 	return nil, fmt.Errorf("invalid enum member %q for %s", val, e.TypeName())
+}
+
+var _ dagql.EnumValueAliased = (*ModuleEnum)(nil)
+
+// EnumValueAliases returns the enum's members and their hidden aliases (see
+// EnumMemberTypeDef.NameAliases), so callers may still pass the name the
+// legacy naming rules gave a member. A local enum, which the module that
+// declares it decodes by its members' original names, has none.
+func (e *ModuleEnum) EnumValueAliases() dagql.EnumValueAliases {
+	var aliases dagql.EnumValueAliases
+	if e.Local {
+		return aliases
+	}
+	for _, possible := range e.TypeDef.Members {
+		member := possible.Self()
+		aliases.Values = append(aliases.Values, member.Name)
+		if names := member.NameAliases(); len(names.Names) > 0 {
+			if aliases.Aliases == nil {
+				aliases.Aliases = map[string]dagql.Aliases{}
+			}
+			aliases.Aliases[member.Name] = names
+		}
+	}
+	return aliases
 }
 
 func (e *ModuleEnum) memberTypedef() *EnumMemberTypeDef {

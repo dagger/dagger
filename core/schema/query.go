@@ -185,10 +185,10 @@ func getSchemaJSON(hiddenTypes, hiddenFields []string, view call.View, srv *dagq
 }
 
 // buildSchemaJSON serializes the schema in view, without hiddenTypes and
-// hiddenFields. With includeAliases, it adds the hidden field and argument
-// aliases (see dagql.Aliases), marked deprecated, as SchemaWithAliasesForView
-// has them, but not type aliases: a copy of a type would be a different type
-// to whatever reads the JSON.
+// hiddenFields. With includeAliases, it adds the hidden field, argument and
+// enum value aliases (see dagql.Aliases), marked deprecated, as
+// SchemaWithAliasesForView has them, but not type aliases: a copy of a type
+// would be a different type to whatever reads the JSON.
 //
 // Only a runtime that typechecks callers against the JSON without generating
 // code from it (the in-engine Dang runtime) wants the aliases: SDK

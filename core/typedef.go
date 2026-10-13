@@ -2299,6 +2299,10 @@ type EnumMemberTypeDef struct {
 	Deprecated  *string                                        `field:"true" doc:"The reason this enum member is deprecated, if any."`
 
 	OriginalName string
+	// LegacyName is the member's name by the legacy strcase rules, when the
+	// naming rules of its module gave it a different one: a hidden alias of
+	// it. See NameAliases.
+	LegacyName string
 }
 
 func (*EnumMemberTypeDef) Type() *ast.Type {
@@ -2364,6 +2368,8 @@ func NewEnumMemberTypeDef(name, value, description string, deprecated *string, s
 }
 
 // NewEnumMemberTypeDef creates an enum member, normalizing its name with n.
+// If n gives it another name than the legacy strcase rules do, that one is
+// kept as a hidden alias (see NameAliases).
 func (n Namer) NewEnumMemberTypeDef(name, value, description string, deprecated *string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumMemberTypeDef {
 	typedef := &EnumMemberTypeDef{
 		OriginalName: name,
@@ -2372,10 +2378,23 @@ func (n Namer) NewEnumMemberTypeDef(name, value, description string, deprecated 
 		Description:  description,
 		Deprecated:   deprecated,
 	}
+	if legacy := n.legacyNameAliases(typedef.Name, LegacyNamer.EnumMemberName(name)); len(legacy.Names) > 0 {
+		typedef.LegacyName = legacy.Names[0]
+	}
 	if sourceMap.Self() != nil {
 		typedef.SourceMap = dagql.NonNull(sourceMap)
 	}
 	return typedef
+}
+
+// NameAliases returns the transition aliases of the member's name: its name
+// by the legacy rules, if its module's rules renamed it. See
+// ModuleNameAliases.
+func (enumValue *EnumMemberTypeDef) NameAliases() dagql.Aliases {
+	if enumValue.LegacyName == "" || enumValue.LegacyName == enumValue.Name {
+		return dagql.Aliases{}
+	}
+	return ModuleNameAliases(enumValue.LegacyName)
 }
 
 func NewEnumValueTypeDef(name, value, description string, deprecated *string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumMemberTypeDef {
@@ -2983,6 +3002,7 @@ type persistedEnumMemberTypeDef struct {
 	SourceMapResultID uint64  `json:"sourceMapResultID,omitempty"`
 	Deprecated        *string `json:"deprecated,omitempty"`
 	OriginalName      string  `json:"originalName,omitempty"`
+	LegacyName        string  `json:"legacyName,omitempty"`
 }
 
 func encodePersistedSourceMap(sourceMap *SourceMap) *persistedSourceMap {
@@ -3624,6 +3644,7 @@ func encodePersistedEnumMemberTypeDef(enc *dagql.PersistEncodeContext, member *E
 		Description:  member.Description,
 		Deprecated:   member.Deprecated,
 		OriginalName: member.OriginalName,
+		LegacyName:   member.LegacyName,
 	}
 	if member.SourceMap.Valid && member.SourceMap.Value.Self() != nil {
 		sourceMapID, err := encodePersistedObjectRef(enc, member.SourceMap.Value, "enum member source map")
@@ -3645,6 +3666,7 @@ func decodePersistedEnumMemberTypeDef(ctx context.Context, dec *dagql.PersistDec
 		Description:  member.Description,
 		Deprecated:   member.Deprecated,
 		OriginalName: member.OriginalName,
+		LegacyName:   member.LegacyName,
 	}
 	if member.SourceMapResultID != 0 {
 		sourceMap, err := loadPersistedObjectResultByResultID[*SourceMap](ctx, dec, member.SourceMapResultID, "enum member source map")

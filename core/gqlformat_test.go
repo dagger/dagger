@@ -354,15 +354,28 @@ func TestEnumMemberNameFormatting(t *testing.T) {
 		{name: "p256", legacy: "P_256", latest: "P256"},
 		{name: "httpClient", legacy: "HTTP_CLIENT", latest: "HTTP_CLIENT"},
 		{name: "userIDs", legacy: "USER_I_DS", latest: "USER_IDS"},
+		{name: "arm64", legacy: "ARM_64", latest: "ARM64"},
+		{name: "IPv6", legacy: "I_PV_6", latest: "IPV6"},
+		{name: "GitHub", legacy: "GIT_HUB", latest: "GITHUB"},
+		{name: "E2ETest", legacy: "E_2_E_TEST", latest: "E2E_TEST"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			legacy := LegacyNamer.NewEnumMemberTypeDef(tt.name, "", "", nil, dagql.ObjectResult[*SourceMap]{})
 			require.Equal(t, tt.legacy, legacy.Name)
 			require.Equal(t, tt.name, legacy.OriginalName)
+			require.Empty(t, legacy.NameAliases().Names, "legacy modules have no aliases")
 			latest := LatestNamer.NewEnumMemberTypeDef(tt.name, "", "", nil, dagql.ObjectResult[*SourceMap]{})
 			require.Equal(t, tt.latest, latest.Name)
 			require.Equal(t, tt.name, latest.OriginalName)
+			// The legacy name stays accepted as a hidden alias, in every view.
+			aliases := latest.NameAliases()
+			require.Nil(t, aliases.View)
+			if tt.legacy == tt.latest {
+				require.Empty(t, aliases.Names)
+			} else {
+				require.Equal(t, []string{tt.legacy}, aliases.Names)
+			}
 		})
 	}
 }
