@@ -52,11 +52,12 @@ class InputVisitor extends AbstractVisitor {
       methods.add(getter);
       methods.add(setter);
       methods.add(withSetter);
-      legacyNames.add(
-          Helpers.getter(inputObject.getName(), inputObject.getType().formatInput()).name());
-      legacyNames.add(
-          Helpers.setter(inputObject.getName(), inputObject.getType().formatOutput()).name());
-      legacyNames.add(Helpers.legacyWithSetterName(inputObject));
+      // The accessors' names before formatted names, from the schema name
+      // the field had then.
+      String legacyName = Helpers.legacySchemaName(type.getName(), inputObject.getName());
+      legacyNames.add(Helpers.getter(legacyName, inputObject.getType().formatInput()).name());
+      legacyNames.add(Helpers.setter(legacyName, inputObject.getType().formatOutput()).name());
+      legacyNames.add(Helpers.legacyWithSetterName(legacyName));
     }
     Set<String> methodNames = methods.stream().map(MethodSpec::name).collect(Collectors.toSet());
     for (int i = 0; i < methods.size(); i++) {

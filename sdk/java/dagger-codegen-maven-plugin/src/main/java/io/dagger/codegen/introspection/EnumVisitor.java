@@ -44,10 +44,37 @@ public class EnumVisitor extends AbstractVisitor {
         }
         classBuilder.addEnumConstant(enumValue.getName(), enumTypeBuilder.build());
       }
+      addRenamedCoreAliases(classBuilder, type, constants, new HashSet<>(constants.keySet()));
       return classBuilder.build();
     }
 
     return valueEnum(classBuilder, type, constants);
+  }
+
+  /** Renamed core values keep their old names as deprecated aliases. */
+  private static void addRenamedCoreAliases(
+      TypeSpec.Builder classBuilder,
+      Type type,
+      Map<String, List<EnumValue>> constants,
+      Set<String> taken) {
+    ClassName enumClass = ClassName.bestGuess(Helpers.formatName(type));
+    for (Map.Entry<String, List<EnumValue>> constant : constants.entrySet()) {
+      for (EnumValue value : constant.getValue()) {
+        String legacyName = Helpers.legacySchemaName(type.getName(), value.getName());
+        if (legacyName.equals(value.getName())
+            || !SourceVersion.isName(legacyName)
+            || !taken.add(legacyName)) {
+          continue;
+        }
+        classBuilder.addField(
+            FieldSpec.builder(
+                    enumClass, legacyName, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .addAnnotation(Deprecated.class)
+                .addJavadoc("@deprecated Use {@link #$L} instead.\n", constant.getKey())
+                .initializer("$L", constant.getKey())
+                .build());
+      }
+    }
   }
 
   /**
@@ -124,6 +151,7 @@ public class EnumVisitor extends AbstractVisitor {
                 .build());
       }
     }
+    addRenamedCoreAliases(classBuilder, type, constants, taken);
 
     classBuilder.addField(
         FieldSpec.builder(String[].class, "values", Modifier.PRIVATE, Modifier.FINAL).build());

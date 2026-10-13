@@ -1,0 +1,75 @@
+{
+  "__schemaVersion": "v1.0.0",
+  "__schema": {
+    "queryType": {"name": "Query"},
+    "types": [
+      {
+        "kind": "OBJECT", "name": "Query", "description": "The root of the API.",
+        "fields": [
+          {
+            "name": "gitCommit", "description": "A commit.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "OBJECT", "name": "GitCommit", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          }
+        ],
+        "interfaces": []
+      },
+      {
+        "kind": "OBJECT", "name": "GitCommit", "description": "A commit.",
+        "interfaces": [],
+        "fields": [
+          {
+            "name": "id", "description": "The commit's ID.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "shortSHA", "description": "The abbreviated SHA.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          }
+        ]
+      },
+      {
+        "kind": "OBJECT", "name": "GitRepository", "description": "A repository.",
+        "interfaces": [],
+        "fields": [
+          {
+            "name": "id", "description": "The repository's ID.", "args": [],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          },
+          {
+            "name": "withRemote", "description": "Register a remote.",
+            "args": [
+              {
+                "name": "pushURL", "description": "Push destination.", "defaultValue": "\"\"", "directives": [],
+                "type": {"kind": "SCALAR", "name": "String", "ofType": null}
+              }
+            ],
+            "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "OBJECT", "name": "GitRepository", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null, "directives": []
+          }
+        ]
+      },
+      {
+        "kind": "INPUT_OBJECT", "name": "LLMContentBlockInput", "description": "A content block.",
+        "inputFields": [
+          {
+            "name": "callID", "description": "The tool call ID.", "defaultValue": "\"\"", "directives": [],
+            "type": {"kind": "SCALAR", "name": "String", "ofType": null}
+          }
+        ]
+      },
+      {
+        "kind": "ENUM", "name": "FunctionCachePolicy", "description": "A cache policy.",
+        "enumValues": [
+          {"name": "DEFAULT", "description": "The default.", "isDeprecated": false, "deprecationReason": null},
+          {"name": "PER_SESSION", "description": "Once per session.", "isDeprecated": false, "deprecationReason": null}
+        ]
+      },
+      {"kind": "SCALAR", "name": "ID", "description": "An ID."},
+      {"kind": "SCALAR", "name": "String", "description": "A string."}
+    ]
+  }
+}
