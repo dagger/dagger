@@ -1,0 +1,6 @@
+kind: Changed
+body: Calling a function of a Dang module is faster. The engine parsed the module's whole source three times on every call; it now skips two of those parses for source it has already seen.
+time: 2026-10-13T17:50:20Z
+custom:
+  Author: sipsma
+  PR: "14649"
