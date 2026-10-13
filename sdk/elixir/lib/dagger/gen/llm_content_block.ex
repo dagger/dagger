@@ -32,7 +32,7 @@ defmodule Dagger.LLMContentBlock do
   @spec call_id(t()) :: {:ok, String.t()} | {:error, term()}
   def call_id(%__MODULE__{} = llm_content_block) do
     query_builder =
-      llm_content_block.query_builder |> QB.select("callId")
+      llm_content_block.query_builder |> QB.select("callID")
 
     Client.execute(llm_content_block.client, query_builder)
   end

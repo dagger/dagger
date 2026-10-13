@@ -341,7 +341,7 @@ defmodule Dagger.Artifacts do
   @spec filter_uri(t(), String.t()) :: Dagger.Artifacts.t()
   def filter_uri(%__MODULE__{} = artifacts, uri) do
     query_builder =
-      artifacts.query_builder |> QB.select("filterUri") |> QB.put_arg("uri", uri)
+      artifacts.query_builder |> QB.select("filterURI") |> QB.put_arg("uri", uri)
 
     %Dagger.Artifacts{
       query_builder: query_builder,
@@ -476,7 +476,7 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
-  The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+  The DAG address that selects this whole selection: filterURI(uri) selects the same set.
   """
   @spec uri(t()) :: {:ok, String.t()} | {:error, term()}
   def uri(%__MODULE__{} = artifacts) do
@@ -540,7 +540,7 @@ defmodule Dagger.Artifacts do
   @spec without_uri(t(), String.t()) :: Dagger.Artifacts.t()
   def without_uri(%__MODULE__{} = artifacts, uri) do
     query_builder =
-      artifacts.query_builder |> QB.select("withoutUri") |> QB.put_arg("uri", uri)
+      artifacts.query_builder |> QB.select("withoutURI") |> QB.put_arg("uri", uri)
 
     %Dagger.Artifacts{
       query_builder: query_builder,

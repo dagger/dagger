@@ -90,6 +90,14 @@ defmodule Dagger.Codegen.ElixirGenerator.FormatterTest do
                "experimental_with_all_gpus"
     end
 
+    test "legacy_field_name/2 is a renamed core field's old schema name" do
+      assert Formatter.legacy_field_name("GitCommit", "parentSHAs") == "parentShas"
+      assert Formatter.legacy_function_name("parentShas") == "parent_shas"
+      assert Formatter.legacy_field_name("Artifacts", "filterURI") == "filterUri"
+      assert Formatter.legacy_field_name("GitRef", "prerequisiteSHAs") == "prerequisiteSHAs"
+      assert Formatter.legacy_field_name("Other", "parentSHAs") == "parentSHAs"
+    end
+
     test "format_doc/1" do
       assert Formatter.format_doc("Use `prerequisiteSHAs` instead") ==
                "Use `prerequisite_shas` instead"
