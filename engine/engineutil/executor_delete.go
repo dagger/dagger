@@ -123,58 +123,75 @@ func describeCgroupTasks(path, procRoot string) string {
 		out = append(out, "no processes")
 	}
 	for _, pid := range procs {
-		out = append(out, describeProc(filepath.Join(procRoot, pid), pid, maxDescribedTasksPerProc))
+		out = append(out, describeProc(filepath.Join(procRoot, pid), pid, maxDescribedTasksPerProc).text)
 	}
 	return strings.Join(append(out, notes...), "; ")
 }
 
 // DescribeUninterruptibleThreads reports the threads of the process at
 // procDir (such as /proc/self) that sleep uninterruptibly in the kernel, each
-// with its kernel stack.
+// with its kernel stack. Absence is claimed only for a complete read.
 func DescribeUninterruptibleThreads(procDir string) string {
-	desc := describeProc(procDir, filepath.Base(procDir), maxDescribedOwnTasks)
-	if !strings.Contains(desc, "thread ") {
-		desc += ", no uninterruptible threads"
+	d := describeProc(procDir, filepath.Base(procDir), maxDescribedOwnTasks)
+	switch {
+	case d.uninterruptible > 0:
+	case d.complete:
+		d.text += ", no uninterruptible threads"
+	default:
+		d.text += ", no uninterruptible threads among those read"
 	}
-	return desc
+	return d.text
 }
 
-func describeProc(procDir, pid string, maxTasks int) string {
+type procDescription struct {
+	text string
+	// uninterruptible counts the threads seen in state D.
+	uninterruptible int
+	// complete is false when anything was unreadable or truncated.
+	complete bool
+}
+
+func describeProc(procDir, pid string, maxTasks int) procDescription {
 	comm, err := os.ReadFile(filepath.Join(procDir, "comm"))
 	if err != nil {
-		return fmt.Sprintf("pid %s (unreadable: %v)", pid, err)
+		return procDescription{text: fmt.Sprintf("pid %s (unreadable: %v)", pid, err)}
 	}
-	desc := fmt.Sprintf("pid %s (%s)", pid, strings.TrimSpace(string(comm)))
+	d := procDescription{text: fmt.Sprintf("pid %s (%s)", pid, strings.TrimSpace(string(comm))), complete: true}
 	tasks, err := readDirHead(filepath.Join(procDir, "task"), maxTasks+1)
 	if err != nil {
-		return desc + fmt.Sprintf(", threads unreadable: %v", err)
+		d.text += fmt.Sprintf(", threads unreadable: %v", err)
+		d.complete = false
+		return d
 	}
 	if len(tasks) > maxTasks {
-		desc += fmt.Sprintf(", only the first %d threads read", maxTasks)
+		d.text += fmt.Sprintf(", only the first %d threads read", maxTasks)
+		d.complete = false
 		tasks = tasks[:maxTasks]
 	}
 	for _, task := range tasks {
 		taskDir := filepath.Join(procDir, "task", task.Name())
 		state, err := procTaskState(taskDir)
 		if err != nil {
-			desc += fmt.Sprintf(", thread %s state unreadable: %v", task.Name(), err)
+			d.text += fmt.Sprintf(", thread %s state unreadable: %v", task.Name(), err)
+			d.complete = false
 			continue
 		}
 		if state != "D" {
 			continue
 		}
+		d.uninterruptible++
 		stack, err := os.ReadFile(filepath.Join(taskDir, "stack"))
 		if err != nil {
-			desc += fmt.Sprintf(", thread %s uninterruptible (stack unreadable: %v)", task.Name(), err)
+			d.text += fmt.Sprintf(", thread %s uninterruptible (stack unreadable: %v)", task.Name(), err)
 			continue
 		}
 		lines := strings.Split(strings.TrimSpace(string(stack)), "\n")
 		if len(lines) > maxDescribedStackLines {
 			lines = append(lines[:maxDescribedStackLines], "...")
 		}
-		desc += fmt.Sprintf(", thread %s uninterruptible in [%s]", task.Name(), strings.Join(lines, " <- "))
+		d.text += fmt.Sprintf(", thread %s uninterruptible in [%s]", task.Name(), strings.Join(lines, " <- "))
 	}
-	return desc
+	return d
 }
 
 // readCgroupProcs reads the PIDs from a cgroup.procs file, at most enough
