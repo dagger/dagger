@@ -468,16 +468,20 @@ func TestSnapshotShareReportKeepsTheCountItsPartsSettledAt(t *testing.T) {
 	donor := persistedListTestResult(t, ctx, c, srv, "report-settled-donor", &transferTestValue{Text: "old-snapshot", links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "old-donor-snapshot"}}})
 	shareTestEncodedReceiver(t, ctx, c, receiver)
 	partTestEquivalent(t, c, receiver, donor)
-	attemptReleased := armLazyAttemptReleased(c)
+	receiverHolds := shareTestHolds(c, receiver)
 	shareTestUnite(t, ctx, c, "report-settled", donor, receiver)
 	require.Equal(t, 1, barrier.awaitPass(t))
 	require.NotNil(t, receipt)
-	// The installing task's completion queues one empty successor pass, which
-	// takes its own member holds, and the lazy attempt holds the entry until
-	// it is released. Wait for both, so the replacement below finds the entry
-	// unused and replaces it rather than retiring it.
+	// The installing task's completion can queue an empty successor pass,
+	// which takes its own member holds, and the entry's lazy attempts hold it
+	// until they release: the slot's obtain attempt and, when that one has
+	// already retired, the attempt the pass's Finish leads. Each releases on
+	// its own goroutine after signalling done, potentially after its caller
+	// returns. Wait for the pass and for the holds to return to the baseline,
+	// so the replacement below finds the entry unused and replaces it rather
+	// than retiring it.
 	require.Equal(t, 0, barrier.awaitPass(t), "the completion trigger queued an empty successor")
-	waitLazyAttemptReleased(t, attemptReleased)
+	shareTestAwaitHolds(t, c, receiver, receiverHolds)
 	mu.Lock()
 	require.NotEmpty(t, reports)
 	reports = nil

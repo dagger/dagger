@@ -454,10 +454,14 @@ func TestOfferAlreadyCompleteOnAReferencedRowRecordsItsCounterpart(t *testing.T)
 	leaf := persistedListTestResult(t, ctx, c, srv, "leaf", &transferTestValue{Text: "snapshot", links: []PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "complete-snapshot"}}})
 	leafRow := leaf.cacheSharedResult()
 	ran := false
+	attemptReleased := armLazyAttemptReleased(c)
 	require.NoError(t, c.RunLazyTask(ctx, leaf, "lazy:referenced-complete", LazyTaskSpec{Body: func(ctx context.Context) error {
 		return c.partHostFor(leafRow).RunNative(ctx, LazyGroupWhole, []PartKey{"snapshot"}, func(context.Context) error { ran = true; return nil })
 	}}))
 	require.True(t, ran)
+	// The attempt holds the leaf until its goroutine releases it, after
+	// RunLazyTask returns; the ownership counts below must not include it.
+	waitLazyAttemptReleased(t, attemptReleased)
 	key, err := partAddressKey(testLiveOffer().Address)
 	require.NoError(t, err)
 	gate := leafRow.partGate.loadOrCreate()
