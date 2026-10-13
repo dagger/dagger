@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Fix Go module codegen failing with `import cycle not allowed` in OpenTelemetry packages
+  Generated modules now pin `github.com/dagger/otel-go` and `go.opentelemetry.io/otel/sdk`
+  instead of resolving them to their latest versions, which pulled
+  `go.opentelemetry.io/otel` v1.47.0 into a cycle with the pinned `otel/log` v0.16.0.
+time: 2026-10-13T12:30:00Z
+custom:
+  Author: sipsma
+  PR: ""
