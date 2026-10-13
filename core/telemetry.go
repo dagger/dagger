@@ -157,7 +157,8 @@ func AroundFunc(
 
 	// Getter accessors are real calls, so retain their trace metadata, but mark
 	// them as internal machinery rather than presenting them as work.
-	if dagql.IsInternal(ctx) || dagql.CurrentFieldIsTrivial(ctx) {
+	trivial := dagql.CurrentFieldIsTrivial(ctx)
+	if dagql.IsInternal(ctx) || trivial {
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 	if req.PassthroughTelemetry {
@@ -195,7 +196,14 @@ func AroundFunc(
 
 		defer telemetry.EndWithCause(span, err)
 		recordStatus(ctx, res, span, cached, req.ResultCall)
-		dagql.RecordContentPreferredDigest(ctx, span, req.ResultCall, res)
+		if trivial {
+			// A getter only unwraps its receiver, so it isn't worth re-hashing
+			// its whole recipe; that walk runs per call, and list fields of
+			// getters multiply it. Content the result carries is still cheap.
+			dagql.RecordOutputContentDigest(span, res)
+		} else {
+			dagql.RecordContentPreferredDigest(ctx, span, req.ResultCall, res)
+		}
 		recordPending(res, span)
 		recordCacheEvidence(ctx, span, req.CacheEvidence, res)
 		logResult(ctx, res, req.ResultCall)

@@ -727,8 +727,12 @@ func (r ObjectResult[T]) call(
 	if !ok {
 		return nil, fmt.Errorf("call: %s has no such field: %q", r.class.inner.Type().Name(), fieldName)
 	}
+	// The trivial mark describes this call alone, so a non-trivial call nested
+	// in a trivial field's resolver must not inherit it.
 	if field.Spec.Trivial {
 		ctx = ContextWithTrivialField(ctx)
+	} else {
+		ctx = ContextWithoutTrivialField(ctx)
 	}
 	if s.telemetry != nil && !field.Spec.NoTelemetry {
 		telemetryCtx, done := s.telemetry(ctx, req)
