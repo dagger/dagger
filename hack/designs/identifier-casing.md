@@ -906,10 +906,13 @@ module's Dang code (go-sdk calls sdk-helpers'
 hand-written queries. For a transition window the engine accepts the old
 spellings as hidden aliases (`dagql.Aliases`):
 
-- **Declaring.** A field (`Field.WithAliases`, `FieldSpec.Aliases`), a field
-  argument (`Arg(...).WithAliases`, `InputSpec.Aliases`), an object type
-  (`ClassOpts.Aliases`), an interface (`Interface.WithAliases`) or an enum
-  value (`EnumValues.WithAliases` for a core enum; any enum type implementing
+- **Declaring.** A field (`Field.WithAliases`, `FieldSpec.Aliases`, or for
+  fields declared with struct tags, an object type implementing
+  `dagql.FieldAliased`), a field argument (`Arg(...).WithAliases`,
+  `InputSpec.Aliases`), an input object field (an input type implementing
+  `dagql.InputFieldAliased`), an object type (`ClassOpts.Aliases`), an
+  interface (`Interface.WithAliases`) or an enum value
+  (`EnumValues.WithAliases` for a core enum; any enum type implementing
   `dagql.EnumValueAliased`, as `core.ModuleEnum` does) lists its aliases,
   optionally limited to some views. `core.NameAliases` limits them to
   the views with the new rules, where the old spelling is no longer the name;
@@ -924,9 +927,10 @@ spellings as hidden aliases (`dagql.Aliases`):
   repos' forked generators can't be fixed in lockstep.
 - **Validated.** Queries are validated against `SchemaWithAliasesForView`
   (gqlgen's handler via `NewDefaultHandler`, and `Server.Query`), which adds
-  each alias as a copy of its field, argument, type or enum value, marked
-  `@deprecated`. A required argument with aliases is optional there, since a
-  query may give it by either name; the call still requires it.
+  each alias as a copy of its field, argument, input field, type or enum
+  value, marked `@deprecated`. A required argument or input field with
+  aliases is optional there, since a query may give it by either name; the
+  call still requires it.
 - **Canonical.** `parseASTSelections` rewrites an alias to its canonical name
   before building the selector, so an aliased query makes the canonical
   query's calls: same IDs, same cache entries. The response keeps the name the
@@ -942,6 +946,16 @@ spellings as hidden aliases (`dagql.Aliases`):
   typedef's members before calling, so it also takes a member whose name
   matches once case, `_` and `-` are ignored (if only one does), and sends
   the canonical name.
+- **Renamed enum values.** A core enum value renamed in the new views
+  (`EnumValues.RenameView`) is a value of its own there, which decodes to the
+  value of its old name, registered for the older views only; the old name is
+  its hidden alias in the new views. Both spellings decode to the same value,
+  so the same IDs and cache keys, and the schema of each view only has its own
+  spelling (no `@enumValue` directive, unlike `AliasView`).
+- **Input object fields.** An input object field alias is an input only too,
+  and isn't rewritten in the query: the input object's decoder takes a field
+  given by an alias as the field itself, in every view (giving it by both
+  names is an error), so the decoded object's literal has the canonical name.
 - **Types.** A type alias works in fragment type conditions, which is how
   generated clients load objects (`node(id:) { ... on OldName { ... } }` in
   Go's `selectNode`, TypeScript's `Context.selectNode` and Python's
@@ -955,20 +969,24 @@ spellings as hidden aliases (`dagql.Aliases`):
   dispatch on it.
 - **Signal.** Each use adds a `dagger.io/dag.alias` event to the current span,
   naming the alias and its canonical name, and logs at debug level. Enum
-  value aliases (kind `enumValue`, parent the enum type) are noted for the
-  arguments of a query, variables included; a value decoded any other way
-  (a direct `Select`, a recipe) isn't.
-- **Collisions.** An alias that names a real type, field, argument or enum
-  value of its scope, or that two names claim, is ignored with a warning. For
-  enum values both checks span every view, since the decoders that resolve
-  them have none. Aliases count toward the schema digest.
+  value and input object field aliases (kinds `enumValue` and `inputField`,
+  parent the enum or input type) are noted for the arguments of a query,
+  variables included; a value decoded any other way (a direct `Select`, a
+  recipe) isn't.
+- **Collisions.** An alias that names a real type, field, argument, input
+  field or enum value of its scope, or that two names claim, is ignored with a
+  warning. For enum values both checks span every view, since the decoders
+  that resolve them have none, except that a value of other views may be an
+  alias of a value that decodes to the same thing: a renamed value's old
+  name. Aliases count toward the schema digest.
 
 The in-engine Dang runtime typechecks callers against its dependencies'
-schema JSON, so it gets a JSON with the field, argument and enum value
-aliases, marked deprecated (`SchemaIntrospectionJSONFileForDang`, the internal
-`includeAliases` argument of `__schemaJSONFile`); Dang generates nothing from
-it that could collide, and a Dang caller passing an old enum value typechecks
-and is decoded to the canonical one. Other SDKs keep the alias-free JSON.
+schema JSON, so it gets a JSON with the field, argument, input field and enum
+value aliases, marked deprecated (`SchemaIntrospectionJSONFileForDang`, the
+internal `includeAliases` argument of `__schemaJSONFile`); Dang generates
+nothing from it that could collide, and a Dang caller passing an old enum
+value typechecks and is decoded to the canonical one. Other SDKs keep the
+alias-free JSON.
 Limits:
 
 - type aliases aren't in it: a copy of a type is a different type to Dang, so
@@ -996,9 +1014,11 @@ rules have none.
 
 Other gaps:
 
-- Input object fields have no aliases. Enum types have no type aliases
-  either, which only matters for queries that declare variables of a renamed
-  enum type.
+- Enum types have no type aliases, which only matters for queries that
+  declare variables of a renamed enum type.
+- Recipes record canonical names, but loading one that was recorded with an
+  old name (a call ID saved before the rename) doesn't go through the
+  aliases: only queries and input decoders do.
 - Alias names can show up in validation's "Did you mean …" suggestions.
 - Aliases cover names on the wire, not identifiers SDK codegen derives from
   them. In-repo Go codegen (`cmd/codegen`, which builds `dagger.json` Go
@@ -1010,7 +1030,9 @@ Other gaps:
   engine's hidden aliases, so it recovers a module's old schema names by
   applying the legacy strcase namer to the current ones, when the new rules
   spell them as they are (`daggerCLI` → `daggerCli`, `DaggerCLIHTTPClient` →
-  `DaggerCliHttpclient` for module `dagger-cli`); core names are left alone.
+  `DaggerCliHttpclient` for module `dagger-cli`); core names are left alone,
+  but for the few renamed since (see [Core schema](#core-schema)), whose old
+  names every in-repo generator keeps in a small table of its own.
   Where the heuristic misses, there's no alias. Go modules with a
   `dagger-module.toml` build from committed bindings that the external go-sdk
   generates with its own lint-based converter: their old names keep working on
@@ -1051,11 +1073,24 @@ initial dictionary, before the API above added its own (canonical) names:
   aliases: `FunctionCachePolicy` (`Default`, `PerSession`, `Never`).
   `ImageLayerCompression` and `ImageMediaTypes` already have aliases.
 
+These are renamed on the views with the new rules, with their old spellings
+kept as hidden aliases there ([Transition aliases](#transition-aliases),
+`core.NameAliases`): `GitCommit.shortSHA` and `parentSHAs`,
+`Artifacts.filterURI` and `withoutURI`, `LLMContentBlock.callID`,
+`LLMContentBlockInput.callID`, `LLM.withToolResult(callID:)`,
+`GitRepository.withRemote(pushURL:)`, `Workspace.withSDK(asSDKName:)`, and
+`FunctionCachePolicy`'s `DEFAULT`, `PER_SESSION` and `NEVER`. All but the
+enum only exist on those views; older views keep `FunctionCachePolicy`'s
+PascalCase values exactly, and both spellings decode to the same value
+(`EnumValues.RenameView`). The SDKs' codegen can't see the hidden aliases,
+so each keeps a small table of these renames, to keep deprecating the
+identifiers it derived from the old names rather than inventing new ones
+from the new names (Python's `parent_sh_as`, Java's `shortSHA()`).
+
 `TestCoreSchemaCanonical` in `engine/naming` asserts that every core type name
-and every field/argument name outside an allowlist of the 7 is canonical, and
-fails when an allowlisted name becomes canonical; legacy enum values are only
-logged. Whether to rename the 8, with deprecated aliases, before 1.0 is an
-[open question](#open-questions).
+and every field/argument name is canonical; legacy enum values (the
+`ImageLayerCompression` and `ImageMediaTypes` values that have aliases) are
+only logged.
 
 ### What changes for SDK users
 
@@ -1089,7 +1124,8 @@ code it generated before:
   `ImageLayerCompression.ESTARGZ`, `GZIP`, `UNCOMPRESSED` and `ZSTD`,
   `ImageMediaTypes.DOCKER` and `OCI`, which used to be aliases of the legacy
   members, are now the canonical members, and the legacy names their
-  deprecated aliases. Values don't change for core enums. A dependency
+  deprecated aliases. Values don't change for core enums, but for
+  `FunctionCachePolicy`'s, renamed in the schema (see below). A dependency
   module's enum, whose members hold the module's own values (`ACTIVE` holds
   `"ACTIVE value"`), keeps the members it always had, sent by name.
 - **Rust**: the same 2 methods as Python, kept as deprecated aliases. No type
@@ -1136,6 +1172,19 @@ code it generated before:
   members become PascalCase (`NetworkProtocol.Tcp`, `TypeDefKind.StringKind`,
   `FunctionCachePolicy.PerSession`, ...), with the old names as `[Obsolete]`
   aliases; they still serialize to the schema's values.
+
+The core names renamed in the schema ([Core schema](#core-schema)) change
+what goes over the wire (`shortSHA`, `callID`, `pushURL`, ...,
+`FunctionCachePolicy`'s `PER_SESSION`), not the identifiers above: those
+derived from the old names keep working, as they are where the new name
+formats the same (Go `FilterURI`, Python `short_sha`, Rust `call_id`, PHP and
+Java `shortSha`, .NET `FunctionCachePolicy.PerSession`), and as the
+deprecated aliases above otherwise (Go `ShortSha`, TypeScript `shortSha` and
+the `pushUrl` opts key, Python `FunctionCachePolicy.PerSession`, PHP and Java
+`FunctionCachePolicy` constants). An input object field can't be aliased in
+every language: TypeScript's `LLMContentBlockInput` keeps a deprecated
+`callId` key, sent as is, and PHP's keeps its `callId` property (a
+constructor parameter), sent as `callID`; the engine takes either.
 
 Renamed identifiers stay as deprecated aliases wherever the language allows
 one. The hard breaks are:
@@ -1251,7 +1300,9 @@ copy: they get formatted names from the engine.
    if the .NET SDK ever wants the exact form. A third `AcronymStyle` value can be
    added later without breaking anyone.
 2. **Renaming the 8 non-canonical core names** before 1.0, with deprecated
-   aliases, or keeping them on an allowlist.
+   aliases, or keeping them on an allowlist. Resolved: renamed on the views
+   with the new rules, with the old spellings as hidden aliases there (see
+   [Core schema](#core-schema)).
 3. **Offline codegen.** Some SDK codegen paths were thought to run without an
    engine session. Resolved: nearly all codegen has an engine connection, or
    reads its input from a step that has one, so codegen asks the engine to
