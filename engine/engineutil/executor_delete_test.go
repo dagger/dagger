@@ -273,3 +273,27 @@ func TestDescribeUninterruptibleThreads(t *testing.T) {
 	writeFile(filepath.Join(self, "task", "2", "stack"), "[<0>] sync_inodes_sb+0xd4/0x2b0\n")
 	require.Equal(t, "pid self (dagger-engine), thread 2 uninterruptible in [[<0>] sync_inodes_sb+0xd4/0x2b0]", DescribeUninterruptibleThreads(self))
 }
+
+func TestDescribeUninterruptibleThreadsClaimsAbsenceOnlyWhenComplete(t *testing.T) {
+	writeFile := func(path, data string) {
+		t.Helper()
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(data), 0o600))
+	}
+
+	noComm := filepath.Join(t.TempDir(), "self")
+	writeFile(filepath.Join(noComm, "task", "1", "stat"), "1 (x) S 0\n")
+	require.Contains(t, DescribeUninterruptibleThreads(noComm), "no uninterruptible threads among those read")
+
+	noTasks := filepath.Join(t.TempDir(), "self")
+	writeFile(filepath.Join(noTasks, "comm"), "dagger-engine\n")
+	require.Contains(t, DescribeUninterruptibleThreads(noTasks), "no uninterruptible threads among those read")
+
+	truncated := filepath.Join(t.TempDir(), "self")
+	writeFile(filepath.Join(truncated, "comm"), "dagger-engine\n")
+	writeFile(filepath.Join(truncated, "task", "1", "stat"), "1 (dagger-engine) S 0\n")
+	writeFile(filepath.Join(truncated, "task", "2", "stat"), "2 (dagger-engine) S 0\n")
+	d := describeProc(truncated, "self", 1)
+	require.False(t, d.complete)
+	require.Contains(t, d.text, "only the first 1 threads read")
+}
