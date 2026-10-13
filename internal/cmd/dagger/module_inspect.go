@@ -1020,6 +1020,34 @@ func (e *modEnum) ValueNames() []string {
 	return values
 }
 
+// MemberName returns the name of the member s names: the member whose name
+// is s in any case, or else the only one whose name is s once word
+// separators are ignored too. That accepts the names the legacy naming rules
+// gave the members of a module on the new rules (ARM_64 for ARM64, GIT_HUB
+// for GITHUB), which the engine accepts as hidden aliases but no typedef
+// lists.
+func (e *modEnum) MemberName(s string) (string, bool) {
+	for _, member := range e.Members {
+		if strings.EqualFold(s, member.Name) {
+			return member.Name, true
+		}
+	}
+	loose := func(name string) string {
+		return strings.NewReplacer("_", "", "-", "").Replace(name)
+	}
+	found := ""
+	for _, member := range e.Members {
+		if !strings.EqualFold(loose(s), loose(member.Name)) {
+			continue
+		}
+		if found != "" {
+			return "", false
+		}
+		found = member.Name
+	}
+	return found, found != ""
+}
+
 type modEnumMember struct {
 	Name        string
 	Description string

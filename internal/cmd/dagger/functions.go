@@ -1140,16 +1140,11 @@ func collectionSelectorValues(typeDef *modTypeDef, values []string) (any, error)
 	case core.TypeDefKindEnumKind:
 		result := make([]string, len(values))
 		for i, value := range values {
-			found := false
-			for _, member := range typeDef.AsEnum.Members {
-				if strings.EqualFold(value, member.Name) {
-					result[i], found = member.Name, true
-					break
-				}
-			}
+			name, found := typeDef.AsEnum.MemberName(value)
 			if !found {
 				return nil, fmt.Errorf("value should be one of %s", strings.Join(typeDef.AsEnum.ValueNames(), ","))
 			}
+			result[i] = name
 		}
 		return result, nil
 	default:
