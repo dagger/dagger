@@ -34,6 +34,35 @@ public class IdentifierNamingTests
     }
 
     [TestMethod]
+    public void KeepsTheNamesOfRenamedCoreNames()
+    {
+        var code = Generate(Fixtures.CoreSchema, Fixtures.CoreNames());
+
+        // GitCommit.shortSHA was shortSha, whose method was ShortShaAsync, as
+        // shortSHA's is: no forwarder named after the new schema name.
+        Assert.AreEqual(1, Methods(code, "GitCommit", "ShortShaAsync").Length);
+        Assert.AreEqual(0, Methods(code, "GitCommit", "ShortSHAAsync").Length);
+        StringAssert.Contains(code, "QueryBuilder.Select(\"shortSHA\")");
+
+        // So with LLMContentBlockInput.callID's property.
+        StringAssert.Contains(code, "public string CallId { get; } = callId;");
+        StringAssert.Contains(code, "new KeyValuePair<string, Value>(\"callID\"");
+        Assert.IsFalse(code.Contains(" CallID =>"));
+
+        // FunctionCachePolicy's members are named like the old values, so
+        // they need no alias, and send the new ones.
+        var policy = EnumDecl(code, "FunctionCachePolicy");
+        CollectionAssert.AreEqual(
+            new[] { "Default", "PerSession", "Never" },
+            policy.Members.Select(m => m.Identifier.ValueText).ToArray()
+        );
+        Assert.AreEqual(
+            "[GraphQLValue(\"PER_SESSION\")]",
+            policy.Members[1].AttributeLists.ToString()
+        );
+    }
+
+    [TestMethod]
     public void NamesMembersFromFormattedNames()
     {
         var code = Generate(NamesSchema, Names());
