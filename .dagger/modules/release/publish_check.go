@@ -393,9 +393,14 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 		return nil, err
 	}
 
+	// This replaces engine-dev's default engine.json, so keep its docker.io
+	// mirror: without it the release engine pulls straight from Docker Hub.
 	engineCtr := dev.Container().
 		WithNewFile("/etc/dagger/engine.json", `{
   "registries": {
+    "docker.io": {
+      "mirrors": ["mirror.gcr.io"]
+    },
     "`+publishCheckRegistryAddress+`": {
       "http": true
     }
