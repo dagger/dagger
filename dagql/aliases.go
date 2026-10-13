@@ -387,6 +387,14 @@ func (s *Server) collectNameAliasesLocked(view call.View, schema *ast.Schema) *n
 		collect(name, iface, iface.FieldSpecs(view))
 	}
 	idx.Types = types.claims
+	s.collectEnumValueAliasesLocked(view, schema, idx)
+	return idx
+}
+
+// collectEnumValueAliasesLocked adds the aliases of the values of the enums
+// in schema, the server's schema for view, to idx. The caller holds
+// installLock.
+func (s *Server) collectEnumValueAliasesLocked(view call.View, schema *ast.Schema, idx *nameAliases) {
 	for _, name := range slices.Sorted(maps.Keys(s.scalars)) {
 		aliased, ok := s.scalars[name].(EnumValueAliased)
 		if !ok {
@@ -396,32 +404,7 @@ func (s *Server) collectNameAliasesLocked(view call.View, schema *ast.Schema) *n
 		if def == nil || def.Kind != ast.Enum {
 			continue
 		}
-		valueAliases := aliased.EnumValueAliases()
-		claims := map[string]string{}
-		refused := map[string]bool{}
-		for _, value := range slices.Sorted(maps.Keys(valueAliases.Aliases)) {
-			if def.EnumValues.ForName(value) == nil {
-				continue
-			}
-			for _, alias := range valueAliases.Aliases[value].namesIn(view) {
-				if alias == value || refused[alias] {
-					continue
-				}
-				// Resolve as the enum's decoder does, in every view, so
-				// validation accepts what decoding does.
-				if canonical, ok := valueAliases.Resolve(alias); ok && canonical == value {
-					claims[alias] = value
-					continue
-				}
-				refused[alias] = true
-				if slices.Contains(valueAliases.Values, alias) {
-					slog.Warn("ignoring name alias that collides with an enum value", "enum", name, "value", value, "alias", alias)
-				} else {
-					slog.Warn("ignoring ambiguous name alias", "scope", name, "alias", alias)
-				}
-			}
-		}
-		if len(claims) > 0 {
+		if claims := enumValueAliasClaims(view, def, aliased.EnumValueAliases()); len(claims) > 0 {
 			if idx.EnumValues == nil {
 				idx.EnumValues = map[string]map[string]string{}
 			}
@@ -431,7 +414,36 @@ func (s *Server) collectNameAliasesLocked(view call.View, schema *ast.Schema) *n
 	if len(idx.EnumValues) > 0 {
 		idx.types = schema.Types
 	}
-	return idx
+}
+
+// enumValueAliasClaims maps the value aliases of def, an enum, accepted in
+// view to their values. An alias the enum's decoder wouldn't resolve to its
+// value (one that names a value, or that two values claim, in any view) is
+// ignored with a warning, so validation accepts what decoding does.
+func enumValueAliasClaims(view call.View, def *ast.Definition, valueAliases EnumValueAliases) map[string]string {
+	claims := map[string]string{}
+	refused := map[string]bool{}
+	for _, value := range slices.Sorted(maps.Keys(valueAliases.Aliases)) {
+		if def.EnumValues.ForName(value) == nil {
+			continue
+		}
+		for _, alias := range valueAliases.Aliases[value].namesIn(view) {
+			if alias == value || refused[alias] {
+				continue
+			}
+			if canonical, ok := valueAliases.Resolve(alias); ok && canonical == value {
+				claims[alias] = value
+				continue
+			}
+			refused[alias] = true
+			if slices.Contains(valueAliases.Values, alias) {
+				slog.Warn("ignoring name alias that collides with an enum value", "enum", def.Name, "value", value, "alias", alias)
+			} else {
+				slog.Warn("ignoring ambiguous name alias", "scope", def.Name, "alias", alias)
+			}
+		}
+	}
+	return claims
 }
 
 // schema returns base with the aliases added, each marked @deprecated with
