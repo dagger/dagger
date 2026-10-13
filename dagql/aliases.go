@@ -85,6 +85,14 @@ type InputFieldAliased interface {
 	InputFieldAliases() map[string]Aliases
 }
 
+// FieldAliased is implemented by object types whose fields declared with
+// struct tags (`field:"true"`) have hidden aliases (see Aliases), by field
+// name. Fields installs them; fields declared with Func and the like have
+// Field.WithAliases instead.
+type FieldAliased interface {
+	FieldAliases() map[string]Aliases
+}
+
 // EnumValueAliases are the values of an enum and their hidden aliases.
 type EnumValueAliases struct {
 	// Values are the names of all the enum's values, in every view.

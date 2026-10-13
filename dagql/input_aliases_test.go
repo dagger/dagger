@@ -43,6 +43,20 @@ func (*aliasReply) Type() *ast.Type {
 	return &ast.Type{NamedType: "AliasReply", NonNull: true}
 }
 
+// The struct-tag field text has the hidden alias txt.
+func (*aliasReply) FieldAliases() map[string]dagql.Aliases {
+	return map[string]dagql.Aliases{"text": aliasesOf("txt")}
+}
+
+// A field declared with a struct tag gets the aliases its type declares.
+func TestStructFieldAliases(t *testing.T) {
+	ctx, srv, _ := newInputAliasTestServer(t)
+	data, err := srv.Query(ctx, `{ send(message: {callID: "a"}) { txt text } }`, nil)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"send": map[string]any{"txt": "a@", "text": "a@"}}, roundTrip(t, data))
+	require.Nil(t, srv.Schema().Types["AliasReply"].Fields.ForName("txt"))
+}
+
 // newInputAliasTestServer serves Query.send(message: AliasMessage!,
 // messages: [AliasMessage!]): AliasReply, counting the calls.
 func newInputAliasTestServer(t *testing.T) (context.Context, *dagql.Server, *atomic.Int32) {

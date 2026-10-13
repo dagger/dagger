@@ -1515,6 +1515,10 @@ func (fields Fields[T]) Install(server *Server) {
 	if err != nil {
 		panic(fmt.Errorf("fields for %T: %w", t, err))
 	}
+	var aliases map[string]Aliases
+	if aliased, ok := any(t).(FieldAliased); ok {
+		aliases = aliased.FieldAliases()
+	}
 	for _, field := range objectFields {
 		name := field.Name
 		spec := &FieldSpec{
@@ -1523,6 +1527,7 @@ func (fields Fields[T]) Install(server *Server) {
 			Description:        field.Field.Tag.Get("doc"),
 			ExperimentalReason: field.Field.Tag.Get("experimental"),
 			DoNotCache:         field.Field.Tag.Get("doNotCache"),
+			Aliases:            aliases[name],
 			// Reflected struct fields are pure getter accessors. Keep their spans
 			// available as internal trace detail without presenting them as work.
 			Trivial: true,
