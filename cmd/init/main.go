@@ -5,13 +5,16 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -162,7 +165,11 @@ func mainInit() error {
 						if status == -1 {
 							status = 128 + int(ws.Signal())
 						}
-						fmt.Fprintf(helperStatus, "exited %d\n", status)
+						if out := helper.outputAfterExit(); out != "" {
+							fmt.Fprintf(helperStatus, "exited %d %s\n", status, strconv.Quote(out))
+						} else {
+							fmt.Fprintf(helperStatus, "exited %d\n", status)
+						}
 					}
 				}
 				if deadPid == child.Pid {
@@ -268,6 +275,46 @@ var sessionHelperPath = distconsts.InitSessionContainerPath
 type sessionHelper struct {
 	pid    int
 	reaped bool
+
+	// output is the start of what the helper wrote to its stdout and stderr,
+	// which go to a pipe drained into it rather than to the command's. It's
+	// only reported if the helper exits while the command runs.
+	output  headBuffer
+	drained chan struct{}
+}
+
+// outputAfterExit returns the helper's output once it has exited, waiting
+// briefly for the pipe to drain.
+func (h *sessionHelper) outputAfterExit() string {
+	select {
+	case <-h.drained:
+	case <-time.After(time.Second):
+	}
+	return h.output.String()
+}
+
+// headBuffer keeps the first headBufferSize bytes written to it and drops
+// the rest.
+type headBuffer struct {
+	mu  sync.Mutex
+	buf []byte
+}
+
+const headBufferSize = 4096
+
+func (b *headBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if n := headBufferSize - len(b.buf); n > 0 {
+		b.buf = append(b.buf, p[:min(n, len(p))]...)
+	}
+	return len(p), nil
+}
+
+func (b *headBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return string(b.buf)
 }
 
 // stop kills the helper and reaps it, unless it has already exited. It's
@@ -292,14 +339,24 @@ func (h *sessionHelper) stop() {
 func startSessionSubprocess() (*sessionHelper, error) {
 	cmd := exec.Command(sessionHelperPath)
 
-	// forwarding our stdio ensures that a panic in the child process won't get hidden and any other logging works too
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// The helper's output isn't the command's: keep it out of the exec's
+	// stdout and stderr, and report it to the engine if the helper exits
+	// while the command runs.
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start session subprocess: %w", err)
+	}
+	cmd.Stdout = w
+	cmd.Stderr = w
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,
 	}
-	err := cmd.Start()
+	err = cmd.Start()
+	w.Close()
+	if err != nil {
+		r.Close()
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		// Not a nested client, though the command's env names a session: the
 		// engine only mounts the helper for nested clients. Run the command
@@ -309,5 +366,11 @@ func startSessionSubprocess() (*sessionHelper, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to start session subprocess: %w", err)
 	}
-	return &sessionHelper{pid: cmd.Process.Pid}, nil
+	h := &sessionHelper{pid: cmd.Process.Pid, drained: make(chan struct{})}
+	go func() {
+		defer close(h.drained)
+		io.Copy(&h.output, r)
+		r.Close()
+	}()
+	return h, nil
 }

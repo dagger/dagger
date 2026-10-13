@@ -27,6 +27,9 @@ const (
 	testHelperEnv = "_DAGGER_INIT_TEST_SESSION_HELPER"
 	// testHelperPidFileEnv names a file the session helper writes its pid to.
 	testHelperPidFileEnv = "_DAGGER_INIT_TEST_SESSION_HELPER_PID_FILE"
+	// testHelperPrintEnv is text the session helper writes to its stdout and
+	// stderr when it starts.
+	testHelperPrintEnv = "_DAGGER_INIT_TEST_SESSION_HELPER_PRINT"
 )
 
 // TestMain runs the test binary as /.init when a test starts it with
@@ -49,6 +52,10 @@ func TestMain(m *testing.M) {
 	if helper, ok := os.LookupEnv(testHelperEnv); ok {
 		if pidFile := os.Getenv(testHelperPidFileEnv); pidFile != "" {
 			os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0o600)
+		}
+		if text := os.Getenv(testHelperPrintEnv); text != "" {
+			fmt.Fprint(os.Stdout, text)
+			fmt.Fprint(os.Stderr, text)
 		}
 		if status, ok := strings.CutPrefix(helper, "exit:"); ok {
 			code, _ := strconv.Atoi(status)
@@ -252,4 +259,48 @@ func processesWithEnv(t *testing.T, kv string) []int {
 		}
 	}
 	return pids
+}
+
+// The session helper's output doesn't reach the command's stdout or stderr.
+func TestInitKeepsSessionHelperOutputPrivate(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "helper.pid")
+	cmd := exec.Command(os.Args[0], "sh", "-c", waitHelperStarted+"echo ran; echo oops >&2")
+	cmd.Env = initEnv(
+		"DAGGER_SESSION_TOKEN=token", "DAGGER_SESSION_PORT=1",
+		testHelperEnv+"=hang", testHelperPidFileEnv+"="+pidFile, testHelperPrintEnv+"=helper says hi\n",
+	)
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	require.NoError(t, cmd.Run())
+	_, err := os.Stat(pidFile)
+	require.NoError(t, err, "the session helper didn't start")
+	require.Equal(t, "ran\n", stdout.String())
+	require.Equal(t, "oops\n", stderr.String())
+}
+
+// When the session helper exits while the command runs, /.init reports what
+// it wrote along with its status.
+func TestInitReportsSessionHelperOutput(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	defer r.Close()
+
+	cmd := exec.Command(os.Args[0], "sh", "-c", waitHelperGone+"echo ran")
+	cmd.Env = initEnv(
+		"DAGGER_SESSION_TOKEN=token", "DAGGER_SESSION_PORT=1", testHelperEnv+"=exit:2",
+		testHelperPidFileEnv+"="+filepath.Join(t.TempDir(), "helper.pid"),
+		testHelperPrintEnv+"=no session for you\n", distconsts.SessionHelperStatusFDEnv+"=3",
+	)
+	cmd.ExtraFiles = []*os.File{w}
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	w.Close()
+	require.NoError(t, err)
+	require.Equal(t, "ran\n", string(out))
+	require.Empty(t, stderr.String())
+
+	report, err := bufio.NewReader(r).ReadString('\n')
+	require.NoError(t, err)
+	require.Equal(t, "exited 2 "+strconv.Quote("no session for you\nno session for you\n")+"\n", report)
 }
