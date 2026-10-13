@@ -135,6 +135,8 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatArgName":           formatArgName,
 		"FormatEnum":              funcs.formatEnum,
 		"LegacyEnumValueNames":    funcs.legacyEnumValueNames,
+		"LegacyTypeName":          funcs.legacyTypeName,
+		"LegacyOptionalArgName":   funcs.legacyOptionalArgName,
 		"SortEnumFields":          funcs.sortEnumFields,
 		"GroupEnumByValue":        funcs.groupEnumByValue,
 		"FieldOptionsStructName":  funcs.fieldOptionsStructName,
@@ -465,9 +467,9 @@ func (funcs goTemplateFuncs) forwardedArgs(f introspection.Field) []string {
 // before the engine formatted names, when it differs from the current one, so
 // it can be kept as a deprecated alias.
 func (funcs goTemplateFuncs) legacyFieldOptionsStructName(f introspection.Field) string {
-	legacy := legacyFormatName(f.Name) + "Opts"
+	legacy := legacyFormatName(legacyFieldSchemaName(f)) + "Opts"
 	if f.ParentObject.Name != generator.QueryStructName {
-		legacy = legacyFormatName(f.ParentObject.Name) + legacy
+		legacy = legacyFormatName(legacyTypeSchemaName(f.ParentObject)) + legacy
 	}
 	if legacy == funcs.fieldOptionsStructName(f) {
 		return ""

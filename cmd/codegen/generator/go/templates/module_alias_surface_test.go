@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/internal/testnames"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
@@ -26,6 +27,7 @@ import (
 // core output, across the schema views whose gates differ.
 func TestModuleAliasSurfaceMatchesCore(t *testing.T) {
 	for _, schemaVersion := range []string{
+		"v1.0.0",      // engine-formatted names
 		"v0.21.0-dev", // post-cutover: interface clients, scoped enums
 		"v0.20.6",     // legacy interfaces, scoped enums
 		"v0.14.0",     // legacy interfaces, unscoped enum aliases
@@ -33,6 +35,9 @@ func TestModuleAliasSurfaceMatchesCore(t *testing.T) {
 	} {
 		t.Run(schemaVersion, func(t *testing.T) {
 			schema := aliasSurfaceSchema()
+			if schemaVersion == "v1.0.0" {
+				testnames.Load(schema, NameFormats...)
+			}
 			generator.SetSchemaParents(schema)
 			generator.SetSchema(schema)
 			t.Cleanup(func() { generator.SetSchema(nil) })
@@ -72,6 +77,12 @@ func TestModuleAliasSurfaceMatchesCore(t *testing.T) {
 			for _, ref := range qualifiedRefs(t, "dagger.gen.go", aliasSrc, "core") {
 				require.Contains(t, declared, ref,
 					"internal/dagger references core.%s, which internal/dagger/core does not declare", ref)
+			}
+
+			// The renamed module's old names are re-exported.
+			for _, legacy := range []string{"DaggerCli", "DaggerCliMode", "DaggerCliModeFast", "DaggerCliRunner"} {
+				require.Contains(t, declared, legacy)
+				require.Contains(t, topLevelDecls(t, "dagger.gen.go", aliasSrc), legacy)
 			}
 		})
 	}
@@ -129,7 +140,49 @@ func aliasSurfaceSchema() *introspection.Schema {
 		EnumValues: []introspection.EnumValue{{Name: "HAPPY"}, {Name: "SAD"}},
 	}
 
-	return &introspection.Schema{Types: introspection.Types{id, query, foo, iface, enum}}
+	// A module's types that the new naming rules renamed (DaggerCli,
+	// daggerCli): they keep their old names as deprecated aliases, which the
+	// alias layer re-exports too.
+	cliRef := &introspection.TypeRef{
+		Kind:   introspection.TypeKindNonNull,
+		OfType: &introspection.TypeRef{Kind: introspection.TypeKindObject, Name: "DaggerCLI"},
+	}
+	cli := &introspection.Type{
+		Kind:       introspection.TypeKindObject,
+		Name:       "DaggerCLI",
+		Directives: sourceMapDirectives("dagger-cli"),
+		Fields: []*introspection.Field{
+			{Name: "id", TypeRef: idRef},
+			{
+				Name:    "withVCSCommit",
+				TypeRef: cliRef,
+				Args:    introspection.InputValues{{Name: "vcsCommit", TypeRef: optionalString}},
+			},
+		},
+	}
+	cliRunner := &introspection.Type{
+		Kind:       introspection.TypeKindInterface,
+		Name:       "DaggerCLIRunner",
+		Directives: sourceMapDirectives("dagger-cli"),
+		Fields: []*introspection.Field{
+			{Name: "id", TypeRef: idRef},
+			{Name: "run", TypeRef: idRef, Args: introspection.InputValues{{Name: "vcsCommit", TypeRef: optionalString}}},
+		},
+	}
+	cliMode := &introspection.Type{
+		Kind:       introspection.TypeKindEnum,
+		Name:       "DaggerCLIMode",
+		Directives: sourceMapDirectives("dagger-cli"),
+		EnumValues: []introspection.EnumValue{{Name: "FAST"}, {Name: "SLOW"}},
+	}
+	query.Fields = append(query.Fields, &introspection.Field{
+		Name:       "daggerCLI",
+		TypeRef:    cliRef,
+		Directives: sourceMapDirectives("dagger-cli"),
+		Args:       introspection.InputValues{{Name: "vcsCommit", TypeRef: optionalString}},
+	})
+
+	return &introspection.Schema{Types: introspection.Types{id, query, foo, iface, enum, cli, cliRunner, cliMode}}
 }
 
 // topLevelDecls returns the set of package-level names src declares.

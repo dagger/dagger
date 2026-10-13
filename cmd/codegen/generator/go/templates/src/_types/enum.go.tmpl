@@ -3,6 +3,11 @@
 {{- $enumName := .Name }}
 type {{ $enumName }} string
 {{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+{{- with LegacyTypeName . }}
+
+// Deprecated: use {{ $enumName }} instead.
+type {{ . }} = {{ $enumName }}
+{{- end }}
 
 func ({{ $enumName }}) IsEnum() {}
 

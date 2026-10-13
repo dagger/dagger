@@ -35,6 +35,14 @@ type {{ .Name | InterfaceClientName }} struct {
 	{{- end }}
 {{- end }}
 }
+{{- with LegacyTypeName . }}
+
+// Deprecated: use {{ $.Name | FormatName }} instead.
+type {{ . }} = {{ $.Name | FormatName }}
+
+// Deprecated: use {{ $.Name | InterfaceClientName }} instead.
+type {{ . }}Client = {{ $.Name | InterfaceClientName }}
+{{- end }}
 
 func (r *{{ .Name | InterfaceClientName }}) WithGraphQLQuery(q *querybuilder.Selection) *{{ .Name | InterfaceClientName }} {
 	return &{{ .Name | InterfaceClientName }}{
@@ -71,6 +79,10 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- end }}
 	{{ $arg.Name | FormatName }} {{ $formattedTypeRef }}
 	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{- with LegacyOptionalArgName $field $arg }}
+	// Deprecated: use {{ $arg.Name | FormatName }} instead.
+	{{ . }} {{ $formattedTypeRef }}
+	{{- end }}
 	{{- end }}
 	{{- end }}
 }
@@ -117,6 +129,11 @@ type {{ . }} = {{ $field | FieldOptionsStructName }}
 	if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
 		q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
 	}
+	{{- with LegacyOptionalArgName $field $arg }}
+	if querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) && !querybuilder.IsZeroValue(opts[i].{{ . }}) {
+		q = q.Arg("{{ $arg.Name }}", opts[i].{{ . }})
+	}
+	{{- end }}
 	{{- end }}
 	{{- end }}
 	}

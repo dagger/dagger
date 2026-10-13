@@ -15,9 +15,19 @@ type {{ .Name | FormatName }} struct {
         {{- end }}
 	{{- end }}
 }
+{{- with LegacyTypeName . }}
+
+// Deprecated: use {{ $.Name | FormatName }} instead.
+type {{ . }} = {{ $.Name | FormatName }}
+{{- end }}
 
 {{- if . | IsSelfChainable }}
 type With{{ .Name | FormatName }}Func func(r *{{ .Name | FormatName }}) *{{ .Name | FormatName }}
+{{- with LegacyTypeName $ }}
+
+// Deprecated: use With{{ $.Name | FormatName }}Func instead.
+type With{{ . }}Func = With{{ $.Name | FormatName }}Func
+{{- end }}
 
 // With calls the provided function with current {{ .Name | FormatName }}.
 //
@@ -65,6 +75,10 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- end }}
 	{{ $arg.Name | FormatName }} {{ $formattedTypeRef }}
 	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{- with LegacyOptionalArgName $field $arg }}
+	// Deprecated: use {{ $arg.Name | FormatName }} instead.
+	{{ . }} {{ $formattedTypeRef }}
+	{{- end }}
 	{{- end }}
 	{{- end }}
 }
@@ -121,6 +135,14 @@ type {{ . }} = {{ $field | FieldOptionsStructName }}
 		refetchID = true
 		{{- end }}
 	}
+	{{- with LegacyOptionalArgName $field $arg }}
+	if querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) && !querybuilder.IsZeroValue(opts[i].{{ . }}) {
+		q = q.Arg("{{ $arg.Name }}", opts[i].{{ . }})
+		{{- if and $refetchWhen (HasString $refetchWhen $arg.Name) }}
+		refetchID = true
+		{{- end }}
+	}
+	{{- end }}
 	{{- end }}
 	{{- end }}
 	}
