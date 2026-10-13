@@ -67,6 +67,7 @@ module.exports = {
           collapsed: false,
           items: [
             { type: "doc", id: "getting-started/platform-guides/go/index" },
+            { type: "doc", id: "getting-started/platform-guides/playwright/index" },
           ],
         },
       ],
