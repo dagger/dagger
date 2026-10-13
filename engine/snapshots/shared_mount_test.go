@@ -3,8 +3,10 @@ package snapshots_test
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -115,8 +118,11 @@ func TestSharedMountHoldsSnapshotUntilReleased(t *testing.T) {
 	require.Equal(t, "b", readShared(t, lingered, "b.txt"))
 	require.NoError(t, lingered.Release(ctx))
 	require.NoError(t, store.Manager.RemoveLease(ctx, lingeredOwner))
-	require.Eventually(t, func() bool { return len(viewLeases(t, store)) == 0 }, 10*time.Second, 10*time.Millisecond,
-		"the idle mount is released once its linger runs out")
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		views, err := listViews(store)
+		assert.NoError(c, err)
+		assert.Empty(c, views)
+	}, 10*time.Second, 10*time.Millisecond, "the idle mount is released once its linger runs out")
 	store.GC(t)
 	require.False(t, snapshotExists(t, store, lingered.SnapshotID()))
 }
@@ -133,7 +139,12 @@ func TestSharedMountIdleCap(t *testing.T) {
 
 	require.Equal(t, "a", readShared(t, a, "a.txt"))
 	require.Equal(t, "b", readShared(t, b, "b.txt"))
-	require.Eventually(t, func() bool { return len(viewLeases(t, store)) == 1 }, 10*time.Second, 10*time.Millisecond)
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		views, err := listViews(store)
+		assert.NoError(c, err)
+		assert.ElementsMatch(c, []string{b.SnapshotID()}, slices.Collect(maps.Values(views)),
+			"only the most recently used mount, b's, keeps its view")
+	}, 10*time.Second, 10*time.Millisecond)
 	require.Equal(t, "b", readShared(t, b, "b.txt"))
 	require.EqualValues(t, 2, store.LocalMounts.Load(), "the most recently used mount is kept")
 	require.Equal(t, "a", readShared(t, a, "a.txt"))
