@@ -605,34 +605,54 @@ func (idx *nameAliases) schema(base *ast.Schema) *ast.Schema {
 }
 
 // withInputFieldAliases returns def, an input object, with the aliases of
-// its fields added after each, as copies of it. A required field with
-// aliases is optional in it, since an input may give it by either name; the
-// decoder still requires it.
+// its fields added after each, as copies of it (see withInputValueAliases).
 func withInputFieldAliases(def *ast.Definition, fieldAliases map[string]string) *ast.Definition {
-	byField := aliasesByCanonical(fieldAliases)
 	out := *def
-	out.Fields = make(ast.FieldList, 0, len(def.Fields)+len(fieldAliases))
-	for _, field := range def.Fields {
-		aliases := byField[field.Name]
-		if len(aliases) == 0 {
-			out.Fields = append(out.Fields, field)
+	out.Fields = withInputValueAliases(def.Fields, fieldAliases, func(field *ast.FieldDefinition) inputValueParts {
+		return inputValueParts{&field.Name, &field.Type, &field.DefaultValue, &field.Directives}
+	})
+	return &out
+}
+
+// inputValueParts points to the parts of an argument or input object field
+// definition withInputValueAliases changes.
+type inputValueParts struct {
+	name         *string
+	typ          **ast.Type
+	defaultValue **ast.Value
+	directives   *ast.DirectiveList
+}
+
+// withInputValueAliases returns values, the arguments of a field or the
+// fields of an input object, with the aliases of each added after it, as
+// copies of it. A required value with aliases is optional there, since an
+// input may give it by either name; the call or decoder still requires it.
+func withInputValueAliases[T any](values []*T, aliases map[string]string, parts func(*T) inputValueParts) []*T {
+	byName := aliasesByCanonical(aliases)
+	out := make([]*T, 0, len(values)+len(aliases))
+	for _, value := range values {
+		orig := parts(value)
+		names := byName[*orig.name]
+		if len(names) == 0 {
+			out = append(out, value)
 			continue
 		}
-		canonical := *field
-		if canonical.Type.NonNull && canonical.DefaultValue == nil {
-			optional := *canonical.Type
+		canonical := *value
+		if c := parts(&canonical); (*c.typ).NonNull && *c.defaultValue == nil {
+			optional := **c.typ
 			optional.NonNull = false
-			canonical.Type = &optional
+			*c.typ = &optional
 		}
-		out.Fields = append(out.Fields, &canonical)
-		for _, alias := range aliases {
-			aliasField := canonical
-			aliasField.Name = alias
-			aliasField.Directives = withAliasDeprecation(field.Directives, field.Name)
-			out.Fields = append(out.Fields, &aliasField)
+		out = append(out, &canonical)
+		for _, alias := range names {
+			aliasValue := canonical
+			a := parts(&aliasValue)
+			*a.name = alias
+			*a.directives = withAliasDeprecation(*orig.directives, *orig.name)
+			out = append(out, &aliasValue)
 		}
 	}
-	return &out
+	return out
 }
 
 // withEnumValueAliases returns def, an enum, with the aliases of its values
@@ -673,29 +693,10 @@ func withFieldAliases(def *ast.Definition, fieldAliases map[string]string, argAl
 }
 
 func withArgAliases(field *ast.FieldDefinition, argAliases map[string]string) *ast.FieldDefinition {
-	byArg := aliasesByCanonical(argAliases)
 	out := *field
-	out.Arguments = make(ast.ArgumentDefinitionList, 0, len(field.Arguments)+len(argAliases))
-	for _, arg := range field.Arguments {
-		aliases := byArg[arg.Name]
-		if len(aliases) == 0 {
-			out.Arguments = append(out.Arguments, arg)
-			continue
-		}
-		canonical := *arg
-		if canonical.Type.NonNull && canonical.DefaultValue == nil {
-			optional := *canonical.Type
-			optional.NonNull = false
-			canonical.Type = &optional
-		}
-		out.Arguments = append(out.Arguments, &canonical)
-		for _, alias := range aliases {
-			aliasArg := canonical
-			aliasArg.Name = alias
-			aliasArg.Directives = withAliasDeprecation(arg.Directives, arg.Name)
-			out.Arguments = append(out.Arguments, &aliasArg)
-		}
-	}
+	out.Arguments = withInputValueAliases(field.Arguments, argAliases, func(arg *ast.ArgumentDefinition) inputValueParts {
+		return inputValueParts{&arg.Name, &arg.Type, &arg.DefaultValue, &arg.Directives}
+	})
 	return &out
 }
 
