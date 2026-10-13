@@ -2615,6 +2615,30 @@ func withRequestTelemetrySuppression(ctx context.Context, r *http.Request) (cont
 	return dagql.WithSkip(ctx), true
 }
 
+// Module processes use presentation trace parents on the wire. Retain
+// their engine-owned accounting parent in the workload copy only.
+func (client *clientRuntime) withWorkloadParent(ctx context.Context) context.Context {
+	sess := client.daggerSession
+	if sess.workloadTracerProvider == nil {
+		return ctx
+	}
+	owner := client.fnCall.WorkloadSpanContext()
+	reference := client.fnCall.WorkloadReferenceOnly()
+	if !owner.IsValid() && len(client.parentClientIDs) > 0 {
+		if parents, err := sess.ancestorRuntimes(client.clientRecord); err == nil {
+			for i := len(parents) - 1; i >= 0 && !owner.IsValid(); i-- {
+				owner = parents[i].fnCall.WorkloadSpanContext()
+				reference = parents[i].fnCall.WorkloadReferenceOnly()
+			}
+		}
+	}
+	ctx = enginetel.WithWorkloadParent(ctx, owner)
+	if reference {
+		ctx = enginetel.WithWorkloadReference(ctx)
+	}
+	return ctx
+}
+
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *clientRuntime) (rerr error) {
 	sess := client.daggerSession
 
@@ -2667,24 +2691,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		}
 	}()
 
-	// Module processes use presentation trace parents on the wire. Retain
-	// their engine-owned accounting parent in the workload copy only.
-	if sess.workloadTracerProvider != nil {
-		owner := client.fnCall.WorkloadSpanContext()
-		reference := client.fnCall.WorkloadReferenceOnly()
-		if !owner.IsValid() && len(client.parentClientIDs) > 0 {
-			if parents, err := sess.ancestorRuntimes(client.clientRecord); err == nil {
-				for i := len(parents) - 1; i >= 0 && !owner.IsValid(); i-- {
-					owner = parents[i].fnCall.WorkloadSpanContext()
-					reference = parents[i].fnCall.WorkloadReferenceOnly()
-				}
-			}
-		}
-		ctx = enginetel.WithWorkloadParent(ctx, owner)
-		if reference {
-			ctx = enginetel.WithWorkloadReference(ctx)
-		}
-	}
+	ctx = client.withWorkloadParent(ctx)
 
 	// only record telemetry if the request is traced, otherwise
 	// we end up with orphaned spans in their own separate traces from tests etc.

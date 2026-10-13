@@ -162,27 +162,7 @@ func workloadEvaluationProducer(ctx context.Context, row *sharedResult, address 
 			break
 		}
 		seen[step] = true
-		var delegation *PartDelegation
-		if native, ok := UnwrapAs[WorkloadEvaluationParent](current.loadPayloadState().self); ok && len(group.OutputPath) == 0 {
-			delegation, err = native.WorkloadEvaluationParent(ctx, current.loadResultCall(), group.Group)
-		} else {
-			part := PersistedPartAddress{OutputPath: group.OutputPath, Part: PartKey(group.Group)}
-			var record PersistedRecord
-			record, _, _, err = cache.probePart(ctx, current, part)
-			if err == nil {
-				err = walkTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
-					if !slices.Equal(v.Path, group.OutputPath) {
-						return v.Payload, nil
-					}
-					if router, ok := f.Transfer.(WorkloadPartRouter); ok {
-						var err error
-						delegation, err = router.WorkloadPartDelegation(v, group.Group)
-						return v.Payload, err
-					}
-					return v.Payload, nil
-				})
-			}
-		}
+		delegation, err := cache.workloadEvaluationDelegation(ctx, current, group)
 		if err != nil {
 			break
 		}
@@ -202,30 +182,61 @@ func workloadEvaluationProducer(ctx context.Context, row *sharedResult, address 
 		cache.incrementIncomingOwnershipLocked(ctx, parent)
 		cache.egraphMu.Unlock()
 		held = append(held, parent)
-		if native, ok := UnwrapAs[WorkloadEvaluationGroups](parent.loadPayloadState().self); ok && len(delegation.Address.OutputPath) == 0 {
-			groups, err := native.WorkloadEvaluationGroups(ctx, parent.loadResultCall(), []PartKey{delegation.Address.Part})
-			if err != nil || len(groups) != 1 {
-				break
-			}
-			group = LazyGroupAddress{Group: groups[0]}
-		} else {
-			parentRecord, _, _, err := cache.probePart(ctx, parent, delegation.Address)
-			if err != nil {
-				break
-			}
-			route, err := routePartRecord(parentRecord, delegation.Address)
-			if err != nil || route.NeedsMetadata || (!route.HasLazyOperation && route.Delegation == nil) {
-				break
-			}
-			group = route.Group
-			if route.Delegation != nil {
-				group = LazyGroupAddress{OutputPath: delegation.Address.OutputPath, Group: LazyGroupKey(delegation.Address.Part)}
-			}
+		var ok bool
+		group, ok = cache.workloadDelegatedGroup(ctx, parent, delegation.Address)
+		if !ok {
+			break
 		}
 		current = parent
 	}
 	release()
 	return nil, LazyGroupAddress{}, nil
+}
+
+func (c *Cache) workloadEvaluationDelegation(ctx context.Context, row *sharedResult, group LazyGroupAddress) (*PartDelegation, error) {
+	if native, ok := UnwrapAs[WorkloadEvaluationParent](row.loadPayloadState().self); ok && len(group.OutputPath) == 0 {
+		return native.WorkloadEvaluationParent(ctx, row.loadResultCall(), group.Group)
+	}
+	part := PersistedPartAddress{OutputPath: group.OutputPath, Part: PartKey(group.Group)}
+	record, _, _, err := c.probePart(ctx, row, part)
+	if err != nil {
+		return nil, err
+	}
+	var delegation *PartDelegation
+	err = walkTransferPayloads(&record.Envelope, record.Call, record.SnapshotLinks, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+		if !slices.Equal(v.Path, group.OutputPath) {
+			return v.Payload, nil
+		}
+		if router, ok := f.Transfer.(WorkloadPartRouter); ok {
+			var err error
+			delegation, err = router.WorkloadPartDelegation(v, group.Group)
+			return v.Payload, err
+		}
+		return v.Payload, nil
+	})
+	return delegation, err
+}
+
+func (c *Cache) workloadDelegatedGroup(ctx context.Context, parent *sharedResult, address PersistedPartAddress) (LazyGroupAddress, bool) {
+	if native, ok := UnwrapAs[WorkloadEvaluationGroups](parent.loadPayloadState().self); ok && len(address.OutputPath) == 0 {
+		groups, err := native.WorkloadEvaluationGroups(ctx, parent.loadResultCall(), []PartKey{address.Part})
+		if err != nil || len(groups) != 1 {
+			return LazyGroupAddress{}, false
+		}
+		return LazyGroupAddress{Group: groups[0]}, true
+	}
+	record, _, _, err := c.probePart(ctx, parent, address)
+	if err != nil {
+		return LazyGroupAddress{}, false
+	}
+	route, err := routePartRecord(record, address)
+	if err != nil || route.NeedsMetadata || (!route.HasLazyOperation && route.Delegation == nil) {
+		return LazyGroupAddress{}, false
+	}
+	if route.Delegation != nil {
+		return LazyGroupAddress{OutputPath: address.OutputPath, Group: LazyGroupKey(address.Part)}, true
+	}
+	return route.Group, true
 }
 
 // BeginWorkloadPreparation observes a detached whole-value evaluation used to
