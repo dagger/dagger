@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -499,5 +500,104 @@ func TestBootstrapFramingRequiresVerifiedTerminal(t *testing.T) {
 	corrupt[12] ^= 1
 	if _, _, err := DecodeBootstrap(bytes.NewReader(corrupt), nil, nil); err == nil {
 		t.Fatal("corrupt bootstrap verified")
+	}
+}
+
+func TestManagerLookupsDoNotWaitOnManifestWrites(t *testing.T) {
+	sizing, release := make(chan struct{}), make(chan struct{})
+	manager, err := NewManager(Config{Root: t.TempDir(), StoreSize: func(string) (int64, error) {
+		close(sizing)
+		<-release
+		return 10, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Register(testTraceA, "client"); err != nil {
+		t.Fatal(err)
+	}
+	marked := make(chan error, 1)
+	go func() { marked <- manager.MarkIncomplete(testTraceA, errors.New("teardown failed")) }()
+	// The writer is now stalled mid-update, as a slow fsync stalls it.
+	<-sizing
+	looked := make(chan error, 1)
+	go func() {
+		manifest, err := manager.Manifest(testTraceA)
+		if err != nil {
+			looked <- err
+			return
+		}
+		if manifest.State != StateActive {
+			looked <- errors.New("lookup saw an unwritten manifest")
+			return
+		}
+		manager.List("", "", 10)
+		manager.KeepSet()
+		if _, err := manager.Register(testTraceA, "nested"); err == nil {
+			looked <- errors.New("second registration for the same trace succeeded")
+			return
+		}
+		looked <- nil
+	}()
+	select {
+	case err := <-looked:
+		close(release)
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		close(release)
+		t.Fatal("lookups waited on a stalled manifest write")
+	}
+	if err := <-marked; err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := manager.Manifest(testTraceA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.State != StateIncomplete || manifest.SizeBytes != 10 {
+		t.Fatalf("marked manifest = %+v", manifest)
+	}
+}
+
+func TestManagerLookupRacingRegistrationFindsIt(t *testing.T) {
+	root := t.TempDir()
+	manager, err := NewManager(Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Hold a lookup's read lock so the registration queues for mu, then
+	// check that it queued before writing its manifest.
+	manager.mu.RLock()
+	registered := make(chan error, 1)
+	go func() {
+		_, err := manager.Register(testTraceA, "client")
+		registered <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for manager.mu.TryRLock() {
+		manager.mu.RUnlock()
+		if time.Now().After(deadline) {
+			manager.mu.RUnlock()
+			t.Fatal("registration never queued for the index lock")
+		}
+		runtime.Gosched()
+	}
+	if _, err := os.Stat(filepath.Join(root, testTraceA+".json")); !errors.Is(err, os.ErrNotExist) {
+		manager.mu.RUnlock()
+		t.Fatalf("manifest written before the index lock was taken: %v", err)
+	}
+	looked := make(chan error, 1)
+	go func() {
+		_, err := manager.Manifest(testTraceA)
+		looked <- err
+	}()
+	manager.mu.RUnlock()
+	if err := <-registered; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-looked; err != nil {
+		t.Fatalf("lookup racing registration: %v", err)
 	}
 }
