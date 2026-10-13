@@ -2549,6 +2549,16 @@ func (AgentRuntimeSuite) TestResumeAnchorRecords(ctx context.Context, t *testctx
 	require.NotEmpty(t, node.SnapshotDigest,
 		"without an anchor the trace cannot be resumed from at all")
 
+	// The anchor is a control record; the call payload it names rides spans
+	// and the payload log lane, so it can land after the record. Wait until
+	// the anchor rebuilds. A timeout fails the test if the anchor does not
+	// become rebuildable before the deadline.
+	waitCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	captured, err := sink.restorableCapture(waitCtx, 1, map[string]string{"anchored": "FAILED"})
+	cancel()
+	require.NoError(t, err, "anchor did not become rebuildable before the deadline")
+	node = captured.nodes["anchored"]
+
 	// The anchor names the COMMITTED conversation: rebuilt and read back, it
 	// is the history the agent actually holds, marker included.
 	encoded := sink.rebuildDigest(t, node.SnapshotDigest)
