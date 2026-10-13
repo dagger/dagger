@@ -33,6 +33,10 @@ func (p *workloadSpanProcessor) OnEnd(span sdktrace.ReadOnlySpan) {
 		if workloadSpanAttribute(attr.Key) {
 			attrs = append(attrs, attr)
 		}
+		// This engine records the transfers below its calls.
+		if string(attr.Key) == telemetryattrs.CacheOutcomeAttr {
+			attrs = append(attrs, attribute.String(telemetryattrs.WorkloadTransfersAttr, telemetryattrs.WorkloadTransfersV1))
+		}
 	}
 	var links []sdktrace.Link
 	for _, link := range span.Links() {
@@ -68,6 +72,7 @@ func workloadSpanAttribute(key attribute.Key) bool {
 	case telemetry.DagDigestAttr, telemetry.CachedAttr, telemetry.PendingAttr, telemetry.UIInternalAttr,
 		telemetryattrs.DagContentPreferredDigestAttr, telemetryattrs.DagPartialAttr, telemetryattrs.DagBlockedAttr,
 		telemetryattrs.CacheContractAttr,
+		telemetryattrs.WorkloadTransferKindAttr, telemetryattrs.WorkloadTransferBytesAttr, telemetryattrs.WorkloadTransferIdentityAttr,
 		telemetryattrs.CacheOutcomeAttr, telemetryattrs.CacheHitRouteAttr, telemetryattrs.CacheResultIDAttr,
 		telemetryattrs.WcprofOpKindAttr, telemetryattrs.WcprofParentAttr,
 		telemetryattrs.TelemetryOriginClientIDAttr, ExecutionIDAttr, ExecutionInternalAttr,

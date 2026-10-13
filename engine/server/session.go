@@ -158,6 +158,8 @@ type daggerSession struct {
 	spanExporter   sdktrace.SpanExporter
 	logExporter    sdklog.Exporter
 	telemetryDebug LifecycleTelemetryCounts
+	// workloadTracerProvider sends spans only to the workload export.
+	workloadTracerProvider *sdktrace.TracerProvider
 
 	// Dagger Cloud publishing, set up when the main client asked the engine
 	// to publish the session's telemetry. cloudForwarder publishes the spans
@@ -775,6 +777,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	if sess.tracerProvider != nil {
 		traceDur += timedProviderOp(ctx, &errs, sess.tracerProvider.Shutdown)
 	}
+	if sess.workloadTracerProvider != nil {
+		traceDur += timedProviderOp(ctx, &errs, sess.workloadTracerProvider.Shutdown)
+	}
 	if sess.loggerProvider != nil {
 		logDur += timedProviderOp(ctx, &errs, sess.loggerProvider.Shutdown)
 	}
@@ -990,9 +995,15 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		spanProcessors++
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
+	sess.workloadTracerProvider = srv.workloadExport.WorkloadTracerProvider(sess.sessionID)
+	tracerProviders := 1
+	if sess.workloadTracerProvider != nil {
+		tracerProviders++
+		spanProcessors++
+	}
 	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	sess.telemetryDebug = LifecycleTelemetryCounts{
-		TracerProviders:          1,
+		TracerProviders:          tracerProviders,
 		LoggerProviders:          1,
 		ConfiguredSpanProcessors: spanProcessors,
 		ConfiguredLogProcessors:  logProcessors,
@@ -2713,6 +2724,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	ctx = telemetry.WithLoggerProvider(ctx, sess.loggerProvider)
 	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
 	ctx = enginetel.WithWorkloadReadings(ctx, client.workloadReadings)
+	ctx = enginetel.WithWorkloadTracer(ctx, sess.workloadTracerProvider)
 
 	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
 		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
