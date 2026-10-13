@@ -593,7 +593,7 @@ func (s *workspaceSchema) checkpointCapturedGitRemotes(
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.NewString("origin")},
 				{Name: "url", Value: dagql.NewString(metadata.RemoteUrl)},
-				{Name: "pushUrl", Value: dagql.NewString(metadata.RemotePushUrl)},
+				{Name: "pushURL", Value: dagql.NewString(metadata.RemotePushUrl)},
 			},
 		}); err != nil {
 			return inst, fmt.Errorf("record workspace push destinations: %w", err)

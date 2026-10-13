@@ -548,10 +548,23 @@ type FunctionCachePolicy string
 
 var FunctionCachePolicyEnum = dagql.NewEnum[FunctionCachePolicy]()
 
+// The values are PascalCase before IdentifierNamingVersion, and
+// SCREAMING_SNAKE from it on: renamed values, which decode to the same Go
+// values, with the old names kept as hidden aliases (see NameAliases).
 var (
-	FunctionCachePolicyDefault    = FunctionCachePolicyEnum.Register("Default")
-	FunctionCachePolicyPerSession = FunctionCachePolicyEnum.Register("PerSession")
-	FunctionCachePolicyNever      = FunctionCachePolicyEnum.Register("Never")
+	FunctionCachePolicyDefault    = FunctionCachePolicyEnum.RegisterView("Default", BeforeVersion(IdentifierNamingVersion))
+	FunctionCachePolicyPerSession = FunctionCachePolicyEnum.RegisterView("PerSession", BeforeVersion(IdentifierNamingVersion))
+	FunctionCachePolicyNever      = FunctionCachePolicyEnum.RegisterView("Never", BeforeVersion(IdentifierNamingVersion))
+
+	_ = FunctionCachePolicyEnum.WithAliases(
+		FunctionCachePolicyEnum.RenameView("DEFAULT", FunctionCachePolicyDefault, identifierNamingView),
+		NameAliases(string(FunctionCachePolicyDefault)))
+	_ = FunctionCachePolicyEnum.WithAliases(
+		FunctionCachePolicyEnum.RenameView("PER_SESSION", FunctionCachePolicyPerSession, identifierNamingView),
+		NameAliases(string(FunctionCachePolicyPerSession)))
+	_ = FunctionCachePolicyEnum.WithAliases(
+		FunctionCachePolicyEnum.RenameView("NEVER", FunctionCachePolicyNever, identifierNamingView),
+		NameAliases(string(FunctionCachePolicyNever)))
 )
 
 func (proto FunctionCachePolicy) Type() *ast.Type {

@@ -377,7 +377,7 @@ type workspaceSDKInstallArgs struct {
 	Ref       string
 	Name      string `default:""`
 	Here      bool   `default:"false"`
-	AsSdkName string `default:""`
+	AsSdkName string `name:"asSDKName" default:""`
 }
 
 func (s *workspaceSchema) withSDK(

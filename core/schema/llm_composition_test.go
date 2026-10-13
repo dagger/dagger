@@ -287,7 +287,7 @@ func TestLLMCommittedLeafRestore(t *testing.T) {
 	frames := map[string]*callpbv1.Call{}
 	content, err := (dagql.ArrayInput[dagql.InputObject[core.LLMContentBlockInput]]{}).Decoder().DecodeInput([]any{
 		map[string]any{"kind": "TEXT", "text": "recorded answer", "arguments": ""},
-		map[string]any{"kind": "TOOL_CALL", "callId": "call-1", "toolName": "tool", "arguments": "{}"},
+		map[string]any{"kind": "TOOL_CALL", "callID": "call-1", "toolName": "tool", "arguments": "{}"},
 	})
 	require.NoError(t, err)
 	var committed dagql.ObjectResult[*core.LLM]
@@ -297,7 +297,7 @@ func TestLLMCommittedLeafRestore(t *testing.T) {
 		{Field: "withPrompt", Args: []dagql.NamedInput{{Name: "prompt", Value: dagql.String("hello")}}},
 		{Field: "withResponse", Args: []dagql.NamedInput{{Name: "content", Value: content}}},
 		{Field: "withToolResult", Args: []dagql.NamedInput{
-			{Name: "callId", Value: dagql.String("call-1")},
+			{Name: "callID", Value: dagql.String("call-1")},
 			{Name: "content", Value: dagql.String("recorded result")},
 			{Name: "errored", Value: dagql.Boolean(false)},
 		}},

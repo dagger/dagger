@@ -237,7 +237,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc(`The remote's name, e.g. "origin" or "upstream".`),
 				dagql.Arg("url").Doc(`The remote's fetch URL.`),
-				dagql.Arg("pushUrl").Doc(`Push destination, when pushes go somewhere other than url. Empty uses url.`),
+				dagql.Arg("pushURL").WithAliases(core.NameAliases("pushUrl")).Doc(`Push destination, when pushes go somewhere other than url. Empty uses url.`),
 			),
 		dagql.NodeFunc("remotes", s.remotes).
 			View(AfterVersion("v1.0.0-0")).IsPersistable().
@@ -490,7 +490,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("sha", s.commitSHA).
 			IsPersistable().
 			Doc(`The full commit SHA.`),
-		dagql.NodeFunc("shortSha", s.commitShortSHA).
+		dagql.NodeFunc("shortSHA", s.commitShortSHA).
+			WithAliases(core.NameAliases("shortSha")).
 			IsPersistable().
 			Doc(`The abbreviated commit SHA.`),
 		dagql.NodeFunc("authoredDate", s.commitAuthoredDate).
@@ -520,7 +521,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("messageBody", s.commitMessageBody).
 			IsPersistable().
 			Doc(`Commit message body, excluding the headline.`),
-		dagql.NodeFunc("parentShas", s.commitParentSHAs).
+		dagql.NodeFunc("parentSHAs", s.commitParentSHAs).
+			WithAliases(core.NameAliases("parentShas")).
 			IsPersistable().
 			Doc(`Parent commit SHAs.`),
 	}.Install(srv)
