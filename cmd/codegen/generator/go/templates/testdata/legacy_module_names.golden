@@ -1,0 +1,61 @@
+// DaggerCLIOpts contains options for Query.DaggerCLI
+type DaggerCLIOpts struct {
+	Version string
+
+	VCSCommit string // dagger-cli (../../:0:0)
+	// Deprecated: use VCSCommit instead.
+	VcsCommit string
+}
+
+// Deprecated: use DaggerCLIOpts instead.
+type DaggerCliOpts = DaggerCLIOpts
+
+func (r *Query) DaggerCLI(opts ...DaggerCLIOpts) *DaggerCLI { // dagger-cli (../../:0:0)
+	q := r.query.Select("daggerCLI")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+		// `vcsCommit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VCSCommit) {
+			q = q.Arg("vcsCommit", opts[i].VCSCommit)
+		}
+		if querybuilder.IsZeroValue(opts[i].VCSCommit) && !querybuilder.IsZeroValue(opts[i].VcsCommit) {
+			q = q.Arg("vcsCommit", opts[i].VcsCommit)
+		}
+	}
+
+	return &DaggerCLI{
+		query: q,
+	}
+}
+
+// Deprecated: use DaggerCLI instead.
+func (r *Query) DaggerCli(opts ...DaggerCLIOpts) *DaggerCLI {
+	return r.DaggerCLI(opts...)
+}
+
+// GoOpts contains options for Query.Go
+type GoOpts struct {
+	VCSCommit string // go (../../:0:0)
+	// Deprecated: use VCSCommit instead.
+	VcsCommit string
+}
+
+func (r *Query) Go(opts ...GoOpts) *GoVCS { // go (../../:0:0)
+	q := r.query.Select("go")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `vcsCommit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VCSCommit) {
+			q = q.Arg("vcsCommit", opts[i].VCSCommit)
+		}
+		if querybuilder.IsZeroValue(opts[i].VCSCommit) && !querybuilder.IsZeroValue(opts[i].VcsCommit) {
+			q = q.Arg("vcsCommit", opts[i].VcsCommit)
+		}
+	}
+
+	return &GoVCS{
+		query: q,
+	}
+}
