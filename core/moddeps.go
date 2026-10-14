@@ -317,6 +317,27 @@ func (b *SchemaBuilder) SchemaIntrospectionJSONFileForModule(ctx context.Context
 	return b.SchemaIntrospectionJSONFile(ctx, hiddenTypes, hiddenFields)
 }
 
+// SchemaIntrospectionJSONFileForDang is SchemaIntrospectionJSONFileForModule
+// with the hidden field, argument and enum value aliases added, marked
+// deprecated (see dagql.Aliases), for the in-engine Dang runtime: it
+// typechecks its callers against the JSON, so callers using old names keep
+// typechecking, and it generates nothing from it that could collide on them.
+// Other SDKs' codegen must keep the JSON without aliases.
+func (b *SchemaBuilder) SchemaIntrospectionJSONFileForDang(ctx context.Context) (dagql.Result[*File], error) {
+	dag, err := b.Schema(ctx)
+	if err != nil {
+		return dagql.Result[*File]{}, err
+	}
+	hiddenTypes, hiddenFields := moduleIntrospectionScrubConfig()
+	sel := schemaJSONFileSelector(dag.View, hiddenTypes, hiddenFields)
+	sel.Args = append(sel.Args, dagql.NamedInput{Name: "includeAliases", Value: dagql.Boolean(true)})
+	var schemaJSONFile dagql.Result[*File]
+	if err := dag.Select(ctx, dag.Root(), &schemaJSONFile, sel); err != nil {
+		return schemaJSONFile, fmt.Errorf("failed to select introspection JSON file: %w", err)
+	}
+	return schemaJSONFile, nil
+}
+
 func moduleIntrospectionScrubConfig() ([]string, []string) {
 	hiddenTypes := append([]string{}, TypesToIgnoreForModuleIntrospection...)
 	for _, typed := range TypesHiddenFromModuleSDKs {
