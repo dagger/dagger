@@ -48,7 +48,7 @@ type ElixirClientDev {
       .withDirectory(sourcePath, source)
 
     let gen = withCodegen(devContainer)
-      .withMountedFile("/schema.json", daggerEngine(ws: self.ws).introspectionJson)
+      .withMountedFile("/schema.json", daggerEngine(ws: self.ws).introspectionJson(ws: self.ws))
       .withExec(["mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"])
       .withExec(["mix", "format", "gen/*.ex"])
       .directory("gen")

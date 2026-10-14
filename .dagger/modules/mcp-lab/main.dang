@@ -116,7 +116,7 @@ type McpLab {
     let srcDir = source.directory("/")
 
     # build the dagger CLI from source
-    let cli = cliDev(ws: source, source: srcDir).binary
+    let cli = cliDev(ws: source, source: srcDir).binary(ws: source)
 
     # Build the HTTP<->stdio bridge from the workspace tree: it lives in the
     # repo's root Go module, so it compiles against the exact mcp-go version
@@ -138,7 +138,7 @@ type McpLab {
       .from("alpine:3.20")
       .withExec(["apk", "add", "--no-cache", "git"])
     let base = if (engineAddress == "") {
-      let svc = engineDev(ws: source).service(name: "mcp-lab").start
+      let svc = engineDev(ws: source).service(ws: source, name: "mcp-lab").start
       self.engineService = svc
       lean
         .withServiceBinding("dagger-engine", svc)

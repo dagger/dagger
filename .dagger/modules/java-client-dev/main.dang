@@ -48,7 +48,8 @@ type JavaClientDev {
   let devContainer: Container! {
     daggerEngine(ws: self.ws)
       .installClient(
-        mavenImage
+        ws: self.ws,
+        client: mavenImage
           .withDirectory(workspacePath, workspaceDir)
           .withWorkdir(workspacePath + "/" + sourcePath),
       )

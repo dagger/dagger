@@ -182,9 +182,9 @@ type EngineLab {
     # The from-source engine service. This replicates engine-dev's Service()
     # (fresh state volume, engine entrypoint, incremented subnet for nesting)
     # and adds --debugaddr, which the stock Playground service doesn't enable.
-    let svcDev = dev.incrementSubnet
+    let svcDev = dev.incrementSubnet(ws: source)
     let engineCtr = svcDev
-      .container
+      .container(ws: source)
       .withExposedPort(1234)
       .withMountedCache(
         "/var/lib/dagger",
@@ -193,7 +193,7 @@ type EngineLab {
     let engineArgs = [
       "--addr", "tcp://0.0.0.0:1234",
       "--network-name", "dagger-lab",
-      "--network-cidr", svcDev.networkCidr,
+      "--network-cidr", svcDev.networkCidr(ws: source),
       "--debugaddr", "0.0.0.0:" + toString(debugPort),
     ]
 
@@ -212,10 +212,10 @@ type EngineLab {
     let base = container
       .from("alpine:3.20")
       .withExec(["apk", "add", "--no-cache", "curl", "jq", "git"])
-    let cli = cliDev(ws: source, source: srcDir).binary
+    let cli = cliDev(ws: source, source: srcDir).binary(ws: source)
 
     self.client = dev
-      .installClient(client: base, service: svc)
+      .installClient(ws: source, client: base, service: svc)
       .withFile("/usr/local/bin/dagger", cli)
     self.engine = svc
     self.engineEndpoint = "tcp://" + host + ":1234"
@@ -394,11 +394,11 @@ type EngineLab {
     # a real re-run.
     let dev = engineDev(ws: source)
     if (wcprofCapture == "") {
-      dev.test(pkg: pkg, run: run, testVerbose: testVerbose)
+      dev.test(ws: source, pkg: pkg, run: run, testVerbose: testVerbose)
       print("tests passed")
       return self
     }
-    let profiled = dev.testProfile(pkg: pkg, run: run, testVerbose: testVerbose)
+    let profiled = dev.testProfile(ws: source, pkg: pkg, run: run, testVerbose: testVerbose)
     let status = profiled.{{exitCode, output}}
     # The dump is the same session-cached testProfile result, so reading it
     # does not re-run the tests.
@@ -624,9 +624,9 @@ type EngineLab {
       stateVolume
     }
     let dev = engineDev(ws: source)
-    let svcDev = dev.incrementSubnet
+    let svcDev = dev.incrementSubnet(ws: source)
     let svc = svcDev
-      .container
+      .container(ws: source)
       .withExposedPort(1234)
       .withEnvVariable("_DAGGER_WCPROF", "1")
       .withMountedCache(
@@ -637,7 +637,7 @@ type EngineLab {
         args: [
           "--addr", "tcp://0.0.0.0:1234",
           "--network-name", "dagger-lab",
-          "--network-cidr", svcDev.networkCidr,
+          "--network-cidr", svcDev.networkCidr(ws: source),
           "--debugaddr", "0.0.0.0:" + toString(debugPort),
         ],
         useEntrypoint: true,
@@ -650,7 +650,7 @@ type EngineLab {
     let dir = workdir ?? source.directory("/")
     let run = ["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger"]
     let client = withCredentials(
-      dev.installClient(client: base, service: svc).withFile("/usr/local/bin/dagger", cliDev(ws: source, source: source.directory("/")).binary),
+      dev.installClient(ws: source, client: base, service: svc).withFile("/usr/local/bin/dagger", cliDev(ws: source, source: source.directory("/")).binary(ws: source)),
       cloudCredentials,
       daggerConfig,
     )

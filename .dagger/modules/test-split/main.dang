@@ -34,7 +34,7 @@ type TestSplit {
     """
     ebpf: Boolean,
   ): Void {
-    engineDev(ws: self.ws).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    engineDev(ws: self.ws).test(ws: self.ws, parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   let testCliEngineSpecific(
@@ -44,11 +44,11 @@ type TestSplit {
     race: Boolean,
   ): Void {
     engineDev(ws: self.ws)
-      .withEngineConfig("worker.oci", [
+      .withEngineConfig(ws: self.ws, key: "worker.oci", value: [
         "minFreeSpace = \"30%\"",
         "maxUsedSpace = \"50%\"",
       ].join("\n"))
-      .test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+      .test(ws: self.ws, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   let testSkip(
@@ -58,7 +58,7 @@ type TestSplit {
     race: Boolean,
     parallel: Int,
   ): Void {
-    engineDev(ws: self.ws).test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    engineDev(ws: self.ws).test(ws: self.ws, parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   """
@@ -171,7 +171,7 @@ type TestSplit {
   pub packagePatterns: String! {
     # Match the source tree used by engine-dev tests: workspace-only tools
     # excluded from that tree must not become explicit package arguments.
-    go(ws: self.ws, source: engineDev(ws: self.ws).source, race: true, cgo: true).env.withExec([
+    go(ws: self.ws, source: engineDev(ws: self.ws).source, race: true, cgo: true).env(ws: self.ws).withExec([
       "go", "list", "-race", "-f",
       "{{if ne .ImportPath \"github.com/dagger/dagger/core/integration\"}}{{.ImportPath}}{{end}}",
       "./...",
@@ -236,8 +236,8 @@ type TestSplit {
   pub testTelemetry: Void @check {
     # Rendering goldens require their warmup cache to survive session teardown.
     engineDev(ws: self.ws)
-      .withEngineConfig("worker.oci", "gc = false")
-      .test(run: "^TestTelemetry$", pkg: "./dagql/idtui", testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+      .withEngineConfig(ws: self.ws, key: "worker.oci", value: "gc = false")
+      .test(ws: self.ws, run: "^TestTelemetry$", pkg: "./dagql/idtui", testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
     testSpecific(["^TestTelemetry$"])
 
     null

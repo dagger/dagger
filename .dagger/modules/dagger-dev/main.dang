@@ -23,7 +23,7 @@ type DaggerDev {
   Connect to it with `DAGGER_ENGINE=tcp://localhost:1234`
   """
   engine(ws: Workspace!): Service! @up {
-    engineDev(ws: ws).service(""
+    engineDev(ws: ws).service(ws: ws, name: ""
       gpuSupport: gpuSupport
     )
   }
@@ -32,7 +32,7 @@ type DaggerDev {
   Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
   """
   playground(ws: Workspace!): Container! {
-    engineDev(ws: ws).installClient(base, service: engine(ws))
+    engineDev(ws: ws).installClient(ws: ws, client: base, service: engine(ws))
   }
 
   """

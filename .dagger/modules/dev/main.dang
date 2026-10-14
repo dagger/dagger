@@ -32,7 +32,7 @@ type Dev {
     gpuSupport: Boolean! = false,
   ): File! {
     engineDev(ws: ws)
-      .container(gpuSupport: gpuSupport)
+      .container(ws: ws, gpuSupport: gpuSupport)
       # gzip, to stay readable by older docker versions
       .asTarball(forcedCompression: ImageLayerCompression.GZIP)
   }
@@ -90,11 +90,12 @@ type Dev {
     # already coming up while the host CLI is still linking.
     let built = {{
       cli: cliDev(runnerHost: runnerHost, ws: ws)
-        .devBinaries(platform: platform ?? defaultPlatform),
+        .devBinaries(ws: ws, platform: platform ?? defaultPlatform),
 
       started: engine
-        .loadToDocker(docker, name: image, gpuSupport: gpuSupport)
+        .loadToDocker(ws: ws, docker: docker, name: image, gpuSupport: gpuSupport)
         .start(
+          ws: ws,
           name: name,
           debug: debugEndpoint,
           extraHosts: extraHosts,
