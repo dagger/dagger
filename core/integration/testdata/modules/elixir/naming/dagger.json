@@ -1,0 +1,7 @@
+{
+  "name": "naming-check",
+  "engineVersion": "v1.0.0",
+  "sdk": {
+    "source": "../../sdk/elixir"
+  }
+}
