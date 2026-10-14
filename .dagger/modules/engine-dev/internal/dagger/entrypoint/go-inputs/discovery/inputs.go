@@ -20,6 +20,51 @@ type Inputs struct {
 	External   bool     `json:"external"`
 }
 
+// DiscoverPatterns selects external compilation patterns from Go metadata.
+// The caller passes these directly to Workspace.directory: walking every
+// workspace filename through GraphQL creates a cache entry for each list item.
+// The module's canonical source is overlaid separately, including its assets.
+func DiscoverPatterns(workspaceRoot, moduleRoot string) (*Inputs, error) {
+	root, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+	module, err := filepath.Abs(moduleRoot)
+	if err != nil {
+		return nil, err
+	}
+	rel, err := filepath.Rel(root, module)
+	if err != nil || !filepath.IsLocal(rel) {
+		return nil, fmt.Errorf("module directory leaves the workspace root")
+	}
+	modulePath := filepath.ToSlash(rel)
+	if err := validateReplacements(root, module); err != nil {
+		return nil, err
+	}
+	includes, err := ReadIncludes(module, modulePath)
+	if err != nil {
+		return nil, err
+	}
+	selected := map[string]bool{modulePath: true}
+	for _, include := range includes.Include {
+		pattern := path.Join(modulePath, include.Path)
+		selected[pattern] = true
+		if strings.HasSuffix(pattern, "/*.go") {
+			// Metadata does not contain native sources. Select their names
+			// alongside each imported package, without importing unrelated files.
+			for _, ext := range []string{".s", ".h", ".syso"} {
+				selected[strings.TrimSuffix(pattern, ".go")+ext] = true
+			}
+		}
+	}
+	result := &Inputs{ModulePath: modulePath, External: len(includes.Include) > 0}
+	for pattern := range selected {
+		result.Files = append(result.Files, pattern)
+	}
+	slices.Sort(result.Files)
+	return result, nil
+}
+
 // Discover reads a metadata snapshot and an optional file-name inventory.
 // Inventory entries become empty placeholders only in the discovery snapshot;
 // the caller imports the actual selected contents into a separate build tree.
@@ -90,25 +135,8 @@ func Discover(workspaceRoot, moduleRoot string, inventory []string) (*Inputs, er
 			}
 		}
 	}
-	// Absolute replacements cannot be preserved when the tree is relocated.
-	mod, _, err := localReplaces(module)
-	if err != nil {
+	if err := validateReplacements(root, module); err != nil {
 		return nil, err
-	}
-	if mod != nil {
-		for _, replacement := range mod.Replace {
-			if replacement.New.Version == "" && strings.HasPrefix(replacement.New.Path, ".") {
-				target := filepath.Clean(filepath.Join(module, replacement.New.Path))
-				rel, err := filepath.Rel(root, target)
-				if err != nil || !filepath.IsLocal(rel) {
-					return nil, fmt.Errorf("replace %s => %s leaves the workspace root", replacement.Old.Path, replacement.New.Path)
-				}
-			}
-
-			if replacement.New.Version == "" && filepath.IsAbs(replacement.New.Path) {
-				return nil, fmt.Errorf("replace %s: use a workspace-relative path, not an absolute local target", replacement.Old.Path)
-			}
-		}
 	}
 	includes, err := ReadIncludes(module, modulePath)
 	if err != nil {
@@ -149,4 +177,28 @@ func Discover(workspaceRoot, moduleRoot string, inventory []string) (*Inputs, er
 	}
 	slices.Sort(result.Files)
 	return result, nil
+}
+
+// Absolute replacements cannot be preserved when the tree is relocated.
+func validateReplacements(root, module string) error {
+	mod, _, err := localReplaces(module)
+	if err != nil {
+		return err
+	}
+	if mod != nil {
+		for _, replacement := range mod.Replace {
+			if replacement.New.Version == "" && strings.HasPrefix(replacement.New.Path, ".") {
+				target := filepath.Clean(filepath.Join(module, replacement.New.Path))
+				rel, err := filepath.Rel(root, target)
+				if err != nil || !filepath.IsLocal(rel) {
+					return fmt.Errorf("replace %s => %s leaves the workspace root", replacement.Old.Path, replacement.New.Path)
+				}
+			}
+
+			if replacement.New.Version == "" && filepath.IsAbs(replacement.New.Path) {
+				return fmt.Errorf("replace %s: use a workspace-relative path, not an absolute local target", replacement.Old.Path)
+			}
+		}
+	}
+	return nil
 }

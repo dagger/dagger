@@ -148,7 +148,7 @@ source = "dagger.io/sdk/dang@main"
 check.skip = ["generate/stale"]
 
 [modules.go-sdk]
-source = "github.com/dagger/go-sdk@3d4c37a0a2be94cef24e1fa8e969362c49ca61ba"
+source = "github.com/dagger/go-sdk@02aea8499c629ac24279e7916a7a5017393dda61"
 check.skip = ["generate/stale"]
 
 [modules.go-sdk.settings]

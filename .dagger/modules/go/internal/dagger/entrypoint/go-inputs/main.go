@@ -15,6 +15,7 @@ func main() {
 	workspace := flag.String("workspace-root", "/workspace", "discovery snapshot root")
 	module := flag.String("module-root", "", "module directory in that snapshot")
 	inventoryPath := flag.String("inventory", "", "JSON list of workspace-relative file names")
+	patterns := flag.Bool("patterns", false, "select compilation patterns from metadata without enumerating workspace files")
 	flag.Parse()
 	var inventory []string
 	var err error
@@ -27,7 +28,11 @@ func main() {
 	}
 	var inputs *discovery.Inputs
 	if err == nil {
-		inputs, err = discovery.Discover(*workspace, *module, inventory)
+		if *patterns {
+			inputs, err = discovery.DiscoverPatterns(*workspace, *module)
+		} else {
+			inputs, err = discovery.Discover(*workspace, *module, inventory)
+		}
 	}
 	if err == nil {
 		err = json.NewEncoder(os.Stdout).Encode(inputs)

@@ -4,12 +4,12 @@
     "dagger.dispatch.gen.go": "5d6d938c9ef08294b34190991c8507982098c319f4c8fda238176a62b056731b",
     "dagger.gen.go": "7415aacf5da2400f2d39f160f865f17cee089aaa365a3e30b49861b121f3bd36",
     "internal/dagger/dagger.gen.go": "1c1890793992eb2fbcbaffa70569a593292ca75c1403f88ed80e8535788fae53",
-    "internal/dagger/entrypoint/go-inputs/discovery/inputs.go": "193820c0e0d023075750f47491e967a6846edcc32c2c2652c2c462d65e25d623",
+    "internal/dagger/entrypoint/go-inputs/discovery/inputs.go": "3668aa800574840f1684fed882ff69c553fa9e14d55b482a90af2cc9e6f4cd43",
     "internal/dagger/entrypoint/go-inputs/discovery/local.go": "f966566077f0c997458315efa68f01b248ae6d901c6cc8057c5777c7311b2099",
     "internal/dagger/entrypoint/go-inputs/go.mod": "7dfcd8e78babc4108d12fff5746960b9a0c3d6da87b65b522f9d41e35e7d49ee",
     "internal/dagger/entrypoint/go-inputs/go.sum": "d438e0b5972c523df1a73e37a6b3d6a7523019e1ec18c2fd6cbb503d1c196960",
-    "internal/dagger/entrypoint/go-inputs/main.go": "8bf7df9134edabfaa6431cb193a6bc57185c63b5b6ebc5359e9cf068a7434c9f",
-    "internal/dagger/entrypoint/main.dang": "385ea28470ae7908ae2149e86b8dbe495244cea1b61d3ed09bf28433aa43386d",
+    "internal/dagger/entrypoint/go-inputs/main.go": "d48b4978483f6e48c7a4c59445e83e50125ad32da2044085629a228497a44dfb",
+    "internal/dagger/entrypoint/main.dang": "8737948b8f2a9c9c7cac37256d50751206557fd5380ed549c4273834179d3bf7",
     "internal/dagger/go.gen.go": "bb00d2ad3ad21a15bb6cd1204fb4134e44861552102c31e518ec0dc8af3ae7f8"
   }
 }

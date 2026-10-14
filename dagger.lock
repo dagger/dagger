@@ -90,7 +90,7 @@
 ["","vanity-url",["https://dagger.io/sdk/go"],"https://github.com/dagger/go-sdk"]
 ["","vanity-url",["https://dagger.io/sdk/helpers"],"https://github.com/dagger/sdk-helpers"]
 ["","vanity-url",["https://dagger.io/shellcheck"],"https://github.com/dagger/shellcheck"]
-["","git-sha",["github.com/dagger/go-sdk","3d4c37a0a2be94cef24e1fa8e969362c49ca61ba"],"3d4c37a0a2be94cef24e1fa8e969362c49ca61ba"]
+["","git-sha",["github.com/dagger/go-sdk","02aea8499c629ac24279e7916a7a5017393dda61"],"02aea8499c629ac24279e7916a7a5017393dda61"]
 ["","oci-sha",["docker.io/library/alpine:3.22"],"sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8"]
 ["","oci-sha",["docker.io/library/golang:1.26.1-alpine"],"sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039"]
 ["","oci-sha",["docker.io/library/golang:1.26.6-alpine"],"sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83"]
