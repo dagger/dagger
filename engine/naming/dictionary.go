@@ -35,6 +35,9 @@ type Dictionary struct {
 	terms []Term
 	// byFold maps a lowercased spelling to its index in terms.
 	byFold map[string]int
+	// maxLen and maxLetters are the longest entry's length and letter count,
+	// which bound how far parsing looks for a match.
+	maxLen, maxLetters int
 }
 
 // NewDictionary builds a dictionary from terms. It returns an error for an
@@ -72,6 +75,8 @@ func NewDictionary(terms []Term) (*Dictionary, error) {
 		}
 		d.byFold[fold] = len(d.terms)
 		d.terms = append(d.terms, t)
+		d.maxLen = max(d.maxLen, len(t.Spelling))
+		d.maxLetters = max(d.maxLetters, countLetters(t.Spelling))
 	}
 	return d, nil
 }

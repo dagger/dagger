@@ -74,6 +74,12 @@ var ErrNonASCII = errors.New("identifier must be ASCII")
 // ErrNoWords is returned when parsing a name with no letters or digits.
 var ErrNoWords = errors.New("identifier must contain a letter or digit")
 
+// MaxLength is the longest name, in bytes, that Parse accepts.
+const MaxLength = 256
+
+// ErrTooLong is returned when parsing a name longer than MaxLength.
+var ErrTooLong = fmt.Errorf("identifier must be at most %d bytes", MaxLength)
+
 // Parse parses name with the Latest dictionary.
 func Parse(name string) (Identifier, error) {
 	return Latest.Parse(name)
@@ -81,6 +87,9 @@ func Parse(name string) (Identifier, error) {
 
 // Parse parses a name in any casing into words.
 func (d *Dictionary) Parse(name string) (Identifier, error) {
+	if len(name) > MaxLength {
+		return Identifier{}, fmt.Errorf("parse %q...: %w", name[:32], ErrTooLong)
+	}
 	var hasUpperLetter, hasLowerLetter, hasAlnumChar bool
 	for i := 0; i < len(name); i++ {
 		c := name[i]
@@ -195,6 +204,8 @@ func isCapsPiece(p string) bool {
 type cut struct {
 	text  string
 	piece int
+	// offset is where the cut starts in its piece.
+	offset int
 }
 
 type pieceInfo struct {
@@ -243,7 +254,7 @@ func (d *Dictionary) segment(pieces []string, allCaps bool) []Word {
 		start := 0
 		for k := 1; k <= len(p); k++ {
 			if k == len(p) || isDigit(p[k]) != isDigit(p[k-1]) {
-				cuts = append(cuts, cut{text: p[start:k], piece: i})
+				cuts = append(cuts, cut{text: p[start:k], piece: i, offset: start})
 				start = k
 			}
 		}
@@ -265,16 +276,30 @@ func (d *Dictionary) segment(pieces []string, allCaps bool) []Word {
 			best[j] = state{ok: true, score: sc, from: i, words: words}
 		}
 	}
+	improves := func(i, j int, sc score) bool {
+		sc = best[i].score.add(sc)
+		return !best[j].ok || sc.less(best[j].score)
+	}
 
 	for i := 0; i < n; i++ {
 		if !best[i].ok {
 			continue
 		}
 
-		// Dictionary matches over whole cuts, possibly crossing pieces.
+		// Dictionary matches over whole cuts, possibly crossing pieces. A
+		// match has at most one letter (a plural s) beyond its entry's, so
+		// stop extending past that.
 		var fold strings.Builder
+		letters := 0
 		for j := i + 1; j <= n; j++ {
-			fold.WriteString(strings.ToLower(cuts[j-1].text))
+			c := cuts[j-1].text
+			if !isDigit(c[0]) {
+				letters += len(c)
+			}
+			if letters > d.maxLetters+1 {
+				break
+			}
+			fold.WriteString(strings.ToLower(c))
 			f := fold.String()
 			if t, ok := d.lookup(f); ok {
 				relax(i, j, score{words: 1, total: 1}, []Word{termWord(t, "")})
@@ -303,12 +328,20 @@ func (d *Dictionary) segment(pieces []string, allCaps bool) []Word {
 			}
 		}
 
-		// Heuristic words stay within one piece.
-		var text strings.Builder
+		// Heuristic words stay within one piece. Their score only depends on
+		// their letter count, so build the word only when it would win.
+		letters = 0
 		for j := i + 1; j <= info.end; j++ {
-			text.WriteString(cuts[j-1].text)
-			w, sc := heuristicWord(text.String(), info.caps, j == info.end)
-			relax(i, j, sc, []Word{w})
+			c := cuts[j-1]
+			if !isDigit(c.text[0]) {
+				letters += len(c.text)
+			}
+			sc := heuristicScore(letters)
+			if !improves(i, j, sc) {
+				continue
+			}
+			text := info.text[cuts[i].offset : c.offset+len(c.text)]
+			relax(i, j, sc, []Word{heuristicWord(text, info.caps, j == info.end)})
 		}
 	}
 
@@ -363,7 +396,7 @@ func (d *Dictionary) coverCaps(p string) ([]Word, score, bool) {
 				relax(i, j, score{uncovered: 1, words: 1, total: 1}, Word{Kind: KindWord, Text: strings.ToLower(p[i:j])})
 			}
 		}
-		for j := i + 1; j <= n; j++ {
+		for j := i + 1; j <= n && j-i <= d.maxLen; j++ {
 			t, ok := d.lookup(strings.ToLower(p[i:j]))
 			if !ok {
 				continue
@@ -394,30 +427,32 @@ func termWord(t *Term, suffix string) Word {
 	return Word{Kind: t.Kind(), Text: t.Spelling, Suffix: suffix, Term: t}
 }
 
-// heuristicWord makes a word from text found by the case heuristic, and
-// scores it. atPieceEnd reports whether text ends its piece, where a caps
-// piece may carry a plural "s".
-func heuristicWord(text string, caps, atPieceEnd bool) (Word, score) {
-	letters := 0
-	for i := 0; i < len(text); i++ {
-		if !isDigit(text[i]) {
-			letters++
-		}
-	}
+// heuristicScore scores a word found by the case heuristic, from its number
+// of letters.
+func heuristicScore(letters int) score {
 	if letters == 0 {
-		return Word{Kind: KindWord, Text: text}, score{total: 1}
+		return score{total: 1}
 	}
-	sc := score{uncovered: letters, words: 1, total: 1}
+	return score{uncovered: letters, words: 1, total: 1}
+}
+
+// heuristicWord makes a word from text found by the case heuristic.
+// atPieceEnd reports whether text ends its piece, where a caps piece may
+// carry a plural "s".
+func heuristicWord(text string, caps, atPieceEnd bool) Word {
+	if !hasLetter(text) {
+		return Word{Kind: KindWord, Text: text}
+	}
 	if caps {
 		body, suffix := text, ""
 		if atPieceEnd && len(text) >= 2 && text[len(text)-1] == 's' {
 			body, suffix = text[:len(text)-1], "s"
 		}
 		if !hasLower(body) && countLetters(body) >= 2 {
-			return Word{Kind: KindAcronym, Text: body, Suffix: suffix}, sc
+			return Word{Kind: KindAcronym, Text: body, Suffix: suffix}
 		}
 	}
-	return Word{Kind: KindWord, Text: strings.ToLower(text)}, sc
+	return Word{Kind: KindWord, Text: strings.ToLower(text)}
 }
 
 // glueDigits attaches each digit-only word to the word before it: OAuth·2

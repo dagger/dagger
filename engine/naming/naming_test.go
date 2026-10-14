@@ -131,10 +131,14 @@ func TestParseErrors(t *testing.T) {
 		{"", ErrNoWords},
 		{"_", ErrNoWords},
 		{"--.", ErrNoWords},
+		{strings.Repeat("a", MaxLength+1), ErrTooLong},
 	} {
 		if _, err := Parse(tc.input); !errors.Is(err, tc.err) {
 			t.Errorf("Parse(%q): got error %v, want %v", tc.input, err, tc.err)
 		}
+	}
+	if _, err := Parse(strings.Repeat("a", MaxLength)); err != nil {
+		t.Errorf("Parse of a %d-byte name: %v", MaxLength, err)
 	}
 }
 

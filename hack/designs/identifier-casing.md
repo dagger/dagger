@@ -142,7 +142,10 @@ fallback, and steps 5–6 tidy up.
 
 ### 1. Validate and chunk
 
-- Reject non-ASCII input and input with no letters or digits.
+- Reject non-ASCII input, input with no letters or digits, and input longer
+  than 256 bytes (`naming.MaxLength`). The limit bounds the work a name can
+  cost the engine, since `formatIdentifiers` parses whatever a client sends;
+  real names are far shorter.
 - Split on every non-alphanumeric character (`_`, `-`, `.`, space, ...). These
   are hard word boundaries; empty chunks are dropped.
 
