@@ -351,7 +351,10 @@ New entries are requested in an issue or PR and ship with the next engine
 release. Each addition renames names for anyone who already has them (a Python
 `httpx_client` goes from `HttpxClient` to `HTTPXClient`), so additions follow
 the engine-version gate in
-[Versioning and Compatibility](#versioning-and-compatibility).
+[Versioning and Compatibility](#versioning-and-compatibility). A released
+dictionary is never edited; `TestInitialDictionaryFrozen` pins
+`naming.Initial`, entry by entry, and fails with a pointer to the release list
+if it changes.
 
 ### No per-module entries
 

@@ -105,7 +105,7 @@ func (d *Dictionary) lookup(fold string) (*Term, bool) {
 }
 
 // Initial is the dictionary the engine first shipped identifier parsing
-// with. Don't edit it; see Dictionary.
+// with. Don't edit it; see Dictionary. TestInitialDictionaryFrozen pins it.
 var Initial = MustDictionary(initialTerms)
 
 // Latest is the newest dictionary, used by the package-level Parse.
