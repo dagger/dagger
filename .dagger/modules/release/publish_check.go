@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger/release/internal/dagger"
+	"dagger.io/dagger/core"
 
 	"golang.org/x/mod/semver"
 	"sigs.k8s.io/yaml"
@@ -490,7 +491,11 @@ exit "$status"
 		WithEnvVariable("GO_SDK_DEST_REMOTE", env.goSDKDestRemote).
 		WithEnvVariable("PHP_SDK_DEST_REMOTE", env.phpSDKDestRemote).
 		WithEnvVariable("PUBLISH_RUN_CACHE_BUSTER", randomID()).
-		WithExec([]string{"sh", "-ec", script}).
+		// The CLI must connect to the bound release engine with its own client
+		// identity, rather than inheriting the outer engine's bootstrap metadata.
+		WithExec([]string{"sh", "-ec", script}, core.ContainerWithExecOpts{
+			DisableDaggerInDagger: true,
+		}).
 		Stdout(ctx)
 	if err != nil {
 		return out, fmt.Errorf("release publish %s failed: %w\n%s", tag, err, out)

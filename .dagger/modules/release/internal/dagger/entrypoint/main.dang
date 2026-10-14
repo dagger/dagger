@@ -104,9 +104,9 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("PublishWithMockEndpoints", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Exercise the release publish path against local mock endpoints.")
-            .withSourceMap(sourceMap("publish_check.go", 64, 1))
+            .withSourceMap(sourceMap("publish_check.go", 65, 1))
             .withCheck
-            .withArg("source", typeDef.withObject("Directory").withOptional(true), description: "Source tree to publish. The check commits this exact tree to a local git\nservice and invokes release through a nested engine using that git ref.", defaultPath: "/", sourceMap: sourceMap("publish_check.go", 70, 2))
+            .withArg("source", typeDef.withObject("Directory").withOptional(true), description: "Source tree to publish. The check commits this exact tree to a local git\nservice and invokes release through a nested engine using that git ref.", defaultPath: "/", sourceMap: sourceMap("publish_check.go", 71, 2))
         )
         .withFunction(
           function("PythonSdkTargetVersion", typeDef.withObject("Changeset"))

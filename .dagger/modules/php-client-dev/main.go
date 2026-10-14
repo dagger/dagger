@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"dagger/php-client-dev/internal/dagger"
+	"dagger.io/dagger/core"
 )
 
 const (
@@ -148,7 +149,11 @@ func (t *PhpClientDev) Changes() *dagger.Changeset {
 
 func (t *PhpClientDev) WithGeneratedClient() *PhpClientDev {
 	relLayer := t.DevContainer(true).
-		WithExec([]string{"dagger", "api", "exec", "--load-workspace-modules", "./scripts/codegen.php"}).
+		// Use the dev engine installed in this container. An inherited outer
+		// session overrides its endpoint and breaks the CLI's child credentials.
+		WithExec([]string{"dagger", "api", "exec", "--load-workspace-modules", "./scripts/codegen.php"}, core.ContainerWithExecOpts{
+			DisableDaggerInDagger: true,
+		}).
 		Directory(".").
 		Filter(dagger.DirectoryFilterOpts{
 			Exclude: []string{
