@@ -237,8 +237,8 @@ const sourcesEntrypointInterface = `interface ModuleEntrypoint {
 }
 `
 
-// entrypointContract records which ModuleEntrypoint interface the entrypoint
-// that run evaluated implements.
+// entrypointContract is stateful because the contract is known only once run
+// reads the entrypoint, which evalDangSource mounts.
 type entrypointContract struct {
 	sources bool
 }
@@ -252,8 +252,6 @@ func (c *entrypointContract) run(ctx context.Context, dir string) (dang.ValueSco
 	return runEntrypointDir(ctx, dir, sources)
 }
 
-// workspaceArgs returns the workspace argument that types and call take first
-// under the contract without sources.
 func (c *entrypointContract) workspaceArgs(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -280,20 +278,18 @@ func runEntrypointDir(ctx context.Context, sourceDir string, sources bool) (dang
 	}
 	defer os.RemoveAll(dir)
 
-	entries, err := os.ReadDir(sourceDir)
+	files, err := entrypointFiles(sourceDir)
 	if err != nil {
-		return nil, fmt.Errorf("read module entrypoint directory: %w", err)
+		return nil, err
 	}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".dang" {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(sourceDir, entry.Name()))
+	for _, path := range files {
+		name := filepath.Base(path)
+		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("read module entrypoint file %q: %w", entry.Name(), err)
+			return nil, fmt.Errorf("read module entrypoint file %q: %w", name, err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, entry.Name()), data, 0o600); err != nil {
-			return nil, fmt.Errorf("copy module entrypoint file %q: %w", entry.Name(), err)
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			return nil, fmt.Errorf("copy module entrypoint file %q: %w", name, err)
 		}
 	}
 	contractPath := filepath.Join(dir, "__module_entrypoint.dang")

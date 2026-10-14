@@ -52,7 +52,6 @@ func DeclaresEntrypointSources(dir string) (bool, error) {
 	return false, nil
 }
 
-// entrypointFiles lists the files that runEntrypointDir runs.
 func entrypointFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

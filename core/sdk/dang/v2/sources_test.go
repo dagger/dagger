@@ -136,7 +136,8 @@ func TestDeclaresEntrypointSources(t *testing.T) {
 	}
 }
 
-// failingClient fails every request; a conformance check sends none.
+// failingClient fails every request because type checking the interface sends
+// none.
 type failingClient struct{}
 
 func (failingClient) MakeRequest(context.Context, *graphql.Request, *graphql.Response) error {

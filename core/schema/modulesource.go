@@ -1245,8 +1245,8 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	return nil
 }
 
-// reloadModuleSourceContext reloads the module context after a change to what
-// it includes, with the files that the entrypoint's sources member returns.
+// reloadModuleSourceContext evaluates sources again because a reload replaces
+// the context that held the files sources returned.
 func (s *moduleSourceSchema) reloadModuleSourceContext(ctx context.Context, src *core.ModuleSource) error {
 	if err := s.loadModuleSourceContext(ctx, src); err != nil {
 		return err
@@ -1379,8 +1379,6 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 	return nil
 }
 
-// moduleSourceContextIncludes returns the context-root-relative patterns that
-// select the module's own files in its context.
 func moduleSourceContextIncludes(src *core.ModuleSource) []string {
 	// we load the includes specified by the user in the module config (if any) plus a few
 	// prepended paths that are always loaded
