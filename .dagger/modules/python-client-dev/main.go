@@ -196,9 +196,10 @@ func (t PythonClientDev) ClientLibrary(_ context.Context) (*dagger.Changeset, er
 	src = dag.Directory().WithDirectory("", src)
 	genFile := devContainer.
 		WithMountedFile("/schema.json", dag.DaggerEngine(t.Ws).IntrospectionJSON()).
+		WithMountedFile("/names.json", dag.DaggerEngine(t.Ws).IntrospectionNames([]string{"SNAKE:UPPERCASE"})).
 		WithWorkdir("codegen").
 		WithExec(uvRun(
-			"python", "-m", "codegen", "generate", "-i", "/schema.json", "-o", "gen.py",
+			"python", "-m", "codegen", "generate", "-i", "/schema.json", "-n", "/names.json", "-o", "gen.py",
 		)).
 		WithExec(uvRun(
 			"ruff", "check", "--fix-only", "gen.py",
