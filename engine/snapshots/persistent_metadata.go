@@ -19,6 +19,11 @@ const dagqlResultLeasePrefix = "dagql/result/"
 
 // ContentHashMetadataKey stores the serialized per-path hash tree. Imported
 // hashes must survive a restart: rescanning uses a different file hash format.
+//
+// Persisted rows record neither this key nor an encoding version, and unopened
+// rows are carried forward on shutdown. Changes to this key or the record
+// format require a dagql cachePersistenceSchemaVersion bump: incompatible
+// records make Checksum fail rather than trigger a filesystem rescan.
 const ContentHashMetadataKey = "buildkit.contenthash.v0"
 
 type PersistentMetadataRows struct {
@@ -60,6 +65,8 @@ type ImportedLayerDiffKey struct {
 	DiffID           digest.Digest
 }
 
+// LoadPersistentMetadata takes ownership of the content-hash data buffers.
+// Callers must not modify them after loading.
 func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -107,11 +114,10 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 		if row.SnapshotID == "" || len(row.Data) == 0 {
 			continue
 		}
-		data := bytes.Clone(row.Data)
 		if md, ok := cm.metadataStore.refs[row.SnapshotID]; ok {
-			md.external[ContentHashMetadataKey] = data
+			md.external[ContentHashMetadataKey] = row.Data
 		} else {
-			cm.metadataStore.pendingContentHashes[row.SnapshotID] = data
+			cm.metadataStore.pendingContentHashes[row.SnapshotID] = row.Data
 		}
 	}
 
