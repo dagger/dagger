@@ -227,13 +227,15 @@ interface ModuleEntrypoint {
 The engine calls `sources` while it loads the module source, before anything
 reads the module digest. The module context becomes the returned directory
 plus the module's own files: its manifest, its source directory and its
-`include` paths, as the engine loads them without the member. The engine then
-removes every `.git` directory and file: `.git/config` can hold credentials,
-and `.git` changes on every fetch. The returned files are thus part of
-`contextDirectory` and of the module digest, so they reach the cache key of
-every function call and of `types`. A file outside the returned directory does
-not change the context digest. The digest also covers the module identity, its
-paths, its user defaults and its SDK, as for any module.
+`include` paths, as the engine loads them without the member. When the
+returned directory and the module's own files hold the same path, the module's
+own file wins. The engine then removes every `.git` directory and file:
+`.git/config` can hold credentials, and `.git` changes on every fetch. The
+returned files are thus part of `contextDirectory` and of the module digest, so
+they reach the cache key of every function call and of `types`. A file outside
+the returned directory does not change the context digest. The digest also
+covers the module identity, its paths, its user defaults and its SDK, as for
+any module.
 
 The returned directory must hold the module manifest at the module path, as
 in this example:
@@ -273,10 +275,12 @@ returned directory follows the `gitignore` argument that `sources` passes to
 and the returned files, not the whole directory that its caller passed. This
 also holds for a module that another module serves from its own tree.
 
-The engine calls `sources` once for each load of the module source, which is
-once for each client, and once for each function call of a module that
-declares the module as a client. Keep it to a few API calls: a `glob` over the
-workspace or one read per file multiplies the load cost.
+The engine evaluates `sources` each time it loads or reloads the module
+context. A mutator that changes what the context includes, such as
+`withIncludes` or `withSourceSubpath`, reloads it. A load happens once for each
+client. A load also happens once for each function call of a module that
+declares the module as a client. Keep `sources` to a few API calls: a `glob`
+over the workspace or one read per file multiplies the load cost.
 
 `sources` runs with a nested client like a module function: it has the Dagger
 API, and it reaches the caller's host only through the workspace it gets. It
