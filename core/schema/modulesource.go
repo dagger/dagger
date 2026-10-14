@@ -17,6 +17,8 @@ import (
 	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/sdk"
+	dangv2 "github.com/dagger/dagger/core/sdk/dang/v2"
+	"github.com/dagger/dagger/core/sdk/entrypoint"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -1234,10 +1236,126 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	if err := eg.Wait(); err != nil {
 		return err
 	}
+	if err := s.loadEntrypointSources(ctx, src); err != nil {
+		return err
+	}
 	if err := src.LoadUserDefaults(ctx); err != nil {
 		return fmt.Errorf("load module source user defaults: %w", err)
 	}
 	return nil
+}
+
+// reloadModuleSourceContext reloads the module context after a change to what
+// it includes, with the files that the entrypoint's sources member returns.
+func (s *moduleSourceSchema) reloadModuleSourceContext(ctx context.Context, src *core.ModuleSource) error {
+	if err := s.loadModuleSourceContext(ctx, src); err != nil {
+		return err
+	}
+	return s.loadEntrypointSources(ctx, src)
+}
+
+// loadEntrypointSources adds what the entrypoint's sources member returns to
+// the module context. It runs while the source loads, because dependents and
+// the declaredClients input hash the module digest without loading the module.
+func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *core.ModuleSource) (rerr error) {
+	if src.Entrypoint == nil {
+		return nil
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+	entryDir, local, err := entrypoint.LocalDirectory(ctx, dag, src)
+	if err != nil || !local {
+		return err
+	}
+	declared := false
+	err = entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
+		declared, err = dangv2.DeclaresEntrypointSources(dir)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("scan module entrypoint source: %w", err)
+	}
+	if !declared {
+		return nil
+	}
+
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("entrypoint sources: %s", src.ModuleName), telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
+	fail := func(err error) error {
+		return fmt.Errorf("module %q entrypoint %s: %w", src.ModuleName, dangv2.EntrypointSourcesMember, err)
+	}
+
+	workspace, err := entrypoint.SourcesWorkspace(ctx, dag, src)
+	if err != nil {
+		return fail(err)
+	}
+	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, src.EngineVersion)
+	if err != nil {
+		return fail(err)
+	}
+	schemaFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
+	if err != nil {
+		return fail(fmt.Errorf("get entrypoint schema: %w", err))
+	}
+	sources, err := dangv2.EntrypointSources(ctx, src, entryDir, schemaFile, workspace)
+	if err != nil {
+		return fail(err)
+	}
+	configPath := filepath.Join(src.SourceRootSubpath, moduleSourceConfigFilename(src))
+	if _, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: sources}, configPath); err != nil || !exists {
+		return errors.Join(fail(fmt.Errorf("the returned directory has no %s; return the files at their paths from the workspace root", configPath)), err)
+	}
+	moduleContext := src.ContextDirectory
+	if src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil {
+		// A directory source's context is the whole directory. Keep the
+		// module's own files of it, as a Git module context does, so that
+		// sources decides what else the module builds from.
+		err := dag.Select(ctx, src.DirSrc.OriginalContextDir, &moduleContext, dagql.Selector{
+			Field: "filter",
+			Args: []dagql.NamedInput{
+				{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(moduleSourceContextIncludes(src)...))},
+			},
+		})
+		if err != nil {
+			return fail(err)
+		}
+	}
+	contextDir, err := mergeEntrypointSources(ctx, dag, sources, moduleContext)
+	if err != nil {
+		return fail(err)
+	}
+	src.ContextDirectory = contextDir
+	slog.Info("entrypoint sources evaluated", "module", src.ModuleName)
+	return nil
+}
+
+// mergeEntrypointSources overlays the module's own files as the engine loads
+// them without sources, so the module directory holds what it holds without
+// the member, .gitignore handling included. It drops repository metadata from
+// both: .git/config can hold credentials, and .git changes on every fetch.
+func mergeEntrypointSources(
+	ctx context.Context,
+	dag *dagql.Server,
+	sources dagql.ObjectResult[*core.Directory],
+	moduleContext dagql.ObjectResult[*core.Directory],
+) (dagql.ObjectResult[*core.Directory], error) {
+	var merged dagql.ObjectResult[*core.Directory]
+	contextID, err := moduleContext.ID()
+	if err != nil {
+		return merged, err
+	}
+	err = dag.Select(ctx, sources, &merged,
+		dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String("/")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](contextID)},
+		}},
+		dagql.Selector{Field: "filter", Args: []dagql.NamedInput{
+			{Name: "exclude", Value: dagql.ArrayInput[dagql.String]{".git", "**/.git"}},
+		}},
+	)
+	return merged, err
 }
 
 // load (or re-load) the context directory for the given module source
@@ -1245,6 +1363,25 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
 	src *core.ModuleSource,
 ) error {
+	if src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil {
+		// Directory sources already carry their complete in-engine context.
+		return nil
+	}
+
+	contextDir, err := core.NewModuleSourceFS(nil, src).ContextDirectory(ctx, core.CopyFilter{
+		Include:   moduleSourceContextIncludes(src),
+		Gitignore: src.Workspace.Self() != nil || src.Kind == core.ModuleSourceKindLocal,
+	})
+	if err != nil {
+		return err
+	}
+	src.ContextDirectory = contextDir
+	return nil
+}
+
+// moduleSourceContextIncludes returns the context-root-relative patterns that
+// select the module's own files in its context.
+func moduleSourceContextIncludes(src *core.ModuleSource) []string {
 	// we load the includes specified by the user in the module config (if any) plus a few
 	// prepended paths that are always loaded
 	fullIncludePaths := []string{
@@ -1263,22 +1400,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		sourcePath = "*"
 	}
 	fullIncludePaths = append(fullIncludePaths, sourcePath)
-
-	if src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil {
-		// Directory sources already carry their complete in-engine context.
-		return nil
-	}
-
-	fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
-	contextDir, err := core.NewModuleSourceFS(nil, src).ContextDirectory(ctx, core.CopyFilter{
-		Include:   fullIncludePaths,
-		Gitignore: src.Workspace.Self() != nil || src.Kind == core.ModuleSourceKindLocal,
-	})
-	if err != nil {
-		return err
-	}
-	src.ContextDirectory = contextDir
-	return nil
+	return append(fullIncludePaths, src.RebasedIncludePaths...)
 }
 
 func (s *moduleSourceSchema) moduleSourceSubpath(
@@ -1344,7 +1466,7 @@ func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
 	}
 
 	// reload context since the subpath impacts what we implicitly include in the load
-	err = s.loadModuleSourceContext(ctx, src)
+	err = s.reloadModuleSourceContext(ctx, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -1418,7 +1540,7 @@ func (s *moduleSourceSchema) moduleSourceWithIncludes(
 	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
 	// reload context in case includes have changed it
-	err = s.loadModuleSourceContext(ctx, src)
+	err = s.reloadModuleSourceContext(ctx, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -1462,7 +1584,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		// Reload the context directory now that SourceSubpath is set, so that
 		// the source files are included (e.g. an existing main.go). The initial
 		// load may have used empty SourceSubpath which matches no files.
-		err := s.loadModuleSourceContext(ctx, src)
+		err := s.reloadModuleSourceContext(ctx, src)
 		switch {
 		case err == nil:
 		case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:

@@ -2,11 +2,20 @@ package dangv2
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/vito/dang/v2/pkg/dang"
+	"github.com/vito/dang/v2/pkg/introspection"
+
+	"github.com/dagger/dagger/core"
+	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
+	"github.com/dagger/dagger/core/sdk/entrypoint"
+	"github.com/dagger/dagger/dagql"
 )
 
 // EntrypointSourcesMember is the optional entrypoint member that returns the
@@ -82,4 +91,100 @@ func implementsModuleEntrypoint(decl *dang.ObjectDecl) bool {
 		}
 	}
 	return false
+}
+
+// EntrypointSources calls the sources member of the entrypoint in entryDir
+// with workspace and returns the Directory it returns. No module exists yet,
+// so the program runs without currentModule. Its nested client has what a
+// module function has: the Dagger API, and the host only through the
+// workspace it is given.
+func EntrypointSources(
+	ctx context.Context,
+	src *core.ModuleSource,
+	entryDir dagql.ObjectResult[*core.Directory],
+	schemaFile dagql.Result[*core.File],
+	workspace dagql.ObjectResult[*core.Workspace],
+) (dagql.ObjectResult[*core.Directory], error) {
+	var sources dagql.ObjectResult[*core.Directory]
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return sources, err
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return sources, err
+	}
+	var intro introspection.Response
+	f, err := schemaFile.Self().Open(ctx, dagql.ObjectResult[*core.File]{Result: schemaFile})
+	if err != nil {
+		return sources, fmt.Errorf("open schema file: %w", err)
+	}
+	defer f.Close()
+	if err := json.NewDecoder(f).Decode(&intro); err != nil {
+		return sources, fmt.Errorf("decode schema: %w", err)
+	}
+	workspaceArg, err := entrypoint.WorkspaceCallArg(workspace)
+	if err != nil {
+		return sources, err
+	}
+	nestedClientMetadata, err := dangshared.NewNestedClientMetadata(ctx)
+	if err != nil {
+		return sources, err
+	}
+	module := dangModule{name: src.ModuleName, originalName: src.ModuleOriginalName}
+
+	_, err = dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, true, nil, dagql.ObjectResult[*core.Module]{}, func(ctx context.Context, client graphql.Client) ([]byte, error) {
+		ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
+			Name:       "Dagger",
+			Client:     client,
+			Schema:     intro.Schema,
+			AutoImport: true,
+		})
+		return nil, entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
+			ensureModuleSelfTypes(intro.Schema, src, dir)
+			env, err := runEntrypointDir(ctx, dir, true)
+			if err != nil {
+				if isDangSourceError(err) {
+					return &dangSourceError{err: err}
+				}
+				return fmt.Errorf("run module entrypoint: %w", err)
+			}
+			entrypointName, err := findModuleEntrypoint(env)
+			if err != nil {
+				return err
+			}
+			value, err := callDangFunction(ctx, env, &core.FunctionCall{
+				Name:       EntrypointSourcesMember,
+				ParentName: entrypointName,
+				Parent:     core.JSON("{}"),
+				InputArgs:  []*core.FunctionCallArgValue{workspaceArg},
+			}, module)
+			if err != nil {
+				return err
+			}
+			sources, err = loadEntrypointDirectory(ctx, dag, value)
+			return err
+		})
+	})
+	if err != nil {
+		return sources, dangshared.ConvertError(err)
+	}
+	return sources, nil
+}
+
+func loadEntrypointDirectory(ctx context.Context, dag *dagql.Server, value dang.Value) (dagql.ObjectResult[*core.Directory], error) {
+	var directory dagql.ObjectResult[*core.Directory]
+	object, ok := value.(dang.GraphQLValue)
+	if !ok || object.TypeName != "Directory" {
+		return directory, fmt.Errorf("%s returned %T instead of a Directory", EntrypointSourcesMember, value)
+	}
+	encoded, err := object.ID(ctx)
+	if err != nil {
+		return directory, fmt.Errorf("get %s directory ID: %w", EntrypointSourcesMember, err)
+	}
+	var id dagql.ID[*core.Directory]
+	if err := id.Decode(encoded); err != nil {
+		return directory, fmt.Errorf("decode %s directory ID: %w", EntrypointSourcesMember, err)
+	}
+	return id.Load(ctx, dag)
 }

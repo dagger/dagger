@@ -1580,7 +1580,10 @@ func (srv *Server) initializeClientRuntime(
 			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
 		client.servedMods = servedMods.ClientOwned()
-	} else {
+	} else if !opts.InertAttachables {
+		// Only a client that can read its host detects its own workspace. An
+		// in-engine SDK client without a module, such as one that evaluates an
+		// entrypoint's sources, inherits its parent's like a module client.
 		client.pendingWorkspaceLoad = true
 		if clientMD := client.clientMetadata; clientMD != nil && len(clientMD.ExtraModules) > 0 {
 			client.pendingExtraModules = clientMD.ExtraModules

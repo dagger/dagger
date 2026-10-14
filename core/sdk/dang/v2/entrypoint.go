@@ -65,6 +65,17 @@ func EntrypointModuleTypes(
 			if err != nil {
 				return nil, err
 			}
+			if contract.sources {
+				// The engine evaluates sources while the module source loads,
+				// which it does only for an entrypoint inside the module.
+				local, err := entrypoint.IsLocalSource(ctx, src.Self())
+				if err != nil {
+					return nil, err
+				}
+				if !local {
+					return nil, fmt.Errorf("%s needs a local entrypoint: entrypoint.source %q is not a path inside the module", EntrypointSourcesMember, src.Self().Entrypoint.Source)
+				}
+			}
 			args, err := contract.workspaceArgs(ctx, dag, src)
 			if err != nil {
 				return nil, err
