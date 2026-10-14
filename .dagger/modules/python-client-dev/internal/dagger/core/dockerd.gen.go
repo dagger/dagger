@@ -10,7 +10,7 @@ import (
 )
 
 // Module for running docker in dagger
-type Dockerd struct { // dockerd (../../../../../.dagger/modules/python-client-dev/dockerd/main.go:14:6)
+type Dockerd struct { // dockerd (../../../../../../.dagger/modules/python-client-dev/dockerd/main.go:14:6)
 	query *querybuilder.Selection
 
 	id *ID
@@ -26,11 +26,11 @@ func (r *Dockerd) WithGraphQLQuery(q *querybuilder.Selection) *Dockerd {
 type DockerdAttachOpts struct {
 
 	// Default: "24.0"
-	DockerVersion string // dockerd (../../../../../.dagger/modules/python-client-dev/dockerd/main.go:22:2)
+	DockerVersion string // dockerd (../../../../../../.dagger/modules/python-client-dev/dockerd/main.go:22:2)
 }
 
 // Attach a dockerd service to a container
-func (r *Dockerd) Attach(container *Container, opts ...DockerdAttachOpts) *Container { // dockerd (../../../../../.dagger/modules/python-client-dev/dockerd/main.go:17:1)
+func (r *Dockerd) Attach(container *Container, opts ...DockerdAttachOpts) *Container { // dockerd (../../../../../../.dagger/modules/python-client-dev/dockerd/main.go:17:1)
 	assertNotNil("container", container)
 	q := r.query.Select("attach")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -99,11 +99,11 @@ func (r *Dockerd) UnmarshalJSON(bs []byte) error {
 type DockerdServiceOpts struct {
 
 	// Default: "24.0"
-	DockerVersion string // dockerd (../../../../../.dagger/modules/python-client-dev/dockerd/main.go:42:2)
+	DockerVersion string // dockerd (../../../../../../.dagger/modules/python-client-dev/dockerd/main.go:42:2)
 }
 
 // Get a Service container running dockerd
-func (r *Dockerd) Service(opts ...DockerdServiceOpts) *Service { // dockerd (../../../../../.dagger/modules/python-client-dev/dockerd/main.go:39:1)
+func (r *Dockerd) Service(opts ...DockerdServiceOpts) *Service { // dockerd (../../../../../../.dagger/modules/python-client-dev/dockerd/main.go:39:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `dockerVersion` optional argument
@@ -126,7 +126,7 @@ func (r *Dockerd) AsNode() Node {
 }
 
 // Module for running docker in dagger
-func (r *Query) Dockerd() *Dockerd { // dockerd (../../../../../.dagger/modules/python-client-dev/dockerd/main.go:14:6)
+func (r *Query) Dockerd() *Dockerd { // dockerd (../../../../../../.dagger/modules/python-client-dev/dockerd/main.go:14:6)
 	q := r.query.Select("dockerd")
 
 	return &Dockerd{
