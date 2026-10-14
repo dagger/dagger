@@ -304,11 +304,8 @@ func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, set
 	}, &dagger.Response{Data: &functions}); err != nil {
 		return "", err
 	}
-	want := gqlFieldName(value)
-	for _, fn := range functions.CurrentWorkspace.Module.Functions {
-		if fn == want {
-			return "dag://" + entrypoint + "/" + value, nil
-		}
+	if containsFieldName(functions.CurrentWorkspace.Module.Functions, value) {
+		return "dag://" + entrypoint + "/" + value, nil
 	}
 	return value, nil
 }
