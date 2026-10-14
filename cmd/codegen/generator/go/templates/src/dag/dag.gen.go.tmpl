@@ -57,6 +57,10 @@ func Close() error {
 		{{- end -}}
 	)
 }
+{{- with FieldLegacyWrapper $field true $supportsVoid "core" }}
+
+{{ . }}
+{{- end }}
 
 {{ end }}
 {{- end }}
@@ -153,6 +157,10 @@ func Close() error {
 		{{- end -}}
 	)
 }
+{{- with FieldLegacyWrapper $field true $supportsVoid "dagger" }}
+
+{{ . }}
+{{- end }}
 
 {{ end }}
 {{- end }}
