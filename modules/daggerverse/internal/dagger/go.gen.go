@@ -492,7 +492,7 @@ type GoTestOpts struct {
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // go (../../../../toolchains/go/main.go:422:2)
+	FailFast bool // go (../../../../toolchains/go/main.go:422:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
@@ -529,9 +529,9 @@ func (r *Go) Test(ctx context.Context, opts ...GoTestOpts) error { // go (../../
 		if !querybuilder.IsZeroValue(opts[i].Skip) {
 			q = q.Arg("skip", opts[i].Skip)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {

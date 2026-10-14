@@ -423,7 +423,7 @@ func (p *Go) Test(
 	skip string,
 	// Abort test run on first failure
 	// +optional
-	failfast bool,
+	failFast bool,
 	// How many tests to run in parallel - defaults to the number of CPUs
 	// +optional
 	// +default=0
@@ -452,7 +452,7 @@ func (p *Go) Test(
 	if run != "" {
 		cmd = append(cmd, "-run", run)
 	}
-	if failfast {
+	if failFast {
 		cmd = append(cmd, "-failfast")
 	}
 	if skip != "" {

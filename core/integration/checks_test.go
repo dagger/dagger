@@ -588,10 +588,10 @@ func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
 	modGen, err := checksTestEnv(t, c)
 	require.NoError(t, err)
 	modGen = modGen.WithWorkdir("hello-with-checks")
-	// run all checks with --failfast; should fail because there are failing checks
+	// run all checks with --fail-fast; should fail because there are failing checks
 	out, err := modGen.
 		WithEnvVariable("CACHEBUSTER", rand.Text()).
-		With(daggerExecFail("--progress=report", "check", "--failfast")).
+		With(daggerExecFail("--progress=report", "check", "--fail-fast")).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "ERROR")
@@ -625,7 +625,7 @@ func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
 					continue
 				}
 				for parent := span; parent != nil; parent = spans[string(parent.TraceId)+string(parent.ParentSpanId)] {
-					if parent.Name == "dagger --progress=report check --failfast" {
+					if parent.Name == "dagger --progress=report check --fail-fast" {
 						canceled = true
 						break
 					}
@@ -639,7 +639,7 @@ func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
 		}
 		select {
 		case <-ctx.Done():
-			require.NoError(t, ctx.Err(), "no canceled check outcome received from dagger check --failfast")
+			require.NoError(t, ctx.Err(), "no canceled check outcome received from dagger check --fail-fast")
 		case <-changed:
 		}
 	}

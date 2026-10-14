@@ -425,7 +425,7 @@ type DaggerEngineTestOpts struct {
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // dagger-engine (../../../../toolchains/engine-dev/test.go:35:2)
+	FailFast bool // dagger-engine (../../../../toolchains/engine-dev/test.go:35:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
@@ -474,9 +474,9 @@ func (r *DaggerEngine) Test(ctx context.Context, opts ...DaggerEngineTestOpts) e
 		if !querybuilder.IsZeroValue(opts[i].Pkg) {
 			q = q.Arg("pkg", opts[i].Pkg)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {
@@ -528,7 +528,7 @@ type DaggerEngineTestTelemetryOpts struct {
 
 	Update bool // dagger-engine (../../../../toolchains/engine-dev/test.go:93:2)
 
-	Failfast bool // dagger-engine (../../../../toolchains/engine-dev/test.go:95:2)
+	FailFast bool // dagger-engine (../../../../toolchains/engine-dev/test.go:95:2)
 
 	Parallel int // dagger-engine (../../../../toolchains/engine-dev/test.go:97:2)
 
@@ -564,9 +564,9 @@ func (r *DaggerEngine) TestTelemetry(opts ...DaggerEngineTestTelemetryOpts) *Cha
 		if !querybuilder.IsZeroValue(opts[i].Update) {
 			q = q.Arg("update", opts[i].Update)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {
