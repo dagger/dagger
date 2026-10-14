@@ -113,17 +113,18 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"LegacyGoSDKCompat":         funcs.legacyGoSDKCompat,
 
 		// interface support
-		"IsInterfaceType":          funcs.isInterfaceType,
-		"IsInterfaceRef":           funcs.isInterfaceRef,
-		"IsNullableObject":         funcs.isNullableObject,
-		"IsListOfInterface":        funcs.isListOfInterface,
-		"InterfaceClientName":      funcs.interfaceClientName,
-		"InterfaceReturnType":      funcs.interfaceReturnType,
-		"InterfaceListResultType":  funcs.interfaceListResultType,
-		"PossibleTypes":            funcs.possibleTypes,
-		"ImplementedInterfaces":    funcs.implementedInterfaces,
-		"InterfaceMethodSignature": funcs.interfaceMethodSignature,
-		"InterfaceClientMethod":    funcs.interfaceClientMethod,
+		"IsInterfaceType":              funcs.isInterfaceType,
+		"IsInterfaceRef":               funcs.isInterfaceRef,
+		"IsNullableObject":             funcs.isNullableObject,
+		"IsListOfInterface":            funcs.isListOfInterface,
+		"InterfaceClientName":          funcs.interfaceClientName,
+		"InterfaceReturnType":          funcs.interfaceReturnType,
+		"InterfaceListResultType":      funcs.interfaceListResultType,
+		"PossibleTypes":                funcs.possibleTypes,
+		"ImplementedInterfaces":        funcs.implementedInterfaces,
+		"InterfaceMethodSignature":     funcs.interfaceMethodSignature,
+		"InterfaceClientMethod":        funcs.interfaceClientMethod,
+		"InterfaceClientLegacyWrapper": funcs.interfaceClientLegacyWrapper,
 
 		// go specific
 		"Comment":                 funcs.comment,
@@ -132,10 +133,15 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatName":              formatName,
 		"FormatParamName":         formatParamName,
 		"FormatEnum":              funcs.formatEnum,
+		"LegacyEnumValueNames":    funcs.legacyEnumValueNames,
+		"LegacyTypeName":          funcs.legacyTypeName,
+		"LegacyOptionalArgName":   funcs.legacyOptionalArgName,
 		"SortEnumFields":          funcs.sortEnumFields,
 		"GroupEnumByValue":        funcs.groupEnumByValue,
 		"FieldOptionsStructName":  funcs.fieldOptionsStructName,
+		"LegacyFieldOptionsName":  funcs.legacyFieldOptionsStructName,
 		"FieldFunction":           funcs.fieldFunction,
+		"FieldLegacyWrapper":      funcs.fieldLegacyWrapper,
 		"IsArgOptional":           funcs.isArgOptional,
 		"HasOptionals":            funcs.hasOptionals,
 		"IsEnum":                  funcs.isEnum,
@@ -266,15 +272,6 @@ func (funcs goTemplateFuncs) isPointer(t introspection.InputValue) (bool, error)
 	return strings.Index(representation, "*") == 0, err
 }
 
-// formatName formats a GraphQL name (e.g. object, field, arg) into a Go equivalent
-// Example: `fooId` -> `FooID`
-func formatName(s string) string {
-	if len(s) > 0 {
-		s = strings.ToUpper(string(s[0])) + s[1:]
-	}
-	return lintName(s)
-}
-
 // formatParamName formats a GraphQL argument or field name into a Go
 // identifier: keywords don't parse, and predeclared identifiers
 // (types.Universe) would shadow types referenced in the generated body —
@@ -398,6 +395,87 @@ func (funcs goTemplateFuncs) isArgOptional(arg introspection.InputValue) bool {
 // fieldFunction converts a field into a function signature
 // Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
 func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool, supportsVoid bool, scopes ...string) (string, error) {
+	return funcs.fieldFunctionNamed(f, formatName(f.Name), topLevel, supportsVoid, scopes...)
+}
+
+// fieldLegacyWrapper returns a deprecated method under the name a field's
+// method had before engine/naming renamed it, forwarding to the current one,
+// or "" when the name didn't change. See legacyMethodName.
+func (funcs goTemplateFuncs) fieldLegacyWrapper(f introspection.Field, topLevel bool, supportsVoid bool, scopes ...string) (string, error) {
+	legacy, ok := legacyMethodName(f)
+	if !ok {
+		return "", nil
+	}
+	sig, err := funcs.fieldFunctionNamed(f, legacy, topLevel, supportsVoid, scopes...)
+	if err != nil {
+		return "", err
+	}
+	target := formatName(f.Name)
+	if !topLevel {
+		target = "r." + target
+	} else if funcs.isCoreLibrary() && !hasTypeScope(scopes) {
+		target = funcs.coreConstructorName(f)
+	}
+	return legacyWrapper(sig, target, funcs.forwardedArgs(f)), nil
+}
+
+// interfaceClientLegacyWrapper is fieldLegacyWrapper for an interface's
+// query-builder struct.
+func (funcs goTemplateFuncs) interfaceClientLegacyWrapper(ifaceName string, f introspection.Field) (string, error) {
+	legacy, ok := legacyMethodName(f)
+	if !ok {
+		return "", nil
+	}
+	sig, err := funcs.interfaceClientMethodNamed(ifaceName, f, legacy)
+	if err != nil {
+		return "", err
+	}
+	return legacyWrapper(sig, "r."+formatName(f.Name), funcs.forwardedArgs(f)), nil
+}
+
+func legacyWrapper(sig, target string, args []string) string {
+	name := target[strings.LastIndex(target, ".")+1:]
+	return "// Deprecated: use " + name + " instead.\n" +
+		sig + " {\n\treturn " + target + "(" + strings.Join(args, ", ") + ")\n}\n"
+}
+
+// forwardedArgs lists the arguments a wrapper passes on to a field's method,
+// matching the parameters fieldFunction declares.
+func (funcs goTemplateFuncs) forwardedArgs(f introspection.Field) []string {
+	var args []string
+	if f.TypeRef.IsScalar() || f.TypeRef.IsList() || funcs.isNullableObject(f.TypeRef) {
+		args = append(args, "ctx")
+	}
+	for _, arg := range f.Args {
+		if funcs.isArgOptional(arg) {
+			continue
+		}
+		args = append(args, formatParamName(arg.Name))
+	}
+	if funcs.hasOptionals(f.Args) {
+		args = append(args, "opts...")
+	}
+	return args
+}
+
+// legacyFieldOptionsStructName returns the name a field's options struct had
+// before engine/naming renamed it, when it differs from the current one, so
+// it can be kept as a deprecated alias.
+func (funcs goTemplateFuncs) legacyFieldOptionsStructName(f introspection.Field) string {
+	legacy := legacyFormatName(legacyFieldSchemaName(f)) + "Opts"
+	if f.ParentObject.Name != generator.QueryStructName {
+		legacy = legacyFormatName(legacyTypeSchemaName(f.ParentObject)) + legacy
+	}
+	if legacy == funcs.fieldOptionsStructName(f) {
+		return ""
+	}
+	if t := funcs.fullSchema.Types.Get(legacy); t != nil {
+		return ""
+	}
+	return legacy
+}
+
+func (funcs goTemplateFuncs) fieldFunctionNamed(f introspection.Field, name string, topLevel bool, supportsVoid bool, scopes ...string) (string, error) {
 	// don't create methods on query for the env itself,
 	// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
 	// TODO(vito): still needed? we codegen against the module's schema view,
@@ -421,9 +499,9 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 		// get a "New" prefix instead. A package that refers to the types
 		// through a scope (e.g. dag, with "core") has no collision, so it
 		// keeps the plain name.
-		signature += funcs.coreConstructorName(f)
+		signature += funcs.coreConstructorNamed(name)
 	} else {
-		signature += formatName(f.Name)
+		signature += name
 	}
 
 	// Generate arguments
@@ -720,8 +798,12 @@ func (funcs goTemplateFuncs) interfaceMethodSignature(f introspection.Field) (st
 //
 //	func (r *duckClient) Quack(ctx context.Context) (string, error)
 func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspection.Field) (string, error) {
+	return funcs.interfaceClientMethodNamed(ifaceName, f, formatName(f.Name))
+}
+
+func (funcs goTemplateFuncs) interfaceClientMethodNamed(ifaceName string, f introspection.Field, name string) (string, error) {
 	clientName := funcs.interfaceClientName(ifaceName)
-	sig := "func (r *" + clientName + ") " + formatName(f.Name)
+	sig := "func (r *" + clientName + ") " + name
 
 	args := []string{}
 	if f.TypeRef.IsScalar() || f.TypeRef.IsList() || funcs.isNullableObject(f.TypeRef) {
