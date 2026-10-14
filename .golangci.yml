@@ -104,6 +104,11 @@ linters:
           - unparam
         path: docs/
       - linters:
+          # The Go SDK uses ws to compile external inputs even when the Go body doesn't read it.
+          - unparam
+        path: \.dagger/modules/(go|cli-dev|engine-dev)/
+        text: " - ws is unused$"
+      - linters:
           # this is sometimes done for clarity
           - unparam
         text: .* always receives .*

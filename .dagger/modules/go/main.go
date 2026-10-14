@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	wolfiClient "github.com/dagger/dagger/modules/go/internal/dagger/clients/wolfi"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	wolfiClient "github.com/dagger/dagger/modules/go/internal/dagger/clients/wolfi"
 
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	telemetry "github.com/dagger/otel-go"

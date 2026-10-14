@@ -79,7 +79,7 @@ func vcsInfo(ctx context.Context, ws *dagger.Workspace) (commit string, dirty bo
 		return "", false
 	}
 	git := ws.Git()
-	commit, err := git.Head().Commit(ctx)
+	commit, err := git.Head().CommitSHA(ctx)
 	if err != nil {
 		return "", false
 	}

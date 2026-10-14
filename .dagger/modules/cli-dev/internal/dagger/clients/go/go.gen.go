@@ -10,7 +10,7 @@ import (
 )
 
 // A Go project
-type Go struct { // go (../../main.go:185:6)
+type Go struct { // go (../../main.go:186:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -44,7 +44,7 @@ func (r *Go) WithGraphQLQuery(q *querybuilder.Selection) *Go {
 }
 
 // Base container from which to run all operations
-func (r *Go) Base() *Container { // go (../../main.go:202:2)
+func (r *Go) Base() *Container { // go (../../main.go:203:2)
 	q := r.query.Select("base")
 
 	return new(Container).WithGraphQLQuery(q)
@@ -55,19 +55,19 @@ type GoBinaryOpts struct {
 	//
 	// Disable symbol table
 	//
-	NoSymbols bool // go (../../main.go:380:2)
+	NoSymbols bool // go (../../main.go:381:2)
 	//
 	// Disable DWARF generation
 	//
-	NoDwarf bool // go (../../main.go:383:2)
+	NoDwarf bool // go (../../main.go:384:2)
 	//
 	// Target build platform
 	//
-	Platform Platform // go (../../main.go:386:2)
+	Platform Platform // go (../../main.go:387:2)
 }
 
 // Build a single main package, and return the compiled binary
-func (r *Go) Binary(ws *Workspace, pkg string, opts ...GoBinaryOpts) *File { // go (../../main.go:374:1)
+func (r *Go) Binary(ws *Workspace, pkg string, opts ...GoBinaryOpts) *File { // go (../../main.go:375:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -97,29 +97,29 @@ type GoBuildOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../main.go:322:2)
+	Pkgs []string // go (../../main.go:323:2)
 	//
 	// Disable symbol table
 	//
-	NoSymbols bool // go (../../main.go:325:2)
+	NoSymbols bool // go (../../main.go:326:2)
 	//
 	// Disable DWARF generation
 	//
-	NoDwarf bool // go (../../main.go:328:2)
+	NoDwarf bool // go (../../main.go:329:2)
 	//
 	// Target build platform
 	//
-	Platform Platform // go (../../main.go:331:2)
+	Platform Platform // go (../../main.go:332:2)
 	//
 	// Output directory
 	//
 	//
 	// Default: "./bin/"
-	Output string // go (../../main.go:335:2)
+	Output string // go (../../main.go:336:2)
 }
 
 // Build the given main packages, and return the build directory
-func (r *Go) Build(ws *Workspace, opts ...GoBuildOpts) *Directory { // go (../../main.go:317:1)
+func (r *Go) Build(ws *Workspace, opts ...GoBuildOpts) *Directory { // go (../../main.go:318:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -150,14 +150,14 @@ func (r *Go) Build(ws *Workspace, opts ...GoBuildOpts) *Directory { // go (../..
 }
 
 // Go build cache
-func (r *Go) BuildCache() *CacheVolume { // go (../../main.go:199:2)
+func (r *Go) BuildCache() *CacheVolume { // go (../../main.go:200:2)
 	q := r.query.Select("buildCache")
 
 	return new(CacheVolume).WithGraphQLQuery(q)
 }
 
 // Enable CGO
-func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../main.go:214:2)
+func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../main.go:215:2)
 	if r.cgo != nil {
 		return *r.cgo, nil
 	}
@@ -171,13 +171,13 @@ func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../main.go:214:2
 
 // GoCheckTidyOpts contains options for Go.CheckTidy
 type GoCheckTidyOpts struct {
-	Include []string // go (../../main.go:800:2)
+	Include []string // go (../../main.go:801:2)
 
-	Exclude []string // go (../../main.go:801:2)
+	Exclude []string // go (../../main.go:802:2)
 }
 
 // Check if 'go mod tidy' is up-to-date
-func (r *Go) CheckTidy(ws *Workspace, opts ...GoCheckTidyOpts) *Check { // go (../../main.go:798:1)
+func (r *Go) CheckTidy(ws *Workspace, opts ...GoCheckTidyOpts) *Check { // go (../../main.go:799:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("checkTidy")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -196,7 +196,7 @@ func (r *Go) CheckTidy(ws *Workspace, opts ...GoCheckTidyOpts) *Check { // go (.
 }
 
 // Download dependencies into the module cache
-func (r *Go) Download(ws *Workspace) *Go { // go (../../main.go:237:1)
+func (r *Go) Download(ws *Workspace) *Go { // go (../../main.go:238:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("download")
 	q = q.Arg("ws", ws)
@@ -209,14 +209,14 @@ func (r *Go) Download(ws *Workspace) *Go { // go (../../main.go:237:1)
 
 // GoEnvOpts contains options for Go.Env
 type GoEnvOpts struct {
-	Platform Platform // go (../../main.go:258:2)
+	Platform Platform // go (../../main.go:259:2)
 }
 
 // Prepare a build environment for the given Go source code:
 //   - Build a base container with Go tooling installed and configured
 //   - Apply configuration
 //   - Mount the source code
-func (r *Go) Env(ws *Workspace, opts ...GoEnvOpts) *Container { // go (../../main.go:256:1)
+func (r *Go) Env(ws *Workspace, opts ...GoEnvOpts) *Container { // go (../../main.go:257:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("env")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -230,7 +230,7 @@ func (r *Go) Env(ws *Workspace, opts ...GoEnvOpts) *Container { // go (../../mai
 	return new(Container).WithGraphQLQuery(q)
 }
 
-func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../main.go:224:2)
+func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../main.go:225:2)
 	q := r.query.Select("exclude")
 
 	var response []string
@@ -240,7 +240,7 @@ func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../main.
 }
 
 // Enable go experiments
-func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../main.go:220:2)
+func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../main.go:221:2)
 	q := r.query.Select("experiment")
 
 	var response []string
@@ -249,7 +249,7 @@ func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../ma
 	return response, q.Execute(ctx)
 }
 
-func (r *Go) GenerateDaggerRuntime(ws *Workspace, start string) *Go { // go (../../main.go:639:1)
+func (r *Go) GenerateDaggerRuntime(ws *Workspace, start string) *Go { // go (../../main.go:640:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("generateDaggerRuntime")
 	q = q.Arg("ws", ws)
@@ -262,7 +262,7 @@ func (r *Go) GenerateDaggerRuntime(ws *Workspace, start string) *Go { // go (../
 }
 
 // Generate Dagger runtime files for Go SDK modules in the configured source.
-func (r *Go) GenerateDaggerRuntimes(ws *Workspace) *Changeset { // go (../../main.go:595:1)
+func (r *Go) GenerateDaggerRuntimes(ws *Workspace) *Changeset { // go (../../main.go:596:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("generateDaggerRuntimes")
 	q = q.Arg("ws", ws)
@@ -325,7 +325,7 @@ func (r *Go) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../main.go:222:2)
+func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../main.go:223:2)
 	q := r.query.Select("include")
 
 	var response []string
@@ -335,7 +335,7 @@ func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../main.
 }
 
 // Pass arguments to 'go build -ldflags'
-func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../main.go:205:2)
+func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../main.go:206:2)
 	q := r.query.Select("ldflags")
 
 	var response []string
@@ -345,7 +345,7 @@ func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../main.
 }
 
 // Max number of parallel jobs to run
-func (r *Go) Limit(ctx context.Context) (int, error) { // go (../../main.go:227:2)
+func (r *Go) Limit(ctx context.Context) (int, error) { // go (../../main.go:228:2)
 	if r.limit != nil {
 		return *r.limit, nil
 	}
@@ -364,15 +364,15 @@ type GoListPackagesOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../main.go:470:2)
+	Pkgs []string // go (../../main.go:471:2)
 	//
 	// Only list main packages
 	//
-	OnlyMain bool // go (../../main.go:473:2)
+	OnlyMain bool // go (../../main.go:474:2)
 }
 
 // List packages matching the specified criteria
-func (r *Go) ListPackages(ctx context.Context, ws *Workspace, opts ...GoListPackagesOpts) ([]string, error) { // go (../../main.go:465:1)
+func (r *Go) ListPackages(ctx context.Context, ws *Workspace, opts ...GoListPackagesOpts) ([]string, error) { // go (../../main.go:466:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("listPackages")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -394,7 +394,7 @@ func (r *Go) ListPackages(ctx context.Context, ws *Workspace, opts ...GoListPack
 }
 
 // Go module cache
-func (r *Go) ModuleCache() *CacheVolume { // go (../../main.go:196:2)
+func (r *Go) ModuleCache() *CacheVolume { // go (../../main.go:197:2)
 	q := r.query.Select("moduleCache")
 
 	return new(CacheVolume).WithGraphQLQuery(q)
@@ -402,13 +402,13 @@ func (r *Go) ModuleCache() *CacheVolume { // go (../../main.go:196:2)
 
 // GoModulesOpts contains options for Go.Modules
 type GoModulesOpts struct {
-	Include []string // go (../../main.go:545:2)
+	Include []string // go (../../main.go:546:2)
 
-	Exclude []string // go (../../main.go:546:2)
+	Exclude []string // go (../../main.go:547:2)
 }
 
 // Scan the source for go modules, and return their paths
-func (r *Go) Modules(ctx context.Context, ws *Workspace, opts ...GoModulesOpts) ([]string, error) { // go (../../main.go:543:1)
+func (r *Go) Modules(ctx context.Context, ws *Workspace, opts ...GoModulesOpts) ([]string, error) { // go (../../main.go:544:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("modules")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -430,7 +430,7 @@ func (r *Go) Modules(ctx context.Context, ws *Workspace, opts ...GoModulesOpts) 
 }
 
 // Enable race detector
-func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../main.go:217:2)
+func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../main.go:218:2)
 	if r.race != nil {
 		return *r.race, nil
 	}
@@ -443,14 +443,14 @@ func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../main.go:217:
 }
 
 // Project source directory
-func (r *Go) Source() *Directory { // go (../../main.go:193:2)
+func (r *Go) Source() *Directory { // go (../../main.go:194:2)
 	q := r.query.Select("source")
 
 	return new(Directory).WithGraphQLQuery(q)
 }
 
 // Pass arguments to 'go build -tags'
-func (r *Go) Tags(ctx context.Context) ([]string, error) { // go (../../main.go:208:2)
+func (r *Go) Tags(ctx context.Context) ([]string, error) { // go (../../main.go:209:2)
 	q := r.query.Select("tags")
 
 	var response []string
@@ -464,38 +464,38 @@ type GoTestOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // go (../../main.go:416:2)
+	Run string // go (../../main.go:417:2)
 	//
 	// Skip these tests
 	//
-	Skip string // go (../../main.go:419:2)
+	Skip string // go (../../main.go:420:2)
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // go (../../main.go:422:2)
+	Failfast bool // go (../../main.go:423:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
-	Parallel int // go (../../main.go:426:2)
+	Parallel int // go (../../main.go:427:2)
 	//
 	// How long before timing out the test run
 	//
 	//
 	// Default: "30m"
-	Timeout string // go (../../main.go:430:2)
+	Timeout string // go (../../main.go:431:2)
 
 	// Default: 1
-	Count int // go (../../main.go:433:2)
+	Count int // go (../../main.go:434:2)
 	//
 	// Which packages to test
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../main.go:437:2)
+	Pkgs []string // go (../../main.go:438:2)
 }
 
 // Run tests for the given packages
-func (r *Go) Test(ctx context.Context, ws *Workspace, opts ...GoTestOpts) error { // go (../../main.go:412:1)
+func (r *Go) Test(ctx context.Context, ws *Workspace, opts ...GoTestOpts) error { // go (../../main.go:413:1)
 	assertNotNil("ws", ws)
 	if r.test != nil {
 		return nil
@@ -543,11 +543,11 @@ type GoTestsOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../main.go:307:2)
+	Pkgs []string // go (../../main.go:308:2)
 }
 
 // List tests
-func (r *Go) Tests(ctx context.Context, ws *Workspace, opts ...GoTestsOpts) (string, error) { // go (../../main.go:302:1)
+func (r *Go) Tests(ctx context.Context, ws *Workspace, opts ...GoTestsOpts) (string, error) { // go (../../main.go:303:1)
 	assertNotNil("ws", ws)
 	if r.tests != nil {
 		return *r.tests, nil
@@ -569,12 +569,12 @@ func (r *Go) Tests(ctx context.Context, ws *Workspace, opts ...GoTestsOpts) (str
 
 // GoTidyOpts contains options for Go.Tidy
 type GoTidyOpts struct {
-	Include []string // go (../../main.go:568:2)
+	Include []string // go (../../main.go:569:2)
 
-	Exclude []string // go (../../main.go:569:2)
+	Exclude []string // go (../../main.go:570:2)
 }
 
-func (r *Go) Tidy(ws *Workspace, opts ...GoTidyOpts) *Changeset { // go (../../main.go:566:1)
+func (r *Go) Tidy(ws *Workspace, opts ...GoTidyOpts) *Changeset { // go (../../main.go:567:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("tidy")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -592,7 +592,7 @@ func (r *Go) Tidy(ws *Workspace, opts ...GoTidyOpts) *Changeset { // go (../../m
 	return new(Changeset).WithGraphQLQuery(q)
 }
 
-func (r *Go) TidyModule(ws *Workspace, module string) *Changeset { // go (../../main.go:555:1)
+func (r *Go) TidyModule(ws *Workspace, module string) *Changeset { // go (../../main.go:556:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("tidyModule")
 	q = q.Arg("ws", ws)
@@ -602,7 +602,7 @@ func (r *Go) TidyModule(ws *Workspace, module string) *Changeset { // go (../../
 }
 
 // Add string value definition of the form importpath.name=value
-func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../main.go:211:2)
+func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../main.go:212:2)
 	q := r.query.Select("values")
 
 	var response []string
@@ -612,7 +612,7 @@ func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../main.g
 }
 
 // Go version
-func (r *Go) Version(ctx context.Context) (string, error) { // go (../../main.go:190:2)
+func (r *Go) Version(ctx context.Context) (string, error) { // go (../../main.go:191:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -635,75 +635,75 @@ type GoOpts struct {
 	//
 	// Project source directory
 	//
-	Source *Directory // go (../../main.go:35:2)
+	Source *Directory // go (../../main.go:36:2)
 	//
 	// Go version
 	//
 	//
 	// Default: "1.26"
-	Version string // go (../../main.go:39:2)
+	Version string // go (../../main.go:40:2)
 	//
 	// Use a custom module cache
 	//
-	ModuleCache *CacheVolume // go (../../main.go:42:2)
+	ModuleCache *CacheVolume // go (../../main.go:43:2)
 	//
 	// Use a custom build cache
 	//
-	BuildCache *CacheVolume // go (../../main.go:46:2)
+	BuildCache *CacheVolume // go (../../main.go:47:2)
 	//
 	// Use a custom base container.
 	// The container must have Go installed.
 	//
-	Base *Container // go (../../main.go:51:2)
+	Base *Container // go (../../main.go:52:2)
 	//
 	// Pass arguments to 'go build -ldflags'
 	//
-	Ldflags []string // go (../../main.go:55:2)
+	Ldflags []string // go (../../main.go:56:2)
 	//
 	// Pass arguments to 'go build -tags'
 	//
-	Tags []string // go (../../main.go:59:2)
+	Tags []string // go (../../main.go:60:2)
 	//
 	// Add string value definition of the form importpath.name=value
 	// Example: "github.com/my/module.Foo=bar"
 	//
-	Values []string // go (../../main.go:64:2)
+	Values []string // go (../../main.go:65:2)
 	//
 	// Enable CGO
 	//
-	Cgo bool // go (../../main.go:68:2)
+	Cgo bool // go (../../main.go:69:2)
 	//
 	// Enable race detector. Implies cgo=true
 	//
-	Race bool // go (../../main.go:72:2)
+	Race bool // go (../../main.go:73:2)
 	//
 	// Enable go experiments https://pkg.go.dev/internal/goexperiment
 	//
-	Experiment []string // go (../../main.go:76:2)
+	Experiment []string // go (../../main.go:77:2)
 	//
 	// extra system packages to include in the default base image; only
 	// valid if 'base' arg is nil
 	//
-	ExtraPackages []string // go (../../main.go:81:2)
+	ExtraPackages []string // go (../../main.go:82:2)
 	//
 	// max number of parallel jobs to run for tidy/check tidy/lint/runtime generation
 	//
 	//
 	// Default: 10
-	Limit int // go (../../main.go:85:2)
+	Limit int // go (../../main.go:86:2)
 	//
 	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
 	// precedence over workspace VCS metadata.
 	//
-	VcsCommit string // go (../../main.go:94:2)
+	VcsCommit string // go (../../main.go:95:2)
 	//
 	// Resolved VCS dirty state to stamp, paired with vcsCommit.
 	//
-	VcsDirty bool // go (../../main.go:98:2)
+	VcsDirty bool // go (../../main.go:99:2)
 }
 
 // A Go project
-func (r *Query) Go(ws *Workspace, opts ...GoOpts) *Go { // go (../../main.go:30:1)
+func (r *Query) Go(ws *Workspace, opts ...GoOpts) *Go { // go (../../main.go:31:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("go")
 	for i := len(opts) - 1; i >= 0; i-- {
