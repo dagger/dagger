@@ -1149,6 +1149,201 @@
     }
   },
   {
+    "input": "APIv1",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      },
+      {
+        "kind": "WORD",
+        "text": "v1",
+        "suffix": "",
+        "capitalized": "V1"
+      }
+    ],
+    "formats": {
+      "CAMEL": "apiV1",
+      "CAMEL_CAPITALIZED": "apiV1",
+      "FLAT": "apiv1",
+      "KEBAB": "api-v1",
+      "PASCAL": "APIV1",
+      "PASCAL_CAPITALIZED": "ApiV1",
+      "SCREAMING_SNAKE": "API_V1",
+      "SNAKE": "api_v1"
+    }
+  },
+  {
+    "input": "UUIDV7",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "UUID",
+        "suffix": "",
+        "capitalized": "Uuid"
+      },
+      {
+        "kind": "WORD",
+        "text": "v7",
+        "suffix": "",
+        "capitalized": "V7"
+      }
+    ],
+    "formats": {
+      "CAMEL": "uuidV7",
+      "CAMEL_CAPITALIZED": "uuidV7",
+      "FLAT": "uuidv7",
+      "KEBAB": "uuid-v7",
+      "PASCAL": "UUIDV7",
+      "PASCAL_CAPITALIZED": "UuidV7",
+      "SCREAMING_SNAKE": "UUID_V7",
+      "SNAKE": "uuid_v7"
+    }
+  },
+  {
+    "input": "JSONV2Schema",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "JSON",
+        "suffix": "",
+        "capitalized": "Json"
+      },
+      {
+        "kind": "WORD",
+        "text": "v2",
+        "suffix": "",
+        "capitalized": "V2"
+      },
+      {
+        "kind": "WORD",
+        "text": "schema",
+        "suffix": "",
+        "capitalized": "Schema"
+      }
+    ],
+    "formats": {
+      "CAMEL": "jsonV2Schema",
+      "CAMEL_CAPITALIZED": "jsonV2Schema",
+      "FLAT": "jsonv2schema",
+      "KEBAB": "json-v2-schema",
+      "PASCAL": "JSONV2Schema",
+      "PASCAL_CAPITALIZED": "JsonV2Schema",
+      "SCREAMING_SNAKE": "JSON_V2_SCHEMA",
+      "SNAKE": "json_v2_schema"
+    }
+  },
+  {
+    "input": "json_v2_schema",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "JSON",
+        "suffix": "",
+        "capitalized": "Json"
+      },
+      {
+        "kind": "WORD",
+        "text": "v2",
+        "suffix": "",
+        "capitalized": "V2"
+      },
+      {
+        "kind": "WORD",
+        "text": "schema",
+        "suffix": "",
+        "capitalized": "Schema"
+      }
+    ],
+    "formats": {
+      "CAMEL": "jsonV2Schema",
+      "CAMEL_CAPITALIZED": "jsonV2Schema",
+      "FLAT": "jsonv2schema",
+      "KEBAB": "json-v2-schema",
+      "PASCAL": "JSONV2Schema",
+      "PASCAL_CAPITALIZED": "JsonV2Schema",
+      "SCREAMING_SNAKE": "JSON_V2_SCHEMA",
+      "SNAKE": "json_v2_schema"
+    }
+  },
+  {
+    "input": "apiS3Bucket",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      },
+      {
+        "kind": "WORD",
+        "text": "s3",
+        "suffix": "",
+        "capitalized": "S3"
+      },
+      {
+        "kind": "WORD",
+        "text": "bucket",
+        "suffix": "",
+        "capitalized": "Bucket"
+      }
+    ],
+    "formats": {
+      "CAMEL": "apiS3Bucket",
+      "CAMEL_CAPITALIZED": "apiS3Bucket",
+      "FLAT": "apis3bucket",
+      "KEBAB": "api-s3-bucket",
+      "PASCAL": "APIS3Bucket",
+      "PASCAL_CAPITALIZED": "ApiS3Bucket",
+      "SCREAMING_SNAKE": "API_S3_BUCKET",
+      "SNAKE": "api_s3_bucket"
+    }
+  },
+  {
+    "input": "HTTP2s",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "2s",
+        "capitalized": "Http"
+      }
+    ],
+    "formats": {
+      "CAMEL": "http2s",
+      "CAMEL_CAPITALIZED": "http2s",
+      "FLAT": "http2s",
+      "KEBAB": "http2s",
+      "PASCAL": "HTTP2s",
+      "PASCAL_CAPITALIZED": "Http2s",
+      "SCREAMING_SNAKE": "HTTP2S",
+      "SNAKE": "http2s"
+    }
+  },
+  {
+    "input": "SHA256s",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "SHA",
+        "suffix": "256s",
+        "capitalized": "Sha"
+      }
+    ],
+    "formats": {
+      "CAMEL": "sha256s",
+      "CAMEL_CAPITALIZED": "sha256s",
+      "FLAT": "sha256s",
+      "KEBAB": "sha256s",
+      "PASCAL": "SHA256s",
+      "PASCAL_CAPITALIZED": "Sha256s",
+      "SCREAMING_SNAKE": "SHA256S",
+      "SNAKE": "sha256s"
+    }
+  },
+  {
     "input": "IDsFoo",
     "words": [
       {
@@ -1503,6 +1698,183 @@
       "PASCAL_CAPITALIZED": "Get4KStream",
       "SCREAMING_SNAKE": "GET4_K_STREAM",
       "SNAKE": "get4_k_stream"
+    }
+  },
+  {
+    "input": "IOx86",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "IO",
+        "suffix": "",
+        "capitalized": "Io"
+      },
+      {
+        "kind": "WORD",
+        "text": "x86",
+        "suffix": "",
+        "capitalized": "X86"
+      }
+    ],
+    "formats": {
+      "CAMEL": "ioX86",
+      "CAMEL_CAPITALIZED": "ioX86",
+      "FLAT": "iox86",
+      "KEBAB": "io-x86",
+      "PASCAL": "IOX86",
+      "PASCAL_CAPITALIZED": "IoX86",
+      "SCREAMING_SNAKE": "IO_X86",
+      "SNAKE": "io_x86"
+    }
+  },
+  {
+    "input": "APIR2",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      },
+      {
+        "kind": "WORD",
+        "text": "r2",
+        "suffix": "",
+        "capitalized": "R2"
+      }
+    ],
+    "formats": {
+      "CAMEL": "apiR2",
+      "CAMEL_CAPITALIZED": "apiR2",
+      "FLAT": "apir2",
+      "KEBAB": "api-r2",
+      "PASCAL": "APIR2",
+      "PASCAL_CAPITALIZED": "ApiR2",
+      "SCREAMING_SNAKE": "API_R2",
+      "SNAKE": "api_r2"
+    }
+  },
+  {
+    "input": "Vp9Codec",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "vp9",
+        "suffix": "",
+        "capitalized": "Vp9"
+      },
+      {
+        "kind": "WORD",
+        "text": "codec",
+        "suffix": "",
+        "capitalized": "Codec"
+      }
+    ],
+    "formats": {
+      "CAMEL": "vp9Codec",
+      "CAMEL_CAPITALIZED": "vp9Codec",
+      "FLAT": "vp9codec",
+      "KEBAB": "vp9-codec",
+      "PASCAL": "Vp9Codec",
+      "PASCAL_CAPITALIZED": "Vp9Codec",
+      "SCREAMING_SNAKE": "VP9_CODEC",
+      "SNAKE": "vp9_codec"
+    }
+  },
+  {
+    "input": "M3U8",
+    "words": [
+      {
+        "kind": "WORD",
+        "text": "m3u8",
+        "suffix": "",
+        "capitalized": "M3u8"
+      }
+    ],
+    "formats": {
+      "CAMEL": "m3u8",
+      "CAMEL_CAPITALIZED": "m3u8",
+      "FLAT": "m3u8",
+      "KEBAB": "m3u8",
+      "PASCAL": "M3u8",
+      "PASCAL_CAPITALIZED": "M3u8",
+      "SCREAMING_SNAKE": "M3U8",
+      "SNAKE": "m3u8"
+    }
+  },
+  {
+    "input": "EC2s",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "EC2",
+        "suffix": "s",
+        "capitalized": "Ec2"
+      }
+    ],
+    "formats": {
+      "CAMEL": "ec2s",
+      "CAMEL_CAPITALIZED": "ec2s",
+      "FLAT": "ec2s",
+      "KEBAB": "ec2s",
+      "PASCAL": "EC2s",
+      "PASCAL_CAPITALIZED": "Ec2s",
+      "SCREAMING_SNAKE": "EC2S",
+      "SNAKE": "ec2s"
+    }
+  },
+  {
+    "input": "APIHTTP2s",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "API",
+        "suffix": "",
+        "capitalized": "Api"
+      },
+      {
+        "kind": "ACRONYM",
+        "text": "HTTP",
+        "suffix": "2s",
+        "capitalized": "Http"
+      }
+    ],
+    "formats": {
+      "CAMEL": "apiHTTP2s",
+      "CAMEL_CAPITALIZED": "apiHttp2s",
+      "FLAT": "apihttp2s",
+      "KEBAB": "api-http2s",
+      "PASCAL": "APIHTTP2s",
+      "PASCAL_CAPITALIZED": "ApiHttp2s",
+      "SCREAMING_SNAKE": "API_HTTP2S",
+      "SNAKE": "api_http2s"
+    }
+  },
+  {
+    "input": "IDs2",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "ID",
+        "suffix": "",
+        "capitalized": "Id"
+      },
+      {
+        "kind": "WORD",
+        "text": "s2",
+        "suffix": "",
+        "capitalized": "S2"
+      }
+    ],
+    "formats": {
+      "CAMEL": "idS2",
+      "CAMEL_CAPITALIZED": "idS2",
+      "FLAT": "ids2",
+      "KEBAB": "id-s2",
+      "PASCAL": "IDS2",
+      "PASCAL_CAPITALIZED": "IdS2",
+      "SCREAMING_SNAKE": "ID_S2",
+      "SNAKE": "id_s2"
     }
   },
   {
@@ -1875,6 +2247,27 @@
       "PASCAL_CAPITALIZED": "E2eapi",
       "SCREAMING_SNAKE": "E2EAPI",
       "SNAKE": "e2eapi"
+    }
+  },
+  {
+    "input": "httpS3",
+    "words": [
+      {
+        "kind": "ACRONYM",
+        "text": "HTTPS",
+        "suffix": "3",
+        "capitalized": "Https"
+      }
+    ],
+    "formats": {
+      "CAMEL": "https3",
+      "CAMEL_CAPITALIZED": "https3",
+      "FLAT": "https3",
+      "KEBAB": "https3",
+      "PASCAL": "HTTPS3",
+      "PASCAL_CAPITALIZED": "Https3",
+      "SCREAMING_SNAKE": "HTTPS3",
+      "SNAKE": "https3"
     }
   },
   {

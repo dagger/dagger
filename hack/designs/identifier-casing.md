@@ -128,7 +128,7 @@ Each implementation recovers that information with different heuristics.
 | `WORD` | An ordinary word, stored lowercase: `client`. |
 | `ACRONYM` | A word written in capitals: `HTTP`, `E2E`, `3D`. Comes from the dictionary or from a run of capitals in the input. |
 | `TERM` | A dictionary entry with a fixed mixed-case spelling: `GitHub`, `IPv6`, `iOS`. |
-| Suffix | A plural `s` and/or trailing digits attached to an acronym or term: `SHA`+`s`, `OAuth`+`2`, `HTTP`+`2`. An ordinary word keeps its digits in its text. |
+| Suffix | Trailing digits and/or a plural `s`, in that order, attached to an acronym or term: `SHA`+`s`, `OAuth`+`2`, `HTTP`+`2s`. The plural ends the word. An ordinary word keeps its digits in its text. |
 | Casing | The joining convention: `PASCAL`, `CAMEL`, `SNAKE`, `SCREAMING_SNAKE`, `KEBAB`, `FLAT`. |
 | Acronym style | How acronyms and terms are written where a word starts with a capital: `UPPERCASE` (`HTTPClient`) or `CAPITALIZED` (`HttpClient`). |
 | Canonical name | `format(parse(x), casing, UPPERCASE)` for the casing the schema uses at that position. |
@@ -164,7 +164,7 @@ caps pieces get in step 4: `JSONAPI` → `JSON`·`API`, but `HTTP_CLIENT` stays
 ### 3. Pieces and digit cuts
 
 In cased mode, each chunk is split into **pieces** at case boundaries. There is
-a boundary before position `k` when either:
+a boundary before position `k` when any of these holds:
 
 - **(a)** `k` is a capital, and the nearest earlier character that isn't a
   digit is lowercase: `httpClient` → `http|Client`, `Get3DModel` →
@@ -175,6 +175,15 @@ a boundary before position `k` when either:
   - **Plural exception:** no boundary if that lowercase letter is an `s` that
     ends the chunk or is followed by a capital or digit. `prerequisiteSHAs` →
     `prerequisite|SHAs`, `IDsFoo` → `IDs|Foo`, `listPRs` → `list|PRs`.
+  - **Letter-digit exception:** no boundary if that lowercase letter is
+    followed by a digit and the capital ends a run of two or more; rule (c)
+    splits after the run instead.
+- **(c)** `k` is a lowercase letter followed by a digit, after a run of two or
+  more capitals. A lone letter with digits is a word of its own, typically a
+  version: `APIv1` → `API|v1`, `UUIDv7` → `UUID|v7`, `IOx86` → `IO|x86`. A
+  single capital doesn't count as a run, so capitalized forms stay whole:
+  `Vp9Codec`, `Ec2Instance`, `Ipv6Address`. Dictionary matches cross the new
+  boundary like any other, so `IPv6` (`IP|v6`) is still one term.
 
 A piece with no lowercase letters (ignoring a trailing plural `s` on a piece of
 three or more characters) is a **caps piece**: `HTTP`, `E2E`, `SHAs`,
@@ -191,16 +200,25 @@ Each candidate word is one of:
 
 1. **Dictionary match:** one or more consecutive cut segments, possibly crossing
    piece boundaries, whose concatenation equals an entry's spelling
-   (case-insensitively), or the spelling plus `s`.
+   (case-insensitively), or the spelling plus a suffix: `s`, or digits and
+   `s`.
    - `I`+`Pv`+`6` → `IPv6`; `Git`+`Hub` → `GitHub`; `3`+`D` → `3D`; `e`+`2`+`e`
-     → `E2E`; `Ids` → `ID`+`s`.
+     → `E2E`; `Ids` → `ID`+`s`; `HTTP`+`2`+`s` → `HTTP`+`2s`.
+   - A plural ends the word, so it never matches right before a digit
+     segment: in `APIS3` (`APIS`, `3`), `APIS` isn't `API`+`s`.
 2. **Caps piece cover:** a whole caps piece, or a whole chunk of all-caps input
-   (step 2), written as a sequence of dictionary entries and digit runs.
-   `HTTPAPI` → `HTTP`+`API`; `HTTP2` → `HTTP`+`2`; `APIs` → `API`+`s` (only
-   the last entry can take the piece's plural `s`). This is the only place the
-   dictionary looks *inside* a segment, because a run of capitals has no
-   internal boundary information. If the cover isn't complete (`HTTPX`), this
-   candidate doesn't apply.
+   (step 2), written as a sequence of dictionary entries, digit runs, and
+   letter-digit words. `HTTPAPI` → `HTTP`+`API`; `HTTP2` → `HTTP`+`2`; `APIs`
+   → `API`+`s` and `APIHTTP2s` → `API`+`HTTP`+`2s` (only the last entry can
+   take the piece's plural `s`, after its digits); `APIV1` → `API`+`V1`,
+   `APIS3` → `API`+`S3`. This is the only place the dictionary looks *inside*
+   a segment, because a run of capitals has no internal boundary information.
+   If the cover isn't complete (`HTTPX`), this candidate doesn't apply.
+   - A **letter-digit word** is one letter and the digits after it: `V1`,
+     `S3`, `R2`. It becomes an ordinary word (`v1`), and its letter counts as
+     not covered by the dictionary, so it only splits a run that entries
+     otherwise cover: `UUIDV7` → `UUID`·`v7`, but `M3U8` stays whole, since
+     neither `M` nor `U` is an entry.
 3. **Heuristic word:** consecutive cut segments within one piece, as a single
    word.
 
@@ -229,7 +247,9 @@ own.
 
 So **digits belong to the word before them by default** (`base64`, `int32`,
 `v1`, `beta1`, `win32`), and dictionary entries decide the exceptions (`3D`,
-`E2E`).
+`E2E`). Digits never follow a plural: an `s` that ends a word's suffix ends the
+word (`HTTP`+`2s`), and digits after an `s` belong to a letter-digit word of
+their own (`ID`·`s2`).
 
 ### 6. Word kinds
 
@@ -306,7 +326,9 @@ Plurals are automatic (`SHAs`, `IDs`, `GPUs`); there are no plural entries.
   `HTTPAPI` splits correctly. No `HTTPAPI` entry is needed.
 
 Entries are *not* needed for digit suffixes: `OAuth` covers `OAuth2`, `HTTP`
-covers `HTTP2`, `SHA` covers `SHA256`.
+covers `HTTP2` and `HTTP2s`, `SHA` covers `SHA256`. Nor are they needed for
+letter-digit words like versions and product names: `APIv1`, `APIS3` and
+`APIR2` split without `V1`, `S3` or `R2` entries.
 
 ### Initial contents
 
@@ -383,7 +405,7 @@ type IdentifierWord {
   """Standard spelling: "client" (WORD), "HTTP" (ACRONYM), "GitHub" (TERM)."""
   text: String!
 
-  """A plural "s" and/or trailing digits: SHA+"s", OAuth+"2"."""
+  """Trailing digits and/or a plural "s", in that order: SHA+"s", OAuth+"2", HTTP+"2s"."""
   suffix: String!
 
   kind: IdentifierWordKind!
@@ -1236,6 +1258,7 @@ schema has no other case.
 | Dictionary overrides author casing | `Sha256Sum` → `SHA256Sum`; `HttpClient` → `HTTPClient` | intended |
 | A dictionary entry splits a lowercase word at a digit | `md5sum` → `md5_sum` / `MD5Sum` (because `MD5` is an entry) | intended; `base64`, `int32` stay whole |
 | Digit-led words not in the dictionary | `Get4KStream` → `get4_k_stream` | add the term (`4K`) |
+| An entry plus `s` spells another entry | `httpS3` → `HTTPS`+`3`, since `HTTP`·`s3` is `HTTPS3` in `PASCAL`; `readIOs` → `iOS` | write `http_s3`, or avoid the name |
 | `FLAT` | drops boundaries | output only |
 
 ## Test Vectors
@@ -1288,6 +1311,13 @@ copy: they get formatted names from the engine.
 | `JSONAPI` | ^JSON · ^API | `JSONAPI` | `jsonAPI` | `json_api` | `JsonApi` |
 | `HTMLURL` | ^HTML · ^URL | `HTMLURL` | `htmlURL` | `html_url` | `HtmlUrl` |
 | `HTTPX_CLIENT` | httpx · client | `HttpxClient` | `httpxClient` | `httpx_client` | `HttpxClient` |
+| `APIv1` | ^API · v1 | `APIV1` | `apiV1` | `api_v1` | `ApiV1` |
+| `UUIDV7` | ^UUID · v7 | `UUIDV7` | `uuidV7` | `uuid_v7` | `UuidV7` |
+| `JSONV2Schema` | ^JSON · v2 · schema | `JSONV2Schema` | `jsonV2Schema` | `json_v2_schema` | `JsonV2Schema` |
+| `json_v2_schema` | ^JSON · v2 · schema | `JSONV2Schema` | `jsonV2Schema` | `json_v2_schema` | `JsonV2Schema` |
+| `apiS3Bucket` | ^API · s3 · bucket | `APIS3Bucket` | `apiS3Bucket` | `api_s3_bucket` | `ApiS3Bucket` |
+| `HTTP2s` | ^HTTP+2s | `HTTP2s` | `http2s` | `http2s` | `Http2s` |
+| `SHA256s` | ^SHA+256s | `SHA256s` | `sha256s` | `sha256s` | `Sha256s` |
 | `Café` | error: non-ASCII | | | | |
 
 ## Open Questions

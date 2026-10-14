@@ -21,11 +21,12 @@ var sharedVectorExtras = []string{
 	// TestParseDetails.
 	"IDsFoo", "HTTPSettings", "HTTPSServer", "GetAs", "MyAPIsList", "ios",
 	"https", "3D", "123Foo", "foo_2_bar", "utf8_string", "runE2EAPITest",
-	"Get4KStream", "HTTPAPIS", "MY_HTTPAPI_CLIENT", "UTF8JSON", "HTTPXAPI",
+	"Get4KStream", "IOx86", "APIR2", "Vp9Codec", "M3U8", "EC2s", "APIHTTP2s",
+	"IDs2", "HTTPAPIS", "MY_HTTPAPI_CLIENT", "UTF8JSON", "HTTPXAPI",
 	"httpapi", "HTTPXAPIClient", "PostgreSQL", "gRPCAPI", "iOSSDK",
 	"foo.bar-baz qux", "__init__",
 	// TestKnownLimitations.
-	"base64", "int32", "e2eapi",
+	"base64", "int32", "e2eapi", "httpS3",
 	// TestAllAcronymNames.
 	"htmlURL", "HTTPAPI", "GitHubAPI", "IPv6URL", "sha256URL", "IDs", "GPUsAPI",
 	// The core schema.

@@ -52,6 +52,13 @@ var testVectors = []struct {
 	{"JSONAPI", "^JSON · ^API", "JSONAPI", "jsonAPI", "json_api", "JsonApi"},
 	{"HTMLURL", "^HTML · ^URL", "HTMLURL", "htmlURL", "html_url", "HtmlUrl"},
 	{"HTTPX_CLIENT", "httpx · client", "HttpxClient", "httpxClient", "httpx_client", "HttpxClient"},
+	{"APIv1", "^API · v1", "APIV1", "apiV1", "api_v1", "ApiV1"},
+	{"UUIDV7", "^UUID · v7", "UUIDV7", "uuidV7", "uuid_v7", "UuidV7"},
+	{"JSONV2Schema", "^JSON · v2 · schema", "JSONV2Schema", "jsonV2Schema", "json_v2_schema", "JsonV2Schema"},
+	{"json_v2_schema", "^JSON · v2 · schema", "JSONV2Schema", "jsonV2Schema", "json_v2_schema", "JsonV2Schema"},
+	{"apiS3Bucket", "^API · s3 · bucket", "APIS3Bucket", "apiS3Bucket", "api_s3_bucket", "ApiS3Bucket"},
+	{"HTTP2s", "^HTTP+2s", "HTTP2s", "http2s", "http2s", "Http2s"},
+	{"SHA256s", "^SHA+256s", "SHA256s", "sha256s", "sha256s", "Sha256s"},
 }
 
 // unknownAcronyms are test vector inputs with acronyms the dictionary doesn't
@@ -178,6 +185,17 @@ func TestParseDetails(t *testing.T) {
 		{"utf8_string", "^UTF8 · string"},
 		{"runE2EAPITest", "run · ^E2E · ^API · test"},
 		{"Get4KStream", "get4 · k · stream"},
+		// A letter and its digits after a run of capitals is a word, but not
+		// after a single capital, and not where the run isn't otherwise
+		// covered by entries.
+		{"IOx86", "^IO · x86"},
+		{"APIR2", "^API · r2"},
+		{"Vp9Codec", "vp9 · codec"},
+		{"M3U8", "m3u8"},
+		// A suffix is digits, then a plural, which ends the word.
+		{"EC2s", "^EC2+s"},
+		{"APIHTTP2s", "^API · ^HTTP+2s"},
+		{"IDs2", "^ID · s2"},
 		// All-caps chunks split only where entries cover them completely.
 		{"HTTPAPIS", "^HTTP · ^API+s"},
 		{"MY_HTTPAPI_CLIENT", "my · ^HTTP · ^API · client"},
@@ -219,6 +237,9 @@ func TestKnownLimitations(t *testing.T) {
 		{"e2eapi", Pascal, "E2eapi"},
 		{"HTTPXAPI", Snake, "httpxapi"},
 		{"HTTP_CLIENT", Pascal, "HTTPClient"},
+		// An entry plus "s" that spells another entry wins: HTTP · s3 is
+		// HTTPS3 in PASCAL either way.
+		{"httpS3", Snake, "https3"},
 	} {
 		got, err := Convert(tc.input, tc.casing, Uppercase)
 		if err != nil {

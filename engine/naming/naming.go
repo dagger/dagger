@@ -51,8 +51,8 @@ type Word struct {
 	// Text is the standard spelling: client (WORD), HTTP (ACRONYM), GitHub
 	// (TERM). A WORD's digits are part of its text: base64, v1.
 	Text string
-	// Suffix is a plural "s" and/or trailing digits on an acronym or term:
-	// SHA+"s", OAuth+"2".
+	// Suffix is trailing digits and/or a plural "s", in that order, on an
+	// acronym or term: SHA+"s", OAuth+"2", HTTP+"2s".
 	Suffix string
 	// Term is the dictionary entry the word matched, or nil for a word
 	// found by the case heuristic. It is shared with the dictionary and must
@@ -139,6 +139,11 @@ func splitPieces(chunk string) []string {
 
 // caseBoundary reports whether a new piece starts at s[k].
 func caseBoundary(s string, k int) bool {
+	// (c) A lone lowercase letter with digits after a run of capitals is a
+	// word of its own: APIv1, UUIDv7.
+	if letterDigitsAfterCaps(s, k) {
+		return true
+	}
 	if !isUpper(s[k]) {
 		return false
 	}
@@ -159,9 +164,20 @@ func caseBoundary(s string, k int) bool {
 		if s[k+1] == 's' && (k+2 == len(s) || isUpper(s[k+2]) || isDigit(s[k+2])) {
 			return false
 		}
+		if letterDigitsAfterCaps(s, k+1) {
+			return false
+		}
 		return true
 	}
 	return false
+}
+
+// letterDigitsAfterCaps reports whether s[k] is a lowercase letter followed
+// by a digit, after at least two capitals: the v of APIv1.
+func letterDigitsAfterCaps(s string, k int) bool {
+	return k >= 2 && k+1 < len(s) &&
+		isLower(s[k]) && isDigit(s[k+1]) &&
+		isUpper(s[k-1]) && isUpper(s[k-2])
 }
 
 // isCapsPiece reports whether a piece has no lowercase letters, ignoring a
@@ -263,9 +279,15 @@ func (d *Dictionary) segment(pieces []string, allCaps bool) []Word {
 			if t, ok := d.lookup(f); ok {
 				relax(i, j, score{words: 1, total: 1}, []Word{termWord(t, "")})
 			}
-			if base, ok := strings.CutSuffix(f, "s"); ok {
+			// A suffix is digits, then a plural "s", which ends the word: SHAs,
+			// HTTP2s, EC2s, but APIs3 is API · s3.
+			if base, ok := strings.CutSuffix(f, "s"); ok && (j == n || !isDigits(cuts[j].text)) {
 				if t, ok := d.lookup(base); ok {
 					relax(i, j, score{words: 1, plurals: 1, total: 1}, []Word{termWord(t, "s")})
+				} else if stem := strings.TrimRight(base, "0123456789"); stem != base {
+					if t, ok := d.lookup(stem); ok {
+						relax(i, j, score{words: 1, plurals: 1, total: 1}, []Word{termWord(t, base[len(stem):]+"s")})
+					}
 				}
 			}
 		}
@@ -302,9 +324,10 @@ func (d *Dictionary) segment(pieces []string, allCaps bool) []Word {
 }
 
 // coverCaps writes a whole run of capitals (a caps piece, or a lowercased
-// chunk of all-caps input) as a sequence of dictionary entries and
-// digit runs, with the fewest entries, then the fewest plurals. It fails if
-// any letter is left over (HTTPX).
+// chunk of all-caps input) as a sequence of dictionary entries, digit runs
+// and letter-digit words (V1), with the fewest uncovered letters, then the
+// fewest entries, then the fewest plurals. It fails if any other letter is
+// left over (HTTPX).
 func (d *Dictionary) coverCaps(p string) ([]Word, score, bool) {
 	type state struct {
 		ok    bool
@@ -328,14 +351,31 @@ func (d *Dictionary) coverCaps(p string) ([]Word, score, bool) {
 		for j := i + 1; j <= n && isDigit(p[j-1]); j++ {
 			relax(i, j, score{total: 1}, Word{Kind: KindWord, Text: p[i:j]})
 		}
+		// A letter and its digits (the V1 of APIV1) is an ordinary word. It
+		// counts as uncovered, so it only splits a run that entries
+		// otherwise cover: M3U8 stays whole.
+		if !isDigit(p[i]) {
+			j := i + 1
+			for j < n && isDigit(p[j]) {
+				j++
+			}
+			if j > i+1 {
+				relax(i, j, score{uncovered: 1, words: 1, total: 1}, Word{Kind: KindWord, Text: strings.ToLower(p[i:j])})
+			}
+		}
 		for j := i + 1; j <= n; j++ {
 			t, ok := d.lookup(strings.ToLower(p[i:j]))
 			if !ok {
 				continue
 			}
 			relax(i, j, score{words: 1, total: 1}, termWord(t, ""))
-			if j == n-1 && p[j] == 's' {
-				relax(i, n, score{words: 1, plurals: 1, total: 1}, termWord(t, "s"))
+			// The plural may follow the entry's digits: APIHTTP2s.
+			k := j
+			for k < n && isDigit(p[k]) {
+				k++
+			}
+			if k == n-1 && p[k] == 's' {
+				relax(i, n, score{words: 1, plurals: 1, total: 1}, termWord(t, p[j:k]+"s"))
 			}
 		}
 	}
