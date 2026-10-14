@@ -70,6 +70,32 @@ const sharedSourcesMember = `  pub sources(workspace: Workspace!): Directory! {
       .withDirectory(workspace.cwd, workspace.directory(".", gitignore: true))
   }`
 
+// moduleOnlyEntrypoint is the shape every module can share: sources returns
+// the module directory alone, and types and call take no workspace.
+const moduleOnlyEntrypoint = `type Entrypoint implements ModuleEntrypoint {
+  pub sources(workspace: Workspace!): Directory! {
+    directory.withDirectory(workspace.cwd, workspace.directory(".", gitignore: true))
+  }
+
+  pub types: [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Probe")
+        .withConstructor(function("", typeDef.withObject("Probe")))
+        .withFunction(function("Nonce", typeDef.withKind(TypeDefKind.STRING_KIND))),
+    ]
+  }
+
+  pub call(receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else {
+      (JSON.encode(currentModule.source.file("data/local.txt").contents.trimSpace + "@" + Random.string) :: JSON!)
+    }
+  }
+}
+`
+
 const sourcesModuleManifest = `name = "m"
 
 [entrypoint]
@@ -286,6 +312,25 @@ func (ModuleSuite) TestModuleEntrypointSources(ctx context.Context, t *testctx.T
 
 		ctr = ctr.WithNewFile("m/data/local.txt", "changed\n")
 		require.NotEqual(t, changed, nonce(ctr, "6"), "a module file changes the result")
+	})
+
+	t.Run("module directory only, without a workspace argument", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := local(t, c, "").WithNewFile("m/entrypoint/main.dang", moduleOnlyEntrypoint)
+		nonce := func(ctr *core.Container, run string) string {
+			return call(ctx, t, ctr.WithEnvVariable("RUN", run), "./m", "nonce")
+		}
+
+		files, err := moduleSourceContextFiles(ctx, ctr, "./m")
+		require.NoError(t, err)
+		require.Contains(t, files, "m/data/local.txt")
+		require.NotContains(t, files, "shared/value.txt")
+
+		first := nonce(ctr, "1")
+		require.True(t, strings.HasPrefix(first, "module data@"), first)
+		require.Equal(t, first, nonce(ctr, "2"))
+		require.Equal(t, first, nonce(ctr.WithNewFile("shared/value.txt", "changed\n"), "3"))
+		require.NotEqual(t, first, nonce(ctr.WithNewFile("m/data/local.txt", "changed\n"), "4"))
 	})
 
 	// The engine adds the module context it loads without the member, so a Git
