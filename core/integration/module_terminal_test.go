@@ -11,6 +11,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -234,7 +235,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
+		cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "--nonce", rand.Text(), "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -247,7 +248,13 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
-		time.Sleep(2 * time.Second)
+		// Crash the dependency only now that the shell is up, wait until it has
+		// exited, and give the engine time to observe the exit.
+		_, err = console.SendLine("touch /handshake/crash; until [ -e /handshake/crashed ]; do sleep 0.1; done; sleep 2")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
 
 		_, err = console.SendLine("echo still here")
 		require.NoError(t, err)
