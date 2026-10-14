@@ -367,7 +367,7 @@ func (c *Client) setupNetwork(ctx context.Context, state *execState) error {
 			}
 			bklog.G(ctx).WithError(errs).Warnf("skipping unresolvable host aliases %v for %s", aliases, target)
 			if state.procInfo.Stderr != nil {
-				fmt.Fprintf(state.procInfo.Stderr, "warning: bound service %s is not running and will not resolve\r\n", strings.Join(aliases, ", "))
+				fmt.Fprintf(state.procInfo.Stderr, "warning: could not resolve bound service %s; skipping its host aliases\r\n", strings.Join(aliases, ", "))
 			}
 			continue
 		}
