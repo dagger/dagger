@@ -12378,7 +12378,7 @@ impl IdentifierWord {
         let query = self.selection.select("text");
         query.execute(self.graphql_client.clone()).await
     }
-    /// A plural "s" and/or trailing digits: SHA+"s", OAuth+"2".
+    /// Trailing digits and/or a plural "s", in that order: SHA+"s", OAuth+"2", HTTP+"2s".
     pub async fn suffix(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("suffix");
         query.execute(self.graphql_client.clone()).await

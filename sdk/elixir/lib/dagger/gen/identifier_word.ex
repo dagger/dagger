@@ -41,7 +41,7 @@ defmodule Dagger.IdentifierWord do
   end
 
   @doc """
-  A plural "s" and/or trailing digits: SHA+"s", OAuth+"2".
+  Trailing digits and/or a plural "s", in that order: SHA+"s", OAuth+"2", HTTP+"2s".
   """
   @spec suffix(t()) :: {:ok, String.t()} | {:error, term()}
   def suffix(%__MODULE__{} = identifier_word) do

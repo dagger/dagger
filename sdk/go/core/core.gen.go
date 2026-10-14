@@ -13333,7 +13333,7 @@ func (r *IdentifierWord) Kind(ctx context.Context) (IdentifierWordKind, error) {
 	return response, q.Execute(ctx)
 }
 
-// A plural "s" and/or trailing digits: SHA+"s", OAuth+"2".
+// Trailing digits and/or a plural "s", in that order: SHA+"s", OAuth+"2", HTTP+"2s".
 func (r *IdentifierWord) Suffix(ctx context.Context) (string, error) {
 	if r.suffix != nil {
 		return *r.suffix, nil

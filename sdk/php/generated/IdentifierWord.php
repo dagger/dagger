@@ -46,7 +46,7 @@ class IdentifierWord extends Client\AbstractObject implements Client\IdAble, Nod
     }
 
     /**
-     * A plural "s" and/or trailing digits: SHA+"s", OAuth+"2".
+     * Trailing digits and/or a plural "s", in that order: SHA+"s", OAuth+"2", HTTP+"2s".
      */
     public function suffix(): string
     {

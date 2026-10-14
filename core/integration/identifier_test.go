@@ -129,6 +129,13 @@ func (IdentifierSuite) TestErrors(ctx context.Context, t *testctx.T) {
 
 	_, err = c.FormatIdentifiers(ctx, []string{"ok", "Café"}, core.CasingSnake)
 	require.ErrorContains(t, err, "identifier must be ASCII")
+
+	tooLong := strings.Repeat("a", naming.MaxLength+1)
+	_, err = c.Identifier(tooLong).Name(ctx)
+	require.ErrorContains(t, err, "identifier must be at most 256 bytes")
+
+	_, err = c.FormatIdentifiers(ctx, []string{"ok", tooLong}, core.CasingSnake)
+	require.ErrorContains(t, err, "identifier must be at most 256 bytes")
 }
 
 func (IdentifierSuite) TestNamingDictionary(ctx context.Context, t *testctx.T) {

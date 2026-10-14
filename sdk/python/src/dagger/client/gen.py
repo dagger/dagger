@@ -11993,7 +11993,8 @@ class IdentifierWord(Type):
         return await _ctx.execute(IdentifierWordKind)
 
     async def suffix(self) -> str:
-        """A plural "s" and/or trailing digits: SHA+"s", OAuth+"2".
+        """Trailing digits and/or a plural "s", in that order: SHA+"s",
+        OAuth+"2", HTTP+"2s".
 
         Returns
         -------

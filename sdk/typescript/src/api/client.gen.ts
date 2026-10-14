@@ -13265,7 +13265,7 @@ export class IdentifierWord extends BaseClient {
   }
 
   /**
-   * A plural "s" and/or trailing digits: SHA+"s", OAuth+"2".
+   * Trailing digits and/or a plural "s", in that order: SHA+"s", OAuth+"2", HTTP+"2s".
    */
   suffix = async (): Promise<string> => {
     if (this._suffix) {

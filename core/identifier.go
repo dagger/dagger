@@ -66,7 +66,7 @@ func (id *Identifier) Naming() naming.Identifier {
 // IdentifierWord is one word of an Identifier.
 type IdentifierWord struct {
 	Text   string             `field:"true" doc:"Standard spelling: \"client\" (WORD), \"HTTP\" (ACRONYM), \"GitHub\" (TERM)."`
-	Suffix string             `field:"true" doc:"A plural \"s\" and/or trailing digits: SHA+\"s\", OAuth+\"2\"."`
+	Suffix string             `field:"true" doc:"Trailing digits and/or a plural \"s\", in that order: SHA+\"s\", OAuth+\"2\", HTTP+\"2s\"."`
 	Kind   IdentifierWordKind `field:"true" doc:"The kind of word."`
 	// Term is exposed through an explicit nullable accessor: a
 	// struct-derived pointer field renders non-null.

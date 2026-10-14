@@ -4697,7 +4697,9 @@ type IdentifierWord implements Node {
   """Standard spelling: "client" (WORD), "HTTP" (ACRONYM), "GitHub" (TERM)."""
   text: String!
 
-  """A plural "s" and/or trailing digits: SHA+"s", OAuth+"2"."""
+  """
+  Trailing digits and/or a plural "s", in that order: SHA+"s", OAuth+"2", HTTP+"2s".
+  """
   suffix: String!
 
   """The kind of word."""
