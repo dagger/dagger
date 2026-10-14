@@ -184,7 +184,7 @@ defmodule Dagger.GitCommit do
   @spec parent_shas(t()) :: {:ok, [String.t()]} | {:error, term()}
   def parent_shas(%__MODULE__{} = git_commit) do
     query_builder =
-      git_commit.query_builder |> QB.select("parentShas")
+      git_commit.query_builder |> QB.select("parentSHAs")
 
     Client.execute(git_commit.client, query_builder)
   end
@@ -238,7 +238,7 @@ defmodule Dagger.GitCommit do
   @spec short_sha(t()) :: {:ok, String.t()} | {:error, term()}
   def short_sha(%__MODULE__{} = git_commit) do
     query_builder =
-      git_commit.query_builder |> QB.select("shortSha")
+      git_commit.query_builder |> QB.select("shortSHA")
 
     Client.execute(git_commit.client, query_builder)
   end

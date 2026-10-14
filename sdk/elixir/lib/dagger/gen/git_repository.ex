@@ -338,7 +338,7 @@ defmodule Dagger.GitRepository do
       |> QB.select("withRemote")
       |> QB.put_arg("name", name)
       |> QB.put_arg("url", url)
-      |> QB.maybe_put_arg("pushUrl", optional_args[:push_url])
+      |> QB.maybe_put_arg("pushURL", optional_args[:push_url])
 
     %Dagger.GitRepository{
       query_builder: query_builder,

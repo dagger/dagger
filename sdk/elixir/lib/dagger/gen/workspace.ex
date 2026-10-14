@@ -427,7 +427,7 @@ defmodule Dagger.Workspace do
   @doc """
   Resolve an address in this workspace.
 
-  A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+  A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterURI(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
 
   A value without the dag:// scheme keeps its external meaning, such as a container image reference.
 
@@ -985,7 +985,7 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("ref", ref)
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("here", optional_args[:here])
-      |> QB.maybe_put_arg("asSdkName", optional_args[:as_sdk_name])
+      |> QB.maybe_put_arg("asSDKName", optional_args[:as_sdk_name])
 
     %Dagger.Workspace{
       query_builder: query_builder,

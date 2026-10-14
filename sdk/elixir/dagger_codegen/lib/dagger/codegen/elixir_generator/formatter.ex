@@ -66,6 +66,28 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
     |> question_mark()
   end
 
+  # Core fields renamed for the engine's naming rules (see
+  # hack/designs/identifier-casing.md, "Core schema"), by `Type.field`, with
+  # their old schema names. The engine still accepts the old names as hidden
+  # aliases, but the schema doesn't show them, so the deprecated aliases of
+  # the functions named after them come from here. Arguments, input fields
+  # and enum values aren't listed: their Elixir names didn't change.
+  @renamed_core_fields %{
+    "Artifacts.filterURI" => "filterUri",
+    "Artifacts.withoutURI" => "withoutUri",
+    "GitCommit.parentSHAs" => "parentShas",
+    "GitCommit.shortSHA" => "shortSha",
+    "LLMContentBlock.callID" => "callId"
+  }
+
+  @doc """
+  The schema name the field `name` of `type_name` had before it was renamed:
+  `name` itself, unless it's a renamed core field.
+  """
+  def legacy_field_name(type_name, name) do
+    Map.get(@renamed_core_fields, "#{type_name}.#{name}", name)
+  end
+
   # Special case: is_foo => foo?
   defp question_mark(<<"is_", rest::binary>>), do: rest <> "?"
   defp question_mark(name), do: name
