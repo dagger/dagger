@@ -1,0 +1,232 @@
+{
+  "__schemaVersion": "v1.0.0",
+  "__schema": {
+    "queryType": {
+      "name": "Query"
+    },
+    "types": [
+      {
+        "description": "The root of the DAG.",
+        "enumValues": [],
+        "fields": [
+          {
+            "args": [
+              {
+                "defaultValue": null,
+                "description": "The base URL.",
+                "name": "baseURL",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              },
+              {
+                "defaultValue": null,
+                "description": "Commits to start from.",
+                "name": "sourceSHAs",
+                "type": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              }
+            ],
+            "deprecationReason": null,
+            "description": "Create an HTTP client.",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "httpClient",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "OBJECT",
+                "name": "HTTPClient",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "args": [
+              {
+                "defaultValue": null,
+                "description": "The names to format.",
+                "name": "names",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              }
+            ],
+            "deprecationReason": null,
+            "description": "Format names, for codegen.",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "formatIdentifiers",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        ],
+        "inputFields": [],
+        "interfaces": [],
+        "kind": "OBJECT",
+        "name": "Query",
+        "possibleTypes": []
+      },
+      {
+        "description": "An HTTP client.",
+        "enumValues": [],
+        "fields": [
+          {
+            "args": [],
+            "deprecationReason": null,
+            "description": "Whether the client uses TLS.",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "isTLS",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "args": [],
+            "deprecationReason": null,
+            "description": "Commits that must already exist.",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "prerequisiteSHAs",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "inputFields": [],
+        "interfaces": [],
+        "kind": "OBJECT",
+        "name": "HTTPClient",
+        "possibleTypes": []
+      },
+      {
+        "description": "A set of commits.",
+        "enumValues": [
+          {
+            "deprecationReason": null,
+            "description": "The parent commits.",
+            "isDeprecated": false,
+            "name": "PARENT_SHAS"
+          },
+          {
+            "deprecationReason": "Use `PARENT_SHAS` instead.",
+            "description": "The parent commits.",
+            "isDeprecated": true,
+            "name": "ParentSHAs"
+          }
+        ],
+        "fields": [],
+        "inputFields": [],
+        "interfaces": [],
+        "kind": "ENUM",
+        "name": "CommitSet",
+        "possibleTypes": []
+      },
+      {
+        "description": "An HTTP header.",
+        "enumValues": [],
+        "fields": [],
+        "inputFields": [
+          {
+            "defaultValue": null,
+            "description": "The header name.",
+            "name": "name",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "description": "Commits the header applies to.",
+            "name": "sourceSHAs",
+            "type": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        ],
+        "interfaces": [],
+        "kind": "INPUT_OBJECT",
+        "name": "HTTPHeader",
+        "possibleTypes": []
+      },
+      {
+        "description": "The `LLMID` scalar type represents an identifier for an object of type LLM.",
+        "enumValues": [],
+        "fields": [],
+        "inputFields": [],
+        "interfaces": [],
+        "kind": "SCALAR",
+        "name": "LLMID",
+        "possibleTypes": []
+      }
+    ]
+  }
+}
