@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
+	"sync"
+	"weak"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -137,222 +140,24 @@ func (e *ExecError) Unwrap() error {
 	return e.original
 }
 
-// A unique identifier for an object.
-type AddressID string
-
-// A unique identifier for an object.
-type BindingID string
-
-// A unique identifier for an object.
-type CacheVolumeID string
-
-// A unique identifier for an object.
-type ChangesetID string
-
-// A unique identifier for an object.
-type CheckGroupID string
-
-// A unique identifier for an object.
-type CheckID string
-
-// A unique identifier for an object.
-type ClientFilesyncMirrorID string
-
-// A unique identifier for an object.
-type CloudID string
-
-// A unique identifier for an object.
-type ContainerID string
-
-// A unique identifier for an object.
-type CurrentModuleID string
-
-// A unique identifier for an object.
-type DaggerCliID string
-
-// A unique identifier for an object.
-type DiffStatID string
-
-// A unique identifier for an object.
-type DirectoryID string
-
-// A unique identifier for an object.
-type EngineCacheEntryID string
-
-// A unique identifier for an object.
-type EngineCacheEntrySetID string
-
-// A unique identifier for an object.
-type EngineCacheID string
-
-// A unique identifier for an object.
-type EngineID string
-
-// A unique identifier for an object.
-type EnumTypeDefID string
-
-// A unique identifier for an object.
-type EnumValueTypeDefID string
-
-// A unique identifier for an object.
-type EnvFileID string
-
-// A unique identifier for an object.
-type EnvID string
-
-// A unique identifier for an object.
-type EnvVariableID string
-
-// A unique identifier for an object.
-type ErrorID string
-
-// A unique identifier for an object.
-type ErrorValueID string
-
-// A unique identifier for an object.
-type ExportableID string
-
-// A unique identifier for an object.
-type FieldTypeDefID string
-
-// A unique identifier for an object.
-type FileID string
-
-// A unique identifier for an object.
-type FunctionArgID string
-
-// A unique identifier for an object.
-type FunctionCallArgValueID string
-
-// A unique identifier for an object.
-type FunctionCallID string
-
-// A unique identifier for an object.
-type FunctionID string
-
-// A unique identifier for an object.
-type GeneratedCodeID string
-
-// A unique identifier for an object.
-type GeneratorGroupID string
-
-// A unique identifier for an object.
-type GeneratorID string
-
-// A unique identifier for an object.
-type GitRefID string
-
-// A unique identifier for an object.
-type GitRepositoryID string
-
-// A unique identifier for an object.
-type HTTPStateID string
-
-// A unique identifier for an object.
-type HealthcheckConfigID string
-
-// A unique identifier for an object.
-type HostID string
+// Arbitrary binary data, represented as a base64-encoded string.
+type Bytes string
 
 // A unique identifier for an object.
 type ID string
 
-// A unique identifier for an object.
-type InputTypeDefID string
-
-// A unique identifier for an object.
-type InterfaceTypeDefID string
-
 // An arbitrary JSON-encoded value.
 type JSON string
-
-// A unique identifier for an object.
-type JSONValueID string
-
-// A unique identifier for an object.
-type LLMID string
-
-// A unique identifier for an object.
-type LLMTokenUsageID string
-
-// A unique identifier for an object.
-type LabelID string
-
-// A unique identifier for an object.
-type ListTypeDefID string
-
-// A unique identifier for an object.
-type ModuleConfigClientID string
-
-// A unique identifier for an object.
-type ModuleID string
-
-// A unique identifier for an object.
-type ModuleSourceID string
-
-// A unique identifier for an object.
-type ObjectTypeDefID string
 
 // The platform config OS and architecture in a Container.
 //
 // The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
 type Platform string
 
-// A unique identifier for an object.
-type PortID string
-
-// A unique identifier for an object.
-type RemoteGitMirrorID string
-
-// A unique identifier for an object.
-type SDKConfigID string
-
-// A unique identifier for an object.
-type ScalarTypeDefID string
-
-// A unique identifier for an object.
-type SearchResultID string
-
-// A unique identifier for an object.
-type SearchSubmatchID string
-
-// A unique identifier for an object.
-type SecretID string
-
-// A unique identifier for an object.
-type ServiceID string
-
-// A unique identifier for an object.
-type SocketID string
-
-// A unique identifier for an object.
-type SourceMapID string
-
-// A unique identifier for an object.
-type StatID string
-
-// A unique identifier for an object.
-type SyncerID string
-
-// A unique identifier for an object.
-type TerminalID string
-
-// A unique identifier for an object.
-type TypeDefID string
-
-// A unique identifier for an object.
-type UpGroupID string
-
-// A unique identifier for an object.
-type UpID string
-
 // The absence of a value.
 //
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
-
-// A unique identifier for an object.
-type WorkspaceID string
 
 // Key value object that represents a build argument.
 type BuildArg struct {
@@ -361,6 +166,59 @@ type BuildArg struct {
 
 	// The build argument value.
 	Value string `json:"value"`
+}
+
+// A content block within an LLM message.
+type LLMContentBlockInput struct {
+	// The arguments to pass to the tool (for TOOL_CALL kind).
+	Arguments JSON `json:"arguments"`
+
+	// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+	CallID string `json:"callId,omitempty"`
+
+	// Ordered TEXT or media blocks returned by a tool.
+	Content []LLMContentBlockInput `json:"content,omitempty"`
+
+	// Media bytes. Supply exactly one of data or file for media.
+	Data Bytes `json:"data"`
+
+	// Whether the tool call resulted in an error (for TOOL_RESULT kind).
+	Errored bool `json:"errored,omitempty"`
+
+	// A media file to resolve to inline bytes.
+	File *File `json:"file,omitempty"`
+
+	// The kind of content block.
+	Kind LLMContentBlockKind `json:"kind"`
+
+	// Media MIME type; required for inline data, inferred for a file.
+	MimeType string `json:"mimeType,omitempty"`
+
+	// Provider-specific opaque data (e.g. Anthropic thinking signature).
+	Signature string `json:"signature,omitempty"`
+
+	// Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+	Text string `json:"text,omitempty"`
+
+	// The name of the tool to call (for TOOL_CALL kind).
+	ToolName string `json:"toolName,omitempty"`
+}
+
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// The provenance of a message delivered through an agent mailbox.
+type LLMMessageOriginInput struct {
+	// The display name of the sending or observed agent.
+	AgentName string `json:"agentName,omitempty"`
+
+	// Who put this message on the record.
+	Kind LLMMessageOriginKind `json:"kind"`
+
+	// The message's short ref within the receiving agent's runtime, e.g. "#3".
+	Ref string `json:"ref,omitempty"`
+
+	// The ref of the message this one answers, if any.
+	ReplyTo string `json:"replyTo,omitempty"`
 }
 
 // Key value object that represents a pipeline label.
@@ -387,6 +245,10 @@ type PortForward struct {
 // A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
 type Address struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id    *ID
 	value *string
@@ -395,15 +257,33 @@ type Address struct {
 func (r *Address) WithGraphQLQuery(q *querybuilder.Selection) *Address {
 	return &Address{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
+// AddressContainerOpts contains options for Address.Container
+type AddressContainerOpts struct {
+	// Resolve the address's image tag live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
+}
+
 // Load a container from the address.
-func (r *Address) Container() *Container {
+func (r *Address) Container(opts ...AddressContainerOpts) *Container {
 	q := r.query.Select("container")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+		}
+	}
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
 }
 
@@ -416,11 +296,16 @@ type AddressDirectoryOpts struct {
 	Gitignore bool
 
 	NoCache bool
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
 }
 
 // Load a directory from the address.
 func (r *Address) Directory(opts ...AddressDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
@@ -437,11 +322,18 @@ func (r *Address) Directory(opts ...AddressDirectoryOpts) *Directory {
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
+			refetchID = true
+		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
 		}
 	}
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: refetchID,
 	}
 }
 
@@ -454,11 +346,16 @@ type AddressFileOpts struct {
 	Gitignore bool
 
 	NoCache bool
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
 }
 
 // Load a file from the address.
 func (r *Address) File(opts ...AddressFileOpts) *File {
 	q := r.query.Select("file")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
@@ -475,20 +372,44 @@ func (r *Address) File(opts ...AddressFileOpts) *File {
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
+			refetchID = true
+		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
 		}
 	}
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: refetchID,
 	}
 }
 
+// AddressGitRefOpts contains options for Address.GitRef
+type AddressGitRefOpts struct {
+	// Resolve the address's git ref live, ignoring the workspace lockfile: neither read a pinned value nor record one.
+	//
+	// A DAG address is unaffected: its module evaluates as usual.
+	NoLock bool
+}
+
 // Load a git ref (branch, tag or commit) from the address.
-func (r *Address) GitRef() *GitRef {
+func (r *Address) GitRef(opts ...AddressGitRefOpts) *GitRef {
 	q := r.query.Select("gitRef")
+	refetchID := r.refetchID
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
+		}
+	}
 
 	return &GitRef{
-		query: q,
+		query:     q,
+		refetchID: refetchID,
 	}
 }
 
@@ -497,7 +418,8 @@ func (r *Address) GitRepository() *GitRepository {
 	q := r.query.Select("gitRepository")
 
 	return &GitRepository{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -511,7 +433,13 @@ func (r *Address) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -546,7 +474,8 @@ func (r *Address) Secret() *Secret {
 	q := r.query.Select("secret")
 
 	return &Secret{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
 }
 
@@ -555,7 +484,8 @@ func (r *Address) Service() *Service {
 	q := r.query.Select("service")
 
 	return &Service{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -564,7 +494,8 @@ func (r *Address) Socket() *Socket {
 	q := r.query.Select("socket")
 
 	return &Socket{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
 }
 
@@ -581,280 +512,78 @@ func (r *Address) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Load a volume from the address.
+func (r *Address) Volume() *Volume {
+	q := r.query.Select("volume")
+
+	return &Volume{
+		query:     q,
+		refetchID: true,
+	}
+}
+
+// Load a workspace from a module reference.
+func (r *Address) Workspace() *Workspace {
+	q := r.query.Select("workspace")
+
+	return &Workspace{
+		query:     q,
+		refetchID: true,
+	}
+}
+
 // AsNode returns this Address as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Address) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
-type Binding struct {
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.
+type Agent struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
-	asString *string
-	digest   *string
-	id       *ID
-	isNull   *bool
-	name     *string
-	typeName *string
+	error  *string
+	handle *string
+	id     *ID
+	name   *string
+	notify *ID
+	pause  *ID
+	reseed *ID
+	resume *ID
+	send   *ID
+	state  *AgentState
+	stop   *ID
+	wait   *ID
 }
 
-func (r *Binding) WithGraphQLQuery(q *querybuilder.Selection) *Binding {
-	return &Binding{
+func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
+	return &Agent{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
-// Retrieve the binding value, as type Address
-func (r *Binding) AsAddress() *Address {
-	q := r.query.Select("asAddress")
-
-	return &Address{
-		query: q,
+// Why the loop failed, for a FAILED agent; empty otherwise.
+//
+// The snapshot holds the completed prefix — send or resume retries from it.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Error(ctx context.Context) (string, error) {
+	if r.error != nil {
+		return *r.error, nil
 	}
-}
-
-// Retrieve the binding value, as type CacheVolume
-func (r *Binding) AsCacheVolume() *CacheVolume {
-	q := r.query.Select("asCacheVolume")
-
-	return &CacheVolume{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Changeset
-func (r *Binding) AsChangeset() *Changeset {
-	q := r.query.Select("asChangeset")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Check
-func (r *Binding) AsCheck() *Check {
-	q := r.query.Select("asCheck")
-
-	return &Check{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type CheckGroup
-func (r *Binding) AsCheckGroup() *CheckGroup {
-	q := r.query.Select("asCheckGroup")
-
-	return &CheckGroup{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Cloud
-func (r *Binding) AsCloud() *Cloud {
-	q := r.query.Select("asCloud")
-
-	return &Cloud{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Container
-func (r *Binding) AsContainer() *Container {
-	q := r.query.Select("asContainer")
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type DiffStat
-func (r *Binding) AsDiffStat() *DiffStat {
-	q := r.query.Select("asDiffStat")
-
-	return &DiffStat{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Directory
-func (r *Binding) AsDirectory() *Directory {
-	q := r.query.Select("asDirectory")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Env
-func (r *Binding) AsEnv() *Env {
-	q := r.query.Select("asEnv")
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type EnvFile
-func (r *Binding) AsEnvFile() *EnvFile {
-	q := r.query.Select("asEnvFile")
-
-	return &EnvFile{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type File
-func (r *Binding) AsFile() *File {
-	q := r.query.Select("asFile")
-
-	return &File{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Generator
-func (r *Binding) AsGenerator() *Generator {
-	q := r.query.Select("asGenerator")
-
-	return &Generator{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type GeneratorGroup
-func (r *Binding) AsGeneratorGroup() *GeneratorGroup {
-	q := r.query.Select("asGeneratorGroup")
-
-	return &GeneratorGroup{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type GitRef
-func (r *Binding) AsGitRef() *GitRef {
-	q := r.query.Select("asGitRef")
-
-	return &GitRef{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type GitRepository
-func (r *Binding) AsGitRepository() *GitRepository {
-	q := r.query.Select("asGitRepository")
-
-	return &GitRepository{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type HTTPState
-func (r *Binding) AsHTTPState() *HTTPState {
-	q := r.query.Select("asHTTPState")
-
-	return &HTTPState{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type JSONValue
-func (r *Binding) AsJSONValue() *JSONValue {
-	q := r.query.Select("asJSONValue")
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Module
-func (r *Binding) AsModule() *Module {
-	q := r.query.Select("asModule")
-
-	return &Module{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type ModuleConfigClient
-func (r *Binding) AsModuleConfigClient() *ModuleConfigClient {
-	q := r.query.Select("asModuleConfigClient")
-
-	return &ModuleConfigClient{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type ModuleSource
-func (r *Binding) AsModuleSource() *ModuleSource {
-	q := r.query.Select("asModuleSource")
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type SearchResult
-func (r *Binding) AsSearchResult() *SearchResult {
-	q := r.query.Select("asSearchResult")
-
-	return &SearchResult{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type SearchSubmatch
-func (r *Binding) AsSearchSubmatch() *SearchSubmatch {
-	q := r.query.Select("asSearchSubmatch")
-
-	return &SearchSubmatch{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Secret
-func (r *Binding) AsSecret() *Secret {
-	q := r.query.Select("asSecret")
-
-	return &Secret{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Service
-func (r *Binding) AsService() *Service {
-	q := r.query.Select("asService")
-
-	return &Service{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Socket
-func (r *Binding) AsSocket() *Socket {
-	q := r.query.Select("asSocket")
-
-	return &Socket{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Stat
-func (r *Binding) AsStat() *Stat {
-	q := r.query.Select("asStat")
-
-	return &Stat{
-		query: q,
-	}
-}
-
-// Returns the binding's string value
-func (r *Binding) AsString(ctx context.Context) (string, error) {
-	if r.asString != nil {
-		return *r.asString, nil
-	}
-	q := r.query.Select("asString")
+	q := r.query.Select("error")
 
 	var response string
 
@@ -862,39 +591,16 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Retrieve the binding value, as type Up
-func (r *Binding) AsUp() *Up {
-	q := r.query.Select("asUp")
-
-	return &Up{
-		query: q,
+// The opaque runtime handle minted by the spawn that created this agent.
+//
+// It is the same value the agent's loop span publishes as dagger.io/agent.id, so a client can correlate the agent with what it discovers in the trace. Two spawns of an identical composition have different handles; a display name is shared freely.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Handle(ctx context.Context) (string, error) {
+	if r.handle != nil {
+		return *r.handle, nil
 	}
-}
-
-// Retrieve the binding value, as type UpGroup
-func (r *Binding) AsUpGroup() *UpGroup {
-	q := r.query.Select("asUpGroup")
-
-	return &UpGroup{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Workspace
-func (r *Binding) AsWorkspace() *Workspace {
-	q := r.query.Select("asWorkspace")
-
-	return &Workspace{
-		query: q,
-	}
-}
-
-// Returns the digest of the binding value
-func (r *Binding) Digest(ctx context.Context) (string, error) {
-	if r.digest != nil {
-		return *r.digest, nil
-	}
-	q := r.query.Select("digest")
+	q := r.query.Select("handle")
 
 	var response string
 
@@ -902,8 +608,8 @@ func (r *Binding) Digest(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// A unique identifier for this Binding.
-func (r *Binding) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this Agent.
+func (r *Agent) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -912,21 +618,27 @@ func (r *Binding) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Binding) XXX_GraphQLType() string {
-	return "Binding"
+func (r *Agent) XXX_GraphQLType() string {
+	return "Agent"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Binding) XXX_GraphQLIDType() string {
+func (r *Agent) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Binding) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *Agent) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -934,7 +646,7 @@ func (r *Binding) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *Binding) MarshalJSON() ([]byte, error) {
+func (r *Agent) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -942,21 +654,27 @@ func (r *Binding) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Returns true if the binding is null
-func (r *Binding) IsNull(ctx context.Context) (bool, error) {
-	if r.isNull != nil {
-		return *r.isNull, nil
+// Look up a previously sent message by its ref.
+//
+// This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-request-again contract).
+//
+// Fails if the agent has no runtime entry in this session, or no record of the given ref.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Message(ref string) *AgentMessage {
+	q := r.query.Select("message")
+	q = q.Arg("ref", ref)
+
+	return &AgentMessage{
+		query:     q,
+		refetchID: r.refetchID,
 	}
-	q := r.query.Select("isNull")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
-// Returns the binding name
-func (r *Binding) Name(ctx context.Context) (string, error) {
+// Display label for the agent; carries no identity.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -968,12 +686,358 @@ func (r *Binding) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Returns the binding type
-func (r *Binding) TypeName(ctx context.Context) (string, error) {
-	if r.typeName != nil {
-		return *r.typeName, nil
+// AgentNotifyOpts contains options for Agent.Notify
+type AgentNotifyOpts struct {
+	// The lifecycle states that fire an event. IDLE events carry the turn's final reply; FAILED events carry the loop error.
+	//
+	// Default: [IDLE,FAILED]
+	On []AgentState
+}
+
+// Subscribe another agent to this agent's lifecycle: each transition into one of the given states enqueues an event message to the subscriber — steering its open turn, or waking it if idle, like any other message.
+//
+// This is how a supervisor hears every completion and failure without polling or blocking: subscribe at spawn time, keep working, and events arrive as attributed messages.
+//
+// Events never relaunch a stopped subscriber, and an already-reached state fires immediately at subscribe time, so a fast agent settling before the subscription lands is not missed.
+//
+// A restored agent that nothing has sent to, started, or resumed yet is the exception: its state was reached in the session it was restored from, so subscribing to it announces nothing until it next transitions. This is how a restore reinstalls recorded subscriptions without waking their subscribers.
+//
+// Idempotent per subscriber; re-subscribing replaces the state set.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Notify(ctx context.Context, subscriber *Agent, opts ...AgentNotifyOpts) (*Agent, error) {
+	assertNotNil("subscriber", subscriber)
+	q := r.query.Select("notify")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `on` optional argument
+		if !querybuilder.IsZeroValue(opts[i].On) {
+			q = q.Arg("on", opts[i].On)
+		}
 	}
-	q := r.query.Select("typeName")
+	q = q.Arg("subscriber", subscriber)
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// AgentPauseOpts contains options for Agent.Pause
+type AgentPauseOpts struct {
+	// Preempt the in-flight step instead of letting it finish. All completed steps are kept and the interrupted turn stays open: messages it consumed remain pending, while unconsumed mailbox messages are discarded. Resume continues the turn from the last committed step. On an idle, never-started, or failed agent there is nothing to preempt, so this is a plain pause.
+	Interrupt bool
+}
+
+// Stop draining the mailbox once the in-flight step completes, or immediately with interrupt.
+//
+// Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
+//
+// Pausing a never-started agent leaves it paused for its eventual resume; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Pause(ctx context.Context, opts ...AgentPauseOpts) (*Agent, error) {
+	q := r.query.Select("pause")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `interrupt` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Interrupt) {
+			q = q.Arg("interrupt", opts[i].Interrupt)
+		}
+	}
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// Replace this instance's committed conversation with the given one, keeping the entry: identity, mailbox, and lifecycle state are untouched. A paused suspended turn is abandoned and its consumed messages are resolved before replacement.
+//
+// This is the continuity verb. Compaction, a workspace rebind, a model change, or rewinding an interrupted prompt produce a new conversation value for the SAME agent; reseed swaps it in place, where a stop-and-respawn would mint a successor instance and split the agent across two roster entries. It is the client-facing form of what a continuation tool already does mid-turn: the agent adopts a new conversation without changing who it is.
+//
+// The next turn continues from the reseeded conversation, and queued messages drain onto it. A FAILED agent keeps its error — resume retries from the new conversation.
+//
+// Fails if the instance has no runtime entry in this session (only a spawned or re-hydrated instance holds a conversation to replace), if a step is in flight, or if the agent is stopped.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Reseed(ctx context.Context, conversation *LLM) (*Agent, error) {
+	assertNotNil("conversation", conversation)
+	q := r.query.Select("reseed")
+	q = q.Arg("conversation", conversation)
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
+//
+// Resuming a never-started agent starts its evaluation loop, detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations. Resuming a FAILED agent retries its pending step. Resuming a STOPPED agent relaunches the same instance from its last committed snapshot.
+//
+// No-op on a running or idle agent.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
+	q := r.query.Select("resume")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// The conversation the agent was spawned from: the tools, workspace and message history its loop started with.
+//
+// Fixed by the spawn; stepping does not move it (see snapshot for the latest committed step). Its workspace is the baseline the agent's own changes are measured from.
+//
+// For an agent restored under a handle, this is the conversation it was restored from.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Seed() *LLM {
+	q := r.query.Select("seed")
+
+	return &LLM{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AgentSendOpts contains options for Agent.Send
+type AgentSendOpts struct {
+	// The ref of a message in the SENDER's own mailbox this send answers (e.g. "#3", from its attribution header). The recipient sees the two paired, and awaiters of the replied-to message resolve with this reply immediately instead of at the sender's turn end.
+	ReplyTo string
+	// Ordered TEXT, IMAGE, AUDIO, or DOCUMENT user content blocks. File inputs are resolved and all content is validated before enqueueing. Pass an empty message for media-only sends.
+	Content []LLMContentBlockInput
+}
+
+// Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
+//
+// Never blocks, never drops; concurrent sends queue in order.
+//
+// The returned message is pinned through the message lookup field, so its handle is re-addressable from any request in the session: cancel a response request and request it again freely.
+//
+// Sending to a never-started agent starts it (signal-with-start). Sending to a stopped agent restarts the same instance from its last committed snapshot. Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Send(ctx context.Context, message string, opts ...AgentSendOpts) (*AgentMessage, error) {
+	q := r.query.Select("send")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `replyTo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReplyTo) {
+			q = q.Arg("replyTo", opts[i].ReplyTo)
+		}
+		// `content` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Content) {
+			q = q.Arg("content", opts[i].Content)
+		}
+	}
+	q = q.Arg("message", message)
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &AgentMessage{
+		query: selectNode(q.Root(), id, "AgentMessage"),
+	}, nil
+}
+
+// The conversation as of the last committed step: immutable, branchable, persistable.
+//
+// The seed conversation if the agent never stepped.
+//
+// Branching from it does not affect the agent.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Snapshot() *LLM {
+	q := r.query.Select("snapshot")
+
+	return &LLM{
+		query:     q,
+		refetchID: true,
+	}
+}
+
+// Computed lifecycle state; never stored.
+//
+// An agent that was never started reports IDLE: its mailbox is empty and no turn is open.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) State(ctx context.Context) (AgentState, error) {
+	if r.state != nil {
+		return *r.state, nil
+	}
+	q := r.query.Select("state")
+
+	var response AgentState
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AgentStopOpts contains options for Agent.Stop
+type AgentStopOpts struct {
+	// Cancel the loop immediately instead of letting an in-flight step finish. Either way the completed steps are preserved in the snapshot.
+	Kill bool
+}
+
+// Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Stop(ctx context.Context, opts ...AgentStopOpts) (*Agent, error) {
+	q := r.query.Select("stop")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `kill` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kill) {
+			q = q.Arg("kill", opts[i].Kill)
+		}
+	}
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// Block until the agent settles: IDLE, FAILED, or STOPPED. Read which from state afterwards.
+//
+// Unlike waiting for one exact state, this cannot hang merely because the agent settled in a different outcome.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Agent) Wait(ctx context.Context) (*Agent, error) {
+	q := r.query.Select("wait")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
+}
+
+// AsNode returns this Agent as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Agent) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// A message delivered to an agent's mailbox.
+type AgentMessage struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	delivery *AgentMessageDelivery
+	id       *ID
+	ref      *string
+	response *string
+}
+
+func (r *AgentMessage) WithGraphQLQuery(q *querybuilder.Selection) *AgentMessage {
+	return &AgentMessage{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// How the message conclusively landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).
+//
+// Blocks until provider or native lifecycle evidence is conclusive. Once recorded, the result or cancellation error is immutable.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMessage) Delivery(ctx context.Context) (AgentMessageDelivery, error) {
+	if r.delivery != nil {
+		return *r.delivery, nil
+	}
+	q := r.query.Select("delivery")
+
+	var response AgentMessageDelivery
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this AgentMessage.
+func (r *AgentMessage) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *AgentMessage) XXX_GraphQLType() string {
+	return "AgentMessage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *AgentMessage) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *AgentMessage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *AgentMessage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The message's short ref within the receiving agent's runtime, e.g. "#3".
+//
+// This is the deterministic token the recipient's attribution header shows and a reply's replyTo names — quote it when telling the recipient what to answer.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMessage) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
 
 	var response string
 
@@ -981,17 +1045,1604 @@ func (r *Binding) TypeName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// AsNode returns this Binding as a Node.
+// Block until this message is answered, and return the answer: an explicit reply (a send whose replyTo names this message), or the final reply of the turn that consumed it, whichever comes first.
+//
+// Idempotent: cancel and request the response again freely; concurrent waiters share the result.
+//
+// Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, requesting the response again returns the real reply.
+//
+// Refused when called from inside an agent turn whose wait would deadlock: turns should not block on other agents — send without awaiting, and the reply arrives as a message.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *AgentMessage) Response(ctx context.Context) (string, error) {
+	if r.response != nil {
+		return *r.response, nil
+	}
+	q := r.query.Select("response")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this AgentMessage as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *Binding) AsNode() Node {
+func (r *AgentMessage) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// One workspace value with a complete path and all required dimension keys. Reading metadata does not evaluate the value. Different addresses remain distinct even if they return the same object.
+type Artifact struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	description *string
+	id          *ID
+	loadError   *string
+	moduleName  *string
+	uri         *string
+}
+
+func (r *Artifact) WithGraphQLQuery(q *querybuilder.Selection) *Artifact {
+	return &Artifact{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The arguments accepted by the artifact field.
+func (r *Artifact) Arguments(ctx context.Context) ([]FunctionArg, error) {
+	q := r.query.Select("arguments")
+
+	q = q.Select("id")
+
+	type arguments struct {
+		Id ID
+	}
+
+	convert := func(fields []arguments) []FunctionArg {
+		out := []FunctionArg{}
+
+		for i := range fields {
+			val := FunctionArg{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "FunctionArg")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []arguments
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The description of the field that supplies this artifact.
+func (r *Artifact) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module name, collection keys, and full path key in the artifact type dimension.
+func (r *Artifact) DimensionKeys(ctx context.Context) ([]ArtifactDimensionKey, error) {
+	q := r.query.Select("dimensionKeys")
+
+	q = q.Select("id")
+
+	type dimensionKeys struct {
+		Id ID
+	}
+
+	convert := func(fields []dimensionKeys) []ArtifactDimensionKey {
+		out := []ArtifactDimensionKey{}
+
+		for i := range fields {
+			val := ArtifactDimensionKey{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactDimensionKey")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []dimensionKeys
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The directives carried by this artifact.
+func (r *Artifact) Directives(ctx context.Context) ([]string, error) {
+	q := r.query.Select("directives")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Artifact.
+func (r *Artifact) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Artifact) XXX_GraphQLType() string {
+	return "Artifact"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Artifact) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Artifact) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Artifact) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// A module load failure, or an empty string if discovery succeeded.
+func (r *Artifact) LoadError(ctx context.Context) (string, error) {
+	if r.loadError != nil {
+		return *r.loadError, nil
+	}
+	q := r.query.Select("loadError")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The installed module name.
+func (r *Artifact) ModuleName(ctx context.Context) (string, error) {
+	if r.moduleName != nil {
+		return *r.moduleName, nil
+	}
+	q := r.query.Select("moduleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+func (r *Artifact) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// ArtifactURIOpts contains options for Artifact.URI
+type ArtifactURIOpts struct {
+	// Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address.
+	Absolute bool
+	// Include the dimension keys as a query. Without them, the address is a path selector.
+	//
+	// Default: true
+	DimensionKeys bool
+	// Include the artifact type in the scheme: dag+container://.
+	TypeAssertion bool
+}
+
+// The artifact's DAG address, such as dag://engine-dev/playground.
+func (r *Artifact) URI(ctx context.Context, opts ...ArtifactURIOpts) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
+	}
+	q := r.query.Select("uri")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `absolute` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Absolute) {
+			q = q.Arg("absolute", opts[i].Absolute)
+		}
+		// `dimensionKeys` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DimensionKeys) {
+			q = q.Arg("dimensionKeys", opts[i].DimensionKeys)
+		}
+		// `typeAssertion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TypeAssertion) {
+			q = q.Arg("typeAssertion", opts[i].TypeAssertion)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// ArtifactValueOpts contains options for Artifact.Value
+type ArtifactValueOpts struct {
+	// Field arguments as a JSON object.
+	//
+	// Default: "{}"
+	Arguments JSON
+}
+
+// Evaluate the target in the workspace that supplied this artifact.
+func (r *Artifact) Value(opts ...ArtifactValueOpts) Node {
+	q := r.query.Select("value")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `arguments` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Arguments) {
+			q = q.Arg("arguments", opts[i].Arguments)
+		}
+	}
+	return &NodeClient{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this Artifact as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Artifact) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+type ArtifactDimension struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	collectionType *string
+	id             *ID
+	identifier     *string
+	itemType       *string
+	keyDescription *string
+	keyName        *string
+	kind           *ArtifactDimensionKind
+	name           *string
+	qualifiedName  *string
+}
+
+func (r *ArtifactDimension) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactDimension {
+	return &ArtifactDimension{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The collection type, or null for a static dimension.
+func (r *ArtifactDimension) CollectionType(ctx context.Context) (string, error) {
+	if r.collectionType != nil {
+		return *r.collectionType, nil
+	}
+	q := r.query.Select("collectionType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ArtifactDimension.
+func (r *ArtifactDimension) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactDimension) XXX_GraphQLType() string {
+	return "ArtifactDimension"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactDimension) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactDimension) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactDimension) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+func (r *ArtifactDimension) Identifier(ctx context.Context) (string, error) {
+	if r.identifier != nil {
+		return *r.identifier, nil
+	}
+	q := r.query.Select("identifier")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The collection item or artifact type name, or empty for the module dimension.
+func (r *ArtifactDimension) ItemType(ctx context.Context) (string, error) {
+	if r.itemType != nil {
+		return *r.itemType, nil
+	}
+	q := r.query.Select("itemType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The collection key argument description, or empty for a static dimension.
+func (r *ArtifactDimension) KeyDescription(ctx context.Context) (string, error) {
+	if r.keyDescription != nil {
+		return *r.keyDescription, nil
+	}
+	q := r.query.Select("keyDescription")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The collection key argument name, or name for a static dimension.
+func (r *ArtifactDimension) KeyName(ctx context.Context) (string, error) {
+	if r.keyName != nil {
+		return *r.keyName, nil
+	}
+	q := r.query.Select("keyName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// How this dimension gets its keys.
+func (r *ArtifactDimension) Kind(ctx context.Context) (ArtifactDimensionKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response ArtifactDimensionKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Short name used to select this dimension.
+func (r *ArtifactDimension) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Qualified name used when the short name is ambiguous.
+func (r *ArtifactDimension) QualifiedName(ctx context.Context) (string, error) {
+	if r.qualifiedName != nil {
+		return *r.qualifiedName, nil
+	}
+	q := r.query.Select("qualifiedName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ArtifactDimension as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactDimension) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+type ArtifactDimensionKey struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	dimension *string
+	id        *ID
+	key       *string
+}
+
+func (r *ArtifactDimensionKey) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactDimensionKey {
+	return &ArtifactDimensionKey{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The dimension identifier, fixed across the workspace schema.
+func (r *ArtifactDimensionKey) Dimension(ctx context.Context) (string, error) {
+	if r.dimension != nil {
+		return *r.dimension, nil
+	}
+	q := r.query.Select("dimension")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ArtifactDimensionKey.
+func (r *ArtifactDimensionKey) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactDimensionKey) XXX_GraphQLType() string {
+	return "ArtifactDimensionKey"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactDimensionKey) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactDimensionKey) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactDimensionKey) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The dimension item's key.
+func (r *ArtifactDimensionKey) Key(ctx context.Context) (string, error) {
+	if r.key != nil {
+		return *r.key, nil
+	}
+	q := r.query.Select("key")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ArtifactDimensionKey as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactDimensionKey) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A schema path and its dimensions. The path can exist even when its collections have no runtime items.
+type ArtifactPath struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	description *string
+	id          *ID
+	loadError   *string
+	moduleName  *string
+	uri         *string
+}
+
+func (r *ArtifactPath) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactPath {
+	return &ArtifactPath{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The description of the field at this path.
+func (r *ArtifactPath) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The dimension identifiers required by this path.
+func (r *ArtifactPath) Dimensions(ctx context.Context) ([]string, error) {
+	q := r.query.Select("dimensions")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ArtifactPath.
+func (r *ArtifactPath) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactPath) XXX_GraphQLType() string {
+	return "ArtifactPath"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactPath) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactPath) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactPath) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// A module load failure for this path, or an empty string.
+func (r *ArtifactPath) LoadError(ctx context.Context) (string, error) {
+	if r.loadError != nil {
+		return *r.loadError, nil
+	}
+	q := r.query.Select("loadError")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The installed module name.
+func (r *ArtifactPath) ModuleName(ctx context.Context) (string, error) {
+	if r.moduleName != nil {
+		return *r.moduleName, nil
+	}
+	q := r.query.Select("moduleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The DAG address of this path, without dimension keys.
+func (r *ArtifactPath) URI(ctx context.Context) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
+	}
+	q := r.query.Select("uri")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ArtifactPath as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactPath) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+type ArtifactResult struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *ArtifactResult) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactResult {
+	return &ArtifactResult{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The artifact that was evaluated.
+func (r *ArtifactResult) Artifact() *Artifact {
+	q := r.query.Select("artifact")
+
+	return &Artifact{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// The evaluation failure, if any.
+func (r *ArtifactResult) Error(ctx context.Context) (*Error, error) {
+	q := r.query.Select("error")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Error{
+		query: selectNode(q.Root(), *objectID, "Error"),
+	}, nil
+}
+
+// A unique identifier for this ArtifactResult.
+func (r *ArtifactResult) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactResult) XXX_GraphQLType() string {
+	return "ArtifactResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactResult) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The evaluated value, or null when evaluation failed.
+func (r *ArtifactResult) Value(ctx context.Context) (Node, error) {
+	q := r.query.Select("value")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &NodeClient{
+		query: selectNode(q.Root(), *objectID, "Node"),
+	}, nil
+}
+
+// AsNode returns this ArtifactResult as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactResult) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers.
+type Artifacts struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id  *ID
+	uri *string
+}
+type WithArtifactsFunc func(r *Artifacts) *Artifacts
+
+// With calls the provided function with current Artifacts.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Artifacts) With(f WithArtifactsFunc) *Artifacts {
+	return f(r)
+}
+
+func (r *Artifacts) WithGraphQLQuery(q *querybuilder.Selection) *Artifacts {
+	return &Artifacts{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+func (r *Artifacts) AsChangesets(ctx context.Context) ([]Changeset, error) {
+	q := r.query.Select("asChangesets")
+
+	q = q.Select("id")
+
+	type asChangesets struct {
+		Id ID
+	}
+
+	convert := func(fields []asChangesets) []Changeset {
+		out := []Changeset{}
+
+		for i := range fields {
+			val := Changeset{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Changeset")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asChangesets
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+func (r *Artifacts) AsChecks(ctx context.Context) ([]Check, error) {
+	q := r.query.Select("asChecks")
+
+	q = q.Select("id")
+
+	type asChecks struct {
+		Id ID
+	}
+
+	convert := func(fields []asChecks) []Check {
+		out := []Check{}
+
+		for i := range fields {
+			val := Check{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Check")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asChecks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+func (r *Artifacts) AsExpertise(ctx context.Context) ([]Expertise, error) {
+	q := r.query.Select("asExpertise")
+
+	q = q.Select("id")
+
+	type asExpertise struct {
+		Id ID
+	}
+
+	convert := func(fields []asExpertise) []Expertise {
+		out := []Expertise{}
+
+		for i := range fields {
+			val := Expertise{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Expertise")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asExpertise
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+func (r *Artifacts) AsGenerators(ctx context.Context) ([]Generator, error) {
+	q := r.query.Select("asGenerators")
+
+	q = q.Select("id")
+
+	type asGenerators struct {
+		Id ID
+	}
+
+	convert := func(fields []asGenerators) []Generator {
+		out := []Generator{}
+
+		for i := range fields {
+			val := Generator{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Generator")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asGenerators
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
+func (r *Artifacts) AsServices(ctx context.Context) ([]Service, error) {
+	q := r.query.Select("asServices")
+
+	q = q.Select("id")
+
+	type asServices struct {
+		Id ID
+	}
+
+	convert := func(fields []asServices) []Service {
+		out := []Service{}
+
+		for i := range fields {
+			val := Service{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Service")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asServices
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// List dimensions on the selected schema paths, including empty collections. Does not read runtime values.
+func (r *Artifacts) DimensionDefinitions(ctx context.Context) ([]ArtifactDimension, error) {
+	q := r.query.Select("dimensionDefinitions")
+
+	q = q.Select("id")
+
+	type dimensionDefinitions struct {
+		Id ID
+	}
+
+	convert := func(fields []dimensionDefinitions) []ArtifactDimension {
+		out := []ArtifactDimension{}
+
+		for i := range fields {
+			val := ArtifactDimension{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactDimension")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []dimensionDefinitions
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
+func (r *Artifacts) DimensionItems(ctx context.Context, dimension string) ([]Artifact, error) {
+	q := r.query.Select("dimensionItems")
+	q = q.Arg("dimension", dimension)
+
+	q = q.Select("id")
+
+	type dimensionItems struct {
+		Id ID
+	}
+
+	convert := func(fields []dimensionItems) []Artifact {
+		out := []Artifact{}
+
+		for i := range fields {
+			val := Artifact{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Artifact")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []dimensionItems
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// List keys represented in this selection for the given dimension, sorted with no duplicates.
+func (r *Artifacts) DimensionKeys(ctx context.Context, dimension string) ([]string, error) {
+	q := r.query.Select("dimensionKeys")
+	q = q.Arg("dimension", dimension)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// List dimension identifiers represented in this selection, sorted with no duplicates.
+func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
+	q := r.query.Select("dimensions")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Keep artifacts with any listed key in this dimension.
+func (r *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifacts {
+	q := r.query.Select("filterDimensionKeys")
+	q = q.Arg("dimension", dimension)
+	q = q.Arg("keys", keys)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Keep artifacts selected through any listed dimension.
+func (r *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
+	q := r.query.Select("filterDimensions")
+	q = q.Arg("dimensions", dimensions)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ArtifactsFilterDirectivesOpts contains options for Artifacts.FilterDirectives
+type ArtifactsFilterDirectivesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
+// Keep artifacts with any listed directive. Does not filter by type or workspace settings.
+func (r *Artifacts) FilterDirectives(directives []string, opts ...ArtifactsFilterDirectivesOpts) *Artifacts {
+	q := r.query.Select("filterDirectives")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("directives", directives)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ArtifactsFilterParentDirectivesOpts contains options for Artifacts.FilterParentDirectives
+type ArtifactsFilterParentDirectivesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
+// Keep artifacts whose immediate parent has any listed directive. Artifacts without a parent do not match.
+func (r *Artifacts) FilterParentDirectives(directives []string, opts ...ArtifactsFilterParentDirectivesOpts) *Artifacts {
+	q := r.query.Select("filterParentDirectives")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("directives", directives)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ArtifactsFilterParentTypesOpts contains options for Artifacts.FilterParentTypes
+type ArtifactsFilterParentTypesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
+// Keep artifacts whose immediate parent has any listed object type. Artifacts without a typed parent do not match.
+func (r *Artifacts) FilterParentTypes(types []string, opts ...ArtifactsFilterParentTypesOpts) *Artifacts {
+	q := r.query.Select("filterParentTypes")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("types", types)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Match one complete, ordered field sequence exactly.
+func (r *Artifacts) FilterPath(path []string) *Artifacts {
+	q := r.query.Select("filterPath")
+	q = q.Arg("path", path)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+func (r *Artifacts) FilterPathPattern(pattern string) *Artifacts {
+	q := r.query.Select("filterPathPattern")
+	q = q.Arg("pattern", pattern)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ArtifactsFilterTypesOpts contains options for Artifacts.FilterTypes
+type ArtifactsFilterTypesOpts struct {
+	// Remove the matching artifacts instead.
+	Exclude bool
+}
+
+// Keep artifacts of any listed concrete GraphQL type.
+func (r *Artifacts) FilterTypes(types []string, opts ...ArtifactsFilterTypesOpts) *Artifacts {
+	q := r.query.Select("filterTypes")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("types", types)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
+//
+// The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+func (r *Artifacts) FilterURI(uri string) *Artifacts {
+	q := r.query.Select("filterUri")
+	q = q.Arg("uri", uri)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// A unique identifier for this Artifacts.
+func (r *Artifacts) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Artifacts) XXX_GraphQLType() string {
+	return "Artifacts"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Artifacts) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Artifacts) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Artifacts) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Enumerate complete artifacts without evaluating their values.
+func (r *Artifacts) Items(ctx context.Context) ([]Artifact, error) {
+	q := r.query.Select("items")
+
+	q = q.Select("id")
+
+	type items struct {
+		Id ID
+	}
+
+	convert := func(fields []items) []Artifact {
+		out := []Artifact{}
+
+		for i := range fields {
+			val := Artifact{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Artifact")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []items
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// List the modules represented in this selection without evaluating artifact values.
+func (r *Artifacts) Modules(ctx context.Context) ([]Module, error) {
+	q := r.query.Select("modules")
+
+	q = q.Select("id")
+
+	type modules struct {
+		Id ID
+	}
+
+	convert := func(fields []modules) []Module {
+		out := []Module{}
+
+		for i := range fields {
+			val := Module{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Module")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []modules
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
+func (r *Artifacts) One() *Artifact {
+	q := r.query.Select("one")
+
+	return &Artifact{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ArtifactsPathDefinitionsOpts contains options for Artifacts.PathDefinitions
+type ArtifactsPathDefinitionsOpts struct {
+	// Prefix each address with the workspace's Git address and commit.
+	Absolute bool
+	// Include the artifact type in each address scheme.
+	TypeAssertion bool
+	// Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.
+	Dimension string
+}
+
+// List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.
+func (r *Artifacts) PathDefinitions(ctx context.Context, opts ...ArtifactsPathDefinitionsOpts) ([]ArtifactPath, error) {
+	q := r.query.Select("pathDefinitions")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `absolute` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Absolute) {
+			q = q.Arg("absolute", opts[i].Absolute)
+		}
+		// `typeAssertion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TypeAssertion) {
+			q = q.Arg("typeAssertion", opts[i].TypeAssertion)
+		}
+		// `dimension` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dimension) {
+			q = q.Arg("dimension", opts[i].Dimension)
+		}
+	}
+
+	q = q.Select("id")
+
+	type pathDefinitions struct {
+		Id ID
+	}
+
+	convert := func(fields []pathDefinitions) []ArtifactPath {
+		out := []ArtifactPath{}
+
+		for i := range fields {
+			val := ArtifactPath{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactPath")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []pathDefinitions
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// List concrete type definitions represented in this selection, sorted by name with no duplicates.
+func (r *Artifacts) Types(ctx context.Context) ([]TypeDef, error) {
+	q := r.query.Select("types")
+
+	q = q.Select("id")
+
+	type types struct {
+		Id ID
+	}
+
+	convert := func(fields []types) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "TypeDef")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []types
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+func (r *Artifacts) URI(ctx context.Context) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
+	}
+	q := r.query.Select("uri")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// ArtifactsValuesOpts contains options for Artifacts.Values
+type ArtifactsValuesOpts struct {
+	// Cancel remaining work after the first failure.
+	FailFast bool
+	// Field arguments applied to each artifact, as a JSON object.
+	//
+	// Default: "{}"
+	Arguments JSON
+	// Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
+	MaxConcurrency int
+}
+
+// Evaluate the selection in parallel, retaining each result and error.
+func (r *Artifacts) Values(ctx context.Context, opts ...ArtifactsValuesOpts) ([]ArtifactResult, error) {
+	q := r.query.Select("values")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
+		}
+		// `arguments` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Arguments) {
+			q = q.Arg("arguments", opts[i].Arguments)
+		}
+		// `maxConcurrency` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxConcurrency) {
+			q = q.Arg("maxConcurrency", opts[i].MaxConcurrency)
+		}
+	}
+
+	q = q.Select("id")
+
+	type values struct {
+		Id ID
+	}
+
+	convert := func(fields []values) []ArtifactResult {
+		out := []ArtifactResult{}
+
+		for i := range fields {
+			val := ArtifactResult{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactResult")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []values
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
+func (r *Artifacts) WithArtifacts(artifacts *Artifacts) *Artifacts {
+	assertNotNil("artifacts", artifacts)
+	q := r.query.Select("withArtifacts")
+	q = q.Arg("artifacts", artifacts)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Remove artifacts selected by a DAG address.
+func (r *Artifacts) WithoutURI(uri string) *Artifacts {
+	q := r.query.Select("withoutUri")
+	q = q.Arg("uri", uri)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this Artifacts as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Artifacts) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A directory whose contents persist across runs.
 type CacheVolume struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id *ID
 }
@@ -999,6 +2650,9 @@ type CacheVolume struct {
 func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
 	return &CacheVolume{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -1012,7 +2666,13 @@ func (r *CacheVolume) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -1046,13 +2706,18 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *CacheVolume) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A comparison between two directories representing changes that can be applied.
 type Changeset struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	export  *string
 	id      *ID
@@ -1071,6 +2736,9 @@ func (r *Changeset) With(f WithChangesetFunc) *Changeset {
 func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
 	return &Changeset{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -1089,7 +2757,8 @@ func (r *Changeset) After() *Directory {
 	q := r.query.Select("after")
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -1098,7 +2767,8 @@ func (r *Changeset) AsPatch() *File {
 	q := r.query.Select("asPatch")
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -1107,7 +2777,8 @@ func (r *Changeset) Before() *Directory {
 	q := r.query.Select("before")
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -1158,6 +2829,36 @@ func (r *Changeset) Export(ctx context.Context, path string) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ChangesetFilterOpts contains options for Changeset.Filter
+type ChangesetFilterOpts struct {
+	// Only include changes at paths matching these patterns. Empty includes all paths.
+	Include []string
+	// Exclude changes at paths matching these patterns.
+	Exclude []string
+}
+
+// Select changes matching the supplied glob patterns, preserving their original baseline.
+//
+// Includes additions, modifications, and deletions. Selecting only one side of a rename yields an addition or deletion.
+func (r *Changeset) Filter(opts ...ChangesetFilterOpts) *Changeset {
+	q := r.query.Select("filter")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+
+	return &Changeset{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // A unique identifier for this Changeset.
 func (r *Changeset) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -1168,7 +2869,13 @@ func (r *Changeset) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -1216,7 +2923,8 @@ func (r *Changeset) Layer() *Directory {
 	q := r.query.Select("layer")
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -1276,7 +2984,8 @@ func (r *Changeset) WithChangeset(changes *Changeset, opts ...ChangesetWithChang
 	q = q.Arg("changes", changes)
 
 	return &Changeset{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -1304,7 +3013,8 @@ func (r *Changeset) WithChangesets(changes []*Changeset, opts ...ChangesetWithCh
 	q = q.Arg("changes", changes)
 
 	return &Changeset{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -1312,7 +3022,8 @@ func (r *Changeset) WithChangesets(changes []*Changeset, opts ...ChangesetWithCh
 // This is a local type conversion — no GraphQL call.
 func (r *Changeset) AsExportable() Exportable {
 	return &ExportableClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -1320,7 +3031,8 @@ func (r *Changeset) AsExportable() Exportable {
 // This is a local type conversion — no GraphQL call.
 func (r *Changeset) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -1328,20 +3040,22 @@ func (r *Changeset) AsNode() Node {
 // This is a local type conversion — no GraphQL call.
 func (r *Changeset) AsSyncer() Syncer {
 	return &SyncerClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
+// One deferred check. Reading pass, error, or sync runs it.
 type Check struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
-	checkType   *string
-	completed   *bool
-	description *string
-	id          *ID
-	name        *string
-	passed      *bool
-	resultEmoji *string
+	assertion *string
+	id        *ID
+	pass      *bool
 }
 type WithCheckFunc func(r *Check) *Check
 
@@ -1355,15 +3069,18 @@ func (r *Check) With(f WithCheckFunc) *Check {
 func (r *Check) WithGraphQLQuery(q *querybuilder.Selection) *Check {
 	return &Check{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
-// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
-func (r *Check) CheckType(ctx context.Context) (string, error) {
-	if r.checkType != nil {
-		return *r.checkType, nil
+// The assertion that is false when this check fails.
+func (r *Check) Assertion(ctx context.Context) (string, error) {
+	if r.assertion != nil {
+		return *r.assertion, nil
 	}
-	q := r.query.Select("checkType")
+	q := r.query.Select("assertion")
 
 	var response string
 
@@ -1371,39 +3088,21 @@ func (r *Check) CheckType(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Whether the check completed
-func (r *Check) Completed(ctx context.Context) (bool, error) {
-	if r.completed != nil {
-		return *r.completed, nil
-	}
-	q := r.query.Select("completed")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The description of the check
-func (r *Check) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// If the check failed, this is the error
-func (r *Check) Error() *Error {
+// Run the check and return its failure, if any.
+func (r *Check) Error(ctx context.Context) (*Error, error) {
 	q := r.query.Select("error")
 
-	return &Error{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Error{
+		query: selectNode(q.Root(), *objectID, "Error"),
+	}, nil
 }
 
 // A unique identifier for this Check.
@@ -1416,7 +3115,13 @@ func (r *Check) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -1446,34 +3151,12 @@ func (r *Check) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Return the fully qualified name of the check
-func (r *Check) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
+// Run the check and return whether it passes.
+func (r *Check) Pass(ctx context.Context) (bool, error) {
+	if r.pass != nil {
+		return *r.pass, nil
 	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The original module in which the check has been defined
-func (r *Check) OriginalModule() *Module {
-	q := r.query.Select("originalModule")
-
-	return &Module{
-		query: q,
-	}
-}
-
-// Whether the check passed
-func (r *Check) Passed(ctx context.Context) (bool, error) {
-	if r.passed != nil {
-		return *r.passed, nil
-	}
-	q := r.query.Select("passed")
+	q := r.query.Select("pass")
 
 	var response bool
 
@@ -1481,35 +3164,30 @@ func (r *Check) Passed(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// The path of the check within its module
-func (r *Check) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
+// An optional report produced by the check.
+func (r *Check) Report(ctx context.Context) (*Directory, error) {
+	q := r.query.Select("report")
 
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// An emoji representing the result of the check
-func (r *Check) ResultEmoji(ctx context.Context) (string, error) {
-	if r.resultEmoji != nil {
-		return *r.resultEmoji, nil
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
-	q := r.query.Select("resultEmoji")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Directory{
+		query: selectNode(q.Root(), *objectID, "Directory"),
+	}, nil
 }
 
-// Execute the check
-func (r *Check) Run() *Check {
-	q := r.query.Select("run")
+// Run the check and retain its result.
+func (r *Check) Sync() *Check {
+	q := r.query.Select("sync")
 
 	return &Check{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -1517,144 +3195,18 @@ func (r *Check) Run() *Check {
 // This is a local type conversion — no GraphQL call.
 func (r *Check) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
-	}
-}
-
-type CheckGroup struct {
-	query *querybuilder.Selection
-
-	id *ID
-}
-type WithCheckGroupFunc func(r *CheckGroup) *CheckGroup
-
-// With calls the provided function with current CheckGroup.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *CheckGroup) With(f WithCheckGroupFunc) *CheckGroup {
-	return f(r)
-}
-
-func (r *CheckGroup) WithGraphQLQuery(q *querybuilder.Selection) *CheckGroup {
-	return &CheckGroup{
-		query: q,
-	}
-}
-
-// A unique identifier for this CheckGroup.
-func (r *CheckGroup) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *CheckGroup) XXX_GraphQLType() string {
-	return "CheckGroup"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *CheckGroup) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *CheckGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *CheckGroup) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Return a list of individual checks and their details
-func (r *CheckGroup) List(ctx context.Context) ([]Check, error) {
-	q := r.query.Select("list")
-
-	q = q.Select("id")
-
-	type list struct {
-		Id ID
-	}
-
-	convert := func(fields []list) []Check {
-		out := []Check{}
-
-		for i := range fields {
-			val := Check{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Check")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []list
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Generate a markdown report
-func (r *CheckGroup) Report() *File {
-	q := r.query.Select("report")
-
-	return &File{
-		query: q,
-	}
-}
-
-// CheckGroupRunOpts contains options for CheckGroup.Run
-type CheckGroupRunOpts struct {
-	// If true, stop running checks as soon as any check fails.
-	FailFast bool
-}
-
-// Execute all selected checks
-func (r *CheckGroup) Run(opts ...CheckGroupRunOpts) *CheckGroup {
-	q := r.query.Select("run")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `failFast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].FailFast) {
-			q = q.Arg("failFast", opts[i].FailFast)
-		}
-	}
-
-	return &CheckGroup{
-		query: q,
-	}
-}
-
-// AsNode returns this CheckGroup as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *CheckGroup) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // An internal persistent filesync mirror.
 type ClientFilesyncMirror struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id *ID
 }
@@ -1662,6 +3214,9 @@ type ClientFilesyncMirror struct {
 func (r *ClientFilesyncMirror) WithGraphQLQuery(q *querybuilder.Selection) *ClientFilesyncMirror {
 	return &ClientFilesyncMirror{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -1675,7 +3230,13 @@ func (r *ClientFilesyncMirror) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -1709,13 +3270,18 @@ func (r *ClientFilesyncMirror) MarshalJSON() ([]byte, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *ClientFilesyncMirror) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // Dagger Cloud configuration and state
 type Cloud struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id       *ID
 	traceURL *string
@@ -1724,6 +3290,9 @@ type Cloud struct {
 func (r *Cloud) WithGraphQLQuery(q *querybuilder.Selection) *Cloud {
 	return &Cloud{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -1737,7 +3306,13 @@ func (r *Cloud) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -1784,13 +3359,383 @@ func (r *Cloud) TraceURL(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *Cloud) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+type CollectionDelta struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *CollectionDelta) WithGraphQLQuery(q *querybuilder.Selection) *CollectionDelta {
+	return &CollectionDelta{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Current keys absent from the original collection, in current order.
+func (r *CollectionDelta) AddedKeys(ctx context.Context) ([]string, error) {
+	q := r.query.Select("addedKeys")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this CollectionDelta.
+func (r *CollectionDelta) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CollectionDelta) XXX_GraphQLType() string {
+	return "CollectionDelta"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CollectionDelta) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CollectionDelta) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CollectionDelta) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Original keys absent from the current collection, in original order.
+func (r *CollectionDelta) RemovedKeys(ctx context.Context) ([]string, error) {
+	q := r.query.Select("removedKeys")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this CollectionDelta as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CollectionDelta) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+type CollectionTypeDef struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *CollectionTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *CollectionTypeDef {
+	return &CollectionTypeDef{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The type of batch operations, or null when there are none.
+func (r *CollectionTypeDef) BatchType(ctx context.Context) (*TypeDef, error) {
+	q := r.query.Select("batchType")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &TypeDef{
+		query: selectNode(q.Root(), *objectID, "TypeDef"),
+	}, nil
+}
+
+// A unique identifier for this CollectionTypeDef.
+func (r *CollectionTypeDef) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CollectionTypeDef) XXX_GraphQLType() string {
+	return "CollectionTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CollectionTypeDef) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CollectionTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CollectionTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The type of collection keys.
+func (r *CollectionTypeDef) KeyType() *TypeDef {
+	q := r.query.Select("keyType")
+
+	return &TypeDef{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// The object type returned by get.
+func (r *CollectionTypeDef) ValueType() *TypeDef {
+	q := r.query.Select("valueType")
+
+	return &TypeDef{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this CollectionTypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CollectionTypeDef) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A command's arguments and execution settings.
+type Command struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id                       *ID
+	insecureRootCapabilities *bool
+	privilegedNesting        *bool
+	workdir                  *string
+}
+
+func (r *Command) WithGraphQLQuery(q *querybuilder.Selection) *Command {
+	return &Command{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The command arguments.
+func (r *Command) Args(ctx context.Context) ([]string, error) {
+	q := r.query.Select("args")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Environment variable overrides. Other variables come from the container.
+func (r *Command) Env(ctx context.Context) ([]EnvVariable, error) {
+	q := r.query.Select("env")
+
+	q = q.Select("id")
+
+	type env struct {
+		Id ID
+	}
+
+	convert := func(fields []env) []EnvVariable {
+		out := []EnvVariable{}
+
+		for i := range fields {
+			val := EnvVariable{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "EnvVariable")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []env
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this Command.
+func (r *Command) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Command) XXX_GraphQLType() string {
+	return "Command"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Command) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Command) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Command) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Whether the command has all root capabilities.
+func (r *Command) InsecureRootCapabilities(ctx context.Context) (bool, error) {
+	if r.insecureRootCapabilities != nil {
+		return *r.insecureRootCapabilities, nil
+	}
+	q := r.query.Select("insecureRootCapabilities")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the command has access to Dagger.
+func (r *Command) PrivilegedNesting(ctx context.Context) (bool, error) {
+	if r.privilegedNesting != nil {
+		return *r.privilegedNesting, nil
+	}
+	q := r.query.Select("privilegedNesting")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Working directory override. If unset, use the container's working directory.
+func (r *Command) Workdir(ctx context.Context) (string, error) {
+	if r.workdir != nil {
+		return *r.workdir, nil
+	}
+	q := r.query.Select("workdir")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Command as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Command) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // An OCI-compatible container, also known as a Docker container.
 type Container struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	combinedOutput *string
 	envVariable    *string
@@ -1822,6 +3767,9 @@ func (r *Container) With(f WithContainerFunc) *Container {
 func (r *Container) WithGraphQLQuery(q *querybuilder.Selection) *Container {
 	return &Container{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -1833,8 +3781,17 @@ type ContainerAsServiceOpts struct {
 	Args []string
 	// If the container has an entrypoint, prepend it to the args.
 	UseEntrypoint bool
-	// Provides Dagger access to the executed command.
+	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
+	// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+	//
+	// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+	//
+	// Cannot be combined with "disableDaggerInDagger".
+	DaggerInDaggerNewSession bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -1859,9 +3816,17 @@ func (r *Container) AsService(opts ...ContainerAsServiceOpts) *Service {
 		if !querybuilder.IsZeroValue(opts[i].UseEntrypoint) {
 			q = q.Arg("useEntrypoint", opts[i].UseEntrypoint)
 		}
+		// `disableDaggerInDagger` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
+			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `daggerInDaggerNewSession` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DaggerInDaggerNewSession) {
+			q = q.Arg("daggerInDaggerNewSession", opts[i].DaggerInDaggerNewSession)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -1878,7 +3843,8 @@ func (r *Container) AsService(opts ...ContainerAsServiceOpts) *Service {
 	}
 
 	return &Service{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -1919,7 +3885,8 @@ func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
 	}
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -1968,17 +3935,26 @@ func (r *Container) Directory(path string, opts ...ContainerDirectoryOpts) *Dire
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // Retrieves this container's configured docker healthcheck.
-func (r *Container) DockerHealthcheck() *HealthcheckConfig {
+func (r *Container) DockerHealthcheck(ctx context.Context) (*HealthcheckConfig, error) {
 	q := r.query.Select("dockerHealthcheck")
 
-	return &HealthcheckConfig{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &HealthcheckConfig{
+		query: selectNode(q.Root(), *objectID, "HealthcheckConfig"),
+	}, nil
 }
 
 // Return the container's OCI entrypoint.
@@ -2091,30 +4067,32 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
-// EXPERIMENTAL API! Subject to change/removal at any time.
-//
 // Configures all available GPUs on the host to be accessible to this container.
 //
 // This currently works for Nvidia devices only.
+//
+// Deprecated: Use "withGPU" instead.
 func (r *Container) ExperimentalWithAllGPUs() *Container {
 	q := r.query.Select("experimentalWithAllGPUs")
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// EXPERIMENTAL API! Subject to change/removal at any time.
-//
 // Configures the provided list of devices to be accessible to this container.
 //
 // This currently works for Nvidia devices only.
+//
+// Deprecated: Use "withGPU" instead, which exposes all GPUs available on the host.
 func (r *Container) ExperimentalWithGPU(devices []string) *Container {
 	q := r.query.Select("experimentalWithGPU")
 	q = q.Arg("devices", devices)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2270,31 +4248,59 @@ func (r *Container) File(path string, opts ...ContainerFileOpts) *File {
 	q = q.Arg("path", path)
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // ContainerFromOpts contains options for Container.From
 type ContainerFromOpts struct {
+	// Version query used to select an image tag. The address must not contain a tag or digest.
+	Version string
 	// Service to use as the registry endpoint for the image address.
 	//
 	// The service will be started only for this pull.
 	RegistryService *Service
+	// Protocol to use for registry communication.
+	//
+	// Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+	Protocol RegistryProtocol
+	// Allow HTTPS registry communication without verifying the server certificate.
+	InsecureSkipTLSVerify bool
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
 }
 
 // Download a container image, and apply it to the container state. All previous state will be lost.
 func (r *Container) From(address string, opts ...ContainerFromOpts) *Container {
 	q := r.query.Select("from")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
 		// `registryService` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RegistryService) {
 			q = q.Arg("registryService", opts[i].RegistryService)
+		}
+		// `protocol` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Protocol) {
+			q = q.Arg("protocol", opts[i].Protocol)
+		}
+		// `insecureSkipTLSVerify` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
+			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
+		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
 		}
 	}
 	q = q.Arg("address", address)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2308,7 +4314,13 @@ func (r *Container) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -2370,7 +4382,8 @@ func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2421,6 +4434,71 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	return convert(response), nil
 }
 
+// ContainerLayerOpts contains options for Container.Layer
+type ContainerLayerOpts struct {
+	// Force each layer of the image to use the specified compression algorithm.
+	//
+	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+	ForcedCompression ImageLayerCompression
+	// Media types to use for image layers. Defaults to OCI.
+	//
+	// Default: OCIMediaTypes
+	MediaTypes ImageMediaTypes
+}
+
+// Returns the image layer or configuration blob with the given digest as a File.
+func (r *Container) Layer(id string, opts ...ContainerLayerOpts) *File {
+	q := r.query.Select("layer")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `forcedCompression` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+	}
+	q = q.Arg("id", id)
+
+	return &File{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ContainerManifestOpts contains options for Container.Manifest
+type ContainerManifestOpts struct {
+	// Force each layer of the image to use the specified compression algorithm.
+	//
+	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+	ForcedCompression ImageLayerCompression
+	// Media types to use for image layers. Defaults to OCI.
+	//
+	// Default: OCIMediaTypes
+	MediaTypes ImageMediaTypes
+}
+
+// Computes and returns the manifest for this container as a File.
+func (r *Container) Manifest(opts ...ContainerManifestOpts) *File {
+	q := r.query.Select("manifest")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `forcedCompression` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+	}
+
+	return &File{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // Retrieves the list of paths where a directory is mounted.
 func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	q := r.query.Select("mounts")
@@ -2464,6 +4542,12 @@ type ContainerPublishOpts struct {
 	//
 	// The service will be started only for this push.
 	RegistryService *Service
+	// Protocol to use for registry communication.
+	//
+	// Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+	Protocol RegistryProtocol
+	// Allow HTTPS registry communication without verifying the server certificate.
+	InsecureSkipTLSVerify bool
 }
 
 // Package the container state as an OCI image, and publish it to a registry
@@ -2491,6 +4575,14 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		if !querybuilder.IsZeroValue(opts[i].RegistryService) {
 			q = q.Arg("registryService", opts[i].RegistryService)
 		}
+		// `protocol` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Protocol) {
+			q = q.Arg("protocol", opts[i].Protocol)
+		}
+		// `insecureSkipTLSVerify` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
+			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
+		}
 	}
 	q = q.Arg("address", address)
 
@@ -2505,7 +4597,30 @@ func (r *Container) Rootfs() *Directory {
 	q := r.query.Select("rootfs")
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ContainerShellOpts contains options for Container.Shell
+type ContainerShellOpts struct {
+	// Return the batch command instead of the interactive command.
+	Batch bool
+}
+
+// Return the configured shell command. Defaults to ["sh"].
+func (r *Container) Shell(opts ...ContainerShellOpts) *Command {
+	q := r.query.Select("shell")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `batch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Batch) {
+			q = q.Arg("batch", opts[i].Batch)
+		}
+	}
+
+	return &Command{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2516,7 +4631,7 @@ type ContainerStatOpts struct {
 }
 
 // Return file status
-func (r *Container) Stat(path string, opts ...ContainerStatOpts) *Stat {
+func (r *Container) Stat(ctx context.Context, path string, opts ...ContainerStatOpts) (*Stat, error) {
 	q := r.query.Select("stat")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `doNotFollowSymlinks` optional argument
@@ -2526,9 +4641,17 @@ func (r *Container) Stat(path string, opts ...ContainerStatOpts) *Stat {
 	}
 	q = q.Arg("path", path)
 
-	return &Stat{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Stat{
+		query: selectNode(q.Root(), *objectID, "Stat"),
+	}, nil
 }
 
 // The buffered standard error stream of the last executed command
@@ -2580,7 +4703,10 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 type ContainerTerminalOpts struct {
 	// If set, override the container's default terminal command and invoke these command arguments instead.
 	Cmd []string
-	// Provides Dagger access to the executed command.
+	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
@@ -2594,6 +4720,10 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Container {
 		if !querybuilder.IsZeroValue(opts[i].Cmd) {
 			q = q.Arg("cmd", opts[i].Cmd)
 		}
+		// `disableDaggerInDagger` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
+			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
@@ -2605,7 +4735,8 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Container {
 	}
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
 }
 
@@ -2623,8 +4754,17 @@ type ContainerUpOpts struct {
 	Args []string
 	// If the container has an entrypoint, prepend it to the args.
 	UseEntrypoint bool
-	// Provides Dagger access to the executed command.
+	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
+	// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+	//
+	// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+	//
+	// Cannot be combined with "disableDaggerInDagger".
+	DaggerInDaggerNewSession bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -2660,9 +4800,17 @@ func (r *Container) Up(ctx context.Context, opts ...ContainerUpOpts) error {
 		if !querybuilder.IsZeroValue(opts[i].UseEntrypoint) {
 			q = q.Arg("useEntrypoint", opts[i].UseEntrypoint)
 		}
+		// `disableDaggerInDagger` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
+			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `daggerInDaggerNewSession` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DaggerInDaggerNewSession) {
+			q = q.Arg("daggerInDaggerNewSession", opts[i].DaggerInDaggerNewSession)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -2701,7 +4849,8 @@ func (r *Container) WithAnnotation(name string, value string) *Container {
 	q = q.Arg("value", value)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2711,22 +4860,32 @@ func (r *Container) WithDefaultArgs(args []string) *Container {
 	q = q.Arg("args", args)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // ContainerWithDefaultTerminalCmdOpts contains options for Container.WithDefaultTerminalCmd
 type ContainerWithDefaultTerminalCmdOpts struct {
-	// Provides Dagger access to the executed command.
+	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 }
 
 // Set the default command to invoke for the container's terminal API.
+//
+// Deprecated: Use withShell.
 func (r *Container) WithDefaultTerminalCmd(args []string, opts ...ContainerWithDefaultTerminalCmdOpts) *Container {
 	q := r.query.Select("withDefaultTerminalCmd")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `disableDaggerInDagger` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
+			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
@@ -2739,7 +4898,8 @@ func (r *Container) WithDefaultTerminalCmd(args []string, opts ...ContainerWithD
 	q = q.Arg("args", args)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2757,6 +4917,8 @@ type ContainerWithDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 
@@ -2784,6 +4946,10 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
 		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
+		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
@@ -2797,7 +4963,8 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2849,7 +5016,8 @@ func (r *Container) WithDockerHealthcheck(args []string, opts ...ContainerWithDo
 	q = q.Arg("args", args)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2871,7 +5039,8 @@ func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypoin
 	q = q.Arg("args", args)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2882,7 +5051,8 @@ func (r *Container) WithEnvFileVariables(source *EnvFile) *Container {
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2905,7 +5075,8 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 	q = q.Arg("value", value)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2915,7 +5086,8 @@ func (r *Container) WithError(err string) *Container {
 	q = q.Arg("err", err)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -2927,16 +5099,25 @@ type ContainerWithExecOpts struct {
 	Stdin string
 	// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
 	RedirectStdin string
-	// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+	// Redirect the command's standard output to a file in the container. The redirected output is not logged. Example: "./stdout.txt"
 	RedirectStdout string
-	// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+	// Redirect the command's standard error to a file in the container. The redirected output is not logged. Example: "./stderr.txt"
 	RedirectStderr string
 	// Exit codes this command is allowed to exit with without error
 	//
 	// Default: SUCCESS
 	Expect ReturnType
-	// Provides Dagger access to the executed command.
+	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
+	// Connect Dagger clients started by the command to the current engine as new sessions, instead of as clients of the current session. Each connection gets its own session, released when that client closes.
+	//
+	// The command reaches the engine through DAGGER_ENGINE, so SDKs run a Dagger CLI: set _EXPERIMENTAL_DAGGER_CLI_BIN to one in the container, or let the SDK download one.
+	//
+	// Cannot be combined with "disableDaggerInDagger".
+	DaggerInDaggerNewSession bool
 	// Execute the command with all root capabilities. Like --privileged in Docker
 	//
 	// DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
@@ -2977,9 +5158,17 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		if !querybuilder.IsZeroValue(opts[i].Expect) {
 			q = q.Arg("expect", opts[i].Expect)
 		}
+		// `disableDaggerInDagger` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
+			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `daggerInDaggerNewSession` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DaggerInDaggerNewSession) {
+			q = q.Arg("daggerInDaggerNewSession", opts[i].DaggerInDaggerNewSession)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -2997,7 +5186,8 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 	q = q.Arg("args", args)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3039,7 +5229,8 @@ func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOp
 	q = q.Arg("port", port)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3053,6 +5244,8 @@ type ContainerWithFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -3070,6 +5263,10 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
 		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
+		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
@@ -3079,7 +5276,8 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3093,6 +5291,8 @@ type ContainerWithFilesOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -3109,6 +5309,10 @@ func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWit
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
 		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
+		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
@@ -3118,7 +5322,20 @@ func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWit
 	q = q.Arg("sources", sources)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Configures all GPUs available on the host to be accessible to this container.
+//
+// This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
+func (r *Container) WithGPU() *Container {
+	q := r.query.Select("withGPU")
+
+	return &Container{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3129,7 +5346,8 @@ func (r *Container) WithLabel(name string, value string) *Container {
 	q = q.Arg("value", value)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3149,6 +5367,8 @@ type ContainerWithMountedCacheOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -3170,6 +5390,10 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
 		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
+		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
@@ -3179,7 +5403,8 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 	q = q.Arg("cache", cache)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3191,6 +5416,8 @@ type ContainerWithMountedDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Mount the directory read-only.
 	ReadOnly bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -3206,6 +5433,10 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
 		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
+		}
 		// `readOnly` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
 			q = q.Arg("readOnly", opts[i].ReadOnly)
@@ -3219,7 +5450,8 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3231,6 +5463,8 @@ type ContainerWithMountedFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -3244,6 +5478,10 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
 		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
+		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
@@ -3253,7 +5491,8 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3265,6 +5504,8 @@ type ContainerWithMountedSecretOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Permission given to the mounted secret (e.g., 0600).
 	//
 	// This option requires an owner to be set to be active.
@@ -3284,6 +5525,10 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
 		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
+		}
 		// `mode` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Mode) {
 			q = q.Arg("mode", opts[i].Mode)
@@ -3297,7 +5542,8 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3325,7 +5571,39 @@ func (r *Container) WithMountedTemp(path string, opts ...ContainerWithMountedTem
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ContainerWithMountedVolumeOpts contains options for Container.WithMountedVolume
+type ContainerWithMountedVolumeOpts struct {
+	// Mount the volume read-only.
+	ReadOnly bool
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	Expand bool
+}
+
+// Retrieves this container plus a volume mounted at the given path.
+func (r *Container) WithMountedVolume(path string, volume *Volume, opts ...ContainerWithMountedVolumeOpts) *Container {
+	assertNotNil("volume", volume)
+	q := r.query.Select("withMountedVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `readOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
+			q = q.Arg("readOnly", opts[i].ReadOnly)
+		}
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("volume", volume)
+
+	return &Container{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3341,6 +5619,8 @@ type ContainerWithNewFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -3357,6 +5637,10 @@ func (r *Container) WithNewFile(path string, contents string, opts ...ContainerW
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
 		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
+		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
@@ -3366,7 +5650,8 @@ func (r *Container) WithNewFile(path string, contents string, opts ...ContainerW
 	q = q.Arg("contents", contents)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3379,7 +5664,8 @@ func (r *Container) WithRegistryAuth(address string, username string, secret *Se
 	q = q.Arg("secret", secret)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3390,7 +5676,50 @@ func (r *Container) WithRootfs(directory *Directory) *Container {
 	q = q.Arg("directory", directory)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ContainerWithRunOpts contains options for Container.WithRun
+type ContainerWithRunOpts struct {
+	// Override the batch shell arguments. Example: ["bash", "-c"].
+	Shell []string
+	// Override whether the shell is denied Dagger API access. Omit to use the configured shell setting.
+	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+	ExperimentalPrivilegedNesting bool
+	// Override whether the shell has all root capabilities.
+	InsecureRootCapabilities bool
+}
+
+// Execute a script with the configured batch shell and return the modified container.
+func (r *Container) WithRun(command string, opts ...ContainerWithRunOpts) *Container {
+	q := r.query.Select("withRun")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `shell` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Shell) {
+			q = q.Arg("shell", opts[i].Shell)
+		}
+		// `disableDaggerInDagger` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
+			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `insecureRootCapabilities` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+		}
+	}
+	q = q.Arg("command", command)
+
+	return &Container{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3402,7 +5731,8 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	q = q.Arg("secret", secret)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3420,7 +5750,50 @@ func (r *Container) WithServiceBinding(alias string, service *Service) *Containe
 	q = q.Arg("service", service)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// ContainerWithShellOpts contains options for Container.WithShell
+type ContainerWithShellOpts struct {
+	// Command arguments for batch use. The script is appended as one argument. Defaults to interactive followed by "-c".
+	Batch []string
+	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
+	ExperimentalPrivilegedNesting bool
+	// Give the shell all root capabilities. Use only with trusted commands.
+	InsecureRootCapabilities bool
+}
+
+// Set the shell used by terminal() and withRun().
+func (r *Container) WithShell(interactive []string, opts ...ContainerWithShellOpts) *Container {
+	q := r.query.Select("withShell")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `batch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Batch) {
+			q = q.Arg("batch", opts[i].Batch)
+		}
+		// `disableDaggerInDagger` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
+			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `insecureRootCapabilities` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+		}
+	}
+	q = q.Arg("interactive", interactive)
+
+	return &Container{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3443,7 +5816,8 @@ func (r *Container) WithSymlink(target string, linkName string, opts ...Containe
 	q = q.Arg("linkName", linkName)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3455,6 +5829,8 @@ type ContainerWithUnixSocketOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -3468,6 +5844,10 @@ func (r *Container) WithUnixSocket(path string, source *Socket, opts ...Containe
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
 		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
+		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
@@ -3477,7 +5857,8 @@ func (r *Container) WithUnixSocket(path string, source *Socket, opts ...Containe
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3487,7 +5868,8 @@ func (r *Container) WithUser(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3500,7 +5882,8 @@ func (r *Container) WithVolatileVariable(name string, value string) *Container {
 	q = q.Arg("value", value)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3522,7 +5905,8 @@ func (r *Container) WithWorkdir(path string, opts ...ContainerWithWorkdirOpts) *
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3532,7 +5916,8 @@ func (r *Container) WithoutAnnotation(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3541,7 +5926,8 @@ func (r *Container) WithoutDefaultArgs() *Container {
 	q := r.query.Select("withoutDefaultArgs")
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3563,7 +5949,8 @@ func (r *Container) WithoutDirectory(path string, opts ...ContainerWithoutDirect
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3572,7 +5959,8 @@ func (r *Container) WithoutDockerHealthcheck() *Container {
 	q := r.query.Select("withoutDockerHealthcheck")
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3593,7 +5981,8 @@ func (r *Container) WithoutEntrypoint(opts ...ContainerWithoutEntrypointOpts) *C
 	}
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3603,7 +5992,8 @@ func (r *Container) WithoutEnvVariable(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3627,7 +6017,8 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 	q = q.Arg("port", port)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3649,7 +6040,8 @@ func (r *Container) WithoutFile(path string, opts ...ContainerWithoutFileOpts) *
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3671,7 +6063,8 @@ func (r *Container) WithoutFiles(paths []string, opts ...ContainerWithoutFilesOp
 	q = q.Arg("paths", paths)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3681,7 +6074,8 @@ func (r *Container) WithoutLabel(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3703,7 +6097,8 @@ func (r *Container) WithoutMount(path string, opts ...ContainerWithoutMountOpts)
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3713,7 +6108,8 @@ func (r *Container) WithoutRegistryAuth(address string) *Container {
 	q = q.Arg("address", address)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3723,7 +6119,8 @@ func (r *Container) WithoutSecretVariable(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3745,7 +6142,8 @@ func (r *Container) WithoutUnixSocket(path string, opts ...ContainerWithoutUnixS
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3756,7 +6154,8 @@ func (r *Container) WithoutUser() *Container {
 	q := r.query.Select("withoutUser")
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3766,7 +6165,8 @@ func (r *Container) WithoutVolatileVariable(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3777,7 +6177,8 @@ func (r *Container) WithoutWorkdir() *Container {
 	q := r.query.Select("withoutWorkdir")
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3798,7 +6199,8 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *Container) AsExportable() Exportable {
 	return &ExportableClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3806,7 +6208,8 @@ func (r *Container) AsExportable() Exportable {
 // This is a local type conversion — no GraphQL call.
 func (r *Container) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3814,21 +6217,42 @@ func (r *Container) AsNode() Node {
 // This is a local type conversion — no GraphQL call.
 func (r *Container) AsSyncer() Syncer {
 	return &SyncerClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // Reflective module API provided to functions at runtime.
 type CurrentModule struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
-	id   *ID
-	name *string
+	id            *ID
+	name          *string
+	sourceSubpath *string
 }
 
 func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModule {
 	return &CurrentModule{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The module's context directory loaded into the engine (plus any generated code that may have been created).
+//
+// It holds the module's source code and every other file the engine loaded for the module, at their paths relative to the context root. Use sourceSubpath to locate the source code in it.
+func (r *CurrentModule) ContextDirectory() *Directory {
+	q := r.query.Select("contextDirectory")
+
+	return &Directory{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3870,30 +6294,8 @@ func (r *CurrentModule) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
 
 	return &Directory{
-		query: q,
-	}
-}
-
-// CurrentModuleGeneratorsOpts contains options for CurrentModule.Generators
-type CurrentModuleGeneratorsOpts struct {
-	// Only include generators matching the specified patterns
-	Include []string
-}
-
-// Return all generators defined by the module
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *CurrentModule) Generators(opts ...CurrentModuleGeneratorsOpts) *GeneratorGroup {
-	q := r.query.Select("generators")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &GeneratorGroup{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3907,7 +6309,13 @@ func (r *CurrentModule) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -3955,8 +6363,22 @@ func (r *CurrentModule) Source() *Directory {
 	q := r.query.Select("source")
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
+}
+
+// The path to the directory containing the module's source code, relative to the context directory.
+func (r *CurrentModule) SourceSubpath(ctx context.Context) (string, error) {
+	if r.sourceSubpath != nil {
+		return *r.sourceSubpath, nil
+	}
+	q := r.query.Select("sourceSubpath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // CurrentModuleWorkdirOpts contains options for CurrentModule.Workdir
@@ -3989,7 +6411,8 @@ func (r *CurrentModule) Workdir(path string, opts ...CurrentModuleWorkdirOpts) *
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -3999,7 +6422,8 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 	q = q.Arg("path", path)
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4007,12 +6431,17 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 // This is a local type conversion — no GraphQL call.
 func (r *CurrentModule) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 type DiffStat struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	addedLines   *int
 	id           *ID
@@ -4025,6 +6454,9 @@ type DiffStat struct {
 func (r *DiffStat) WithGraphQLQuery(q *querybuilder.Selection) *DiffStat {
 	return &DiffStat{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -4051,7 +6483,13 @@ func (r *DiffStat) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -4137,13 +6575,18 @@ func (r *DiffStat) RemovedLines(ctx context.Context) (int, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *DiffStat) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A directory.
 type Directory struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	digest *string
 	exists *bool
@@ -4165,6 +6608,9 @@ func (r *Directory) With(f WithDirectoryFunc) *Directory {
 func (r *Directory) WithGraphQLQuery(q *querybuilder.Selection) *Directory {
 	return &Directory{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -4173,7 +6619,8 @@ func (r *Directory) AsGit() *GitRepository {
 	q := r.query.Select("asGit")
 
 	return &GitRepository{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4198,7 +6645,8 @@ func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 	}
 
 	return &Module{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4223,7 +6671,32 @@ func (r *Directory) AsModuleSource(opts ...DirectoryAsModuleSourceOpts) *ModuleS
 	}
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// DirectoryAsWorkspaceOpts contains options for Directory.AsWorkspace
+type DirectoryAsWorkspaceOpts struct {
+	// Current working directory inside the workspace root. Defaults to the workspace root.
+	//
+	// Default: "/"
+	Cwd string
+}
+
+// Creates a synthetic workspace from this directory.
+func (r *Directory) AsWorkspace(opts ...DirectoryAsWorkspaceOpts) *Workspace {
+	q := r.query.Select("asWorkspace")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cwd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cwd) {
+			q = q.Arg("cwd", opts[i].Cwd)
+		}
+	}
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4236,7 +6709,8 @@ func (r *Directory) Changes(from *Directory) *Changeset {
 	q = q.Arg("from", from)
 
 	return &Changeset{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4247,7 +6721,8 @@ func (r *Directory) Chown(path string, owner string) *Directory {
 	q = q.Arg("owner", owner)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4258,7 +6733,8 @@ func (r *Directory) Diff(other *Directory) *Directory {
 	q = q.Arg("other", other)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4281,7 +6757,8 @@ func (r *Directory) Directory(path string) *Directory {
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4348,7 +6825,8 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	}
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4438,7 +6916,8 @@ func (r *Directory) File(path string) *File {
 	q = q.Arg("path", path)
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4471,7 +6950,8 @@ func (r *Directory) Filter(opts ...DirectoryFilterOpts) *Directory {
 	}
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4511,7 +6991,13 @@ func (r *Directory) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -4663,7 +7149,7 @@ type DirectoryStatOpts struct {
 }
 
 // Return file status
-func (r *Directory) Stat(path string, opts ...DirectoryStatOpts) *Stat {
+func (r *Directory) Stat(ctx context.Context, path string, opts ...DirectoryStatOpts) (*Stat, error) {
 	q := r.query.Select("stat")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `doNotFollowSymlinks` optional argument
@@ -4673,9 +7159,17 @@ func (r *Directory) Stat(path string, opts ...DirectoryStatOpts) *Stat {
 	}
 	q = q.Arg("path", path)
 
-	return &Stat{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Stat{
+		query: selectNode(q.Root(), *objectID, "Stat"),
+	}, nil
 }
 
 // Force evaluation in the engine.
@@ -4697,7 +7191,10 @@ type DirectoryTerminalOpts struct {
 	Container *Container
 	// If set, override the container's default terminal command and invoke these command arguments instead.
 	Cmd []string
-	// Provides Dagger access to the executed command.
+	// Disable Dagger API access for the executed command. By default, commands can connect to the current Dagger engine.
+	DisableDaggerInDagger bool
+
+	// Deprecated: Commands can access Dagger by default. Use "disableDaggerInDagger" to opt out.
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
@@ -4715,6 +7212,10 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 		if !querybuilder.IsZeroValue(opts[i].Cmd) {
 			q = q.Arg("cmd", opts[i].Cmd)
 		}
+		// `disableDaggerInDagger` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DisableDaggerInDagger) {
+			q = q.Arg("disableDaggerInDagger", opts[i].DisableDaggerInDagger)
+		}
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
@@ -4726,7 +7227,8 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 	}
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
 }
 
@@ -4737,7 +7239,8 @@ func (r *Directory) WithChanges(changes *Changeset) *Directory {
 	q = q.Arg("changes", changes)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4789,7 +7292,8 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 	q = q.Arg("source", source)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4799,7 +7303,8 @@ func (r *Directory) WithError(err string) *Directory {
 	q = q.Arg("err", err)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4833,7 +7338,8 @@ func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFil
 	q = q.Arg("source", source)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4856,7 +7362,8 @@ func (r *Directory) WithFiles(path string, sources []*File, opts ...DirectoryWit
 	q = q.Arg("sources", sources)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4880,7 +7387,8 @@ func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirect
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4905,32 +7413,63 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 	q = q.Arg("contents", contents)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
+}
+
+// DirectoryWithPatchOpts contains options for Directory.WithPatch
+type DirectoryWithPatchOpts struct {
+	// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+	//
+	// Default: FAIL
+	OnConflict PatchConflict
 }
 
 // Retrieves this directory with the given Git-compatible patch applied.
 //
 // Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Directory) WithPatch(patch string) *Directory {
+func (r *Directory) WithPatch(patch string, opts ...DirectoryWithPatchOpts) *Directory {
 	q := r.query.Select("withPatch")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
 	q = q.Arg("patch", patch)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
+}
+
+// DirectoryWithPatchFileOpts contains options for Directory.WithPatchFile
+type DirectoryWithPatchFileOpts struct {
+	// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+	//
+	// Default: FAIL
+	OnConflict PatchConflict
 }
 
 // Retrieves this directory with the given Git-compatible patch file applied.
 //
 // Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Directory) WithPatchFile(patch *File) *Directory {
+func (r *Directory) WithPatchFile(patch *File, opts ...DirectoryWithPatchFileOpts) *Directory {
 	assertNotNil("patch", patch)
 	q := r.query.Select("withPatchFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
 	q = q.Arg("patch", patch)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4941,7 +7480,8 @@ func (r *Directory) WithSymlink(target string, linkName string) *Directory {
 	q = q.Arg("linkName", linkName)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4951,7 +7491,8 @@ func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	q = q.Arg("timestamp", timestamp)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4961,7 +7502,8 @@ func (r *Directory) WithoutDirectory(path string) *Directory {
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4971,7 +7513,8 @@ func (r *Directory) WithoutFile(path string) *Directory {
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4981,7 +7524,8 @@ func (r *Directory) WithoutFiles(paths []string) *Directory {
 	q = q.Arg("paths", paths)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4989,7 +7533,8 @@ func (r *Directory) WithoutFiles(paths []string) *Directory {
 // This is a local type conversion — no GraphQL call.
 func (r *Directory) AsExportable() Exportable {
 	return &ExportableClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -4997,7 +7542,8 @@ func (r *Directory) AsExportable() Exportable {
 // This is a local type conversion — no GraphQL call.
 func (r *Directory) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -5005,13 +7551,18 @@ func (r *Directory) AsNode() Node {
 // This is a local type conversion — no GraphQL call.
 func (r *Directory) AsSyncer() Syncer {
 	return &SyncerClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // The Dagger engine configuration and state
 type Engine struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id   *ID
 	name *string
@@ -5020,6 +7571,9 @@ type Engine struct {
 func (r *Engine) WithGraphQLQuery(q *querybuilder.Selection) *Engine {
 	return &Engine{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -5043,7 +7597,13 @@ func (r *Engine) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -5078,7 +7638,8 @@ func (r *Engine) LocalCache() *EngineCache {
 	q := r.query.Select("localCache")
 
 	return &EngineCache{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -5099,13 +7660,18 @@ func (r *Engine) Name(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *Engine) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A cache storage for the Dagger engine
 type EngineCache struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id            *ID
 	maxUsedSpace  *int
@@ -5118,6 +7684,9 @@ type EngineCache struct {
 func (r *EngineCache) WithGraphQLQuery(q *querybuilder.Selection) *EngineCache {
 	return &EngineCache{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -5137,7 +7706,8 @@ func (r *EngineCache) EntrySet(opts ...EngineCacheEntrySetOpts) *EngineCacheEntr
 	}
 
 	return &EngineCacheEntrySet{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
 }
 
@@ -5151,7 +7721,13 @@ func (r *EngineCache) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -5209,7 +7785,7 @@ func (r *EngineCache) MinFreeSpace(ctx context.Context) (int, error) {
 
 // EngineCachePruneOpts contains options for EngineCache.Prune
 type EngineCachePruneOpts struct {
-	// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+	// Use enabled engine-wide default disk and structural policies. If no default disk policy is enabled, the disk stage falls back to pruning all releasable disk-cache entries. If false, explicit options select stages; with no options, all releasable disk-cache entries are pruned.
 	UseDefaultPolicy bool
 	// Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
 	MaxUsedSpace string
@@ -5219,6 +7795,10 @@ type EngineCachePruneOpts struct {
 	MinFreeSpace string
 	// Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
 	TargetSpace string
+	// Override the maximum structural metadata estimate in absolute bytes. Explicit values must be positive; the configured/default value is used when omitted.
+	MaxEstimatedBytes int
+	// Override the structural metadata estimate to target in absolute bytes. Explicit values must be positive and lower than the resolved maximum; the configured/default value is used when omitted.
+	TargetEstimatedBytes int
 }
 
 // Prune the cache of releaseable entries
@@ -5247,6 +7827,14 @@ func (r *EngineCache) Prune(ctx context.Context, opts ...EngineCachePruneOpts) e
 		// `targetSpace` optional argument
 		if !querybuilder.IsZeroValue(opts[i].TargetSpace) {
 			q = q.Arg("targetSpace", opts[i].TargetSpace)
+		}
+		// `maxEstimatedBytes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxEstimatedBytes) {
+			q = q.Arg("maxEstimatedBytes", opts[i].MaxEstimatedBytes)
+		}
+		// `targetEstimatedBytes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TargetEstimatedBytes) {
+			q = q.Arg("targetEstimatedBytes", opts[i].TargetEstimatedBytes)
 		}
 	}
 
@@ -5283,13 +7871,18 @@ func (r *EngineCache) TargetSpace(ctx context.Context) (int, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *EngineCache) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // An individual cache entry in a cache entry set
 type EngineCacheEntry struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	activelyUsed              *bool
 	createdTimeUnixNano       *int
@@ -5304,6 +7897,9 @@ type EngineCacheEntry struct {
 func (r *EngineCacheEntry) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntry {
 	return &EngineCacheEntry{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -5382,7 +7978,13 @@ func (r *EngineCacheEntry) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -5452,13 +8054,18 @@ func (r *EngineCacheEntry) RecordTypes(ctx context.Context) ([]string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *EngineCacheEntry) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A set of cache entries returned by a query to a cache
 type EngineCacheEntrySet struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	diskSpaceBytes *int
 	entryCount     *int
@@ -5468,6 +8075,9 @@ type EngineCacheEntrySet struct {
 func (r *EngineCacheEntrySet) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntrySet {
 	return &EngineCacheEntrySet{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -5540,7 +8150,13 @@ func (r *EngineCacheEntrySet) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -5574,13 +8190,18 @@ func (r *EngineCacheEntrySet) MarshalJSON() ([]byte, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *EngineCacheEntrySet) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A definition of a custom enum defined in a Module.
 type EnumTypeDef struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	description      *string
 	id               *ID
@@ -5591,6 +8212,9 @@ type EnumTypeDef struct {
 func (r *EnumTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumTypeDef {
 	return &EnumTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -5617,7 +8241,13 @@ func (r *EnumTypeDef) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -5694,12 +8324,20 @@ func (r *EnumTypeDef) Name(ctx context.Context) (string, error) {
 }
 
 // The location of this enum declaration.
-func (r *EnumTypeDef) SourceMap() *SourceMap {
+func (r *EnumTypeDef) SourceMap(ctx context.Context) (*SourceMap, error) {
 	q := r.query.Select("sourceMap")
 
-	return &SourceMap{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &SourceMap{
+		query: selectNode(q.Root(), *objectID, "SourceMap"),
+	}, nil
 }
 
 // If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -5754,13 +8392,18 @@ func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *EnumTypeDef) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A definition of a value in a custom enum defined in a Module.
 type EnumValueTypeDef struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	deprecated  *string
 	description *string
@@ -5772,6 +8415,9 @@ type EnumValueTypeDef struct {
 func (r *EnumValueTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumValueTypeDef {
 	return &EnumValueTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -5811,7 +8457,13 @@ func (r *EnumValueTypeDef) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -5855,12 +8507,20 @@ func (r *EnumValueTypeDef) Name(ctx context.Context) (string, error) {
 }
 
 // The location of this enum member declaration.
-func (r *EnumValueTypeDef) SourceMap() *SourceMap {
+func (r *EnumValueTypeDef) SourceMap(ctx context.Context) (*SourceMap, error) {
 	q := r.query.Select("sourceMap")
 
-	return &SourceMap{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &SourceMap{
+		query: selectNode(q.Root(), *objectID, "SourceMap"),
+	}, nil
 }
 
 // The value of the enum member
@@ -5880,1041 +8540,18 @@ func (r *EnumValueTypeDef) Value(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *EnumValueTypeDef) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
-	}
-}
-
-type Env struct {
-	query *querybuilder.Selection
-
-	id *ID
-}
-type WithEnvFunc func(r *Env) *Env
-
-// With calls the provided function with current Env.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Env) With(f WithEnvFunc) *Env {
-	return f(r)
-}
-
-func (r *Env) WithGraphQLQuery(q *querybuilder.Selection) *Env {
-	return &Env{
-		query: q,
-	}
-}
-
-// Return the check with the given name from the installed modules. Must match exactly one check.
-//
-// Experimental: Checks API is highly experimental and may be removed or replaced entirely.
-func (r *Env) Check(name string) *Check {
-	q := r.query.Select("check")
-	q = q.Arg("name", name)
-
-	return &Check{
-		query: q,
-	}
-}
-
-// EnvChecksOpts contains options for Env.Checks
-type EnvChecksOpts struct {
-	// Only include checks matching the specified patterns
-	Include []string
-	// When true, only return annotated check functions; exclude generate-as-checks
-	NoGenerate bool
-}
-
-// Return all checks defined by the installed modules
-//
-// Experimental: Checks API is highly experimental and may be removed or replaced entirely.
-func (r *Env) Checks(opts ...EnvChecksOpts) *CheckGroup {
-	q := r.query.Select("checks")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `noGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
-			q = q.Arg("noGenerate", opts[i].NoGenerate)
-		}
-	}
-
-	return &CheckGroup{
-		query: q,
-	}
-}
-
-// A unique identifier for this Env.
-func (r *Env) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Env) XXX_GraphQLType() string {
-	return "Env"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Env) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Env) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Env) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Retrieves an input binding by name
-func (r *Env) Input(name string) *Binding {
-	q := r.query.Select("input")
-	q = q.Arg("name", name)
-
-	return &Binding{
-		query: q,
-	}
-}
-
-// Returns all input bindings provided to the environment
-func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
-	q := r.query.Select("inputs")
-
-	q = q.Select("id")
-
-	type inputs struct {
-		Id ID
-	}
-
-	convert := func(fields []inputs) []Binding {
-		out := []Binding{}
-
-		for i := range fields {
-			val := Binding{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Binding")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []inputs
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Retrieves an output binding by name
-func (r *Env) Output(name string) *Binding {
-	q := r.query.Select("output")
-	q = q.Arg("name", name)
-
-	return &Binding{
-		query: q,
-	}
-}
-
-// Returns all declared output bindings for the environment
-func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
-	q := r.query.Select("outputs")
-
-	q = q.Select("id")
-
-	type outputs struct {
-		Id ID
-	}
-
-	convert := func(fields []outputs) []Binding {
-		out := []Binding{}
-
-		for i := range fields {
-			val := Binding{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Binding")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []outputs
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// EnvServicesOpts contains options for Env.Services
-type EnvServicesOpts struct {
-	// Only include services matching the specified patterns
-	Include []string
-}
-
-// Return all services defined by the installed modules
-//
-// Experimental: Services API is highly experimental and may be removed or replaced entirely.
-func (r *Env) Services(opts ...EnvServicesOpts) *UpGroup {
-	q := r.query.Select("services")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &UpGroup{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Address in the environment
-func (r *Env) WithAddressInput(name string, value *Address, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withAddressInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Address output to be assigned in the environment
-func (r *Env) WithAddressOutput(name string, description string) *Env {
-	q := r.query.Select("withAddressOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type CacheVolume in the environment
-func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withCacheVolumeInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired CacheVolume output to be assigned in the environment
-func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
-	q := r.query.Select("withCacheVolumeOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Changeset in the environment
-func (r *Env) WithChangesetInput(name string, value *Changeset, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withChangesetInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Changeset output to be assigned in the environment
-func (r *Env) WithChangesetOutput(name string, description string) *Env {
-	q := r.query.Select("withChangesetOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type CheckGroup in the environment
-func (r *Env) WithCheckGroupInput(name string, value *CheckGroup, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withCheckGroupInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired CheckGroup output to be assigned in the environment
-func (r *Env) WithCheckGroupOutput(name string, description string) *Env {
-	q := r.query.Select("withCheckGroupOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Check in the environment
-func (r *Env) WithCheckInput(name string, value *Check, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withCheckInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Check output to be assigned in the environment
-func (r *Env) WithCheckOutput(name string, description string) *Env {
-	q := r.query.Select("withCheckOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Cloud in the environment
-func (r *Env) WithCloudInput(name string, value *Cloud, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withCloudInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Cloud output to be assigned in the environment
-func (r *Env) WithCloudOutput(name string, description string) *Env {
-	q := r.query.Select("withCloudOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Container in the environment
-func (r *Env) WithContainerInput(name string, value *Container, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withContainerInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Container output to be assigned in the environment
-func (r *Env) WithContainerOutput(name string, description string) *Env {
-	q := r.query.Select("withContainerOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Installs the current module into the environment, exposing its functions to the model
-//
-// Contextual path arguments will be populated using the environment's workspace.
-func (r *Env) WithCurrentModule() *Env {
-	q := r.query.Select("withCurrentModule")
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type DiffStat in the environment
-func (r *Env) WithDiffStatInput(name string, value *DiffStat, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withDiffStatInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired DiffStat output to be assigned in the environment
-func (r *Env) WithDiffStatOutput(name string, description string) *Env {
-	q := r.query.Select("withDiffStatOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Directory in the environment
-func (r *Env) WithDirectoryInput(name string, value *Directory, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withDirectoryInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Directory output to be assigned in the environment
-func (r *Env) WithDirectoryOutput(name string, description string) *Env {
-	q := r.query.Select("withDirectoryOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type EnvFile in the environment
-func (r *Env) WithEnvFileInput(name string, value *EnvFile, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withEnvFileInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired EnvFile output to be assigned in the environment
-func (r *Env) WithEnvFileOutput(name string, description string) *Env {
-	q := r.query.Select("withEnvFileOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Env in the environment
-func (r *Env) WithEnvInput(name string, value *Env, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withEnvInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Env output to be assigned in the environment
-func (r *Env) WithEnvOutput(name string, description string) *Env {
-	q := r.query.Select("withEnvOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type File in the environment
-func (r *Env) WithFileInput(name string, value *File, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withFileInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired File output to be assigned in the environment
-func (r *Env) WithFileOutput(name string, description string) *Env {
-	q := r.query.Select("withFileOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type GeneratorGroup in the environment
-func (r *Env) WithGeneratorGroupInput(name string, value *GeneratorGroup, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withGeneratorGroupInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired GeneratorGroup output to be assigned in the environment
-func (r *Env) WithGeneratorGroupOutput(name string, description string) *Env {
-	q := r.query.Select("withGeneratorGroupOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Generator in the environment
-func (r *Env) WithGeneratorInput(name string, value *Generator, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withGeneratorInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Generator output to be assigned in the environment
-func (r *Env) WithGeneratorOutput(name string, description string) *Env {
-	q := r.query.Select("withGeneratorOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type GitRef in the environment
-func (r *Env) WithGitRefInput(name string, value *GitRef, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withGitRefInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired GitRef output to be assigned in the environment
-func (r *Env) WithGitRefOutput(name string, description string) *Env {
-	q := r.query.Select("withGitRefOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type GitRepository in the environment
-func (r *Env) WithGitRepositoryInput(name string, value *GitRepository, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withGitRepositoryInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired GitRepository output to be assigned in the environment
-func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
-	q := r.query.Select("withGitRepositoryOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type HTTPState in the environment
-func (r *Env) WithHTTPStateInput(name string, value *HTTPState, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withHTTPStateInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired HTTPState output to be assigned in the environment
-func (r *Env) WithHTTPStateOutput(name string, description string) *Env {
-	q := r.query.Select("withHTTPStateOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type JSONValue in the environment
-func (r *Env) WithJSONValueInput(name string, value *JSONValue, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withJSONValueInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired JSONValue output to be assigned in the environment
-func (r *Env) WithJSONValueOutput(name string, description string) *Env {
-	q := r.query.Select("withJSONValueOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Sets the main module for this environment (the project being worked on)
-//
-// Contextual path arguments will be populated using the environment's workspace.
-func (r *Env) WithMainModule(module *Module) *Env {
-	assertNotNil("module", module)
-	q := r.query.Select("withMainModule")
-	q = q.Arg("module", module)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Installs a module into the environment, exposing its functions to the model
-//
-// Contextual path arguments will be populated using the environment's workspace.
-//
-// Deprecated: Use withMainModule instead
-func (r *Env) WithModule(module *Module) *Env {
-	assertNotNil("module", module)
-	q := r.query.Select("withModule")
-	q = q.Arg("module", module)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type ModuleConfigClient in the environment
-func (r *Env) WithModuleConfigClientInput(name string, value *ModuleConfigClient, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withModuleConfigClientInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired ModuleConfigClient output to be assigned in the environment
-func (r *Env) WithModuleConfigClientOutput(name string, description string) *Env {
-	q := r.query.Select("withModuleConfigClientOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Module in the environment
-func (r *Env) WithModuleInput(name string, value *Module, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withModuleInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Module output to be assigned in the environment
-func (r *Env) WithModuleOutput(name string, description string) *Env {
-	q := r.query.Select("withModuleOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type ModuleSource in the environment
-func (r *Env) WithModuleSourceInput(name string, value *ModuleSource, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withModuleSourceInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired ModuleSource output to be assigned in the environment
-func (r *Env) WithModuleSourceOutput(name string, description string) *Env {
-	q := r.query.Select("withModuleSourceOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type SearchResult in the environment
-func (r *Env) WithSearchResultInput(name string, value *SearchResult, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withSearchResultInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired SearchResult output to be assigned in the environment
-func (r *Env) WithSearchResultOutput(name string, description string) *Env {
-	q := r.query.Select("withSearchResultOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type SearchSubmatch in the environment
-func (r *Env) WithSearchSubmatchInput(name string, value *SearchSubmatch, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withSearchSubmatchInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired SearchSubmatch output to be assigned in the environment
-func (r *Env) WithSearchSubmatchOutput(name string, description string) *Env {
-	q := r.query.Select("withSearchSubmatchOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Secret in the environment
-func (r *Env) WithSecretInput(name string, value *Secret, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withSecretInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Secret output to be assigned in the environment
-func (r *Env) WithSecretOutput(name string, description string) *Env {
-	q := r.query.Select("withSecretOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Service in the environment
-func (r *Env) WithServiceInput(name string, value *Service, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withServiceInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Service output to be assigned in the environment
-func (r *Env) WithServiceOutput(name string, description string) *Env {
-	q := r.query.Select("withServiceOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Socket in the environment
-func (r *Env) WithSocketInput(name string, value *Socket, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withSocketInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Socket output to be assigned in the environment
-func (r *Env) WithSocketOutput(name string, description string) *Env {
-	q := r.query.Select("withSocketOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Stat in the environment
-func (r *Env) WithStatInput(name string, value *Stat, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withStatInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Stat output to be assigned in the environment
-func (r *Env) WithStatOutput(name string, description string) *Env {
-	q := r.query.Select("withStatOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Provides a string input binding to the environment
-func (r *Env) WithStringInput(name string, value string, description string) *Env {
-	q := r.query.Select("withStringInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declares a desired string output binding
-func (r *Env) WithStringOutput(name string, description string) *Env {
-	q := r.query.Select("withStringOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type UpGroup in the environment
-func (r *Env) WithUpGroupInput(name string, value *UpGroup, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withUpGroupInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired UpGroup output to be assigned in the environment
-func (r *Env) WithUpGroupOutput(name string, description string) *Env {
-	q := r.query.Select("withUpGroupOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Up in the environment
-func (r *Env) WithUpInput(name string, value *Up, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withUpInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Up output to be assigned in the environment
-func (r *Env) WithUpOutput(name string, description string) *Env {
-	q := r.query.Select("withUpOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Returns a new environment with the provided workspace
-func (r *Env) WithWorkspace(workspace *Directory) *Env {
-	assertNotNil("workspace", workspace)
-	q := r.query.Select("withWorkspace")
-	q = q.Arg("workspace", workspace)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Workspace in the environment
-func (r *Env) WithWorkspaceInput(name string, value *Workspace, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withWorkspaceInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Workspace output to be assigned in the environment
-func (r *Env) WithWorkspaceOutput(name string, description string) *Env {
-	q := r.query.Select("withWorkspaceOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Returns a new environment without any outputs
-func (r *Env) WithoutOutputs() *Env {
-	q := r.query.Select("withoutOutputs")
-
-	return &Env{
-		query: q,
-	}
-}
-
-func (r *Env) Workspace() *Directory {
-	q := r.query.Select("workspace")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// AsNode returns this Env as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *Env) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A collection of environment variables.
 type EnvFile struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	exists *bool
 	get    *string
@@ -6932,6 +8569,9 @@ func (r *EnvFile) With(f WithEnvFileFunc) *EnvFile {
 func (r *EnvFile) WithGraphQLQuery(q *querybuilder.Selection) *EnvFile {
 	return &EnvFile{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -6940,7 +8580,8 @@ func (r *EnvFile) AsFile() *File {
 	q := r.query.Select("asFile")
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -6994,7 +8635,13 @@ func (r *EnvFile) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -7030,7 +8677,8 @@ func (r *EnvFile) Namespace(prefix string) *EnvFile {
 	q = q.Arg("prefix", prefix)
 
 	return &EnvFile{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7086,7 +8734,8 @@ func (r *EnvFile) WithVariable(name string, value string) *EnvFile {
 	q = q.Arg("value", value)
 
 	return &EnvFile{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7096,7 +8745,8 @@ func (r *EnvFile) WithoutVariable(name string) *EnvFile {
 	q = q.Arg("name", name)
 
 	return &EnvFile{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7104,13 +8754,18 @@ func (r *EnvFile) WithoutVariable(name string) *EnvFile {
 // This is a local type conversion — no GraphQL call.
 func (r *EnvFile) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // An environment variable name and value.
 type EnvVariable struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id    *ID
 	name  *string
@@ -7120,6 +8775,9 @@ type EnvVariable struct {
 func (r *EnvVariable) WithGraphQLQuery(q *querybuilder.Selection) *EnvVariable {
 	return &EnvVariable{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -7133,7 +8791,13 @@ func (r *EnvVariable) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -7193,12 +8857,17 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *EnvVariable) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 type Error struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id      *ID
 	message *string
@@ -7215,6 +8884,9 @@ func (r *Error) With(f WithErrorFunc) *Error {
 func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
 	return &Error{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -7228,7 +8900,13 @@ func (r *Error) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -7311,7 +8989,8 @@ func (r *Error) WithValue(name string, value JSON) *Error {
 	q = q.Arg("value", value)
 
 	return &Error{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7319,12 +8998,17 @@ func (r *Error) WithValue(name string, value JSON) *Error {
 // This is a local type conversion — no GraphQL call.
 func (r *Error) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 type ErrorValue struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id    *ID
 	name  *string
@@ -7334,6 +9018,9 @@ type ErrorValue struct {
 func (r *ErrorValue) WithGraphQLQuery(q *querybuilder.Selection) *ErrorValue {
 	return &ErrorValue{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -7347,7 +9034,13 @@ func (r *ErrorValue) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -7407,7 +9100,131 @@ func (r *ErrorValue) Value(ctx context.Context) (JSON, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *ErrorValue) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// An agent function that can modify a conversation.
+type Expertise struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	description *string
+	id          *ID
+	name        *string
+}
+
+func (r *Expertise) WithGraphQLQuery(q *querybuilder.Selection) *Expertise {
+	return &Expertise{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The agent function's description.
+func (r *Expertise) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Expertise.
+func (r *Expertise) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Expertise) XXX_GraphQLType() string {
+	return "Expertise"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Expertise) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Expertise) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Expertise) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The agent function's name.
+func (r *Expertise) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module that defines the agent function.
+func (r *Expertise) OriginalModule() *Module {
+	q := r.query.Select("originalModule")
+
+	return &Module{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// The agent function's path within its module.
+func (r *Expertise) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Expertise as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Expertise) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7416,6 +9233,10 @@ func (r *ErrorValue) AsNode() Node {
 // A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
 type FieldTypeDef struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	deprecated  *string
 	description *string
@@ -7426,6 +9247,9 @@ type FieldTypeDef struct {
 func (r *FieldTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *FieldTypeDef {
 	return &FieldTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -7465,7 +9289,13 @@ func (r *FieldTypeDef) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -7509,12 +9339,20 @@ func (r *FieldTypeDef) Name(ctx context.Context) (string, error) {
 }
 
 // The location of this field declaration.
-func (r *FieldTypeDef) SourceMap() *SourceMap {
+func (r *FieldTypeDef) SourceMap(ctx context.Context) (*SourceMap, error) {
 	q := r.query.Select("sourceMap")
 
-	return &SourceMap{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &SourceMap{
+		query: selectNode(q.Root(), *objectID, "SourceMap"),
+	}, nil
 }
 
 // The type of the field.
@@ -7522,7 +9360,8 @@ func (r *FieldTypeDef) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7530,13 +9369,18 @@ func (r *FieldTypeDef) TypeDef() *TypeDef {
 // This is a local type conversion — no GraphQL call.
 func (r *FieldTypeDef) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A file.
 type File struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	contents *string
 	digest   *string
@@ -7558,6 +9402,9 @@ func (r *File) With(f WithFileFunc) *File {
 func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 	return &File{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -7579,7 +9426,18 @@ func (r *File) AsEnvFile(opts ...FileAsEnvFileOpts) *EnvFile {
 	}
 
 	return &EnvFile{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Interpret this file as a Git bundle by lazily parsing its header.
+func (r *File) AsGitBundle() *GitBundle {
+	q := r.query.Select("asGitBundle")
+
+	return &GitBundle{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7588,7 +9446,8 @@ func (r *File) AsJSON() *JSONValue {
 	q := r.query.Select("asJSON")
 
 	return &JSONValue{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7598,7 +9457,8 @@ func (r *File) Chown(owner string) *File {
 	q = q.Arg("owner", owner)
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7694,7 +9554,13 @@ func (r *File) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -7853,12 +9719,20 @@ func (r *File) Size(ctx context.Context) (int, error) {
 }
 
 // Return file status
-func (r *File) Stat() *Stat {
+func (r *File) Stat(ctx context.Context) (*Stat, error) {
 	q := r.query.Select("stat")
 
-	return &Stat{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Stat{
+		query: selectNode(q.Root(), *objectID, "Stat"),
+	}, nil
 }
 
 // Force evaluation in the engine.
@@ -7880,7 +9754,8 @@ func (r *File) WithName(name string) *File {
 	q = q.Arg("name", name)
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7917,7 +9792,8 @@ func (r *File) WithReplaced(search string, replacement string, opts ...FileWithR
 	q = q.Arg("replacement", replacement)
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7927,7 +9803,8 @@ func (r *File) WithTimestamps(timestamp int) *File {
 	q = q.Arg("timestamp", timestamp)
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7935,7 +9812,8 @@ func (r *File) WithTimestamps(timestamp int) *File {
 // This is a local type conversion — no GraphQL call.
 func (r *File) AsExportable() Exportable {
 	return &ExportableClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7943,7 +9821,8 @@ func (r *File) AsExportable() Exportable {
 // This is a local type conversion — no GraphQL call.
 func (r *File) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7951,7 +9830,8 @@ func (r *File) AsNode() Node {
 // This is a local type conversion — no GraphQL call.
 func (r *File) AsSyncer() Syncer {
 	return &SyncerClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -7960,6 +9840,10 @@ func (r *File) AsSyncer() Syncer {
 // A function always evaluates against a parent object and is given a set of named arguments.
 type Function struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	deprecated       *string
 	description      *string
@@ -7979,6 +9863,9 @@ func (r *Function) With(f WithFunctionFunc) *Function {
 func (r *Function) WithGraphQLQuery(q *querybuilder.Selection) *Function {
 	return &Function{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8051,7 +9938,13 @@ func (r *Function) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -8099,17 +9992,26 @@ func (r *Function) ReturnType() *TypeDef {
 	q := r.query.Select("returnType")
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // The location of this function declaration.
-func (r *Function) SourceMap() *SourceMap {
+func (r *Function) SourceMap(ctx context.Context) (*SourceMap, error) {
 	q := r.query.Select("sourceMap")
 
-	return &SourceMap{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &SourceMap{
+		query: selectNode(q.Root(), *objectID, "SourceMap"),
+	}, nil
 }
 
 // If this function is provided by a module, the name of the module. Unset otherwise.
@@ -8123,6 +10025,18 @@ func (r *Function) SourceModuleName(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Returns the function with a flag indicating it is a source of expertise.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *Function) WithAgent() *Function {
+	q := r.query.Select("withAgent")
+
+	return &Function{
+		query:     q,
+		refetchID: r.refetchID,
+	}
 }
 
 // FunctionWithArgOpts contains options for Function.WithArg
@@ -8181,7 +10095,8 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 	q = q.Arg("typeDef", typeDef)
 
 	return &Function{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8203,7 +10118,8 @@ func (r *Function) WithCachePolicy(policy FunctionCachePolicy, opts ...FunctionW
 	q = q.Arg("policy", policy)
 
 	return &Function{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8212,7 +10128,8 @@ func (r *Function) WithCheck() *Function {
 	q := r.query.Select("withCheck")
 
 	return &Function{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8233,7 +10150,8 @@ func (r *Function) WithDeprecated(opts ...FunctionWithDeprecatedOpts) *Function 
 	}
 
 	return &Function{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8243,7 +10161,8 @@ func (r *Function) WithDescription(description string) *Function {
 	q = q.Arg("description", description)
 
 	return &Function{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8252,7 +10171,8 @@ func (r *Function) WithGenerator() *Function {
 	q := r.query.Select("withGenerator")
 
 	return &Function{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8263,7 +10183,8 @@ func (r *Function) WithSourceMap(sourceMap *SourceMap) *Function {
 	q = q.Arg("sourceMap", sourceMap)
 
 	return &Function{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8272,7 +10193,8 @@ func (r *Function) WithUp() *Function {
 	q := r.query.Select("withUp")
 
 	return &Function{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8280,7 +10202,8 @@ func (r *Function) WithUp() *Function {
 // This is a local type conversion — no GraphQL call.
 func (r *Function) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8289,6 +10212,10 @@ func (r *Function) AsNode() Node {
 // This is a specification for an argument at function definition time, not an argument passed at function call time.
 type FunctionArg struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	defaultAddress *string
 	defaultPath    *string
@@ -8302,6 +10229,9 @@ type FunctionArg struct {
 func (r *FunctionArg) WithGraphQLQuery(q *querybuilder.Selection) *FunctionArg {
 	return &FunctionArg{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8380,7 +10310,13 @@ func (r *FunctionArg) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -8434,12 +10370,20 @@ func (r *FunctionArg) Name(ctx context.Context) (string, error) {
 }
 
 // The location of this arg declaration.
-func (r *FunctionArg) SourceMap() *SourceMap {
+func (r *FunctionArg) SourceMap(ctx context.Context) (*SourceMap, error) {
 	q := r.query.Select("sourceMap")
 
-	return &SourceMap{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &SourceMap{
+		query: selectNode(q.Root(), *objectID, "SourceMap"),
+	}, nil
 }
 
 // The type of the argument.
@@ -8447,7 +10391,8 @@ func (r *FunctionArg) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8455,13 +10400,18 @@ func (r *FunctionArg) TypeDef() *TypeDef {
 // This is a local type conversion — no GraphQL call.
 func (r *FunctionArg) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // An active function call.
 type FunctionCall struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id          *ID
 	name        *string
@@ -8474,6 +10424,9 @@ type FunctionCall struct {
 func (r *FunctionCall) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCall {
 	return &FunctionCall{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8487,7 +10440,13 @@ func (r *FunctionCall) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -8616,13 +10575,18 @@ func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) error {
 // This is a local type conversion — no GraphQL call.
 func (r *FunctionCall) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A value passed as a named argument to a function call.
 type FunctionCallArgValue struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id    *ID
 	name  *string
@@ -8632,6 +10596,9 @@ type FunctionCallArgValue struct {
 func (r *FunctionCallArgValue) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCallArgValue {
 	return &FunctionCallArgValue{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8645,7 +10612,13 @@ func (r *FunctionCallArgValue) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -8705,13 +10678,18 @@ func (r *FunctionCallArgValue) Value(ctx context.Context) (JSON, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *FunctionCallArgValue) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // The result of running an SDK's codegen.
 type GeneratedCode struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id *ID
 }
@@ -8727,6 +10705,9 @@ func (r *GeneratedCode) With(f WithGeneratedCodeFunc) *GeneratedCode {
 func (r *GeneratedCode) WithGraphQLQuery(q *querybuilder.Selection) *GeneratedCode {
 	return &GeneratedCode{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -8735,7 +10716,8 @@ func (r *GeneratedCode) Code() *Directory {
 	q := r.query.Select("code")
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8749,7 +10731,13 @@ func (r *GeneratedCode) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -8805,7 +10793,8 @@ func (r *GeneratedCode) WithVCSGeneratedPaths(paths []string) *GeneratedCode {
 	q = q.Arg("paths", paths)
 
 	return &GeneratedCode{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8815,7 +10804,8 @@ func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 	q = q.Arg("paths", paths)
 
 	return &GeneratedCode{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -8823,18 +10813,20 @@ func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 // This is a local type conversion — no GraphQL call.
 func (r *GeneratedCode) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
+// A generation function and its staleness check. Reading changeset runs the function.
 type Generator struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
-	completed   *bool
-	description *string
-	id          *ID
-	isEmpty     *bool
-	name        *string
+	id *ID
 }
 type WithGeneratorFunc func(r *Generator) *Generator
 
@@ -8848,42 +10840,20 @@ func (r *Generator) With(f WithGeneratorFunc) *Generator {
 func (r *Generator) WithGraphQLQuery(q *querybuilder.Selection) *Generator {
 	return &Generator{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
-// The generated changeset from the last run
-func (r *Generator) Changes() *Changeset {
-	q := r.query.Select("changes")
+// Run the generator and return its changes.
+func (r *Generator) Changeset() *Changeset {
+	q := r.query.Select("changeset")
 
 	return &Changeset{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
-}
-
-// Whether the generator complete
-func (r *Generator) Completed(ctx context.Context) (bool, error) {
-	if r.completed != nil {
-		return *r.completed, nil
-	}
-	q := r.query.Select("completed")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Return the description of the generator
-func (r *Generator) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this Generator.
@@ -8896,7 +10866,13 @@ func (r *Generator) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -8926,57 +10902,23 @@ func (r *Generator) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Whether changeset from the last generator run is empty or not
-func (r *Generator) IsEmpty(ctx context.Context) (bool, error) {
-	if r.isEmpty != nil {
-		return *r.isEmpty, nil
-	}
-	q := r.query.Select("isEmpty")
+// A check that passes when this generator would produce no changes.
+func (r *Generator) Stale() *Check {
+	q := r.query.Select("stale")
 
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Return the fully qualified name of the generator
-func (r *Generator) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The original module in which the generator has been defined
-func (r *Generator) OriginalModule() *Module {
-	q := r.query.Select("originalModule")
-
-	return &Module{
-		query: q,
+	return &Check{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// The path of the generator within its module
-func (r *Generator) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Execute the generator
-func (r *Generator) Run() *Generator {
-	q := r.query.Select("run")
+// Run the generator and retain its result.
+func (r *Generator) Sync() *Generator {
+	q := r.query.Select("sync")
 
 	return &Generator{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
 }
 
@@ -8984,60 +10926,53 @@ func (r *Generator) Run() *Generator {
 // This is a local type conversion — no GraphQL call.
 func (r *Generator) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
-type GeneratorGroup struct {
+// A Git bundle: a self-describing container of refs and the objects needed to reconstruct them, optionally rooted at prerequisite commits.
+type GitBundle struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
-	id      *ID
-	isEmpty *bool
+	id           *ID
+	objectFormat *string
+	version      *int
 }
-type WithGeneratorGroupFunc func(r *GeneratorGroup) *GeneratorGroup
+type WithGitBundleFunc func(r *GitBundle) *GitBundle
 
-// With calls the provided function with current GeneratorGroup.
+// With calls the provided function with current GitBundle.
 //
 // This is useful for reusability and readability by not breaking the calling chain.
-func (r *GeneratorGroup) With(f WithGeneratorGroupFunc) *GeneratorGroup {
+func (r *GitBundle) With(f WithGitBundleFunc) *GitBundle {
 	return f(r)
 }
 
-func (r *GeneratorGroup) WithGraphQLQuery(q *querybuilder.Selection) *GeneratorGroup {
-	return &GeneratorGroup{
+func (r *GitBundle) WithGraphQLQuery(q *querybuilder.Selection) *GitBundle {
+	return &GitBundle{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
-// GeneratorGroupChangesOpts contains options for GeneratorGroup.Changes
-type GeneratorGroupChangesOpts struct {
-	// Strategy to apply on conflicts between generators
-	//
-	// Default: FAIL_EARLY
-	OnConflict ChangesetsMergeConflict
-}
+// Return the bundle bytes as a File.
+func (r *GitBundle) AsFile() *File {
+	q := r.query.Select("asFile")
 
-// The combined changes from the last run of the generators
-//
-// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
-//
-// Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
-func (r *GeneratorGroup) Changes(opts ...GeneratorGroupChangesOpts) *Changeset {
-	q := r.query.Select("changes")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `onConflict` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
-			q = q.Arg("onConflict", opts[i].OnConflict)
-		}
-	}
-
-	return &Changeset{
-		query: q,
+	return &File{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// A unique identifier for this GeneratorGroup.
-func (r *GeneratorGroup) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this GitBundle.
+func (r *GitBundle) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -9046,21 +10981,27 @@ func (r *GeneratorGroup) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *GeneratorGroup) XXX_GraphQLType() string {
-	return "GeneratorGroup"
+func (r *GitBundle) XXX_GraphQLType() string {
+	return "GitBundle"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *GeneratorGroup) XXX_GraphQLIDType() string {
+func (r *GitBundle) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *GeneratorGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *GitBundle) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -9068,7 +11009,7 @@ func (r *GeneratorGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *GeneratorGroup) MarshalJSON() ([]byte, error) {
+func (r *GitBundle) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -9076,41 +11017,51 @@ func (r *GeneratorGroup) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Whether the generated changeset from the last run is empty or not
-func (r *GeneratorGroup) IsEmpty(ctx context.Context) (bool, error) {
-	if r.isEmpty != nil {
-		return *r.isEmpty, nil
+// Object format capability: sha1 or sha256.
+func (r *GitBundle) ObjectFormat(ctx context.Context) (string, error) {
+	if r.objectFormat != nil {
+		return *r.objectFormat, nil
 	}
-	q := r.query.Select("isEmpty")
+	q := r.query.Select("objectFormat")
 
-	var response bool
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 }
 
-// Return a list of individual generators and their details
-func (r *GeneratorGroup) List(ctx context.Context) ([]Generator, error) {
-	q := r.query.Select("list")
+// Commits that must already exist wherever this bundle is applied.
+func (r *GitBundle) PrerequisiteSHAs(ctx context.Context) ([]string, error) {
+	q := r.query.Select("prerequisiteSHAs")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Refs advertised by the bundle and the object IDs they resolve to.
+func (r *GitBundle) Refs(ctx context.Context) ([]GitBundleRef, error) {
+	q := r.query.Select("refs")
 
 	q = q.Select("id")
 
-	type list struct {
+	type refs struct {
 		Id ID
 	}
 
-	convert := func(fields []list) []Generator {
-		out := []Generator{}
+	convert := func(fields []refs) []GitBundleRef {
+		out := []GitBundleRef{}
 
 		for i := range fields {
-			val := Generator{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Generator")
+			val := GitBundleRef{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GitBundleRef")
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []list
+	var response []refs
 
 	q = q.Bind(&response)
 
@@ -9122,30 +11073,643 @@ func (r *GeneratorGroup) List(ctx context.Context) ([]Generator, error) {
 	return convert(response), nil
 }
 
-// Execute all selected generators
-func (r *GeneratorGroup) Run() *GeneratorGroup {
-	q := r.query.Select("run")
+// Perform full structural verification of the bundle and error if it is malformed.
+func (r *GitBundle) Validate() *GitBundle {
+	q := r.query.Select("validate")
 
-	return &GeneratorGroup{
-		query: q,
+	return &GitBundle{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// AsNode returns this GeneratorGroup as a Node.
+// Bundle format version (2 or 3).
+func (r *GitBundle) Version(ctx context.Context) (int, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.query.Select("version")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this GitBundle as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *GeneratorGroup) AsNode() Node {
+func (r *GitBundle) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A ref advertised by a Git bundle.
+type GitBundleRef struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id   *ID
+	name *string
+	sha  *string
+}
+
+func (r *GitBundleRef) WithGraphQLQuery(q *querybuilder.Selection) *GitBundleRef {
+	return &GitBundleRef{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// A unique identifier for this GitBundleRef.
+func (r *GitBundleRef) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitBundleRef) XXX_GraphQLType() string {
+	return "GitBundleRef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitBundleRef) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitBundleRef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitBundleRef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The advertised ref name.
+func (r *GitBundleRef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The object ID the advertised ref resolves to.
+func (r *GitBundleRef) Sha(ctx context.Context) (string, error) {
+	if r.sha != nil {
+		return *r.sha, nil
+	}
+	q := r.query.Select("sha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this GitBundleRef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitBundleRef) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// An immutable git commit.
+type GitCommit struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	authorEmail     *string
+	authorName      *string
+	authoredDate    *string
+	committedDate   *string
+	committerEmail  *string
+	committerName   *string
+	id              *ID
+	message         *string
+	messageBody     *string
+	messageHeadline *string
+	sha             *string
+	shortSha        *string
+}
+
+func (r *GitCommit) WithGraphQLQuery(q *querybuilder.Selection) *GitCommit {
+	return &GitCommit{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// GitCommitAncestorReleaseTagOpts contains options for GitCommit.AncestorReleaseTag
+type GitCommitAncestorReleaseTagOpts struct {
+	// Include pre-release tags when choosing the latest tag.
+	IncludePreRelease bool
+}
+
+// The latest semver release tag reachable from this commit.
+func (r *GitCommit) AncestorReleaseTag(ctx context.Context, opts ...GitCommitAncestorReleaseTagOpts) (*GitRef, error) {
+	q := r.query.Select("ancestorReleaseTag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includePreRelease` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludePreRelease) {
+			q = q.Arg("includePreRelease", opts[i].IncludePreRelease)
+		}
+	}
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &GitRef{
+		query: selectNode(q.Root(), *objectID, "GitRef"),
+	}, nil
+}
+
+// Git author email.
+func (r *GitCommit) AuthorEmail(ctx context.Context) (string, error) {
+	if r.authorEmail != nil {
+		return *r.authorEmail, nil
+	}
+	q := r.query.Select("authorEmail")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Git author name.
+func (r *GitCommit) AuthorName(ctx context.Context) (string, error) {
+	if r.authorName != nil {
+		return *r.authorName, nil
+	}
+	q := r.query.Select("authorName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Git author date, in RFC3339 format.
+func (r *GitCommit) AuthoredDate(ctx context.Context) (string, error) {
+	if r.authoredDate != nil {
+		return *r.authoredDate, nil
+	}
+	q := r.query.Select("authoredDate")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// GitCommitChangesOpts contains options for GitCommit.Changes
+type GitCommitChangesOpts struct {
+	// Use this commit as the comparison base instead of the first parent. The comparison commit may belong to an unrelated history or repository.
+	Against *GitCommit
+}
+
+// Returns the changes from the first parent to this commit, excluding Git metadata.
+//
+// Root commits are compared with an empty tree. Merge commits are compared with their first parent, not a merge base.
+func (r *GitCommit) Changes(opts ...GitCommitChangesOpts) *Changeset {
+	q := r.query.Select("changes")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `against` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Against) {
+			q = q.Arg("against", opts[i].Against)
+		}
+	}
+
+	return &Changeset{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Git committer date, in RFC3339 format.
+func (r *GitCommit) CommittedDate(ctx context.Context) (string, error) {
+	if r.committedDate != nil {
+		return *r.committedDate, nil
+	}
+	q := r.query.Select("committedDate")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Git committer email.
+func (r *GitCommit) CommitterEmail(ctx context.Context) (string, error) {
+	if r.committerEmail != nil {
+		return *r.committerEmail, nil
+	}
+	q := r.query.Select("committerEmail")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Git committer name.
+func (r *GitCommit) CommitterName(ctx context.Context) (string, error) {
+	if r.committerName != nil {
+		return *r.committerName, nil
+	}
+	q := r.query.Select("committerName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this GitCommit.
+func (r *GitCommit) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitCommit) XXX_GraphQLType() string {
+	return "GitCommit"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitCommit) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitCommit) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitCommit) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Full commit message.
+func (r *GitCommit) Message(ctx context.Context) (string, error) {
+	if r.message != nil {
+		return *r.message, nil
+	}
+	q := r.query.Select("message")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Commit message body, excluding the headline.
+func (r *GitCommit) MessageBody(ctx context.Context) (string, error) {
+	if r.messageBody != nil {
+		return *r.messageBody, nil
+	}
+	q := r.query.Select("messageBody")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// First line of the commit message.
+func (r *GitCommit) MessageHeadline(ctx context.Context) (string, error) {
+	if r.messageHeadline != nil {
+		return *r.messageHeadline, nil
+	}
+	q := r.query.Select("messageHeadline")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Parent commit SHAs.
+func (r *GitCommit) ParentShas(ctx context.Context) ([]string, error) {
+	q := r.query.Select("parentShas")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// GitCommitReleaseTagOpts contains options for GitCommit.ReleaseTag
+type GitCommitReleaseTagOpts struct {
+	// Include pre-release tags when choosing the latest tag.
+	IncludePreRelease bool
+}
+
+// The latest semver release tag that points directly at this commit.
+func (r *GitCommit) ReleaseTag(ctx context.Context, opts ...GitCommitReleaseTagOpts) (*GitRef, error) {
+	q := r.query.Select("releaseTag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includePreRelease` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludePreRelease) {
+			q = q.Arg("includePreRelease", opts[i].IncludePreRelease)
+		}
+	}
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &GitRef{
+		query: selectNode(q.Root(), *objectID, "GitRef"),
+	}, nil
+}
+
+// The full commit SHA.
+func (r *GitCommit) Sha(ctx context.Context) (string, error) {
+	if r.sha != nil {
+		return *r.sha, nil
+	}
+	q := r.query.Select("sha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The abbreviated commit SHA.
+func (r *GitCommit) ShortSha(ctx context.Context) (string, error) {
+	if r.shortSha != nil {
+		return *r.shortSha, nil
+	}
+	q := r.query.Select("shortSha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// GitCommitTreeOpts contains options for GitCommit.Tree
+type GitCommitTreeOpts struct {
+	// Set to true to discard .git directory.
+	DiscardGitDir bool
+	// The depth of the tree to fetch.
+	//
+	// Default: 1
+	Depth int
+	// Set to true to populate tag refs in the local checkout .git.
+	IncludeTags bool
+}
+
+// The filesystem tree at this commit.
+func (r *GitCommit) Tree(opts ...GitCommitTreeOpts) *Directory {
+	q := r.query.Select("tree")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `discardGitDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DiscardGitDir) {
+			q = q.Arg("discardGitDir", opts[i].DiscardGitDir)
+		}
+		// `depth` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Depth) {
+			q = q.Arg("depth", opts[i].Depth)
+		}
+		// `includeTags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeTags) {
+			q = q.Arg("includeTags", opts[i].IncludeTags)
+		}
+	}
+
+	return &Directory{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this GitCommit as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitCommit) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A receipt for a completed Git push. Reading or replaying the receipt does not push again.
+type GitPushResult struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	disposition *GitPushDisposition
+	id          *ID
+	previousSHA *string
+	ref         *string
+	sha         *string
+}
+
+func (r *GitPushResult) WithGraphQLQuery(q *querybuilder.Selection) *GitPushResult {
+	return &GitPushResult{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// How the remote ref was updated.
+func (r *GitPushResult) Disposition(ctx context.Context) (GitPushDisposition, error) {
+	if r.disposition != nil {
+		return *r.disposition, nil
+	}
+	q := r.query.Select("disposition")
+
+	var response GitPushDisposition
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this GitPushResult.
+func (r *GitPushResult) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitPushResult) XXX_GraphQLType() string {
+	return "GitPushResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitPushResult) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitPushResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitPushResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The previous remote object ID; empty when the ref was created.
+func (r *GitPushResult) PreviousSHA(ctx context.Context) (string, error) {
+	if r.previousSHA != nil {
+		return *r.previousSHA, nil
+	}
+	q := r.query.Select("previousSHA")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The fully qualified remote ref.
+func (r *GitPushResult) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The object ID pushed to the remote.
+func (r *GitPushResult) Sha(ctx context.Context) (string, error) {
+	if r.sha != nil {
+		return *r.sha, nil
+	}
+	q := r.query.Select("sha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this GitPushResult as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitPushResult) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A git ref (tag, branch, or commit).
 type GitRef struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
-	commit *string
-	id     *ID
-	ref    *string
+	commit    *string
+	commitSHA *string
+	contains  *bool
+	id        *ID
+	name      *string
+	ref       *string
 }
 type WithGitRefFunc func(r *GitRef) *GitRef
 
@@ -9159,15 +11723,69 @@ func (r *GitRef) With(f WithGitRefFunc) *GitRef {
 func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	return &GitRef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Return this ref's repository with HEAD pinned to the selected commit.
+//
+// Preserves the original repository backend, connection information, and other refs. Does not modify a branch or checkout, or prune history.
+func (r *GitRef) AsRepository() *GitRepository {
+	q := r.query.Select("asRepository")
+
+	return &GitRepository{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// GitRefAsWorkspaceOpts contains options for GitRef.AsWorkspace
+type GitRefAsWorkspaceOpts struct {
+	// Current working directory inside the workspace root. Defaults to the workspace root.
+	//
+	// Default: "/"
+	Cwd string
+}
+
+// Creates a synthetic workspace from this git ref.
+func (r *GitRef) AsWorkspace(opts ...GitRefAsWorkspaceOpts) *Workspace {
+	q := r.query.Select("asWorkspace")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cwd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cwd) {
+			q = q.Arg("cwd", opts[i].Cwd)
+		}
+	}
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // The resolved commit id at this ref.
+//
+// Deprecated: Use "commitSHA" instead.
 func (r *GitRef) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {
 		return *r.commit, nil
 	}
 	q := r.query.Select("commit")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The resolved commit SHA at this ref.
+func (r *GitRef) CommitSHA(ctx context.Context) (string, error) {
+	if r.commitSHA != nil {
+		return *r.commitSHA, nil
+	}
+	q := r.query.Select("commitSHA")
 
 	var response string
 
@@ -9182,8 +11800,26 @@ func (r *GitRef) CommonAncestor(other *GitRef) *GitRef {
 	q = q.Arg("other", other)
 
 	return &GitRef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
+}
+
+// Return true when the other ref's commit equals this commit or is an ancestor of it.
+//
+// Compares commit history across branches, tags and detached refs. Incomplete or unavailable history is an error.
+func (r *GitRef) Contains(ctx context.Context, other *GitRef) (bool, error) {
+	assertNotNil("other", other)
+	if r.contains != nil {
+		return *r.contains, nil
+	}
+	q := r.query.Select("contains")
+	q = q.Arg("other", other)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this GitRef.
@@ -9196,7 +11832,13 @@ func (r *GitRef) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -9226,7 +11868,125 @@ func (r *GitRef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// GitRefLogOpts contains options for GitRef.Log
+type GitRefLogOpts struct {
+	// Maximum number of commits to return.
+	//
+	// Default: 10
+	Limit int
+	// Only include commits touching these paths, relative to the root of the repository.
+	Paths []string
+	// Exclude commits reachable from this ref, i.e. only list commits added on top of it.
+	Base *GitRef
+}
+
+// Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
+func (r *GitRef) Log(ctx context.Context, opts ...GitRefLogOpts) ([]GitCommit, error) {
+	q := r.query.Select("log")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `base` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Base) {
+			q = q.Arg("base", opts[i].Base)
+		}
+	}
+
+	q = q.Select("id")
+
+	type log struct {
+		Id ID
+	}
+
+	convert := func(fields []log) []GitCommit {
+		out := []GitCommit{}
+
+		for i := range fields {
+			val := GitCommit{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GitCommit")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []log
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The resolved name of this ref.
+func (r *GitRef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// GitRefPushOpts contains options for GitRef.Push
+type GitRefPushOpts struct {
+	// Destination remote repository. Defaults to the origin remote's push routing, or the source's repository URL when none is registered. Required when the source has no remote URL.
+	To *GitRepository
+	// Name of a registered remote to push to (see GitRepository.withRemote). Defaults to origin. The remote's push URLs, or its URL, become the destination; more than one push URL requires an explicit to instead.
+	Remote string
+	// Destination branch; a refs/ prefix is used verbatim. Defaults to this ref's branch name. Required for detached and non-branch refs.
+	Branch string
+	// Optional lease: a full lowercase object ID allows replacement only if the remote ref still has that value. Checked even for up-to-date pushes. Empty or omitted uses normal non-force rules, creating the ref if it does not exist.
+	ExpectedRemoteSHA string
+}
+
+// Push this ref's commit and history to a remote repository using the destination's credentials.
+//
+// The source can come from a remote repository or an engine-side Git repository. To publish a workspace's commits, use Workspace.git.head.push. Pushing does not modify the calling client's checkout, and checkout hooks do not run.
+//
+// A missing remote ref is created. Without a lease, Git's normal non-force rules apply. Each invocation performs a push; loading the returned receipt does not push again.
+func (r *GitRef) Push(opts ...GitRefPushOpts) *GitPushResult {
+	q := r.query.Select("push")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `to` optional argument
+		if !querybuilder.IsZeroValue(opts[i].To) {
+			q = q.Arg("to", opts[i].To)
+		}
+		// `remote` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Remote) {
+			q = q.Arg("remote", opts[i].Remote)
+		}
+		// `branch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Branch) {
+			q = q.Arg("branch", opts[i].Branch)
+		}
+		// `expectedRemoteSHA` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExpectedRemoteSHA) {
+			q = q.Arg("expectedRemoteSHA", opts[i].ExpectedRemoteSHA)
+		}
+	}
+
+	return &GitPushResult{
+		query:     q,
+		refetchID: true,
+	}
+}
+
 // The resolved ref name at this ref.
+//
+// Deprecated: Use "name" instead.
 func (r *GitRef) Ref(ctx context.Context) (string, error) {
 	if r.ref != nil {
 		return *r.ref, nil
@@ -9237,6 +11997,16 @@ func (r *GitRef) Ref(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// The commit this ref resolves to.
+func (r *GitRef) TargetCommit() *GitCommit {
+	q := r.query.Select("targetCommit")
+
+	return &GitCommit{
+		query:     q,
+		refetchID: r.refetchID,
+	}
 }
 
 // GitRefTreeOpts contains options for GitRef.Tree
@@ -9270,7 +12040,64 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	}
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// GitRefWithCommitOpts contains options for GitRef.WithCommit
+type GitRefWithCommitOpts struct {
+	// Committer name. Defaults to authorName.
+	CommitterName string
+	// Committer email. Defaults to authorEmail.
+	CommitterEmail string
+	// RFC3339 committer date. Defaults to date.
+	CommitterDate string
+	// Allow a commit whose tree matches its parent, including when the supplied edits are already present. Defaults to false.
+	AllowEmpty bool
+	// Add a Signed-off-by trailer using the commit author's name and email.
+	Signoff bool
+}
+
+// Create a single-parent commit on this ref by applying a changeset's edits.
+//
+// Three-way merges the changeset against this ref's tree, using its before snapshot as the base. Preserves compatible parent edits and fails on conflicts. Does not modify the input repository or host checkout.
+//
+// Identity and dates are explicit; neither client Git configuration nor the current clock is consulted.
+func (r *GitRef) WithCommit(changes *Changeset, message string, date string, authorName string, authorEmail string, opts ...GitRefWithCommitOpts) *GitRef {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withCommit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `committerName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CommitterName) {
+			q = q.Arg("committerName", opts[i].CommitterName)
+		}
+		// `committerEmail` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CommitterEmail) {
+			q = q.Arg("committerEmail", opts[i].CommitterEmail)
+		}
+		// `committerDate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CommitterDate) {
+			q = q.Arg("committerDate", opts[i].CommitterDate)
+		}
+		// `allowEmpty` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AllowEmpty) {
+			q = q.Arg("allowEmpty", opts[i].AllowEmpty)
+		}
+		// `signoff` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Signoff) {
+			q = q.Arg("signoff", opts[i].Signoff)
+		}
+	}
+	q = q.Arg("changes", changes)
+	q = q.Arg("message", message)
+	q = q.Arg("date", date)
+	q = q.Arg("authorName", authorName)
+	q = q.Arg("authorEmail", authorEmail)
+
+	return &GitRef{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -9278,31 +12105,189 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 // This is a local type conversion — no GraphQL call.
 func (r *GitRef) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A named reference to a remote Git repository.
+type GitRemote struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id   *ID
+	name *string
+}
+
+func (r *GitRemote) WithGraphQLQuery(q *querybuilder.Selection) *GitRemote {
+	return &GitRemote{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// A unique identifier for this GitRemote.
+func (r *GitRemote) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitRemote) XXX_GraphQLType() string {
+	return "GitRemote"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitRemote) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitRemote) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitRemote) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The remote's name.
+func (r *GitRemote) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Access this remote's repository using its fetch URL and the caller's credentials, or the source's existing capability for this exact destination.
+//
+// HEAD is the remote's HEAD, independent of the workspace's selected commit. Remote registration alone does not grant credentials.
+func (r *GitRemote) Repository() *GitRepository {
+	q := r.query.Select("repository")
+
+	return &GitRepository{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this GitRemote as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitRemote) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A git repository.
 type GitRepository struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id  *ID
 	url *string
+}
+type WithGitRepositoryFunc func(r *GitRepository) *GitRepository
+
+// With calls the provided function with current GitRepository.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GitRepository) With(f WithGitRepositoryFunc) *GitRepository {
+	return f(r)
 }
 
 func (r *GitRepository) WithGraphQLQuery(q *querybuilder.Selection) *GitRepository {
 	return &GitRepository{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
+// GitRepositoryAsWorkspaceOpts contains options for GitRepository.AsWorkspace
+type GitRepositoryAsWorkspaceOpts struct {
+	// Current working directory inside the workspace root. Defaults to the workspace root.
+	//
+	// Default: "/"
+	Cwd string
+}
+
+// Creates a synthetic workspace from this repository's HEAD and uncommitted file changes.
+//
+// Pending changes are applied at the repository root. The staging split is not preserved. The source repository is not modified.
+func (r *GitRepository) AsWorkspace(opts ...GitRepositoryAsWorkspaceOpts) *Workspace {
+	q := r.query.Select("asWorkspace")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cwd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cwd) {
+			q = q.Arg("cwd", opts[i].Cwd)
+		}
+	}
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// GitRepositoryBranchOpts contains options for GitRepository.Branch
+type GitRepositoryBranchOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
 // Returns details of a branch.
-func (r *GitRepository) Branch(name string) *GitRef {
+func (r *GitRepository) Branch(name string, opts ...GitRepositoryBranchOpts) *GitRef {
 	q := r.query.Select("branch")
+	refetchID := r.refetchID
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
+		}
+	}
 	q = q.Arg("name", name)
 
 	return &GitRef{
-		query: q,
+		query:     q,
+		refetchID: refetchID,
 	}
 }
 
@@ -9328,22 +12313,80 @@ func (r *GitRepository) Branches(ctx context.Context, opts ...GitRepositoryBranc
 	return response, q.Execute(ctx)
 }
 
-// Returns details of a commit.
-func (r *GitRepository) Commit(id string) *GitRef {
-	q := r.query.Select("commit")
-	q = q.Arg("id", id)
+// GitRepositoryBundleOpts contains options for GitRepository.Bundle
+type GitRepositoryBundleOpts struct {
+	// A Git ref whose reachable objects are omitted and recorded as a prerequisite.
+	Base *GitRef
+}
 
-	return &GitRef{
-		query: q,
+// Pack the given refs and the objects needed to reconstruct them into a Git bundle.
+func (r *GitRepository) Bundle(refs []string, opts ...GitRepositoryBundleOpts) *GitBundle {
+	q := r.query.Select("bundle")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `base` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Base) {
+			q = q.Arg("base", opts[i].Base)
+		}
+	}
+	q = q.Arg("refs", refs)
+
+	return &GitBundle{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
+// Returns details of a commit.
+func (r *GitRepository) Commit(id string) *GitCommit {
+	q := r.query.Select("commit")
+	q = q.Arg("id", id)
+
+	return &GitCommit{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return the sole remote, otherwise origin, otherwise the selected branch's upstream remote, otherwise null.
+//
+// Frozen workspaces retain their captured upstream selection. Does not contact remote servers.
+func (r *GitRepository) DefaultRemote(ctx context.Context) (*GitRemote, error) {
+	q := r.query.Select("defaultRemote")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &GitRemote{
+		query: selectNode(q.Root(), *objectID, "GitRemote"),
+	}, nil
+}
+
+// GitRepositoryHeadOpts contains options for GitRepository.Head
+type GitRepositoryHeadOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
 // Returns details for HEAD.
-func (r *GitRepository) Head() *GitRef {
+func (r *GitRepository) Head(opts ...GitRepositoryHeadOpts) *GitRef {
 	q := r.query.Select("head")
+	refetchID := r.refetchID
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
+		}
+	}
 
 	return &GitRef{
-		query: q,
+		query:     q,
+		refetchID: refetchID,
 	}
 }
 
@@ -9357,7 +12400,13 @@ func (r *GitRepository) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -9387,32 +12436,129 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Returns details for the latest semver tag.
-func (r *GitRepository) LatestVersion() *GitRef {
-	q := r.query.Select("latestVersion")
+// GitRepositoryLatestOpts contains options for GitRepository.Latest
+type GitRepositoryLatestOpts struct {
+	// Version query used to select the greatest matching release ref.
+	Version string
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
+// Return the latest stable release tag, falling back to HEAD when no release exists.
+//
+// Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned unless noLock is enabled.
+func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
+	q := r.query.Select("latest")
+	refetchID := r.refetchID
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
+		}
+	}
 
 	return &GitRef{
-		query: q,
+		query:     q,
+		refetchID: refetchID,
 	}
+}
+
+// GitRepositoryRefOpts contains options for GitRepository.Ref
+type GitRepositoryRefOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
 }
 
 // Returns details of a ref.
-func (r *GitRepository) Ref(name string) *GitRef {
+func (r *GitRepository) Ref(name string, opts ...GitRepositoryRefOpts) *GitRef {
 	q := r.query.Select("ref")
+	refetchID := r.refetchID
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
+		}
+	}
 	q = q.Arg("name", name)
 
 	return &GitRef{
-		query: q,
+		query:     q,
+		refetchID: refetchID,
 	}
 }
 
+// Look up a remote by name. Fails when the remote does not exist.
+func (r *GitRepository) Remote(name string) *GitRemote {
+	q := r.query.Select("remote")
+	q = q.Arg("name", name)
+
+	return &GitRemote{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// List this repository's named remotes, with registered remotes overriding configured ones. Does not contact remote servers.
+func (r *GitRepository) Remotes(ctx context.Context) ([]GitRemote, error) {
+	q := r.query.Select("remotes")
+
+	q = q.Select("id")
+
+	type remotes struct {
+		Id ID
+	}
+
+	convert := func(fields []remotes) []GitRemote {
+		out := []GitRemote{}
+
+		for i := range fields {
+			val := GitRemote{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GitRemote")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []remotes
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// GitRepositoryTagOpts contains options for GitRepository.Tag
+type GitRepositoryTagOpts struct {
+	// Ignore the workspace lockfile for this lookup.
+	NoLock bool
+}
+
 // Returns details of a tag.
-func (r *GitRepository) Tag(name string) *GitRef {
+func (r *GitRepository) Tag(name string, opts ...GitRepositoryTagOpts) *GitRef {
 	q := r.query.Select("tag")
+	refetchID := r.refetchID
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noLock` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoLock) {
+			q = q.Arg("noLock", opts[i].NoLock)
+			refetchID = true
+		}
+	}
 	q = q.Arg("name", name)
 
 	return &GitRef{
-		query: q,
+		query:     q,
+		refetchID: refetchID,
 	}
 }
 
@@ -9443,7 +12589,8 @@ func (r *GitRepository) Uncommitted() *Changeset {
 	q := r.query.Select("uncommitted")
 
 	return &Changeset{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -9460,17 +12607,92 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// GitRepositoryWithBundleOpts contains options for GitRepository.WithBundle
+type GitRepositoryWithBundleOpts struct {
+	// An optional remote ref hint for fetching a prerequisite when the remote does not allow fetches by object ID.
+	PrerequisiteRef string
+}
+
+// Import a Git bundle after fetching and verifying all of its prerequisites.
+func (r *GitRepository) WithBundle(bundle *GitBundle, opts ...GitRepositoryWithBundleOpts) *GitRepository {
+	assertNotNil("bundle", bundle)
+	q := r.query.Select("withBundle")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `prerequisiteRef` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PrerequisiteRef) {
+			q = q.Arg("prerequisiteRef", opts[i].PrerequisiteRef)
+		}
+	}
+	q = q.Arg("bundle", bundle)
+
+	return &GitRepository{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Replace this repository's storage with the supplied self-contained Git repository, retaining its logical URL and push destinations.
+//
+// Accepts a whole checkout (including .git and pending file edits), .git contents, or a bare repository. Does not initialize a repository, merge histories, or modify either input.
+//
+// The receiver's logical routing wins over the supplied Git configuration; that configuration is not rewritten. Use Directory.asGit to open the supplied repository without retaining the receiver's routing.
+//
+// When the receiver is a remote repository (or was derived from one), that remote is retained with its authentication: refs the supplied storage does not contain resolve through it.
+func (r *GitRepository) WithContents(directory *Directory) *GitRepository {
+	assertNotNil("directory", directory)
+	q := r.query.Select("withContents")
+	q = q.Arg("directory", directory)
+
+	return &GitRepository{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// GitRepositoryWithRemoteOpts contains options for GitRepository.WithRemote
+type GitRepositoryWithRemoteOpts struct {
+	// Push destination, when pushes go somewhere other than url. Empty uses url.
+	PushURL string
+}
+
+// Register a named remote on this repository, replacing any registered remote of the same name.
+//
+// Registered remotes are recorded in checkouts materialized from this repository (GitRef.tree, Workspace.git.directory), so remote-aware tooling like gh can resolve and fetch from them. The origin remote also routes push when no explicit destination is passed: its push URL, or its URL, becomes the default destination.
+//
+// Routing metadata only, never a credential grant: pushes still authenticate with the caller's own credentials and require approval as usual.
+func (r *GitRepository) WithRemote(name string, url string, opts ...GitRepositoryWithRemoteOpts) *GitRepository {
+	q := r.query.Select("withRemote")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `pushUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PushURL) {
+			q = q.Arg("pushUrl", opts[i].PushURL)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("url", url)
+
+	return &GitRepository{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // AsNode returns this GitRepository as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *GitRepository) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // An internal persistent HTTP state.
 type HTTPState struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id *ID
 }
@@ -9478,6 +12700,9 @@ type HTTPState struct {
 func (r *HTTPState) WithGraphQLQuery(q *querybuilder.Selection) *HTTPState {
 	return &HTTPState{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -9491,7 +12716,13 @@ func (r *HTTPState) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -9525,13 +12756,18 @@ func (r *HTTPState) MarshalJSON() ([]byte, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *HTTPState) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // Image healthcheck configuration.
 type HealthcheckConfig struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id            *ID
 	interval      *string
@@ -9545,6 +12781,9 @@ type HealthcheckConfig struct {
 func (r *HealthcheckConfig) WithGraphQLQuery(q *querybuilder.Selection) *HealthcheckConfig {
 	return &HealthcheckConfig{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -9568,7 +12807,13 @@ func (r *HealthcheckConfig) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -9680,13 +12925,18 @@ func (r *HealthcheckConfig) Timeout(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *HealthcheckConfig) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // Information about the host environment.
 type Host struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	findUp *string
 	id     *ID
@@ -9695,6 +12945,9 @@ type Host struct {
 func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
 	return &Host{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -9704,7 +12957,8 @@ func (r *Host) ContainerImage(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -9723,6 +12977,7 @@ type HostDirectoryOpts struct {
 // Accesses a directory on the host.
 func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
@@ -9735,6 +12990,7 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
+			refetchID = true
 		}
 		// `gitignore` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
@@ -9744,7 +13000,8 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: refetchID,
 	}
 }
 
@@ -9757,16 +13014,19 @@ type HostFileOpts struct {
 // Accesses a file on the host.
 func (r *Host) File(path string, opts ...HostFileOpts) *File {
 	q := r.query.Select("file")
+	refetchID := r.refetchID
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
+			refetchID = true
 		}
 	}
 	q = q.Arg("path", path)
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: refetchID,
 	}
 }
 
@@ -9805,7 +13065,13 @@ func (r *Host) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -9855,7 +13121,8 @@ func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
 	q = q.Arg("ports", ports)
 
 	return &Service{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -9892,7 +13159,8 @@ func (r *Host) Tunnel(service *Service, opts ...HostTunnelOpts) *Service {
 	q = q.Arg("service", service)
 
 	return &Service{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -9902,7 +13170,8 @@ func (r *Host) UnixSocket(path string) *Socket {
 	q = q.Arg("path", path)
 
 	return &Socket{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -9910,7 +13179,8 @@ func (r *Host) UnixSocket(path string) *Socket {
 // This is a local type conversion — no GraphQL call.
 func (r *Host) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -9920,6 +13190,10 @@ func (r *Host) AsNode() Node {
 // module accept input objects via their id rather than graphql input types.
 type InputTypeDef struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id   *ID
 	name *string
@@ -9928,6 +13202,9 @@ type InputTypeDef struct {
 func (r *InputTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *InputTypeDef {
 	return &InputTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -9974,7 +13251,13 @@ func (r *InputTypeDef) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -10021,13 +13304,18 @@ func (r *InputTypeDef) Name(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *InputTypeDef) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A definition of a custom interface defined in a Module.
 type InterfaceTypeDef struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	description      *string
 	id               *ID
@@ -10038,6 +13326,9 @@ type InterfaceTypeDef struct {
 func (r *InterfaceTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *InterfaceTypeDef {
 	return &InterfaceTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -10097,7 +13388,13 @@ func (r *InterfaceTypeDef) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -10141,12 +13438,20 @@ func (r *InterfaceTypeDef) Name(ctx context.Context) (string, error) {
 }
 
 // The location of this interface declaration.
-func (r *InterfaceTypeDef) SourceMap() *SourceMap {
+func (r *InterfaceTypeDef) SourceMap(ctx context.Context) (*SourceMap, error) {
 	q := r.query.Select("sourceMap")
 
-	return &SourceMap{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &SourceMap{
+		query: selectNode(q.Root(), *objectID, "SourceMap"),
+	}, nil
 }
 
 // If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -10166,12 +13471,17 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 // This is a local type conversion — no GraphQL call.
 func (r *InterfaceTypeDef) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 type JSONValue struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	asBoolean *bool
 	asInteger *int
@@ -10191,6 +13501,9 @@ func (r *JSONValue) With(f WithJSONValueFunc) *JSONValue {
 func (r *JSONValue) WithGraphQLQuery(q *querybuilder.Selection) *JSONValue {
 	return &JSONValue{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -10305,7 +13618,8 @@ func (r *JSONValue) Field(path []string) *JSONValue {
 	q = q.Arg("path", path)
 
 	return &JSONValue{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -10329,7 +13643,13 @@ func (r *JSONValue) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -10365,7 +13685,8 @@ func (r *JSONValue) NewBoolean(value bool) *JSONValue {
 	q = q.Arg("value", value)
 
 	return &JSONValue{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -10375,7 +13696,8 @@ func (r *JSONValue) NewInteger(value int) *JSONValue {
 	q = q.Arg("value", value)
 
 	return &JSONValue{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -10385,7 +13707,8 @@ func (r *JSONValue) NewString(value string) *JSONValue {
 	q = q.Arg("value", value)
 
 	return &JSONValue{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -10395,7 +13718,8 @@ func (r *JSONValue) WithContents(contents JSON) *JSONValue {
 	q = q.Arg("contents", contents)
 
 	return &JSONValue{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -10407,7 +13731,8 @@ func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
 	q = q.Arg("value", value)
 
 	return &JSONValue{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -10415,22 +13740,31 @@ func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
 // This is a local type conversion — no GraphQL call.
 func (r *JSONValue) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
+// A conversation with a large language model (LLM): queue prompts, expose tools, and step the model until it completes its turn.
 type LLM struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
-	hasPrompt   *bool
-	historyJSON *JSON
-	id          *ID
-	lastReply   *string
-	model       *string
-	provider    *string
-	step        *ID
-	sync        *ID
-	tools       *string
+	contextTokens   *int
+	contextWindow   *int
+	hasPending      *bool
+	id              *ID
+	lastReply       *string
+	model           *string
+	provider        *string
+	reasoningEffort *string
+	spawn           *ID
+	sync            *ID
+	tools           *string
+	transcript      *string
 }
 type WithLLMFunc func(r *LLM) *LLM
 
@@ -10444,69 +13778,114 @@ func (r *LLM) With(f WithLLMFunc) *LLM {
 func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 	return &LLM{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
-// create a branch in the LLM's history
-func (r *LLM) Attempt(number int) *LLM {
-	q := r.query.Select("attempt")
-	q = q.Arg("number", number)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// returns the type of the current state
-func (r *LLM) BindResult(name string) *Binding {
-	q := r.query.Select("bindResult")
+// Reconstruct a spawned agent from its runtime handle.
+//
+// This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLM) Agent(handle string, name string) *Agent {
+	q := r.query.Select("agent")
+	q = q.Arg("handle", handle)
 	q = q.Arg("name", name)
 
-	return &Binding{
-		query: q,
+	return &Agent{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// return the LLM's current environment
-func (r *LLM) Env() *Env {
-	q := r.query.Select("env")
+// LLMArtifactsOpts contains options for LLM.Artifacts
+type LLMArtifactsOpts struct {
+	// Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.
+	Include []string
+}
 
-	return &Env{
-		query: q,
+// Discover every artifact this conversation can address, as one selection, without evaluating their values.
+//
+// Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.
+//
+// The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.
+//
+// Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLM) Artifacts(opts ...LLMArtifactsOpts) *Artifacts {
+	q := r.query.Select("artifacts")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// Indicates whether there are any queued prompts or tool results to send to the model
-func (r *LLM) HasPrompt(ctx context.Context) (bool, error) {
-	if r.hasPrompt != nil {
-		return *r.hasPrompt, nil
+// Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+func (r *LLM) Compose(expertise []*Expertise) *LLM {
+	q := r.query.Select("compose")
+	q = q.Arg("expertise", expertise)
+
+	return &LLM{
+		query:     q,
+		refetchID: r.refetchID,
 	}
-	q := r.query.Select("hasPrompt")
+}
+
+// estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
+func (r *LLM) ContextTokens(ctx context.Context) (int, error) {
+	if r.contextTokens != nil {
+		return *r.contextTokens, nil
+	}
+	q := r.query.Select("contextTokens")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).
+func (r *LLM) ContextWindow(ctx context.Context) (int, error) {
+	if r.contextWindow != nil {
+		return *r.contextWindow, nil
+	}
+	q := r.query.Select("contextWindow")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
+func (r *LLM) Fork(label string) *LLM {
+	q := r.query.Select("fork")
+	q = q.Arg("label", label)
+
+	return &LLM{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete.
+func (r *LLM) HasPending(ctx context.Context) (bool, error) {
+	if r.hasPending != nil {
+		return *r.hasPending, nil
+	}
+	q := r.query.Select("hasPending")
 
 	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// return the llm message history
-func (r *LLM) History(ctx context.Context) ([]string, error) {
-	q := r.query.Select("history")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// return the raw llm message history as json
-func (r *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
-	if r.historyJSON != nil {
-		return *r.historyJSON, nil
-	}
-	q := r.query.Select("historyJSON")
-
-	var response JSON
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10522,7 +13901,13 @@ func (r *LLM) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -10552,7 +13937,7 @@ func (r *LLM) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// return the last llm reply from the history
+// The text of the model's most recent reply.
 func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	if r.lastReply != nil {
 		return *r.lastReply, nil
@@ -10565,16 +13950,68 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
-func (r *LLM) Loop() *LLM {
+// LLMLoopOpts contains options for LLM.Loop
+type LLMLoopOpts struct {
+	// Cap the number of steps. The loop fails if the cap is reached before the model ends its turn.
+	MaxSteps int
+	// Cap the model's output tokens on each step. Defaults to the model's maximum.
+	MaxTokens int
+}
+
+// Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
+func (r *LLM) Loop(opts ...LLMLoopOpts) *LLM {
 	q := r.query.Select("loop")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `maxSteps` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxSteps) {
+			q = q.Arg("maxSteps", opts[i].MaxSteps)
+		}
+		// `maxTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxTokens) {
+			q = q.Arg("maxTokens", opts[i].MaxTokens)
+		}
+	}
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// return the model used by the llm
+// The full message history, as structured messages.
+func (r *LLM) Messages(ctx context.Context) ([]LLMMessage, error) {
+	q := r.query.Select("messages")
+
+	q = q.Select("id")
+
+	type messages struct {
+		Id ID
+	}
+
+	convert := func(fields []messages) []LLMMessage {
+		out := []LLMMessage{}
+
+		for i := range fields {
+			val := LLMMessage{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMMessage")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []messages
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The model the conversation is running against, after resolving any configured default.
 func (r *LLM) Model(ctx context.Context) (string, error) {
 	if r.model != nil {
 		return *r.model, nil
@@ -10587,7 +14024,7 @@ func (r *LLM) Model(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// return the provider used by the llm
+// The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
 func (r *LLM) Provider(ctx context.Context) (string, error) {
 	if r.provider != nil {
 		return *r.provider, nil
@@ -10600,20 +14037,151 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
-func (r *LLM) Step(ctx context.Context) (*LLM, error) {
-	q := r.query.Select("step")
+// The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+func (r *LLM) ReasoningEffort(ctx context.Context) (string, error) {
+	if r.reasoningEffort != nil {
+		return *r.reasoningEffort, nil
+	}
+	q := r.query.Select("reasoningEffort")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
+//
+// Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
+//
+// A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
+func (r *LLM) Recompose(expertise []*Expertise) *LLM {
+	q := r.query.Select("recompose")
+	q = q.Arg("expertise", expertise)
+
+	return &LLM{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
+func (r *LLM) Skills(ctx context.Context) ([]LLMSkill, error) {
+	q := r.query.Select("skills")
+
+	q = q.Select("id")
+
+	type skills struct {
+		Id ID
+	}
+
+	convert := func(fields []skills) []LLMSkill {
+		out := []LLMSkill{}
+
+		for i := range fields {
+			val := LLMSkill{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMSkill")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []skills
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// LLMSpawnOpts contains options for LLM.Spawn
+type LLMSpawnOpts struct {
+	// Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
+	Name string
+	// The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.
+	Handle string
+	// The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.
+	//
+	// RUNNING and WAITING_INPUT are refused: they describe a loop, and a restored loop died with the session that published it — restore such an agent as IDLE, its interrupted turn's input still pending on the conversation.
+	//
+	// Default: IDLE
+	State AgentState
+	// Recorded parent handle when restoring an agent. Lineage does not install a notification subscription. Requires a supplied handle. The parent must already be restored in this session and cannot be the agent itself or its descendant.
+	ParentHandle string
+	// The loop error to create the agent with, for state FAILED. Refused with any other state.
+	Error string
+}
+
+// Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
+//
+// Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The result is pinned to the instance (via the agent lookup field), so re-loading its ID re-addresses the same agent from any request in the session.
+//
+// The loop is not started: the agent spends nothing until it is prompted or resumed, and any input pending on the conversation is stepped then.
+//
+// With a handle, spawn restores an instance instead of minting one: this conversation becomes the committed history of the agent that handle names, so prompting it continues where it left off — rebuild a conversation's ID from a trace, load it, and spawn it under the handle it belonged to. Fails if that instance already has a runtime entry in this session: a restore must happen before anything else addresses the instance, since by then it may have stepped.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (*Agent, error) {
+	q := r.query.Select("spawn")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `handle` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Handle) {
+			q = q.Arg("handle", opts[i].Handle)
+		}
+		// `state` optional argument
+		if !querybuilder.IsZeroValue(opts[i].State) {
+			q = q.Arg("state", opts[i].State)
+		}
+		// `parentHandle` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ParentHandle) {
+			q = q.Arg("parentHandle", opts[i].ParentHandle)
+		}
+		// `error` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Error) {
+			q = q.Arg("error", opts[i].Error)
+		}
+	}
 
 	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
-	return &LLM{
-		query: selectNode(q.Root(), id, "LLM"),
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
 	}, nil
 }
 
-// synchronize LLM state
+// LLMStepOpts contains options for LLM.Step
+type LLMStepOpts struct {
+	// Cap the model's output tokens for this step. Defaults to the model's maximum.
+	MaxTokens int
+}
+
+// Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
+func (r *LLM) Step(opts ...LLMStepOpts) *LLM {
+	q := r.query.Select("step")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `maxTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxTokens) {
+			q = q.Arg("maxTokens", opts[i].MaxTokens)
+		}
+	}
+
+	return &LLM{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
 func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	q := r.query.Select("sync")
 
@@ -10626,16 +14194,17 @@ func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	}, nil
 }
 
-// returns the token usage of the current state
+// The cumulative token usage, summed across every API call in the conversation.
 func (r *LLM) TokenUsage() *LLMTokenUsage {
 	q := r.query.Select("tokenUsage")
 
 	return &LLMTokenUsage{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// print documentation for available tools
+// Render documentation for the tools currently exposed to the model.
 func (r *LLM) Tools(ctx context.Context) (string, error) {
 	if r.tools != nil {
 		return *r.tools, nil
@@ -10648,25 +14217,63 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Return a new LLM with the specified function no longer exposed as a tool
-func (r *LLM) WithBlockedFunction(typeName string, function string) *LLM {
-	q := r.query.Select("withBlockedFunction")
-	q = q.Arg("typeName", typeName)
-	q = q.Arg("function", function)
+// The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+func (r *LLM) Transcript(ctx context.Context) (string, error) {
+	if r.transcript != nil {
+		return *r.transcript, nil
+	}
+	q := r.query.Select("transcript")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// LLMWithContentOpts contains options for LLM.WithContent
+type LLMWithContentOpts struct {
+	// The message's recorded provenance.
+	Origin LLMMessageOriginInput
+}
+
+// Queue one user message containing ordered text and media blocks.
+func (r *LLM) WithContent(content []LLMContentBlockInput, opts ...LLMWithContentOpts) *LLM {
+	q := r.query.Select("withContent")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `origin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Origin) {
+			q = q.Arg("origin", opts[i].Origin)
+		}
+	}
+	q = q.Arg("content", content)
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// allow the LLM to interact with an environment via MCP
-func (r *LLM) WithEnv(env *Env) *LLM {
-	assertNotNil("env", env)
-	q := r.query.Select("withEnv")
-	q = q.Arg("env", env)
+// LLMWithContentFileOpts contains options for LLM.WithContentFile
+type LLMWithContentFileOpts struct {
+	// The media MIME type; inferred from the file's contents when omitted.
+	MimeType string
+}
+
+// Queue an image, audio, or PDF file as one user message. Media bytes are stored in the conversation.
+func (r *LLM) WithContentFile(file *File, opts ...LLMWithContentFileOpts) *LLM {
+	assertNotNil("file", file)
+	q := r.query.Select("withContentFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `mimeType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MimeType) {
+			q = q.Arg("mimeType", opts[i].MimeType)
+		}
+	}
+	q = q.Arg("file", file)
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -10678,57 +14285,223 @@ func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
 	q = q.Arg("service", service)
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// swap out the llm model
-func (r *LLM) WithModel(model string) *LLM {
+// LLMWithModelOpts contains options for LLM.WithModel
+type LLMWithModelOpts struct {
+	// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
+	Provider string
+}
+
+// Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
+func (r *LLM) WithModel(model string, opts ...LLMWithModelOpts) *LLM {
 	q := r.query.Select("withModel")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `provider` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Provider) {
+			q = q.Arg("provider", opts[i].Provider)
+		}
+	}
 	q = q.Arg("model", model)
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// append a prompt to the llm context
-func (r *LLM) WithPrompt(prompt string) *LLM {
+// LLMWithPromptOpts contains options for LLM.WithPrompt
+type LLMWithPromptOpts struct {
+	// The message's recorded provenance, when it arrived through an agent mailbox rather than from the user. Rendered to the model as an attribution header at request-build time.
+	Origin LLMMessageOriginInput
+}
+
+// Queue a user prompt, to be sent to the model on the next step or loop.
+func (r *LLM) WithPrompt(prompt string, opts ...LLMWithPromptOpts) *LLM {
 	q := r.query.Select("withPrompt")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `origin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Origin) {
+			q = q.Arg("origin", opts[i].Origin)
+		}
+	}
 	q = q.Arg("prompt", prompt)
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// append the contents of a file to the llm context
+// Queue a file's contents as a user prompt, like withPrompt.
 func (r *LLM) WithPromptFile(file *File) *LLM {
 	assertNotNil("file", file)
 	q := r.query.Select("withPromptFile")
 	q = q.Arg("file", file)
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
-func (r *LLM) WithStaticTools() *LLM {
-	q := r.query.Select("withStaticTools")
+// Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
+func (r *LLM) WithReasoningEffort(effort string) *LLM {
+	q := r.query.Select("withReasoningEffort")
+	q = q.Arg("effort", effort)
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// Add a system prompt to the LLM's environment
+// LLMWithResponseOpts contains options for LLM.WithResponse
+type LLMWithResponseOpts struct {
+	// Uncached input tokens sent
+	InputTokens int
+	// Tokens received from the model, including text and tool calls
+	OutputTokens int
+	// Cached input tokens read
+	CachedTokenReads int
+	// Cached input tokens written
+	CachedTokenWrites int
+	// Total tokens consumed by this response
+	TotalTokens int
+}
+
+// Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
+func (r *LLM) WithResponse(content []LLMContentBlockInput, opts ...LLMWithResponseOpts) *LLM {
+	q := r.query.Select("withResponse")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `inputTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InputTokens) {
+			q = q.Arg("inputTokens", opts[i].InputTokens)
+		}
+		// `outputTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OutputTokens) {
+			q = q.Arg("outputTokens", opts[i].OutputTokens)
+		}
+		// `cachedTokenReads` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CachedTokenReads) {
+			q = q.Arg("cachedTokenReads", opts[i].CachedTokenReads)
+		}
+		// `cachedTokenWrites` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CachedTokenWrites) {
+			q = q.Arg("cachedTokenWrites", opts[i].CachedTokenWrites)
+		}
+		// `totalTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TotalTokens) {
+			q = q.Arg("totalTokens", opts[i].TotalTokens)
+		}
+	}
+	q = q.Arg("content", content)
+
+	return &LLM{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
+func (r *LLM) WithSkills(directory *Directory) *LLM {
+	assertNotNil("directory", directory)
+	q := r.query.Select("withSkills")
+	q = q.Arg("directory", directory)
+
+	return &LLM{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model.
+func (r *LLM) WithSmallModel() *LLM {
+	q := r.query.Select("withSmallModel")
+
+	return &LLM{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Add a system prompt, instructing the model across the whole conversation.
 func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	q := r.query.Select("withSystemPrompt")
 	q = q.Arg("prompt", prompt)
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// LLMWithToolResultOpts contains options for LLM.WithToolResult
+type LLMWithToolResultOpts struct {
+	// Ordered text and media returned by the tool
+	Blocks []LLMContentBlockInput
+}
+
+// Append the result of a tool call to the message history.
+func (r *LLM) WithToolResult(callId string, content string, errored bool, opts ...LLMWithToolResultOpts) *LLM {
+	q := r.query.Select("withToolResult")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `blocks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Blocks) {
+			q = q.Arg("blocks", opts[i].Blocks)
+		}
+	}
+	q = q.Arg("callId", callId)
+	q = q.Arg("content", content)
+	q = q.Arg("errored", errored)
+
+	return &LLM{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// LLMWithToolsOpts contains options for LLM.WithTools
+type LLMWithToolsOpts struct {
+	// Method names to exclude from the toolset (e.g. constructors, entrypoints).
+	Except []string
+	// Version of this binding's state contract. Recomposition preserves compatible state when the version is unchanged and resets to the newly bound object's defaults when it differs. Change this when the state layout changes incompatibly. Same-type tool returns retain the version. Module identity and ownership checks still apply.
+	Version int
+}
+
+// Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
+func (r *LLM) WithTools(object Node, opts ...LLMWithToolsOpts) *LLM {
+	q := r.query.Select("withTools")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `except` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Except) {
+			q = q.Arg("except", opts[i].Except)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+	q = q.Arg("object", object)
+
+	return &LLM{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.
+func (r *LLM) WithWorkspace(workspace *Workspace) *LLM {
+	assertNotNil("workspace", workspace)
+	q := r.query.Select("withWorkspace")
+	q = q.Arg("workspace", workspace)
+
+	return &LLM{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -10737,25 +14510,38 @@ func (r *LLM) WithoutDefaultSystemPrompt() *LLM {
 	q := r.query.Select("withoutDefaultSystemPrompt")
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// Clear the message history, leaving only the system prompts
+// Clear the message history, keeping only the system prompts.
 func (r *LLM) WithoutMessageHistory() *LLM {
 	q := r.query.Select("withoutMessageHistory")
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// Clear the system prompts, leaving only the default system prompt
+// Clear the user-added system prompts, keeping only the default system prompt.
 func (r *LLM) WithoutSystemPrompts() *LLM {
 	q := r.query.Select("withoutSystemPrompts")
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return the workspace the LLM is bound to.
+func (r *LLM) Workspace() *Workspace {
+	q := r.query.Select("workspace")
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -10763,7 +14549,8 @@ func (r *LLM) WithoutSystemPrompts() *LLM {
 // This is a local type conversion — no GraphQL call.
 func (r *LLM) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -10771,12 +14558,814 @@ func (r *LLM) AsNode() Node {
 // This is a local type conversion — no GraphQL call.
 func (r *LLM) AsSyncer() Syncer {
 	return &SyncerClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
+// An ordered run of text and media content for a model to read, built outside any conversation.
+type LLMContent struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+type WithLLMContentFunc func(r *LLMContent) *LLMContent
+
+// With calls the provided function with current LLMContent.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *LLMContent) With(f WithLLMContentFunc) *LLMContent {
+	return f(r)
+}
+
+func (r *LLMContent) WithGraphQLQuery(q *querybuilder.Selection) *LLMContent {
+	return &LLMContent{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The ordered text and media blocks.
+func (r *LLMContent) Blocks(ctx context.Context) ([]LLMContentBlock, error) {
+	q := r.query.Select("blocks")
+
+	q = q.Select("id")
+
+	type blocks struct {
+		Id ID
+	}
+
+	convert := func(fields []blocks) []LLMContentBlock {
+		out := []LLMContentBlock{}
+
+		for i := range fields {
+			val := LLMContentBlock{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMContentBlock")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []blocks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this LLMContent.
+func (r *LLMContent) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMContent) XXX_GraphQLType() string {
+	return "LLMContent"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMContent) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMContent) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMContent) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Append image, audio, or PDF bytes as an inline media block. The media kind follows the MIME type.
+//
+// Prefer withFile for anything but small payloads: the bytes become part of the content's identity, so they travel with every reference to it.
+func (r *LLMContent) WithData(data Bytes, mimeType string) *LLMContent {
+	q := r.query.Select("withData")
+	q = q.Arg("data", data)
+	q = q.Arg("mimeType", mimeType)
+
+	return &LLMContent{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// LLMContentWithFileOpts contains options for LLMContent.WithFile
+type LLMContentWithFileOpts struct {
+	// The media MIME type, e.g. "image/png". Inferred from the file's contents when omitted.
+	MimeType string
+}
+
+// Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.
+func (r *LLMContent) WithFile(file *File, opts ...LLMContentWithFileOpts) *LLMContent {
+	assertNotNil("file", file)
+	q := r.query.Select("withFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `mimeType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MimeType) {
+			q = q.Arg("mimeType", opts[i].MimeType)
+		}
+	}
+	q = q.Arg("file", file)
+
+	return &LLMContent{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Append a block of text.
+func (r *LLMContent) WithText(text string) *LLMContent {
+	q := r.query.Select("withText")
+	q = q.Arg("text", text)
+
+	return &LLMContent{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this LLMContent as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMContent) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A single piece of content within an LLM message.
+type LLMContentBlock struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	arguments *JSON
+	callId    *string
+	data      *Bytes
+	errored   *bool
+	id        *ID
+	kind      *LLMContentBlockKind
+	mimeType  *string
+	signature *string
+	text      *string
+	toolName  *string
+}
+
+func (r *LLMContentBlock) WithGraphQLQuery(q *querybuilder.Selection) *LLMContentBlock {
+	return &LLMContentBlock{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
+func (r *LLMContentBlock) Arguments(ctx context.Context) (JSON, error) {
+	if r.arguments != nil {
+		return *r.arguments, nil
+	}
+	q := r.query.Select("arguments")
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+func (r *LLMContentBlock) CallID(ctx context.Context) (string, error) {
+	if r.callId != nil {
+		return *r.callId, nil
+	}
+	q := r.query.Select("callId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Ordered content returned by a tool, following any text (for TOOL_RESULT kind).
+func (r *LLMContentBlock) Content(ctx context.Context) ([]LLMContentBlock, error) {
+	q := r.query.Select("content")
+
+	q = q.Select("id")
+
+	type content struct {
+		Id ID
+	}
+
+	convert := func(fields []content) []LLMContentBlock {
+		out := []LLMContentBlock{}
+
+		for i := range fields {
+			val := LLMContentBlock{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMContentBlock")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []content
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The media bytes (for IMAGE, AUDIO, or DOCUMENT kinds).
+func (r *LLMContentBlock) Data(ctx context.Context) (Bytes, error) {
+	if r.data != nil {
+		return *r.data, nil
+	}
+	q := r.query.Select("data")
+
+	var response Bytes
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the tool call resulted in an error (for TOOL_RESULT kind).
+func (r *LLMContentBlock) Errored(ctx context.Context) (bool, error) {
+	if r.errored != nil {
+		return *r.errored, nil
+	}
+	q := r.query.Select("errored")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLMContentBlock.
+func (r *LLMContentBlock) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMContentBlock) XXX_GraphQLType() string {
+	return "LLMContentBlock"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMContentBlock) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMContentBlock) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMContentBlock) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The kind of content block, which determines the other populated fields.
+func (r *LLMContentBlock) Kind(ctx context.Context) (LLMContentBlockKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response LLMContentBlockKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The media MIME type (for IMAGE, AUDIO, or DOCUMENT kinds).
+func (r *LLMContentBlock) MimeType(ctx context.Context) (string, error) {
+	if r.mimeType != nil {
+		return *r.mimeType, nil
+	}
+	q := r.query.Select("mimeType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
+func (r *LLMContentBlock) Signature(ctx context.Context) (string, error) {
+	if r.signature != nil {
+		return *r.signature, nil
+	}
+	q := r.query.Select("signature")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+func (r *LLMContentBlock) Text(ctx context.Context) (string, error) {
+	if r.text != nil {
+		return *r.text, nil
+	}
+	q := r.query.Select("text")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The name of the tool called (for TOOL_CALL kind).
+func (r *LLMContentBlock) ToolName(ctx context.Context) (string, error) {
+	if r.toolName != nil {
+		return *r.toolName, nil
+	}
+	q := r.query.Select("toolName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this LLMContentBlock as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMContentBlock) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A single message in an LLM conversation.
+type LLMMessage struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id   *ID
+	role *LLMMessageRole
+}
+
+func (r *LLMMessage) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessage {
+	return &LLMMessage{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The message's content blocks, in the order the model produced them.
+func (r *LLMMessage) Content(ctx context.Context) ([]LLMContentBlock, error) {
+	q := r.query.Select("content")
+
+	q = q.Select("id")
+
+	type content struct {
+		Id ID
+	}
+
+	convert := func(fields []content) []LLMContentBlock {
+		out := []LLMContentBlock{}
+
+		for i := range fields {
+			val := LLMContentBlock{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMContentBlock")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []content
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this LLMMessage.
+func (r *LLMMessage) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMMessage) XXX_GraphQLType() string {
+	return "LLMMessage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMMessage) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMMessage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMMessage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Who put this message on the record, when it arrived through an agent mailbox.
+//
+// Null for the user's own prompts and for everything the model or tools produced.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLMMessage) Origin(ctx context.Context) (*LLMMessageOrigin, error) {
+	q := r.query.Select("origin")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &LLMMessageOrigin{
+		query: selectNode(q.Root(), *objectID, "LLMMessageOrigin"),
+	}, nil
+}
+
+// The role that produced this message.
+func (r *LLMMessage) Role(ctx context.Context) (LLMMessageRole, error) {
+	if r.role != nil {
+		return *r.role, nil
+	}
+	q := r.query.Select("role")
+
+	var response LLMMessageRole
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+func (r *LLMMessage) TokenUsage() *LLMTokenUsage {
+	q := r.query.Select("tokenUsage")
+
+	return &LLMTokenUsage{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this LLMMessage as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMMessage) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// The recorded provenance of a message that arrived through an agent mailbox.
+type LLMMessageOrigin struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	agentName *string
+	id        *ID
+	kind      *LLMMessageOriginKind
+	ref       *string
+	replyTo   *string
+}
+
+func (r *LLMMessageOrigin) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessageOrigin {
+	return &LLMMessageOrigin{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The display name of the sending agent (for AGENT origins) or the observed agent (for EVENT origins).
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLMMessageOrigin) AgentName(ctx context.Context) (string, error) {
+	if r.agentName != nil {
+		return *r.agentName, nil
+	}
+	q := r.query.Select("agentName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLMMessageOrigin.
+func (r *LLMMessageOrigin) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMMessageOrigin) XXX_GraphQLType() string {
+	return "LLMMessageOrigin"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMMessageOrigin) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMMessageOrigin) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMMessageOrigin) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Who put this message on the record.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLMMessageOrigin) Kind(ctx context.Context) (LLMMessageOriginKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response LLMMessageOriginKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The message's short ref within the receiving agent's runtime, e.g. "#3": the deterministic token replies name (send's replyTo) and the message lookup takes.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLMMessageOrigin) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The ref of the message this one answers, in the sender's own runtime, if any.
+//
+// Experimental: Agent APIs are likely to change.
+func (r *LLMMessageOrigin) ReplyTo(ctx context.Context) (string, error) {
+	if r.replyTo != nil {
+		return *r.replyTo, nil
+	}
+	q := r.query.Select("replyTo")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this LLMMessageOrigin as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMMessageOrigin) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill.
+type LLMSkill struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	description *string
+	id          *ID
+	name        *string
+}
+
+func (r *LLMSkill) WithGraphQLQuery(q *querybuilder.Selection) *LLMSkill {
+	return &LLMSkill{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The one-line description from the SKILL.md frontmatter.
+func (r *LLMSkill) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLMSkill.
+func (r *LLMSkill) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMSkill) XXX_GraphQLType() string {
+	return "LLMSkill"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMSkill) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMSkill) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMSkill) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The skill name, as passed to ReadSkill.
+func (r *LLMSkill) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this LLMSkill as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMSkill) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A count of tokens consumed by LLM API calls.
 type LLMTokenUsage struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	cachedTokenReads  *int
 	cachedTokenWrites *int
@@ -10789,9 +15378,13 @@ type LLMTokenUsage struct {
 func (r *LLMTokenUsage) WithGraphQLQuery(q *querybuilder.Selection) *LLMTokenUsage {
 	return &LLMTokenUsage{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
+// Input tokens served from the provider's prompt cache.
 func (r *LLMTokenUsage) CachedTokenReads(ctx context.Context) (int, error) {
 	if r.cachedTokenReads != nil {
 		return *r.cachedTokenReads, nil
@@ -10804,6 +15397,7 @@ func (r *LLMTokenUsage) CachedTokenReads(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// Input tokens written to the provider's prompt cache.
 func (r *LLMTokenUsage) CachedTokenWrites(ctx context.Context) (int, error) {
 	if r.cachedTokenWrites != nil {
 		return *r.cachedTokenWrites, nil
@@ -10826,7 +15420,13 @@ func (r *LLMTokenUsage) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -10856,6 +15456,7 @@ func (r *LLMTokenUsage) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Uncached input tokens sent to the model.
 func (r *LLMTokenUsage) InputTokens(ctx context.Context) (int, error) {
 	if r.inputTokens != nil {
 		return *r.inputTokens, nil
@@ -10868,6 +15469,7 @@ func (r *LLMTokenUsage) InputTokens(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// Tokens received from the model, including text and tool calls.
 func (r *LLMTokenUsage) OutputTokens(ctx context.Context) (int, error) {
 	if r.outputTokens != nil {
 		return *r.outputTokens, nil
@@ -10880,6 +15482,7 @@ func (r *LLMTokenUsage) OutputTokens(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// Total tokens consumed, as reported by the provider.
 func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
 	if r.totalTokens != nil {
 		return *r.totalTokens, nil
@@ -10896,13 +15499,18 @@ func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *LLMTokenUsage) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A simple key value object that represents a label.
 type Label struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id    *ID
 	name  *string
@@ -10912,6 +15520,9 @@ type Label struct {
 func (r *Label) WithGraphQLQuery(q *querybuilder.Selection) *Label {
 	return &Label{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -10925,7 +15536,13 @@ func (r *Label) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -10985,13 +15602,18 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *Label) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A definition of a list type in a Module.
 type ListTypeDef struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id *ID
 }
@@ -10999,6 +15621,9 @@ type ListTypeDef struct {
 func (r *ListTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ListTypeDef {
 	return &ListTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -11007,7 +15632,8 @@ func (r *ListTypeDef) ElementTypeDef() *TypeDef {
 	q := r.query.Select("elementTypeDef")
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11021,7 +15647,13 @@ func (r *ListTypeDef) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -11055,13 +15687,18 @@ func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *ListTypeDef) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A Dagger module.
 type Module struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	description *string
 	id          *ID
@@ -11081,48 +15718,27 @@ func (r *Module) With(f WithModuleFunc) *Module {
 func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
 	return &Module{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
-// Return the check defined by the module with the given name. Must match to exactly one check.
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Module) Check(name string) *Check {
-	q := r.query.Select("check")
-	q = q.Arg("name", name)
+// The source used to resolve contextual files and directories, when different from source.
+func (r *Module) ContextSource(ctx context.Context) (*ModuleSource, error) {
+	q := r.query.Select("contextSource")
 
-	return &Check{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
-}
-
-// ModuleChecksOpts contains options for Module.Checks
-type ModuleChecksOpts struct {
-	// Only include checks matching the specified patterns
-	Include []string
-	// When true, only return annotated check functions; exclude generate-as-checks
-	NoGenerate bool
-}
-
-// Return all checks defined by the module
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Module) Checks(opts ...ModuleChecksOpts) *CheckGroup {
-	q := r.query.Select("checks")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `noGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
-			q = q.Arg("noGenerate", opts[i].NoGenerate)
-		}
+	if objectID == nil {
+		return nil, nil
 	}
-
-	return &CheckGroup{
-		query: q,
-	}
+	return &ModuleSource{
+		query: selectNode(q.Root(), *objectID, "ModuleSource"),
+	}, nil
 }
 
 // The dependencies of the module.
@@ -11209,42 +15825,8 @@ func (r *Module) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
 
 	return &Directory{
-		query: q,
-	}
-}
-
-// Return the generator defined by the module with the given name. Must match to exactly one generator.
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Module) Generator(name string) *Generator {
-	q := r.query.Select("generator")
-	q = q.Arg("name", name)
-
-	return &Generator{
-		query: q,
-	}
-}
-
-// ModuleGeneratorsOpts contains options for Module.Generators
-type ModuleGeneratorsOpts struct {
-	// Only include generators matching the specified patterns
-	Include []string
-}
-
-// Return all generators defined by the module
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Module) Generators(opts ...ModuleGeneratorsOpts) *GeneratorGroup {
-	q := r.query.Select("generators")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &GeneratorGroup{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11258,7 +15840,13 @@ func (r *Module) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -11330,7 +15918,8 @@ func (r *Module) IntrospectionSchemaJSON() *File {
 	q := r.query.Select("introspectionSchemaJSON")
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11381,21 +15970,37 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 }
 
 // The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-func (r *Module) Runtime() *Container {
+func (r *Module) Runtime(ctx context.Context) (*Container, error) {
 	q := r.query.Select("runtime")
 
-	return &Container{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Container{
+		query: selectNode(q.Root(), *objectID, "Container"),
+	}, nil
 }
 
 // The SDK config used by this module.
-func (r *Module) SDK() *SDKConfig {
+func (r *Module) SDK(ctx context.Context) (*SDKConfig, error) {
 	q := r.query.Select("sdk")
 
-	return &SDKConfig{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &SDKConfig{
+		query: selectNode(q.Root(), *objectID, "SDKConfig"),
+	}, nil
 }
 
 // ModuleServeOpts contains options for Module.Serve
@@ -11428,36 +16033,21 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 	return q.Execute(ctx)
 }
 
-// ModuleServicesOpts contains options for Module.Services
-type ModuleServicesOpts struct {
-	// Only include services matching the specified patterns
-	Include []string
-}
-
-// Return all services defined by the module
-//
-// Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Module) Services(opts ...ModuleServicesOpts) *UpGroup {
-	q := r.query.Select("services")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &UpGroup{
-		query: q,
-	}
-}
-
 // The source for the module.
-func (r *Module) Source() *ModuleSource {
+func (r *Module) Source(ctx context.Context) (*ModuleSource, error) {
 	q := r.query.Select("source")
 
-	return &ModuleSource{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &ModuleSource{
+		query: selectNode(q.Root(), *objectID, "ModuleSource"),
+	}, nil
 }
 
 // Forces evaluation of the module, including any loading into the engine and associated validation.
@@ -11478,7 +16068,8 @@ func (r *Module) UserDefaults() *EnvFile {
 	q := r.query.Select("userDefaults")
 
 	return &EnvFile{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11488,7 +16079,8 @@ func (r *Module) WithDescription(description string) *Module {
 	q = q.Arg("description", description)
 
 	return &Module{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11499,7 +16091,8 @@ func (r *Module) WithEnum(enum *TypeDef) *Module {
 	q = q.Arg("enum", enum)
 
 	return &Module{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11510,7 +16103,8 @@ func (r *Module) WithInterface(iface *TypeDef) *Module {
 	q = q.Arg("iface", iface)
 
 	return &Module{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11521,7 +16115,8 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 	q = q.Arg("object", object)
 
 	return &Module{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11529,7 +16124,8 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 // This is a local type conversion — no GraphQL call.
 func (r *Module) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11537,13 +16133,18 @@ func (r *Module) AsNode() Node {
 // This is a local type conversion — no GraphQL call.
 func (r *Module) AsSyncer() Syncer {
 	return &SyncerClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // The client generated for the module.
 type ModuleConfigClient struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	directory *string
 	generator *string
@@ -11553,6 +16154,9 @@ type ModuleConfigClient struct {
 func (r *ModuleConfigClient) WithGraphQLQuery(q *querybuilder.Selection) *ModuleConfigClient {
 	return &ModuleConfigClient{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -11592,7 +16196,13 @@ func (r *ModuleConfigClient) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -11626,13 +16236,18 @@ func (r *ModuleConfigClient) MarshalJSON() ([]byte, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *ModuleConfigClient) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 type ModuleSource struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	asString                  *string
 	cloneRef                  *string
@@ -11667,6 +16282,9 @@ func (r *ModuleSource) With(f WithModuleSourceFunc) *ModuleSource {
 func (r *ModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *ModuleSource {
 	return &ModuleSource{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -11675,7 +16293,8 @@ func (r *ModuleSource) AsModule() *Module {
 	q := r.query.Select("asModule")
 
 	return &Module{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11693,11 +16312,26 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 }
 
 // The blueprint referenced by the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
 func (r *ModuleSource) Blueprint() *ModuleSource {
 	q := r.query.Select("blueprint")
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// The client-facing introspection schema JSON file for this module source.
+//
+// This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+func (r *ModuleSource) ClientSchemaIntrospectionJSON() *File {
+	q := r.query.Select("clientSchemaIntrospectionJSON")
+
+	return &File{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11760,7 +16394,7 @@ func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient,
 	return convert(response), nil
 }
 
-// Whether an existing dagger.json for the module was found.
+// Whether an existing module config file was found.
 func (r *ModuleSource) ConfigExists(ctx context.Context) (bool, error) {
 	if r.configExists != nil {
 		return *r.configExists, nil
@@ -11778,7 +16412,8 @@ func (r *ModuleSource) ContextDirectory() *Directory {
 	q := r.query.Select("contextDirectory")
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11834,7 +16469,8 @@ func (r *ModuleSource) Directory(path string) *Directory {
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11851,12 +16487,27 @@ func (r *ModuleSource) EngineVersion(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Return the supplied workspace with this module's generated context applied.
+//
+// The workspace change baseline is preserved, so a later Workspace.changes call includes this generation together with any other edits made by the caller.
+func (r *ModuleSource) Generate(workspace *Workspace) *Workspace {
+	assertNotNil("workspace", workspace)
+	q := r.query.Select("generate")
+	q = q.Arg("workspace", workspace)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // The generated files and directories made on top of the module source's context directory, returned as a Changeset.
 func (r *ModuleSource) GeneratedContextChangeset() *Changeset {
 	q := r.query.Select("generatedContextChangeset")
 
 	return &Changeset{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11865,7 +16516,8 @@ func (r *ModuleSource) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11905,7 +16557,13 @@ func (r *ModuleSource) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -11944,7 +16602,8 @@ func (r *ModuleSource) IntrospectionSchemaJSON() *File {
 	q := r.query.Select("introspectionSchemaJSON")
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -11987,7 +16646,7 @@ func (r *ModuleSource) ModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
+// The original name of the module as read from the module config file (or set for the first time with the withName API).
 func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 	if r.moduleOriginalName != nil {
 		return *r.moduleOriginalName, nil
@@ -12040,15 +16699,23 @@ func (r *ModuleSource) RepoRootPath(ctx context.Context) (string, error) {
 }
 
 // The SDK configuration of the module.
-func (r *ModuleSource) SDK() *SDKConfig {
+func (r *ModuleSource) SDK(ctx context.Context) (*SDKConfig, error) {
 	q := r.query.Select("sdk")
 
-	return &SDKConfig{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &SDKConfig{
+		query: selectNode(q.Root(), *objectID, "SDKConfig"),
+	}, nil
 }
 
-// The path, relative to the context directory, that contains the module's dagger.json.
+// The path, relative to the context directory, that contains the module config.
 func (r *ModuleSource) SourceRootSubpath(ctx context.Context) (string, error) {
 	if r.sourceRootSubpath != nil {
 		return *r.sourceRootSubpath, nil
@@ -12088,6 +16755,8 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 }
 
 // The toolchains referenced by the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
 func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 	q := r.query.Select("toolchains")
 
@@ -12120,12 +16789,25 @@ func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 	return convert(response), nil
 }
 
+// The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.
+//
+// Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.
+func (r *ModuleSource) UpdatedConfigDirectory() *Directory {
+	q := r.query.Select("updatedConfigDirectory")
+
+	return &Directory{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // User-defined defaults read from local .env files
 func (r *ModuleSource) UserDefaults() *EnvFile {
 	q := r.query.Select("userDefaults")
 
 	return &EnvFile{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12143,13 +16825,16 @@ func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 }
 
 // Set a blueprint for the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithBlueprint(blueprint *ModuleSource) *ModuleSource {
 	assertNotNil("blueprint", blueprint)
 	q := r.query.Select("withBlueprint")
 	q = q.Arg("blueprint", blueprint)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12160,7 +16845,8 @@ func (r *ModuleSource) WithClient(generator string, outputDir string) *ModuleSou
 	q = q.Arg("outputDir", outputDir)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12170,7 +16856,8 @@ func (r *ModuleSource) WithDependencies(dependencies []*ModuleSource) *ModuleSou
 	q = q.Arg("dependencies", dependencies)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12180,7 +16867,8 @@ func (r *ModuleSource) WithEngineVersion(version string) *ModuleSource {
 	q = q.Arg("version", version)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12190,7 +16878,8 @@ func (r *ModuleSource) WithExperimentalFeatures(features []ModuleSourceExperimen
 	q = q.Arg("features", features)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12200,7 +16889,8 @@ func (r *ModuleSource) WithIncludes(patterns []string) *ModuleSource {
 	q = q.Arg("patterns", patterns)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12210,7 +16900,8 @@ func (r *ModuleSource) WithName(name string) *ModuleSource {
 	q = q.Arg("name", name)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12220,7 +16911,8 @@ func (r *ModuleSource) WithSDK(source string) *ModuleSource {
 	q = q.Arg("source", source)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12230,26 +16922,33 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	q = q.Arg("path", path)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // Add toolchains to the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource {
 	q := r.query.Select("withToolchains")
 	q = q.Arg("toolchains", toolchains)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // Update the blueprint module to the latest version.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
 	q := r.query.Select("withUpdateBlueprint")
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12259,17 +16958,21 @@ func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSour
 	q = q.Arg("dependencies", dependencies)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // Update one or more toolchains.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithUpdateToolchains(toolchains []string) *ModuleSource {
 	q := r.query.Select("withUpdateToolchains")
 	q = q.Arg("toolchains", toolchains)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12279,16 +16982,20 @@ func (r *ModuleSource) WithUpdatedClients(clients []string) *ModuleSource {
 	q = q.Arg("clients", clients)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // Remove the current blueprint from the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithoutBlueprint() *ModuleSource {
 	q := r.query.Select("withoutBlueprint")
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12298,7 +17005,8 @@ func (r *ModuleSource) WithoutClient(path string) *ModuleSource {
 	q = q.Arg("path", path)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12308,7 +17016,8 @@ func (r *ModuleSource) WithoutDependencies(dependencies []string) *ModuleSource 
 	q = q.Arg("dependencies", dependencies)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12318,17 +17027,21 @@ func (r *ModuleSource) WithoutExperimentalFeatures(features []ModuleSourceExperi
 	q = q.Arg("features", features)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // Remove the provided toolchains from the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithoutToolchains(toolchains []string) *ModuleSource {
 	q := r.query.Select("withoutToolchains")
 	q = q.Arg("toolchains", toolchains)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12336,7 +17049,8 @@ func (r *ModuleSource) WithoutToolchains(toolchains []string) *ModuleSource {
 // This is a local type conversion — no GraphQL call.
 func (r *ModuleSource) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12344,13 +17058,18 @@ func (r *ModuleSource) AsNode() Node {
 // This is a local type conversion — no GraphQL call.
 func (r *ModuleSource) AsSyncer() Syncer {
 	return &SyncerClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	deprecated       *string
 	description      *string
@@ -12362,16 +17081,27 @@ type ObjectTypeDef struct {
 func (r *ObjectTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ObjectTypeDef {
 	return &ObjectTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
 // The function used to construct new instances of this object, if any.
-func (r *ObjectTypeDef) Constructor() *Function {
+func (r *ObjectTypeDef) Constructor(ctx context.Context) (*Function, error) {
 	q := r.query.Select("constructor")
 
-	return &Function{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Function{
+		query: selectNode(q.Root(), *objectID, "Function"),
+	}, nil
 }
 
 // The reason this enum member is deprecated, if any.
@@ -12476,7 +17206,13 @@ func (r *ObjectTypeDef) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -12520,12 +17256,20 @@ func (r *ObjectTypeDef) Name(ctx context.Context) (string, error) {
 }
 
 // The location of this object declaration.
-func (r *ObjectTypeDef) SourceMap() *SourceMap {
+func (r *ObjectTypeDef) SourceMap(ctx context.Context) (*SourceMap, error) {
 	q := r.query.Select("sourceMap")
 
-	return &SourceMap{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &SourceMap{
+		query: selectNode(q.Root(), *objectID, "SourceMap"),
+	}, nil
 }
 
 // If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -12545,13 +17289,18 @@ func (r *ObjectTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *ObjectTypeDef) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A port exposed by a container.
 type Port struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	description                 *string
 	experimentalSkipHealthcheck *bool
@@ -12563,6 +17312,9 @@ type Port struct {
 func (r *Port) WithGraphQLQuery(q *querybuilder.Selection) *Port {
 	return &Port{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -12602,7 +17354,13 @@ func (r *Port) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -12662,32 +17420,70 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *Port) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // The root of the DAG.
 type Query struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
-	defaultPlatform *Platform
-	id              *ID
-	version         *string
+	currentTimestamp *string
+	defaultPlatform  *Platform
+	id               *ID
+	serveModule      *Void
+	setSessionTitle  *Void
+	version          *string
 }
 
 func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
 	return &Query{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
-// initialize an address to load directories, containers, secrets or other object types.
+// Resolve external references only.
 func (r *Query) Address(value string) *Address {
 	q := r.query.Select("address")
 	q = q.Arg("value", value)
 
 	return &Address{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// BlobOpts contains options for Query.Blob
+type BlobOpts struct {
+	// Permissions of the new file. Example: 0600
+	//
+	// Default: 420
+	Permissions int
+}
+
+// Creates a file from arbitrary binary contents.
+func (r *Query) Blob(name string, contents Bytes, opts ...BlobOpts) *File {
+	q := r.query.Select("blob")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("contents", contents)
+
+	return &File{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12727,7 +17523,8 @@ func (r *Query) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
 	q = q.Arg("key", key)
 
 	return &CacheVolume{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12736,7 +17533,8 @@ func (r *Query) Changeset() *Changeset {
 	q := r.query.Select("changeset")
 
 	return &Changeset{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12745,7 +17543,8 @@ func (r *Query) Cloud() *Cloud {
 	q := r.query.Select("cloud")
 
 	return &Cloud{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12768,22 +17567,8 @@ func (r *Query) Container(opts ...ContainerOpts) *Container {
 	}
 
 	return &Container{
-		query: q,
-	}
-}
-
-// Returns the current environment
-//
-// When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
-//
-// When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
-//
-// Experimental: Programmatic env access is speculative and might be replaced.
-func (r *Query) CurrentEnv() *Env {
-	q := r.query.Select("currentEnv")
-
-	return &Env{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12794,7 +17579,8 @@ func (r *Query) CurrentFunctionCall() *FunctionCall {
 	q := r.query.Select("currentFunctionCall")
 
 	return &FunctionCall{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12803,8 +17589,28 @@ func (r *Query) CurrentModule() *CurrentModule {
 	q := r.query.Select("currentModule")
 
 	return &CurrentModule{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
+}
+
+// The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
+func (r *Query) CurrentNode() Node {
+	q := r.query.Select("currentNode")
+	return &NodeClient{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// The current UTC time in RFC3339 format. Never cached.
+func (r *Query) CurrentTimestamp(ctx context.Context) (string, error) {
+	q := r.query.Select("currentTimestamp")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs
@@ -12867,7 +17673,8 @@ func (r *Query) CurrentWorkspace() *Workspace {
 	q := r.query.Select("currentWorkspace")
 
 	return &Workspace{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
 }
 
@@ -12886,7 +17693,8 @@ func (r *Query) Directory() *Directory {
 	q := r.query.Select("directory")
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12895,36 +17703,31 @@ func (r *Query) Engine() *Engine {
 	q := r.query.Select("engine")
 
 	return &Engine{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// EnvOpts contains options for Query.Env
-type EnvOpts struct {
-	// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
-	Privileged bool
-	// Allow new outputs to be declared and saved in the environment
-	Writable bool
+// EngineVolumeOpts contains options for Query.EngineVolume
+type EngineVolumeOpts struct {
+	// Optional existing subdirectory within the volume payload to mount.
+	Subdir string
 }
 
-// Initializes a new environment
-//
-// Experimental: Environments are not yet stabilized
-func (r *Query) Env(opts ...EnvOpts) *Env {
-	q := r.query.Select("env")
+// Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+func (r *Query) EngineVolume(name string, opts ...EngineVolumeOpts) *Volume {
+	q := r.query.Select("engineVolume")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `privileged` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Privileged) {
-			q = q.Arg("privileged", opts[i].Privileged)
-		}
-		// `writable` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Writable) {
-			q = q.Arg("writable", opts[i].Writable)
+		// `subdir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Subdir) {
+			q = q.Arg("subdir", opts[i].Subdir)
 		}
 	}
+	q = q.Arg("name", name)
 
-	return &Env{
-		query: q,
+	return &Volume{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12946,7 +17749,8 @@ func (r *Query) EnvFile(opts ...EnvFileOpts) *EnvFile {
 	}
 
 	return &EnvFile{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12956,7 +17760,8 @@ func (r *Query) Error(message string) *Error {
 	q = q.Arg("message", message)
 
 	return &Error{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12981,7 +17786,8 @@ func (r *Query) File(name string, contents string, opts ...FileOpts) *File {
 	q = q.Arg("contents", contents)
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -12993,7 +17799,8 @@ func (r *Query) Function(name string, returnType *TypeDef) *Function {
 	q = q.Arg("returnType", returnType)
 
 	return &Function{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -13004,7 +17811,8 @@ func (r *Query) GeneratedCode(code *Directory) *GeneratedCode {
 	q = q.Arg("code", code)
 
 	return &GeneratedCode{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -13065,7 +17873,8 @@ func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
 	q = q.Arg("url", url)
 
 	return &GitRepository{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -13074,7 +17883,8 @@ func (r *Query) Host() *Host {
 	q := r.query.Select("host")
 
 	return &Host{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -13120,7 +17930,8 @@ func (r *Query) HTTP(url string, opts ...HTTPOpts) *File {
 	q = q.Arg("url", url)
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -13166,19 +17977,20 @@ func (r *Query) JSON() *JSONValue {
 	q := r.query.Select("json")
 
 	return &JSONValue{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // LLMOpts contains options for Query.LLM
 type LLMOpts struct {
-	// Model to use
+	// The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4". Defaults to the configured default model.
 	Model string
-	// Cap the number of API calls for this LLM
-	MaxAPICalls int
+	// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
+	Provider string
 }
 
-// Initialize a Large Language Model (LLM)
+// Initialize a new LLM conversation.
 //
 // Experimental: LLM support is not yet stabilized
 func (r *Query) LLM(opts ...LLMOpts) *LLM {
@@ -13188,682 +18000,29 @@ func (r *Query) LLM(opts ...LLMOpts) *LLM {
 		if !querybuilder.IsZeroValue(opts[i].Model) {
 			q = q.Arg("model", opts[i].Model)
 		}
-		// `maxAPICalls` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
-			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
+		// `provider` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Provider) {
+			q = q.Arg("provider", opts[i].Provider)
 		}
 	}
 
 	return &LLM{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// Load a Address from its ID.
-func (r *Query) LoadAddressFromID(id AddressID) *Address {
-	q := r.query.Select("loadAddressFromID")
-	q = q.Arg("id", id)
+// Start an empty run of text and media content, independent of any conversation.
+//
+// Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+//
+// Experimental: LLM support is not yet stabilized
+func (r *Query) LLMContent() *LLMContent {
+	q := r.query.Select("llmContent")
 
-	return &Address{
-		query: q,
-	}
-}
-
-// Load a Binding from its ID.
-func (r *Query) LoadBindingFromID(id BindingID) *Binding {
-	q := r.query.Select("loadBindingFromID")
-	q = q.Arg("id", id)
-
-	return &Binding{
-		query: q,
-	}
-}
-
-// Load a CacheVolume from its ID.
-func (r *Query) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
-	q := r.query.Select("loadCacheVolumeFromID")
-	q = q.Arg("id", id)
-
-	return &CacheVolume{
-		query: q,
-	}
-}
-
-// Load a Changeset from its ID.
-func (r *Query) LoadChangesetFromID(id ChangesetID) *Changeset {
-	q := r.query.Select("loadChangesetFromID")
-	q = q.Arg("id", id)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Load a Check from its ID.
-func (r *Query) LoadCheckFromID(id CheckID) *Check {
-	q := r.query.Select("loadCheckFromID")
-	q = q.Arg("id", id)
-
-	return &Check{
-		query: q,
-	}
-}
-
-// Load a CheckGroup from its ID.
-func (r *Query) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
-	q := r.query.Select("loadCheckGroupFromID")
-	q = q.Arg("id", id)
-
-	return &CheckGroup{
-		query: q,
-	}
-}
-
-// Load a ClientFilesyncMirror from its ID.
-func (r *Query) LoadClientFilesyncMirrorFromID(id ClientFilesyncMirrorID) *ClientFilesyncMirror {
-	q := r.query.Select("loadClientFilesyncMirrorFromID")
-	q = q.Arg("id", id)
-
-	return &ClientFilesyncMirror{
-		query: q,
-	}
-}
-
-// Load a Cloud from its ID.
-func (r *Query) LoadCloudFromID(id CloudID) *Cloud {
-	q := r.query.Select("loadCloudFromID")
-	q = q.Arg("id", id)
-
-	return &Cloud{
-		query: q,
-	}
-}
-
-// Load a Container from its ID.
-func (r *Query) LoadContainerFromID(id ContainerID) *Container {
-	q := r.query.Select("loadContainerFromID")
-	q = q.Arg("id", id)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Load a CurrentModule from its ID.
-func (r *Query) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
-	q := r.query.Select("loadCurrentModuleFromID")
-	q = q.Arg("id", id)
-
-	return &CurrentModule{
-		query: q,
-	}
-}
-
-// Load a DaggerCli from its ID.
-func (r *Query) LoadDaggerCliFromID(id DaggerCliID) *DaggerCli {
-	q := r.query.Select("loadDaggerCliFromID")
-	q = q.Arg("id", id)
-
-	return &DaggerCli{
-		query: q,
-	}
-}
-
-// Load a DiffStat from its ID.
-func (r *Query) LoadDiffStatFromID(id DiffStatID) *DiffStat {
-	q := r.query.Select("loadDiffStatFromID")
-	q = q.Arg("id", id)
-
-	return &DiffStat{
-		query: q,
-	}
-}
-
-// Load a Directory from its ID.
-func (r *Query) LoadDirectoryFromID(id DirectoryID) *Directory {
-	q := r.query.Select("loadDirectoryFromID")
-	q = q.Arg("id", id)
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// Load a EngineCacheEntry from its ID.
-func (r *Query) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheEntry {
-	q := r.query.Select("loadEngineCacheEntryFromID")
-	q = q.Arg("id", id)
-
-	return &EngineCacheEntry{
-		query: q,
-	}
-}
-
-// Load a EngineCacheEntrySet from its ID.
-func (r *Query) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *EngineCacheEntrySet {
-	q := r.query.Select("loadEngineCacheEntrySetFromID")
-	q = q.Arg("id", id)
-
-	return &EngineCacheEntrySet{
-		query: q,
-	}
-}
-
-// Load a EngineCache from its ID.
-func (r *Query) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
-	q := r.query.Select("loadEngineCacheFromID")
-	q = q.Arg("id", id)
-
-	return &EngineCache{
-		query: q,
-	}
-}
-
-// Load a Engine from its ID.
-func (r *Query) LoadEngineFromID(id EngineID) *Engine {
-	q := r.query.Select("loadEngineFromID")
-	q = q.Arg("id", id)
-
-	return &Engine{
-		query: q,
-	}
-}
-
-// Load a EnumTypeDef from its ID.
-func (r *Query) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
-	q := r.query.Select("loadEnumTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &EnumTypeDef{
-		query: q,
-	}
-}
-
-// Load a EnumValueTypeDef from its ID.
-func (r *Query) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTypeDef {
-	q := r.query.Select("loadEnumValueTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &EnumValueTypeDef{
-		query: q,
-	}
-}
-
-// Load a EnvFile from its ID.
-func (r *Query) LoadEnvFileFromID(id EnvFileID) *EnvFile {
-	q := r.query.Select("loadEnvFileFromID")
-	q = q.Arg("id", id)
-
-	return &EnvFile{
-		query: q,
-	}
-}
-
-// Load a Env from its ID.
-func (r *Query) LoadEnvFromID(id EnvID) *Env {
-	q := r.query.Select("loadEnvFromID")
-	q = q.Arg("id", id)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Load a EnvVariable from its ID.
-func (r *Query) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
-	q := r.query.Select("loadEnvVariableFromID")
-	q = q.Arg("id", id)
-
-	return &EnvVariable{
-		query: q,
-	}
-}
-
-// Load a Error from its ID.
-func (r *Query) LoadErrorFromID(id ErrorID) *Error {
-	q := r.query.Select("loadErrorFromID")
-	q = q.Arg("id", id)
-
-	return &Error{
-		query: q,
-	}
-}
-
-// Load a ErrorValue from its ID.
-func (r *Query) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
-	q := r.query.Select("loadErrorValueFromID")
-	q = q.Arg("id", id)
-
-	return &ErrorValue{
-		query: q,
-	}
-}
-
-// Load a Exportable from its ID.
-func (r *Query) LoadExportableFromID(id ExportableID) Exportable {
-	q := r.query.Select("loadExportableFromID")
-	q = q.Arg("id", id)
-	return &ExportableClient{
-		query: q,
-	}
-}
-
-// Load a FieldTypeDef from its ID.
-func (r *Query) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
-	q := r.query.Select("loadFieldTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &FieldTypeDef{
-		query: q,
-	}
-}
-
-// Load a File from its ID.
-func (r *Query) LoadFileFromID(id FileID) *File {
-	q := r.query.Select("loadFileFromID")
-	q = q.Arg("id", id)
-
-	return &File{
-		query: q,
-	}
-}
-
-// Load a FunctionArg from its ID.
-func (r *Query) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
-	q := r.query.Select("loadFunctionArgFromID")
-	q = q.Arg("id", id)
-
-	return &FunctionArg{
-		query: q,
-	}
-}
-
-// Load a FunctionCallArgValue from its ID.
-func (r *Query) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *FunctionCallArgValue {
-	q := r.query.Select("loadFunctionCallArgValueFromID")
-	q = q.Arg("id", id)
-
-	return &FunctionCallArgValue{
-		query: q,
-	}
-}
-
-// Load a FunctionCall from its ID.
-func (r *Query) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
-	q := r.query.Select("loadFunctionCallFromID")
-	q = q.Arg("id", id)
-
-	return &FunctionCall{
-		query: q,
-	}
-}
-
-// Load a Function from its ID.
-func (r *Query) LoadFunctionFromID(id FunctionID) *Function {
-	q := r.query.Select("loadFunctionFromID")
-	q = q.Arg("id", id)
-
-	return &Function{
-		query: q,
-	}
-}
-
-// Load a GeneratedCode from its ID.
-func (r *Query) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
-	q := r.query.Select("loadGeneratedCodeFromID")
-	q = q.Arg("id", id)
-
-	return &GeneratedCode{
-		query: q,
-	}
-}
-
-// Load a Generator from its ID.
-func (r *Query) LoadGeneratorFromID(id GeneratorID) *Generator {
-	q := r.query.Select("loadGeneratorFromID")
-	q = q.Arg("id", id)
-
-	return &Generator{
-		query: q,
-	}
-}
-
-// Load a GeneratorGroup from its ID.
-func (r *Query) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
-	q := r.query.Select("loadGeneratorGroupFromID")
-	q = q.Arg("id", id)
-
-	return &GeneratorGroup{
-		query: q,
-	}
-}
-
-// Load a GitRef from its ID.
-func (r *Query) LoadGitRefFromID(id GitRefID) *GitRef {
-	q := r.query.Select("loadGitRefFromID")
-	q = q.Arg("id", id)
-
-	return &GitRef{
-		query: q,
-	}
-}
-
-// Load a GitRepository from its ID.
-func (r *Query) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
-	q := r.query.Select("loadGitRepositoryFromID")
-	q = q.Arg("id", id)
-
-	return &GitRepository{
-		query: q,
-	}
-}
-
-// Load a HTTPState from its ID.
-func (r *Query) LoadHTTPStateFromID(id HTTPStateID) *HTTPState {
-	q := r.query.Select("loadHTTPStateFromID")
-	q = q.Arg("id", id)
-
-	return &HTTPState{
-		query: q,
-	}
-}
-
-// Load a HealthcheckConfig from its ID.
-func (r *Query) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
-	q := r.query.Select("loadHealthcheckConfigFromID")
-	q = q.Arg("id", id)
-
-	return &HealthcheckConfig{
-		query: q,
-	}
-}
-
-// Load a Host from its ID.
-func (r *Query) LoadHostFromID(id HostID) *Host {
-	q := r.query.Select("loadHostFromID")
-	q = q.Arg("id", id)
-
-	return &Host{
-		query: q,
-	}
-}
-
-// Load a InputTypeDef from its ID.
-func (r *Query) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
-	q := r.query.Select("loadInputTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &InputTypeDef{
-		query: q,
-	}
-}
-
-// Load a InterfaceTypeDef from its ID.
-func (r *Query) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
-	q := r.query.Select("loadInterfaceTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &InterfaceTypeDef{
-		query: q,
-	}
-}
-
-// Load a JSONValue from its ID.
-func (r *Query) LoadJSONValueFromID(id JSONValueID) *JSONValue {
-	q := r.query.Select("loadJSONValueFromID")
-	q = q.Arg("id", id)
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
-// Load a LLM from its ID.
-func (r *Query) LoadLLMFromID(id LLMID) *LLM {
-	q := r.query.Select("loadLLMFromID")
-	q = q.Arg("id", id)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Load a LLMTokenUsage from its ID.
-func (r *Query) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
-	q := r.query.Select("loadLLMTokenUsageFromID")
-	q = q.Arg("id", id)
-
-	return &LLMTokenUsage{
-		query: q,
-	}
-}
-
-// Load a Label from its ID.
-func (r *Query) LoadLabelFromID(id LabelID) *Label {
-	q := r.query.Select("loadLabelFromID")
-	q = q.Arg("id", id)
-
-	return &Label{
-		query: q,
-	}
-}
-
-// Load a ListTypeDef from its ID.
-func (r *Query) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
-	q := r.query.Select("loadListTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &ListTypeDef{
-		query: q,
-	}
-}
-
-// Load a ModuleConfigClient from its ID.
-func (r *Query) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleConfigClient {
-	q := r.query.Select("loadModuleConfigClientFromID")
-	q = q.Arg("id", id)
-
-	return &ModuleConfigClient{
-		query: q,
-	}
-}
-
-// Load a Module from its ID.
-func (r *Query) LoadModuleFromID(id ModuleID) *Module {
-	q := r.query.Select("loadModuleFromID")
-	q = q.Arg("id", id)
-
-	return &Module{
-		query: q,
-	}
-}
-
-// Load a ModuleSource from its ID.
-func (r *Query) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
-	q := r.query.Select("loadModuleSourceFromID")
-	q = q.Arg("id", id)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Load a ObjectTypeDef from its ID.
-func (r *Query) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
-	q := r.query.Select("loadObjectTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &ObjectTypeDef{
-		query: q,
-	}
-}
-
-// Load a Port from its ID.
-func (r *Query) LoadPortFromID(id PortID) *Port {
-	q := r.query.Select("loadPortFromID")
-	q = q.Arg("id", id)
-
-	return &Port{
-		query: q,
-	}
-}
-
-// Load a RemoteGitMirror from its ID.
-func (r *Query) LoadRemoteGitMirrorFromID(id RemoteGitMirrorID) *RemoteGitMirror {
-	q := r.query.Select("loadRemoteGitMirrorFromID")
-	q = q.Arg("id", id)
-
-	return &RemoteGitMirror{
-		query: q,
-	}
-}
-
-// Load a SDKConfig from its ID.
-func (r *Query) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
-	q := r.query.Select("loadSDKConfigFromID")
-	q = q.Arg("id", id)
-
-	return &SDKConfig{
-		query: q,
-	}
-}
-
-// Load a ScalarTypeDef from its ID.
-func (r *Query) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
-	q := r.query.Select("loadScalarTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &ScalarTypeDef{
-		query: q,
-	}
-}
-
-// Load a SearchResult from its ID.
-func (r *Query) LoadSearchResultFromID(id SearchResultID) *SearchResult {
-	q := r.query.Select("loadSearchResultFromID")
-	q = q.Arg("id", id)
-
-	return &SearchResult{
-		query: q,
-	}
-}
-
-// Load a SearchSubmatch from its ID.
-func (r *Query) LoadSearchSubmatchFromID(id SearchSubmatchID) *SearchSubmatch {
-	q := r.query.Select("loadSearchSubmatchFromID")
-	q = q.Arg("id", id)
-
-	return &SearchSubmatch{
-		query: q,
-	}
-}
-
-// Load a Secret from its ID.
-func (r *Query) LoadSecretFromID(id SecretID) *Secret {
-	q := r.query.Select("loadSecretFromID")
-	q = q.Arg("id", id)
-
-	return &Secret{
-		query: q,
-	}
-}
-
-// Load a Service from its ID.
-func (r *Query) LoadServiceFromID(id ServiceID) *Service {
-	q := r.query.Select("loadServiceFromID")
-	q = q.Arg("id", id)
-
-	return &Service{
-		query: q,
-	}
-}
-
-// Load a Socket from its ID.
-func (r *Query) LoadSocketFromID(id SocketID) *Socket {
-	q := r.query.Select("loadSocketFromID")
-	q = q.Arg("id", id)
-
-	return &Socket{
-		query: q,
-	}
-}
-
-// Load a SourceMap from its ID.
-func (r *Query) LoadSourceMapFromID(id SourceMapID) *SourceMap {
-	q := r.query.Select("loadSourceMapFromID")
-	q = q.Arg("id", id)
-
-	return &SourceMap{
-		query: q,
-	}
-}
-
-// Load a Stat from its ID.
-func (r *Query) LoadStatFromID(id StatID) *Stat {
-	q := r.query.Select("loadStatFromID")
-	q = q.Arg("id", id)
-
-	return &Stat{
-		query: q,
-	}
-}
-
-// Load a Syncer from its ID.
-func (r *Query) LoadSyncerFromID(id SyncerID) Syncer {
-	q := r.query.Select("loadSyncerFromID")
-	q = q.Arg("id", id)
-	return &SyncerClient{
-		query: q,
-	}
-}
-
-// Load a Terminal from its ID.
-func (r *Query) LoadTerminalFromID(id TerminalID) *Terminal {
-	q := r.query.Select("loadTerminalFromID")
-	q = q.Arg("id", id)
-
-	return &Terminal{
-		query: q,
-	}
-}
-
-// Load a TypeDef from its ID.
-func (r *Query) LoadTypeDefFromID(id TypeDefID) *TypeDef {
-	q := r.query.Select("loadTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &TypeDef{
-		query: q,
-	}
-}
-
-// Load a Up from its ID.
-func (r *Query) LoadUpFromID(id UpID) *Up {
-	q := r.query.Select("loadUpFromID")
-	q = q.Arg("id", id)
-
-	return &Up{
-		query: q,
-	}
-}
-
-// Load a UpGroup from its ID.
-func (r *Query) LoadUpGroupFromID(id UpGroupID) *UpGroup {
-	q := r.query.Select("loadUpGroupFromID")
-	q = q.Arg("id", id)
-
-	return &UpGroup{
-		query: q,
-	}
-}
-
-// Load a Workspace from its ID.
-func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
-	q := r.query.Select("loadWorkspaceFromID")
-	q = q.Arg("id", id)
-
-	return &Workspace{
-		query: q,
+	return &LLMContent{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -13872,15 +18031,18 @@ func (r *Query) Module() *Module {
 	q := r.query.Select("module")
 
 	return &Module{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // ModuleSourceOpts contains options for Query.ModuleSource
 type ModuleSourceOpts struct {
+	// Version query for a Git module source.
+	Version string
 	// The pinned version of the module source
 	RefPin string
-	// If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+	// If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
 	DisableFindUp bool
 	// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
 	AllowNotExists bool
@@ -13892,6 +18054,10 @@ type ModuleSourceOpts struct {
 func (r *Query) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
 	q := r.query.Select("moduleSource")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
 		// `refPin` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RefPin) {
 			q = q.Arg("refPin", opts[i].RefPin)
@@ -13912,16 +18078,37 @@ func (r *Query) ModuleSource(refString string, opts ...ModuleSourceOpts) *Module
 	q = q.Arg("refString", refString)
 
 	return &ModuleSource{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
 // Load any object by its ID.
-func (r *Query) Node(id ID) Node {
+func (r *Query) Node(ctx context.Context, id ID) (Node, error) {
 	q := r.query.Select("node")
 	q = q.Arg("id", id)
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
 	return &NodeClient{
-		query: q,
+		query: selectNode(q.Root(), *objectID, "Node"),
+	}, nil
+}
+
+// Load a GraphQL introspection schema for merging.
+func (r *Query) Schema(json JSON) *Schema {
+	q := r.query.Select("schema")
+	q = q.Arg("json", json)
+
+	return &Schema{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -13947,8 +18134,31 @@ func (r *Query) Secret(uri string, opts ...SecretOpts) *Secret {
 	q = q.Arg("uri", uri)
 
 	return &Secret{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
+}
+
+// ServeModuleOpts contains options for Query.ServeModule
+type ServeModuleOpts struct {
+	// The pinned version of a remote module address.
+	RefPin string
+}
+
+// Load the module at the given address and serve its API in the current session.
+//
+// A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+func (r *Query) ServeModule(ctx context.Context, address string, opts ...ServeModuleOpts) error {
+	q := r.query.Select("serveModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `refPin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RefPin) {
+			q = q.Arg("refPin", opts[i].RefPin)
+		}
+	}
+	q = q.Arg("address", address)
+
+	return q.Execute(ctx)
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.
@@ -13960,8 +18170,21 @@ func (r *Query) SetSecret(name string, plaintext string) *Secret {
 	q = q.Arg("plaintext", plaintext)
 
 	return &Secret{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
+}
+
+// Name the current session.
+//
+// The title renames the session wherever its telemetry is shown (the calling client's primary span, e.g. the CLI's command span) and labels its engine archive, as listed by dagger agent --resume. The latest title wins. Only the session's main client may set it.
+//
+// Experimental: Session APIs are likely to change.
+func (r *Query) SetSessionTitle(ctx context.Context, title string) error {
+	q := r.query.Select("setSessionTitle")
+	q = q.Arg("title", title)
+
+	return q.Execute(ctx)
 }
 
 // Creates source map metadata.
@@ -13972,7 +18195,51 @@ func (r *Query) SourceMap(filename string, line int, column int) *SourceMap {
 	q = q.Arg("column", column)
 
 	return &SourceMap{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// SshfsVolumeOpts contains options for Query.SshfsVolume
+type SshfsVolumeOpts struct {
+	// known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
+	KnownHosts *Secret
+	// Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
+	CacheKey string
+	// Disable SSH host key verification. This is insecure and must be explicitly opted into.
+	InsecureSkipHostKeyCheck bool
+	// Service to use as the SSHFS network endpoint while verifying the original host key.
+	ExperimentalServiceHost *Service
+}
+
+// Constructs an SSHFS volume.
+func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, opts ...SshfsVolumeOpts) *Volume {
+	assertNotNil("privateKey", privateKey)
+	q := r.query.Select("sshfsVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `knownHosts` optional argument
+		if !querybuilder.IsZeroValue(opts[i].KnownHosts) {
+			q = q.Arg("knownHosts", opts[i].KnownHosts)
+		}
+		// `cacheKey` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CacheKey) {
+			q = q.Arg("cacheKey", opts[i].CacheKey)
+		}
+		// `insecureSkipHostKeyCheck` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureSkipHostKeyCheck) {
+			q = q.Arg("insecureSkipHostKeyCheck", opts[i].InsecureSkipHostKeyCheck)
+		}
+		// `experimentalServiceHost` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
+		}
+	}
+	q = q.Arg("endpoint", endpoint)
+	q = q.Arg("privateKey", privateKey)
+
+	return &Volume{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -13981,7 +18248,8 @@ func (r *Query) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -13999,13 +18267,18 @@ func (r *Query) Version(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *Query) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // An internal persistent bare git mirror.
 type RemoteGitMirror struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id *ID
 }
@@ -14013,6 +18286,9 @@ type RemoteGitMirror struct {
 func (r *RemoteGitMirror) WithGraphQLQuery(q *querybuilder.Selection) *RemoteGitMirror {
 	return &RemoteGitMirror{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14026,7 +18302,13 @@ func (r *RemoteGitMirror) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -14060,13 +18342,18 @@ func (r *RemoteGitMirror) MarshalJSON() ([]byte, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *RemoteGitMirror) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // The SDK config of the module.
 type SDKConfig struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	debug  *bool
 	id     *ID
@@ -14076,6 +18363,9 @@ type SDKConfig struct {
 func (r *SDKConfig) WithGraphQLQuery(q *querybuilder.Selection) *SDKConfig {
 	return &SDKConfig{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14102,7 +18392,13 @@ func (r *SDKConfig) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -14149,13 +18445,18 @@ func (r *SDKConfig) Source(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *SDKConfig) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A definition of a custom scalar defined in a Module.
 type ScalarTypeDef struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	description      *string
 	id               *ID
@@ -14166,6 +18467,9 @@ type ScalarTypeDef struct {
 func (r *ScalarTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ScalarTypeDef {
 	return &ScalarTypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14192,7 +18496,13 @@ func (r *ScalarTypeDef) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -14252,12 +18562,126 @@ func (r *ScalarTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *ScalarTypeDef) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A GraphQL introspection schema that can be inspected and merged.
+type Schema struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	contents *JSON
+	id       *ID
+}
+type WithSchemaFunc func(r *Schema) *Schema
+
+// With calls the provided function with current Schema.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Schema) With(f WithSchemaFunc) *Schema {
+	return f(r)
+}
+
+func (r *Schema) WithGraphQLQuery(q *querybuilder.Selection) *Schema {
+	return &Schema{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Serialize the schema back to introspection JSON.
+func (r *Schema) Contents(ctx context.Context) (JSON, error) {
+	if r.contents != nil {
+		return *r.contents, nil
+	}
+	q := r.query.Select("contents")
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Schema.
+func (r *Schema) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Schema) XXX_GraphQLType() string {
+	return "Schema"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Schema) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Schema) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Schema) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Merge a module's introspection-shaped type definitions into the schema, returning the combined schema.
+func (r *Schema) Merge(moduleTypes JSON, moduleName string) *Schema {
+	q := r.query.Select("merge")
+	q = q.Arg("moduleTypes", moduleTypes)
+	q = q.Arg("moduleName", moduleName)
+
+	return &Schema{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this Schema as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Schema) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 type SearchResult struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	absoluteOffset *int
 	filePath       *string
@@ -14269,6 +18693,9 @@ type SearchResult struct {
 func (r *SearchResult) WithGraphQLQuery(q *querybuilder.Selection) *SearchResult {
 	return &SearchResult{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14308,7 +18735,13 @@ func (r *SearchResult) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -14401,12 +18834,17 @@ func (r *SearchResult) Submatches(ctx context.Context) ([]SearchSubmatch, error)
 // This is a local type conversion — no GraphQL call.
 func (r *SearchResult) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 type SearchSubmatch struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	end   *int
 	id    *ID
@@ -14417,6 +18855,9 @@ type SearchSubmatch struct {
 func (r *SearchSubmatch) WithGraphQLQuery(q *querybuilder.Selection) *SearchSubmatch {
 	return &SearchSubmatch{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14443,7 +18884,13 @@ func (r *SearchSubmatch) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -14503,13 +18950,18 @@ func (r *SearchSubmatch) Text(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *SearchSubmatch) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A reference to a secret value, which can be handled more safely than the value itself.
 type Secret struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id        *ID
 	name      *string
@@ -14520,6 +18972,9 @@ type Secret struct {
 func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
 	return &Secret{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14533,7 +18988,13 @@ func (r *Secret) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -14606,13 +19067,18 @@ func (r *Secret) URI(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *Secret) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A content-addressed service providing TCP connectivity.
 type Service struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	endpoint *string
 	hostname *string
@@ -14634,6 +19100,9 @@ func (r *Service) With(f WithServiceFunc) *Service {
 func (r *Service) WithGraphQLQuery(q *querybuilder.Selection) *Service {
 	return &Service{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14695,7 +19164,13 @@ func (r *Service) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -14725,9 +19200,21 @@ func (r *Service) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// ServicePortsOpts contains options for Service.Ports
+type ServicePortsOpts struct {
+	// Return only container ports declared before startup. Other service types return an empty list.
+	Declared bool
+}
+
 // Retrieves the list of ports provided by the service.
-func (r *Service) Ports(ctx context.Context) ([]Port, error) {
+func (r *Service) Ports(ctx context.Context, opts ...ServicePortsOpts) ([]Port, error) {
 	q := r.query.Select("ports")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `declared` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Declared) {
+			q = q.Arg("declared", opts[i].Declared)
+		}
+	}
 
 	q = q.Select("id")
 
@@ -14826,7 +19313,8 @@ func (r *Service) Terminal(opts ...ServiceTerminalOpts) *Service {
 	}
 
 	return &Service{
-		query: q,
+		query:     q,
+		refetchID: true,
 	}
 }
 
@@ -14866,7 +19354,8 @@ func (r *Service) WithHostname(hostname string) *Service {
 	q = q.Arg("hostname", hostname)
 
 	return &Service{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -14874,7 +19363,8 @@ func (r *Service) WithHostname(hostname string) *Service {
 // This is a local type conversion — no GraphQL call.
 func (r *Service) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -14882,13 +19372,18 @@ func (r *Service) AsNode() Node {
 // This is a local type conversion — no GraphQL call.
 func (r *Service) AsSyncer() Syncer {
 	return &SyncerClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A Unix or TCP/IP socket that can be mounted into a container.
 type Socket struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id *ID
 }
@@ -14896,6 +19391,9 @@ type Socket struct {
 func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
 	return &Socket{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -14909,7 +19407,13 @@ func (r *Socket) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -14943,13 +19447,18 @@ func (r *Socket) MarshalJSON() ([]byte, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *Socket) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // Source location information.
 type SourceMap struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	column   *int
 	filename *string
@@ -14962,6 +19471,9 @@ type SourceMap struct {
 func (r *SourceMap) WithGraphQLQuery(q *querybuilder.Selection) *SourceMap {
 	return &SourceMap{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -15001,7 +19513,13 @@ func (r *SourceMap) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -15074,13 +19592,18 @@ func (r *SourceMap) URL(ctx context.Context) (string, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *SourceMap) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A file or directory status object.
 type Stat struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	fileType    *FileType
 	id          *ID
@@ -15092,6 +19615,9 @@ type Stat struct {
 func (r *Stat) WithGraphQLQuery(q *querybuilder.Selection) *Stat {
 	return &Stat{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -15118,7 +19644,13 @@ func (r *Stat) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -15191,13 +19723,18 @@ func (r *Stat) Size(ctx context.Context) (int, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *Stat) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // An interactive terminal that clients can connect to.
 type Terminal struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id   *ID
 	sync *ID
@@ -15206,6 +19743,9 @@ type Terminal struct {
 func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
 	return &Terminal{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -15219,7 +19759,13 @@ func (r *Terminal) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -15268,7 +19814,8 @@ func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
 // This is a local type conversion — no GraphQL call.
 func (r *Terminal) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15276,13 +19823,18 @@ func (r *Terminal) AsNode() Node {
 // This is a local type conversion — no GraphQL call.
 func (r *Terminal) AsSyncer() Syncer {
 	return &SyncerClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
 // A definition of a parameter or return type in a Module.
 type TypeDef struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id       *ID
 	kind     *TypeDefKind
@@ -15301,61 +19853,129 @@ func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 func (r *TypeDef) WithGraphQLQuery(q *querybuilder.Selection) *TypeDef {
 	return &TypeDef{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
+}
+
+// Collection metadata, or null if this object is not a collection.
+func (r *TypeDef) AsCollection(ctx context.Context) (*CollectionTypeDef, error) {
+	q := r.query.Select("asCollection")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &CollectionTypeDef{
+		query: selectNode(q.Root(), *objectID, "CollectionTypeDef"),
+	}, nil
 }
 
 // If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
-func (r *TypeDef) AsEnum() *EnumTypeDef {
+func (r *TypeDef) AsEnum(ctx context.Context) (*EnumTypeDef, error) {
 	q := r.query.Select("asEnum")
 
-	return &EnumTypeDef{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &EnumTypeDef{
+		query: selectNode(q.Root(), *objectID, "EnumTypeDef"),
+	}, nil
 }
 
 // If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
-func (r *TypeDef) AsInput() *InputTypeDef {
+func (r *TypeDef) AsInput(ctx context.Context) (*InputTypeDef, error) {
 	q := r.query.Select("asInput")
 
-	return &InputTypeDef{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &InputTypeDef{
+		query: selectNode(q.Root(), *objectID, "InputTypeDef"),
+	}, nil
 }
 
 // If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
-func (r *TypeDef) AsInterface() *InterfaceTypeDef {
+func (r *TypeDef) AsInterface(ctx context.Context) (*InterfaceTypeDef, error) {
 	q := r.query.Select("asInterface")
 
-	return &InterfaceTypeDef{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &InterfaceTypeDef{
+		query: selectNode(q.Root(), *objectID, "InterfaceTypeDef"),
+	}, nil
 }
 
 // If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
-func (r *TypeDef) AsList() *ListTypeDef {
+func (r *TypeDef) AsList(ctx context.Context) (*ListTypeDef, error) {
 	q := r.query.Select("asList")
 
-	return &ListTypeDef{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &ListTypeDef{
+		query: selectNode(q.Root(), *objectID, "ListTypeDef"),
+	}, nil
 }
 
 // If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
-func (r *TypeDef) AsObject() *ObjectTypeDef {
+func (r *TypeDef) AsObject(ctx context.Context) (*ObjectTypeDef, error) {
 	q := r.query.Select("asObject")
 
-	return &ObjectTypeDef{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &ObjectTypeDef{
+		query: selectNode(q.Root(), *objectID, "ObjectTypeDef"),
+	}, nil
 }
 
 // If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
-func (r *TypeDef) AsScalar() *ScalarTypeDef {
+func (r *TypeDef) AsScalar(ctx context.Context) (*ScalarTypeDef, error) {
 	q := r.query.Select("asScalar")
 
-	return &ScalarTypeDef{
-		query: q,
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &ScalarTypeDef{
+		query: selectNode(q.Root(), *objectID, "ScalarTypeDef"),
+	}, nil
 }
 
 // A unique identifier for this TypeDef.
@@ -15368,7 +19988,13 @@ func (r *TypeDef) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -15437,6 +20063,49 @@ func (r *TypeDef) Optional(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// Mark this object as a collection.
+func (r *TypeDef) WithCollection() *TypeDef {
+	q := r.query.Select("withCollection")
+
+	return &TypeDef{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Select the field that receives changes from the original collection.
+func (r *TypeDef) WithCollectionDelta(name string) *TypeDef {
+	q := r.query.Select("withCollectionDelta")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Select the item lookup function for this collection.
+func (r *TypeDef) WithCollectionGet(name string) *TypeDef {
+	q := r.query.Select("withCollectionGet")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Select the stored keys field for this collection.
+func (r *TypeDef) WithCollectionKeys(name string) *TypeDef {
+	q := r.query.Select("withCollectionKeys")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 // Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
 func (r *TypeDef) WithConstructor(function *Function) *TypeDef {
 	assertNotNil("function", function)
@@ -15444,7 +20113,8 @@ func (r *TypeDef) WithConstructor(function *Function) *TypeDef {
 	q = q.Arg("function", function)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15474,7 +20144,8 @@ func (r *TypeDef) WithEnum(name string, opts ...TypeDefWithEnumOpts) *TypeDef {
 	q = q.Arg("name", name)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15514,7 +20185,8 @@ func (r *TypeDef) WithEnumMember(name string, opts ...TypeDefWithEnumMemberOpts)
 	q = q.Arg("name", name)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15550,7 +20222,8 @@ func (r *TypeDef) WithEnumValue(value string, opts ...TypeDefWithEnumValueOpts) 
 	q = q.Arg("value", value)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15586,7 +20259,8 @@ func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFi
 	q = q.Arg("typeDef", typeDef)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15597,7 +20271,8 @@ func (r *TypeDef) WithFunction(function *Function) *TypeDef {
 	q = q.Arg("function", function)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15624,7 +20299,8 @@ func (r *TypeDef) WithInterface(name string, opts ...TypeDefWithInterfaceOpts) *
 	q = q.Arg("name", name)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15634,7 +20310,8 @@ func (r *TypeDef) WithKind(kind TypeDefKind) *TypeDef {
 	q = q.Arg("kind", kind)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15645,7 +20322,8 @@ func (r *TypeDef) WithListOf(elementType *TypeDef) *TypeDef {
 	q = q.Arg("elementType", elementType)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15680,7 +20358,8 @@ func (r *TypeDef) WithObject(name string, opts ...TypeDefWithObjectOpts) *TypeDe
 	q = q.Arg("name", name)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15690,7 +20369,8 @@ func (r *TypeDef) WithOptional(optional bool) *TypeDef {
 	q = q.Arg("optional", optional)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15711,7 +20391,8 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 	q = q.Arg("name", name)
 
 	return &TypeDef{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -15719,156 +20400,33 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 // This is a local type conversion — no GraphQL call.
 func (r *TypeDef) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
-type Up struct {
+// A filesystem volume that can be mounted into containers.
+type Volume struct {
 	query *querybuilder.Selection
-
-	description *string
-	id          *ID
-	name        *string
-}
-type WithUpFunc func(r *Up) *Up
-
-// With calls the provided function with current Up.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Up) With(f WithUpFunc) *Up {
-	return f(r)
-}
-
-func (r *Up) WithGraphQLQuery(q *querybuilder.Selection) *Up {
-	return &Up{
-		query: q,
-	}
-}
-
-// The description of the service
-func (r *Up) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this Up.
-func (r *Up) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Up) XXX_GraphQLType() string {
-	return "Up"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Up) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Up) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Up) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Return the fully qualified name of the service
-func (r *Up) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The original module in which the service has been defined
-func (r *Up) OriginalModule() *Module {
-	q := r.query.Select("originalModule")
-
-	return &Module{
-		query: q,
-	}
-}
-
-// The path of the service within its module
-func (r *Up) Path(ctx context.Context) ([]string, error) {
-	q := r.query.Select("path")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Execute the service function
-func (r *Up) Run() *Up {
-	q := r.query.Select("run")
-
-	return &Up{
-		query: q,
-	}
-}
-
-// AsNode returns this Up as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *Up) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-type UpGroup struct {
-	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id *ID
 }
-type WithUpGroupFunc func(r *UpGroup) *UpGroup
 
-// With calls the provided function with current UpGroup.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *UpGroup) With(f WithUpGroupFunc) *UpGroup {
-	return f(r)
-}
-
-func (r *UpGroup) WithGraphQLQuery(q *querybuilder.Selection) *UpGroup {
-	return &UpGroup{
+func (r *Volume) WithGraphQLQuery(q *querybuilder.Selection) *Volume {
+	return &Volume{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
-// A unique identifier for this UpGroup.
-func (r *UpGroup) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this Volume.
+func (r *Volume) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -15877,21 +20435,27 @@ func (r *UpGroup) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *UpGroup) XXX_GraphQLType() string {
-	return "UpGroup"
+func (r *Volume) XXX_GraphQLType() string {
+	return "Volume"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *UpGroup) XXX_GraphQLIDType() string {
+func (r *Volume) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *UpGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *Volume) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -15899,7 +20463,7 @@ func (r *UpGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *UpGroup) MarshalJSON() ([]byte, error) {
+func (r *Volume) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -15907,77 +20471,52 @@ func (r *UpGroup) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Return a list of individual services and their details
-func (r *UpGroup) List(ctx context.Context) ([]Up, error) {
-	q := r.query.Select("list")
-
-	q = q.Select("id")
-
-	type list struct {
-		Id ID
-	}
-
-	convert := func(fields []list) []Up {
-		out := []Up{}
-
-		for i := range fields {
-			val := Up{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Up")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []list
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Execute all selected service functions
-func (r *UpGroup) Run() *UpGroup {
-	q := r.query.Select("run")
-
-	return &UpGroup{
-		query: q,
-	}
-}
-
-// AsNode returns this UpGroup as a Node.
+// AsNode returns this Volume as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *UpGroup) AsNode() Node {
+func (r *Volume) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
-// A Dagger workspace detected from the current working directory.
+// A Dagger workspace detected from the current working directory or constructed from a Directory.
 type Workspace struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	address     *string
-	clientId    *string
-	configPath  *string
+	configFile  *string
+	configRead  *string
+	cwd         *string
+	detectScope *string
+	entrypoint  *string
+	export      *Void
 	findUp      *string
-	hasConfig   *bool
 	id          *ID
-	initialized *bool
-	path        *string
+}
+type WithWorkspaceFunc func(r *Workspace) *Workspace
+
+// With calls the provided function with current Workspace.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Workspace) With(f WithWorkspaceFunc) *Workspace {
+	return f(r)
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	return &Workspace{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
-// Canonical Dagger address of the workspace directory.
+// Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
 func (r *Workspace) Address(ctx context.Context) (string, error) {
 	if r.address != nil {
 		return *r.address, nil
@@ -15990,45 +20529,117 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// WorkspaceChecksOpts contains options for Workspace.Checks
-type WorkspaceChecksOpts struct {
-	// Only include checks matching the specified patterns
+// WorkspaceArtifactsOpts contains options for Workspace.Artifacts
+type WorkspaceArtifactsOpts struct {
+	// Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.
 	Include []string
-	// When true, only return annotated check functions; exclude generate-as-checks
-	NoGenerate bool
-	// When true, only return generate-as-checks; exclude annotated check functions
-	OnlyGenerate bool
 }
 
-// Return all checks from modules loaded in the workspace.
-func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
-	q := r.query.Select("checks")
+// Discover static object artifacts from workspace modules without evaluating their values.
+func (r *Workspace) Artifacts(opts ...WorkspaceArtifactsOpts) *Artifacts {
+	q := r.query.Select("artifacts")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
 		}
-		// `noGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
-			q = q.Arg("noGenerate", opts[i].NoGenerate)
-		}
-		// `onlyGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OnlyGenerate) {
-			q = q.Arg("onlyGenerate", opts[i].OnlyGenerate)
-		}
 	}
 
-	return &CheckGroup{
-		query: q,
+	return &Artifacts{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// The client ID that owns this workspace's host filesystem.
-func (r *Workspace) ClientID(ctx context.Context) (string, error) {
-	if r.clientId != nil {
-		return *r.clientId, nil
+// WorkspaceChangesOpts contains options for Workspace.Changes
+type WorkspaceChangesOpts struct {
+	// An earlier workspace state to compare against.
+	From *Workspace
+}
+
+// Return this workspace's changes, with paths relative to its working directory.
+//
+// Pass from to compare against an earlier workspace state. Omitting it preserves the cumulative behavior used by clients from before this argument was added.
+func (r *Workspace) Changes(opts ...WorkspaceChangesOpts) *Changeset {
+	q := r.query.Select("changes")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `from` optional argument
+		if !querybuilder.IsZeroValue(opts[i].From) {
+			q = q.Arg("from", opts[i].From)
+		}
 	}
-	q := r.query.Select("clientId")
+
+	return &Changeset{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceCompareCommitsFromOpts contains options for Workspace.CompareCommitsFrom
+type WorkspaceCompareCommitsFromOpts struct {
+	// Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
+	Commits []string
+	// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+	//
+	// Default: 100
+	MaxCommits int
+}
+
+// Preview which source commits withCommitsFrom would apply, skip, or report as conflicting.
+//
+// Results are ordered oldest first and account for earlier applicable commits in the same preview. The preview does not apply commits or write to the checkout.
+//
+// A local receiver is snapshotted automatically; untracked files require interactive approval. Source uncommitted changes are ignored. Exceeding maxCommits fails rather than returning a partial preview. Divergent merge commits require manual integration.
+func (r *Workspace) CompareCommitsFrom(ctx context.Context, source *Workspace, opts ...WorkspaceCompareCommitsFromOpts) ([]WorkspaceCommitPick, error) {
+	assertNotNil("source", source)
+	q := r.query.Select("compareCommitsFrom")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `commits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Commits) {
+			q = q.Arg("commits", opts[i].Commits)
+		}
+		// `maxCommits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxCommits) {
+			q = q.Arg("maxCommits", opts[i].MaxCommits)
+		}
+	}
+	q = q.Arg("source", source)
+
+	q = q.Select("id")
+
+	type compareCommitsFrom struct {
+		Id ID
+	}
+
+	convert := func(fields []compareCommitsFrom) []WorkspaceCommitPick {
+		out := []WorkspaceCommitPick{}
+
+		for i := range fields {
+			val := WorkspaceCommitPick{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceCommitPick")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []compareCommitsFrom
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Selected native workspace config file relative to the workspace cwd, if any.
+func (r *Workspace) ConfigFile(ctx context.Context) (string, error) {
+	if r.configFile != nil {
+		return *r.configFile, nil
+	}
+	q := r.query.Select("configFile")
 
 	var response string
 
@@ -16036,12 +20647,67 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Path to config.toml relative to the workspace boundary (empty if not initialized).
-func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
-	if r.configPath != nil {
-		return *r.configPath, nil
+// WorkspaceConfigReadOpts contains options for Workspace.ConfigRead
+type WorkspaceConfigReadOpts struct {
+	// Dotted key path (e.g. modules.greeter.source). Empty for full config.
+	Key string
+	// Include the selected environment, user overrides, and legacy workspace settings.
+	Effective bool
+}
+
+// Read a configuration value from dagger.toml.
+//
+// If key is empty, returns the full config.
+//
+// If key points to a scalar, returns the value.
+//
+// If key points to a table, returns flattened dotted-key output.
+func (r *Workspace) ConfigRead(ctx context.Context, opts ...WorkspaceConfigReadOpts) (string, error) {
+	if r.configRead != nil {
+		return *r.configRead, nil
 	}
-	q := r.query.Select("configPath")
+	q := r.query.Select("configRead")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `key` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Key) {
+			q = q.Arg("key", opts[i].Key)
+		}
+		// `effective` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Effective) {
+			q = q.Arg("effective", opts[i].Effective)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Current location within the workspace root.
+//
+// The workspace root is returned as "/".
+//
+// Relative paths in workspace APIs resolve from here.
+func (r *Workspace) Cwd(ctx context.Context) (string, error) {
+	if r.cwd != nil {
+		return *r.cwd, nil
+	}
+	q := r.query.Select("cwd")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Return the selected SDK module's current scope at this workspace location.
+func (r *Workspace) DetectScope(ctx context.Context, sdk string) (string, error) {
+	if r.detectScope != nil {
+		return *r.detectScope, nil
+	}
+	q := r.query.Select("detectScope")
+	q = q.Arg("sdk", sdk)
 
 	var response string
 
@@ -16061,7 +20727,7 @@ type WorkspaceDirectoryOpts struct {
 
 // Returns a Directory from the workspace.
 //
-// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
 func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -16081,25 +20747,121 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
+}
+
+// Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+//
+// Reflects the selected env's effective view. Fails if several modules are selected.
+func (r *Workspace) Entrypoint(ctx context.Context) (string, error) {
+	if r.entrypoint != nil {
+		return *r.entrypoint, nil
+	}
+	q := r.query.Select("entrypoint")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// List named environments defined in the workspace configuration.
+func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
+	q := r.query.Select("envList")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceExportOpts contains options for Workspace.Export
+type WorkspaceExportOpts struct {
+	// Destination checkout path on the calling client. Relative paths start at the client's working directory. Omit to use the calling client's current local workspace root.
+	Path string
+	// Earlier workspace state to compare against. For Git integration, live inputs are snapshotted at export time; use a snapshot to retain the baseline of a previous export.
+	From *Workspace
+}
+
+// Write this workspace's commits and pending changes to a checkout on the calling client.
+//
+// Path selects the destination; omitting it uses the calling client's current local workspace root, including when exporting a snapshot or committed workspace. Exported file paths are relative to the workspace root regardless of its working directory. This writes only to the client making the call, never the source's client.
+//
+// A live workspace exported to its own checkout applies only its overlay edits, without capturing the whole checkout. This also applies with an explicit path. Pass from with the same live base to apply only changes since that overlay state.
+//
+// Other exports integrate divergent commits by cherry-picking, preserve unrelated checkout edits, and refuse conflicts. Live inputs are snapshotted automatically; capturing untracked source files requires interactive approval. Stable inputs retain their baseline. Pass from to save only work since an earlier source value, including previously saved pending edits that are now committed.
+func (r *Workspace) Export(ctx context.Context, opts ...WorkspaceExportOpts) error {
+	if r.export != nil {
+		return nil
+	}
+	q := r.query.Select("export")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `path` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+		}
+		// `from` optional argument
+		if !querybuilder.IsZeroValue(opts[i].From) {
+			q = q.Arg("from", opts[i].From)
+		}
+	}
+
+	return q.Execute(ctx)
 }
 
 // Returns a File from the workspace.
 //
-// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
 func (r *Workspace) File(path string) *File {
 	q := r.query.Select("file")
 	q = q.Arg("path", path)
 
 	return &File{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
+}
+
+// WorkspaceFindRootsOpts contains options for Workspace.FindRoots
+type WorkspaceFindRootsOpts struct {
+	// Directory to start from. Relative paths resolve from the workspace cwd.
+	//
+	// Default: "."
+	Start string
+	// Glob patterns pruning the walk below start (e.g. ["**/node_modules/**"]).
+	Exclude []string
+}
+
+// Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.
+//
+// Returns cwd-relative directory paths for every marked directory at or below start, plus the nearest marked ancestor when start itself is not marked.
+//
+// Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+func (r *Workspace) FindRoots(ctx context.Context, markers []string, opts ...WorkspaceFindRootsOpts) ([]string, error) {
+	q := r.query.Select("findRoots")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `start` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Start) {
+			q = q.Arg("start", opts[i].Start)
+		}
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("markers", markers)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // WorkspaceFindUpOpts contains options for Workspace.FindUp
 type WorkspaceFindUpOpts struct {
-	// Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
+	// Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
 	//
 	// Default: "."
 	From string
@@ -16109,9 +20871,9 @@ type WorkspaceFindUpOpts struct {
 //
 // Returns the absolute workspace path if found, or null if not found.
 //
-// Relative start paths resolve from the workspace directory.
+// Relative start paths resolve from the workspace cwd.
 //
-// The search stops at the workspace boundary and will not traverse above it.
+// The search stops at the workspace root and will not traverse above it.
 func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFindUpOpts) (string, error) {
 	if r.findUp != nil {
 		return *r.findUp, nil
@@ -16131,35 +20893,24 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 	return response, q.Execute(ctx)
 }
 
-// WorkspaceGeneratorsOpts contains options for Workspace.Generators
-type WorkspaceGeneratorsOpts struct {
-	// Only include generators matching the specified patterns
-	Include []string
-}
+// Git state for this workspace. Errors if the workspace is not in a git repository.
+func (r *Workspace) Git() *WorkspaceGit {
+	q := r.query.Select("git")
 
-// Return all generators from modules loaded in the workspace.
-func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup {
-	q := r.query.Select("generators")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &GeneratorGroup{
-		query: q,
+	return &WorkspaceGit{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-// Whether a config.toml file exists in the workspace.
-func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
-	if r.hasConfig != nil {
-		return *r.hasConfig, nil
-	}
-	q := r.query.Select("hasConfig")
+// Returns a list of files and directories that match the given pattern.
+//
+// Patterns match paths relative to the workspace root.
+func (r *Workspace) Glob(ctx context.Context, pattern string) ([]string, error) {
+	q := r.query.Select("glob")
+	q = q.Arg("pattern", pattern)
 
-	var response bool
+	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -16175,7 +20926,13 @@ func (r *Workspace) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -16205,63 +20962,1120 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Whether .dagger/config.toml exists.
-func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
-	if r.initialized != nil {
-		return *r.initialized, nil
-	}
-	q := r.query.Select("initialized")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+// WorkspaceMigrateOpts contains options for Workspace.Migrate
+type WorkspaceMigrateOpts struct {
+	// Additional local modules to migrate. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+	Modules []string
 }
 
-// Workspace directory path relative to the workspace boundary.
-func (r *Workspace) Path(ctx context.Context) (string, error) {
-	if r.path != nil {
-		return *r.path, nil
-	}
-	q := r.query.Select("path")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// WorkspaceServicesOpts contains options for Workspace.Services
-type WorkspaceServicesOpts struct {
-	// Only include services matching the specified patterns
-	Include []string
-}
-
-// Return all services from modules loaded in the workspace.
-func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
-	q := r.query.Select("services")
+// Plan the explicit migration needed for the current workspace.
+//
+// Include installed local modules and their local dependencies. Other module candidates remain unchanged unless selected.
+//
+// The returned plan has an empty changeset and no steps when no migration is needed.
+func (r *Workspace) Migrate(opts ...WorkspaceMigrateOpts) *WorkspaceMigration {
+	q := r.query.Select("migrate")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
+		// `modules` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Modules) {
+			q = q.Arg("modules", opts[i].Modules)
 		}
 	}
 
-	return &UpGroup{
-		query: q,
+	return &WorkspaceMigration{
+		query:     q,
+		refetchID: true,
 	}
 }
 
-// Refresh workspace-managed state and return the resulting changeset.
-//
-// Currently this refreshes existing lockfile entries only.
-//
-// Experimental: Experimental workspace update API currently refreshes existing lockfile entries only.
-func (r *Workspace) Update() *Changeset {
-	q := r.query.Select("update")
+// WorkspaceMigrateModuleOpts contains options for Workspace.MigrateModule
+type WorkspaceMigrateModuleOpts struct {
+	// Module directory. Relative paths start at the workspace cwd; absolute paths start at the workspace root.
+	//
+	// Default: "."
+	Path string
+}
 
-	return &Changeset{
-		query: q,
+// Plan migration of one local module without migrating its dependencies or creating a workspace configuration.
+//
+// Include SDK registration when a workspace configuration exists and remove obsolete generated-file ignore rules.
+func (r *Workspace) MigrateModule(opts ...WorkspaceMigrateModuleOpts) *WorkspaceMigration {
+	q := r.query.Select("migrateModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `path` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+		}
+	}
+
+	return &WorkspaceMigration{
+		query:     q,
+		refetchID: true,
+	}
+}
+
+// Return a module defined in the workspace configuration.
+//
+// Reflects the selected env's effective view.
+func (r *Workspace) Module(name string) *WorkspaceModule {
+	q := r.query.Select("module")
+	q = q.Arg("name", name)
+
+	return &WorkspaceModule{
+		query:     q,
+		refetchID: true,
+	}
+}
+
+// Load a module source from a path within the workspace.
+//
+// Relative paths (e.g., "foo") resolve from the workspace cwd; absolute paths (e.g., "/foo") resolve from the workspace root.
+//
+// Fails if the path does not point to an initialized module.
+func (r *Workspace) ModuleSource(path string) *ModuleSource {
+	q := r.query.Select("moduleSource")
+	q = q.Arg("path", path)
+
+	return &ModuleSource{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// List modules defined in the workspace configuration.
+//
+// Reflects the selected env's effective view.
+func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
+	q := r.query.Select("modules")
+
+	q = q.Select("id")
+
+	type modules struct {
+		Id ID
+	}
+
+	convert := func(fields []modules) []WorkspaceModule {
+		out := []WorkspaceModule{}
+
+		for i := range fields {
+			val := WorkspaceModule{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceModule")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []modules
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Resolve an address in this workspace.
+//
+// A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+//
+// A value without the dag:// scheme keeps its external meaning, such as a container image reference.
+//
+// The Address retains this workspace across module calls and ID reloads.
+func (r *Workspace) Resolve(value string) *Address {
+	q := r.query.Select("resolve")
+	q = q.Arg("value", value)
+
+	return &Address{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// An installed SDK, by name.
+func (r *Workspace) SDK(name string) *WorkspaceSDK {
+	q := r.query.Select("sdk")
+	q = q.Arg("name", name)
+
+	return &WorkspaceSDK{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Installed SDKs.
+func (r *Workspace) Sdks(ctx context.Context) ([]WorkspaceSDK, error) {
+	q := r.query.Select("sdks")
+
+	q = q.Select("id")
+
+	type sdks struct {
+		Id ID
+	}
+
+	convert := func(fields []sdks) []WorkspaceSDK {
+		out := []WorkspaceSDK{}
+
+		for i := range fields {
+			val := WorkspaceSDK{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceSDK")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []sdks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// WorkspaceSearchOpts contains options for Workspace.Search
+type WorkspaceSearchOpts struct {
+	// Directory or file paths to search
+	Paths []string
+	// Glob patterns to match (e.g., "*.md")
+	Globs []string
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
+	// Enable searching across multiple lines.
+	Multiline bool
+	// Allow the . pattern to match newlines in multiline mode.
+	Dotall bool
+	// Enable case-insensitive matching.
+	Insensitive bool
+	// Honor .gitignore, .ignore, and .rgignore files.
+	SkipIgnored bool
+	// Skip hidden files (files starting with .).
+	SkipHidden bool
+	// Only return matching files, not lines and content
+	FilesOnly bool
+	// Limit the number of results to return
+	Limit int
+}
+
+// Searches for content matching the given regular expression or literal string.
+//
+// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+//
+// Runs ripgrep on the client host, falling back to grep if unavailable.
+func (r *Workspace) Search(ctx context.Context, pattern string, opts ...WorkspaceSearchOpts) ([]SearchResult, error) {
+	q := r.query.Select("search")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `globs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Globs) {
+			q = q.Arg("globs", opts[i].Globs)
+		}
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+		// `dotall` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dotall) {
+			q = q.Arg("dotall", opts[i].Dotall)
+		}
+		// `insensitive` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Insensitive) {
+			q = q.Arg("insensitive", opts[i].Insensitive)
+		}
+		// `skipIgnored` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipIgnored) {
+			q = q.Arg("skipIgnored", opts[i].SkipIgnored)
+		}
+		// `skipHidden` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipHidden) {
+			q = q.Arg("skipHidden", opts[i].SkipHidden)
+		}
+		// `filesOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FilesOnly) {
+			q = q.Arg("filesOnly", opts[i].FilesOnly)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+	}
+	q = q.Arg("pattern", pattern)
+
+	q = q.Select("id")
+
+	type search struct {
+		Id ID
+	}
+
+	convert := func(fields []search) []SearchResult {
+		out := []SearchResult{}
+
+		for i := range fields {
+			val := SearchResult{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "SearchResult")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []search
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Return a snapshot of this workspace as a stable value.
+//
+// Git capture is a progressive enhancement: if the workspace has no Git repository or commits, or the client cannot capture Git, return this workspace unchanged. Approval rejections and capture failures remain errors.
+//
+// Use the returned workspace for subsequent reads, edits, and module loading against the captured baseline. Snapshotting an existing stable value preserves its baseline; snapshot currentWorkspace again to capture later checkout changes.
+//
+// Only the owning client can capture a local checkout. Tracked changes are captured automatically; untracked files require interactive approval. Remote Git refs are pinned to their resolved commits. Capturing leaves the checkout unchanged.
+//
+// The recipe is portable when a remote can serve its base; otherwise it is frozen for this session only.
+//
+// Experimental: Best-effort capture for resumable sessions; capture and fallback behavior may change.
+func (r *Workspace) Snapshot() *Workspace {
+	q := r.query.Select("snapshot")
+
+	return &Workspace{
+		query:     q,
+		refetchID: true,
+	}
+}
+
+// Return this workspace with a changeset applied, without mutating the source.
+func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withChanges")
+	q = q.Arg("changes", changes)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithClientOpts contains options for Workspace.WithClient
+type WorkspaceWithClientOpts struct {
+	// Optional SDK name. Inspect all installed SDKs when omitted.
+	SDK string
+	// Explicit SDK-module constructor setting overrides for this scope. Requires an explicit SDK name.
+	Settings JSON
+}
+
+// Return this workspace with a generated module client added to one SDK scope.
+//
+// Select the deepest detected or registered scope. Fail if several SDKs have that deepest scope.
+func (r *Workspace) WithClient(module string, opts ...WorkspaceWithClientOpts) *Workspace {
+	q := r.query.Select("withClient")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SDK) {
+			q = q.Arg("sdk", opts[i].SDK)
+		}
+		// `settings` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Settings) {
+			q = q.Arg("settings", opts[i].Settings)
+		}
+	}
+	q = q.Arg("module", module)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithCommitOpts contains options for Workspace.WithCommit
+type WorkspaceWithCommitOpts struct {
+	// Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
+	AuthorName string
+	// Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
+	AuthorEmail string
+	// Add a Signed-off-by trailer using the commit author's name and email.
+	Signoff bool
+}
+
+// Create a Git commit from a changeset and return a stable workspace with HEAD advanced.
+//
+// The changeset is three-way merged into both HEAD and the frozen working tree. Compatible unselected edits remain uncommitted; incoming changes need not already be in the working tree. Conflicts with either tree fail without modifying the workspace. Empty changesets, or changes already present in HEAD, fail with nothing to commit.
+//
+// A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.
+//
+// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+func (r *Workspace) WithCommit(changes *Changeset, message string, date string, opts ...WorkspaceWithCommitOpts) *Workspace {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withCommit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `authorName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorName) {
+			q = q.Arg("authorName", opts[i].AuthorName)
+		}
+		// `authorEmail` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorEmail) {
+			q = q.Arg("authorEmail", opts[i].AuthorEmail)
+		}
+		// `signoff` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Signoff) {
+			q = q.Arg("signoff", opts[i].Signoff)
+		}
+	}
+	q = q.Arg("changes", changes)
+	q = q.Arg("message", message)
+	q = q.Arg("date", date)
+
+	return &Workspace{
+		query:     q,
+		refetchID: true,
+	}
+}
+
+// WorkspaceWithCommitsFromOpts contains options for Workspace.WithCommitsFrom
+type WorkspaceWithCommitsFromOpts struct {
+	// Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
+	Commits []string
+	// Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.
+	//
+	// Default: 100
+	MaxCommits int
+}
+
+// Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.
+//
+// Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.
+//
+// A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
+//
+// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+func (r *Workspace) WithCommitsFrom(source *Workspace, opts ...WorkspaceWithCommitsFromOpts) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withCommitsFrom")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `commits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Commits) {
+			q = q.Arg("commits", opts[i].Commits)
+		}
+		// `maxCommits` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxCommits) {
+			q = q.Arg("maxCommits", opts[i].MaxCommits)
+		}
+	}
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query:     q,
+		refetchID: true,
+	}
+}
+
+// WorkspaceWithConfigEnvOpts contains options for Workspace.WithConfigEnv
+type WorkspaceWithConfigEnvOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a named config environment created.
+func (r *Workspace) WithConfigEnv(name string, opts ...WorkspaceWithConfigEnvOpts) *Workspace {
+	q := r.query.Select("withConfigEnv")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Select the config environment carried by this workspace.
+func (r *Workspace) WithConfigEnvironment(name string) *Workspace {
+	q := r.query.Select("withConfigEnvironment")
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Select workspace-root-relative config and lockfile paths. Empty paths clear the selection.
+func (r *Workspace) WithConfigPaths(configFile string, lockFile string) *Workspace {
+	q := r.query.Select("withConfigPaths")
+	q = q.Arg("configFile", configFile)
+	q = q.Arg("lockFile", lockFile)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithConfigValueOpts contains options for Workspace.WithConfigValue
+type WorkspaceWithConfigValueOpts struct {
+	// List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
+	Values []string
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a configuration value written.
+//
+// When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.
+func (r *Workspace) WithConfigValue(key string, value string, opts ...WorkspaceWithConfigValueOpts) *Workspace {
+	q := r.query.Select("withConfigValue")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `values` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Values) {
+			q = q.Arg("values", opts[i].Values)
+		}
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("key", key)
+	q = q.Arg("value", value)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with a directory merged into the given path, without mutating the source.
+//
+// Anything already at the path stays, and files the source carries win, as with Directory.withDirectory. Use withNewDirectory to replace the path instead.
+func (r *Workspace) WithDirectory(path string, source *Directory) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withDirectory")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with an installed module selected as its entrypoint.
+//
+// Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+func (r *Workspace) WithEntrypoint(name string) *Workspace {
+	q := r.query.Select("withEntrypoint")
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithFileOpts contains options for Workspace.WithFile
+type WorkspaceWithFileOpts struct {
+	// Permissions of the added file. Defaults to the source file permissions.
+	Permissions int
+}
+
+// Return this workspace with a file added or replaced, without mutating the source.
+func (r *Workspace) WithFile(path string, source *File, opts ...WorkspaceWithFileOpts) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithInitModuleOpts contains options for Workspace.WithInitModule
+type WorkspaceWithInitModuleOpts struct {
+	// Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
+	Name string
+	// Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
+	Path string
+	// Install the module. When omitted, install only if path is omitted.
+	Install bool
+	// Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+	Entrypoint bool
+	// Explicit SDK-module constructor setting overrides for this scope.
+	Settings JSON
+}
+
+// Return this workspace with a location initialized as a module scope.
+//
+// The selected SDK module records the scope and generates the module source.
+func (r *Workspace) WithInitModule(sdk string, opts ...WorkspaceWithInitModuleOpts) *Workspace {
+	q := r.query.Select("withInitModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `path` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+		}
+		// `install` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Install) {
+			q = q.Arg("install", opts[i].Install)
+		}
+		// `entrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
+			q = q.Arg("entrypoint", opts[i].Entrypoint)
+		}
+		// `settings` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Settings) {
+			q = q.Arg("settings", opts[i].Settings)
+		}
+	}
+	q = q.Arg("sdk", sdk)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with a native configuration, without changing an existing configuration.
+//
+// Fail if legacy configuration needs workspace migration.
+func (r *Workspace) WithInitialized() *Workspace {
+	q := r.query.Select("withInitialized")
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithModuleOpts contains options for Workspace.WithModule
+type WorkspaceWithModuleOpts struct {
+	// Override name for the installed module entry.
+	Name string
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a module installed in its config.
+//
+// When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.
+func (r *Workspace) WithModule(ref string, opts ...WorkspaceWithModuleOpts) *Workspace {
+	q := r.query.Select("withModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("ref", ref)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+//
+// Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+func (r *Workspace) WithMountedDirectory(path string, source *Directory) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withMountedDirectory")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with a file mounted read-only at the given path, without mutating the source.
+//
+// Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+func (r *Workspace) WithMountedFile(path string, source *File) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withMountedFile")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with the given path replaced by a directory, without mutating the source.
+//
+// The source becomes the entire contents of the path: anything already there that the source does not carry is removed. Use withDirectory to keep it instead.
+func (r *Workspace) WithNewDirectory(path string, source *Directory) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withNewDirectory")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithNewFileOpts contains options for Workspace.WithNewFile
+type WorkspaceWithNewFileOpts struct {
+	// Permissions of the new file.
+	//
+	// Default: 420
+	Permissions int
+}
+
+// Return this workspace with a new or replaced file, without mutating the source.
+func (r *Workspace) WithNewFile(path string, contents string, opts ...WorkspaceWithNewFileOpts) *Workspace {
+	q := r.query.Select("withNewFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("contents", contents)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithPatchFileOpts contains options for Workspace.WithPatchFile
+type WorkspaceWithPatchFileOpts struct {
+	// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+	//
+	// Default: FAIL
+	OnConflict PatchConflict
+}
+
+// Return this workspace with the given Git-compatible patch file applied, without mutating the source.
+//
+// Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Workspace) WithPatchFile(patch *File, opts ...WorkspaceWithPatchFileOpts) *Workspace {
+	assertNotNil("patch", patch)
+	q := r.query.Select("withPatchFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
+	q = q.Arg("patch", patch)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithResetOpts contains options for Workspace.WithReset
+type WorkspaceWithResetOpts struct {
+	// Discard uncommitted changes, resetting the working tree to the commit.
+	Hard bool
+}
+
+// Move this workspace's Git HEAD to a commit and return the resulting stable workspace.
+//
+// A local workspace is snapshotted automatically before resetting; untracked files require interactive approval. The host checkout is not modified. By default the difference between the previous working tree and the target commit stays uncommitted, as with git reset --mixed, so history can be reworked and reapplied with withCommit — e.g. to amend the latest commit message, reset to its parent and commit again.
+//
+// With hard, the working tree is reset to the commit and every uncommitted change is discarded.
+//
+// Commits orphaned by the reset are not preserved: the frozen repository keeps reachable history only, so a reset cannot be undone by resetting forward again.
+func (r *Workspace) WithReset(commit string, opts ...WorkspaceWithResetOpts) *Workspace {
+	q := r.query.Select("withReset")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `hard` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Hard) {
+			q = q.Arg("hard", opts[i].Hard)
+		}
+	}
+	q = q.Arg("commit", commit)
+
+	return &Workspace{
+		query:     q,
+		refetchID: true,
+	}
+}
+
+// WorkspaceWithSDKOpts contains options for Workspace.WithSDK
+type WorkspaceWithSDKOpts struct {
+	// Override name for the installed SDK entry.
+	Name string
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+	// Optional override for the SDK name conventionally derived from the installed module name.
+	AsSDKName string
+}
+
+// Return this workspace with an SDK installed in its config.
+func (r *Workspace) WithSDK(ref string, opts ...WorkspaceWithSDKOpts) *Workspace {
+	q := r.query.Select("withSDK")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+		// `asSdkName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AsSDKName) {
+			q = q.Arg("asSdkName", opts[i].AsSDKName)
+		}
+	}
+	q = q.Arg("ref", ref)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithUpdatedClientsOpts contains options for Workspace.WithUpdatedClients
+type WorkspaceWithUpdatedClientsOpts struct {
+	// Recorded client targets to update. All targets in the selected scopes are updated when omitted.
+	Modules []string
+	// Select clients in every scope instead of only the scopes containing the workspace cwd.
+	All bool
+	// Optional SDK name. All installed SDK modules are selected when omitted.
+	SDK string
+}
+
+// Return this workspace with the selected module clients updated.
+//
+// The engine re-reads the source of each selected client target and writes the lock entries that those targets reach.
+//
+// The selected SDK module then regenerates every scope that owns one of the targets.
+func (r *Workspace) WithUpdatedClients(opts ...WorkspaceWithUpdatedClientsOpts) *Workspace {
+	q := r.query.Select("withUpdatedClients")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `modules` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Modules) {
+			q = q.Arg("modules", opts[i].Modules)
+		}
+		// `all` optional argument
+		if !querybuilder.IsZeroValue(opts[i].All) {
+			q = q.Arg("all", opts[i].All)
+		}
+		// `sdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SDK) {
+			q = q.Arg("sdk", opts[i].SDK)
+		}
+	}
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithUpdatedLockOpts contains options for Workspace.WithUpdatedLock
+type WorkspaceWithUpdatedLockOpts struct {
+	// Do not regenerate SDK client scopes.
+	NoGenerate bool
+}
+
+// Return this workspace with refreshed lockfile state.
+//
+// SDK client scopes are regenerated unless noGenerate is true.
+func (r *Workspace) WithUpdatedLock(opts ...WorkspaceWithUpdatedLockOpts) *Workspace {
+	q := r.query.Select("withUpdatedLock")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
+			q = q.Arg("noGenerate", opts[i].NoGenerate)
+		}
+	}
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithUpdatedModulesOpts contains options for Workspace.WithUpdatedModules
+type WorkspaceWithUpdatedModulesOpts struct {
+	// Installed module names or sources. A version suffix sets a new request. An empty list refreshes all installed modules.
+	Names []string
+	// New version request for exactly one selected module. Cannot be combined with a version suffix.
+	Version string
+	// New source for exactly one selected module. Resolved like an install source. Cannot be combined with a version or a version suffix.
+	Source string
+}
+
+// Return this workspace with updated module sources, versions and lockfile state.
+//
+// An SDK client scope is regenerated when it targets an updated module.
+func (r *Workspace) WithUpdatedModules(opts ...WorkspaceWithUpdatedModulesOpts) *Workspace {
+	q := r.query.Select("withUpdatedModules")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `names` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Names) {
+			q = q.Arg("names", opts[i].Names)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+	}
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with the calling client's user-level config re-read and applied.
+//
+// User-level config (the [workspaces.*] section of the Dagger config file) is read when a session loads its workspace, and snapshots keep that configuration. Call this to pick up edits made since, for example when an agent reloads its modules.
+//
+// The entry is matched by the workspace's git origin remote. A workspace without one, or without a matching entry, gets no user-level config.
+func (r *Workspace) WithUserConfig() *Workspace {
+	q := r.query.Select("withUserConfig")
+
+	return &Workspace{
+		query:     q,
+		refetchID: true,
+	}
+}
+
+// Return this workspace with its working directory pointed at the given workspace-relative path.
+func (r *Workspace) WithWorkdir(path string) *Workspace {
+	q := r.query.Select("withWorkdir")
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithoutClientOpts contains options for Workspace.WithoutClient
+type WorkspaceWithoutClientOpts struct {
+	// Optional SDK name. Search all installed SDKs when omitted.
+	SDK string
+}
+
+// Return this workspace with a module client removed from the deepest matching recorded scope.
+//
+// Fail if several SDKs have that deepest scope. The selected SDK module regenerates the complete scope.
+//
+// If invalid client targets remain, save the removal and skip generation until those targets are corrected or removed.
+func (r *Workspace) WithoutClient(module string, opts ...WorkspaceWithoutClientOpts) *Workspace {
+	q := r.query.Select("withoutClient")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SDK) {
+			q = q.Arg("sdk", opts[i].SDK)
+		}
+	}
+	q = q.Arg("module", module)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithoutConfigEnvOpts contains options for Workspace.WithoutConfigEnv
+type WorkspaceWithoutConfigEnvOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a named config environment removed.
+func (r *Workspace) WithoutConfigEnv(name string, opts ...WorkspaceWithoutConfigEnvOpts) *Workspace {
+	q := r.query.Select("withoutConfigEnv")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithoutConfigValueOpts contains options for Workspace.WithoutConfigValue
+type WorkspaceWithoutConfigValueOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a configuration value removed.
+//
+// Errors when the key is not currently set.
+//
+// When the session selects an env, the key is scoped to that env's overlay.
+func (r *Workspace) WithoutConfigValue(key string, opts ...WorkspaceWithoutConfigValueOpts) *Workspace {
+	q := r.query.Select("withoutConfigValue")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("key", key)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with a directory removed, without mutating the source.
+func (r *Workspace) WithoutDirectory(path string) *Workspace {
+	q := r.query.Select("withoutDirectory")
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with no module selected as its entrypoint.
+func (r *Workspace) WithoutEntrypoint() *Workspace {
+	q := r.query.Select("withoutEntrypoint")
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with a file removed, without mutating the source.
+func (r *Workspace) WithoutFile(path string) *Workspace {
+	q := r.query.Select("withoutFile")
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with files removed, without mutating the source.
+func (r *Workspace) WithoutFiles(paths []string) *Workspace {
+	q := r.query.Select("withoutFiles")
+	q = q.Arg("paths", paths)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithoutModuleOpts contains options for Workspace.WithoutModule
+type WorkspaceWithoutModuleOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a module removed from its config.
+//
+// When the session selects an env, only that env's overlay entry is removed.
+func (r *Workspace) WithoutModule(name string, opts ...WorkspaceWithoutModuleOpts) *Workspace {
+	q := r.query.Select("withoutModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with the content mounted at the given path unmounted.
+//
+// Removes directory and file mounts at or below the path, revealing the underlying workspace content. Other mounts and pending changes are preserved.
+func (r *Workspace) WithoutMount(path string) *Workspace {
+	q := r.query.Select("withoutMount")
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// WorkspaceWithoutSDKOpts contains options for Workspace.WithoutSDK
+type WorkspaceWithoutSDKOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with an SDK removed from its config.
+func (r *Workspace) WithoutSDK(name string, opts ...WorkspaceWithoutSDKOpts) *Workspace {
+	q := r.query.Select("withoutSDK")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -16269,7 +22083,1017 @@ func (r *Workspace) Update() *Changeset {
 // This is a local type conversion — no GraphQL call.
 func (r *Workspace) AsNode() Node {
 	return &NodeClient{
-		query: r.query,
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A source commit classified against the receiving workspace.
+type WorkspaceCommitPick struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id     *ID
+	reason *WorkspaceCommitPickReason
+	status *WorkspaceCommitPickStatus
+}
+
+func (r *WorkspaceCommitPick) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceCommitPick {
+	return &WorkspaceCommitPick{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The commit in the source workspace.
+func (r *WorkspaceCommitPick) Commit() *GitCommit {
+	q := r.query.Select("commit")
+
+	return &GitCommit{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Workspace-root-relative conflicting paths. Empty unless the status is CONFLICT.
+func (r *WorkspaceCommitPick) ConflictPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("conflictPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceCommitPick.
+func (r *WorkspaceCommitPick) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceCommitPick) XXX_GraphQLType() string {
+	return "WorkspaceCommitPick"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceCommitPick) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceCommitPick) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceCommitPick) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Why the commit conflicts, or NONE.
+func (r *WorkspaceCommitPick) Reason(ctx context.Context) (WorkspaceCommitPickReason, error) {
+	if r.reason != nil {
+		return *r.reason, nil
+	}
+	q := r.query.Select("reason")
+
+	var response WorkspaceCommitPickReason
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether this commit can be applied.
+func (r *WorkspaceCommitPick) Status(ctx context.Context) (WorkspaceCommitPickStatus, error) {
+	if r.status != nil {
+		return *r.status, nil
+	}
+	q := r.query.Select("status")
+
+	var response WorkspaceCommitPickStatus
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceCommitPick as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceCommitPick) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// Local git state for a workspace.
+type WorkspaceGit struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *WorkspaceGit) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceGit {
+	return &WorkspaceGit{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Return a self-contained Git metadata directory for this workspace's HEAD, including its full reachable history and an index matching HEAD.
+//
+// Mount this directory at .git alongside workspace.directory("/") to create a usable checkout. Pending workspace edits remain uncommitted; the original checkout's staging state is not preserved.
+//
+// This is a snapshot: Git writes to a mounted copy do not update the workspace. The workspace must have a Git repository with a HEAD commit.
+func (r *WorkspaceGit) Directory() *Directory {
+	q := r.query.Select("directory")
+
+	return &Directory{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// The checked-out HEAD of this workspace.
+func (r *WorkspaceGit) Head() *GitRef {
+	q := r.query.Select("head")
+
+	return &GitRef{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// A unique identifier for this WorkspaceGit.
+func (r *WorkspaceGit) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceGit) XXX_GraphQLType() string {
+	return "WorkspaceGit"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceGit) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceGit) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceGit) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
+func (r *WorkspaceGit) Uncommitted() *Changeset {
+	q := r.query.Select("uncommitted")
+
+	return &Changeset{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this WorkspaceGit as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceGit) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A planned workspace migration.
+type WorkspaceMigration struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	configFile *string
+	id         *ID
+}
+
+func (r *WorkspaceMigration) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceMigration {
+	return &WorkspaceMigration{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Filesystem changes for the full migration plan.
+func (r *WorkspaceMigration) Changes() *Changeset {
+	q := r.query.Select("changes")
+
+	return &Changeset{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Native workspace config path after migration, relative to the workspace root. Empty if no workspace config exists.
+func (r *WorkspaceMigration) ConfigFile(ctx context.Context) (string, error) {
+	if r.configFile != nil {
+		return *r.configFile, nil
+	}
+	q := r.query.Select("configFile")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceMigration.
+func (r *WorkspaceMigration) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceMigration) XXX_GraphQLType() string {
+	return "WorkspaceMigration"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceMigration) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceMigration) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceMigration) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Unselected legacy module directories relative to the workspace root. Candidates can include fixtures.
+func (r *WorkspaceMigration) ModuleCandidates(ctx context.Context) ([]string, error) {
+	q := r.query.Select("moduleCandidates")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Logical migration steps, each identified by a stable code.
+func (r *WorkspaceMigration) Steps(ctx context.Context) ([]WorkspaceMigrationStep, error) {
+	q := r.query.Select("steps")
+
+	q = q.Select("id")
+
+	type steps struct {
+		Id ID
+	}
+
+	convert := func(fields []steps) []WorkspaceMigrationStep {
+		out := []WorkspaceMigrationStep{}
+
+		for i := range fields {
+			val := WorkspaceMigrationStep{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceMigrationStep")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []steps
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// AsNode returns this WorkspaceMigration as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceMigration) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A single logical part of a workspace migration.
+type WorkspaceMigrationStep struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	code        *string
+	description *string
+	id          *ID
+}
+
+func (r *WorkspaceMigrationStep) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceMigrationStep {
+	return &WorkspaceMigrationStep{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Filesystem changes for this step.
+func (r *WorkspaceMigrationStep) Changes() *Changeset {
+	q := r.query.Select("changes")
+
+	return &Changeset{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Stable code identifying this logical migration step.
+func (r *WorkspaceMigrationStep) Code(ctx context.Context) (string, error) {
+	if r.code != nil {
+		return *r.code, nil
+	}
+	q := r.query.Select("code")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Generic summary of this step's purpose and impact.
+func (r *WorkspaceMigrationStep) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceMigrationStep.
+func (r *WorkspaceMigrationStep) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceMigrationStep) XXX_GraphQLType() string {
+	return "WorkspaceMigrationStep"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceMigrationStep) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceMigrationStep) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceMigrationStep) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Non-fatal warnings raised while planning this step.
+func (r *WorkspaceMigrationStep) Warnings(ctx context.Context) ([]string, error) {
+	q := r.query.Select("warnings")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceMigrationStep as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceMigrationStep) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A module entry in the workspace configuration.
+type WorkspaceModule struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	entrypoint *bool
+	id         *ID
+	name       *string
+	source     *string
+}
+
+func (r *WorkspaceModule) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceModule {
+	return &WorkspaceModule{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Whether the module is the workspace entrypoint (functions aliased to Query root).
+func (r *WorkspaceModule) Entrypoint(ctx context.Context) (bool, error) {
+	if r.entrypoint != nil {
+		return *r.entrypoint, nil
+	}
+	q := r.query.Select("entrypoint")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// List the functions of this module's main object, in GraphQL field form.
+func (r *WorkspaceModule) Functions(ctx context.Context) ([]string, error) {
+	q := r.query.Select("functions")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceModule.
+func (r *WorkspaceModule) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceModule) XXX_GraphQLType() string {
+	return "WorkspaceModule"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceModule) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceModule) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceModule) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The module name.
+func (r *WorkspaceModule) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// List constructor-backed settings for this module.
+func (r *WorkspaceModule) Settings(ctx context.Context) ([]WorkspaceModuleSetting, error) {
+	q := r.query.Select("settings")
+
+	q = q.Select("id")
+
+	type settings struct {
+		Id ID
+	}
+
+	convert := func(fields []settings) []WorkspaceModuleSetting {
+		out := []WorkspaceModuleSetting{}
+
+		for i := range fields {
+			val := WorkspaceModuleSetting{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceModuleSetting")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []settings
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The module source path.
+func (r *WorkspaceModule) Source(ctx context.Context) (string, error) {
+	if r.source != nil {
+		return *r.source, nil
+	}
+	q := r.query.Select("source")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceModule as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceModule) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// A constructor-backed module setting.
+type WorkspaceModuleSetting struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	defaultValue *string
+	description  *string
+	id           *ID
+	isList       *bool
+	isObject     *bool
+	isString     *bool
+	key          *string
+	value        *string
+}
+
+func (r *WorkspaceModuleSetting) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceModuleSetting {
+	return &WorkspaceModuleSetting{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The constructor argument's declared default, formatted like value, or empty when the argument has no default.
+func (r *WorkspaceModuleSetting) DefaultValue(ctx context.Context) (string, error) {
+	if r.defaultValue != nil {
+		return *r.defaultValue, nil
+	}
+	q := r.query.Select("defaultValue")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The constructor argument description.
+func (r *WorkspaceModuleSetting) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceModuleSetting.
+func (r *WorkspaceModuleSetting) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceModuleSetting) XXX_GraphQLType() string {
+	return "WorkspaceModuleSetting"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceModuleSetting) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceModuleSetting) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceModuleSetting) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Whether the setting accepts a list of values.
+func (r *WorkspaceModuleSetting) IsList(ctx context.Context) (bool, error) {
+	if r.isList != nil {
+		return *r.isList, nil
+	}
+	q := r.query.Select("isList")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the setting is an object type resolved from an address string (Container, Directory, File, Secret, Service, ...), which may be a module reference.
+func (r *WorkspaceModuleSetting) IsObject(ctx context.Context) (bool, error) {
+	if r.isObject != nil {
+		return *r.isObject, nil
+	}
+	q := r.query.Select("isObject")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the setting is a string argument, stored as a TOML string even when the value reads as a number or boolean.
+func (r *WorkspaceModuleSetting) IsString(ctx context.Context) (bool, error) {
+	if r.isString != nil {
+		return *r.isString, nil
+	}
+	q := r.query.Select("isString")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The setting key.
+func (r *WorkspaceModuleSetting) Key(ctx context.Context) (string, error) {
+	if r.key != nil {
+		return *r.key, nil
+	}
+	q := r.query.Select("key")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The value stored in workspace config after applying the selected workspace environment, or empty when unset.
+func (r *WorkspaceModuleSetting) Value(ctx context.Context) (string, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
+	q := r.query.Select("value")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceModuleSetting as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceModuleSetting) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+// An installed SDK: a module marked for scaffolding other modules and clients.
+type WorkspaceSDK struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id   *ID
+	name *string
+	ref  *string
+}
+
+func (r *WorkspaceSDK) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceSDK {
+	return &WorkspaceSDK{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Clients generated with this SDK.
+func (r *WorkspaceSDK) Clients(ctx context.Context) ([]WorkspaceModule, error) {
+	q := r.query.Select("clients")
+
+	q = q.Select("id")
+
+	type clients struct {
+		Id ID
+	}
+
+	convert := func(fields []clients) []WorkspaceModule {
+		out := []WorkspaceModule{}
+
+		for i := range fields {
+			val := WorkspaceModule{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceModule")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []clients
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Generate the modules and clients managed by this SDK.
+func (r *WorkspaceSDK) Generate() *Changeset {
+	q := r.query.Select("generate")
+
+	return &Changeset{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// A unique identifier for this WorkspaceSDK.
+func (r *WorkspaceSDK) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceSDK) XXX_GraphQLType() string {
+	return "WorkspaceSDK"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceSDK) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceSDK) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Modules authored with this SDK.
+func (r *WorkspaceSDK) Modules(ctx context.Context) ([]WorkspaceModule, error) {
+	q := r.query.Select("modules")
+
+	q = q.Select("id")
+
+	type modules struct {
+		Id ID
+	}
+
+	convert := func(fields []modules) []WorkspaceModule {
+		out := []WorkspaceModule{}
+
+		for i := range fields {
+			val := WorkspaceModule{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceModule")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []modules
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The user-facing SDK name.
+func (r *WorkspaceSDK) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module reference this SDK was installed from.
+func (r *WorkspaceSDK) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceSDK as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceSDK) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -16291,6 +23115,10 @@ type Exportable interface {
 // ExportableClient is the query-builder for the Exportable interface.
 type ExportableClient struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	export *string
 	id     *ID
@@ -16299,6 +23127,9 @@ type ExportableClient struct {
 func (r *ExportableClient) WithGraphQLQuery(q *querybuilder.Selection) *ExportableClient {
 	return &ExportableClient{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -16322,7 +23153,13 @@ func (r *ExportableClient) ID(ctx context.Context) (ID, error) {
 
 	var response ID
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -16391,6 +23228,10 @@ type Node interface {
 // NodeClient is the query-builder for the Node interface.
 type NodeClient struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id *ID
 }
@@ -16398,6 +23239,9 @@ type NodeClient struct {
 func (r *NodeClient) WithGraphQLQuery(q *querybuilder.Selection) *NodeClient {
 	return &NodeClient{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -16409,7 +23253,13 @@ func (r *NodeClient) ID(ctx context.Context) (ID, error) {
 
 	var response ID
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -16457,6 +23307,10 @@ type Syncer interface {
 // SyncerClient is the query-builder for the Syncer interface.
 type SyncerClient struct {
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id   *ID
 	sync *ID
@@ -16465,6 +23319,9 @@ type SyncerClient struct {
 func (r *SyncerClient) WithGraphQLQuery(q *querybuilder.Selection) *SyncerClient {
 	return &SyncerClient{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -16476,7 +23333,13 @@ func (r *SyncerClient) ID(ctx context.Context) (ID, error) {
 
 	var response ID
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -16556,6 +23419,219 @@ func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
 		return nil, fmt.Errorf("unknown Syncer implementation: %s", typeName)
 	}
 }
+
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// How a message landed in an agent's evaluation.
+type AgentMessageDelivery string
+
+func (AgentMessageDelivery) IsEnum() {}
+
+func (v AgentMessageDelivery) Name() string {
+	switch v {
+	case AgentMessageDeliveryStarted:
+		return "STARTED"
+	case AgentMessageDeliverySteered:
+		return "STEERED"
+	case AgentMessageDeliveryQueued:
+		return "QUEUED"
+	default:
+		return ""
+	}
+}
+
+func (v AgentMessageDelivery) Value() string {
+	return string(v)
+}
+
+func (v *AgentMessageDelivery) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *AgentMessageDelivery) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "QUEUED":
+		*v = AgentMessageDeliveryQueued
+	case "STARTED":
+		*v = AgentMessageDeliveryStarted
+	case "STEERED":
+		*v = AgentMessageDeliverySteered
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The message opened a new turn: the agent was idle or newly started.
+	AgentMessageDeliveryStarted AgentMessageDelivery = "STARTED"
+
+	// The message was absorbed into the in-flight turn at a step boundary, steering it.
+	AgentMessageDeliverySteered AgentMessageDelivery = "STEERED"
+
+	// The message is queued: the agent is paused or failed, and a resume will drain it.
+	AgentMessageDeliveryQueued AgentMessageDelivery = "QUEUED"
+)
+
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// Computed lifecycle state of an agent.
+type AgentState string
+
+func (AgentState) IsEnum() {}
+
+func (v AgentState) Name() string {
+	switch v {
+	case AgentStateIdle:
+		return "IDLE"
+	case AgentStateRunning:
+		return "RUNNING"
+	case AgentStateWaitingInput:
+		return "WAITING_INPUT"
+	case AgentStatePaused:
+		return "PAUSED"
+	case AgentStateStopped:
+		return "STOPPED"
+	case AgentStateFailed:
+		return "FAILED"
+	default:
+		return ""
+	}
+}
+
+func (v AgentState) Value() string {
+	return string(v)
+}
+
+func (v *AgentState) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *AgentState) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "FAILED":
+		*v = AgentStateFailed
+	case "IDLE":
+		*v = AgentStateIdle
+	case "PAUSED":
+		*v = AgentStatePaused
+	case "RUNNING":
+		*v = AgentStateRunning
+	case "STOPPED":
+		*v = AgentStateStopped
+	case "WAITING_INPUT":
+		*v = AgentStateWaitingInput
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Mailbox empty, turn complete; blocked in receive.
+	AgentStateIdle AgentState = "IDLE"
+
+	// A model request or tool evaluation is in flight.
+	AgentStateRunning AgentState = "RUNNING"
+
+	// Blocked on input from the user.
+	AgentStateWaitingInput AgentState = "WAITING_INPUT"
+
+	// Mailbox accepting but not draining, until resume.
+	AgentStatePaused AgentState = "PAUSED"
+
+	// Runtime released; snapshot remains readable.
+	AgentStateStopped AgentState = "STOPPED"
+
+	// The loop failed; snapshot holds the completed prefix. Resume retries.
+	AgentStateFailed AgentState = "FAILED"
+)
+
+type ArtifactDimensionKind string
+
+func (ArtifactDimensionKind) IsEnum() {}
+
+func (v ArtifactDimensionKind) Name() string {
+	switch v {
+	case ArtifactDimensionKindCollection:
+		return "COLLECTION"
+	case ArtifactDimensionKindModule:
+		return "MODULE"
+	case ArtifactDimensionKindType:
+		return "TYPE"
+	default:
+		return ""
+	}
+}
+
+func (v ArtifactDimensionKind) Value() string {
+	return string(v)
+}
+
+func (v *ArtifactDimensionKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ArtifactDimensionKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "COLLECTION":
+		*v = ArtifactDimensionKindCollection
+	case "MODULE":
+		*v = ArtifactDimensionKindModule
+	case "TYPE":
+		*v = ArtifactDimensionKindType
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	ArtifactDimensionKindCollection ArtifactDimensionKind = "COLLECTION"
+
+	ArtifactDimensionKindModule ArtifactDimensionKind = "MODULE"
+
+	ArtifactDimensionKindType ArtifactDimensionKind = "TYPE"
+)
 
 // Sharing mode of the cache volume.
 type CacheSharingMode string
@@ -17035,6 +24111,77 @@ const (
 	FunctionCachePolicyNever FunctionCachePolicy = "Never"
 )
 
+// How a Git push updated the remote ref.
+type GitPushDisposition string
+
+func (GitPushDisposition) IsEnum() {}
+
+func (v GitPushDisposition) Name() string {
+	switch v {
+	case GitPushDispositionCreated:
+		return "CREATED"
+	case GitPushDispositionFastForward:
+		return "FAST_FORWARD"
+	case GitPushDispositionForced:
+		return "FORCED"
+	case GitPushDispositionUpToDate:
+		return "UP_TO_DATE"
+	default:
+		return ""
+	}
+}
+
+func (v GitPushDisposition) Value() string {
+	return string(v)
+}
+
+func (v *GitPushDisposition) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *GitPushDisposition) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CREATED":
+		*v = GitPushDispositionCreated
+	case "FAST_FORWARD":
+		*v = GitPushDispositionFastForward
+	case "FORCED":
+		*v = GitPushDispositionForced
+	case "UP_TO_DATE":
+		*v = GitPushDispositionUpToDate
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The remote ref was created.
+	GitPushDispositionCreated GitPushDisposition = "CREATED"
+
+	// The remote ref was fast-forwarded.
+	GitPushDispositionFastForward GitPushDisposition = "FAST_FORWARD"
+
+	// The remote ref was replaced under an explicit lease.
+	GitPushDispositionForced GitPushDisposition = "FORCED"
+
+	// The remote ref already pointed to this commit.
+	GitPushDispositionUpToDate GitPushDisposition = "UP_TO_DATE"
+)
+
 // Compression algorithm to use for image layers.
 type ImageLayerCompression string
 
@@ -17164,6 +24311,228 @@ const (
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
+)
+
+// The kind of content in a message block.
+type LLMContentBlockKind string
+
+func (LLMContentBlockKind) IsEnum() {}
+
+func (v LLMContentBlockKind) Name() string {
+	switch v {
+	case LLMContentBlockKindText:
+		return "TEXT"
+	case LLMContentBlockKindThinking:
+		return "THINKING"
+	case LLMContentBlockKindToolCall:
+		return "TOOL_CALL"
+	case LLMContentBlockKindToolResult:
+		return "TOOL_RESULT"
+	case LLMContentBlockKindImage:
+		return "IMAGE"
+	case LLMContentBlockKindAudio:
+		return "AUDIO"
+	case LLMContentBlockKindDocument:
+		return "DOCUMENT"
+	default:
+		return ""
+	}
+}
+
+func (v LLMContentBlockKind) Value() string {
+	return string(v)
+}
+
+func (v *LLMContentBlockKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMContentBlockKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "AUDIO":
+		*v = LLMContentBlockKindAudio
+	case "DOCUMENT":
+		*v = LLMContentBlockKindDocument
+	case "IMAGE":
+		*v = LLMContentBlockKindImage
+	case "TEXT":
+		*v = LLMContentBlockKindText
+	case "THINKING":
+		*v = LLMContentBlockKindThinking
+	case "TOOL_CALL":
+		*v = LLMContentBlockKindToolCall
+	case "TOOL_RESULT":
+		*v = LLMContentBlockKindToolResult
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Plain text content.
+	LLMContentBlockKindText LLMContentBlockKind = "TEXT"
+
+	// Model thinking/reasoning content (e.g. Anthropic extended thinking).
+	LLMContentBlockKindThinking LLMContentBlockKind = "THINKING"
+
+	// A tool/function call from the model.
+	LLMContentBlockKindToolCall LLMContentBlockKind = "TOOL_CALL"
+
+	// A tool/function result.
+	LLMContentBlockKindToolResult LLMContentBlockKind = "TOOL_RESULT"
+
+	// An inline image.
+	LLMContentBlockKindImage LLMContentBlockKind = "IMAGE"
+
+	// Inline audio.
+	LLMContentBlockKindAudio LLMContentBlockKind = "AUDIO"
+
+	// An inline PDF document.
+	LLMContentBlockKindDocument LLMContentBlockKind = "DOCUMENT"
+)
+
+// EXPERIMENTAL: Agent APIs are likely to change.
+//
+// Who put a message on the conversation record.
+type LLMMessageOriginKind string
+
+func (LLMMessageOriginKind) IsEnum() {}
+
+func (v LLMMessageOriginKind) Name() string {
+	switch v {
+	case LLMMessageOriginKindUser:
+		return "USER"
+	case LLMMessageOriginKindAgent:
+		return "AGENT"
+	case LLMMessageOriginKindEvent:
+		return "EVENT"
+	default:
+		return ""
+	}
+}
+
+func (v LLMMessageOriginKind) Value() string {
+	return string(v)
+}
+
+func (v *LLMMessageOriginKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMMessageOriginKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "AGENT":
+		*v = LLMMessageOriginKindAgent
+	case "EVENT":
+		*v = LLMMessageOriginKindEvent
+	case "USER":
+		*v = LLMMessageOriginKindUser
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The user: a prompt submitted by a client rather than sent by an agent.
+	LLMMessageOriginKindUser LLMMessageOriginKind = "USER"
+
+	// Another agent: the message was sent from within that agent's turn.
+	LLMMessageOriginKindAgent LLMMessageOriginKind = "AGENT"
+
+	// The engine, reporting a subscribed agent's lifecycle transition.
+	LLMMessageOriginKindEvent LLMMessageOriginKind = "EVENT"
+)
+
+// The role that generated a message.
+type LLMMessageRole string
+
+func (LLMMessageRole) IsEnum() {}
+
+func (v LLMMessageRole) Name() string {
+	switch v {
+	case LLMMessageRoleUser:
+		return "USER"
+	case LLMMessageRoleAssistant:
+		return "ASSISTANT"
+	case LLMMessageRoleSystem:
+		return "SYSTEM"
+	default:
+		return ""
+	}
+}
+
+func (v LLMMessageRole) Value() string {
+	return string(v)
+}
+
+func (v *LLMMessageRole) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMMessageRole) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ASSISTANT":
+		*v = LLMMessageRoleAssistant
+	case "SYSTEM":
+		*v = LLMMessageRoleSystem
+	case "USER":
+		*v = LLMMessageRoleUser
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// A user prompt or tool response.
+	LLMMessageRoleUser LLMMessageRole = "USER"
+
+	// A reply from the model.
+	LLMMessageRoleAssistant LLMMessageRole = "ASSISTANT"
+
+	// A system prompt.
+	LLMMessageRoleSystem LLMMessageRole = "SYSTEM"
 )
 
 // Experimental features of a module
@@ -17339,6 +24708,118 @@ const (
 	NetworkProtocolTcp NetworkProtocol = "TCP"
 
 	NetworkProtocolUdp NetworkProtocol = "UDP"
+)
+
+// How to handle patch hunks that no longer apply to the target content.
+type PatchConflict string
+
+func (PatchConflict) IsEnum() {}
+
+func (v PatchConflict) Name() string {
+	switch v {
+	case PatchConflictFail:
+		return "FAIL"
+	case PatchConflictLeaveConflictMarkers:
+		return "LEAVE_CONFLICT_MARKERS"
+	default:
+		return ""
+	}
+}
+
+func (v PatchConflict) Value() string {
+	return string(v)
+}
+
+func (v *PatchConflict) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *PatchConflict) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "FAIL":
+		*v = PatchConflictFail
+	case "LEAVE_CONFLICT_MARKERS":
+		*v = PatchConflictLeaveConflictMarkers
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Fail the operation if any part of the patch does not apply.
+	PatchConflictFail PatchConflict = "FAIL"
+
+	// Apply the hunks that fit and insert conflict markers where hunks no longer match, instead of failing.
+	PatchConflictLeaveConflictMarkers PatchConflict = "LEAVE_CONFLICT_MARKERS"
+)
+
+// Transport protocol to use for registry operations.
+type RegistryProtocol string
+
+func (RegistryProtocol) IsEnum() {}
+
+func (v RegistryProtocol) Name() string {
+	switch v {
+	case RegistryProtocolHttps:
+		return "HTTPS"
+	case RegistryProtocolHttp:
+		return "HTTP"
+	default:
+		return ""
+	}
+}
+
+func (v RegistryProtocol) Value() string {
+	return string(v)
+}
+
+func (v *RegistryProtocol) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *RegistryProtocol) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "HTTP":
+		*v = RegistryProtocolHttp
+	case "HTTPS":
+		*v = RegistryProtocolHttps
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	RegistryProtocolHttps RegistryProtocol = "HTTPS"
+
+	RegistryProtocolHttp RegistryProtocol = "HTTP"
 )
 
 // Expected return type of an execution
@@ -17589,6 +25070,141 @@ const (
 	TypeDefKindEnum TypeDefKind = TypeDefKindEnumKind
 )
 
+// Why a source commit cannot be pulled.
+type WorkspaceCommitPickReason string
+
+func (WorkspaceCommitPickReason) IsEnum() {}
+
+func (v WorkspaceCommitPickReason) Name() string {
+	switch v {
+	case WorkspaceCommitPickReasonNone:
+		return "NONE"
+	case WorkspaceCommitPickReasonContent:
+		return "CONTENT"
+	case WorkspaceCommitPickReasonDirty:
+		return "DIRTY"
+	default:
+		return ""
+	}
+}
+
+func (v WorkspaceCommitPickReason) Value() string {
+	return string(v)
+}
+
+func (v *WorkspaceCommitPickReason) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *WorkspaceCommitPickReason) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CONTENT":
+		*v = WorkspaceCommitPickReasonContent
+	case "DIRTY":
+		*v = WorkspaceCommitPickReasonDirty
+	case "NONE":
+		*v = WorkspaceCommitPickReasonNone
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// No conflict.
+	WorkspaceCommitPickReasonNone WorkspaceCommitPickReason = "NONE"
+
+	// The patch conflicts with committed content.
+	WorkspaceCommitPickReasonContent WorkspaceCommitPickReason = "CONTENT"
+
+	// The commit touches uncommitted paths in the receiving workspace.
+	WorkspaceCommitPickReasonDirty WorkspaceCommitPickReason = "DIRTY"
+)
+
+// Whether a source commit can be pulled.
+type WorkspaceCommitPickStatus string
+
+func (WorkspaceCommitPickStatus) IsEnum() {}
+
+func (v WorkspaceCommitPickStatus) Name() string {
+	switch v {
+	case WorkspaceCommitPickStatusPickable:
+		return "PICKABLE"
+	case WorkspaceCommitPickStatusPicked:
+		return "PICKED"
+	case WorkspaceCommitPickStatusRedundant:
+		return "REDUNDANT"
+	case WorkspaceCommitPickStatusConflict:
+		return "CONFLICT"
+	default:
+		return ""
+	}
+}
+
+func (v WorkspaceCommitPickStatus) Value() string {
+	return string(v)
+}
+
+func (v *WorkspaceCommitPickStatus) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *WorkspaceCommitPickStatus) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "CONFLICT":
+		*v = WorkspaceCommitPickStatusConflict
+	case "PICKABLE":
+		*v = WorkspaceCommitPickStatusPickable
+	case "PICKED":
+		*v = WorkspaceCommitPickStatusPicked
+	case "REDUNDANT":
+		*v = WorkspaceCommitPickStatusRedundant
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The commit can be applied.
+	WorkspaceCommitPickStatusPickable WorkspaceCommitPickStatus = "PICKABLE"
+
+	// The commit is already present by hash or cherry-pick origin.
+	WorkspaceCommitPickStatusPicked WorkspaceCommitPickStatus = "PICKED"
+
+	// The patch is already present, or applying it would be empty.
+	WorkspaceCommitPickStatusRedundant WorkspaceCommitPickStatus = "REDUNDANT"
+
+	// The commit cannot be applied; see reason and conflictPaths.
+	WorkspaceCommitPickStatusConflict WorkspaceCommitPickStatus = "CONFLICT"
+)
+
 // Client is the Dagger Engine Client
 type Client struct {
 	*Query
@@ -17641,7 +25257,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 
 	c := &Client{
 		Query: &Query{
-			query: dag.QueryBuilder(),
+			query: querybuilder.Query().Client(dag.GraphQLClient()),
 		},
 		client: dag.GraphQLClient(),
 		dag:    dag,
@@ -17698,6 +25314,65 @@ func serveModuleDependencies(ctx context.Context, client *Client) error {
 // given type via an inline fragment.
 func selectNode(q *querybuilder.Selection, id any, typeName string) *querybuilder.Selection {
 	return q.Select("node").Arg("id", id).InlineFragment(typeName)
+}
+
+// idMemo holds the ID fetched for one object query.
+type idMemo struct {
+	mu       sync.Mutex
+	id       string
+	ok       bool
+	fetching chan struct{} // closed when the fetch in flight ends
+}
+
+// idMemos maps an object's query to its idMemo. Keys are weak pointers, and an
+// entry is deleted once its query is garbage collected.
+var idMemos sync.Map // weak.Pointer[querybuilder.Selection] -> *idMemo
+
+// memoizedID returns the ID of the object built by query q, calling fetch at
+// most once per q, so an object that is passed as an argument many times
+// fetches its ID once. Concurrent callers wait for the fetch in flight, or
+// until their own ctx is done. A failed fetch is not remembered: the next
+// caller fetches again.
+func memoizedID[T ~string](ctx context.Context, q *querybuilder.Selection, fetch func() (T, error)) (T, error) {
+	key := weak.Make(q)
+	v, loaded := idMemos.LoadOrStore(key, &idMemo{})
+	if !loaded {
+		runtime.AddCleanup(q, func(key weak.Pointer[querybuilder.Selection]) {
+			idMemos.Delete(key)
+		}, key)
+	}
+	m := v.(*idMemo)
+	for {
+		m.mu.Lock()
+		if m.ok {
+			m.mu.Unlock()
+			return T(m.id), nil
+		}
+		if m.fetching == nil {
+			break
+		}
+		fetching := m.fetching
+		m.mu.Unlock()
+		select {
+		case <-fetching:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	fetching := make(chan struct{})
+	m.fetching = fetching
+	m.mu.Unlock()
+
+	id, err := fetch()
+
+	m.mu.Lock()
+	if err == nil {
+		m.id, m.ok = string(id), true
+	}
+	m.fetching = nil
+	m.mu.Unlock()
+	close(fetching)
+	return id, err
 }
 
 // Loadable is the constraint for types that can be loaded from an ID.

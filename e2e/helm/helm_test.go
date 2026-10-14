@@ -112,7 +112,7 @@ func TestInstallK3S(t *testing.T) {
 	})
 
 	kubectl, err := helmContainer(dag).
-		WithMountedFile("/usr/bin/dagger", dag.DaggerCli().Binary()).
+		WithMountedFile("/usr/bin/dagger", dag.DaggerCli(dag.CurrentWorkspace()).Binary(dag.CurrentWorkspace())).
 		WithServiceBinding("helm-test", k3sSvc).
 		WithFile("/.kube/config", k3s.config).
 		WithEnvVariable("KUBECONFIG", "/.kube/config").
