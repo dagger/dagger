@@ -402,7 +402,7 @@ func (m *MCP) scopeLLM(ctx context.Context, srv *dagql.Server) (dagql.ObjectResu
 }
 
 // scopeSelectors select a DAG address in a conversation's scope:
-// artifacts(include: [<path>]).filterUri(uri: <uri>). As for workspace
+// artifacts(include: [<path>]).filterURI(uri: <uri>). As for workspace
 // resolution (Workspace.resolve), the path narrows which workspace modules
 // load.
 func scopeSelectors(srv *dagql.Server, parsed *dagaddress.Address, uri string) []dagql.Selector {
@@ -411,7 +411,7 @@ func scopeSelectors(srv *dagql.Server, parsed *dagaddress.Address, uri string) [
 		artifacts.Args = []dagql.NamedInput{{Name: "include", Value: dagql.Opt(dagql.ArrayInput[dagql.String](dagql.NewStringArray(parsed.Path)))}}
 	}
 	return []dagql.Selector{artifacts, {
-		View: srv.View, Field: "filterUri",
+		View: srv.View, Field: "filterURI",
 		Args: []dagql.NamedInput{{Name: "uri", Value: dagql.String(uri)}},
 	}}
 }
@@ -489,7 +489,7 @@ func requireScopeMatch(ctx context.Context, selection *Artifacts, addr *dagaddre
 
 // resolveScopeObject evaluates the one value a relative DAG address names in
 // the conversation's scope: its bound tools with their live state, and its
-// workspace. It is LLM.artifacts(include: [<path>]).filterUri(<addr>).one.value,
+// workspace. It is LLM.artifacts(include: [<path>]).filterURI(<addr>).one.value,
 // with Workspace.resolve's rules: a type assertion only chooses among
 // several matches, so an artifact of another type is reported as such, and
 // the value must have the argument's type. Artifact.value evaluates each
@@ -509,7 +509,7 @@ func (m *MCP) resolveScopeObject(ctx context.Context, srv *dagql.Server, parsed 
 	if len(parsed.Types) > 0 && len(selection.Self().Entries) > 1 {
 		typed := dagaddress.Address{HasScheme: true, Types: parsed.Types}
 		if err := srv.Select(ctx, selection, &selection, dagql.Selector{
-			View: srv.View, Field: "filterUri",
+			View: srv.View, Field: "filterURI",
 			Args: []dagql.NamedInput{{Name: "uri", Value: dagql.String(typed.String())}},
 		}); err != nil {
 			return nil, fmt.Errorf("resolve %q: %w", addr, err)

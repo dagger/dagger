@@ -32,9 +32,11 @@ type recordedMessage struct {
 }
 
 type recordedContentBlock struct {
-	Kind      string                 `json:"kind"`
-	Text      string                 `json:"text"`
-	CallID    string                 `json:"callId"`
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+	// Recordings made before the field was renamed spell it callId, which
+	// encoding/json matches too: keys match case-insensitively.
+	CallID    string                 `json:"callID"`
 	ToolName  string                 `json:"toolName"`
 	Arguments string                 `json:"arguments"`
 	Errored   bool                   `json:"errored"`

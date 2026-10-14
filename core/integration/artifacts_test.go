@@ -232,28 +232,28 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 
 	// The current workspace's own absolute address is accepted; any other is reserved.
 	out, err = base.With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{ currentWorkspace {
-  artifacts { filterUri(uri: %q) { items { uri } } }
+  artifacts { filterURI(uri: %q) { items { uri } } }
   resolve(value: %q) { container { file(path: "/marker") { contents } } }
 } }`, uri, uri), "-W", ref, "-m", "core")).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"currentWorkspace":{
-  "artifacts":{"filterUri":{"items":[{"uri":"dag://?container=base"}]}},
+  "artifacts":{"filterURI":{"items":[{"uri":"dag://?container=base"}]}},
   "resolve":{"container":{"file":{"contents":"configured:original"}}}
 }}`, out)
 	_, err = base.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
-  artifacts { filterUri(uri: "dag://github.com/dagger/dagger@main:base") { items { uri } } }
+  artifacts { filterURI(uri: "dag://github.com/dagger/dagger@main:base") { items { uri } } }
 } }`, "-W", ref, "-m", "core")).Stdout(ctx)
 	requireErrOut(t, err, "address selects another workspace; filters cannot change workspace: dag://github.com/dagger/dagger@main:base")
 	for _, address := range []string{uri, "dag://github.com/acme/other@main:base"} {
 		out, err := base.With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{ currentWorkspace {
   artifacts { filterTypes(types: []) {
-    filterUri(uri: %q) { items { uri } }
-    withoutUri(uri: %q) { items { uri } }
+    filterURI(uri: %q) { items { uri } }
+    withoutURI(uri: %q) { items { uri } }
   } }
 } }`, address, address), "-W", ref, "-m", "core")).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterTypes":{
-  "filterUri":{"items":[]},"withoutUri":{"items":[]}
+  "filterURI":{"items":[]},"withoutURI":{"items":[]}
 }}}}`, out)
 	}
 }
@@ -290,7 +290,7 @@ func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}](c, t, `query($ws: ID!, $uri: String!) {
-  node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: $uri) { items { uri } } } } }
+  node(id: $ws) { ... on Workspace { artifacts { filterURI(uri: $uri) { items { uri } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "uri": tc.uri}})
 			require.NoError(t, err)
 			var got []string
@@ -310,7 +310,7 @@ func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
 		{"dag://github.com/dagger/dagger@main", "tree addresses are not supported"},
 	} {
 		_, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!, $uri: String!) {
-  node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: $uri) { items { uri } } } } }
+  node(id: $ws) { ... on Workspace { artifacts { filterURI(uri: $uri) { items { uri } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "uri": tc.uri}})
 		require.ErrorContains(t, err, tc.want)
 	}
@@ -334,13 +334,13 @@ func (ArtifactsSuite) TestSelectorRoundTrip(ctx context.Context, t *testctx.T) {
 		{`artifacts { filterPath(path: ["docs", "source"]) ` + sel + ` }`, "dag://docs/source"},
 		{`artifacts(include: ["docs"]) { filterPath(path: ["docs", "again"]) ` + sel + ` }`, "dag://docs/again"},
 		{`artifacts(include: ["docs"]) { filterTypes(types: ["Directory"]) ` + sel + ` }`, "dag+directory://docs/**"},
-		{`artifacts { filterUri(uri: "dag+container://consumer/**") ` + sel + ` }`, "dag+container://consumer/**"},
+		{`artifacts { filterURI(uri: "dag+container://consumer/**") ` + sel + ` }`, "dag+container://consumer/**"},
 		{`artifacts { filterPath(path: ["base"]) { filterTypes(types: ["Directory"]) ` + sel + ` } }`, "dag+directory://base"},
 		{`artifacts { filterTypes(types: []) ` + sel + ` }`, "dag://{}"},
 		{`artifacts { filterPath(path: []) ` + sel + ` }`, "dag://{}"},
 		{`artifacts { filterPath(path: ["docs", "Source"]) ` + sel + ` }`, "dag://{}"},
 		{`artifacts { filterPath(path: ["docs", "*"]) ` + sel + ` }`, "dag://{}"},
-		{`artifacts { filterUri(uri: "docs/**") { filterUri(uri: "consumer/**") ` + sel + ` } }`, "dag://{}"},
+		{`artifacts { filterURI(uri: "docs/**") { filterURI(uri: "consumer/**") ` + sel + ` } }`, "dag://{}"},
 	} {
 		t.Run(tc.uri, func(ctx context.Context, t *testctx.T) {
 			got, err := testutil.QueryWithClient[json.RawMessage](c, t,
@@ -362,7 +362,7 @@ func (ArtifactsSuite) TestSelectorRoundTrip(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}](c, t, `query($ws: ID!, $uri: String!) {
-  node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: $uri) { items { uri } } } } }
+  node(id: $ws) { ... on Workspace { artifacts { filterURI(uri: $uri) { items { uri } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "uri": selector[1]}})
 			require.NoError(t, err)
 			var roundTrip []string
@@ -1067,12 +1067,12 @@ More details."""
 	opts := &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}}
 	// Staleness belongs to Generator. An ordinary Changeset has no stale check.
 	unmarked, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
- node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: "dag://{edit,broken-edit}/stale") {
+ node(id: $ws) { ... on Workspace { artifacts { filterURI(uri: "dag://{edit,broken-edit}/stale") {
  items { uri directives }
  } } } }
 }`, opts)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"node":{"artifacts":{"filterUri":{"items":[]}}}}`, string(*unmarked))
+	require.JSONEq(t, `{"node":{"artifacts":{"filterURI":{"items":[]}}}}`, string(*unmarked))
 
 	metadata, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
  node(id: $ws) { ... on Workspace { artifacts { filterDirectives(directives: ["check"]) { items { uri directives } } } } }

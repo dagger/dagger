@@ -114,7 +114,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("Discover every artifact this conversation can address, as one selection, without evaluating their values.",
 				"Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.",
 				"The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.",
-				"Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.").
+				"Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterURI.").
 			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with Workspace.artifacts. A path selects that path and its children.")),
 		dagql.Func("withModel", s.withModel).
 			Doc("Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.").
@@ -193,7 +193,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Append the result of a tool call to the message history.").
 			Args(
-				dagql.Arg("callId").Doc("The ID of the tool call this result responds to"),
+				dagql.Arg("callID").WithAliases(core.NameAliases("callId")).Doc("The ID of the tool call this result responds to"),
 				dagql.Arg("content").Doc("Text returned by the tool, placed before blocks"),
 				dagql.Arg("errored").Doc("Whether the tool call resulted in an error"),
 				dagql.Arg("blocks").Doc("Ordered text and media returned by the tool"),
@@ -598,7 +598,7 @@ func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct
 }
 
 func (s *llmSchema) withToolResult(ctx context.Context, llm *core.LLM, args struct {
-	CallID  string `name:"callId"`
+	CallID  string `name:"callID"`
 	Content string
 	Errored bool
 	Blocks  []dagql.InputObject[core.LLMContentBlockInput] `default:"[]"`

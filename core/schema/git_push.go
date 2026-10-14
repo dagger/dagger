@@ -102,7 +102,7 @@ func (s *gitSchema) push(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 type withRemoteArgs struct {
 	Name    string
 	URL     string `name:"url"`
-	PushURL string `name:"pushUrl" default:""`
+	PushURL string `name:"pushURL" default:""`
 }
 
 func (s *gitSchema) withRemote(_ context.Context, parent *core.GitRepository, args withRemoteArgs) (*core.GitRepository, error) {

@@ -57,6 +57,8 @@ func (a *Artifact) QueryCloud(ctx context.Context, arguments JSON, fields string
 			}
 		}
 	}
+	// The cloud engine may predate the filterURI spelling; newer ones accept
+	// filterUri as a hidden alias.
 	err = client.Dagger().Do(ctx, &dagger.Request{
 		Query: `query($workspace: ID!, $path: String!, $uri: String!, $arguments: JSON!) {
 		 node(id: $workspace) { ... on Workspace { artifacts(include: [$path]) {

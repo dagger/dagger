@@ -442,7 +442,7 @@ func artifactTypeNames(types []commandListItem) []string {
 	return names
 }
 
-// artifactURIs prints one address per artifact, in the form filterUri accepts.
+// artifactURIs prints one address per artifact, in the form filterURI accepts.
 func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *core.Artifacts, absolute bool) ([]string, error) {
 	items, err := readListedArtifacts(ctx, dag, artifacts, absolute, false)
 	if err != nil {

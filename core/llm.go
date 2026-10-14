@@ -379,7 +379,7 @@ type LLMContentBlock struct {
 	Text string `field:"true" json:"text,omitempty" doc:"Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."`
 
 	// Tool call fields (Kind=TOOL_CALL)
-	CallID    string `field:"true" json:"call_id,omitempty" doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."`
+	CallID    string `field:"true" name:"callID" json:"call_id,omitempty" doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."`
 	ToolName  string `field:"true" json:"tool_name,omitempty" doc:"The name of the tool called (for TOOL_CALL kind)."`
 	Arguments JSON   `field:"true" json:"arguments,omitempty" doc:"The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind)."`
 
@@ -406,6 +406,11 @@ func (*LLMContentBlock) Type() *ast.Type {
 		NamedType: "LLMContentBlock",
 		NonNull:   true,
 	}
+}
+
+// FieldAliases keeps the old spelling of callID. See NameAliases.
+func (*LLMContentBlock) FieldAliases() map[string]dagql.Aliases {
+	return map[string]dagql.Aliases{"callID": NameAliases("callId")}
 }
 
 func (b *LLMContentBlock) Clone() *LLMContentBlock {
@@ -539,7 +544,7 @@ func (b *LLMContentBlock) ContentText() string {
 type LLMContentBlockInput struct {
 	Kind      LLMContentBlockKind                       `doc:"The kind of content block."`
 	Text      string                                    `doc:"Text content (for TEXT, THINKING, or TOOL_RESULT kinds)." default:""`
-	CallID    string                                    `doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)." default:""`
+	CallID    string                                    `name:"callID" doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)." default:""`
 	ToolName  string                                    `doc:"The name of the tool to call (for TOOL_CALL kind)." default:""`
 	Arguments JSON                                      `doc:"The arguments to pass to the tool (for TOOL_CALL kind)." default:""`
 	Errored   bool                                      `doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)." default:"false"`
@@ -556,6 +561,11 @@ func (LLMContentBlockInput) TypeName() string {
 
 func (LLMContentBlockInput) TypeDescription() string {
 	return "A content block within an LLM message."
+}
+
+// InputFieldAliases keeps the old spelling of callID. See NameAliases.
+func (LLMContentBlockInput) InputFieldAliases() map[string]dagql.Aliases {
+	return map[string]dagql.Aliases{"callID": NameAliases("callId")}
 }
 
 // ToLLMContentBlock converts the input object to an LLMContentBlock.
@@ -2008,7 +2018,7 @@ func toolResultSelectors(target *LLM, msgs []*LLMMessage, toolNames map[string]s
 		sel := dagql.Selector{
 			Field: "withToolResult",
 			Args: []dagql.NamedInput{
-				{Name: "callId", Value: dagql.NewString(callID)},
+				{Name: "callID", Value: dagql.NewString(callID)},
 				{Name: "content", Value: dagql.NewString(result.Text)},
 				{Name: "errored", Value: dagql.NewBoolean(result.Errored)},
 			},
@@ -2267,7 +2277,7 @@ func contentBlockInputMap(block *LLMContentBlock) map[string]any {
 	}
 	m := map[string]any{
 		"kind": string(block.Kind), "text": block.Text,
-		"callId": block.CallID, "toolName": block.ToolName,
+		"callID": block.CallID, "toolName": block.ToolName,
 		"arguments": string(block.Arguments), "errored": block.Errored,
 		"signature": block.Signature, "mimeType": block.MIMEType,
 		"content": content,
