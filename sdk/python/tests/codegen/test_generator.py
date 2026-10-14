@@ -48,6 +48,7 @@ from graphql import (
     GraphQLString as String,
 )
 
+from codegen.cli import load_names
 from codegen.generator import (
     Context,
     _InputField,
@@ -111,6 +112,151 @@ def ctx():
 )
 def test_format_name(graphql, expected):
     assert format_name(graphql) == expected
+
+
+# Names as the engine formats them in snake_case (the SNAKE:UPPERCASE map of a
+# names file). Made up where they differ from the legacy conversion, to tell
+# which one was used.
+_NAMES = {
+    "prerequisiteSHAs": "prerequisite_shas",
+    "experimentalWithAllGPUs": "experimental_with_all_gpus",
+    "withFS": "with_fs",
+    "from": "from",
+    "str": "str",
+    "gitRef": "git_ref",
+    "withRepoURL": "with_repo_url_engine",
+}
+
+
+@pytest.mark.parametrize(
+    ("graphql", "expected"),
+    [
+        ("prerequisiteSHAs", "prerequisite_shas"),
+        ("experimentalWithAllGPUs", "experimental_with_all_gpus"),
+        ("withFS", "with_fs"),
+        ("withRepoURL", "with_repo_url_engine"),
+        ("from", "from_"),  # reserved keyword, escaped after formatting
+        ("str", "str_"),  # builtin, escaped after formatting
+        ("envVariable", "env_variable"),  # not in the names: fallback
+    ],
+)
+def test_context_format_name(graphql, expected):
+    assert Context(names=_NAMES).format_name(graphql) == expected
+
+
+def test_context_format_name_without_names():
+    # Older schemas have no engine-formatted names: keep guessing, as before.
+    assert Context().format_name("prerequisiteSHAs") == "prerequisite_sh_as"
+
+
+def test_names_legacy_alias():
+    parent = Object(
+        "GitRef",
+        lambda: {
+            "prerequisiteSHAs": Field(NonNull(List(NonNull(String)))),
+        },
+    )
+    handler = _ObjectField(
+        Context(names=_NAMES),
+        "prerequisiteSHAs",
+        parent.fields["prerequisiteSHAs"],
+        parent,
+    )
+    assert handler.func_signature() == (
+        "async def prerequisite_shas(self) -> list[str]:"
+    )
+    code = str(handler)
+    assert "def prerequisite_sh_as(self, *args, **kwargs):" in code
+    assert "return self.prerequisite_shas(*args, **kwargs)" in code
+    assert "DeprecationWarning" in code
+
+
+def test_no_legacy_alias_without_names():
+    parent = Object(
+        "GitRef",
+        lambda: {
+            "prerequisiteSHAs": Field(NonNull(List(NonNull(String)))),
+        },
+    )
+    handler = _ObjectField(
+        Context(),
+        "prerequisiteSHAs",
+        parent.fields["prerequisiteSHAs"],
+        parent,
+    )
+    assert handler.legacy_name is None
+    assert "**kwargs" not in str(handler)
+
+
+def test_names_deprecation_reference():
+    ctx = Context(names=_NAMES)
+    assert (
+        ctx.rewrite_notice("Use `prerequisiteSHAs` instead.", "", "")
+        == "Use prerequisite_shas instead."
+    )
+
+
+_NAMES_SCHEMA = """
+    type GitRef {
+        prerequisiteSHAs: [String!]!
+        withRepoURL(repoURL: String!): GitRef!
+    }
+    type Query {
+        gitRef: GitRef!
+        %s
+    }
+"""
+
+_FORMAT_IDENTIFIERS = "formatIdentifiers(names: [String!]!): [String!]!"
+
+
+def test_generate_with_names():
+    schema = build_schema(_NAMES_SCHEMA % _FORMAT_IDENTIFIERS)
+
+    code = generate(schema, names={**_NAMES, "repoURL": "repo_url_engine"})
+
+    assert "async def prerequisite_shas(self) -> list[str]:" in code
+    assert "def prerequisite_sh_as(self, *args, **kwargs):" in code
+    assert "def with_repo_url_engine(self, repo_url_engine: str) -> Self:" in code
+    assert 'Arg("repoURL", repo_url_engine),' in code
+    assert "def git_ref(self) -> GitRef:" in code
+    assert "class GitRef(Type):" in code
+
+
+def test_generate_without_names():
+    schema = build_schema(_NAMES_SCHEMA % _FORMAT_IDENTIFIERS)
+
+    code = generate(schema)
+
+    assert "async def prerequisite_sh_as(self) -> list[str]:" in code
+    assert "def with_repo_url(self, repo_url: str) -> Self:" in code
+    assert "**kwargs" not in code
+
+
+def test_generate_names_gate():
+    # A schema without Query.formatIdentifiers keeps the legacy conversion,
+    # even with names.
+    schema = build_schema(_NAMES_SCHEMA % "")
+
+    code = generate(schema, names=_NAMES)
+
+    assert "async def prerequisite_sh_as(self) -> list[str]:" in code
+    assert "def with_repo_url(self, repo_url: str) -> Self:" in code
+    assert "**kwargs" not in code
+
+
+def test_load_names(tmp_path):
+    assert load_names(None) is None
+
+    path = tmp_path / "names.json"
+    path.write_text("{}")  # a schema without Query.formatIdentifiers
+    assert load_names(path) is None
+
+    path.write_text(
+        '{"SNAKE:UPPERCASE": {"withGPU": "with_gpu"},'
+        ' "PASCAL:CAPITALIZED": {"withGPU": "WithGpu"}}'
+    )
+    assert load_names(path) == {"withGPU": "with_gpu"}
 
 
 opts = InputObject(
@@ -636,6 +782,131 @@ def test_scalar_render(type_, expected, ctx: Context):
 def test_enum_render(type_, expected, ctx: Context):
     handler = EnumHandler(ctx)
     assert handler.render(type_) == expected
+
+
+def test_enum_render_conventional():
+    # With engine-formatted names, members are SCREAMING_SNAKE and their
+    # values the API's values, which go over the wire; the API's other
+    # spellings stay as deprecated aliases.
+    ctx = Context(names={"Default": "default", "PerSession": "per_session"})
+    type_ = GraphQLEnumType(
+        "Compression",
+        {
+            "Gzip": GraphQLEnumValue("Gzip", description="Legacy."),
+            "GZIP": GraphQLEnumValue("Gzip", description="Gzip."),
+            "PerSession": GraphQLEnumValue("PerSession"),
+            "Default": GraphQLEnumValue("Default"),
+            "HTTP2": GraphQLEnumValue("HTTP2"),
+        },
+    )
+    assert EnumHandler(ctx).render(type_) == dedent(
+        '''
+        class Compression(ValueEnum):
+
+            DEFAULT = 'Default'
+            Default = 'Default'
+            """.. deprecated:: Use DEFAULT instead."""
+
+            GZIP = 'Gzip'
+            """Gzip."""
+            Gzip = 'Gzip'
+            """.. deprecated:: Use GZIP instead."""
+
+            HTTP2 = 'HTTP2'
+
+            PER_SESSION = 'PerSession'
+            PerSession = 'PerSession'
+            """.. deprecated:: Use PER_SESSION instead."""
+        ''',
+    )
+
+
+_ENUM_SCHEMA = """
+    enum Policy { Default PerSession }
+    type Query {
+        policy: Policy!
+        %s
+    }
+"""
+
+
+def test_generate_enum_names():
+    schema = build_schema(_ENUM_SCHEMA % _FORMAT_IDENTIFIERS)
+
+    code = generate(schema, names={"Default": "default", "PerSession": "per_session"})
+
+    assert "from dagger.client.base import Input, Root, Scalar, Type, ValueEnum" in code
+    assert "class Policy(ValueEnum):" in code
+    assert "PER_SESSION = 'PerSession'" in code
+    assert "PerSession = 'PerSession'" in code
+
+
+def test_generate_enum_default_names():
+    # A default value names the canonical member, not a deprecated alias.
+    sdl = """
+        enum Policy { Default PerSession }
+        type Query {
+            run(policy: Policy = PerSession): String!
+            %s
+        }
+    """
+    names = {"Default": "default", "PerSession": "per_session", "run": "run"}
+
+    code = generate(build_schema(sdl % _FORMAT_IDENTIFIERS), names=names)
+    assert "policy: Policy | None = Policy.PER_SESSION" in code
+
+    legacy = generate(build_schema(sdl % ""), names=names)
+    assert "policy: Policy | None = Policy.PerSession" in legacy
+
+
+def test_generate_module_enum_values():
+    # A dependency module's enum keeps its members as they always were:
+    # named by schema value, holding the module's value, and sent by name,
+    # since its values aren't schema values.
+    sdl = """
+        directive @enumValue(value: String!) on ENUM_VALUE
+        enum Policy { Default PerSession }
+        enum DepStatus {
+            ACTIVE @enumValue(value: "ACTIVE value")
+            INACTIVE @enumValue(value: "INACTIVE value")
+        }
+        type Query {
+            policy: Policy!
+            status(status: DepStatus = ACTIVE): DepStatus!
+            %s
+        }
+    """
+    names = {
+        "Default": "default",
+        "PerSession": "per_session",
+        "ACTIVE": "active",
+        "INACTIVE": "inactive",
+        "status": "status",
+    }
+
+    code = generate(build_schema(sdl % _FORMAT_IDENTIFIERS), names=names)
+
+    assert (
+        "from dagger.client.base import Enum, Input, Root, Scalar, Type, ValueEnum"
+        in code
+    )
+    assert "class Policy(ValueEnum):" in code
+    assert "class DepStatus(Enum):" in code
+    assert "ACTIVE = 'ACTIVE value'" in code
+    assert "INACTIVE = 'INACTIVE value'" in code
+    assert "status: DepStatus | None = DepStatus.ACTIVE" in code
+
+
+def test_generate_enum_without_names():
+    # Older schemas generate the code they always did.
+    schema = build_schema(_ENUM_SCHEMA % "")
+
+    code = generate(schema, names={"Default": "default", "PerSession": "per_session"})
+
+    assert "from dagger.client.base import Enum, Input, Root, Scalar, Type" in code
+    assert "class Policy(Enum):" in code
+    assert "PerSession = 'PerSession'" in code
+    assert "PER_SESSION" not in code
 
 
 @pytest.mark.parametrize(

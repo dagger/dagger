@@ -23,9 +23,9 @@ type PythonSDK struct { // python-sdk (../../../../../:0:0)
 	baseImage      *string
 	contextDirPath *string
 	debug          *bool
-	extraIndexUrl  *string
+	extraIndexURL  *string
 	id             *ID
-	indexUrl       *string
+	indexURL       *string
 	isInit         *bool
 	mainObjectName *string
 	modName        *string
@@ -105,12 +105,12 @@ func (r *PythonSDK) BaseImage(ctx context.Context) (string, error) {
 }
 
 // Generated code for the Python module
-func (r *PythonSDK) Codegen(modSource *ModuleSource, introspectionJson *File) *GeneratedCode {
+func (r *PythonSDK) Codegen(modSource *ModuleSource, introspectionJSON *File) *GeneratedCode {
 	assertNotNil("modSource", modSource)
-	assertNotNil("introspectionJson", introspectionJson)
+	assertNotNil("introspectionJSON", introspectionJSON)
 	q := r.query.Select("codegen")
 	q = q.Arg("modSource", modSource)
-	q = q.Arg("introspectionJson", introspectionJson)
+	q = q.Arg("introspectionJSON", introspectionJSON)
 
 	return &GeneratedCode{
 		query: q,
@@ -127,9 +127,9 @@ func (r *PythonSDK) Common(modSource *ModuleSource, opts ...PythonSDKCommonOpts)
 	assertNotNil("modSource", modSource)
 	q := r.query.Select("common")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `introspectionJson` optional argument
+		// `introspectionJSON` optional argument
 		if !querybuilder.IsZeroValue(opts[i].IntrospectionJSON) {
-			q = q.Arg("introspectionJson", opts[i].IntrospectionJSON)
+			q = q.Arg("introspectionJSON", opts[i].IntrospectionJSON)
 		}
 	}
 	q = q.Arg("modSource", modSource)
@@ -196,10 +196,10 @@ func (r *PythonSDK) Debug(ctx context.Context) (bool, error) {
 
 // Uv's "extra-index-url" setting
 func (r *PythonSDK) ExtraIndexURL(ctx context.Context) (string, error) {
-	if r.extraIndexUrl != nil {
-		return *r.extraIndexUrl, nil
+	if r.extraIndexURL != nil {
+		return *r.extraIndexURL, nil
 	}
-	q := r.query.Select("extraIndexUrl")
+	q := r.query.Select("extraIndexURL")
 
 	var response string
 
@@ -217,7 +217,7 @@ func (r *PythonSDK) GetFile(name string) *File {
 	}
 }
 
-// A unique identifier for this PythonSdk.
+// A unique identifier for this PythonSDK.
 func (r *PythonSDK) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -232,7 +232,7 @@ func (r *PythonSDK) ID(ctx context.Context) (ID, error) {
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
 func (r *PythonSDK) XXX_GraphQLType() string {
-	return "PythonSdk"
+	return "PythonSDK"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
@@ -262,16 +262,16 @@ func (r *PythonSDK) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = PythonSDK{query: selectNode(dag.query, id, "PythonSdk")}
+	*r = PythonSDK{query: selectNode(dag.query, id, "PythonSDK")}
 	return nil
 }
 
 // Uv's default index URL setting
 func (r *PythonSDK) IndexURL(ctx context.Context) (string, error) {
-	if r.indexUrl != nil {
-		return *r.indexUrl, nil
+	if r.indexURL != nil {
+		return *r.indexURL, nil
 	}
-	q := r.query.Select("indexUrl")
+	q := r.query.Select("indexURL")
 
 	var response string
 
@@ -350,9 +350,9 @@ func (r *PythonSDK) ModuleRuntime(modSource *ModuleSource, opts ...PythonSDKModu
 	assertNotNil("modSource", modSource)
 	q := r.query.Select("moduleRuntime")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `introspectionJson` optional argument
+		// `introspectionJSON` optional argument
 		if !querybuilder.IsZeroValue(opts[i].IntrospectionJSON) {
-			q = q.Arg("introspectionJson", opts[i].IntrospectionJSON)
+			q = q.Arg("introspectionJSON", opts[i].IntrospectionJSON)
 		}
 	}
 	q = q.Arg("modSource", modSource)
@@ -539,10 +539,10 @@ func (r *PythonSDK) WithInstall() *PythonSDK {
 //
 // This includes regenerating the client bindings for the current API schema
 // (codegen).
-func (r *PythonSDK) WithSDK(introspectionJson *File) *PythonSDK {
-	assertNotNil("introspectionJson", introspectionJson)
-	q := r.query.Select("withSdk")
-	q = q.Arg("introspectionJson", introspectionJson)
+func (r *PythonSDK) WithSDK(introspectionJSON *File) *PythonSDK {
+	assertNotNil("introspectionJSON", introspectionJSON)
+	q := r.query.Select("withSDK")
+	q = q.Arg("introspectionJSON", introspectionJSON)
 
 	return &PythonSDK{
 		query: q,
@@ -630,7 +630,7 @@ type PythonSDKOpts struct {
 }
 
 func (r *Query) PythonSDK(opts ...PythonSDKOpts) *PythonSDK { // python-sdk (../../../../../:0:0)
-	q := r.query.Select("pythonSdk")
+	q := r.query.Select("pythonSDK")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sdkSourceDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SDKSourceDir) {

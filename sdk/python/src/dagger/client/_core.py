@@ -44,7 +44,7 @@ from dagger import (
 )
 from dagger._exceptions import _query_error_from_transport
 from dagger.client._session import BaseConnection, SharedConnection
-from dagger.client.base import Scalar, Type
+from dagger.client.base import Scalar, Type, ValueEnum
 
 from ._guards import IDType, is_id_type
 
@@ -380,9 +380,17 @@ def make_converter(ctx: Context):
 
 
 def configure_converter_enum(conv: cattrs.Converter, cl: typing.Any = enum.Enum):
-    """Register hooks for structuring and destructuring enums using member names."""
+    """Register hooks for structuring and destructuring enums using member names.
+
+    Members of a :py:class:`~dagger.client.base.ValueEnum` are named by
+    Python's convention and go over the wire by value instead; they're still
+    structured by name, since such an enum keeps the API's spellings as
+    aliases.
+    """
 
     def to_enum_name(val: enum.Enum) -> str:
+        if isinstance(val, ValueEnum):
+            return val.value
         return val.name
 
     def from_enum_name(name: str, cls: type[enum.Enum]) -> enum.Enum:
