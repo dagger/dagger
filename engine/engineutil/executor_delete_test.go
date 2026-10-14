@@ -13,6 +13,7 @@ import (
 
 	runc "github.com/containerd/go-runc"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 var errBusyCgroup = errors.New("unable to remove container's cgroup: rmdir /sys/fs/cgroup/buildkit/test/init: device or resource busy")
@@ -296,4 +297,23 @@ func TestDescribeUninterruptibleThreadsClaimsAbsenceOnlyWhenComplete(t *testing.
 	d := describeProc(truncated, "self", 1)
 	require.False(t, d.complete)
 	require.Contains(t, d.text, "only the first 1 threads read")
+}
+
+func TestRemoveExecCgroup(t *testing.T) {
+	describe := func(path, _ string) string { return "described " + path }
+	removeErr := func(err error) func(string) error {
+		return func(path string) error { return &os.PathError{Op: "remove", Path: path, Err: err} }
+	}
+
+	require.NoError(t, removeExecCgroup("/sys/fs/cgroup/exec/x", func(string) error { return nil }, describe))
+	require.NoError(t, removeExecCgroup("/sys/fs/cgroup/exec/x", removeErr(unix.ENOENT), describe))
+
+	// A container cgroup that crun couldn't remove keeps its parent busy.
+	err := removeExecCgroup("/sys/fs/cgroup/exec/x", removeErr(unix.EBUSY), describe)
+	require.ErrorIs(t, err, unix.EBUSY)
+	require.ErrorContains(t, err, "left in cgroup: described /sys/fs/cgroup/exec/x")
+
+	err = removeExecCgroup("/sys/fs/cgroup/exec/x", removeErr(unix.EACCES), describe)
+	require.ErrorIs(t, err, unix.EACCES)
+	require.NotContains(t, err.Error(), "left in cgroup")
 }

@@ -16,6 +16,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/opencontainers/cgroups"
 	cgroupmanager "github.com/opencontainers/cgroups/manager"
+	"golang.org/x/sys/unix"
 )
 
 const containerDeleteRecoveryTimeout = 5 * time.Second
@@ -61,6 +62,23 @@ func killContainerCgroup(ctx context.Context, id, cgroupPath string) error {
 		return fmt.Errorf("%w (left in cgroup after kill: %s)", err, describeCgroupTasks(path, "/proc"))
 	}
 	return err
+}
+
+// removeExecCgroup removes an execution's accounting cgroup once its
+// container is deleted. crun's delete only warns, into its log file, when it
+// can't remove a container cgroup that still has tasks, and exits 0; the
+// leftover child then makes this removal fail with EBUSY, so that is where
+// the tasks still inside get named.
+func removeExecCgroup(path string, remove func(string) error, describe func(path, procRoot string) string) error {
+	err := remove(path)
+	switch {
+	case err == nil, errors.Is(err, os.ErrNotExist):
+		return nil
+	case errors.Is(err, unix.EBUSY):
+		return fmt.Errorf("%w (left in cgroup: %s)", err, describe(path, "/proc"))
+	default:
+		return err
+	}
 }
 
 const (
