@@ -91,8 +91,14 @@ public class CodeRenderer : ICodeRenderer
         var declarations = members.Select(m =>
             $"[GraphQLValue({string.Join(", ", m.Values.Select(v => SymbolDisplay.FormatLiteral(v, true)))})] {m.Name}"
         );
+        // The old members, named like the schema values, or like their old
+        // schema values for renamed core values.
         var aliases = members
-            .SelectMany(m => m.Values.Select(legacy => (Member: m.Name, Legacy: legacy)))
+            .SelectMany(m =>
+                m.Values.Select(value =>
+                    (Member: m.Name, Legacy: RenamedCoreNames.Legacy(type.Name, value))
+                )
+            )
             .Where(alias => IsIdentifier(alias.Legacy) && taken.Add(alias.Legacy))
             .Select(alias =>
                 $"[Obsolete(\"Use {alias.Member} instead.\")] {alias.Legacy} = {alias.Member}"
@@ -134,7 +140,8 @@ public class CodeRenderer : ICodeRenderer
         );
 
         // Keep properties renamed by formatted names under their legacy
-        // names too.
+        // names too: those of their old schema names, for renamed core
+        // fields.
         var propertyNames = new HashSet<string>(
             type.InputFields.Select(field => Namer.Property(field.Name))
         );
@@ -143,7 +150,9 @@ public class CodeRenderer : ICodeRenderer
                 (
                     Field: field,
                     Name: Namer.Property(field.Name),
-                    LegacyName: Namer.Legacy.Property(field.Name)
+                    LegacyName: Namer.Legacy.Property(
+                        RenamedCoreNames.Legacy(type.Name, field.Name)
+                    )
                 )
             )
             .Where(p => p.LegacyName != p.Name && !propertyNames.Contains(p.LegacyName))
@@ -686,9 +695,14 @@ public class CodeRenderer : ICodeRenderer
         }
     }
 
-    private string FormatMethodName(Field field, string parentTypeName, Namer? namer = null)
+    private string FormatMethodName(
+        Field field,
+        string parentTypeName,
+        Namer? namer = null,
+        string? name = null
+    )
     {
-        var methodName = (namer ?? Namer).Method(field.Name);
+        var methodName = (namer ?? Namer).Method(name ?? field.Name);
         if (
             parentTypeName.Equals(field.Name, StringComparison.CurrentCultureIgnoreCase)
             || methodName == Namer.Type(parentTypeName)
@@ -716,7 +730,13 @@ public class CodeRenderer : ICodeRenderer
         foreach (var field in fields)
         {
             var methodName = FormatMethodName(field, type.Name);
-            var legacyName = FormatMethodName(field, type.Name, Namer.Legacy);
+            // A renamed core field had its old schema name.
+            var legacyName = FormatMethodName(
+                field,
+                type.Name,
+                Namer.Legacy,
+                RenamedCoreNames.Legacy(type.Name, field.Name)
+            );
             if (legacyName == methodName || methodNames.Contains(legacyName))
             {
                 continue;
