@@ -69,11 +69,9 @@ func New(
 	}
 }
 
-// vcsInfo resolves the git HEAD commit and dirty state from the workspace for
-// stamping into built binaries. Errors are swallowed — a build proceeds with
-// whatever we collected (possibly nothing). Only the resolved scalars are
-// threaded onward; the Workspace itself is never stored or passed into a
-// build, which would make every affected cache key session-specific.
+// vcsInfo reads git HEAD and dirty state for binary stamping. Missing git
+// metadata does not prevent a build. Callers pass the resolved values as linker
+// flags and forward the workspace separately for current compilation inputs.
 func vcsInfo(ctx context.Context, ws *dagger.Workspace) (commit string, dirty bool) {
 	if ws == nil {
 		return "", false

@@ -505,11 +505,11 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
 				}
 			}
-			var failfast bool
-			if inputArgs["failfast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+			var failFast bool
+			if inputArgs["failFast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failFast"]), &failFast)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failFast", err))
 				}
 			}
 			var parallel int
@@ -582,7 +582,7 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dumpAfter", err))
 				}
 			}
-			return nil, (*EngineDev).Test(&parent, ctx, ws, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, ebpf, dumpAfter)
+			return nil, (*EngineDev).Test(&parent, ctx, ws, run, skip, pkg, failFast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, ebpf, dumpAfter)
 		case "TestProfile":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -617,11 +617,11 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
 				}
 			}
-			var failfast bool
-			if inputArgs["failfast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+			var failFast bool
+			if inputArgs["failFast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failFast"]), &failFast)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failFast", err))
 				}
 			}
 			var parallel int
@@ -673,7 +673,7 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpfProgs", err))
 				}
 			}
-			return (*EngineDev).TestProfile(&parent, ctx, ws, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
+			return (*EngineDev).TestProfile(&parent, ctx, ws, run, skip, pkg, failFast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
 		case "TestTelemetry":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -708,11 +708,11 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg update", err))
 				}
 			}
-			var failfast bool
-			if inputArgs["failfast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+			var failFast bool
+			if inputArgs["failFast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failFast"]), &failFast)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failFast", err))
 				}
 			}
 			var parallel int
@@ -764,7 +764,7 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpfProgs", err))
 				}
 			}
-			return (*EngineDev).TestTelemetry(&parent, ctx, ws, run, skip, update, failfast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
+			return (*EngineDev).TestTelemetry(&parent, ctx, ws, run, skip, update, failFast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
 		case "Tests":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)

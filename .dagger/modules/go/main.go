@@ -140,13 +140,10 @@ func New(
 			WithMountedCache("/root/.cache/go-build", buildCache).
 			WithWorkdir("/app")
 	}
-	// Stamp git commit / dirty state into built binaries as VCS info, via
-	// -ldflags into the Dagger buildinfo package's Injected* vars. Prefer the
-	// scalars a parent toolchain resolved for us; otherwise resolve the
-	// auto-injected workspace (a direct call). Errors are swallowed — the
-	// build proceeds with whatever we collected. Only the resolved strings are
-	// ever stamped, never the Workspace itself, so the build stays
-	// content-addressed and its result survives an engine restart.
+	// Stamp git metadata into binaries through the buildinfo linker flags.
+	// Prefer values supplied by a parent toolchain; otherwise read the workspace.
+	// Missing git metadata does not prevent a build. Unchanged source files and
+	// linker flags allow the build to reuse its content cache.
 	if vcsCommit == "" && ws != nil {
 		git := ws.Git()
 		if commit, err := git.Head().CommitSHA(ctx); err == nil {

@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type DaggerEngine struct { // dagger-engine (../../../../../main.go:92:6)
+type DaggerEngine struct { // dagger-engine (../../../../../main.go:90:6)
 	query *querybuilder.Selection
 
 	id            *ID
@@ -34,7 +34,7 @@ func (r *DaggerEngine) WithGraphQLQuery(q *querybuilder.Selection) *DaggerEngine
 	}
 }
 
-func (r *DaggerEngine) ClientDockerConfig() *Secret { // dagger-engine (../../../../../main.go:107:2)
+func (r *DaggerEngine) ClientDockerConfig() *Secret { // dagger-engine (../../../../../main.go:105:2)
 	q := r.query.Select("clientDockerConfig")
 
 	return &Secret{
@@ -44,15 +44,15 @@ func (r *DaggerEngine) ClientDockerConfig() *Secret { // dagger-engine (../../..
 
 // DaggerEngineContainerOpts contains options for DaggerEngine.Container
 type DaggerEngineContainerOpts struct {
-	Platform Platform // dagger-engine (../../../../../main.go:146:2)
+	Platform Platform // dagger-engine (../../../../../main.go:144:2)
 
-	GpuSupport bool // dagger-engine (../../../../../main.go:148:2)
+	GpuSupport bool // dagger-engine (../../../../../main.go:146:2)
 
-	Version string // dagger-engine (../../../../../main.go:150:2)
+	Version string // dagger-engine (../../../../../main.go:148:2)
 }
 
 // Build the engine container
-func (r *DaggerEngine) Container(ws *Workspace, opts ...DaggerEngineContainerOpts) *Container { // dagger-engine (../../../../../main.go:142:1)
+func (r *DaggerEngine) Container(ws *Workspace, opts ...DaggerEngineContainerOpts) *Container { // dagger-engine (../../../../../main.go:140:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -78,11 +78,11 @@ func (r *DaggerEngine) Container(ws *Workspace, opts ...DaggerEngineContainerOpt
 
 // DaggerEngineGraphqlSchemaOpts contains options for DaggerEngine.GraphqlSchema
 type DaggerEngineGraphqlSchemaOpts struct {
-	Version string // dagger-engine (../../../../../main.go:333:2)
+	Version string // dagger-engine (../../../../../main.go:331:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *DaggerEngine) GraphqlSchema(ws *Workspace, opts ...DaggerEngineGraphqlSchemaOpts) *File { // dagger-engine (../../../../../main.go:330:1)
+func (r *DaggerEngine) GraphqlSchema(ws *Workspace, opts ...DaggerEngineGraphqlSchemaOpts) *File { // dagger-engine (../../../../../main.go:328:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -147,7 +147,7 @@ func (r *DaggerEngine) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *DaggerEngine) IncrementSubnet(ws *Workspace) *DaggerEngine { // dagger-engine (../../../../../main.go:116:1)
+func (r *DaggerEngine) IncrementSubnet(ws *Workspace) *DaggerEngine { // dagger-engine (../../../../../main.go:114:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("incrementSubnet")
 	q = q.Arg("ws", ws)
@@ -162,15 +162,15 @@ type DaggerEngineInstallClientOpts struct {
 	//
 	// The client container to configure
 	//
-	Client *Container // dagger-engine (../../../../../main.go:260:2)
+	Client *Container // dagger-engine (../../../../../main.go:258:2)
 	//
 	// The engine service to bind
 	//
-	Service *Service // dagger-engine (../../../../../main.go:263:2)
+	Service *Service // dagger-engine (../../../../../main.go:261:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *DaggerEngine) InstallClient(ws *Workspace, opts ...DaggerEngineInstallClientOpts) *Container { // dagger-engine (../../../../../main.go:256:1)
+func (r *DaggerEngine) InstallClient(ws *Workspace, opts ...DaggerEngineInstallClientOpts) *Container { // dagger-engine (../../../../../main.go:254:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -192,7 +192,7 @@ func (r *DaggerEngine) InstallClient(ws *Workspace, opts ...DaggerEngineInstallC
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *DaggerEngine) IntrospectionJSON(ws *Workspace) *File { // dagger-engine (../../../../../main.go:317:1)
+func (r *DaggerEngine) IntrospectionJSON(ws *Workspace) *File { // dagger-engine (../../../../../main.go:315:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("introspectionJson")
 	q = q.Arg("ws", ws)
@@ -203,7 +203,7 @@ func (r *DaggerEngine) IntrospectionJSON(ws *Workspace) *File { // dagger-engine
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *DaggerEngine) IntrospectionTool(ws *Workspace) *File { // dagger-engine (../../../../../main.go:351:1)
+func (r *DaggerEngine) IntrospectionTool(ws *Workspace) *File { // dagger-engine (../../../../../main.go:349:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("introspectionTool")
 	q = q.Arg("ws", ws)
@@ -253,7 +253,7 @@ func (r *DaggerEngine) LoadToDocker(ws *Workspace, docker *Socket, opts ...Dagge
 	}
 }
 
-func (r *DaggerEngine) NetworkCidr(ctx context.Context, ws *Workspace) (string, error) { // dagger-engine (../../../../../main.go:112:1)
+func (r *DaggerEngine) NetworkCidr(ctx context.Context, ws *Workspace) (string, error) { // dagger-engine (../../../../../main.go:110:1)
 	assertNotNil("ws", ws)
 	if r.networkCidr != nil {
 		return *r.networkCidr, nil
@@ -274,17 +274,17 @@ type DaggerEnginePublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // dagger-engine (../../../../../main.go:400:2)
+	Image string // dagger-engine (../../../../../main.go:398:2)
 
-	DryRun bool // dagger-engine (../../../../../main.go:405:2)
+	DryRun bool // dagger-engine (../../../../../main.go:403:2)
 
-	RegistryUsername string // dagger-engine (../../../../../main.go:408:2)
+	RegistryUsername string // dagger-engine (../../../../../main.go:406:2)
 
-	RegistryPassword *Secret // dagger-engine (../../../../../main.go:410:2)
+	RegistryPassword *Secret // dagger-engine (../../../../../main.go:408:2)
 }
 
 // Publish all engine images to a registry
-func (r *DaggerEngine) Publish(ctx context.Context, ws *Workspace, tag []string, opts ...DaggerEnginePublishOpts) error { // dagger-engine (../../../../../main.go:395:1)
+func (r *DaggerEngine) Publish(ctx context.Context, ws *Workspace, tag []string, opts ...DaggerEnginePublishOpts) error { // dagger-engine (../../../../../main.go:393:1)
 	assertNotNil("ws", ws)
 	if r.publish != nil {
 		return nil
@@ -314,7 +314,7 @@ func (r *DaggerEngine) Publish(ctx context.Context, ws *Workspace, tag []string,
 	return q.Execute(ctx)
 }
 
-func (r *DaggerEngine) ReleaseDryRun(ctx context.Context, ws *Workspace) error { // dagger-engine (../../../../../main.go:381:1)
+func (r *DaggerEngine) ReleaseDryRun(ctx context.Context, ws *Workspace) error { // dagger-engine (../../../../../main.go:379:1)
 	assertNotNil("ws", ws)
 	if r.releaseDryRun != nil {
 		return nil
@@ -327,15 +327,15 @@ func (r *DaggerEngine) ReleaseDryRun(ctx context.Context, ws *Workspace) error {
 
 // DaggerEngineServiceOpts contains options for DaggerEngine.Service
 type DaggerEngineServiceOpts struct {
-	GpuSupport bool // dagger-engine (../../../../../main.go:209:2)
+	GpuSupport bool // dagger-engine (../../../../../main.go:207:2)
 
-	SharedCache bool // dagger-engine (../../../../../main.go:211:2)
+	SharedCache bool // dagger-engine (../../../../../main.go:209:2)
 
-	Metrics bool // dagger-engine (../../../../../main.go:213:2)
+	Metrics bool // dagger-engine (../../../../../main.go:211:2)
 }
 
 // Create a test engine service
-func (r *DaggerEngine) Service(ws *Workspace, name string, opts ...DaggerEngineServiceOpts) *Service { // dagger-engine (../../../../../main.go:205:1)
+func (r *DaggerEngine) Service(ws *Workspace, name string, opts ...DaggerEngineServiceOpts) *Service { // dagger-engine (../../../../../main.go:203:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -360,7 +360,7 @@ func (r *DaggerEngine) Service(ws *Workspace, name string, opts ...DaggerEngineS
 	}
 }
 
-func (r *DaggerEngine) Source() *Directory { // dagger-engine (../../../../../main.go:93:2)
+func (r *DaggerEngine) Source() *Directory { // dagger-engine (../../../../../main.go:91:2)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -384,7 +384,7 @@ type DaggerEngineTestOpts struct {
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // dagger-engine (../../../../../test.go:38:2)
+	FailFast bool // dagger-engine (../../../../../test.go:38:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
@@ -442,9 +442,9 @@ func (r *DaggerEngine) Test(ctx context.Context, ws *Workspace, opts ...DaggerEn
 		if !querybuilder.IsZeroValue(opts[i].Pkg) {
 			q = q.Arg("pkg", opts[i].Pkg)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {
@@ -508,7 +508,7 @@ type DaggerEngineTestProfileOpts struct {
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // dagger-engine (../../../../../test.go:142:2)
+	FailFast bool // dagger-engine (../../../../../test.go:142:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
@@ -558,9 +558,9 @@ func (r *DaggerEngine) TestProfile(ws *Workspace, opts ...DaggerEngineTestProfil
 		if !querybuilder.IsZeroValue(opts[i].Pkg) {
 			q = q.Arg("pkg", opts[i].Pkg)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {
@@ -611,7 +611,7 @@ type DaggerEngineTestTelemetryOpts struct {
 
 	Update bool // dagger-engine (../../../../../test.go:230:2)
 
-	Failfast bool // dagger-engine (../../../../../test.go:232:2)
+	FailFast bool // dagger-engine (../../../../../test.go:232:2)
 
 	Parallel int // dagger-engine (../../../../../test.go:234:2)
 
@@ -648,9 +648,9 @@ func (r *DaggerEngine) TestTelemetry(ws *Workspace, opts ...DaggerEngineTestTele
 		if !querybuilder.IsZeroValue(opts[i].Update) {
 			q = q.Arg("update", opts[i].Update)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {
@@ -703,7 +703,7 @@ func (r *DaggerEngine) Tests(ctx context.Context, ws *Workspace) (string, error)
 	return response, q.Execute(ctx)
 }
 
-func (r *DaggerEngine) WithEbpfprogs(ws *Workspace, names []string) *DaggerEngine { // dagger-engine (../../../../../main.go:121:1)
+func (r *DaggerEngine) WithEbpfprogs(ws *Workspace, names []string) *DaggerEngine { // dagger-engine (../../../../../main.go:119:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("withEbpfprogs")
 	q = q.Arg("ws", ws)
@@ -714,7 +714,7 @@ func (r *DaggerEngine) WithEbpfprogs(ws *Workspace, names []string) *DaggerEngin
 	}
 }
 
-func (r *DaggerEngine) WithEngineConfig(ws *Workspace, key string, value string) *DaggerEngine { // dagger-engine (../../../../../main.go:126:1)
+func (r *DaggerEngine) WithEngineConfig(ws *Workspace, key string, value string) *DaggerEngine { // dagger-engine (../../../../../main.go:124:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("withEngineConfig")
 	q = q.Arg("ws", ws)
@@ -726,7 +726,7 @@ func (r *DaggerEngine) WithEngineConfig(ws *Workspace, key string, value string)
 	}
 }
 
-func (r *DaggerEngine) WithLogLevel(ws *Workspace, level string) *DaggerEngine { // dagger-engine (../../../../../main.go:136:1)
+func (r *DaggerEngine) WithLogLevel(ws *Workspace, level string) *DaggerEngine { // dagger-engine (../../../../../main.go:134:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("withLogLevel")
 	q = q.Arg("ws", ws)
@@ -737,7 +737,7 @@ func (r *DaggerEngine) WithLogLevel(ws *Workspace, level string) *DaggerEngine {
 	}
 }
 
-func (r *DaggerEngine) WithRace(ws *Workspace) *DaggerEngine { // dagger-engine (../../../../../main.go:131:1)
+func (r *DaggerEngine) WithRace(ws *Workspace) *DaggerEngine { // dagger-engine (../../../../../main.go:129:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("withRace")
 	q = q.Arg("ws", ws)

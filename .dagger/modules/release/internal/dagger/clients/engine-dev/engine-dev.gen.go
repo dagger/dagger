@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type EngineDev struct { // engine-dev (../../main.go:92:6)
+type EngineDev struct { // engine-dev (../../main.go:90:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -40,7 +40,7 @@ func (r *EngineDev) WithGraphQLQuery(q *querybuilder.Selection) *EngineDev {
 	}
 }
 
-func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../main.go:107:2)
+func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../main.go:105:2)
 	q := r.query.Select("clientDockerConfig")
 
 	return new(Secret).WithGraphQLQuery(q)
@@ -48,15 +48,15 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../main.go:
 
 // EngineDevContainerOpts contains options for EngineDev.Container
 type EngineDevContainerOpts struct {
-	Platform Platform // engine-dev (../../main.go:146:2)
+	Platform Platform // engine-dev (../../main.go:144:2)
 
-	GpuSupport bool // engine-dev (../../main.go:148:2)
+	GpuSupport bool // engine-dev (../../main.go:146:2)
 
-	Version string // engine-dev (../../main.go:150:2)
+	Version string // engine-dev (../../main.go:148:2)
 }
 
 // Build the engine container
-func (r *EngineDev) Container(ws *Workspace, opts ...EngineDevContainerOpts) *Container { // engine-dev (../../main.go:142:1)
+func (r *EngineDev) Container(ws *Workspace, opts ...EngineDevContainerOpts) *Container { // engine-dev (../../main.go:140:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -80,11 +80,11 @@ func (r *EngineDev) Container(ws *Workspace, opts ...EngineDevContainerOpts) *Co
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../main.go:333:2)
+	Version string // engine-dev (../../main.go:331:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(ws *Workspace, opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../main.go:330:1)
+func (r *EngineDev) GraphqlSchema(ws *Workspace, opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../main.go:328:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -153,7 +153,7 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *EngineDev) IncrementSubnet(ws *Workspace) *EngineDev { // engine-dev (../../main.go:116:1)
+func (r *EngineDev) IncrementSubnet(ws *Workspace) *EngineDev { // engine-dev (../../main.go:114:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("incrementSubnet")
 	q = q.Arg("ws", ws)
@@ -169,15 +169,15 @@ type EngineDevInstallClientOpts struct {
 	//
 	// The client container to configure
 	//
-	Client *Container // engine-dev (../../main.go:260:2)
+	Client *Container // engine-dev (../../main.go:258:2)
 	//
 	// The engine service to bind
 	//
-	Service *Service // engine-dev (../../main.go:263:2)
+	Service *Service // engine-dev (../../main.go:261:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *EngineDev) InstallClient(ws *Workspace, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../main.go:256:1)
+func (r *EngineDev) InstallClient(ws *Workspace, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../main.go:254:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -197,7 +197,7 @@ func (r *EngineDev) InstallClient(ws *Workspace, opts ...EngineDevInstallClientO
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *EngineDev) IntrospectionJSON(ws *Workspace) *File { // engine-dev (../../main.go:317:1)
+func (r *EngineDev) IntrospectionJSON(ws *Workspace) *File { // engine-dev (../../main.go:315:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("introspectionJson")
 	q = q.Arg("ws", ws)
@@ -206,7 +206,7 @@ func (r *EngineDev) IntrospectionJSON(ws *Workspace) *File { // engine-dev (../.
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool(ws *Workspace) *File { // engine-dev (../../main.go:351:1)
+func (r *EngineDev) IntrospectionTool(ws *Workspace) *File { // engine-dev (../../main.go:349:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("introspectionTool")
 	q = q.Arg("ws", ws)
@@ -255,7 +255,7 @@ func (r *EngineDev) LoadToDocker(ws *Workspace, docker *Socket, opts ...EngineDe
 	}
 }
 
-func (r *EngineDev) NetworkCidr(ctx context.Context, ws *Workspace) (string, error) { // engine-dev (../../main.go:112:1)
+func (r *EngineDev) NetworkCidr(ctx context.Context, ws *Workspace) (string, error) { // engine-dev (../../main.go:110:1)
 	assertNotNil("ws", ws)
 	if r.networkCidr != nil {
 		return *r.networkCidr, nil
@@ -276,17 +276,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../main.go:400:2)
+	Image string // engine-dev (../../main.go:398:2)
 
-	DryRun bool // engine-dev (../../main.go:405:2)
+	DryRun bool // engine-dev (../../main.go:403:2)
 
-	RegistryUsername string // engine-dev (../../main.go:408:2)
+	RegistryUsername string // engine-dev (../../main.go:406:2)
 
-	RegistryPassword *Secret // engine-dev (../../main.go:410:2)
+	RegistryPassword *Secret // engine-dev (../../main.go:408:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, ws *Workspace, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:395:1)
+func (r *EngineDev) Publish(ctx context.Context, ws *Workspace, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:393:1)
 	assertNotNil("ws", ws)
 	if r.publish != nil {
 		return nil
@@ -316,7 +316,7 @@ func (r *EngineDev) Publish(ctx context.Context, ws *Workspace, tag []string, op
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ws *Workspace) *Check { // engine-dev (../../main.go:381:1)
+func (r *EngineDev) ReleaseDryRun(ws *Workspace) *Check { // engine-dev (../../main.go:379:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("releaseDryRun")
 	q = q.Arg("ws", ws)
@@ -326,15 +326,15 @@ func (r *EngineDev) ReleaseDryRun(ws *Workspace) *Check { // engine-dev (../../m
 
 // EngineDevServiceOpts contains options for EngineDev.Service
 type EngineDevServiceOpts struct {
-	GpuSupport bool // engine-dev (../../main.go:209:2)
+	GpuSupport bool // engine-dev (../../main.go:207:2)
 
-	SharedCache bool // engine-dev (../../main.go:211:2)
+	SharedCache bool // engine-dev (../../main.go:209:2)
 
-	Metrics bool // engine-dev (../../main.go:213:2)
+	Metrics bool // engine-dev (../../main.go:211:2)
 }
 
 // Create a test engine service
-func (r *EngineDev) Service(ws *Workspace, name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../main.go:205:1)
+func (r *EngineDev) Service(ws *Workspace, name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../main.go:203:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -357,7 +357,7 @@ func (r *EngineDev) Service(ws *Workspace, name string, opts ...EngineDevService
 	return new(Service).WithGraphQLQuery(q)
 }
 
-func (r *EngineDev) Source() *Directory { // engine-dev (../../main.go:93:2)
+func (r *EngineDev) Source() *Directory { // engine-dev (../../main.go:91:2)
 	q := r.query.Select("source")
 
 	return new(Directory).WithGraphQLQuery(q)
@@ -379,7 +379,7 @@ type EngineDevTestOpts struct {
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // engine-dev (../../test.go:38:2)
+	FailFast bool // engine-dev (../../test.go:38:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
@@ -437,9 +437,9 @@ func (r *EngineDev) Test(ctx context.Context, ws *Workspace, opts ...EngineDevTe
 		if !querybuilder.IsZeroValue(opts[i].Pkg) {
 			q = q.Arg("pkg", opts[i].Pkg)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {
@@ -503,7 +503,7 @@ type EngineDevTestProfileOpts struct {
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // engine-dev (../../test.go:142:2)
+	FailFast bool // engine-dev (../../test.go:142:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
@@ -553,9 +553,9 @@ func (r *EngineDev) TestProfile(ws *Workspace, opts ...EngineDevTestProfileOpts)
 		if !querybuilder.IsZeroValue(opts[i].Pkg) {
 			q = q.Arg("pkg", opts[i].Pkg)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {
@@ -607,7 +607,7 @@ type EngineDevTestTelemetryOpts struct {
 
 	Update bool // engine-dev (../../test.go:230:2)
 
-	Failfast bool // engine-dev (../../test.go:232:2)
+	FailFast bool // engine-dev (../../test.go:232:2)
 
 	Parallel int // engine-dev (../../test.go:234:2)
 
@@ -644,9 +644,9 @@ func (r *EngineDev) TestTelemetry(ws *Workspace, opts ...EngineDevTestTelemetryO
 		if !querybuilder.IsZeroValue(opts[i].Update) {
 			q = q.Arg("update", opts[i].Update)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {
@@ -697,7 +697,7 @@ func (r *EngineDev) Tests(ctx context.Context, ws *Workspace) (string, error) { 
 	return response, q.Execute(ctx)
 }
 
-func (r *EngineDev) WithEbpfprogs(ws *Workspace, names []string) *EngineDev { // engine-dev (../../main.go:121:1)
+func (r *EngineDev) WithEbpfprogs(ws *Workspace, names []string) *EngineDev { // engine-dev (../../main.go:119:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("withEbpfprogs")
 	q = q.Arg("ws", ws)
@@ -709,7 +709,7 @@ func (r *EngineDev) WithEbpfprogs(ws *Workspace, names []string) *EngineDev { //
 	}
 }
 
-func (r *EngineDev) WithEngineConfig(ws *Workspace, key string, value string) *EngineDev { // engine-dev (../../main.go:126:1)
+func (r *EngineDev) WithEngineConfig(ws *Workspace, key string, value string) *EngineDev { // engine-dev (../../main.go:124:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("withEngineConfig")
 	q = q.Arg("ws", ws)
@@ -722,7 +722,7 @@ func (r *EngineDev) WithEngineConfig(ws *Workspace, key string, value string) *E
 	}
 }
 
-func (r *EngineDev) WithLogLevel(ws *Workspace, level string) *EngineDev { // engine-dev (../../main.go:136:1)
+func (r *EngineDev) WithLogLevel(ws *Workspace, level string) *EngineDev { // engine-dev (../../main.go:134:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("withLogLevel")
 	q = q.Arg("ws", ws)
@@ -734,7 +734,7 @@ func (r *EngineDev) WithLogLevel(ws *Workspace, level string) *EngineDev { // en
 	}
 }
 
-func (r *EngineDev) WithRace(ws *Workspace) *EngineDev { // engine-dev (../../main.go:131:1)
+func (r *EngineDev) WithRace(ws *Workspace) *EngineDev { // engine-dev (../../main.go:129:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("withRace")
 	q = q.Arg("ws", ws)

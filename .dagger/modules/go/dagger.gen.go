@@ -414,11 +414,11 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
 				}
 			}
-			var failfast bool
-			if inputArgs["failfast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
+			var failFast bool
+			if inputArgs["failFast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failFast"]), &failFast)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failFast", err))
 				}
 			}
 			var parallel int
@@ -449,7 +449,7 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkgs", err))
 				}
 			}
-			return nil, (*Go).Test(&parent, ctx, ws, run, skip, failfast, parallel, timeout, count, pkgs)
+			return nil, (*Go).Test(&parent, ctx, ws, run, skip, failFast, parallel, timeout, count, pkgs)
 		case "Tests":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)

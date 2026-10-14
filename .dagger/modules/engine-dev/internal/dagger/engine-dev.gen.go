@@ -369,7 +369,7 @@ type EngineDevTestOpts struct {
 	// Default: "./..."
 	Pkg string
 	// Abort test run on first failure
-	Failfast bool
+	FailFast bool
 	// How many tests to run in parallel - defaults to the number of CPUs
 	Parallel int
 	// How long before timing out the test run
@@ -413,9 +413,9 @@ func (r *EngineDev) Test(ctx context.Context, ws *Workspace, opts ...EngineDevTe
 		if !querybuilder.IsZeroValue(opts[i].Pkg) {
 			q = q.Arg("pkg", opts[i].Pkg)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {
@@ -473,7 +473,7 @@ type EngineDevTestProfileOpts struct {
 	// Default: "./..."
 	Pkg string
 	// Abort test run on first failure
-	Failfast bool
+	FailFast bool
 	// How many tests to run in parallel - defaults to the number of CPUs
 	Parallel int
 	// How long before timing out the test run
@@ -515,9 +515,9 @@ func (r *EngineDev) TestProfile(ws *Workspace, opts ...EngineDevTestProfileOpts)
 		if !querybuilder.IsZeroValue(opts[i].Pkg) {
 			q = q.Arg("pkg", opts[i].Pkg)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {
@@ -565,7 +565,7 @@ type EngineDevTestTelemetryOpts struct {
 
 	Update bool
 
-	Failfast bool
+	FailFast bool
 
 	Parallel int
 
@@ -600,9 +600,9 @@ func (r *EngineDev) TestTelemetry(ws *Workspace, opts ...EngineDevTestTelemetryO
 		if !querybuilder.IsZeroValue(opts[i].Update) {
 			q = q.Arg("update", opts[i].Update)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {

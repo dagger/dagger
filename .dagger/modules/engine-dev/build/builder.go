@@ -26,10 +26,8 @@ var versionAnnotation = distconsts.OCIVersionAnnotation
 type Builder struct {
 	source *dagger.Directory
 
-	// Resolved VCS info stamped into the built engine, threaded in from
-	// engine-dev as scalars. Storing the source Workspace here instead would
-	// make every build method's cache key session-specific and prevent
-	// disk-cache reuse across engine restarts.
+	// Resolved VCS info stamped into the built engine. These scalar values and
+	// the selected source files determine the build's content cache key.
 	vcsCommit string
 	vcsDirty  bool
 
