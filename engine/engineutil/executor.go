@@ -56,6 +56,14 @@ type ExecutionMetadata struct {
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string
+	// If true, an alias whose target no longer resolves is left out of the
+	// hosts file instead of failing the exec. Interactive execs set this: a
+	// bound service that has already exited must not stop a terminal from
+	// starting.
+	//
+	// omitempty keeps the serialized form, and therefore the cache keys, of
+	// every other exec unchanged.
+	SkipUnresolvableHostAliases bool `json:",omitempty"`
 	// search domains to install prior to the session's domain
 	ExtraSearchDomains []string
 
