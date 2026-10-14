@@ -195,7 +195,100 @@ object IDs. It does not copy these objects between client schemas.
 
 The engine passes the same module workspace to `types` and `call`. The
 workspace boundary can be above the module directory. Thus, the entrypoint can
-read a file such as `go.mod` above the module directory.
+read a file such as `go.mod` above the module directory. A file that the
+entrypoint reads from the workspace is not part of the module digest, so a
+function result with the default cache policy does not follow a change to it.
+Return such files from `sources` instead.
+
+### Module sources
+
+The entrypoint type can declare one optional member, `sources`. Declaring it
+selects a second interface:
+
+```graphql
+interface ModuleEntrypoint {
+  """
+  Return every file the module builds from, at its path from the root of
+  the workspace. The workspace working directory is the module directory.
+  """
+  sources(workspace: Workspace!): Directory!
+
+  types: [TypeDef!]!
+
+  call(
+    receiverType: String!
+    receiverValue: JSON
+    fnName: String!
+    fnArgs: JSON!
+  ): JSON!
+}
+```
+
+The engine calls `sources` while it loads the module source, before anything
+reads the module digest. The module context becomes the returned directory
+plus the module's own files: its manifest, its source directory and its
+`include` paths, as the engine loads them without the member. The engine then
+removes every `.git` directory and file: `.git/config` can hold credentials,
+and `.git` changes on every fetch. The returned files are thus part of
+`contextDirectory` and of the module digest, so they reach the cache key of
+every function call and of `types`. A file outside the returned directory does
+not change the context digest. The digest also covers the module identity, its
+paths, its user defaults and its SDK, as for any module.
+
+The returned directory must hold the module manifest at the module path, as
+in this example:
+
+```dang
+pub sources(workspace: Workspace!): Directory! {
+  directory
+    .withDirectory("lib", workspace.directory("/lib", include: ["go.mod", "greet/*.go"], gitignore: true))
+    .withDirectory(workspace.cwd, workspace.directory(".", gitignore: true))
+}
+```
+
+The engine refuses a directory without the manifest at the module path, which
+also catches a directory rooted at the module directory.
+
+`types` and `call` get no workspace under this interface. They read the module
+through `currentModule`. Dang accepts an extra nullable argument, so an
+entrypoint that also supports an engine without `sources` can keep a nullable
+`workspace` argument on `types` and `call`, and can tell such an engine by the
+workspace it receives.
+
+The workspace that `sources` gets reads the module's own source:
+
+| Module source | Workspace |
+| --- | --- |
+| Local | The checkout on the host, rooted at the context root, read through the client that loaded the module. This holds for a module outside the caller's workspace. |
+| Loaded through `Workspace.moduleSource` | That workspace. |
+| Git | The tree of the module commit. |
+| Directory | The directory that the caller passed. |
+
+A Git module thus never reads the caller's checkout.
+
+The module's own files keep their `.gitignore` rules: a local module context
+applies `.gitignore`, and a Git or directory module context does not. The
+returned directory follows the `gitignore` argument that `sources` passes to
+`Workspace.directory`. A directory module context holds the module's own files
+and the returned files, not the whole directory that its caller passed. This
+also holds for a module that another module serves from its own tree.
+
+The engine calls `sources` once for each load of the module source, which is
+once for each client, and once for each function call of a module that
+declares the module as a client. Keep it to a few API calls: a `glob` over the
+workspace or one read per file multiplies the load cost.
+
+`sources` runs with a nested client like a module function: it has the Dagger
+API, and it reaches the caller's host only through the workspace it gets. It
+runs before the module exists, so it cannot read `currentModule`. A module that
+declares `sources` gets the same trust as its function code.
+
+The engine evaluates `sources` only when a type that implements
+`ModuleEntrypoint` in a top-level `.dang` file of the entrypoint directory
+declares a public member with that name. A comment, a string, a private member
+or a member of another type does not count. `sources` needs a local
+entrypoint: an entrypoint named by a module reference or an address that
+declares the member fails when the module loads its types.
 
 ### Module context in the entrypoint
 
@@ -212,10 +305,10 @@ An SDK that resolves relative paths, such as a path dependency on
 it. The workspace cannot replace these fields: a Git or directory module is not
 in the workspace, and the module digest does not cover workspace files.
 
-For a local or Git module, `contextDirectory` holds the manifest and the
-module directory, at their paths from the context root. A local module context
-applies `.gitignore`. A directory module source keeps the whole directory that
-its caller passed.
+For a local or Git module, `contextDirectory` holds the manifest, the module
+directory and the files that `sources` returns, at their paths from the context
+root. A local module context applies `.gitignore`. A directory module source
+without `sources` keeps the whole directory that its caller passed.
 
 ### Type rules
 
@@ -393,6 +486,7 @@ All new GraphQL fields and types use the v1 schema view gate.
 | --- | --- |
 | Manifest | Read and write the three fields. Select the format by the presence of the `entrypoint` table. Reject missing or invalid values. Reject a `manifestVersion` key in a version 2 manifest and an `entrypoint` value in `dagger.json`. |
 | Context | Expose the module context and the module subpath through `currentModule.contextDirectory` and `currentModule.sourceSubpath`. Keep `currentModule.source` narrowed to the module directory. |
+| Sources | Evaluate a declared `sources` member while the module source loads, with the module's own workspace, and add the returned files to the module context. Pass no workspace to `types` and `call` of such an entrypoint. Load a module without the member as before. Reject a directory without the module manifest at the module path, and the member on a non-local entrypoint. |
 | Source | Resolve module-relative local paths, module references, and module-returned directories. Keep a module reference on the directory it names. Reject paths that leave the module directory. |
 | Dang driver | Load a directory without a manifest. Require one empty-constructible `ModuleEntrypoint`. Reject dependencies. |
 | Types | Bind name-only module and core type references. Reject invalid or duplicate definitions. |
