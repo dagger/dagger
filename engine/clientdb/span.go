@@ -114,16 +114,25 @@ func UnmarshalProtoJSONs[T proto.Message](pb []byte, base T, out *[]T) error {
 	return nil
 }
 
+// MarshalProtoJSONs encodes protos as a JSON array of their protojson
+// encodings. Each element is appended as protojson wrote it: wrapping them in
+// json.RawMessage for json.Marshal would validate and re-compact every element
+// a second time, which costs as much as encoding it. Readers parse the array
+// (UnmarshalProtoJSONs), and the byte scans over it (e.g. protoJSONStringAttr)
+// tolerate protojson's whitespace.
 func MarshalProtoJSONs[T proto.Message](protos []T) ([]byte, error) {
-	msgs := make([]json.RawMessage, len(protos))
+	buf := append(make([]byte, 0, 64*len(protos)+2), '[')
 	for i, msg := range protos {
-		pl, err := protojson.Marshal(msg)
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		var err error
+		buf, err = protojson.MarshalOptions{}.MarshalAppend(buf, msg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to protojson marshal: %w", err)
 		}
-		msgs[i] = json.RawMessage(pl)
 	}
-	return json.Marshal(msgs)
+	return append(buf, ']'), nil
 }
 
 // Attributes returns the attributes of the span
