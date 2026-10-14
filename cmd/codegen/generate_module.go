@@ -34,7 +34,8 @@ func GenerateModule(cmd *cobra.Command, args []string) error {
 
 	// Go merges the module's own types into the schema via the engine's
 	// schema-merge tool, so it needs an engine connection; other languages
-	// keep working offline with pre-baked introspection JSON.
+	// only connect when the engine formats the schema's names (see
+	// getGlobalConfig).
 	cfg, err := getGlobalConfig(ctx, generator.SDKLang(lang) == generator.SDKLangGo)
 	if err != nil {
 		return fmt.Errorf("failed to get global configuration: %w", err)
