@@ -430,8 +430,6 @@ source = "`+repoURL+`#main:entry"
 	})
 }
 
-// A module without sources keeps the contract that passes the module
-// workspace to types and call.
 func (ModuleSuite) TestModuleEntrypointWithoutSourcesGetsWorkspace(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := goGitBase(t, c).
