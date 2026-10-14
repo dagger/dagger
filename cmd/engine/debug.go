@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
+	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -51,6 +53,33 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 	// runtime.SetMutexProfileFraction(1)
 	// runtime.SetBlockProfileRate(1)
 
+	// Every process the engine can see, with its state, wait channel and
+	// kernel stack, for diagnosing a stuck shutdown.
+	m.Handle("/debug/processes", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		entries, err := os.ReadDir("/proc")
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		for _, ent := range entries {
+			if _, err := strconv.Atoi(ent.Name()); err != nil {
+				continue
+			}
+			dir := filepath.Join("/proc", ent.Name())
+			stat, _ := os.ReadFile(filepath.Join(dir, "stat"))
+			wchan, _ := os.ReadFile(filepath.Join(dir, "wchan"))
+			cmdline, _ := os.ReadFile(filepath.Join(dir, "cmdline"))
+			// at most 16 frames of the kernel stack, as is enough to see
+			// where a process waits
+			stack, _ := os.ReadFile(filepath.Join(dir, "stack"))
+			if lines := strings.SplitAfter(string(stack), "\n"); len(lines) > 16 {
+				stack = []byte(strings.Join(lines[:16], ""))
+			}
+			fmt.Fprintf(rw, "== %s\nstat: %s\nwchan: %s\ncmdline: %s\n%s\n",
+				ent.Name(), strings.TrimSpace(string(stat)), wchan,
+				strings.ReplaceAll(string(cmdline), "\x00", " "), stack)
+		}
+	}))
 	m.Handle("/debug/gc", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		runtime.GC()
 		debug.FreeOSMemory()

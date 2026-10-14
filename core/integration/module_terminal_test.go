@@ -94,6 +94,30 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		require.NoError(t, cmd.Wait())
 	})
 
+	t.Run("initial terminal size", func(ctx context.Context, t *testctx.T) {
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 35, Cols: 160}))
+
+		// The runtime applies the client's size shortly after the command
+		// starts, so wait for it. (A zero-sized terminal prints nothing.)
+		cmd := hostDaggerCommandRaw(ctx, t, t.TempDir(), "-c",
+			`container | from `+alpineImage+` | with-new-file /probe.sh --contents='for i in $(seq 50); do s=$(stty size); [ "$s" = "35 160" ] && break; sleep 0.1; done; echo "size=$s"' | terminal --cmd=sh,/probe.sh`)
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		require.NoError(t, cmd.Start())
+
+		_, err = console.ExpectString("size=35 160\r\n")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+		require.NoError(t, cmd.Wait())
+	})
+
 	t.Run("top-level command without terminal", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-default")
 		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "data"), 0o755))

@@ -4,7 +4,7 @@ import "github.com/dagger/dagger/engine/distconsts"
 
 const (
 	EngineServerPath      = "/usr/local/bin/dagger-engine"
-	RuncPath              = distconsts.RuncPath
+	RuntimePath           = distconsts.RuntimePath
 	DaggerInitPath        = distconsts.DaggerInitPath
 	DaggerInitSessionPath = distconsts.DaggerInitSessionPath
 	DaggerCLIPath         = distconsts.DaggerCLIPath
@@ -19,9 +19,14 @@ const (
 	AlpineImage   = distconsts.AlpineImage
 	UbuntuVersion = "22.04"
 
-	RuncVersion  = "v1.4.2"
-	CniVersion   = "v1.9.0"
-	SSHFSVersion = "3.7.6"
+	// The container runtime is crun, built from the release tarball with a
+	// static json-c (Alpine has no static json-c package).
+	CrunVersion   = "1.30.1"
+	CrunChecksum  = "sha256:99d036d95113552b6df66c7c879432835504bf0e525fc0372745071df129527b"
+	JSONCVersion  = "0.18-20240915"
+	JSONCChecksum = "sha256:3112c1f25d39eca661fe3fc663431e130cc6e2f900c081738317fba49d29e298"
+	CniVersion    = "v1.9.0"
+	SSHFSVersion  = "3.7.6"
 
 	QemuVersion  = "11.0.2"
 	QemuChecksum = "sha256:3745f6ea88e2e87fe0dc838b2b1d4e0a770bf48e01a1d5a186842a1fff76ccf5"
