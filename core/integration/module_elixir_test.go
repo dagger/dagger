@@ -296,6 +296,25 @@ func (ElixirSuite) TestCheck(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// A module on a v1 engine version gets its generated client named by the
+// engine (Query.formatIdentifiers), with deprecated aliases under the legacy
+// names. Older modules keep the legacy names: the other tests cover them.
+func (ElixirSuite) TestNaming(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := elixirModule(t, c, "naming").
+		With(daggerCallAt(".", "exported")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "new=true legacy=true", out)
+
+	out, err = elixirModule(t, c, "naming").
+		With(daggerCallAt(".", "http-url-for", "--host-name", "dagger.io")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "https://dagger.io", out)
+}
+
 func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *core.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/elixir", moduleName))

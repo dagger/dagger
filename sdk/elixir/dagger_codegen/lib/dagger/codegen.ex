@@ -4,14 +4,21 @@ defmodule Dagger.Codegen do
   """
 
   alias Dagger.Codegen.Introspection.Types.Schema
+  alias Dagger.Codegen.Naming
 
   @nullable_objects_version Version.parse!("1.0.0-beta.10")
 
   def generate(generator, introspection_schema) do
     supports_nullable_objects = supports_nullable_objects?(introspection_schema.version)
+    names = introspection_schema.names
 
     visit(introspection_schema, fn type ->
-      code = do_generate(%{type | supports_nullable_objects: supports_nullable_objects}, generator)
+      # Each type generates in its own process: give it the schema's names.
+      Naming.put_names(names)
+
+      code =
+        do_generate(%{type | supports_nullable_objects: supports_nullable_objects}, generator)
+
       {generator.filename(type), generator.format(code)}
     end)
   end

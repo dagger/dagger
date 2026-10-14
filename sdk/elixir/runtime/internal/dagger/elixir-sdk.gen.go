@@ -40,24 +40,24 @@ func (r *ElixirSDK) Base(modSource *ModuleSource, subPath string) *ElixirSDK {
 	}
 }
 
-func (r *ElixirSDK) Codegen(modSource *ModuleSource, introspectionJson *File) *GeneratedCode {
+func (r *ElixirSDK) Codegen(modSource *ModuleSource, introspectionJSON *File) *GeneratedCode {
 	assertNotNil("modSource", modSource)
-	assertNotNil("introspectionJson", introspectionJson)
+	assertNotNil("introspectionJSON", introspectionJSON)
 	q := r.query.Select("codegen")
 	q = q.Arg("modSource", modSource)
-	q = q.Arg("introspectionJson", introspectionJson)
+	q = q.Arg("introspectionJSON", introspectionJSON)
 
 	return &GeneratedCode{
 		query: q,
 	}
 }
 
-func (r *ElixirSDK) Common(modSource *ModuleSource, introspectionJson *File) *Container {
+func (r *ElixirSDK) Common(modSource *ModuleSource, introspectionJSON *File) *Container {
 	assertNotNil("modSource", modSource)
-	assertNotNil("introspectionJson", introspectionJson)
+	assertNotNil("introspectionJSON", introspectionJSON)
 	q := r.query.Select("common")
 	q = q.Arg("modSource", modSource)
-	q = q.Arg("introspectionJson", introspectionJson)
+	q = q.Arg("introspectionJSON", introspectionJSON)
 
 	return &Container{
 		query: q,
@@ -72,17 +72,17 @@ func (r *ElixirSDK) Container() *Container {
 	}
 }
 
-func (r *ElixirSDK) GenerateCode(introspectionJson *File) *Directory {
-	assertNotNil("introspectionJson", introspectionJson)
+func (r *ElixirSDK) GenerateCode(introspectionJSON *File) *Directory {
+	assertNotNil("introspectionJSON", introspectionJSON)
 	q := r.query.Select("generateCode")
-	q = q.Arg("introspectionJson", introspectionJson)
+	q = q.Arg("introspectionJSON", introspectionJSON)
 
 	return &Directory{
 		query: q,
 	}
 }
 
-// A unique identifier for this ElixirSdk.
+// A unique identifier for this ElixirSDK.
 func (r *ElixirSDK) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -97,7 +97,7 @@ func (r *ElixirSDK) ID(ctx context.Context) (ID, error) {
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
 func (r *ElixirSDK) XXX_GraphQLType() string {
-	return "ElixirSdk"
+	return "ElixirSDK"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
@@ -127,16 +127,16 @@ func (r *ElixirSDK) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = ElixirSDK{query: selectNode(dag.query, id, "ElixirSdk")}
+	*r = ElixirSDK{query: selectNode(dag.query, id, "ElixirSDK")}
 	return nil
 }
 
-func (r *ElixirSDK) ModuleRuntime(modSource *ModuleSource, introspectionJson *File) *Container {
+func (r *ElixirSDK) ModuleRuntime(modSource *ModuleSource, introspectionJSON *File) *Container {
 	assertNotNil("modSource", modSource)
-	assertNotNil("introspectionJson", introspectionJson)
+	assertNotNil("introspectionJSON", introspectionJSON)
 	q := r.query.Select("moduleRuntime")
 	q = q.Arg("modSource", modSource)
-	q = q.Arg("introspectionJson", introspectionJson)
+	q = q.Arg("introspectionJSON", introspectionJSON)
 
 	return &Container{
 		query: q,
@@ -171,10 +171,10 @@ func (r *ElixirSDK) WithNewElixirPackage(modName string) *ElixirSDK {
 }
 
 // Generate the SDK into the container.
-func (r *ElixirSDK) WithSDK(introspectionJson *File) *ElixirSDK {
-	assertNotNil("introspectionJson", introspectionJson)
-	q := r.query.Select("withSdk")
-	q = q.Arg("introspectionJson", introspectionJson)
+func (r *ElixirSDK) WithSDK(introspectionJSON *File) *ElixirSDK {
+	assertNotNil("introspectionJSON", introspectionJSON)
+	q := r.query.Select("withSDK")
+	q = q.Arg("introspectionJSON", introspectionJSON)
 
 	return &ElixirSDK{
 		query: q,
@@ -188,7 +188,7 @@ type ElixirSDKOpts struct {
 }
 
 func (r *Query) ElixirSDK(opts ...ElixirSDKOpts) *ElixirSDK { // elixir-sdk (../../../../../:0:0)
-	q := r.query.Select("elixirSdk")
+	q := r.query.Select("elixirSDK")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sdkSourceDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SDKSourceDir) {
