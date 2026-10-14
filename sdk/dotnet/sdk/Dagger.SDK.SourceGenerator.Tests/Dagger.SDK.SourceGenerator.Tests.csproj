@@ -19,4 +19,12 @@
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
     </ItemGroup>
 
+    <ItemGroup>
+        <!-- The core schema and its formatted names: see Fixtures/generate.go. -->
+        <EmbeddedResource Include="Fixtures\core-schema.json" LogicalName="core-schema.json" />
+        <EmbeddedResource Include="Fixtures\core-names.json" LogicalName="core-names.json" />
+        <!-- The SDK runtime, to compile generated code against. -->
+        <EmbeddedResource Include="..\Dagger.SDK\**\*.cs" Exclude="..\Dagger.SDK\bin\**;..\Dagger.SDK\obj\**" LogicalName="Runtime/%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+
 </Project>
