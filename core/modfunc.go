@@ -178,8 +178,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 	hasArg := map[string]bool{}
 
 	for i, input := range opts.Inputs {
-		normalizedName := gqlArgName(input.Name)
-		arg, ok := fn.args[normalizedName]
+		arg, ok := fn.lookupArg(input.Name)
 		if !ok {
 			return nil, fmt.Errorf("find arg %q", input.Name)
 		}
@@ -503,7 +502,11 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 		var result dagql.AnyObjectResult
 		if err := srv.Select(mainCtx, addr, &result,
 			dagql.Selector{
-				Field: gqlFieldName(typename),
+				// The field of the address object that yields a core type
+				// (Secret gives secret, GitRef gives gitRef): core names are
+				// hand-written, not module names, so this keeps the rules it
+				// always had.
+				Field: LegacyNamer.FieldName(typename),
 			},
 		); err != nil {
 			return nil, ud.errorf(err, "resolve object (%q)", typename)
@@ -1162,11 +1165,21 @@ func (fn *ModuleFunction) ReturnType() (ModType, error) {
 }
 
 func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
-	arg, ok := fn.args[gqlArgName(argName)]
+	arg, ok := fn.lookupArg(argName)
 	if !ok {
 		return nil, fmt.Errorf("find arg %q", argName)
 	}
 	return arg.modType, nil
+}
+
+// lookupArg finds an argument by its schema name, or by a name that
+// normalizes to it with the module's naming rules.
+func (fn *ModuleFunction) lookupArg(name string) (*UserModFunctionArg, bool) {
+	if arg, ok := fn.args[name]; ok {
+		return arg, true
+	}
+	arg, ok := fn.args[fn.mod.Self().Namer().ArgName(name)]
+	return arg, ok
 }
 
 func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {

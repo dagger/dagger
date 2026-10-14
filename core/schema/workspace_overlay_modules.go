@@ -422,6 +422,10 @@ func overlayIncludedModuleNames(names, include []string) map[string]struct{} {
 	return wanted
 }
 
+// canonicalOverlayModuleName is a comparison key for module names, never
+// shown; like the session loader's canonicalWorkspaceModuleName it keeps the
+// legacy strcase rules, which give a module name and its CLI spelling by
+// either the legacy or the latest naming rules the same key.
 func canonicalOverlayModuleName(name string) string {
 	return strcase.ToKebab(name)
 }

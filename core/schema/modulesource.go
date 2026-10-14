@@ -1098,6 +1098,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 
 	engineVersion := modCfg.EngineVersion
 	if modCfg.Entrypoint != nil {
+		// An entrypoint module declares no engine version: it gets the
+		// engine's API and naming rules. The names those rules changed keep
+		// their old spellings as aliases (see core.ModuleNameAliases).
 		engineVersion = engine.Version
 	}
 	switch engineVersion {
@@ -4413,7 +4416,9 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 
 // loadDefaultSchemaBuilder returns a SchemaBuilder seeded with only the default
 // (core) dependencies, with the core module pinned to src's engine version
-// view. Callers append the user modules they want to expose.
+// view, whose naming rules also name src's declarations (see
+// core.ModuleSource.NamingView). Callers append the user modules they want to
+// expose.
 func (s *moduleSourceSchema) loadDefaultSchemaBuilder(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
