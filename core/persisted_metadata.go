@@ -361,6 +361,9 @@ var persistedMetadataFamilies = []dagql.PersistedObjectFamily{
 	{Name: "core.WorkspaceMigrationStep", Typed: (*WorkspaceMigrationStep)(nil), Visitor: persistedWorkspaceMigrationStepVisitor},
 	{Name: "core.Cloud", Typed: (*Cloud)(nil), Visitor: dagql.PersistedNoReferences{}},
 	{Name: "core.TerminalLegacy", Typed: (*TerminalLegacy)(nil), Visitor: dagql.PersistedNoReferences{}},
+	{Name: "core.Identifier", Typed: (*Identifier)(nil), Visitor: dagql.PersistedNoReferences{}},
+	{Name: "core.IdentifierWord", Typed: (*IdentifierWord)(nil), Visitor: dagql.PersistedNoReferences{}},
+	{Name: "core.NamingTerm", Typed: (*NamingTerm)(nil), Visitor: dagql.PersistedNoReferences{}},
 }
 
 func init() {

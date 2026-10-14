@@ -1,9 +1,13 @@
 package core
 
 import (
+	"context"
 	"strings"
 
 	"github.com/iancoleman/strcase"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 /*
@@ -20,6 +24,19 @@ func formatGqlDescription(desc string) string {
 	}
 	return "\n" + strings.TrimSpace(desc) + "\n"
 }
+
+// IdentifierNamingVersion is the first engine version whose names are
+// normalized by engine/naming: modules that declare it or later in their
+// engineVersion, and modules served at the engine's own version (manifest v2
+// entrypoints). Modules that declare an older engineVersion keep the strcase
+// rules they were built against, byte for byte. See
+// hack/designs/identifier-casing.md, "The gate".
+//
+// The gate is an API view, so it's base-version granular like every view
+// (engine.APIViewVersion): every v1.0.0 prerelease shares the v1.0.0 view and
+// gets the new rules. The old spellings of the module names they changed stay
+// accepted as hidden aliases (see ModuleNameAliases).
+const IdentifierNamingVersion = "v1.0.0-0"
 
 func gqlObjectName(name string) string {
 	// gql object name is capitalized camel case
@@ -92,4 +109,17 @@ func isConventionalGraphQLEnumMemberName(name string) bool {
 		return false
 	}
 	return true
+}
+
+// CallerView is the API view of the caller of the current field: the view
+// recorded in the call when the field is view-scoped, else the view of the
+// current server. Empty when neither is known.
+func CallerView(ctx context.Context) call.View {
+	if cur := dagql.CurrentCall(ctx); cur != nil && cur.View != "" {
+		return cur.View
+	}
+	if srv := dagql.CurrentDagqlServer(ctx); srv != nil {
+		return srv.View
+	}
+	return ""
 }
