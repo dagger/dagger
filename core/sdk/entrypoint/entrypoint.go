@@ -59,7 +59,6 @@ func SourceForDirectory(src *core.ModuleSource, directory dagql.ObjectResult[*co
 	entrySrc.SourceSubpath = "."
 	entrySrc.IncludePaths = nil
 	entrySrc.RebasedIncludePaths = nil
-	entrySrc.EntrypointResourcesLoaded = false
 	entrySrc.ConfigDependencies = nil
 	entrySrc.Dependencies = nil
 	entrySrc.ConfigBlueprint = nil

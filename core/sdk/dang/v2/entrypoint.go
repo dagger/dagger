@@ -46,19 +46,6 @@ func EntrypointModuleTypes(
 	if err != nil {
 		return inst, err
 	}
-	local, err := entrypoint.IsLocalSource(ctx, src.Self())
-	if err != nil {
-		return inst, err
-	}
-	runSource := runEntrypointDir
-	if !local {
-		runSource = func(ctx context.Context, dir string) (dang.ValueScope, error) {
-			if declared, _ := DeclaresEntrypointResources(dir); declared {
-				return nil, fmt.Errorf("%s needs a local entrypoint: entrypoint.source %q is not a path inside the module", EntrypointResourcesMember, src.Self().Entrypoint.Source)
-			}
-			return runEntrypointDir(ctx, dir)
-		}
-	}
 
 	var typeDefs dagql.ObjectResultArray[*core.TypeDef]
 	_, err = evalDangSource(
@@ -71,7 +58,7 @@ func EntrypointModuleTypes(
 		nil,
 		moduleContext,
 		false, /* the entrypoint's own types() builds the typedefs */
-		runSource,
+		runEntrypointDir,
 		func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 			entrypointName, err := findModuleEntrypoint(env)
 			if err != nil {
