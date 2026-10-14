@@ -33,7 +33,7 @@ func (dev *EngineDev) Test(
 	pkg string,
 	// Abort test run on first failure
 	// +optional
-	failfast bool,
+	failFast bool,
 	// How many tests to run in parallel - defaults to the number of CPUs
 	// +optional
 	parallel int,
@@ -80,7 +80,7 @@ func (dev *EngineDev) Test(
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           pkg,
-		failfast:      failfast,
+		failFast:      failFast,
 		parallel:      parallel,
 		timeout:       timeout,
 		race:          race,
@@ -137,7 +137,7 @@ func (dev *EngineDev) TestProfile(
 	pkg string,
 	// Abort test run on first failure
 	// +optional
-	failfast bool,
+	failFast bool,
 	// How many tests to run in parallel - defaults to the number of CPUs
 	// +optional
 	parallel int,
@@ -166,7 +166,7 @@ func (dev *EngineDev) TestProfile(
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           pkg,
-		failfast:      failfast,
+		failFast:      failFast,
 		parallel:      parallel,
 		timeout:       timeout,
 		race:          race,
@@ -227,7 +227,7 @@ func (dev *EngineDev) TestTelemetry(
 	// +optional
 	update bool,
 	// +optional
-	failfast bool,
+	failFast bool,
 	// +optional
 	parallel int,
 	// +optional
@@ -255,7 +255,7 @@ func (dev *EngineDev) TestTelemetry(
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           "./dagql/idtui/",
-		failfast:      failfast,
+		failFast:      failFast,
 		parallel:      parallel,
 		timeout:       timeout,
 		race:          race,
@@ -277,7 +277,7 @@ type testOpts struct {
 	runTestRegex  string
 	skipTestRegex string
 	pkg           string
-	failfast      bool
+	failFast      bool
 	parallel      int
 	timeout       string
 	race          bool
@@ -318,7 +318,7 @@ func (dev *EngineDev) test(
 	}
 
 	// All following are go test flags
-	if opts.failfast {
+	if opts.failFast {
 		args = append(args, "-failfast")
 	}
 

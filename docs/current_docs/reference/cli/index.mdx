@@ -324,7 +324,7 @@ dagger api with-session python main.py
 Verify your project — tests, linters, type checks, security scans, etc.
 
 ```
-dagger check [--failfast] [FILTERS] [OPTIONS]
+dagger check [--fail-fast] [FILTERS] [OPTIONS]
 ```
 
 ### Options
@@ -333,7 +333,7 @@ dagger check [--failfast] [FILTERS] [OPTIONS]
       --absolute             Show absolute links (alias: --abs)
   -a, --all                  Expand collections and list each item
       --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to allow every loaded module for the entire session
-      --failfast             Cancel remaining checks on first failure
+      --fail-fast            Cancel remaining checks on first failure
   -f, --format FORMAT        Output FORMAT: table, link, or cli (requires --list) (default "table")
       --generated            Include staleness checks for 'dagger generate' (default true)
   -l, --list                 List available checks
@@ -455,7 +455,10 @@ dagger cloud checks list [version]
 ### Options
 
 ```
-      --failed   Only list failed checks
+      --fail-fast           When watching, stop as soon as a check is not successful
+      --failed              Only list failed checks
+      --interval duration   Polling interval used while watching (default 5s)
+      --watch               Wait until all checks have finished; exit non-zero if any check did not succeed
 ```
 
 ### Options inherited from parent commands

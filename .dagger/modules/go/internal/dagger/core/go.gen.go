@@ -456,7 +456,7 @@ type GoTestOpts struct {
 	// Skip these tests
 	Skip string
 	// Abort test run on first failure
-	Failfast bool
+	FailFast bool
 	// How many tests to run in parallel - defaults to the number of CPUs
 	Parallel int
 	// How long before timing out the test run
@@ -487,9 +487,9 @@ func (r *Go) Test(ctx context.Context, opts ...GoTestOpts) error {
 		if !querybuilder.IsZeroValue(opts[i].Skip) {
 			q = q.Arg("skip", opts[i].Skip)
 		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
 		}
 		// `parallel` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Parallel) {
