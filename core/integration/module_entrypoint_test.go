@@ -99,6 +99,70 @@ func (ModuleSuite) TestDangModuleEntrypointEnumRoundtrip(ctx context.Context, t 
 	require.Equal(t, "READY", strings.TrimSpace(out))
 }
 
+// A module entrypoint (manifest v2) declares no engineVersion, so the engine
+// serves it at its own version, naming rules included. The names those rules
+// changed keep their legacy spellings as hidden aliases, so callers built
+// against them keep working. See hack/designs/identifier-casing.md, "Module
+// entrypoints" and "Transition aliases".
+func (ModuleSuite) TestModuleEntrypointLegacyNameAliases(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := goGitBase(t, c).
+		WithNewFile("dagger.toml", "[modules.tiny]\nsource = \"tiny\"\n").
+		WithNewFile("tiny/dagger-module.toml", "name = \"tiny\"\n[entrypoint]\nkind = \"dang\"\nsource = \"./entrypoint\"\n").
+		WithNewFile("tiny/entrypoint/main.dang", `type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef.withObject("HttpClient")
+        .withField("baseUrl", typeDef.withKind(TypeDefKind.STRING_KIND)),
+      typeDef.withObject("Tiny")
+        .withConstructor(function("", typeDef.withObject("Tiny")))
+        .withFunction(function("getUrl", typeDef.withKind(TypeDefKind.STRING_KIND))
+          .withArg("comUrl", typeDef.withKind(TypeDefKind.STRING_KIND)))
+        .withFunction(function("httpClient", typeDef.withObject("HttpClient"))),
+    ]
+  }
+  pub call(workspace: Workspace!, receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!): JSON! {
+    if (fnName == "") { "{}" :: JSON! }
+    else {
+      if (fnName == "getUrl") {
+        if (fnArgs != ("{\"comUrl\":\"https://example.com\"}" :: JSON!)) {
+          raise "the owning module must receive the original argument name"
+        }
+        "\"https://example.com\"" :: JSON!
+      } else {
+        "{\"baseUrl\":\"https://example.com\"}" :: JSON!
+      }
+    }
+  }
+}`).
+		// -m serves the module as the entrypoint: its main object's functions
+		// are proxied onto Query, aliases included.
+		With(daggerQueryAt("tiny", `{
+  getURL(comURL: "https://example.com")
+  getUrl(comUrl: "https://example.com")
+  httpClient {
+    __typename
+    baseURL
+    baseUrl
+    ... on TinyHttpClient { legacyFragment: baseUrl }
+  }
+  latest: __type(name: "TinyHTTPClient") { name }
+}`))
+	out, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+  "getURL": "https://example.com",
+  "getUrl": "https://example.com",
+  "httpClient": {
+    "__typename": "TinyHTTPClient",
+    "baseURL": "https://example.com",
+    "baseUrl": "https://example.com",
+    "legacyFragment": "https://example.com"
+  },
+  "latest": {"name": "TinyHTTPClient"}
+}`, out)
+}
+
 // The engine records which interface it drove a module through, but the span is
 // internal: it belongs in a trace, not in the output of an ordinary call.
 func (ModuleSuite) TestModuleEntrypointInterfaceSpanIsInternal(ctx context.Context, t *testctx.T) {
