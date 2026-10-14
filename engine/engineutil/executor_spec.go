@@ -496,10 +496,7 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 		// runc removes the container leaf, not its accounting parent.
 		// Mount accounting may already have removed the parent.
 		if filepath.IsAbs(state.resourceCgroupPath) && !strings.Contains(state.resourceCgroupPath, ":") {
-			removeErr := os.Remove(filepath.Join("/sys/fs/cgroup", state.resourceCgroupPath))
-			if !errors.Is(removeErr, os.ErrNotExist) {
-				err = errors.Join(err, removeErr)
-			}
+			err = errors.Join(err, removeExecCgroup(filepath.Join("/sys/fs/cgroup", state.resourceCgroupPath), os.Remove, describeCgroupTasks))
 		}
 		return err
 	})
