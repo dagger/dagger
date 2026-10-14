@@ -15,6 +15,7 @@ func (ps *parseState) parseGoIface(t *types.Interface, named *types.Named) (*par
 		goType:            t,
 		moduleName:        ps.moduleName,
 		legacyGoSDKCompat: ps.legacyGoSDKCompat,
+		namer:             ps.namer,
 	}
 
 	if named == nil {
@@ -111,6 +112,9 @@ type parsedIfaceType struct {
 	goType            *types.Interface
 	moduleName        string
 	legacyGoSDKCompat bool
+	// namer names the interface and its functions in the schema, as the
+	// engine does for the module's engine version.
+	namer moduleNamer
 }
 
 var _ NamedParsedType = &parsedIfaceType{}
@@ -166,15 +170,20 @@ func (spec *parsedIfaceType) ModuleName() string {
 // schemaName returns the namespaced GraphQL type name for this interface as it
 // appears in the engine's schema.  Module-defined types are prefixed with the
 // module name (e.g. module "test", interface "CustomIface" → "TestCustomIface").
-// This mirrors the engine's namespaceObject() logic in core/gqlformat.go.
+// This mirrors the engine's NamespaceObject() logic in core/gqlformat.go.
 func (spec *parsedIfaceType) schemaName() string {
-	return gqlSchemaName(spec.name, spec.moduleName)
+	return gqlSchemaName(spec.namer, spec.name, spec.moduleName)
 }
 
 // gqlSchemaName computes the namespaced GraphQL type name for a module-defined
 // type.  If moduleName is empty the name is returned as-is (the type comes
-// from the introspection schema and is already fully qualified).
-func gqlSchemaName(name, moduleName string) string {
+// from the introspection schema and is already fully qualified), or with the
+// engine/naming rules, resolved as the engine resolves it (see
+// moduleNamer.typeName).
+func gqlSchemaName(n moduleNamer, name, moduleName string) string {
+	if n.dict != nil {
+		return n.typeName(name, moduleName)
+	}
 	if moduleName == "" {
 		return name
 	}
@@ -484,7 +493,7 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) (*Statemen
 		methodReturns = append(methodReturns, Id("error"))
 	}
 
-	gqlFieldName := strcase.ToLowerCamel(method.name)
+	gqlFieldName := spec.namer.fieldName(method.name)
 	executeQueryCode, err := spec.concreteMethodExecuteQueryCode(method)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate execute query code: %w", err)
@@ -502,7 +511,7 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) (*Statemen
 					// skip context
 					continue
 				}
-				gqlArgName := strcase.ToLowerCamel(argSpec.name)
+				gqlArgName := spec.namer.fieldName(argSpec.name)
 				setCode := Id("q").Op("=").Id("q").Dot("Arg").Call(Lit(gqlArgName), Id(argSpec.name))
 				g.Add(setCode).Line()
 			}
@@ -616,7 +625,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			s.Var().Id("results").Index().Add(underlyingReturnTypeCode).Line()
 			s.For(List(Id("_"), Id("idResult")).Op(":=").Range().Id("idResults")).BlockFunc(func(g *Group) {
 				g.Id("id").Op(":=").Id("idResult").Dot("Id")
-				query := Id("r").Dot("query").Dot("Root").Call().Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id")).Dot("InlineFragment").Call(Lit(gqlSchemaName(underlyingReturnType.Name(), underlyingReturnType.ModuleName())))
+				query := Id("r").Dot("query").Dot("Root").Call().Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id")).Dot("InlineFragment").Call(Lit(gqlSchemaName(spec.namer, underlyingReturnType.Name(), underlyingReturnType.ModuleName())))
 				g.Id("results").Op("=").Append(Id("results"), Params(Op("&").Add(underlyingImplTypeCode).Values()).Dot("WithGraphQLQuery").Call(query))
 			}).Line()
 
