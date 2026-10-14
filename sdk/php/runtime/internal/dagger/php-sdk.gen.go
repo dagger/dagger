@@ -21,31 +21,31 @@ func (r *PhpSDK) WithGraphQLQuery(q *querybuilder.Selection) *PhpSDK {
 	}
 }
 
-func (r *PhpSDK) Codegen(modSource *ModuleSource, introspectionJson *File) *GeneratedCode {
+func (r *PhpSDK) Codegen(modSource *ModuleSource, introspectionJSON *File) *GeneratedCode {
 	assertNotNil("modSource", modSource)
-	assertNotNil("introspectionJson", introspectionJson)
+	assertNotNil("introspectionJSON", introspectionJSON)
 	q := r.query.Select("codegen")
 	q = q.Arg("modSource", modSource)
-	q = q.Arg("introspectionJson", introspectionJson)
+	q = q.Arg("introspectionJSON", introspectionJSON)
 
 	return &GeneratedCode{
 		query: q,
 	}
 }
 
-func (r *PhpSDK) CodegenBase(modSource *ModuleSource, introspectionJson *File) *Container {
+func (r *PhpSDK) CodegenBase(modSource *ModuleSource, introspectionJSON *File) *Container {
 	assertNotNil("modSource", modSource)
-	assertNotNil("introspectionJson", introspectionJson)
+	assertNotNil("introspectionJSON", introspectionJSON)
 	q := r.query.Select("codegenBase")
 	q = q.Arg("modSource", modSource)
-	q = q.Arg("introspectionJson", introspectionJson)
+	q = q.Arg("introspectionJSON", introspectionJSON)
 
 	return &Container{
 		query: q,
 	}
 }
 
-// A unique identifier for this PhpSdk.
+// A unique identifier for this PhpSDK.
 func (r *PhpSDK) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -60,7 +60,7 @@ func (r *PhpSDK) ID(ctx context.Context) (ID, error) {
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
 func (r *PhpSDK) XXX_GraphQLType() string {
-	return "PhpSdk"
+	return "PhpSDK"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
@@ -90,16 +90,16 @@ func (r *PhpSDK) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = PhpSDK{query: selectNode(dag.query, id, "PhpSdk")}
+	*r = PhpSDK{query: selectNode(dag.query, id, "PhpSDK")}
 	return nil
 }
 
-func (r *PhpSDK) ModuleRuntime(modSource *ModuleSource, introspectionJson *File) *Container {
+func (r *PhpSDK) ModuleRuntime(modSource *ModuleSource, introspectionJSON *File) *Container {
 	assertNotNil("modSource", modSource)
-	assertNotNil("introspectionJson", introspectionJson)
+	assertNotNil("introspectionJSON", introspectionJSON)
 	q := r.query.Select("moduleRuntime")
 	q = q.Arg("modSource", modSource)
-	q = q.Arg("introspectionJson", introspectionJson)
+	q = q.Arg("introspectionJSON", introspectionJSON)
 
 	return &Container{
 		query: q,
@@ -121,7 +121,7 @@ type PhpSDKOpts struct {
 }
 
 func (r *Query) PhpSDK(opts ...PhpSDKOpts) *PhpSDK { // php-sdk (../../../../../:0:0)
-	q := r.query.Select("phpSdk")
+	q := r.query.Select("phpSDK")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sdkSourceDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SDKSourceDir) {
