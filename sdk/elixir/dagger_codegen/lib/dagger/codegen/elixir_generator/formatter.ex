@@ -1,9 +1,31 @@
 defmodule Dagger.Codegen.ElixirGenerator.Formatter do
+  @moduledoc """
+  Formats schema names into Elixir names.
+
+  Names are the engine's when it formatted them (see `Dagger.Codegen.Naming`):
+  modules in PascalCase with uppercase acronyms (`Dagger.JSONValue`),
+  functions, arguments and variables in snake_case. Older schemas have no
+  formatted names, so names fall back to the legacy `Macro` conversion, which
+  keeps their output unchanged.
+
+  Only Elixir identifiers are formatted here: the names sent to the API
+  (selected fields, arguments, enum values, type names) are always the
+  schema's own.
+  """
+
   alias Dagger.Codegen.Introspection.Types.TypeRef
+  alias Dagger.Codegen.Naming
 
   def format_module("Query"), do: format_module("Client")
 
   def format_module(name) do
+    case Naming.format(name, :pascal, :uppercase) do
+      nil -> legacy_module(name)
+      formatted -> "Dagger." <> formatted
+    end
+  end
+
+  defp legacy_module(name) do
     Module.concat(Dagger, Macro.camelize(name))
     |> to_string()
     |> String.trim_leading("Elixir.")
@@ -12,26 +34,41 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
   def format_var_name("Query"), do: format_var_name("Client")
 
   def format_var_name(name) do
-    Macro.underscore(name)
+    case Naming.format(name, :snake, :uppercase) do
+      nil -> legacy_var_name(name)
+      formatted -> formatted
+    end
   end
 
+  @doc """
+  The legacy conversion of `format_var_name/1`, for names that must not
+  change: the input object struct keys, which are sent to the API as is.
+  """
+  def legacy_var_name("Query"), do: legacy_var_name("Client")
+  def legacy_var_name(name), do: Macro.underscore(name)
+
   def format_function_name(name) do
+    case Naming.format(name, :snake, :uppercase) do
+      nil -> legacy_function_name(name)
+      formatted -> formatted |> normalize_reserved_word() |> question_mark()
+    end
+  end
+
+  @doc """
+  The function name `format_function_name/1` gives `name` when the engine
+  didn't format the schema's names, to keep renamed functions as deprecated
+  aliases.
+  """
+  def legacy_function_name(name) do
     name
     |> normalize_name()
     |> Macro.underscore()
-    |> case do
-      <<"is_", rest::binary>> = orig ->
-        # Special case: is_foo => foo?
-        if String.starts_with?(orig, "is_") do
-          rest <> "?"
-        else
-          orig
-        end
-
-      other ->
-        other
-    end
+    |> question_mark()
   end
+
+  # Special case: is_foo => foo?
+  defp question_mark(<<"is_", rest::binary>>), do: rest <> "?"
+  defp question_mark(name), do: name
 
   defp normalize_name(name) do
     name
