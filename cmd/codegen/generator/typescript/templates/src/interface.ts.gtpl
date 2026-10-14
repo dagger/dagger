@@ -19,10 +19,11 @@
 export interface {{ .Name | FormatName }} { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 			{{- range $field := .Fields }}
 				{{- if Solve . }}
-  {{ .Name | FormatName }}({{ template "interface_args" . }}): Promise<{{ . | FormatFieldReturnType }}>
+  {{ .Name | FormatMethodName }}({{ template "interface_args" . }}): Promise<{{ . | FormatFieldReturnType }}>
 				{{- else }}
-  {{ .Name | FormatName }}({{ template "interface_args" . }}): {{ .TypeRef | FormatOutputType }}
+  {{ .Name | FormatMethodName }}({{ template "interface_args" . }}): {{ .TypeRef | FormatOutputType }}
 				{{- end }}
+				{{- template "interface_method_alias" . }}
 			{{- end }}
 }
 
@@ -83,10 +84,24 @@ export class _{{ .Name | FormatName }}Client extends BaseClient { {{- with .Dire
 		{{- if .TypeRef.IsOptional }}
 			{{- $opt = "?" }}
 		{{- end }}
-		{{- .Name | FormatName }}{{ $opt }}: {{ . | FormatInputType }}
+		{{- .Name | FormatArgName }}{{ $opt }}: {{ . | FormatInputType }}
 		{{- if or (ne $index $maxIndex) $optionals }}, {{ end }}
 	{{- end }}
 	{{- if $optionals }}
-		{{- "" }}opts?: {{ $.ParentObject.Name }}{{ .Name | PascalCase }}Opts
+		{{- "" }}opts?: {{ OptsTypeName $.ParentObject.Name .Name }}
+	{{- end }}
+{{- end }}
+
+{{- /* Write a deprecated alias for an interface method renamed by identifier
+words (see method_alias). The dot is an introspection.Field. */ -}}
+{{ define "interface_method_alias" }}
+	{{- $name := .Name | FormatMethodName }}
+	{{- $legacy := .Name | LegacyMethodName }}
+	{{- if ne $name $legacy }}
+	{{- $iface := .ParentObject.Name | QueryToClient | FormatName }}
+  /**
+   * @deprecated use {{ $name }} instead.
+   */
+  {{ $legacy }}: {{ $iface }}["{{ $name }}"]
 	{{- end }}
 {{- end }}
