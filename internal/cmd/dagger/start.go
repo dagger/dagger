@@ -113,7 +113,7 @@ func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifac
 			if err != nil {
 				return err
 			}
-			mappings[i] = append(mappings[i], core.PortForward{Frontend: frontend, Backend: mapping.BackendPort, Protocol: core.NetworkProtocolTcp})
+			mappings[i] = append(mappings[i], core.PortForward{Frontend: frontend, Backend: mapping.BackendPort, Protocol: core.NetworkProtocolTCP})
 		}
 		var claimed []string
 		if len(mappings[i]) > 0 {

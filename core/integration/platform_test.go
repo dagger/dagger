@@ -88,7 +88,7 @@ func (PlatformSuite) TestFromSinglePlatformTagWithoutExplicitPlatform(ctx contex
 	registrySvc := core.NewQuery(c).Container().
 		From("registry:3").
 		WithMountedCache("/var/lib/registry", core.NewQuery(c).CacheVolume("platform-single-tag-registry-"+rand.Text())).
-		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
+		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTCP}).
 		AsService()
 
 	startFreshEngine := func(ctx context.Context, t *testctx.T) (*dagger.Client, func()) {
@@ -174,7 +174,7 @@ func (PlatformSuite) TestFromMultiPlatformTagWithFreshPullEngines(ctx context.Co
 	registrySvc := core.NewQuery(c).Container().
 		From("registry:3").
 		WithMountedCache("/var/lib/registry", core.NewQuery(c).CacheVolume("platform-multi-tag-registry-"+rand.Text())).
-		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
+		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTCP}).
 		AsService()
 
 	startFreshEngine := func(ctx context.Context, t *testctx.T) (*dagger.Client, func()) {
