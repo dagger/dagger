@@ -54,6 +54,8 @@ from graphql import (
 from graphql.pyutils import camel_to_snake
 from graphql.type.schema import TypeMap
 
+from codegen.renamed import legacy_core_name
+
 NAMES_FORMAT = "SNAKE:UPPERCASE"
 """The engine name format of field, argument and input field names.
 
@@ -827,10 +829,11 @@ class _ObjectField:
         self.parent_name = get_named_type(parent).name
 
         # The name older schemas, without engine-formatted names, made us
-        # guess. When it differs, keep it as a deprecated alias.
+        # guess, from the field's old schema name if it's a renamed core
+        # field. When it differs, keep it as a deprecated alias.
         self.legacy_name: PythonName | None = None
         if ctx.names is not None:
-            legacy_name = format_name(name)
+            legacy_name = format_name(legacy_core_name(self.parent_name, name))
             if legacy_name != self.name and legacy_name not in {
                 ctx.format_name(n) for n in parent.fields
             }:
@@ -1235,6 +1238,14 @@ class Enum(Handler[GraphQLEnumType]):
                     continue
                 emitted.add(name)
                 group.append(_EnumMember(name, wire, name, first or name))
+
+            # A renamed core value keeps its old name too.
+            for name in names:
+                legacy = legacy_core_name(t.name, name)
+                if legacy == name or legacy in emitted or legacy in t.values:
+                    continue
+                emitted.add(legacy)
+                group.append(_EnumMember(legacy, wire, name, first or name))
 
             yield group
 

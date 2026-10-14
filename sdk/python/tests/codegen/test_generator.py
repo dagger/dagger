@@ -909,6 +909,52 @@ def test_generate_enum_without_names():
     assert "PER_SESSION" not in code
 
 
+_RENAMED_SCHEMA = """
+    enum FunctionCachePolicy { DEFAULT PER_SESSION NEVER }
+    type GitCommit {
+        parentSHAs: [String!]!
+        shortSHA: String!
+    }
+    type Query {
+        gitCommit: GitCommit!
+        policy: FunctionCachePolicy!
+        %s
+    }
+"""
+
+
+def test_generate_renamed_core_names():
+    # Renamed core names keep the Python names their old schema names had:
+    # a FunctionCachePolicy member for each old value, sending the new one,
+    # and no alias for a method whose Python name didn't change.
+    names = {
+        "parentSHAs": "parent_shas",
+        "shortSHA": "short_sha",
+        "DEFAULT": "default",
+        "PER_SESSION": "per_session",
+        "NEVER": "never",
+        "gitCommit": "git_commit",
+        "policy": "policy",
+    }
+
+    code = generate(build_schema(_RENAMED_SCHEMA % _FORMAT_IDENTIFIERS), names=names)
+
+    assert "async def parent_shas(self) -> list[str]:" in code
+    assert 'self._select("parentSHAs", _args)' in code
+    assert "parent_sh_as" not in code
+    assert "async def short_sha(self) -> str:" in code
+    for member, old in [
+        ("DEFAULT", "Default"),
+        ("PER_SESSION", "PerSession"),
+        ("NEVER", "Never"),
+    ]:
+        assert f"{member} = {member!r}" in code
+        assert (
+            f'{old} = {member!r}\n    """.. deprecated:: Use {member} instead."""'
+            in code
+        )
+
+
 @pytest.mark.parametrize(
     ("original", "expected"),
     [
