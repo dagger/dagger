@@ -333,6 +333,61 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		}
 	})
 
+	t.Run("imported host directory projection keeps its digest after restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "imported-hash-restart-" + rand.Text()
+		dir := t.TempDir()
+		for _, name := range []string{"before", "warm", "after"} {
+			require.NoError(t, os.Mkdir(filepath.Join(dir, name), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, name, "source.txt"), []byte("unchanged source"), 0o644))
+		}
+		clientOpts := []dagger.ClientOpt{dagger.WithWorkdir(dir)}
+		// The random output reveals whether the command executed again.
+		action := func(client *dagger.Client, source *core.Directory) (string, error) {
+			return core.NewQuery(client).Container().From(alpineImage).
+				WithMountedDirectory("/source", source).
+				WithExec([]string{"sh", "-ec", "cat /source/source.txt >/dev/null; cat /proc/sys/kernel/random/uuid"}).
+				Stdout(ctx)
+		}
+
+		upA, tunnelA, a := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upA, tunnelA, a) })
+		hostA, err := core.NewQuery(a).Host().Directory(".").Sync(ctx)
+		require.NoError(t, err)
+		hostID, err := hostA.ID(ctx)
+		require.NoError(t, err)
+		beforeSource := hostA.Directory("before")
+		beforeDigest, err := beforeSource.Digest(ctx)
+		require.NoError(t, err)
+		beforeToken, err := action(a, beforeSource)
+		require.NoError(t, err)
+		warmToken, err := action(a, hostA.Directory("warm"))
+		require.NoError(t, err)
+		require.Equal(t, beforeToken, warmToken, "identical source projections should reuse the executed action")
+		stopEngine(ctx, t, upA, tunnelA, a)
+		upA, tunnelA, a = nil, nil, nil
+
+		upB, tunnelB, b := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upB, tunnelB, b) })
+		// Read the restored result by its handle. A fresh host import would
+		// recreate the XXH3 records and hide their loss across the restart.
+		restored := core.Ref[*core.Directory](core.NewQuery(b), hostID)
+		originalToken, err := action(b, restored.Directory("before"))
+		require.NoError(t, err)
+		require.Equal(t, beforeToken, originalToken, "the original action result must survive restart")
+
+		// This projection was never requested before the restart. Its bytes
+		// match the old source, so both its digest and action should match.
+		afterSource := restored.Directory("after")
+		afterDigest, err := afterSource.Digest(ctx)
+		require.NoError(t, err)
+		afterToken, err := action(b, afterSource)
+		require.NoError(t, err)
+		t.Logf("unchanged projection after restart: before digest=%s after digest=%s action reused=%t", beforeDigest, afterDigest, beforeToken == afterToken)
+		require.Equal(t, beforeDigest, afterDigest, "unchanged content should keep its imported digest across restart")
+		require.Equal(t, beforeToken, afterToken, "unchanged content should reuse the action across restart")
+	})
+
 	t.Run("directory and file restore without opening", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "directory-file-" + rand.Text()

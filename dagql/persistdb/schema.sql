@@ -89,6 +89,11 @@ CREATE TABLE IF NOT EXISTS snapshot_content_links (
     PRIMARY KEY(snapshot_id, digest)
 ) STRICT, WITHOUT ROWID;
 
+CREATE TABLE IF NOT EXISTS snapshot_content_hashes (
+    snapshot_id TEXT PRIMARY KEY,
+    data BLOB NOT NULL
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS imported_layer_blob_index (
     parent_snapshot_id TEXT NOT NULL,
     blob_digest TEXT NOT NULL,

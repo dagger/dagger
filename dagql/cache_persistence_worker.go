@@ -273,6 +273,12 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 	if c.snapshotManager != nil {
 		rows := c.snapshotManager.PersistentMetadataRows()
+		for _, row := range rows.ContentHashes {
+			snapshot.snapshotContentHashes = append(snapshot.snapshotContentHashes, persistdb.MirrorSnapshotContentHash{
+				SnapshotID: row.SnapshotID,
+				Data:       row.Data,
+			})
+		}
 		for _, row := range rows.SnapshotContent {
 			snapshot.snapshotContentLinks = append(snapshot.snapshotContentLinks, persistdb.MirrorSnapshotContentLink{
 				SnapshotID: row.SnapshotID,
@@ -482,6 +488,12 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 		if err := q.InsertMirrorSnapshotContentLink(ctx, row); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("insert snapshot_content_link (%s,%s): %w", row.SnapshotID, row.Digest, err)
+		}
+	}
+	for _, row := range snapshot.snapshotContentHashes {
+		if err := q.InsertMirrorSnapshotContentHash(ctx, row); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("insert snapshot_content_hash (%s): %w", row.SnapshotID, err)
 		}
 	}
 	for _, row := range snapshot.importedLayerByBlob {

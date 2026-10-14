@@ -112,6 +112,8 @@ type SnapshotManager interface {
 	AttachLease(ctx context.Context, leaseID, snapshotID string) error
 	RemoveLease(ctx context.Context, leaseID string) error
 	PinContent(ctx context.Context, leaseID string, descs []ocispecs.Descriptor) error
+	// LoadPersistentMetadata takes ownership of the content-hash data buffers.
+	// Callers must not modify them after loading.
 	LoadPersistentMetadata(rows PersistentMetadataRows) error
 	PersistentMetadataRows() PersistentMetadataRows
 	DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error
