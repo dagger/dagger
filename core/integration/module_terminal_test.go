@@ -119,6 +119,31 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		require.NoError(t, cmd.Wait())
 	})
 
+	t.Run("shell setup failure is reported", func(ctx context.Context, t *testctx.T) {
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 35, Cols: 160}))
+
+		// The unknown user fails the shell's container setup, so no shell
+		// ever runs. That must fail the command with the setup error, not
+		// end it successfully with a bare "exit 1".
+		cmd := hostDaggerCommandRaw(ctx, t, t.TempDir(), "-c",
+			`container | from `+alpineImage+` | with-user no-such-user | terminal`)
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		require.NoError(t, cmd.Start())
+
+		_, err = console.ExpectString("get user")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+		require.Error(t, cmd.Wait())
+	})
+
 	t.Run("top-level command without terminal", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-default")
 		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "data"), 0o755))
