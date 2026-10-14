@@ -13,9 +13,12 @@ namespace Dagger;
  */
 enum ImageLayerCompression: string
 {
+    /** @deprecated Use E_STAR_GZ instead. */
+    public const EStarGZ = self::E_STAR_GZ;
+
     case Gzip = 'Gzip';
     case Zstd = 'Zstd';
-    case EStarGZ = 'EStarGZ';
+    case E_STAR_GZ = 'EStarGZ';
     case Uncompressed = 'Uncompressed';
     case GZIP = 'GZIP';
     case ZSTD = 'ZSTD';

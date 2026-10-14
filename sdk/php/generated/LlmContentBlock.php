@@ -11,7 +11,8 @@ namespace Dagger;
 /**
  * A single piece of content within an LLM message.
  */
-class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, Node
+#[Attribute\GraphQLType('LLMContentBlock')]
+class LlmContentBlock extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this LLMContentBlock.
@@ -25,10 +26,10 @@ class LLMContentBlock extends Client\AbstractObject implements Client\IdAble, No
     /**
      * The kind of content block, which determines the other populated fields.
      */
-    public function kind(): LLMContentBlockKind
+    public function kind(): LlmContentBlockKind
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
-        return \Dagger\LLMContentBlockKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
+        return \Dagger\LlmContentBlockKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
     }
 
     /**

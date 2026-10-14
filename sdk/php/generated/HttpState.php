@@ -11,7 +11,8 @@ namespace Dagger;
 /**
  * An internal persistent HTTP state.
  */
-class HTTPState extends Client\AbstractObject implements Client\IdAble, Node
+#[Attribute\GraphQLType('HTTPState')]
+class HttpState extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this HTTPState.

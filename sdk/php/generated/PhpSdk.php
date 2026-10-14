@@ -8,10 +8,11 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+#[Attribute\GraphQLType('PhpSDK')]
 class PhpSdk extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * A unique identifier for this PhpSdk.
+     * A unique identifier for this PhpSDK.
      */
     public function id(): Id
     {
@@ -29,7 +30,7 @@ class PhpSdk extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegen');
         $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        $innerQueryBuilder->setArgument('introspectionJSON', $introspectionJson);
         return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -37,7 +38,7 @@ class PhpSdk extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegenBase');
         $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        $innerQueryBuilder->setArgument('introspectionJSON', $introspectionJson);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -45,7 +46,7 @@ class PhpSdk extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleRuntime');
         $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        $innerQueryBuilder->setArgument('introspectionJSON', $introspectionJson);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

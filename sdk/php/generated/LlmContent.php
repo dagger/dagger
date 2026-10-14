@@ -11,7 +11,8 @@ namespace Dagger;
 /**
  * An ordered run of text and media content for a model to read, built outside any conversation.
  */
-class LLMContent extends Client\AbstractObject implements Client\IdAble, Node
+#[Attribute\GraphQLType('LLMContent')]
+class LlmContent extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this LLMContent.
@@ -25,24 +26,24 @@ class LLMContent extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Append a block of text.
      */
-    public function withText(string $text): LLMContent
+    public function withText(string $text): LlmContent
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withText');
         $innerQueryBuilder->setArgument('text', $text);
-        return new \Dagger\LLMContent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\LlmContent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Append an image, audio, or PDF file as an inline media block. The media kind follows the MIME type.
      */
-    public function withFile(File $file, ?string $mimeType = ''): LLMContent
+    public function withFile(File $file, ?string $mimeType = ''): LlmContent
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
         $innerQueryBuilder->setArgument('file', $file);
         if (null !== $mimeType) {
         $innerQueryBuilder->setArgument('mimeType', $mimeType);
         }
-        return new \Dagger\LLMContent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\LlmContent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -50,12 +51,12 @@ class LLMContent extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Prefer withFile for anything but small payloads: the bytes become part of the content's identity, so they travel with every reference to it.
      */
-    public function withData(Bytes $data, string $mimeType): LLMContent
+    public function withData(Bytes $data, string $mimeType): LlmContent
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withData');
         $innerQueryBuilder->setArgument('data', $data);
         $innerQueryBuilder->setArgument('mimeType', $mimeType);
-        return new \Dagger\LLMContent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\LlmContent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

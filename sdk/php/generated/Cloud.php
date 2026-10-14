@@ -25,7 +25,7 @@ class Cloud extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * The trace URL for the current session
      */
-    public function traceURL(): string
+    public function traceUrl(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('traceURL');
         return (string)$this->queryLeaf($leafQueryBuilder, 'traceURL');
