@@ -332,14 +332,14 @@ func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDe
 	if res != nil {
 		// The recorded output content identity: the authoritative frame's last
 		// content-labeled extra digest at completion (never the derived
-		// content-preferred digest). Errors reading the frame just drop the
-		// optional fact.
-		if frame, frameErr := res.ResultCall(); frameErr == nil {
-			if contentDig := frame.ContentDigest(); contentDig != "" {
+		// content-preferred digest). A result without a frame just drops the
+		// optional facts.
+		if contentDig, typeName, ok := dagql.ResultFrameFacts(res); ok {
+			if contentDig != "" {
 				attrs = append(attrs, attribute.String(telemetryattrs.CacheOutputContentDigestAttr, contentDig.String()))
 			}
-			if frame.Type != nil && frame.Type.NamedType != "" {
-				attrs = append(attrs, attribute.String(telemetryattrs.CacheTypeAttr, frame.Type.NamedType))
+			if typeName != "" {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheTypeAttr, typeName))
 			}
 		}
 	}
