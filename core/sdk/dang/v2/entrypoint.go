@@ -34,7 +34,7 @@ func EntrypointModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("get current query for entrypoint types: %w", err)
 	}
-	entrySrc, workspace, err := entrypoint.ResolveSource(ctx, dag, src)
+	entrySrc, err := entrypoint.ResolveSource(ctx, dag, src)
 	if err != nil {
 		return inst, err
 	}
@@ -47,6 +47,7 @@ func EntrypointModuleTypes(
 		return inst, err
 	}
 
+	var contract entrypointContract
 	var typeDefs dagql.ObjectResultArray[*core.TypeDef]
 	_, err = evalDangSource(
 		ctx,
@@ -58,19 +59,17 @@ func EntrypointModuleTypes(
 		nil,
 		moduleContext,
 		false, /* the entrypoint's own types() builds the typedefs */
-		runEntrypointDir,
+		contract.run,
 		func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 			entrypointName, err := findModuleEntrypoint(env)
 			if err != nil {
 				return nil, err
 			}
-			workspaceArg, err := entrypoint.WorkspaceCallArg(workspace)
+			args, err := contract.workspaceArgs(ctx, dag, src)
 			if err != nil {
 				return nil, err
 			}
-			result, err := callEntrypointMethod(ctx, env, entrypointName, "types", moduleContext, []*core.FunctionCallArgValue{
-				workspaceArg,
-			})
+			result, err := callEntrypointMethod(ctx, env, entrypointName, "types", moduleContext, args)
 			if err != nil {
 				return nil, fmt.Errorf("call module entrypoint types: %w", err)
 			}
@@ -130,7 +129,7 @@ func (r *entrypointRuntime) Call(
 	if err != nil {
 		return fmt.Errorf("get current query for entrypoint call: %w", err)
 	}
-	entrySrc, workspace, err := entrypoint.ResolveSource(ctx, dag, r.modSource)
+	entrySrc, err := entrypoint.ResolveSource(ctx, dag, r.modSource)
 	if err != nil {
 		return err
 	}
@@ -143,6 +142,7 @@ func (r *entrypointRuntime) Call(
 		return err
 	}
 
+	var contract entrypointContract
 	var resultJSON []byte
 	_, err = evalDangSource(
 		ctx,
@@ -154,13 +154,13 @@ func (r *entrypointRuntime) Call(
 		fnCall,
 		moduleContext,
 		false, /* a function call reads no object directives */
-		runEntrypointDir,
+		contract.run,
 		func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 			entrypointName, err := findModuleEntrypoint(env)
 			if err != nil {
 				return nil, err
 			}
-			workspaceArg, err := entrypoint.WorkspaceCallArg(workspace)
+			callArgs, err := contract.workspaceArgs(ctx, dag, r.modSource)
 			if err != nil {
 				return nil, err
 			}
@@ -168,13 +168,12 @@ func (r *entrypointRuntime) Call(
 			if err != nil {
 				return nil, err
 			}
-			callArgs := []*core.FunctionCallArgValue{
-				workspaceArg,
+			callArgs = append(callArgs,
 				entrypoint.StringCallArg("receiverType", fnCall.ParentName),
 				entrypoint.JSONScalarCallArg("receiverValue", fnCall.Parent),
 				entrypoint.StringCallArg("fnName", fnCall.Name),
 				entrypoint.JSONScalarCallArg("fnArgs", fnArgs),
-			}
+			)
 			// An exec that the entrypoint starts is cached by its own recipe,
 			// which misses the call's implicit inputs, such as the clients the
 			// workspace declares. An entrypoint keys its exec on the call by
@@ -209,7 +208,61 @@ const moduleEntrypointInterface = `interface ModuleEntrypoint {
 }
 `
 
-func runEntrypointDir(ctx context.Context, sourceDir string) (dang.ValueScope, error) {
+// sourcesEntrypointInterface is the contract of an entrypoint that declares
+// sources. types and call read the module through currentModule, whose context
+// is what sources returned, so they get no workspace: a workspace read there
+// would escape every cache key. Dang accepts an extra nullable argument, so an
+// entrypoint that also runs on an engine with the other contract can keep a
+// nullable workspace argument.
+const sourcesEntrypointInterface = `interface ModuleEntrypoint {
+  sources(workspace: Workspace!): Directory!
+  types: [TypeDef!]!
+  call(
+    receiverType: String!
+    receiverValue: JSON
+    fnName: String!
+    fnArgs: JSON!
+  ): JSON!
+}
+`
+
+// entrypointContract records which ModuleEntrypoint interface the entrypoint
+// that run evaluated implements.
+type entrypointContract struct {
+	sources bool
+}
+
+func (c *entrypointContract) run(ctx context.Context, dir string) (dang.ValueScope, error) {
+	sources, err := DeclaresEntrypointSources(dir)
+	if err != nil {
+		return nil, err
+	}
+	c.sources = sources
+	return runEntrypointDir(ctx, dir, sources)
+}
+
+// workspaceArgs returns the workspace argument that types and call take first
+// under the contract without sources.
+func (c *entrypointContract) workspaceArgs(
+	ctx context.Context,
+	dag *dagql.Server,
+	src dagql.ObjectResult[*core.ModuleSource],
+) ([]*core.FunctionCallArgValue, error) {
+	if c.sources {
+		return nil, nil
+	}
+	workspace, err := entrypoint.Workspace(ctx, dag, src)
+	if err != nil {
+		return nil, err
+	}
+	arg, err := entrypoint.WorkspaceCallArg(workspace)
+	if err != nil {
+		return nil, err
+	}
+	return []*core.FunctionCallArgValue{arg}, nil
+}
+
+func runEntrypointDir(ctx context.Context, sourceDir string, sources bool) (dang.ValueScope, error) {
 	dir, err := os.MkdirTemp("", "dagger-module-entrypoint-")
 	if err != nil {
 		return nil, fmt.Errorf("create module entrypoint directory: %w", err)
@@ -237,7 +290,11 @@ func runEntrypointDir(ctx context.Context, sourceDir string) (dang.ValueScope, e
 	if err != nil {
 		return nil, fmt.Errorf("install module entrypoint interface: %w", err)
 	}
-	if _, err := contract.WriteString(moduleEntrypointInterface); err != nil {
+	iface := moduleEntrypointInterface
+	if sources {
+		iface = sourcesEntrypointInterface
+	}
+	if _, err := contract.WriteString(iface); err != nil {
 		contract.Close()
 		return nil, fmt.Errorf("write module entrypoint interface: %w", err)
 	}
