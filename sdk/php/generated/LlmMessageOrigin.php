@@ -13,7 +13,8 @@ namespace Dagger;
  *
  * The recorded provenance of a message that arrived through an agent mailbox.
  */
-class LLMMessageOrigin extends Client\AbstractObject implements Client\IdAble, Node
+#[Attribute\GraphQLType('LLMMessageOrigin')]
+class LlmMessageOrigin extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this LLMMessageOrigin.
@@ -27,10 +28,10 @@ class LLMMessageOrigin extends Client\AbstractObject implements Client\IdAble, N
     /**
      * Who put this message on the record.
      */
-    public function kind(): LLMMessageOriginKind
+    public function kind(): LlmMessageOriginKind
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
-        return \Dagger\LLMMessageOriginKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
+        return \Dagger\LlmMessageOriginKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
     }
 
     /**

@@ -11,6 +11,7 @@ namespace Dagger;
 /**
  * Query-builder client for the Exportable interface.
  */
+#[Attribute\GraphQLType('Exportable')]
 class ExportableClient extends Client\AbstractObject implements Exportable, Client\IdAble
 {
     public function id(): Id

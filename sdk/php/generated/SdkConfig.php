@@ -11,7 +11,8 @@ namespace Dagger;
 /**
  * The SDK config of the module.
  */
-class SDKConfig extends Client\AbstractObject implements Client\IdAble, Node
+#[Attribute\GraphQLType('SDKConfig')]
+class SdkConfig extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this SDKConfig.

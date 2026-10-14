@@ -11,7 +11,8 @@ namespace Dagger;
 /**
  * A single message in an LLM conversation.
  */
-class LLMMessage extends Client\AbstractObject implements Client\IdAble, Node
+#[Attribute\GraphQLType('LLMMessage')]
+class LlmMessage extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this LLMMessage.
@@ -27,7 +28,7 @@ class LLMMessage extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Null for the user's own prompts and for everything the model or tools produced.
      */
-    public function origin(): ?LLMMessageOrigin
+    public function origin(): ?LlmMessageOrigin
     {
         $objectQueryBuilder = new \Dagger\Client\QueryBuilder('origin');
         $objectQueryBuilder->selectField('id');
@@ -35,16 +36,16 @@ class LLMMessage extends Client\AbstractObject implements Client\IdAble, Node
         if ($id === null) {
             return null;
         }
-        return $this->client->loadObjectFromId(\Dagger\LLMMessageOrigin::class, new \Dagger\Id((string)$id), 'LLMMessageOrigin');
+        return $this->client->loadObjectFromId(\Dagger\LlmMessageOrigin::class, new \Dagger\Id((string)$id), 'LLMMessageOrigin');
     }
 
     /**
      * The role that produced this message.
      */
-    public function role(): LLMMessageRole
+    public function role(): LlmMessageRole
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('role');
-        return \Dagger\LLMMessageRole::from((string)$this->queryLeaf($leafQueryBuilder, 'role'));
+        return \Dagger\LlmMessageRole::from((string)$this->queryLeaf($leafQueryBuilder, 'role'));
     }
 
     /**
@@ -59,9 +60,9 @@ class LLMMessage extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
      */
-    public function tokenUsage(): LLMTokenUsage
+    public function tokenUsage(): LlmTokenUsage
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tokenUsage');
-        return new \Dagger\LLMTokenUsage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\LlmTokenUsage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }
