@@ -1,14 +1,18 @@
 ---
-title: "Migrate from dagger.json"
-slug: /config/migrate-dagger-json
-description: "Convert a legacy dagger.json project to a workspace"
+title: "Migrate to Dagger 1.0"
+slug: /migrate-to-v1
+description: "What changes when you upgrade a project from Dagger 0.x to 1.0"
 ---
 
-# Migrate from dagger.json
+# Migrate to Dagger 1.0
 
 :::note
 If you're new to Dagger, you can skip this page. It's for existing users encountering changes.
 :::
+
+Dagger 1.0 can still load 0.x projects, and most old command names still work as hidden aliases. This page lists what changes, and what to do.
+
+## Configuration
 
 In Dagger 0.x, `dagger.json` served two roles:
 
@@ -22,11 +26,11 @@ In Dagger 1.0, these two roles are filled by two different files:
 | Manifest for a module | `dagger.json` | `dagger-module.toml` |
 | Configuration for a workspace | `dagger.json` | `dagger.toml` |
 
-## Backwards compatibility
+### Backwards compatibility
 
 Dagger 1.0 can still load `dagger.json` in both roles, so you don't have to rush a migration. But, we recommend you migrate to take advantage of all the features of 1.0.
 
-## Migrating your workspace
+### Migrating your workspace
 
 To migrate your workspace:
 
@@ -44,7 +48,7 @@ Each migrated module is registered as a scope of its SDK. The scope gets an expl
 | `toolchains` | Each installed toolchain is migrated as a 1.0 module (see "migrating a module") then installed in `dagger.toml`. Its customizations are converted to module settings, when possible |
 | `blueprint` | This field cannot be migrated |
 
-## Coding agents
+### Coding agents
 
 When Dagger detects that a coding agent is running `dagger workspace migrate` or `dagger module migrate`, it requires an explicit choice up front. Pass `-y` to apply the migration, or `--no-apply` to show the changes without writing them:
 
@@ -54,11 +58,11 @@ dagger workspace migrate --no-apply
 
 Optional module candidates are skipped in both cases. Use `dagger module migrate PATH` to migrate one explicitly.
 
-## Migration report
+### Migration report
 
 After migration, a report is written to `.dagger/migration-report.md`. Read it to know which parts of your `dagger.json` may not have been successfully migrated.
 
-## Migrating a module
+### Migrating a module
 
 To migrate a module from `dagger.json` to `dagger-module.toml`:
 
@@ -67,3 +71,30 @@ dagger module migrate ./path/to/module
 ```
 
 This will translate only the selected module, without migrating the surrounding workspace.
+
+## CLI
+
+| 0.x | 1.0 |
+| -- | -- |
+| `dagger init` creates a module | `dagger init` creates a workspace. To create a module, run `dagger module init`. |
+| `dagger install` adds a dependency to a module | `dagger install` adds a module to your workspace. |
+| `dagger update` | `dagger lock update` refreshes the lockfile. `dagger module update` changes the source or version of a module. |
+| `dagger develop` | `dagger generate`. SDK codegen now runs as a generator. |
+| `dagger toolchain` | Removed. `dagger workspace migrate` converts toolchains to modules. |
+| `dagger call`, `dagger functions`, `dagger query` | `dagger api call`, `dagger api functions`, `dagger api query` |
+| `dagger up` | `dagger start` |
+| `dagger shell` starts Dagger Shell | `dagger shell` opens a dev shell in a container. For Dagger Shell, use `dagger -c '...'` or `dagger <file>`. |
+| `--cloud` | `--engine=cloud` |
+| `-i`, `--interactive` | `-i`, `--shell-on-error` |
+
+## API
+
+- **`vault://` secrets.** The URI takes the full path of the secret, with the mount name: `vault://<mount>/<path>.<field>`. If you used the default mount `secret`, add it to the path.
+- **`GitRepository.commit`** returns a `GitCommit`, not a `GitRef`. Modules on an older schema version keep the old behavior.
+- **Redirected output.** When a `withExec` redirects its output to a file, Dagger no longer shows that output in the logs.
+
+## Modules
+
+- **SDK codegen.** Modules that use `dagger-module.toml` do not run SDK codegen at runtime. Run `dagger generate` after you change a module, and commit the generated code. Modules that use `dagger.json` still run SDK codegen at runtime, so they load more slowly.
+- **Go clients.** In standalone Go programs, the core types move to `dagger.io/dagger/core`, and constructors get a `New` prefix: `dag.Container()` becomes `core.NewContainer()`. The `dag` package still works, but it is deprecated. Module code does not change.
+- **Alpine and Wolfi.** These modules moved to their own repositories: `github.com/dagger/dagger/modules/alpine` is now `github.com/dagger/alpine`, and `github.com/dagger/dagger/modules/wolfi` is now `github.com/dagger/wolfi`.
