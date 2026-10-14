@@ -1,5 +1,6 @@
 package io.dagger.codegen.introspection;
 
+import jakarta.json.bind.annotation.JsonbTransient;
 import java.util.List;
 
 public class InputObject {
@@ -9,6 +10,17 @@ public class InputObject {
   private String defaultValue; // isDeprecated
   private TypeRef type;
   private List<Directive> directives;
+
+  /** The Java name the engine formatted for this argument or input field's name, or null. */
+  @JsonbTransient private String formattedName;
+
+  public String getFormattedName() {
+    return formattedName;
+  }
+
+  public void setFormattedName(String formattedName) {
+    this.formattedName = formattedName;
+  }
 
   public String getName() {
     return name;

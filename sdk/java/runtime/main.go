@@ -155,6 +155,25 @@ func (m *JavaSdk) buildJavaDependencies(
 	if err != nil {
 		return nil, err
 	}
+	installArgs := []string{
+		"mvn",
+		"--projects", "dagger-codegen-maven-plugin,dagger-java-annotation-processor,dagger-java-sdk", "--also-make",
+		"clean", "install",
+		// avoid tests
+		"-DskipTests",
+		// specify the introspection json file
+		"-Ddaggerengine.schema=/schema.json",
+	}
+	// The names the engine formatted for the schema, for the generated code's
+	// Java names (nil for schemas without Query.formatIdentifiers)
+	names, err := codegenNames(ctx, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+	if names != nil {
+		ctr = ctr.WithMountedFile(NamesPath, names)
+		installArgs = append(installArgs, "-Ddaggerengine.names="+NamesPath)
+	}
 	return ctr.
 		// Cache maven dependencies
 		WithMountedCache("/root/.m2", dag.CacheVolume("sdk-java-maven-m2"), dagger.ContainerWithMountedCacheOpts{Sharing: dagger.CacheSharingModeLocked}).
@@ -181,15 +200,7 @@ func (m *JavaSdk) buildJavaDependencies(
 		//   - this processor will be used by the user module to generate the entrypoint, so it's referenced in the user module pom.xml
 		// - dagger-java-sdk: the actual SDK, where the generated code will be written
 		//   - the user module code only depends on this, it includes all the required types
-		WithExec(m.mavenCommand(
-			"mvn",
-			"--projects", "dagger-codegen-maven-plugin,dagger-java-annotation-processor,dagger-java-sdk", "--also-make",
-			"clean", "install",
-			// avoid tests
-			"-DskipTests",
-			// specify the introspection json file
-			"-Ddaggerengine.schema=/schema.json",
-		)), nil
+		WithExec(m.mavenCommand(installArgs...)), nil
 }
 
 // addTemplate creates all the necessary files to start a new Java module

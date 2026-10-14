@@ -314,17 +314,17 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithFunction(
 						dag.Function("JavaImage",
 							dag.TypeDef().WithObject("Container")).
-							WithSourceMap(dag.SourceMap("main.go", 478, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 489, 1))).
 					WithFunction(
 						dag.Function("MavenImage",
 							dag.TypeDef().WithObject("Container")).
-							WithSourceMap(dag.SourceMap("main.go", 471, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 482, 1))).
 					WithFunction(
 						dag.Function("ModuleRuntime",
 							dag.TypeDef().WithObject("Container")).
-							WithSourceMap(dag.SourceMap("main.go", 296, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 298, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 299, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 307, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 309, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 310, 2)})).
 					WithFunction(
 						dag.Function("WithConfig",
 							dag.TypeDef().WithObject("JavaSdk")).

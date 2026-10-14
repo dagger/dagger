@@ -29,6 +29,7 @@ class ScalarVisitor extends AbstractVisitor {
                 AnnotationSpec.builder(JsonbTypeDeserializer.class)
                     .addMember("value", "$T.class", ClassName.bestGuess("ScalarStringDeserializer"))
                     .build());
+    Helpers.addGraphQLType(classBuilder, type.getName(), Helpers.formatName(type));
 
     MethodSpec constructor =
         MethodSpec.constructorBuilder()

@@ -211,6 +211,10 @@ class QueryBuilder {
         // FIXME - This may not happen
         throw new RuntimeException(nsme);
       }
+    } else if (klass.isEnum() && GraphQLEnum.class.isAssignableFrom(klass)) {
+      // Constants named apart from their schema values are looked up by value
+      String value = JsonPath.parse(response.getData().toString()).read(path, String.class);
+      return value == null ? null : GraphQLEnums.valueOf(klass, value);
     } else {
       return JsonPath.parse(response.getData().toString()).read(path, klass);
     }

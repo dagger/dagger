@@ -25,6 +25,17 @@ public class Field {
 
   private Type parentObject;
 
+  /** The Java name the engine formatted for this field's name, or null. */
+  @JsonbTransient private String formattedName;
+
+  public String getFormattedName() {
+    return formattedName;
+  }
+
+  public void setFormattedName(String formattedName) {
+    this.formattedName = formattedName;
+  }
+
   public String getName() {
     return name;
   }
