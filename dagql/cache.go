@@ -3191,6 +3191,11 @@ type ongoingCall struct {
 	// that returns successfully while waiters remain delegates publication and
 	// lease release to them, so the last waiter to leave must check it.
 	fnDone bool
+	// producerClosed is set under callsMu when the callback or the result's
+	// publication failed after the session whose scope the work runs under was
+	// removed. The call is retired from ongoingCalls at the same time, so a
+	// waiter from a live session can take the work over with its own callback.
+	producerClosed bool
 
 	// profOpID is the wcprof op for the shared execution of this call, when
 	// profiling is enabled. Waiters record wait events against it.
@@ -3209,6 +3214,43 @@ type ongoingCall struct {
 	profSkip bool
 
 	res *sharedResult
+}
+
+// retireOngoingCallLocked removes oc from ongoingCalls if it is still the
+// published call for its keys; a successor started by a takeover keeps its
+// entry. callsMu must be held.
+func (c *Cache) retireOngoingCallLocked(oc *ongoingCall) {
+	if c.ongoingCalls[oc.callConcurrencyKeys] == oc {
+		delete(c.ongoingCalls, oc.callConcurrencyKeys)
+	}
+}
+
+// sharedWorkTakeoverError tells a waiter of a shared call to run the call again
+// with its own callback: the call failed after the session that started it was
+// removed, and the waiter is still waiting.
+type sharedWorkTakeoverError struct {
+	err error
+}
+
+func (e *sharedWorkTakeoverError) Error() string { return e.err.Error() }
+func (e *sharedWorkTakeoverError) Unwrap() error { return e.err }
+
+// sharedWorkTakeover returns the takeover signal for err if oc failed because
+// its producer's session was removed and the waiter with ctx is still live.
+// Otherwise it returns err. A waiter from a removed session may take over too:
+// its session refuses to extend its scope, so it fails without running work.
+func sharedWorkTakeover(ctx context.Context, oc *ongoingCall, err error) error {
+	if !oc.producerClosed || ctx.Err() != nil {
+		return err
+	}
+	return &sharedWorkTakeoverError{err: err}
+}
+
+// clientScopeSessionClosed reports whether ctx runs under a client scope whose
+// session has been removed.
+func clientScopeSessionClosed(ctx context.Context) bool {
+	scope, ok := engine.ClientScopeFromContext(ctx)
+	return ok && scope.Lease().SessionClosed()
 }
 
 func (oc *ongoingCall) releaseSharedWorkLeases(ctx context.Context) error {
@@ -5042,6 +5084,12 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				attemptOp.session.lifecycle.Load()&cacheSessionReleasedBit != 0 {
 				attempt.releasedProducer = attemptOp.sessionID
 			}
+			// Session removal closes the producer's scope before it tears down
+			// any of the callback's dependencies, so any failure after the
+			// closure is attributed to it, like a release.
+			if err != nil && clientScopeLease.SessionClosed() {
+				attempt.releasedProducer = attemptOp.sessionID
+			}
 			attempt.cancel = nil
 			if err == nil {
 				g.complete = true
@@ -5738,12 +5786,12 @@ func (c *Cache) getOrInitCall(
 	// (volume-constrained, always-on) skips that class. ProfileSkip never reaches a
 	// native profiling check.
 	if !wcprof.Enabled(ctx) || req == nil || req.ResultCall == nil {
-		return c.getOrInitCallInner(ctx, sessionID, resolver, req, fn, nil)
+		return c.getOrInitCallTakingOver(ctx, sessionID, resolver, req, fn, nil)
 	}
 	ctx, profOp := wcprof.BeginOp(ctx, wcprof.OpKindCall, profCallClass(req.ResultCall), wcprof.OpOpts{
 		ClientID: profClientID(ctx),
 	})
-	res, err := c.getOrInitCallInner(ctx, sessionID, resolver, req, fn, profOp)
+	res, err := c.getOrInitCallTakingOver(ctx, sessionID, resolver, req, fn, profOp)
 	outcome := profOp.OutcomeHint()
 	switch {
 	case err != nil:
@@ -5757,6 +5805,35 @@ func (c *Cache) getOrInitCall(
 	}
 	profOp.EndWithResult(outcome, profResultID(res))
 	return res, err
+}
+
+// maxSharedCallTakeovers bounds how many times one invocation takes over a
+// shared call from a removed producer, as maxLazySessionRetries does for lazy
+// evaluation.
+const maxSharedCallTakeovers = 3
+
+// getOrInitCallTakingOver runs the request, and runs it again with this
+// caller's own callback and scope when the shared call it started or joined
+// failed because its producer's session was removed: the first survivor
+// starts a new call and the others join it.
+func (c *Cache) getOrInitCallTakingOver(
+	ctx context.Context,
+	sessionID string,
+	resolver TypeResolver,
+	req *CallRequest,
+	fn func(context.Context) (AnyResult, error),
+	profOp *wcprof.Op,
+) (AnyResult, error) {
+	for takeovers := 0; ; takeovers++ {
+		res, err := c.getOrInitCallInner(ctx, sessionID, resolver, req, fn, profOp)
+		var takeover *sharedWorkTakeoverError
+		if !errors.As(err, &takeover) {
+			return res, err
+		}
+		if takeovers == maxSharedCallTakeovers {
+			return nil, fmt.Errorf("shared call takeover budget exhausted after %d foreign-session takeovers: %w", maxSharedCallTakeovers, takeover.err)
+		}
+	}
 }
 
 //nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
@@ -6016,6 +6093,13 @@ func (c *Cache) getOrInitCallInner(
 		c.callsMu.Lock()
 		oc.fnDone = true
 		noWaiters := oc.waiters == 0
+		// Session removal closes the producer's scope before it tears down any
+		// of the work's dependencies, so a failure after the closure may be
+		// any error teardown causes. The waiters take the work over.
+		if err != nil && oc.clientScopeLease.SessionClosed() {
+			oc.producerClosed = true
+			c.retireOngoingCallLocked(oc)
+		}
 		c.callsMu.Unlock()
 		if c.testAfterCallbackWaiterCheck != nil {
 			c.testAfterCallbackWaiterCheck()
@@ -6223,7 +6307,7 @@ func (c *Cache) wait(
 		// exactly one of them observes the other's state.
 		orphaned := lastWaiter && oc.fnDone
 		if lastWaiter {
-			delete(c.ongoingCalls, oc.callConcurrencyKeys)
+			c.retireOngoingCallLocked(oc)
 			oc.cancel(canceledErr)
 		}
 		c.callsMu.Unlock()
@@ -6243,11 +6327,11 @@ func (c *Cache) wait(
 		oc.waiters--
 		lastWaiter := oc.waiters == 0
 		if lastWaiter {
-			delete(c.ongoingCalls, oc.callConcurrencyKeys)
+			c.retireOngoingCallLocked(oc)
 			oc.cancel(completionErr)
 		}
 		c.callsMu.Unlock()
-		return nil, completionErr
+		return nil, sharedWorkTakeover(ctx, oc, completionErr)
 	}
 
 	oc.initCompletedResultOnce.Do(func() {
@@ -6286,7 +6370,9 @@ func (c *Cache) wait(
 		if oc.needsPersistedEdge {
 			oc.pendingEdge = &pendingRetention{expiresAtUnix: oc.persistedEdgeExpiresAtUnix}
 		}
-		delete(c.ongoingCalls, oc.callConcurrencyKeys)
+		// Publication runs under the producer's scope too; see the callback.
+		oc.producerClosed = oc.initCompletedResultErr != nil && oc.clientScopeLease.SessionClosed()
+		c.retireOngoingCallLocked(oc)
 		c.callsMu.Unlock()
 	})
 	if oc.initCompletedResultErr != nil {
@@ -6299,7 +6385,7 @@ func (c *Cache) wait(
 				return nil, relErr
 			}
 		}
-		return nil, oc.initCompletedResultErr
+		return nil, sharedWorkTakeover(ctx, oc, oc.initCompletedResultErr)
 	}
 	if oc.res == nil {
 		c.callsMu.Lock()
@@ -7019,7 +7105,10 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			// readers; the classification reads the hook error alone, so the
 			// joined cleanup errors cannot reclassify a genuine failure. The
 			// publishing invocation keeps the unclassified attachment error.
-			return failAttachment(err, errors.Is(err, ErrCacheSessionReleased))
+			// Attachment also runs under the scope of the work that produced
+			// the value; a failure after that scope's session was removed is
+			// likewise that removal's, whatever the error.
+			return failAttachment(err, errors.Is(err, ErrCacheSessionReleased) || clientScopeSessionClosed(ctx))
 		}
 	}
 	if err := func() error {

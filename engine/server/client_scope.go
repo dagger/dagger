@@ -601,6 +601,10 @@ func (sess *daggerSession) closeClientScope(client *clientRuntime) {
 // live-session transition.
 func (sess *daggerSession) markSessionRemoved() {
 	sess.scopeMu.Lock()
+	// Work still running under the session's scopes observes the removal
+	// before anything can fail it: some readers of the removed state do not
+	// take scopeMu.
+	sess.scopeAuthority.Close()
 	sess.state.Store(sessionStateRemoved)
 	sess.scopeMu.Unlock()
 }
