@@ -89,7 +89,7 @@ type TypescriptClientDev {
   """
   pub testNodejs(nodeVersion: String!): Void {
     daggerEngine(ws: self.ws)
-      .installClient(nodejsDevContainer(nodeVersion))
+      .installClient(ws: self.ws, client: nodejsDevContainer(nodeVersion))
       .withWorkdir(sourcePath)
       .withEnvVariable("NODE_OPTIONS", "--import @dagger.io/mocha/register")
       .withExec(["yarn", "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"])
@@ -103,7 +103,7 @@ type TypescriptClientDev {
   """
   pub testBunjs: Void @check {
     daggerEngine(ws: self.ws)
-      .installClient(bunjsDevContainer)
+      .installClient(ws: self.ws, client: bunjsDevContainer)
       .withWorkdir(sourcePath)
       .withExec(["bun", "test:bun", "-i", "-g", "Automatic Provisioned CLI Binary"])
       .sync
@@ -118,7 +118,7 @@ type TypescriptClientDev {
     let ctr = nodejsBase(nodeVersionPrevLts)
       .withMountedDirectory(".", workspaceDir)
       .withExec(["yarn", "--cwd", sourcePath, "install"])
-    ctr = daggerEngine(ws: self.ws).installClient(ctr)
+    ctr = daggerEngine(ws: self.ws).installClient(ws: self.ws, client: ctr)
     ctr
       .withFile("/usr/local/bin/codegen", codegen(ws: self.ws).binary)
       .withExec(["codegen", "generate-library", "--lang", "typescript", "-o", "./sdk/typescript/src/api/"])
@@ -275,6 +275,6 @@ type TypescriptClientDev {
   }
 
   pub binary: File! {
-    go(ws: self.ws, source: source).binary("./cmd/codegen", noSymbols: true, noDwarf: true)
+    go(ws: self.ws, source: source).binary(ws: self.ws, pkg: "./cmd/codegen", noSymbols: true, noDwarf: true)
   }
 }

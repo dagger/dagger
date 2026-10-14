@@ -1,0 +1,519 @@
+package discovery
+
+import (
+	"fmt"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"maps"
+	"os"
+	"path"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+
+	"golang.org/x/mod/modfile"
+)
+
+const embedDirective = "//go:embed"
+
+const symlinkRefusal = "symlinks outside the module directory are refused"
+
+// Includes is what a module's build reads outside its module directory. An
+// empty Include means the build reads nothing outside it.
+type Includes struct {
+	// Anchor is the directory that holds the module directory and every
+	// included path, relative to the module directory, such as "..".
+	Anchor string
+	// ModulePath is the module directory relative to the anchor.
+	ModulePath string
+	Include    []IncludePattern
+	// Paths holds the same list as clean patterns relative to the module
+	// directory.
+	Paths []string
+}
+
+type IncludePattern struct {
+	// Position is the go.mod line, import or //go:embed line that needs the
+	// path, relative to the module directory.
+	Position string
+	// Path is relative to the module directory.
+	Path string
+	// Pattern is relative to the anchor.
+	Pattern string
+}
+
+// ReadIncludes lists what the build of the module at root reads outside its
+// module directory, in path order. workspacePath is the module directory
+// relative to the workspace root. Without it, paths are bounded by the file
+// system root instead.
+func ReadIncludes(root, workspacePath string) (*Includes, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	location := filepath.ToSlash(root)
+	depth := len(strings.Split(location, "/")) - 1
+	if workspacePath != "" {
+		location = path.Join("/", workspacePath)
+		depth = 0
+		if location != "/" {
+			depth = len(strings.Split(strings.TrimPrefix(location, "/"), "/"))
+		}
+	}
+	outside, err := outsideFiles(root, depth)
+	if err != nil {
+		return nil, err
+	}
+	includes := &Includes{Anchor: ".", ModulePath: "."}
+	if len(outside) == 0 {
+		return includes, nil
+	}
+
+	anchorUp := 0
+	for p := range outside {
+		anchorUp = max(anchorUp, leadingParents(p))
+	}
+	parts := strings.Split(strings.Trim(location, "/"), "/")
+	includes.ModulePath = strings.Join(parts[len(parts)-anchorUp:], "/")
+	includes.Anchor = strings.TrimSuffix(strings.Repeat("../", anchorUp), "/")
+	for _, p := range slices.Sorted(maps.Keys(outside)) {
+		includes.Include = append(includes.Include, IncludePattern{
+			Position: outside[p],
+			Path:     p,
+			Pattern:  path.Join(includes.ModulePath, p),
+		})
+		includes.Paths = append(includes.Paths, p)
+	}
+	return includes, nil
+}
+
+func leadingParents(cleaned string) int {
+	up := 0
+	for cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		up++
+		cleaned = strings.TrimPrefix(strings.TrimPrefix(cleaned, ".."), "/")
+	}
+	return up
+}
+
+// splitEmbedArgs splits directive arguments at white space. An argument can
+// be a Go interpreted or raw string.
+func splitEmbedArgs(text string) ([]string, error) {
+	var args []string
+	for {
+		text = strings.TrimLeft(text, " \t")
+		if text == "" {
+			return args, nil
+		}
+		switch text[0] {
+		case '"':
+			end := 1
+			for end < len(text) && text[end] != '"' {
+				if text[end] == '\\' {
+					end++
+				}
+				end++
+			}
+			if end >= len(text) {
+				return nil, fmt.Errorf("invalid quoted string in %s: %s", embedDirective, text)
+			}
+			arg, err := strconv.Unquote(text[:end+1])
+			if err != nil {
+				return nil, fmt.Errorf("invalid quoted string in %s: %s", embedDirective, text[:end+1])
+			}
+			args = append(args, arg)
+			text = text[end+1:]
+		case '`':
+			end := strings.IndexByte(text[1:], '`')
+			if end < 0 {
+				return nil, fmt.Errorf("invalid quoted string in %s: %s", embedDirective, text)
+			}
+			args = append(args, text[1:end+1])
+			text = text[end+2:]
+		default:
+			end := strings.IndexAny(text, " \t")
+			if end < 0 {
+				end = len(text)
+			}
+			args = append(args, text[:end])
+			text = text[end:]
+		}
+	}
+}
+
+type localReplace struct {
+	module string
+	text   string
+	dir    string
+	line   int
+	inside bool
+}
+
+// localReplaces reads go.mod and its replace directives that name a local
+// directory. It returns a nil file for a module without go.mod.
+func localReplaces(root string) (*modfile.File, []localReplace, error) {
+	goModPath := filepath.Join(root, "go.mod")
+	data, err := os.ReadFile(goModPath)
+	if os.IsNotExist(err) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	mod, err := modfile.Parse(goModPath, data, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	var replaces []localReplace
+	for _, replace := range mod.Replace {
+		if replace.New.Version != "" || !modfile.IsDirectoryPath(replace.New.Path) {
+			continue
+		}
+		dir := replace.New.Path
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(root, filepath.FromSlash(dir))
+		}
+		rel, err := filepath.Rel(root, dir)
+		replaces = append(replaces, localReplace{
+			module: replace.Old.Path,
+			text:   strings.TrimSpace(replace.Old.Path + " " + replace.Old.Version),
+			dir:    dir,
+			line:   replace.Syntax.Start.Line,
+			inside: err == nil && filepath.IsLocal(rel),
+		})
+	}
+	return mod, replaces, nil
+}
+
+// LocalReplaceTargets returns the local replace targets of go.mod outside the
+// module directory, relative to it.
+func LocalReplaceTargets(root string) ([]string, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	_, replaces, err := localReplaces(root)
+	if err != nil {
+		return nil, err
+	}
+	var targets []string
+	for _, replace := range replaces {
+		if !replace.inside {
+			targets = append(targets, replaceText(root, replace.dir))
+		}
+	}
+	return targets, nil
+}
+
+// outsideFiles maps what the build reads outside the module directory to the
+// go.mod line, import or //go:embed line that needs it: the go.mod of each
+// local replace target go.mod requires, the Go files of every package
+// imported from one, and the files those packages embed, with their assembly,
+// header and syso files. Imports count under every build tag and test files
+// of the module count, as go mod tidy loads them.
+func outsideFiles(root string, depth int) (map[string]string, error) {
+	mod, replaces, err := localReplaces(root)
+	if err != nil || !slices.ContainsFunc(replaces, func(replace localReplace) bool { return !replace.inside }) {
+		return nil, err
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+
+	// With graph pruning, the build reads the go.mod of each module go.mod
+	// requires, and not of the modules those require.
+	required := map[string]bool{}
+	for _, req := range mod.Require {
+		required[req.Mod.Path] = true
+	}
+
+	found := map[string]string{}
+	add := func(position, file string) {
+		if _, ok := found[file]; !ok {
+			found[file] = position
+		}
+	}
+	checkGoMod := func(replace localReplace) error {
+		dir := replaceText(root, replace.dir)
+		if leadingParents(dir) > depth {
+			return fmt.Errorf("go.mod:%d: replace %s => %s leaves the workspace root", replace.line, replace.text, dir)
+		}
+		if _, err := os.Stat(filepath.Join(replace.dir, "go.mod")); err != nil {
+			return fmt.Errorf("go.mod:%d: replace %s => %s reads %s, which is missing",
+				replace.line, replace.text, dir, path.Join(dir, "go.mod"))
+		}
+		if throughSymlink(root, realRoot, filepath.Join(replace.dir, "go.mod")) {
+			return fmt.Errorf("go.mod:%d: replace %s => %s reads %s through a symlink; %s",
+				replace.line, replace.text, dir, path.Join(dir, "go.mod"), symlinkRefusal)
+		}
+		add(fmt.Sprintf("go.mod:%d", replace.line), path.Join(dir, "go.mod"))
+		return nil
+	}
+	for _, replace := range replaces {
+		if !replace.inside && required[replace.module] {
+			if err := checkGoMod(replace); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	type pkg struct {
+		dir   string
+		tests bool
+	}
+	var queue []pkg
+	err = filepath.WalkDir(root, func(file string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		if file != root && skipPackageDir(file, entry.Name()) {
+			return fs.SkipDir
+		}
+		queue = append(queue, pkg{dir: file, tests: true})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	visited := map[string]bool{}
+	for len(queue) > 0 {
+		next := queue[0]
+		queue = queue[1:]
+		if visited[next.dir] {
+			continue
+		}
+		visited[next.dir] = true
+		var addFiles func(position, file string)
+		if rel, err := filepath.Rel(root, next.dir); err != nil || !filepath.IsLocal(rel) {
+			addFiles = add
+		}
+		imports, err := packageImports(root, next.dir, next.tests, addFiles)
+		if err != nil {
+			return nil, err
+		}
+		for _, imported := range imports {
+			// The module's own packages are walked above, even under a
+			// replaced module path.
+			if mod.Module != nil && (imported.path == mod.Module.Mod.Path || strings.HasPrefix(imported.path, mod.Module.Mod.Path+"/")) {
+				continue
+			}
+			var match *localReplace
+			for i, replace := range replaces {
+				if (imported.path == replace.module || strings.HasPrefix(imported.path, replace.module+"/")) &&
+					(match == nil || len(replace.module) > len(match.module)) {
+					match = &replaces[i]
+				}
+			}
+			if match == nil {
+				continue
+			}
+			if !match.inside {
+				if err := checkGoMod(*match); err != nil {
+					return nil, err
+				}
+			}
+			dir := filepath.Join(match.dir, filepath.FromSlash(strings.TrimPrefix(imported.path, match.module)))
+			if !match.inside {
+				if !hasGoFiles(dir) {
+					return nil, fmt.Errorf("%s: package %s is in %s (go.mod:%d), but %s has no Go files",
+						imported.position, imported.path, replaceText(root, match.dir), match.line, replaceText(root, dir))
+				}
+				if throughSymlink(root, realRoot, dir) {
+					return nil, fmt.Errorf("%s: package %s reads %s through a symlink; %s",
+						imported.position, imported.path, replaceText(root, dir), symlinkRefusal)
+				}
+				add(imported.position, path.Join(replaceText(root, dir), "*.go"))
+			}
+			queue = append(queue, pkg{dir: dir})
+		}
+	}
+	return found, nil
+}
+
+// throughSymlink reports whether p resolves through a symlink. The list names
+// paths as written, so a path through a symlink would leave out the files the
+// build reads, which can be outside the workspace root.
+func throughSymlink(root, realRoot, p string) bool {
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return false
+	}
+	want, err := filepath.Rel(root, p)
+	if err != nil {
+		return true
+	}
+	got, err := filepath.Rel(realRoot, real)
+	return err != nil || got != want
+}
+
+// checkEmbed expands a //go:embed pattern of the package at dir as go:embed
+// does, and refuses a path through a symlink among the files it reads, and a
+// match in another module, which go:embed refuses.
+func checkEmbed(root, dir, pattern string, all bool) error {
+	matches, _ := filepath.Glob(filepath.Join(dir, filepath.FromSlash(pattern)))
+	for _, match := range matches {
+		what := "file"
+		if info, err := os.Lstat(match); err == nil && info.IsDir() {
+			what = "directory"
+		}
+		for p := match; len(p) > len(dir); p = filepath.Dir(p) {
+			if info, err := os.Lstat(p); err == nil && info.Mode()&fs.ModeSymlink != 0 {
+				return fmt.Errorf("%s is a symlink; %s", replaceText(root, p), symlinkRefusal)
+			}
+			if _, err := os.Stat(filepath.Join(p, "go.mod")); err == nil {
+				return fmt.Errorf("cannot embed %s %s: in different module", what, replaceText(root, match))
+			}
+		}
+		linked := ""
+		filepath.WalkDir(match, func(p string, entry fs.DirEntry, err error) error {
+			if err != nil || p == match {
+				return nil
+			}
+			// go:embed skips these names, and nested modules.
+			name := entry.Name()
+			if slices.Contains([]string{".bzr", ".git", ".hg", ".svn"}, name) || (!all && (name[0] == '.' || name[0] == '_')) {
+				if entry.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if entry.Type()&fs.ModeSymlink != 0 {
+				linked = p
+				return fs.SkipAll
+			}
+			if _, err := os.Stat(filepath.Join(p, "go.mod")); entry.IsDir() && err == nil {
+				return fs.SkipDir
+			}
+			return nil
+		})
+		if linked != "" {
+			return fmt.Errorf("%s is a symlink; %s", replaceText(root, linked), symlinkRefusal)
+		}
+	}
+	return nil
+}
+
+// replaceText is a directory as a go.mod line names it.
+func replaceText(root, dir string) string {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return filepath.ToSlash(dir)
+	}
+	rel = filepath.ToSlash(rel)
+	if !strings.HasPrefix(rel, "../") && rel != ".." {
+		rel = "./" + rel
+	}
+	return rel
+}
+
+// skipPackageDir reports a directory that Go builds nothing from, or that
+// holds another module.
+func skipPackageDir(dir, name string) bool {
+	if name == "testdata" || name == "vendor" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+		return true
+	}
+	_, err := os.Stat(filepath.Join(dir, "go.mod"))
+	return err == nil
+}
+
+func hasGoFiles(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") && !strings.HasSuffix(entry.Name(), "_test.go") {
+			return true
+		}
+	}
+	return false
+}
+
+type packageImport struct {
+	path     string
+	position string
+}
+
+// packageImports lists the imports of every Go file of a package directory,
+// whatever its build constraints, in file order. With addFiles, it also adds
+// the other files the package's build reads: the patterns of its //go:embed
+// lines, and its assembly, header and syso files.
+func packageImports(root, dir string, tests bool, addFiles func(position, file string)) ([]packageImport, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	fset := token.NewFileSet()
+	mode := parser.ImportsOnly
+	if addFiles != nil {
+		mode = parser.ParseComments
+	}
+	position := func(pos token.Pos) string {
+		at := fset.Position(pos)
+		rel, err := filepath.Rel(root, at.Filename)
+		if err != nil {
+			rel = at.Filename
+		}
+		return fmt.Sprintf("%s:%d:%d", filepath.ToSlash(rel), at.Line, at.Column)
+	}
+	var imports []packageImport
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() {
+			continue
+		}
+		if addFiles != nil && entry.Type()&fs.ModeSymlink != 0 && !strings.HasSuffix(name, "_test.go") &&
+			slices.Contains([]string{".go", ".s", ".h", ".syso"}, filepath.Ext(name)) {
+			return nil, fmt.Errorf("%s is a symlink; %s", path.Join(replaceText(root, dir), name), symlinkRefusal)
+		}
+		if ext := filepath.Ext(name); addFiles != nil && (ext == ".s" || ext == ".h" || ext == ".syso") {
+			addFiles(path.Join(replaceText(root, dir), name), path.Join(replaceText(root, dir), "*"+ext))
+		}
+		if !strings.HasSuffix(name, ".go") || (!tests && strings.HasSuffix(name, "_test.go")) {
+			continue
+		}
+		file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, mode)
+		if err != nil {
+			return nil, err
+		}
+		for _, group := range file.Comments {
+			for _, comment := range group.List {
+				args, ok := strings.CutPrefix(comment.Text, embedDirective)
+				if !ok || args == "" || (args[0] != ' ' && args[0] != '\t') {
+					continue
+				}
+				patterns, err := splitEmbedArgs(args)
+				if err != nil {
+					return nil, fmt.Errorf("%s: %w", position(comment.Pos()), err)
+				}
+				for _, pattern := range patterns {
+					// Go refuses these patterns, which would also lead the list
+					// out of the package directory.
+					all := strings.HasPrefix(pattern, "all:")
+					pattern = strings.TrimPrefix(pattern, "all:")
+					if pattern == "." || !fs.ValidPath(pattern) {
+						return nil, fmt.Errorf("%s: invalid pattern in %s: %s", position(comment.Pos()), embedDirective, pattern)
+					}
+					if err := checkEmbed(root, dir, pattern, all); err != nil {
+						return nil, fmt.Errorf("%s: %w", position(comment.Pos()), err)
+					}
+					addFiles(position(comment.Pos()), path.Join(replaceText(root, dir), pattern))
+				}
+			}
+		}
+		for _, spec := range file.Imports {
+			value, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				continue
+			}
+			imports = append(imports, packageImport{path: value, position: position(spec.Pos())})
+		}
+	}
+	return imports, nil
+}

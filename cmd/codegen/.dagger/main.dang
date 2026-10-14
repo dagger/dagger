@@ -14,6 +14,6 @@ type Codegen {
   let ws: Workspace!
 
   pub binary: File! {
-    go(ws: self.ws, source: source).binary("./cmd/codegen", noSymbols: true, noDwarf: true)
+    go(ws: self.ws, source: source).binary(ws: self.ws, pkg: "./cmd/codegen", noSymbols: true, noDwarf: true)
   }
 }

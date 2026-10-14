@@ -5,7 +5,19 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	changieClient "dagger/release/internal/dagger/clients/changie"
+	cliDevClient "dagger/release/internal/dagger/clients/cli-dev"
+	docsDevClient "dagger/release/internal/dagger/clients/docs-dev"
+	elixirClientDevClient "dagger/release/internal/dagger/clients/elixir-client-dev"
+	engineDevClient "dagger/release/internal/dagger/clients/engine-dev"
+	goClientDevClient "dagger/release/internal/dagger/clients/go-client-dev"
+	notifyClient "dagger/release/internal/dagger/clients/notify"
+	phpClientDevClient "dagger/release/internal/dagger/clients/php-client-dev"
+	pythonClientDevClient "dagger/release/internal/dagger/clients/python-client-dev"
+	rustClientDevClient "dagger/release/internal/dagger/clients/rust-client-dev"
+	typescriptClientDevClient "dagger/release/internal/dagger/clients/typescript-client-dev"
 	_ "embed"
+	"errors"
 	"fmt"
 	"strings"
 	"text/template"
@@ -84,7 +96,7 @@ func (report *ReleaseReport) notify(
 		}
 
 		message := fmt.Sprintf("%s: https://github.com/dagger/dagger/releases/tag/%s", artifact.Name, artifact.Tag)
-		_, err := dag.Notify().Discord(ctx, discordWebhook, message)
+		_, err := notifyClient.New().Discord(ctx, discordWebhook, message)
 		if err != nil {
 			return err
 		}
@@ -171,7 +183,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		// this is a public release
 		tags = append(tags, "latest")
 	}
-	err := dag.EngineDev(r.Workspace).Publish(ctx, tags, dagger.EngineDevPublishOpts{
+	err := engineDevClient.New(r.Workspace).Publish(ctx, r.Workspace, tags, engineDevClient.EngineDevPublishOpts{
 		Image:            registryImage,
 		RegistryUsername: registryUsername,
 		RegistryPassword: registryPassword,
@@ -186,17 +198,14 @@ func (r *Release) Publish( //nolint:gocyclo
 		Name: "🚗 CLI",
 		Tag:  tag,
 	}
-	cliDevOpts := dagger.CliDevOpts{
-		// Dependencies don't inherit the workspace; forward it explicitly.
-		Ws: r.Workspace,
-	}
+	cliDevOpts := cliDevClient.CliDevOpts{}
 	if version != "" {
 		cliDevOpts.Version = version
 	}
-	cliDev := dag.CliDev(cliDevOpts)
+	cliDev := cliDevClient.New(r.Workspace, cliDevOpts)
 	if !dryRun {
 		_, err := cliDev.
-			Publish(tag, commit, githubOrgName, dagger.CliDevPublishOpts{
+			Publish(r.Workspace, tag, commit, githubOrgName, cliDevClient.CliDevPublishOpts{
 				GithubToken:        githubToken,
 				GithubHost:         githubHost,
 				GithubCaCert:       githubCaCert,
@@ -211,14 +220,14 @@ func (r *Release) Publish( //nolint:gocyclo
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
-		err = cliDev.PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, dagger.CliDevPublishMetadataOpts{
+		err = cliDev.PublishMetadata(ctx, r.Workspace, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, cliDevClient.CliDevPublishMetadataOpts{
 			AwsEndpointURL: awsEndpointURL,
 		})
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	} else {
-		if err := cliDev.ReleaseDryRun(ctx); err != nil {
+		if err := runCheck(ctx, cliDev.ReleaseDryRun(r.Workspace)); err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	}
@@ -239,7 +248,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			Link: "https://docs.dagger.io",
 		}
 		if !dryRun {
-			if err := dag.DocsDev().Publish(ctx, netlifyToken, dagger.DocsDevPublishOpts{
+			if err := docsDevClient.New().Publish(ctx, netlifyToken, docsDevClient.DocsDevPublishOpts{
 				APIURL: netlifyAPIURL,
 			}); err != nil {
 				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
@@ -264,13 +273,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			link: "https://pkg.go.dev/dagger.io/dagger@" + cmp.Or(version, "main"),
 			dev:  true,
 			release: func(ctx context.Context) error {
-				return dag.GoClientDev(r.Workspace).Release(ctx, tag, dagger.GoClientDevReleaseOpts{
+				return goClientDevClient.New(r.Workspace).Release(ctx, tag, goClientDevClient.GoClientDevReleaseOpts{
 					GithubToken: githubToken,
 					DestRemote:  goSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.GoClientDev(r.Workspace).ReleaseDryRun(ctx)
+				return goClientDevClient.New(r.Workspace).ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -279,14 +288,14 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/python/",
 			link: "https://pypi.org/project/dagger-io/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.PythonClientDev(r.Workspace).Release(ctx, tag, dagger.PythonClientDevReleaseOpts{
+				return pythonClientDevClient.New(r.Workspace).Release(ctx, tag, pythonClientDevClient.PythonClientDevReleaseOpts{
 					PypiRepo:  pypiRepo,
 					PypiURL:   pypiURL,
 					PypiToken: pypiToken,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.PythonClientDev(r.Workspace).ReleaseDryRun(ctx)
+				return runCheck(ctx, pythonClientDevClient.New(r.Workspace).ReleaseDryRun())
 			},
 		},
 		{
@@ -295,13 +304,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/typescript/",
 			link: "https://www.npmjs.com/package/@dagger.io/dagger/v/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.TypescriptClientDev(r.Workspace).Release(ctx, tag, dagger.TypescriptClientDevReleaseOpts{
+				return typescriptClientDevClient.New(r.Workspace).Release(ctx, tag, typescriptClientDevClient.TypescriptClientDevReleaseOpts{
 					NpmToken:       npmToken,
 					NpmRegistryURL: npmRegistryURL,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.TypescriptClientDev(r.Workspace).ReleaseDryRun(ctx)
+				return typescriptClientDevClient.New(r.Workspace).ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -310,13 +319,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/elixir/",
 			link: "https://hex.pm/packages/dagger/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.ElixirClientDev(r.Workspace).Publish(ctx, tag, dagger.ElixirClientDevPublishOpts{
+				return elixirClientDevClient.New(r.Workspace).Publish(ctx, tag, elixirClientDevClient.ElixirClientDevPublishOpts{
 					HexAPIKey: hexAPIKey,
 					HexAPIURL: hexAPIURL,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.ElixirClientDev(r.Workspace).ReleaseDryRun(ctx)
+				return elixirClientDevClient.New(r.Workspace).ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -325,13 +334,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/rust/",
 			link: "https://crates.io/crates/dagger-sdk/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.RustClientDev(r.Workspace).
-					Release(ctx, tag, cargoRegistryToken, dagger.RustClientDevReleaseOpts{
+				return rustClientDevClient.New(r.Workspace).
+					Release(ctx, tag, cargoRegistryToken, rustClientDevClient.RustClientDevReleaseOpts{
 						CargoRegistryIndex: cargoRegistryIndex,
 					})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.RustClientDev(r.Workspace).ReleaseDryRun(ctx)
+				return rustClientDevClient.New(r.Workspace).ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -341,13 +350,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			link: "https://packagist.org/packages/dagger/dagger#" + cmp.Or(version, "dev-main"),
 			dev:  true,
 			release: func(ctx context.Context) error {
-				return dag.PhpClientDev(r.Workspace).Release(ctx, tag, dagger.PhpClientDevReleaseOpts{
+				return phpClientDevClient.New(r.Workspace).Release(ctx, tag, phpClientDevClient.PhpClientDevReleaseOpts{
 					GithubToken: githubToken,
 					Dest:        phpSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.PhpClientDev(r.Workspace).ReleaseDryRun(ctx)
+				return phpClientDevClient.New(r.Workspace).ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -409,7 +418,7 @@ func (r *Release) Publish( //nolint:gocyclo
 				}()
 
 				if semver.IsValid(version) && !isPrerelease {
-					notes := dag.Changie(r.Workspace).LookupEntry(component.path, version)
+					notes := changieClient.New(r.Workspace).LookupEntry(component.path, version)
 					repo := "https://github.com/dagger/dagger"
 					if githubHost != "" {
 						repo = "https://" + githubHost + "/dagger/dagger"
@@ -496,11 +505,24 @@ func (r Release) Notify(
 
 	if discordWebhook != nil {
 		message := fmt.Sprintf("%s: https://github.com/%s/releases/tag/%s", name, githubRepo, target)
-		_, err = dag.Notify().Discord(ctx, discordWebhook, message)
+		_, err = notifyClient.New().Discord(ctx, discordWebhook, message)
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// Run a native check and propagate its failure to the release report.
+func runCheck(ctx context.Context, check *dagger.Check) error {
+	failure, err := check.Error(ctx)
+	if err != nil || failure == nil {
+		return err
+	}
+	message, err := failure.Message(ctx)
+	if err != nil {
+		return err
+	}
+	return errors.New(message)
 }

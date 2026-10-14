@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "files": {
+    "dagger.gen.go": "d8da02b0a9ff390ec70de6136dbd65e458c981883c8a8380fb68067e5cc8cdde",
+    "dockerd.gen.go": "6f82aa34cf6d255bdde6240d5c39f659ec4ca1ef8fbbbb53a90ef05c5dc65898"
+  }
+}

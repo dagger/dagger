@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	cliDevClient "dagger/engine-dev/internal/dagger/clients/cli-dev"
+	goClient "dagger/engine-dev/internal/dagger/clients/go"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -14,14 +16,14 @@ import (
 )
 
 // List all core engine tests
-func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
-	return dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Tests(ctx)
+func (dev *EngineDev) Tests(ctx context.Context, ws *dagger.Workspace) (string, error) {
+	return goClient.New(ws, goClient.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty}).Tests(ctx, ws)
 }
 
 // Run core engine tests
 // +cache="session"
 func (dev *EngineDev) Test(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	// Only run these tests
 	// +optional
 	run string,
@@ -125,7 +127,7 @@ const benchTestsEnv = "_DAGGER_BENCH"
 // for: select them with `run` like any other test.
 // +cache="session"
 func (dev *EngineDev) TestProfile(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	// Only run these tests
 	// +optional
 	run string,
@@ -217,7 +219,7 @@ func tailLines(s string, n int) string {
 // Run telemetry tests
 // +cache="session"
 func (dev *EngineDev) TestTelemetry(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	// Only run these tests
 	// +optional
 	run string,
@@ -246,7 +248,7 @@ func (dev *EngineDev) TestTelemetry(
 ) (*dagger.Changeset, error) {
 	// Goldens compare a warmed cache with the following CLI invocation.
 	// Keep warmup results available after its session closes.
-	dev = dev.WithEngineConfig("worker.oci", "gc = false")
+	dev = dev.WithEngineConfig(ws, "worker.oci", "gc = false")
 	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, false)
 	if err != nil {
 		return nil, err
@@ -479,12 +481,12 @@ exit "$result"
 // (FIXME: do this more cleanly, and reuse the standard Go toolchain)
 func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcprof bool) (*dagger.Container, []string, error) {
 	devEngine, err := dev.
-		WithEBPFProgs(ebpfProgs).
-		WithEngineConfig(`registry."registry:5000"`, `http = true`).
-		WithEngineConfig(`registry."privateregistry:5000"`, `http = true`).
-		WithEngineConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
+		WithEBPFProgs(dev.Ws, ebpfProgs).
+		WithEngineConfig(dev.Ws, `registry."registry:5000"`, `http = true`).
+		WithEngineConfig(dev.Ws, `registry."privateregistry:5000"`, `http = true`).
+		WithEngineConfig(dev.Ws, `registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
 		Container(
-			ctx,
+			ctx, dev.Ws,
 			"",    // platform
 			false, // gpuSupport
 			"",    // version
@@ -506,7 +508,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 		return nil, nil, err
 	}
 
-	devBinary := dag.DaggerCli(dagger.DaggerCliOpts{VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()
+	devBinary := cliDevClient.New(dev.Ws, cliDevClient.CliDevOpts{VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty}).Binary(dev.Ws)
 	// This creates an engine.tar container file that can be used by the integration tests.
 	// In particular, it is used by core/integration/remotecache_test.go to create a
 	// dev engine that can be used to test remote caching.
@@ -549,7 +551,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 	}
 
 	utilDirPath := "/dagger-dev"
-	goToolchain := dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws,
+	goToolchain := goClient.New(dev.Ws, goClient.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty,
 		// Exercise real client-managed agents and encrypted key loading.
 		ExtraPackages: []string{"openssh-client", "curl"},
 	})
@@ -557,7 +559,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 	if err != nil {
 		return nil, nil, err
 	}
-	tests := goToolchain.Env().
+	tests := goToolchain.Env(dev.Ws).
 		WithExec([]string{"go", "install", "github.com/dagger/otel-go/cmd/otelgotest"}).
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
@@ -566,7 +568,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 		WithMountedCache("/run", engineRunVol).
 		WithServiceBinding("registry", registrySvc)
 
-	tests, err = dev.InstallClient(ctx, tests, devEngineSvc)
+	tests, err = dev.InstallClient(ctx, dev.Ws, tests, devEngineSvc)
 	if err != nil {
 		return nil, nil, err
 	}

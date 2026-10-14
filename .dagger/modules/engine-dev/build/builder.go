@@ -2,6 +2,8 @@ package build
 
 import (
 	"context"
+	goClient "dagger/engine-dev/internal/dagger/clients/go"
+	wolfiClient "dagger/engine-dev/internal/dagger/clients/wolfi"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -126,9 +128,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	if build.gpuSupport {
 		pkgs = append(pkgs, "nvidia-driver", "nvidia-tools")
 	}
-	base := dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	base := wolfiClient.New().
+		Container(wolfiClient.WolfiContainerOpts{
 			Packages: pkgs,
 			Arch:     build.platformSpec.Architecture,
 		})
@@ -210,20 +211,20 @@ func (build *Builder) binary(pkg string, race bool) *dagger.File {
 
 func (build *Builder) binaryWithSource(pkg string, race bool, source *dagger.Directory) *dagger.File {
 	return build.goWithSource(source, race).
-		Binary(pkg, dagger.GoBinaryOpts{
+		Binary(build.ws, pkg, goClient.GoBinaryOpts{
 			Platform:  build.platform,
 			NoSymbols: true,
 			NoDwarf:   true,
 		})
 }
 
-func (build *Builder) Go(race bool) *dagger.Go {
+func (build *Builder) Go(race bool) *goClient.Go {
 	return build.goWithSource(build.source, race)
 }
 
-func (build *Builder) goWithSource(source *dagger.Directory, race bool) *dagger.Go {
-	return dag.Go(dagger.GoOpts{
-		Ws:        build.ws,
+func (build *Builder) goWithSource(source *dagger.Directory, race bool) *goClient.Go {
+	return goClient.New(build.ws, goClient.GoOpts{
+
 		Source:    source,
 		VcsCommit: build.vcsCommit,
 		VcsDirty:  build.vcsDirty,
@@ -269,9 +270,8 @@ func (build *Builder) sshfsBin() *dagger.File {
 		Tag("sshfs-" + consts.SSHFSVersion).
 		Tree()
 
-	return dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	return wolfiClient.New().
+		Container(wolfiClient.WolfiContainerOpts{
 			Packages: []string{
 				"build-base",
 				"ca-certificates-bundle",
@@ -300,7 +300,7 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 	} {
 		// CNI plugins are third-party; VCS stamping is irrelevant here, so we
 		// don't thread any VCS info into their build.
-		bin := dag.Go(dagger.GoOpts{Source: src, Ws: build.ws}).Binary(pluginPath, dagger.GoBinaryOpts{
+		bin := goClient.New(build.ws, goClient.GoOpts{Source: src}).Binary(build.ws, pluginPath, goClient.GoBinaryOpts{
 			NoSymbols: true,
 			NoDwarf:   true,
 			Platform:  build.platform,
@@ -349,9 +349,8 @@ func (build *Builder) verifyPlatform(ctx context.Context, bin *dagger.File) erro
 		return fmt.Errorf("failed to get name of binary: %w", err)
 	}
 	mntPath := filepath.Join("/mnt", name)
-	out, err := dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	out, err := wolfiClient.New().
+		Container(wolfiClient.WolfiContainerOpts{
 			Packages: []string{"file"},
 		}).
 		WithMountedFile(mntPath, bin).

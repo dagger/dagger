@@ -3,35 +3,29 @@
 package main
 
 import (
+	core "dagger.io/dagger/core"
+
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"os"
-	"sort"
 
-	telemetry "github.com/dagger/otel-go"
-	"github.com/vektah/gqlparser/v2/gqlerror"
+	"github.com/dagger/querybuilder"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/modules/go/internal/dagger"
-
-	"github.com/dagger/querybuilder"
 )
 
+// Deprecated: use explicit core constructors and generated module clients.
 var dag = dagger.Connect()
+var compilationWorkspace string
 
 func Tracer() trace.Tracer {
 	return otel.Tracer("dagger.io/sdk.go")
 }
 
-// used for local MarshalJSON implementations
 var marshalCtx = context.Background()
 
-// called by main()
 func setMarshalContext(ctx context.Context) {
 	marshalCtx = ctx
 	dagger.SetMarshalContext(ctx)
@@ -44,13 +38,8 @@ type DaggerObject interface {
 
 type ExecError = dagger.ExecError
 
-// ptr returns a pointer to the given value.
-func ptr[T any](v T) *T {
-	return &v
-}
+func ptr[T any](v T) *T { return &v }
 
-// convertSlice converts a slice of one type to a slice of another type using a
-// converter function
 func convertSlice[I any, O any](in []I, f func(I) O) []O {
 	out := make([]O, len(in))
 	for i, v := range in {
@@ -61,6 +50,7 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 
 func (r Go) MarshalJSON() ([]byte, error) {
 	var concrete struct {
+		Ws          *dagger.Workspace
 		Version     string
 		Source      *dagger.Directory
 		ModuleCache *dagger.CacheVolume
@@ -76,6 +66,7 @@ func (r Go) MarshalJSON() ([]byte, error) {
 		Exclude     []string
 		Limit       int
 	}
+	concrete.Ws = r.Ws
 	concrete.Version = r.Version
 	concrete.Source = r.Source
 	concrete.ModuleCache = r.ModuleCache
@@ -95,6 +86,7 @@ func (r Go) MarshalJSON() ([]byte, error) {
 
 func (r *Go) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
+		Ws          *dagger.Workspace
 		Version     string
 		Source      *dagger.Directory
 		ModuleCache *dagger.CacheVolume
@@ -114,6 +106,7 @@ func (r *Go) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
+	r.Ws = concrete.Ws
 	r.Version = concrete.Version
 	r.Source = concrete.Source
 	r.ModuleCache = concrete.ModuleCache
@@ -131,130 +124,36 @@ func (r *Go) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func main() {
-	ctx := context.Background()
-
-	// Direct slog to the new stderr. This is only for dev time debugging, and
-	// runtime errors/warnings.
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
-	})))
-
-	if err := dispatch(ctx); err != nil {
-		os.Exit(2)
-	}
-}
-
-func convertError(rerr error) *dagger.Error {
-	if gqlErr := findSingleGQLError(rerr); gqlErr != nil {
-		dagErr := dag.Error(gqlErr.Message)
-		if gqlErr.Extensions != nil {
-			keys := make([]string, 0, len(gqlErr.Extensions))
-			for k := range gqlErr.Extensions {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				val, err := json.Marshal(gqlErr.Extensions[k])
-				if err != nil {
-					fmt.Println("failed to marshal error value:", err)
-				}
-				dagErr = dagErr.WithValue(k, dagger.JSON(val))
-			}
-		}
-		return dagErr
-	}
-	return dag.Error(rerr.Error())
-}
-
-func findSingleGQLError(rerr error) *gqlerror.Error {
-	switch x := rerr.(type) {
-	case *gqlerror.Error:
-		return x
-	case interface{ Unwrap() []error }:
-		return nil
-	case interface{ Unwrap() error }:
-		return findSingleGQLError(x.Unwrap())
-	default:
-		return nil
-	}
-}
-func dispatch(ctx context.Context) (rerr error) {
-	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceNameKey.String("dagger-go-sdk"),
-		// TODO version?
-	))
-	defer telemetry.Close()
-
-	// A lot of the "work" actually happens when we're marshalling the return
-	// value, which entails getting object IDs, which happens in MarshalJSON,
-	// which has no ctx argument, so we use this lovely global variable.
+func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	setMarshalContext(ctx)
-
-	fnCall := dag.CurrentFunctionCall()
-	defer func() {
-		if rerr != nil {
-			if err := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
-				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
-			}
-		}
-	}()
-
-	parentName, err := fnCall.ParentName(ctx)
-	if err != nil {
-		return fmt.Errorf("get parent name: %w", err)
-	}
-	fnName, err := fnCall.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn name: %w", err)
-	}
-	parentJson, err := fnCall.Parent(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn parent: %w", err)
-	}
-	fnArgs, err := fnCall.InputArgs(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn args: %w", err)
-	}
-
-	inputArgs := map[string][]byte{}
-	for _, fnArg := range fnArgs {
-		argName, err := fnArg.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg name: %w", err)
-		}
-		argValue, err := fnArg.Value(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg value: %w", err)
-		}
-		inputArgs[argName] = []byte(argValue)
-	}
-
-	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
-	if err != nil {
-		return err
-	}
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-
-	if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
-		return fmt.Errorf("store return value: %w", err)
-	}
-	return nil
-}
-func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
+	compilationWorkspace = ""
+	_ = json.Unmarshal(inputArgs["ws"], &compilationWorkspace)
 	_ = inputArgs
+	if parentName == "" {
+		switch fnName {
+		case "Go", "go":
+			parentName = "Go"
+			fnName = ""
+		}
+	}
 	switch parentName {
 	case "Go":
+		if fnName == "New" {
+			fnName = ""
+		}
 		switch fnName {
 		case "Binary":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var pkg string
 			if inputArgs["pkg"] != nil {
@@ -277,19 +176,26 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg noDwarf", err))
 				}
 			}
-			var platform dagger.Platform
+			var platform core.Platform
 			if inputArgs["platform"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
 				if err != nil {
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
 				}
 			}
-			return (*Go).Binary(&parent, ctx, pkg, noSymbols, noDwarf, platform)
+			return (*Go).Binary(&parent, ctx, ws, pkg, noSymbols, noDwarf, platform)
 		case "Build":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var pkgs []string
 			if inputArgs["pkgs"] != nil {
@@ -312,7 +218,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg noDwarf", err))
 				}
 			}
-			var platform dagger.Platform
+			var platform core.Platform
 			if inputArgs["platform"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
 				if err != nil {
@@ -326,12 +232,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg output", err))
 				}
 			}
-			return (*Go).Build(&parent, ctx, pkgs, noSymbols, noDwarf, platform, output)
+			return (*Go).Build(&parent, ctx, ws, pkgs, noSymbols, noDwarf, platform, output)
 		case "CheckTidy":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var include []string
 			if inputArgs["include"] != nil {
@@ -347,33 +260,54 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg exclude", err))
 				}
 			}
-			return nil, (*Go).CheckTidy(&parent, ctx, include, exclude)
+			return nil, (*Go).CheckTidy(&parent, ctx, ws, include, exclude)
 		case "Download":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Go).Download(&parent, ctx)
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			return (*Go).Download(&parent, ctx, ws)
 		case "Env":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var platform dagger.Platform
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			var platform core.Platform
 			if inputArgs["platform"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
 				if err != nil {
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
 				}
 			}
-			return (*Go).Env(&parent, platform), nil
+			return (*Go).Env(&parent, ws, platform), nil
 		case "GenerateDaggerRuntime":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var start string
 			if inputArgs["start"] != nil {
@@ -382,19 +316,33 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg start", err))
 				}
 			}
-			return (*Go).GenerateDaggerRuntime(&parent, ctx, start)
+			return (*Go).GenerateDaggerRuntime(&parent, ctx, ws, start)
 		case "GenerateDaggerRuntimes":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Go).GenerateDaggerRuntimes(&parent, ctx)
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			return (*Go).GenerateDaggerRuntimes(&parent, ctx, ws)
 		case "ListPackages":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var pkgs []string
 			if inputArgs["pkgs"] != nil {
@@ -410,12 +358,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg onlyMain", err))
 				}
 			}
-			return (*Go).ListPackages(&parent, ctx, pkgs, onlyMain)
+			return (*Go).ListPackages(&parent, ctx, ws, pkgs, onlyMain)
 		case "Modules":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var include []string
 			if inputArgs["include"] != nil {
@@ -431,12 +386,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg exclude", err))
 				}
 			}
-			return (*Go).Modules(&parent, ctx, include, exclude)
+			return (*Go).Modules(&parent, ctx, ws, include, exclude)
 		case "Test":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var run string
 			if inputArgs["run"] != nil {
@@ -452,11 +414,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
 				}
 			}
-			var failFast bool
-			if inputArgs["failFast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failFast"]), &failFast)
+			var failfast bool
+			if inputArgs["failfast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failFast", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
 				}
 			}
 			var parallel int
@@ -487,12 +449,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkgs", err))
 				}
 			}
-			return nil, (*Go).Test(&parent, ctx, run, skip, failFast, parallel, timeout, count, pkgs)
+			return nil, (*Go).Test(&parent, ctx, ws, run, skip, failfast, parallel, timeout, count, pkgs)
 		case "Tests":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var pkgs []string
 			if inputArgs["pkgs"] != nil {
@@ -501,12 +470,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkgs", err))
 				}
 			}
-			return (*Go).Tests(&parent, ctx, pkgs)
+			return (*Go).Tests(&parent, ctx, ws, pkgs)
 		case "Tidy":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var include []string
 			if inputArgs["include"] != nil {
@@ -522,12 +498,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg exclude", err))
 				}
 			}
-			return (*Go).Tidy(&parent, ctx, include, exclude)
+			return (*Go).Tidy(&parent, ctx, ws, include, exclude)
 		case "TidyModule":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var module string
 			if inputArgs["module"] != nil {
@@ -536,14 +519,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg module", err))
 				}
 			}
-			return (*Go).TidyModule(&parent, module)
+			return (*Go).TidyModule(&parent, ws, module)
 		case "":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var source *dagger.Directory
+			var source *core.Directory
 			if inputArgs["source"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
 				if err != nil {
@@ -557,21 +540,21 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			var moduleCache *dagger.CacheVolume
+			var moduleCache *core.CacheVolume
 			if inputArgs["moduleCache"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["moduleCache"]), &moduleCache)
 				if err != nil {
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg moduleCache", err))
 				}
 			}
-			var buildCache *dagger.CacheVolume
+			var buildCache *core.CacheVolume
 			if inputArgs["buildCache"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["buildCache"]), &buildCache)
 				if err != nil {
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg buildCache", err))
 				}
 			}
-			var base *dagger.Container
+			var base *core.Container
 			if inputArgs["base"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["base"]), &base)
 				if err != nil {
@@ -634,7 +617,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg limit", err))
 				}
 			}
-			var ws *dagger.Workspace
+			var ws *core.Workspace
 			if inputArgs["ws"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
 				if err != nil {
@@ -659,139 +642,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
-	case "":
-		return dag.Module().
-			WithDescription("A module to develop, build, test Go softwares\n").
-			WithObject(
-				dag.TypeDef().WithObject("Go", dagger.TypeDefWithObjectOpts{Description: "A Go project", SourceMap: dag.SourceMap("main.go", 192, 6)}).
-					WithFunction(
-						dag.Function("Binary",
-							dag.TypeDef().WithObject("File")).
-							WithDescription("Build a single main package, and return the compiled binary").
-							WithSourceMap(dag.SourceMap("main.go", 378, 1)).
-							WithArg("pkg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Which package to build", SourceMap: dag.SourceMap("main.go", 381, 2)}).
-							WithArg("noSymbols", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Disable symbol table", SourceMap: dag.SourceMap("main.go", 384, 2)}).
-							WithArg("noDwarf", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Disable DWARF generation", SourceMap: dag.SourceMap("main.go", 387, 2)}).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Target build platform", SourceMap: dag.SourceMap("main.go", 390, 2)})).
-					WithFunction(
-						dag.Function("Build",
-							dag.TypeDef().WithObject("Directory")).
-							WithDescription("Build the given main packages, and return the build directory").
-							WithSourceMap(dag.SourceMap("main.go", 321, 1)).
-							WithArg("pkgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Which targets to build (default all main packages)", SourceMap: dag.SourceMap("main.go", 326, 2), DefaultValue: dagger.JSON("[\"./...\"]")}).
-							WithArg("noSymbols", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Disable symbol table", SourceMap: dag.SourceMap("main.go", 329, 2)}).
-							WithArg("noDwarf", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Disable DWARF generation", SourceMap: dag.SourceMap("main.go", 332, 2)}).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Target build platform", SourceMap: dag.SourceMap("main.go", 335, 2)}).
-							WithArg("output", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Output directory", SourceMap: dag.SourceMap("main.go", 339, 2), DefaultValue: dagger.JSON("\"./bin/\"")})).
-					WithFunction(
-						dag.Function("CheckTidy",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Check if 'go mod tidy' is up-to-date").
-							WithSourceMap(dag.SourceMap("main.go", 802, 1)).
-							WithCheck().
-							WithArg("include", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 804, 2)}).
-							WithArg("exclude", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 805, 2)})).
-					WithFunction(
-						dag.Function("Download",
-							dag.TypeDef().WithObject("Go")).
-							WithDescription("Download dependencies into the module cache").
-							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 241, 1))).
-					WithFunction(
-						dag.Function("Env",
-							dag.TypeDef().WithObject("Container")).
-							WithDescription("Prepare a build environment for the given Go source code:\n  - Build a base container with Go tooling installed and configured\n  - Apply configuration\n  - Mount the source code").
-							WithSourceMap(dag.SourceMap("main.go", 260, 1)).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 262, 2)})).
-					WithFunction(
-						dag.Function("GenerateDaggerRuntime",
-							dag.TypeDef().WithObject("Go")).
-							WithSourceMap(dag.SourceMap("main.go", 643, 1)).
-							WithArg("start", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 643, 57)})).
-					WithFunction(
-						dag.Function("GenerateDaggerRuntimes",
-							dag.TypeDef().WithObject("Changeset")).
-							WithDescription("Generate Dagger runtime files for Go SDK modules in the configured source.").
-							WithSourceMap(dag.SourceMap("main.go", 599, 1)).
-							WithGenerator()).
-					WithFunction(
-						dag.Function("ListPackages",
-							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
-							WithDescription("List packages matching the specified criteria").
-							WithSourceMap(dag.SourceMap("main.go", 469, 1)).
-							WithArg("pkgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Filter by name or pattern. Example './foo/...'", SourceMap: dag.SourceMap("main.go", 474, 2), DefaultValue: dagger.JSON("[\"./...\"]")}).
-							WithArg("onlyMain", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only list main packages", SourceMap: dag.SourceMap("main.go", 477, 2)})).
-					WithFunction(
-						dag.Function("Modules",
-							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
-							WithDescription("Scan the source for go modules, and return their paths").
-							WithSourceMap(dag.SourceMap("main.go", 547, 1)).
-							WithArg("include", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 549, 2)}).
-							WithArg("exclude", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 550, 2)})).
-					WithFunction(
-						dag.Function("Test",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Run tests for the given packages").
-							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 416, 1)).
-							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("main.go", 420, 2)}).
-							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("main.go", 423, 2)}).
-							WithArg("failFast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort test run on first failure", SourceMap: dag.SourceMap("main.go", 426, 2)}).
-							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How many tests to run in parallel - defaults to the number of CPUs", SourceMap: dag.SourceMap("main.go", 430, 2), DefaultValue: dagger.JSON("0")}).
-							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How long before timing out the test run", SourceMap: dag.SourceMap("main.go", 434, 2), DefaultValue: dagger.JSON("\"30m\"")}).
-							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 437, 2), DefaultValue: dagger.JSON("1")}).
-							WithArg("pkgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Which packages to test", SourceMap: dag.SourceMap("main.go", 441, 2), DefaultValue: dagger.JSON("[\"./...\"]")})).
-					WithFunction(
-						dag.Function("Tests",
-							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithDescription("List tests").
-							WithSourceMap(dag.SourceMap("main.go", 306, 1)).
-							WithArg("pkgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Packages to list tests from (default all packages)", SourceMap: dag.SourceMap("main.go", 311, 2), DefaultValue: dagger.JSON("[\"./...\"]")})).
-					WithFunction(
-						dag.Function("Tidy",
-							dag.TypeDef().WithObject("Changeset")).
-							WithSourceMap(dag.SourceMap("main.go", 570, 1)).
-							WithArg("include", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 572, 2)}).
-							WithArg("exclude", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 573, 2)})).
-					WithFunction(
-						dag.Function("TidyModule",
-							dag.TypeDef().WithObject("Changeset")).
-							WithSourceMap(dag.SourceMap("main.go", 559, 1)).
-							WithArg("module", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 559, 25)})).
-					WithField("Version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "Go version", SourceMap: dag.SourceMap("main.go", 194, 2)}).
-					WithField("Source", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "Project source directory", SourceMap: dag.SourceMap("main.go", 197, 2)}).
-					WithField("ModuleCache", dag.TypeDef().WithObject("CacheVolume"), dagger.TypeDefWithFieldOpts{Description: "Go module cache", SourceMap: dag.SourceMap("main.go", 200, 2)}).
-					WithField("BuildCache", dag.TypeDef().WithObject("CacheVolume"), dagger.TypeDefWithFieldOpts{Description: "Go build cache", SourceMap: dag.SourceMap("main.go", 203, 2)}).
-					WithField("Base", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{Description: "Base container from which to run all operations", SourceMap: dag.SourceMap("main.go", 206, 2)}).
-					WithField("Ldflags", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Pass arguments to 'go build -ldflags'", SourceMap: dag.SourceMap("main.go", 209, 2)}).
-					WithField("Tags", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Pass arguments to 'go build -tags'", SourceMap: dag.SourceMap("main.go", 212, 2)}).
-					WithField("Values", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Add string value definition of the form importpath.name=value", SourceMap: dag.SourceMap("main.go", 215, 2)}).
-					WithField("Cgo", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "Enable CGO", SourceMap: dag.SourceMap("main.go", 218, 2)}).
-					WithField("Race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "Enable race detector", SourceMap: dag.SourceMap("main.go", 221, 2)}).
-					WithField("Experiment", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Enable go experiments", SourceMap: dag.SourceMap("main.go", 224, 2)}).
-					WithField("Include", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 226, 2)}).
-					WithField("Exclude", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 228, 2)}).
-					WithField("Limit", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{Description: "Max number of parallel jobs to run", SourceMap: dag.SourceMap("main.go", 231, 2)}).
-					WithConstructor(
-						dag.Function("New",
-							dag.TypeDef().WithObject("Go")).
-							WithSourceMap(dag.SourceMap("main.go", 29, 1)).
-							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Project source directory", SourceMap: dag.SourceMap("main.go", 34, 2), DefaultPath: "/"}).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Go version", SourceMap: dag.SourceMap("main.go", 38, 2), DefaultValue: dagger.JSON("\"1.26\"")}).
-							WithArg("moduleCache", dag.TypeDef().WithObject("CacheVolume").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Use a custom module cache", SourceMap: dag.SourceMap("main.go", 41, 2)}).
-							WithArg("buildCache", dag.TypeDef().WithObject("CacheVolume").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Use a custom build cache", SourceMap: dag.SourceMap("main.go", 45, 2)}).
-							WithArg("base", dag.TypeDef().WithObject("Container").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Use a custom base container.\nThe container must have Go installed.", SourceMap: dag.SourceMap("main.go", 50, 2)}).
-							WithArg("ldflags", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Pass arguments to 'go build -ldflags'", SourceMap: dag.SourceMap("main.go", 54, 2)}).
-							WithArg("tags", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Pass arguments to 'go build -tags'", SourceMap: dag.SourceMap("main.go", 58, 2)}).
-							WithArg("values", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Add string value definition of the form importpath.name=value\nExample: \"github.com/my/module.Foo=bar\"", SourceMap: dag.SourceMap("main.go", 63, 2)}).
-							WithArg("cgo", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable CGO", SourceMap: dag.SourceMap("main.go", 67, 2)}).
-							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable race detector. Implies cgo=true", SourceMap: dag.SourceMap("main.go", 71, 2)}).
-							WithArg("experiment", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable go experiments https://pkg.go.dev/internal/goexperiment", SourceMap: dag.SourceMap("main.go", 75, 2)}).
-							WithArg("extraPackages", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "extra system packages to include in the default base image; only\nvalid if 'base' arg is nil", SourceMap: dag.SourceMap("main.go", 80, 2)}).
-							WithArg("limit", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{Description: "max number of parallel jobs to run for tidy/check tidy/lint/runtime generation", SourceMap: dag.SourceMap("main.go", 84, 2), DefaultValue: dagger.JSON("10")}).
-							WithArg("ws", dag.TypeDef().WithObject("Workspace").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Workspace whose git HEAD commit and dirty state are stamped into built\nbinaries as VCS info (see the stamping block in New).\n\nThe engine only auto-injects a Workspace on a *direct* client call;\nmodule-runtime callers don't inherit it. Rather than forward the\nWorkspace (a session-scoped resource that would make this build's cache\nkey session-specific and prevent disk-cache reuse across engine restarts),\nparent toolchains resolve it to the scalar vcsCommit/vcsDirty below, which take\nprecedence over ws. Omitted → no stamping.", SourceMap: dag.SourceMap("main.go", 97, 2)}).
-							WithArg("vcsCommit", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes\nprecedence over ws so the Workspace never enters this build's cache key.", SourceMap: dag.SourceMap("main.go", 102, 2)}).
-							WithArg("vcsDirty", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Resolved VCS dirty state to stamp, paired with vcsCommit.", SourceMap: dag.SourceMap("main.go", 106, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	alpineClient "dagger/cli-dev/internal/dagger/clients/alpine"
 	"fmt"
 	"net/url"
 	"strings"
@@ -16,7 +17,7 @@ import (
 // Publish the CLI release artifacts.
 // +cache="session"
 func (cli *CliDev) Publish(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	tag string,
 	commit string,
 
@@ -101,7 +102,7 @@ func githubAPIURL(host string) string {
 
 // +cache="session"
 func (cli *CliDev) PublishMetadata(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 
 	awsAccessKeyID *dagger.Secret,
 	awsSecretAccessKey *dagger.Secret,
@@ -110,11 +111,10 @@ func (cli *CliDev) PublishMetadata(
 	awsCloudfrontDistribution string,
 	awsEndpointURL string, // +optional
 ) error {
-	ctr := dag.
-		Alpine(dagger.AlpineOpts{
-			Branch:   "3.22",
-			Packages: []string{"aws-cli"},
-		}).
+	ctr := alpineClient.New(alpineClient.AlpineOpts{
+		Branch:   "3.22",
+		Packages: []string{"aws-cli"},
+	}).
 		Container().
 		WithWorkdir("/src").
 		WithDirectory(".", cli.Go.Source()).
@@ -171,7 +171,7 @@ func s3Path(bucket string, path string, args ...any) string {
 
 // +check
 // Verify that the CLI builds without actually publishing anything
-func (cli *CliDev) ReleaseDryRun(ctx context.Context) error {
+func (cli *CliDev) ReleaseDryRun(ctx context.Context, ws *dagger.Workspace) error {
 	return parallel.New().
 		WithJob(
 			"dry-run build on all targets",

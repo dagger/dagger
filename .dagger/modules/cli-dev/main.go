@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	goClient "dagger/cli-dev/internal/dagger/clients/go"
 
 	"dagger/cli-dev/internal/dagger"
 
@@ -16,26 +17,8 @@ func New(
 	// +optional
 	runnerHost string,
 
+	// Project source directory
 	// +optional
-	// +defaultPath="/"
-	// +ignore=[
-	//   "*",
-	//   ".*",
-	//   "!cmd/dagger/*",
-	//   "!internal/cmd/dagger/**",
-	//   "!**/go.sum",
-	//   "!**/go.mod",
-	//   "!**/*.go",
-	//   "!**/VERSION",
-	//   "!vendor/**/*",
-	//   "!**.graphql",
-	//   "!.changes",
-	//   "!LICENSE",
-	//   "!install.sh",
-	//   "!install.ps1",
-	//   "!**/*.sql",
-	//   "!core/prompts/*.md", "!core/sdk/sdkmeta/sdks.json"
-	// ]
 	source *dagger.Directory,
 
 	// Base image for go build environment
@@ -53,12 +36,8 @@ func New(
 	// +optional
 	version string,
 
-	// Workspace whose git info stamps the CLI's VCS metadata and pins the
-	// default engine tag on commit builds. Auto-injected when cli-dev is
-	// called directly; a parent toolchain (e.g. engine-dev) instead resolves
-	// it to the scalar vcsCommit/vcsDirty below and forwards those, so the
-	// session-scoped Workspace never makes the build cache key session-specific.
-	// +optional
+	// Workspace for current compilation inputs and VCS metadata. Forward it
+	// explicitly to dependency functions; downstream builds cache by content.
 	ws *dagger.Workspace,
 
 	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
@@ -70,6 +49,10 @@ func New(
 	// +optional
 	vcsDirty bool,
 ) (*CliDev, error) {
+	if source == nil {
+		source = ws.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: []string{"*", ".*", "!cmd/dagger/*", "!internal/cmd/dagger/**", "!**/go.sum", "!**/go.mod", "!**/*.go", "!**/VERSION", "!vendor/**/*", "!**.graphql", "!.changes", "!LICENSE", "!install.sh", "!install.ps1", "!**/*.sql", "!core/prompts/*.md", "!core/sdk/sdkmeta/sdks.json"}})
+	}
+
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -96,13 +79,14 @@ func New(
 	}
 
 	return &CliDev{
+		Ws:      ws,
 		Version: version,
 		Tag:     version,
-		Go: dag.Go(dagger.GoOpts{
+		Go: goClient.New(ws, goClient.GoOpts{
 			Source: source,
 			Base:   base,
 			Values: values,
-			Ws:     ws,
+
 			// VCS info for stamping, already resolved to scalars above.
 			VcsCommit: vcsCommit,
 			VcsDirty:  vcsDirty,
@@ -111,18 +95,21 @@ func New(
 }
 
 type CliDev struct {
+	// +private
+	Ws *dagger.Workspace
+
 	Version string
 	Tag     string
 
-	Go *dagger.Go // +private
+	Go *goClient.Go // +private
 }
 
 // Build the dagger CLI binary for a single platform
-func (cli CliDev) Binary(
+func (cli CliDev) Binary(ws *dagger.Workspace,
 	// +optional
 	platform dagger.Platform,
 ) *dagger.File {
-	return cli.Go.Binary("./cmd/dagger", dagger.GoBinaryOpts{
+	return cli.Go.Binary(ws, "./cmd/dagger", goClient.GoBinaryOpts{
 		Platform:  platform,
 		NoSymbols: true,
 		NoDwarf:   true,
@@ -131,12 +118,12 @@ func (cli CliDev) Binary(
 
 // Build dev CLI binaries
 // TODO: remove this
-func (cli *CliDev) DevBinaries(
+func (cli *CliDev) DevBinaries(ws *dagger.Workspace,
 	// +optional
 	platform dagger.Platform,
 ) *dagger.Directory {
 	p := platforms.MustParse(string(platform))
-	bin := cli.Binary(platform)
+	bin := cli.Binary(ws, platform)
 	binName := "dagger"
 	if p.OS == "windows" {
 		binName += ".exe"
@@ -147,7 +134,7 @@ func (cli *CliDev) DevBinaries(
 		p2.OS = "linux"
 		p2.OSFeatures = nil
 		p2.OSVersion = ""
-		dir = dir.WithFile("dagger-linux", cli.Binary(dagger.Platform(platforms.Format(p2))))
+		dir = dir.WithFile("dagger-linux", cli.Binary(ws, dagger.Platform(platforms.Format(p2))))
 	}
 	return dir
 }

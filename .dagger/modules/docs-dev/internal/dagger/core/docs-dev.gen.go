@@ -174,25 +174,19 @@ func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...Doc
 type DocsDevReferencesOpts struct {
 	// Dagger version to generate API docs for
 	Version string
-	// Workspace forwarded to engine-dev for VCS stamping (References is the
-	// only docs-dev method that builds). Auto-injected on a direct call;
-	// dependencies don't inherit it.
-	Ws *Workspace
 }
 
 // Regenerate the GraphQL schema and API reference pages
-func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset {
+func (r *DocsDev) References(ws *Workspace, opts ...DocsDevReferencesOpts) *Changeset {
+	assertNotNil("ws", ws)
 	q := r.query.Select("references")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
 		}
-		// `ws` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ws) {
-			q = q.Arg("ws", opts[i].Ws)
-		}
 	}
+	q = q.Arg("ws", ws)
 
 	return &Changeset{
 		query: q,

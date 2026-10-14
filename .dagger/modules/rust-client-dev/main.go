@@ -57,7 +57,7 @@ func New(
 		With(func(c *dagger.Container) *dagger.Container {
 			return dag.DaggerEngine(workspace, dagger.DaggerEngineOpts{
 				ClientDockerConfig: clientDockerConfig,
-			}).InstallClient(dagger.DaggerEngineInstallClientOpts{Client: c})
+			}).InstallClient(workspace, dagger.DaggerEngineInstallClientOpts{Client: c})
 		})
 
 	return &RustClientDev{
@@ -162,7 +162,7 @@ func (t *RustClientDev) Changes() *dagger.Changeset {
 
 func (t *RustClientDev) WithGeneratedClient() *RustClientDev {
 	relLayer := t.DevContainer(true).
-		WithMountedFile("/introspection.json", dag.DaggerEngine(t.Ws).IntrospectionJSON()).
+		WithMountedFile("/introspection.json", dag.DaggerEngine(t.Ws).IntrospectionJSON(t.Ws)).
 		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--output", rustGeneratedClientFilePath}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
 		WithExec([]string{"cargo", "fmt"}).

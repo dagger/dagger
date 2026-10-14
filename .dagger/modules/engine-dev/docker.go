@@ -15,7 +15,7 @@ import (
 // Load the engine container into a Docker engine
 // +cache="session"
 func (dev *EngineDev) LoadToDocker(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 
 	docker *dagger.Socket,
 
@@ -30,7 +30,7 @@ func (dev *EngineDev) LoadToDocker(
 	// +optional
 	gpuSupport bool,
 ) (*LoadedEngine, error) {
-	ctr, err := dev.Container(ctx, platform, gpuSupport, "")
+	ctr, err := dev.Container(ctx, ws, platform, gpuSupport, "")
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ type LoadedEngine struct {
 // Start the loaded engine container
 // +cache="session"
 func (e LoadedEngine) Start(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 
 	// +optional
 	// +default="dagger-engine.dev"

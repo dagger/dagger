@@ -4,6 +4,10 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	cliDevClient "dagger/engine-dev/internal/dagger/clients/cli-dev"
+	codegenClient "dagger/engine-dev/internal/dagger/clients/codegen"
+	goClient "dagger/engine-dev/internal/dagger/clients/go"
+	wolfiClient "dagger/engine-dev/internal/dagger/clients/wolfi"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -105,38 +109,38 @@ type EngineDev struct {
 	Ws *dagger.Workspace // +private
 }
 
-func (dev *EngineDev) NetworkCidr() string {
+func (dev *EngineDev) NetworkCidr(ws *dagger.Workspace) string {
 	return fmt.Sprintf("10.%d.0.0/16", dev.SubnetNumber)
 }
 
-func (dev *EngineDev) IncrementSubnet() *EngineDev {
+func (dev *EngineDev) IncrementSubnet(ws *dagger.Workspace) *EngineDev {
 	dev.SubnetNumber++
 	return dev
 }
 
-func (dev *EngineDev) WithEBPFProgs(names []string) *EngineDev {
+func (dev *EngineDev) WithEBPFProgs(ws *dagger.Workspace, names []string) *EngineDev {
 	dev.EBPFProgs = append(dev.EBPFProgs, names...)
 	return dev
 }
 
-func (dev *EngineDev) WithEngineConfig(key, value string) *EngineDev {
+func (dev *EngineDev) WithEngineConfig(ws *dagger.Workspace, key, value string) *EngineDev {
 	dev.EngineConfig = append(dev.EngineConfig, key+"="+value)
 	return dev
 }
 
-func (dev *EngineDev) WithRace() *EngineDev {
+func (dev *EngineDev) WithRace(ws *dagger.Workspace) *EngineDev {
 	dev.Race = true
 	return dev
 }
 
-func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
+func (dev *EngineDev) WithLogLevel(ws *dagger.Workspace, level string) *EngineDev {
 	dev.LogLevel = level
 	return dev
 }
 
 // Build the engine container
 func (dev *EngineDev) Container(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 
 	// +optional
 	platform dagger.Platform,
@@ -185,7 +189,7 @@ func (dev *EngineDev) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary(dagger.DaggerCliBinaryOpts{
+	cli := cliDevClient.New(ws, cliDevClient.CliDevOpts{Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty}).Binary(ws, cliDevClient.CliDevBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -199,7 +203,7 @@ func (dev *EngineDev) Container(
 
 // Create a test engine service
 func (dev *EngineDev) Service(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	name string,
 	// +optional
 	gpuSupport bool,
@@ -209,7 +213,7 @@ func (dev *EngineDev) Service(
 	metrics bool,
 ) (*dagger.Service, error) {
 	// Support 256 layers of nested dagger engines :-P
-	dev = dev.IncrementSubnet()
+	dev = dev.IncrementSubnet(ws)
 	cacheVolumeName := "dagger-dev-engine-state"
 	if !sharedCache {
 		cacheVolumeName = "dagger-dev-engine-state-" + rand.Text()
@@ -218,7 +222,7 @@ func (dev *EngineDev) Service(
 		}
 	}
 
-	devEngine, err := dev.Container(ctx, "", gpuSupport, "")
+	devEngine, err := dev.Container(ctx, ws, "", gpuSupport, "")
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +245,7 @@ func (dev *EngineDev) Service(
 		Args: []string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--network-name", "dagger-dev",
-			"--network-cidr", dev.NetworkCidr(),
+			"--network-cidr", dev.NetworkCidr(ws),
 		},
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
@@ -250,7 +254,7 @@ func (dev *EngineDev) Service(
 
 // Configure the given client container so that it can connect to the given engine service
 func (dev *EngineDev) InstallClient(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	// The client container to configure
 	// +optional
 	client *dagger.Container,
@@ -260,12 +264,12 @@ func (dev *EngineDev) InstallClient(
 ) (*dagger.Container, error) {
 	if client == nil {
 		// By default, start from a simple base container
-		client = dag.Wolfi().Container()
+		client = wolfiClient.New().Container()
 	}
 	if service == nil {
 		var err error
 		service, err = dev.Service(
-			ctx,
+			ctx, ws,
 			"",    // name
 			false, // gpuSupport
 			false, // sharedCache
@@ -284,7 +288,7 @@ func (dev *EngineDev) InstallClient(
 		WithServiceBinding("dagger-engine", service).
 		// FIXME: retrieve endpoint dynamically?
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
+		WithMountedFile(cliPath, cliDevClient.New(ws, cliDevClient.CliDevOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty}).Binary(ws)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
@@ -310,13 +314,13 @@ func withoutOuterSession(args ...string) []string {
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
-	ctr, err := dev.InstallClient(ctx, nil, nil)
+func (dev *EngineDev) IntrospectionJSON(ctx context.Context, ws *dagger.Workspace) (*dagger.File, error) {
+	ctr, err := dev.InstallClient(ctx, ws, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 	introspectionJSON := ctr.
-		WithFile("/usr/local/bin/codegen", dag.Codegen(dev.Ws).Binary()).
+		WithFile("/usr/local/bin/codegen", codegenClient.New(ws).Binary()).
 		WithExec(withoutOuterSession("codegen", "introspect", "-o", "/schema.json")).
 		File("/schema.json")
 	return introspectionJSON, nil
@@ -324,17 +328,17 @@ func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, erro
 
 // Introspect the engine API schema, and return it as a graphql schema
 func (dev *EngineDev) GraphqlSchema(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	// +optional
 	version string,
 ) (*dagger.File, error) {
-	ctr, err := dev.InstallClient(ctx, nil, nil)
+	ctr, err := dev.InstallClient(ctx, ws, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 	schemaPath := "schema.graphqls"
 	schema := ctr.
-		WithFile("/usr/local/bin/introspect", dev.IntrospectionTool()).
+		WithFile("/usr/local/bin/introspect", dev.IntrospectionTool(ws)).
 		WithExec(
 			[]string{"introspect", "--version=" + version, "schema"},
 			dagger.ContainerWithExecOpts{RedirectStdout: schemaPath},
@@ -344,10 +348,9 @@ func (dev *EngineDev) GraphqlSchema(
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (dev *EngineDev) IntrospectionTool() *dagger.File {
-	return dag.
-		Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).
-		Binary("./cmd/introspect")
+func (dev *EngineDev) IntrospectionTool(ws *dagger.Workspace) *dagger.File {
+	return goClient.New(ws, goClient.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty}).
+		Binary(ws, "./cmd/introspect")
 }
 
 var targets = []struct {
@@ -375,9 +378,9 @@ type targetResult struct {
 }
 
 // +check
-func (dev *EngineDev) ReleaseDryRun(ctx context.Context) error {
+func (dev *EngineDev) ReleaseDryRun(ctx context.Context, ws *dagger.Workspace) error {
 	return dev.Publish(
-		ctx,
+		ctx, ws,
 		"dagger-engine.dev", // image
 		// FIXME: why not from HEAD like the SDKs?
 		[]string{"main"}, // tag
@@ -390,7 +393,7 @@ func (dev *EngineDev) ReleaseDryRun(ctx context.Context) error {
 // Publish all engine images to a registry
 // +cache="session"
 func (dev *EngineDev) Publish(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 
 	// Image target to push to
 	// +default="ghcr.io/dagger/engine"
@@ -430,7 +433,7 @@ func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]target
 		for j, platform := range target.Platforms {
 			jobs = jobs.WithJob(fmt.Sprintf("build %s for %s", target.Name, platform),
 				func(ctx context.Context) error {
-					ctr, err := dev.Container(ctx, platform, target.GPUSupport, releaseVersion)
+					ctr, err := dev.Container(ctx, dev.Ws, platform, target.GPUSupport, releaseVersion)
 					if err != nil {
 						return err
 					}

@@ -3,6 +3,9 @@ package main
 
 import (
 	"context"
+	dockerdClient "dagger/python-client-dev/internal/dagger/clients/dockerd"
+	engineDevClient "dagger/python-client-dev/internal/dagger/clients/engine-dev"
+	wolfiClient "dagger/python-client-dev/internal/dagger/clients/wolfi"
 	_ "embed"
 	"fmt"
 	"runtime"
@@ -24,26 +27,8 @@ type PythonClientDev struct {
 }
 
 func New(
-	// A workspace containing the SDK source code and other relevant files
-	// +defaultPath="/"
-	// +ignore=[
-	//   "*",
-	//   "!sdk/python/*.toml",
-	//   "!sdk/python/*.lock",
-	//   "!sdk/python/*/*.toml",
-	//   "!sdk/python/*/*.lock",
-	//   "!sdk/python/.python-version",
-	//   "!sdk/python/dev/src/**/*.py",
-	//   "!sdk/python/docs/**/*.py",
-	//   "!sdk/python/docs/**/*.rst",
-	//   "!sdk/python/runtime/images",
-	//   "!sdk/python/src/**/*.py",
-	//   "!sdk/python/src/**/py.typed",
-	//   "!sdk/python/tests/**/*.py",
-	//   "!sdk/python/codegen/**/*.py",
-	//   "!sdk/python/README.md",
-	//   "!sdk/python/LICENSE"
-	// ]
+	// Selected repository files, or an explicit directory override
+	// +optional
 	workspaceDir *dagger.Directory,
 
 	// +default="sdk/python"
@@ -55,13 +40,17 @@ func New(
 	// direct call; dependencies don't inherit it, so callers must forward it.
 	ws *dagger.Workspace,
 ) *PythonClientDev {
+	if workspaceDir == nil {
+		workspaceDir = ws.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: []string{"*", "!sdk/python/*.toml", "!sdk/python/*.lock", "!sdk/python/*/*.toml", "!sdk/python/*/*.lock", "!sdk/python/.python-version", "!sdk/python/dev/src/**/*.py", "!sdk/python/docs/**/*.py", "!sdk/python/docs/**/*.rst", "!sdk/python/runtime/images", "!sdk/python/src/**/*.py", "!sdk/python/src/**/py.typed", "!sdk/python/tests/**/*.py", "!sdk/python/codegen/**/*.py", "!sdk/python/README.md", "!sdk/python/LICENSE"}})
+	}
+
 	return &PythonClientDev{
-		DevContainer: dag.DaggerEngine(ws, dagger.DaggerEngineOpts{
+		DevContainer: engineDevClient.New(ws, engineDevClient.EngineDevOpts{
 			ClientDockerConfig: clientDockerConfig,
 		}).InstallClient(
-			dagger.DaggerEngineInstallClientOpts{
-				Client: dag.Wolfi().
-					Container(dagger.WolfiContainerOpts{Packages: []string{"libgcc"}}).
+			ws, engineDevClient.EngineDevInstallClientOpts{
+				Client: wolfiClient.New().
+					Container(wolfiClient.WolfiContainerOpts{Packages: []string{"libgcc"}}).
 					WithEnvVariable("PYTHONUNBUFFERED", "1").
 					WithEnvVariable(
 						"PATH",
@@ -85,32 +74,35 @@ var supportedVersions = []string{"3.14", "3.13", "3.12", "3.11", "3.10"}
 // Lint the Python snippets in the documentation
 // +check
 func (t PythonClientDev) LintDocsSnippets(
-	// +defaultPath="/"
-	// +ignore=[
-	//  "*",
-	//  "!docs/current_docs/**/*.py",
-	//  "!docs/current_docs/**/.ruff.toml",
-	//  "!.ruff.toml"
-	// ]
+	ctx context.Context,
+	ws *dagger.Workspace,
+	// Selected documentation files, or an explicit directory override
+	// +optional
 	workspace *dagger.Directory,
-) *dagger.Container {
+) error {
+	if workspace == nil {
+		workspace = ws.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: []string{"*", "!docs/current_docs/**/*.py", "!docs/current_docs/**/.ruff.toml", "!.ruff.toml"}})
+	}
 	// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
-	return t.WithDirectory(workspace).Lint([]string{"../../docs"})
+	return t.WithDirectory(workspace).Lint(ctx, []string{"../../docs"})
 }
 
 // +check
 // Check for linting errors
 func (t PythonClientDev) Lint(
+	ctx context.Context,
 	// List of files or directories to check
 	// +default=[]
 	paths []string,
-) *dagger.Container {
-	return t.DevContainer.
+) error {
+	_, err := t.DevContainer.
 		WithExec(append(uvRun("ruff", "check"), paths...)).
-		WithExec(append(uvRun("ruff", "format", "--check", "--diff"), paths...))
+		WithExec(append(uvRun("ruff", "format", "--check", "--diff"), paths...)).
+		Sync(ctx)
+	return err
 }
 
-// +check
+// +generate
 // Format source files
 func (t PythonClientDev) Format(
 	// List of files or directories to check
@@ -195,7 +187,7 @@ func (t PythonClientDev) ClientLibrary(_ context.Context) (*dagger.Changeset, er
 	// FIXME: workaround for Directory.changes() bug
 	src = dag.Directory().WithDirectory("", src)
 	genFile := devContainer.
-		WithMountedFile("/schema.json", dag.DaggerEngine(t.Ws).IntrospectionJSON()).
+		WithMountedFile("/schema.json", engineDevClient.New(t.Ws).IntrospectionJSON(t.Ws)).
 		WithWorkdir("codegen").
 		WithExec(uvRun(
 			"python", "-m", "codegen", "generate", "-i", "/schema.json", "-o", "gen.py",
@@ -361,7 +353,7 @@ func (t PythonClientDev) Provision(
 
 	dockerVersion := "24.0.7"
 
-	ctr := dag.Dockerd().Attach(
+	ctr := dockerdClient.New().Attach(
 		t.DevContainer.WithMountedFile(
 			"/opt/docker.tgz",
 			dag.HTTP(fmt.Sprintf("https://download.docker.com/linux/static/stable/%s/docker-%s.tgz", runtime.GOARCH, dockerVersion)),
@@ -375,7 +367,7 @@ func (t PythonClientDev) Provision(
 				"/usr/local/bin",
 				"docker/docker",
 			}),
-		dagger.DockerdAttachOpts{DockerVersion: dockerVersion})
+		dockerdClient.DockerdAttachOpts{DockerVersion: dockerVersion})
 
 	if runnerHost != "" {
 		ctr = ctr.WithEnvVariable(

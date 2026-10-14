@@ -30,11 +30,11 @@ type GoClientDev {
   """
   pub devContainer: Container! {
     let ctr = go(ws: self.ws, source: workspaceDir)
-      .env
+      .env(ws: self.ws)
       .withWorkdir(sourcePath)
     # "sdk" is an arbitrary name for state persistence
     let engine = engineDev(ws: self.ws)
-    engine.installClient(ctr, engine.service("sdk"))
+    engine.installClient(ws: self.ws, client: ctr, service: engine.service(ws: self.ws, name: "sdk"))
   }
 
   pub source: Directory! {

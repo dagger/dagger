@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	wolfiClient "dagger/release/internal/dagger/clients/wolfi"
 	"strings"
 
 	"dagger/release/internal/dagger"
@@ -20,8 +21,8 @@ func (r *Release) helmChartSource() *dagger.Directory {
 }
 
 func (r *Release) helmChart() *dagger.Container {
-	return dag.Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	return wolfiClient.New().
+		Container(wolfiClient.WolfiContainerOpts{
 			Packages: []string{
 				"helm-3~3.19.2",
 			},

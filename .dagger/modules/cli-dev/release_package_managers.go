@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	alpineClient "dagger/cli-dev/internal/dagger/clients/alpine"
 	"fmt"
 	"sort"
 	"strings"
@@ -93,11 +94,10 @@ func (cli *CliDev) releaseNixArchives(ctx context.Context, dist *dagger.Director
 }
 
 func (cli *CliDev) nixHashes(ctx context.Context, dist *dagger.Directory, archives []string) (map[string]string, error) {
-	ctr := dag.
-		Alpine(dagger.AlpineOpts{
-			Branch:   "3.22",
-			Packages: []string{"ca-certificates", "coreutils", "curl", "xz"},
-		}).
+	ctr := alpineClient.New(alpineClient.AlpineOpts{
+		Branch:   "3.22",
+		Packages: []string{"ca-certificates", "coreutils", "curl", "xz"},
+	}).
 		Container().
 		WithDirectory("/nix", dag.Directory()).
 		WithNewFile("/etc/nix/nix.conf", `build-users-group =`).

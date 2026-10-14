@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	alpineClient "dagger/cli-dev/internal/dagger/clients/alpine"
 	"strings"
 
 	"dagger/cli-dev/internal/dagger"
@@ -54,11 +55,10 @@ func (cli *CliDev) publishReleaseArtifactsToS3(
 		}
 	}
 
-	ctr := dag.
-		Alpine(dagger.AlpineOpts{
-			Branch:   "3.22",
-			Packages: []string{"aws-cli"},
-		}).
+	ctr := alpineClient.New(alpineClient.AlpineOpts{
+		Branch:   "3.22",
+		Packages: []string{"aws-cli"},
+	}).
 		Container().
 		WithMountedDirectory("/dist", dist).
 		WithNewFile("/upload-manifest", manifest.String()).

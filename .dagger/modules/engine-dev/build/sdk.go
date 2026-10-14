@@ -2,6 +2,7 @@ package build
 
 import (
 	"context"
+	wolfiClient "dagger/engine-dev/internal/dagger/clients/wolfi"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -288,8 +289,7 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 }
 
 func unpackTar(tarball *dagger.File) *dagger.Directory {
-	return dag.
-		Wolfi().
+	return wolfiClient.New().
 		Container().
 		WithMountedDirectory("/out", dag.Directory()).
 		WithMountedFile("/target.tar", tarball).

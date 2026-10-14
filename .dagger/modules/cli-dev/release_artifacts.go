@@ -1,6 +1,7 @@
 package main
 
 import (
+	alpineClient "dagger/cli-dev/internal/dagger/clients/alpine"
 	"fmt"
 
 	"golang.org/x/mod/semver"
@@ -67,7 +68,7 @@ func cliReleaseArchiveName(label string, target cliReleaseTarget) string {
 }
 
 func (cli *CliDev) releaseBinary(target cliReleaseTarget) *dagger.File {
-	return cli.Binary(dagger.Platform(target.Platform))
+	return cli.Binary(cli.Ws, dagger.Platform(target.Platform))
 }
 
 func (cli *CliDev) releaseBinaries() *dagger.Directory {
@@ -124,10 +125,9 @@ func (cli *CliDev) releaseArchive(label string, target cliReleaseTarget) *dagger
 }
 
 func (cli *CliDev) releaseChecksums(dist *dagger.Directory) *dagger.File {
-	return dag.
-		Alpine(dagger.AlpineOpts{
-			Branch: "3.22",
-		}).
+	return alpineClient.New(alpineClient.AlpineOpts{
+		Branch: "3.22",
+	}).
 		Container().
 		WithDirectory("/dist", dist).
 		WithExec([]string{"sh", "-ec", `mkdir -p /out
@@ -139,10 +139,9 @@ done > /out/checksums.txt`}).
 }
 
 func releaseArchiveBase() *dagger.Container {
-	return dag.
-		Alpine(dagger.AlpineOpts{
-			Branch:   "3.22",
-			Packages: []string{"tar", "gzip", "zip"},
-		}).
+	return alpineClient.New(alpineClient.AlpineOpts{
+		Branch:   "3.22",
+		Packages: []string{"tar", "gzip", "zip"},
+	}).
 		Container()
 }

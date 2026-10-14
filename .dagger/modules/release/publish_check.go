@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	engineDevClient "dagger/release/internal/dagger/clients/engine-dev"
+	wolfiClient "dagger/release/internal/dagger/clients/wolfi"
 	"fmt"
 	"net/url"
 	"strings"
@@ -372,15 +374,15 @@ func publishCheckRelease(ctx context.Context, source *dagger.Directory) (tag, ve
 }
 
 func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service, error) {
-	dev := dag.EngineDev(env.workspace, dagger.EngineDevOpts{
+	dev := engineDevClient.New(env.workspace, engineDevClient.EngineDevOpts{
 		SubnetNumber: 90,
-	}).IncrementSubnet()
-	networkCIDR, err := dev.NetworkCidr(ctx)
+	}).IncrementSubnet(env.workspace)
+	networkCIDR, err := dev.NetworkCidr(ctx, env.workspace)
 	if err != nil {
 		return nil, err
 	}
 
-	engineCtr := dev.Container().
+	engineCtr := dev.Container(env.workspace).
 		WithNewFile("/etc/dagger/engine.json", `{
   "registries": {
     "`+publishCheckRegistryAddress+`": {
@@ -411,9 +413,9 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 }
 
 func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
-	dev := dag.EngineDev(env.workspace)
-	client := dag.Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	dev := engineDevClient.New(env.workspace)
+	client := wolfiClient.New().
+		Container(wolfiClient.WolfiContainerOpts{
 			Packages: []string{"apk-tools", "ca-certificates", "curl", "git"},
 		}).
 		WithEnvVariable("HOME", "/root").
@@ -427,7 +429,7 @@ func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 		WithServiceBinding("github.test", env.mockSvc).
 		WithMountedFile("/github-ca.pem", env.certs.caRootCert)
 
-	return dev.InstallClient(dagger.EngineDevInstallClientOpts{
+	return dev.InstallClient(env.workspace, engineDevClient.EngineDevInstallClientOpts{
 		Client:  client,
 		Service: engine,
 	})

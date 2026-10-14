@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	wolfiClient "github.com/dagger/dagger/modules/go/internal/dagger/clients/wolfi"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -30,7 +31,7 @@ func New(
 	ctx context.Context,
 
 	// Project source directory
-	// +defaultPath="/"
+	// +optional
 	source *dagger.Directory,
 	// Go version
 	// +optional
@@ -83,21 +84,12 @@ func New(
 	// +default=10
 	limit int,
 
-	// Workspace whose git HEAD commit and dirty state are stamped into built
-	// binaries as VCS info (see the stamping block in New).
-	//
-	// The engine only auto-injects a Workspace on a *direct* client call;
-	// module-runtime callers don't inherit it. Rather than forward the
-	// Workspace (a session-scoped resource that would make this build's cache
-	// key session-specific and prevent disk-cache reuse across engine restarts),
-	// parent toolchains resolve it to the scalar vcsCommit/vcsDirty below, which take
-	// precedence over ws. Omitted → no stamping.
-	//
-	// +optional
+	// Workspace for current compilation inputs and VCS metadata. Forward it
+	// explicitly to dependency functions; downstream builds cache by content.
 	ws *dagger.Workspace,
 
 	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
-	// precedence over ws so the Workspace never enters this build's cache key.
+	// precedence over workspace VCS metadata.
 	// +optional
 	vcsCommit string,
 
@@ -106,8 +98,9 @@ func New(
 	vcsDirty bool,
 ) *Go {
 	if source == nil {
-		source = dag.Directory()
+		source = ws.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: []string{"**/.git"}})
 	}
+
 	if moduleCache == nil {
 		// Cache volumes should be namespaced by module, but they aren't (yet).
 		// For now, we namespace them explicitly here.
@@ -135,9 +128,8 @@ func New(
 		if len(extraPackages) > 0 {
 			packages = append(packages, extraPackages...)
 		}
-		base = dag.
-			Wolfi().
-			Container(dagger.WolfiContainerOpts{Packages: packages}).
+		base = wolfiClient.New().
+			Container(wolfiClient.WolfiContainerOpts{Packages: packages}).
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").
 			WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true}).
@@ -173,6 +165,7 @@ func New(
 		// accessor is available.
 	}
 	return &Go{
+		Ws:          ws,
 		Version:     version,
 		Source:      source,
 		ModuleCache: moduleCache,
@@ -190,6 +183,9 @@ func New(
 
 // A Go project
 type Go struct {
+	// +private
+	Ws *dagger.Workspace
+
 	// Go version
 	Version string
 
@@ -238,7 +234,7 @@ type AssociativeArray[T any] []struct {
 
 // Download dependencies into the module cache
 // +cache="session"
-func (p *Go) Download(ctx context.Context) (*Go, error) {
+func (p *Go) Download(ctx context.Context, ws *dagger.Workspace) (*Go, error) {
 	_, err := p.Base.
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
 		WithDirectory("", p.Source, dagger.ContainerWithDirectoryOpts{
@@ -257,7 +253,7 @@ func (p *Go) Download(ctx context.Context) (*Go, error) {
 //   - Build a base container with Go tooling installed and configured
 //   - Apply configuration
 //   - Mount the source code
-func (p *Go) Env(
+func (p *Go) Env(ws *dagger.Workspace,
 	// +optional
 	platform dagger.Platform,
 ) *dagger.Container {
@@ -304,7 +300,7 @@ func (p *Go) Env(
 
 // List tests
 func (p *Go) Tests(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	// Packages to list tests from (default all packages)
 	// +optional
 	// +default=["./..."]
@@ -312,14 +308,14 @@ func (p *Go) Tests(
 ) (string, error) {
 	script := "go test -list=. " + strings.Join(pkgs, " ") + " | grep ^Test | sort"
 	return p.
-		Env(defaultPlatform).
+		Env(ws, defaultPlatform).
 		WithExec([]string{"sh", "-c", script}).
 		Stdout(ctx)
 }
 
 // Build the given main packages, and return the build directory
 func (p *Go) Build(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	// Which targets to build (default all main packages)
 	// +optional
 	// +default=["./..."]
@@ -352,7 +348,7 @@ func (p *Go) Build(
 	}
 	if hasWildcardPkgs {
 		var err error
-		mainPkgs, err = p.ListPackages(ctx, pkgs, true)
+		mainPkgs, err = p.ListPackages(ctx, ws, pkgs, true)
 		if err != nil {
 			return nil, err
 		}
@@ -366,7 +362,7 @@ func (p *Go) Build(
 		ldflags = append(ldflags, "-w")
 	}
 
-	env := p.Env(platform)
+	env := p.Env(ws, platform)
 	cmd := []string{"go", "build", "-o", output}
 	for _, pkg := range mainPkgs {
 		env = env.WithExec(goCommand(cmd, []string{pkg}, ldflags, p.Tags, p.Values, p.Race))
@@ -376,7 +372,7 @@ func (p *Go) Build(
 
 // Build a single main package, and return the compiled binary
 func (p *Go) Binary(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	// Which package to build
 	pkg string,
 	// Disable symbol table
@@ -390,7 +386,7 @@ func (p *Go) Binary(
 	platform dagger.Platform,
 ) (*dagger.File, error) {
 	dir, err := p.Build(
-		ctx,
+		ctx, ws,
 		[]string{pkg},
 		noSymbols,
 		noDwarf,
@@ -414,7 +410,7 @@ func (p *Go) Binary(
 // Run tests for the given packages
 // +cache="session"
 func (p *Go) Test(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	// Only run these tests
 	// +optional
 	run string,
@@ -459,7 +455,7 @@ func (p *Go) Test(
 		cmd = append(cmd, "-skip", skip)
 	}
 	_, err := p.
-		Env(defaultPlatform).
+		Env(ws, defaultPlatform).
 		WithExec(goCommand(cmd, pkgs, p.Ldflags, p.Tags, p.Values, p.Race)).
 		Sync(ctx)
 	return err
@@ -467,7 +463,7 @@ func (p *Go) Test(
 
 // List packages matching the specified criteria
 func (p *Go) ListPackages(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	// Filter by name or pattern. Example './foo/...'
 	// +optional
 	// +default=["./..."]
@@ -483,7 +479,7 @@ func (p *Go) ListPackages(
 		args = append(args, "-f", `{{.Dir}}`)
 	}
 	args = append(args, pkgs...)
-	out, err := p.Env(defaultPlatform).WithExec(args).Stdout(ctx)
+	out, err := p.Env(ws, defaultPlatform).WithExec(args).Stdout(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -545,7 +541,7 @@ func (p *Go) findParentDirs(ctx context.Context, dir *dagger.Directory, filename
 
 // Scan the source for go modules, and return their paths
 func (p *Go) Modules(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	include []string, // +optional
 	exclude []string, // +optional
 ) ([]string, error) {
@@ -556,8 +552,8 @@ func (p *Go) Modules(
 	return mods, nil
 }
 
-func (p *Go) TidyModule(module string) (*dagger.Changeset, error) {
-	tidyModDir := p.Env(defaultPlatform).
+func (p *Go) TidyModule(ws *dagger.Workspace, module string) (*dagger.Changeset, error) {
+	tidyModDir := p.Env(ws, defaultPlatform).
 		WithWorkdir(module).
 		WithExec([]string{"go", "mod", "tidy"}).
 		Directory(".")
@@ -568,11 +564,11 @@ func (p *Go) TidyModule(module string) (*dagger.Changeset, error) {
 }
 
 func (p *Go) Tidy(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	include []string, // +optional
 	exclude []string, // +optional
 ) (*dagger.Changeset, error) {
-	modules, err := p.Modules(ctx, include, exclude)
+	modules, err := p.Modules(ctx, ws, include, exclude)
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +580,7 @@ func (p *Go) Tidy(
 	for i, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
 			var err error
-			tidyModules[i], err = p.TidyModule(mod)
+			tidyModules[i], err = p.TidyModule(ws, mod)
 			return err
 		})
 	}
@@ -596,10 +592,10 @@ func (p *Go) Tidy(
 
 // Generate Dagger runtime files for Go SDK modules in the configured source.
 // +generate
-func (p *Go) GenerateDaggerRuntimes(ctx context.Context) (*dagger.Changeset, error) {
+func (p *Go) GenerateDaggerRuntimes(ctx context.Context, ws *dagger.Workspace) (*dagger.Changeset, error) {
 	before := p.Source
 
-	modules, err := p.Modules(ctx, nil, nil)
+	modules, err := p.Modules(ctx, ws, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -640,7 +636,7 @@ func (p *Go) GenerateDaggerRuntimes(ctx context.Context) (*dagger.Changeset, err
 	return diff, nil
 }
 
-func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, error) {
+func (p *Go) GenerateDaggerRuntime(ctx context.Context, ws *dagger.Workspace, start string) (*Go, error) {
 	layer, ok, err := p.generateDaggerRuntimeLayer(ctx, start)
 	if err != nil {
 		return nil, err
@@ -800,11 +796,11 @@ func moduleConfigPathDepth(configPath string) int {
 // Check if 'go mod tidy' is up-to-date
 // +check
 func (p *Go) CheckTidy(
-	ctx context.Context,
+	ctx context.Context, ws *dagger.Workspace,
 	include []string, // +optional
 	exclude []string, // +optional
 ) error {
-	modules, err := p.Modules(ctx, include, exclude)
+	modules, err := p.Modules(ctx, ws, include, exclude)
 	if err != nil {
 		return err
 	}
@@ -821,7 +817,7 @@ func (p *Go) CheckTidy(
 		WithRollupSpans(true)
 	for _, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
-			diffTidy, err := p.TidyModule(mod)
+			diffTidy, err := p.TidyModule(ws, mod)
 			if err != nil {
 				return err
 			}

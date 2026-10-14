@@ -3,35 +3,29 @@
 package main
 
 import (
+	core "dagger.io/dagger/core"
+
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"os"
-	"sort"
 
-	telemetry "github.com/dagger/otel-go"
-	"github.com/vektah/gqlparser/v2/gqlerror"
+	"github.com/dagger/querybuilder"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger/engine-dev/internal/dagger"
-
-	"github.com/dagger/querybuilder"
 )
 
+// Deprecated: use explicit core constructors and generated module clients.
 var dag = dagger.Connect()
+var compilationWorkspace string
 
 func Tracer() trace.Tracer {
 	return otel.Tracer("dagger.io/sdk.go")
 }
 
-// used for local MarshalJSON implementations
 var marshalCtx = context.Background()
 
-// called by main()
 func setMarshalContext(ctx context.Context) {
 	marshalCtx = ctx
 	dagger.SetMarshalContext(ctx)
@@ -44,13 +38,8 @@ type DaggerObject interface {
 
 type ExecError = dagger.ExecError
 
-// ptr returns a pointer to the given value.
-func ptr[T any](v T) *T {
-	return &v
-}
+func ptr[T any](v T) *T { return &v }
 
-// convertSlice converts a slice of one type to a slice of another type using a
-// converter function
 func convertSlice[I any, O any](in []I, f func(I) O) []O {
 	out := make([]O, len(in))
 	for i, v := range in {
@@ -171,124 +160,29 @@ func (r *TestProfileResult) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func main() {
-	ctx := context.Background()
-
-	// Direct slog to the new stderr. This is only for dev time debugging, and
-	// runtime errors/warnings.
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
-	})))
-
-	if err := dispatch(ctx); err != nil {
-		os.Exit(2)
-	}
-}
-
-func convertError(rerr error) *dagger.Error {
-	if gqlErr := findSingleGQLError(rerr); gqlErr != nil {
-		dagErr := dag.Error(gqlErr.Message)
-		if gqlErr.Extensions != nil {
-			keys := make([]string, 0, len(gqlErr.Extensions))
-			for k := range gqlErr.Extensions {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				val, err := json.Marshal(gqlErr.Extensions[k])
-				if err != nil {
-					fmt.Println("failed to marshal error value:", err)
-				}
-				dagErr = dagErr.WithValue(k, dagger.JSON(val))
-			}
-		}
-		return dagErr
-	}
-	return dag.Error(rerr.Error())
-}
-
-func findSingleGQLError(rerr error) *gqlerror.Error {
-	switch x := rerr.(type) {
-	case *gqlerror.Error:
-		return x
-	case interface{ Unwrap() []error }:
-		return nil
-	case interface{ Unwrap() error }:
-		return findSingleGQLError(x.Unwrap())
-	default:
-		return nil
-	}
-}
-func dispatch(ctx context.Context) (rerr error) {
-	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceNameKey.String("dagger-go-sdk"),
-		// TODO version?
-	))
-	defer telemetry.Close()
-
-	// A lot of the "work" actually happens when we're marshalling the return
-	// value, which entails getting object IDs, which happens in MarshalJSON,
-	// which has no ctx argument, so we use this lovely global variable.
+func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	setMarshalContext(ctx)
-
-	fnCall := dag.CurrentFunctionCall()
-	defer func() {
-		if rerr != nil {
-			if err := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
-				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
-			}
-		}
-	}()
-
-	parentName, err := fnCall.ParentName(ctx)
-	if err != nil {
-		return fmt.Errorf("get parent name: %w", err)
-	}
-	fnName, err := fnCall.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn name: %w", err)
-	}
-	parentJson, err := fnCall.Parent(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn parent: %w", err)
-	}
-	fnArgs, err := fnCall.InputArgs(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn args: %w", err)
-	}
-
-	inputArgs := map[string][]byte{}
-	for _, fnArg := range fnArgs {
-		argName, err := fnArg.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg name: %w", err)
-		}
-		argValue, err := fnArg.Value(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg value: %w", err)
-		}
-		inputArgs[argName] = []byte(argValue)
-	}
-
-	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
-	if err != nil {
-		return err
-	}
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-
-	if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
-		return fmt.Errorf("store return value: %w", err)
-	}
-	return nil
-}
-func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
+	compilationWorkspace = ""
+	_ = json.Unmarshal(inputArgs["ws"], &compilationWorkspace)
 	_ = inputArgs
+	if parentName == "" {
+		switch fnName {
+		case "EngineDev", "engineDev":
+			parentName = "EngineDev"
+			fnName = ""
+		case "LoadedEngine", "loadedEngine":
+			parentName = "LoadedEngine"
+			fnName = ""
+		case "TestProfileResult", "testProfileResult":
+			parentName = "TestProfileResult"
+			fnName = ""
+		}
+	}
 	switch parentName {
 	case "EngineDev":
+		if fnName == "New" {
+			fnName = ""
+		}
 		switch fnName {
 		case "Container":
 			var parent EngineDev
@@ -296,7 +190,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var platform dagger.Platform
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			var platform core.Platform
 			if inputArgs["platform"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
 				if err != nil {
@@ -317,12 +218,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			return (*EngineDev).Container(&parent, ctx, platform, gpuSupport, version)
+			return (*EngineDev).Container(&parent, ctx, ws, platform, gpuSupport, version)
 		case "GraphqlSchema":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var version string
 			if inputArgs["version"] != nil {
@@ -331,56 +239,91 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			return (*EngineDev).GraphqlSchema(&parent, ctx, version)
+			return (*EngineDev).GraphqlSchema(&parent, ctx, ws, version)
 		case "IncrementSubnet":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*EngineDev).IncrementSubnet(&parent), nil
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			return (*EngineDev).IncrementSubnet(&parent, ws), nil
 		case "InstallClient":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var client *dagger.Container
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			var client *core.Container
 			if inputArgs["client"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["client"]), &client)
 				if err != nil {
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg client", err))
 				}
 			}
-			var service *dagger.Service
+			var service *core.Service
 			if inputArgs["service"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["service"]), &service)
 				if err != nil {
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg service", err))
 				}
 			}
-			return (*EngineDev).InstallClient(&parent, ctx, client, service)
+			return (*EngineDev).InstallClient(&parent, ctx, ws, client, service)
 		case "IntrospectionJSON":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*EngineDev).IntrospectionJSON(&parent, ctx)
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			return (*EngineDev).IntrospectionJSON(&parent, ctx, ws)
 		case "IntrospectionTool":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*EngineDev).IntrospectionTool(&parent), nil
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			return (*EngineDev).IntrospectionTool(&parent, ws), nil
 		case "LoadToDocker":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var docker *dagger.Socket
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			var docker *core.Socket
 			if inputArgs["docker"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["docker"]), &docker)
 				if err != nil {
@@ -394,7 +337,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
 				}
 			}
-			var platform dagger.Platform
+			var platform core.Platform
 			if inputArgs["platform"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
 				if err != nil {
@@ -408,19 +351,33 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gpuSupport", err))
 				}
 			}
-			return (*EngineDev).LoadToDocker(&parent, ctx, docker, name, platform, gpuSupport)
+			return (*EngineDev).LoadToDocker(&parent, ctx, ws, docker, name, platform, gpuSupport)
 		case "NetworkCidr":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*EngineDev).NetworkCidr(&parent), nil
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			return (*EngineDev).NetworkCidr(&parent, ws), nil
 		case "Publish":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var image string
 			if inputArgs["image"] != nil {
@@ -450,26 +407,40 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg registryUsername", err))
 				}
 			}
-			var registryPassword *dagger.Secret
+			var registryPassword *core.Secret
 			if inputArgs["registryPassword"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["registryPassword"]), &registryPassword)
 				if err != nil {
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg registryPassword", err))
 				}
 			}
-			return nil, (*EngineDev).Publish(&parent, ctx, image, tag, dryRun, registryUsername, registryPassword)
+			return nil, (*EngineDev).Publish(&parent, ctx, ws, image, tag, dryRun, registryUsername, registryPassword)
 		case "ReleaseDryRun":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*EngineDev).ReleaseDryRun(&parent, ctx)
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			return nil, (*EngineDev).ReleaseDryRun(&parent, ctx, ws)
 		case "Service":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var name string
 			if inputArgs["name"] != nil {
@@ -499,12 +470,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg metrics", err))
 				}
 			}
-			return (*EngineDev).Service(&parent, ctx, name, gpuSupport, sharedCache, metrics)
+			return (*EngineDev).Service(&parent, ctx, ws, name, gpuSupport, sharedCache, metrics)
 		case "Test":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var run string
 			if inputArgs["run"] != nil {
@@ -527,11 +505,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
 				}
 			}
-			var failFast bool
-			if inputArgs["failFast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failFast"]), &failFast)
+			var failfast bool
+			if inputArgs["failfast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failFast", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
 				}
 			}
 			var parallel int
@@ -562,7 +540,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
 				}
 			}
-			var envFile *dagger.Secret
+			var envFile *core.Secret
 			if inputArgs["envFile"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["envFile"]), &envFile)
 				if err != nil {
@@ -604,12 +582,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dumpAfter", err))
 				}
 			}
-			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failFast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, ebpf, dumpAfter)
+			return nil, (*EngineDev).Test(&parent, ctx, ws, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, ebpf, dumpAfter)
 		case "TestProfile":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var run string
 			if inputArgs["run"] != nil {
@@ -632,11 +617,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
 				}
 			}
-			var failFast bool
-			if inputArgs["failFast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failFast"]), &failFast)
+			var failfast bool
+			if inputArgs["failfast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failFast", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
 				}
 			}
 			var parallel int
@@ -667,7 +652,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
 				}
 			}
-			var envFile *dagger.Secret
+			var envFile *core.Secret
 			if inputArgs["envFile"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["envFile"]), &envFile)
 				if err != nil {
@@ -688,12 +673,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpfProgs", err))
 				}
 			}
-			return (*EngineDev).TestProfile(&parent, ctx, run, skip, pkg, failFast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
+			return (*EngineDev).TestProfile(&parent, ctx, ws, run, skip, pkg, failfast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
 		case "TestTelemetry":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var run string
 			if inputArgs["run"] != nil {
@@ -716,11 +708,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg update", err))
 				}
 			}
-			var failFast bool
-			if inputArgs["failFast"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["failFast"]), &failFast)
+			var failfast bool
+			if inputArgs["failfast"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["failfast"]), &failfast)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failFast", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg failfast", err))
 				}
 			}
 			var parallel int
@@ -751,7 +743,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg count", err))
 				}
 			}
-			var envFile *dagger.Secret
+			var envFile *core.Secret
 			if inputArgs["envFile"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["envFile"]), &envFile)
 				if err != nil {
@@ -772,19 +764,33 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ebpfProgs", err))
 				}
 			}
-			return (*EngineDev).TestTelemetry(&parent, ctx, run, skip, update, failFast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
+			return (*EngineDev).TestTelemetry(&parent, ctx, ws, run, skip, update, failfast, parallel, timeout, race, count, envFile, testVerbose, ebpfProgs)
 		case "Tests":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*EngineDev).Tests(&parent, ctx)
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			return (*EngineDev).Tests(&parent, ctx, ws)
 		case "WithEBPFProgs":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var names []string
 			if inputArgs["names"] != nil {
@@ -793,12 +799,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg names", err))
 				}
 			}
-			return (*EngineDev).WithEBPFProgs(&parent, names), nil
+			return (*EngineDev).WithEBPFProgs(&parent, ws, names), nil
 		case "WithEngineConfig":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var key string
 			if inputArgs["key"] != nil {
@@ -814,12 +827,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
 				}
 			}
-			return (*EngineDev).WithEngineConfig(&parent, key, value), nil
+			return (*EngineDev).WithEngineConfig(&parent, ws, key, value), nil
 		case "WithLogLevel":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var level string
 			if inputArgs["level"] != nil {
@@ -828,21 +848,28 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg level", err))
 				}
 			}
-			return (*EngineDev).WithLogLevel(&parent, level), nil
+			return (*EngineDev).WithLogLevel(&parent, ws, level), nil
 		case "WithRace":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*EngineDev).WithRace(&parent), nil
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			return (*EngineDev).WithRace(&parent, ws), nil
 		case "":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var ws *dagger.Workspace
+			var ws *core.Workspace
 			if inputArgs["ws"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
 				if err != nil {
@@ -856,7 +883,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg subnetNumber", err))
 				}
 			}
-			var clientDockerConfig *dagger.Secret
+			var clientDockerConfig *core.Secret
 			if inputArgs["clientDockerConfig"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["clientDockerConfig"]), &clientDockerConfig)
 				if err != nil {
@@ -868,12 +895,24 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
 	case "LoadedEngine":
+		if fnName == "New" {
+			fnName = ""
+		}
 		switch fnName {
+		case "":
+			return &LoadedEngine{}, nil
 		case "Start":
 			var parent LoadedEngine
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ws *core.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
 			}
 			var name string
 			if inputArgs["name"] != nil {
@@ -882,7 +921,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
 				}
 			}
-			var cloudToken *dagger.Secret
+			var cloudToken *core.Secret
 			if inputArgs["cloudToken"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["cloudToken"]), &cloudToken)
 				if err != nil {
@@ -910,196 +949,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg extraHosts", err))
 				}
 			}
-			return nil, (*LoadedEngine).Start(&parent, ctx, name, cloudToken, cloudUrl, debug, extraHosts)
+			return nil, (*LoadedEngine).Start(&parent, ctx, ws, name, cloudToken, cloudUrl, debug, extraHosts)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
-	case "":
-		return dag.Module().
-			WithDescription("Creates a complete end-to-end build environment with CLI and engine for interactive testing\n").
-			WithObject(
-				dag.TypeDef().WithObject("EngineDev", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 88, 6)}).
-					WithFunction(
-						dag.Function("Container",
-							dag.TypeDef().WithObject("Container")).
-							WithDescription("Build the engine container").
-							WithSourceMap(dag.SourceMap("main.go", 138, 1)).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 142, 2)}).
-							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 144, 2)}).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 146, 2)})).
-					WithFunction(
-						dag.Function("GraphqlSchema",
-							dag.TypeDef().WithObject("File")).
-							WithDescription("Introspect the engine API schema, and return it as a graphql schema").
-							WithSourceMap(dag.SourceMap("main.go", 326, 1)).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 329, 2)})).
-					WithFunction(
-						dag.Function("IncrementSubnet",
-							dag.TypeDef().WithObject("EngineDev")).
-							WithSourceMap(dag.SourceMap("main.go", 112, 1))).
-					WithFunction(
-						dag.Function("InstallClient",
-							dag.TypeDef().WithObject("Container")).
-							WithDescription("Configure the given client container so that it can connect to the given engine service").
-							WithSourceMap(dag.SourceMap("main.go", 252, 1)).
-							WithArg("client", dag.TypeDef().WithObject("Container").WithOptional(true), dagger.FunctionWithArgOpts{Description: "The client container to configure", SourceMap: dag.SourceMap("main.go", 256, 2)}).
-							WithArg("service", dag.TypeDef().WithObject("Service").WithOptional(true), dagger.FunctionWithArgOpts{Description: "The engine service to bind", SourceMap: dag.SourceMap("main.go", 259, 2)})).
-					WithFunction(
-						dag.Function("IntrospectionJSON",
-							dag.TypeDef().WithObject("File")).
-							WithDescription("Introspect the engine API schema, and return it as a json-encoded file.\nThis file is used by SDKs to generate clients.").
-							WithSourceMap(dag.SourceMap("main.go", 313, 1))).
-					WithFunction(
-						dag.Function("IntrospectionTool",
-							dag.TypeDef().WithObject("File")).
-							WithDescription("Build the `introspect` tool which introspects the engine API").
-							WithSourceMap(dag.SourceMap("main.go", 347, 1))).
-					WithFunction(
-						dag.Function("LoadToDocker",
-							dag.TypeDef().WithObject("LoadedEngine")).
-							WithDescription("Load the engine container into a Docker engine").
-							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("docker.go", 17, 1)).
-							WithArg("docker", dag.TypeDef().WithObject("Socket"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 20, 2)}).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 24, 2), DefaultValue: dagger.JSON("\"localhost/dagger-engine.dev:latest\"")}).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 27, 2)}).
-							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable experimental GPU support", SourceMap: dag.SourceMap("docker.go", 31, 2)})).
-					WithFunction(
-						dag.Function("NetworkCidr",
-							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithSourceMap(dag.SourceMap("main.go", 108, 1))).
-					WithFunction(
-						dag.Function("Publish",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Publish all engine images to a registry").
-							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 392, 1)).
-							WithArg("image", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Image target to push to", SourceMap: dag.SourceMap("main.go", 397, 2), DefaultValue: dagger.JSON("\"ghcr.io/dagger/engine\"")}).
-							WithArg("tag", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{Description: "List of tags to use", SourceMap: dag.SourceMap("main.go", 399, 2)}).
-							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 402, 2)}).
-							WithArg("registryUsername", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 405, 2)}).
-							WithArg("registryPassword", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 407, 2)})).
-					WithFunction(
-						dag.Function("ReleaseDryRun",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithSourceMap(dag.SourceMap("main.go", 378, 1)).
-							WithCheck()).
-					WithFunction(
-						dag.Function("Service",
-							dag.TypeDef().WithObject("Service")).
-							WithDescription("Create a test engine service").
-							WithSourceMap(dag.SourceMap("main.go", 201, 1)).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 203, 2)}).
-							WithArg("gpuSupport", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 205, 2)}).
-							WithArg("sharedCache", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 207, 2)}).
-							WithArg("metrics", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 209, 2)})).
-					WithFunction(
-						dag.Function("Test",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Run core engine tests").
-							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("test.go", 23, 1)).
-							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 27, 2)}).
-							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 30, 2)}).
-							WithArg("pkg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 33, 2), DefaultValue: dagger.JSON("\"./...\"")}).
-							WithArg("failFast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort test run on first failure", SourceMap: dag.SourceMap("test.go", 36, 2)}).
-							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How many tests to run in parallel - defaults to the number of CPUs", SourceMap: dag.SourceMap("test.go", 39, 2)}).
-							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How long before timing out the test run", SourceMap: dag.SourceMap("test.go", 42, 2)}).
-							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 44, 2)}).
-							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 47, 2), DefaultValue: dagger.JSON("1")}).
-							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 49, 2)}).
-							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable verbose output", SourceMap: dag.SourceMap("test.go", 52, 2)}).
-							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Update golden files", SourceMap: dag.SourceMap("test.go", 55, 2)}).
-							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 58, 2)}).
-							WithArg("ebpf", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable privileged eBPF tests (Linux 6.15 or newer)", SourceMap: dag.SourceMap("test.go", 61, 2)}).
-							WithArg("dumpAfter", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Elapsed times after the test runner starts at which to dump engine goroutines", SourceMap: dag.SourceMap("test.go", 64, 2)})).
-					WithFunction(
-						dag.Function("TestProfile",
-							dag.TypeDef().WithObject("TestProfileResult")).
-							WithDescription("Run core engine tests against an engine recording a wcprof wall-clock\nprofile, and return the recording.\n\nThe test engine records every session from startup (_DAGGER_WCPROF=1). The\ndump is fetched from its debug endpoint after `go test` exits, whether or\nnot the tests passed, so a failing run still yields a profile. Benchmark\ntests gated on _DAGGER_BENCH are opted in, since profiling is what they are\nfor: select them with `run` like any other test.").
-							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("test.go", 127, 1)).
-							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 131, 2)}).
-							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 134, 2)}).
-							WithArg("pkg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 137, 2), DefaultValue: dagger.JSON("\"./...\"")}).
-							WithArg("failFast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Abort test run on first failure", SourceMap: dag.SourceMap("test.go", 140, 2)}).
-							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How many tests to run in parallel - defaults to the number of CPUs", SourceMap: dag.SourceMap("test.go", 143, 2)}).
-							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "How long before timing out the test run", SourceMap: dag.SourceMap("test.go", 146, 2)}).
-							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 148, 2)}).
-							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 151, 2), DefaultValue: dagger.JSON("1")}).
-							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 153, 2)}).
-							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable verbose output", SourceMap: dag.SourceMap("test.go", 156, 2)}).
-							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 159, 2)})).
-					WithFunction(
-						dag.Function("TestTelemetry",
-							dag.TypeDef().WithObject("Changeset")).
-							WithDescription("Run telemetry tests").
-							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("test.go", 219, 1)).
-							WithArg("run", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run these tests", SourceMap: dag.SourceMap("test.go", 223, 2)}).
-							WithArg("skip", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip these tests", SourceMap: dag.SourceMap("test.go", 226, 2)}).
-							WithArg("update", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 228, 2)}).
-							WithArg("failFast", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 230, 2)}).
-							WithArg("parallel", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 232, 2)}).
-							WithArg("timeout", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 234, 2)}).
-							WithArg("race", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 236, 2)}).
-							WithArg("count", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 238, 2), DefaultValue: dagger.JSON("1")}).
-							WithArg("envFile", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 240, 2)}).
-							WithArg("testVerbose", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("test.go", 242, 2)}).
-							WithArg("ebpfProgs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Enable the given ebpf progs in the engine during tests", SourceMap: dag.SourceMap("test.go", 245, 2)})).
-					WithFunction(
-						dag.Function("Tests",
-							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithDescription("List all core engine tests").
-							WithSourceMap(dag.SourceMap("test.go", 17, 1))).
-					WithFunction(
-						dag.Function("WithEBPFProgs",
-							dag.TypeDef().WithObject("EngineDev")).
-							WithSourceMap(dag.SourceMap("main.go", 117, 1)).
-							WithArg("names", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 117, 37)})).
-					WithFunction(
-						dag.Function("WithEngineConfig",
-							dag.TypeDef().WithObject("EngineDev")).
-							WithSourceMap(dag.SourceMap("main.go", 122, 1)).
-							WithArg("key", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 122, 40)}).
-							WithArg("value", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 122, 45)})).
-					WithFunction(
-						dag.Function("WithLogLevel",
-							dag.TypeDef().WithObject("EngineDev")).
-							WithSourceMap(dag.SourceMap("main.go", 132, 1)).
-							WithArg("level", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 132, 36)})).
-					WithFunction(
-						dag.Function("WithRace",
-							dag.TypeDef().WithObject("EngineDev")).
-							WithSourceMap(dag.SourceMap("main.go", 127, 1))).
-					WithField("Source", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 89, 2)}).
-					WithField("ClientDockerConfig", dag.TypeDef().WithObject("Secret"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 103, 2)}).
-					WithConstructor(
-						dag.Function("New",
-							dag.TypeDef().WithObject("EngineDev")).
-							WithSourceMap(dag.SourceMap("main.go", 19, 1)).
-							WithArg("ws", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 21, 2)}).
-							WithArg("subnetNumber", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{Description: "A configurable part of the IP subnet managed by the engine\nChange this to allow nested dagger engines", SourceMap: dag.SourceMap("main.go", 25, 2), DefaultValue: dagger.JSON("89")}).
-							WithArg("clientDockerConfig", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A docker config file with credentials to install on clients,\nto ensure they can access private registries", SourceMap: dag.SourceMap("main.go", 29, 2)}))).
-			WithObject(
-				dag.TypeDef().WithObject("LoadedEngine", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("docker.go", 78, 6)}).
-					WithFunction(
-						dag.Function("Start",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("Start the loaded engine container").
-							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("docker.go", 87, 1)).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 92, 2), DefaultValue: dagger.JSON("\"dagger-engine.dev\"")}).
-							WithArg("cloudToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 94, 2)}).
-							WithArg("cloudURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 96, 2)}).
-							WithArg("debug", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 99, 2)}).
-							WithArg("extraHosts", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("docker.go", 102, 2)})).
-					WithField("Image", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("docker.go", 80, 2)})).
-			WithObject(
-				dag.TypeDef().WithObject("TestProfileResult", dagger.TypeDefWithObjectOpts{Description: "The result of a profiled test run: the test engine's wcprof recording, and\nhow the tests went.", SourceMap: dag.SourceMap("test.go", 101, 6)}).
-					WithField("Dump", dag.TypeDef().WithObject("File"), dagger.TypeDefWithFieldOpts{Description: "The test engine's wcprof dump (engine/wcprof), covering every\nsession the tests opened", SourceMap: dag.SourceMap("test.go", 104, 2)}).
-					WithField("ExitCode", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{Description: "The exit status of `go test`", SourceMap: dag.SourceMap("test.go", 106, 2)}).
-					WithField("Output", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The tail of the test output (stdout and stderr)", SourceMap: dag.SourceMap("test.go", 108, 2)})), nil
+	case "TestProfileResult":
+		if fnName == "New" {
+			fnName = ""
+		}
+		switch fnName {
+		case "":
+			return &TestProfileResult{}, nil
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	pytestClient "dagger/python-client-dev/internal/dagger/clients/pytest"
 
 	"dagger/python-client-dev/internal/dagger"
 )
@@ -33,10 +34,10 @@ func (t *TestForPythonVersion) Run(
 	// Arguments to pass to pytest
 	args []string,
 ) error {
-	return dag.Pytest(dagger.PytestOpts{
+	return pytestClient.New(pytestClient.PytestOpts{
 		Container: t.Container,
 		Source:    t.Container.Directory("/src/sdk/python"),
-	}).Test(ctx, dagger.PytestTestOpts{
+	}).Test(ctx, pytestClient.PytestTestOpts{
 		Version: t.Version,
 		Args:    args,
 	})

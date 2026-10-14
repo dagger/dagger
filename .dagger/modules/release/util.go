@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"dagger/release/internal/dagger"
+	ghClient "dagger/release/internal/dagger/clients/gh"
 	"fmt"
 	"net/url"
 	"strings"
@@ -64,7 +65,7 @@ func (r Release) githubRelease(
 		return nil
 	}
 
-	gh := dag.Gh(dagger.GhOpts{
+	gh := ghClient.New(ghClient.GhOpts{
 		Repo:   githubRepo,
 		Token:  token,
 		Host:   githubHost,
@@ -74,10 +75,10 @@ func (r Release) githubRelease(
 		ctx,
 		dest,
 		dest,
-		dagger.GhReleaseCreateOpts{
+		ghClient.GhReleaseCreateOpts{
 			Target:    src,
 			NotesFile: notes,
-			Latest:    dagger.GhLatestFalse,
+			Latest:    ghClient.GhLatestFalse,
 		},
 	)
 }

@@ -1,0 +1,150 @@
+// Package discovery selects Go compilation inputs at generation and call time.
+// Local import/embed scanning shares the implementation from Go SDK PR #63.
+package discovery
+
+import (
+	"fmt"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"slices"
+	"strings"
+)
+
+type Inputs struct {
+	ModulePath string   `json:"modulePath"`
+	Files      []string `json:"files"`
+	External   bool     `json:"external"`
+}
+
+// Discover reads a metadata snapshot and an optional file-name inventory.
+// Inventory entries become empty placeholders only in the discovery snapshot;
+// the caller imports the actual selected contents into a separate build tree.
+func Discover(workspaceRoot, moduleRoot string, inventory []string) (*Inputs, error) {
+	root, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+	module, err := filepath.Abs(moduleRoot)
+	if err != nil {
+		return nil, err
+	}
+	rel, err := filepath.Rel(root, module)
+	if err != nil || !filepath.IsLocal(rel) {
+		return nil, fmt.Errorf("module directory leaves the workspace root")
+	}
+	modulePath := filepath.ToSlash(rel)
+	if inventory == nil {
+		err = filepath.WalkDir(root, func(p string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				if entry.Name() == ".git" || entry.Name() == "vendor" {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			r, err := filepath.Rel(root, p)
+			if err == nil {
+				inventory = append(inventory, filepath.ToSlash(r))
+			}
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Go sources and module files must already exist as real metadata. Only
+		// assets/native sources need placeholders for the scanner's stat/glob checks.
+		for _, candidate := range inventory {
+			candidate = strings.TrimPrefix(candidate, "/")
+			if strings.HasSuffix(candidate, "/") {
+				continue
+			}
+			if !fs.ValidPath(candidate) {
+				return nil, fmt.Errorf("invalid workspace inventory path %q", candidate)
+			}
+			ext := path.Ext(candidate)
+			if ext == ".go" || path.Base(candidate) == "go.mod" || path.Base(candidate) == "go.sum" {
+				continue
+			}
+			p := filepath.Join(root, filepath.FromSlash(candidate))
+			if _, err := os.Lstat(p); err == nil {
+				continue
+			} else if !os.IsNotExist(err) {
+				return nil, err
+			}
+			if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+				return nil, err
+			}
+			f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+			if err != nil {
+				return nil, err
+			}
+			if err := f.Close(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	// Absolute replacements cannot be preserved when the tree is relocated.
+	mod, _, err := localReplaces(module)
+	if err != nil {
+		return nil, err
+	}
+	if mod != nil {
+		for _, replacement := range mod.Replace {
+			if replacement.New.Version == "" && strings.HasPrefix(replacement.New.Path, ".") {
+				target := filepath.Clean(filepath.Join(module, replacement.New.Path))
+				rel, err := filepath.Rel(root, target)
+				if err != nil || !filepath.IsLocal(rel) {
+					return nil, fmt.Errorf("replace %s => %s leaves the workspace root", replacement.Old.Path, replacement.New.Path)
+				}
+			}
+
+			if replacement.New.Version == "" && filepath.IsAbs(replacement.New.Path) {
+				return nil, fmt.Errorf("replace %s: use a workspace-relative path, not an absolute local target", replacement.Old.Path)
+			}
+		}
+	}
+	includes, err := ReadIncludes(module, modulePath)
+	if err != nil {
+		return nil, err
+	}
+	result := &Inputs{ModulePath: modulePath, External: len(includes.Include) > 0}
+	selected := map[string]bool{}
+	for _, candidate := range inventory {
+		candidate = strings.TrimPrefix(candidate, "/")
+		if strings.HasSuffix(candidate, "/") {
+			continue
+		}
+		// The canonical module source is overlaid in full, including its assets.
+		if modulePath == "." || strings.HasPrefix(candidate, modulePath+"/") {
+			selected[candidate] = true
+			continue
+		}
+		for _, include := range includes.Include {
+			pattern := path.Join(modulePath, include.Path)
+			parts := strings.Split(candidate, "/")
+			for n := 1; n <= len(parts); n++ {
+				matched, err := path.Match(pattern, strings.Join(parts[:n], "/"))
+				if err != nil {
+					return nil, err
+				}
+				if matched {
+					// Dependencies' tests don't participate in the build or main-module tidy.
+					if !strings.HasSuffix(candidate, "_test.go") {
+						selected[candidate] = true
+					}
+					break
+				}
+			}
+		}
+	}
+	for file := range selected {
+		result.Files = append(result.Files, file)
+	}
+	slices.Sort(result.Files)
+	return result, nil
+}

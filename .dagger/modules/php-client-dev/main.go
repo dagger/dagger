@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	engineDevClient "dagger/php-client-dev/internal/dagger/clients/engine-dev"
+	gitReleaserClient "dagger/php-client-dev/internal/dagger/clients/git-releaser"
 	"fmt"
 	"strings"
 
@@ -26,9 +28,8 @@ type PhpClientDev struct {
 
 // Develop the Dagger PHP SDK (experimental)
 func New(
-	// A directory with all the files needed to develop the SDK
-	// +defaultPath="/"
-	// +ignore=["*", "!sdk/php", "sdk/php/.changes"]
+	// Selected repository files, or an explicit directory override
+	// +optional
 	workspaceDir *dagger.Directory,
 	// The path of the SDK source in the workspace
 	// +default="sdk/php"
@@ -40,6 +41,10 @@ func New(
 	// direct call; dependencies don't inherit it, so callers must forward it.
 	ws *dagger.Workspace,
 ) *PhpClientDev {
+	if workspaceDir == nil {
+		workspaceDir = ws.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: []string{"*", "!sdk/php", "sdk/php/.changes"}})
+	}
+
 	return &PhpClientDev{
 		Workspace:          workspaceDir,
 		OriginalWorkspace:  workspaceDir,
@@ -68,9 +73,9 @@ func (t PhpClientDev) BaseContainer() *dagger.Container {
 		WithEnvVariable("COMPOSER_ALLOW_SUPERUSER", "1").
 		WithWorkdir("/src").
 		With(func(c *dagger.Container) *dagger.Container {
-			return dag.DaggerEngine(t.Ws, dagger.DaggerEngineOpts{
+			return engineDevClient.New(t.Ws, engineDevClient.EngineDevOpts{
 				ClientDockerConfig: t.ClientDockerConfig,
-			}).InstallClient(dagger.DaggerEngineInstallClientOpts{Client: c})
+			}).InstallClient(t.Ws, engineDevClient.EngineDevInstallClientOpts{Client: c})
 		})
 }
 
@@ -171,12 +176,12 @@ func (t PhpClientDev) ReleaseDryRun(
 	// +default="https://github.com/dagger/dagger-php-sdk.git"
 	destRemote string,
 ) error {
-	return dag.GitReleaser().DryRun(
+	return gitReleaserClient.New().DryRun(
 		ctx,
 		sourceRepo,
 		sourceTag,
 		destRemote,
-		dagger.GitReleaserDryRunOpts{
+		gitReleaserClient.GitReleaserDryRunOpts{
 			DestTag:    t.VersionFromTag(sourceTag),
 			SourcePath: "sdk/php/",
 		},
@@ -206,12 +211,12 @@ func (t PhpClientDev) Release(
 	// +optional
 	githubToken *dagger.Secret,
 ) error {
-	return dag.GitReleaser().Release(
+	return gitReleaserClient.New().Release(
 		ctx,
 		sourceRepo,
 		sourceTag,
 		dest,
-		dagger.GitReleaserReleaseOpts{
+		gitReleaserClient.GitReleaserReleaseOpts{
 			DestTag:     t.VersionFromTag(sourceTag),
 			SourcePath:  "sdk/php/",
 			GithubToken: githubToken,

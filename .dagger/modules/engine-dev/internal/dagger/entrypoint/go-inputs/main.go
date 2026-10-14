@@ -1,0 +1,36 @@
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"github.com/dagger/go-sdk/cmd/dagger-go-sdk-codegen/generator/gogenerator/templates/go-inputs/discovery"
+	"os"
+)
+
+func main() {
+	workspace := flag.String("workspace-root", "/workspace", "discovery snapshot root")
+	module := flag.String("module-root", "", "module directory in that snapshot")
+	inventoryPath := flag.String("inventory", "", "JSON list of workspace-relative file names")
+	flag.Parse()
+	var inventory []string
+	var err error
+	if *inventoryPath != "" {
+		var data []byte
+		data, err = os.ReadFile(*inventoryPath)
+		if err == nil {
+			err = json.Unmarshal(data, &inventory)
+		}
+	}
+	var inputs *discovery.Inputs
+	if err == nil {
+		inputs, err = discovery.Discover(*workspace, *module, inventory)
+	}
+	if err == nil {
+		err = json.NewEncoder(os.Stdout).Encode(inputs)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "go-inputs:", err)
+		os.Exit(1)
+	}
+}

@@ -236,15 +236,14 @@ func (d DocsDev) References(
 
 	// Workspace forwarded to engine-dev for VCS stamping (References is the
 	// only docs-dev method that builds). Auto-injected on a direct call;
-	// dependencies don't inherit it.
-	// +optional
+	// dependencies pass it explicitly.
 	ws *dagger.Workspace,
 ) (*dagger.Changeset, error) {
 	src := d.Source
 	// 1. Generate the GraphQL schema
 	withGqlSchema := src.WithFile(
 		"docs/docs-graphql/schema.graphqls",
-		dag.EngineDev(ws).GraphqlSchema(dagger.EngineDevGraphqlSchemaOpts{
+		dag.EngineDev(ws).GraphqlSchema(ws, dagger.EngineDevGraphqlSchemaOpts{
 			Version: version,
 		}),
 	)

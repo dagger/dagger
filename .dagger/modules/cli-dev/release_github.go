@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	alpineClient "dagger/cli-dev/internal/dagger/clients/alpine"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -381,11 +382,10 @@ func (cli *CliDev) uploadGitHubReleaseAsset(
 	uploadURL += "?name=" + url.QueryEscape(asset)
 	// Release archives are binary; keep upload in a container so the mounted
 	// file can be streamed without converting it through File.Contents().
-	ctr := dag.
-		Alpine(dagger.AlpineOpts{
-			Branch:   "3.22",
-			Packages: []string{"ca-certificates", "curl"},
-		}).
+	ctr := alpineClient.New(alpineClient.AlpineOpts{
+		Branch:   "3.22",
+		Packages: []string{"ca-certificates", "curl"},
+	}).
 		Container().
 		With(withGithubCaCert(githubCaCert)).
 		WithMountedDirectory("/dist", dist).
