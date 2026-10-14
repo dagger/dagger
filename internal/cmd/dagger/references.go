@@ -434,7 +434,7 @@ func (a *sessionAgent) attachTunnel(ctx context.Context, tok string, u *url.URL,
 		[]core.PortForward{{
 			Backend:  port,
 			Frontend: port,
-			Protocol: core.NetworkProtocolTcp,
+			Protocol: core.NetworkProtocolTCP,
 		}},
 		core.HostServiceOpts{Host: u.Hostname()},
 	)

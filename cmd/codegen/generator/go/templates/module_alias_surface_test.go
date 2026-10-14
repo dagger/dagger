@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/internal/testnames"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
@@ -26,6 +27,7 @@ import (
 // core output, across the schema views whose gates differ.
 func TestModuleAliasSurfaceMatchesCore(t *testing.T) {
 	for _, schemaVersion := range []string{
+		"v1.0.0",      // engine-formatted names
 		"v0.21.0-dev", // post-cutover: interface clients, scoped enums
 		"v0.20.6",     // legacy interfaces, scoped enums
 		"v0.14.0",     // legacy interfaces, unscoped enum aliases
@@ -33,6 +35,9 @@ func TestModuleAliasSurfaceMatchesCore(t *testing.T) {
 	} {
 		t.Run(schemaVersion, func(t *testing.T) {
 			schema := aliasSurfaceSchema()
+			if schemaVersion == "v1.0.0" {
+				testnames.Load(schema, NameFormats...)
+			}
 			generator.SetSchemaParents(schema)
 			generator.SetSchema(schema)
 			t.Cleanup(func() { generator.SetSchema(nil) })
@@ -149,9 +154,9 @@ func aliasSurfaceSchema() *introspection.Schema {
 		Fields: []*introspection.Field{
 			{Name: "id", TypeRef: idRef},
 			{
-				Name:    "withCommit",
+				Name:    "withVCSCommit",
 				TypeRef: cliRef,
-				Args:    introspection.InputValues{{Name: "commitSHA", TypeRef: optionalString}},
+				Args:    introspection.InputValues{{Name: "vcsCommit", TypeRef: optionalString}},
 			},
 		},
 	}
@@ -161,7 +166,7 @@ func aliasSurfaceSchema() *introspection.Schema {
 		Directives: sourceMapDirectives("dagger-cli"),
 		Fields: []*introspection.Field{
 			{Name: "id", TypeRef: idRef},
-			{Name: "run", TypeRef: idRef, Args: introspection.InputValues{{Name: "commitSHA", TypeRef: optionalString}}},
+			{Name: "run", TypeRef: idRef, Args: introspection.InputValues{{Name: "vcsCommit", TypeRef: optionalString}}},
 		},
 	}
 	cliMode := &introspection.Type{
@@ -174,7 +179,7 @@ func aliasSurfaceSchema() *introspection.Schema {
 		Name:       "daggerCLI",
 		TypeRef:    cliRef,
 		Directives: sourceMapDirectives("dagger-cli"),
-		Args:       introspection.InputValues{{Name: "commitSHA", TypeRef: optionalString}},
+		Args:       introspection.InputValues{{Name: "vcsCommit", TypeRef: optionalString}},
 	})
 
 	return &introspection.Schema{Types: introspection.Types{id, query, foo, iface, enum, cli, cliRunner, cliMode}}

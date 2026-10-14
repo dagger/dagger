@@ -12,22 +12,48 @@ import (
 	"github.com/dagger/dagger/engine/naming"
 )
 
-// Go identifiers are schema names formatted with golint's initialisms.
+// Go identifiers are schema names formatted by the engine (Query.
+// formatIdentifiers, present for engine views v1.0.0-0 and later; see
+// hack/designs/identifier-casing.md), loaded onto the schema in NameFormats
+// before rendering. When a name has no engine format (an older schema, or a
+// name that isn't one of the schema's names), the legacy conversions apply:
+// golint's initialisms for names, strcase for enum values.
 //
 // Only Go identifiers go through here. Strings sent over the wire (selected
 // fields, argument names, enum values, GraphQL type names) always use the
 // schema name as is.
 
+var (
+	// pascalNames: types, methods, option struct fields and enum values.
+	pascalNames = introspection.NameFormat{Casing: introspection.CasingPascal, Acronyms: introspection.AcronymsUppercase}
+	// camelNames: parameters.
+	camelNames = introspection.NameFormat{Casing: introspection.CasingCamel, Acronyms: introspection.AcronymsUppercase}
+)
+
+// NameFormats are the formats Go codegen asks the engine for: load them onto
+// the schema with LoadFormattedNames before rendering.
+var NameFormats = []introspection.NameFormat{pascalNames, camelNames}
+
+// engineName returns a schema name as the engine formatted it in f, if the
+// schema being generated has engine formats.
+func engineName(name string, f introspection.NameFormat) (string, bool) {
+	return generator.GetSchema().FormattedName(name, f)
+}
+
 // formatName formats a GraphQL name (an object, field, or an argument
-// becoming an option struct field) into an exported Go identifier.
-// Example: `fooId` -> `FooID`
+// becoming an option struct field) into an exported Go identifier: PASCAL
+// with uppercase acronyms, e.g. `parentShas` -> `ParentSHAs`. Without an
+// engine format, it falls back to legacyFormatName.
 func formatName(s string) string {
+	if name, ok := engineName(s, pascalNames); ok {
+		return name
+	}
 	return legacyFormatName(s)
 }
 
-// legacyFormatName is how a schema name was formatted into a Go identifier
-// before engine/naming: capitalize the first letter, then apply golint's
-// initialisms. Example: `fooId` -> `FooID`
+// legacyFormatName is how names were formatted before the engine formatted
+// them: capitalize the first letter, then apply golint's initialisms.
+// Example: `fooId` -> `FooID`
 func legacyFormatName(s string) string {
 	if len(s) > 0 {
 		s = strings.ToUpper(string(s[0])) + s[1:]
@@ -35,28 +61,47 @@ func legacyFormatName(s string) string {
 	return lintName(s)
 }
 
+// formatArgName formats a GraphQL argument name into a Go parameter name:
+// CAMEL with uppercase acronyms, e.g. `filterUri` -> `filterURI`, then
+// escaped like formatParamName. Without an engine format the schema name is
+// used as is.
+func formatArgName(s string) string {
+	if name, ok := engineName(s, camelNames); ok {
+		s = name
+	}
+	return formatParamName(s)
+}
+
+// enumValueName formats an enum value into the Go suffix of its scoped
+// constant name (`<Enum><Value>`): PASCAL with uppercase acronyms, like every
+// other Go identifier, so `TCP` becomes `TCP` (strcase gave `Tcp`) and
+// `LEAVE_CONFLICT_MARKERS` stays `LeaveConflictMarkers`.
+func enumValueName(s string) string {
+	if name, ok := engineName(s, pascalNames); ok {
+		return name
+	}
+	return strcase.ToCamel(s)
+}
+
 // Legacy names
 //
 // A renamed Go identifier keeps its old name as a deprecated alias wherever Go
 // allows one: a wrapper method, a type alias, an option struct alias, an
-// extra option struct field or an enum constant. The old name is the Go
-// formatting (legacyFormatName) of the schema name the declaration had before
-// engine/naming.
+// extra option struct field or an enum constant. The old name is the legacy
+// conversion (legacyFormatName) of the schema name the declaration had before
+// engine/naming:
 //
-// Only modules' declarations are renamed: core names are written by hand, so
-// their schema names didn't change. A module's names are its declarations'
-// original names normalized by its naming rules, which since engine/naming are
-// no longer strcase for modules at v1.0.0 and later: `daggerCli` became
-// `daggerCLI`. The engine still accepts the old schema name as a hidden alias,
-// but the schema doesn't show it, so it's recovered here by applying the
-// legacy strcase namer to the current name: the new name only recases the
-// words of the original, and strcase recases them the same way either way.
-// That's a heuristic: when it misses, there's just no alias. Names of modules
-// still named by strcase are strcase's own output, which it leaves as is.
-//
-// Go modules regenerate their bindings at every load, so without these a
-// dependency renamed by the new rules would break the dependent module's
-// build on engine upgrade.
+//   - Core names are written by hand, so the schema name didn't change: only
+//     its Go formatting did (`parentShas` was ParentShas, is ParentSHAs).
+//   - A module's names are its declarations' original names normalized by
+//     its naming rules, which since engine/naming are no longer strcase for
+//     modules at v1.0.0 and later: `daggerCli` became `daggerCLI`. The engine
+//     still accepts the old schema name as a hidden alias, but the schema
+//     doesn't show it, so it's recovered here by applying the legacy strcase
+//     namer to the current name: the new name only recases the words of the
+//     original, and strcase recases them the same way either way. That's a
+//     heuristic: when it misses, there's just no alias. Names of modules still
+//     named by strcase are strcase's own output, which it leaves as is.
 //
 // See hack/designs/identifier-casing.md, "Transition aliases".
 
@@ -237,8 +282,8 @@ func (funcs goTemplateFuncs) legacyOptionalArgName(f introspection.Field, arg in
 	return legacy
 }
 
-// legacyMethodName returns the name a field's method had before
-// engine/naming, when it differs from the current one and doesn't collide
+// legacyMethodName returns the name a field's method had before the engine
+// formatted names, when it differs from the current one and doesn't collide
 // with any other method of the parent, so the old name can be kept as a
 // deprecated wrapper.
 func legacyMethodName(f introspection.Field) (string, bool) {
@@ -281,10 +326,10 @@ var generatedMethodNames = map[string]bool{
 }
 
 // legacyEnumValueNames returns the names the scoped constants of an enum
-// value and its aliases (the values sharing its wire value) had before
-// engine/naming, where they differ from every current constant of the enum,
-// so the old names can be kept as deprecated aliases: a renamed module enum
-// keeps them under its old name.
+// value and its aliases (the values sharing its wire value) had before the
+// engine formatted names, where they differ from every current constant of the
+// enum, so the old names can be kept as deprecated aliases. A renamed module
+// enum keeps them under its old name too.
 func (funcs goTemplateFuncs) legacyEnumValueNames(enum introspection.Type, value introspection.EnumValue) []string {
 	current := map[string]bool{}
 	for _, other := range enum.EnumValues {

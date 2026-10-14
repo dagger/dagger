@@ -4131,7 +4131,7 @@ func credentials(r *http.Request) (string, string, bool) {
 		WithNewFile("/src/main.go", tokenAuthServer).
 		WithMountedCache("/logs", tokenLogs).
 		WithEnvVariable("GOCACHE", "/tmp/go-cache").
-		WithExposedPort(5001, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
+		WithExposedPort(5001, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTCP}).
 		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
 		AsService()
 
@@ -4140,7 +4140,7 @@ func credentials(r *http.Request) (string, string, bool) {
 		From("registry:3").
 		WithNewFile("/etc/distribution/config.yml", registryConfig).
 		WithMountedCache("/cache/logs", registryLogs).
-		WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
+		WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTCP}).
 		WithDefaultArgs([]string{"sh", "-c", "registry serve /etc/distribution/config.yml | tee /cache/logs/registry.log"}).
 		AsService()
 
@@ -4299,7 +4299,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 			WithFile("/certs/domain.key", registryKey).
 			WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
 			WithEnvVariable("REGISTRY_HTTP_TLS_KEY", "/certs/domain.key").
-			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
+			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTCP}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c,
@@ -4334,7 +4334,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
 			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-"+rand.Text())).
-			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
+			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTCP}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c,
@@ -4364,7 +4364,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
 			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-api-"+rand.Text())).
-			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
+			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTCP}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
@@ -4393,7 +4393,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 			WithFile("/certs/domain.key", registryKey).
 			WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
 			WithEnvVariable("REGISTRY_HTTP_TLS_KEY", "/certs/domain.key").
-			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
+			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTCP}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
@@ -4416,7 +4416,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 		registry := sdkcore.NewQuery(c).Container().
 			From("registry:3").
 			WithMountedCache("/var/lib/registry", sdkcore.NewQuery(c).CacheVolume("service-binding-registry-http-invalid-api-"+rand.Text())).
-			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
+			WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTCP}).
 			AsService()
 
 		devEngine := devEngineContainerAsService(devEngineContainer(c))
@@ -4448,7 +4448,7 @@ func (ContainerSuite) TestWithRegistryAuthFileAndDirectoryAccess(ctx context.Con
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
-		WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTcp}).
+		WithExposedPort(5000, sdkcore.ContainerWithExposedPortOpts{Protocol: sdkcore.NetworkProtocolTCP}).
 		AsService(sdkcore.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	devEngine := devEngineContainerAsService(devEngineContainer(c,
@@ -4977,7 +4977,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
-			sdkcore.ImageLayerCompressionEstarGz,
+			sdkcore.ImageLayerCompressionEStarGZ,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
@@ -5044,7 +5044,7 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			sdkcore.ImageMediaTypesOcimediaTypes,
+			sdkcore.ImageMediaTypesOCIMediaTypes,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
@@ -5164,7 +5164,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 
 	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
 		dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: t.Name(), version: dockerVersion})
-		for _, mediaType := range []sdkcore.ImageMediaTypes{sdkcore.ImageMediaTypesOcimediaTypes, sdkcore.ImageMediaTypesDockerMediaTypes} {
+		for _, mediaType := range []sdkcore.ImageMediaTypes{sdkcore.ImageMediaTypesOCIMediaTypes, sdkcore.ImageMediaTypesDockerMediaTypes} {
 			for _, compression := range []sdkcore.ImageLayerCompression{sdkcore.ImageLayerCompressionGzip, sdkcore.ImageLayerCompressionZstd, sdkcore.ImageLayerCompressionUncompressed} {
 				t.Run(fmt.Sprintf("%s-%s-%s-%s", t.Name(), dockerVersion, mediaType, compression), func(ctx context.Context, t *testctx.T) {
 					tmpdir := t.TempDir()

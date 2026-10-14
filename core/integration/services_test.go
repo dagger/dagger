@@ -452,7 +452,7 @@ func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
 		}).
 		WithExposedPort(9000, core.ContainerWithExposedPortOpts{
 			Description: "nine thousand",
-			Protocol:    core.NetworkProtocolUdp,
+			Protocol:    core.NetworkProtocolUDP,
 		}).
 		WithDefaultArgs([]string{"python", "-m", "http.server"}).
 		AsService()
@@ -474,11 +474,11 @@ func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
 		case 0:
 			require.Equal(t, 8000, port)
 			require.Equal(t, "eight thousand", desc)
-			require.Equal(t, core.NetworkProtocolTcp, proto)
+			require.Equal(t, core.NetworkProtocolTCP, proto)
 		case 1:
 			require.Equal(t, 9000, port)
 			require.Equal(t, "nine thousand", desc)
-			require.Equal(t, core.NetworkProtocolUdp, proto)
+			require.Equal(t, core.NetworkProtocolUDP, proto)
 		}
 	}
 }
@@ -531,7 +531,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 			Description: "eight thousand tcp",
 		}).
 		WithExposedPort(8000, core.ContainerWithExposedPortOpts{
-			Protocol:    core.NetworkProtocolUdp,
+			Protocol:    core.NetworkProtocolUDP,
 			Description: "eight thousand udp",
 		}).
 		WithExposedPort(5432)
@@ -614,7 +614,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	require.Nil(t, desc)
 
 	withoutUDP := withPorts.WithoutExposedPort(8000, core.ContainerWithoutExposedPortOpts{
-		Protocol: core.NetworkProtocolUdp,
+		Protocol: core.NetworkProtocolUDP,
 	})
 	cid, err = withoutUDP.ID(ctx)
 	require.NoError(t, err)
@@ -651,12 +651,12 @@ func (ServiceSuite) TestPortOCIConfig(ctx context.Context, t *testctx.T) {
 			Description: "eight thousand tcp",
 		}).
 		WithExposedPort(8000, core.ContainerWithExposedPortOpts{
-			Protocol:    core.NetworkProtocolUdp,
+			Protocol:    core.NetworkProtocolUDP,
 			Description: "eight thousand udp",
 		}).
 		WithExposedPort(5432).
 		WithExposedPort(5432, core.ContainerWithExposedPortOpts{
-			Protocol: core.NetworkProtocolUdp,
+			Protocol: core.NetworkProtocolUDP,
 		})
 
 	dest := t.TempDir()
@@ -679,7 +679,7 @@ func (ServiceSuite) TestPortOCIConfig(ctx context.Context, t *testctx.T) {
 
 	withoutPorts := withPorts.
 		WithoutExposedPort(8000, core.ContainerWithoutExposedPortOpts{
-			Protocol: core.NetworkProtocolUdp,
+			Protocol: core.NetworkProtocolUDP,
 		}).
 		WithoutExposedPort(5432)
 
@@ -914,7 +914,7 @@ func (ServiceSuite) TestExecUDPServices(ctx context.Context, t *testctx.T) {
 		From(golangImage).
 		WithMountedFile("/src/main.go", core.NewQuery(c).Directory().WithNewFile("main.go", udpSrc).File("main.go")).
 		WithExposedPort(4321, core.ContainerWithExposedPortOpts{
-			Protocol: core.NetworkProtocolUdp,
+			Protocol: core.NetworkProtocolUDP,
 		}).
 		// use TCP :4322 for health-check to avoid test flakiness, since UDP dial
 		// health-checks aren't really a thing
@@ -2031,7 +2031,7 @@ func (ServiceSuite) TestServiceFromUncachedPrivateImage(ctx context.Context, t *
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
-		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
+		WithExposedPort(5000, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTCP}).
 		AsService(core.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	engineSvc := devEngineContainerAsService(devEngineContainer(c,

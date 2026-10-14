@@ -490,3 +490,33 @@ func (dev *EngineDev) pushTargets(
 	}
 	return jobs.Run(ctx)
 }
+
+// Format the engine API schema's names with the engine, and return them as a
+// json-encoded file, for SDK codegen that runs without an engine connection.
+//
+// The file maps each format to every schema name formatted in it, e.g.
+// {"SNAKE:UPPERCASE": {"httpClient": "http_client", ...}}, and is empty ({})
+// when the schema has no Query.formatIdentifiers. It goes with the schema of
+// IntrospectionJSON; see `codegen introspect --help`.
+func (dev *EngineDev) IntrospectionNames(
+	ctx context.Context,
+	// Name formats, as CASING:ACRONYMS values of the Casing and AcronymStyle
+	// enums, e.g. ["SNAKE:UPPERCASE", "PASCAL:CAPITALIZED"]
+	formats []string,
+) (*dagger.File, error) {
+	if len(formats) == 0 {
+		return nil, fmt.Errorf("no name formats")
+	}
+	ctr, err := dev.InstallClient(ctx, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	names := ctr.
+		WithFile("/usr/local/bin/codegen", dag.Codegen(dev.Ws).Binary()).
+		WithExec(withoutOuterSession(
+			"codegen", "introspect", "-o", "/schema.json",
+			"--names-out", "/names.json", "--names", strings.Join(formats, ","),
+		)).
+		File("/names.json")
+	return names, nil
+}

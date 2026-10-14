@@ -315,21 +315,41 @@ func TestNamespaceTypeName(t *testing.T) {
 }
 
 // TestModuleNamerVersions verifies the Go SDK names a module's types the way
-// the engine does for the module's engine version: strcase before v1.0.0,
-// engine/naming from v1.0.0 (any prerelease included).
+// the engine does for the module: with engine/naming exactly when the schema
+// it generates from has Query.formatIdentifiers, which the engine hides from
+// the views of modules it names with strcase.
 func TestModuleNamerVersions(t *testing.T) {
+	withFormat := &introspection.Schema{
+		QueryType: struct {
+			Name string `json:"name,omitempty"`
+		}{Name: "Query"},
+		Types: introspection.Types{
+			{Kind: introspection.TypeKindObject, Name: "Query", Fields: []*introspection.Field{{Name: "formatIdentifiers"}}},
+		},
+	}
+	withoutFormat := &introspection.Schema{
+		QueryType: struct {
+			Name string `json:"name,omitempty"`
+		}{Name: "Query"},
+		Types: introspection.Types{
+			{Kind: introspection.TypeKindObject, Name: "Query", Fields: []*introspection.Field{{Name: "container"}}},
+		},
+	}
 	for _, tc := range []struct {
 		schemaVersion string
+		schema        *introspection.Schema
 		legacy        bool
 	}{
-		{"", false},
-		{"v1.0.0", false},
-		{"v1.0.0-beta.15", false},
-		{"v0.21.9", true},
+		{"", withFormat, false},
+		{"v1.0.0", withFormat, false},
+		{"v1.0.0", withoutFormat, true},
+		{"v0.21.9", withoutFormat, true},
+		{"v1.0.0", nil, true},
 	} {
 		funcs := goTemplateFuncs{
 			CommonFunctions: generator.NewCommonFunctions(tc.schemaVersion, &FormatTypeFunc{}),
 			schemaVersion:   tc.schemaVersion,
+			schema:          tc.schema,
 		}
 		require.Equal(t, tc.legacy, funcs.moduleNamer().dict == nil, "schema version %q", tc.schemaVersion)
 	}

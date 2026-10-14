@@ -70,7 +70,7 @@ func (WorkspaceSuite) TestWorkspaceLegacyKeepGitDirFalse(ctx context.Context, t 
 		require.NoError(t, err)
 		require.Equal(t, "new-b", working)
 		head := committed.Git().Head()
-		parents, err := head.TargetCommit().ParentShas(ctx)
+		parents, err := head.TargetCommit().ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{baseSHA}, parents)
 		// Metadata reconstruction must retain history with a local backend too.

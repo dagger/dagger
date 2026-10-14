@@ -6,7 +6,7 @@ package core
 
 import (
 	"context"
-	"strings"
+	"encoding/json"
 	"testing"
 
 	"dagger.io/dagger"
@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/engine/naming"
 	"github.com/dagger/dagger/internal/testutil"
 )
@@ -150,10 +151,14 @@ func (IdentifierSuite) TestNamingDictionary(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "3D", capitalized["3D"])
 }
 
-// The API is only served to v1.0.0 clients: SDK codegen gates on
-// Query.formatIdentifiers being in the schema it generates from, so older
-// clients' schemas lack it and their codegen keeps its own conversion.
-func (IdentifierSuite) TestViews(ctx context.Context, t *testctx.T) {
+// Codegen formats schema names through the engine (introspection.FormatNames)
+// when the schema has Query.formatIdentifiers, from v1.0.0 on; older clients'
+// schemas lack it, so their codegen keeps its own conversion.
+func (IdentifierSuite) TestCodegenFormatNames(ctx context.Context, t *testctx.T) {
+	pascalCapitalized := introspection.NameFormat{
+		Casing:   introspection.CasingPascal,
+		Acronyms: introspection.AcronymsCapitalized,
+	}
 	for _, tc := range []struct {
 		name string
 		opts []dagger.ClientOpt
@@ -164,51 +169,45 @@ func (IdentifierSuite) TestViews(ctx context.Context, t *testctx.T) {
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			res, err := testutil.Query[struct {
-				FormatIdentifiers []string
-			}](t, `{ formatIdentifiers(names: ["prerequisiteSHAs"], casing: SNAKE) }`, nil, tc.opts...)
+				File struct {
+					Contents string `json:"contents"`
+				} `json:"__schemaJSONFile"`
+			}](t, `{ __schemaJSONFile { contents } }`, nil, tc.opts...)
+			require.NoError(t, err)
+			var resp introspection.Response
+			require.NoError(t, json.Unmarshal([]byte(res.File.Contents), &resp))
+			require.Equal(t, tc.want, resp.Schema.HasFormatIdentifiers())
+
+			c := connect(ctx, t, tc.opts...)
+			live, version, err := introspection.Introspect(ctx, c)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, live.HasFormatIdentifiers())
+
+			names := live.Names()
+			formatted, ok, err := introspection.FormatNames(ctx, c, live, version, append(names, "_"), introspection.CasingSnake, introspection.AcronymsUppercase)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, ok)
+			require.NoError(t, live.LoadFormattedNames(ctx, c, version, pascalCapitalized))
 			if !tc.want {
-				require.ErrorContains(t, err, "formatIdentifiers")
+				require.Nil(t, formatted)
+				require.Nil(t, live.FormattedNames)
 				return
 			}
-			require.NoError(t, err)
-			require.Equal(t, []string{"prerequisite_shas"}, res.FormatIdentifiers)
+
+			// Every name, but not "_", which the engine can't parse.
+			require.Len(t, formatted, len(names))
+			require.NotContains(t, formatted, "_")
+			require.Equal(t, "experimental_with_all_gpus", formatted["experimentalWithAllGPUs"])
+			require.Equal(t, "prerequisite_shas", formatted["prerequisiteSHAs"])
+			for _, name := range names {
+				id, err := naming.Parse(name)
+				require.NoError(t, err)
+				require.Equal(t, id.Format(naming.Snake, naming.Uppercase), formatted[name], name)
+			}
+
+			pascal, ok := live.FormattedName("prerequisiteSHAs", pascalCapitalized)
+			require.True(t, ok)
+			require.Equal(t, "PrerequisiteShas", pascal)
 		})
-	}
-}
-
-// formatIdentifiers formats every core schema name the way engine/naming does.
-func (IdentifierSuite) TestFormatSchemaNames(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
-		Schema struct {
-			Types []struct {
-				Name   string
-				Fields []struct {
-					Name string
-				}
-			}
-		} `json:"__schema"`
-	}](t, `{ __schema { types { name fields { name } } } }`, nil)
-	require.NoError(t, err)
-	var names []string
-	for _, typ := range res.Schema.Types {
-		if strings.HasPrefix(typ.Name, "__") {
-			continue
-		}
-		names = append(names, typ.Name)
-		for _, field := range typ.Fields {
-			if !strings.HasPrefix(field.Name, "__") {
-				names = append(names, field.Name)
-			}
-		}
-	}
-
-	c := core.NewQuery(connect(ctx, t))
-	formatted, err := c.FormatIdentifiers(ctx, names, core.CasingSnake)
-	require.NoError(t, err)
-	require.Len(t, formatted, len(names))
-	for i, name := range names {
-		id, err := naming.Parse(name)
-		require.NoError(t, err)
-		require.Equal(t, id.Format(naming.Snake, naming.Uppercase), formatted[i], name)
 	}
 }

@@ -132,6 +132,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatExperimental":      funcs.formatExperimental,
 		"FormatName":              formatName,
 		"FormatParamName":         formatParamName,
+		"FormatArgName":           formatArgName,
 		"FormatEnum":              funcs.formatEnum,
 		"LegacyEnumValueNames":    funcs.legacyEnumValueNames,
 		"LegacyTypeName":          funcs.legacyTypeName,
@@ -298,13 +299,17 @@ func formatParamName(s string) string {
 func (funcs goTemplateFuncs) formatEnum(parent string, s string) string {
 	if parent == "" {
 		// legacy path - terrible, removes all the casing :(
-		s = strings.ToLower(s)
+		// Only used for schemas before v0.15.0, which have no
+		// Query.formatIdentifiers.
+		return strcase.ToCamel(strings.ToLower(s))
 	}
-	s = strcase.ToCamel(s)
-	return parent + s
+	return parent + enumValueName(s)
 }
 
 func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
+	// This feeds UnmarshalJSON's cases, keyed by wire name: keep the legacy
+	// deduplication even with engine-formatted names, which may give more
+	// values the same Go name, so no wire name loses its case.
 	s = slices.Clone(s)
 	slices.SortStableFunc(s, func(x, y introspection.EnumValue) int {
 		return cmp.Compare(strcase.ToCamel(x.Name), strcase.ToCamel(y.Name))
@@ -324,7 +329,7 @@ func (funcs goTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]i
 	for _, v := range s {
 		value := cmp.Or(v.Directives.EnumValue(), v.Name)
 		if !slices.ContainsFunc(m[value], func(other introspection.EnumValue) bool {
-			return strcase.ToCamel(v.Name) == strcase.ToCamel(other.Name)
+			return enumValueName(v.Name) == enumValueName(other.Name)
 		}) {
 			m[value] = append(m[value], v)
 		}
@@ -399,8 +404,8 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 }
 
 // fieldLegacyWrapper returns a deprecated method under the name a field's
-// method had before engine/naming renamed it, forwarding to the current one,
-// or "" when the name didn't change. See legacyMethodName.
+// method had before the engine formatted names, forwarding to the current
+// one, or "" when the name didn't change. See legacyMethodName.
 func (funcs goTemplateFuncs) fieldLegacyWrapper(f introspection.Field, topLevel bool, supportsVoid bool, scopes ...string) (string, error) {
 	legacy, ok := legacyMethodName(f)
 	if !ok {
@@ -450,7 +455,7 @@ func (funcs goTemplateFuncs) forwardedArgs(f introspection.Field) []string {
 		if funcs.isArgOptional(arg) {
 			continue
 		}
-		args = append(args, formatParamName(arg.Name))
+		args = append(args, formatArgName(arg.Name))
 	}
 	if funcs.hasOptionals(f.Args) {
 		args = append(args, "opts...")
@@ -459,7 +464,7 @@ func (funcs goTemplateFuncs) forwardedArgs(f introspection.Field) []string {
 }
 
 // legacyFieldOptionsStructName returns the name a field's options struct had
-// before engine/naming renamed it, when it differs from the current one, so
+// before the engine formatted names, when it differs from the current one, so
 // it can be kept as a deprecated alias.
 func (funcs goTemplateFuncs) legacyFieldOptionsStructName(f introspection.Field) string {
 	legacy := legacyFormatName(legacyFieldSchemaName(f)) + "Opts"
@@ -520,13 +525,13 @@ func (funcs goTemplateFuncs) fieldFunctionNamed(f introspection.Field, name stri
 			if err != nil {
 				return "", err
 			}
-			args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), outType))
+			args = append(args, fmt.Sprintf("%s %s", formatArgName(arg.Name), outType))
 		} else {
 			inType, err := funcs.FormatInputType(arg, scopes...)
 			if err != nil {
 				return "", err
 			}
-			args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), inType))
+			args = append(args, fmt.Sprintf("%s %s", formatArgName(arg.Name), inType))
 		}
 	}
 
@@ -745,7 +750,7 @@ func (funcs goTemplateFuncs) interfaceMethodSignature(f introspection.Field) (st
 		if err != nil {
 			return "", err
 		}
-		args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), inType))
+		args = append(args, fmt.Sprintf("%s %s", formatArgName(arg.Name), inType))
 	}
 	if funcs.hasOptionals(f.Args) {
 		args = append(args, fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)))
@@ -817,7 +822,7 @@ func (funcs goTemplateFuncs) interfaceClientMethodNamed(ifaceName string, f intr
 		if err != nil {
 			return "", err
 		}
-		args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), inType))
+		args = append(args, fmt.Sprintf("%s %s", formatArgName(arg.Name), inType))
 	}
 	if funcs.hasOptionals(f.Args) {
 		args = append(args, fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)))

@@ -1,0 +1,75 @@
+// Compression algorithm to use for image layers.
+type ImageLayerCompression string
+
+func (ImageLayerCompression) IsEnum() {}
+
+func (v ImageLayerCompression) Name() string {
+	switch v {
+	case ImageLayerCompressionGzip:
+		return "Gzip"
+	case ImageLayerCompressionEStarGZ:
+		return "EStarGZ"
+	case ImageLayerCompressionTCP:
+		return "TCP"
+	default:
+		return ""
+	}
+}
+
+func (v ImageLayerCompression) Value() string {
+	return string(v)
+}
+
+func (v *ImageLayerCompression) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "EStarGZ":
+		*v = ImageLayerCompressionEStarGZ
+	case "Gzip":
+		*v = ImageLayerCompressionGzip
+	case "TCP":
+		*v = ImageLayerCompressionTCP
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	ImageLayerCompressionGzip ImageLayerCompression = "Gzip"
+
+	// Deprecated: use ImageLayerCompressionGzip instead
+	Gzip ImageLayerCompression = ImageLayerCompressionGzip
+
+	ImageLayerCompressionEStarGZ ImageLayerCompression = "EStarGZ"
+
+	// Deprecated: use ImageLayerCompressionEStarGZ instead
+	Estargz ImageLayerCompression = ImageLayerCompressionEStarGZ
+
+	// Deprecated: use ImageLayerCompressionEStarGZ instead.
+	ImageLayerCompressionEstarGz ImageLayerCompression = ImageLayerCompressionEStarGZ
+
+	ImageLayerCompressionTCP ImageLayerCompression = "TCP"
+
+	// Deprecated: use ImageLayerCompressionTCP instead
+	Tcp ImageLayerCompression = ImageLayerCompressionTCP
+
+	// Deprecated: use ImageLayerCompressionTCP instead.
+	ImageLayerCompressionTcp ImageLayerCompression = ImageLayerCompressionTCP
+)

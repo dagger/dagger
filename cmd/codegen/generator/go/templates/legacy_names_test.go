@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/internal/testnames"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
@@ -66,6 +67,8 @@ func TestLegacyModuleSchemaNames(t *testing.T) {
 	core := &introspection.Type{Kind: introspection.TypeKindObject, Name: "GitCommit"}
 	require.Equal(t, "parentShas", legacyFieldSchemaName(introspection.Field{Name: "parentShas", ParentObject: core}))
 	require.Equal(t, "LLMContent", legacyTypeSchemaName(&introspection.Type{Kind: introspection.TypeKindObject, Name: "LLMContent"}))
+	withRemote := introspection.Field{Name: "withRemote", ParentObject: &introspection.Type{Kind: introspection.TypeKindObject, Name: "GitRepository"}}
+	require.Equal(t, "url", legacyArgSchemaName(withRemote, introspection.InputValue{Name: "url"}))
 	// ...unless a module adds them to a core type.
 	require.Equal(t, "asDaggerCli", legacyFieldSchemaName(introspection.Field{
 		Name: "asDaggerCLI", ParentObject: core, Directives: sourceMapDirectives("dagger-cli"),
@@ -80,8 +83,8 @@ func TestLegacyModuleSchemaNames(t *testing.T) {
 }
 
 // legacyModuleSchema is a dependency module the new rules renamed: module
-// dagger-cli (daggerCli, DaggerCli), with an argument they renamed too
-// (commitSha is commitSHA).
+// dagger-cli (daggerCli, DaggerCli), next to one they named the same way (go,
+// whose Go identifiers only changed formatting: GoVcs, vcsCommit).
 func legacyModuleSchema(t *testing.T) *introspection.Schema {
 	t.Helper()
 	id := &introspection.Type{Kind: introspection.TypeKindScalar, Name: "ID"}
@@ -102,6 +105,14 @@ func legacyModuleSchema(t *testing.T) *introspection.Schema {
 			},
 		},
 	}
+	goVCS := &introspection.Type{
+		Kind:       introspection.TypeKindObject,
+		Name:       "GoVcs",
+		Directives: sourceMapDirectives("go"),
+		Fields: []*introspection.Field{
+			{Name: "id", TypeRef: nonNull(scalarRef("ID"))},
+		},
+	}
 	mode := &introspection.Type{
 		Kind:       introspection.TypeKindEnum,
 		Name:       "DaggerCLIMode",
@@ -118,22 +129,32 @@ func legacyModuleSchema(t *testing.T) *introspection.Schema {
 				Directives: sourceMapDirectives("dagger-cli"),
 				Args: introspection.InputValues{
 					{Name: "version", TypeRef: scalarRef("String")},
-					{Name: "commitSHA", TypeRef: scalarRef("String"), Directives: sourceMapDirectives("dagger-cli")},
+					{Name: "vcsCommit", TypeRef: scalarRef("String"), Directives: sourceMapDirectives("dagger-cli")},
+				},
+			},
+			{
+				Name:       "go",
+				TypeRef:    nonNull(&introspection.TypeRef{Kind: introspection.TypeKindObject, Name: "GoVcs"}),
+				Directives: sourceMapDirectives("go"),
+				Args: introspection.InputValues{
+					{Name: "vcsCommit", TypeRef: scalarRef("String"), Directives: sourceMapDirectives("go")},
 				},
 			},
 		},
 	}
-	schema := &introspection.Schema{Types: introspection.Types{id, str, query, cli, mode}}
+	schema := &introspection.Schema{Types: introspection.Types{id, str, query, cli, goVCS, mode}}
 	generator.SetSchemaParents(schema)
 	generator.SetSchema(schema)
 	t.Cleanup(func() { generator.SetSchema(nil) })
 	return schema
 }
 
-// A dependency's old Go identifiers keep compiling, deprecated, where the new
-// naming rules renamed its schema names (daggerCli is daggerCLI).
+// A dependency's old Go identifiers keep compiling, deprecated: those the
+// new naming rules renamed in the schema (daggerCli is daggerCLI), and those
+// the engine's formatting renamed in Go (VcsCommit is VCSCommit).
 func TestLegacyModuleNames(t *testing.T) {
 	schema := legacyModuleSchema(t)
+	testnames.Load(schema, NameFormats...)
 	query := schema.Types.Get("Query")
 	cli := schema.Types.Get("DaggerCLI")
 
@@ -141,9 +162,9 @@ func TestLegacyModuleNames(t *testing.T) {
 	require.Contains(t, got, "func (r *Query) DaggerCLI(opts ...DaggerCLIOpts) *DaggerCLI")
 	require.Contains(t, got, "// Deprecated: use DaggerCLI instead.\nfunc (r *Query) DaggerCli(opts ...DaggerCLIOpts) *DaggerCLI {\n\treturn r.DaggerCLI(opts...)\n}")
 	require.Contains(t, got, "// Deprecated: use DaggerCLIOpts instead.\ntype DaggerCliOpts = DaggerCLIOpts")
-	require.Regexp(t, `CommitSHA string[^\n]*\n\s+// Deprecated: use CommitSHA instead.\n\s+CommitSha string`, got)
-	require.Contains(t, got, `if querybuilder.IsZeroValue(opts[i].CommitSHA) && !querybuilder.IsZeroValue(opts[i].CommitSha) {
-			q = q.Arg("commitSHA", opts[i].CommitSha)`)
+	require.Regexp(t, `VCSCommit string[^\n]*\n\s+// Deprecated: use VCSCommit instead.\n\s+VcsCommit string`, got)
+	require.Contains(t, got, `if querybuilder.IsZeroValue(opts[i].VCSCommit) && !querybuilder.IsZeroValue(opts[i].VcsCommit) {
+			q = q.Arg("vcsCommit", opts[i].VcsCommit)`)
 	// The wire names don't change.
 	require.Contains(t, got, `q := r.query.Select("daggerCLI")`)
 	require.NotContains(t, got, `"daggerCli"`)
@@ -152,39 +173,29 @@ func TestLegacyModuleNames(t *testing.T) {
 	require.Contains(t, got, "// Deprecated: use DaggerCLI instead.\ntype DaggerCli = DaggerCLI")
 	require.Contains(t, got, "// Deprecated: use DaggerCLIBinaryOpts instead.\ntype DaggerCliBinaryOpts = DaggerCLIBinaryOpts")
 
+	got = renderTemplate(t, parseTemplateFiles(t, schema, "_types/object.go.tmpl"), schema.Types.Get("GoVcs"))
+	require.Contains(t, got, "// Deprecated: use GoVCS instead.\ntype GoVcs = GoVCS")
+
 	got = renderTemplate(t, parseTemplateFiles(t, schema, "_types/enum.go.tmpl"), schema.Types.Get("DaggerCLIMode"))
 	require.Contains(t, got, "// Deprecated: use DaggerCLIMode instead.\ntype DaggerCliMode = DaggerCLIMode")
 	require.Contains(t, got, "// Deprecated: use DaggerCLIModeFast instead.\n\tDaggerCliModeFast DaggerCLIMode = DaggerCLIModeFast")
+
+	want := updateAndGetFixture(t, "testdata/legacy_module_names.golden", renderTemplate(t, parseTemplateFiles(t, schema, "_types/object_fields.go.tmpl"), query))
+	require.Equal(t, want, renderTemplate(t, parseTemplateFiles(t, schema, "_types/object_fields.go.tmpl"), query))
 }
 
-// Core declarations get no aliases: their schema names didn't change.
+// Core declarations get no new aliases: their schema names didn't change,
+// and neither did the Go names of their types or option struct fields.
 func TestLegacyNamesSkipCore(t *testing.T) {
-	commit := &introspection.Type{
-		Kind: introspection.TypeKindObject,
-		Name: "GitCommit",
-		Fields: []*introspection.Field{
-			{Name: "parentShas", TypeRef: nonNull(scalarRef("String"))},
-			{
-				Name:    "shortSha",
-				TypeRef: nonNull(scalarRef("String")),
-				Args:    introspection.InputValues{{Name: "minLength", TypeRef: scalarRef("Int")}},
-			},
-		},
-	}
-	schema := &introspection.Schema{Types: introspection.Types{commit}}
-	generator.SetSchemaParents(schema)
-	generator.SetSchema(schema)
-	t.Cleanup(func() { generator.SetSchema(nil) })
+	schema, object := loadSchemaFromTypeJSON(t, engineNamesObjectJSON)
+	testnames.Load(schema, NameFormats...)
 	funcs := goTemplateFuncs{
 		CommonFunctions: generator.NewCommonFunctions("", &FormatTypeFunc{}),
 		fullSchema:      schema,
 		schema:          schema,
 	}
-	require.Empty(t, funcs.legacyTypeName(commit))
-	for _, f := range commit.Fields {
-		_, ok := legacyMethodName(*f)
-		require.False(t, ok, f.Name)
-		require.Empty(t, funcs.legacyFieldOptionsStructName(*f), f.Name)
+	require.Empty(t, funcs.legacyTypeName(object))
+	for _, f := range object.Fields {
 		for _, arg := range f.Args {
 			require.Empty(t, funcs.legacyOptionalArgName(*f, arg))
 		}
