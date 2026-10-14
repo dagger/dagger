@@ -16,11 +16,15 @@
 {{- end }}
 
 {{- /* Write optional arguments sent to method resolver: the opts, with keys
-renamed in TS mapped back to their schema name. The old key, which is the
-schema name, is still accepted. The dot is the optional args. */ -}}
+renamed in TS mapped back to their schema name. The old key (the schema name,
+or a renamed core argument's old schema name) is still accepted. The dot is
+the field. */ -}}
 {{ define "call_opts" }}
 	{{- "" }}...opts
-	{{- range RenamedArgs . }}
-		{{- "" }}, {{ .Name | ArgName }}: undefined, {{ .Name }}: opts?.{{ .Name | ArgName }} ?? opts?.{{ .Name }}
+	{{- range RenamedOpts . }}
+		{{- if ne .Key .Wire }}, {{ .Key }}: undefined{{ end }}
+		{{- if and (ne .Legacy .Wire) (ne .Legacy .Key) }}, {{ .Legacy }}: undefined{{ end }}
+		{{- "" }}, {{ .Wire }}: opts?.{{ .Key }}
+		{{- if ne .Legacy .Key }} ?? opts?.{{ .Legacy }}{{ end }}
 	{{- end }}
 {{- end }}

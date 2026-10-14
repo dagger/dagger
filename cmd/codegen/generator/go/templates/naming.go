@@ -93,6 +93,8 @@ func enumValueName(s string) string {
 //
 //   - Core names are written by hand, so the schema name didn't change: only
 //     its Go formatting did (`parentShas` was ParentShas, is ParentSHAs).
+//     The few core names renamed since (`parentShas` is now `parentSHAs`)
+//     have their old schema names in introspection's table of them.
 //   - A module's names are its declarations' original names normalized by
 //     its naming rules, which since engine/naming are no longer strcase for
 //     modules at v1.0.0 and later: `daggerCli` became `daggerCLI`. The engine
@@ -125,10 +127,11 @@ func isModuleField(f introspection.Field) bool {
 }
 
 // legacyFieldSchemaName is the schema name a field had before engine/naming:
-// the name itself for core fields, strcase's for module fields.
+// the name itself for core fields, or its old name for a core field renamed
+// since (see introspection.LegacyCoreName), and strcase's for module fields.
 func legacyFieldSchemaName(f introspection.Field) string {
 	if !isModuleField(f) {
-		return f.Name
+		return f.LegacyName()
 	}
 	return legacyRename(f.Name, strcase.ToLowerCamel(f.Name), naming.Camel)
 }
@@ -136,7 +139,7 @@ func legacyFieldSchemaName(f introspection.Field) string {
 // legacyArgSchemaName is legacyFieldSchemaName for an argument of f.
 func legacyArgSchemaName(f introspection.Field, arg introspection.InputValue) string {
 	if !isModuleField(f) && !moduleOwned(arg.Directives) {
-		return arg.Name
+		return f.LegacyArgName(arg.Name)
 	}
 	return legacyRename(arg.Name, strcase.ToLowerCamel(arg.Name), naming.Camel)
 }

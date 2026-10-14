@@ -37,10 +37,11 @@
 {{- end }}
 
 {{- /* Write a deprecated alias under the name a method had before identifier
-words, when it differs. The dot is an introspection.Field. */ -}}
+words, or before its core field was renamed, when it differs. The dot is an
+introspection.Field. */ -}}
 {{ define "method_alias" }}
 	{{- $name := .Name | FormatMethodName }}
-	{{- $legacy := .Name | LegacyMethodName }}
+	{{- $legacy := LegacyFieldName . | LegacyMethodName }}
 	{{- if ne $name $legacy }}
 	{{- $class := .ParentObject.Name | QueryToClient | FormatName }}
 

@@ -113,16 +113,34 @@ func (funcs typescriptTemplateFuncs) formatEnum(name string) string {
 	return toPascalCase(name)
 }
 
-// renamedArgs returns the args whose TS name differs from their schema name.
-// Their Opts keys are mapped back to the schema name before the call.
-func (funcs typescriptTemplateFuncs) renamedArgs(values introspection.InputValues) introspection.InputValues {
-	var renamed introspection.InputValues
-	for _, v := range values {
-		if funcs.argName(v.Name) != v.Name {
-			renamed = append(renamed, v)
+// optsKey is an optional argument whose Opts key isn't simply its schema
+// name: Key is its TS name, Wire the schema name it's sent as, and Legacy
+// the deprecated key that's still accepted. Before the engine formatted
+// names, the key was the schema name (Legacy is Wire); a renamed core
+// argument keeps its old schema name as the old key (see
+// introspection.LegacyCoreArgName).
+type optsKey struct {
+	Key, Wire, Legacy string
+}
+
+// renamedOpts returns the optional arguments of f whose Opts keys are mapped
+// to their schema names before the call: renamed in TS, or with an old key.
+func (funcs typescriptTemplateFuncs) renamedOpts(f introspection.Field) []optsKey {
+	var keys []optsKey
+	for _, arg := range funcs.getOptionalArgs(f.Args) {
+		key := optsKey{Key: funcs.argName(arg.Name), Wire: arg.Name, Legacy: f.LegacyArgName(arg.Name)}
+		if key.Key != key.Wire || key.Legacy != key.Key {
+			keys = append(keys, key)
 		}
 	}
-	return renamed
+	return keys
+}
+
+// legacyFieldName returns the schema name a field had before it was renamed,
+// for its deprecated method alias: the name itself, but for a renamed core
+// field (see introspection.LegacyCoreName).
+func (funcs typescriptTemplateFuncs) legacyFieldName(f introspection.Field) string {
+	return f.LegacyName()
 }
 
 // optsFields is the dot of the "field" template: the fields of an Opts or
@@ -131,12 +149,33 @@ func (funcs typescriptTemplateFuncs) renamedArgs(values introspection.InputValue
 type optsFields struct {
 	Fields introspection.InputValues
 	Opts   bool
+
+	// legacy returns the deprecated key of a field, or its key.
+	legacy func(introspection.InputValue) string
 }
 
-func optsFieldList(fields introspection.InputValues) optsFields {
-	return optsFields{Fields: fields, Opts: true}
+// LegacyKey returns the deprecated key a field of the Opts or input type is
+// still accepted under, or "" if it has none: an Opts key renamed in TS keeps
+// its schema name, and a renamed core argument or input object field keeps
+// its old schema name.
+func (o optsFields) LegacyKey(field introspection.InputValue, key string) string {
+	if o.legacy == nil {
+		return ""
+	}
+	if legacy := o.legacy(field); legacy != key {
+		return legacy
+	}
+	return ""
 }
 
-func inputFieldList(fields introspection.InputValues) optsFields {
-	return optsFields{Fields: fields}
+func optsFieldList(f introspection.Field, fields introspection.InputValues) optsFields {
+	return optsFields{Fields: fields, Opts: true, legacy: func(arg introspection.InputValue) string {
+		return f.LegacyArgName(arg.Name)
+	}}
+}
+
+func inputFieldList(typeName string, fields introspection.InputValues) optsFields {
+	return optsFields{Fields: fields, legacy: func(field introspection.InputValue) string {
+		return introspection.LegacyCoreName(typeName, field.Name)
+	}}
 }
