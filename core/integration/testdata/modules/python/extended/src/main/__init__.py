@@ -44,7 +44,7 @@ class ExtPythonSdk:
         self,
         mod_source: dagger.ModuleSource,
         introspection_json: dagger.File,
-    ) -> dagger.PythonSdk:
+    ) -> dagger.PythonSDK:
         base = (
             dag.python_sdk(
                 # Note that the ``+defaultPath=".."`` defined in the original
