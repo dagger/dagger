@@ -9,8 +9,8 @@ import io.dagger.client.Directory;
 import io.dagger.client.Function;
 import io.dagger.client.FunctionCall;
 import io.dagger.client.FunctionCallArgValue;
-import io.dagger.client.ID;
-import io.dagger.client.JSON;
+import io.dagger.client.Id;
+import io.dagger.client.Json;
 import io.dagger.client.JsonConverter;
 import io.dagger.client.Module;
 import io.dagger.client.Platform;
@@ -51,16 +51,16 @@ public class Entrypoint {
     try {
       String parentName = fnCall.parentName();
       String fnName = fnCall.name();
-      JSON parentJson = fnCall.parent();
+      Json parentJson = fnCall.parent();
       List<FunctionCallArgValue> fnArgs = fnCall.inputArgs();
-      Map<String, JSON> inputArgs = new HashMap<>();
+      Map<String, Json> inputArgs = new HashMap<>();
       for (FunctionCallArgValue fnArg : fnArgs) {
         inputArgs.put(fnArg.name(), fnArg.value());
       }
 
-      JSON result;
+      Json result;
       if (parentName.isEmpty()) {
-        ID modID = register();
+        Id modID = register();
         result = JsonConverter.toJSON(modID);
       } else {
         result = invoke(parentJson, parentName, fnName, inputArgs);
@@ -80,7 +80,7 @@ public class Entrypoint {
     }
   }
 
-  private ID register()
+  private Id register()
       throws ExecutionException, DaggerQueryException, InterruptedException {
     Module module = dag().module().withDescription("Dagger Java Module example").withObject(dag()
         .typeDef()
@@ -90,7 +90,7 @@ public class Entrypoint {
             .withDescription("Returns a container that echoes whatever string argument is provided")
             .withArg("stringArg", dag().typeDef().withKind(TypeDefKind.STRING_KIND),
                 new Function.WithArgArguments().withDescription("string to echo")
-                    .withDefaultValue(JSON.from("\"Hello Dagger\""))))
+                    .withDefaultValue(Json.from("\"Hello Dagger\""))))
         .withFunction(dag().function("grepDir", dag().typeDef().withKind(TypeDefKind.STRING_KIND))
             .withDescription(
                 "Returns lines that match a pattern in the files of the provided Directory")
@@ -123,7 +123,7 @@ public class Entrypoint {
             .withDescription(
                 "If the user doesn't provide an argument, a default value is used. The argument can't be null.")
             .withArg("stringArg", dag().typeDef().withKind(TypeDefKind.STRING_KIND),
-                new Function.WithArgArguments().withDefaultValue(JSON.from("\"default value\""))))
+                new Function.WithArgArguments().withDefaultValue(Json.from("\"default value\""))))
         .withFunction(dag().function("nullable", dag().typeDef().withKind(TypeDefKind.STRING_KIND))
             .withDescription(
                 "Make it optional but do not define a value. If the user doesn't provide an argument, it will be\n"
@@ -136,7 +136,7 @@ public class Entrypoint {
                 "Set a default value in case the user doesn't provide a value and allow for null value.")
             .withArg("stringArg",
                 dag().typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true),
-                new Function.WithArgArguments().withDefaultValue(JSON.from("\"Foo\""))))
+                new Function.WithArgArguments().withDefaultValue(Json.from("\"Foo\""))))
         .withFunction(dag().function("defaultPlatform", dag().typeDef().withScalar("Platform"))
             .withDescription("return the default platform as a Scalar value"))
         .withFunction(dag().function("addFloat", dag().typeDef().withKind(TypeDefKind.FLOAT_KIND))
@@ -167,7 +167,7 @@ public class Entrypoint {
                 new Function.WithArgArguments().withDescription("Project source directory"))
             .withArg("version", dag().typeDef().withKind(TypeDefKind.STRING_KIND),
                 new Function.WithArgArguments().withDescription("Go version")
-                    .withDefaultValue(JSON.from("\"1.23.2\"")))))
+                    .withDefaultValue(Json.from("\"1.23.2\"")))))
         .withEnum(dag().typeDef()
             .withEnum("Severity", new TypeDef.WithEnumArguments().withDescription("Severities"))
             .withEnumValue("DEBUG",
@@ -178,8 +178,8 @@ public class Entrypoint {
     return module.id();
   }
 
-  private JSON invoke(JSON parentJson, String parentName, String fnName,
-      Map<String, JSON> inputArgs) throws Exception {
+  private Json invoke(Json parentJson, String parentName, String fnName,
+      Map<String, Json> inputArgs) throws Exception {
     if (parentName.equals("DaggerJava")) {
       if (fnName.equals("containerEcho")) {
         Class clazz = Class.forName("io.dagger.java.module.DaggerJava");

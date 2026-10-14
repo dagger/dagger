@@ -161,6 +161,7 @@
                 <configuration>
                     <version>${daggerengine.version}</version>
                     <introspectionJson>${daggerengine.schema}</introspectionJson>
+                    <namesJson>${daggerengine.names}</namesJson>
                 </configuration>
                 <executions>
                     <execution>

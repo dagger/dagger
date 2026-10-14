@@ -2,11 +2,15 @@ package io.dagger.codegen.introspection;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
+import com.palantir.javapoet.AnnotationSpec;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterSpec;
 import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import javax.lang.model.element.Modifier;
 
 public class Helpers {
@@ -73,16 +77,76 @@ public class Helpers {
 
   static ClassName convertScalarToObject(String typeName, String expectedType) {
     if (expectedType != null && !expectedType.isEmpty()) {
-      return ClassName.bestGuess(expectedType);
+      return className(expectedType);
     }
     if (typeName.endsWith("ID") && typeName.length() > 2) {
-      return ClassName.bestGuess(typeName.substring(0, typeName.length() - 2));
+      return className(typeName.substring(0, typeName.length() - 2));
     }
-    return ClassName.bestGuess(typeName);
+    return className(typeName);
   }
 
   static ClassName convertScalarToObject(String typeName) {
     return convertScalarToObject(typeName, null);
+  }
+
+  /**
+   * The class names the engine formatted for the schema's types (PascalCase with acronyms written
+   * like words, see {@link FormattedNames#TYPES}), keyed by GraphQL type name; empty when the
+   * schema isn't formatted. Set with the schema's formatted names (see {@link
+   * Schema#setFormattedNames}).
+   */
+  private static Map<String, String> javaTypeNames = Map.of();
+
+  static void setJavaTypeNames(Map<String, String> names) {
+    javaTypeNames = names == null ? Map.of() : names;
+  }
+
+  /** Whether class names follow Java's convention, from formatted names. */
+  static boolean formatsTypeNames() {
+    return !javaTypeNames.isEmpty();
+  }
+
+  /**
+   * The Java class name of a GraphQL type: the name the engine formatted ({@code JsonValue} for
+   * {@code JSONValue}), else the schema name. The Query type is the {@code Client} class. Strings
+   * sent to the API (inline fragments, node lookups, typedefs) always use the GraphQL type name.
+   */
+  static String javaTypeName(String typeName) {
+    if ("Query".equals(typeName)) {
+      return "Client";
+    }
+    String formatted = javaTypeNames.get(typeName);
+    if (formatted == null || formatted.isEmpty()) {
+      return capitalize(typeName);
+    }
+    return formatted;
+  }
+
+  /** The class of a GraphQL type (see {@link #javaTypeName}). */
+  static ClassName className(String typeName) {
+    return ClassName.bestGuess(javaTypeName(typeName));
+  }
+
+  /**
+   * The class instantiated for values of a GraphQL type: the type's class, or for an interface the
+   * {@code FooClient} class implementing it.
+   */
+  static String instanceClassName(String typeName, boolean isInterface) {
+    return isInterface ? javaTypeName(typeName) + "Client" : javaTypeName(typeName);
+  }
+
+  /**
+   * Marks a generated class with the GraphQL type it stands for, when its name differs from the
+   * type's: the runtime reads it wherever it sends a class's type name to the API.
+   */
+  static void addGraphQLType(TypeSpec.Builder builder, String typeName, String className) {
+    if ("Query".equals(typeName) || typeName.equals(className)) {
+      return;
+    }
+    builder.addAnnotation(
+        AnnotationSpec.builder(ClassName.get("io.dagger.client", "GraphQLType"))
+            .addMember("value", "$S", typeName)
+            .build());
   }
 
   /**
@@ -144,30 +208,101 @@ public class Helpers {
   }
 
   static String formatName(Type type) {
-    if ("Query".equals(type.getName())) {
-      return "Client";
-    } else {
-      return capitalize(type.getName());
-    }
+    return javaTypeName(type.getName());
   }
 
+  /**
+   * The Java spelling of a field, argument or input field name: camelCase with acronyms written
+   * like words ({@code asJson}, {@code withGpu}) as the engine formatted it (see {@link
+   * FormattedNames}), else the schema name as is. Strings sent to the API always use the schema
+   * name.
+   */
+  static String javaName(String name, String formattedName) {
+    if (formattedName == null || formattedName.isEmpty()) {
+      return name;
+    }
+    return formattedName;
+  }
+
+  /** The Java method name of a field. */
   static String formatName(Field field) {
+    return escapeMethodName(field, javaName(field.getName(), field.getFormattedName()));
+  }
+
+  /**
+   * The Java method name of a field before engine-formatted names: the schema name, escaped. When
+   * it differs from {@link #formatName(Field)}, it's kept as a deprecated alias.
+   */
+  static String legacyName(Field field) {
+    return escapeMethodName(field, field.getName());
+  }
+
+  private static String escapeMethodName(Field field, String name) {
     if ("Container".equals(field.getParentObject().getName()) && "import".equals(field.getName())) {
       return "importTarball";
-    } else if (JAVA_KEYWORDS.contains(field.getName())
-        || (JAVA_OBJECT_METHODS.contains(field.getName()) && field.getRequiredArgs().isEmpty())) {
-      return field.getName() + "_";
+    } else if (JAVA_KEYWORDS.contains(name)
+        || (JAVA_OBJECT_METHODS.contains(name) && field.getRequiredArgs().isEmpty())) {
+      return name + "_";
     } else {
-      return field.getName();
+      return name;
     }
   }
 
+  /**
+   * The class holding a field's optional arguments. It keeps the name derived from the schema name:
+   * like other class names, it doesn't follow the formatted names, and an alias differing only in
+   * case would clash with it on case-insensitive file systems.
+   */
+  static String argumentsClassName(Field field) {
+    return capitalize(legacyName(field)) + "Arguments";
+  }
+
+  /** The Java variable name of an argument or input field. */
   static String formatName(InputObject arg) {
-    if (JAVA_KEYWORDS.contains(arg.getName())) {
-      return "_" + arg.getName();
+    return escapeVariableName(javaName(arg.getName(), arg.getFormattedName()));
+  }
+
+  private static String escapeVariableName(String name) {
+    if (JAVA_KEYWORDS.contains(name)) {
+      return "_" + name;
     } else {
-      return arg.getName();
+      return name;
     }
+  }
+
+  /** The name of the "with" setter of an argument or input field. */
+  static String withSetterName(InputObject var) {
+    return "with" + capitalize(javaName(var.getName(), var.getFormattedName()));
+  }
+
+  /** The name of the "with" setter of an argument or input field before formatted names. */
+  static String legacyWithSetterName(InputObject var) {
+    return "with" + capitalize(var.getName());
+  }
+
+  /**
+   * A deprecated method under a name the generator used before formatted names, forwarding to the
+   * method that replaces it.
+   */
+  static MethodSpec deprecatedAlias(MethodSpec target, String legacyName, Modifier... modifiers) {
+    MethodSpec.Builder builder =
+        MethodSpec.methodBuilder(legacyName)
+            .addModifiers(Modifier.PUBLIC)
+            .addModifiers(modifiers)
+            .addTypeVariables(target.typeVariables())
+            .returns(target.returnType())
+            .addParameters(target.parameters())
+            .addExceptions(target.exceptions())
+            .addAnnotation(Deprecated.class)
+            .addJavadoc("@deprecated Use {@link #$L} instead.\n", target.name());
+    String args =
+        target.parameters().stream().map(ParameterSpec::name).collect(Collectors.joining(", "));
+    if (TypeName.VOID.equals(target.returnType())) {
+      builder.addStatement("$L($L)", target.name(), args);
+    } else {
+      builder.addStatement("return $L($L)", target.name(), args);
+    }
+    return builder.build();
   }
 
   static MethodSpec getter(String var, TypeName type) {
@@ -194,7 +329,7 @@ public class Helpers {
 
   static MethodSpec withSetter(InputObject var, TypeName type, TypeName returnType, String doc) {
     MethodSpec.Builder builder =
-        MethodSpec.methodBuilder("with" + capitalize(var.getName()))
+        MethodSpec.methodBuilder(withSetterName(var))
             .addModifiers(Modifier.PUBLIC)
             .addParameter(type, Helpers.formatName(var))
             .returns(returnType)

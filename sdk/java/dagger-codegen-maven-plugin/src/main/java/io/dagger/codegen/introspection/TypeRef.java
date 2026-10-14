@@ -133,21 +133,21 @@ public class TypeRef {
           case "ID" -> {
             // Unified ID scalar: resolve to expected type if present
             if (isInput && expectedType != null && !expectedType.isEmpty()) {
-              return ClassName.bestGuess(expectedType);
+              return Helpers.className(expectedType);
             }
             // When used as output (e.g. id() field), return the ID type
-            return ClassName.bestGuess("ID");
+            return Helpers.className("ID");
           }
           default -> {
             if (!isInput) {
-              return ClassName.bestGuess(getName());
+              return Helpers.className(getName());
             }
             return Helpers.convertScalarToObject(getName(), expectedType);
           }
         }
       }
       case OBJECT, ENUM, INPUT_OBJECT, INTERFACE -> {
-        return ClassName.bestGuess(getName());
+        return Helpers.className(getName());
       }
       case LIST -> {
         return ParameterizedTypeName.get(
