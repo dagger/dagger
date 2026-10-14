@@ -1995,7 +1995,7 @@ impl Artifacts {
     }
     /// Remove artifacts selected by a DAG address.
     pub fn without_uri(&self, uri: impl Into<String>) -> Artifacts {
-        let mut query = self.selection.select("withoutUri");
+        let mut query = self.selection.select("withoutURI");
         query = query.arg("uri", uri.into());
         Artifacts {
             proc: self.proc.clone(),
@@ -2108,7 +2108,7 @@ impl Artifacts {
     ///
     /// * `uri` - A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]
     pub fn filter_uri(&self, uri: impl Into<String>) -> Artifacts {
-        let mut query = self.selection.select("filterUri");
+        let mut query = self.selection.select("filterURI");
         query = query.arg("uri", uri.into());
         Artifacts {
             proc: self.proc.clone(),
@@ -2177,7 +2177,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+    /// The DAG address that selects this whole selection: filterURI(uri) selects the same set.
     pub async fn uri(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("uri");
         query.execute(self.graphql_client.clone()).await
@@ -10578,7 +10578,7 @@ impl GitCommit {
     }
     /// The abbreviated commit SHA.
     pub async fn short_sha(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("shortSha");
+        let query = self.selection.select("shortSHA");
         query.execute(self.graphql_client.clone()).await
     }
     /// Git author date, in RFC3339 format.
@@ -10628,7 +10628,7 @@ impl GitCommit {
     }
     /// Parent commit SHAs.
     pub async fn parent_shas(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("parentShas");
+        let query = self.selection.select("parentSHAs");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -11666,7 +11666,7 @@ impl GitRepository {
         query = query.arg("name", name.into());
         query = query.arg("url", url.into());
         if let Some(push_url) = opts.push_url {
-            query = query.arg("pushUrl", push_url);
+            query = query.arg("pushURL", push_url);
         }
         GitRepository {
             proc: self.proc.clone(),
@@ -13027,7 +13027,7 @@ impl Llm {
     /// Discover every artifact this conversation can address, as one selection, without evaluating their values.
     /// Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.
     /// The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.
-    /// Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.
+    /// Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterURI.
     ///
     /// # Arguments
     ///
@@ -13043,7 +13043,7 @@ impl Llm {
     /// Discover every artifact this conversation can address, as one selection, without evaluating their values.
     /// Tool objects bound with withTools contribute their modules' artifacts, rooted at their current values: evaluating one reads the live state of the bound tools, not a fresh construction. If a module's main object is bound, only its tree is included; otherwise each bound object of that module contributes its own tree. Addresses start with the module name. These artifacts have no workspace of their own: they evaluate in the LLM's bound workspace, if any, whoever evaluates them.
     /// The workspace part is the artifacts of the workspace bound with withWorkspace, as returned by Workspace.artifacts; an LLM with no bound workspace has none. A workspace module with the same name as a module with bound tool objects is omitted: the bound tools shadow it. Unless they are only a plain construction of the module, which has no state of its own: then the workspace module's artifacts are kept instead.
-    /// Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterUri.
+    /// Tool arguments that take an address resolve it here: a DAG address to one object, or, for Artifacts and Artifact arguments, a selection filtered like filterURI.
     ///
     /// # Arguments
     ///
@@ -13337,7 +13337,7 @@ impl Llm {
         errored: bool,
     ) -> Llm {
         let mut query = self.selection.select("withToolResult");
-        query = query.arg("callId", call_id.into());
+        query = query.arg("callID", call_id.into());
         query = query.arg("content", content.into());
         query = query.arg("errored", errored);
         Llm {
@@ -13362,7 +13362,7 @@ impl Llm {
         opts: LlmWithToolResultOpts,
     ) -> Llm {
         let mut query = self.selection.select("withToolResult");
-        query = query.arg("callId", call_id.into());
+        query = query.arg("callID", call_id.into());
         query = query.arg("content", content.into());
         query = query.arg("errored", errored);
         if let Some(blocks) = opts.blocks {
@@ -13902,7 +13902,7 @@ impl LlmContentBlock {
     }
     /// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
     pub async fn call_id(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("callId");
+        let query = self.selection.select("callID");
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the tool called (for TOOL_CALL kind).
@@ -18793,7 +18793,7 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// Resolve an address in this workspace.
-    /// A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+    /// A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterURI(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
     /// A value without the dag:// scheme keeps its external meaning, such as a container image reference.
     /// The Address retains this workspace across module calls and ID reloads.
     ///
@@ -19878,7 +19878,7 @@ impl Workspace {
             query = query.arg("here", here);
         }
         if let Some(as_sdk_name) = opts.as_sdk_name {
-            query = query.arg("asSdkName", as_sdk_name);
+            query = query.arg("asSDKName", as_sdk_name);
         }
         Workspace {
             proc: self.proc.clone(),
@@ -21298,11 +21298,11 @@ pub enum FileType {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum FunctionCachePolicy {
-    #[serde(rename = "Default")]
+    #[serde(rename = "DEFAULT")]
     Default,
-    #[serde(rename = "Never")]
+    #[serde(rename = "NEVER")]
     Never,
-    #[serde(rename = "PerSession")]
+    #[serde(rename = "PER_SESSION")]
     PerSession,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
