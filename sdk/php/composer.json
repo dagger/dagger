@@ -21,7 +21,8 @@
             "Dagger\\": ["src/", "generated/"]
         },
         "files": [
-            "src/functions.php"
+            "src/functions.php",
+            "src/legacy_class_names.php"
         ]
     },
     "autoload-dev": {

@@ -4,8 +4,10 @@ namespace Dagger\Command;
 
 use Dagger\Codegen\Codegen;
 use Dagger\Codegen\Introspection\IntrospectionSchema;
+use Dagger\Codegen\Naming\FormattedNames;
 use Dagger\Codegen\SchemaGenerator;
 use Dagger\Connection;
+use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -41,6 +43,15 @@ class CodegenCommand extends Command
             'Path to the schema json file',
             null
         );
+        $this->addOption(
+            'names-file',
+            null,
+            InputArgument::OPTIONAL,
+            'Path to a json file of the schema\'s names as the engine formatted them, '
+                . 'by name format ({"CAMEL:CAPITALIZED": {"withGPU": "withGpu", ...}, ...}), '
+                . 'for --schema-file',
+            null
+        );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -51,6 +62,20 @@ class CodegenCommand extends Command
             $fileContents = file_get_contents($input->getOption('schema-file'));
             $schemaArray = json_decode($fileContents, true);
             $schema = IntrospectionSchema::fromArray($schemaArray);
+
+            // Without names, or for a schema without Query.formatIdentifiers,
+            // codegen keeps its legacy conversion.
+            $namesFile = $input->getOption('names-file');
+            if ($namesFile !== null && $schema->hasFormatIdentifiers()) {
+                $names = json_decode((string)file_get_contents($namesFile), true, flags: JSON_THROW_ON_ERROR);
+                if (!is_array($names)) {
+                    throw new RuntimeException("names file {$namesFile}: not a JSON object");
+                }
+                $formatted = FormattedNames::fromArray($names);
+                if ($formatted->toArray() !== []) {
+                    $schema->names = $formatted;
+                }
+            }
         } else {
             $client = $this->daggerConnection->connect();
             $schema = (new SchemaGenerator($client))->getSchema();
