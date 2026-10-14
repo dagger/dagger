@@ -11,7 +11,8 @@ namespace Dagger;
 /**
  * The kind of content in a message block.
  */
-enum LLMContentBlockKind: string
+#[Attribute\GraphQLType('LLMContentBlockKind')]
+enum LlmContentBlockKind: string
 {
     /** Plain text content. */
     case TEXT = 'TEXT';

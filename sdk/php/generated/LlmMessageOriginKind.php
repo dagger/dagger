@@ -13,7 +13,8 @@ namespace Dagger;
  *
  * Who put a message on the conversation record.
  */
-enum LLMMessageOriginKind: string
+#[Attribute\GraphQLType('LLMMessageOriginKind')]
+enum LlmMessageOriginKind: string
 {
     /** The user: a prompt submitted by a client rather than sent by an agent. */
     case USER = 'USER';

@@ -73,10 +73,10 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
      *
      * For an agent restored under a handle, this is the conversation it was restored from.
      */
-    public function seed(): LLM
+    public function seed(): Llm
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('seed');
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -86,10 +86,10 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Branching from it does not affect the agent.
      */
-    public function snapshot(): LLM
+    public function snapshot(): Llm
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('snapshot');
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -216,7 +216,7 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Fails if the instance has no runtime entry in this session (only a spawned or re-hydrated instance holds a conversation to replace), if a step is in flight, or if the agent is stopped.
      */
-    public function reseed(LLM $conversation): Agent
+    public function reseed(Llm $conversation): Agent
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('reseed');
         $leafQueryBuilder->setArgument('conversation', $conversation);

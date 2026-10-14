@@ -11,6 +11,7 @@ namespace Dagger;
 /**
  * Query-builder client for the Syncer interface.
  */
+#[Attribute\GraphQLType('Syncer')]
 class SyncerClient extends Client\AbstractObject implements Syncer, Client\IdAble
 {
     public function id(): Id

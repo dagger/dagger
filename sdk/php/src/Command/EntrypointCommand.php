@@ -184,11 +184,13 @@ class EntrypointCommand extends Command
                 return $typeDef->withKind($type->typeDefKind);
             case TypeDefKind::SCALAR_KIND:
                 return $typeDef->withScalar(
-                    NormalizesClassName::shorten($type->name)
+                    NormalizesClassName::graphQLTypeName($type->name)
+                        ?? NormalizesClassName::shorten($type->name)
                 );
             case TypeDefKind::ENUM_KIND:
                 return $typeDef->withEnum(
-                    NormalizesClassName::shorten($type->name)
+                    NormalizesClassName::graphQLTypeName($type->name)
+                        ?? NormalizesClassName::shorten($type->name)
                 );
             case TypeDefKind::LIST_KIND:
                 return $typeDef->withListOf($this->getTypeDef($type->subtype));
@@ -200,7 +202,8 @@ class EntrypointCommand extends Command
             case TypeDefKind::OBJECT_KIND:
                 if ($type->isIdable()) {
                     return $typeDef->withObject(
-                        NormalizesClassName::shorten($type->name)
+                        NormalizesClassName::graphQLTypeName($type->name)
+                            ?? NormalizesClassName::shorten($type->name)
                     );
                 }
 

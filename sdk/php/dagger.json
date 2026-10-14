@@ -1,6 +1,6 @@
 {
   "name": "php-sdk",
-  "engineVersion": "v0.21.9",
+  "engineVersion": "v1.0.0",
   "sdk": {
     "source": "go"
   },

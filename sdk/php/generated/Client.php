@@ -11,6 +11,7 @@ namespace Dagger;
 /**
  * The root of the DAG.
  */
+#[Attribute\GraphQLType('Query')]
 class Client extends Client\AbstractClient implements Client\IdAble, Node
 {
     /**
@@ -478,7 +479,7 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     /**
      * Initialize a new LLM conversation.
      */
-    public function llm(?string $model = null, ?string $provider = null): LLM
+    public function llm(?string $model = null, ?string $provider = null): Llm
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
         if (null !== $model) {
@@ -487,7 +488,7 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         if (null !== $provider) {
         $innerQueryBuilder->setArgument('provider', $provider);
         }
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -495,10 +496,10 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
      *
      * Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
      */
-    public function llmContent(): LLMContent
+    public function llmContent(): LlmContent
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llmContent');
-        return new \Dagger\LLMContent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\LlmContent($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -615,7 +616,7 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegen');
         $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        $innerQueryBuilder->setArgument('introspectionJSON', $introspectionJson);
         return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -623,7 +624,7 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegenBase');
         $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        $innerQueryBuilder->setArgument('introspectionJSON', $introspectionJson);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -631,7 +632,7 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleRuntime');
         $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
+        $innerQueryBuilder->setArgument('introspectionJSON', $introspectionJson);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

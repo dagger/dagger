@@ -11,7 +11,8 @@ namespace Dagger;
 /**
  * A count of tokens consumed by LLM API calls.
  */
-class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble, Node
+#[Attribute\GraphQLType('LLMTokenUsage')]
+class LlmTokenUsage extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this LLMTokenUsage.

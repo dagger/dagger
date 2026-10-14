@@ -11,6 +11,7 @@ namespace Dagger;
 /**
  * A unique identifier for an object.
  */
+#[Attribute\GraphQLType('ID')]
 readonly class Id extends Client\AbstractScalar
 {
 }

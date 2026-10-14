@@ -13,10 +13,11 @@ namespace Dagger;
  *
  * The provenance of a message delivered through an agent mailbox.
  */
-class LLMMessageOriginInput extends Client\AbstractInputObject
+#[Attribute\GraphQLType('LLMMessageOriginInput')]
+class LlmMessageOriginInput extends Client\AbstractInputObject
 {
     public function __construct(
-        public LLMMessageOriginKind $kind,
+        public LlmMessageOriginKind $kind,
         public ?string $agentName = '',
         public ?string $ref = '',
         public ?string $replyTo = '',
