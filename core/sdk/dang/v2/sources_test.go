@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Khan/genqlient/graphql"
@@ -213,6 +214,12 @@ func TestEntrypointContractConformance(t *testing.T) {
 		{
 			name:    "sources without a workspace argument",
 			source:  entrypointSource(sourcesMember, workspacelessMethods),
+			sources: true,
+		},
+		{
+			name: "sources with parentheses on types",
+			source: entrypointSource(sourcesMember, strings.Replace(workspacelessMethods,
+				"pub types: [TypeDef!]!", "pub types(): [TypeDef!]!", 1)),
 			sources: true,
 		},
 		{
