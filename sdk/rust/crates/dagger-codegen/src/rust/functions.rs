@@ -131,9 +131,13 @@ pub fn legacy_field_schema_name<'a>(field: &'a FullTypeFields) -> Option<&'a str
 }
 
 /// The name the function had before engine-formatted names, when it differs
-/// from today's.
+/// from today's. Without engine-formatted names, today's name is the legacy
+/// one: no alias, even for a renamed core field.
 pub fn legacy_function_name(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<String> {
     let name = field.name.as_ref()?;
+    funcs
+        .names()
+        .format(name, Casing::Snake, Acronyms::Uppercase)?;
     let legacy = format_struct_name(legacy_field_schema_name(field)?);
     if legacy == member_name(funcs.names(), name) {
         None
