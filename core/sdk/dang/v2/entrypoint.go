@@ -38,7 +38,7 @@ func EntrypointModuleTypes(
 	if err != nil {
 		return inst, err
 	}
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForDang(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("get entrypoint schema: %w", err)
 	}
@@ -147,7 +147,7 @@ func (r *entrypointRuntime) Call(
 	if err != nil {
 		return err
 	}
-	schemaJSONFile, err := r.deps.SchemaIntrospectionJSONFileForModule(ctx)
+	schemaJSONFile, err := r.deps.SchemaIntrospectionJSONFileForDang(ctx)
 	if err != nil {
 		return fmt.Errorf("get entrypoint schema: %w", err)
 	}
