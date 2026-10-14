@@ -5,7 +5,7 @@ import static io.dagger.client.Dagger.dag;
 import io.dagger.client.AutoCloseableClient;
 import io.dagger.client.Container;
 import io.dagger.client.Dagger;
-import io.dagger.client.JSON;
+import io.dagger.client.Json;
 import io.dagger.client.exception.DaggerExecException;
 import java.util.List;
 import org.apache.commons.lang3.StringUtils;
@@ -26,11 +26,11 @@ public class RunContainerWithError {
           "Test pipeline failure full message: "
               + dag()
                   .error(dqe.getMessage())
-                  .withValue("stdout", JSON.from(dqe.getStdOut()))
-                  .withValue("stderr", JSON.from(dqe.getStdErr()))
-                  .withValue("cmd", JSON.from(StringUtils.join(dqe.getCmd())))
-                  .withValue("exitCode", JSON.from(StringUtils.join(dqe.getExitCode())))
-                  .withValue("path", JSON.from(StringUtils.join(dqe.getPath())))
+                  .withValue("stdout", Json.from(dqe.getStdOut()))
+                  .withValue("stderr", Json.from(dqe.getStdErr()))
+                  .withValue("cmd", Json.from(StringUtils.join(dqe.getCmd())))
+                  .withValue("exitCode", Json.from(StringUtils.join(dqe.getExitCode())))
+                  .withValue("path", Json.from(StringUtils.join(dqe.getPath())))
                   .toString());
     }
   }

@@ -4,6 +4,7 @@ import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.ParameterizedTypeName;
 import io.dagger.client.Dagger;
+import io.dagger.client.GraphQLType;
 import io.dagger.client.TypeDefKind;
 import io.dagger.module.info.TypeInfo;
 import java.util.Set;
@@ -11,6 +12,40 @@ import javax.lang.model.type.TypeKind;
 
 public abstract class DaggerType {
   protected static Set<String> knownEnums = Set.of();
+
+  /**
+   * The SDK's ID and JSON scalar classes. Their names depend on the schema the SDK was generated
+   * from: Java's convention ({@code Id}, {@code Json}) with engine-formatted names, the schema's
+   * ({@code ID}, {@code JSON}) without.
+   */
+  static final ClassName ID_CLASS = clientClass("Id", "ID");
+
+  static final ClassName JSON_CLASS = clientClass("Json", "JSON");
+
+  private static ClassName clientClass(String conventionName, String schemaName) {
+    try {
+      Class.forName("io.dagger.client." + conventionName);
+      return ClassName.get("io.dagger.client", conventionName);
+    } catch (ClassNotFoundException | LinkageError e) {
+      return ClassName.get("io.dagger.client", schemaName);
+    }
+  }
+
+  /**
+   * The GraphQL type a class stands for: the type its {@link GraphQLType} names, for SDK classes
+   * named by Java's convention ({@code JsonValue} for {@code JSONValue}), else its simple name.
+   */
+  static String graphQLName(String qualifiedName, String simpleName) {
+    try {
+      GraphQLType graphQLType = Class.forName(qualifiedName).getAnnotation(GraphQLType.class);
+      if (graphQLType != null) {
+        return graphQLType.value();
+      }
+    } catch (ClassNotFoundException | LinkageError e) {
+      // not an SDK class: the module's own types are named by their simple names
+    }
+    return simpleName;
+  }
 
   public static void setKnownEnums(Set<String> enums) {
     knownEnums = enums;
@@ -122,7 +157,8 @@ public abstract class DaggerType {
 
     @Override
     CodeBlock toDaggerTypeDef() {
-      return CodeBlock.of("$T.dag().typeDef().withEnum($S)", Dagger.class, simpleName);
+      String name = graphQLName(qualifiedName, simpleName);
+      return CodeBlock.of("$T.dag().typeDef().withEnum($S)", Dagger.class, name);
     }
 
     @Override
@@ -198,7 +234,8 @@ public abstract class DaggerType {
 
     @Override
     CodeBlock toDaggerTypeDef() {
-      return CodeBlock.of("$T.dag().typeDef().withScalar($S)", Dagger.class, simpleName);
+      String name = graphQLName(qualifiedName, simpleName);
+      return CodeBlock.of("$T.dag().typeDef().withScalar($S)", Dagger.class, name);
     }
 
     @Override
@@ -218,7 +255,8 @@ public abstract class DaggerType {
 
     @Override
     CodeBlock toDaggerTypeDef() {
-      return CodeBlock.of("$T.dag().typeDef().withObject($S)", Dagger.class, simpleName);
+      String name = graphQLName(qualifiedName, simpleName);
+      return CodeBlock.of("$T.dag().typeDef().withObject($S)", Dagger.class, name);
     }
 
     @Override

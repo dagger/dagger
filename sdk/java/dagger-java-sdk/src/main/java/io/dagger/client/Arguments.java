@@ -1,6 +1,7 @@
 package io.dagger.client;
 
 import static io.smallrye.graphql.client.core.Argument.arg;
+import static io.smallrye.graphql.client.core.Enum.gqlEnum;
 import static io.smallrye.graphql.client.core.InputObject.inputObject;
 import static io.smallrye.graphql.client.core.InputObjectField.prop;
 
@@ -68,7 +69,7 @@ public class Arguments {
       return inputObject(
           ((InputValue) value)
               .toMap().entrySet().stream()
-                  .map(e -> prop(e.getKey(), e.getValue()))
+                  .map(e -> prop(e.getKey(), toInputFieldValue(e.getValue())))
                   .toArray(InputObjectField[]::new));
     } else if (value instanceof String
         || value instanceof Integer
@@ -81,6 +82,8 @@ public class Arguments {
         list.add(toArgumentValue(o));
       }
       return list;
+    } else if (value instanceof GraphQLEnum) {
+      return ((GraphQLEnum) value).graphQLValue();
     } else if (value instanceof Enum<?>) {
       return ((Enum<?>) value).toString();
     } else {
@@ -88,6 +91,17 @@ public class Arguments {
           String.format(
               "Argument is not an authorized argument type. Found type is %s", value.getClass()));
     }
+  }
+
+  /**
+   * The value of an input object field: enums whose constants aren't named like their values go as
+   * an enum literal of their schema value, the rest as is.
+   */
+  private static Object toInputFieldValue(Object value) {
+    if (value instanceof GraphQLEnum) {
+      return gqlEnum(((GraphQLEnum) value).graphQLValue());
+    }
+    return value;
   }
 
   public class Builder {

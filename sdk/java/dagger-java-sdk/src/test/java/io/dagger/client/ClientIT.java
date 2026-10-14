@@ -41,7 +41,7 @@ public class ClientIT {
       assertFalse(readme.isEmpty());
       assertTrue(readme.contains("Dagger"));
 
-      ID readmeID = readmeFile.id();
+      Id readmeID = readmeFile.id();
       String otherReadme = client.loadObjectFromID(File.class, readmeID).contents();
       assertEquals(readme, otherReadme);
     }
@@ -58,7 +58,7 @@ public class ClientIT {
       assertEquals("3.16.2\n", stdout);
 
       // Ensure we can grab the container ID back and re-run the same query
-      ID id = alpine.id();
+      Id id = alpine.id();
       contents =
           client
               .loadObjectFromID(Container.class, id)
