@@ -161,10 +161,24 @@ class NewCodegenVisitorTest extends TestCase
     }
 
     #[Test]
-    public function itKeepsInputFieldSchemaNames(): void
+    public function itKeepsRenamedCoreNames(): void
     {
-        // Input object properties are sent under their own name, so they
-        // keep the schema's spelling.
+        // A renamed core enum value stays reachable under its old name.
+        $policy = IntrospectionType::fromArray([
+            'kind' => 'ENUM',
+            'name' => 'FunctionCachePolicy',
+            'enumValues' => [['name' => 'DEFAULT'], ['name' => 'PER_SESSION']],
+        ]);
+        $enum = $this->generate($policy, self::names());
+        self::assertInstanceOf(EnumType::class, $enum);
+        self::assertSame(['DEFAULT', 'PER_SESSION'], array_keys($enum->getCases()));
+        $constants = $enum->getConstants();
+        self::assertSame(['Default', 'PerSession'], array_keys($constants));
+        self::assertSame('self::PER_SESSION', (string)$constants['PerSession']->getValue());
+        self::assertStringContainsString('@deprecated Use PER_SESSION', (string)$constants['PerSession']->getComment());
+
+        // A renamed core input field keeps its old property name, and is
+        // sent under its new one.
         $string = ['kind' => 'SCALAR', 'name' => 'String'];
         $input = IntrospectionType::fromArray([
             'kind' => 'INPUT_OBJECT',
@@ -175,8 +189,8 @@ class NewCodegenVisitorTest extends TestCase
             ],
         ]);
         $class = $this->generate($input, self::names());
-        self::assertSame(['callID', 'toolName'], array_keys($class->getMethod('__construct')->getParameters()));
-        self::assertSame([], $class->getConstants());
+        self::assertSame(['callId', 'toolName'], array_keys($class->getMethod('__construct')->getParameters()));
+        self::assertSame(['callId' => 'callID'], $class->getConstants()['FIELD_NAMES']->getValue());
     }
 
     #[Test]

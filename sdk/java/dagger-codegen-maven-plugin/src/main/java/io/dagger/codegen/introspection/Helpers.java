@@ -231,10 +231,52 @@ public class Helpers {
 
   /**
    * The Java method name of a field before engine-formatted names: the schema name, escaped. When
-   * it differs from {@link #formatName(Field)}, it's kept as a deprecated alias.
+   * it differs from {@link #formatName(Field)}, it's kept as a deprecated alias. For a renamed core
+   * field, that's its old schema name (see {@link #legacySchemaName}).
    */
   static String legacyName(Field field) {
-    return escapeMethodName(field, field.getName());
+    return escapeMethodName(
+        field, legacySchemaName(field.getParentObject().getName(), field.getName()));
+  }
+
+  /**
+   * Core names renamed for the engine's naming rules (see hack/designs/identifier-casing.md, "Core
+   * schema"), with their old schema names, by {@code Type.name} for fields, input fields and enum
+   * values, and {@code Type.field(arg)} for arguments. The engine still accepts the old names as
+   * hidden aliases, but the schema doesn't show them, so the Java names derived from them are kept
+   * from here.
+   */
+  private static final Map<String, String> RENAMED_CORE_NAMES =
+      Map.ofEntries(
+          Map.entry("Artifacts.filterURI", "filterUri"),
+          Map.entry("Artifacts.withoutURI", "withoutUri"),
+          Map.entry("FunctionCachePolicy.DEFAULT", "Default"),
+          Map.entry("FunctionCachePolicy.NEVER", "Never"),
+          Map.entry("FunctionCachePolicy.PER_SESSION", "PerSession"),
+          Map.entry("GitCommit.parentSHAs", "parentShas"),
+          Map.entry("GitCommit.shortSHA", "shortSha"),
+          Map.entry("GitRepository.withRemote(pushURL)", "pushUrl"),
+          Map.entry("LLM.withToolResult(callID)", "callId"),
+          Map.entry("LLMContentBlock.callID", "callId"),
+          Map.entry("LLMContentBlockInput.callID", "callId"),
+          Map.entry("Workspace.withSDK(asSDKName)", "asSdkName"));
+
+  /**
+   * The schema name a field, input field or enum value of {@code typeName} had before it was
+   * renamed: {@code name} itself, unless it's a renamed core name.
+   */
+  static String legacySchemaName(String typeName, String name) {
+    return RENAMED_CORE_NAMES.getOrDefault(typeName + "." + name, name);
+  }
+
+  /**
+   * The schema name an argument of {@code field} had before it was renamed: its name, unless it's a
+   * renamed core argument.
+   */
+  static String legacyArgSchemaName(Field field, InputObject arg) {
+    return RENAMED_CORE_NAMES.getOrDefault(
+        field.getParentObject().getName() + "." + field.getName() + "(" + arg.getName() + ")",
+        arg.getName());
   }
 
   private static String escapeMethodName(Field field, String name) {
@@ -275,9 +317,12 @@ public class Helpers {
     return "with" + capitalize(javaName(var.getName(), var.getFormattedName()));
   }
 
-  /** The name of the "with" setter of an argument or input field before formatted names. */
-  static String legacyWithSetterName(InputObject var) {
-    return "with" + capitalize(var.getName());
+  /**
+   * The name of the "with" setter of an argument or input field before formatted names, from the
+   * schema name it had then.
+   */
+  static String legacyWithSetterName(String legacySchemaName) {
+    return "with" + capitalize(legacySchemaName);
   }
 
   /**

@@ -96,7 +96,7 @@ export class _{{ .Name | FormatName }}Client extends BaseClient { {{- with .Dire
 words (see method_alias). The dot is an introspection.Field. */ -}}
 {{ define "interface_method_alias" }}
 	{{- $name := .Name | FormatMethodName }}
-	{{- $legacy := .Name | LegacyMethodName }}
+	{{- $legacy := LegacyFieldName . | LegacyMethodName }}
 	{{- if ne $name $legacy }}
 	{{- $iface := .ParentObject.Name | QueryToClient | FormatName }}
   /**

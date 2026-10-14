@@ -130,7 +130,7 @@ export function {{ $enumName | PascalCase }}NameToValue(name: string): {{ $enumN
 				{{- $optsName := OptsTypeName ($.Name | QueryToClient) .Name }}
 				{{- $legacyOptsName := LegacyOptsTypeName ($.Name | QueryToClient) .Name }}
 export type {{ $optsName }} = {
-				{{- template "field" (OptsFields $optionals) }}
+				{{- template "field" (OptsFields . $optionals) }}
 }
 {{ "" }}
 				{{- if ne $optsName $legacyOptsName }}
@@ -147,7 +147,7 @@ export type {{ $legacyOptsName }} = {{ $optsName }}
 	{{- /* Generate input GraphQL type. */ -}}
 	{{- with .InputFields }}
 export type {{ $.Name | FormatName }} = {
-		{{- template "field" (InputFields (SortInputFields .)) }}
+		{{- template "field" (InputFields $.Name (SortInputFields .)) }}
 }
 {{ "" }}
 	{{- end }}
@@ -195,13 +195,15 @@ export type {{ $.Name | FormatName }} = {
 		{{- /* Write type. */}}
   {{ $key }}{{ $opt }}: {{ $field | FormatInputType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 
-		{{- /* Keep accepting the schema name of a renamed opts key. */ -}}
-		{{- if ne $key $field.Name }}
+		{{- /* Keep accepting a deprecated key: the schema name of an opts key
+		renamed in TS, or the old schema name of a renamed core argument or
+		input object field. */ -}}
+		{{- with $.LegacyKey $field $key }}
 
   /**
    * @deprecated use {{ $key }} instead.
    */
-  {{ $field.Name }}{{ $opt }}: {{ $field | FormatInputType }}
+  {{ . }}?: {{ $field | FormatInputType }}
 		{{- end }}
 
 	{{- end }}

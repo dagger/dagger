@@ -25,7 +25,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Resolve an address in this workspace.
      *
-     * A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterUri(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
+     * A DAG address (dag://<path>) selects exactly one workspace artifact: artifacts.filterURI(value).one(). Its typed loaders use that artifact and never fall back to external resolution.
      *
      * A value without the dag:// scheme keeps its external meaning, such as a container image reference.
      *
@@ -573,7 +573,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('here', $here);
         }
         if (null !== $asSdkName) {
-        $innerQueryBuilder->setArgument('asSdkName', $asSdkName);
+        $innerQueryBuilder->setArgument('asSDKName', $asSdkName);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

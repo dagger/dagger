@@ -60,11 +60,33 @@ func TestIdentifierNames(t *testing.T) {
 	require.Equal(t, "DirectoryType", funcs.formatEnum("DIRECTORY_TYPE"))
 
 	// only renamed args are mapped back to their schema name
-	renamed := funcs.renamedArgs(introspection.InputValues{
-		{Name: "pushUrl"}, {Name: "default"}, {Name: "notInSchema"},
-	})
-	require.Len(t, renamed, 1)
-	require.Equal(t, "pushUrl", renamed[0].Name)
+	optional := &introspection.TypeRef{Kind: introspection.TypeKindScalar, Name: "String"}
+	renamed := funcs.renamedOpts(introspection.Field{Name: "f", Args: introspection.InputValues{
+		{Name: "pushUrl", TypeRef: optional}, {Name: "default", TypeRef: optional}, {Name: "notInSchema", TypeRef: optional},
+	}})
+	require.Equal(t, []optsKey{{Key: "pushURL", Wire: "pushUrl", Legacy: "pushUrl"}}, renamed)
+}
+
+// A renamed core field or argument keeps its old schema name's method and
+// opts key as deprecated aliases; renamed args send the new name.
+func TestRenamedCoreNames(t *testing.T) {
+	funcs := identifierFuncs("shortSHA", "pushURL", "callID", "url")
+	optional := &introspection.TypeRef{Kind: introspection.TypeKindScalar, Name: "String"}
+	commit := &introspection.Type{Name: "GitCommit"}
+	require.Equal(t, "shortSha", funcs.legacyMethodName(funcs.legacyFieldName(introspection.Field{Name: "shortSHA", ParentObject: commit})))
+	require.Equal(t, "shortSHA", funcs.legacyMethodName(funcs.legacyFieldName(introspection.Field{Name: "shortSHA"})))
+
+	withRemote := introspection.Field{Name: "withRemote", ParentObject: &introspection.Type{Name: "GitRepository"}, Args: introspection.InputValues{
+		{Name: "url", TypeRef: optional}, {Name: "pushURL", TypeRef: optional},
+	}}
+	require.Equal(t, []optsKey{{Key: "pushURL", Wire: "pushURL", Legacy: "pushUrl"}}, funcs.renamedOpts(withRemote))
+	opts := optsFieldList(withRemote, withRemote.Args)
+	require.Equal(t, "pushUrl", opts.LegacyKey(withRemote.Args[1], "pushURL"))
+	require.Empty(t, opts.LegacyKey(withRemote.Args[0], "url"))
+
+	input := inputFieldList("LLMContentBlockInput", introspection.InputValues{{Name: "callID"}})
+	require.Equal(t, "callId", input.LegacyKey(introspection.InputValue{Name: "callID"}, "callID"))
+	require.Empty(t, inputFieldList("Other", nil).LegacyKey(introspection.InputValue{Name: "callID"}, "callID"))
 }
 
 // Without engine-formatted names, every name goes through the legacy
@@ -83,7 +105,9 @@ func TestIdentifierNamesFallback(t *testing.T) {
 		require.Equal(t, "ClientLLMOpts", funcs.optsTypeName("Client", "llm"))
 		require.Equal(t, "LLMContentBlockKind", funcs.pascalCase("LLMContentBlockKind"))
 		require.Equal(t, "Tcp", funcs.formatEnum("TCP"))
-		require.Empty(t, funcs.renamedArgs(introspection.InputValues{{Name: "pushUrl"}}))
+		require.Empty(t, funcs.renamedOpts(introspection.Field{Args: introspection.InputValues{
+			{Name: "pushUrl", TypeRef: &introspection.TypeRef{Kind: introspection.TypeKindScalar, Name: "String"}},
+		}}))
 	}
 }
 

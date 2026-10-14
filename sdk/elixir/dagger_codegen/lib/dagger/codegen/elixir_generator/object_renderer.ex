@@ -134,14 +134,17 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
 
   @doc """
   Render deprecated aliases for the functions whose name changed when the
-  engine formatted it, under their legacy names. Renders nothing for schemas
-  without formatted names, or when a legacy name is taken.
+  engine formatted it, under their legacy names: the names of their old
+  schema names, for renamed core fields. Renders nothing for schemas without
+  formatted names, or when a legacy name is taken.
   """
   def render_legacy_aliases(type, module_var) do
     names = MapSet.new(type.fields, &Formatter.format_function_name(&1.name))
 
     type.fields
-    |> Enum.map(&{&1, Formatter.legacy_function_name(&1.name)})
+    |> Enum.map(
+      &{&1, Formatter.legacy_function_name(Formatter.legacy_field_name(type.name, &1.name))}
+    )
     |> Enum.reject(fn {_field, legacy_name} -> MapSet.member?(names, legacy_name) end)
     |> Enum.uniq_by(fn {_field, legacy_name} -> legacy_name end)
     |> Enum.map(fn {field, legacy_name} ->

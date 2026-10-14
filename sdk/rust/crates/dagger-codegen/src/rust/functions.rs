@@ -101,11 +101,44 @@ pub fn legacy_field_options_struct_name(
     }
 }
 
+/// Core fields renamed for the engine's naming rules (see
+/// hack/designs/identifier-casing.md, "Core schema"), by `Type.field`, with
+/// their old schema names. The engine still accepts the old names as hidden
+/// aliases, but the schema doesn't show them, so deprecated aliases of the
+/// Rust names derived from them come from here. Arguments and enum values
+/// aren't listed: their Rust names didn't change.
+const RENAMED_CORE_FIELDS: &[(&str, &str)] = &[
+    ("Artifacts.filterURI", "filterUri"),
+    ("Artifacts.withoutURI", "withoutUri"),
+    ("GitCommit.parentSHAs", "parentShas"),
+    ("GitCommit.shortSHA", "shortSha"),
+    ("LLMContentBlock.callID", "callId"),
+];
+
+/// The schema name a field had before it was renamed: the name itself, unless
+/// it's a renamed core field.
+pub fn legacy_field_schema_name<'a>(field: &'a FullTypeFields) -> Option<&'a str> {
+    let name = field.name.as_deref()?;
+    let parent = field.parent_type.as_ref().and_then(|p| p.name.as_deref());
+    let renamed = parent.and_then(|parent| {
+        let key = format!("{parent}.{name}");
+        RENAMED_CORE_FIELDS
+            .iter()
+            .find(|(renamed, _)| *renamed == key)
+            .map(|(_, legacy)| *legacy)
+    });
+    Some(renamed.unwrap_or(name))
+}
+
 /// The name the function had before engine-formatted names, when it differs
-/// from today's.
+/// from today's. Without engine-formatted names, today's name is the legacy
+/// one: no alias, even for a renamed core field.
 pub fn legacy_function_name(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<String> {
     let name = field.name.as_ref()?;
-    let legacy = format_struct_name(name);
+    funcs
+        .names()
+        .format(name, Casing::Snake, Acronyms::Uppercase)?;
+    let legacy = format_struct_name(legacy_field_schema_name(field)?);
     if legacy == member_name(funcs.names(), name) {
         None
     } else {

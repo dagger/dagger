@@ -754,7 +754,7 @@ func (a *Artifacts) FilterURI(addr *dagaddress.Address) (*Artifacts, error) {
 	return selected, nil
 }
 
-// URI is the selector for the whole selection: filterUri(uri) selects the
+// URI is the selector for the whole selection: filterURI(uri) selects the
 // same set. Include patterns and chained filters are normalized; an empty
 // selection prints as the empty alternation "{}".
 func (a *Artifacts) URI() string {

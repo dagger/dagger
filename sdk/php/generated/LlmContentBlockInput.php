@@ -14,6 +14,9 @@ namespace Dagger;
 #[Attribute\GraphQLType('LLMContentBlockInput')]
 class LlmContentBlockInput extends Client\AbstractInputObject
 {
+    /** Schema names of the properties named otherwise. */
+    protected const FIELD_NAMES = ['callId' => 'callID'];
+
     public function __construct(
         public LlmContentBlockKind $kind,
         public ?string $text = '',

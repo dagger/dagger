@@ -832,6 +832,8 @@ mod tests {
             ("OCI", "Oci"),
             ("ref", "Ref"),
             ("formatIdentifiers", "FormatIdentifiers"),
+            ("GitCommit", "GitCommit"),
+            ("parentSHAs", "ParentShas"),
         ];
         let snake = [
             ("ID", "id"),
@@ -846,6 +848,8 @@ mod tests {
             ("OCI", "oci"),
             ("ref", "ref"),
             ("formatIdentifiers", "format_identifiers"),
+            ("GitCommit", "git_commit"),
+            ("parentSHAs", "parent_shas"),
         ];
         let map = |names: &[(&str, &str)]| {
             names
@@ -957,6 +961,25 @@ mod tests {
             ],
             "type": {{"kind": "NON_NULL", "name": null,
               "ofType": {{"kind": "OBJECT", "name": "JSONValue", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null
+          }}
+        ],
+        "inputFields": null, "interfaces": [],
+        "enumValues": null, "possibleTypes": null
+      }},
+      {{
+        "kind": "OBJECT", "name": "GitCommit", "description": null,
+        "fields": [
+          {{
+            "name": "id", "description": null, "args": [],
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "SCALAR", "name": "ID", "ofType": null}}}},
+            "isDeprecated": false, "deprecationReason": null
+          }},
+          {{
+            "name": "parentSHAs", "description": null, "args": [],
+            "type": {{"kind": "NON_NULL", "name": null,
+              "ofType": {{"kind": "SCALAR", "name": "String", "ofType": null}}}},
             "isDeprecated": false, "deprecationReason": null
           }}
         ],
@@ -1135,6 +1158,25 @@ mod tests {
         );
         // Names that didn't change get no alias.
         assert_eq!(code.matches("fn json_value(").count(), 1);
+    }
+
+    #[test]
+    fn renamed_core_fields_keep_their_old_rust_names() {
+        let code = generate_with_engine_names();
+
+        // GitCommit.parentSHAs was parentShas, whose Rust name is the same:
+        // no alias derived from the new schema name.
+        assert!(
+            has(&code, r#"pub async fn parent_shas(&self"#),
+            "{}",
+            lines_with(&code, "parent")
+        );
+        assert!(has(&code, r#"self.selection.select("parentSHAs")"#));
+        assert!(
+            !code.contains("parent_sh_as"),
+            "{}",
+            lines_with(&code, "parent")
+        );
     }
 
     /// Code generated with the legacy converter: no engine-formatted names,
