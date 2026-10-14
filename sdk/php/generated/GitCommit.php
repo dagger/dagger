@@ -102,8 +102,8 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
      */
     public function shortSha(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('shortSha');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'shortSha');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('shortSHA');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'shortSHA');
     }
 
     /**
@@ -192,7 +192,7 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
      */
     public function parentShas(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('parentShas');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'parentShas');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('parentSHAs');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'parentSHAs');
     }
 }

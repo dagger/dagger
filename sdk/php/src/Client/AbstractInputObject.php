@@ -7,6 +7,14 @@ use Stringable;
 
 abstract class AbstractInputObject implements Stringable
 {
+    /**
+     * The schema names of the properties named otherwise: a renamed field
+     * keeps its old property name, and is sent under its schema name.
+     *
+     * @var array<string, string>
+     */
+    protected const FIELD_NAMES = [];
+
     public function __toString(): string
     {
         $objectString = '{';
@@ -32,7 +40,7 @@ abstract class AbstractInputObject implements Stringable
                 // Convert PHP array to its array representation in graphql arguments
                 $value = StringLiteralFormatter::formatArrayForGQLQuery($value);
             }
-            $objectString .= $name . ': ' . $value;
+            $objectString .= (static::FIELD_NAMES[$name] ?? $name) . ': ' . $value;
         }
         $objectString .= '}';
 

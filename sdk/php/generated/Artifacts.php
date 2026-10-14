@@ -187,7 +187,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
      */
     public function withoutUri(string $uri): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUri');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutURI');
         $innerQueryBuilder->setArgument('uri', $uri);
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -253,7 +253,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
      */
     public function filterUri(string $uri): Artifacts
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterUri');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterURI');
         $innerQueryBuilder->setArgument('uri', $uri);
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -306,7 +306,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The DAG address that selects this whole selection: filterUri(uri) selects the same set.
+     * The DAG address that selects this whole selection: filterURI(uri) selects the same set.
      */
     public function uri(): string
     {
