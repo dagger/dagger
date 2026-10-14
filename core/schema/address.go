@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/iancoleman/strcase"
-
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
@@ -126,8 +124,9 @@ func resolveLegacyModuleRef(ctx context.Context, addr string, dest any) (bool, e
 		return false, nil
 	}
 	srv = srv.Canonical()
-	moduleField := strcase.ToLowerCamel(module)
-	spec, exists := srv.Root().ObjectType().FieldSpec(moduleField, srv.View)
+	// The module may name its constructor by the legacy or the latest rules
+	// (whichever its engine version selects), so try both spellings.
+	moduleField, spec, exists := rootFieldSpec(srv, module)
 	if !exists {
 		// Selector commands may have loaded only the consumer of this module.
 		refreshed, installed, err := demandLoadInstalledModule(ctx, module)
@@ -138,7 +137,7 @@ func resolveLegacyModuleRef(ctx context.Context, addr string, dest any) (bool, e
 			return true, fmt.Errorf("resolve module reference %q: load module %q: %w", addr, module, err)
 		}
 		srv = refreshed.Canonical()
-		spec, exists = srv.Root().ObjectType().FieldSpec(moduleField, srv.View)
+		moduleField, spec, exists = rootFieldSpec(srv, module)
 		if !exists {
 			return false, nil
 		}
@@ -150,11 +149,16 @@ func resolveLegacyModuleRef(ctx context.Context, addr string, dest any) (bool, e
 	if strings.Contains(rest, ":") {
 		return true, fmt.Errorf("invalid module reference %q: only %s:<function> is supported today (a single function segment); got extra segments in %q", addr, module, rest)
 	}
-	functionField := strcase.ToLowerCamel(rest)
+	functionField := core.FieldNameCandidates(rest)[0]
 	var functionSpec dagql.FieldSpec
 	functionExists := false
 	if objType, exists := srv.ObjectType(spec.Type.Type().Name()); exists {
-		functionSpec, functionExists = objType.FieldSpec(functionField, srv.View)
+		for _, candidate := range core.FieldNameCandidates(rest) {
+			if functionSpec, functionExists = objType.FieldSpec(candidate, srv.View); functionExists {
+				functionField = candidate
+				break
+			}
+		}
 	}
 	if !qualified && !functionExists {
 		return false, nil
@@ -182,6 +186,19 @@ func resolveLegacyModuleRef(ctx context.Context, addr string, dest any) (bool, e
 	return true, nil
 }
 
+// rootFieldSpec finds the Query field a module name refers to, trying each
+// spelling a module's naming rules may give it (see
+// core.FieldNameCandidates).
+func rootFieldSpec(srv *dagql.Server, name string) (string, dagql.FieldSpec, bool) {
+	candidates := core.FieldNameCandidates(name)
+	for _, candidate := range candidates {
+		if spec, ok := srv.Root().ObjectType().FieldSpec(candidate, srv.View); ok {
+			return candidate, spec, true
+		}
+	}
+	return candidates[0], dagql.FieldSpec{}, false
+}
+
 // demandLoadInstalledModule loads and serves the named workspace module when
 // the workspace config installs it but the current command has not loaded it
 // (selector verbs narrow module loading to the modules their patterns name).
@@ -203,9 +220,8 @@ func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Ser
 	if md == nil || md.ClientID != ws.ClientID {
 		return nil, false, nil
 	}
-	want := strcase.ToKebab(name)
 	for installedName := range cfg.Modules {
-		if strcase.ToKebab(installedName) == want {
+		if core.SameCLIName(installedName, name) {
 			installed = true
 			break
 		}

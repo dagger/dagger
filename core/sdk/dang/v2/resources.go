@@ -169,6 +169,7 @@ func EntrypointResources(
 		patterns, err = evalEntrypointResources(ctx, intro.Schema, refusingClient{}, dir, dangModule{
 			name:         src.Self().ModuleName,
 			originalName: src.Self().ModuleOriginalName,
+			namer:        src.Self().Namer(),
 		})
 		return err
 	})

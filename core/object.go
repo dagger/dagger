@@ -1160,7 +1160,8 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	}
 
 	classOpts := dagql.ClassOpts[*ModuleObject]{
-		Typed: obj,
+		Typed:   obj,
+		Aliases: obj.typeNameAliases(),
 	}
 
 	installDirectives := []*ast.Directive{}
@@ -1217,6 +1218,20 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	return nil
 }
 
+// typeNameAliases returns the transition aliases of the object's type name
+// (see Module.TypeNameAliases), for a collection's batch type too.
+func (obj *ModuleObject) typeNameAliases() dagql.Aliases {
+	aliases := obj.Module.Self().TypeNameAliases(obj.TypeDef.Name, obj.TypeDef.OriginalName)
+	if obj.CollectionBatch && len(aliases.Names) > 0 {
+		names := make([]string, len(aliases.Names))
+		for i, name := range aliases.Names {
+			names[i] = name + "_Batch"
+		}
+		aliases.Names = names
+	}
+	return aliases
+}
+
 func (obj *ModuleObject) isMainObject() bool {
 	if obj.CollectionBatch {
 		return false
@@ -1224,7 +1239,8 @@ func (obj *ModuleObject) isMainObject() bool {
 	if src := obj.Module.Self().GetSource(); src != nil && src.Entrypoint != nil {
 		return obj.TypeDef.Constructor.Valid
 	}
-	return gqlObjectName(obj.TypeDef.OriginalName) == gqlObjectName(obj.Module.Self().OriginalName)
+	namer := obj.Module.Self().Namer()
+	return namer.ObjectName(obj.TypeDef.OriginalName) == namer.ObjectName(obj.Module.Self().OriginalName)
 }
 
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
@@ -1245,7 +1261,8 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			desc = formatGqlDescription(mod.Description)
 		}
 		spec := dagql.FieldSpec{
-			Name:             gqlFieldName(mod.Name()),
+			Name:             mod.ConstructorName(),
+			Aliases:          mod.ConstructorNameAliases(),
 			Description:      desc,
 			Type:             obj,
 			Module:           moduleID,
@@ -1294,7 +1311,8 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	if err != nil {
 		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
-	spec.Name = gqlFieldName(mod.Name())
+	spec.Name = mod.ConstructorName()
+	spec.Aliases = mod.ConstructorNameAliases()
 	if spec.Description == "" {
 		spec.Description = formatGqlDescription(objDef.Description)
 	}
@@ -1333,7 +1351,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for entrypoint object %q: %w", obj.TypeDef.Name, err)
 	}
-	constructorName := gqlFieldName(obj.Module.Self().Name())
+	constructorName := obj.Module.Self().ConstructorName()
 
 	// Build constructor arg specs from the module's type definition
 	// rather than looking them up from the server — the constructor
@@ -1558,6 +1576,7 @@ func objField(mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field
 	}
 	spec := &dagql.FieldSpec{
 		Name:             field.Name,
+		Aliases:          field.NameAliases(mod.Self().Namer()),
 		Description:      field.Description,
 		Type:             field.TypeDef.Self().ToTyped(),
 		Module:           moduleID,
