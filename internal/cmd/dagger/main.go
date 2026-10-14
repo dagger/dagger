@@ -333,9 +333,15 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
-		t.Capture(cmd.Context(), "cli_command", map[string]string{
+		properties := map[string]string{
 			"name": commandName(cmd),
-		})
+		}
+		// Command arguments are omitted by default as they may contain sensitive
+		// data. The `module search` query is a safe exception.
+		if commandName(cmd) == "module search" && len(args) > 0 {
+			properties["args"] = strings.Join(args, " ")
+		}
+		t.Capture(cmd.Context(), "cli_command", properties)
 
 		return nil
 	},
