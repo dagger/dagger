@@ -421,7 +421,7 @@ class ObjectVisitor extends AbstractVisitor {
               ClassName.bestGuess(fieldArgumentsClassName),
               arg.getDescription());
       optionalArgFieldWithMethods.add(withSetter);
-      String legacyName = Helpers.legacyWithSetterName(arg);
+      String legacyName = Helpers.legacyWithSetterName(Helpers.legacyArgSchemaName(field, arg));
       if (!legacyName.equals(withSetter.name()) && !withSetterNames.contains(legacyName)) {
         optionalArgFieldWithMethods.add(Helpers.deprecatedAlias(withSetter, legacyName));
       }
