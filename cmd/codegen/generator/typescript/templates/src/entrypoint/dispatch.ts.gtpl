@@ -47,6 +47,9 @@ async function dispatch() {
     }
 
     try {
+{{- if $module.Interfaces }}
+      await __loadSchemaNames()
+{{- end }}
       const result = await invoke(parentName, fnName, parentJson, args)
       const out = result === undefined || result === null ? "null" : JSON.stringify(result)
       await fnCall.returnValue(out as string & { __JSON: never })
