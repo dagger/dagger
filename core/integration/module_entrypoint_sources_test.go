@@ -145,6 +145,26 @@ func (ModuleSuite) TestModuleEntrypointSources(ctx context.Context, t *testctx.T
 		require.Equal(t, "from the shared sibling", call(ctx, t, ctr, "./m", "shared"))
 	})
 
+	t.Run("the engine adds the module's own files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := local(t, c, `  pub sources(workspace: Workspace!): Directory! {
+    directory
+      .withDirectory("shared", workspace.directory("/shared"))
+      .withFile(workspace.cwd + "/dagger-module.toml", workspace.file("dagger-module.toml"))
+      .withNewFile(workspace.cwd + "/data/local.txt", "from sources")
+  }`)
+
+		files, err := moduleSourceContextFiles(ctx, ctr, "./m")
+		require.NoError(t, err)
+		require.Contains(t, files, "m/entrypoint/main.dang")
+		require.Contains(t, files, "m/data/local.txt")
+		require.Contains(t, files, "shared/value.txt")
+
+		out, err := ctr.With(daggerExec("core", "module-source", "--ref-string", "./m", "context-directory", "file", "--path", "m/data/local.txt", "contents")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "module data", strings.TrimSpace(out))
+	})
+
 	t.Run("workspace module loads the returned files", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := local(t, c, sharedSourcesMember).
@@ -208,20 +228,25 @@ func (ModuleSuite) TestModuleEntrypointSources(ctx context.Context, t *testctx.T
 	t.Run("a context reload keeps the returned files", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := local(t, c, sharedSourcesMember)
-
-		out, err := ctr.With(daggerQuery(`{moduleSource(refString:"./m"){withIncludes(patterns:["data"]){contextDirectory{glob(pattern:"**")}}}}`)).Stdout(ctx)
-		require.NoError(t, err)
-		var res struct {
-			ModuleSource struct {
-				WithIncludes struct {
-					ContextDirectory struct {
-						Glob []string
+		reloaded := func(t *testctx.T, field string) []string {
+			t.Helper()
+			out, err := ctr.With(daggerQuery(`{moduleSource(refString:"./m"){reloaded: %s{contextDirectory{glob(pattern:"**")}}}}`, field)).Stdout(ctx)
+			require.NoError(t, err)
+			var res struct {
+				ModuleSource struct {
+					Reloaded struct {
+						ContextDirectory struct {
+							Glob []string
+						}
 					}
 				}
 			}
+			require.NoError(t, json.Unmarshal([]byte(out), &res))
+			return res.ModuleSource.Reloaded.ContextDirectory.Glob
 		}
-		require.NoError(t, json.Unmarshal([]byte(out), &res))
-		requireLoaded(t, res.ModuleSource.WithIncludes.ContextDirectory.Glob)
+
+		requireLoaded(t, reloaded(t, `withIncludes(patterns:["data"])`))
+		requireLoaded(t, reloaded(t, `withSourceSubpath(path:".")`))
 	})
 
 	t.Run("digest follows the returned files", func(ctx context.Context, t *testctx.T) {
