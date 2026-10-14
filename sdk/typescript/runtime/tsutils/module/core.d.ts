@@ -36,4 +36,16 @@ export function getRegisteredClass(
   name: string,
 ): { new (...args: unknown[]): unknown } | undefined
 
+export class SchemaNames {
+  fieldName(name: string): string
+  interfaceName(name: string, legacy: string): string
+}
+export function resolveSchemaNames(
+  moduleName: string,
+  interfaces: {
+    name: string
+    functions: { name: string; args: string[] }[]
+  }[],
+): Promise<SchemaNames | undefined>
+
 export function getTracer(name?: string): unknown

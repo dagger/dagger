@@ -10,16 +10,40 @@ import { Connection } from "../common/graphql/connection.js"
 import { DaggerModule } from "./introspector/dagger_module/index.js"
 import { DaggerInterfaceFunctions } from "./introspector/dagger_module/interfaceFunction.js"
 import { TypeDef } from "./introspector/typedef.js"
+import { resolveSchemaNames, SchemaNames } from "./naming.js"
+import type { InterfaceNames } from "./naming.js"
 
 export type State = { [property: string]: any }
 
 export type Args = Record<string, unknown>
 
 export class Executor {
+  /**
+   * Schema names of the module's interfaces, for calls through them.
+   */
+  public schemaNames = new SchemaNames()
+
   constructor(
     public readonly modules: Module[],
     private readonly daggerModule: DaggerModule,
   ) {}
+
+  /**
+   * Ask the engine how it names the module's interfaces.
+   *
+   * Modules at engine version v1.0.0 and later have their names formatted by
+   * the engine's naming rules. Calls through the module's interfaces need
+   * those names, so get them before invoking anything.
+   */
+  async loadSchemaNames(): Promise<void> {
+    const names = await resolveSchemaNames(
+      this.daggerModule.name,
+      interfaceNames(this.daggerModule),
+    )
+    if (names) {
+      this.schemaNames = names
+    }
+  }
 
   private getExportedObject(object: string): any {
     const key = object as keyof Module
@@ -69,12 +93,22 @@ export class Executor {
     const ifaceImpl = new InterfaceWrapper(
       this,
       this.daggerModule,
-      `${this.daggerModule.name}${iface}`,
+      this.interfaceTypeName(iface),
       id,
       interfaceObject.functions,
     )
 
     return ifaceImpl
+  }
+
+  /**
+   * The schema name of an interface declared in the module.
+   */
+  interfaceTypeName(iface: string): string {
+    return this.schemaNames.interfaceName(
+      iface,
+      `${this.daggerModule.name}${iface}`,
+    )
   }
 
   /**
@@ -119,6 +153,19 @@ export class Executor {
 }
 
 /**
+ * The names of the interfaces a module declares, for resolveSchemaNames.
+ */
+export function interfaceNames(module: DaggerModule): InterfaceNames[] {
+  return Object.values(module.interfaces).map((iface) => ({
+    name: iface.name,
+    functions: Object.values(iface.functions).map((fn) => ({
+      name: fn.name,
+      args: Object.keys(fn.arguments),
+    })),
+  }))
+}
+
+/**
  * Interface Wrapper serves as dynaminc module binding so the module can
  * call function of this interface.
  * Because the actual interface implementation can come from any external modules,
@@ -157,6 +204,7 @@ class InterfaceWrapper {
 
     Object.entries(fcts).forEach(([name, fct]) => {
       const argKeys = Object.keys(fct.arguments)
+      const names = this.executor.schemaNames
 
       // Dynamically adding functions of the interface and it's resolvers.
       // @ts-ignore
@@ -166,11 +214,11 @@ class InterfaceWrapper {
         for (let i = 0; i < argKeys.length; i++) {
           if (args[i] !== undefined) {
             // @ts-ignore
-            argsPayload[argKeys[i]] = args[i]
+            argsPayload[names.fieldName(argKeys[i])] = args[i]
           }
         }
 
-        this._ctx = this._ctx.select(name, argsPayload)
+        this._ctx = this._ctx.select(names.fieldName(name), argsPayload)
 
         // If the function is returning an IDable, we don't need to execute it
         // since it will be resolved later.
@@ -209,7 +257,7 @@ class InterfaceWrapper {
                     new InterfaceWrapper(
                       this.executor,
                       module,
-                      `${this.module.name}${typedef.name}`,
+                      this.executor.interfaceTypeName(typedef.name),
                       id,
                       this.module.interfaces[typedef.name].functions,
                     ),

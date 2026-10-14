@@ -41,6 +41,9 @@ func EntrypointTemplateFuncs(module *TypedefModule, opts EntrypointOptions) temp
 		"argCoercionLine":      c.argCoercionLine,
 		"hasDefault":           hasDefault,
 		"engineIfaceTypeName":  c.engineIfaceTypeName,
+		"ifaceTypeNameExpr":    c.ifaceTypeNameExpr,
+		"ifaceFieldNameExpr":   ifaceFieldNameExpr,
+		"interfaceNamesLit":    c.interfaceNamesLit,
 		"plannedImports":       c.plannedImports,
 		"isVariadic":           func(a *TypedefArgument) bool { return a.IsVariadic },
 		"propFieldName":        propFieldName,
@@ -83,21 +86,25 @@ func (c *entrypointFuncCtx) isExportedClass(obj *TypedefObject) bool {
 // `Context`).
 var entrypointReservedBindings = map[string]bool{
 	// SDK imports
-	"Context":             true,
-	"DaggerError":         true,
-	"FunctionCachePolicy": true,
-	"TypeDefKind":         true,
-	"connection":          true,
-	"dag":                 true,
-	"getRegisteredClass":  true,
-	"__dagger":            true,
-	"telemetry":           true,
+	"Context":              true,
+	"DaggerError":          true,
+	"FunctionCachePolicy":  true,
+	"TypeDefKind":          true,
+	"connection":           true,
+	"dag":                  true,
+	"getRegisteredClass":   true,
+	"__SchemaNames":        true,
+	"__resolveSchemaNames": true,
+	"__dagger":             true,
+	"telemetry":            true,
 	// entrypoint-internal declarations
-	"__loadCoreObject": true,
-	"formatError":      true,
-	"invoke":           true,
-	"dispatch":         true,
-	"register":         true,
+	"__loadCoreObject":  true,
+	"__schemaNames":     true,
+	"__loadSchemaNames": true,
+	"formatError":       true,
+	"invoke":            true,
+	"dispatch":          true,
+	"register":          true,
 }
 
 // classBinding returns the local identifier an exported user class is imported
@@ -467,6 +474,50 @@ func (c *entrypointFuncCtx) engineIfaceTypeName(iface *TypedefInterface) string 
 	return pascalize(c.module.Name) + iface.Name
 }
 
+// ifaceTypeNameExpr returns a TS expression for the schema name of a module
+// interface: the name the engine gives it by its naming rules (modules at
+// engine version v1.0.0 and later), else engineIfaceTypeName. The names are
+// resolved by __loadSchemaNames before anything is invoked.
+func (c *entrypointFuncCtx) ifaceTypeNameExpr(iface *TypedefInterface) string {
+	return fmt.Sprintf("__schemaNames.interfaceName(%s, %s)",
+		jsString(iface.Name), jsString(c.engineIfaceTypeName(iface)))
+}
+
+// ifaceFieldNameExpr returns a TS expression for the schema name of a
+// function or argument of a module interface (see ifaceTypeNameExpr).
+func ifaceFieldNameExpr(name string) string {
+	return fmt.Sprintf("__schemaNames.fieldName(%s)", jsString(name))
+}
+
+// interfaceNamesLit returns the module's interfaces, as the TS literal
+// resolveSchemaNames takes: each interface's functions and their arguments.
+func (c *entrypointFuncCtx) interfaceNamesLit() string {
+	type fnNames struct {
+		Name string   `json:"name"`
+		Args []string `json:"args"`
+	}
+	type ifaceNames struct {
+		Name      string    `json:"name"`
+		Functions []fnNames `json:"functions"`
+	}
+	ifaces := []ifaceNames{}
+	for _, name := range sortedInterfaceKeys(c.module.Interfaces) {
+		iface := c.module.Interfaces[name]
+		fns := []fnNames{}
+		for _, fnName := range sortedFunctionKeys(iface.Functions) {
+			fn := iface.Functions[fnName]
+			args := []string{}
+			for _, arg := range fn.Arguments {
+				args = append(args, arg.Name)
+			}
+			fns = append(fns, fnNames{Name: fn.Name, Args: args})
+		}
+		ifaces = append(ifaces, ifaceNames{Name: iface.Name, Functions: fns})
+	}
+	b, _ := json.Marshal(ifaces)
+	return string(b)
+}
+
 // plannedImports returns an ordered slice of import lines to emit. Encodes
 // the named/namespace/side-effect plan for the imports template.
 func (c *entrypointFuncCtx) plannedImports() []importLine {
@@ -475,10 +526,13 @@ func (c *entrypointFuncCtx) plannedImports() []importLine {
 		sdk = "@dagger.io/dagger"
 	}
 	var lines []importLine
-	lines = append(lines, importLine{
-		From:  sdk,
-		Names: []string{"Context", "Error as DaggerError", "FunctionCachePolicy", "TypeDefKind", "connection", "dag", "getRegisteredClass"},
-	})
+	sdkNames := []string{"Context", "Error as DaggerError", "FunctionCachePolicy", "TypeDefKind", "connection", "dag", "getRegisteredClass"}
+	if len(c.module.Interfaces) > 0 {
+		// Calls through the module's interfaces need the names the engine
+		// gives them (see ifaceTypeNameExpr).
+		sdkNames = append(sdkNames, "SchemaNames as __SchemaNames", "resolveSchemaNames as __resolveSchemaNames")
+	}
+	lines = append(lines, importLine{From: sdk, Names: sdkNames})
 	// Namespace import of the generated client so __loadCoreObject can look up
 	// core/dependency object classes by name when loading them from an ID.
 	lines = append(lines, importLine{From: sdk, Namespace: "* as __dagger"})

@@ -735,6 +735,12 @@ function toScreamingSnake(input: string): string {
 // gqlObjectName / gqlFieldName / gqlArgName. A different casing (e.g. the
 // scanner's convertToPascalCase, which splits on every case boundary) would
 // emit type/field names the engine never serves, breaking self calls.
+//
+// Only modules older than engine version v1.0.0 are named this way: from
+// v1.0.0 the engine names module declarations with its naming rules
+// (engine/naming), and getUrl becomes getURL. This emitter runs without an
+// engine connection and isn't wired in yet; whatever wires it has to name
+// v1.0.0 modules with the engine's rules (see ../naming.ts).
 function toPascal(name: string): string {
   return toCamelInitCase(name, true)
 }

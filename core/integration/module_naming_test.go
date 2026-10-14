@@ -304,3 +304,81 @@ class Test:
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/y", strings.TrimSpace(out))
 }
+
+// TestTypeScriptInterfaceAcronyms checks the calls the TypeScript runtime
+// builds through a module's own interface. From v1.0.0 the engine names the
+// interface and its members with its naming rules (PondHTTPFetcher,
+// getURL(comURL:)), and the runtime asks it for those names.
+func (ModuleNamingSuite) TestTypeScriptInterfaceAcronyms(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := goGitBase(t, c).
+		With(withLegacyTypescriptModule(t, c, "pond", "pond", "latest")).
+		With(sdkSourceAt("pond", "typescript", `import { func, object } from "@dagger.io/dagger"
+
+export interface HttpFetcher {
+  getUrl: (comUrl: string) => Promise<string>
+  withHttpPrefix: (httpPrefix: string) => Promise<HttpFetcher>
+}
+
+@object()
+export class Pond {
+  @func()
+  async fetch(fetcher: HttpFetcher, comUrl: string): Promise<string> {
+    const prefixed = await fetcher.withHttpPrefix("got ")
+    return await prefixed.getUrl(comUrl)
+  }
+}
+`)).
+		With(withLegacyTypescriptModule(t, c, "impl", "impl", "latest")).
+		With(sdkSourceAt("impl", "typescript", `import { func, object } from "@dagger.io/dagger"
+
+@object()
+export class Impl {
+  @func()
+  prefix = ""
+
+  @func()
+  getUrl(comUrl: string): string {
+    return this.prefix + comUrl
+  }
+
+  @func()
+  withHttpPrefix(httpPrefix: string): Impl {
+    this.prefix = httpPrefix
+    return this
+  }
+}
+`)).
+		With(withLegacyGoModule(t, c, ".", "test", "latest")).
+		With(fileContents("dagger.json", `{
+  "name": "test",
+  "sdk": "go",
+  "source": ".",
+  "engineVersion": "latest",
+  "dependencies": [
+    {"name": "impl", "source": "impl"},
+    {"name": "pond", "source": "pond"}
+  ]
+}`)).
+		With(sdkSource("go", `package main
+
+import "context"
+
+type Test struct{}
+
+func (m *Test) Fetch(ctx context.Context) (string, error) {
+	return dag.Pond().Fetch(ctx, dag.Impl().AsPondHTTPFetcher(), "https://example.com")
+}
+`))
+
+	out, err := modGen.With(daggerQueryAt("pond", `{__type(name: "PondHTTPFetcher") { fields { name args { name } } }}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `"getURL"`)
+	require.Contains(t, out, `"comURL"`)
+	require.Contains(t, out, `"withHTTPPrefix"`)
+
+	out, err = modGen.With(daggerCall("fetch")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "got https://example.com", strings.TrimSpace(out))
+}
