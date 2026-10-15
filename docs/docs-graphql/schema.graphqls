@@ -507,6 +507,13 @@ type Artifact implements Node {
   """The description of the field that supplies this artifact."""
   description: String!
 
+  """
+  The workspace this artifact was discovered in; its address is relative to it.
+  Null for an artifact without a workspace, such as one of an LLM's bound tool
+  objects (see LLM.artifacts).
+  """
+  workspace: Workspace
+
   """The artifact's DAG address, such as dag://engine-dev/playground."""
   uri(
     """
@@ -647,7 +654,9 @@ type Artifacts implements Node {
   id: ID!
 
   """
-  Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+  Convert the selection to expertise without running the functions. Fail if any
+  artifact is not a source of expertise, or is a module load failure (see
+  filterUri).
   """
   asExpertise: [Expertise!]!
 
@@ -785,6 +794,10 @@ type Artifacts implements Node {
   Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
 
   The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+
+  An address that names nothing here selects nothing. An address under a module
+  that failed to load keeps that module's load failure, so conversions such as
+  asExpertise report the error instead of an empty result.
   """
   filterUri(
     """A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]"""

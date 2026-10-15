@@ -5182,6 +5182,20 @@ export class Artifact extends BaseClient {
     const ctx = this._ctx.select("value", { ...opts })
     return new _NodeClient(ctx)
   }
+
+  /**
+   * The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts).
+   */
+  workspace = async (): Promise<Workspace | null> => {
+    const ctx = this._ctx.select("workspace").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new Workspace(ctx.copy().selectNode(response, "Workspace"))
+  }
 }
 
 export class ArtifactDimension extends BaseClient {
@@ -5667,7 +5681,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+   * Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise, or is a module load failure (see filterUri).
    */
   asExpertise = async (): Promise<Expertise[]> => {
     type asExpertise = {
@@ -5861,6 +5875,8 @@ export class Artifacts extends BaseClient {
    * Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
    *
    * The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+   *
+   * An address that names nothing here selects nothing. An address under a module that failed to load keeps that module's load failure, so conversions such as asExpertise report the error instead of an empty result.
    * @param uri A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]
    */
   filterUri = (uri: string): Artifacts => {

@@ -1148,6 +1148,21 @@ impl Artifact {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts).
+    pub async fn workspace(&self) -> Result<Option<Workspace>, DaggerError> {
+        let query = self.selection.select("workspace");
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| Workspace {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Workspace"),
+            graphql_client: self.graphql_client.clone(),
+        }))
+    }
     /// The artifact's DAG address, such as dag://engine-dev/playground.
     ///
     /// # Arguments
@@ -1598,7 +1613,7 @@ impl Artifacts {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+    /// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise, or is a module load failure (see filterUri).
     pub async fn as_expertise(&self) -> Result<Vec<Expertise>, DaggerError> {
         let query = self.selection.select("asExpertise");
         let query = query.select("id");
@@ -2103,6 +2118,7 @@ impl Artifacts {
     }
     /// Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
     /// The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+    /// An address that names nothing here selects nothing. An address under a module that failed to load keeps that module's load failure, so conversions such as asExpertise report the error instead of an empty result.
     ///
     /// # Arguments
     ///

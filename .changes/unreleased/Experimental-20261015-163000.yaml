@@ -1,0 +1,13 @@
+kind: Experimental
+body: |
+  Add `Artifact.workspace`, the workspace an artifact was discovered in, or null
+  for an artifact without one, such as an LLM's bound tool objects.
+
+  `Artifacts.filterUri` now keeps a module's load failure for an address under
+  a module that failed to load, so `asExpertise` and other conversions report
+  the load error instead of finding nothing. An address the workspace does not
+  have still selects nothing.
+time: 2026-10-15T16:30:00Z
+custom:
+  Author: vito
+  PR: ""

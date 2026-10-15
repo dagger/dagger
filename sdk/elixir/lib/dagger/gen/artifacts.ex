@@ -62,7 +62,7 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
-  Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+  Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise, or is a module load failure (see filterUri).
   """
   @spec as_expertise(t()) :: {:ok, [Dagger.Expertise.t()]} | {:error, term()}
   def as_expertise(%__MODULE__{} = artifacts) do
@@ -337,6 +337,8 @@ defmodule Dagger.Artifacts do
   Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
 
   The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+
+  An address that names nothing here selects nothing. An address under a module that failed to load keeps that module's load failure, so conversions such as asExpertise report the error instead of an empty result.
   """
   @spec filter_uri(t(), String.t()) :: Dagger.Artifacts.t()
   def filter_uri(%__MODULE__{} = artifacts, uri) do

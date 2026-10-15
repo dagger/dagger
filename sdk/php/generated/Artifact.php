@@ -50,6 +50,20 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts).
+     */
+    public function workspace(): ?Workspace
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Workspace::class, new \Dagger\Id((string)$id), 'Workspace');
+    }
+
+    /**
      * The artifact's DAG address, such as dag://engine-dev/playground.
      */
     public function uri(?bool $absolute = false, ?bool $dimensionKeys = true, ?bool $typeAssertion = false): string

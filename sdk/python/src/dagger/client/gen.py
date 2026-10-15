@@ -1704,6 +1704,15 @@ class Artifact(Type):
         _ctx = self._select("value", _args)
         return _NodeClient(_ctx)
 
+    async def workspace(self) -> "Workspace | None":
+        """The workspace this artifact was discovered in; its address is relative
+        to it. Null for an artifact without a workspace, such as one of an
+        LLM's bound tool objects (see LLM.artifacts).
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("workspace", _args)
+        return await _ctx.execute_object(Workspace)
+
 
 @typecheck
 class ArtifactDimension(Type):
@@ -2186,7 +2195,8 @@ class Artifacts(Type):
 
     async def as_expertise(self) -> list["Expertise"]:
         """Convert the selection to expertise without running the functions. Fail
-        if any artifact is not a source of expertise.
+        if any artifact is not a source of expertise, or is a module load
+        failure (see filterUri).
         """
         _args: list[Arg] = []
         _ctx = self._select("asExpertise", _args)
@@ -2401,6 +2411,11 @@ class Artifacts(Type):
 
         The scheme is optional. The path may be a pattern; an empty path
         selects all artifacts.
+
+        An address that names nothing here selects nothing. An address under a
+        module that failed to load keeps that module's load failure, so
+        conversions such as asExpertise report the error instead of an empty
+        result.
 
         Parameters
         ----------
