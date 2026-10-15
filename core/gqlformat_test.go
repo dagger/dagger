@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,6 +54,35 @@ func TestNamespaceObjects(t *testing.T) {
 			require.Equal(t, tc.result, result)
 		})
 	}
+}
+
+// Transition aliases exist only in the views that have the new names.
+func TestNameAliasesView(t *testing.T) {
+	t.Parallel()
+
+	aliases := NameAliases("getUrl")
+	require.Equal(t, []string{"getUrl"}, aliases.Names)
+	for view, accepted := range map[call.View]bool{
+		"":               true,
+		"v1.0.0-0":       true,
+		"v1.0.0":         true,
+		"v1.2.3":         true,
+		"v0.21.5":        false,
+		"v0.9.9":         false,
+		"v0.21.5-beta.1": false,
+	} {
+		require.Equal(t, accepted, aliases.View.Contains(view), "view %q", view)
+	}
+}
+
+// Module name aliases are accepted in every view: a module's names follow
+// its own engine version, not its caller's.
+func TestModuleNameAliasesView(t *testing.T) {
+	t.Parallel()
+
+	aliases := ModuleNameAliases("legacyJson")
+	require.Equal(t, []string{"legacyJson"}, aliases.Names)
+	require.Nil(t, aliases.View)
 }
 
 // TestTypeDefWithNameVerbatim guards the invariant that the internal __withName
