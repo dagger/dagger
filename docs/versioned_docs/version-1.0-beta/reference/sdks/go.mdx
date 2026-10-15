@@ -760,6 +760,10 @@ Go modules use `// +directive` comments to add Dagger metadata that Go's type sy
 | `// +private` | above a struct field | keep the field out of the API |
 | `// +check` | above a method | mark the function as a [check](#checks) |
 | `// +generate` | above a method | mark the function as a [generator](#generators) |
+| `// +collection` | above a struct | mark the type as a [collection](#collections) |
+| `// +keys` | above a struct field | the collection's keys |
+| `// +get` | above a method | the function that returns one item of a collection |
+| `// +delta` | above a struct field | receives the changes to a collection's keys |
 
 ### Ignore patterns
 
@@ -843,6 +847,138 @@ func (m *MyModule) Web() *dagger.Service {
 ```
 
 Like checks, services can also be declared on custom object types so you can group related services (for example an `Infra` object exposing a `Database` service). This is the same `*dagger.Service` type described under [Services](#services) above.
+
+## Collections {#collections}
+
+A **collection** is a set of objects that a module discovers at run time, each with a unique key: the packages in a repository, the test files in a project, or the scripts in a directory. Return a collection when users should be able to run a check or generator on one item. Dagger adds a flag for each collection to `dagger check` and `dagger generate`, and users select items with it. See [Select collection items](../../using/checking.mdx#select-collection-items).
+
+### Declare a collection
+
+Mark a struct with the `// +collection` pragma. A collection has two members:
+
+- A **keys** field, marked `// +keys`. It is a slice of a scalar or enum type, such as `[]string`, and holds one unique key per item.
+- A **get** function, marked `// +get`. It takes one key and returns the item for it.
+
+Without the pragmas, the members must be named `Keys` and `Get`.
+
+This module discovers the shell scripts in a workspace and lints them with ShellCheck. `Scripts` is the collection, keyed by path, and `Script` is the item:
+
+```go title="main.go"
+package main
+
+import (
+	"context"
+
+	"dagger/shellcheck/internal/dagger"
+)
+
+type Shellcheck struct{}
+
+// Shell scripts in the workspace, keyed by path.
+func (m *Shellcheck) Scripts(ctx context.Context, ws *dagger.Workspace) (*Scripts, error) {
+	source := ws.Directory("/", dagger.WorkspaceDirectoryOpts{Include: []string{"**/*.sh"}})
+	paths, err := source.Glob(ctx, "**/*.sh")
+	if err != nil {
+		return nil, err
+	}
+	return &Scripts{Paths: paths, Source: source}, nil
+}
+
+// Shell scripts, keyed by path.
+//
+// +collection
+type Scripts struct {
+	// Script paths, relative to the workspace root.
+	//
+	// +keys
+	Paths []string
+
+	// +private
+	Source *dagger.Directory
+}
+
+// The script at this path.
+//
+// +get
+func (s *Scripts) Script(path string) *Script {
+	return &Script{Path: path, Source: s.Source}
+}
+
+// Lint the selected scripts with one ShellCheck run.
+//
+// +check
+func (s *Scripts) Lint(ctx context.Context) error {
+	return shellcheck(ctx, s.Source, s.Paths...)
+}
+
+// A shell script.
+type Script struct {
+	// Script path, relative to the workspace root.
+	Path string
+
+	// +private
+	Source *dagger.Directory
+}
+
+// Lint this script.
+//
+// +check
+func (s *Script) Lint(ctx context.Context) error {
+	return shellcheck(ctx, s.Source, s.Path)
+}
+
+func shellcheck(ctx context.Context, source *dagger.Directory, paths ...string) error {
+	_, err := dag.Container().
+		From("koalaman/shellcheck-alpine:stable").
+		WithMountedDirectory("/src", source).
+		WithWorkdir("/src").
+		WithExec(append([]string{"shellcheck"}, paths...)).
+		Sync(ctx)
+	return err
+}
+```
+
+The flag is named after the item type, with the module name in front, so `Script` in the `shellcheck` module adds `--shellcheck-script`. Its placeholder comes from the get function's argument name:
+
+```shell
+dagger check --shellcheck-script=scripts/deploy.sh
+dagger list shellcheck-scripts -a
+```
+
+### Batch functions
+
+Callers see the same API on every collection, whatever its Go struct holds:
+
+| Function | Returns |
+|---|---|
+| `keys` | The keys, in the order the module returned them |
+| `list` | Every item |
+| `get` | The item with the given key |
+| `subset` | A collection of the items with the given keys |
+| `batch` | The collection's other functions |
+
+Every other method on the collection struct is a **batch function**, reached through `batch`. Dagger calls it on a copy of the collection whose keys field holds only the selected keys, so `s.Paths` above lists the scripts the user selected. The collection's other fields are internal to the module.
+
+A batch check or generator replaces the check or generator with the same name on the item type. `dagger check --shellcheck` calls `Scripts.Lint` once with every script, not `Script.Lint` once per script. A batch function runs once for each parent item: the batch of a collection nested inside another collection's items runs once per parent. Without a batch function of the same name, the item's check runs once per selected item.
+
+### Collection delta
+
+A batch function can tell whether the user narrowed the selection. Add a `*dagger.CollectionDelta` field marked `// +delta`, or named `Delta`. Dagger fills it before each call with the keys added and removed since the module created the collection:
+
+```go
+// +collection
+type Scripts struct {
+	// +keys
+	Paths []string
+
+	// Scripts selected in or out since discovery.
+	//
+	// +delta
+	Selection *dagger.CollectionDelta
+}
+```
+
+`s.Selection.AddedKeys(ctx)` and `s.Selection.RemovedKeys(ctx)` return the changes. When both are empty, the collection holds every item the module discovered. The Go module uses this to run `go test` on a whole package when every test is selected, and `go test -run` with the selected names otherwise.
 
 ## Testing Go modules
 

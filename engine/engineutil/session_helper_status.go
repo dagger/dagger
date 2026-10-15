@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -58,7 +59,14 @@ func sessionHelperStatusErr(line string) error {
 	kind, detail, _ := strings.Cut(line, " ")
 	switch kind {
 	case "exited":
-		return fmt.Errorf("the Dagger session helper in this container exited with status %s; its error, if any, is in the exec's output", detail)
+		status, output, _ := strings.Cut(detail, " ")
+		if output == "" {
+			return fmt.Errorf("the Dagger session helper in this container exited with status %s", status)
+		}
+		if unquoted, err := strconv.Unquote(output); err == nil {
+			output = unquoted
+		}
+		return fmt.Errorf("the Dagger session helper in this container exited with status %s: %s", status, strings.TrimSpace(output))
 	case "start-failed":
 		return fmt.Errorf("the Dagger session helper in this container failed to start: %s", detail)
 	case "":

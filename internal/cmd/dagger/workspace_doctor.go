@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -163,7 +164,7 @@ func runDoctorChecks(ctx context.Context, report *doctorReport, connect func(con
 	}
 	defer closeSession()
 
-	ws := sess.Dagger().CurrentWorkspace()
+	ws := core.NewQuery(sess.Dagger()).CurrentWorkspace()
 	if remote {
 		doctorRemoteWorkspaceFiles(ctx, report, ws)
 	}
@@ -216,14 +217,14 @@ func doctorWorkspaceFiles(ctx context.Context, report *doctorReport, ws *workspa
 	report.result(ctx, "Lockfile", lockPath+" is loadable", err, false)
 }
 
-func doctorRemoteWorkspaceFiles(ctx context.Context, report *doctorReport, ws *dagger.Workspace) {
+func doctorRemoteWorkspaceFiles(ctx context.Context, report *doctorReport, ws *core.Workspace) {
 	cwd, err := ws.Cwd(ctx)
 	if err != nil {
 		report.result(ctx, "Workspace files", "", err, false)
 		return
 	}
 	doctorWorkspaceFilesInRoot(ctx, report, cwd, func(dir string) ([]string, error) {
-		return ws.Directory("/"+dir, dagger.WorkspaceDirectoryOpts{Include: []string{"*"}, Exclude: []string{"*/*"}}).Entries(ctx)
+		return ws.Directory("/"+dir, core.WorkspaceDirectoryOpts{Include: []string{"*"}, Exclude: []string{"*/*"}}).Entries(ctx)
 	}, func(name string) ([]byte, error) {
 		contents, err := ws.File("/" + filepath.ToSlash(name)).Contents(ctx)
 		return []byte(contents), err

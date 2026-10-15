@@ -5,6 +5,7 @@ import (
 
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -35,4 +36,22 @@ func RecordContentPreferredDigest(ctx context.Context, span trace.Span, frame *R
 	if dig != "" {
 		span.SetAttributes(attribute.String(telemetryattrs.DagContentPreferredDigestAttr, dig.String()))
 	}
+}
+
+// ResultFrameFacts reports the recorded output content digest and the type
+// name of res's call frame, and whether res has a frame. It reads the shared
+// frame directly, which is immutable once stored: ResultCall would clone the
+// frame's whole DAG just to read these two facts.
+func ResultFrameFacts(res AnyResult) (content digest.Digest, typeName string, ok bool) {
+	if res == nil {
+		return "", "", false
+	}
+	frame := res.cacheSharedResult().loadResultCall()
+	if frame == nil {
+		return "", "", false
+	}
+	if frame.Type != nil {
+		typeName = frame.Type.NamedType
+	}
+	return frame.ContentDigest(), typeName, true
 }

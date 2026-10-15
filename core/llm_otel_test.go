@@ -44,7 +44,7 @@ func TestLLMUnsentRequestHasNoNetworkEstimate(t *testing.T) {
 	require.NoError(t, err)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://unused.invalid", strings.NewReader(`{"model":"test"}`))
 	require.NoError(t, err)
-	resp, err := newLLMOTelTransport(unsentLLMTransport{}, "test").RoundTrip(req)
+	resp, err := newLLMOTelTransport(unsentLLMTransport{}, "test", false).RoundTrip(req)
 	if resp != nil {
 		require.NoError(t, resp.Body.Close())
 	}
@@ -88,7 +88,7 @@ func TestLLMAttributedNetworkBytes(t *testing.T) {
 	ctx, err = enginetelemetry.WithNetworkRecording(ctx)
 	require.NoError(t, err)
 
-	client := &http.Client{Transport: newLLMOTelTransport(nil, "test")}
+	client := &http.Client{Transport: newLLMOTelTransport(nil, "test", false)}
 	req, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, srv.URL, strings.NewReader(requestBody),
 	)
@@ -170,7 +170,7 @@ func TestLLMTransportSpanInternal(t *testing.T) {
 			ctx, root := tp.Tracer("llm-otel-test").Start(context.Background(), "root")
 			defer root.End()
 
-			client := &http.Client{Transport: newLLMOTelTransport(nil, "test")}
+			client := &http.Client{Transport: newLLMOTelTransport(nil, "test", false)}
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL+"/v1/messages",
 				strings.NewReader(`{"model":"test"}`))
 			if err != nil {

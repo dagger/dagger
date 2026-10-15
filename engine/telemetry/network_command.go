@@ -69,10 +69,13 @@ func SetCommandNetworkHook(hook func(context.Context, *exec.Cmd) func()) {
 
 // PrepareCommandNetwork prepares accounting before cmd.Start. Call the returned
 // function after Wait, or after releasing a daemon. Without an engine-installed
-// hook this does nothing, including emitting no availability metrics.
+// hook this does nothing, including emitting no availability metrics. A
+// workload transfer in ctx then has unknown bytes.
 func PrepareCommandNetwork(ctx context.Context, cmd *exec.Cmd) func() {
 	if hook := commandNetwork.Load(); hook != nil {
 		return (*hook)(ctx, cmd)
 	}
+	WorkloadInputFromContext(ctx).Unmeasured()
+	WorkloadOutputFromContext(ctx).Unmeasured()
 	return func() {}
 }

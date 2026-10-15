@@ -30,7 +30,7 @@ Install the official Prettier module:
 dagger module install dagger.io/js/prettier
 ```
 
-The command creates `dagger.toml`. It also adds `prettier:check` to the workspace.
+The command creates `dagger.toml`. It also adds a `format-check` Check for each Prettier project in the repository. `hello-dagger` has one, at its root.
 
 ## Run the Check
 
@@ -38,14 +38,14 @@ The command creates `dagger.toml`. It also adds `prettier:check` to the workspac
 dagger check
 ```
 
-`prettier:check` reports unformatted files. The command exits with an error.
+`format-check` reports unformatted files. The command exits with an error.
 
 ## Fix the formatting
 
-Run Prettier and apply its changeset:
+Run Prettier on the project in the current directory and apply its changeset:
 
 ```shell
-dagger api call prettier write -y
+dagger api call -y prettier project --path=. format
 ```
 
 ## Verify the result
@@ -56,4 +56,4 @@ Run the Check again:
 dagger check
 ```
 
-You are done when the output shows that `prettier:check` passed.
+You are done when the output shows that `dag://?check=prettier/projects/format-check&prettier-project=.` passed.

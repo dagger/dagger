@@ -17,11 +17,15 @@ func installCollectionSchema(s *moduleSchema, dag *dagql.Server) {
 		dagql.Func("withCollectionKeys", s.typeDefWithCollectionKeys).View(AfterVersion("v1.0.0-0")).Doc("Select the stored keys field for this collection."),
 		dagql.Func("withCollectionGet", s.typeDefWithCollectionGet).View(AfterVersion("v1.0.0-0")).Doc("Select the item lookup function for this collection."),
 		dagql.Func("withCollectionDelta", s.typeDefWithCollectionDelta).View(AfterVersion("v1.0.0-0")).Doc("Select the field that receives changes from the original collection."),
-		dagql.Func("asCollection", s.typeDefAsCollection).View(AfterVersion("v1.0.0-0")).Doc("Collection metadata, or null if this object is not a collection."),
+		dagql.Func("asCollection", s.typeDefAsCollection).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("simple field selection").
+			Doc("Collection metadata, or null if this object is not a collection."),
 	}.Install(dag)
 	dagql.Fields[*core.ObjectTypeDef]{
 		dagql.Func("__withCollectionMember", s.objectTypeDefWithCollectionMember),
 		dagql.NodeFunc("__collectionProjection", s.collectionProjection),
+		dagql.NodeFunc("__collectionTypeDef", s.collectionTypeDef),
 	}.Install(dag)
 	dagql.Fields[*core.CollectionTypeDef]{
 		dagql.Func("keyType", s.collectionKeyType).Doc("The type of collection keys."),
@@ -80,14 +84,33 @@ func (s *moduleSchema) objectTypeDefWithCollectionMember(_ context.Context, obj 
 	return obj.WithCollectionMember(args.Role, args.Name)
 }
 
-func (s *moduleSchema) typeDefAsCollection(_ context.Context, def *core.TypeDef, _ struct{}) (dagql.Nullable[*core.CollectionTypeDef], error) {
+// typeDefAsCollection is uncached, like the other as* accessors: the CLI
+// selects it for every typedef on every start-up. Most typedefs aren't
+// collections and get null. A collection's metadata is selected through the
+// cached __collectionTypeDef, so it keeps an addressable ID.
+func (s *moduleSchema) typeDefAsCollection(ctx context.Context, def *core.TypeDef, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.CollectionTypeDef]], error) {
 	if !def.AsObject.Valid || def.AsObject.Value.Self().Collection == nil || !def.AsObject.Value.Self().Collection.Enabled {
-		return dagql.Null[*core.CollectionTypeDef](), nil
+		return dagql.Null[dagql.ObjectResult[*core.CollectionTypeDef]](), nil
 	}
-	if _, err := def.AsObject.Value.Self().CollectionMembers(); err != nil {
-		return dagql.Null[*core.CollectionTypeDef](), err
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.Null[dagql.ObjectResult[*core.CollectionTypeDef]](), err
 	}
-	return dagql.NonNull(&core.CollectionTypeDef{Object: def.AsObject.Value}), nil
+	var metadata dagql.ObjectResult[*core.CollectionTypeDef]
+	if err := dag.Select(ctx, def.AsObject.Value, &metadata, dagql.Selector{Field: "__collectionTypeDef"}); err != nil {
+		return dagql.Null[dagql.ObjectResult[*core.CollectionTypeDef]](), err
+	}
+	return dagql.NonNull(metadata), nil
+}
+
+func (s *moduleSchema) collectionTypeDef(_ context.Context, obj dagql.ObjectResult[*core.ObjectTypeDef], _ struct{}) (*core.CollectionTypeDef, error) {
+	if obj.Self().Collection == nil || !obj.Self().Collection.Enabled {
+		return nil, fmt.Errorf("object %q is not a collection", obj.Self().Name)
+	}
+	if _, err := obj.Self().CollectionMembers(); err != nil {
+		return nil, err
+	}
+	return &core.CollectionTypeDef{Object: obj}, nil
 }
 
 func (s *moduleSchema) collectionKeyType(_ context.Context, def *core.CollectionTypeDef, _ struct{}) (dagql.ObjectResult[*core.TypeDef], error) {

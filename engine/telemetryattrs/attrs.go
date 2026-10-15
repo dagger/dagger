@@ -1,6 +1,24 @@
 package telemetryattrs
 
 const (
+	// WorkloadTransfersAttr marks, in the workload export, the spans of an
+	// engine that records its external transfers and the external network
+	// readings of its executions. Without it, the transferred bytes below a
+	// call are unknown, not zero.
+	WorkloadTransfersAttr = "dagger.io/workload.transfers"
+	WorkloadTransfersV1   = "1"
+
+	// A workload input or output span records one external transfer to or
+	// from the engine. Kind is filesync, registry, git, or http. Bytes are
+	// absent when the transfer could not be measured. Identity names the
+	// transferred content, for example a manifest or content digest; it never
+	// contains a URL.
+	WorkloadInputSpan            = "workload.input"
+	WorkloadOutputSpan           = "workload.output"
+	WorkloadTransferKindAttr     = "dagger.io/workload.transfer.kind"
+	WorkloadTransferBytesAttr    = "dagger.io/workload.transfer.bytes"
+	WorkloadTransferIdentityAttr = "dagger.io/workload.transfer.identity"
+
 	// DagContentPreferredDigestAttr is the operation's content-preferred identity
 	// at span completion (string). Prefer its recorded output content digest;
 	// otherwise hash its recipe using recursively content-preferred inputs.

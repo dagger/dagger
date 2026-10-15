@@ -61,7 +61,7 @@ func (Impl) ModuleTypes(
 		runner = runDangDirForModuleTypes
 	}
 
-	_, err = evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, true /* inert attachables */, nil, scopedMod, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
+	_, err = evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, true /* inert attachables */, nil, scopedMod, true /* for typedefs */, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		inst, err = initDangModule(ctx, dag, env)
 		if err != nil {
 			return nil, err

@@ -53,14 +53,14 @@ source = "github.com/example/playwright@v1.0"
 app = "dag://docusaurus/serve"
 ```
 
-The setting selects a `Service` artifact by its `dag://` address. In this example, `docusaurus` is the module's install name, the `[modules.docusaurus]` key in `dagger.toml`. The selected function must return a non-null `Service` and be reachable without required user input. Use `dagger artifact list --type Service` to find and copy an available address. When Dagger constructs `playwright`, it evaluates that artifact and passes the service as the `app` argument.
+The setting selects a `Service` artifact by its `dag://` address. In this example, `docusaurus` is the module's install name, the `[modules.docusaurus]` key in `dagger.toml`. The selected function must return a non-null `Service` and be reachable without required user input. Use `dagger list services` to find the services available to wire. When Dagger constructs `playwright`, it evaluates that artifact and passes the service as the `app` argument.
 
 This also works for `Container` constructor arguments. Select a `Container` artifact to share a common base image across modules.
 
 Because a module reference is an ordinary address string, the same value works as a CLI flag with no `dagger.toml` entry:
 
 ```shell
-dagger call playwright --app=dag://docusaurus/serve test
+dagger api call playwright --app=dag://docusaurus/serve test
 ```
 
 ## Container-to-host networking

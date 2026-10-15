@@ -6,10 +6,11 @@ description: "Check and rewrite source formatting with Prettier."
 
 # Prettier
 
-The Prettier module keeps formatting boring, consistent, and enforced before
-code review. It checks formatting locally, in CI, and in Dagger Cloud, and can
-rewrite source to match, always using your project's own Prettier config. Keep
-it alongside a linter so formatting policy stays separate from lint rules.
+The Prettier module keeps formatting consistent and enforced before code
+review. It checks formatting locally, in CI, and in Dagger Cloud, and can
+rewrite source to match, always using the project's own Prettier config. Each
+Prettier config roots a project. Keep it alongside a linter so formatting
+policy stays separate from lint rules.
 
 ## Add it to your workspace
 
@@ -20,40 +21,70 @@ dagger module install dagger.io/js/prettier
 ## Run the check
 
 ```bash
-dagger check                 # run every check in the workspace
-dagger check dag://prettier/check  # just check formatting
+dagger check --prettier                          # check every project
+dagger check --prettier-project=packages/ui      # check one project
 ```
 
-`prettier:check` installs dependencies and runs `prettier --check .` across the
-workspace, failing if any file isn't formatted.
+The check is `prettier/projects/format-check`. It installs dependencies and
+runs the project's own Prettier with `--check` from the project directory,
+failing if any file isn't formatted. A check over several projects reports
+every project that fails.
+
+## Projects
+
+| Flag | Collection | Key |
+| --- | --- | --- |
+| `--prettier-project` | `projects` | Directory holding the Prettier config, relative to the workspace root. The root is `.` |
+
+List the keys with `dagger list prettier-projects -a`. [Select collection items](../../../using/checking.mdx#select-collection-items) describes how to select items.
+
+A project is a directory holding `.prettierrc`, `.prettierrc.json`, `.json5`,
+`.yaml`, `.yml`, `.toml`, `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, or `.cts`, or
+`prettier.config.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, or `.cts`. A config in the
+`prettier` field of `package.json` does not root a project. A project covers
+everything below it except nested projects.
+
+Projects are found at or below the directory `dagger` runs from, plus the
+nearest project that encloses it.
+
+The source is mounted without files ignored by `.gitignore`, in addition to the
+project's own Prettier ignore files. Dependencies install at the nearest
+workspace root (a `pnpm-workspace.yaml` or a `package.json` with `workspaces`),
+else the nearest lockfile, else the nearest `package.json`.
 
 ## Fix formatting
 
-Prettier also exposes a `write` function that runs `prettier --write .` across
-the workspace and returns the reformatted source as a changeset (everything
-except `node_modules`). Which files it touches is governed by your project's own
-Prettier configuration and ignore files. It's a regular function, not a check, so
-it doesn't run during `dagger check`. Call it directly:
+`format` runs Prettier with `--write` and returns the reformatted source as a
+changeset. It is a regular function, not a check, so it doesn't run during
+`dagger check`. Call it on the project that contains a path:
 
 ```bash
-dagger api call prettier write
+dagger api call -y prettier project --path=. format
 ```
+
+`-y` applies the changeset without prompting.
 
 ## Configure it
 
 List the current settings with `dagger module settings prettier`, then change one with
 `dagger module settings prettier <key> <value>`. They live in `dagger.toml`
-under `[modules.prettier.settings]`:
+under `[modules.prettier.settings]` and apply to every project:
 
-- `packageManager` (default `npm`) is the package manager used to install
-  dependencies before checking. Set it to `yarn` or `pnpm` to match the project.
+- `packageManager` (default empty) is the package manager that installs
+  dependencies: `npm`, `yarn`, `pnpm`, or `bun`. Empty detects it from the
+  `packageManager` field of `package.json`, then from the lockfile, then uses
+  npm.
 - `baseImageAddress` (default `node:25-alpine`) is the Node base image
   Prettier runs in. Pin it to your project's Node version, e.g. `node:22-alpine`.
+- `installFlags` (default empty) are extra arguments for the install command,
+  such as `["--ignore-scripts"]`.
+- `environment` (default empty) sets environment variables for Prettier, as
+  `KEY=VALUE`.
 
 ```toml
 [modules.prettier.settings]
-packageManager = "pnpm"
 baseImageAddress = "node:22-alpine"
+installFlags = ["--ignore-scripts"]
 ```
 
 ## Working with other modules

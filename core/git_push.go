@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/util/gitutil"
 )
 
@@ -193,7 +194,14 @@ func (ref *GitRef) Push(ctx context.Context, destination *RemoteGitRepository, o
 			pushGit = pushGit.New(gitutil.WithHTTPTokenAuth(destination.URL, credential.Password, credential.Username))
 		} // Missing credentials are permitted for anonymous writable remotes.
 	}
-	return runGitPush(ctx, pushGit.New(gitutil.WithGitDir(tmp)), destination.URL.Remote(), name, ref.Ref.SHA, opts.ExpectedRemoteSHA)
+	// A destination that a Dagger service serves is inside the engine.
+	var output *enginetel.WorkloadTransfer
+	if len(destination.Services) == 0 {
+		ctx, output = enginetel.StartWorkloadOutput(ctx, enginetel.WorkloadTransferGit)
+	}
+	result, err := runGitPush(ctx, pushGit.New(gitutil.WithGitDir(tmp)), destination.URL.Remote(), name, ref.Ref.SHA, opts.ExpectedRemoteSHA)
+	output.End("commit:"+ref.Ref.SHA, err)
+	return result, err
 }
 
 func prepareGitPushSSHAuth(ctx context.Context, query *Query, owner *engine.ClientMetadata, destination *RemoteGitRepository) (string, error) {

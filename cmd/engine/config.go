@@ -49,7 +49,7 @@ func setDefaultBuildkitConfig(cfg *bkconfig.Config, netConf *networkConfig) {
 	cfg.Workers.OCI.Enabled = &isTrue
 
 	if cfg.Workers.OCI.Binary == "" {
-		cfg.Workers.OCI.Binary = distconsts.RuncPath
+		cfg.Workers.OCI.Binary = distconsts.RuntimePath
 	}
 
 	if cfg.DNS == nil {

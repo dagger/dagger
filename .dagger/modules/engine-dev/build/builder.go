@@ -147,7 +147,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		{path: "/usr/bin/sshfs", file: build.sshfsBin()},
 		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
-		{path: consts.RuncPath, file: build.runcBin()},
+		{path: consts.RuntimePath, file: build.runtimeBin()},
 		{path: consts.DaggerInitPath, file: build.daggerInit()},
 		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session", false)},
 		{path: consts.TiniPath, file: build.Init(), fileOpts: []dagger.ContainerWithFileOpts{{Permissions: 0o755}}},
@@ -237,27 +237,48 @@ func (build *Builder) goWithSource(source *dagger.Directory, race bool) *dagger.
 	})
 }
 
-func (build *Builder) runcBin() *dagger.File {
-	// We build runc from source to enable upgrades to go and other dependencies that
-	// can contain CVEs in the builds on github releases
-	buildCtr := dag.Container().
-		From(consts.GolangImage).
-		With(build.goPlatformEnv).
+func (build *Builder) runtimeBin() *dagger.File {
+	// crun is C: cross-compile it with xx, as runc is, statically linked,
+	// from the checksummed release tarball, which carries its libocispec
+	// submodule.
+	src := dag.HTTP(
+		"https://github.com/containers/crun/releases/download/"+consts.CrunVersion+"/crun-"+consts.CrunVersion+".tar.gz",
+		dagger.HTTPOpts{Checksum: consts.CrunChecksum},
+	)
+	jsonc := dag.HTTP(
+		"https://github.com/json-c/json-c/archive/refs/tags/json-c-"+consts.JSONCVersion+".tar.gz",
+		dagger.HTTPOpts{Checksum: consts.JSONCChecksum},
+	)
+	return dag.Container().
+		From(consts.AlpineImage).
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
-		WithEnvVariable("CGO_ENABLED", "1").
-		WithExec([]string{"apk", "add", "clang", "lld", "git", "pkgconf"}).
+		WithExec([]string{"apk", "add", "--no-cache",
+			"clang", "lld", "llvm", "make", "autoconf", "automake", "libtool", "pkgconf", "python3", "cmake",
+		}).
 		WithDirectory("/", dag.Container().From(consts.XxImage).Rootfs()).
-		WithExec([]string{"xx-apk", "update"}).
-		WithExec([]string{"xx-apk", "add", "build-base", "pkgconf", "libseccomp-dev", "libseccomp-static"}).
-		WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
-		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("go-build")).
-		WithMountedDirectory("/src", dag.Git("github.com/opencontainers/runc").Tag(consts.RuncVersion).Tree()).
-		WithWorkdir("/src")
-
-	return buildCtr.
-		WithExec([]string{"xx-go", "build", "-trimpath", "-buildmode=pie", "-tags", "seccomp netgo osusergo", "-ldflags", "-X main.version=" + consts.RuncVersion + " -linkmode external -extldflags -static-pie", "-o", "runc", "."}).
-		File("runc")
+		WithExec([]string{"xx-apk", "add", "--no-cache",
+			"musl-dev", "gcc", "linux-headers",
+			"libcap-dev", "libcap-static", "libseccomp-dev", "libseccomp-static", "argp-standalone",
+		}).
+		WithFile("/crun.tar.gz", src).
+		WithFile("/json-c.tar.gz", jsonc).
+		WithExec([]string{"sh", "-ec", `
+sysroot=$(xx-info sysroot)
+mkdir -p /json-c/build /src
+tar xzf /json-c.tar.gz --strip-components=1 -C /json-c
+cd /json-c/build
+cmake .. $(xx-clang --print-cmake-defines) -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release
+make -j"$(nproc)"
+make install DESTDIR="$sysroot"
+tar xzf /crun.tar.gz --strip-components=1 -C /src
+cd /src
+./configure --host="$(xx-clang --print-target-triple)" CC=xx-clang --disable-systemd --disable-criu LIBS=-largp
+make -j"$(nproc)" LDFLAGS=-all-static
+llvm-strip crun
+xx-verify --static crun
+`}).
+		File("/src/crun")
 }
 
 func (build *Builder) sshfsBin() *dagger.File {

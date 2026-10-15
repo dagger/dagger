@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -71,6 +72,41 @@ func TestCollectionSchema(t *testing.T) {
 	require.Equal(t, "Item", gotValue.Self().AsObject.Value.Self().Name)
 	require.Equal(t, "Items_Batch", gotBatch.Self().AsObject.Value.Self().Name)
 	require.Len(t, gotBatch.Self().AsObject.Value.Self().Functions, 1)
+
+	// asCollection isn't cached per session, but the metadata it returns must
+	// still have an ID that loads in a later request, as the SDKs' AsCollection
+	// does.
+	metadataID, err := metadata.ID()
+	require.NoError(t, err)
+	loaded, err := dag.Load(ctx, metadataID)
+	require.NoError(t, err)
+	var keyAgain dagql.ObjectResult[*core.TypeDef]
+	require.NoError(t, dag.Select(ctx, loaded, &keyAgain, dagql.Selector{Field: "keyType"}))
+	require.Equal(t, core.TypeDefKindString, keyAgain.Self().Kind)
+	recipeID, err := metadata.RecipeID(ctx)
+	require.NoError(t, err)
+	loaded, err = dag.Load(ctx, recipeID)
+	require.NoError(t, err)
+	require.NoError(t, dag.Select(ctx, loaded, &keyAgain, dagql.Selector{Field: "keyType"}))
+	require.Equal(t, core.TypeDefKindString, keyAgain.Self().Kind)
+	// The same through the public API. This fixture has no module dependency
+	// resolver, and every ID belongs to this schema, so node(id:) can use
+	// dagql's direct loader.
+	dag.SetNodeLoader(nil)
+	collectionID, err := collection.ID()
+	require.NoError(t, err)
+	encoded, err := collectionID.Encode()
+	require.NoError(t, err)
+	res, err := dag.Query(ctx, fmt.Sprintf(`{ node(id: %q) { ... on TypeDef { asCollection { id keyType { name } valueType { name } } } } }`, encoded), nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, res["node"].(map[string]any)["asCollection"].(map[string]any)["id"])
+	notCollectionID, err := item.ID()
+	require.NoError(t, err)
+	encoded, err = notCollectionID.Encode()
+	require.NoError(t, err)
+	res, err = dag.Query(ctx, fmt.Sprintf(`{ node(id: %q) { ... on TypeDef { asCollection { id } } } }`, encoded), nil)
+	require.NoError(t, err)
+	require.Nil(t, res["node"].(map[string]any)["asCollection"])
 
 	var public dagql.ObjectResult[*core.ObjectTypeDef]
 	require.NoError(t, dag.Select(ctx, collection, &public, dagql.Selector{Field: "asObject"}))

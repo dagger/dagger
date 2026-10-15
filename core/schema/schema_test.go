@@ -721,7 +721,7 @@ func TestCurrentTypeDefsReturnAllTypesAfterSessionRelease(t *testing.T) {
 var typeDefAccessorFields = map[string][]string{
 	"Function":         {"args", "returnType", "sourceModuleName"},
 	"FunctionArg":      {"typeDef"},
-	"TypeDef":          {"asList", "asObject", "asInterface", "asInput", "asScalar", "asEnum"},
+	"TypeDef":          {"asList", "asObject", "asInterface", "asInput", "asScalar", "asEnum", "asCollection"},
 	"ObjectTypeDef":    {"fields", "functions", "constructor"},
 	"InterfaceTypeDef": {"functions"},
 	"InputTypeDef":     {"fields"},
@@ -757,6 +757,7 @@ fragment FieldParts on FieldTypeDef { name typeDef { ...TypeDefRefParts } }
 		asInterface { name functions { ...FunctionParts } }
 		asInput { name fields { ...FieldParts } }
 		asList { elementTypeDef { ...TypeDefRefParts } }
+		asCollection { keyType { ...TypeDefRefParts } valueType { ...TypeDefRefParts } batchType { ...TypeDefRefParts } }
 	}
 }`
 

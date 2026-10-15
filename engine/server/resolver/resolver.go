@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -201,7 +202,7 @@ func (r *Resolver) ResolveImageConfig(
 	key += fmt.Sprintf(":%d", opts.ResolveMode)
 	key += ":" + opts.RegistryTransport.CacheKey()
 
-	resolve := func(ctx context.Context) (*resolveImageConfigResult, error) {
+	resolve := func(ctx context.Context) (_ *resolveImageConfigResult, rerr error) {
 		if opts.ResolveMode == ResolveModeDefault {
 			if resolvedRef, dgst, configBytes, found, err := r.tryLocalCanonicalConfig(ctx, ref, opts); err != nil {
 				return nil, err
@@ -214,6 +215,9 @@ func (r *Resolver) ResolveImageConfig(
 			}
 		}
 
+		ctx, input := registryTransfer(ctx, ref, opts.Network, enginetelemetry.StartWorkloadInput)
+		var identity string
+		defer func() { input.End(identity, rerr) }()
 		network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
 		if err != nil {
 			return nil, fmt.Errorf("create registry resolve network recorder: %w", err)
@@ -222,6 +226,7 @@ func (r *Resolver) ResolveImageConfig(
 		if err != nil {
 			return nil, err
 		}
+		identity = registryMetadataIdentity(rootDesc.Digest)
 		fetcher, err := resolver.Fetcher(ctx, resolvedRef)
 		if err != nil {
 			return nil, err
@@ -284,7 +289,10 @@ func (r *Resolver) ResolveImageDigest(
 ) (_ string, _ digest.Digest, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "resolving "+ref,
 		telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, input := registryTransfer(ctx, ref, opts.Network, enginetelemetry.StartWorkloadInput)
+	var identity string
 	defer func() {
+		input.End(identity, rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -302,8 +310,34 @@ func (r *Resolver) ResolveImageDigest(
 	if err != nil {
 		return "", "", err
 	}
+	identity = registryMetadataIdentity(rootDesc.Digest)
 	return resolvedRef, rootDesc.Digest, nil
 }
+
+// registryTransfer records an external registry transfer. A registry that a
+// Dagger service serves is inside the engine, so its transfers are not
+// external.
+func registryTransfer(
+	ctx context.Context,
+	ref string,
+	network NetworkConfig,
+	start func(context.Context, string) (context.Context, *enginetelemetry.WorkloadTransfer),
+) (context.Context, *enginetelemetry.WorkloadTransfer) {
+	if named, err := reference.ParseNormalizedNamed(ref); err == nil {
+		host := reference.Domain(named)
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if _, ok := network.HostAliases[host]; ok {
+			return ctx, nil
+		}
+	}
+	return start(ctx, enginetelemetry.WorkloadTransferRegistry)
+}
+
+// Metadata and image transfers of the same root are different content.
+func registryMetadataIdentity(root digest.Digest) string  { return "metadata:" + root.String() }
+func registryImageIdentity(manifest digest.Digest) string { return "image:" + manifest.String() }
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "pulling "+bkcache.DisplayRef(ref), telemetry.Encapsulated(), telemetry.Encapsulate())
@@ -339,6 +373,9 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		}
 	}
 
+	ctx, input := registryTransfer(ctx, ref, opts.Network, enginetelemetry.StartWorkloadInput)
+	var identity string
+	defer func() { input.End(identity, rerr) }()
 	network, err := enginetelemetry.NewNetworkAccumulator(ctx, enginetelemetry.NetworkRX)
 	if err != nil {
 		return nil, fmt.Errorf("create registry pull network recorder: %w", err)
@@ -378,6 +415,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 			return nil, err
 		}
 	}
+	identity = registryImageIdentity(manifestDesc.Digest)
 
 	metadata := map[digest.Digest]ocispecs.Descriptor{}
 	recordNonLayers := images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
@@ -707,6 +745,8 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	if img == nil {
 		return errors.New("pushed image is nil")
 	}
+	ctx, output := registryTransfer(ctx, ref, opts.Network, enginetelemetry.StartWorkloadOutput)
+	defer func() { output.End(registryImageIdentity(img.RootDesc.Digest), rerr) }()
 	network, err := enginetelemetry.NewNetworkAccumulator(
 		ctx,
 		enginetelemetry.NetworkTX,

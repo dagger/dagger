@@ -3,6 +3,7 @@ package dangv2
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +17,9 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/charmbracelet/x/ansi"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/iancoleman/strcase"
+	"github.com/zeebo/xxh3"
 
 	"github.com/dagger/dagger/core"
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
@@ -51,7 +54,10 @@ func (r *runtime) eval(
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
 ) ([]byte, error) {
-	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, inertAttachables, fnCall, moduleContext, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
+	// Only the module-initialization call builds type definitions from the
+	// environment; a function call never reads object directives.
+	forTypeDefs := fnCall.ParentName == ""
+	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, inertAttachables, fnCall, moduleContext, forTypeDefs, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
 		return dang.RunDir(ctx, modSrcDir, false)
 	}, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		if fnCall.ParentName == "" {
@@ -82,6 +88,12 @@ func (r *runtime) eval(
 	})
 }
 
+// evalDangSource runs a module's Dang source and calls withEnv with the
+// resulting environment.
+//
+// forTypeDefs says that withEnv builds the module's type definitions from the
+// environment (initDangModule), which is the only reader of object directives
+// such as @collection. See retainDangObjectDirectives.
 func evalDangSource(
 	ctx context.Context,
 	query *core.Query,
@@ -91,6 +103,7 @@ func evalDangSource(
 	inertAttachables bool,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
+	forTypeDefs bool,
 	runSource dangSourceRunner,
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
@@ -153,7 +166,7 @@ func evalDangSource(
 				}
 				return fmt.Errorf("run dir: %w", err)
 			}
-			return retainDangObjectDirectives(ctx, env, modSrcDir)
+			return retainDangObjectDirectives(ctx, env, modSrcDir, forTypeDefs)
 		})
 		if err != nil {
 			if errors.As(err, new(*dangSourceError)) {
@@ -240,7 +253,13 @@ func reportDangSourceError(stderr io.Writer, err error) error {
 
 // Dang validates object directives but does not retain them on its runtime
 // Type. Keep these declarations alongside the field directives for registration.
-func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir string) error {
+//
+// Only type registration reads them (createObjectTypeDef), so nothing is
+// parsed unless forTypeDefs says the environment is used for that.
+func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir string, forTypeDefs bool) error {
+	if !forTypeDefs {
+		return nil
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
@@ -249,7 +268,12 @@ func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir st
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".dang" {
 			continue
 		}
-		root, err := dang.ParseFile(filepath.Join(dir, entry.Name()))
+		path := filepath.Join(dir, entry.Name())
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		root, err := parseDangSource(path, src)
 		if err != nil {
 			return err
 		}
@@ -337,7 +361,98 @@ func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource,
 // source can't be parsed, so the common case keeps working. Parsing here is
 // best-effort: it drives name resolution only, and any genuine syntax error
 // surfaces later when the source is actually declared/run.
+// declaredTypeNames memoizes moduleDeclaredTypeNames. The names are a pure
+// function of the module name and of the module's .dang files, and finding
+// them means parsing every file, which each function call would otherwise
+// repeat only to learn that the runtime schema already has all of them.
+//
+// It holds at most 256 modules' names; an entry is a 16-byte key and the
+// module's type names.
+var declaredTypeNames, _ = lru.New[string, []string](256) // error is impossible on positive size
+
+// parseDangSource is dang.Parse, replaceable so tests can count parses.
+var parseDangSource = func(filename string, src []byte) (any, error) {
+	return dang.Parse(filename, src)
+}
+
+// dangSourceFile is one .dang file of a module's source directory.
+type dangSourceFile struct {
+	name    string
+	content []byte
+}
+
+// readDangSourceFiles reads the .dang files at the top level of dir. It
+// reports false when the directory or one of the files could not be read; the
+// files that could be read are still returned.
+func readDangSourceFiles(dir string) ([]dangSourceFile, bool) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		slog.Debug("ensureModuleSelfTypes: read module dir", "dir", dir, "error", err)
+		return nil, false
+	}
+	complete := true
+	var files []dangSourceFile
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".dang" {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			slog.Debug("ensureModuleSelfTypes: read module file", "file", entry.Name(), "error", err)
+			complete = false
+			continue
+		}
+		files = append(files, dangSourceFile{name: entry.Name(), content: content})
+	}
+	return files, complete
+}
+
+// moduleDeclaredTypeNames returns the local names of the types a module
+// declares at the top level of its source. The result is shared between
+// callers and must not be modified.
+//
+// Each file is read once and the bytes that were read are both the memo key
+// and what is parsed, so a file that fails to parse fails for its content and
+// can be remembered. A directory or file that cannot be read is not: the
+// names found are returned, and the next call tries again.
 func moduleDeclaredTypeNames(modSrcDir, moduleName string) []string {
+	files, complete := readDangSourceFiles(modSrcDir)
+	var key string
+	if complete {
+		key = declaredTypeNamesKey(moduleName, files)
+		if names, ok := declaredTypeNames.Get(key); ok {
+			return names
+		}
+	}
+	names := parseDeclaredTypeNames(modSrcDir, moduleName, files)
+	if complete {
+		declaredTypeNames.Add(key, names)
+	}
+	return names
+}
+
+// declaredTypeNamesKey identifies a module's declared type names by its name
+// and the names and content of its .dang files.
+func declaredTypeNamesKey(moduleName string, files []dangSourceFile) string {
+	h := xxh3.New()
+	writeField := func(b []byte) {
+		var size [8]byte
+		binary.LittleEndian.PutUint64(size[:], uint64(len(b)))
+		h.Write(size[:])
+		h.Write(b)
+	}
+	writeField([]byte(moduleName))
+	for _, file := range files {
+		writeField([]byte(file.name))
+		writeField(file.content)
+	}
+	sum := h.Sum128().Bytes()
+	return string(sum[:])
+}
+
+// parseDeclaredTypeNames parses the module's source files for its declared
+// type names.
+func parseDeclaredTypeNames(modSrcDir, moduleName string, files []dangSourceFile) []string {
 	seen := map[string]struct{}{}
 	var names []string
 	add := func(name string) {
@@ -357,18 +472,10 @@ func moduleDeclaredTypeNames(modSrcDir, moduleName string) []string {
 	// the rest of the source fails to parse.
 	add(strcase.ToCamel(moduleName))
 
-	entries, err := os.ReadDir(modSrcDir)
-	if err != nil {
-		slog.Debug("ensureModuleSelfTypes: read module dir", "dir", modSrcDir, "error", err)
-		return names
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".dang" {
-			continue
-		}
-		root, err := dang.ParseFile(filepath.Join(modSrcDir, entry.Name()))
+	for _, src := range files {
+		root, err := parseDangSource(filepath.Join(modSrcDir, src.name), src.content)
 		if err != nil {
-			slog.Debug("ensureModuleSelfTypes: parse module file", "file", entry.Name(), "error", err)
+			slog.Debug("ensureModuleSelfTypes: parse module file", "file", src.name, "error", err)
 			continue
 		}
 		file, ok := root.(*dang.FileBlock)

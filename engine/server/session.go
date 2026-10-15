@@ -158,6 +158,8 @@ type daggerSession struct {
 	spanExporter   sdktrace.SpanExporter
 	logExporter    sdklog.Exporter
 	telemetryDebug LifecycleTelemetryCounts
+	// workloadTracerProvider sends spans only to the workload export.
+	workloadTracerProvider *sdktrace.TracerProvider
 
 	// Dagger Cloud publishing, set up when the main client asked the engine
 	// to publish the session's telemetry. cloudForwarder publishes the spans
@@ -775,6 +777,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 	if sess.tracerProvider != nil {
 		traceDur += timedProviderOp(ctx, &errs, sess.tracerProvider.Shutdown)
 	}
+	if sess.workloadTracerProvider != nil {
+		traceDur += timedProviderOp(ctx, &errs, sess.workloadTracerProvider.Shutdown)
+	}
 	if sess.loggerProvider != nil {
 		logDur += timedProviderOp(ctx, &errs, sess.loggerProvider.Shutdown)
 	}
@@ -990,9 +995,15 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		spanProcessors++
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
+	sess.workloadTracerProvider = srv.workloadExport.WorkloadTracerProvider(sess.sessionID)
+	tracerProviders := 1
+	if sess.workloadTracerProvider != nil {
+		tracerProviders++
+		spanProcessors++
+	}
 	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	sess.telemetryDebug = LifecycleTelemetryCounts{
-		TracerProviders:          1,
+		TracerProviders:          tracerProviders,
 		LoggerProviders:          1,
 		ConfiguredSpanProcessors: spanProcessors,
 		ConfiguredLogProcessors:  logProcessors,
@@ -1580,7 +1591,10 @@ func (srv *Server) initializeClientRuntime(
 			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
 		client.servedMods = servedMods.ClientOwned()
-	} else {
+	} else if !opts.InertAttachables {
+		// Only a client that can read its host detects its own workspace. An
+		// in-engine SDK client without a module, such as one that evaluates an
+		// entrypoint's sources, inherits its parent's like a module client.
 		client.pendingWorkspaceLoad = true
 		if clientMD := client.clientMetadata; clientMD != nil && len(clientMD.ExtraModules) > 0 {
 			client.pendingExtraModules = clientMD.ExtraModules
@@ -2710,6 +2724,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	ctx = telemetry.WithLoggerProvider(ctx, sess.loggerProvider)
 	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
 	ctx = enginetel.WithWorkloadReadings(ctx, client.workloadReadings)
+	ctx = enginetel.WithWorkloadTracer(ctx, sess.workloadTracerProvider)
 
 	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
 		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {

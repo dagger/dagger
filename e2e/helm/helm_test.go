@@ -40,6 +40,11 @@ const (
 	chartPath       = "helm/dagger"
 	helmImage       = "cgr.dev/chainguard/wolfi-base"
 	testEngineImage = "registry.dagger.io/engine:main"
+
+	// diagnosticsReserve is how long before go test's deadline TestInstallK3S
+	// stops waiting, so it can log diagnostics instead of being killed.
+	diagnosticsReserve = time.Minute
+	diagnosticsTimeout = 45 * time.Second
 )
 
 func TestCustomProbes(t *testing.T) {
@@ -98,6 +103,11 @@ func TestPackageDryRun(t *testing.T) {
 
 func TestInstallK3S(t *testing.T) {
 	ctx := t.Context()
+	if deadline, ok := t.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline.Add(-diagnosticsReserve))
+		defer cancel()
+	}
 	dag := connect(t)
 
 	k3s := newK3S(dag, "helm-test")
@@ -111,12 +121,15 @@ func TestInstallK3S(t *testing.T) {
 		}
 	})
 
-	kubectl, err := helmContainer(dag).
-		WithMountedFile("/usr/bin/dagger", dag.DaggerCli().Binary()).
+	// kube reaches the cluster without the Dagger CLI, so diagnostics don't
+	// wait for the CLI build.
+	kube := helmContainer(dag).
 		WithServiceBinding("helm-test", k3sSvc).
 		WithFile("/.kube/config", k3s.config).
 		WithEnvVariable("KUBECONFIG", "/.kube/config").
-		WithEnvVariable("CACHEBUSTER", time.Now().String()).
+		WithEnvVariable("CACHEBUSTER", time.Now().String())
+	kubectl, err := kube.
+		WithMountedFile("/usr/bin/dagger", dag.DaggerCli().Binary()).
 		// Kubeconfig and the k3s service port can be available before API discovery is ready.
 		WithExec([]string{"sh", "-c", `
 set -eu
@@ -135,6 +148,7 @@ exit 1
 `}).
 		Sync(ctx)
 	if err != nil {
+		logDiagnostics(t, k3s, kube, "")
 		t.Fatalf("wait for k3s readiness: %v", err)
 	}
 
@@ -177,6 +191,10 @@ exit 1
 	}
 
 	for _, test := range tests {
+		if ctx.Err() != nil {
+			t.Errorf("skipping %q and later subtests: %v", test.name, context.Cause(ctx))
+			break
+		}
 		t.Run(test.name, func(t *testing.T) {
 			args := []string{
 				"helm", "install", "--wait", "--create-namespace", "--namespace=dagger",
@@ -189,13 +207,58 @@ exit 1
 
 			engine, err := kubectl.WithExec(args).Sync(ctx)
 			if err != nil {
+				logDiagnostics(t, k3s, kube, test.engineName)
 				t.Fatalf("install chart: %v", err)
 			}
 			if err := runInstallAssertions(ctx, test.engineName, test.engineKind, test.port, engine); err != nil {
+				logDiagnostics(t, k3s, kube, test.engineName)
 				t.Fatal(err)
 			}
 		})
 	}
+}
+
+// clusterDiagnostics prints a bounded snapshot of the cluster. $ENGINE names
+// the engine pods to describe and read logs from, if any.
+const clusterDiagnostics = `
+run() {
+	lines=$1
+	shift
+	echo "\$ $*"
+	"$@" --request-timeout=10s 2>&1 | tail -n "$lines"
+}
+run 20 kubectl get nodes --output=wide
+run 30 kubectl get pods --all-namespaces --output=wide
+run 30 kubectl get events --all-namespaces --sort-by=.lastTimestamp
+if [ -n "$ENGINE" ]; then
+	run 60 kubectl describe pods --namespace=dagger --selector=name="$ENGINE"
+	run 30 kubectl logs --namespace=dagger --selector=name="$ENGINE" --all-containers --tail=30
+fi
+`
+
+// logDiagnostics logs why the cluster may be stuck: the end of the k3s server
+// log and a snapshot of the cluster. It has its own time budget, since the
+// test's context may already have expired.
+func logDiagnostics(t *testing.T, k3s k3sCluster, kube *dagger.Container, engineName string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), diagnosticsTimeout)
+	defer cancel()
+
+	serverLog, err := k3s.serverLogTail(ctx)
+	if err != nil {
+		serverLog = fmt.Sprintf("read k3s server log: %v", err)
+	}
+	t.Logf("k3s server log, last warnings and errors:\n%s", serverLog)
+
+	cluster, err := kube.
+		WithEnvVariable("ENGINE", engineName).
+		WithEnvVariable("DIAGNOSTICS", time.Now().String()).
+		WithExec([]string{"sh", "-c", clusterDiagnostics}).
+		Stdout(ctx)
+	if err != nil {
+		cluster = fmt.Sprintf("get cluster state: %v", err)
+	}
+	t.Logf("cluster state:\n%s", cluster)
 }
 
 func connect(t *testing.T) *dagger.Client {
@@ -236,13 +299,7 @@ func runInstallAssertions(ctx context.Context, engineName string, engineKind str
 			"--timeout=5m",
 		}).Sync(ctx)
 		if err != nil {
-			status, _ := kubectl.WithExec([]string{
-				"kubectl", "get", "pod",
-				"--selector=name=" + engineName,
-				"--namespace=dagger",
-				"--output=wide",
-			}).Stdout(ctx)
-			return fmt.Errorf("wait for engine pod %s (%s): %w\n%s", engineName, condition, err, status)
+			return fmt.Errorf("wait for engine pod %s (%s): %w", engineName, condition, err)
 		}
 	}
 

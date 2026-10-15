@@ -621,23 +621,24 @@ func (k procKiller) Kill(ctx context.Context) (err error) {
 	// get the runc pid via the startedCh, so we might need to retry until
 	// it appears in the edge case where we want to kill a process
 	// immediately after it was created.
+	// crun creates the file before writing the pid into it, so an empty file
+	// is retried like a missing one.
 	var pidData []byte
 	for {
 		pidData, err = os.ReadFile(k.pidfile)
-		if err != nil {
-			if os.IsNotExist(err) {
-				select {
-				case <-ctx.Done():
-					return errors.New("context cancelled before runc wrote pidfile")
-				case <-time.After(10 * time.Millisecond):
-					continue
-				}
-			}
-			return fmt.Errorf("failed to read pidfile from runc: %w", err)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to read pidfile from the runtime: %w", err)
 		}
-		break
+		if err == nil && len(strings.TrimSpace(string(pidData))) > 0 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return errors.New("context cancelled before the runtime wrote the pidfile")
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
-	pid, err := strconv.Atoi(string(pidData))
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidData)))
 	if err != nil {
 		return fmt.Errorf("read invalid pid from pidfile: %w", err)
 	}
@@ -898,11 +899,24 @@ func (c *Client) callWithIO(ctx context.Context, process *executor.ProcessInfo, 
 		if err != nil {
 			return err
 		}
+		// crun ignores SIGWINCH until it starts proxying the container's
+		// terminal, where it blocks every signal and reads them from a
+		// signalfd, and it copies the size only on SIGWINCH. A resize sent
+		// before then, such as the initial one, is lost, so resend the latest
+		// once crun blocks SIGWINCH.
+		takesResize := waitForBlockedSignal(ctx, runcProcess.monitorProcess.Pid, syscall.SIGWINCH)
+		resized := false
 		for {
 			select {
 			case <-ctx.Done():
 				return nil
+			case <-takesResize:
+				takesResize = nil
+				if !resized {
+					continue
+				}
 			case resize := <-process.Resize:
+				resized = true
 				err = ptm.Resize(console.WinSize{
 					Height: uint16(resize.Rows),
 					Width:  uint16(resize.Cols),
@@ -910,12 +924,13 @@ func (c *Client) callWithIO(ctx context.Context, process *executor.ProcessInfo, 
 				if err != nil {
 					bklog.G(ctx).Errorf("failed to resize ptm: %s", err)
 				}
-				// SIGWINCH must be sent to the runc monitor process, as
-				// terminal resizing is done in runc.
-				err = runcProcess.monitorProcess.Signal(signal.SIGWINCH)
-				if err != nil {
-					bklog.G(ctx).Errorf("failed to send SIGWINCH to process: %s", err)
-				}
+			}
+			// SIGWINCH must be sent to the runtime's monitor process, as
+			// terminal resizing is done in the runtime: it copies the ptm's size
+			// to the container's terminal.
+			err = runcProcess.monitorProcess.Signal(signal.SIGWINCH)
+			if err != nil {
+				bklog.G(ctx).Errorf("failed to send SIGWINCH to process: %s", err)
 			}
 		}
 	})
@@ -939,3 +954,42 @@ type nopCloser struct {
 }
 
 func (nopCloser) Close() error { return nil }
+
+// waitForBlockedSignal returns a channel that is closed once process pid
+// blocks sig, polling its /proc status. It is never closed if the process
+// exits first or ctx is done.
+func waitForBlockedSignal(ctx context.Context, pid int, sig syscall.Signal) <-chan struct{} {
+	blocked := make(chan struct{})
+	go func() {
+		for {
+			status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+			if err != nil {
+				return
+			}
+			if signalBlocked(status, sig) {
+				close(blocked)
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+	}()
+	return blocked
+}
+
+// signalBlocked reports whether a /proc/<pid>/status shows sig in its
+// blocked mask (SigBlk).
+func signalBlocked(status []byte, sig syscall.Signal) bool {
+	for _, line := range strings.Split(string(status), "\n") {
+		mask, ok := strings.CutPrefix(line, "SigBlk:")
+		if !ok {
+			continue
+		}
+		bits, err := strconv.ParseUint(strings.TrimSpace(mask), 16, 64)
+		return err == nil && bits&(1<<(uint(sig)-1)) != 0
+	}
+	return false
+}

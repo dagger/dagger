@@ -1676,7 +1676,14 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	initFDs.add(distconsts.SessionHelperStatusFDEnv, state.sessionHelperStatus.writeEnd())
 	initFDs.add(distconsts.InitTimingFDEnv, initTiming.writeEnd())
 	if state.sessionHelperStatus != nil {
-		go state.sessionHelperStatus.watch(state.failSessionHelper)
+		go state.sessionHelperStatus.watch(func(err error) {
+			// A query waiting for the helper's attachables gets this error, but
+			// a helper that fails after registering may have none waiting, so
+			// keep the report, with what the helper wrote, in the engine's log.
+			bklog.G(ctx).WithField("nested_client_id", state.nestedClientMetadata.ClientID).
+				Warnf("exec %s: %v", state.id, err)
+			state.failSessionHelper(err)
+		})
 	}
 
 	if err := json.NewEncoder(f).Encode(initFDs.withEnv(state.spec)); err != nil {
@@ -2001,7 +2008,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		if startedNS := profStartedNS.Load(); startedNS > 0 {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
 			processStartNS := startedNS
-			if releasedNS := workloadReleasedNS(pidFile, startedNS, profStartedWall.Load()); releasedNS > startedNS && releasedNS <= endNS {
+			if releasedNS := workloadReleasedNS(pidFile, startedNS, profStartedWall.Load()); releasedNS != 0 && releasedNS <= endNS {
 				// runc creating the container, up to releasing the workload
 				wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.runtimeStart", wcprof.OpOpts{Ident: state.id}, startedNS, releasedNS, wcprof.OutcomeOK)
 				processStartNS = releasedNS

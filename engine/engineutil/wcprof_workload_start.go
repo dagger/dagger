@@ -17,7 +17,10 @@ import (
 // placed relative to the started callback, whose wcprof and wall-clock times
 // (startedNS, startedWallNS) were taken together, so only that short interval
 // is measured on the wall clock. File times come from the kernel's coarse
-// clock, so the result can be early by up to a clock tick (a few ms).
+// clock, so the result can be early by up to a clock tick (a few ms). A
+// runtime that starts within a tick (crun often does) can then read as
+// released before it started; that is clamped to the start. crun also writes
+// the file only after releasing the workload (libcrun's wait_for_process).
 func workloadReleasedNS(pidFile string, startedNS, startedWallNS int64) int64 {
 	if pidFile == "" || startedNS == 0 || startedWallNS == 0 {
 		return 0
@@ -26,5 +29,5 @@ func workloadReleasedNS(pidFile string, startedNS, startedWallNS int64) int64 {
 	if err != nil {
 		return 0
 	}
-	return startedNS + fi.ModTime().UnixNano() - startedWallNS
+	return max(startedNS+fi.ModTime().UnixNano()-startedWallNS, startedNS)
 }

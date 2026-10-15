@@ -28,6 +28,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/filesync"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/util/gitutil"
 )
 
@@ -351,7 +352,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		}()
 	}
 
-	ref, contentDgst, err := mirror.Snapshot(ctx, query, callerConn, absRootCopyPath, snapshotOpts)
+	snapshotCtx, input := filesyncTransfer(ctx, query, clientMetadata.ClientID, enginetel.StartWorkloadInput)
+	ref, contentDgst, err := mirror.Snapshot(snapshotCtx, query, callerConn, absRootCopyPath, snapshotOpts)
+	input.End(contentDgst.String(), err)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get snapshot: %w", err)
 	}
