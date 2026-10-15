@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -406,19 +407,21 @@ source = "./entrypoint"
 	require.Equal(t, ".dagger/modules/tiny", strings.TrimPrefix(strings.TrimSpace(out), "/"))
 }
 
-// ttlEntrypointSource has the shape of an SDK entrypoint: its call keys the
+// nonceEntrypointSource has the shape of an SDK entrypoint: its call keys the
 // module process exec on the call digest, and the process returns a new value
-// each time it runs.
-var ttlEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntrypoint {
+// each time it runs. Failing raises after that exec, so dagql keeps no result
+// for the call and evaluates it again on the next one.
+var nonceEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntrypoint {
   pub types(workspace: Workspace!): [TypeDef!]! {
+    let nonce = typeDef.withKind(TypeDefKind.STRING_KIND)
     [
       typeDef
-        .withObject("Ttl")
-        .withConstructor(function("", typeDef.withObject("Ttl")))
-        .withFunction(
-          function("Nonce", typeDef.withKind(TypeDefKind.STRING_KIND))
-            .withCachePolicy(FunctionCachePolicy.Default, timeToLive: "3s"),
-        ),
+        .withObject("Nonces")
+        .withConstructor(function("", typeDef.withObject("Nonces")))
+        .withFunction(function("Ttl", nonce).withCachePolicy(FunctionCachePolicy.Default, timeToLive: "3s"))
+        .withFunction(function("Never", nonce).withCachePolicy(FunctionCachePolicy.Never))
+        .withFunction(function("Session", nonce).withCachePolicy(FunctionCachePolicy.PerSession))
+        .withFunction(function("Failing", nonce)),
     ]
   }
 
@@ -439,47 +442,57 @@ var ttlEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntrypoi
         .withExec(["sh", "-c", %s], stdin: fnName)
         .file("/result.json")
         .contents
+      if (fnName == "Failing") {
+        raise "failed after " + result
+      }
       (result :: JSON!)
     }
   }
 }
 `, strconv.Quote(alpineImage), strconv.Quote(`printf '"%s"' "$(cat /proc/sys/kernel/random/uuid)" > /result.json`))
 
-// A function whose result outlived its TTL runs again. The exec its entrypoint
-// keyed on the call digest must not answer for it with the old result.
-func (ModuleSuite) TestModuleEntrypointCallAfterTTL(ctx context.Context, t *testctx.T) {
-	// The TTL counts whole seconds.
-	const expiry = 4 * time.Second
-	module := func(c *dagger.Client, runID string) *core.Directory {
-		return core.NewQuery(c).Directory().
-			WithNewFile("dagger-module.toml", `name = "ttl"
+func nonceModule(c *dagger.Client, runID string) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("dagger-module.toml", `name = "nonces"
 
 [entrypoint]
 kind = "dang"
 source = "./entrypoint"
 `).
-			WithNewFile("entrypoint/main.dang", ttlEntrypointSource).
-			WithNewFile("run-id", runID)
-	}
+		WithNewFile("entrypoint/main.dang", nonceEntrypointSource).
+		WithNewFile("run-id", runID)
+}
 
-	nonce := func(t *testctx.T, c *dagger.Client) string {
-		t.Helper()
-		res, err := testutil.QueryWithClient[struct{ Ttl struct{ Nonce string } }](c, t, `{ttl{nonce}}`, nil)
-		require.NoError(t, err)
-		return res.Ttl.Nonce
-	}
+func serveNonceModule(ctx context.Context, t *testctx.T, runID string) *dagger.Client {
+	t.Helper()
+	c := connect(ctx, t)
+	require.NoError(t, nonceModule(c, runID).AsModuleSource().AsModule().Serve(ctx))
+	return c
+}
+
+func queryNonce(t *testctx.T, c *dagger.Client, fn string) string {
+	t.Helper()
+	res, err := testutil.QueryWithClient[struct{ Nonces map[string]string }](c, t, "{nonces{"+fn+"}}", nil)
+	require.NoError(t, err)
+	return res.Nonces[fn]
+}
+
+// A function with an explicit TTL runs again whenever dagql evaluates it again,
+// such as after its result expired. The exec its entrypoint keyed on the call
+// digest must not answer for it with the old result.
+func (ModuleSuite) TestModuleEntrypointCallAfterTTL(ctx context.Context, t *testctx.T) {
+	// The TTL counts whole seconds.
+	const expiry = 4 * time.Second
 	requireRerunAfterTTL := func(t *testctx.T, c *dagger.Client) {
 		t.Helper()
-		first := nonce(t, c)
-		require.Equal(t, first, nonce(t, c), "a result within its TTL is cached")
+		first := queryNonce(t, c, "ttl")
+		require.Equal(t, first, queryNonce(t, c, "ttl"), "a result within its TTL is cached")
 		time.Sleep(expiry)
-		require.NotEqual(t, first, nonce(t, c), "an expired result runs the function again")
+		require.NotEqual(t, first, queryNonce(t, c, "ttl"), "an expired result runs the function again")
 	}
 
 	t.Run("directory module", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		require.NoError(t, module(c, rand.Text()).AsModuleSource().AsModule().Serve(ctx))
-		requireRerunAfterTTL(t, c)
+		requireRerunAfterTTL(t, serveNonceModule(ctx, t, rand.Text()))
 	})
 
 	t.Run("git module", func(ctx context.Context, t *testctx.T) {
@@ -487,7 +500,7 @@ source = "./entrypoint"
 		serve := func(ctx context.Context, t *testctx.T) *dagger.Client {
 			t.Helper()
 			c := connect(ctx, t)
-			gitDaemon, repoURL := gitService(ctx, t, c, module(c, runID))
+			gitDaemon, repoURL := gitService(ctx, t, c, nonceModule(c, runID))
 			_, err := gitDaemon.Start(ctx)
 			require.NoError(t, err)
 			require.NoError(t, core.NewQuery(c).ModuleSource(repoURL+"#main").AsModule().Serve(ctx))
@@ -495,13 +508,128 @@ source = "./entrypoint"
 		}
 
 		c := serve(ctx, t)
-		first := nonce(t, c)
+		first := queryNonce(t, c, "ttl")
 		require.NoError(t, c.Close())
 		time.Sleep(expiry)
 
 		c = serve(ctx, t)
-		assert.NotEqual(t, first, nonce(t, c), "an expired result from another session runs the function again")
+		assert.NotEqual(t, first, queryNonce(t, c, "ttl"), "an expired result from another session runs the function again")
 		requireRerunAfterTTL(t, c)
+	})
+
+	// Short and long return the same container, so they share one cached
+	// result, which expires at the earlier of their TTLs.
+	t.Run("result shared with a shorter TTL", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		require.NoError(t, core.NewQuery(c).Directory().
+			WithNewFile("dagger-module.toml", `name = "shared"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`).
+			WithNewFile("entrypoint/main.dang", sharedContainerEntrypointSource).
+			WithNewFile("run-id", rand.Text()).
+			AsModuleSource().AsModule().Serve(ctx))
+		call := func(fn string) {
+			t.Helper()
+			_, err := testutil.QueryWithClient[struct{}](c, t, "{shared{"+fn+"{id}}}", nil)
+			require.NoError(t, err)
+		}
+		longRuns := func() string {
+			t.Helper()
+			res, err := testutil.QueryWithClient[struct{ Shared struct{ Runs string } }](c, t, `{shared{runs}}`, nil)
+			require.NoError(t, err)
+			return res.Shared.Runs
+		}
+
+		call("long")
+		call("short")
+		require.Equal(t, "1", longRuns())
+		time.Sleep(2 * time.Second)
+		call("long")
+		require.Equal(t, "2", longRuns(), "long runs again once the shared result expired")
+	})
+}
+
+// sharedContainerEntrypointSource returns one container from both Short and
+// Long. The container is unique to the module, so no other call recreates it
+// once it expired. Each run of a function appends its name to a cache volume,
+// and Runs counts the runs of Long.
+var sharedContainerEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Shared")
+        .withConstructor(function("", typeDef.withObject("Shared")))
+        .withFunction(function("Short", typeDef.withObject("Container")).withCachePolicy(FunctionCachePolicy.Default, timeToLive: "1s"))
+        .withFunction(function("Long", typeDef.withObject("Container")).withCachePolicy(FunctionCachePolicy.Default, timeToLive: "60s"))
+        .withFunction(function("Runs", typeDef.withKind(TypeDefKind.STRING_KIND)).withCachePolicy(FunctionCachePolicy.Never)),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+    callDigest: String,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else {
+      let runID = currentModule.source.file("run-id").contents
+      let runs = container
+        .from(%[1]s)
+        .withMountedCache("/runs", cacheVolume("runs-" + runID))
+        .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
+        .withExec(["sh", "-c", %[2]s], stdin: fnName)
+        .stdout
+      if (fnName == "Runs") {
+        (runs :: JSON!)
+      } else {
+        if (runs == "") {
+          raise "the module process wrote nothing"
+        }
+        (("\"" + toString(container.from(%[1]s).withEnvVariable("RUN_ID", runID).id) + "\"") :: JSON!)
+      }
+    }
+  }
+}
+`, strconv.Quote(alpineImage), strconv.Quote(`fn=$(cat)
+[ "$fn" = Runs ] || echo "$fn" >> /runs/log
+printf '"%s"' "$(grep -cx Long /runs/log)"`))
+
+// Without an explicit TTL, the exec of a call answers again whenever dagql
+// evaluates the call again. The recipe digest it is keyed on already changes
+// per call for never and per session for per session.
+func (ModuleSuite) TestModuleEntrypointCallCachePolicies(ctx context.Context, t *testctx.T) {
+	t.Run("never", func(ctx context.Context, t *testctx.T) {
+		c := serveNonceModule(ctx, t, rand.Text())
+		require.NotEqual(t, queryNonce(t, c, "never"), queryNonce(t, c, "never"))
+	})
+
+	t.Run("per session", func(ctx context.Context, t *testctx.T) {
+		runID := rand.Text()
+		c := serveNonceModule(ctx, t, runID)
+		first := queryNonce(t, c, "session")
+		require.Equal(t, first, queryNonce(t, c, "session"), "a result is cached within its session")
+		require.NotEqual(t, first, queryNonce(t, serveNonceModule(ctx, t, runID), "session"), "another session runs the function again")
+	})
+
+	t.Run("default evaluated again", func(ctx context.Context, t *testctx.T) {
+		c := serveNonceModule(ctx, t, rand.Text())
+		failedAfter := regexp.MustCompile(`failed after \W*([0-9a-f-]{36})`)
+		nonce := func() string {
+			t.Helper()
+			_, err := testutil.QueryWithClient[struct{ Nonces struct{ Failing string } }](c, t, `{nonces{failing}}`, nil)
+			require.Error(t, err)
+			match := failedAfter.FindStringSubmatch(err.Error())
+			require.NotNil(t, match, err.Error())
+			return match[1]
+		}
+		require.Equal(t, nonce(), nonce(), "the exec answers again")
 	})
 }
 

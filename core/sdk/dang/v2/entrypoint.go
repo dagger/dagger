@@ -191,12 +191,19 @@ func (r *entrypointRuntime) Call(
 			// which misses the call's implicit inputs, such as the clients the
 			// workspace declares. An entrypoint keys its exec on the call by
 			// declaring a nullable callDigest argument; one that does not
-			// declare it never receives it. The digest is new for each
-			// evaluation: dagql evaluates a call only when it has no result
-			// for it, such as after its TTL, so the exec must not answer with
-			// an older result.
+			// declare it never receives it. The recipe digest is stable, so
+			// the exec answers again when dagql evaluates a call again, such
+			// as after a prune; it already changes per call for never and per
+			// session for per-session functions. A function with an explicit
+			// TTL gets a new digest on every evaluation instead: its result
+			// can expire before that TTL when a call with a shorter one
+			// returned the same result. So it runs again whenever dagql
+			// evaluates it, also after a pruned result or a failed attempt.
 			if execMD != nil && execMD.CallDigest != "" {
-				callDigest := hashutil.HashStrings(execMD.CallDigest.String(), rand.Text())
+				callDigest := execMD.CallDigest
+				if fnCall.CacheTTLSeconds() > 0 {
+					callDigest = hashutil.HashStrings(callDigest.String(), rand.Text())
+				}
 				callArgs = append(callArgs, entrypoint.StringCallArg("callDigest", callDigest.String()))
 			}
 			result, err := callEntrypointMethod(ctx, env, entrypointName, "call", moduleContext, callArgs)

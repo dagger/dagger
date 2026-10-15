@@ -1060,6 +1060,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
+	if fn.metadata.derivedCachePolicy(mod) == FunctionCachePolicyDefault && fn.metadata.CacheTTLSeconds.Valid {
+		fnCall.cacheTTLSeconds = fn.metadata.CacheTTLSeconds.Value.Int64()
+	}
 	// Carry the receiver object (with its dagql ID) engine-side so the module can
 	// reach it via Query.currentNode. It rides the fnCall by reference into the
 	// nested client session (ServeHTTPToNestedClient) for both in-process and
