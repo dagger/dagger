@@ -927,6 +927,9 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 		}
 		cmd.Env = append(cmd.Env, entry)
 	}
+	// Parent the CLI's spans under this test's span rather than the process's
+	// inherited TRACEPARENT; dropping it altogether orphans the CLI's trace.
+	cmd.Env = append(cmd.Env, telemetry.PropagationEnv(ctx)...)
 	if cloudOnly {
 		cmd.Env = append(cmd.Env, "DAGGER_CLOUD_URL="+cloudURL, "DAGGER_CLOUD_TOKEN=restore-test-token")
 	} else {
