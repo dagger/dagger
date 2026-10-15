@@ -109,7 +109,7 @@ func TestCloudChecksOnPrerequisites(t *testing.T) {
 						data = `{"user":{"repositories":[{"ref":"github.com/example/project","mappedSource":{"installationId":"installation","mode":"SELECTED","repositories":["github.com/example/project"]}}]}}`
 					}
 				case "GetSources":
-					data = `{"sources":[{"id":"installation","name":"example","orgName":"example"}]}`
+					data = `{"sources":[{"provider":"GITHUB","instance":"https://github.com","id":"installation","name":"example","orgName":"example"}]}`
 					if tc.noSource {
 						data = `{"sources":[]}`
 					}
@@ -205,7 +205,7 @@ func TestCloudChecksOnEnabledRepoStillEnforcesFeatures(t *testing.T) {
 			data = `{"user":{"repositories":[{"ref":"github.com/example/project","mappedSource":{"installationId":"installation","mode":"SELECTED","repositories":["github.com/example/project"]}}]}}`
 		case "GetSources":
 			// Resolves the org owning the installation for the feature gate.
-			data = `{"sources":[{"id":"installation","name":"example","orgName":"example"}]}`
+			data = `{"sources":[{"provider":"GITHUB","instance":"https://github.com","id":"installation","name":"example","orgName":"example"}]}`
 		case "GetOrgDetails":
 			// Neither feature enabled -> checks on must fail, not report "on".
 			data = `{"org":{"id":"org-1","name":"example","createdAt":"","subscription":{"status":"","subscriptionID":"","planID":"","hasCaching":false},"features":[{"name":"CLOUD_CHECKS","status":"UNUSED"}]}}`
@@ -279,7 +279,7 @@ func TestCloudChecksOnUntrackedRepoChecksFeaturesBeforeMappedSources(t *testing.
 				case "GetUserRepositories":
 					data = `{"user":{"repositories":[]}}`
 				case "GetSources":
-					data = `{"sources":[{"id":"installation","name":"example","orgName":"example"}]}`
+					data = `{"sources":[{"provider":"GITHUB","instance":"https://github.com","id":"installation","name":"example","orgName":"example"}]}`
 				case "User":
 					data = `{"user":{"id":"user","orgs":[{"id":"org","name":"example"}]}}`
 				case "GetOrgDetails":
@@ -346,7 +346,7 @@ func TestCloudChecksOnRepoNotGrantedPointsAtInstallationSettings(t *testing.T) {
 		case "GetUserRepositories":
 			data = `{"user":{"repositories":[]}}`
 		case "GetSources":
-			data = `{"sources":[{"id":"161781848","name":"marcosnils","orgName":"marcosnils","configUrl":"https://github.com/settings/installations/161781848"}]}`
+			data = `{"sources":[{"provider":"GITHUB","instance":"https://github.com","id":"161781848","name":"marcosnils","orgName":"marcosnils","configUrl":"https://github.com/settings/installations/161781848"}]}`
 		case "User":
 			data = `{"user":{"id":"user","orgs":[{"id":"org","name":"marcosnils"}]}}`
 		case "GetOrgDetails":
@@ -378,6 +378,6 @@ func TestCloudChecksOnRepoNotGrantedPointsAtInstallationSettings(t *testing.T) {
 	err := runCloudCheckSet(true)(cmd, []string{"github.com/marcosnils/bin"})
 	require.Error(t, err)
 	require.EqualError(t, err,
-		"Cloud checks need GitHub access to this repository. Visit https://github.com/settings/installations/161781848 to enable it and then run the command again")
+		"Cloud checks need access to this repository. Visit https://github.com/settings/installations/161781848 to enable it and then run the command again")
 	require.NotContains(t, err.Error(), "does not belong to installation")
 }

@@ -32,11 +32,12 @@ type SourceRepository struct {
 }
 
 type MappedSource struct {
-	SourceName     string   `json:"sourceName"`
-	InstallationID string   `json:"installationId"`
-	ConfigURL      string   `json:"configUrl"`
-	Mode           string   `json:"mode"`
-	Repositories   []string `json:"repositories"`
+	Provider       GitProvider `json:"provider"`
+	SourceName     string      `json:"sourceName"`
+	InstallationID string      `json:"installationId"`
+	ConfigURL      string      `json:"configUrl"`
+	Mode           string      `json:"mode"`
+	Repositories   []string    `json:"repositories"`
 }
 
 // Repository is a repo-scoped view of Cloud configuration, reachable through
@@ -153,6 +154,28 @@ query GetUserRepositories($refs: [String!]) {
 				isPublic
 			}
 			mappedSource {
+				provider
+				sourceName
+				installationId
+				configUrl
+				mode
+				repositories
+			}
+		}
+	}
+}
+`
+
+const getLegacyUserRepositoriesOperation = `
+query GetUserRepositories($refs: [String!]) {
+	user {
+		repositories(refs: $refs) {
+			ref
+			settings {
+				repo
+				isPublic
+			}
+			mappedSource {
 				sourceName
 				installationId
 				configUrl
@@ -176,7 +199,19 @@ func (c *Client) UserRepositories(ctx context.Context, refs ...string) ([]Reposi
 	if err := c.doGraphQL(ctx, "GetUserRepositories", getUserRepositoriesOperation, map[string]any{
 		"refs": refs,
 	}, &data); err != nil {
-		return nil, err
+		// Released GitHub-only APIs do not expose mapped-source identity. Fall
+		// back only on that missing field, never on an authorization failure.
+		if !strings.Contains(err.Error(), `Cannot query field "provider" on type "MappedSource"`) {
+			return nil, err
+		}
+		if err := c.doGraphQL(ctx, "GetUserRepositories", getLegacyUserRepositoriesOperation, map[string]any{"refs": refs}, &data); err != nil {
+			return nil, err
+		}
+		for i := range data.User.Repositories {
+			if mapped := data.User.Repositories[i].MappedSource; mapped != nil {
+				mapped.Provider = GitProviderGitHub
+			}
+		}
 	}
 	return data.User.Repositories, nil
 }
