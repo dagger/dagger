@@ -4,15 +4,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
+)
+
+type GitProvider string
+
+const (
+	GitProviderGitHub GitProvider = "GITHUB"
+	GitProviderGitLab GitProvider = "GITLAB"
 )
 
 type Source struct {
-	Name         string  `json:"name"`
-	ID           string  `json:"id"`
-	Type         string  `json:"type"`
-	ConfiguredAt string  `json:"configuredAt"`
-	OrgName      *string `json:"orgName"`
-	ConfigURL    string  `json:"configUrl"`
+	Provider     GitProvider `json:"provider"`
+	Instance     string      `json:"instance"`
+	Name         string      `json:"name"`
+	ID           string      `json:"id"`
+	Type         string      `json:"type"`
+	ConfiguredAt string      `json:"configuredAt"`
+	OrgName      *string     `json:"orgName"`
+	ConfigURL    string      `json:"configUrl"`
 }
 
 type SourceRepository struct {
@@ -23,6 +34,7 @@ type SourceRepository struct {
 type MappedSource struct {
 	SourceName     string   `json:"sourceName"`
 	InstallationID string   `json:"installationId"`
+	ConfigURL      string   `json:"configUrl"`
 	Mode           string   `json:"mode"`
 	Repositories   []string `json:"repositories"`
 }
@@ -61,6 +73,22 @@ type OrgDetails struct {
 }
 
 const getSourcesOperation = `
+query GetSources($providers: [GitProvider!]!) {
+	sources(providers: $providers) {
+		provider
+		instance
+		name
+		id
+		type
+		configuredAt
+		orgName
+		configUrl
+	}
+}
+`
+
+// Older Cloud APIs exposed only GitHub sources and had no provider metadata.
+const getLegacySourcesOperation = `
 query GetSources {
 	sources {
 		name
@@ -74,13 +102,45 @@ query GetSources {
 `
 
 func (c *Client) Sources(ctx context.Context) ([]Source, error) {
+	return c.sourcesForProviders(ctx, []GitProvider{GitProviderGitHub, GitProviderGitLab})
+}
+
+// SourcesForProvider preserves the selected provider's discovery/authentication
+// result, including a successful empty list when no App installation exists.
+func (c *Client) SourcesForProvider(ctx context.Context, provider GitProvider) ([]Source, error) {
+	return c.sourcesForProviders(ctx, []GitProvider{provider})
+}
+
+func (c *Client) sourcesForProviders(ctx context.Context, providers []GitProvider) ([]Source, error) {
 	var data struct {
 		Sources []Source `json:"sources"`
 	}
-	if err := c.doGraphQL(ctx, "GetSources", getSourcesOperation, nil, &data); err != nil {
-		return nil, err
+	variables := map[string]any{"providers": providers}
+	if err := c.doGraphQL(ctx, "GetSources", getSourcesOperation, variables, &data); err != nil {
+		// New CLI versions can still talk to a Cloud API predating provider metadata.
+		if !legacySourcesSchema(err) {
+			return nil, err
+		}
+		if !slices.Contains(providers, GitProviderGitHub) {
+			return nil, fmt.Errorf("this Cloud API supports only GitHub sources")
+		}
+		if err := c.doGraphQL(ctx, "GetSources", getLegacySourcesOperation, nil, &data); err != nil {
+			return nil, err
+		}
+		for i := range data.Sources {
+			data.Sources[i].Provider = GitProviderGitHub
+			data.Sources[i].Instance = "https://github.com"
+		}
 	}
 	return data.Sources, nil
+}
+
+func legacySourcesSchema(err error) bool {
+	message := err.Error()
+	return strings.Contains(message, `Cannot query field "provider" on type "Source"`) ||
+		strings.Contains(message, `Cannot query field "instance" on type "Source"`) ||
+		strings.Contains(message, `Unknown argument "providers" on field "Query.sources"`) ||
+		strings.Contains(message, `Unknown type "GitProvider"`)
 }
 
 const getUserRepositoriesOperation = `
@@ -95,6 +155,7 @@ query GetUserRepositories($refs: [String!]) {
 			mappedSource {
 				sourceName
 				installationId
+				configUrl
 				mode
 				repositories
 			}
@@ -126,6 +187,7 @@ query GetOrgMappedSources($org: String!) {
 		mappedSources {
 			sourceName
 			installationId
+			configUrl
 			mode
 			repositories
 		}
@@ -390,4 +452,29 @@ func (c *Client) CreatePortalSession(ctx context.Context, orgID string) (string,
 		return "", err
 	}
 	return data.CreatePortalSession, nil
+}
+
+// GitLabConnection represents one linked account on a configured GitLab instance.
+type GitLabConnection struct {
+	ID        string `json:"id"`
+	Instance  string `json:"instance"`
+	Username  string `json:"username"`
+	CreatedAt string `json:"createdAt"`
+}
+type GitLabSetup struct {
+	Instances   []string           `json:"gitlabInstances"`
+	Connections []GitLabConnection `json:"gitlabConnections"`
+}
+
+func (c *Client) GitLabSetup(ctx context.Context) (*GitLabSetup, error) {
+	var result GitLabSetup
+	err := c.doGraphQL(ctx, "GetGitLabSetup", `query GetGitLabSetup { gitlabInstances gitlabConnections { id instance username createdAt } }`, nil, &result)
+	return &result, err
+}
+func (c *Client) GitLabOAuthURL(ctx context.Context, instance, redirect string) (string, error) {
+	var result struct {
+		URL string `json:"gitlabOAuthURL"`
+	}
+	err := c.doGraphQL(ctx, "GetGitLabOAuthURL", `query GetGitLabOAuthURL($instance: String!, $redirectURI: String!) { gitlabOAuthURL(instance: $instance, redirectURI: $redirectURI) }`, map[string]any{"instance": instance, "redirectURI": redirect}, &result)
+	return result.URL, err
 }
