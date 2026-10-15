@@ -16879,7 +16879,7 @@ export class Client extends BaseClient {
   /**
    * Parse a name in any casing into words.
    *
-   * Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input or input with no letters or digits.
+   * Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
    * @param name The name to parse.
    * @experimental
    */
