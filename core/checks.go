@@ -147,7 +147,9 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 // tool's patch, or a diff-stat summary when the patch is too large to show.
 func logStalePatch(ctx, spanCtx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) {
 	preview := summarizePatch(ctx, srv, changes)
-	if preview == "" {
+	if preview == "" || ctx.Err() != nil {
+		// Canceled (e.g. by fail-fast): the preview is at best a warning about
+		// the cancellation, not the changes.
 		return
 	}
 	if !strings.HasSuffix(preview, "\n") {
