@@ -18,7 +18,9 @@ import (
 //   - filesync: gRPC message bytes exchanged with the session's main client;
 //   - registry and http: request or response body bytes, before content
 //     decoding;
-//   - git: IP packet bytes that git commands exchange with external addresses.
+//   - git: IP packet bytes that git commands exchange with external addresses;
+//   - llm: the request body sent to a model provider, counted when its response
+//     arrives, and the response body, before content decoding.
 //
 // Transfers inside the engine, such as with nested clients and Dagger
 // services, are not external. Command traffic of executions is in their
@@ -28,6 +30,7 @@ const (
 	WorkloadTransferRegistry = "registry"
 	WorkloadTransferGit      = "git"
 	WorkloadTransferHTTP     = "http"
+	WorkloadTransferLLM      = "llm"
 )
 
 // WorkloadScope is the instrumentation scope of the spans that only the
