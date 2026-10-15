@@ -268,6 +268,7 @@ entrypoint = true
 				require.Contains(t, out, "+stale world")
 				require.Contains(t, out, "+brand new")
 				require.Contains(t, out, "generated files are not up to date")
+				require.Contains(t, out, `dagger generate "dag://?generator=generate-stale"`)
 			},
 			LogTest: func(t *testctx.T, db *dagui.DB, logs []sdklog.Record) {
 				// Only the check's own output matters here: the internal `git diff`

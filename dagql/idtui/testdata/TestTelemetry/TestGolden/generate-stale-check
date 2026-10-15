@@ -21,3 +21,6 @@ CHECKS  ✘ 1 failed
 
 RUN LOCALLY
   dagger check "dag://?check=generate-stale/stale"
+
+REGENERATE
+  dagger generate "dag://?generator=generate-stale"

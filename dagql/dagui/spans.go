@@ -364,6 +364,10 @@ type SpanSnapshot struct {
 	// Check name (see CheckPassed)
 	CheckName string `json:",omitempty"`
 
+	// CheckGenerator is the address of the generator a staleness check covers:
+	// running it fixes the check.
+	CheckGenerator string `json:",omitempty"`
+
 	// Generator name
 	GeneratorName string `json:",omitempty"`
 
@@ -585,6 +589,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.CheckPassedAttr:
 		// TODO: redundant with span status?
 		snapshot.CheckPassed = val.(bool)
+
+	case telemetryattrs.CheckGeneratorAttr:
+		snapshot.CheckGenerator = val.(string)
 
 	case telemetry.GeneratorNameAttr:
 		snapshot.GeneratorName = val.(string)

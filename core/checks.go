@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -20,16 +21,16 @@ type checkSpanKey struct{}
 // WithCheckName marks a check already covered by an artifact evaluation span,
 // the span current in ctx. It does not change the check's execution identity.
 func WithCheckName(ctx context.Context, name string) context.Context {
-	ctx = context.WithValue(ctx, checkSpanKey{}, trace.SpanContextFromContext(ctx))
+	ctx = context.WithValue(ctx, checkSpanKey{}, trace.SpanFromContext(ctx))
 	return context.WithValue(ctx, checkNameKey{}, name)
 }
 
 // checkSpanContext returns ctx with the span that covers the running check as
-// its current span, so the check's own output lands on it rather than on
-// whichever (possibly internal) call span is running the check.
+// its current span, so the check's own output and attributes land on it rather
+// than on whichever (possibly internal) call span is running the check.
 func checkSpanContext(ctx context.Context) context.Context {
-	if sc, ok := ctx.Value(checkSpanKey{}).(trace.SpanContext); ok && sc.IsValid() {
-		return trace.ContextWithSpanContext(ctx, sc)
+	if span, ok := ctx.Value(checkSpanKey{}).(trace.Span); ok && span.SpanContext().IsValid() {
+		return trace.ContextWithSpan(ctx, span)
 	}
 	return ctx
 }
@@ -114,6 +115,10 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 	case c.Receiver.Self() != nil:
 		failure = c.runFunction(ctx)
 	case c.Generator.Self() != nil:
+		// Running the generator is what fixes this check.
+		if uri, err := c.Generator.Self().Artifact.URI(ArtifactURIOpts{DimensionKeys: true}); err == nil {
+			trace.SpanFromContext(spanCtx).SetAttributes(attribute.String(telemetryattrs.CheckGeneratorAttr, uri))
+		}
 		var changes dagql.ObjectResult[*Changeset]
 		var srv *dagql.Server
 		srv, failure = CurrentDagqlServer(ctx)
