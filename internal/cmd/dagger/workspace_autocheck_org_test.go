@@ -81,26 +81,36 @@ func TestIsCloudUnauthorized(t *testing.T) {
 func TestRepoAccessError(t *testing.T) {
 	err := &repoAccessError{settingsURL: "https://github.com/settings/installations/12345"}
 	require.EqualError(t, err,
-		"Cloud checks need GitHub access to this repository. Visit https://github.com/settings/installations/12345 to enable it and then run the command again")
+		"Cloud checks need access to this repository. Visit https://github.com/settings/installations/12345 to enable it and then run the command again")
 }
 
-func TestInstallationSettingsURL(t *testing.T) {
+func TestSourceSettingsURL(t *testing.T) {
 	t.Run("prefers the source's config URL", func(t *testing.T) {
-		url := installationSettingsURL(workspaceAutocheckState{
+		url := sourceSettingsURL(workspaceAutocheckState{
 			InstallationID: "12345",
 			ConfigURL:      "https://github.com/organizations/acme/settings/installations/12345",
 		})
 		require.Equal(t, "https://github.com/organizations/acme/settings/installations/12345", url)
 	})
-	t.Run("falls back to the canonical URL", func(t *testing.T) {
-		url := installationSettingsURL(workspaceAutocheckState{InstallationID: "67890"})
-		require.Equal(t, "https://github.com/settings/installations/67890", url)
+	t.Run("GitLab access is managed in Cloud, not on the group page", func(t *testing.T) {
+		t.Setenv("DAGGER_CLOUD_EXTERNAL_URL", "http://localhost:3000/")
+		url := sourceSettingsURL(workspaceAutocheckState{
+			Provider: cloudapi.GitProviderGitLab, OrgName: "acme", ConfigURL: "https://gitlab.example.com/team/sub",
+		})
+		require.Equal(t, "http://localhost:3000/acme/settings/repositories", url)
+	})
+
+	t.Run("uses Cloud settings without provider metadata", func(t *testing.T) {
+		t.Setenv("DAGGER_CLOUD_EXTERNAL_URL", "http://localhost:3000/")
+		url := sourceSettingsURL(workspaceAutocheckState{InstallationID: "gitlab:67890", OrgName: "acme"})
+		require.Equal(t, "http://localhost:3000/acme/settings/repositories", url)
+		require.Equal(t, "http://localhost:3000", sourceSettingsURL(workspaceAutocheckState{}))
 	})
 }
 
 func TestIsRepoNotInInstallation(t *testing.T) {
-	require.True(t, isRepoNotInInstallation(errors.New(
+	require.True(t, isRepositoryNotInSource(errors.New(
 		"ConfigureSource: repository github.com/marcosnils/bin does not belong to installation 161781848. Verify that the GitHub app has been granted access to the repository.")))
-	require.False(t, isRepoNotInInstallation(errors.New("unauthorized")))
-	require.False(t, isRepoNotInInstallation(nil))
+	require.False(t, isRepositoryNotInSource(errors.New("unauthorized")))
+	require.False(t, isRepositoryNotInSource(nil))
 }

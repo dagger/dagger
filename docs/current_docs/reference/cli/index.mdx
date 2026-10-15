@@ -634,12 +634,16 @@ dagger cloud integration create <provider>
 
 ```
 dagger cloud integration create github
+dagger cloud integration create gitlab --instance https://gitlab.com
 ```
 
 ### Options
 
 ```
-      --open   Open the setup URL in a browser
+      --instance string       Configured GitLab instance URL (default "https://gitlab.com")
+      --open                  Open the setup URL in a browser
+      --reauthorize           Repeat GitLab account setup authorization
+      --redirect-uri string   Registered Cloud OAuth callback URL
 ```
 
 ### Options inherited from parent commands

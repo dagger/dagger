@@ -118,7 +118,7 @@ func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) erro
 		}
 		state, err := setWorkspaceAutocheckState(cmd, remote, enabled)
 		if enabled && errors.Is(err, errCloudSourceNotConfigured) {
-			if setupErr := prepareCloudChecksIntegration(cmd, args); setupErr != nil {
+			if setupErr := prepareCloudChecksIntegration(cmd, args, remote.CloneRef); setupErr != nil {
 				return setupErr
 			}
 			// Re-read Cloud state after the user completes the browser step.
@@ -190,10 +190,38 @@ func prepareCloudChecksAccount(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func prepareCloudChecksIntegration(cmd *cobra.Command, args []string) error {
+func prepareCloudChecksIntegration(cmd *cobra.Command, args []string, repository ...string) error {
 	client, _, err := cloudCLI.cloudClientWithLogin(cmd.Context(), false)
 	if err != nil {
 		return err
+	}
+	if len(repository) > 0 && repositoryInstance(repository[0]) != "https://github.com" {
+		setup, err := client.GitLabSetup(cmd.Context())
+		if err != nil {
+			return err
+		}
+		instance, err := registeredGitLabInstance(setup, repository[0])
+		if err != nil {
+			return err
+		}
+		command := "dagger cloud integration create gitlab --instance " + instance
+		required := cloudChecksPrerequisiteError(cmd, args, "Cloud checks need GitLab access to this repository", command)
+		if !canPromptForCloudChecks() || !confirmSetupCommand(cmd, "Connect GitLab to Dagger Cloud in the browser?", command+" --open") {
+			return required
+		}
+		redirect := gitlabOAuthRedirect()
+		oauthURL, err := client.GitLabOAuthURL(cmd.Context(), instance, redirect)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Manual step: connect a GitLab group Owner account, then choose the group and repositories in Cloud Repository settings:\n%s\n", oauthURL)
+		if err := browser.OpenURL(oauthURL); err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Could not open a browser. Open the URL above.")
+		}
+		if !confirmManualStep(cmd, "Have you completed GitLab authorization?") {
+			return required
+		}
+		return nil
 	}
 	// When the GitHub identity is already connected, the missing piece is the
 	// Dagger Cloud GitHub App installation on the repository's owner —

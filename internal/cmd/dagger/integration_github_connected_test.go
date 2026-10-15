@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,11 @@ func fakeCloudClient(t *testing.T, githubConnectionJSON, sourcesJSON string) *cl
 		case strings.Contains(string(body), "githubConnection"):
 			_, _ = io.WriteString(w, githubConnectionJSON)
 		case strings.Contains(string(body), "GetSources"), strings.Contains(string(body), "sources"):
+			var request struct {
+				Variables struct{ Providers []cloudapi.GitProvider }
+			}
+			require.NoError(t, json.Unmarshal(body, &request))
+			require.Equal(t, []cloudapi.GitProvider{cloudapi.GitProviderGitHub}, request.Variables.Providers)
 			_, _ = io.WriteString(w, sourcesJSON)
 		default:
 			_, _ = io.WriteString(w, `{"data":{}}`)
@@ -55,7 +61,7 @@ func TestGithubConnected(t *testing.T) {
 	t.Run("no stored connection but sources listable (Auth0 identity)", func(t *testing.T) {
 		client := fakeCloudClient(t,
 			`{"data":{"githubConnection":null}}`,
-			`{"data":{"sources":[{"name":"acme","id":"1","type":"Organization","configuredAt":"","orgName":null,"configUrl":""}]}}`,
+			`{"data":{"sources":[{"provider":"GITHUB","instance":"https://github.com","name":"acme","id":"1","type":"Organization","configuredAt":"","orgName":null,"configUrl":""}]}}`,
 		)
 		connected, login := cli.githubConnected(context.Background(), client)
 		require.True(t, connected)
@@ -69,6 +75,13 @@ func TestGithubConnected(t *testing.T) {
 		)
 		connected, login := cli.githubConnected(context.Background(), client)
 		require.False(t, connected)
+		require.Empty(t, login)
+	})
+
+	t.Run("connected GitHub identity without installations", func(t *testing.T) {
+		client := fakeCloudClient(t, `{"data":{"githubConnection":null}}`, `{"data":{"sources":[]}}`)
+		connected, login := cli.githubConnected(context.Background(), client)
+		require.True(t, connected)
 		require.Empty(t, login)
 	})
 }

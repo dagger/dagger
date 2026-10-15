@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,6 +19,8 @@ import (
 const cloudCheckFetchLimit = 100
 
 type cloudCheckSelectorFlags struct {
+	GitRepo    []string
+	GitLabMR   []string
 	GitHubRepo []string
 	GitHubPR   []string
 	GitBranch  []string
@@ -29,6 +32,10 @@ type cloudCheckSelectorFlags struct {
 
 func (f cloudCheckSelectorFlags) values(dim string) []string {
 	switch dim {
+	case "git-repo":
+		return f.GitRepo
+	case "gitlab-mr":
+		return f.GitLabMR
 	case "github-repo":
 		return f.GitHubRepo
 	case "github-pr":
@@ -49,6 +56,7 @@ func (f cloudCheckSelectorFlags) values(dim string) []string {
 }
 
 var cloudCheckDimensions = []string{
+	"git-repo", "gitlab-mr",
 	"github-repo",
 	"github-pr",
 	"git-branch",
@@ -80,7 +88,7 @@ func (cli *CloudCLI) loadCloudCheckRowsAcrossUserOrgs(ctx context.Context, selec
 		return nil, err
 	}
 
-	orgs, preferred := orderCloudOrgsForRepos(user.Orgs, selectors.GitHubRepo)
+	orgs, preferred := orderCloudOrgsForRepos(user.Orgs, append(selectors.GitRepo, selectors.GitHubRepo...))
 	for _, org := range orgs[:preferred] {
 		rows, err := loadCloudCheckRowsForOrg(ctx, client, org.Name, selectors)
 		if err != nil {
@@ -117,7 +125,7 @@ func (cli *CloudCLI) loadCloudCheckRowsAcrossUserOrgs(ctx context.Context, selec
 }
 
 func loadCloudCheckRowsForOrg(ctx context.Context, client *cloudapi.Client, orgName string, selectors cloudCheckSelectorFlags) ([]cloudCheckRow, error) {
-	commits, err := client.OrgChecks(ctx, orgName, selectors.GitHubRepo, cloudCheckFetchLimit)
+	commits, err := client.OrgChecks(ctx, orgName, append(selectors.GitRepo, selectors.GitHubRepo...), cloudCheckFetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("fetch Cloud checks for org %q: %w", orgName, err)
 	}
@@ -188,6 +196,11 @@ func cloudWorkspaceSelectors(base cloudCheckSelectorFlags, version string) []clo
 		return []cloudCheckSelectorFlags{base}
 	}
 	var selectors []cloudCheckSelectorFlags
+	if mrNumber := cloudMergeRequestNumber(version); mrNumber != "" {
+		selector := base
+		selector.GitLabMR = []string{mrNumber}
+		selectors = append(selectors, selector)
+	}
 	if prNumber := cloudPullRequestNumber(version); prNumber != "" {
 		sel := base
 		sel.GitHubPR = []string{prNumber}
@@ -223,7 +236,7 @@ func dedupeCloudCheckRows(rows []cloudCheckRow) []cloudCheckRow {
 	for _, row := range rows {
 		key := cloudCommitKey(row.Commit) + "\x00" +
 			row.Check.Name + "\x00" +
-			row.Dimensions["github-pr"] + "\x00" +
+			row.Dimensions["github-pr"] + "\x00" + row.Dimensions["gitlab-mr"] + "\x00" +
 			row.Dimensions["git-branch"] + "\x00" +
 			row.Dimensions["git-tag"] + "\x00" +
 			row.Dimensions["git-sha"] + "\x00" +
@@ -252,7 +265,10 @@ func cloudCheckRows(orgName string, commits []cloudapi.CheckCommit) []cloudCheck
 					dims[k] = v
 				}
 				repo := normalizeGitHubRepo(commit.Repo)
-				dims["github-repo"] = repo
+				dims["git-repo"] = normalizeRepository(commit.Repo)
+				if repositoryInstance(commit.Repo) == "https://github.com" {
+					dims["github-repo"] = repo
+				}
 				dims["git-sha"] = firstNonEmpty(commit.CommitSHA, check.ModuleVersion)
 				dims["workspace"] = firstNonEmpty(check.ModuleRef, repo)
 				dims["check"] = check.Name
@@ -283,7 +299,11 @@ func cloudCheckRefDimensions(commit cloudapi.CheckCommit) []map[string]string {
 		switch ref.Typename {
 		case "CheckCommitPullRequestRef":
 			if ref.Number != 0 {
-				dims["github-pr"] = strconv.Itoa(ref.Number)
+				if repositoryInstance(commit.Repo) == "https://github.com" {
+					dims["github-pr"] = strconv.Itoa(ref.Number)
+				} else {
+					dims["gitlab-mr"] = strconv.Itoa(ref.Number)
+				}
 			}
 			dims["url"] = ref.URL
 			dims["description"] = ref.Title
@@ -369,8 +389,8 @@ func cloudDimensionMatches(dim, got string, values []string) bool {
 			if strings.EqualFold(normalizeGitHubRepo(got), normalizeGitHubRepo(want)) {
 				return true
 			}
-		case "workspace":
-			if strings.EqualFold(normalizeGitHubRepo(got), normalizeGitHubRepo(want)) {
+		case "workspace", "git-repo":
+			if strings.EqualFold(normalizeRepository(got), normalizeRepository(want)) {
 				return true
 			}
 		case "git-sha":
@@ -564,6 +584,8 @@ func cloudCheckWorkspaceAddress(row cloudCheckRow) (string, string) {
 		return "", ""
 	}
 	switch {
+	case row.Dimensions["gitlab-mr"] != "":
+		return "mr", base + "@refs/merge-requests/" + row.Dimensions["gitlab-mr"] + "/head"
 	case row.Dimensions["github-pr"] != "":
 		return "pr", base + "@pull/" + row.Dimensions["github-pr"] + "/head"
 	case row.Dimensions["git-branch"] != "":
@@ -580,6 +602,9 @@ func cloudCheckWorkspaceAddress(row cloudCheckRow) (string, string) {
 func cloudCheckWorkspaceBase(row cloudCheckRow) string {
 	if workspace := row.Dimensions["workspace"]; workspace != "" {
 		return workspace
+	}
+	if repo := row.Dimensions["git-repo"]; repo != "" {
+		return repo
 	}
 	repo := normalizeGitHubRepo(row.Dimensions["github-repo"])
 	if repo == "" {
@@ -622,14 +647,22 @@ func cloudCheckStart(check cloudapi.Check) time.Time {
 }
 
 func cloudCommitKey(commit cloudapi.CheckCommit) string {
-	return normalizeGitHubRepo(commit.Repo) + "@" + commit.CommitSHA
+	return normalizeRepository(commit.Repo) + "@" + commit.CommitSHA
 }
 
 func cloudTraceURL(orgName, traceID string) string {
 	if traceID == "" {
 		return ""
 	}
-	return fmt.Sprintf("https://dagger.cloud/%s/traces/%s", orgName, traceID)
+	return fmt.Sprintf("%s/%s/traces/%s", cloudWebURL(), orgName, traceID)
+}
+
+func cloudWebURL() string {
+	base := strings.TrimRight(os.Getenv("DAGGER_CLOUD_EXTERNAL_URL"), "/")
+	if base == "" {
+		base = "https://dagger.cloud"
+	}
+	return base
 }
 
 func firstNonEmpty(values ...string) string {
@@ -666,4 +699,15 @@ func relativeTime(t time.Time) string {
 	default:
 		return t.Format("2006-01-02")
 	}
+}
+
+func cloudMergeRequestNumber(version string) string {
+	version = strings.TrimPrefix(version, "refs/")
+	if rest, ok := strings.CutPrefix(version, "merge-requests/"); ok {
+		number, suffix, ok := strings.Cut(rest, "/")
+		if ok && (suffix == "head" || suffix == "merge") && isAllDigits(number) {
+			return number
+		}
+	}
+	return ""
 }
