@@ -1426,6 +1426,28 @@ func (s *Server) loadNthValue(
 	return res, nil
 }
 
+// resolveLeafList renders the elements of a list that are leaves of the query
+// (they have no subselections).
+func (s *Server) resolveLeafList(ctx context.Context, val AnyResult, enum Enumerable) ([]any, error) {
+	if values, ok := enum.(valueEnumerable); ok {
+		// read plain values straight from the list (see valueEnumerable)
+		return leafValues(values)
+	}
+	// resolve serially (fast path, no goroutine overhead)
+	results := make([]any, enum.Len()) // TODO subtle: favor [] over null result
+	for nth := 1; nth <= len(results); nth++ {
+		elemVal, err := s.loadNthValue(ctx, val, nth, false)
+		if err != nil {
+			return nil, err
+		}
+		if elemVal == nil || elemVal.Unwrap() == nil {
+			continue
+		}
+		results[nth-1] = elemVal.Unwrap()
+	}
+	return results, nil
+}
+
 func beginLoadTypeCacheOperation(ctx context.Context, id *call.ID) (*Cache, cacheOperation, string, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -2430,50 +2452,38 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		// we're sub-selecting into an enumerable value, so we need to resolve each
 		// element
 
+		if len(sel.Subselections) == 0 {
+			return s.resolveLeafList(ctx, val, enum)
+		}
+
+		// Has subselections - resolve in parallel
 		length := enum.Len()
 		results := make([]any, length) // TODO subtle: favor [] over null result
-
-		if len(sel.Subselections) == 0 {
-			// No subselections - resolve serially (fast path, no goroutine overhead)
-			for nth := 1; nth <= length; nth++ {
+		p := pool.New().WithErrors().WithMaxGoroutines(maxConcurrentResolvers)
+		for nth := 1; nth <= length; nth++ {
+			p.Go(func() error {
 				elemVal, err := s.loadNthValue(ctx, val, nth, false)
 				if err != nil {
-					return nil, err
+					return err
 				}
-				if elemVal == nil || elemVal.Unwrap() == nil {
+				if elemVal == nil {
 					results[nth-1] = nil
-					continue
-				}
-				results[nth-1] = elemVal.Unwrap()
-			}
-		} else {
-			// Has subselections - resolve in parallel
-			p := pool.New().WithErrors().WithMaxGoroutines(maxConcurrentResolvers)
-			for nth := 1; nth <= length; nth++ {
-				p.Go(func() error {
-					elemVal, err := s.loadNthValue(ctx, val, nth, false)
-					if err != nil {
-						return err
-					}
-					if elemVal == nil {
-						results[nth-1] = nil
-						return nil
-					}
-					node, err := s.toSelectable(ctx, elemVal)
-					if err != nil {
-						return fmt.Errorf("instantiate %dth array element: %w", nth, err)
-					}
-					res, err := s.Resolve(ctx, node, sel.Subselections...)
-					if err != nil {
-						return err
-					}
-					results[nth-1] = res
 					return nil
-				})
-			}
-			if err := p.Wait(); err != nil {
-				return nil, err
-			}
+				}
+				node, err := s.toSelectable(ctx, elemVal)
+				if err != nil {
+					return fmt.Errorf("instantiate %dth array element: %w", nth, err)
+				}
+				res, err := s.Resolve(ctx, node, sel.Subselections...)
+				if err != nil {
+					return err
+				}
+				results[nth-1] = res
+				return nil
+			})
+		}
+		if err := p.Wait(); err != nil {
+			return nil, err
 		}
 		return results, nil
 	}

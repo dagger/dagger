@@ -369,7 +369,8 @@ extend type Query {
   """
   Parse a name in any casing into words. Known acronyms and terms come from
   the naming dictionary; everything else falls back to the case heuristic.
-  Errors on non-ASCII input or input with no letters or digits.
+  Errors on non-ASCII input, input with no letters or digits, or input over
+  256 bytes.
   """
   identifier(name: String!): Identifier!
 
