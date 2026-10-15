@@ -113,7 +113,12 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 			if err != nil {
 				return nil, err
 			}
-			if slices.ContainsFunc(selected, func(d *ArtifactDimension) bool { return d.Identifier == id }) && !slices.Contains(ids, id) {
+			// Keep a name the selection has, or one a module that failed to
+			// load could have: SchemaSelection decides for each failure, as
+			// it does for a single name.
+			present := slices.ContainsFunc(selected, func(d *ArtifactDimension) bool { return d.Identifier == id }) ||
+				!a.exact && slices.ContainsFunc(a.Entries, func(entry *Artifact) bool { return entry.mayHaveDimension(id, nil) })
+			if present && !slices.Contains(ids, id) {
 				ids = append(ids, id)
 			}
 		}

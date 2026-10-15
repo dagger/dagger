@@ -157,6 +157,31 @@ func TestArtifactLoadFailureFilters(t *testing.T) {
 	})
 }
 
+// Several dimension names keep a load failure that any one of them keeps.
+func TestArtifactLoadFailureDimensionAlternatives(t *testing.T) {
+	dim := &ArtifactDimension{Kind: "COLLECTION", Identifier: "/good/items", Name: "good-item", QualifiedName: "good-items-item"}
+	items := &ModTreeNode{Name: "items"}
+	item := &ModTreeNode{Parent: items, Name: "get", CollectionDimension: dim}
+	all := &Artifacts{Entries: []*Artifact{
+		{ModuleName: "good", Path: []string{"good", "items"}, TypeName: "GoodItem", Node: item},
+		loadFailureArtifact("staff"),
+	}}
+	all.AllDimensions = all.DimensionDefinitions()
+	for _, tc := range []struct {
+		names []string
+		want  []string
+	}{
+		{[]string{"staff-member"}, []string{"staff/load"}},
+		{[]string{"good-item"}, []string{"good/items"}},
+		{[]string{"staff-member", "good-item"}, []string{"good/items", "staff/load"}},
+		{[]string{"good-item", "staff-member"}, []string{"good/items", "staff/load"}},
+	} {
+		t.Run(strings.Join(tc.names, ","), func(t *testing.T) {
+			require.Equal(t, tc.want, schemaPaths(t, all.FilterDimensions(tc.names)))
+		})
+	}
+}
+
 func TestArtifactEntrypointLoadFailure(t *testing.T) {
 	app := loadFailureArtifact("app")
 	app.LoadFailure.Entrypoint = true
