@@ -1,14 +1,14 @@
 ---
 title: "golangci-lint"
 slug: /reference/modules/go/golangci-lint
-description: "Lint Go modules across a workspace with golangci-lint."
+description: "Lint the Go projects in a workspace with golangci-lint."
 ---
 
 # golangci-lint
 
 The golangci-lint module runs Go linters as a Dagger check, using the same
-configuration locally and in CI. It discovers `go.mod` files and runs
-golangci-lint separately in each selected Go module.
+configuration locally and in CI. Each golangci-lint configuration file roots a
+project, and the module lints each project with its own configuration.
 
 ## Add it to your workspace
 
@@ -22,39 +22,43 @@ dagger module install dagger.io/go/golangci-lint
 ## Run the check
 
 ```bash
-dagger check                       # run every check in the workspace
-dagger check dag://golangci-lint/lint-all # lint the selected Go modules
+dagger check --golangci-lint                              # lint every project
+dagger check --golangci-lint-project=services/api        # lint one project
 ```
 
-`lint-all` discovers Go modules at or below the working directory, including
-the enclosing module when run from a subdirectory. Run it from the workspace
-root to check every module. Each check runs `golangci-lint run` with the
-workspace's `.golangci.*` configuration files and reports diagnostics with
-workspace-relative paths.
+The check is `golangci-lint/projects/lint`. It runs `golangci-lint run` once for
+each Go module a project covers, on the toolchain that module's `go.mod` asks
+for, and reports diagnostics with workspace-relative paths. golangci-lint finds
+the project's configuration with its own lookup.
 
 Go and C/C++ sources, embedded assets, and local `go.mod` replacement
 dependencies within the workspace are included automatically. Go module,
 build, and golangci-lint caches are shared between runs.
 
-## Module discovery
+## Projects
 
-`lint-all` finds Go modules by looking for `go.mod` files:
+| Flag | Collection | Key |
+| --- | --- | --- |
+| `--golangci-lint-project` | `projects` | Directory holding the configuration file, relative to the workspace root. The root is `.` |
 
-- Every directory at or below the directory `dagger` runs from that holds a
-  `go.mod` is a Go module. Run `dagger` from the workspace root to cover the
-  whole repository.
-- When `dagger` runs from a directory inside a Go module, that enclosing module
-  is included as well.
-- Every `go.mod` counts, including those under `vendor/`, `testdata/`,
-  `examples/`, hidden directories, and directories listed in `.gitignore`.
-- A directory is a module when its `go.mod` parses and it holds at least one
-  Go file, so an empty module or a placeholder `go.mod` is left out.
+List the keys with `dagger list golangci-lint-projects -a`. [Select collection items](../../../using/checking.mdx#select-collection-items) describes how to select items.
 
-Exclude a module with the `lint` setting, which selects module roots by path
-from the workspace root. `"!vendor"` excludes the module at `vendor` and any
-module below it, and exclusions always win. The pattern rules are the same as
+A project is a directory holding `.golangci.yml`, `.golangci.yaml`,
+`.golangci.toml`, or `.golangci.json`. It covers everything below it that a
+nested configuration does not claim: each Go module below it, and the part
+below it of a Go module that encloses it. A repository without a configuration
+file has no projects, so nothing is linted.
+
+Projects are found at or below the directory `dagger` runs from, plus the
+nearest project that encloses it. Run `dagger` from the workspace root to
+cover the whole repository.
+
+Exclude a project with the `lint` setting, which selects project roots by path
+from the workspace root. `"!vendor"` excludes the project at `vendor` and any
+project below it, and exclusions always win. The pattern rules are the same as
 the Go module's `test` setting, listed under
-[Module discovery](../go.mdx#module-discovery).
+[Module discovery](../go.mdx#module-discovery). An excluded project is still
+listed, and its check passes without running.
 
 ## Configure it
 
@@ -62,11 +66,11 @@ List the current settings with `dagger module settings golangci-lint`, then
 change one with `dagger module settings golangci-lint <key> <value>`. Settings
 live in `dagger.toml` under `[modules.golangci-lint.settings]`:
 
-- `version` (default `2.11.4`) selects the golangci-lint release every module
+- `version` (default `2.11.4`) selects the golangci-lint release every project
   is linted with, without the `v` prefix. The default is pinned by digest. It is
   installed into the lint container unless that container already carries
   golangci-lint.
-- `goVersion` sets one Go toolchain for every module, overriding the `go`
+- `goVersion` sets one Go toolchain for every Go module, overriding the `go`
   directive in each module's `go.mod`. Without it, each module is linted with
   the toolchain its own `go.mod` asks for. It is separate from the Go module's
   `version`, which applies to tests and generators.
@@ -76,11 +80,11 @@ live in `dagger.toml` under `[modules.golangci-lint.settings]`:
   so `goVersion` is ignored alongside it.
 - `includeExtraFiles` (default empty) adds workspace-root path patterns for
   files that automatic source discovery misses.
-- `lint` (default `["**"]`) selects module roots to lint. A bare path or
-  `path/**` includes that module and its descendants; `!path` excludes them.
-  Exclusions always win. `"**"` and `"*"` match every module. With no positive
-  pattern, every module is included unless excluded; `["!**"]` skips all
-  modules. Other glob forms are not supported by this setting.
+- `lint` (default `["**"]`) selects project roots to lint. A bare path or
+  `path/**` includes that project and the projects below it; `!path` excludes
+  them. Exclusions always win. `"**"` and `"*"` match every project. With no
+  positive pattern, every project is included unless excluded; `["!**"]` skips
+  all projects. Other glob forms are not supported by this setting.
 
 Edit list-valued settings directly in `dagger.toml`:
 
