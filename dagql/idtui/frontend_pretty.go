@@ -4643,7 +4643,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 			})
 			eachFailedLeafGenerator(fe.reportGenerators(), func(n *dagui.GeneratorNode) {
 				// The generator span's own rolled-up logs carry the exec failure
-				// (renderGeneratorFailureDetail); explicit origins render like a
+				// (renderSpanFailureDetail); explicit origins render like a
 				// check's causes.
 				fe.requestLogs(n.Span.ID)
 				for _, origin := range n.Span.ErrorOrigins.Spans() {

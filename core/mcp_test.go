@@ -150,7 +150,7 @@ func TestOversizedChangesetSkipsPatchWork(t *testing.T) {
 
 	// No server is needed on the oversized summary: it may not request
 	// asPatch, diffStats, or an exact per-path summary.
-	out := newMCP().summarizePatch(ctx, nil, changes)
+	out := summarizePatch(ctx, nil, changes)
 	require.Contains(t, out, "exceeds the 200-path inspection budget")
 	require.NotContains(t, out, "new/")
 	require.NotContains(t, out, "old/")

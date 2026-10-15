@@ -439,7 +439,10 @@ func changesetTooLarge(ctx context.Context, changes dagql.ObjectResult[*Changese
 	return changes.Self().PathCountExceeds(ctx, patchSummaryMaxPaths)
 }
 
-func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) string {
+// summarizePatch previews a changeset: the patch itself when it is small and
+// textual, otherwise a diff-stat summary. Shared by tool results and the
+// generator staleness check, so both render the same way.
+func summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) string {
 	tooLarge, err := changesetTooLarge(ctx, changes)
 	if err != nil {
 		return fmt.Sprintf("WARNING: failed to bound changed paths: %s", err)
@@ -781,7 +784,7 @@ func (m *MCP) summarizeWorkspaceDiff(ctx context.Context, srv *dagql.Server, pre
 	}); err != nil {
 		return "", err
 	}
-	return m.summarizePatch(ctx, srv, changes), nil
+	return summarizePatch(ctx, srv, changes), nil
 }
 
 // unionMountPoints returns every root-relative path excluded from a workspace
@@ -1240,7 +1243,7 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	if err := m.overlayChangeset(ctx, srv, placed); err != nil {
 		return "", err
 	}
-	return m.summarizePatch(ctx, srv, changes), nil
+	return summarizePatch(ctx, srv, changes), nil
 }
 
 // refuseGitMetadataChanges fails for a changeset that touches a .git path, at
