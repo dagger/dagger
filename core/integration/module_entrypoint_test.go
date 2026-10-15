@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"dagger.io/dagger/core"
 
@@ -403,6 +404,105 @@ source = "./entrypoint"
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, ".dagger/modules/tiny", strings.TrimPrefix(strings.TrimSpace(out), "/"))
+}
+
+// ttlEntrypointSource has the shape of an SDK entrypoint: its call keys the
+// module process exec on the call digest, and the process returns a new value
+// each time it runs.
+var ttlEntrypointSource = fmt.Sprintf(`type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Ttl")
+        .withConstructor(function("", typeDef.withObject("Ttl")))
+        .withFunction(
+          function("Nonce", typeDef.withKind(TypeDefKind.STRING_KIND))
+            .withCachePolicy(FunctionCachePolicy.Default, timeToLive: "3s"),
+        ),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+    callDigest: String,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else {
+      let result = container
+        .from(%s)
+        .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
+        .withExec(["sh", "-c", %s], stdin: fnName)
+        .file("/result.json")
+        .contents
+      (result :: JSON!)
+    }
+  }
+}
+`, strconv.Quote(alpineImage), strconv.Quote(`printf '"%s"' "$(cat /proc/sys/kernel/random/uuid)" > /result.json`))
+
+// A function whose result outlived its TTL runs again. The exec its entrypoint
+// keyed on the call digest must not answer for it with the old result.
+func (ModuleSuite) TestModuleEntrypointCallAfterTTL(ctx context.Context, t *testctx.T) {
+	// The TTL counts whole seconds.
+	const expiry = 4 * time.Second
+	module := func(c *dagger.Client, runID string) *core.Directory {
+		return core.NewQuery(c).Directory().
+			WithNewFile("dagger-module.toml", `name = "ttl"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`).
+			WithNewFile("entrypoint/main.dang", ttlEntrypointSource).
+			WithNewFile("run-id", runID)
+	}
+
+	nonce := func(t *testctx.T, c *dagger.Client) string {
+		t.Helper()
+		res, err := testutil.QueryWithClient[struct{ Ttl struct{ Nonce string } }](c, t, `{ttl{nonce}}`, nil)
+		require.NoError(t, err)
+		return res.Ttl.Nonce
+	}
+	requireRerunAfterTTL := func(t *testctx.T, c *dagger.Client) {
+		t.Helper()
+		first := nonce(t, c)
+		require.Equal(t, first, nonce(t, c), "a result within its TTL is cached")
+		time.Sleep(expiry)
+		require.NotEqual(t, first, nonce(t, c), "an expired result runs the function again")
+	}
+
+	t.Run("directory module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		require.NoError(t, module(c, rand.Text()).AsModuleSource().AsModule().Serve(ctx))
+		requireRerunAfterTTL(t, c)
+	})
+
+	t.Run("git module", func(ctx context.Context, t *testctx.T) {
+		runID := rand.Text()
+		serve := func(ctx context.Context, t *testctx.T) *dagger.Client {
+			t.Helper()
+			c := connect(ctx, t)
+			gitDaemon, repoURL := gitService(ctx, t, c, module(c, runID))
+			_, err := gitDaemon.Start(ctx)
+			require.NoError(t, err)
+			require.NoError(t, core.NewQuery(c).ModuleSource(repoURL+"#main").AsModule().Serve(ctx))
+			return c
+		}
+
+		c := serve(ctx, t)
+		first := nonce(t, c)
+		require.NoError(t, c.Close())
+		time.Sleep(expiry)
+
+		c = serve(ctx, t)
+		assert.NotEqual(t, first, nonce(t, c), "an expired result from another session runs the function again")
+		requireRerunAfterTTL(t, c)
+	})
 }
 
 // tracedEntrypointSource has the shape of an SDK entrypoint: a build exec that

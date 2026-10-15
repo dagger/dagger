@@ -2,6 +2,7 @@ package dangv2
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/dagger/dagger/core/sdk/entrypoint"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vito/dang/v2/pkg/dang"
 )
@@ -189,9 +191,13 @@ func (r *entrypointRuntime) Call(
 			// which misses the call's implicit inputs, such as the clients the
 			// workspace declares. An entrypoint keys its exec on the call by
 			// declaring a nullable callDigest argument; one that does not
-			// declare it never receives it.
+			// declare it never receives it. The digest is new for each
+			// evaluation: dagql evaluates a call only when it has no result
+			// for it, such as after its TTL, so the exec must not answer with
+			// an older result.
 			if execMD != nil && execMD.CallDigest != "" {
-				callArgs = append(callArgs, entrypoint.StringCallArg("callDigest", execMD.CallDigest.String()))
+				callDigest := hashutil.HashStrings(execMD.CallDigest.String(), rand.Text())
+				callArgs = append(callArgs, entrypoint.StringCallArg("callDigest", callDigest.String()))
 			}
 			result, err := callEntrypointMethod(ctx, env, entrypointName, "call", moduleContext, callArgs)
 			if err != nil {
