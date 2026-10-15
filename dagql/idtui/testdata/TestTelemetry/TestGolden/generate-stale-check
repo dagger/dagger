@@ -1,0 +1,23 @@
+Expected stderr:
+
+CHECKS  ✘ 1 failed
+✘ dag://?check=generate-stale/stale X.Xs ERROR
+  ┃ diff --git a/greeting.txt b/greeting.txt
+  ┃ index 94954ab..869f401 100644
+  ┃ --- a/greeting.txt
+  ┃ +++ b/greeting.txt
+  ┃ @@ -1,2 +1,2 @@
+  ┃  hello
+  ┃ -world
+  ┃ +stale world
+  ┃ diff --git a/new.txt b/new.txt
+  ┃ new file mode 100644
+  ┃ index 0000000..d5a09df
+  ┃ --- /dev/null
+  ┃ +++ b/new.txt
+  ┃ @@ -0,0 +1 @@
+  ┃ +brand new
+  ! generated files are not up to date
+
+RUN LOCALLY
+  dagger check "dag://?check=generate-stale/stale"
