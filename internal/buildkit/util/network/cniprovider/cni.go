@@ -579,10 +579,23 @@ func (ns *cniNS) release() error {
 	if err1 := unmountNetNS(ns.nativeID); err1 != nil && err == nil {
 		err = err1
 	}
-	if err1 := deleteNetNS(ns.nativeID); err1 != nil && err == nil {
-		err = err1
+	if err != nil {
+		// Keep the namespace's file, so the next engine start retries the
+		// CNI teardown, which also releases its address.
+		return err
 	}
-	return err
+	return deleteNetNS(ns.nativeID)
+}
+
+// releaseUnmounted retries the CNI teardown of a namespace that no longer
+// exists. Without a namespace, the plugins release what lives outside it,
+// such as its address and firewall rules.
+func (ns *cniNS) releaseUnmounted() error {
+	bklog.L.Tracef("releasing unmounted cni network namespace %s", ns.id)
+	if err := ns.handle.Remove(context.TODO(), ns.id, "", ns.opts...); err != nil {
+		return err
+	}
+	return deleteNetNS(ns.nativeID)
 }
 
 type contextKeyT string
