@@ -270,6 +270,10 @@ func (a *Artifacts) ExpandDimensionKeys(ctx context.Context, name string) ([]str
 		}
 		var keys []string
 		for _, entry := range selected.Entries {
+			// A load failure the filter kept has no key of its own.
+			if !slices.ContainsFunc(entry.DimensionDefinitions(), func(d *ArtifactDimension) bool { return d.Identifier == dimension }) {
+				continue
+			}
 			keys = append(keys, entry.StaticDimensionKey(dimension))
 		}
 		slices.Sort(keys)
@@ -324,7 +328,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 			}
 			// Match the exclusion with its own selector. The entries already
 			// satisfy the inclusion filters.
-			excluded, err := (&Artifacts{Entries: result.Entries, AllDimensions: a.AllDimensions}).filterURI(address, false)
+			excluded, err := (&Artifacts{Entries: result.Entries, AllDimensions: a.AllDimensions}).filterURI(address, true)
 			if err != nil {
 				return nil, err
 			}
@@ -651,29 +655,29 @@ func (a *Artifacts) SchemaSelection() (*Artifacts, error) {
 		return nil, err
 	}
 	return bound.filter(func(item *Artifact) bool {
-		if item.LoadFailure != nil && slices.Contains(bound.Selector.LoadFailures, item.ModuleName) {
-			return bound.matchesModule(item.ModuleName)
-		}
-		if !bound.matchesDimensionFilters(item.DimensionDefinitions()) {
-			return false
+		dims := item.DimensionDefinitions()
+		has := func(id string) bool {
+			return slices.ContainsFunc(dims, func(d *ArtifactDimension) bool { return d.Identifier == id })
 		}
 		for _, filter := range bound.Selector.Dimensions {
-			if artifact.IsStaticDimension(filter.Dimension) && filter.Keys != nil && !slices.Contains(filter.Keys, item.StaticDimensionKey(filter.Dimension)) {
+			if filter.Keys != nil && len(filter.Keys) == 0 {
+				return false
+			}
+			matched := has(filter.Dimension) && (!artifact.IsStaticDimension(filter.Dimension) || filter.Keys == nil ||
+				slices.Contains(filter.Keys, item.StaticDimensionKey(filter.Dimension)))
+			if !matched && (bound.exact || !item.mayHaveDimension(filter.Dimension, filter.Keys)) {
+				return false
+			}
+		}
+		for _, group := range bound.Selector.DimensionAlternatives {
+			if !slices.ContainsFunc(group, func(id string) bool {
+				return has(id) || !bound.exact && item.mayHaveDimension(id, nil)
+			}) {
 				return false
 			}
 		}
 		return true
 	}), nil
-}
-
-// matchesModule applies the module key filters to a module.
-func (a *Artifacts) matchesModule(module string) bool {
-	for _, filter := range a.Selector.Dimensions {
-		if filter.Dimension == artifact.ModuleDimension && filter.Keys != nil && !slices.Contains(filter.Keys, module) {
-			return false
-		}
-	}
-	return true
 }
 
 func (a *Artifact) setStaticDimensions() {

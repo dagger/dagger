@@ -1,7 +1,6 @@
 package core
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/core/dagaddress"
@@ -90,88 +89,6 @@ func TestArtifactWithoutWorkspace(t *testing.T) {
 	selected, err = mixed.FilterURI(relative)
 	require.NoError(t, err)
 	require.Len(t, selected.Entries, 2)
-}
-
-func TestArtifactAddressUnderFailedModule(t *testing.T) {
-	failure := func(module string) *Artifact {
-		return &Artifact{
-			ModuleName: module, Path: []string{module, "load"}, TypeName: "Check",
-			Directives: []string{"check"}, LoadFailure: &ModuleLoadFailure{Name: module, Message: module + " failed"},
-		}
-	}
-	all := &Artifacts{Entries: []*Artifact{
-		{ModuleName: "coll", Path: []string{"coll", "helper"}, TypeName: "Expertise"},
-		failure("other"),
-		failure("staff"),
-	}}
-	all.AllDimensions = all.DimensionDefinitions()
-	paths := func(t *testing.T, selected *Artifacts) []string {
-		t.Helper()
-		selected, err := selected.SchemaSelection()
-		require.NoError(t, err)
-		paths := []string{}
-		for _, entry := range selected.Entries {
-			paths = append(paths, strings.Join(entry.Path, "/"))
-		}
-		return paths
-	}
-	for uri, want := range map[string][]string{
-		// The address names the failed module: keep its failure.
-		"dag://staff/worker":                          {"staff/load"},
-		"dag://staff/members/head?staff-member=chief": {"staff/load"},
-		"dag://?expertise=staff/worker":               {"staff/load"},
-		"dag+expertise://?expertise=staff/worker":     {"staff/load"},
-		"dag://?staff-worker=staff/worker":            {"staff/load"},
-		"dag://?module=staff":                         {"staff/load"},
-		"dag://staff/**":                              {"staff/load"},
-		// A module key filter still applies.
-		"dag://staff/worker?module=coll": {},
-		// An address that names nothing here selects nothing.
-		"dag://nope/worker":                {},
-		"dag://?expertise=nope/worker":     {},
-		"dag://nope/coll/item?nope-item=a": {},
-		"dag://?expertise=coll/helper":     {"coll/helper"},
-	} {
-		t.Run("filter "+uri, func(t *testing.T) {
-			addr, err := dagaddress.Parse(uri)
-			require.NoError(t, err)
-			selected, err := all.FilterURI(addr)
-			require.NoError(t, err)
-			require.Equal(t, want, paths(t, selected))
-		})
-	}
-	// Excluding part of a failed module keeps its failure; excluding all of
-	// it drops the failure.
-	for uri, want := range map[string][]string{
-		"dag://staff/**":                {"coll/helper", "other/load"},
-		"dag://?module=staff":           {"coll/helper", "other/load"},
-		"dag://staff/worker":            {"coll/helper", "other/load", "staff/load"},
-		"dag://?expertise=staff/worker": {"coll/helper", "other/load", "staff/load"},
-	} {
-		t.Run("without "+uri, func(t *testing.T) {
-			addr, err := dagaddress.Parse(uri)
-			require.NoError(t, err)
-			selected, err := all.WithoutURI(addr)
-			require.NoError(t, err)
-			require.Equal(t, want, paths(t, selected))
-		})
-	}
-	// A kept failure survives later filters, and excluding the address does
-	// not hide it.
-	addr, err := dagaddress.Parse("dag://?expertise=staff/worker")
-	require.NoError(t, err)
-	selected, err := all.FilterURI(addr)
-	require.NoError(t, err)
-	require.Equal(t, []string{"staff/load"}, paths(t, selected.FilterDimensionKeys("expertise", []string{"staff/other"})))
-	excluded, err := selected.WithoutURI(addr)
-	require.NoError(t, err)
-	require.Equal(t, []string{"staff/load"}, paths(t, excluded))
-	// The address round-trips.
-	replayAddr, err := dagaddress.Parse(selected.URI())
-	require.NoError(t, err)
-	replayed, err := all.FilterURI(replayAddr)
-	require.NoError(t, err)
-	require.Equal(t, []string{"staff/load"}, paths(t, replayed))
 }
 
 func TestArtifactParentDirectivesAreImmediate(t *testing.T) {
