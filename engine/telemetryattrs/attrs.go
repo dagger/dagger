@@ -2,14 +2,16 @@ package telemetryattrs
 
 const (
 	// WorkloadTransfersAttr marks, in the workload export, the spans of an
-	// engine that records its external transfers and the external network
-	// readings of its executions. Without it, the transferred bytes below a
-	// call are unknown, not zero.
+	// engine that records its external transfers, the readings of its
+	// executions and helper commands, and the results that each session uses.
+	// Without it, the work below a call is unknown, not zero. Version 2 keys
+	// readings by span and records helper commands and uses; version 1 keyed
+	// readings by execution ID.
 	WorkloadTransfersAttr = "dagger.io/workload.transfers"
-	WorkloadTransfersV1   = "1"
+	WorkloadTransfersV2   = "2"
 
 	// A workload input or output span records one external transfer to or
-	// from the engine. Kind is filesync, registry, git, or http. Bytes are
+	// from the engine. Kind is filesync, registry, http, or llm. Bytes are
 	// absent when the transfer could not be measured. Identity names the
 	// transferred content, for example a manifest or content digest; it never
 	// contains a URL.
@@ -18,6 +20,14 @@ const (
 	WorkloadTransferKindAttr     = "dagger.io/workload.transfer.kind"
 	WorkloadTransferBytesAttr    = "dagger.io/workload.transfer.bytes"
 	WorkloadTransferIdentityAttr = "dagger.io/workload.transfer.identity"
+
+	// A workload use span records that a session needed the content of a
+	// result: its files or command outputs, not only its metadata. It is sent
+	// once per session and result, with the result's digest after
+	// evaluation. The work that produced the result is below the lazy
+	// evaluation spans with the same digest.
+	WorkloadUseSpan       = "workload.use"
+	WorkloadUseDigestAttr = "dagger.io/workload.use.digest"
 
 	// DagContentPreferredDigestAttr is the operation's content-preferred identity
 	// at span completion (string). Prefer its recorded output content digest;

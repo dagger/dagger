@@ -14,21 +14,21 @@ import (
 	"google.golang.org/grpc/stats"
 )
 
-// Kinds of external transfers. Bytes are counted at the boundary of each kind:
+// Kinds of external transfers that the engine process makes itself. Bytes are
+// counted at the boundary of each kind:
 //   - filesync: gRPC message bytes exchanged with the session's main client;
 //   - registry and http: request or response body bytes, before content
 //     decoding;
-//   - git: IP packet bytes that git commands exchange with external addresses;
 //   - llm: the request body sent to a model provider, counted when its response
 //     arrives, and the response body, before content decoding.
 //
 // Transfers inside the engine, such as with nested clients and Dagger
-// services, are not external. Command traffic of executions is in their
-// resource readings, not in transfers.
+// services, are not external. The network traffic of executions and of
+// helper commands, such as git, is in their resource readings, not in
+// transfers.
 const (
 	WorkloadTransferFilesync = "filesync"
 	WorkloadTransferRegistry = "registry"
-	WorkloadTransferGit      = "git"
 	WorkloadTransferHTTP     = "http"
 	WorkloadTransferLLM      = "llm"
 )

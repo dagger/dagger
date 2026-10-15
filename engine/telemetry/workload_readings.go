@@ -19,7 +19,6 @@ const (
 	maxPendingWorkloadReadings = LargeSpanQueueSize
 	SamplePhaseAttr            = "dagger.io/resource.sample.phase"
 	SampleIntervalAttr         = "dagger.io/resource.sample_interval_ms"
-	ExecutionIDAttr            = "dagger.io/execution.id"
 	ExecutionInternalAttr      = "dagger.io/execution.internal"
 	ResourceAvailableName      = "dagger.io/resource.sample.available"
 	// Only workload export has these memory.stat readings. memory.current

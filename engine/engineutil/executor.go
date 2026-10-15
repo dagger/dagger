@@ -212,7 +212,6 @@ func (c *Client) Run(
 		var attrs []attribute.KeyValue
 		if enginetel.HasWorkloadReadings(ctx) {
 			attrs = append(attrs,
-				attribute.String(enginetel.ExecutionIDAttr, state.id),
 				attribute.Bool(enginetel.ExecutionInternalAttr, execMD != nil && execMD.Internal),
 			)
 		}

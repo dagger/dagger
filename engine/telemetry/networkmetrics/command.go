@@ -33,6 +33,10 @@ func PrepareCommandNetwork(ctx context.Context, cmd *exec.Cmd) func() {
 	})
 }
 
+// commandSampleInterval is the longest time between two readings of a helper
+// command.
+const commandSampleInterval = 5 * time.Second
+
 type commandNetworkCounters interface {
 	CgroupPath() string
 	Sample() (nettracer.Sample, error)
@@ -41,18 +45,6 @@ type commandNetworkCounters interface {
 }
 
 func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exec.Cmd) (commandNetworkCounters, error)) func() {
-	// A workload input receives the external bytes that the command receives,
-	// and an output the bytes that it sends. Without counters, the bytes are
-	// unknown.
-	input := enginetel.WorkloadInputFromContext(ctx)
-	output := enginetel.WorkloadOutputFromContext(ctx)
-	sampling := false
-	defer func() {
-		if !sampling {
-			input.Unmeasured()
-			output.Unmeasured()
-		}
-	}()
 	endSpan := func() {}
 	if trace.SpanContextFromContext(ctx).IsValid() {
 		var commandSpan trace.Span
@@ -87,6 +79,20 @@ func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exe
 		attribute.String(daggerotel.MetricsTraceIDAttr, span.TraceID().String()),
 		attribute.String(daggerotel.MetricsSpanIDAttr, span.SpanID().String()),
 	)
+	// The workload export receives the CPU, memory, and external network
+	// readings of the command, keyed by its span like those of an execution.
+	// A span that is not recorded is not exported, so its readings could not
+	// be attributed.
+	interval := commandSampleInterval
+	if !trace.SpanFromContext(ctx).IsRecording() {
+		ctx = enginetel.WithoutWorkloadReadings(ctx)
+	}
+	if enginetel.HasWorkloadReadings(ctx) {
+		interval = min(enginetel.WorkloadReadingInterval(ctx, interval), interval)
+		ctx = enginetel.WithWorkloadReadingAttributes(ctx, attribute.NewSet(append(attrs.ToSlice(),
+			attribute.Int64(enginetel.SampleIntervalAttr, interval.Milliseconds()))...))
+		meter = enginetel.WorkloadReadingMeter(ctx, meter, "dagger.io/network")
+	}
 	opts := metric.WithAttributeSet(attrs)
 	available, err := meter.Int64Gauge(telemetryattrs.NetworkAvailable, metric.WithUnit("1"))
 	if err != nil {
@@ -102,11 +108,13 @@ func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exe
 		gauges[i], err = meter.Int64Gauge(name, metric.WithUnit("bytes"))
 		if err != nil {
 			available.Record(ctx, 0, opts)
+			enginetel.RecordResourceAvailability(ctx, resources.NetworkSource, false)
 			return cleanup
 		}
 	}
 	if prepareErr != nil {
 		available.Record(ctx, 0, opts)
+		enginetel.RecordResourceAvailability(ctx, resources.NetworkSource, false)
 		slog.DebugContext(ctx, "subprocess network accounting unavailable", "error", prepareErr)
 		return cleanup
 	}
@@ -115,11 +123,10 @@ func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exe
 		slog.DebugContext(ctx, "subprocess resource accounting unavailable", "error", err)
 	}
 	var sampleMu sync.Mutex
-	var externalRX, externalTX uint64
-	sampled := false
-	sample := func() {
+	sample := func(phase string) {
 		sampleMu.Lock()
 		defer sampleMu.Unlock()
+		ctx := enginetel.WithSamplePhase(ctx, phase)
 		// Resource accounting remains useful when eBPF is disabled or fails.
 		if resourceSampler != nil {
 			if err := resourceSampler.Sample(ctx); err != nil {
@@ -128,12 +135,12 @@ func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exe
 		}
 		value, err := command.Sample()
 		if err != nil {
-			sampled = false
 			available.Record(ctx, 0, opts)
+			enginetel.RecordResourceAvailability(ctx, resources.NetworkSource, false)
 			return
 		}
-		sampled, externalRX, externalTX = true, value.ExternalRX, value.ExternalTX
 		available.Record(ctx, 1, opts)
+		enginetel.RecordResourceAvailability(ctx, resources.NetworkSource, true)
 		for i, n := range []uint64{
 			value.InternalRX + value.ExternalRX, value.InternalTX + value.ExternalTX,
 			value.InternalRX, value.InternalTX, value.ExternalRX, value.ExternalTX,
@@ -141,37 +148,25 @@ func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exe
 			gauges[i].Record(ctx, int64(min(n, math.MaxInt64)), opts)
 		}
 	}
-	sample()
+	sample("startup")
 	done, stopped := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(stopped)
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-done:
-				sample()
+				sample("periodic")
 				return
 			case <-ticker.C:
-				sample()
+				sample("periodic")
 			}
 		}
 	}()
-	sampling = true
 	return sync.OnceFunc(func() {
 		// Publish current traffic before the caller can close session telemetry.
-		sample()
-		// The counters are cumulative for this command. Bytes that surviving
-		// helpers transfer after it exits are not part of the transfer.
-		sampleMu.Lock()
-		if sampled {
-			input.Add(int64(min(externalRX, math.MaxInt64)))
-			output.Add(int64(min(externalTX, math.MaxInt64)))
-		} else {
-			input.Unmeasured()
-			output.Unmeasured()
-		}
-		sampleMu.Unlock()
+		sample("final")
 		// Session teardown does not wait for cgroup cleanup. End the span now
 		// so its completion is included in the caller's telemetry flush.
 		endSpan()
