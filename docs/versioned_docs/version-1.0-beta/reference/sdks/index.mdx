@@ -51,6 +51,10 @@ You mark checks and generators in your SDK with `@check`, `@generate`, or the la
 
 Round these out with the rest of the platform: settings and environments for team and per-context defaults, explicit `Secret` inputs for credentials, and Dagger Cloud for traces and remote execution.
 
+### Collections
+
+When a module discovers many units of a project at run time, such as packages, test files, or config directories, return them as a **collection**: a set of objects with unique keys. Users can then run a check or generator on one item with a flag such as `--go-package=sdk/go`, instead of on the whole project. A collection can also define batch functions, which run once over the selected items, such as a single `go test` command for the selected tests of a package. See Collections in the [Dang](./dang.mdx#collections), [Go](./go.mdx#collections), [TypeScript](./typescript.mdx#collections), and [Python](./python.mdx#collections) guides.
+
 ## Quality
 
 A module is ready for other people when its public API is small and well-named, its functions and arguments are documented (so `dagger api call --help` is useful), its inputs and outputs are typed and composable, and its secrets, services, and side effects are explicit. Cover the main path and the important failure modes with tests. Treat the API as a contract: renaming a function or changing a default is a breaking change. Publish modules as versioned Git refs; consumers add them with `dagger module install`.

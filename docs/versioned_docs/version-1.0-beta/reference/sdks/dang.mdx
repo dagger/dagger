@@ -906,6 +906,133 @@ pub currentTime: String! @cache(policy: "Never") { ... }
 
 The `policy` values are `Default`, `PerSession`, and `Never`. A function cache hit skips the function entirely. A miss runs it, but individual operations inside may still hit the layer cache. `@cache(policy: "Never")` forces the function to run every call but does not disable layer caching for the operations inside it.
 
+## Collections {#collections}
+
+A **collection** is a set of objects that a module discovers at run time, each with a unique key: the packages in a repository, the test files in a project, or the scripts in a directory. Return a collection when users should be able to run a check or generator on one item. Dagger adds a flag for each collection to `dagger check` and `dagger generate`, and users select items with it. See [Select collection items](../../using/checking.mdx#select-collection-items).
+
+### Declare a collection
+
+Mark a type with `@collection`. A collection has two members:
+
+- A **keys** field, marked `@keys`. It is a non-null list of a scalar or enum type, such as `[String!]!`, and holds one unique key per item.
+- A **get** function, marked `@get`. It takes one key and returns the item for it.
+
+Without the directives, the members must be named `keys` and `get`.
+
+This module discovers the shell scripts in a workspace and lints them with ShellCheck. `Scripts` is the collection, keyed by path, and `Script` is the item:
+
+```dang title="main.dang"
+"""
+Lint shell scripts with ShellCheck.
+"""
+type Shellcheck {
+  """
+  Shell scripts in the workspace, keyed by path.
+  """
+  pub scripts(ws: Workspace!): Scripts! {
+    let source = ws.directory("/", include: ["**/*.sh"])
+    Scripts(paths: source.glob("**/*.sh"), source: source)
+  }
+}
+
+"""
+Shell scripts, keyed by path.
+"""
+type Scripts @collection {
+  """
+  Script paths, relative to the workspace root.
+  """
+  pub paths: [String!]! @keys
+
+  let source: Directory!
+
+  """
+  The script at this path.
+  """
+  pub script(path: String!): Script! @get {
+    Script(path: path, source: source)
+  }
+
+  """
+  Lint the selected scripts with one ShellCheck run.
+  """
+  pub lint: Void @check {
+    container
+      .from("koalaman/shellcheck-alpine:stable")
+      .withMountedDirectory("/src", source)
+      .withWorkdir("/src")
+      .withExec(["shellcheck"] + paths)
+      .sync
+    null
+  }
+}
+
+"""
+A shell script.
+"""
+type Script {
+  """
+  Script path, relative to the workspace root.
+  """
+  pub path: String!
+
+  let source: Directory!
+
+  """
+  Lint this script.
+  """
+  pub lint: Void @check {
+    container
+      .from("koalaman/shellcheck-alpine:stable")
+      .withMountedDirectory("/src", source)
+      .withWorkdir("/src")
+      .withExec(["shellcheck", path])
+      .sync
+    null
+  }
+}
+```
+
+The flag is named after the item type, with the module name in front, so `Script` in the `shellcheck` module adds `--shellcheck-script`. Its placeholder comes from the get function's argument name:
+
+```shell
+dagger check --shellcheck-script=scripts/deploy.sh
+dagger list shellcheck-scripts -a
+```
+
+### Batch functions
+
+Callers see the same API on every collection, whatever its type holds:
+
+| Function | Returns |
+|---|---|
+| `keys` | The keys, in the order the module returned them |
+| `list` | Every item |
+| `get` | The item with the given key |
+| `subset` | A collection of the items with the given keys |
+| `batch` | The collection's other functions |
+
+Every other function on the collection is a **batch function**, reached through `batch`. Dagger calls it on a copy of the collection whose keys field holds only the selected keys, so `paths` above lists the scripts the user selected. The collection's other fields are internal to the module.
+
+A batch check or generator replaces the check or generator with the same name on the item type. `dagger check --shellcheck` calls `Scripts.lint` once with every script, not `Script.lint` once per script. A batch function runs once for each parent item: the batch of a collection nested inside another collection's items runs once per parent. Without a batch function of the same name, the item's check runs once per selected item.
+
+### Collection delta
+
+A batch function can tell whether the user narrowed the selection. Add a `CollectionDelta` field marked `@delta`, or named `delta`. Dagger fills it before each call with the keys added and removed since the module created the collection:
+
+```dang
+type Scripts @collection {
+  pub paths: [String!]! @keys
+
+  """
+  Scripts selected in or out since discovery.
+  """
+  pub selection: CollectionDelta @delta
+}
+```
+
+`selection!.addedKeys` and `selection!.removedKeys` return the changes. When both are empty, the collection holds every item the module discovered. The Go module uses this to run `go test` on a whole package when every test is selected, and `go test -run` with the selected names otherwise.
+
 ## Testing Dang modules
 
 The most direct way to test a Dang module is to call its functions and run its checks:
