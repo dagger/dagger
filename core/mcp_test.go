@@ -150,7 +150,7 @@ func TestOversizedChangesetSkipsPatchWork(t *testing.T) {
 
 	// No server is needed on the oversized summary: it may not request
 	// asPatch, diffStats, or an exact per-path summary.
-	out := summarizePatch(ctx, nil, changes)
+	out := summarizePatch(ctx, nil, changes, toolPatchLimits)
 	require.Contains(t, out, "exceeds the 200-path inspection budget")
 	require.NotContains(t, out, "new/")
 	require.NotContains(t, out, "old/")
@@ -174,9 +174,17 @@ func TestSmallTextChangeset(t *testing.T) {
 		{name: "over line budget across files", stats: []*DiffStat{{Path: "a.txt", Kind: DiffStatKindAdded, AddedLines: patchSummaryMaxLines}, {Path: "b.txt", Kind: DiffStatKindRemoved, RemovedLines: 1}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, smallTextChangeset(tc.stats))
+			require.Equal(t, tc.want, toolPatchLimits.smallTextChangeset(tc.stats))
 		})
 	}
+
+	t.Run("limits are tunable", func(t *testing.T) {
+		// A regeneration too long for a model's context still shows as a
+		// patch for a stale generator's check.
+		stats := []*DiffStat{{Path: "a.txt", Kind: DiffStatKindModified, AddedLines: 500, RemovedLines: 500}}
+		require.False(t, toolPatchLimits.smallTextChangeset(stats))
+		require.True(t, stalePatchLimits.smallTextChangeset(stats))
+	})
 }
 
 func TestReadPatchPreview(t *testing.T) {
@@ -195,7 +203,7 @@ func TestReadPatchPreview(t *testing.T) {
 		{name: "text mentioning binary marker", patch: "diff --git a/a b/a\n+GIT binary patch\n", want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			preview, ok := readPatchPreview(strings.NewReader(tc.patch))
+			preview, ok := toolPatchLimits.readPatchPreview(strings.NewReader(tc.patch))
 			require.Equal(t, tc.want, ok)
 			if ok {
 				require.Equal(t, tc.patch, preview)
@@ -206,13 +214,13 @@ func TestReadPatchPreview(t *testing.T) {
 	}
 
 	t.Run("read error", func(t *testing.T) {
-		preview, ok := readPatchPreview(iotest.ErrReader(io.ErrUnexpectedEOF))
+		preview, ok := toolPatchLimits.readPatchPreview(iotest.ErrReader(io.ErrUnexpectedEOF))
 		require.False(t, ok)
 		require.Empty(t, preview)
 	})
 	t.Run("read is bounded", func(t *testing.T) {
 		r := strings.NewReader(strings.Repeat("x", patchSummaryMaxBytes*2))
-		preview, ok := readPatchPreview(r)
+		preview, ok := toolPatchLimits.readPatchPreview(r)
 		require.False(t, ok)
 		require.Empty(t, preview)
 		require.Equal(t, patchSummaryMaxBytes-1, r.Len())
