@@ -335,7 +335,9 @@ func (s *fileSchema) export(ctx context.Context, parent dagql.ObjectResult[*core
 	if err != nil {
 		return "", fmt.Errorf("failed to evaluate file: %w", err)
 	}
-	err = core.ExportFile(ctx, snapshot, filePath, args.Path, args.AllowParentDirPath)
+	exportCtx, exported := filesyncExport(ctx, parent)
+	err = core.ExportFile(exportCtx, snapshot, filePath, args.Path, args.AllowParentDirPath)
+	exported(err)
 	if err != nil {
 		return "", err
 	}

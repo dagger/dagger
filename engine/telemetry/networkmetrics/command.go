@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	"github.com/dagger/dagger/engine/engineutil/resources"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	daggerotel "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -40,6 +41,18 @@ type commandNetworkCounters interface {
 }
 
 func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exec.Cmd) (commandNetworkCounters, error)) func() {
+	// A workload input receives the external bytes that the command receives,
+	// and an output the bytes that it sends. Without counters, the bytes are
+	// unknown.
+	input := enginetel.WorkloadInputFromContext(ctx)
+	output := enginetel.WorkloadOutputFromContext(ctx)
+	sampling := false
+	defer func() {
+		if !sampling {
+			input.Unmeasured()
+			output.Unmeasured()
+		}
+	}()
 	endSpan := func() {}
 	if trace.SpanContextFromContext(ctx).IsValid() {
 		var commandSpan trace.Span
@@ -102,6 +115,8 @@ func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exe
 		slog.DebugContext(ctx, "subprocess resource accounting unavailable", "error", err)
 	}
 	var sampleMu sync.Mutex
+	var externalRX, externalTX uint64
+	sampled := false
 	sample := func() {
 		sampleMu.Lock()
 		defer sampleMu.Unlock()
@@ -113,9 +128,11 @@ func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exe
 		}
 		value, err := command.Sample()
 		if err != nil {
+			sampled = false
 			available.Record(ctx, 0, opts)
 			return
 		}
+		sampled, externalRX, externalTX = true, value.ExternalRX, value.ExternalTX
 		available.Record(ctx, 1, opts)
 		for i, n := range []uint64{
 			value.InternalRX + value.ExternalRX, value.InternalTX + value.ExternalTX,
@@ -140,9 +157,21 @@ func prepareCommandNetwork(ctx context.Context, cmd *exec.Cmd, prepare func(*exe
 			}
 		}
 	}()
+	sampling = true
 	return sync.OnceFunc(func() {
 		// Publish current traffic before the caller can close session telemetry.
 		sample()
+		// The counters are cumulative for this command. Bytes that surviving
+		// helpers transfer after it exits are not part of the transfer.
+		sampleMu.Lock()
+		if sampled {
+			input.Add(int64(min(externalRX, math.MaxInt64)))
+			output.Add(int64(min(externalTX, math.MaxInt64)))
+		} else {
+			input.Unmeasured()
+			output.Unmeasured()
+		}
+		sampleMu.Unlock()
 		// Session teardown does not wait for cgroup cleanup. End the span now
 		// so its completion is included in the caller's telemetry flush.
 		endSpan()

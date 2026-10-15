@@ -73,6 +73,7 @@ func (r *NetworkRecorder) Record(bytes int64) {
 // operation into a single absolute network metric.
 type NetworkAccumulator struct {
 	recorder *NetworkRecorder
+	transfer *WorkloadTransfer
 	mu       sync.Mutex
 	total    int64
 }
@@ -90,13 +91,19 @@ func NewNetworkAccumulator(ctx context.Context, direction NetworkDirection) (*Ne
 	if err != nil {
 		return nil, err
 	}
-	return &NetworkAccumulator{recorder: recorder}, nil
+	// Received bytes count for a workload input, sent bytes for an output.
+	transfer := WorkloadInputFromContext(ctx)
+	if direction == NetworkTX {
+		transfer = WorkloadOutputFromContext(ctx)
+	}
+	return &NetworkAccumulator{recorder: recorder, transfer: transfer}, nil
 }
 
 func (a *NetworkAccumulator) Add(bytes int64) {
 	if a == nil || bytes <= 0 {
 		return
 	}
+	a.transfer.Add(bytes)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.total += bytes

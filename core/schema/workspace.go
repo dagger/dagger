@@ -2880,7 +2880,10 @@ func (s *workspaceSchema) exportOverlay(
 	// effect on the calling client, like Directory.export — never on the
 	// client that created the workspace (dagger/dagger#14007).
 	wrote = true // Filesync can partially write before returning an error.
-	if err := changes.Self().Export(ctx, args.Path); err != nil {
+	exportCtx, exported := filesyncExport(ctx, changes)
+	err = changes.Self().Export(exportCtx, args.Path)
+	exported(err)
+	if err != nil {
 		return core.Void{}, err
 	}
 	return core.Void{}, nil
