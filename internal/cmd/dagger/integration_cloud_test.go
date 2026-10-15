@@ -11,6 +11,7 @@ func TestIntegrationAccountEntriesFromSources(t *testing.T) {
 	orgName := "dagger"
 	entries := integrationAccountEntriesFromSources([]cloudapi.Source{
 		{
+			Provider:     cloudapi.GitProviderGitHub,
 			Name:         "dagger",
 			ID:           "123",
 			Type:         "Organization",
@@ -19,6 +20,7 @@ func TestIntegrationAccountEntriesFromSources(t *testing.T) {
 			ConfiguredAt: "2026-05-26T00:00:00Z",
 		},
 		{
+			Provider:  cloudapi.GitProviderGitLab,
 			Name:      "acme",
 			ID:        "456",
 			Type:      "Organization",
@@ -42,7 +44,7 @@ func TestIntegrationAccountEntriesFromSources(t *testing.T) {
 			Provider:  "GitLab",
 			Account:   "acme",
 			Type:      "Organization",
-			Autocheck: false,
+			Autocheck: true,
 			ConfigURL: "https://gitlab.com/acme",
 		},
 	}, entries)
