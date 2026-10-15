@@ -1982,9 +1982,10 @@ func reportSkippedModule(ctx context.Context, name string, cause error) {
 // can tell whether the run regenerated it) and the described message.
 func moduleLoadFailure(mod pendingModule, err error) core.ModuleLoadFailure {
 	return core.ModuleLoadFailure{
-		Name:    moduleProgressName(mod),
-		Dir:     mod.WorkspaceDir,
-		Message: core.DescribeLoadFailure(err, core.ModuleLoadBestEffort),
+		Name:       moduleProgressName(mod),
+		Dir:        mod.WorkspaceDir,
+		Message:    core.DescribeLoadFailure(err, core.ModuleLoadBestEffort),
+		Entrypoint: mod.Entrypoint,
 	}
 }
 

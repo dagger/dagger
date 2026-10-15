@@ -293,6 +293,10 @@ type Artifacts struct {
 	// modules that are not loaded, but names start with their module, so
 	// those modules cannot change a name either.
 	AllDimensions artifact.Dimensions
+	// exact makes load failures match filters only by their own path and
+	// keys, not by what their module could have held (see
+	// Artifact.mayContainPath). Exclusions and resolution use it internally.
+	exact bool
 }
 
 var _ dagql.PersistedObject = (*Artifact)(nil)
@@ -304,11 +308,11 @@ var _ dagql.HasDependencyResults = (*Artifacts)(nil)
 
 func (*Artifacts) Type() *ast.Type { return &ast.Type{NamedType: "Artifacts", NonNull: true} }
 func (*Artifacts) TypeDescription() string {
-	return "An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers."
+	return "An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>."
 }
 
 func (a *Artifacts) filter(matches func(*Artifact) bool) *Artifacts {
-	selected := &Artifacts{Entries: make([]*Artifact, 0, len(a.Entries)), Selector: a.Selector.clone(), AllDimensions: a.AllDimensions}
+	selected := &Artifacts{Entries: make([]*Artifact, 0, len(a.Entries)), Selector: a.Selector.clone(), AllDimensions: a.AllDimensions, exact: a.exact}
 	for _, artifact := range a.Entries {
 		if matches(artifact) {
 			selected.Entries = append(selected.Entries, artifact.Clone())
@@ -574,7 +578,9 @@ func (a *Artifacts) withPathFilter(matches func(*Artifact) bool, patterns []stri
 }
 
 func (a *Artifacts) FilterPath(path []string) *Artifacts {
-	selected := a.filter(func(artifact *Artifact) bool { return slices.Equal(path, artifact.Path) })
+	selected := a.filter(func(artifact *Artifact) bool {
+		return slices.Equal(path, artifact.Path) || !a.exact && artifact.mayContainPath(strings.Join(path, "/"), false)
+	})
 	// A literal path is not a pattern. Record only the matching paths so an
 	// empty path, glob character, or different case cannot broaden URI().
 	selected.Selector.Paths = selected.exactPaths()
@@ -594,13 +600,15 @@ func (a *Artifacts) FilterPattern(pattern string) (*Artifacts, error) {
 		if err != nil {
 			matchErr = err
 		}
-		return match
+		return match || !a.exact && artifact.mayContainPath(pattern, true)
 	}, []string{pattern})
 	if matchErr != nil {
 		return nil, matchErr
 	}
 	if !strings.ContainsAny(pattern, "*?[{") {
-		selected.Selector.CollectionPaths = append(selected.Selector.CollectionPaths, selected.exactPaths()...)
+		// Only artifacts are collection endpoints, not load failures.
+		endpoints := selected.filter(func(artifact *Artifact) bool { return artifact.LoadFailure == nil })
+		selected.Selector.CollectionPaths = append(selected.Selector.CollectionPaths, endpoints.exactPaths()...)
 	}
 	return selected, nil
 }
@@ -705,7 +713,23 @@ func (a *Artifacts) DimensionKeys(dimension string) []string {
 // dimension-key filters the address encodes. An absolute address names a
 // workspace, so it never selects an artifact without one (see BoundArtifacts);
 // callers check that the workspace is the selection's own.
+//
+// Like the filters it chains, it keeps a module's load failure when the
+// module could have held what the address selects (see
+// Artifact.mayContainPath and Artifact.mayHaveDimension).
 func (a *Artifacts) FilterURI(addr *dagaddress.Address) (*Artifacts, error) {
+	return a.filterURI(addr, false)
+}
+
+// filterURI is FilterURI; with exact, a load failure matches only by its own
+// path and keys. Exclusions are exact: excluding part of a broken module must
+// not hide its failure, while excluding all of it (dag://staff/**) still
+// does. Resolution is exact too: a load failure is not the artifact it names.
+func (a *Artifacts) filterURI(addr *dagaddress.Address, exact bool) (*Artifacts, error) {
+	if exact != a.exact {
+		a = a.filter(func(*Artifact) bool { return true })
+		a.exact = exact
+	}
 	selected := a
 	if addr.Absolute && slices.ContainsFunc(a.Entries, func(artifact *Artifact) bool { return artifact.Workspace.Self() == nil }) {
 		selected = a.filter(func(artifact *Artifact) bool { return artifact.Workspace.Self() != nil })
@@ -821,7 +845,8 @@ func (a *Artifact) AssertType(types []string) error {
 func (a *Artifacts) ResolveURI(ctx context.Context, addr *dagaddress.Address, expand func(context.Context, *Artifacts) (*Artifacts, error)) (*Artifact, error) {
 	untyped := *addr
 	untyped.Types = nil
-	selected, err := a.FilterURI(&untyped)
+	// Resolution names one artifact; a load failure is not it.
+	selected, err := a.filterURI(&untyped, true)
 	if err != nil {
 		return nil, err
 	}
@@ -833,9 +858,28 @@ func (a *Artifacts) ResolveURI(ctx context.Context, addr *dagaddress.Address, ex
 		return nil, err
 	}
 	if len(selected.Entries) == 0 {
-		return nil, errors.New("no artifact matches")
+		return nil, a.noArtifactMatches(&untyped)
 	}
 	return selected.One()
+}
+
+// noArtifactMatches reports an address that resolves to nothing, naming the
+// modules that failed to load and could have held it.
+func (a *Artifacts) noArtifactMatches(addr *dagaddress.Address) error {
+	err := errors.New("no artifact matches")
+	failures, filterErr := a.filterURI(addr, false)
+	if filterErr == nil {
+		failures, filterErr = failures.SchemaSelection()
+	}
+	if filterErr != nil {
+		return err
+	}
+	for _, failure := range failures.Entries {
+		if failure.LoadFailure != nil {
+			err = fmt.Errorf("%w; module %q failed to load: %s", err, failure.LoadFailure.Name, failure.LoadFailure.Message)
+		}
+	}
+	return err
 }
 
 // BoundArtifacts discovers the artifacts of a module rooted at a live value of
@@ -1099,7 +1143,7 @@ func (a *Artifacts) WithoutURI(address *dagaddress.Address) (*Artifacts, error) 
 			}
 		}
 	}
-	excluded, err := a.FilterURI(address)
+	excluded, err := a.filterURI(address, true)
 	if err != nil {
 		return nil, err
 	}

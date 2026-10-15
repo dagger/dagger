@@ -1242,6 +1242,23 @@ func (r *Artifact) Value(opts ...ArtifactValueOpts) Node {
 	}
 }
 
+// The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts).
+func (r *Artifact) Workspace(ctx context.Context) (*Workspace, error) {
+	q := r.query.Select("workspace")
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &Workspace{
+		query: selectNode(q.Root(), *objectID, "Workspace"),
+	}, nil
+}
+
 // AsNode returns this Artifact as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Artifact) AsNode() Node {
@@ -1798,7 +1815,7 @@ func (r *ArtifactResult) AsNode() Node {
 	}
 }
 
-// An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers.
+// An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
 type Artifacts struct {
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
@@ -1827,7 +1844,7 @@ func (r *Artifacts) WithGraphQLQuery(q *querybuilder.Selection) *Artifacts {
 	}
 }
 
-// Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+// Convert the selection to Changesets. Fail if any artifact is not a Changeset; a module load failure fails with its load error. Does not apply command filters.
 func (r *Artifacts) AsChangesets(ctx context.Context) ([]Changeset, error) {
 	q := r.query.Select("asChangesets")
 
@@ -1860,7 +1877,7 @@ func (r *Artifacts) AsChangesets(ctx context.Context) ([]Changeset, error) {
 	return convert(response), nil
 }
 
-// Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+// Convert the selection to Checks. Fail if any artifact is not a Check. A module load failure is a Check that fails with its load error. Does not apply command filters or run the checks.
 func (r *Artifacts) AsChecks(ctx context.Context) ([]Check, error) {
 	q := r.query.Select("asChecks")
 
@@ -1893,7 +1910,7 @@ func (r *Artifacts) AsChecks(ctx context.Context) ([]Check, error) {
 	return convert(response), nil
 }
 
-// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise.
+// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise; a module load failure fails with its load error.
 func (r *Artifacts) AsExpertise(ctx context.Context) ([]Expertise, error) {
 	q := r.query.Select("asExpertise")
 
@@ -1926,7 +1943,7 @@ func (r *Artifacts) AsExpertise(ctx context.Context) ([]Expertise, error) {
 	return convert(response), nil
 }
 
-// Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+// Convert the selection to Generators without running them. Fail if any artifact is not a Generator. Module load failures are skipped: generating can repair them.
 func (r *Artifacts) AsGenerators(ctx context.Context) ([]Generator, error) {
 	q := r.query.Select("asGenerators")
 
@@ -1959,7 +1976,7 @@ func (r *Artifacts) AsGenerators(ctx context.Context) ([]Generator, error) {
 	return convert(response), nil
 }
 
-// Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
+// Convert the selection to Services. Fail if any artifact is not a Service; a module load failure fails with its load error. Does not apply command filters or start the services.
 func (r *Artifacts) AsServices(ctx context.Context) ([]Service, error) {
 	q := r.query.Select("asServices")
 
@@ -2220,6 +2237,8 @@ func (r *Artifacts) FilterTypes(types []string, opts ...ArtifactsFilterTypesOpts
 // Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
 //
 // The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
+//
+// A module that failed to load keeps its load failure when the module could hold what the address selects, as with every filter (see Artifacts).
 func (r *Artifacts) FilterURI(uri string) *Artifacts {
 	q := r.query.Select("filterUri")
 	q = q.Arg("uri", uri)

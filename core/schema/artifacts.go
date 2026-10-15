@@ -55,11 +55,11 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		Description: "The evaluated value, or null when evaluation failed."}, s.resultValue)
 	dagql.Fields[*core.ArtifactDimensionKey]{}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
-		dagql.NodeFunc("asExpertise", s.asExpertise).Doc("Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise."),
-		dagql.NodeFunc("asGenerators", s.asGenerators).Doc("Convert the selection to Generators without running them. Fail if any artifact is not a Generator."),
-		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks."),
-		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
-		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services."),
+		dagql.NodeFunc("asExpertise", s.asExpertise).Doc("Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise; a module load failure fails with its load error."),
+		dagql.NodeFunc("asGenerators", s.asGenerators).Doc("Convert the selection to Generators without running them. Fail if any artifact is not a Generator. Module load failures are skipped: generating can repair them."),
+		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. A module load failure is a Check that fails with its load error. Does not apply command filters or run the checks."),
+		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset; a module load failure fails with its load error. Does not apply command filters."),
+		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service; a module load failure fails with its load error. Does not apply command filters or start the services."),
 		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme."), dagql.Arg("dimension").Doc("Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.")),
 		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
 		// Each invocation gets a new cache key. Retain its results so SDK clients can load their IDs.
@@ -78,7 +78,8 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("filterDimensionKeys", s.filterDimensionKeys).Doc("Keep artifacts with any listed key in this dimension."),
 		dagql.Func("filterUri", s.filterURI).
 			Doc("Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.",
-				"The scheme is optional. The path may be a pattern; an empty path selects all artifacts.").
+				"The scheme is optional. The path may be a pattern; an empty path selects all artifacts.",
+				"A module that failed to load keeps its load failure when the module could hold what the address selects, as with every filter (see Artifacts).").
 			Args(dagql.Arg("uri").Doc("A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]")),
 		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
@@ -100,6 +101,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("loadError", s.loadError).Doc("A module load failure, or an empty string if discovery succeeded."),
 		dagql.Func("arguments", s.arguments).Doc("The arguments accepted by the artifact field."),
 		dagql.Func("description", s.description).Doc("The description of the field that supplies this artifact."),
+		dagql.Func("workspace", s.artifactWorkspace).Doc("The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts)."),
 		dagql.Func("uri", s.artifactURI).
 			Doc("The artifact's DAG address, such as dag://engine-dev/playground.").
 			Args(
@@ -737,16 +739,7 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			result.Entries = append(result.Entries, entry)
 		}
 	}
-	seenFailures := map[string]bool{}
-	for _, failure := range failures {
-		if seenFailures[failure.Name] {
-			continue
-		}
-		seenFailures[failure.Name] = true
-		entry := &core.Artifact{
-			ModuleName: failure.Name, Path: []string{failure.Name, "load"}, DimensionKeys: []*core.ArtifactDimensionKey{},
-			Directives: []string{"check"}, TypeName: "Check", LoadFailure: &failure, Workspace: parent,
-		}
+	for _, entry := range loadFailureArtifacts(parent, cfg, entrypoints, mods, failures) {
 		loaded = append(loaded, entry)
 		result.Entries = append(result.Entries, entry)
 	}
@@ -757,6 +750,59 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		return nil, err
 	}
 	return result, nil
+}
+
+// loadFailureArtifacts stands each module that failed to load up as a
+// <module>/load check, named like the module's artifacts would be.
+func loadFailureArtifacts(
+	parent dagql.ObjectResult[*core.Workspace],
+	cfg *workspace.Config,
+	entrypoints map[string]bool,
+	mods []dagql.ObjectResult[*core.Module],
+	failures []core.ModuleLoadFailure,
+) []*core.Artifact {
+	// An entrypoint's shorthand paths cannot start with another module's
+	// address name. Name every module the workspace has, not only those the
+	// include patterns loaded.
+	var moduleNames []string
+	addModule := func(name string) {
+		if name := core.ArtifactTypeName(name); !slices.Contains(moduleNames, name) {
+			moduleNames = append(moduleNames, name)
+		}
+	}
+	for name := range cfg.Modules {
+		addModule(name)
+	}
+	for name := range entrypoints {
+		addModule(name)
+	}
+	for _, mod := range mods {
+		addModule(mod.Self().Name())
+	}
+	for _, failure := range failures {
+		addModule(failure.Name)
+	}
+	slices.Sort(moduleNames)
+	var entries []*core.Artifact
+	seen := map[string]bool{}
+	for _, failure := range failures {
+		if seen[failure.Name] {
+			continue
+		}
+		seen[failure.Name] = true
+		name := core.ArtifactTypeName(failure.Name)
+		// The loader reports whether the failed module is the entrypoint;
+		// the policy that names healthy entrypoints covers the rest.
+		if failure.Entrypoint || entrypoints[failure.Name] {
+			failure.Entrypoint = true
+			failure.Siblings = slices.DeleteFunc(slices.Clone(moduleNames), func(sibling string) bool { return sibling == name })
+		}
+		entries = append(entries, &core.Artifact{
+			ModuleName: failure.Name, Path: []string{name, "load"}, DimensionKeys: []*core.ArtifactDimensionKey{},
+			Directives: []string{"check"}, TypeName: "Check", LoadFailure: &failure, Workspace: parent,
+		})
+	}
+	return entries
 }
 
 func (s *workspaceSchema) sdkArtifactNodes(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], cfg *workspace.Config, entrypoints map[string]bool) ([]*core.ModTreeNode, error) {
@@ -820,6 +866,13 @@ func (*artifactsSchema) filterDirectives(_ context.Context, parent *core.Artifac
 
 func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ struct{}) (string, error) {
 	return parent.Description(), nil
+}
+
+func (*artifactsSchema) artifactWorkspace(_ context.Context, parent *core.Artifact, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.Workspace]], error) {
+	if parent.Workspace.Self() == nil {
+		return dagql.Null[dagql.ObjectResult[*core.Workspace]](), nil
+	}
+	return dagql.NonNull(parent.Workspace), nil
 }
 
 // Keep planned artifacts in the query graph so value evaluation, remote

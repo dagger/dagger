@@ -175,7 +175,7 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 			if !mode.BestEffort() {
 				return nil, nil, err
 			}
-			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, core.ModuleLoadBestEffort)}
+			failure := core.ModuleLoadFailure{Name: name, Message: core.DescribeLoadFailure(err, core.ModuleLoadBestEffort), Entrypoint: entry.Entrypoint}
 			if workspace.IsLocalRef(entry.Source, "") {
 				failure.Dir = filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 			}
