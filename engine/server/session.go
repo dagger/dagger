@@ -369,6 +369,12 @@ type clientRuntime struct {
 	// the set of modules being served to this client, with per-module
 	// install policy (constructor vs type-only)
 	servedMods *core.SchemaBuilder
+	// gqlHandler retains gqlgen's parsed-query and persisted-query caches for
+	// the lifetime of the currently served schema. A new handler is installed
+	// when module loading replaces the schema server.
+	gqlHandlerMu     sync.Mutex
+	gqlHandlerSchema *dagql.Server
+	gqlHandler       http.Handler
 	// the default deps that each client/module starts out with (currently just core)
 	defaultDeps *core.SchemaBuilder
 	// schema builders memoized per module set for this client's handle
@@ -496,6 +502,11 @@ func (client *clientRuntime) releaseHeavyState() {
 	client.spanExporter = nil
 	client.logExporter = nil
 	client.stateMu.Unlock()
+
+	client.gqlHandlerMu.Lock()
+	client.gqlHandlerSchema = nil
+	client.gqlHandler = nil
+	client.gqlHandlerMu.Unlock()
 
 	if err := client.closeTelemetryDB(); err != nil {
 		slog.Error("error closing quiescent client telemetry store", "clientID", client.clientID, "error", err)
@@ -2780,7 +2791,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
 
-	gqlSrv := dagql.NewDefaultHandler(schema)
+	gqlSrv := client.graphQLHandler(schema)
 	// NB: break glass when needed:
 	// gqlSrv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
 	// 	res := next(ctx)
@@ -2797,6 +2808,16 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 
 	gqlSrv.ServeHTTP(w, r)
 	return nil
+}
+
+func (client *clientRuntime) graphQLHandler(schema *dagql.Server) http.Handler {
+	client.gqlHandlerMu.Lock()
+	defer client.gqlHandlerMu.Unlock()
+	if client.gqlHandlerSchema != schema {
+		client.gqlHandlerSchema = schema
+		client.gqlHandler = dagql.NewDefaultHandler(schema)
+	}
+	return client.gqlHandler
 }
 
 func (client *clientRuntime) claimSingleQueryRequest() error {
