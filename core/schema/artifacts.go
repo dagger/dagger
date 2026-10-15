@@ -741,14 +741,27 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	}
 	seenFailures := map[string]bool{}
 	// An entrypoint's shorthand paths cannot start with another module's
-	// address name.
+	// address name. Name every module the workspace has, not only those the
+	// include patterns loaded.
 	var moduleNames []string
+	addModule := func(name string) {
+		if name := core.ArtifactTypeName(name); !slices.Contains(moduleNames, name) {
+			moduleNames = append(moduleNames, name)
+		}
+	}
+	for name := range cfg.Modules {
+		addModule(name)
+	}
+	for name := range entrypoints {
+		addModule(name)
+	}
 	for _, mod := range mods {
-		moduleNames = append(moduleNames, core.ArtifactTypeName(mod.Self().Name()))
+		addModule(mod.Self().Name())
 	}
 	for _, failure := range failures {
-		moduleNames = append(moduleNames, core.ArtifactTypeName(failure.Name))
+		addModule(failure.Name)
 	}
+	slices.Sort(moduleNames)
 	for _, failure := range failures {
 		if seenFailures[failure.Name] {
 			continue
@@ -757,7 +770,9 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		// The failure answers to its module's address name, as the
 		// module's artifacts would.
 		name := core.ArtifactTypeName(failure.Name)
-		if cfg.Modules[failure.Name].Entrypoint {
+		// The loader reports whether the failed module is the entrypoint;
+		// the policy that names healthy entrypoints covers the rest.
+		if failure.Entrypoint || entrypoints[failure.Name] {
 			failure.Entrypoint = true
 			failure.Siblings = slices.DeleteFunc(slices.Clone(moduleNames), func(sibling string) bool { return sibling == name })
 		}

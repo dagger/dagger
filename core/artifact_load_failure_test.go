@@ -48,6 +48,7 @@ func requireRoundTrip(t *testing.T, all, selected *Artifacts) {
 func TestArtifactLoadFailureFilters(t *testing.T) {
 	all := &Artifacts{Entries: []*Artifact{
 		{ModuleName: "coll", Path: []string{"coll", "helper"}, TypeName: "Expertise"},
+		{ModuleName: "my_mod3", Path: []string{"my-mod3", "helper"}, TypeName: "Expertise"},
 		loadFailureArtifact("staff"),
 		loadFailureArtifact("my_mod"),
 		loadFailureArtifact("myMod2"),
@@ -76,6 +77,9 @@ func TestArtifactLoadFailureFilters(t *testing.T) {
 		"dag://?my-mod-member=x":     {"my-mod/load"},
 		"dag://myMod2/worker":        {myMod2},
 		"dag://?expertise=" + myMod2: {myMod2},
+		// A module key matches in either form, for healthy modules too.
+		"dag://?module=my_mod3": {"my-mod3/helper"},
+		"dag://?module=my-mod3": {"my-mod3/helper"},
 		// What the module cannot hold selects nothing.
 		"dag://staff/worker?module=coll":           {},
 		"dag://staff/worker?expertise=coll/helper": {},
@@ -121,17 +125,19 @@ func TestArtifactLoadFailureFilters(t *testing.T) {
 		// A failure kept by a type filter has no key in that type.
 		keys, err := all.ExpandDimensionKeys(t.Context(), "expertise")
 		require.NoError(t, err)
-		require.Equal(t, []string{"coll/helper"}, keys)
+		require.Equal(t, []string{"coll/helper", "my-mod3/helper"}, keys)
 	})
 
 	// Exclusion matches a failure only by its own path and keys: excluding
 	// part of a failed module keeps its failure; excluding all of it drops
 	// the failure.
 	for uri, want := range map[string][]string{
-		"dag://staff/**":                {"coll/helper", "my-mod/load", myMod2},
-		"dag://?module=staff":           {"coll/helper", "my-mod/load", myMod2},
-		"dag://staff/worker":            {"coll/helper", "my-mod/load", myMod2, "staff/load"},
-		"dag://?expertise=staff/worker": {"coll/helper", "my-mod/load", myMod2, "staff/load"},
+		"dag://staff/**":                {"coll/helper", "my-mod3/helper", "my-mod/load", myMod2},
+		"dag://?module=staff":           {"coll/helper", "my-mod3/helper", "my-mod/load", myMod2},
+		"dag://?module=my-mod":          {"coll/helper", "my-mod3/helper", "staff/load", myMod2},
+		"dag://?module=my_mod":          {"coll/helper", "my-mod3/helper", "staff/load", myMod2},
+		"dag://staff/worker":            {"coll/helper", "my-mod3/helper", "my-mod/load", myMod2, "staff/load"},
+		"dag://?expertise=staff/worker": {"coll/helper", "my-mod3/helper", "my-mod/load", myMod2, "staff/load"},
 	} {
 		t.Run("without "+uri, func(t *testing.T) {
 			addr, err := dagaddress.Parse(uri)
@@ -166,9 +172,11 @@ func TestArtifactEntrypointLoadFailure(t *testing.T) {
 		"dag://app/worker":        {"app/load"},
 		"dag://?expertise=worker": {"app/load"},
 		"dag://w*":                {"app/load"},
-		// ...unless it starts with another module's name.
+		// ...unless it starts with another module's name, or names another
+		// module's collection.
 		"dag://coll/helper":            {"coll/helper"},
 		"dag://?expertise=coll/helper": {"coll/helper"},
+		"dag://?coll-item=a":           {},
 	} {
 		t.Run(uri, func(t *testing.T) {
 			selected := filterURI(t, all, uri)

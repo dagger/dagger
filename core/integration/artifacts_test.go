@@ -353,6 +353,7 @@ func (ArtifactsSuite) TestFilterURIUnderFailedModule(ctx context.Context, t *tes
     loaded: filterUri(uri: "dag://?expertise=good/helper") { items { uri } }
     missing: filterUri(uri: "dag://?expertise=gone/worker") { items { uri } asExpertise { __typename } }
     withoutModule: withoutUri(uri: "dag://staff/**") { items { uri } }
+    withoutModuleKey: withoutUri(uri: "dag://?module=my-mod") { items { uri } }
     withoutOne: withoutUri(uri: "dag://?expertise=staff/worker") { items { uri } }
   } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
@@ -373,6 +374,7 @@ func (ArtifactsSuite) TestFilterURIUnderFailedModule(ctx context.Context, t *tes
   "loaded":{"items":[{"uri":"dag://?expertise=good/helper"}]},
   "missing":{"items":[],"asExpertise":[]},
   "withoutModule":{"items":[{"uri":"dag://?expertise=good/helper"},{"uri":"dag://?check=my-mod/load"}]},
+  "withoutModuleKey":{"items":[{"uri":"dag://?expertise=good/helper"},{"uri":"dag://?check=staff/load"}]},
   "withoutOne":{"items":[{"uri":"dag://?expertise=good/helper"},{"uri":"dag://?check=my-mod/load"},{"uri":"dag://?check=staff/load"}]}
 }}}`, string(*got))
 	// Converting the selection reports the load failure.
@@ -396,13 +398,18 @@ func (ArtifactsSuite) TestFilterURIUnderFailedModule(ctx context.Context, t *tes
   node(id: $ws) { ... on Workspace { artifacts {
     shorthand: filterUri(uri: "dag://worker") { items { uri } }
     other: filterUri(uri: "dag://good/helper") { items { uri } }
+  }
+  narrowed: artifacts(include: ["worker"]) {
+    other: filterUri(uri: "dag://good/helper") { items { uri } }
   } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": entrypointID}})
 	require.NoError(t, err)
+	// Narrowing module loading does not make another module's address look
+	// like a shorthand path.
 	require.JSONEq(t, `{"node":{"artifacts":{
   "shorthand":{"items":[{"uri":"dag://?check=staff/load"}]},
   "other":{"items":[{"uri":"dag://?expertise=good/helper"}]}
-}}}`, string(*got))
+},"narrowed":{"other":{"items":[]}}}}`, string(*got))
 }
 
 func (ArtifactsSuite) TestArtifactWorkspace(ctx context.Context, t *testctx.T) {

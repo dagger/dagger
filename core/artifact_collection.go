@@ -664,6 +664,7 @@ func (a *Artifacts) SchemaSelection() (*Artifacts, error) {
 				return false
 			}
 			matched := has(filter.Dimension) && (!artifact.IsStaticDimension(filter.Dimension) || filter.Keys == nil ||
+				filter.Dimension == artifact.ModuleDimension && moduleKeysMatch(filter.Keys, item.ModuleName) ||
 				slices.Contains(filter.Keys, item.StaticDimensionKey(filter.Dimension)))
 			if !matched && (bound.exact || !item.mayHaveDimension(filter.Dimension, filter.Keys)) {
 				return false

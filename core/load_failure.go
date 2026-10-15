@@ -18,9 +18,9 @@ type ModuleLoadFailure struct {
 	// describeLoadFailure).
 	Message string `json:"message"`
 	// Entrypoint reports whether the module is the workspace entrypoint,
-	// whose artifact paths may omit the module name. Siblings lists the
-	// address names of the workspace's other modules, which such a shorthand
-	// path cannot start with.
+	// whose artifact paths may omit the module name; the loader sets it.
+	// Siblings lists the address names of the workspace's other modules,
+	// which such a shorthand path cannot start with.
 	Entrypoint bool     `json:"entrypoint,omitempty"`
 	Siblings   []string `json:"siblings,omitempty"`
 }

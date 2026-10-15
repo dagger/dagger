@@ -74,20 +74,36 @@ func (a *Artifact) mayHaveDimension(id string, keys []string) bool {
 	}
 	switch {
 	case id == artifact.ModuleDimension:
-		return keys == nil || slices.Contains(keys, module) || slices.Contains(keys, a.ModuleName)
+		return keys == nil || moduleKeysMatch(keys, a.ModuleName)
 	case strings.HasPrefix(id, "type:"):
 		return paths()
 	case strings.HasPrefix(id, "/"):
 		owner, _, _ := strings.Cut(strings.TrimPrefix(id, "/"), "/")
 		return owner == module
-	case id == module || strings.HasPrefix(id, module+"-"):
+	case namedBy(id, module):
 		// An unknown name of one of the module's collections.
 		return true
+	case slices.ContainsFunc(a.LoadFailure.Siblings, func(sibling string) bool { return namedBy(id, sibling) }):
+		// Another module's collection.
+		return false
 	default:
 		// Any other unknown name can only be one of the module's types,
 		// whose keys are artifact paths.
 		return paths()
 	}
+}
+
+// namedBy reports whether a dimension name belongs to module: collection
+// names start with their module's name.
+func namedBy(name, module string) bool {
+	return name == module || strings.HasPrefix(name, module+"-")
+}
+
+// moduleKeysMatch reports whether any key of the module dimension names
+// module. Keys compare in their address form, kebab-case, so a module
+// configured as my_mod answers to both my_mod and my-mod.
+func moduleKeysMatch(keys []string, module string) bool {
+	return slices.ContainsFunc(keys, func(key string) bool { return ArtifactTypeName(key) == ArtifactTypeName(module) })
 }
 
 // matchSegment matches one path segment against a glob segment.
