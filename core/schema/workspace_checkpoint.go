@@ -753,37 +753,54 @@ func checkpointOverlay(
 	frozen dagql.ObjectResult[*core.Workspace],
 	changes dagql.ObjectResult[*core.Changeset],
 ) (out dagql.ObjectResult[*core.Workspace], err error) {
+	out, err = workspaceWithChangesAsPatch(ctx, srv, frozen, changes, "workspace-overlay.patch")
+	if err != nil {
+		return out, fmt.Errorf("apply workspace overlay to checkpoint: %w", err)
+	}
+	return out, nil
+}
+
+// workspaceWithChangesAsPatch applies changes to ws, recording them as their
+// content (a patch rendered against ws's root and embedded as a blob called
+// name, see core.ApplyPatchOnto) rather than by reference, so the resulting
+// recipe never replays whatever produced changes. A patch core.EmbedPatch
+// refuses, too large or carrying a binary file, is not recorded: changes are
+// applied raw instead, by reference.
+func workspaceWithChangesAsPatch(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws dagql.ObjectResult[*core.Workspace],
+	changes dagql.ObjectResult[*core.Changeset],
+	name string,
+) (out dagql.ObjectResult[*core.Workspace], err error) {
 	var before dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, frozen, &before, dagql.Selector{
+	if err := srv.Select(ctx, ws, &before, dagql.Selector{
 		Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.NewString("/")}},
 	}); err != nil {
 		return out, err
 	}
-	// Rendered against the frozen tree itself, and bounded: git stops at the
-	// first binary hunk or past the budget, rather than writing out a build
-	// output's base85 only for it to be refused.
+	// Rendered against the workspace's tree itself, and bounded: git stops at
+	// the first binary hunk or past the budget, rather than writing out a
+	// build output's base85 only for it to be refused.
 	rendered, err := changes.Self().RenderPatchOnto(ctx, before, ".", core.EmbeddedPatchMaxBytes)
 	if err == nil {
 		if rendered.IsEmpty() {
-			return frozen, nil
+			return ws, nil
 		}
 		// Rendered against this very tree, so it fits by construction.
-		out, err = core.ApplyPatchOnto(ctx, srv, frozen, rendered, "workspace-overlay.patch", core.PatchConflictFail)
+		out, err = core.ApplyPatchOnto(ctx, srv, ws, rendered, name, core.PatchConflictFail)
 	}
 	if core.PatchNotEmbeddable(err) {
 		changesID, err := changes.ID()
 		if err != nil {
 			return out, err
 		}
-		err = srv.Select(ctx, frozen, &out, dagql.Selector{
+		err = srv.Select(ctx, ws, &out, dagql.Selector{
 			Field: "withChanges", Args: []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
 		})
 		return out, err
 	}
-	if err != nil {
-		return out, fmt.Errorf("apply workspace overlay to checkpoint: %w", err)
-	}
-	return out, nil
+	return out, err
 }
 
 func checkpointBundleChunks(chunks []capturedCheckpointChunk) (bundle [][]byte) {
