@@ -61,6 +61,8 @@ defmodule Dagger.Core.QueryBuilder do
     [~c"(", Enum.map(args, fun) |> Enum.intersperse(","), ~c")"]
   end
 
+  defp encode_value(nil), do: ~c"null"
+
   defp encode_value(value) when is_atom(value),
     do: to_string(value)
 
@@ -80,9 +82,12 @@ defmodule Dagger.Core.QueryBuilder do
     [~c"[", Enum.map_intersperse(value, ",", &encode_value/1), ~c"]"]
   end
 
-  defp encode_value(value) when is_struct(value) do
+  defp encode_value(%module{} = value) do
+    field_names = field_names(module)
+
     value
     |> Map.from_struct()
+    |> Map.new(fn {key, val} -> {Map.get(field_names, key, key), val} end)
     |> encode_value()
   end
 
@@ -95,6 +100,16 @@ defmodule Dagger.Core.QueryBuilder do
   end
 
   defp encode_value(value), do: [to_string(value)]
+
+  # Generated input structs map their snake_case keys to the schema's field
+  # names (e.g. `agent_name` => "agentName").
+  defp field_names(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :__field_names__, 0) do
+      module.__field_names__()
+    else
+      %{}
+    end
+  end
 
   def path(selection) do
     path(selection, [])

@@ -464,6 +464,13 @@ class BuildArg(Input):
     value: str
     """The build argument value."""
 
+    @classmethod
+    def _graphql_field_names(cls) -> dict[str, str]:
+        return {
+            "name": "name",
+            "value": "value",
+        }
+
 
 @typecheck
 @dataclass(slots=True)
@@ -503,6 +510,22 @@ class LLMContentBlockInput(Input):
     tool_name: str | None = ""
     """The name of the tool to call (for TOOL_CALL kind)."""
 
+    @classmethod
+    def _graphql_field_names(cls) -> dict[str, str]:
+        return {
+            "arguments": "arguments",
+            "call_id": "callId",
+            "content": "content",
+            "data": "data",
+            "errored": "errored",
+            "file": "file",
+            "kind": "kind",
+            "mime_type": "mimeType",
+            "signature": "signature",
+            "text": "text",
+            "tool_name": "toolName",
+        }
+
 
 @typecheck
 @dataclass(slots=True)
@@ -522,6 +545,15 @@ class LLMMessageOriginInput(Input):
     reply_to: str | None = ""
     """The ref of the message this one answers, if any."""
 
+    @classmethod
+    def _graphql_field_names(cls) -> dict[str, str]:
+        return {
+            "agent_name": "agentName",
+            "kind": "kind",
+            "ref": "ref",
+            "reply_to": "replyTo",
+        }
+
 
 @typecheck
 @dataclass(slots=True)
@@ -533,6 +565,13 @@ class PipelineLabel(Input):
 
     value: str
     """Label value."""
+
+    @classmethod
+    def _graphql_field_names(cls) -> dict[str, str]:
+        return {
+            "name": "name",
+            "value": "value",
+        }
 
 
 @typecheck
@@ -548,6 +587,14 @@ class PortForward(Input):
 
     protocol: NetworkProtocol | None = NetworkProtocol.TCP
     """Transport layer protocol to use for traffic."""
+
+    @classmethod
+    def _graphql_field_names(cls) -> dict[str, str]:
+        return {
+            "backend": "backend",
+            "frontend": "frontend",
+            "protocol": "protocol",
+        }
 
 
 @runtime_checkable
