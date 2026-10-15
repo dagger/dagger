@@ -280,6 +280,11 @@ func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
 		{"dag+directory://base", nil},
 		{"dag://base?missing=anything", nil},
 		{"dag://?missing", nil},
+		// An address this workspace does not have selects nothing, rather
+		// than failing: a caller can fall back to what it recorded.
+		{"dag://missing/items/file?missing-item=a", nil},
+		{"dag://?file=missing/items/file&missing-item=a", nil},
+		{"dag://?module=missing", nil},
 		{"dag://", nil}, // all artifacts; checked by count below
 	} {
 		t.Run(tc.uri, func(ctx context.Context, t *testctx.T) {
@@ -314,6 +319,55 @@ func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID, "uri": tc.uri}})
 		require.ErrorContains(t, err, tc.want)
 	}
+}
+
+// failedModuleWorkspace has a loaded module with expertise and a module that
+// fails to load.
+func failedModuleWorkspace(c *dagger.Client) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.good]\nsource = \"./good\"\n[modules.staff]\nsource = \"./staff\"\n").
+		WithNewFile("good/dagger-module.toml", "name = \"good\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("good/main.dang", "type Good {\n  pub helper(base: LLM!): LLM! @agent { base }\n}\n").
+		WithNewFile("staff/dagger-module.toml", "name = \"staff\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("staff/main.dang", "invalid source")
+}
+
+// An address under a module that failed to load keeps its load failure, so a
+// lookup reports the failure instead of finding nothing.
+func (ArtifactsSuite) TestFilterURIUnderFailedModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	wsID, err := failedModuleWorkspace(c).AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts {
+    path: filterUri(uri: "dag://staff/worker") { items { uri } }
+    typeKey: filterUri(uri: "dag://?expertise=staff/worker") { items { uri } }
+    typed: filterUri(uri: "dag+expertise://?expertise=staff/worker") { items { uri } }
+    item: filterUri(uri: "dag://staff/members/worker?staff-member=chief") { items { uri } }
+    otherModule: filterUri(uri: "dag://staff/worker?module=good") { items { uri } }
+    loaded: filterUri(uri: "dag://?expertise=good/helper") { items { uri } }
+    missing: filterUri(uri: "dag://?expertise=gone/worker") { items { uri } asExpertise { __typename } }
+    withoutModule: withoutUri(uri: "dag://staff/**") { items { uri } }
+    withoutOne: withoutUri(uri: "dag://?expertise=staff/worker") { items { uri } }
+  } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"node":{"artifacts":{
+  "path":{"items":[{"uri":"dag://?check=staff/load"}]},
+  "typeKey":{"items":[{"uri":"dag://?check=staff/load"}]},
+  "typed":{"items":[{"uri":"dag://?check=staff/load"}]},
+  "item":{"items":[{"uri":"dag://?check=staff/load"}]},
+  "otherModule":{"items":[]},
+  "loaded":{"items":[{"uri":"dag://?expertise=good/helper"}]},
+  "missing":{"items":[],"asExpertise":[]},
+  "withoutModule":{"items":[{"uri":"dag://?expertise=good/helper"}]},
+  "withoutOne":{"items":[{"uri":"dag://?expertise=good/helper"},{"uri":"dag://?check=staff/load"}]}
+}}}`, string(*got))
+	// Converting the selection reports the load failure.
+	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: "dag://?expertise=staff/worker") { asExpertise { __typename } } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+	require.ErrorContains(t, err, `module "staff"`)
 }
 
 func (ArtifactsSuite) TestSelectorRoundTrip(ctx context.Context, t *testctx.T) {

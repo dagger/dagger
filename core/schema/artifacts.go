@@ -55,7 +55,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		Description: "The evaluated value, or null when evaluation failed."}, s.resultValue)
 	dagql.Fields[*core.ArtifactDimensionKey]{}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
-		dagql.NodeFunc("asExpertise", s.asExpertise).Doc("Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise."),
+		dagql.NodeFunc("asExpertise", s.asExpertise).Doc("Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise, or is a module load failure (see filterUri)."),
 		dagql.NodeFunc("asGenerators", s.asGenerators).Doc("Convert the selection to Generators without running them. Fail if any artifact is not a Generator."),
 		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks."),
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters."),
@@ -78,7 +78,8 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("filterDimensionKeys", s.filterDimensionKeys).Doc("Keep artifacts with any listed key in this dimension."),
 		dagql.Func("filterUri", s.filterURI).
 			Doc("Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.",
-				"The scheme is optional. The path may be a pattern; an empty path selects all artifacts.").
+				"The scheme is optional. The path may be a pattern; an empty path selects all artifacts.",
+				"An address that names nothing here selects nothing. An address under a module that failed to load keeps that module's load failure, so conversions such as asExpertise report the error instead of an empty result.").
 			Args(dagql.Arg("uri").Doc("A DAG address: [dag[+<type>]://][<path>][?<dimension>=<key>&...]")),
 		dagql.Func("dimensions", s.dimensions).Doc("List dimension identifiers represented in this selection, sorted with no duplicates."),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),

@@ -280,6 +280,11 @@ type ArtifactSelector struct {
 	CollectionPaths []string
 	// Apply keyed exclusions after collection expansion.
 	ExcludedURIs []string
+	// LoadFailures lists modules whose load failure an address named (see
+	// FilterURI). Dimension filters keep those failures: the module has no
+	// schema to show it lacks the dimensions. A module key filter still
+	// applies.
+	LoadFailures []string `json:",omitempty"`
 }
 
 // Artifacts is an immutable selection. Filtering changes only the entry list
@@ -323,6 +328,7 @@ func (sel ArtifactSelector) clone() ArtifactSelector {
 		Types:           slices.Clone(sel.Types),
 		CollectionPaths: slices.Clone(sel.CollectionPaths),
 		ExcludedURIs:    slices.Clone(sel.ExcludedURIs),
+		LoadFailures:    slices.Clone(sel.LoadFailures),
 	}
 	for _, dim := range sel.Dimensions {
 		cloned.Dimensions = append(cloned.Dimensions, ArtifactDimensionFilter{Dimension: dim.Dimension, Keys: slices.Clone(dim.Keys)})
@@ -587,9 +593,17 @@ func (a *Artifacts) FilterPath(path []string) *Artifacts {
 // exactly. The qualified path with the module name also matches, so an
 // entrypoint artifact answers to both its shorthand and its full path.
 func (a *Artifacts) FilterPattern(pattern string) (*Artifacts, error) {
+	return a.filterPattern(pattern, nil)
+}
+
+// filterPattern is FilterPattern that also keeps the artifacts keep accepts.
+func (a *Artifacts) filterPattern(pattern string, keep func(*Artifact) bool) (*Artifacts, error) {
 	pattern = artifactPattern(pattern)
 	var matchErr error
 	selected := a.withPathFilter(func(artifact *Artifact) bool {
+		if keep != nil && keep(artifact) {
+			return true
+		}
 		match, err := artifact.matchesPattern(pattern)
 		if err != nil {
 			matchErr = err
@@ -705,7 +719,31 @@ func (a *Artifacts) DimensionKeys(dimension string) []string {
 // dimension-key filters the address encodes. An absolute address names a
 // workspace, so it never selects an artifact without one (see BoundArtifacts);
 // callers check that the workspace is the selection's own.
+//
+// An address that names nothing here selects nothing. But a module that
+// failed to load has no schema, so its load failure could hide the addressed
+// artifact: an address under such a module (see addressedLoadFailures) keeps
+// the failure, so consumers report the error instead of an empty result, as
+// FilterTypes does.
 func (a *Artifacts) FilterURI(addr *dagaddress.Address) (*Artifacts, error) {
+	return a.filterURI(addr, true)
+}
+
+// filterURI is FilterURI; keepLoadFailures controls whether an address under
+// a module that failed to load keeps its load failure. Exclusions do not:
+// excluding one artifact of a broken module must not hide its failure.
+func (a *Artifacts) filterURI(addr *dagaddress.Address, keepLoadFailures bool) (*Artifacts, error) {
+	var failed []string
+	if keepLoadFailures {
+		failed = a.addressedLoadFailures(addr)
+	} else if len(a.Selector.LoadFailures) > 0 {
+		// Nor do the failures an earlier filter kept.
+		a = a.filter(func(*Artifact) bool { return true })
+		a.Selector.LoadFailures = nil
+	}
+	keep := func(artifact *Artifact) bool {
+		return artifact.LoadFailure != nil && slices.Contains(failed, artifact.ModuleName)
+	}
 	selected := a
 	if addr.Absolute && slices.ContainsFunc(a.Entries, func(artifact *Artifact) bool { return artifact.Workspace.Self() == nil }) {
 		selected = a.filter(func(artifact *Artifact) bool { return artifact.Workspace.Self() != nil })
@@ -713,7 +751,7 @@ func (a *Artifacts) FilterURI(addr *dagaddress.Address) (*Artifacts, error) {
 	}
 	if addr.Path != "" {
 		var err error
-		selected, err = selected.FilterPattern(addr.Path)
+		selected, err = selected.filterPattern(addr.Path, keep)
 		if err != nil {
 			return nil, err
 		}
@@ -728,7 +766,63 @@ func (a *Artifacts) FilterURI(addr *dagaddress.Address) (*Artifacts, error) {
 			selected = selected.FilterDimensionKeys(filter.Dimension, filter.Keys)
 		}
 	}
+	if len(failed) > 0 {
+		if selected == a {
+			selected = a.filter(func(*Artifact) bool { return true })
+		}
+		for _, module := range failed {
+			if !slices.Contains(selected.Selector.LoadFailures, module) {
+				selected.Selector.LoadFailures = append(selected.Selector.LoadFailures, module)
+			}
+		}
+	}
 	return selected, nil
+}
+
+// addressedLoadFailures lists the modules that failed to load and that addr
+// is under: the first segment of its path, a module key, or the first
+// segment of a key that may hold an artifact path. That is a type key, or a
+// key of a dimension this workspace does not have, which the failed module
+// could have defined. A glob path that matches a load failure selects it
+// directly. An address that uses an entrypoint module's shorthand path does
+// not name the module, so it cannot be attributed to it.
+func (a *Artifacts) addressedLoadFailures(addr *dagaddress.Address) []string {
+	var failed []string
+	for _, entry := range a.Entries {
+		if entry.LoadFailure != nil && !slices.Contains(failed, entry.ModuleName) {
+			failed = append(failed, entry.ModuleName)
+		}
+	}
+	if len(failed) == 0 {
+		return nil
+	}
+	var named []string
+	firstSegment := func(path string) {
+		segment, _, _ := strings.Cut(artifactPattern(path), "/")
+		if segment != "" && !strings.ContainsAny(segment, "*?[{") {
+			named = append(named, segment)
+		}
+	}
+	if addr.Path != "" {
+		firstSegment(addr.Path)
+	} else {
+		for _, filter := range addr.DimensionFilters() {
+			id, err := a.ResolveDimension(filter.Dimension)
+			if err != nil {
+				continue
+			}
+			known := slices.ContainsFunc(a.AllDimensions, func(dim *ArtifactDimension) bool { return dim.Identifier == id })
+			for _, key := range filter.Keys {
+				switch {
+				case id == artifact.ModuleDimension:
+					named = append(named, key)
+				case strings.HasPrefix(id, "type:") || !known:
+					firstSegment(key)
+				}
+			}
+		}
+	}
+	return slices.DeleteFunc(failed, func(module string) bool { return !slices.Contains(named, module) })
 }
 
 // URI is the selector for the whole selection: filterUri(uri) selects the
@@ -821,7 +915,8 @@ func (a *Artifact) AssertType(types []string) error {
 func (a *Artifacts) ResolveURI(ctx context.Context, addr *dagaddress.Address, expand func(context.Context, *Artifacts) (*Artifacts, error)) (*Artifact, error) {
 	untyped := *addr
 	untyped.Types = nil
-	selected, err := a.FilterURI(&untyped)
+	// Resolution names one artifact; a load failure is not it.
+	selected, err := a.filterURI(&untyped, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1099,7 +1194,7 @@ func (a *Artifacts) WithoutURI(address *dagaddress.Address) (*Artifacts, error) 
 			}
 		}
 	}
-	excluded, err := a.FilterURI(address)
+	excluded, err := a.filterURI(address, false)
 	if err != nil {
 		return nil, err
 	}

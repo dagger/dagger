@@ -324,7 +324,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 			}
 			// Match the exclusion with its own selector. The entries already
 			// satisfy the inclusion filters.
-			excluded, err := (&Artifacts{Entries: result.Entries, AllDimensions: a.AllDimensions}).FilterURI(address)
+			excluded, err := (&Artifacts{Entries: result.Entries, AllDimensions: a.AllDimensions}).filterURI(address, false)
 			if err != nil {
 				return nil, err
 			}
@@ -651,6 +651,9 @@ func (a *Artifacts) SchemaSelection() (*Artifacts, error) {
 		return nil, err
 	}
 	return bound.filter(func(item *Artifact) bool {
+		if item.LoadFailure != nil && slices.Contains(bound.Selector.LoadFailures, item.ModuleName) {
+			return bound.matchesModule(item.ModuleName)
+		}
 		if !bound.matchesDimensionFilters(item.DimensionDefinitions()) {
 			return false
 		}
@@ -661,6 +664,16 @@ func (a *Artifacts) SchemaSelection() (*Artifacts, error) {
 		}
 		return true
 	}), nil
+}
+
+// matchesModule applies the module key filters to a module.
+func (a *Artifacts) matchesModule(module string) bool {
+	for _, filter := range a.Selector.Dimensions {
+		if filter.Dimension == artifact.ModuleDimension && filter.Keys != nil && !slices.Contains(filter.Keys, module) {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *Artifact) setStaticDimensions() {
