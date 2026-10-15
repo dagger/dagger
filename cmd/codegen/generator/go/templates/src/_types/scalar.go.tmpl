@@ -5,3 +5,8 @@ type {{ .Name | FormatName }} = ID
 type {{ .Name | FormatName }} string
 {{- end }}
 {{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+{{- with LegacyTypeName . }}
+
+// Deprecated: use {{ $.Name | FormatName }} instead.
+type {{ . }} = {{ $.Name | FormatName }}
+{{- end }}

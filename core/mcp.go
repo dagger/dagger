@@ -1576,11 +1576,11 @@ func toolSpanAttrs(tool *LLMTool) []attribute.KeyValue {
 	toolName := tool.Name
 	if tool.Server != "" {
 		// External MCP tools may come prefixed `<server>_`; collision-namespaced
-		// object tools are prefixed `<gqlFieldName(server)>_` (their Server is
+		// object tools are prefixed `<toolNamespace(server)>_` (their Server is
 		// the bound type name). Trim either so the span shows the bare tool name
 		// alongside the server attribute.
 		toolName = strings.TrimPrefix(toolName, tool.Server+"_")
-		toolName = strings.TrimPrefix(toolName, gqlFieldName(tool.Server)+"_")
+		toolName = strings.TrimPrefix(toolName, toolNamespace(tool.Server)+"_")
 	}
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.LLMToolAttr, toolName),

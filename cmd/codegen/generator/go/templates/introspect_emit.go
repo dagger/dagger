@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/iancoleman/strcase"
 )
 
 // introspectTypeRef converts a ParsedType into its introspection TypeRef tree.
@@ -28,13 +27,13 @@ import (
 //
 // For void / unknown types a nullable SCALAR Void fallback is returned (see
 // introspectVoidRef), matching the engine which marks Void always optional.
-func introspectTypeRef(spec ParsedType) *introspection.TypeRef {
+func introspectTypeRef(n moduleNamer, spec ParsedType) *introspection.TypeRef {
 	switch s := spec.(type) {
 	case *parsedPrimitiveType:
 		return introspectPrimitiveTypeRef(s)
 
 	case *parsedSliceType:
-		elemRef := introspectTypeRef(s.underlying)
+		elemRef := introspectTypeRef(n, s.underlying)
 		return &introspection.TypeRef{
 			Kind: introspection.TypeKindNonNull,
 			OfType: &introspection.TypeRef{
@@ -48,7 +47,7 @@ func introspectTypeRef(spec ParsedType) *introspection.TypeRef {
 			Kind: introspection.TypeKindNonNull,
 			OfType: &introspection.TypeRef{
 				Kind: introspection.TypeKindObject,
-				Name: introspectTypeName(s.name, s.moduleName),
+				Name: n.typeName(s.name, s.moduleName),
 			},
 		}
 
@@ -58,7 +57,7 @@ func introspectTypeRef(spec ParsedType) *introspection.TypeRef {
 			Kind: introspection.TypeKindNonNull,
 			OfType: &introspection.TypeRef{
 				Kind: introspection.TypeKindInterface,
-				Name: introspectTypeName(s.name, s.moduleName),
+				Name: n.typeName(s.name, s.moduleName),
 			},
 		}
 
@@ -67,7 +66,7 @@ func introspectTypeRef(spec ParsedType) *introspection.TypeRef {
 			Kind: introspection.TypeKindNonNull,
 			OfType: &introspection.TypeRef{
 				Kind: introspection.TypeKindEnum,
-				Name: introspectTypeName(s.name, s.moduleName),
+				Name: n.typeName(s.name, s.moduleName),
 			},
 		}
 
@@ -132,60 +131,26 @@ func introspectVoidRef() *introspection.TypeRef {
 	}
 }
 
-// introspectTypeName maps a parsed type name to the name the engine installs
-// it under. Module-local types (moduleName != "") are namespaced with the
-// module name, exactly as the engine does when installing the module's
-// typedefs — without this, a module type shadowing a core or dependency type
-// name would collide at merge time instead of being namespaced. Core and
-// dependency types (moduleName == "") already carry their final schema name.
-func introspectTypeName(name, moduleName string) string {
-	if moduleName == "" {
-		return strcase.ToCamel(name)
-	}
-	return namespaceTypeName(name, moduleName)
-}
-
-// namespaceTypeName mirrors the engine's namespaceObject (core/gqlformat.go),
-// which the engine applies to module objects, interfaces and enums alike, for
-// the case where the module's final and original names are equal — always true
-// for the module's own view of itself. Keep in sync.
-func namespaceTypeName(typeName, moduleName string) string {
-	typeName = strcase.ToCamel(typeName)
-	modName := strcase.ToCamel(moduleName)
-	if rest := strings.TrimPrefix(typeName, modName); rest != typeName {
-		if len(rest) == 0 {
-			// The main module object keeps the module's name.
-			return modName
-		}
-		// Only treat the prefix as a namespace on a word boundary: type
-		// "Postman" in module "post" must become "PostPostman", while
-		// "PostMan" is already namespaced.
-		if 'A' <= rest[0] && rest[0] <= 'Z' {
-			return typeName
-		}
-	}
-	return strcase.ToCamel(modName + "_" + typeName)
-}
-
 // introspectObject converts a parsedObjectType to an introspection.Type.
-// It mirrors parsedObjectType.TypeDefCode().
-func introspectObject(spec *parsedObjectType) *introspection.Type {
+// It mirrors parsedObjectType.TypeDefCode(), with the names the engine gives
+// the module's types and fields (see moduleNamer).
+func introspectObject(n moduleNamer, spec *parsedObjectType) *introspection.Type {
 	t := &introspection.Type{
 		Kind:        introspection.TypeKindObject,
-		Name:        introspectTypeName(spec.name, spec.moduleName),
+		Name:        n.typeName(spec.name, spec.moduleName),
 		Description: strings.TrimSpace(spec.doc),
 		Interfaces:  []*introspection.Type{},
 	}
 
 	// Methods → Fields
 	for _, m := range spec.methods {
-		if strcase.ToLowerCamel(m.name) == "id" {
+		if n.fieldName(m.name) == "id" {
 			// "id" is engine-reserved (Node): registration rejects it with an
 			// actionable error. Skip it here so the generated bindings still
 			// compile and that error is the one the user sees.
 			continue
 		}
-		t.Fields = append(t.Fields, introspectMethod(m))
+		t.Fields = append(t.Fields, introspectMethod(n, m))
 	}
 
 	// Struct fields → Fields (public, non-private)
@@ -193,14 +158,14 @@ func introspectObject(spec *parsedObjectType) *introspection.Type {
 		if f.isPrivate {
 			continue
 		}
-		if strcase.ToLowerCamel(f.name) == "id" {
+		if n.fieldName(f.name) == "id" {
 			// engine-reserved, see above
 			continue
 		}
 		field := &introspection.Field{
-			Name:        strcase.ToLowerCamel(f.name),
+			Name:        n.fieldName(f.name),
 			Description: strings.TrimSpace(f.doc),
-			TypeRef:     introspectTypeRef(f.typeSpec),
+			TypeRef:     introspectTypeRef(n, f.typeSpec),
 			Args:        introspection.InputValues{},
 		}
 		if f.deprecated != nil {
@@ -230,19 +195,19 @@ func introspectNodeIDField(typeName string) *introspection.Field {
 
 // introspectMethod converts a funcTypeSpec to an introspection Field.
 // Used for both object methods and interface methods.
-func introspectMethod(m *funcTypeSpec) *introspection.Field {
+func introspectMethod(n moduleNamer, m *funcTypeSpec) *introspection.Field {
 	var typeRef *introspection.TypeRef
 	if m.returnSpec == nil {
 		typeRef = introspectVoidRef()
 	} else {
-		typeRef = introspectTypeRef(m.returnSpec)
+		typeRef = introspectTypeRef(n, m.returnSpec)
 	}
 
 	field := &introspection.Field{
-		Name:        strcase.ToLowerCamel(m.name),
+		Name:        n.fieldName(m.name),
 		Description: strings.TrimSpace(m.doc),
 		TypeRef:     typeRef,
-		Args:        introspectFuncArgs(m),
+		Args:        introspectFuncArgs(n, m),
 	}
 
 	if m.deprecated != nil {
@@ -257,13 +222,13 @@ func introspectMethod(m *funcTypeSpec) *introspection.Field {
 // introspectFuncArgs converts a funcTypeSpec's paramSpecs to InputValues,
 // skipping context args and honouring the optional flag (matching TypeDef's
 // WithOptional wrapping which makes a type nullable).
-func introspectFuncArgs(m *funcTypeSpec) introspection.InputValues {
+func introspectFuncArgs(n moduleNamer, m *funcTypeSpec) introspection.InputValues {
 	var args introspection.InputValues
 	for _, arg := range m.argSpecs {
 		if arg.isContext {
 			continue
 		}
-		iv := introspectArg(arg)
+		iv := introspectArg(n, arg)
 		args = append(args, iv)
 	}
 	return args
@@ -275,10 +240,10 @@ func introspectFuncArgs(m *funcTypeSpec) introspection.InputValues {
 // @expectedType directive naming the target type, which the binding generator
 // uses to recover the concrete parameter type. expectedType is the name for
 // that directive; empty when the argument is not object/interface-typed.
-func introspectArgTypeRef(spec ParsedType) (ref *introspection.TypeRef, expectedType string) {
+func introspectArgTypeRef(n moduleNamer, spec ParsedType) (ref *introspection.TypeRef, expectedType string) {
 	switch s := spec.(type) {
 	case *parsedSliceType:
-		elemRef, expected := introspectArgTypeRef(s.underlying)
+		elemRef, expected := introspectArgTypeRef(n, s.underlying)
 		return &introspection.TypeRef{
 			Kind: introspection.TypeKindNonNull,
 			OfType: &introspection.TypeRef{
@@ -288,13 +253,13 @@ func introspectArgTypeRef(spec ParsedType) (ref *introspection.TypeRef, expected
 		}, expected
 
 	case *parsedObjectTypeReference:
-		return introspectIDRef(), introspectTypeName(s.name, s.moduleName)
+		return introspectIDRef(), n.typeName(s.name, s.moduleName)
 
 	case *parsedIfaceTypeReference:
-		return introspectIDRef(), introspectTypeName(s.name, s.moduleName)
+		return introspectIDRef(), n.typeName(s.name, s.moduleName)
 
 	default:
-		return introspectTypeRef(spec), ""
+		return introspectTypeRef(n, spec), ""
 	}
 }
 
@@ -309,8 +274,8 @@ func introspectIDRef() *introspection.TypeRef {
 }
 
 // introspectArg converts a single paramSpec to an InputValue.
-func introspectArg(arg paramSpec) introspection.InputValue {
-	typeRef, expectedType := introspectArgTypeRef(arg.typeSpec)
+func introspectArg(n moduleNamer, arg paramSpec) introspection.InputValue {
+	typeRef, expectedType := introspectArgTypeRef(n, arg.typeSpec)
 	// Strip the NON_NULL wrapper exactly where the engine calls WithOptional:
 	// arg.optional (set by +optional, defaultPath and defaultAddress — see
 	// TypeDefCode's `if argSpec.optional`). We deliberately do NOT use
@@ -325,7 +290,7 @@ func introspectArg(arg paramSpec) introspection.InputValue {
 	}
 
 	iv := introspection.InputValue{
-		Name:        strcase.ToLowerCamel(arg.name),
+		Name:        n.fieldName(arg.name),
 		Description: strings.TrimSpace(arg.description),
 		TypeRef:     typeRef,
 	}
@@ -371,19 +336,19 @@ func introspectArg(arg paramSpec) introspection.InputValue {
 
 // introspectInterface converts a parsedIfaceType to an introspection.Type.
 // Mirrors parsedIfaceType.TypeDefCode().
-func introspectInterface(spec *parsedIfaceType) *introspection.Type {
+func introspectInterface(n moduleNamer, spec *parsedIfaceType) *introspection.Type {
 	t := &introspection.Type{
 		Kind:        introspection.TypeKindInterface,
-		Name:        introspectTypeName(spec.name, spec.moduleName),
+		Name:        n.typeName(spec.name, spec.moduleName),
 		Description: strings.TrimSpace(spec.doc),
 		Interfaces:  []*introspection.Type{},
 	}
 	for _, m := range spec.methods {
-		if strcase.ToLowerCamel(m.name) == "id" {
+		if n.fieldName(m.name) == "id" {
 			// engine-reserved, see introspectObject
 			continue
 		}
-		t.Fields = append(t.Fields, introspectMethod(m))
+		t.Fields = append(t.Fields, introspectMethod(n, m))
 	}
 	t.Fields = append(t.Fields, introspectNodeIDField(t.Name))
 	return t
@@ -391,16 +356,18 @@ func introspectInterface(spec *parsedIfaceType) *introspection.Type {
 
 // introspectEnum converts a parsedEnumType to an introspection.Type.
 // Mirrors parsedEnumType.TypeDefCode().
-func introspectEnum(spec *parsedEnumType) *introspection.Type {
+func introspectEnum(n moduleNamer, spec *parsedEnumType) *introspection.Type {
 	t := &introspection.Type{
 		Kind:        introspection.TypeKindEnum,
-		Name:        introspectTypeName(spec.name, spec.moduleName),
+		Name:        n.typeName(spec.name, spec.moduleName),
 		Description: strings.TrimSpace(spec.doc),
 		Interfaces:  []*introspection.Type{},
 	}
 	for _, v := range spec.values {
 		ev := introspection.EnumValue{
-			Name:        gqlEnumMemberName(v.name),
+			// Emitting a different name than the engine registers would make
+			// self-call bindings send unknown enum values.
+			Name:        n.enumMemberName(v.name),
 			Description: strings.TrimSpace(v.doc),
 		}
 		if v.deprecated != nil {
@@ -413,19 +380,9 @@ func introspectEnum(spec *parsedEnumType) *introspection.Type {
 	return t
 }
 
-// gqlEnumMemberName mirrors the engine's enum member naming (gqlEnumMemberName
-// in core/gqlformat.go): already-conventional GraphQL member names such as
-// HTTP2 are kept as-is, everything else becomes SCREAMING_SNAKE. Emitting a
-// different name than the engine registers would make self-call bindings send
-// unknown enum values. cmd/codegen cannot import core (core imports
-// cmd/codegen/introspection), so keep this copy in sync.
-func gqlEnumMemberName(name string) string {
-	if isConventionalGraphQLEnumMemberName(name) {
-		return name
-	}
-	return strcase.ToScreamingSnake(name)
-}
-
+// isConventionalGraphQLEnumMemberName mirrors the engine's check
+// (core/gqlformat.go) for member names already written in GraphQL's member
+// convention, such as HTTP2, which are kept as they are.
 func isConventionalGraphQLEnumMemberName(name string) bool {
 	if name == "" || strings.HasPrefix(name, "__") {
 		return false
@@ -460,13 +417,14 @@ func (funcs goTemplateFuncs) ModuleIntrospectionJSON(moduleName string) ([]byte,
 	var moduleTypes introspection.Types
 	var mainObject *parsedObjectType
 
-	mainObjCamel := strcase.ToCamel(moduleName)
+	n := funcs.moduleNamer()
+	mainObjName := n.objectName(moduleName)
 
 	err := funcs.visitTypes(false, &visitorFuncs{
 		RootVisitor: func(_ string) error { return nil },
 		StructVisitor: func(_ *parseState, _ *types.Named, _ *types.TypeName, spec *parsedObjectType, _ *types.Struct) error {
 			if spec.isCollection {
-				collection, batch, err := introspectCollection(spec)
+				collection, batch, err := introspectCollection(n, spec)
 				if err != nil {
 					return err
 				}
@@ -475,19 +433,19 @@ func (funcs goTemplateFuncs) ModuleIntrospectionJSON(moduleName string) ([]byte,
 					moduleTypes = append(moduleTypes, batch)
 				}
 			} else {
-				moduleTypes = append(moduleTypes, introspectObject(spec))
+				moduleTypes = append(moduleTypes, introspectObject(n, spec))
 			}
-			if strcase.ToCamel(spec.name) == mainObjCamel {
+			if n.objectName(spec.name) == mainObjName {
 				mainObject = spec
 			}
 			return nil
 		},
 		IfaceVisitor: func(_ *parseState, _ *types.Named, _ *types.TypeName, spec *parsedIfaceType, _ *types.Interface) error {
-			moduleTypes = append(moduleTypes, introspectInterface(spec))
+			moduleTypes = append(moduleTypes, introspectInterface(n, spec))
 			return nil
 		},
 		EnumVisitor: func(_ *parseState, _ *types.Named, _ *types.TypeName, spec *parsedEnumType, _ *types.Basic) error {
-			moduleTypes = append(moduleTypes, introspectEnum(spec))
+			moduleTypes = append(moduleTypes, introspectEnum(n, spec))
 			return nil
 		},
 	})
@@ -503,7 +461,7 @@ func (funcs goTemplateFuncs) ModuleIntrospectionJSON(moduleName string) ([]byte,
 	kept := moduleTypes[:0]
 	for _, t := range moduleTypes {
 		if funcs.schema != nil && funcs.schema.Types.Get(t.Name) != nil {
-			if mainObject != nil && strcase.ToCamel(mainObject.name) == t.Name {
+			if mainObject != nil && n.objectName(mainObject.name) == t.Name {
 				mainObject = nil
 			}
 			continue
@@ -542,16 +500,16 @@ func (funcs goTemplateFuncs) ModuleIntrospectionJSON(moduleName string) ([]byte,
 			Kind: introspection.TypeKindNonNull,
 			OfType: &introspection.TypeRef{
 				Kind: introspection.TypeKindObject,
-				Name: introspectTypeName(mainObject.name, mainObject.moduleName),
+				Name: n.typeName(mainObject.name, mainObject.moduleName),
 			},
 		}
 		field := &introspection.Field{
-			Name:    strcase.ToLowerCamel(moduleName),
+			Name:    n.fieldName(moduleName),
 			TypeRef: ctorRef,
 			Args:    introspection.InputValues{},
 		}
 		if mainObject.constructor != nil {
-			field.Args = introspectFuncArgs(mainObject.constructor)
+			field.Args = introspectFuncArgs(n, mainObject.constructor)
 		}
 		queryType.Fields = append(queryType.Fields, field)
 	}

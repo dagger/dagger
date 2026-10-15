@@ -35,19 +35,36 @@ type ExecError = core.ExecError
 
 {{ range .Types }}
 {{ $name := .Name | FormatName }}
+{{- /* enum types keep their schema name (see _types/enum.go.tmpl) */}}
+{{- if eq .Kind "ENUM" }}{{ $name = .Name }}{{ end }}
 
 {{ .Description | Comment }}
 type {{ $name }} = core.{{ $name }}
+{{- with LegacyTypeName . }}
+
+// Deprecated: use {{ $name }} instead.
+type {{ . }} = core.{{ . }}
+{{- end }}
 
 {{ if eq .Kind "INTERFACE" }}
 {{- $clientName := InterfaceClientName .Name }}
 {{- if ne $clientName $name }}
 type {{ $clientName }} = core.{{ $clientName }}
+{{- with LegacyTypeName . }}
+
+// Deprecated: use {{ $clientName }} instead.
+type {{ . }}Client = core.{{ . }}Client
+{{- end }}
 {{ end }}
 {{- end }}
 {{ if eq .Kind "OBJECT" }}
 {{- if . | IsSelfChainable }}
 type With{{ $name }}Func = core.With{{ $name }}Func
+{{- with LegacyTypeName . }}
+
+// Deprecated: use With{{ $name }}Func instead.
+type With{{ . }}Func = core.With{{ . }}Func
+{{- end }}
 {{ end }}
 {{- end }}
 {{ if or (eq .Kind "OBJECT") (eq .Kind "INTERFACE") }}
@@ -55,12 +72,18 @@ type With{{ $name }}Func = core.With{{ $name }}Func
 {{- if HasOptionals $field.Args }}
 // {{ $field | FieldOptionsStructName }} contains options for {{ $name }}.{{ $field.Name | FormatName }}
 type {{ $field | FieldOptionsStructName }} = core.{{ $field | FieldOptionsStructName }}
+{{- with $field | LegacyFieldOptionsName }}
+
+// Deprecated: use {{ $field | FieldOptionsStructName }} instead.
+type {{ . }} = core.{{ . }}
+{{- end }}
 {{ end }}
 {{ end }}
 {{- end }}
 
 {{ if eq .Kind "ENUM" }}
 {{- $enumName := .Name }}
+{{- $enumType := . }}
 {{- $needsUnscopedEnums := CheckVersionCompatibility "v0.15.0" | not }}
 const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
@@ -72,6 +95,13 @@ const (
 	{{ $unscopedName }} {{ $enumName }} = core.{{ $unscopedName }}
 	{{- end }}
 	{{ end }}
+	{{- range $fields := .EnumValues | GroupEnumByValue }}
+	{{- range $legacy := LegacyEnumValueNames $enumType (index $fields 0) }}
+
+	// Deprecated: use {{ (index $fields 0).Name | FormatEnum $enumName }} instead.
+	{{ $legacy }} {{ $enumName }} = core.{{ $legacy }}
+	{{- end }}
+	{{- end }}
 )
 {{- end }}
 {{ end }}

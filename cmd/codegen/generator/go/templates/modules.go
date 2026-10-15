@@ -52,7 +52,11 @@ func (funcs goTemplateFuncs) isCoreLibrary() bool {
 // package as the generated types. In that case, prefix the function with
 // "New" instead.
 func (funcs goTemplateFuncs) coreConstructorName(f introspection.Field) string {
-	name := formatName(f.Name)
+	return funcs.coreConstructorNamed(formatName(f.Name))
+}
+
+// coreConstructorNamed is coreConstructorName for a field's Go name.
+func (funcs goTemplateFuncs) coreConstructorNamed(name string) string {
 	if funcs.schema.Types.Get(name) != nil {
 		return "New" + name
 	}
@@ -806,7 +810,10 @@ type parseState struct {
 	fset              *token.FileSet
 	moduleName        string
 	legacyGoSDKCompat bool
-	objs              []types.Object
+	// namer names the module's types and fields in the schema, as the engine
+	// does for the module's engine version.
+	namer moduleNamer
+	objs  []types.Object
 
 	methods map[string][]method
 
@@ -821,7 +828,7 @@ type parseState struct {
 }
 
 func (ps *parseState) isMainModuleObject(name string) bool {
-	return strcase.ToCamel(ps.moduleName) == strcase.ToCamel(name)
+	return ps.namer.objectName(ps.moduleName) == ps.namer.objectName(name)
 }
 
 // pkgDoc returns the package level documentation comment, if any,

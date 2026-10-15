@@ -3,6 +3,11 @@
 {{- $enumName := .Name }}
 type {{ $enumName }} string
 {{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+{{- with LegacyTypeName . }}
+
+// Deprecated: use {{ $enumName }} instead.
+type {{ . }} = {{ $enumName }}
+{{- end }}
 
 func ({{ $enumName }}) IsEnum() {}
 
@@ -90,6 +95,11 @@ const (
 			{{ $fieldName }} {{ $enumName }} = {{ $fullFieldName }}
 			{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- end }}
+	{{- end }}
+	{{- range $legacy := LegacyEnumValueNames $ (index $fields 0) }}
+
+		// Deprecated: use {{ $mainFieldName }} instead.
+		{{ $legacy }} {{ $enumName }} = {{ $mainFieldName }}
 	{{- end }}
 
 	{{ end }}

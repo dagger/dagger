@@ -230,7 +230,7 @@ func (provider *Provider) instantiate(ctx context.Context) (*instance, error) {
 
 	var object dagql.AnyObjectResult
 	if err := dag.Select(ctx, dag.Root(), &object, dagql.Selector{
-		Field: strcase.ToLowerCamel(provider.mod.Self().Name()),
+		Field: provider.mod.Self().ConstructorName(),
 	}); err != nil {
 		return nil, fmt.Errorf("construct SDK module %q: %w", provider.mod.Self().Name(), err)
 	}
