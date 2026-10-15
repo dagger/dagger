@@ -26,6 +26,15 @@ const workspacePullSelectionWindow = 10000
 const WorkspacePullTimeout = 2 * time.Minute
 const workspacePullOutputLimit = 16 << 20
 
+// errWorkspacePullTimeout is the cause of every workspace pull and export
+// deadline: git killed by it reports only the signal.
+var errWorkspacePullTimeout = fmt.Errorf("workspace pull timed out after %s", WorkspacePullTimeout)
+
+// WithWorkspacePullTimeout bounds a workspace pull or export.
+func WithWorkspacePullTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeoutCause(ctx, WorkspacePullTimeout, errWorkspacePullTimeout)
+}
+
 type WorkspacePullOpts struct {
 	// FromSHA excludes previously exported source history, independently of
 	// destination hashes (which may have changed through cherry-picking).
@@ -99,7 +108,7 @@ func WorkspacePullCommits(ctx context.Context, base dagql.ObjectResult[*Director
 	if err := opts.Validate(); err != nil {
 		return nil, nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, WorkspacePullTimeout)
+	ctx, cancel := WithWorkspacePullTimeout(ctx)
 	defer cancel()
 	paths, err := dirty.ComputePaths(ctx)
 	if err != nil {
@@ -601,6 +610,11 @@ func runWorkspacePullGit(ctx context.Context, dir string, env []string, args ...
 		return "", fmt.Errorf("git %s: pull command output exceeds %d bytes", operation, workspacePullOutputLimit)
 	}
 	if err != nil {
+		// A deadline or cancellation kills git, which then only reports the
+		// signal: name the cause instead.
+		if cause := context.Cause(ctx); cause != nil {
+			return stdout.String(), fmt.Errorf("git %s: %w", operation, cause)
+		}
 		return stdout.String(), fmt.Errorf("git %s: %w: %s", operation, err, stderr.String())
 	}
 	return stdout.String(), nil
@@ -660,7 +674,7 @@ func workspacePullPatchID(ctx context.Context, dir, sha string) (string, error) 
 // with parent's uncommitted changes on top. Both workspaces must be frozen.
 // With apply unset, it only reports the commits it would pick.
 func ComputeWorkspacePull(ctx context.Context, parent, source dagql.ObjectResult[*Workspace], opts WorkspacePullOpts, apply bool) (*Directory, []WorkspacePullPick, dagql.ObjectResult[*GitRef], error) {
-	ctx, cancel := context.WithTimeout(ctx, WorkspacePullTimeout)
+	ctx, cancel := WithWorkspacePullTimeout(ctx)
 	defer cancel()
 	var head dagql.ObjectResult[*GitRef]
 	if !parent.Self().IsValueWorkspace() || !source.Self().IsValueWorkspace() {
