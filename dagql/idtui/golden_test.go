@@ -292,7 +292,7 @@ entrypoint = true
 					})
 					require.Equal(t, "text/x-diff", contentType, "the patch must be typed for diff highlighting")
 				}
-				require.NotZero(t, patches, "the failing staleness check must log its patch on its own span")
+				require.Equal(t, 1, patches, "the failing staleness check must log its patch on its own span, once")
 			},
 		},
 
