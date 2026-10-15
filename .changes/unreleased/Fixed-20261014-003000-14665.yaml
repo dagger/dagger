@@ -1,0 +1,6 @@
+kind: Fixed
+body: Source-location comments in Go modules' generated dependency bindings (internal/dagger/core) now point to the right files, and no longer differ between local and git workspaces.
+time: 2026-10-14T00:30:00+00:00
+custom:
+    Author: vito
+    PR: "14665"
