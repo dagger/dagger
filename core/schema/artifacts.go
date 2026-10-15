@@ -101,6 +101,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("loadError", s.loadError).Doc("A module load failure, or an empty string if discovery succeeded."),
 		dagql.Func("arguments", s.arguments).Doc("The arguments accepted by the artifact field."),
 		dagql.Func("description", s.description).Doc("The description of the field that supplies this artifact."),
+		dagql.Func("workspace", s.artifactWorkspace).Doc("The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts)."),
 		dagql.Func("uri", s.artifactURI).
 			Doc("The artifact's DAG address, such as dag://engine-dev/playground.").
 			Args(
@@ -821,6 +822,13 @@ func (*artifactsSchema) filterDirectives(_ context.Context, parent *core.Artifac
 
 func (*artifactsSchema) description(_ context.Context, parent *core.Artifact, _ struct{}) (string, error) {
 	return parent.Description(), nil
+}
+
+func (*artifactsSchema) artifactWorkspace(_ context.Context, parent *core.Artifact, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.Workspace]], error) {
+	if parent.Workspace.Self() == nil {
+		return dagql.Null[dagql.ObjectResult[*core.Workspace]](), nil
+	}
+	return dagql.NonNull(parent.Workspace), nil
 }
 
 // Keep planned artifacts in the query graph so value evaluation, remote

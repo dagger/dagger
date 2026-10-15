@@ -370,6 +370,37 @@ func (ArtifactsSuite) TestFilterURIUnderFailedModule(ctx context.Context, t *tes
 	require.ErrorContains(t, err, `module "staff"`)
 }
 
+func (ArtifactsSuite) TestArtifactWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.binder]\nsource = \"./binder\"\n").
+		WithNewFile("binder/dagger-module.toml", "name = \"binder\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile("binder/main.dang", `type Binder {
+  pub docs: Directory! { directory.withNewFile("readme", "docs") }
+  pub bound: Artifacts! { llm.withTools(currentNode).artifacts }
+}`)
+	const query = `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts {
+    docs: filterUri(uri: "dag://binder/docs") { one { workspace { file(path: "marker.txt") { contents } } } }
+    bound: filterUri(uri: "dag://binder/bound") { one { value { ... on Artifacts {
+      filterUri(uri: "dag://binder/docs") { one { uri workspace { id } } }
+    } } } }
+  } } }
+}`
+	// Each artifact returns the workspace that discovered it.
+	for _, marker := range []string{"first", "second"} {
+		wsID, err := source.WithNewFile("marker.txt", marker).AsWorkspace().ID(ctx)
+		require.NoError(t, err)
+		got, err := testutil.QueryWithClient[json.RawMessage](c, t, query, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+		require.NoError(t, err)
+		// A bound tool object's artifact has no workspace of its own.
+		require.JSONEq(t, `{"node":{"artifacts":{
+  "docs":{"one":{"workspace":{"file":{"contents":"`+marker+`"}}}},
+  "bound":{"one":{"value":{"filterUri":{"one":{"uri":"dag://?directory=binder/docs","workspace":null}}}}}
+}}}`, string(*got))
+	}
+}
+
 func (ArtifactsSuite) TestSelectorRoundTrip(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	wsID, err := artifactSource(c).AsWorkspace().ID(ctx)
