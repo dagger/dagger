@@ -998,7 +998,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		spanProcessors++
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
-	sess.workloadTracerProvider = srv.workloadExport.WorkloadTracerProvider(sess.sessionID)
+	sess.workloadTracerProvider = srv.workloadExport.WorkloadTracerProvider(sess.sessionID, dagql.NewWcprofLazyParentProcessor())
 	tracerProviders := 1
 	if sess.workloadTracerProvider != nil {
 		tracerProviders++

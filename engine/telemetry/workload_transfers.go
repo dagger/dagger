@@ -39,16 +39,19 @@ const WorkloadScope = "dagger.io/workload"
 
 // WorkloadTracerProvider creates spans that only the workload export receives.
 // It shares the engine queue, not the session's CLI or Cloud trace
-// destinations, so ordinary telemetry and the UI do not change.
-func (d *WorkloadExport) WorkloadTracerProvider(sessionID string) *sdktrace.TracerProvider {
+// destinations, so ordinary telemetry and the UI do not change. The first
+// processors run before the export, for example to stamp the evaluation that
+// caused a span, like on ordinary spans.
+func (d *WorkloadExport) WorkloadTracerProvider(sessionID string, first ...sdktrace.SpanProcessor) *sdktrace.TracerProvider {
 	processor := d.SpanProcessor(sessionID)
 	if processor == nil {
 		return nil
 	}
-	return sdktrace.NewTracerProvider(
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		sdktrace.WithSpanProcessor(processor),
-	)
+	opts := []sdktrace.TracerProviderOption{sdktrace.WithSampler(sdktrace.AlwaysSample())}
+	for _, p := range first {
+		opts = append(opts, sdktrace.WithSpanProcessor(p))
+	}
+	return sdktrace.NewTracerProvider(append(opts, sdktrace.WithSpanProcessor(processor))...)
 }
 
 type workloadTracerKey struct{}
