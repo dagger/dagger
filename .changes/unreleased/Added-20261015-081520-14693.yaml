@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  A Dang module entrypoint can declare a `sources` function that returns the files the module builds from, including files outside its directory. The engine adds them to the module context, so cached function results follow them across sessions, and `types` and `call` of such an entrypoint receive no workspace. It replaces the `resources` member.
+time: 2026-10-15T08:15:20Z
+custom:
+  Author: eunomie
+  PR: 14693

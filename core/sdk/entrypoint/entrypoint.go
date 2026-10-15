@@ -22,32 +22,27 @@ import (
 const TypeName = "ModuleEntrypoint"
 
 // ResolveSource resolves entrypoint.source to a module source for the
-// entrypoint itself, and returns the workspace to pass to the entrypoint.
+// entrypoint itself.
 func ResolveSource(
 	ctx context.Context,
 	dag *dagql.Server,
 	src dagql.ObjectResult[*core.ModuleSource],
-) (dagql.ObjectResult[*core.ModuleSource], dagql.ObjectResult[*core.Workspace], error) {
+) (dagql.ObjectResult[*core.ModuleSource], error) {
 	if src.Self().Entrypoint == nil {
-		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module entrypoint is not configured")
-	}
-
-	workspace, err := Workspace(ctx, dag, src)
-	if err != nil {
-		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, err
+		return dagql.ObjectResult[*core.ModuleSource]{}, fmt.Errorf("module entrypoint is not configured")
 	}
 
 	address := src.Self().Entrypoint.Source
 	directory, err := resolveSourceDirectory(ctx, dag, src, address)
 	if err != nil {
-		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("resolve module entrypoint source %q: %w", address, err)
+		return dagql.ObjectResult[*core.ModuleSource]{}, fmt.Errorf("resolve module entrypoint source %q: %w", address, err)
 	}
 
 	entrySrcResult, err := dagql.NewObjectResultForCurrentCall(ctx, dag, SourceForDirectory(src.Self(), directory))
 	if err != nil {
-		return dagql.ObjectResult[*core.ModuleSource]{}, dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("attach module entrypoint source: %w", err)
+		return dagql.ObjectResult[*core.ModuleSource]{}, fmt.Errorf("attach module entrypoint source: %w", err)
 	}
-	return entrySrcResult, workspace, nil
+	return entrySrcResult, nil
 }
 
 // SourceForDirectory returns a clone of src whose whole context is the
@@ -59,7 +54,6 @@ func SourceForDirectory(src *core.ModuleSource, directory dagql.ObjectResult[*co
 	entrySrc.SourceSubpath = "."
 	entrySrc.IncludePaths = nil
 	entrySrc.RebasedIncludePaths = nil
-	entrySrc.EntrypointResourcesLoaded = false
 	entrySrc.ConfigDependencies = nil
 	entrySrc.Dependencies = nil
 	entrySrc.ConfigBlueprint = nil

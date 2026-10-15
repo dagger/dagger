@@ -196,9 +196,6 @@ type ModuleSource struct {
 	IncludePaths []string
 	// RebasedIncludePaths are the include paths with the source root subpath prepended
 	RebasedIncludePaths []string
-	// EntrypointResourcesLoaded records that the entrypoint's resources member
-	// added patterns to IncludePaths, so a context reload must exclude .git.
-	EntrypointResourcesLoaded bool
 
 	// ConfigDependencies are the dependencies as read from the module config
 	// NOTE: this is currently not updated by withDependencies and related APIs, only Dependencies will be updated
@@ -488,7 +485,6 @@ type persistedModuleSourcePayload struct {
 	SDK                             *SDKConfig                            `json:"sdk,omitempty"`
 	IncludePaths                    []string                              `json:"includePaths,omitempty"`
 	RebasedIncludePaths             []string                              `json:"rebasedIncludePaths,omitempty"`
-	EntrypointResourcesLoaded       bool                                  `json:"entrypointResourcesLoaded,omitempty"`
 	ConfigDependencies              []*modules.ModuleConfigDependency     `json:"configDependencies,omitempty"`
 	DependencyResultIDs             []uint64                              `json:"dependencyResultIDs,omitempty"`
 	ConfigBlueprint                 *modules.ModuleConfigDependency       `json:"configBlueprint,omitempty"`
@@ -813,7 +809,6 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		SDK:                           src.SDK,
 		IncludePaths:                  slices.Clone(src.IncludePaths),
 		RebasedIncludePaths:           slices.Clone(src.RebasedIncludePaths),
-		EntrypointResourcesLoaded:     src.EntrypointResourcesLoaded,
 		ConfigDependencies:            slices.Clone(src.ConfigDependencies),
 		ConfigBlueprint:               src.ConfigBlueprint,
 		ConfigToolchains:              slices.Clone(src.ConfigToolchains),
@@ -977,7 +972,6 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		SDK:                           persisted.SDK,
 		IncludePaths:                  slices.Clone(persisted.IncludePaths),
 		RebasedIncludePaths:           slices.Clone(persisted.RebasedIncludePaths),
-		EntrypointResourcesLoaded:     persisted.EntrypointResourcesLoaded,
 		ConfigDependencies:            slices.Clone(persisted.ConfigDependencies),
 		Dependencies:                  dependencies,
 		ConfigBlueprint:               persisted.ConfigBlueprint,
