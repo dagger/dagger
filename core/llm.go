@@ -1630,13 +1630,23 @@ func (llm *LLM) messagesWithSystemPrompt(ctx context.Context) ([]*LLMMessage, er
 	return messages, nil
 }
 
-// renderMessagesForModel applies each message's recorded origin as a
-// model-facing attribution header (hack/designs/agent-messaging.md §4.1):
-// the model must be able to tell another agent's words from the user's, so
-// non-user origins render as a deterministic header line prepended to the
-// message text at request-build time. The stored history keeps clean text
-// plus structured origin; only the wire form carries the header.
+// renderMessagesForModel builds the wire form of the history at
+// request-build time, leaving the stored history untouched:
+//
+//   - Each message's recorded origin renders as a model-facing attribution
+//     header (hack/designs/agent-messaging.md §4.1): the model must be able to
+//     tell another agent's words from the user's, so non-user origins render
+//     as a deterministic header line prepended to the message text. The
+//     stored history keeps clean text plus structured origin.
+//   - Tool results move ahead of other user content that landed between a
+//     turn's tool calls and their results (see orderToolResultsFirst).
 func renderMessagesForModel(messages []*LLMMessage) []*LLMMessage {
+	return orderToolResultsFirst(renderAttribution(messages))
+}
+
+// renderAttribution prepends each non-user origin's attribution header to its
+// message, copying only the messages it changes.
+func renderAttribution(messages []*LLMMessage) []*LLMMessage {
 	var rendered []*LLMMessage
 	for i, msg := range messages {
 		header := msg.Origin.AttributionHeader()
@@ -1667,6 +1677,97 @@ func renderMessagesForModel(messages []*LLMMessage) []*LLMMessage {
 		return messages
 	}
 	return rendered
+}
+
+// orderToolResultsFirst moves the tool results answering an assistant turn
+// ahead of any other user content between that turn and the next.
+//
+// Every provider requires a turn's tool calls to be answered directly: by the
+// next user message's leading tool_result blocks (Anthropic, which merges
+// consecutive user messages), tool messages right after the assistant message
+// (OpenAI), or the next content's function responses (Gemini). The stored
+// history does not always have that shape. A tool that returns a conversation
+// continues from it, and when that conversation appended a prompt or media
+// after the pending calls, the turn's results land after that content; an
+// agent message injected mid-turn does the same. Sent as stored, such a
+// history is rejected on every later step, so the conversation can never
+// recover.
+//
+// Within each run of user messages after an assistant message with tool calls,
+// messages carrying tool results move first and the rest follow, each group
+// keeping its order; a message mixing both kinds leads with its results. The
+// message count never changes, so a recording's indexes still line up with the
+// live history. Histories already in order are returned as-is, not copied.
+func orderToolResultsFirst(messages []*LLMMessage) []*LLMMessage {
+	var ordered []*LLMMessage
+	for i := 0; i < len(messages); i++ {
+		if !messageHasKind(messages[i], LLMMessageRoleAssistant, LLMContentToolCall) {
+			continue
+		}
+		start := i + 1
+		end := start
+		for end < len(messages) && messages[end] != nil && messages[end].Role == LLMMessageRoleUser {
+			end++
+		}
+		if run, changed := toolResultsFirst(messages[start:end]); changed {
+			if ordered == nil {
+				ordered = slices.Clone(messages)
+			}
+			copy(ordered[start:end], run)
+		}
+		i = end - 1
+	}
+	if ordered == nil {
+		return messages
+	}
+	return ordered
+}
+
+// toolResultsFirst reorders one run of user messages following a turn's tool
+// calls, reporting whether anything moved.
+func toolResultsFirst(run []*LLMMessage) ([]*LLMMessage, bool) {
+	var results, rest []*LLMMessage
+	changed := false
+	for _, msg := range run {
+		if !messageHasKind(msg, LLMMessageRoleUser, LLMContentToolResult) {
+			rest = append(rest, msg)
+			continue
+		}
+		if len(rest) > 0 {
+			changed = true
+		}
+		if !slices.IsSortedFunc(msg.Content, compareToolResultsFirst) {
+			cp := *msg
+			cp.Content = slices.Clone(msg.Content)
+			slices.SortStableFunc(cp.Content, compareToolResultsFirst)
+			msg = &cp
+			changed = true
+		}
+		results = append(results, msg)
+	}
+	if !changed {
+		return run, false
+	}
+	return append(results, rest...), true
+}
+
+// compareToolResultsFirst orders tool-result blocks before all other blocks.
+func compareToolResultsFirst(a, b *LLMContentBlock) int {
+	rank := func(block *LLMContentBlock) int {
+		if block != nil && block.Kind == LLMContentToolResult {
+			return 0
+		}
+		return 1
+	}
+	return rank(a) - rank(b)
+}
+
+// messageHasKind reports whether msg has the given role and at least one block
+// of the given kind.
+func messageHasKind(msg *LLMMessage, role LLMMessageRole, kind LLMContentBlockKind) bool {
+	return msg != nil && msg.Role == role && slices.ContainsFunc(msg.Content, func(b *LLMContentBlock) bool {
+		return b != nil && b.Kind == kind
+	})
 }
 
 type ModelFinishedError struct {
