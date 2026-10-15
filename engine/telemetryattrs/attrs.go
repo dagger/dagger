@@ -143,6 +143,24 @@ const (
 	// says so. (bool)
 	DagLeftRunningAttr = "dagger.io/dag.left_running"
 
+	// DagAliasEvent is the span event a query that uses a hidden, deprecated
+	// alias of a type, field, argument, input object field or enum value
+	// (dagql.Aliases) adds to the current span. Its attributes name the alias
+	// and the canonical name.
+	DagAliasEvent = "dagger.io/dag.alias"
+	// DagAliasKindAttr is "type", "field", "argument", "inputField" or
+	// "enumValue". (string)
+	DagAliasKindAttr = "dagger.io/dag.alias.kind"
+	// DagAliasNameAttr is the alias the query used. (string)
+	DagAliasNameAttr = "dagger.io/dag.alias.name"
+	// DagAliasCanonicalAttr is the name the alias stands for. (string)
+	DagAliasCanonicalAttr = "dagger.io/dag.alias.canonical"
+	// DagAliasParentAttr is what the alias belongs to: the type of a field,
+	// "Type.field" for an argument, the input object type for an input
+	// object field, the enum type for an enum value. Unset for a type.
+	// (string)
+	DagAliasParentAttr = "dagger.io/dag.alias.parent"
+
 	// LLMCallDigestAttr is set on LLM prompt/response telemetry spans. Its
 	// value is the DAG digest of the corresponding withPrompt or withResponse
 	// call, enabling the TUI to branch from that point in the conversation.

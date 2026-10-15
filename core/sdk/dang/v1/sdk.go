@@ -32,7 +32,7 @@ func (Impl) ModuleTypes(
 		return inst, fmt.Errorf("failed to get dag for dang module sdk module types: %w", err)
 	}
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForDang(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during dang module sdk module types: %w", err)
 	}
@@ -110,7 +110,7 @@ func (r *runtime) Call(
 	if err != nil {
 		return fmt.Errorf("current query: %w", err)
 	}
-	schemaJSONFile, err := r.deps.SchemaIntrospectionJSONFileForModule(ctx)
+	schemaJSONFile, err := r.deps.SchemaIntrospectionJSONFileForDang(ctx)
 	if err != nil {
 		return fmt.Errorf("get schema introspection: %w", err)
 	}
