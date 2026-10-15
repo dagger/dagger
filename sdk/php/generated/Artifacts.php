@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives and unknown names match nothing. Filters never change addresses or dimension identifiers.
+ * An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>.
  */
 class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
 {
@@ -23,7 +23,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise, or is a module load failure (see filterUri).
+     * Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise; a module load failure fails with its load error.
      */
     public function asExpertise(): array
     {
@@ -32,7 +32,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+     * Convert the selection to Generators without running them. Fail if any artifact is not a Generator. Module load failures are skipped: generating can repair them.
      */
     public function asGenerators(): array
     {
@@ -41,7 +41,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+     * Convert the selection to Checks. Fail if any artifact is not a Check. A module load failure is a Check that fails with its load error. Does not apply command filters or run the checks.
      */
     public function asChecks(): array
     {
@@ -50,7 +50,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+     * Convert the selection to Changesets. Fail if any artifact is not a Changeset; a module load failure fails with its load error. Does not apply command filters.
      */
     public function asChangesets(): array
     {
@@ -59,7 +59,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
+     * Convert the selection to Services. Fail if any artifact is not a Service; a module load failure fails with its load error. Does not apply command filters or start the services.
      */
     public function asServices(): array
     {
@@ -251,7 +251,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
      *
      * The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
      *
-     * An address that names nothing here selects nothing. An address under a module that failed to load keeps that module's load failure, so conversions such as asExpertise report the error instead of an empty result.
+     * A module that failed to load keeps its load failure when the module could hold what the address selects, as with every filter (see Artifacts).
      */
     public function filterUri(string $uri): Artifacts
     {

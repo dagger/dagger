@@ -1613,7 +1613,7 @@ impl Artifacts {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise, or is a module load failure (see filterUri).
+    /// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise; a module load failure fails with its load error.
     pub async fn as_expertise(&self) -> Result<Vec<Expertise>, DaggerError> {
         let query = self.selection.select("asExpertise");
         let query = query.select("id");
@@ -1630,7 +1630,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// Convert the selection to Generators without running them. Fail if any artifact is not a Generator.
+    /// Convert the selection to Generators without running them. Fail if any artifact is not a Generator. Module load failures are skipped: generating can repair them.
     pub async fn as_generators(&self) -> Result<Vec<Generator>, DaggerError> {
         let query = self.selection.select("asGenerators");
         let query = query.select("id");
@@ -1647,7 +1647,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// Convert the selection to Checks. Fail if any artifact is not a Check. Does not apply command filters or run the checks.
+    /// Convert the selection to Checks. Fail if any artifact is not a Check. A module load failure is a Check that fails with its load error. Does not apply command filters or run the checks.
     pub async fn as_checks(&self) -> Result<Vec<Check>, DaggerError> {
         let query = self.selection.select("asChecks");
         let query = query.select("id");
@@ -1664,7 +1664,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// Convert the selection to Changesets. Fail if any artifact is not a Changeset. Does not apply command filters.
+    /// Convert the selection to Changesets. Fail if any artifact is not a Changeset; a module load failure fails with its load error. Does not apply command filters.
     pub async fn as_changesets(&self) -> Result<Vec<Changeset>, DaggerError> {
         let query = self.selection.select("asChangesets");
         let query = query.select("id");
@@ -1681,7 +1681,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// Convert the selection to Services. Fail if any artifact is not a Service. Does not apply command filters or start the services.
+    /// Convert the selection to Services. Fail if any artifact is not a Service; a module load failure fails with its load error. Does not apply command filters or start the services.
     pub async fn as_services(&self) -> Result<Vec<Service>, DaggerError> {
         let query = self.selection.select("asServices");
         let query = query.select("id");
@@ -2118,7 +2118,7 @@ impl Artifacts {
     }
     /// Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.
     /// The scheme is optional. The path may be a pattern; an empty path selects all artifacts.
-    /// An address that names nothing here selects nothing. An address under a module that failed to load keeps that module's load failure, so conversions such as asExpertise report the error instead of an empty result.
+    /// A module that failed to load keeps its load failure when the module could hold what the address selects, as with every filter (see Artifacts).
     ///
     /// # Arguments
     ///
