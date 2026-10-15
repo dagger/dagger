@@ -1359,6 +1359,50 @@ type Enumerable interface {
 	NthValue(i int, call *ResultCall) (AnyResult, error)
 }
 
+// valueEnumerable is an Enumerable that holds plain values rather than
+// results: its NthValue wraps an element in a detached result with a deep copy
+// of the list's call frame. Server.resolvePath reads the elements of such a
+// list directly when they're leaves of the query, since a leaf element needs
+// no result of its own, and copying the frame once per element is quadratic
+// when the call has a large list argument.
+type valueEnumerable interface {
+	Enumerable
+	valueEnumerable()
+}
+
+// leafValues returns the elements of a valueEnumerable as resolvePath would
+// render them as leaves of a query through NthValue: a null nullable is nil,
+// and a non-null one is its value.
+func leafValues(values valueEnumerable) ([]any, error) {
+	results := make([]any, values.Len())
+	for nth := 1; nth <= len(results); nth++ {
+		elem, err := values.Nth(nth)
+		if err != nil {
+			return nil, fmt.Errorf("nth %d: %w", nth, err)
+		}
+		results[nth-1] = leafValue(elem)
+	}
+	return results, nil
+}
+
+// leafValue returns an element of a valueEnumerable as a leaf (see
+// leafValues).
+func leafValue(elem Typed) Typed {
+	if elem == nil {
+		return nil
+	}
+	if derefable, ok := elem.(Derefable); ok {
+		inner, valid := derefable.Deref()
+		if !valid {
+			return nil
+		}
+		if inner != nil {
+			return inner
+		}
+	}
+	return elem
+}
+
 // Array is an array of GraphQL values.
 type ArrayInput[I Input] []I
 
@@ -1537,6 +1581,8 @@ func (arr Array[T]) NthValue(i int, call *ResultCall) (AnyResult, error) {
 	}
 	return newDetachedResult(elemCall, t), nil
 }
+
+func (Array[T]) valueEnumerable() {}
 
 type ResultArray[T Typed] []Result[T]
 
