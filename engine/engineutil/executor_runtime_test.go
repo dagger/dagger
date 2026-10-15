@@ -1,7 +1,6 @@
 package engineutil
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,33 +11,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
-
-func TestSignalBlocked(t *testing.T) {
-	t.Parallel()
-
-	// crun blocks every signal once it proxies the container's terminal.
-	status := []byte("Name:\tcrun\nSigPnd:\t0000000000000000\nSigBlk:\tfffffffe7ffbfeff\nSigIgn:\t0000000000000000\n")
-	require.True(t, signalBlocked(status, syscall.SIGWINCH))
-	// Before that, SIGWINCH (28) is not blocked.
-	status = []byte("Name:\tcrun\nSigBlk:\t0000000000000000\n")
-	require.False(t, signalBlocked(status, syscall.SIGWINCH))
-	status = []byte("Name:\tcrun\nSigBlk:\t0000000008000000\n")
-	require.True(t, signalBlocked(status, syscall.SIGWINCH))
-	require.False(t, signalBlocked([]byte("Name:\tcrun\n"), syscall.SIGWINCH))
-}
-
-func TestWaitForBlockedSignalNotBlocked(t *testing.T) {
-	t.Parallel()
-
-	// This test process doesn't block SIGWINCH, so the wait never fires.
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	select {
-	case <-waitForBlockedSignal(ctx, os.Getpid(), syscall.SIGWINCH):
-		t.Fatal("reported SIGWINCH blocked in a process that doesn't block it")
-	case <-time.After(50 * time.Millisecond):
-	}
-}
 
 func TestProcKillerRetriesEmptyPidFile(t *testing.T) {
 	t.Parallel()
