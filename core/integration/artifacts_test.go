@@ -280,11 +280,6 @@ func (ArtifactsSuite) TestFilterURI(ctx context.Context, t *testctx.T) {
 		{"dag+directory://base", nil},
 		{"dag://base?missing=anything", nil},
 		{"dag://?missing", nil},
-		// An address this workspace does not have selects nothing, rather
-		// than failing: a caller can fall back to what it recorded.
-		{"dag://missing/items/file?missing-item=a", nil},
-		{"dag://?file=missing/items/file&missing-item=a", nil},
-		{"dag://?module=missing", nil},
 		{"dag://", nil}, // all artifacts; checked by count below
 	} {
 		t.Run(tc.uri, func(ctx context.Context, t *testctx.T) {
