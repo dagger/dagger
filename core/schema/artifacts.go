@@ -739,7 +739,28 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			result.Entries = append(result.Entries, entry)
 		}
 	}
-	seenFailures := map[string]bool{}
+	for _, entry := range loadFailureArtifacts(parent, cfg, entrypoints, mods, failures) {
+		loaded = append(loaded, entry)
+		result.Entries = append(result.Entries, entry)
+	}
+	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
+	result.NameEntries()
+	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
+	if err := validateArtifactPaths(result.Entries); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// loadFailureArtifacts stands each module that failed to load up as a
+// <module>/load check, named like the module's artifacts would be.
+func loadFailureArtifacts(
+	parent dagql.ObjectResult[*core.Workspace],
+	cfg *workspace.Config,
+	entrypoints map[string]bool,
+	mods []dagql.ObjectResult[*core.Module],
+	failures []core.ModuleLoadFailure,
+) []*core.Artifact {
 	// An entrypoint's shorthand paths cannot start with another module's
 	// address name. Name every module the workspace has, not only those the
 	// include patterns loaded.
@@ -762,13 +783,13 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		addModule(failure.Name)
 	}
 	slices.Sort(moduleNames)
+	var entries []*core.Artifact
+	seen := map[string]bool{}
 	for _, failure := range failures {
-		if seenFailures[failure.Name] {
+		if seen[failure.Name] {
 			continue
 		}
-		seenFailures[failure.Name] = true
-		// The failure answers to its module's address name, as the
-		// module's artifacts would.
+		seen[failure.Name] = true
 		name := core.ArtifactTypeName(failure.Name)
 		// The loader reports whether the failed module is the entrypoint;
 		// the policy that names healthy entrypoints covers the rest.
@@ -776,20 +797,12 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			failure.Entrypoint = true
 			failure.Siblings = slices.DeleteFunc(slices.Clone(moduleNames), func(sibling string) bool { return sibling == name })
 		}
-		entry := &core.Artifact{
+		entries = append(entries, &core.Artifact{
 			ModuleName: failure.Name, Path: []string{name, "load"}, DimensionKeys: []*core.ArtifactDimensionKey{},
 			Directives: []string{"check"}, TypeName: "Check", LoadFailure: &failure, Workspace: parent,
-		}
-		loaded = append(loaded, entry)
-		result.Entries = append(result.Entries, entry)
+		})
 	}
-	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
-	result.NameEntries()
-	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
-	if err := validateArtifactPaths(result.Entries); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return entries
 }
 
 func (s *workspaceSchema) sdkArtifactNodes(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], cfg *workspace.Config, entrypoints map[string]bool) ([]*core.ModTreeNode, error) {
