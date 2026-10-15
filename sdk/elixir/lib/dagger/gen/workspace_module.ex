@@ -14,9 +14,11 @@ defmodule Dagger.WorkspaceModule do
   defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
-
+  @deprecated """
+  Use main.
+  """
   @doc """
-  Whether the module is the workspace entrypoint (functions aliased to Query root).
+  Compatibility alias for main.
   """
   @spec entrypoint(t()) :: {:ok, boolean()} | {:error, term()}
   def entrypoint(%__MODULE__{} = workspace_module) do
@@ -44,6 +46,17 @@ defmodule Dagger.WorkspaceModule do
   def id(%__MODULE__{} = workspace_module) do
     query_builder =
       workspace_module.query_builder |> QB.select("id")
+
+    Client.execute(workspace_module.client, query_builder)
+  end
+
+  @doc """
+  Whether the module is the workspace main (functions aliased to Query root).
+  """
+  @spec main(t()) :: {:ok, boolean()} | {:error, term()}
+  def main(%__MODULE__{} = workspace_module) do
+    query_builder =
+      workspace_module.query_builder |> QB.select("main")
 
     Client.execute(workspace_module.client, query_builder)
   end

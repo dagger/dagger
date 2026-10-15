@@ -132,16 +132,16 @@ func TestResolveSDKModuleName(t *testing.T) {
 		wantErr  string
 	}{
 		{
-			name: "SDK-selected path retains the entrypoint name",
+			name: "SDK-selected path retains the main name",
 			modules: map[string]workspace.ModuleEntry{
-				"shop-dev": {Source: "../services/api", Entrypoint: true},
+				"shop-dev": {Source: "../services/api", Main: true},
 			},
 			want: "shop-dev",
 		},
 		{
-			name: "explicit name wins over entrypoint and path",
+			name: "explicit name wins over main and path",
 			modules: map[string]workspace.ModuleEntry{
-				"shop-dev": {Source: "../services/api", Entrypoint: true},
+				"shop-dev": {Source: "../services/api", Main: true},
 			},
 			override: "billing", want: "billing",
 		},
@@ -150,28 +150,28 @@ func TestResolveSDKModuleName(t *testing.T) {
 			want: "api",
 		},
 		{
-			name: "aliases and unrelated entrypoints do not supply the name",
+			name: "aliases and unrelated mains do not supply the name",
 			modules: map[string]workspace.ModuleEntry{
 				"alias":  {Source: "../services/api"},
-				"other":  {Source: "other", Entrypoint: true},
-				"remote": {Source: "github.com/acme/api", Entrypoint: true},
+				"other":  {Source: "other", Main: true},
+				"remote": {Source: "github.com/acme/api", Main: true},
 			},
 			want: "api",
 		},
 		{
 			name: "root-relative installation matches",
 			modules: map[string]workspace.ModuleEntry{
-				"shop-dev": {Source: "/apps/services/./api", Entrypoint: true},
+				"shop-dev": {Source: "/apps/services/./api", Main: true},
 			},
 			want: "shop-dev",
 		},
 		{
-			name: "ambiguous entrypoints require an override",
+			name: "ambiguous mains require an override",
 			modules: map[string]workspace.ModuleEntry{
-				"second": {Source: "../services/api", Entrypoint: true},
-				"first":  {Source: "../services/api", Entrypoint: true},
+				"second": {Source: "../services/api", Main: true},
+				"first":  {Source: "../services/api", Main: true},
 			},
-			wantErr: `multiple entrypoint names ["first" "second"]`,
+			wantErr: `multiple workspace main names ["first" "second"]`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -191,10 +191,10 @@ func TestResolveSDKModuleName(t *testing.T) {
 }
 
 func TestPlanSDKModuleInitInstall(t *testing.T) {
-	t.Run("default name and path install an entrypoint", func(t *testing.T) {
+	t.Run("default name and path install an main", func(t *testing.T) {
 		cfg := &workspace.Config{}
 		require.NoError(t, planSDKModuleInitInstall(cfg, ".", "demo", ".dagger/modules/demo", false, false, nil, nil))
-		require.Equal(t, workspace.ModuleEntry{Source: ".dagger/modules/demo", Entrypoint: true}, cfg.Modules["demo"])
+		require.Equal(t, workspace.ModuleEntry{Source: ".dagger/modules/demo", Main: true}, cfg.Modules["demo"])
 	})
 
 	t.Run("explicit name installs a namespaced module", func(t *testing.T) {
@@ -209,30 +209,30 @@ func TestPlanSDKModuleInitInstall(t *testing.T) {
 		require.Empty(t, cfg.Modules)
 	})
 
-	t.Run("repeated default init promotes and preserves its entrypoint", func(t *testing.T) {
+	t.Run("repeated default init promotes and preserves its main", func(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"demo": {Source: ".dagger/modules/demo"},
 		}}
 		require.NoError(t, planSDKModuleInitInstall(cfg, ".", "demo", ".dagger/modules/demo", false, false, nil, nil))
-		require.True(t, cfg.Modules["demo"].Entrypoint)
+		require.True(t, cfg.Modules["demo"].Main)
 		require.NoError(t, planSDKModuleInitInstall(cfg, ".", "demo", ".dagger/modules/demo", false, false, nil, nil))
-		require.True(t, cfg.Modules["demo"].Entrypoint)
+		require.True(t, cfg.Modules["demo"].Main)
 	})
 
-	t.Run("explicit init does not demote an entrypoint", func(t *testing.T) {
+	t.Run("explicit init does not demote an main", func(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
-			"demo": {Source: ".dagger/modules/demo", Entrypoint: true},
+			"demo": {Source: ".dagger/modules/demo", Main: true},
 		}}
 		require.NoError(t, planSDKModuleInitInstall(cfg, ".", "demo", ".dagger/modules/demo", false, true, nil, nil))
-		require.True(t, cfg.Modules["demo"].Entrypoint)
+		require.True(t, cfg.Modules["demo"].Main)
 	})
 
-	t.Run("different entrypoint requires an explicit name", func(t *testing.T) {
+	t.Run("different main requires an explicit name", func(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
-			"existing": {Source: "existing", Entrypoint: true},
+			"existing": {Source: "existing", Main: true},
 		}}
 		err := planSDKModuleInitInstall(cfg, ".", "demo", ".dagger/modules/demo", false, false, nil, nil)
-		require.EqualError(t, err, `workspace already has entrypoint module "existing"; pass --name to initialize an additional namespaced module`)
+		require.EqualError(t, err, `workspace already has main module "existing"; pass --name to initialize an additional namespaced module`)
 		require.NotContains(t, cfg.Modules, "demo")
 	})
 }
@@ -423,7 +423,7 @@ func TestWorkspaceSDKEntryPaths(t *testing.T) {
 	scope := sdkEntry.Scopes[".dagger/modules/demo"]
 	scope.Name = ""
 	sdkEntry.Scopes[".dagger/modules/demo"] = scope
-	cfg.Modules["demo-dev"] = workspace.ModuleEntry{Source: ".dagger/modules/demo", Entrypoint: true}
+	cfg.Modules["demo-dev"] = workspace.ModuleEntry{Source: ".dagger/modules/demo", Main: true}
 	sdk, err = workspaceSDKFromEntry(&core.Workspace{}, cfg, "apps/demo", "custom", moduleEntry)
 	require.NoError(t, err)
 	require.Equal(t, "demo-dev", sdk.Modules[0].Name)
@@ -645,50 +645,50 @@ func TestValidateSDKModuleDestination(t *testing.T) {
 func TestPlanSDKModuleInitInstallControls(t *testing.T) {
 	yes, no := true, false
 	for _, tc := range []struct {
-		name                        string
-		path                        bool
-		install, entrypoint         *bool
-		wantInstall, wantEntrypoint bool
-		wantError                   string
+		name                  string
+		path                  bool
+		install, main         *bool
+		wantInstall, wantMain bool
+		wantError             string
 	}{
 		{name: "custom path explicit install", path: true, install: &yes, wantInstall: true},
-		{name: "custom path explicit entrypoint", path: true, entrypoint: &yes, wantInstall: true, wantEntrypoint: true},
+		{name: "custom path explicit main", path: true, main: &yes, wantInstall: true, wantMain: true},
 		{name: "no install", install: &no},
-		{name: "no entrypoint", entrypoint: &no, wantInstall: true},
-		{name: "explicit replacement", entrypoint: &yes, wantInstall: true, wantEntrypoint: true},
-		{name: "explicit install keeps implicit conflict", install: &yes, wantError: "workspace already has entrypoint"},
-		{name: "contradictory controls", install: &no, entrypoint: &yes, wantError: "--install=false cannot be combined with --entrypoint"},
+		{name: "no main", main: &no, wantInstall: true},
+		{name: "explicit replacement", main: &yes, wantInstall: true, wantMain: true},
+		{name: "explicit install keeps implicit conflict", install: &yes, wantError: "workspace already has main"},
+		{name: "contradictory controls", install: &no, main: &yes, wantError: "--install=false cannot be combined with --main"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{"existing": {Source: "existing", Entrypoint: true}}}
-			err := planSDKModuleInitInstall(cfg, ".", "demo", "custom", tc.path, false, tc.install, tc.entrypoint)
+			cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{"existing": {Source: "existing", Main: true}}}
+			err := planSDKModuleInitInstall(cfg, ".", "demo", "custom", tc.path, false, tc.install, tc.main)
 			if tc.wantError != "" {
 				require.ErrorContains(t, err, tc.wantError)
-				require.Equal(t, map[string]workspace.ModuleEntry{"existing": {Source: "existing", Entrypoint: true}}, cfg.Modules)
+				require.Equal(t, map[string]workspace.ModuleEntry{"existing": {Source: "existing", Main: true}}, cfg.Modules)
 				return
 			}
 			require.NoError(t, err)
 			entry, installed := cfg.Modules["demo"]
 			require.Equal(t, tc.wantInstall, installed)
-			require.Equal(t, tc.wantEntrypoint, entry.Entrypoint)
-			require.Equal(t, !tc.wantEntrypoint, cfg.Modules["existing"].Entrypoint)
+			require.Equal(t, tc.wantMain, entry.Main)
+			require.Equal(t, !tc.wantMain, cfg.Modules["existing"].Main)
 		})
 	}
-	t.Run("failed install leaves old entrypoint selected", func(t *testing.T) {
+	t.Run("failed install leaves old main selected", func(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
-			"existing": {Source: "existing", Entrypoint: true}, "demo": {Source: "other"},
+			"existing": {Source: "existing", Main: true}, "demo": {Source: "other"},
 		}}
 		require.Error(t, planSDKModuleInitInstall(cfg, ".", "demo", "custom", true, true, nil, &yes))
-		require.True(t, cfg.Modules["existing"].Entrypoint)
-		require.False(t, cfg.Modules["demo"].Entrypoint)
+		require.True(t, cfg.Modules["existing"].Main)
+		require.False(t, cfg.Modules["demo"].Main)
 	})
 }
 
 func TestSDKModuleInitRejectsContradictoryControlsBeforeWorkspaceLoad(t *testing.T) {
 	s := &workspaceSchema{}
 	_, err := s.withSDKModuleInitialized(t.Context(), dagql.ObjectResult[*core.Workspace]{}, sdkModuleInitArgs{
-		Install:    dagql.Opt(dagql.Boolean(false)),
-		Entrypoint: dagql.Opt(dagql.Boolean(true)),
+		Install: dagql.Opt(dagql.Boolean(false)),
+		Main:    dagql.Opt(dagql.Boolean(true)),
 	})
-	require.EqualError(t, err, "--install=false cannot be combined with --entrypoint")
+	require.EqualError(t, err, "--install=false cannot be combined with --main")
 }

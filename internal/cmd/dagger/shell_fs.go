@@ -59,7 +59,7 @@ func (h *shellCallHandler) ChangeDir(ctx context.Context, path string) error {
 
 	var subpath string
 
-	def, cfg, err := h.maybeLoadModule(ctx, path, initModuleOpts{entrypoint: true})
+	def, cfg, err := h.maybeLoadModule(ctx, path, initModuleOpts{main: true})
 	if err != nil {
 		return err
 	}

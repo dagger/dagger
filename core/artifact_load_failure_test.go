@@ -182,7 +182,7 @@ func TestArtifactLoadFailureDimensionAlternatives(t *testing.T) {
 	}
 }
 
-func TestArtifactEntrypointLoadFailure(t *testing.T) {
+func TestArtifactMainLoadFailure(t *testing.T) {
 	app := loadFailureArtifact("app")
 	app.LoadFailure.Entrypoint = true
 	app.LoadFailure.Siblings = []string{"coll"}
@@ -192,7 +192,7 @@ func TestArtifactEntrypointLoadFailure(t *testing.T) {
 	}}
 	all.AllDimensions = all.DimensionDefinitions()
 	for uri, want := range map[string][]string{
-		// A shorthand path can belong to the entrypoint...
+		// A shorthand path can belong to the main...
 		"dag://worker":            {"app/load"},
 		"dag://app/worker":        {"app/load"},
 		"dag://?expertise=worker": {"app/load"},

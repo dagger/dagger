@@ -20373,9 +20373,32 @@
             {
               "defaultValue": null,
               "deprecationReason": null,
-              "description": "Install the module as the entrypoint, promoting its main-object methods onto the Query root",
+              "description": "Install the module as the workspace main, promoting its main-object methods onto the Query root",
               "directives": [],
               "isDeprecated": false,
+              "name": "main",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              }
+            },
+            {
+              "defaultValue": null,
+              "deprecationReason": "Use main.",
+              "description": "Compatibility alias for main.",
+              "directives": [
+                {
+                  "args": [
+                    {
+                      "name": "reason",
+                      "value": "\"Use main.\""
+                    }
+                  ],
+                  "name": "deprecated"
+                }
+              ],
+              "isDeprecated": true,
               "name": "entrypoint",
               "type": {
                 "kind": "SCALAR",
@@ -23141,7 +23164,7 @@
             {
               "defaultValue": null,
               "deprecationReason": null,
-              "description": "Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).\n\nCore types (Container, Directory, etc.) are kept so return types and method chaining still work.",
+              "description": "Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).\n\nCore types (Container, Directory, etc.) are kept so return types and method chaining still work.",
               "directives": [],
               "isDeprecated": false,
               "name": "hideCore",

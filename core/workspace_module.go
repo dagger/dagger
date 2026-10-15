@@ -12,9 +12,9 @@ import (
 
 // WorkspaceModule describes a module entry in the workspace config.
 type WorkspaceModule struct {
-	Name       string `field:"true" doc:"The module name."`
-	Entrypoint bool   `field:"true" doc:"Whether the module is the workspace entrypoint (functions aliased to Query root)."`
-	Source     string `field:"true" doc:"The module source path."`
+	Name   string `field:"true" doc:"The module name."`
+	Main   bool   `field:"true" doc:"Whether the module is the workspace main (functions aliased to Query root)."`
+	Source string `field:"true" doc:"The module source path."`
 }
 
 var _ dagql.PersistedObject = (*WorkspaceModule)(nil)

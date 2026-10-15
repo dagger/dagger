@@ -11,6 +11,7 @@ import (
 	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
 
@@ -101,8 +102,8 @@ func TestModuleSDKCommandSelectionReadsStrippedFlags(t *testing.T) {
 		{args: []string{"--auto-apply", "module", "init", "go", "--name", "sdk-smoke", "--path", ".dagger/modules/sdk-smoke"}, wantSDK: "go"},
 		{args: []string{"module", "init", "--name", "demo", "go"}, wantSDK: "go"},
 		{args: []string{"mod", "init", "--install=false", "go"}, wantSDK: "go"},
-		{args: []string{"mod", "init", "--entrypoint=false", "go"}, wantSDK: "go"},
-		{args: []string{"mod", "init", "go", "--install", "--entrypoint"}, wantSDK: "go"},
+		{args: []string{"mod", "init", "--main=false", "go"}, wantSDK: "go"},
+		{args: []string{"mod", "init", "go", "--install", "--main"}, wantSDK: "go"},
 		{args: []string{"mod", "init", "--no-apply", "go"}, wantSDK: "go"},
 		{args: []string{"module", "init", "go", "--starter", "empty"}, wantSDK: "go"},
 		{args: []string{"module", "client", "add", "database", "--sdk=go"}},
@@ -510,24 +511,58 @@ func TestModuleInitHelpWithoutInstalledSDKs(t *testing.T) {
 func TestModuleInitControlMessages(t *testing.T) {
 	yes, no := true, false
 	for _, tc := range []struct {
-		name, path          string
-		explicitName        bool
-		install, entrypoint *bool
-		want                string
+		name, path    string
+		explicitName  bool
+		install, main *bool
+		want          string
 	}{
-		{name: "default", want: "Automatically installed module \"demo\" as entrypoint.\n"},
+		{name: "default", want: "Automatically installed module \"demo\" as the workspace main.\n"},
 		{name: "named", explicitName: true, want: "Automatically installed module \"demo\".\n"},
 		{name: "custom path", path: "custom", want: "Initialized module custom\nCustom path; module was not installed.\n"},
 		{name: "custom install", path: "custom", install: &yes, want: "Installed module \"demo\".\n"},
-		{name: "explicit entrypoint", path: "custom", entrypoint: &yes, want: "Installed module \"demo\" as entrypoint.\n"},
-		{name: "explicit install automatic entrypoint", install: &yes, want: "Installed module \"demo\".\nAutomatically selected module \"demo\" as entrypoint.\n"},
-		{name: "disable entrypoint", entrypoint: &no, want: "Automatically installed module \"demo\".\n"},
+		{name: "explicit main", path: "custom", main: &yes, want: "Installed module \"demo\" as the workspace main.\n"},
+		{name: "explicit install automatic main", install: &yes, want: "Installed module \"demo\".\nAutomatically selected module \"demo\" as the workspace main.\n"},
+		{name: "disable main", main: &no, want: "Automatically installed module \"demo\".\n"},
 		{name: "disable install", install: &no, want: "Initialized module \"demo\".\nModule was not installed.\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			plan, err := workspace.PlanModuleInit(tc.path != "", tc.explicitName, tc.install, tc.entrypoint)
+			plan, err := workspace.PlanModuleInit(tc.path != "", tc.explicitName, tc.install, tc.main)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, moduleInitSuccessMessage("demo", tc.path, plan))
+		})
+	}
+}
+
+func TestModuleInitEntrypointFlagCompatibility(t *testing.T) {
+	flag := moduleInitCmd.PersistentFlags().Lookup("entrypoint")
+	require.NotNil(t, flag)
+	require.Equal(t, "use --main instead", flag.Deprecated)
+
+	yes, no := true, false
+	for _, tc := range []struct {
+		name string
+		args []string
+		want *bool
+		err  string
+	}{
+		{name: "omitted"},
+		{name: "legacy true", args: []string{"--entrypoint"}, want: &yes},
+		{name: "legacy false", args: []string{"--entrypoint=false"}, want: &no},
+		{name: "canonical", args: []string{"--main"}, want: &yes},
+		{name: "both", args: []string{"--main", "--entrypoint"}, err: "cannot use both --main and deprecated --entrypoint"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+			flags.Bool("main", false, "")
+			flags.Bool("entrypoint", false, "")
+			require.NoError(t, flags.Parse(tc.args))
+			got, err := moduleInitMainControl(flags)
+			if tc.err != "" {
+				require.EqualError(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -551,15 +586,15 @@ func TestModuleInitNameFromWorkspace(t *testing.T) {
 }
 
 func TestModuleInitControlPresence(t *testing.T) {
-	for _, arg := range []string{"", "--install", "--install=false", "--entrypoint", "--entrypoint=false"} {
+	for _, arg := range []string{"", "--install", "--install=false", "--main", "--main=false"} {
 		t.Run(arg, func(t *testing.T) {
 			cmd := &cobra.Command{}
 			cmd.Flags().Bool("install", false, "")
-			cmd.Flags().Bool("entrypoint", false, "")
+			cmd.Flags().Bool("main", false, "")
 			if arg != "" {
 				require.NoError(t, cmd.ParseFlags([]string{arg}))
 			}
-			for _, flag := range []string{"install", "entrypoint"} {
+			for _, flag := range []string{"install", "main"} {
 				value := moduleInitControl(cmd.Flags(), flag)
 				if !strings.HasPrefix(arg, "--"+flag) {
 					require.Nil(t, value)
@@ -573,7 +608,7 @@ func TestModuleInitControlPresence(t *testing.T) {
 }
 
 func TestModuleInitControlsRespectSDKFlagPosition(t *testing.T) {
-	for _, flag := range []string{"install", "entrypoint"} {
+	for _, flag := range []string{"install", "main"} {
 		t.Run(flag, func(t *testing.T) {
 			root := &cobra.Command{Use: "dagger", TraverseChildren: rootCmd.TraverseChildren}
 			module := &cobra.Command{Use: "module"}

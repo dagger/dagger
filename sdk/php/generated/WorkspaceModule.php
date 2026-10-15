@@ -23,6 +23,15 @@ class WorkspaceModule extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
+     * Compatibility alias for main.
+     */
+    public function entrypoint(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('entrypoint');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'entrypoint');
+    }
+
+    /**
      * List constructor-backed settings for this module.
      */
     public function settings(): array
@@ -50,12 +59,12 @@ class WorkspaceModule extends Client\AbstractObject implements Client\IdAble, No
     }
 
     /**
-     * Whether the module is the workspace entrypoint (functions aliased to Query root).
+     * Whether the module is the workspace main (functions aliased to Query root).
      */
-    public function entrypoint(): bool
+    public function main(): bool
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('entrypoint');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'entrypoint');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('main');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'main');
     }
 
     /**

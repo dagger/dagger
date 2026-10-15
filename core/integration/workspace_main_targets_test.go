@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func (WorkspaceSuite) TestEntrypointTargetNames(ctx context.Context, t *testctx.T) {
+func (WorkspaceSuite) TestMainTargetNames(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := workspaceBase(t, c).WithNewFile("dagger.toml", `
 [modules.app]
 source = "app"
-entrypoint = true
+main = true
 
 [modules.other]
 source = "other"
@@ -75,7 +75,7 @@ source = "other"
 				require.ElementsMatch(t, want, strings.Fields(out), strings.Join(args, " "))
 			}
 
-			ordinary := base.WithNewFile("dagger.toml", strings.Replace(config, "entrypoint = true", "entrypoint = false", 1))
+			ordinary := base.WithNewFile("dagger.toml", strings.Replace(config, "main = true", "main = false", 1))
 			out, err := ordinary.With(daggerNonNestedExec(test.command, "-l", "-f=link", test.target)).Stdout(ctx)
 			require.NoError(t, err)
 			require.NotContains(t, out, test.target)
@@ -89,7 +89,7 @@ source = "other"
 		})
 	}
 
-	t.Run("caller skip only excludes the entrypoint", func(ctx context.Context, t *testctx.T) {
+	t.Run("caller skip only excludes the main", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerNonNestedExec("check", "-l", "-f=link", "--generated=false", "--skip=verify")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "dag+check://?check=other/verify\n", out)
@@ -102,7 +102,7 @@ source = "other"
 		require.Equal(t, "dag+check://?check=verify\n", out)
 	})
 
-	t.Run("value workspace uses its own entrypoint", func(ctx context.Context, t *testctx.T) {
+	t.Run("value workspace uses its own main", func(ctx context.Context, t *testctx.T) {
 		ws := base.Directory("/work").AsWorkspace()
 		checks, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
 		require.NoError(t, err)
@@ -111,13 +111,13 @@ source = "other"
 		require.NoError(t, err)
 		require.Equal(t, "dag://?check=verify", name)
 
-		changed := ws.WithNewFile("dagger.toml", strings.Replace(config, "entrypoint = true", "entrypoint = false", 1))
+		changed := ws.WithNewFile("dagger.toml", strings.Replace(config, "main = true", "main = false", 1))
 		checks, err = changed.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{"verify"}}).FilterTypes([]string{"Check"}).Items(ctx)
 		require.NoError(t, err)
 		require.Empty(t, checks)
 	})
 
-	t.Run("run the entrypoint generator only", func(ctx context.Context, t *testctx.T) {
+	t.Run("run the main generator only", func(ctx context.Context, t *testctx.T) {
 		generated := base.With(daggerNonNestedExec("generate", "files", "-y"))
 		out, err := generated.CombinedOutput(ctx)
 		require.NoError(t, err, out)
@@ -131,7 +131,7 @@ source = "other"
 		require.False(t, exists)
 	})
 
-	t.Run("run the entrypoint check only", func(ctx context.Context, t *testctx.T) {
+	t.Run("run the main check only", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerNonNestedExec("check", "verify", "--generated=false")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.NotContains(t, out, "app/verify")

@@ -5,7 +5,7 @@ package core
 // module, and a workspace-backed module smoke test.
 //
 // See also:
-// - module_loading_test.go: current-directory module nomination and entrypoints.
+// - module_loading_test.go: current-directory module nomination and mains.
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func TestListen(t *testing.T) {
 }
 
 func (ListenSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
-	t.Run("serves explicit workspace entrypoint", func(ctx context.Context, t *testctx.T) {
+	t.Run("serves explicit workspace main", func(ctx context.Context, t *testctx.T) {
 		workspaceDir := t.TempDir()
 		initGitRepo(ctx, t, workspaceDir)
 		copyTestdataFixture(ctx, t, workspaceDir, "workspaces", "listen-greeter")

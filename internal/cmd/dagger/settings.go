@@ -53,12 +53,12 @@ query WorkspaceModuleSettings($module: String!) {
 `
 }
 
-const workspaceEntrypointQuery = `
-query WorkspaceEntrypoint {
+const workspaceMainQuery = `
+query WorkspaceMain {
   currentWorkspace {
     modules {
       name
-      entrypoint
+      main
     }
   }
 }
@@ -192,7 +192,7 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 				return err
 			}
 			if values == nil {
-				value, err = normalizeEntrypointFunctionRef(ctx, engineClient.Dagger(), setting, value)
+				value, err = normalizeMainFunctionRef(ctx, engineClient.Dagger(), setting, value)
 				if err != nil {
 					return err
 				}
@@ -260,11 +260,11 @@ func workspaceSettingDisplayValue(setting workspaceSetting) string {
 	return setting.DefaultValue + " (default)"
 }
 
-// normalizeEntrypointFunctionRef rewrites a short-form entrypoint function
+// normalizeMainFunctionRef rewrites a short-form main function
 // reference ("image") to the DAG address the config stores
 // ("dag://provider/image"). Only object-typed settings are candidates, so a
 // string setting whose value matches a function name is left alone.
-func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, setting workspaceSetting, value string) (string, error) {
+func normalizeMainFunctionRef(ctx context.Context, dag *dagger.Client, setting workspaceSetting, value string) (string, error) {
 	if !setting.IsObject || !workspacepkg.IsShortFormModuleRef(value) {
 		return value, nil
 	}
@@ -272,22 +272,22 @@ func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, set
 	var modules struct {
 		CurrentWorkspace struct {
 			Modules []struct {
-				Name       string
-				Entrypoint bool
+				Name string
+				Main bool
 			}
 		}
 	}
-	if err := dag.Do(ctx, &dagger.Request{Query: workspaceEntrypointQuery}, &dagger.Response{Data: &modules}); err != nil {
+	if err := dag.Do(ctx, &dagger.Request{Query: workspaceMainQuery}, &dagger.Response{Data: &modules}); err != nil {
 		return "", err
 	}
-	entrypoint := ""
+	main := ""
 	for _, module := range modules.CurrentWorkspace.Modules {
-		if module.Entrypoint {
-			entrypoint = module.Name
+		if module.Main {
+			main = module.Name
 			break
 		}
 	}
-	if entrypoint == "" {
+	if main == "" {
 		return value, nil
 	}
 
@@ -300,14 +300,14 @@ func normalizeEntrypointFunctionRef(ctx context.Context, dag *dagger.Client, set
 	}
 	if err := dag.Do(ctx, &dagger.Request{
 		Query:     workspaceModuleFunctionsQuery,
-		Variables: map[string]any{"module": entrypoint},
+		Variables: map[string]any{"module": main},
 	}, &dagger.Response{Data: &functions}); err != nil {
 		return "", err
 	}
 	want := gqlFieldName(value)
 	for _, fn := range functions.CurrentWorkspace.Module.Functions {
 		if fn == want {
-			return "dag://" + entrypoint + "/" + value, nil
+			return "dag://" + main + "/" + value, nil
 		}
 	}
 	return value, nil

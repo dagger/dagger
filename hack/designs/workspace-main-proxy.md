@@ -1,10 +1,10 @@
-# Entrypoint Proxy: Canonical and Sugared Servers
+# Main Proxy: Canonical and Sugared Servers
 
 ## Overview
 
-Workspace entrypoint modules promote their primary type's fields to `Query`
+Workspace main modules promote their primary type's fields to `Query`
 so users can write `dagger call build` instead of `dagger call myModule
-build`. These promotions are called **entrypoint proxies**.
+build`. These promotions are called **main proxies**.
 
 Proxies can shadow core API fields (`container`, `file`, `directory`) or
 even the module's own constructor (a module named `test` with a method
@@ -12,14 +12,14 @@ even the module's own constructor (a module named `test` with a method
 instances that share a single `SessionCache`:
 
 - **Canonical**: All core types, module types, constructors, and
-  `loadXxxFromID` fields. No entrypoint proxies. The real namespace.
+  `loadXxxFromID` fields. No main proxies. The real namespace.
 
 - **Sugared (client-facing)**: Everything the canonical server has, PLUS
-  entrypoint proxy fields and the `with` field on `Query`. Served to
+  main proxy fields and the `with` field on `Query`. Served to
   clients over HTTP and used for schema introspection.
 
 The sugared server's `Canonical()` method returns the canonical server.
-For servers without entrypoints, `Canonical()` returns the receiver
+For servers without mains, `Canonical()` returns the receiver
 itself (only one server is built).
 
 ## Key Invariants
@@ -44,7 +44,7 @@ itself (only one server is built).
 
 ## Constructor Args: The `with` Field
 
-When an entrypoint module has a constructor with arguments, a `with`
+When an main module has a constructor with arguments, a `with`
 field is installed on `Query`. It takes the constructor's args and
 returns a new `Query` with those args stored in `Query.ConstructorArgs`.
 
@@ -123,10 +123,10 @@ access and cached.
 `SchemaBuilder.lazilyLoadSchema`:
 
 ```text
-hasEntrypoint?
+hasMain?
 ├─ no  → buildSchema(mods) → single server (canonical == self)
-└─ yes → buildSchema(mods with Entrypoint:false) → canonical
-         buildSchema(mods with real Entrypoint flags) → sugared
+└─ yes → buildSchema(mods with Main:false) → canonical
+         buildSchema(mods with real Main flags) → sugared
          sugared.SetCanonical(canonical)
 ```
 
@@ -152,8 +152,8 @@ Three convenience methods control what gets hidden:
 
 ## Proxy Installation
 
-`ModuleObject.installEntrypointMethods` in `core/object.go` runs during
-`Install` when `opts.Entrypoint` is true:
+`ModuleObject.installMainMethods` in `core/object.go` runs during
+`Install` when `opts.Main` is true:
 
 1. **Install `with` field** (if constructor has args): Takes constructor
    args, stores them on `Query.ConstructorArgs`, returns the new Query.
@@ -174,7 +174,7 @@ fields).
 
 ## Directive Reconstruction
 
-When the CLI introspects entrypoint proxy fields, it reads arg metadata
+When the CLI introspects main proxy fields, it reads arg metadata
 through `introspectionObjectToTypeDef` in `core/schema/coremod.go`.
 This path reconstructs `FunctionArg` from introspection fields and reads
 back custom directives (`@defaultPath`, `@defaultAddress`,

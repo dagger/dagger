@@ -7,7 +7,7 @@ package core
 // See also:
 // - workspace_selection_test.go: explicit workspace selection.
 // - contextual_workspace_test.go: workspace find-up from the current directory.
-// - module_loading_test.go: module source selection and entrypoint arbitration.
+// - module_loading_test.go: module source selection and workspace main arbitration.
 
 import (
 	"context"

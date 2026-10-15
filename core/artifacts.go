@@ -60,7 +60,7 @@ func (*ArtifactPath) TypeDescription() string {
 type Artifact struct {
 	ModuleName     string `field:"true" doc:"The installed module name."`
 	DimensionNames map[string]string
-	Path           []string                `field:"true" doc:"Ordered, literal fields to follow. Entrypoint targets use their shorthand."`
+	Path           []string                `field:"true" doc:"Ordered, literal fields to follow. Workspace main targets use their shorthand."`
 	DimensionKeys  []*ArtifactDimensionKey `field:"true" doc:"The module name, collection keys, and full path key in the artifact type dimension."`
 	TypeName       string
 	Directives     []string `field:"true" doc:"The directives carried by this artifact."`
@@ -591,7 +591,7 @@ func (a *Artifacts) FilterPath(path []string) *Artifacts {
 // FilterPattern keeps artifacts whose path matches the pattern, with the
 // same glob rules as include patterns. A literal pattern matches one path
 // exactly. The qualified path with the module name also matches, so an
-// entrypoint artifact answers to both its shorthand and its full path.
+// workspace main artifact answers to both its shorthand and its full path.
 func (a *Artifacts) FilterPattern(pattern string) (*Artifacts, error) {
 	pattern = artifactPattern(pattern)
 	var matchErr error
@@ -885,7 +885,7 @@ func (a *Artifacts) noArtifactMatches(addr *dagaddress.Address) error {
 // BoundArtifacts discovers the artifacts of a module rooted at a live value of
 // one of its objects rather than a fresh construction of its main object:
 // evaluating one selects its path from root. Paths are qualified with the
-// module name, as a workspace module's are, but never use entrypoint
+// module name, as a workspace module's are, but never use workspace main
 // shorthand. Unlike workspace discovery, a constructor that requires
 // arguments does not hide the tree, since it is never called.
 func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root dagql.AnyObjectResult) (*Artifacts, error) {

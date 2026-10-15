@@ -118,7 +118,7 @@ defaults_from_dotenv = true
 
 [modules.greeter]
 source = "modules/greeter"
-entrypoint = true
+main = true
 legacy-default-path = true
 
 [modules.greeter.settings]
@@ -135,7 +135,7 @@ greeting = "hola"
 	require.True(t, cfg.DefaultsFromDotEnv)
 	require.Equal(t, ModuleEntry{
 		Source:            "modules/greeter",
-		Entrypoint:        true,
+		Main:              true,
 		LegacyDefaultPath: true,
 		Settings: map[string]any{
 			"enabled":  true,
@@ -156,6 +156,48 @@ greeting = "hola"
 	require.Empty(t, cfg.Env["local"].Modules)
 }
 
+func TestLegacyEntrypointConfigCompatibility(t *testing.T) {
+	t.Parallel()
+
+	legacy := []byte(`[modules.greeter]
+source = "modules/greeter"
+entrypoint = true # retained until the config is edited
+`)
+	cfg, err := ParseConfig(legacy)
+	require.NoError(t, err)
+	require.True(t, cfg.Modules["greeter"].Main)
+
+	warnings, err := CheckConfigFields(legacy, "dagger.toml")
+	require.NoError(t, err)
+	require.Equal(t, []string{"dagger.toml:3:1: deprecated field modules.greeter.entrypoint is accepted for compatibility; use modules.greeter.main"}, warnings)
+
+	value, err := ReadConfigValue(legacy, "modules.greeter.main")
+	require.NoError(t, err)
+	require.Equal(t, "true", value)
+	value, err = ReadConfigValue(legacy, "modules.greeter.entrypoint")
+	require.NoError(t, err)
+	require.Equal(t, "true", value)
+
+	updated, err := UpdateConfigBytes(legacy, cfg)
+	require.NoError(t, err)
+	require.Contains(t, string(updated), "main = true")
+	require.NotContains(t, string(updated), "entrypoint")
+
+	updated, err = WriteConfigValue(legacy, "modules.greeter.entrypoint", "false")
+	require.NoError(t, err)
+	require.Contains(t, string(updated), "main = false")
+	require.NotContains(t, string(updated), "entrypoint")
+}
+
+func TestLegacyEntrypointConfigRejectsAmbiguity(t *testing.T) {
+	_, err := ParseConfig([]byte(`[modules.greeter]
+source = "modules/greeter"
+main = true
+entrypoint = false
+`))
+	require.EqualError(t, err, `module "greeter" cannot set both main and deprecated entrypoint`)
+}
+
 func TestSerializeConfig(t *testing.T) {
 	t.Parallel()
 
@@ -168,7 +210,7 @@ func TestSerializeConfig(t *testing.T) {
 			},
 			"greeter": {
 				Source:            "modules/greeter",
-				Entrypoint:        true,
+				Main:              true,
 				LegacyDefaultPath: true,
 				Settings: map[string]any{
 					"tags":     []string{"main", "develop"},
@@ -201,7 +243,7 @@ defaults_from_dotenv = true
 
 [modules.greeter]
 source = "modules/greeter"
-entrypoint = true
+main = true
 legacy-default-path = true
 
 [modules.greeter.settings]
@@ -487,7 +529,7 @@ enabled = false
 	t.Run("missing boolean fields read as false defaults", func(t *testing.T) {
 		t.Parallel()
 
-		value, err := ReadConfigValue(data, "modules.greeter.entrypoint")
+		value, err := ReadConfigValue(data, "modules.greeter.main")
 		require.NoError(t, err)
 		require.Equal(t, "false", value)
 
@@ -577,7 +619,7 @@ func TestWriteConfigValue(t *testing.T) {
 
 		data, err := WriteConfigValue(nil, "modules.greeter.source", "modules/greeter")
 		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.entrypoint", "true")
+		data, err = WriteConfigValue(data, "modules.greeter.main", "true")
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "modules.greeter.settings.greeting", "hello")
 		require.NoError(t, err)
@@ -594,8 +636,8 @@ func TestWriteConfigValue(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, cfg.DefaultsFromDotEnv)
 		require.Equal(t, ModuleEntry{
-			Source:     "modules/greeter",
-			Entrypoint: true,
+			Source: "modules/greeter",
+			Main:   true,
 			Settings: map[string]any{
 				"count":    int64(42),
 				"greeting": "hello",
@@ -616,15 +658,15 @@ func TestWriteConfigValue(t *testing.T) {
 	t.Run("settings named after module bool fields keep their written value", func(t *testing.T) {
 		t.Parallel()
 
-		data, err := WriteConfigValue(nil, "modules.greeter.settings.entrypoint", "cmd/main.go")
+		data, err := WriteConfigValue(nil, "modules.greeter.settings.main", "cmd/main.go")
 		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "env.ci.modules.greeter.settings.entrypoint", "cmd/ci.go")
+		data, err = WriteConfigValue(data, "env.ci.modules.greeter.settings.main", "cmd/ci.go")
 		require.NoError(t, err)
 
 		cfg, err := ParseConfig(data)
 		require.NoError(t, err)
-		require.Equal(t, "cmd/main.go", cfg.Modules["greeter"].Settings["entrypoint"])
-		require.Equal(t, "cmd/ci.go", cfg.Env["ci"].Modules["greeter"].Settings["entrypoint"])
+		require.Equal(t, "cmd/main.go", cfg.Modules["greeter"].Settings["main"])
+		require.Equal(t, "cmd/ci.go", cfg.Env["ci"].Modules["greeter"].Settings["main"])
 	})
 
 	t.Run("bracketed values keep string handling instead of JSON parsing", func(t *testing.T) {
@@ -718,7 +760,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.EqualError(t, err, "cannot set \"modules.greeter\" directly; specify a field like modules.greeter.settings")
 
 		_, err = WriteConfigValue(nil, "modules.greeter.unknown", "value")
-		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: check, entrypoint, generate, legacy-default-path, pin, settings, source, up")
+		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: check, generate, legacy-default-path, main, pin, settings, source, up")
 
 		_, err = WriteConfigValue(nil, "ignore.path", "value")
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")
@@ -1149,7 +1191,7 @@ func TestDeleteConfigValue(t *testing.T) {
 	data := []byte(`# workspace config
 [modules.greeter]
 source = "modules/greeter"
-entrypoint = true
+main = true
 
 [modules.greeter.settings]
 greeting = "hello"
@@ -1215,13 +1257,13 @@ check-generated = false
 
 [modules.greeter]
 source = "modules/greeter"
-entrypoint = true
+main = true
 
 [modules.greeter.check]
 skip = ["slow"]
 `)
 
-		out, err := DeleteConfigValue(listData, "modules.greeter.entrypoint")
+		out, err := DeleteConfigValue(listData, "modules.greeter.main")
 		require.NoError(t, err)
 		out, err = DeleteConfigValue(out, "modules.greeter.check.skip")
 		require.NoError(t, err)
@@ -1234,12 +1276,12 @@ skip = ["slow"]
 
 		cfg, err := ParseConfig(out)
 		require.NoError(t, err)
-		require.False(t, cfg.Modules["greeter"].Entrypoint)
+		require.False(t, cfg.Modules["greeter"].Main)
 		require.Empty(t, cfg.Modules["greeter"].Check.Skip)
 		require.Empty(t, cfg.Ignore)
 		require.False(t, cfg.DefaultsFromDotEnv)
 		require.Nil(t, cfg.CheckGenerated)
-		require.NotContains(t, string(out), "entrypoint")
+		require.NotContains(t, string(out), "main")
 		require.NotContains(t, string(out), "check-generated")
 	})
 
@@ -1251,7 +1293,7 @@ defaults_from_dotenv = false
 
 [modules.greeter]
 source = "modules/greeter"
-entrypoint = false
+main = false
 `)
 
 		for _, tc := range []struct {
@@ -1260,7 +1302,7 @@ entrypoint = false
 		}{
 			{"ignore", "ignore"},
 			{"defaults_from_dotenv", "defaults_from_dotenv"},
-			{"modules.greeter.entrypoint", "entrypoint"},
+			{"modules.greeter.main", "main"},
 		} {
 			out, err := DeleteConfigValue(zeroData, tc.key)
 			require.NoError(t, err, tc.key)

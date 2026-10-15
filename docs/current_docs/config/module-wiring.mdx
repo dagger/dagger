@@ -59,9 +59,9 @@ assets = "dag://frontend/assets"
 source = "dag://source-prep/workspace"
 ```
 
-## Reference the workspace entrypoint
+## Reference the workspace main
 
-The entrypoint module's functions are hoisted onto the workspace root, so a
+The workspace main module's functions are hoisted onto the workspace root, so a
 reference to one can drop the module name:
 
 ```shell
@@ -73,15 +73,15 @@ The config always stores the full address:
 ```toml
 [modules.myapp]
 source = "./ci/myapp"
-entrypoint = true
+main = true
 
 [modules.playwright.settings]
 service = "dag://myapp/serve"
 ```
 
-The `dagger settings` command only rewrites a bare name when the entrypoint
-has a function of that name. In `dagger.toml`, the entrypoint's functions are
-also addressed without the module name: `dag://serve`.
+The `dagger settings` command only rewrites a bare name when the workspace main
+module has a function of that name. In `dagger.toml`, the workspace main
+module's functions are also addressed without the module name: `dag://serve`.
 
 ## Use a reference on the command line
 
@@ -97,7 +97,7 @@ dagger api call playwright --service=dag://myapp/serve project --path=. test
 - The `dag://` scheme marks a workspace artifact address. The path's leading
   segment is a module's install name, the `[modules.X]` key in this
   `dagger.toml`, and the rest names a zero-arg function on it whose return type
-  matches the argument. The workspace entrypoint module's functions drop the
+  matches the argument. The workspace main module's functions drop the
   module segment: `dag://serve`.
 - An address with `dag://` *is* a module reference. A missing function or a
   mismatched type is then a hard error, never a silent fallback to an image or
@@ -108,7 +108,7 @@ dagger api call playwright --service=dag://myapp/serve project --path=. test
 
 ## Migrate existing references
 
-Older workspace configurations used `module:function` or a bare entrypoint
+Older workspace configurations used `module:function` or a bare workspace main
 function name. Replace those values in object-typed settings and CLI flags
 with DAG addresses:
 
@@ -116,14 +116,14 @@ with DAG addresses:
 | --- | --- |
 | `base-images:chromium` | `dag://base-images/chromium` |
 | `myapp:serve` | `dag://myapp/serve` |
-| `go-base` (on entrypoint `project-dev`) | `dag://project-dev/go-base` |
+| `go-base` (on workspace main `project-dev`) | `dag://project-dev/go-base` |
 
 This rule applies to object-typed settings for modules written in any SDK.
 For a `Container` setting, a bare name such as `go-base` is now an image
 reference. For `File` and `Directory` settings, it is a path. Keep ordinary
 image references, paths, URLs, and string-valued settings as they are.
 
-The settings command accepts a bare entrypoint function name and writes its
+The settings command accepts a bare workspace main function name and writes its
 full DAG address. Hand-edited `dagger.toml` values and CLI object flags need
 the `dag://` scheme explicitly.
 

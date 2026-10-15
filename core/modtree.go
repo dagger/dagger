@@ -28,9 +28,9 @@ type ModTreeNode struct {
 	Directives     []string
 	types          map[string]dagql.ObjectResult[*TypeDef]
 
-	// WorkspaceEntrypoint is set on the module root when its targets are
+	// WorkspaceMain is set on the module root when its targets are
 	// exposed without a module prefix. Path retains the qualified identity.
-	WorkspaceEntrypoint bool
+	WorkspaceMain       bool
 	CollectionDimension *ArtifactDimension
 	CollectionKey       *string
 	// CollectionKeys selects the subset used by an implicit batch node.
@@ -396,17 +396,17 @@ func (node *ModTreeNode) PathString() string {
 // CommandPath is the path users type to select this target.
 func (node *ModTreeNode) CommandPath() ModTreePath {
 	path := node.Path()
-	if node.inWorkspaceEntrypoint() && len(path) > 0 {
+	if node.inWorkspaceMain() && len(path) > 0 {
 		return path[1:]
 	}
 	return path
 }
 
-// inWorkspaceEntrypoint reports whether node is in the workspace entrypoint
+// inWorkspaceMain reports whether node is in the workspace main
 // module.
-func (node *ModTreeNode) inWorkspaceEntrypoint() bool {
+func (node *ModTreeNode) inWorkspaceMain() bool {
 	for parent := node; parent != nil; parent = parent.Parent {
-		if parent.WorkspaceEntrypoint {
+		if parent.WorkspaceMain {
 			return true
 		}
 	}

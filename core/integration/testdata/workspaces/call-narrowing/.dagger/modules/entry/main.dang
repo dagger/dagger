@@ -1,9 +1,9 @@
 type Entry {
   """
-  A trivial entrypoint function, proxied onto the Query root. Used to prove
-  the entrypoint module loaded when it is the first `dagger call` argument.
+  A trivial workspace main function, proxied onto the Query root. Used to prove
+  the main module loaded when it is the first `dagger call` argument.
   """
   pub greet: String! {
-    "hello from entrypoint"
+    "hello from workspace main"
   }
 }

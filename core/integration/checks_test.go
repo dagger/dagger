@@ -897,7 +897,7 @@ skip = ["generate"]
 		config := strings.Replace(alphaOnly,
 			`source = ".dagger/modules/alpha-sdk"`,
 			`source = ".dagger/modules/alpha-sdk"
-entrypoint = true`, 1)
+main = true`, 1)
 		out, err := generated(ctx, t, config).
 			With(daggerNonNestedExec("check", "-l", "-f=link")).
 			CombinedOutput(ctx)

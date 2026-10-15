@@ -49,9 +49,57 @@ const (
 // ExtraModule specifies a module to load at connect time in addition to
 // (or instead of) workspace modules.
 type ExtraModule struct {
-	Ref        string `json:"ref"`
-	Name       string `json:"name,omitempty"`
-	Entrypoint bool   `json:"entrypoint,omitempty"`
+	Ref  string `json:"ref"`
+	Name string `json:"name,omitempty"`
+	Main bool   `json:"main,omitempty"`
+	// Entrypoint is the deprecated source-level alias for Main.
+	Entrypoint bool `json:"-"`
+}
+
+func (m ExtraModule) IsMain() bool {
+	return m.Main || m.Entrypoint
+}
+
+func (m ExtraModule) MarshalJSON() ([]byte, error) {
+	// Send both keys while clients and engines can be version-skewed. Older
+	// engines read entrypoint; current engines use main.
+	type wireExtraModule struct {
+		Ref        string `json:"ref"`
+		Name       string `json:"name,omitempty"`
+		Main       bool   `json:"main,omitempty"`
+		Entrypoint bool   `json:"entrypoint,omitempty"`
+	}
+	main := m.IsMain()
+	return json.Marshal(wireExtraModule{
+		Ref: m.Ref, Name: m.Name, Main: main, Entrypoint: main,
+	})
+}
+
+func (m *ExtraModule) UnmarshalJSON(data []byte) error {
+	type wireExtraModule struct {
+		Ref        string `json:"ref"`
+		Name       string `json:"name,omitempty"`
+		Main       *bool  `json:"main,omitempty"`
+		Entrypoint *bool  `json:"entrypoint,omitempty"`
+	}
+	var wire wireExtraModule
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if wire.Main != nil && wire.Entrypoint != nil && *wire.Main != *wire.Entrypoint {
+		return fmt.Errorf("extra module cannot set conflicting main and deprecated entrypoint values")
+	}
+	m.Ref, m.Name = wire.Ref, wire.Name
+	switch {
+	case wire.Main != nil:
+		m.Main = *wire.Main
+	case wire.Entrypoint != nil:
+		m.Main = *wire.Entrypoint
+	default:
+		m.Main = false
+	}
+	m.Entrypoint = false
+	return nil
 }
 
 type ClientMetadata struct {
@@ -147,7 +195,7 @@ type ClientMetadata struct {
 	CloudScaleOutEngineID string `json:"cloud_scale_out_engine_id,omitempty"`
 
 	// ExtraModules specifies additional modules to load at connect time.
-	// When Entrypoint is true, the module's main-object methods are proxied onto
+	// When Main is true, the module's main-object methods are proxied onto
 	// the Query root in addition to its namespaced constructor.
 	ExtraModules []ExtraModule `json:"extra_modules,omitempty"`
 
@@ -190,10 +238,10 @@ type ClientMetadata struct {
 
 	// WorkspaceModuleScope hints at the workspace module this client's first
 	// schema introspection targets: the leading CLI command token, unresolved
-	// (it may name a module, an entrypoint-proxied function, or a typo). The
+	// (it may name a module, a workspace-main-proxied function, or a typo). The
 	// engine may use it to defer loading unrelated workspace modules for the
 	// first request whose only full-schema demand is currentTypeDefs. An
-	// unrecognized token falls back to the entrypoint module when one is
+	// unrecognized token falls back to the workspace main module when one is
 	// configured, else to loading everything; deferred modules load on demand
 	// from later requests.
 	WorkspaceModuleScope string `json:"workspace_module_scope,omitempty"`

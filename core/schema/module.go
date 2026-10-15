@@ -272,7 +272,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("returnAllTypes").Doc(`Return the full referenced typedef closure instead of only top-level served typedefs.`).
 					View(AfterVersion("v0.21.0")),
 				dagql.Arg("hideCore").Doc(
-					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).`,
+					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).`,
 					`Core types (Container, Directory, etc.) are kept so return types and method chaining still work.`,
 				),
 			).
@@ -399,7 +399,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
 			Args(
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
-				dagql.Arg("entrypoint").Doc("Install the module as the entrypoint, promoting its main-object methods onto the Query root"),
+				dagql.Arg("main").Doc("Install the module as the workspace main, promoting its main-object methods onto the Query root"),
+				dagql.Arg("entrypoint").Deprecated("Use main.").Doc("Compatibility alias for main."),
 			),
 
 		dagql.NodeFunc("_implementationScoped", s.moduleImplementationScoped).
@@ -2146,6 +2147,7 @@ func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ st
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResult[*core.Module], args struct {
 	IncludeDependencies dagql.Optional[dagql.Boolean]
+	Main                dagql.Optional[dagql.Boolean]
 	Entrypoint          dagql.Optional[dagql.Boolean]
 }) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
@@ -2156,8 +2158,14 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResu
 	}
 
 	includeDependencies := args.IncludeDependencies.Valid && args.IncludeDependencies.Value.Bool()
-	entrypoint := args.Entrypoint.Valid && args.Entrypoint.Value.Bool()
-	return void, query.ServeModule(ctx, modMeta, includeDependencies, entrypoint)
+	if args.Main.Valid && args.Entrypoint.Valid {
+		return void, fmt.Errorf("cannot set both main and deprecated entrypoint")
+	}
+	main := args.Main.Valid && args.Main.Value.Bool()
+	if args.Entrypoint.Valid {
+		main = args.Entrypoint.Value.Bool()
+	}
+	return void, query.ServeModule(ctx, modMeta, includeDependencies, main)
 }
 
 type serveModuleArgs struct {

@@ -95,12 +95,12 @@ func (WorkspaceSuite) TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrok
 	})
 }
 
-// TestSingleQueryCoreRootFieldSkipsBrokenEntrypoint locks in that a raw query
+// TestSingleQueryCoreRootFieldSkipsBrokenMain locks in that a raw query
 // rooted only at core fields loads no workspace module at all. An unrecognized
-// root field is taken for an entrypoint function and loads the pending
-// entrypoint to resolve it, so a core field missing from isCoreRootField makes
-// an unloadable entrypoint break queries that never mention it.
-func (WorkspaceSuite) TestSingleQueryCoreRootFieldSkipsBrokenEntrypoint(ctx context.Context, t *testctx.T) {
+// root field is taken for an main function and loads the pending
+// main to resolve it, so a core field missing from isCoreRootField makes
+// an unloadable main break queries that never mention it.
+func (WorkspaceSuite) TestSingleQueryCoreRootFieldSkipsBrokenMain(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := workspaceFixture(t, c, "generators-broken-entrypoint")
@@ -402,11 +402,11 @@ func (WorkspaceSuite) TestWorkspaceWorktreePlainParity(ctx context.Context, t *t
 		"plain clone .git directory should still be listed in the workspace tree")
 }
 
-// TestEntrypointWithFieldHidden verifies that the synthetic `with` field
-// installed on Query for entrypoint constructors with arguments is hidden
+// TestMainWithFieldHidden verifies that the synthetic `with` field
+// installed on Query for main constructors with arguments is hidden
 // from user-facing CLI listings (`dagger functions`, `dagger call --help`)
 // while remaining callable and introspectable.
-func (WorkspaceSuite) TestEntrypointWithFieldHidden(ctx context.Context, t *testctx.T) {
+func (WorkspaceSuite) TestMainWithFieldHidden(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := workspaceFixture(t, c, "workspace-entrypoint")

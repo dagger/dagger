@@ -86,7 +86,7 @@ type Part struct { Name string }
 
 func collectionSource(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
-		WithNewFile("dagger.toml", "[modules.collections]\nsource = \"./collections\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.collections]\nsource = \"./collections\"\nmain = true\n").
 		WithNewFile("collections/dagger.json", `{"name":"collections","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("collections/main.go", collectionGoSource)
 }
@@ -254,7 +254,7 @@ func (suite *Suite) Run() error { return nil }
 
 func collectionSelectorSourceDir(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
-		WithNewFile("dagger.toml", "[modules.selectors]\nsource = \"./selectors\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.selectors]\nsource = \"./selectors\"\nmain = true\n").
 		WithNewFile("selectors/dagger.json", `{"name":"selectors","engineVersion":"v1.0.0","sdk":{"source":"go"},"source":"."}`).
 		WithNewFile("selectors/main.go", collectionSelectorSource)
 }
@@ -630,7 +630,7 @@ func (*Item) Assistant(base *dagger.LLM) *dagger.LLM { panic("agent evaluated") 
 	t.Run("settings skip schema paths without reading keys", func(ctx context.Context, t *testctx.T) {
 		out, err := base.WithNewFile("dagger.toml", `[modules.collections]
 source = "./collections"
-entrypoint = true
+main = true
 check.skip = ["deferred/load"]
 `).With(daggerExec("check", "-l", "-f=link")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1153,7 +1153,7 @@ func (CollectionsSuite) TestModuleSelectors(ctx context.Context, t *testctx.T) {
 	base := workspaceBase(t, c).WithNewFile("dagger.toml", `
 [modules.go]
 source = "./tools"
-entrypoint = true
+main = true
 [modules.playwright]
 source = "./tools"
 [modules.format]

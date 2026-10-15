@@ -84,7 +84,7 @@ func (MCPSuite) TestModuleWithPrivilegedStillExposesModuleMethods(ctx context.Co
 func (MCPSuite) TestFailureIncludesDiagnosticLogs(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 	for name, contents := range map[string]string{
-		"dagger.toml": "[modules.test]\nsource = \".\"\nentrypoint = true\n",
+		"dagger.toml": "[modules.test]\nsource = \".\"\nmain = true\n",
 		"dagger.json": `{"name":"test","engineVersion":"v1.0.0","sdk":"dang"}`,
 		"main.dang": `type Test {
   broken: Module! {
@@ -143,7 +143,7 @@ func (MCPSuite) TestLLMContentResult(ctx context.Context, t *testctx.T) {
 	const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
 	modDir := t.TempDir()
 	for name, contents := range map[string]string{
-		"dagger.toml": "[modules.test]\nsource = \".\"\nentrypoint = true\n",
+		"dagger.toml": "[modules.test]\nsource = \".\"\nmain = true\n",
 		"dagger.json": `{"name":"test","engineVersion":"v1.0.0","sdk":"dang"}`,
 		"main.dang": `type Test {
   screenshots: LLMContent! {

@@ -32,3 +32,27 @@ func TestWorkspaceSchemaUsesConfigFieldNames(t *testing.T) {
 	require.NotContains(t, out, `"DefaultsFromDotEnv"`)
 	require.NotContains(t, out, `"LegacyDefaultPath"`)
 }
+
+func TestWorkspaceSchemaAcceptsLegacyEntrypoint(t *testing.T) {
+	t.Parallel()
+
+	var targetDef *target
+	for i := range targets {
+		if targets[i].output == "dagger-workspace.schema.json" {
+			targetDef = &targets[i]
+			break
+		}
+	}
+	require.NotNil(t, targetDef)
+
+	schema := new(jsonschema.Reflector).Reflect(targetDef.value)
+	require.NoError(t, addWorkspaceCompatibilityAliases(schema))
+	moduleEntry := schema.Definitions["ModuleEntry"]
+	require.NotNil(t, moduleEntry)
+	require.NotNil(t, moduleEntry.Properties)
+
+	got, ok := moduleEntry.Properties.Get("entrypoint")
+	require.True(t, ok)
+	require.Equal(t, "boolean", got.Type)
+	require.True(t, got.Deprecated)
+}
