@@ -3,8 +3,6 @@ package dagger
 
 import (
 	"context"
-	dep0 "dagger/cli-dev/internal/dagger/clients/alpine"
-	dep1 "dagger/cli-dev/internal/dagger/clients/go"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -17,15 +15,11 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type AlpineOpts = dep0.AlpineOpts
 type Container = core.Container
 type ContainerWithExecOpts = core.ContainerWithExecOpts
 type Directory = core.Directory
 type DirectoryWithFileOpts = core.DirectoryWithFileOpts
 type File = core.File
-type Go = dep1.Go
-type GoBinaryOpts = dep1.GoBinaryOpts
-type GoOpts = dep1.GoOpts
 type ID = core.ID
 type Node = core.Node
 type Platform = core.Platform
@@ -33,15 +27,9 @@ type Secret = core.Secret
 type Void = core.Void
 type WithContainerFunc = core.WithContainerFunc
 type Workspace = core.Workspace
-type dep0Client = dep0.Client
-type dep1Client = dep1.Client
 
 // Client borrows a shared connection. Its API contains only the bound module.
-type Client struct {
-	*Query
-	*dep0Client
-	*dep1Client
-}
+type Client struct{ *Query }
 type Query struct {
 	query     *querybuilder.Selection
 	refetchID bool
@@ -64,7 +52,7 @@ func Connect(connections ...*dagger.Client) *Client {
 		connection = connections[0]
 	}
 	q := querybuilder.Query().Client(defaultOrExplicit(connection))
-	return &Client{Query: &Query{query: q, Query: new(core.Query).WithGraphQLQuery(q)}, dep0Client: dep0.Connect(connection), dep1Client: dep1.Connect(connection)}
+	return &Client{Query: &Query{query: q, Query: new(core.Query).WithGraphQLQuery(q)}}
 }
 
 func defaultOrExplicit(client *dagger.Client) graphql.Client {
