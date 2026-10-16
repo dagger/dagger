@@ -9,47 +9,14 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-// RecomposeExpertise replaces the selected expertise's owned contributions, preserving
-// the state of its tool objects while loading new implementations. Unowned
-// prompts and bindings, and contributions from other expertise, are retained.
-// Every replacement is recorded as a real selector, including the module-state
-// rebind, rather than an in-memory change to an old object's class.
-func RecomposeExpertise(ctx context.Context, base dagql.ObjectResult[*LLM], expertise []*Expertise) (dagql.ObjectResult[*LLM], error) {
-	acc := base
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return base, err
-	}
-	// Clear each module once, before running any entrypoints. Clearing before
-	// every entrypoint would erase contributions from earlier ones in the same
-	// module; checking tool state before all have run would reject their tools.
-	removed := map[string]bool{}
-	for _, entry := range expertise {
-		owner := entry.OriginalModule().Name()
-		if removed[owner] {
-			continue
-		}
-		removed[owner] = true
-		if err := srv.Select(ctx, acc, &acc, dagql.Selector{
-			Field: "__withoutComposition",
-			Args:  []dagql.NamedInput{{Name: "owner", Value: dagql.String(owner)}},
-		}); err != nil {
-			return base, err
-		}
-	}
-	for _, entry := range expertise {
-		next, err := entry.Run(ctx, acc)
-		if err != nil {
-			return base, fmt.Errorf("recompose agent %q: %w", entry.Name(), err)
-		}
-		acc = next
-	}
-	acc, err = preserveRecomposedTools(ctx, srv, base, acc)
-	if err != nil {
-		return base, err
-	}
-	acc.Self().WarnToolNameCollisions(ctx)
-	return acc, nil
+// withoutComposition removes one module's contributions, as a recorded
+// selector so replay reproduces the clearing.
+func withoutComposition(ctx context.Context, srv *dagql.Server, llm dagql.ObjectResult[*LLM], module string) (dagql.ObjectResult[*LLM], error) {
+	err := srv.Select(ctx, llm, &llm, dagql.Selector{
+		Field: "__withoutComposition",
+		Args:  []dagql.NamedInput{{Name: "owner", Value: dagql.String(module)}},
+	})
+	return llm, err
 }
 
 // compositionOwnerMatches compares flat module identities. Empty owners are
@@ -76,8 +43,11 @@ func preserveRecomposedTools(ctx context.Context, srv *dagql.Server, previous, c
 		if !exists {
 			return candidate, fmt.Errorf("reload would discard tool state for %q; use a fresh composition to reset it explicitly", old.typeName())
 		}
+		// An unowned binding (e.g. bound by the main client) may be taken over
+		// by a module's binding of the same type, and vice versa; only two
+		// different modules' bindings conflict.
 		if old.Owner != "" && next.Owner != "" && old.Owner != next.Owner {
-			return candidate, fmt.Errorf("reload would replace tool binding %q owned by other expertise", old.typeName())
+			return candidate, fmt.Errorf("reload would replace tool binding %q owned by other expertise: module %q -> module %q; use a fresh composition to replace it explicitly", old.typeName(), old.Owner, next.Owner)
 		}
 		if stableIDDigest(old.id) == stableIDDigest(next.id) && old.Version == next.Version {
 			continue
