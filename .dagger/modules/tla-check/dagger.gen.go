@@ -16,9 +16,6 @@ import (
 	"dagger/tla-check/internal/dagger"
 )
 
-// Deprecated: use explicit core constructors and generated module clients.
-var dag = dagger.Connect()
-
 func Tracer() trace.Tracer {
 	return otel.Tracer("dagger.io/sdk.go")
 }
