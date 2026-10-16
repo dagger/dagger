@@ -334,7 +334,6 @@ clients = ["./.dagger/modules/changie", "./.dagger/modules/cli-dev", "./.dagger/
 
 [sdks.go.scopes.".dagger/modules/release".settings]
 dangEntrypoint = true
-globalClient = true
 unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/release/apko"]
