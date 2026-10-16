@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger/core"
 	"dagger/tla-check/internal/dagger"
 )
 
@@ -176,8 +177,8 @@ func New(ws *dagger.Workspace) *TlaCheck {
 // base returns a container with Java, the checksum-verified TLC jar, and
 // the spec directory mounted.
 func (m *TlaCheck) base(source *dagger.Directory) *dagger.Container {
-	jar := dag.HTTP(tla2toolsURL)
-	return dag.Container().
+	jar := core.HTTP(tla2toolsURL)
+	return core.NewContainer().
 		From(javaBaseImage).
 		WithFile("/tla2tools.jar", jar).
 		WithExec([]string{"sh", "-c",
