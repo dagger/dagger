@@ -576,6 +576,38 @@ func (AgentRuntimeSuite) TestLifecycle(ctx context.Context, t *testctx.T) {
 	// send or resume may move the same entry back into a live state.
 }
 
+// TestResumeStepsPendingSeed covers spawn's contract for a seed that ends in
+// a prompt: the input is pending on the conversation, not held, so resuming
+// the never-started agent steps it. The canned recording resolving the
+// prompt is the proof that the step ran.
+func (AgentRuntimeSuite) TestResumeStepsPendingSeed(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const (
+		prompt = "a prompt pending on the seed"
+		reply  = "the pending prompt's reply"
+	)
+	model := cannedRecordingModel(ctx, t, c, sdkcore.NewQuery(c).LLM().
+		WithPrompt(prompt).
+		WithResponse([]sdkcore.LLMContentBlockInput{
+			{Kind: sdkcore.LLMContentBlockKindText, Text: reply},
+		}))
+	agent, err := sdkcore.NewQuery(c).LLM(sdkcore.LLMOpts{Model: model}).
+		WithPrompt(prompt).
+		Spawn(ctx, sdkcore.LLMSpawnOpts{Name: "pending-seed"})
+	require.NoError(t, err)
+	id, err := agent.ID(ctx)
+	require.NoError(t, err)
+	h := &agentHandle{c: c, agentID: string(id)}
+	require.Equal(t, "IDLE", h.state(ctx, t), "spawn alone never starts the loop")
+
+	h.mustRun(ctx, t, "resume")
+	h.mustRun(ctx, t, "wait")
+	require.Equal(t, "IDLE", h.state(ctx, t))
+	transcript, lastReply := h.snapshot(ctx, t)
+	require.Equal(t, reply, lastReply, "resume must step the seed's pending prompt")
+	require.Equal(t, 1, strings.Count(transcript, prompt))
+}
+
 // TestSendAwait covers the mailbox happy path: send opens a turn (STARTED),
 // response returns that turn's reply, the consumed message appears in the
 // snapshot's history (influence ⇔ append), and two sequential turns against

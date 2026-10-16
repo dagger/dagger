@@ -17,6 +17,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	telemetry "github.com/dagger/otel-go"
@@ -172,6 +173,19 @@ func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, 
 		return "", err
 	}
 	return sink.committedRecipe(ctx, name)
+}
+
+// unownedRecipe strips the owner stamp the capturing agent puts on the
+// committed conversation. The stamp names the capture's random handle, so
+// tests comparing or inspecting the captured conversation itself use this.
+func unownedRecipe(t *testctx.T, recipe core.ID) core.ID {
+	t.Helper()
+	var id call.ID
+	require.NoError(t, id.Decode(string(recipe)))
+	require.Equal(t, "__withOwnerAgent", id.Field())
+	enc, err := id.Receiver().Encode()
+	require.NoError(t, err)
+	return core.ID(enc)
 }
 
 // captureShellRecipe captures a nested shell's committed conversation after its

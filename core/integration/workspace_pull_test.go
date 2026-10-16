@@ -670,6 +670,7 @@ func (WorkspaceSuite) TestWorkspacePullShortSHAs(ctx context.Context, t *testctx
 		require.Equal(t, "b", contents)
 		recipe, err := sink.captureLLMRecipe(ctx, t, c, core.NewQuery(c).LLM().WithWorkspace(pulled))
 		require.NoError(t, err)
+		recipe = unownedRecipe(t, recipe)
 		recipes = append(recipes, recipe)
 		var id call.ID
 		require.NoError(t, id.Decode(string(recipe)))

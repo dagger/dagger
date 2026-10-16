@@ -1,0 +1,39 @@
+type Staff {
+  agent(base: LLM!): LLM! @agent {
+    base.withSystemPrompt("Chief role.").withTools(currentNode.{{... on Dagger.Staff!}}.chief)
+  }
+
+  worker(base: LLM!, me: Agent!): LLM! {
+    base.withSystemPrompt("Worker role: " + me.name).withTools(currentNode.{{... on Dagger.Staff!}}.peers)
+  }
+
+  chief: Chief! { Chief() }
+  peers: Peers! { Peers() }
+  notATransform: String! { "not a conversation" }
+}
+
+type Chief {
+  chiefOnly: String! { "Chief capability." }
+
+  hire(ws: Workspace!): String! @cache(policy: FunctionCachePolicy.Never) {
+    let worker = llm(model: "__WORKER_MODEL__").withWorkspace(ws).spawn(name: "helper", expertise: ws.artifacts.filterUri("staff/worker").asExpertise.{{ id }}.map { node(id: _.id).{{ ... on Expertise! }} })
+    "worker handle: " + worker.handle
+  }
+}
+
+type Peers {
+  """Original peer implementation."""
+  parentName(me: Agent!): String! {
+    let parent = me.parent
+    if (parent == null) { raise "worker has no parent" }
+    "original parent: " + parent.name
+  }
+
+  reload(llm: LLM!): LLM! {
+    let ws = llm.workspace.withUserConfig
+    llm.withWorkspace(ws).compose(expertise: llm.expertise.{{ id, artifact.{{ uri }} }}.map { e =>
+      let found = ws.artifacts.filterUri(uri: e.artifact.uri).asExpertise.{{ id }}.map { f => f.id }
+      node(id: found[0] ?? e.id).{{ ... on Expertise! }}
+    })
+  }
+}
