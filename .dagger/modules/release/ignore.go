@@ -25,6 +25,9 @@ var (
 		"!core/sdk/sdkmeta/sdks.json",
 	}
 
+	// docs-dev New source (.dagger/modules/docs-dev/main.go)
+	docsDevSourceIgnore = []string{"*", "**/node_modules", "!docs", "!sdk/typescript", "!CONTRIBUTING.md"}
+
 	// php-client-dev New workspaceDir (.dagger/modules/php-client-dev/main.go)
 	phpClientDevWorkspaceIgnore = []string{"*", "!sdk/php", "sdk/php/.changes"}
 
