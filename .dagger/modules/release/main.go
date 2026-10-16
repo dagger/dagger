@@ -1,4 +1,3 @@
-// A module that encodes the official release process of the Dagger Engine
 package main
 
 import (
@@ -6,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"strings"
 	"text/template"
@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// A module that encodes the official release process of the Dagger Engine
 type Release struct {
 	Workspace *dagger.Workspace // +private
 }
@@ -225,8 +226,12 @@ func (r *Release) Publish( //nolint:gocyclo
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	default:
-		if err := cliDev.ReleaseDryRun(ctx); err != nil {
-			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
+		checkErr, err := cliDev.ReleaseDryRun().Error(ctx)
+		if err != nil {
+			checkErr = dag.Error(err.Error())
+		}
+		if checkErr != nil {
+			artifact.Errors = append(artifact.Errors, checkErr)
 		}
 	}
 	report.Artifacts = append(report.Artifacts, artifact)
@@ -255,6 +260,8 @@ func (r *Release) Publish( //nolint:gocyclo
 		report.Artifacts = append(report.Artifacts, artifact)
 	}
 
+	pythonWorkspaceDir := r.Workspace.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: pythonClientDevWorkspaceIgnore})
+	phpWorkspaceDir := r.Workspace.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: phpClientDevWorkspaceIgnore})
 	components := []struct {
 		name    string
 		path    string
@@ -275,12 +282,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			dev:  true,
 			release: func(ctx context.Context) error {
 				return dag.GoClientDev(r.Workspace).Release(ctx, tag, dagger.GoClientDevReleaseOpts{
+					SourceRepo:  r.Workspace.Git().Head().AsRepository(),
 					GithubToken: githubToken,
 					DestRemote:  goSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.GoClientDev(r.Workspace).ReleaseDryRun(ctx)
+				return dag.GoClientDev(r.Workspace).ReleaseDryRun(ctx, dagger.GoClientDevReleaseDryRunOpts{SourceRepo: r.Workspace.Git().Head().AsRepository()})
 			},
 		},
 		{
@@ -289,14 +297,14 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/python/",
 			link: "https://pypi.org/project/dagger-io/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.PythonClientDev(r.Workspace).Release(ctx, tag, dagger.PythonClientDevReleaseOpts{
+				return dag.PythonClientDev(r.Workspace, dagger.PythonClientDevOpts{WorkspaceDir: pythonWorkspaceDir}).Release(ctx, tag, dagger.PythonClientDevReleaseOpts{
 					PypiRepo:  pypiRepo,
 					PypiURL:   pypiURL,
 					PypiToken: pypiToken,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.PythonClientDev(r.Workspace).ReleaseDryRun(ctx)
+				return dag.PythonClientDev(r.Workspace, dagger.PythonClientDevOpts{WorkspaceDir: pythonWorkspaceDir}).ReleaseDryRun(ctx)
 			},
 			published: func(ctx context.Context) (bool, error) {
 				u, err := pypiVersionURL(pypiRepo, pypiURL, strings.TrimPrefix(version, "v"))
@@ -354,7 +362,15 @@ func (r *Release) Publish( //nolint:gocyclo
 					})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.RustClientDev(r.Workspace).ReleaseDryRun(ctx)
+				checkErr, err := dag.RustClientDev(r.Workspace).ReleaseDryRun().Error(ctx)
+				if err != nil || checkErr == nil {
+					return err
+				}
+				msg, err := checkErr.Message(ctx)
+				if err != nil {
+					return err
+				}
+				return errors.New(msg)
 			},
 			published: func(ctx context.Context) (bool, error) {
 				return crateHasVersion(ctx, cargoRegistryIndex, strings.TrimPrefix(version, "v"))
@@ -367,13 +383,14 @@ func (r *Release) Publish( //nolint:gocyclo
 			link: "https://packagist.org/packages/dagger/dagger#" + cmp.Or(version, "dev-main"),
 			dev:  true,
 			release: func(ctx context.Context) error {
-				return dag.PhpClientDev(r.Workspace).Release(ctx, tag, dagger.PhpClientDevReleaseOpts{
+				return dag.PhpClientDev(r.Workspace, dagger.PhpClientDevOpts{WorkspaceDir: phpWorkspaceDir}).Release(ctx, tag, dagger.PhpClientDevReleaseOpts{
+					SourceRepo:  r.Workspace.Git().Head().AsRepository(),
 					GithubToken: githubToken,
 					Dest:        phpSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.PhpClientDev(r.Workspace).ReleaseDryRun(ctx)
+				return dag.PhpClientDev(r.Workspace, dagger.PhpClientDevOpts{WorkspaceDir: phpWorkspaceDir}).ReleaseDryRun(ctx, dagger.PhpClientDevReleaseDryRunOpts{SourceRepo: r.Workspace.Git().Head().AsRepository()})
 			},
 		},
 		{
