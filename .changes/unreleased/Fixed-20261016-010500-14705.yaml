@@ -1,0 +1,6 @@
+kind: Fixed
+body: Artifact.value(arguments:) now honors a Workspace passed for a required Workspace argument, instead of silently replacing it with the artifact's own workspace.
+time: 2026-10-16T01:05:00+00:00
+custom:
+    Author: vito
+    PR: "14705"
