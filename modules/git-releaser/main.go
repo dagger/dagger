@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"dagger.io/dagger/core"
 	"dagger/git-releaser/internal/dagger"
+	"dagger/git-releaser/internal/dagger/clients/alpine"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -74,11 +76,10 @@ func (gitrel *GitReleaser) Release(
 	if destTag == "" {
 		destTag = sourceTag
 	}
-	base := dag.
-		Alpine(dagger.AlpineOpts{
-			Branch:   gitrel.AlpineVersion,
-			Packages: []string{"git", "git-filter-repo", "go", "python3"},
-		}).
+	base := alpine.New(alpine.AlpineOpts{
+		Branch:   gitrel.AlpineVersion,
+		Packages: []string{"git", "git-filter-repo", "go", "python3"},
+	}).
 		Container()
 
 	if !dryRun && githubToken != nil {
@@ -90,7 +91,7 @@ func (gitrel *GitReleaser) Release(
 		base = base.
 			WithEnvVariable("GIT_CONFIG_COUNT", "1").
 			WithEnvVariable("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader").
-			WithSecretVariable("GIT_CONFIG_VALUE_0", dag.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
+			WithSecretVariable("GIT_CONFIG_VALUE_0", core.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
 	}
 
 	filterRepoArgs := []string{
