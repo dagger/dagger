@@ -3,12 +3,6 @@ package dagger
 
 import (
 	"context"
-	dep0 "dagger/engine-dev/internal/dagger/clients/alpine"
-	dep1 "dagger/engine-dev/internal/dagger/clients/cli-dev"
-	dep2 "dagger/engine-dev/internal/dagger/clients/codegen"
-	dep3 "dagger/engine-dev/internal/dagger/clients/go"
-	dep4 "dagger/engine-dev/internal/dagger/clients/notify"
-	dep5 "dagger/engine-dev/internal/dagger/clients/wolfi"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -24,8 +18,6 @@ import (
 const CacheSharingModeLocked = core.CacheSharingModeLocked
 
 type Changeset = core.Changeset
-type CliDevBinaryOpts = dep1.CliDevBinaryOpts
-type CliDevOpts = dep1.CliDevOpts
 type Container = core.Container
 type ContainerAsServiceOpts = core.ContainerAsServiceOpts
 type ContainerAsTarballOpts = core.ContainerAsTarballOpts
@@ -45,9 +37,6 @@ type DirectoryWithFileOpts = core.DirectoryWithFileOpts
 type DirectoryWithNewFileOpts = core.DirectoryWithNewFileOpts
 type EnvFile = core.EnvFile
 type File = core.File
-type Go = dep3.Go
-type GoBinaryOpts = dep3.GoBinaryOpts
-type GoOpts = dep3.GoOpts
 type HTTPOpts = core.HTTPOpts
 type ID = core.ID
 
@@ -65,26 +54,11 @@ type Service = core.Service
 type ServiceEndpointOpts = core.ServiceEndpointOpts
 type Socket = core.Socket
 type Void = core.Void
-type WolfiContainerOpts = dep5.WolfiContainerOpts
 type Workspace = core.Workspace
 type WorkspaceDirectoryOpts = core.WorkspaceDirectoryOpts
-type dep0Client = dep0.Client
-type dep1Client = dep1.Client
-type dep2Client = dep2.Client
-type dep3Client = dep3.Client
-type dep4Client = dep4.Client
-type dep5Client = dep5.Client
 
 // Client borrows a shared connection. Its API contains only the bound module.
-type Client struct {
-	*Query
-	*dep0Client
-	*dep1Client
-	*dep2Client
-	*dep3Client
-	*dep4Client
-	*dep5Client
-}
+type Client struct{ *Query }
 type Query struct {
 	query     *querybuilder.Selection
 	refetchID bool
@@ -107,7 +81,7 @@ func Connect(connections ...*dagger.Client) *Client {
 		connection = connections[0]
 	}
 	q := querybuilder.Query().Client(defaultOrExplicit(connection))
-	return &Client{Query: &Query{query: q, Query: new(core.Query).WithGraphQLQuery(q)}, dep0Client: dep0.Connect(connection), dep1Client: dep1.Connect(connection), dep2Client: dep2.Connect(connection), dep3Client: dep3.Connect(connection), dep4Client: dep4.Connect(connection), dep5Client: dep5.Connect(connection)}
+	return &Client{Query: &Query{query: q, Query: new(core.Query).WithGraphQLQuery(q)}}
 }
 
 func defaultOrExplicit(client *dagger.Client) graphql.Client {
