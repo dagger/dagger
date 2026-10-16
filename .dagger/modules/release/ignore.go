@@ -4,6 +4,27 @@ package main
 // the engine applies it only when it resolves the default itself. These
 // copy each callee's pragma; keep them in sync with the callee.
 var (
+	// cli-dev New source (.dagger/modules/cli-dev/main.go)
+	cliDevSourceIgnore = []string{
+		"*",
+		".*",
+		"!cmd/dagger/*",
+		"!internal/cmd/dagger/**",
+		"!**/go.sum",
+		"!**/go.mod",
+		"!**/*.go",
+		"!**/VERSION",
+		"!vendor/**/*",
+		"!**.graphql",
+		"!.changes",
+		"!LICENSE",
+		"!install.sh",
+		"!install.ps1",
+		"!**/*.sql",
+		"!core/prompts/*.md",
+		"!core/sdk/sdkmeta/sdks.json",
+	}
+
 	// php-client-dev New workspaceDir (.dagger/modules/php-client-dev/main.go)
 	phpClientDevWorkspaceIgnore = []string{"*", "!sdk/php", "sdk/php/.changes"}
 
