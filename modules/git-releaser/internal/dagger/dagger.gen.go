@@ -3,7 +3,6 @@ package dagger
 
 import (
 	"context"
-	dep0 "dagger/git-releaser/internal/dagger/clients/alpine"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -16,7 +15,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type AlpineOpts = dep0.AlpineOpts
 type File = core.File
 type GitRefTreeOpts = core.GitRefTreeOpts
 type GitRepository = core.GitRepository
@@ -24,13 +22,9 @@ type ID = core.ID
 type Node = core.Node
 type Secret = core.Secret
 type Void = core.Void
-type dep0Client = dep0.Client
 
 // Client borrows a shared connection. Its API contains only the bound module.
-type Client struct {
-	*Query
-	*dep0Client
-}
+type Client struct{ *Query }
 type Query struct {
 	query     *querybuilder.Selection
 	refetchID bool
@@ -53,7 +47,7 @@ func Connect(connections ...*dagger.Client) *Client {
 		connection = connections[0]
 	}
 	q := querybuilder.Query().Client(defaultOrExplicit(connection))
-	return &Client{Query: &Query{query: q, Query: new(core.Query).WithGraphQLQuery(q)}, dep0Client: dep0.Connect(connection)}
+	return &Client{Query: &Query{query: q, Query: new(core.Query).WithGraphQLQuery(q)}}
 }
 
 func defaultOrExplicit(client *dagger.Client) graphql.Client {
