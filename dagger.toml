@@ -283,6 +283,11 @@ unifiedClients = true
 is-module = true
 clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev/docusaurus", "./.dagger/modules/engine-dev", "./.dagger/modules/go"]
 
+[sdks.go.scopes.".dagger/modules/docs-dev".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/docs-dev/docusaurus"]
 is-module = true
 

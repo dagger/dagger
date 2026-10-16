@@ -245,7 +245,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			Link: "https://docs.dagger.io",
 		}
 		if !dryRun {
-			if err := dag.DocsDev().Publish(ctx, netlifyToken, dagger.DocsDevPublishOpts{
+			if err := dag.DocsDev(dagger.DocsDevOpts{Source: r.Workspace.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: docsDevSourceIgnore})}).Publish(ctx, netlifyToken, dagger.DocsDevPublishOpts{
 				APIURL: netlifyAPIURL,
 			}); err != nil {
 				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
