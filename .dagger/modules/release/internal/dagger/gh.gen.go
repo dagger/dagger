@@ -6,6 +6,7 @@ import (
 	"dagger/release/internal/dagger/core"
 )
 
+// GitHub CLI
 type Gh = core.Gh
 
 type WithGhFunc = core.WithGhFunc
