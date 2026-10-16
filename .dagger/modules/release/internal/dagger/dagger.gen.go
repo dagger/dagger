@@ -3,19 +3,6 @@ package dagger
 
 import (
 	"context"
-	dep0 "dagger/release/internal/dagger/clients/changie"
-	dep1 "dagger/release/internal/dagger/clients/cli-dev"
-	dep2 "dagger/release/internal/dagger/clients/docs-dev"
-	dep3 "dagger/release/internal/dagger/clients/elixir-client-dev"
-	dep4 "dagger/release/internal/dagger/clients/engine-dev"
-	dep5 "dagger/release/internal/dagger/clients/gh"
-	dep6 "dagger/release/internal/dagger/clients/go-client-dev"
-	dep7 "dagger/release/internal/dagger/clients/notify"
-	dep8 "dagger/release/internal/dagger/clients/php-client-dev"
-	dep9 "dagger/release/internal/dagger/clients/python-client-dev"
-	dep10 "dagger/release/internal/dagger/clients/rust-client-dev"
-	dep11 "dagger/release/internal/dagger/clients/typescript-client-dev"
-	dep12 "dagger/release/internal/dagger/clients/wolfi"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -34,81 +21,29 @@ const CacheSharingModeLocked = core.CacheSharingModeLocked
 
 type CacheVolume = core.CacheVolume
 type Changeset = core.Changeset
-type CliDevOpts = dep1.CliDevOpts
-type CliDevPublishMetadataOpts = dep1.CliDevPublishMetadataOpts
-type CliDevPublishOpts = dep1.CliDevPublishOpts
 type Container = core.Container
 type ContainerAsServiceOpts = core.ContainerAsServiceOpts
 type ContainerOpts = core.ContainerOpts
 type ContainerWithExposedPortOpts = core.ContainerWithExposedPortOpts
 type ContainerWithMountedCacheOpts = core.ContainerWithMountedCacheOpts
 type Directory = core.Directory
-type DocsDevOpts = dep2.DocsDevOpts
-type DocsDevPublishOpts = dep2.DocsDevPublishOpts
-type ElixirClientDevPublishOpts = dep3.ElixirClientDevPublishOpts
-type EngineDevInstallClientOpts = dep4.EngineDevInstallClientOpts
-type EngineDevOpts = dep4.EngineDevOpts
-type EngineDevPublishOpts = dep4.EngineDevPublishOpts
 type Error = core.Error
 type File = core.File
-
-const GhLatestFalse = dep5.GhLatestFalse
-
-type GhOpts = dep5.GhOpts
-type GhReleaseCreateOpts = dep5.GhReleaseCreateOpts
-type GoClientDevReleaseDryRunOpts = dep6.GoClientDevReleaseDryRunOpts
-type GoClientDevReleaseOpts = dep6.GoClientDevReleaseOpts
 type ID = core.ID
 
 const NetworkProtocolTcp = core.NetworkProtocolTcp
 
 type Node = core.Node
-type PhpClientDevOpts = dep8.PhpClientDevOpts
-type PhpClientDevReleaseDryRunOpts = dep8.PhpClientDevReleaseDryRunOpts
-type PhpClientDevReleaseOpts = dep8.PhpClientDevReleaseOpts
 type Platform = core.Platform
-type PythonClientDevOpts = dep9.PythonClientDevOpts
-type PythonClientDevReleaseOpts = dep9.PythonClientDevReleaseOpts
-type RustClientDevReleaseOpts = dep10.RustClientDevReleaseOpts
 type Secret = core.Secret
 type Service = core.Service
 type ServiceStopOpts = core.ServiceStopOpts
-type TypescriptClientDevReleaseOpts = dep11.TypescriptClientDevReleaseOpts
 type Void = core.Void
-type WolfiContainerOpts = dep12.WolfiContainerOpts
 type Workspace = core.Workspace
 type WorkspaceDirectoryOpts = core.WorkspaceDirectoryOpts
-type dep0Client = dep0.Client
-type dep1Client = dep1.Client
-type dep2Client = dep2.Client
-type dep3Client = dep3.Client
-type dep4Client = dep4.Client
-type dep5Client = dep5.Client
-type dep6Client = dep6.Client
-type dep7Client = dep7.Client
-type dep8Client = dep8.Client
-type dep9Client = dep9.Client
-type dep10Client = dep10.Client
-type dep11Client = dep11.Client
-type dep12Client = dep12.Client
 
 // Client borrows a shared connection. Its API contains only the bound module.
-type Client struct {
-	*Query
-	*dep0Client
-	*dep1Client
-	*dep2Client
-	*dep3Client
-	*dep4Client
-	*dep5Client
-	*dep6Client
-	*dep7Client
-	*dep8Client
-	*dep9Client
-	*dep10Client
-	*dep11Client
-	*dep12Client
-}
+type Client struct{ *Query }
 type Query struct {
 	query     *querybuilder.Selection
 	refetchID bool
@@ -131,7 +66,7 @@ func Connect(connections ...*dagger.Client) *Client {
 		connection = connections[0]
 	}
 	q := querybuilder.Query().Client(defaultOrExplicit(connection))
-	return &Client{Query: &Query{query: q, Query: new(core.Query).WithGraphQLQuery(q)}, dep0Client: dep0.Connect(connection), dep1Client: dep1.Connect(connection), dep2Client: dep2.Connect(connection), dep3Client: dep3.Connect(connection), dep4Client: dep4.Connect(connection), dep5Client: dep5.Connect(connection), dep6Client: dep6.Connect(connection), dep7Client: dep7.Connect(connection), dep8Client: dep8.Connect(connection), dep9Client: dep9.Connect(connection), dep10Client: dep10.Connect(connection), dep11Client: dep11.Connect(connection), dep12Client: dep12.Connect(connection)}
+	return &Client{Query: &Query{query: q, Query: new(core.Query).WithGraphQLQuery(q)}}
 }
 
 func defaultOrExplicit(client *dagger.Client) graphql.Client {
