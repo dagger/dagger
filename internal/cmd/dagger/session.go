@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -120,13 +118,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		// logs we need to reveal everything.
 		Frontend.RevealAllSpans()
 
-		srv := http.Server{
-			Handler:           sess,
-			ReadHeaderTimeout: 30 * time.Second,
-			BaseContext: func(net.Listener) context.Context {
-				return ctx
-			},
-		}
+		srv := sessionServer(ctx, "dagger session", sess)
 
 		paramBytes, err := json.Marshal(connectParams{
 			Port:         port,
