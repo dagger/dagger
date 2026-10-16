@@ -22,72 +22,72 @@ type Entrypoint implements ModuleEntrypoint {
 
   pub types: [TypeDef!]! {
     [
-      typeDef.withObject("RustClientDev", description: "Develop the Dagger Rust SDK (experimental)", sourceMap: sourceMap("main.go", 29, 6))
+      typeDef.withObject("RustClientDev", description: "Develop the Dagger Rust SDK (experimental)", sourceMap: sourceMap("main.go", 31, 6))
         .withFunction(
           function("APIClient", typeDef.withObject("Changeset"))
             .withDescription("Regenerate the Rust SDK API client.")
-            .withSourceMap(sourceMap("main.go", 155, 1))
+            .withSourceMap(sourceMap("main.go", 157, 1))
             .withGenerator
         )
         .withFunction(
           function("CargoCheck", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Run cargo check on the Rust SDK")
-            .withSourceMap(sourceMap("main.go", 134, 1))
+            .withSourceMap(sourceMap("main.go", 136, 1))
             .withCheck
         )
         .withFunction(
           function("CargoFmt", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Run cargo fmt on the Rust SDK")
-            .withSourceMap(sourceMap("main.go", 124, 1))
+            .withSourceMap(sourceMap("main.go", 126, 1))
             .withCheck
         )
         .withFunction(
           function("Changes", typeDef.withObject("Changeset"))
-            .withSourceMap(sourceMap("main.go", 159, 1))
+            .withSourceMap(sourceMap("main.go", 161, 1))
         )
         .withFunction(
           function("DevContainer", typeDef.withObject("Container"))
             .withDescription("Return the Rust SDK workspace mounted in a dev container,\nand working directory set to the SDK source.")
-            .withSourceMap(sourceMap("main.go", 74, 1))
-            .withArg("runInstall", typeDef.withKind(TypeDefKind.BOOLEAN_KIND), description: "Install workspace dependencies and any tools required\nto develop the Rust SDK.", defaultValue: ("\"false\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 78, 2))
+            .withSourceMap(sourceMap("main.go", 76, 1))
+            .withArg("runInstall", typeDef.withKind(TypeDefKind.BOOLEAN_KIND), description: "Install workspace dependencies and any tools required\nto develop the Rust SDK.", defaultValue: ("\"false\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 80, 2))
         )
         .withFunction(
           function("Release", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Release the Rust SDK")
-            .withSourceMap(sourceMap("main.go", 251, 1))
-            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to release", sourceMap: sourceMap("main.go", 255, 2))
-            .withArg("cargoRegistryToken", typeDef.withObject("Secret"), sourceMap: sourceMap("main.go", 257, 2))
-            .withArg("cargoRegistryIndex", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Cargo registry index URL to publish to instead of crates.io.", sourceMap: sourceMap("main.go", 261, 2))
+            .withSourceMap(sourceMap("main.go", 253, 1))
+            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to release", sourceMap: sourceMap("main.go", 257, 2))
+            .withArg("cargoRegistryToken", typeDef.withObject("Secret"), sourceMap: sourceMap("main.go", 259, 2))
+            .withArg("cargoRegistryIndex", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Cargo registry index URL to publish to instead of crates.io.", sourceMap: sourceMap("main.go", 263, 2))
         )
         .withFunction(
           function("ReleaseDryRun", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Test the publishing process")
-            .withSourceMap(sourceMap("main.go", 183, 1))
+            .withSourceMap(sourceMap("main.go", 185, 1))
             .withCheck
-            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to fake-release", defaultValue: ("\"HEAD\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 188, 2))
+            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to fake-release", defaultValue: ("\"HEAD\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 190, 2))
         )
         .withFunction(
           function("Source", typeDef.withObject("Directory"))
             .withDescription("Source returns the source directory for the Rust SDK.")
-            .withSourceMap(sourceMap("main.go", 118, 1))
+            .withSourceMap(sourceMap("main.go", 120, 1))
         )
         .withFunction(
           function("Test", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Test the Rust SDK")
-            .withSourceMap(sourceMap("main.go", 144, 1))
+            .withSourceMap(sourceMap("main.go", 146, 1))
             .withCheck
         )
         .withFunction(
           function("WithGeneratedClient", typeDef.withObject("RustClientDev"))
-            .withSourceMap(sourceMap("main.go", 163, 1))
+            .withSourceMap(sourceMap("main.go", 165, 1))
         )
-        .withField("BaseContainer", typeDef.withObject("Container"), sourceMap: sourceMap("main.go", 33, 2))
+        .withField("BaseContainer", typeDef.withObject("Container"), sourceMap: sourceMap("main.go", 35, 2))
         .withConstructor(
           function("", typeDef.withObject("RustClientDev"))
-            .withSourceMap(sourceMap("main.go", 37, 1))
-            .withArg("workspace", typeDef.withObject("Workspace"), description: "A directory with all the files needed to develop the SDK", sourceMap: sourceMap("main.go", 39, 2))
-            .withArg("sourcePath", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The path of the SDK source in the workspace", defaultValue: ("\"sdk/rust\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 42, 2))
-            .withArg("clientDockerConfig", typeDef.withObject("Secret").withOptional(true), description: "A docker config file with credentials to install on clients.", sourceMap: sourceMap("main.go", 45, 2))
+            .withSourceMap(sourceMap("main.go", 39, 1))
+            .withArg("workspace", typeDef.withObject("Workspace"), description: "A directory with all the files needed to develop the SDK", sourceMap: sourceMap("main.go", 41, 2))
+            .withArg("sourcePath", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The path of the SDK source in the workspace", defaultValue: ("\"sdk/rust\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 44, 2))
+            .withArg("clientDockerConfig", typeDef.withObject("Secret").withOptional(true), description: "A docker config file with credentials to install on clients.", sourceMap: sourceMap("main.go", 47, 2))
         )
     ]
   }

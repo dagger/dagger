@@ -2,9 +2,9 @@
   "version": 1,
   "files": {
     "dagger.dispatch.gen.go": "6c09169bd7297c92fb45b8374647a10cad513627a4b0353e556b37696449975a",
-    "dagger.gen.go": "0881d515ede6bbabaed2de55227d8c168ae10e7db2ab01178c0ff689a079cb1f",
-    "internal/dagger/dagger.gen.go": "b2976e1143a3454efde962daeebd5cb86c7abe9403a50c57e35bddff5e08cfe7",
-    "internal/dagger/entrypoint/main.dang": "02c9ba45187e97ec98320cdf9e212b1f8e9eddbe21bed24565b36b888207d3a3",
+    "dagger.gen.go": "a2963e44bafff5bd5b4436b21a195b7f55ad6404e019e4853283fcc27126116f",
+    "internal/dagger/dagger.gen.go": "02f9b4e271ef38310021ddcbf27779d840b266e84b584e4075e5dafca8743782",
+    "internal/dagger/entrypoint/main.dang": "ade13798f5b6a7433f0c6f79de63669fce97cedaef955c80acf82b65dbd2fb76",
     "internal/dagger/rust-client-dev.gen.go": "889a5e8f672d8d1a0226fa4814793515ef6eb398b0215cb128a62ed07c1af1bf"
   }
 }
