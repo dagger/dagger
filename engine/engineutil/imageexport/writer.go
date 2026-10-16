@@ -24,7 +24,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/converter"
-	"github.com/dagger/dagger/internal/buildkit/util/progress"
 	"github.com/dagger/dagger/internal/buildkit/util/system"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
@@ -241,11 +240,9 @@ func (w *Writer) Assemble(
 		MediaType:   index.MediaType,
 		Annotations: maps.Clone(req.IndexDescriptorAnnotations),
 	}
-	done := progress.OneOff(ctx, "exporting manifest list "+indexDigest.String())
 	if err := content.WriteBlob(ctx, w.opt.ContentStore, indexDigest.String(), bytes.NewReader(indexJSON), indexDesc, content.WithLabels(gcLabels)); err != nil {
-		return nil, done(errors.Wrapf(err, "error writing manifest list blob %s", indexDigest))
+		return nil, errors.Wrapf(err, "error writing manifest list blob %s", indexDigest)
 	}
-	done(nil)
 
 	return &ExportedImage{
 		RootDesc:          indexDesc,
@@ -331,22 +328,18 @@ func (w *Writer) commitPlatformManifest(
 		MediaType:   manifestType,
 		Annotations: maps.Clone(input.ManifestDescriptorAnnotations),
 	}
-	done := progress.OneOff(ctx, "exporting manifest "+manifestDigest.String())
 	if err := content.WriteBlob(ctx, w.opt.ContentStore, manifestDigest.String(), bytes.NewReader(manifestJSON), manifestDesc, content.WithLabels(gcLabels)); err != nil {
-		return ocispecs.Descriptor{}, ocispecs.Descriptor{}, done(errors.Wrapf(err, "error writing manifest blob %s", manifestDigest))
+		return ocispecs.Descriptor{}, ocispecs.Descriptor{}, errors.Wrapf(err, "error writing manifest blob %s", manifestDigest)
 	}
-	done(nil)
 
 	configDesc := ocispecs.Descriptor{
 		Digest:    configDigest,
 		Size:      int64(len(configJSON)),
 		MediaType: configType,
 	}
-	done = progress.OneOff(ctx, "exporting config "+configDigest.String())
 	if err := content.WriteBlob(ctx, w.opt.ContentStore, configDigest.String(), bytes.NewReader(configJSON), configDesc); err != nil {
-		return ocispecs.Descriptor{}, ocispecs.Descriptor{}, done(errors.Wrap(err, "error writing config blob"))
+		return ocispecs.Descriptor{}, ocispecs.Descriptor{}, errors.Wrap(err, "error writing config blob")
 	}
-	done(nil)
 
 	return manifestDesc, configDesc, nil
 }
@@ -362,7 +355,6 @@ func (w *Writer) exportLayers(ctx context.Context, refCfg cacheconfig.RefConfig,
 	span, ctx := tracing.StartSpan(ctx, "export layers", trace.WithAttributes(attr...))
 
 	eg, ctx := errgroup.WithContext(ctx)
-	done := progress.OneOff(ctx, "exporting layers")
 	out := make([]cache.ExportChain, len(refs))
 
 	for i, ref := range refs {
@@ -380,7 +372,7 @@ func (w *Writer) exportLayers(ctx context.Context, refCfg cacheconfig.RefConfig,
 		})
 	}
 
-	err := done(eg.Wait())
+	err := eg.Wait()
 	tracing.FinishWithError(span, err)
 	return out, err
 }
@@ -413,7 +405,6 @@ func (w *Writer) rewriteExportChainWithEpoch(ctx context.Context, opts CommitOpt
 	cs := contentutil.NewStoreWithProvider(w.opt.ContentStore, chain.Provider)
 	eg, ctx := errgroup.WithContext(ctx)
 	defer eg.Wait()
-	done := progress.OneOff(ctx, fmt.Sprintf("rewriting layers with source-date-epoch %d (%s)", opts.Epoch.Unix(), opts.Epoch.String()))
 	var divergedFromBase bool
 
 	for i, desc := range descs {
@@ -450,7 +441,7 @@ func (w *Writer) rewriteExportChainWithEpoch(ctx context.Context, opts CommitOpt
 		})
 	}
 
-	if err := done(eg.Wait()); err != nil {
+	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 	return &cache.ExportChain{

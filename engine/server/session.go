@@ -25,7 +25,6 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	telemetry "github.com/dagger/otel-go"
@@ -224,9 +223,6 @@ type daggerSession struct {
 	analytics analytics.Tracker
 
 	authProvider *auth.RegistryAuthProvider
-
-	containers   map[bkgw.Container]struct{}
-	containersMu sync.Mutex
 
 	dagqlMu       sync.Mutex
 	dagqlCond     *sync.Cond
@@ -1045,7 +1041,6 @@ func (srv *Server) initializeDaggerSession(
 		LeaseManager: srv.leaseManager,
 	})
 	failureCleanups.Add("close session resolver", sess.resolver.Close)
-	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.telemetryPubSub = srv.telemetryPubSub
 	srv.initializeSessionTelemetry(sess, clientMetadata)
@@ -1211,24 +1206,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		sess.dagqlCond.Wait()
 	}
 	sess.dagqlMu.Unlock()
-
-	// Release containers and buildkit state before the final telemetry barrier.
-	// Their cleanup paths may still emit spans, logs, and metrics.
-
-	var releaseGroup errgroup.Group
-	sess.containersMu.Lock()
-	for ctr := range sess.containers {
-		if ctr != nil {
-			releaseGroup.Go(func() error {
-				return ctr.Release(ctx)
-			})
-		}
-	}
-	// Keep the container set closed to mutation until all captured containers have
-	// released, then drop the lock before later cleanup and telemetry barriers.
-	releaseErr := releaseGroup.Wait()
-	sess.containersMu.Unlock()
-	errs = errors.Join(errs, releaseErr)
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
