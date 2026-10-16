@@ -355,6 +355,11 @@ unifiedClients = true
 is-module = true
 clients = ["dagger.io/linux/alpine"]
 
+[sdks.go.scopes."modules/git-releaser".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [sdks.dang.scopes.".dagger/modules/dev"]
 clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/cli-dev"]
 is-module = true
