@@ -31,7 +31,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
-	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/network"
@@ -355,39 +354,11 @@ func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remo
 	}
 	defer cleanup()
 
-	inputCtx, input := enginetel.StartWorkloadInput(ctx, enginetel.WorkloadTransferGit)
-	remote, err := git.LsRemote(inputCtx, repo.URL.Remote())
-	input.End(gitRefsIdentity(remote), err)
+	remote, err := git.LsRemote(ctx, repo.URL.Remote())
 	if err != nil {
 		return nil, err
 	}
 	return remote, nil
-}
-
-// Git input identities name the received refs or objects, not the remote URL.
-func gitRefsIdentity(remote *gitutil.Remote) string {
-	if remote == nil {
-		return ""
-	}
-	parts := make([]string, 0, len(remote.Refs)+len(remote.Symrefs))
-	for _, ref := range remote.Refs {
-		parts = append(parts, ref.Name+" "+ref.SHA)
-	}
-	for name, target := range remote.Symrefs {
-		parts = append(parts, name+" -> "+target)
-	}
-	slices.Sort(parts)
-	return "refs:" + hashutil.HashStrings(parts...).String()
-}
-
-func gitObjectsIdentity(refs []*RemoteGitRef, depth int, includeTags bool) string {
-	parts := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		parts = append(parts, ref.SHA)
-	}
-	slices.Sort(parts)
-	parts = append(parts, "depth="+strconv.Itoa(depth), "tags="+strconv.FormatBool(includeTags))
-	return "objects:" + hashutil.HashStrings(parts...).String()
 }
 
 func (repo *RemoteGitRepository) Dirty(ctx context.Context) (inst dagql.ObjectResult[*Directory], _ error) {
@@ -585,10 +556,7 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	// fails, surfacing as a labeled progress row only when objects actually
 	// transfer (an up-to-date repo skips fetching entirely).
 	span, ctx := tracing.StartSpan(ctx, "fetching "+repo.URL.Remote(), telemetry.Encapsulated(), telemetry.Encapsulate())
-	// Counters separate traffic from Dagger services, which is not input.
-	ctx, input := enginetel.StartWorkloadInput(ctx, enginetel.WorkloadTransferGit)
 	defer func() {
-		input.End(gitObjectsIdentity(refs, depth, includeTags), rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 	git = git.New(gitutil.WithStreams(gitFetchProgressStreams(ctx)))

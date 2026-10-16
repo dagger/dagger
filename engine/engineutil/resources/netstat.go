@@ -11,8 +11,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-// networkSource names the external network readings in resource availability.
-const networkSource = "network"
+// NetworkSource names the external network readings in resource availability.
+const NetworkSource = "network"
 
 type BKNetworkSampler interface {
 	Sample() (*resourcestypes.NetworkSample, error)
@@ -148,7 +148,7 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 	sample.networkAvailable.record(ctx)
 	// Without attributed counters, the external bytes of the execution are
 	// unknown, not zero.
-	enginetel.RecordResourceAvailability(ctx, networkSource, available)
+	enginetel.RecordResourceAvailability(ctx, NetworkSource, available)
 
 	return nil
 }

@@ -14,21 +14,21 @@ import (
 	"google.golang.org/grpc/stats"
 )
 
-// Kinds of external transfers. Bytes are counted at the boundary of each kind:
+// Kinds of external transfers that the engine process makes itself. Bytes are
+// counted at the boundary of each kind:
 //   - filesync: gRPC message bytes exchanged with the session's main client;
 //   - registry and http: request or response body bytes, before content
 //     decoding;
-//   - git: IP packet bytes that git commands exchange with external addresses;
 //   - llm: the request body sent to a model provider, counted when its response
 //     arrives, and the response body, before content decoding.
 //
 // Transfers inside the engine, such as with nested clients and Dagger
-// services, are not external. Command traffic of executions is in their
-// resource readings, not in transfers.
+// services, are not external. The network traffic of executions and of
+// helper commands, such as git, is in their resource readings, not in
+// transfers.
 const (
 	WorkloadTransferFilesync = "filesync"
 	WorkloadTransferRegistry = "registry"
-	WorkloadTransferGit      = "git"
 	WorkloadTransferHTTP     = "http"
 	WorkloadTransferLLM      = "llm"
 )
@@ -39,16 +39,19 @@ const WorkloadScope = "dagger.io/workload"
 
 // WorkloadTracerProvider creates spans that only the workload export receives.
 // It shares the engine queue, not the session's CLI or Cloud trace
-// destinations, so ordinary telemetry and the UI do not change.
-func (d *WorkloadExport) WorkloadTracerProvider(sessionID string) *sdktrace.TracerProvider {
+// destinations, so ordinary telemetry and the UI do not change. The first
+// processors run before the export, for example to stamp the evaluation that
+// caused a span, like on ordinary spans.
+func (d *WorkloadExport) WorkloadTracerProvider(sessionID string, first ...sdktrace.SpanProcessor) *sdktrace.TracerProvider {
 	processor := d.SpanProcessor(sessionID)
 	if processor == nil {
 		return nil
 	}
-	return sdktrace.NewTracerProvider(
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		sdktrace.WithSpanProcessor(processor),
-	)
+	opts := []sdktrace.TracerProviderOption{sdktrace.WithSampler(sdktrace.AlwaysSample())}
+	for _, p := range first {
+		opts = append(opts, sdktrace.WithSpanProcessor(p))
+	}
+	return sdktrace.NewTracerProvider(append(opts, sdktrace.WithSpanProcessor(processor))...)
 }
 
 type workloadTracerKey struct{}

@@ -160,6 +160,9 @@ type daggerSession struct {
 	telemetryDebug LifecycleTelemetryCounts
 	// workloadTracerProvider sends spans only to the workload export.
 	workloadTracerProvider *sdktrace.TracerProvider
+	// workloadUses holds the results that the session has used, for the
+	// workload export.
+	workloadUses *enginetel.WorkloadUses
 
 	// Dagger Cloud publishing, set up when the main client asked the engine
 	// to publish the session's telemetry. cloudForwarder publishes the spans
@@ -995,11 +998,12 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		spanProcessors++
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
-	sess.workloadTracerProvider = srv.workloadExport.WorkloadTracerProvider(sess.sessionID)
+	sess.workloadTracerProvider = srv.workloadExport.WorkloadTracerProvider(sess.sessionID, dagql.NewWcprofLazyParentProcessor())
 	tracerProviders := 1
 	if sess.workloadTracerProvider != nil {
 		tracerProviders++
 		spanProcessors++
+		sess.workloadUses = enginetel.NewWorkloadUses()
 	}
 	sess.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	sess.telemetryDebug = LifecycleTelemetryCounts{
@@ -2725,6 +2729,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
 	ctx = enginetel.WithWorkloadReadings(ctx, client.workloadReadings)
 	ctx = enginetel.WithWorkloadTracer(ctx, sess.workloadTracerProvider)
+	ctx = enginetel.WithWorkloadUses(ctx, sess.workloadUses)
 
 	ctx = dagql.ContextWithOperationLeaseProvider(ctx, dagql.OperationLeaseProviderFunc(func(ctx context.Context) (context.Context, func(context.Context) error, error) {
 		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {

@@ -4553,6 +4553,9 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 			watch.refused(err)
 			continue
 		}
+		if err == nil {
+			c.recordWorkloadUse(ctx, shared, nil)
+		}
 		return err
 	}
 }
@@ -4585,6 +4588,9 @@ func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartK
 		if partCanReselect(err) {
 			watch.refused(err)
 			continue
+		}
+		if err == nil {
+			c.recordWorkloadUse(ctx, shared, parts)
 		}
 		return err
 	}
