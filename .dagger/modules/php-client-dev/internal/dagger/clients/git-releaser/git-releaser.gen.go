@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type GitReleaser struct { // git-releaser (../../main.go:13:6)
+type GitReleaser struct { // git-releaser (../../main.go:15:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -32,16 +32,16 @@ func (r *GitReleaser) WithGraphQLQuery(q *querybuilder.Selection) *GitReleaser {
 
 // GitReleaserDryRunOpts contains options for GitReleaser.DryRun
 type GitReleaserDryRunOpts struct {
-	DestTag string // git-releaser (../../main.go:35:2)
+	DestTag string // git-releaser (../../main.go:37:2)
 
-	SourcePath string // git-releaser (../../main.go:36:2)
+	SourcePath string // git-releaser (../../main.go:38:2)
 
-	Callback *File // git-releaser (../../main.go:37:2)
+	Callback *File // git-releaser (../../main.go:39:2)
 }
 
 // Execute a dry-run release,
 // to verify that a release is possible without actually completing it
-func (r *GitReleaser) DryRun(ctx context.Context, sourceRepo *GitRepository, sourceTag string, destRemote string, opts ...GitReleaserDryRunOpts) error { // git-releaser (../../main.go:29:1)
+func (r *GitReleaser) DryRun(ctx context.Context, sourceRepo *GitRepository, sourceTag string, destRemote string, opts ...GitReleaserDryRunOpts) error { // git-releaser (../../main.go:31:1)
 	assertNotNil("sourceRepo", sourceRepo)
 	if r.dryRun != nil {
 		return nil
@@ -128,28 +128,28 @@ type GitReleaserReleaseOpts struct {
 	//
 	// Remote tag to release to
 	//
-	DestTag string // git-releaser (../../main.go:63:2)
+	DestTag string // git-releaser (../../main.go:65:2)
 	//
 	// Optionally publish only a subdirectory
 	//
-	SourcePath string // git-releaser (../../main.go:65:2)
+	SourcePath string // git-releaser (../../main.go:67:2)
 	//
 	// Python script executed by git-filter-repo
 	// See https://github.com/newren/git-filter-repo/blob/main/Documentation/converting-from-filter-branch.md#cheat-sheet-additional-conversion-examples
 	//
-	Callback *File // git-releaser (../../main.go:68:2)
+	Callback *File // git-releaser (../../main.go:70:2)
 	//
 	// Github authentication token
 	//
-	GithubToken *Secret // git-releaser (../../main.go:70:2)
+	GithubToken *Secret // git-releaser (../../main.go:72:2)
 	//
 	// Execute a dry run without actually releasing
 	//
-	DryRun bool // git-releaser (../../main.go:72:2)
+	DryRun bool // git-releaser (../../main.go:74:2)
 }
 
 // Execute a source release from a git repository
-func (r *GitReleaser) Release(ctx context.Context, sourceRepo *GitRepository, sourceTag string, destRemote string, opts ...GitReleaserReleaseOpts) error { // git-releaser (../../main.go:54:1)
+func (r *GitReleaser) Release(ctx context.Context, sourceRepo *GitRepository, sourceTag string, destRemote string, opts ...GitReleaserReleaseOpts) error { // git-releaser (../../main.go:56:1)
 	assertNotNil("sourceRepo", sourceRepo)
 	if r.release != nil {
 		return nil
@@ -194,10 +194,10 @@ func (r *GitReleaser) AsNode() Node {
 type GitReleaserOpts struct {
 
 	// Default: "3.22.1"
-	AlpineVersion string // git-releaser (../../main.go:20:2)
+	AlpineVersion string // git-releaser (../../main.go:22:2)
 }
 
-func (r *Query) GitReleaser(opts ...GitReleaserOpts) *GitReleaser { // git-releaser (../../main.go:17:1)
+func (r *Query) GitReleaser(opts ...GitReleaserOpts) *GitReleaser { // git-releaser (../../main.go:19:1)
 	q := r.query.Select("gitReleaser")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `alpineVersion` optional argument
