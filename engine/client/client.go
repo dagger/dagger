@@ -1467,6 +1467,11 @@ func (c *Client) init(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("do init: %w", err)
 	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
 
 	return resp.Body.Close()
 }

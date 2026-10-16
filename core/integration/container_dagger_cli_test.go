@@ -170,6 +170,7 @@ exit "$rc"
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithNewFile("/query.sh", queryScript).
 		WithNewFile("/session.sh", sessionScript).
+		WithNewFile("/version.graphql", "{ version }").
 		WithEnvVariable("ID", rand.Text())
 
 	for _, nesting := range []struct {
@@ -181,14 +182,29 @@ exit "$rc"
 	} {
 		t.Run(nesting.name, func(ctx context.Context, t *testctx.T) {
 			for _, tc := range []struct {
-				name string
-				args []string
+				name    string
+				args    []string
+				wantErr string
 			}{
-				{"dagger run", []string{"dagger", "run", "sh", "/query.sh"}},
-				{"dagger session", []string{"sh", "/session.sh", "sh", "/query.sh"}},
+				{"dagger run", []string{"dagger", "run", "sh", "/query.sh"}, ""},
+				{"dagger session", []string{"sh", "/session.sh", "sh", "/query.sh"}, ""},
+				{
+					"dagger run, CLI child",
+					[]string{"dagger", "run", "dagger", "query", "--doc", "/version.graphql"},
+					"connecting a Dagger CLI to the session served by `dagger run` is not supported yet",
+				},
+				{
+					"dagger session, CLI child",
+					[]string{"sh", "/session.sh", "dagger", "query", "--doc", "/version.graphql"},
+					"connecting a Dagger CLI to the session served by `dagger session` is not supported yet",
+				},
 			} {
 				t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 					out, err := ctr.WithExec(tc.args, nesting.opts).Stdout(ctx)
+					if tc.wantErr != "" {
+						requireErrOut(t, err, tc.wantErr)
+						return
+					}
 					require.NoError(t, err)
 					require.Contains(t, out, `{"data":{"version":`)
 				})
