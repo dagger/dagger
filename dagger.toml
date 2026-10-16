@@ -298,6 +298,11 @@ unifiedClients = true
 [sdks.go.scopes.".dagger/modules/engine-dev/notify"]
 is-module = true
 
+[sdks.go.scopes.".dagger/modules/engine-dev/notify".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/php-client-dev"]
 is-module = true
 clients = ["./.dagger/modules/engine-dev", "./modules/git-releaser"]
