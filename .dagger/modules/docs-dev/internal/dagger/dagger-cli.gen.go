@@ -6,6 +6,7 @@ import (
 	"dagger/docs/internal/dagger/core"
 )
 
+// Develop the Dagger CLI
 type DaggerCli = core.DaggerCli
 
 // DaggerCliBinaryOpts contains options for DaggerCli.Binary

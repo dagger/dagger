@@ -39,6 +39,7 @@ type ContainerWithMountedCacheOpts = core.ContainerWithMountedCacheOpts
 type ContainerWithMountedSecretOpts = core.ContainerWithMountedSecretOpts
 type Directory = core.Directory
 type DirectoryDockerBuildOpts = core.DirectoryDockerBuildOpts
+type DirectoryFilterOpts = core.DirectoryFilterOpts
 type DirectoryWithDirectoryOpts = core.DirectoryWithDirectoryOpts
 type DirectoryWithFileOpts = core.DirectoryWithFileOpts
 type DirectoryWithNewFileOpts = core.DirectoryWithNewFileOpts
