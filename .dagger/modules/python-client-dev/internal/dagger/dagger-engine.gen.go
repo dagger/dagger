@@ -6,6 +6,7 @@ import (
 	"dagger/python-client-dev/internal/dagger/core"
 )
 
+// Creates a complete end-to-end build environment with CLI and engine for interactive testing
 type DaggerEngine = core.DaggerEngine
 
 type WithDaggerEngineFunc = core.WithDaggerEngineFunc
