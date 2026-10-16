@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"dagger.io/dagger/core"
 	"dagger/gh/internal/dagger"
 	"path"
 )
@@ -167,7 +168,7 @@ func (m *Release) Create(
 
 	{
 		// TODO: use WithFiles
-		dir := dag.Directory()
+		dir := core.NewDirectory()
 
 		for _, file := range files {
 			dir = dir.WithFile("", file)
