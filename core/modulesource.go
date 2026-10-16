@@ -1509,16 +1509,9 @@ func (src *ModuleSource) LoadContextDir(
 ) (inst dagql.ObjectResult[*Directory], err error) {
 	filterInputs := copyFilterInputs(filter)
 
-	// Determine the context for defaultPath arguments, in priority order:
-	//
-	//   1. a Workspace explicitly bound into the context (an LLM bound via
-	//      withWorkspace), so the agent's defaultPath args resolve against its
-	//      own (possibly overlaid) workspace;
-	//   2. otherwise the module source itself.
-	//
-	// NOTE: this applies unilaterally, whether the module was loaded from Host,
-	// Git, or a Directory.
-	if ws, ok := WorkspaceFromContext(ctx); ok {
+	// A bound workspace may carry edits, such as an agent's overlay, that the
+	// module source was loaded without.
+	if ws, ok := WorkspaceFromContext(ctx); ok && src.contextIsWorkspace(ws.Self()) {
 		inst, err = src.loadContextFromWorkspace(ctx, dag, ws, path, filterInputs)
 	} else {
 		inst, err = NewModuleSourceFS(nil, src).directory(ctx, dag, path, filterInputs)
@@ -1554,6 +1547,26 @@ func (src *ModuleSource) LoadContextDir(
 	}
 
 	return inst, nil
+}
+
+// contextIsWorkspace reports whether ws's root is src's context root, the only
+// case in which src's contextual paths mean the same thing in ws. A module
+// installed by git ref, or from a local path under another root, is not in ws.
+// A source loaded through a Workspace, and a Directory source, which has no
+// root to compare, are assumed to be in ws.
+func (src *ModuleSource) contextIsWorkspace(ws *Workspace) bool {
+	if src.Workspace.Self() != nil {
+		return true
+	}
+	switch src.Kind {
+	case ModuleSourceKindDir:
+		return true
+	case ModuleSourceKindLocal:
+		hostPath, ok := ws.LocalSourceHostPath()
+		return ok && src.Local != nil && filepath.Clean(src.Local.ContextDirectoryPath) == filepath.Clean(hostPath)
+	default:
+		return false
+	}
 }
 
 func copyFilterInputs(filter CopyFilter) []dagql.NamedInput {
