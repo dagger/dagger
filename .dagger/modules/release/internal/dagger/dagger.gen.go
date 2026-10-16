@@ -43,6 +43,7 @@ type ContainerOpts = core.ContainerOpts
 type ContainerWithExposedPortOpts = core.ContainerWithExposedPortOpts
 type ContainerWithMountedCacheOpts = core.ContainerWithMountedCacheOpts
 type Directory = core.Directory
+type DocsDevOpts = dep2.DocsDevOpts
 type DocsDevPublishOpts = dep2.DocsDevPublishOpts
 type ElixirClientDevPublishOpts = dep3.ElixirClientDevPublishOpts
 type EngineDevInstallClientOpts = dep4.EngineDevInstallClientOpts
