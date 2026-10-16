@@ -1,35 +1,5 @@
 name = "engine-dev"
-engineVersion = "v1.0.0-0"
-include = ["../../../engine/distconsts/**/*", "../../../sdk/typescript/runtime/**/*", "../../../go.mod", "../../../go.sum", "../../../util/parallel"]
 
-[runtime]
-  source = "go"
-
-[[dependencies]]
-  name = "alpine"
-  source = "https://github.com/dagger/alpine@main"
-  pin = "ff6a5f4c28364912d92c00e682dd0bf19f524ef9"
-
-[[dependencies]]
-  name = "dagger-cli"
-  source = "../cli-dev"
-
-[[dependencies]]
-  name = "codegen"
-  source = "../../../cmd/codegen"
-
-[[dependencies]]
-  name = "go"
-  source = "../go"
-
-[[dependencies]]
-  name = "notify"
-  source = "notify"
-
-[[dependencies]]
-  name = "wolfi"
-  source = "https://github.com/dagger/wolfi@main"
-  pin = "0b73dcbea9c7d63969d747386f96b0694fb4dadc"
-
-[codegen]
-  automaticGitignore = false
+[entrypoint]
+  kind = "dang"
+  source = "./internal/dagger/entrypoint"
