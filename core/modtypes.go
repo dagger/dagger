@@ -292,6 +292,11 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.A
 		itemCtx := ctx
 		if curCall := dagql.CurrentCall(ctx); curCall != nil {
 			itemCall := cloneResultCall(curCall)
+			if curCall.Nth != 0 {
+				// this list is an item of another list: its own position must
+				// stay in the item's identity, so the item is read from it
+				itemCall.Receiver = &dagql.ResultCallRef{Call: cloneResultCall(curCall)}
+			}
 			itemCall.Nth = int64(i + 1)
 			if itemCall.Type != nil {
 				itemCall.Type = itemCall.Type.Elem
