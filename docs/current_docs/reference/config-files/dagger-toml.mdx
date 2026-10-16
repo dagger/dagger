@@ -65,11 +65,14 @@ packageManager = "yarn"
 | `source` | string | Module address — a workspace-relative path, or a Git ref such as `github.com/org/mod@version`. |
 | `pin` | string | Resolved version for `source`. |
 | `settings` | table | Module settings. Keys are defined by the module; set them with `dagger module settings`. |
-| `entrypoint` | bool | Marks this module as the workspace entrypoint. |
+| `main` | bool | Marks this module as the workspace main. |
 | `legacy-default-path` | bool | Compatibility flag recorded by workspace migration. |
 | `check` | table | `skip = [...]` — check functions to exclude from `dagger check`. |
 | `generate` | table | `skip = [...]` — generators to exclude from `dagger generate`. |
 | `up` | table | `skip = [...]` — services to exclude from `dagger start`. |
+
+The deprecated `entrypoint` key remains accepted as an alias for `main`.
+Dagger rewrites it to `main` the next time it edits the configuration.
 
 Settings can point at another module's output instead of a literal value — see [Module wiring](../../config/module-wiring.mdx).
 
@@ -108,9 +111,9 @@ Client paths are relative to the directory containing `dagger.toml`. Use `./api`
 
 `module init` saves a scope name only when you set `--name`. It preserves an
 existing saved name. Before generation, an unnamed module scope uses the name
-of its local entrypoint installation, if one exists. Otherwise, it uses the
+of its local main installation, if one exists. Otherwise, it uses the
 scope directory name. A scope at the workspace root uses the config-parent or
-workspace name with `-dev`. Multiple matching entrypoint names require an
+workspace name with `-dev`. Multiple matching main names require an
 explicit scope name. The inferred name is not written to this field.
 
 Use `dagger sdk scope name -u` to remove an override. An unnamed scope that

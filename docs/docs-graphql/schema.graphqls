@@ -545,7 +545,7 @@ type Artifact implements Node {
   moduleName: String!
 
   """
-  Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+  Ordered, literal fields to follow. Workspace main targets use their shorthand.
   """
   path: [String!]!
 
@@ -801,7 +801,8 @@ type Artifacts implements Node {
   filterPath(path: [String!]!): Artifacts!
 
   """
-  Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+  Keep paths that match a glob pattern. A literal path matches exactly. Both
+  module-qualified and workspace main paths match.
   """
   filterPathPattern(pattern: String!): Artifacts!
 
@@ -5674,9 +5675,12 @@ type Module implements Node & Syncer {
     includeDependencies: Boolean
 
     """
-    Install the module as the entrypoint, promoting its main-object methods onto the Query root
+    Install the module as the workspace main, promoting its main-object methods onto the Query root
     """
-    entrypoint: Boolean
+    main: Boolean
+
+    """Compatibility alias for main."""
+    entrypoint: Boolean @deprecated(reason: "Use main.")
   ): Void
 
   """The source for the module."""
@@ -6457,7 +6461,7 @@ type Query implements Node {
 
     """
     Strip core API functions from the Query type, leaving only module-sourced
-    functions (constructors, entrypoint proxies, etc.).
+    functions (constructors, workspace main proxies, etc.).
 
     Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
     """
@@ -7789,17 +7793,26 @@ type Workspace implements Node {
   ): Workspace!
 
   """
-  Return this workspace with an installed module selected as its entrypoint.
+  Return this workspace with an installed module selected as its main.
 
-  Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+  Every other main selection is cleared. The main module lives in the base workspace config.
   """
-  withEntrypoint(
+  withMain(
     """Exact installed module name."""
     name: String!
   ): Workspace!
 
-  """Return this workspace with no module selected as its entrypoint."""
-  withoutEntrypoint: Workspace!
+  """Compatibility alias for withMain."""
+  withEntrypoint(
+    """Exact installed module name."""
+    name: String!
+  ): Workspace! @deprecated(reason: "Use withMain.")
+
+  """Return this workspace with no module selected as its main."""
+  withoutMain: Workspace!
+
+  """Compatibility alias for withoutMain."""
+  withoutEntrypoint: Workspace! @deprecated(reason: "Use withoutMain.")
 
   """
   Return this workspace with a location initialized as a module scope.
@@ -7825,11 +7838,14 @@ type Workspace implements Node {
     install: Boolean
 
     """
-    Select this module as the entrypoint and install it. False prevents
+    Select this module as the workspace main and install it. False prevents
     automatic selection. When omitted, select only if both path and name are
     omitted and the module is installed.
     """
-    entrypoint: Boolean
+    main: Boolean
+
+    """Compatibility alias for main."""
+    entrypoint: Boolean @deprecated(reason: "Use main.")
 
     """Explicit SDK-module constructor setting overrides for this scope."""
     settings: JSON
@@ -8068,11 +8084,14 @@ type Workspace implements Node {
   ): String!
 
   """
-  Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+  Installed name of the module selected as the workspace main, or an empty string when none is selected.
 
   Reflects the selected env's effective view. Fails if several modules are selected.
   """
-  entrypoint: String!
+  main: String!
+
+  """Compatibility alias for main."""
+  entrypoint: String! @deprecated(reason: "Use main.")
 
   """List named environments defined in the workspace configuration."""
   envList: [String!]!
@@ -8269,6 +8288,9 @@ type WorkspaceModule implements Node {
   """A unique identifier for this WorkspaceModule."""
   id: ID!
 
+  """Compatibility alias for main."""
+  entrypoint: Boolean! @deprecated(reason: "Use main.")
+
   """List constructor-backed settings for this module."""
   settings: [WorkspaceModuleSetting!]!
 
@@ -8281,9 +8303,9 @@ type WorkspaceModule implements Node {
   name: String!
 
   """
-  Whether the module is the workspace entrypoint (functions aliased to Query root).
+  Whether the module is the workspace main (functions aliased to Query root).
   """
-  entrypoint: Boolean!
+  main: Boolean!
 
   """The module source path."""
   source: String!

@@ -105,7 +105,7 @@ type ModuleEntry struct {
 	Source            string         `json:"source" toml:"source"`
 	Pin               string         `json:"pin,omitempty" toml:"pin,omitempty"`
 	Settings          map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
-	Entrypoint        bool           `json:"entrypoint,omitempty" toml:"entrypoint,omitempty"`
+	Main              bool           `json:"main,omitempty" toml:"main,omitempty"`
 	LegacyDefaultPath bool           `json:"legacy-default-path,omitempty" toml:"legacy-default-path,omitempty"`
 	Up                ModuleSkip     `json:"up,omitempty" toml:"up,omitempty"`
 	Generate          ModuleSkip     `json:"generate,omitempty" toml:"generate,omitempty"`
@@ -225,10 +225,90 @@ func ParseConfig(data []byte) (*Config, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse dagger.toml: %w", err)
 	}
+	legacyMains, err := legacyWorkspaceMains(data)
+	if err != nil {
+		return nil, err
+	}
+	for name, main := range legacyMains {
+		entry := cfg.Modules[name]
+		entry.Main = main
+		cfg.Modules[name] = entry
+	}
 	if err := ValidateSDKs(&cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// legacyWorkspaceMains returns workspace main selections written with the
+// former entrypoint key. The alias is input compatibility: config writers
+// emit main.
+func legacyWorkspaceMains(data []byte) (map[string]bool, error) {
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse dagger.toml: %w", err)
+	}
+	modules, _ := tree.Get("modules").(*toml.Tree)
+	if modules == nil {
+		return nil, nil
+	}
+	legacy := map[string]bool{}
+	for _, name := range modules.Keys() {
+		module, _ := modules.Get(name).(*toml.Tree)
+		if module == nil || !module.Has("entrypoint") {
+			continue
+		}
+		if module.Has("main") {
+			return nil, fmt.Errorf("module %q cannot set both main and deprecated entrypoint", name)
+		}
+		value, ok := module.Get("entrypoint").(bool)
+		if !ok {
+			return nil, fmt.Errorf("modules.%s.entrypoint must be a boolean", name)
+		}
+		legacy[name] = value
+	}
+	return legacy, nil
+}
+
+func canonicalConfigParts(parts []string) []string {
+	if len(parts) == 3 && parts[0] == "modules" && parts[2] == "entrypoint" {
+		parts = append([]string(nil), parts...)
+		parts[2] = "main"
+	}
+	return parts
+}
+
+// canonicalizeLegacyWorkspaceMainKeys rewrites deprecated entrypoint keys
+// while preserving the surrounding TOML document.
+func canonicalizeLegacyWorkspaceMainKeys(data []byte) ([]byte, error) {
+	legacy, err := legacyWorkspaceMains(data)
+	if err != nil || len(legacy) == 0 {
+		return data, err
+	}
+	names := make([]string, 0, len(legacy))
+	for name := range legacy {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		doc, err := parseConfigText(data)
+		if err != nil {
+			return nil, err
+		}
+		data, err = doc.set([]string{"modules", name, "main"}, legacy[name])
+		if err != nil {
+			return nil, err
+		}
+		doc, err = parseConfigText(data)
+		if err != nil {
+			return nil, err
+		}
+		data, err = doc.remove([]string{"modules", name, "entrypoint"})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return data, nil
 }
 
 // ApplyEnvOverlay returns a copy of cfg with the named environment overlay
@@ -457,7 +537,7 @@ func cloneConfig(cfg *Config) *Config {
 				Source:            entry.Source,
 				Pin:               entry.Pin,
 				Settings:          cloneConfigMap(entry.Settings),
-				Entrypoint:        entry.Entrypoint,
+				Main:              entry.Main,
 				LegacyDefaultPath: entry.LegacyDefaultPath,
 				Up:                ModuleSkip{Skip: append([]string(nil), entry.Up.Skip...)},
 				Generate:          ModuleSkip{Skip: append([]string(nil), entry.Generate.Skip...)},
@@ -543,8 +623,8 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 		if entry.Pin != "" {
 			fmt.Fprintf(b, "pin = %q\n", entry.Pin)
 		}
-		if entry.Entrypoint {
-			b.WriteString("entrypoint = true\n")
+		if entry.Main {
+			b.WriteString("main = true\n")
 		}
 		if entry.LegacyDefaultPath {
 			b.WriteString("legacy-default-path = true\n")
@@ -726,6 +806,10 @@ func ReadConfigValue(data []byte, key string) (string, error) {
 		return string(data), nil
 	}
 
+	data, err := canonicalizeLegacyWorkspaceMainKeys(data)
+	if err != nil {
+		return "", err
+	}
 	tree, err := toml.LoadBytes(data)
 	if err != nil {
 		return "", fmt.Errorf("parse config: %w", err)
@@ -735,6 +819,7 @@ func ReadConfigValue(data []byte, key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	parts = canonicalConfigParts(parts)
 	value := tree.GetPath(parts)
 	if value == nil {
 		if defaultValue, ok := readMissingConfigDefault(tree, parts); ok {
@@ -758,7 +843,7 @@ func readMissingConfigDefault(tree *toml.Tree, parts []string) (string, bool) {
 	if len(parts) == 1 && parts[0] == "check-generated" {
 		return "true", true
 	}
-	if len(parts) == 3 && parts[0] == "modules" && (parts[2] == "entrypoint" || parts[2] == "legacy-default-path") {
+	if len(parts) == 3 && parts[0] == "modules" && (parts[2] == "main" || parts[2] == "legacy-default-path") {
 		if tree.GetPath(parts[:2]) != nil {
 			return "false", true
 		}
@@ -819,7 +904,12 @@ func writeConfigValueAtKey(existingData []byte, key string, valueFor func(parts 
 	if err != nil {
 		return nil, err
 	}
+	parts = canonicalConfigParts(parts)
 	if err := validateConfigKeyParts(parts, key, "set"); err != nil {
+		return nil, err
+	}
+	existingData, err = canonicalizeLegacyWorkspaceMainKeys(existingData)
+	if err != nil {
 		return nil, err
 	}
 
@@ -897,6 +987,11 @@ func DeleteConfigValue(existingData []byte, key string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	parts = canonicalConfigParts(parts)
+	existingData, err = canonicalizeLegacyWorkspaceMainKeys(existingData)
+	if err != nil {
+		return nil, err
+	}
 	if len(parts) == 2 && parts[0] == "modules" {
 		return nil, fmt.Errorf("cannot unset %q directly; use dagger module uninstall to remove a module", key)
 	}
@@ -919,7 +1014,7 @@ func DeleteConfigValue(existingData []byte, key string) ([]byte, error) {
 	}
 
 	// Presence is judged on the raw document rather than the parsed config:
-	// explicit zero values (`entrypoint = false`, `ignore = []`) are set keys
+	// explicit zero values (`main = false`, `ignore = []`) are set keys
 	// even though they parse to Go zero values, matching how configRead sees
 	// them.
 	tree, err := toml.LoadBytes(existingData)
@@ -1274,12 +1369,12 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 		switch parts[2] {
 		case "source":
 			entry.Source = fmt.Sprint(value)
-		case "entrypoint":
+		case "main":
 			boolValue, ok := value.(bool)
 			if !ok {
-				return fmt.Errorf("modules.%s.entrypoint must be a boolean", moduleName)
+				return fmt.Errorf("modules.%s.main must be a boolean", moduleName)
 			}
-			entry.Entrypoint = boolValue
+			entry.Main = boolValue
 		case "legacy-default-path":
 			boolValue, ok := value.(bool)
 			if !ok {
@@ -1549,7 +1644,7 @@ func parseListElement(input string) (element, rest string, err error) {
 }
 
 func parseValueString(parts []string, rawValue string) any {
-	if (len(parts) == 3 && parts[0] == "modules" && (parts[2] == "entrypoint" || parts[2] == "legacy-default-path")) ||
+	if (len(parts) == 3 && parts[0] == "modules" && (parts[2] == "main" || parts[2] == "legacy-default-path")) ||
 		(len(parts) == 1 && (parts[0] == "defaults_from_dotenv" || parts[0] == "check-generated")) {
 		return rawValue == "true"
 	}

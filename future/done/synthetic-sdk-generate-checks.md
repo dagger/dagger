@@ -192,7 +192,7 @@ The derived check takes its `Node` from the generator, so `Check.Name`,
 `Check.Path`, and `Check.Description` keep working unchanged. The name is
 whatever `dagger generate -l` already prints for the same generator:
 `<provider>:generate` normally, or `generate` when the provider module is the
-workspace entrypoint, because `ModTreeNode.CommandPath` drops the leading
+workspace main, because `ModTreeNode.CommandPath` drops the leading
 element for an entrypoint.
 
 `core.NewCheckGroup` skips a generate-derived check when an explicit `+check`
@@ -397,7 +397,7 @@ then covers:
 - `[modules.<provider>.check] skip = ["generate"]` omits it.
 - An explicit `+check` named `generate` on the provider module leaves exactly
   one check with that name.
-- A provider module marked as the workspace entrypoint names the check
+- A provider module marked as the workspace main names the check
   `generate`.
 - Two SDKs produce two derived checks. With a client scope of SDK A depending
   on a module scope of SDK B, deleting B's generated file fails both checks;

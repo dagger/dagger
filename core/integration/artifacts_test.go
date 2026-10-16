@@ -28,7 +28,7 @@ func artifactSource(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "configured"
 [modules.consumer]
 source = "./consumer"
@@ -895,7 +895,7 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 	reserved := base.
 		WithNewFile("/work/selected/dagger.toml", `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 `).
 		WithNewFile("/work/selected/provider/main.dang", `type Provider {
   pub types: Directory! { directory }
@@ -1049,7 +1049,7 @@ func (ArtifactsSuite) TestWorkspaceEdits(ctx context.Context, t *testctx.T) {
 	}
 	config := `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "changed"
 [modules.consumer]
 source = "./consumer"
@@ -1082,7 +1082,7 @@ func (ArtifactsSuite) TestAliasAndShorthandSetting(ctx context.Context, t *testc
 	c := connect(ctx, t)
 	wsID, err := artifactSource(c).WithNewFile("dagger.toml", `[modules.provider]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "configured"
 [modules.alias]
 source = "./provider"
@@ -1105,11 +1105,11 @@ func (ArtifactsSuite) TestAmbiguousEntrypoints(ctx context.Context, t *testctx.T
 	c := connect(ctx, t)
 	wsID, err := artifactSource(c).WithNewFile("dagger.toml", `[modules.first]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "first"
 [modules.second]
 source = "./provider"
-entrypoint = true
+main = true
 settings.label = "second"
 `).AsWorkspace().ID(ctx)
 	require.NoError(t, err)
@@ -1138,7 +1138,7 @@ func (ArtifactsSuite) TestCheckReturnTypes(ctx context.Context, t *testctx.T) {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			src := core.NewQuery(c).Directory().WithNewFile("dagger.toml", `[modules.example]
 source = "./example"
-entrypoint = true
+main = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
 engineVersion = "v1.0.0"
 [runtime]
@@ -1172,7 +1172,7 @@ func (ArtifactsSuite) TestCheckProjection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	src := core.NewQuery(c).Directory().WithNewFile("dagger.toml", `[modules.example]
 source = "./example"
-entrypoint = true
+main = true
 `).WithNewFile("example/dagger-module.toml", `name = "example"
 engineVersion = "v1.0.0"
 [runtime]
@@ -1282,7 +1282,7 @@ func (ArtifactsSuite) TestCommandFilters(ctx context.Context, t *testctx.T) {
 	config := `check-generated = false
 [modules.probe]
 source = "./probe"
-entrypoint = true
+main = true
 check.skip = ["skipped", "scan?"]
 generate.skip = ["skipped-generate"]
 up.skip = ["skipped-service", "skipped-unmarked-service"]
@@ -1500,7 +1500,7 @@ func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *core.Works
 func (ArtifactsSuite) TestCheckCachePolicy(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
-		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
 		WithNewFile("probe/main.go", `package main
 import ("crypto/rand"; "fmt")
@@ -1556,7 +1556,7 @@ func (*Probe) Every() error { return fmt.Errorf("every %s", rand.Text()) }
 func (ArtifactsSuite) TestLazyValueFailures(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
-		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger-module.toml", "name = \"probe\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
 		WithNewFile("probe/main.dang", `type Probe {
  pub brokenDirectory: Directory! { container.from("alpine:3.22").withExec(["sh", "-c", "exit 42"]).rootfs }
@@ -1613,7 +1613,7 @@ source = "./good"
 settings.expected = "bound"
 [modules.bad]
 source = "./bad"
-entrypoint = true
+main = true
 `).
 		WithNewFile("marker", "bound").
 		WithNewFile("good/dagger-module.toml", "name = \"good\"\nengineVersion = \"v1.0.0\"\n[runtime]\nsource = \"dang\"\n").
@@ -1734,7 +1734,7 @@ func (ArtifactsSuite) TestUnknownEnvironment(ctx context.Context, t *testctx.T) 
 func (ArtifactsSuite) TestGeneratorCachePolicy(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nativeWorkspaceBase(t, c).
-		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nentrypoint = true\n").
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
 		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"v1.0.0","sdk":"go"}`).
 		WithNewFile("probe/main.go", `package main
 import ("crypto/rand"; "fmt"; "dagger/probe/internal/dagger")

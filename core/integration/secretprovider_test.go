@@ -444,7 +444,7 @@ func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
 	verifySecretFromVault := func(ctx context.Context, c *dagger.Client, base *core.Container, secretURL string, tcname string) (string, error) {
 		return base.
 			WithWorkdir("/work").
-			With(withModuleEntrypointFixture(t, c, ".", "foo", "go/vault-ttl")).
+			With(withModuleMainFixture(t, c, ".", "foo", "go/vault-ttl")).
 			With(daggerCall("-vvv", "verify-secret", fmt.Sprintf("--secret=%s", secretURL), "--vault=tcp://vault:8200", fmt.Sprintf("--tc=%s", tcname))).Stdout(ctx)
 	}
 

@@ -200,7 +200,7 @@ module = "local-sdk"
 		c := connect(ctx, t)
 		fixture := `{"name":"fixture","sdk":"dang"}`
 		base := workspaceBase(t, c).
-			WithNewFile("dagger.toml", "[modules.app]\nsource = './app'\nentrypoint = true\n").
+			WithNewFile("dagger.toml", "[modules.app]\nsource = './app'\nmain = true\n").
 			With(legacyDangModule("app", "app", "App", "hello after migration")).
 			WithNewFile("app/dagger.json", `{"name":"app","sdk":"dang","dependencies":[{"name":"dep","source":"../dep"}]}`).
 			With(legacyDangModule("dep", "dep", "Dep", "dependency")).

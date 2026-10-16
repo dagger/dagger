@@ -572,21 +572,21 @@ func TestParseGlobalFlagsLeavesHelpToCobra(t *testing.T) {
 func TestWorkspaceFlagPolicy(t *testing.T) {
 	oldWorkspaceRef := workspaceRef
 	oldWorkspaceEnv := workspaceEnv
-	oldEntrypointUnset := workspaceEntrypointUnset
+	oldMainUnset := workspaceMainUnset
 	t.Cleanup(func() {
 		workspaceRef = oldWorkspaceRef
 		workspaceEnv = oldWorkspaceEnv
-		workspaceEntrypointUnset = oldEntrypointUnset
+		workspaceMainUnset = oldMainUnset
 	})
 
 	workspaceRef = "github.com/acme/ws"
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(newLockListCmd(), nil), "must be a local path")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(newLockUpdateCmd(), nil), "must be a local path")
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceEntrypointCmd, []string{"tools"}), "must be a local path")
-	require.NoError(t, validateWorkspaceFlagPolicy(workspaceEntrypointCmd, nil))
-	workspaceEntrypointUnset = true
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceEntrypointCmd, nil), "must be a local path")
-	workspaceEntrypointUnset = false
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceMainCmd, []string{"tools"}), "must be a local path")
+	require.NoError(t, validateWorkspaceFlagPolicy(workspaceMainCmd, nil))
+	workspaceMainUnset = true
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceMainCmd, nil), "must be a local path")
+	workspaceMainUnset = false
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}), "must be a local path")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz", "qux"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar"}))

@@ -440,8 +440,8 @@ type clientRuntime struct {
 	// load failures by moduleProgressName; failed modules stay pending to keep
 	// reporting their error
 	failedModules map[string]error
-	// whether an entrypoint module has been served (extras outrank ambient)
-	entrypointServed bool
+	// whether a workspace main module has been served (extras outrank ambient)
+	mainServed bool
 	// resolved identities already served, for cross-batch deduplication
 	servedModuleKeys map[string]struct{}
 	// served workspace module names, so demand filters recognize them without
@@ -519,7 +519,7 @@ func (client *clientRuntime) releaseHeavyState() {
 	client.extraModulesLoaded = false
 	client.extraModulesErr = nil
 	client.failedModules = nil
-	client.entrypointServed = false
+	client.mainServed = false
 	client.servedModuleKeys = nil
 	client.servedWorkspaceModuleNames = nil
 	client.workspaceModuleScopeConsumed = false
@@ -2851,7 +2851,7 @@ func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, c
 				// runs under client.modulesMu, which also guards
 				// servedWorkspaceModuleNames and workspaceModuleScopeConsumed
 				scope := client.pendingWorkspaceModuleScopeLocked()
-				selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, client.servedWorkspaceModuleNames, client.failedModules, rootFields, scope, client.entrypointServed)
+				selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, client.servedWorkspaceModuleNames, client.failedModules, rootFields, scope, client.mainServed)
 				if applied {
 					scopeApplied = true
 					names := make([]string, 0, len(selected))
@@ -3059,9 +3059,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 // Stitch in the given module to the list being served to the current client.
 // When includeDependencies is true, dependency modules are also served with
 // their constructors on the Query root.
-// When entrypoint is true, the module's main-object methods are promoted
+// When main is true, the module's main-object methods are promoted
 // onto the Query root.
-func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core.Module], includeDependencies bool, entrypoint bool) error {
+func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core.Module], includeDependencies bool, main bool) error {
 	client, err := srv.executableClientFromContext(ctx)
 	if err != nil {
 		return err
@@ -3070,7 +3070,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
-	if err := srv.serveModule(client, core.NewUserMod(mod), core.InstallOpts{Entrypoint: entrypoint}); err != nil {
+	if err := srv.serveModule(client, core.NewUserMod(mod), core.InstallOpts{Main: main}); err != nil {
 		return err
 	}
 	if includeDependencies {

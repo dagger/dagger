@@ -167,7 +167,7 @@ func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatW
 			Pin:        cfg.Blueprint.Pin,
 			Entry: ModuleEntry{
 				Source:            legacyWorkspaceModuleSource(cfg.Blueprint.Source, cfg.Blueprint.Pin),
-				Entrypoint:        true,
+				Main:              true,
 				LegacyDefaultPath: true,
 			},
 		})
@@ -183,8 +183,8 @@ func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatW
 			Name:       cfg.Name,
 			ConfigName: cfg.Name,
 			Entry: ModuleEntry{
-				Source:     ".",
-				Entrypoint: cfg.Blueprint == nil,
+				Source: ".",
+				Main:   cfg.Blueprint == nil,
 			},
 		}
 	}
@@ -216,7 +216,7 @@ func (compatWorkspace *CompatWorkspace) WorkspaceConfig() *Config {
 		cfg.Modules[mod.ConfigName] = ModuleEntry{
 			Source:            mod.Entry.Source,
 			Settings:          cloneConfigDefaults(mod.Entry.Settings),
-			Entrypoint:        mod.Entry.Entrypoint,
+			Main:              mod.Entry.Main,
 			LegacyDefaultPath: mod.Entry.LegacyDefaultPath,
 		}
 	}
@@ -313,7 +313,7 @@ func RequiresWorkspaceMigration(cfg *modules.ModuleConfig) bool {
 // the config's own directory — the "repo is just a dagger module" shape, as
 // opposed to a module tucked into a subdirectory of a project repo. Migration
 // treats such a module as the repo itself: its config converts in place and it
-// is neither installed into the workspace nor given an entrypoint.
+// is neither installed into the workspace nor selected as its main.
 func ModuleSourceAtRoot(cfg *modules.ModuleConfig) bool {
 	return cfg == nil || cfg.Source == "" || filepath.Clean(cfg.Source) == "."
 }

@@ -799,7 +799,7 @@ The engine must use one atomic workspace change:
 4. Decode explicit SDK-setting overrides.
 5. If `--path` is absent, call optional `defaultModulePath` on the selected provider.
 6. Use a nonempty SDK result. Otherwise, use the engine default path.
-7. Validate and stage the scope path, explicit name, and explicit scope settings in `dagger.toml`. When the name and path are both inferred, install the module as the workspace entrypoint. Preserve any existing saved scope name when no explicit name is supplied.
+7. Validate and stage the scope path, explicit name, and explicit scope settings in `dagger.toml`. When the name and path are both inferred, install the module as the workspace main. Preserve any existing saved scope name when no explicit name is supplied.
 8. Construct the provider with effective scope settings.
 9. Set a derived Workspace CWD to the module scope.
 10. Run the scope generator with the complete scope state.

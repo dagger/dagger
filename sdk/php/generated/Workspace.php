@@ -592,9 +592,19 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace with an installed module selected as its entrypoint.
+     * Return this workspace with an installed module selected as its main.
      *
-     * Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+     * Every other main selection is cleared. The main module lives in the base workspace config.
+     */
+    public function withMain(string $name): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMain');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Compatibility alias for withMain.
      */
     public function withEntrypoint(string $name): Workspace
     {
@@ -604,7 +614,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Return this workspace with no module selected as its entrypoint.
+     * Return this workspace with no module selected as its main.
+     */
+    public function withoutMain(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutMain');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Compatibility alias for withoutMain.
      */
     public function withoutEntrypoint(): Workspace
     {
@@ -622,6 +641,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         ?string $name = '',
         ?string $path = '',
         ?bool $install = null,
+        ?bool $main = null,
         ?bool $entrypoint = null,
         ?Json $settings = null,
     ): Workspace {
@@ -635,6 +655,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $install) {
         $innerQueryBuilder->setArgument('install', $install);
+        }
+        if (null !== $main) {
+        $innerQueryBuilder->setArgument('main', $main);
         }
         if (null !== $entrypoint) {
         $innerQueryBuilder->setArgument('entrypoint', $entrypoint);
@@ -884,9 +907,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+     * Installed name of the module selected as the workspace main, or an empty string when none is selected.
      *
      * Reflects the selected env's effective view. Fails if several modules are selected.
+     */
+    public function main(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('main');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'main');
+    }
+
+    /**
+     * Compatibility alias for main.
      */
     public function entrypoint(): string
     {

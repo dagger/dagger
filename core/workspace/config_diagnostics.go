@@ -52,7 +52,9 @@ func CheckConfigFields(data []byte, filename string) (warnings []string, _ error
 			}
 			if !known {
 				pos := tree.GetPositionPath([]string{key})
-				if legacySDKConfigPath(parts) {
+				if legacyWorkspaceMainPath(parts) {
+					warnings = append(warnings, fmt.Sprintf("%s:%d:%d: deprecated field %s is accepted for compatibility; use %s", filename, pos.Line, pos.Col, JoinConfigPath(parts...), JoinConfigPath(parts[:2]...)+".main"))
+				} else if legacySDKConfigPath(parts) {
 					warnings = append(warnings, fmt.Sprintf("%s:%d:%d: unsupported field %s is ignored; run `dagger ws migrate` to migrate it", filename, pos.Line, pos.Col, JoinConfigPath(parts...)))
 				} else {
 					unknown = append(unknown, unknownField{pos, JoinConfigPath(parts...)})
@@ -74,6 +76,10 @@ func CheckConfigFields(data []byte, filename string) (warnings []string, _ error
 		errs = append(errs, fmt.Errorf("%s:%d:%d: unknown field %s", filename, field.pos.Line, field.pos.Col, field.path))
 	}
 	return warnings, errors.Join(errs...)
+}
+
+func legacyWorkspaceMainPath(parts []string) bool {
+	return len(parts) == 3 && configDecoderKeyMatches(parts[0], "modules") && parts[2] == "entrypoint"
 }
 
 // legacySDKConfigPath reports whether parts names a legacy SDK field that

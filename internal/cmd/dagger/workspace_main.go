@@ -9,22 +9,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var workspaceEntrypointUnset bool
+var workspaceMainUnset bool
 
-var workspaceEntrypointCmd = &cobra.Command{
-	Use:   "entrypoint [NAME]",
-	Short: "Get or set the workspace entrypoint",
-	Long: `Print the installed name of the current entrypoint.
-Print nothing if no entrypoint is set.
+var workspaceMainCmd = &cobra.Command{
+	Use:     "main [NAME]",
+	Aliases: []string{"entrypoint"},
+	Short:   "Get or set the workspace main",
+	Long: `Print the installed name of the current workspace main.
+Print nothing if no workspace main is set.
 
-With NAME, select that installed module and clear the previous entrypoint.
+With NAME, select that installed module and clear the previous workspace main.
 Use --unset to clear the selection. NAME must be an exact installed name.
 Changes are written to the selected dagger.toml.`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
 			return err
 		}
-		if workspaceEntrypointUnset && len(args) != 0 {
+		if workspaceMainUnset && len(args) != 0 {
 			return fmt.Errorf("--unset cannot be used with NAME")
 		}
 		if len(args) == 1 && args[0] == "" {
@@ -33,9 +34,9 @@ Changes are written to the selected dagger.toml.`,
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		write := workspaceEntrypointUnset || len(args) == 1
+		write := workspaceMainUnset || len(args) == 1
 		if write && workspaceEnv != "" {
-			return fmt.Errorf("workspace entrypoint does not support --env; entrypoints are set in the base workspace config")
+			return fmt.Errorf("workspace main does not support --env; it is set in the base workspace config")
 		}
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules:           true,
@@ -43,7 +44,7 @@ Changes are written to the selected dagger.toml.`,
 		}, func(ctx context.Context, engineClient *client.Client) error {
 			ws := core.NewQuery(engineClient.Dagger()).CurrentWorkspace()
 			if !write {
-				name, err := ws.Entrypoint(ctx)
+				name, err := ws.Main(ctx)
 				if err != nil || name == "" {
 					return err
 				}
@@ -54,19 +55,19 @@ Changes are written to the selected dagger.toml.`,
 			if len(args) == 1 {
 				name = args[0]
 			}
-			return writeWorkspaceEntrypoint(ctx, ws, name)
+			return writeWorkspaceMain(ctx, ws, name)
 		})
 	},
 }
 
 func init() {
-	workspaceEntrypointCmd.Flags().BoolVar(&workspaceEntrypointUnset, "unset", false, "Clear the entrypoint")
-	workspaceCmd.AddCommand(workspaceEntrypointCmd)
+	workspaceMainCmd.Flags().BoolVar(&workspaceMainUnset, "unset", false, "Clear the workspace main")
+	workspaceCmd.AddCommand(workspaceMainCmd)
 }
 
-func writeWorkspaceEntrypoint(ctx context.Context, ws *core.Workspace, name string) error {
+func writeWorkspaceMain(ctx context.Context, ws *core.Workspace, name string) error {
 	if name == "" {
-		return ws.WithoutEntrypoint().Export(ctx)
+		return ws.WithoutMain().Export(ctx)
 	}
-	return ws.WithEntrypoint(name).Export(ctx)
+	return ws.WithMain(name).Export(ctx)
 }

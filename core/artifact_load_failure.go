@@ -18,7 +18,7 @@ import (
 // failure.
 //
 // Whether a module could hold something follows from how discovery names
-// artifacts: paths start with the module's address name (an entrypoint's may
+// artifacts: paths start with the module's address name (a main's may
 // omit it), collection dimension identifiers start with /<module>/ and their
 // names with <module>-, and a type dimension's key is an artifact path.
 
@@ -52,7 +52,7 @@ func (a *Artifact) mayContainPath(pattern string, glob bool) bool {
 		if first == module || isGlob && matchSegment(first, module) {
 			return true
 		}
-		// An entrypoint's shorthand path starts with any of its fields,
+		// A main's shorthand path starts with any of its fields,
 		// which no other module's name can be.
 		if a.LoadFailure.Entrypoint && (isGlob || !slices.Contains(a.LoadFailure.Siblings, first)) {
 			return true

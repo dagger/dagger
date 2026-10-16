@@ -4221,7 +4221,7 @@ func (ContainerSuite) TestPublishAndFromWithRegistryServiceBinding(ctx context.C
 			WithNewFile("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
 			WithNewFile("dagger.toml", `[modules.test]
 source = "."
-entrypoint = true
+main = true
 `).
 			WithNewFile("go.mod", `module dagger/test
 

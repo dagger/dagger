@@ -1170,7 +1170,7 @@ func (r *Artifact) ModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+// Ordered, literal fields to follow. Workspace main targets use their shorthand.
 func (r *Artifact) Path(ctx context.Context) ([]string, error) {
 	q := r.query.Select("path")
 
@@ -2200,7 +2200,7 @@ func (r *Artifacts) FilterPath(path []string) *Artifacts {
 	}
 }
 
-// Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+// Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and workspace main paths match.
 func (r *Artifacts) FilterPathPattern(pattern string) *Artifacts {
 	q := r.query.Select("filterPathPattern")
 	q = q.Arg("pattern", pattern)
@@ -16227,7 +16227,10 @@ func (r *Module) SDK(ctx context.Context) (*SDKConfig, error) {
 type ModuleServeOpts struct {
 	// Expose the dependencies of this module to the client
 	IncludeDependencies bool
-	// Install the module as the entrypoint, promoting its main-object methods onto the Query root
+	// Install the module as the workspace main, promoting its main-object methods onto the Query root
+	Main bool
+	// Compatibility alias for main.
+	// Deprecated: Use main.
 	Entrypoint bool
 }
 
@@ -16243,6 +16246,10 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 		// `includeDependencies` optional argument
 		if !querybuilder.IsZeroValue(opts[i].IncludeDependencies) {
 			q = q.Arg("includeDependencies", opts[i].IncludeDependencies)
+		}
+		// `main` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Main) {
+			q = q.Arg("main", opts[i].Main)
 		}
 		// `entrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
@@ -17940,7 +17947,7 @@ func (r *Query) CurrentTimestamp(ctx context.Context) (string, error) {
 type CurrentTypeDefsOpts struct {
 	// Return the full referenced typedef closure instead of only top-level served typedefs.
 	ReturnAllTypes bool
-	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).
 	//
 	// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
 	HideCore bool
@@ -20904,6 +20911,7 @@ type Workspace struct {
 	export      *Void
 	findUp      *string
 	id          *ID
+	main        *string
 }
 type WithWorkspaceFunc func(r *Workspace) *Workspace
 
@@ -21159,9 +21167,9 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 	}
 }
 
-// Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
+// Compatibility alias for main.
 //
-// Reflects the selected env's effective view. Fails if several modules are selected.
+// Deprecated: Use main.
 func (r *Workspace) Entrypoint(ctx context.Context) (string, error) {
 	if r.entrypoint != nil {
 		return *r.entrypoint, nil
@@ -21367,6 +21375,21 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Installed name of the module selected as the workspace main, or an empty string when none is selected.
+//
+// Reflects the selected env's effective view. Fails if several modules are selected.
+func (r *Workspace) Main(ctx context.Context) (string, error) {
+	if r.main != nil {
+		return *r.main, nil
+	}
+	q := r.query.Select("main")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // WorkspaceMigrateOpts contains options for Workspace.Migrate
@@ -21887,9 +21910,9 @@ func (r *Workspace) WithDirectory(path string, source *Directory) *Workspace {
 	}
 }
 
-// Return this workspace with an installed module selected as its entrypoint.
+// Compatibility alias for withMain.
 //
-// Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+// Deprecated: Use withMain.
 func (r *Workspace) WithEntrypoint(name string) *Workspace {
 	q := r.query.Select("withEntrypoint")
 	q = q.Arg("name", name)
@@ -21933,7 +21956,10 @@ type WorkspaceWithInitModuleOpts struct {
 	Path string
 	// Install the module. When omitted, install only if path is omitted.
 	Install bool
-	// Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+	// Select this module as the workspace main and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+	Main bool
+	// Compatibility alias for main.
+	// Deprecated: Use main.
 	Entrypoint bool
 	// Explicit SDK-module constructor setting overrides for this scope.
 	Settings JSON
@@ -21957,6 +21983,10 @@ func (r *Workspace) WithInitModule(sdk string, opts ...WorkspaceWithInitModuleOp
 		if !querybuilder.IsZeroValue(opts[i].Install) {
 			q = q.Arg("install", opts[i].Install)
 		}
+		// `main` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Main) {
+			q = q.Arg("main", opts[i].Main)
+		}
 		// `entrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Entrypoint) {
 			q = q.Arg("entrypoint", opts[i].Entrypoint)
@@ -21979,6 +22009,19 @@ func (r *Workspace) WithInitModule(sdk string, opts ...WorkspaceWithInitModuleOp
 // Fail if legacy configuration needs workspace migration.
 func (r *Workspace) WithInitialized() *Workspace {
 	q := r.query.Select("withInitialized")
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with an installed module selected as its main.
+//
+// Every other main selection is cleared. The main module lives in the base workspace config.
+func (r *Workspace) WithMain(name string) *Workspace {
+	q := r.query.Select("withMain")
+	q = q.Arg("name", name)
 
 	return &Workspace{
 		query:     q,
@@ -22393,7 +22436,9 @@ func (r *Workspace) WithoutDirectory(path string) *Workspace {
 	}
 }
 
-// Return this workspace with no module selected as its entrypoint.
+// Compatibility alias for withoutMain.
+//
+// Deprecated: Use withoutMain.
 func (r *Workspace) WithoutEntrypoint() *Workspace {
 	q := r.query.Select("withoutEntrypoint")
 
@@ -22418,6 +22463,16 @@ func (r *Workspace) WithoutFile(path string) *Workspace {
 func (r *Workspace) WithoutFiles(paths []string) *Workspace {
 	q := r.query.Select("withoutFiles")
 	q = q.Arg("paths", paths)
+
+	return &Workspace{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Return this workspace with no module selected as its main.
+func (r *Workspace) WithoutMain() *Workspace {
+	q := r.query.Select("withoutMain")
 
 	return &Workspace{
 		query:     q,
@@ -23002,6 +23057,7 @@ type WorkspaceModule struct {
 
 	entrypoint *bool
 	id         *ID
+	main       *bool
 	name       *string
 	source     *string
 }
@@ -23015,7 +23071,9 @@ func (r *WorkspaceModule) WithGraphQLQuery(q *querybuilder.Selection) *Workspace
 	}
 }
 
-// Whether the module is the workspace entrypoint (functions aliased to Query root).
+// Compatibility alias for main.
+//
+// Deprecated: Use main.
 func (r *WorkspaceModule) Entrypoint(ctx context.Context) (bool, error) {
 	if r.entrypoint != nil {
 		return *r.entrypoint, nil
@@ -23082,6 +23140,19 @@ func (r *WorkspaceModule) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Whether the module is the workspace main (functions aliased to Query root).
+func (r *WorkspaceModule) Main(ctx context.Context) (bool, error) {
+	if r.main != nil {
+		return *r.main, nil
+	}
+	q := r.query.Select("main")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The module name.

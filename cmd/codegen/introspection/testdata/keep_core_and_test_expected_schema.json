@@ -17964,8 +17964,8 @@
               "deprecationReason": null
             },
             {
-              "name": "entrypoint",
-              "description": "Install the module as the entrypoint, promoting its main-object methods onto the Query root",
+              "name": "main",
+              "description": "Install the module as the workspace main, promoting its main-object methods onto the Query root",
               "defaultValue": null,
               "type": {
                 "kind": "SCALAR",
@@ -17974,6 +17974,28 @@
               "directives": [],
               "isDeprecated": false,
               "deprecationReason": null
+            },
+            {
+              "name": "entrypoint",
+              "description": "Compatibility alias for main.",
+              "defaultValue": null,
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean"
+              },
+              "directives": [
+                {
+                  "name": "deprecated",
+                  "args": [
+                    {
+                      "name": "reason",
+                      "value": "\"Use main.\""
+                    }
+                  ]
+                }
+              ],
+              "isDeprecated": true,
+              "deprecationReason": "Use main."
             }
           ],
           "isDeprecated": false,
@@ -20602,7 +20624,7 @@
           "args": [
             {
               "name": "hideCore",
-              "description": "Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).\n\nCore types (Container, Directory, etc.) are kept so return types and method chaining still work.",
+              "description": "Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).\n\nCore types (Container, Directory, etc.) are kept so return types and method chaining still work.",
               "defaultValue": null,
               "type": {
                 "kind": "SCALAR",

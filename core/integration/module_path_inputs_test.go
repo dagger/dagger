@@ -907,7 +907,7 @@ func (m *Reader) ListIgnoredDefaultDirectory(
 		WithNewFile("filtered/workspace-only.txt", "workspace-only should not be listed").
 		WithNewFile("dagger.toml", `[modules.reader]
 source = "`+remoteRef+`"
-entrypoint = true
+main = true
 `)
 
 	out, err := ctr.With(daggerCall("read-default-file")).Stdout(ctx)

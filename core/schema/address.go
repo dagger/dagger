@@ -113,11 +113,11 @@ func resolveLegacyModuleRef(ctx context.Context, addr string, dest any) (bool, e
 		if !workspace.IsShortFormModuleRef(addr) {
 			return false, nil
 		}
-		entrypoint, found := workspaceEntrypointModuleName(ctx)
+		main, found := workspaceMainModuleName(ctx)
 		if !found {
 			return false, nil
 		}
-		module, rest = entrypoint, addr
+		module, rest = main, addr
 	} else if module == "" || rest == "" {
 		return false, nil
 	}
@@ -252,14 +252,14 @@ func currentWorkspaceConfig(ctx context.Context) (q *core.Query, ws *core.Worksp
 	return q, ws, cfg, true
 }
 
-// workspaceEntrypointModuleName returns the install name of the entrypoint module.
-func workspaceEntrypointModuleName(ctx context.Context) (string, bool) {
+// workspaceMainModuleName returns the install name of the workspace main module.
+func workspaceMainModuleName(ctx context.Context) (string, bool) {
 	_, _, cfg, ok := currentWorkspaceConfig(ctx)
 	if !ok {
 		return "", false
 	}
 	for name, entry := range cfg.Modules {
-		if entry.Entrypoint {
+		if entry.Main {
 			return name, true
 		}
 	}
@@ -769,7 +769,7 @@ func (s *addressSchema) container(
 	if err != nil {
 		return inst, err
 	}
-	// Desugar through the canonical server so entrypoint proxies on the
+	// Desugar through the canonical server so workspace main proxies on the
 	// outer Query root cannot shadow the core container constructor.
 	coreSrv := srv.Canonical()
 	err = coreSrv.Select(ctx, coreSrv.Root(), &inst, q...)

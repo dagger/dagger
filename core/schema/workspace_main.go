@@ -10,11 +10,19 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type workspaceEntrypointArgs struct {
+type workspaceMainArgs struct {
 	Name string
 }
 
-func (s *workspaceSchema) entrypoint(
+func (s *workspaceSchema) workspaceModuleEntrypoint(
+	_ context.Context,
+	parent *core.WorkspaceModule,
+	_ struct{},
+) (dagql.Boolean, error) {
+	return dagql.Boolean(parent.Main), nil
+}
+
+func (s *workspaceSchema) main(
 	ctx context.Context,
 	parent *core.Workspace,
 	_ struct{},
@@ -27,45 +35,45 @@ func (s *workspaceSchema) entrypoint(
 	if err != nil {
 		return "", err
 	}
-	name, err := workspace.EntrypointName(cfg)
+	name, err := workspace.MainName(cfg)
 	if err != nil {
 		return "", err
 	}
 	return dagql.String(name), nil
 }
 
-func (s *workspaceSchema) withEntrypoint(
+func (s *workspaceSchema) withMain(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	args workspaceEntrypointArgs,
+	args workspaceMainArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	if args.Name == "" {
 		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("module name is required")
 	}
-	return s.setWorkspaceEntrypoint(ctx, parent, args.Name)
+	return s.setWorkspaceMain(ctx, parent, args.Name)
 }
 
-func (s *workspaceSchema) withoutEntrypoint(
+func (s *workspaceSchema) withoutMain(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	_ struct{},
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	return s.setWorkspaceEntrypoint(ctx, parent, "")
+	return s.setWorkspaceMain(ctx, parent, "")
 }
 
-// setWorkspaceEntrypoint selects name, or clears the selection when name is
+// setWorkspaceMain selects name, or clears the selection when name is
 // empty, in the base workspace config.
-func (s *workspaceSchema) setWorkspaceEntrypoint(
+func (s *workspaceSchema) setWorkspaceMain(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	name string,
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	if envName, ok := selectedWorkspaceEnv(ctx, parent.Self()); ok {
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("entrypoints cannot be set in env %q; set the entrypoint in the base workspace config", envName)
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("the workspace main cannot be set in env %q; set it in the base workspace config", envName)
 	}
 	// Clearing a selection that cannot exist must not create a config.
 	if parent.Self().ConfigFile == "" {
-		if err := workspace.SetEntrypoint(nil, ".", name); err != nil {
+		if err := workspace.SetMain(nil, ".", name); err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
 		return parent, nil
@@ -74,7 +82,7 @@ func (s *workspaceSchema) setWorkspaceEntrypoint(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := workspace.SetEntrypoint(staged.Config, staged.ConfigDir, name); err != nil {
+	if err := workspace.SetMain(staged.Config, staged.ConfigDir, name); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	updated, err := workspace.UpdateConfigBytesAt(ctx, staged.Data, staged.Config, staged.ConfigDir)

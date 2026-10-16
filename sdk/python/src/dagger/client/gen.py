@@ -1672,7 +1672,7 @@ class Artifact(Type):
         return await _ctx.execute(str)
 
     async def path(self) -> list[str]:
-        """Ordered, literal fields to follow. Entrypoint targets use their
+        """Ordered, literal fields to follow. Workspace main targets use their
         shorthand.
 
         Returns
@@ -2432,7 +2432,7 @@ class Artifacts(Type):
 
     def filter_path_pattern(self, pattern: str) -> Self:
         """Keep paths that match a glob pattern. A literal path matches exactly.
-        Both module-qualified and entrypoint paths match.
+        Both module-qualified and workspace main paths match.
         """
         _args = [
             Arg("pattern", pattern),
@@ -14353,6 +14353,7 @@ class Module(Type):
         self,
         *,
         include_dependencies: bool | None = None,
+        main: bool | None = None,
         entrypoint: bool | None = None,
     ) -> Void | None:
         """Serve a module's API in the current session.
@@ -14364,9 +14365,12 @@ class Module(Type):
         ----------
         include_dependencies:
             Expose the dependencies of this module to the client
+        main:
+            Install the module as the workspace main, promoting its main-
+            object methods onto the Query root
         entrypoint:
-            Install the module as the entrypoint, promoting its main-object
-            methods onto the Query root
+            Compatibility alias for main.
+            .. deprecated:: Use main.
 
         Returns
         -------
@@ -14383,6 +14387,7 @@ class Module(Type):
         """
         _args = [
             Arg("includeDependencies", include_dependencies, None),
+            Arg("main", main, None),
             Arg("entrypoint", entrypoint, None),
         ]
         _ctx = self._select("serve", _args)
@@ -15964,7 +15969,7 @@ class Query(Root):
             level served typedefs.
         hide_core:
             Strip core API functions from the Query type, leaving only module-
-            sourced functions (constructors, entrypoint proxies, etc.).
+            sourced functions (constructors, workspace main proxies, etc.).
             Core types (Container, Directory, etc.) are kept so return types
             and method chaining still work.
         """
@@ -18571,11 +18576,10 @@ class Workspace(Type):
         return Directory(_ctx)
 
     async def entrypoint(self) -> str:
-        """Installed name of the module selected as the workspace entrypoint, or
-        an empty string when none is selected.
+        """Compatibility alias for main.
 
-        Reflects the selected env's effective view. Fails if several modules
-        are selected.
+        .. deprecated::
+            Use main.
 
         Returns
         -------
@@ -18591,6 +18595,11 @@ class Workspace(Type):
         QueryError
             If the API returns an error.
         """
+        warnings.warn(
+            'Method "entrypoint" is deprecated: Use main.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("entrypoint", _args)
         return await _ctx.execute(str)
@@ -18852,6 +18861,31 @@ class Workspace(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def main(self) -> str:
+        """Installed name of the module selected as the workspace main, or an
+        empty string when none is selected.
+
+        Reflects the selected env's effective view. Fails if several modules
+        are selected.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("main", _args)
         return await _ctx.execute(str)
 
     def migrate(
@@ -19352,17 +19386,21 @@ class Workspace(Type):
         return Workspace(_ctx)
 
     def with_entrypoint(self, name: str) -> Self:
-        """Return this workspace with an installed module selected as its
-        entrypoint.
+        """Compatibility alias for withMain.
 
-        Every other entrypoint selection is cleared. Entrypoints live in the
-        base workspace config.
+        .. deprecated::
+            Use withMain.
 
         Parameters
         ----------
         name:
             Exact installed module name.
         """
+        warnings.warn(
+            'Method "with_entrypoint" is deprecated: Use withMain.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("name", name),
         ]
@@ -19404,6 +19442,7 @@ class Workspace(Type):
         name: str | None = "",
         path: str | None = "",
         install: bool | None = None,
+        main: bool | None = None,
         entrypoint: bool | None = None,
         settings: JSON | None = None,
     ) -> Self:
@@ -19425,10 +19464,13 @@ class Workspace(Type):
             active workspace config.
         install:
             Install the module. When omitted, install only if path is omitted.
-        entrypoint:
-            Select this module as the entrypoint and install it. False
+        main:
+            Select this module as the workspace main and install it. False
             prevents automatic selection. When omitted, select only if both
             path and name are omitted and the module is installed.
+        entrypoint:
+            Compatibility alias for main.
+            .. deprecated:: Use main.
         settings:
             Explicit SDK-module constructor setting overrides for this scope.
         """
@@ -19437,6 +19479,7 @@ class Workspace(Type):
             Arg("name", name, ""),
             Arg("path", path, ""),
             Arg("install", install, None),
+            Arg("main", main, None),
             Arg("entrypoint", entrypoint, None),
             Arg("settings", settings, None),
         ]
@@ -19451,6 +19494,23 @@ class Workspace(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("withInitialized", _args)
+        return Workspace(_ctx)
+
+    def with_main(self, name: str) -> Self:
+        """Return this workspace with an installed module selected as its main.
+
+        Every other main selection is cleared. The main module lives in the
+        base workspace config.
+
+        Parameters
+        ----------
+        name:
+            Exact installed module name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withMain", _args)
         return Workspace(_ctx)
 
     def with_module(
@@ -19901,7 +19961,16 @@ class Workspace(Type):
         return Workspace(_ctx)
 
     def without_entrypoint(self) -> Self:
-        """Return this workspace with no module selected as its entrypoint."""
+        """Compatibility alias for withoutMain.
+
+        .. deprecated::
+            Use withoutMain.
+        """
+        warnings.warn(
+            'Method "without_entrypoint" is deprecated: Use withoutMain.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("withoutEntrypoint", _args)
         return Workspace(_ctx)
@@ -19935,6 +20004,12 @@ class Workspace(Type):
             Arg("paths", paths),
         ]
         _ctx = self._select("withoutFiles", _args)
+        return Workspace(_ctx)
+
+    def without_main(self) -> Self:
+        """Return this workspace with no module selected as its main."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutMain", _args)
         return Workspace(_ctx)
 
     def without_module(
@@ -20371,8 +20446,10 @@ class WorkspaceModule(Type):
     """A module entry in the workspace configuration."""
 
     async def entrypoint(self) -> bool:
-        """Whether the module is the workspace entrypoint (functions aliased to
-        Query root).
+        """Compatibility alias for main.
+
+        .. deprecated::
+            Use main.
 
         Returns
         -------
@@ -20386,6 +20463,11 @@ class WorkspaceModule(Type):
         QueryError
             If the API returns an error.
         """
+        warnings.warn(
+            'Method "entrypoint" is deprecated: Use main.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("entrypoint", _args)
         return await _ctx.execute(bool)
@@ -20439,6 +20521,26 @@ class WorkspaceModule(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
+
+    async def main(self) -> bool:
+        """Whether the module is the workspace main (functions aliased to Query
+        root).
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("main", _args)
+        return await _ctx.execute(bool)
 
     async def name(self) -> str:
         """The module name.

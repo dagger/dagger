@@ -401,8 +401,8 @@ func TestClientMetadataUsesExplicitModuleInsteadOfWorkspaceModules(t *testing.T)
 
 	require.False(t, md.LoadWorkspaceModules)
 	require.Equal(t, []engine.ExtraModule{{
-		Ref:        "./explicit",
-		Entrypoint: true,
+		Ref:  "./explicit",
+		Main: true,
 	}}, md.ExtraModules)
 }
 

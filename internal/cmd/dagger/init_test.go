@@ -30,7 +30,7 @@ func TestSetupCommandChoiceShowsExecutableCommand(t *testing.T) {
 	}
 }
 
-func TestWorkspaceEntrypointsShareRecommendations(t *testing.T) {
+func TestWorkspaceMainsShareRecommendations(t *testing.T) {
 	oldWorkspace := workspaceRef
 	workspaceRef = ""
 	t.Cleanup(func() { workspaceRef = oldWorkspace })

@@ -412,13 +412,13 @@ func (ModuleSuite) TestReevaluatedObjectArgReuse(ctx context.Context, t *testctx
 	}, "\n"), strings.TrimSpace(out))
 }
 
-// TestReevaluatedEntrypointProxy checks that an entrypoint proxy, which runs
+// TestReevaluatedMainProxy checks that an main proxy, which runs
 // the module's constructor before the method, is marked @reevaluate when the
 // constructor is never cached, even though the method is cached.
-func (ModuleSuite) TestReevaluatedEntrypointProxy(ctx context.Context, t *testctx.T) {
+func (ModuleSuite) TestReevaluatedMainProxy(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := moduleEntrypointFixture(t, c, "fresh", "go/reevaluate-entrypoint-ctor")
+	base := moduleMainFixture(t, c, "fresh", "go/reevaluate-main-ctor")
 
 	out, err := base.With(daggerQuery(`{__type(name:"Query"){fields{name directives{name}}}}`)).Stdout(ctx)
 	require.NoError(t, err)

@@ -516,7 +516,7 @@ profile = "old"
 		t.Parallel()
 		for _, key := range []string{
 			"modules.aws.source",
-			"modules.aws.entrypoint",
+			"modules.aws.main",
 			"ignore",
 			"defaults_from_dotenv",
 			"env.dev.modules.aws.source",

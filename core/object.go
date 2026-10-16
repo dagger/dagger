@@ -1170,7 +1170,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	}
 
 	class := dagql.NewClass(dag, classOpts)
-	if obj.isMainObject() && !opt.SkipConstructor && !opt.Entrypoint {
+	if obj.isMainObject() && !opt.SkipConstructor && !opt.Main {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
@@ -1193,7 +1193,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	}
 
 	// Engine-only state transfer is deliberately absent from TypeDef.Functions:
-	// it must not become an author method, tool, or entrypoint proxy.
+	// it must not become an author method, tool, or workspace main proxy.
 	rebind, err := obj.stateRebindField(dag)
 	if err != nil {
 		return fmt.Errorf("install state rebind: %w", err)
@@ -1208,9 +1208,9 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	class.Install(fields...)
 	dag.InstallObject(class, installDirectives...)
 
-	if obj.isMainObject() && opt.Entrypoint {
-		if err := obj.installEntrypointMethods(ctx, dag, fields); err != nil {
-			return fmt.Errorf("failed to install entrypoint methods: %w", err)
+	if obj.isMainObject() && opt.Main {
+		if err := obj.installMainMethods(ctx, dag, fields); err != nil {
+			return fmt.Errorf("failed to install workspace main methods: %w", err)
 		}
 	}
 
@@ -1328,16 +1328,16 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	return nil
 }
 
-func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagql.Server, fields []dagql.Field[*ModuleObject]) error {
+func (obj *ModuleObject) installMainMethods(ctx context.Context, dag *dagql.Server, fields []dagql.Field[*ModuleObject]) error {
 	moduleID, moduleProvider, err := NewUserMod(obj.Module).FieldModule()
 	if err != nil {
-		return fmt.Errorf("failed to resolve module identity for entrypoint object %q: %w", obj.TypeDef.Name, err)
+		return fmt.Errorf("failed to resolve module identity for workspace main object %q: %w", obj.TypeDef.Name, err)
 	}
 	constructorName := gqlFieldName(obj.Module.Self().Name())
 
 	// Build constructor arg specs from the module's type definition
 	// rather than looking them up from the server — the constructor
-	// is not installed on the outer server when Entrypoint is set.
+	// is not installed on the outer server when Main is set.
 	var constructorArgs []dagql.InputSpec
 	// A proxy runs the constructor before the method, so it is reevaluated
 	// when the constructor is.
@@ -1359,7 +1359,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 	}
 
 	// Install `with` field on Query that stores constructor args for
-	// entrypoint proxy resolvers to forward to the constructor.
+	// workspace main proxy resolvers to forward to the constructor.
 	// Only installed when the constructor has arguments.
 	if len(constructorArgs) > 0 {
 		// Use the original constructor's description if available,
@@ -1429,7 +1429,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 		// are stored on the Query via the `with` field.
 		proxySpec.Module = moduleID
 		proxySpec.ModuleProvider = moduleProvider
-		proxySpec.DoNotCache = "Entrypoint proxy is pure routing; the inner constructor and method calls cache on their own."
+		proxySpec.DoNotCache = "Workspace main proxy is pure routing; the inner constructor and method calls cache on their own."
 		proxySpec.NoTelemetry = true
 
 		methodName := proxySpec.Name

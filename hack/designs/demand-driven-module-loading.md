@@ -126,7 +126,7 @@ modules remain.
 | `currentWorkspace { generators \| checks \| services(include: […]) }` | resolver | modules matching the patterns |
 | `currentWorkspace { … }` bare (`dagger generate` no args) | resolver | all pending |
 | Root field matches a pending module name | peek | that module |
-| Root field unknown (entrypoint-proxied item) | peek | entrypoint module (existing fallback) |
+| Root field unknown (workspace-main-proxied item) | peek | workspace main module (existing fallback) |
 | `currentTypeDefs`, `__schema`, `env`, `currentModule` | peek | all pending |
 | Unparseable body, non-query operation, anything unrecognized | peek | all pending (conservative) |
 
@@ -169,7 +169,7 @@ can build on.
 2. `engine/server/session_workspaces.go` — `ensureModulesLoaded(ctx, client,
    filter)`: per-module load state, additive serving via the existing
    `serveModule`, per-module (non-sticky) ambient errors, extras kept eager with
-   sticky errors, precomputed entrypoint arbitration. Adds the
+   sticky errors, precomputed workspace main arbitration. Adds the
    `EnsureWorkspaceModules` implementation and the selector/root-field demand
    filters (kebab-normalized name matching, served-module recognition).
 3. `core/schema/workspace.go` + `core/query.go` — add the

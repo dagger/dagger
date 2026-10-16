@@ -3273,7 +3273,14 @@ export type ModuleServeOpts = {
   includeDependencies?: boolean
 
   /**
-   * Install the module as the entrypoint, promoting its main-object methods onto the Query root
+   * Install the module as the workspace main, promoting its main-object methods onto the Query root
+   */
+  main?: boolean
+
+  /**
+   * Compatibility alias for main.
+   *
+   * @deprecated Use main.
    */
   entrypoint?: boolean
 }
@@ -3521,7 +3528,7 @@ export type ClientCurrentTypeDefsOpts = {
   returnAllTypes?: boolean
 
   /**
-   * Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+   * Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).
    *
    * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
    */
@@ -4378,7 +4385,14 @@ export type WorkspaceWithInitModuleOpts = {
   install?: boolean
 
   /**
-   * Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+   * Select this module as the workspace main and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+   */
+  main?: boolean
+
+  /**
+   * Compatibility alias for main.
+   *
+   * @deprecated Use main.
    */
   entrypoint?: boolean
 
@@ -5346,7 +5360,7 @@ export class Artifact extends BaseClient {
   }
 
   /**
-   * Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+   * Ordered, literal fields to follow. Workspace main targets use their shorthand.
    */
   path = async (): Promise<string[]> => {
     const ctx = this._ctx.select("path")
@@ -6052,7 +6066,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+   * Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and workspace main paths match.
    */
   filterPathPattern = (pattern: string): Artifacts => {
     const ctx = this._ctx.select("filterPathPattern", { pattern })
@@ -15280,7 +15294,8 @@ export class Module_ extends BaseClient {
    *
    * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
    * @param opts.includeDependencies Expose the dependencies of this module to the client
-   * @param opts.entrypoint Install the module as the entrypoint, promoting its main-object methods onto the Query root
+   * @param opts.main Install the module as the workspace main, promoting its main-object methods onto the Query root
+   * @param opts.entrypoint Compatibility alias for main.
    */
   serve = async (opts?: ModuleServeOpts): Promise<void> => {
     if (this._serve) {
@@ -16707,7 +16722,7 @@ export class Client extends BaseClient {
   /**
    * The TypeDef representations of the objects currently being served in the session.
    * @param opts.returnAllTypes Return the full referenced typedef closure instead of only top-level served typedefs.
-   * @param opts.hideCore Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+   * @param opts.hideCore Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).
    *
    * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
    */
@@ -18604,6 +18619,7 @@ export class Workspace extends BaseClient {
   private readonly _entrypoint?: string = undefined
   private readonly _export?: Void = undefined
   private readonly _findUp?: string = undefined
+  private readonly _main?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -18619,6 +18635,7 @@ export class Workspace extends BaseClient {
     _entrypoint?: string,
     _export?: Void,
     _findUp?: string,
+    _main?: string,
   ) {
     super(ctx)
 
@@ -18631,6 +18648,7 @@ export class Workspace extends BaseClient {
     this._entrypoint = _entrypoint
     this._export = _export
     this._findUp = _findUp
+    this._main = _main
   }
 
   /**
@@ -18803,9 +18821,8 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
-   *
-   * Reflects the selected env's effective view. Fails if several modules are selected.
+   * Compatibility alias for main.
+   * @deprecated Use main.
    */
   entrypoint = async (): Promise<string> => {
     if (this._entrypoint) {
@@ -18924,6 +18941,23 @@ export class Workspace extends BaseClient {
     const ctx = this._ctx.select("glob", { pattern })
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Installed name of the module selected as the workspace main, or an empty string when none is selected.
+   *
+   * Reflects the selected env's effective view. Fails if several modules are selected.
+   */
+  main = async (): Promise<string> => {
+    if (this._main) {
+      return this._main
+    }
+
+    const ctx = this._ctx.select("main")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -19224,10 +19258,9 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with an installed module selected as its entrypoint.
-   *
-   * Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+   * Compatibility alias for withMain.
    * @param name Exact installed module name.
+   * @deprecated Use withMain.
    */
   withEntrypoint = (name: string): Workspace => {
     const ctx = this._ctx.select("withEntrypoint", { name })
@@ -19257,7 +19290,8 @@ export class Workspace extends BaseClient {
    * @param opts.name Module name. The engine infers it from path, the active config file, or the workspace root when omitted.
    * @param opts.path Module path relative to the workspace cwd, or an absolute workspace path. Defaults to .dagger/modules/<name> beside the active workspace config.
    * @param opts.install Install the module. When omitted, install only if path is omitted.
-   * @param opts.entrypoint Select this module as the entrypoint and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+   * @param opts.main Select this module as the workspace main and install it. False prevents automatic selection. When omitted, select only if both path and name are omitted and the module is installed.
+   * @param opts.entrypoint Compatibility alias for main.
    * @param opts.settings Explicit SDK-module constructor setting overrides for this scope.
    */
   withInitModule = (
@@ -19275,6 +19309,17 @@ export class Workspace extends BaseClient {
    */
   withInitialized = (): Workspace => {
     const ctx = this._ctx.select("withInitialized")
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with an installed module selected as its main.
+   *
+   * Every other main selection is cleared. The main module lives in the base workspace config.
+   * @param name Exact installed module name.
+   */
+  withMain = (name: string): Workspace => {
+    const ctx = this._ctx.select("withMain", { name })
     return new Workspace(ctx)
   }
 
@@ -19514,7 +19559,8 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with no module selected as its entrypoint.
+   * Compatibility alias for withoutMain.
+   * @deprecated Use withoutMain.
    */
   withoutEntrypoint = (): Workspace => {
     const ctx = this._ctx.select("withoutEntrypoint")
@@ -19536,6 +19582,14 @@ export class Workspace extends BaseClient {
    */
   withoutFiles = (paths: string[]): Workspace => {
     const ctx = this._ctx.select("withoutFiles", { paths })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with no module selected as its main.
+   */
+  withoutMain = (): Workspace => {
+    const ctx = this._ctx.select("withoutMain")
     return new Workspace(ctx)
   }
 
@@ -19910,6 +19964,7 @@ export class WorkspaceMigrationStep extends BaseClient {
 export class WorkspaceModule extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _entrypoint?: boolean = undefined
+  private readonly _main?: boolean = undefined
   private readonly _name?: string = undefined
   private readonly _source?: string = undefined
 
@@ -19920,6 +19975,7 @@ export class WorkspaceModule extends BaseClient {
     ctx?: Context,
     _id?: ID,
     _entrypoint?: boolean,
+    _main?: boolean,
     _name?: string,
     _source?: string,
   ) {
@@ -19927,6 +19983,7 @@ export class WorkspaceModule extends BaseClient {
 
     this._id = _id
     this._entrypoint = _entrypoint
+    this._main = _main
     this._name = _name
     this._source = _source
   }
@@ -19947,7 +20004,8 @@ export class WorkspaceModule extends BaseClient {
   }
 
   /**
-   * Whether the module is the workspace entrypoint (functions aliased to Query root).
+   * Compatibility alias for main.
+   * @deprecated Use main.
    */
   entrypoint = async (): Promise<boolean> => {
     if (this._entrypoint) {
@@ -19968,6 +20026,21 @@ export class WorkspaceModule extends BaseClient {
     const ctx = this._ctx.select("functions")
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the module is the workspace main (functions aliased to Query root).
+   */
+  main = async (): Promise<boolean> => {
+    if (this._main) {
+      return this._main
+    }
+
+    const ctx = this._ctx.select("main")
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }

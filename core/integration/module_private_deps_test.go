@@ -197,7 +197,7 @@ func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
 `).
-			With(withModuleEntrypointFixture(t, c, ".", "foo", "go/private-language-dep"))
+			With(withModuleMainFixture(t, c, ".", "foo", "go/private-language-dep"))
 
 		howCoolIsDagger, err := modGen.
 			With(daggerExec("call", "how-cool-is-dagger")).
@@ -229,7 +229,7 @@ func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=no").
 			WithNewFile("/work/dagger.toml", `[modules.foo]
 source = ".dagger/modules/foo"
-entrypoint = true
+main = true
 `).
 			WithNewFile("/work/.dagger/modules/foo/dagger.json", `{
   "name": "foo",

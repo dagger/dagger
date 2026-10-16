@@ -572,7 +572,7 @@ func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 				// Document type
 				// Example: `container | .help`
 				if len(args) == 0 {
-					// When entrypoint proxying is active, the constructor
+					// When main proxying is active, the constructor
 					// returns Query. Show the module's named main object
 					// type instead so `. | .help` documents the module
 					// object, not Query.

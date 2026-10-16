@@ -259,13 +259,13 @@ settings.base = "dag://container-provider/image"
 		require.Contains(t, out, "container-provider")
 	})
 
-	t.Run("entrypoint module ref via settings", func(ctx context.Context, t *testctx.T) {
-		// The referenced module is the workspace entrypoint.
+	t.Run("main module ref via settings", func(ctx context.Context, t *testctx.T) {
+		// The referenced module is the workspace main.
 		out, err := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.container-provider]
 source = "../container-provider"
-entrypoint = true
+main = true
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
@@ -276,13 +276,13 @@ settings.base = "dag://container-provider/image"
 		require.NoError(t, err)
 		require.Contains(t, out, "container-provider")
 
-		// Filtered check: only the consumer loads up front, so the entrypoint
+		// Filtered check: only the consumer loads up front, so the main
 		// module must be demand-loaded when the wiring resolves.
 		out, err = modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.hello-with-services]
 source = "../hello-with-services"
-entrypoint = true
+main = true
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
@@ -294,13 +294,13 @@ settings.app = "dag://hello-with-services/web"
 		require.Contains(t, out, "check-service")
 	})
 
-	t.Run("short-form entrypoint ref via settings", func(ctx context.Context, t *testctx.T) {
-		// A "dag://<function>" address names a function of the entrypoint module.
+	t.Run("short-form main ref via settings", func(ctx context.Context, t *testctx.T) {
+		// A "dag://<function>" address names a function of the main module.
 		ctr := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.container-provider]
 source = "../container-provider"
-entrypoint = true
+main = true
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"
@@ -314,7 +314,7 @@ settings.file = "marker.txt"
 		require.Contains(t, out, "container-provider")
 
 		// A value without the scheme keeps its address meaning, even though
-		// the entrypoint defines a "file" function.
+		// the main defines a "file" function.
 		out, err = ctr.
 			With(daggerExec("call", "service-ref-consumer", "file-provided-by")).
 			Stdout(ctx)
@@ -322,14 +322,14 @@ settings.file = "marker.txt"
 		require.Equal(t, "ambient", strings.TrimSpace(out))
 	})
 
-	t.Run("settings stores entrypoint refs as DAG addresses", func(ctx context.Context, t *testctx.T) {
+	t.Run("settings stores main refs as DAG addresses", func(ctx context.Context, t *testctx.T) {
 		// The short form is accepted but the full address is written; a string
 		// setting is never rewritten.
 		ctr := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.container-provider]
 source = "../container-provider"
-entrypoint = true
+main = true
 
 [modules.service-ref-consumer]
 source = "../service-ref-consumer"

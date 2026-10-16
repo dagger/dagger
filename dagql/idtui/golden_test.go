@@ -154,7 +154,7 @@ so in most cases you should just let it skip.`)
 
 [modules.viztest]
 source = "./viztest"
-entrypoint = true
+main = true
 `), 0o644); err != nil {
 		t.Fatalf("failed to initialize viztest workspace config: %v", err)
 	}

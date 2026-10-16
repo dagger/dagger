@@ -20,6 +20,11 @@ func UpdateConfigBytes(existingData []byte, cfg *Config) ([]byte, error) {
 	if len(existingData) == 0 {
 		return SerializeConfig(cfg), nil
 	}
+	var err error
+	existingData, err = canonicalizeLegacyWorkspaceMainKeys(existingData)
+	if err != nil {
+		return nil, err
+	}
 	existing, err := ParseConfig(existingData)
 	if err != nil {
 		return nil, err
@@ -150,8 +155,8 @@ func configDocumentMap(cfg *Config) map[string]any {
 			if entry.Pin != "" {
 				module["pin"] = entry.Pin
 			}
-			if entry.Entrypoint {
-				module["entrypoint"] = true
+			if entry.Main {
+				module["main"] = true
 			}
 			if entry.LegacyDefaultPath {
 				module["legacy-default-path"] = true

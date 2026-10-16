@@ -1014,7 +1014,7 @@ type FieldSpec struct {
 	NotReplayable string
 
 	// NoTelemetry suppresses telemetry (AroundFunc) for this field.
-	// Used for entrypoint proxies that delegate to real fields which
+	// Used for workspace main proxies that delegate to real fields which
 	// emit their own telemetry.
 	NoTelemetry bool
 
