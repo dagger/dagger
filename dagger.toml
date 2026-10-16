@@ -293,7 +293,6 @@ is-module = true
 
 [sdks.go.scopes.".dagger/modules/docs-dev/docusaurus".settings]
 dangEntrypoint = true
-globalClient = true
 unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/engine-dev"]
