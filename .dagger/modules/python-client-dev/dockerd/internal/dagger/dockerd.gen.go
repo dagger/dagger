@@ -3,14 +3,134 @@
 package dagger
 
 import (
-	"main/internal/dagger/core"
+	"context"
+	"encoding/json"
+
+	"github.com/dagger/querybuilder"
 )
 
 // Module for running docker in dagger
-type Dockerd = core.Dockerd
+type Dockerd struct { // dockerd (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *Dockerd) WithGraphQLQuery(q *querybuilder.Selection) *Dockerd {
+	return &Dockerd{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
 
 // DockerdAttachOpts contains options for Dockerd.Attach
-type DockerdAttachOpts = core.DockerdAttachOpts
+type DockerdAttachOpts struct {
+
+	// Default: "24.0"
+	DockerVersion string
+}
+
+// Attach a dockerd service to a container
+func (r *Dockerd) Attach(container *Container, opts ...DockerdAttachOpts) *Container {
+	assertNotNil("container", container)
+	q := r.query.Select("attach")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `dockerVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DockerVersion) {
+			q = q.Arg("dockerVersion", opts[i].DockerVersion)
+		}
+	}
+	q = q.Arg("container", container)
+
+	return new(Container).WithGraphQLQuery(q)
+}
+
+// A unique identifier for this Dockerd.
+func (r *Dockerd) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Dockerd) XXX_GraphQLType() string {
+	return "Dockerd"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Dockerd) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Dockerd) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Dockerd) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *Dockerd) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = Dockerd{query: selectNode(Connect().QueryBuilder(), id, "Dockerd")}
+	return nil
+}
 
 // DockerdServiceOpts contains options for Dockerd.Service
-type DockerdServiceOpts = core.DockerdServiceOpts
+type DockerdServiceOpts struct {
+
+	// Default: "24.0"
+	DockerVersion string
+}
+
+// Get a Service container running dockerd
+func (r *Dockerd) Service(opts ...DockerdServiceOpts) *Service {
+	q := r.query.Select("service")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `dockerVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DockerVersion) {
+			q = q.Arg("dockerVersion", opts[i].DockerVersion)
+		}
+	}
+
+	return new(Service).WithGraphQLQuery(q)
+}
+
+func (r *Query) Dockerd() *Dockerd { // dockerd (../../:0:0)
+	q := r.query.Select("dockerd")
+
+	return &Dockerd{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
