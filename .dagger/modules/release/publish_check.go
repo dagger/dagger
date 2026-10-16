@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
 	"dagger/release/internal/dagger"
 
 	"golang.org/x/mod/semver"
+	"golang.org/x/sync/errgroup"
 	"sigs.k8s.io/yaml"
 )
 
@@ -57,8 +60,6 @@ type publishCheckEnv struct {
 
 // Exercise the release publish path against local mock endpoints.
 // +check
-//
-//nolint:gocyclo
 func (r *Release) PublishWithMockEndpoints(
 	ctx context.Context,
 
@@ -147,52 +148,43 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		return err
 	}
 
-	if err := env.assertStableCLIReleaseArtifacts(ctx); err != nil {
-		return err
+	assertions := []func(context.Context) error{
+		env.assertStableCLIReleaseArtifacts,
+		env.assertCLIPublishMetadata,
+		env.assertRegistryTags,
+		env.assertEngineVersion,
+		env.assertCLIVersion,
+		func(ctx context.Context) error {
+			return env.assertPackageRegistryRequests(ctx, isPrerelease)
+		},
+		func(ctx context.Context) error {
+			return env.assertNpmVersion(ctx, isPrerelease)
+		},
+		env.assertHelmTags,
+		env.assertSDKTags,
 	}
-	if err := env.assertCLIPublishMetadata(ctx); err != nil {
-		return err
-	}
-
-	if err := env.assertRegistryTags(ctx); err != nil {
-		return err
-	}
-	if err := env.assertEngineVersion(ctx); err != nil {
-		return err
-	}
-	if err := env.assertCLIVersion(ctx); err != nil {
-		return err
-	}
-
 	if !isPrerelease {
-		if err := env.assertCLIGitHubRelease(ctx); err != nil {
-			return err
-		}
-		if err := env.assertCLIPackageManagers(ctx); err != nil {
-			return err
-		}
-		if err := env.assertComponentGitHubReleases(ctx); err != nil {
-			return err
-		}
-		if err := env.assertMockEvents(ctx); err != nil {
-			return err
-		}
-	} else if err := env.assertPrereleaseStableOutputsAbsent(ctx); err != nil {
-		return err
+		assertions = append(assertions,
+			env.assertCLIGitHubRelease,
+			env.assertCLIPackageManagers,
+			env.assertComponentGitHubReleases,
+			env.assertMockEvents,
+		)
+	} else {
+		assertions = append(assertions, env.assertPrereleaseStableOutputsAbsent)
 	}
-	if err := env.assertPackageRegistryRequests(ctx, isPrerelease); err != nil {
-		return err
+
+	assertionErrors := make([]error, len(assertions))
+	var assertionsGroup sync.WaitGroup
+	for i, assertion := range assertions {
+		assertionsGroup.Add(1)
+		go func() {
+			defer assertionsGroup.Done()
+			assertionErrors[i] = assertion(ctx)
+		}()
 	}
-	if err := env.assertNpmVersion(ctx, isPrerelease); err != nil {
-		return err
-	}
-	if err := env.assertHelmTags(ctx); err != nil {
-		return err
-	}
-	if err := env.assertSDKTags(ctx); err != nil {
-		return err
-	}
-	return nil
+	assertionsGroup.Wait()
+	return errors.Join(assertionErrors...)
 }
 
 func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagger.Workspace) (*publishCheckEnv, error) {
@@ -295,9 +287,9 @@ done
 		return nil, err
 	}
 
-	commit, err := env.gitStdout(ctx, `git clone "$REPO_URL" .
-git rev-parse HEAD
-`)
+	commit, err := gitSetup.
+		WithExec([]string{"git", "-C", "/root/repo", "rev-parse", "HEAD"}).
+		Stdout(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -621,11 +613,21 @@ func (env *publishCheckEnv) assertMockEvents(ctx context.Context) error {
 }
 
 func (env *publishCheckEnv) assertInitialCLIReleaseOutputs(ctx context.Context) error {
-	if err := env.assertS3ArchiveSet(ctx, "dagger/main/"+env.commit, publishCheckArchiveNames(env.commit), false); err != nil {
-		return fmt.Errorf("check main SHA CLI artifacts: %w", err)
-	}
-	if err := env.assertS3ArchiveSet(ctx, "dagger/main/head", publishCheckArchiveNames("head"), false); err != nil {
-		return fmt.Errorf("check main head CLI artifacts: %w", err)
+	var archives errgroup.Group
+	archives.Go(func() error {
+		if err := env.assertS3ArchiveSet(ctx, "dagger/main/"+env.commit, publishCheckArchiveNames(env.commit), false); err != nil {
+			return fmt.Errorf("check main SHA CLI artifacts: %w", err)
+		}
+		return nil
+	})
+	archives.Go(func() error {
+		if err := env.assertS3ArchiveSet(ctx, "dagger/main/head", publishCheckArchiveNames("head"), false); err != nil {
+			return fmt.Errorf("check main head CLI artifacts: %w", err)
+		}
+		return nil
+	})
+	if err := archives.Wait(); err != nil {
+		return err
 	}
 
 	events, err := env.mockEvents(ctx)
