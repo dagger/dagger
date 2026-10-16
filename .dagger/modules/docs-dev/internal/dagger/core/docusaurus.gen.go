@@ -9,8 +9,23 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Docusaurus
-type Docusaurus struct { // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:59:6)
+// Docusaurus Dagger Module
+//
+// This module allows you to run docusaurus sites locally with Dagger
+// without needing to install any additional dependencies.
+//
+// Example Usage:
+//
+// `dagger call -m github.com/levlaz/daggerverse/docusaurus --dir "/src/docs" --src https://github.com/kpenfound/dagger#kyle/docs-239-convert-secrets` serve up
+//
+// The example above shows how to grab a remote git branch, the basic
+// structure is https://github.com/$USER/$REPO#$BRANCH. The `src` argument can
+// take a local directory, but this module becomes especially
+// useful when you pass in remote git repos. In particular, imagine you are trying
+// to preview a PR for a docs change. You can simply pass in the git branch from
+// your fork and preview the docs without needing to install any local dependencies
+// or have to remember how to fetch remote branches locally.
+type Docusaurus struct { // docusaurus (../../../../../../main.go:55:6)
 	query *querybuilder.Selection
 
 	cacheVolumeName *string
@@ -28,7 +43,7 @@ func (r *Docusaurus) WithGraphQLQuery(q *querybuilder.Selection) *Docusaurus {
 
 // Return base container for running docusaurus with docs mounted and docusaurus
 // dependencies installed.
-func (r *Docusaurus) Base() *Container { // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:69:1)
+func (r *Docusaurus) Base() *Container { // docusaurus (../../../../../../main.go:65:1)
 	q := r.query.Select("base")
 
 	return &Container{
@@ -37,7 +52,7 @@ func (r *Docusaurus) Base() *Container { // docusaurus (../../../../../../.dagge
 }
 
 // Build production docs
-func (r *Docusaurus) Build() *Directory { // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:101:1)
+func (r *Docusaurus) Build() *Directory { // docusaurus (../../../../../../main.go:97:1)
 	q := r.query.Select("build")
 
 	return &Directory{
@@ -45,7 +60,7 @@ func (r *Docusaurus) Build() *Directory { // docusaurus (../../../../../../.dagg
 	}
 }
 
-func (r *Docusaurus) CacheVolumeName(ctx context.Context) (string, error) { // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:63:2)
+func (r *Docusaurus) CacheVolumeName(ctx context.Context) (string, error) { // docusaurus (../../../../../../main.go:59:2)
 	if r.cacheVolumeName != nil {
 		return *r.cacheVolumeName, nil
 	}
@@ -57,7 +72,7 @@ func (r *Docusaurus) CacheVolumeName(ctx context.Context) (string, error) { // d
 	return response, q.Execute(ctx)
 }
 
-func (r *Docusaurus) Dir(ctx context.Context) (string, error) { // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:61:2)
+func (r *Docusaurus) Dir(ctx context.Context) (string, error) { // docusaurus (../../../../../../main.go:57:2)
 	if r.dir != nil {
 		return *r.dir, nil
 	}
@@ -69,7 +84,7 @@ func (r *Docusaurus) Dir(ctx context.Context) (string, error) { // docusaurus (.
 	return response, q.Execute(ctx)
 }
 
-func (r *Docusaurus) DisableCache(ctx context.Context) (bool, error) { // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:62:2)
+func (r *Docusaurus) DisableCache(ctx context.Context) (bool, error) { // docusaurus (../../../../../../main.go:58:2)
 	if r.disableCache != nil {
 		return *r.disableCache, nil
 	}
@@ -131,7 +146,7 @@ func (r *Docusaurus) UnmarshalJSON(bs []byte) error {
 }
 
 // Serve production docs locally as a service
-func (r *Docusaurus) Serve() *Service { // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:108:1)
+func (r *Docusaurus) Serve() *Service { // docusaurus (../../../../../../main.go:104:1)
 	q := r.query.Select("serve")
 
 	return &Service{
@@ -140,7 +155,7 @@ func (r *Docusaurus) Serve() *Service { // docusaurus (../../../../../../.dagger
 }
 
 // Build and serve development docs as a service
-func (r *Docusaurus) ServeDev() *Service { // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:116:1)
+func (r *Docusaurus) ServeDev() *Service { // docusaurus (../../../../../../main.go:112:1)
 	q := r.query.Select("serveDev")
 
 	return &Service{
@@ -148,7 +163,7 @@ func (r *Docusaurus) ServeDev() *Service { // docusaurus (../../../../../../.dag
 	}
 }
 
-func (r *Docusaurus) Src() *Directory { // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:60:2)
+func (r *Docusaurus) Src() *Directory { // docusaurus (../../../../../../main.go:56:2)
 	q := r.query.Select("src")
 
 	return &Directory{
@@ -156,7 +171,7 @@ func (r *Docusaurus) Src() *Directory { // docusaurus (../../../../../../.dagger
 	}
 }
 
-func (r *Docusaurus) Yarn(ctx context.Context) (bool, error) { // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:64:2)
+func (r *Docusaurus) Yarn(ctx context.Context) (bool, error) { // docusaurus (../../../../../../main.go:60:2)
 	if r.yarn != nil {
 		return *r.yarn, nil
 	}
@@ -183,11 +198,11 @@ type DocusaurusOpts struct {
 	//
 	//
 	// Default: "."
-	Dir string // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:33:2)
+	Dir string // docusaurus (../../../../../../main.go:14:2)
 	//
 	// Optional flag to disable cache
 	//
-	DisableCache bool // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:37:2)
+	DisableCache bool // docusaurus (../../../../../../main.go:18:2)
 	//
 	// Optional cache volume name; this is useful if you work with multiple projects
 	// or have node_dependencies that are rapidly changing to avoid issues with
@@ -195,15 +210,30 @@ type DocusaurusOpts struct {
 	//
 	//
 	// Default: "node-docusaurus-docs"
-	CacheVolumeName string // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:43:2)
+	CacheVolumeName string // docusaurus (../../../../../../main.go:24:2)
 	//
 	// Optional flag to use yarn instead of npm
 	//
-	Yarn bool // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:47:2)
+	Yarn bool // docusaurus (../../../../../../main.go:28:2)
 }
 
-// Docusaurus
-func (r *Query) Docusaurus(src *Directory, opts ...DocusaurusOpts) *Docusaurus { // docusaurus (../../../../../../.dagger/modules/docs-dev/docusaurus/dagger/main.go:27:1)
+// Docusaurus Dagger Module
+//
+// This module allows you to run docusaurus sites locally with Dagger
+// without needing to install any additional dependencies.
+//
+// Example Usage:
+//
+// `dagger call -m github.com/levlaz/daggerverse/docusaurus --dir "/src/docs" --src https://github.com/kpenfound/dagger#kyle/docs-239-convert-secrets` serve up
+//
+// The example above shows how to grab a remote git branch, the basic
+// structure is https://github.com/$USER/$REPO#$BRANCH. The `src` argument can
+// take a local directory, but this module becomes especially
+// useful when you pass in remote git repos. In particular, imagine you are trying
+// to preview a PR for a docs change. You can simply pass in the git branch from
+// your fork and preview the docs without needing to install any local dependencies
+// or have to remember how to fetch remote branches locally.
+func (r *Query) Docusaurus(src *Directory, opts ...DocusaurusOpts) *Docusaurus { // docusaurus (../../../../../../main.go:8:1)
 	assertNotNil("src", src)
 	q := r.query.Select("docusaurus")
 	for i := len(opts) - 1; i >= 0; i-- {
