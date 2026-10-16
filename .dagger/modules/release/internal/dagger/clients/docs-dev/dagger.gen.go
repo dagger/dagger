@@ -16,6 +16,7 @@ import (
 )
 
 type Changeset = core.Changeset
+type Check = core.Check
 type Directory = core.Directory
 type File = core.File
 type GitRef = core.GitRef
