@@ -290,6 +290,11 @@ unifiedClients = true
 is-module = true
 clients = ["dagger.io/linux/alpine", "./cmd/codegen", "./.dagger/modules/cli-dev", "./.dagger/modules/go", "dagger.io/linux/wolfi", "./.dagger/modules/engine-dev/notify"]
 
+[sdks.go.scopes.".dagger/modules/engine-dev".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/engine-dev/notify"]
 is-module = true
 
