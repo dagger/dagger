@@ -1,4 +1,3 @@
-// Creates a complete end-to-end build environment with CLI and engine for interactive testing
 package main
 
 import (
@@ -75,7 +74,7 @@ func vcsInfo(ctx context.Context, ws *dagger.Workspace) (commit string, dirty bo
 		return "", false
 	}
 	git := ws.Git()
-	commit, err := git.Head().Commit(ctx)
+	commit, err := git.Head().CommitSHA(ctx)
 	if err != nil {
 		return "", false
 	}
@@ -85,6 +84,7 @@ func vcsInfo(ctx context.Context, ws *dagger.Workspace) (commit string, dirty bo
 	return commit, dirty
 }
 
+// Creates a complete end-to-end build environment with CLI and engine for interactive testing
 type EngineDev struct {
 	Source *dagger.Directory
 
@@ -185,7 +185,7 @@ func (dev *EngineDev) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary(dagger.DaggerCliBinaryOpts{
+	cli := dag.CliDev(dagger.CliDevOpts{Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary(dagger.CliDevBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -284,7 +284,7 @@ func (dev *EngineDev) InstallClient(
 		WithServiceBinding("dagger-engine", service).
 		// FIXME: retrieve endpoint dynamically?
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
+		WithMountedFile(cliPath, dag.CliDev(dagger.CliDevOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
