@@ -1,4 +1,3 @@
-// Dagger docs toolchain
 package main
 
 import (
@@ -34,6 +33,7 @@ func New(
 	}
 }
 
+// Dagger docs toolchain
 type DocsDev struct {
 	Source      *dagger.Directory
 	NginxConfig *dagger.File // +private
@@ -69,7 +69,7 @@ func (d DocsDev) GenerateVersion(
 	// +default=true
 	collapsePatch bool,
 ) (*dagger.Changeset, error) {
-	ref, err := source.Ref(ctx)
+	ref, err := source.Name(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get source ref name: %w", err)
 	}
