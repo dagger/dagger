@@ -403,7 +403,6 @@ is-module = true
 
 [sdks.go.scopes.".dagger/modules/go".settings]
 dangEntrypoint = true
-globalClient = true
 unifiedClients = true
 
 [modules.dagger-dev]
