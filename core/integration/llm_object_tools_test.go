@@ -1976,8 +1976,11 @@ type Swapper {
   }
 
   reload(llm: LLM!): LLM! {
-    let ws = llm.workspace.withNewFile("` + modulePath + `", llm.workspace.file("next-source.txt").contents)
-    llm.withWorkspace(ws).compose(expertise: ws.artifacts.filterTypes(["Expertise"]).asExpertise.{{ id }}.map { node(id: _.id).{{ ... on Expertise! }} })
+    let ws = llm.workspace.withNewFile("` + modulePath + `", llm.workspace.file("next-source.txt").contents).withUserConfig
+    llm.withWorkspace(ws).compose(expertise: llm.expertise.{{ id, artifact.{{ uri }} }}.map { e =>
+      let found = ws.artifacts.filterUri(uri: e.artifact.uri).asExpertise.{{ id }}.map { f => f.id }
+      node(id: found[0] ?? e.id).{{ ... on Expertise! }}
+    })
   }
 
   advance: Swapper! {
@@ -2030,8 +2033,11 @@ type Swapper {
 	model := cannedRecordingModel(ctx, t, c, script)
 	// The shell starts with the original module installed in its schema. A
 	// core-only client would not exercise collisions between old and new
-	// definitions of the same Swapper type when state is rebound.
-	query := fmt.Sprintf(`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper)`, model)
+	// definitions of the same Swapper type when state is rebound. Compose the
+	// agent entry rather than binding Swapper directly: reload refreshes the
+	// recorded entry, which may only replace the binding it owns. No entry
+	// needs an Agent, so a synchronous loop can reload too.
+	query := fmt.Sprintf(`llm --model="%s" | with-workspace --workspace $(current-workspace) | compose --expertise $(current-workspace | artifacts | filter-types Expertise | one | value)`, model)
 	run := func(query string) string {
 		t.Helper()
 		out, err := base.With(daggerShell(query)).Stdout(ctx)

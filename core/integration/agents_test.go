@@ -166,6 +166,28 @@ func (AgentsSuite) TestValidationRejectsBadReturnType(ctx context.Context, t *te
 	require.Contains(t, out, "does not return LLM!")
 }
 
+func (AgentsSuite) TestCLIComposesWithOwningAgent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture, err := installAgents(t, c, "editor")
+	require.NoError(t, err)
+	fixture = fixture.WithNewFile("../editor/main.dang", `
+type Editor {
+  agent(base: LLM!, me: Agent!): LLM! @agent {
+    if (me.name != "agent") { raise "CLI composed with the wrong owning agent" }
+    base.withSystemPrompt("Owned by " + me.name)
+  }
+}
+`)
+	// EOF exits before inference, but composition must already see the runtime.
+	out, err := fixture.
+		WithEnvVariable("OPENAI_API_KEY", "unused").
+		WithEnvVariable("OPENAI_MODEL", "unused").
+		WithEnvVariable("OPENAI_BASE_URL", "http://127.0.0.1:1").
+		With(daggerExec("agent", "--progress=plain")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "spawn")
+}
+
 func (AgentsSuite) TestComposeToolset(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := installAgents(t, c, "editor", "godoc")

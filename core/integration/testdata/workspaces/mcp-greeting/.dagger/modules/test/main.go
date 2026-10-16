@@ -25,3 +25,21 @@ func (m *Test) Annotate(
 	}
 	return "conversation"
 }
+
+// Wave requires the calling agent, which only an agent loop can supply; served
+// standalone (dagger mcp) it must not be offered.
+func (m *Test) Wave(me *dagger.Agent) string {
+	return "waved"
+}
+
+// Nudge takes the calling agent if there is one; served standalone it is
+// passed null, and never appears in the tool's schema.
+func (m *Test) Nudge(
+	// +optional
+	me *dagger.Agent,
+) string {
+	if me == nil {
+		return "no agent"
+	}
+	return "agent"
+}
