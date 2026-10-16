@@ -97,16 +97,21 @@ var agentCmd = &cobra.Command{
 				if agentListMode {
 					return listAgents(ctx, dag, args, cmd)
 				}
-				// Compose all selected agents onto a workspace-bound LLM, capturing
-				// a stable baseline when possible, then open the prompt. A module
-				// function returning LLM already lands in prompt mode today.
+				// Mint the agent before composing selected expertise onto its
+				// workspace-bound seed, then open the prompt on that runtime.
 				//
 				// Trace restore initializes only inert client plumbing. Its archived
 				// anchors, not a destination base LLM, own the provider and workspace.
 				var llmID string
+				var initialAgent *core.Agent
 				var err error
 				if traceID == "" {
-					llmID, err = composeAgents(ctx, dag, args, cmd)
+					initialAgent, err = composeAgents(ctx, dag, args, cmd)
+					if err == nil {
+						var id core.ID
+						id, err = initialAgent.Snapshot().ID(ctx)
+						llmID = string(id)
+					}
 				}
 				if err != nil {
 					return err
@@ -118,6 +123,7 @@ var agentCmd = &cobra.Command{
 				}
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
 					restore:              restore,
+					initialAgent:         initialAgent,
 					generateSessionTitle: true,
 					exitedResumable: func(traceID string) {
 						if resumeServable(ctx, source, traceID, cloudTraceConfigured) {
@@ -358,26 +364,25 @@ func archiveLabel(m archive.Manifest, loc *time.Location) string {
 	return fmt.Sprintf("%s  %s  %s", m.StartedAt.In(loc).Format("2006-01-02 15:04"), title, m.TraceID)
 }
 
-func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *cobra.Command) (string, error) {
+func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *cobra.Command) (*core.Agent, error) {
 	workspace, err := snapshotWorkspace(ctx, dag)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	all, err := commandArtifactsWithFlags(ctx, dag, workspace, cmd, include, true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	selection := all.FilterTypes([]string{"Expertise"})
 	expertise, err := selection.AsExpertise(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	refs := make([]*core.Expertise, len(expertise))
 	for i := range expertise {
 		refs[i] = &expertise[i]
 	}
-	id, err := core.NewQuery(dag).LLM().WithWorkspace(workspace).Compose(refs).ID(ctx)
-	return string(id), err
+	return core.NewQuery(dag).LLM().WithWorkspace(workspace).Spawn(ctx, core.LLMSpawnOpts{Name: defaultAgentName, Expertise: refs})
 }
 
 // Attempt the effectful capture once before binding or composing tools. Capture
