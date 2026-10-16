@@ -33,7 +33,7 @@
 ["","git-sha",["github.com/dagger/go","pull/45/head"],"1c4c0fba5bd123d36bd7e74008880e9b9c098479"]
 ["","git-sha",["github.com/dagger/go","refs/heads/main"],"334136faaa1cd36ac26dfdc648eda907ce99c063"]
 ["","git-sha",["github.com/dagger/go","refs/tags/v0.1.0"],"0b68a41656546134aa6b5c0a439fd1ffcd2ecae9"]
-["","git-sha",["github.com/dagger/go-sdk","main"],"9db7aded40ed0be183ec91b3a7f338dba2647a14"]
+["","git-sha",["github.com/dagger/go-sdk","main"],"99a87f3779f221133f11ffc1ebf569c2469a3c61"]
 ["","git-sha",["github.com/dagger/go-sdk","refs/tags/v0.1"],"ec2d1ff3ea14032cc0ae5de842b81cea3ce8f8c1"]
 ["","git-sha",["github.com/dagger/go-sdk","refs/tags/v1.1.0"],"2fa6a872760d2e2a33b612f1737ca5099d71ad0d"]
 ["","git-sha",["github.com/dagger/golangci-lint","main"],"f134a34405e2ea5a7da4e19cf6426b8e896d4b34"]
