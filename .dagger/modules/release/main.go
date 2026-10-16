@@ -189,7 +189,8 @@ func (r *Release) Publish( //nolint:gocyclo
 	}
 	cliDevOpts := dagger.CliDevOpts{
 		// Dependencies don't inherit the workspace; forward it explicitly.
-		Ws: r.Workspace,
+		Ws:     r.Workspace,
+		Source: r.Workspace.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: cliDevSourceIgnore}),
 	}
 	if version != "" {
 		cliDevOpts.Version = version

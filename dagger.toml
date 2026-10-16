@@ -274,6 +274,11 @@ module = "go-sdk"
 is-module = true
 clients = ["dagger.io/linux/alpine", "./.dagger/modules/go"]
 
+[sdks.go.scopes.".dagger/modules/cli-dev".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/docs-dev"]
 is-module = true
 clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev/docusaurus", "./.dagger/modules/engine-dev", "./.dagger/modules/go"]

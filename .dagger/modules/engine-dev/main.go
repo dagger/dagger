@@ -185,7 +185,7 @@ func (dev *EngineDev) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.CliDev(dagger.CliDevOpts{Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary(dagger.CliDevBinaryOpts{
+	cli := dag.CliDev(dagger.CliDevOpts{Source: dev.cliDevSource(), Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary(dagger.CliDevBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -284,7 +284,7 @@ func (dev *EngineDev) InstallClient(
 		WithServiceBinding("dagger-engine", service).
 		// FIXME: retrieve endpoint dynamically?
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliPath, dag.CliDev(dagger.CliDevOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
+		WithMountedFile(cliPath, dag.CliDev(dagger.CliDevOpts{Source: dev.cliDevSource(), VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {

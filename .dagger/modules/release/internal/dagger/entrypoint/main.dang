@@ -57,12 +57,12 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("Notify", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withCachePolicy(FunctionCachePolicy.PerSession)
-            .withSourceMap(sourceMap("main.go", 489, 1))
-            .withArg("repository", typeDef.withKind(TypeDefKind.STRING_KIND), description: "GitHub repository URL", sourceMap: sourceMap("main.go", 492, 2))
-            .withArg("target", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The target tag for the release\ne.g. sdk/typescript/v0.14.0", sourceMap: sourceMap("main.go", 495, 2))
-            .withArg("name", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Name of the component to release", sourceMap: sourceMap("main.go", 497, 2))
-            .withArg("discordWebhook", typeDef.withObject("Secret").withOptional(true), description: "Discord webhook", sourceMap: sourceMap("main.go", 500, 2))
-            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), description: "Whether to perform a dry run without creating the release", sourceMap: sourceMap("main.go", 504, 2))
+            .withSourceMap(sourceMap("main.go", 490, 1))
+            .withArg("repository", typeDef.withKind(TypeDefKind.STRING_KIND), description: "GitHub repository URL", sourceMap: sourceMap("main.go", 493, 2))
+            .withArg("target", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The target tag for the release\ne.g. sdk/typescript/v0.14.0", sourceMap: sourceMap("main.go", 496, 2))
+            .withArg("name", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Name of the component to release", sourceMap: sourceMap("main.go", 498, 2))
+            .withArg("discordWebhook", typeDef.withObject("Secret").withOptional(true), description: "Discord webhook", sourceMap: sourceMap("main.go", 501, 2))
+            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), description: "Whether to perform a dry run without creating the release", sourceMap: sourceMap("main.go", 505, 2))
         )
         .withFunction(
           function("PhpSdkTargetVersion", typeDef.withObject("Changeset"))
