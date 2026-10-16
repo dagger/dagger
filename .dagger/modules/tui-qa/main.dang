@@ -390,35 +390,49 @@ type TuiQa {
   }
 
   """
-  Discover agents from a recorded trace or the live console's roster. Returns
-  JSON with stable handles, names, observed states, parent handles, and span IDs.
+  Discover agents from a recorded trace or the live console's roster, as a
+  readable tree: one line per agent with its stable handle, name and observed
+  state, children indented under their parent. Recorded traces hide agents
+  without a checkpoint (e.g. agents run by tests inside the trace), which
+  can't be transcribed; pass `all` to list them too.
   With `dagger trace <id> -E`, the first extraction request downloads and caches
   the full trace payloads (may take minutes); no engine or agent restore is needed.
   In live sessions only loaded telemetry is represented. States in a recorded
   trace are historical, not live runtimes. Never starts or focuses an agent.
   """
-  agents: String! @cache(policy: FunctionCachePolicy.Never) {
+  agents(
+    """
+    Also list agents without a recorded checkpoint.
+    """
+    all: Boolean! = false,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
     if (url == "") {
       return "No active TUI session. Call the tui-qa start tool first."
     }
+    let path = if (all) { "/agents?all=true" } else { "/agents" }
     client
       .withEnvVariable("TUI_QA_NONCE", Random.string)
-      .withExec(["curl", "-s", "--connect-timeout", "10", "--max-time", "300", url + "/agents"])
+      .withExec(["curl", "-s", "--connect-timeout", "10", "--max-time", "300", url + path])
       .stdout
   }
 
   """
-  Read an agent's committed transcript as JSON: text, thinking, tool calls,
-  results, and message origins. With `dagger trace <id> -E`, decodes the recorded
-  checkpoint directly, never evaluating workspace/tool/module recipes. Missing
-  or unsupported message data is an error, not silently omitted. In an engine
-  session, reads Agent.snapshot without sending, resuming, or invoking tools.
+  Read an agent's committed transcript as readable text: a header per message
+  (index, role, origin), prompts, replies and thinking verbatim, tool calls as
+  the tool name with one argument per line, and tool results labeled with the
+  tool that produced them. With `dagger trace <id> -E`, decodes the recorded
+  checkpoint directly, never evaluating workspace/tool/module recipes. Where
+  the checkpoint can't be fully decoded, a GAP message stands in place and the
+  header says the transcript is partial: damage is shown, never silently
+  omitted, and never makes the rest unreadable. In an engine session, reads
+  Agent.snapshot without sending, resuming, or invoking tools.
 
-  Filters apply before pagination; checkpoint message indexes and the snapshot
-  digest (recorded) or ID (live) are returned. Tool filters select whole messages.
-  Text is not terminal-wrapped or truncated. The first recorded-trace request
-  downloads the full payloads; subsequent pages reuse them. Live requests read
-  the full message list on demand and return only the selected page.
+  Filters apply before pagination; message indexes are checkpoint positions.
+  Tool filters select whole messages. A page ends at `limit` messages or about
+  40KiB, whichever comes first, and its header and footer give the next
+  offset. Each tool call's arguments and each tool result is clipped to `clip`
+  bytes; prose never is. The first recorded-trace request downloads the full
+  payloads; subsequent pages reuse them.
   """
   transcript(
     """
@@ -426,11 +440,12 @@ type TuiQa {
     """
     agent: String!,
     """
-    user, assistant, or system. Empty includes all non-system messages.
+    user, assistant, tool (tool results), system, or gap. Empty includes all
+    non-system messages.
     """
     role: String! = "",
     """
-    Exact tool-call name to select, e.g. staff_spawn. Empty selects all.
+    Exact tool name: selects messages calling it and its results. Empty selects all.
     """
     tool: String! = "",
     """
@@ -445,6 +460,10 @@ type TuiQa {
     Maximum messages to return, from 1 to 100.
     """
     limit: Int! = 20,
+    """
+    Bytes kept of each tool call's arguments and each tool result (0 = all).
+    """
+    clip: Int! = 4000,
   ): String! @cache(policy: FunctionCachePolicy.Never) {
     if (url == "") {
       return "No active TUI session. Call the tui-qa start tool first."
@@ -459,6 +478,7 @@ type TuiQa {
         "--data-urlencode", "grep=" + grep,
         "--data-urlencode", "offset=" + toString(offset),
         "--data-urlencode", "limit=" + toString(limit),
+        "--data-urlencode", "clip=" + toString(clip),
         url + "/transcript",
       ])
       .stdout
