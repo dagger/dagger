@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"dagger/release/internal/dagger"
+	enginedev "dagger/release/internal/dagger/clients/engine-dev"
+	"dagger/release/internal/dagger/clients/wolfi"
 
+	"dagger.io/dagger/core"
 	"golang.org/x/mod/semver"
 	"sigs.k8s.io/yaml"
 )
@@ -252,7 +255,7 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagge
 		platformArchive: platformArchive,
 	}
 
-	gitSetup := dag.Container().
+	gitSetup := core.NewContainer().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "git"}).
 		WithDirectory("/root/repo", source).
@@ -307,7 +310,7 @@ git rev-parse HEAD
 	}
 	env.moduleRef = env.repoURL + "@" + env.commit
 
-	env.registrySvc = dag.Container().
+	env.registrySvc = core.NewContainer().
 		From("registry:3").
 		WithNewFile("/auth/htpasswd", publishCheckRegistryUser+":$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC").
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
@@ -316,12 +319,12 @@ git rev-parse HEAD
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		AsService()
 
-	env.motoSvc = dag.Container().
+	env.motoSvc = core.NewContainer().
 		From("motoserver/moto:latest").
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
-	env.verdaccio = dag.Container().
+	env.verdaccio = core.NewContainer().
 		From("verdaccio/verdaccio:5").
 		WithNewFile("/verdaccio/conf/config.yaml", verdaccioConfig).
 		WithExposedPort(4873, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
@@ -329,8 +332,8 @@ git rev-parse HEAD
 
 	env.certs = newReleaseCheckCerts("ca")
 	githubCert, githubKey := env.certs.newServerCerts("github.test")
-	env.mockRecords = dag.CacheVolume("release-mock-records-" + randomID())
-	env.mockSvc = dag.Container().
+	env.mockRecords = core.NewCacheVolume("release-mock-records-" + randomID())
+	env.mockSvc = core.NewContainer().
 		From("python:3.12-alpine").
 		WithMountedFile("/certs/github.test.crt", githubCert).
 		WithMountedFile("/certs/github.test.key", githubKey).
@@ -372,7 +375,7 @@ func publishCheckRelease(ctx context.Context, source *dagger.Directory) (tag, ve
 }
 
 func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service, error) {
-	dev := dag.EngineDev(env.workspace, dagger.EngineDevOpts{
+	dev := enginedev.New(env.workspace, enginedev.EngineDevOpts{
 		SubnetNumber: 90,
 	}).IncrementSubnet()
 	networkCIDR, err := dev.NetworkCidr(ctx)
@@ -395,7 +398,7 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 		WithServiceBinding("mock", env.mockSvc).
 		WithServiceBinding("github.test", env.mockSvc).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithMountedCache(publishCheckEngineStateDir, dag.CacheVolume("release-publish-nested-engine-state-"+randomID()), dagger.ContainerWithMountedCacheOpts{
+		WithMountedCache(publishCheckEngineStateDir, core.NewCacheVolume("release-publish-nested-engine-state-"+randomID()), dagger.ContainerWithMountedCacheOpts{
 			Sharing: dagger.CacheSharingModeLocked,
 		})
 
@@ -411,9 +414,9 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 }
 
 func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
-	dev := dag.EngineDev(env.workspace)
-	client := dag.Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	dev := enginedev.New(env.workspace)
+	client := wolfi.New().
+		Container(wolfi.WolfiContainerOpts{
 			Packages: []string{"apk-tools", "ca-certificates", "curl", "git"},
 		}).
 		WithEnvVariable("HOME", "/root").
@@ -427,7 +430,7 @@ func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 		WithServiceBinding("github.test", env.mockSvc).
 		WithMountedFile("/github-ca.pem", env.certs.caRootCert)
 
-	return dev.InstallClient(dagger.EngineDevInstallClientOpts{
+	return dev.InstallClient(enginedev.EngineDevInstallClientOpts{
 		Client:  client,
 		Service: engine,
 	})
@@ -471,15 +474,15 @@ exit "$status"
 `
 
 	out, err := env.client(engine).
-		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("release-registry-password-"+randomID(), publishCheckRegistryPass)).
-		WithSecretVariable("FAKE_GITHUB_TOKEN", dag.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass)).
-		WithSecretVariable("FAKE_NETLIFY_TOKEN", dag.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token")).
-		WithSecretVariable("FAKE_PYPI_TOKEN", dag.SetSecret("fake-pypi-token-"+randomID(), "fake-pypi-token")).
-		WithSecretVariable("FAKE_NPM_TOKEN", dag.SetSecret("fake-npm-token-"+randomID(), "fake-npm-token")).
-		WithSecretVariable("FAKE_HEX_API_KEY", dag.SetSecret("fake-hex-api-key-"+randomID(), "fake-hex-api-key")).
-		WithSecretVariable("FAKE_CARGO_REGISTRY_TOKEN", dag.SetSecret("fake-cargo-token-"+randomID(), "fake-cargo-token")).
-		WithSecretVariable("AWS_ACCESS_KEY_ID", dag.SetSecret("fake-aws-access-key-"+randomID(), "test")).
-		WithSecretVariable("AWS_SECRET_ACCESS_KEY", dag.SetSecret("fake-aws-secret-key-"+randomID(), "test")).
+		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("release-registry-password-"+randomID(), publishCheckRegistryPass)).
+		WithSecretVariable("FAKE_GITHUB_TOKEN", core.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass)).
+		WithSecretVariable("FAKE_NETLIFY_TOKEN", core.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token")).
+		WithSecretVariable("FAKE_PYPI_TOKEN", core.SetSecret("fake-pypi-token-"+randomID(), "fake-pypi-token")).
+		WithSecretVariable("FAKE_NPM_TOKEN", core.SetSecret("fake-npm-token-"+randomID(), "fake-npm-token")).
+		WithSecretVariable("FAKE_HEX_API_KEY", core.SetSecret("fake-hex-api-key-"+randomID(), "fake-hex-api-key")).
+		WithSecretVariable("FAKE_CARGO_REGISTRY_TOKEN", core.SetSecret("fake-cargo-token-"+randomID(), "fake-cargo-token")).
+		WithSecretVariable("AWS_ACCESS_KEY_ID", core.SetSecret("fake-aws-access-key-"+randomID(), "test")).
+		WithSecretVariable("AWS_SECRET_ACCESS_KEY", core.SetSecret("fake-aws-secret-key-"+randomID(), "test")).
 		WithEnvVariable("MODULE_REF", env.moduleRef).
 		WithEnvVariable("RELEASE_TAG", tag).
 		WithEnvVariable("RELEASE_COMMIT", env.commit).
@@ -497,7 +500,7 @@ exit "$status"
 }
 
 func (env *publishCheckEnv) gitStdout(ctx context.Context, script string) (string, error) {
-	out, err := dag.Container().
+	out, err := core.NewContainer().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -518,7 +521,7 @@ func (env *publishCheckEnv) gitStdout(ctx context.Context, script string) (strin
 }
 
 func (env *publishCheckEnv) gitWorktreeStdout(ctx context.Context, script string) (string, error) {
-	out, err := dag.Container().
+	out, err := core.NewContainer().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "git"}).
 		With(gitUserConfig).
@@ -542,7 +545,7 @@ func (env *publishCheckEnv) awsCLI(opts ...dagger.ContainerOpts) *dagger.Contain
 	if len(opts) > 0 {
 		containerOpts = opts[0]
 	}
-	return dag.Container(containerOpts).
+	return core.NewContainer(containerOpts).
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "aws-cli", "curl"}).
 		WithServiceBinding("moto", env.motoSvc).
@@ -1127,7 +1130,7 @@ PY
 }
 
 func (env *publishCheckEnv) assertComponentGitHubReleases(ctx context.Context) error {
-	_, err := dag.Container().
+	_, err := core.NewContainer().
 		From("python:3.12-alpine").
 		WithMountedCache("/records", env.mockRecords).
 		WithEnvVariable("RELEASE_TAG", env.releaseTag).
@@ -1441,7 +1444,7 @@ func (env *publishCheckEnv) assertPackageRegistryRequests(
 	if isPrerelease {
 		prerelease = "1"
 	}
-	_, err := dag.Container().
+	_, err := core.NewContainer().
 		From("python:3.12-alpine").
 		WithMountedCache("/records", env.mockRecords).
 		WithEnvVariable("RELEASE_VERSION", env.releaseVersion).
@@ -1552,7 +1555,7 @@ need(any(e.get("kind") == "cargo_config" for e in events), "Cargo should fetch r
 }
 
 func (env *publishCheckEnv) mockEvents(ctx context.Context) (string, error) {
-	events, err := dag.Container().
+	events, err := core.NewContainer().
 		From("alpine:latest").
 		WithMountedCache("/records", env.mockRecords).
 		WithEnvVariable("MOCK_EVENTS_CACHE_BUSTER", randomID()).
@@ -1569,12 +1572,12 @@ func (env *publishCheckEnv) assertRegistryTags(ctx context.Context) error {
 	if semver.Prerelease(env.releaseTag) != "" {
 		isPrerelease = "1"
 	}
-	tags, err := dag.Container().
+	tags, err := core.NewContainer().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
-		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("registry-list-password-"+randomID(), publishCheckRegistryPass)).
+		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("registry-list-password-"+randomID(), publishCheckRegistryPass)).
 		WithExec([]string{"sh", "-ec", `curl -fsS -u "$REGISTRY_USERNAME:$REGISTRY_PASSWORD" http://registry:5000/v2/dagger/engine/tags/list`}).
 		Stdout(ctx)
 	if err != nil {
@@ -1596,11 +1599,11 @@ func (env *publishCheckEnv) assertRegistryTags(ctx context.Context) error {
 			return err
 		}
 	}
-	craneCtr := dag.Container(dagger.ContainerOpts{Platform: env.platform}).
+	craneCtr := core.NewContainer(dagger.ContainerOpts{Platform: env.platform}).
 		From("gcr.io/go-containerregistry/crane:debug").
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
-		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("registry-manifest-password-"+randomID(), publishCheckRegistryPass)).
+		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("registry-manifest-password-"+randomID(), publishCheckRegistryPass)).
 		WithEnvVariable("RELEASE_TAG", env.releaseTag).
 		WithEnvVariable("IS_PRERELEASE", isPrerelease)
 
@@ -1670,7 +1673,7 @@ set -eu
 	crane export --insecure --platform linux/amd64 "registry:5000/dagger/engine:$RELEASE_TAG-gpu" - | tar -xOf - usr/local/bin/dagger-engine > /tmp/engine-binaries/gpu-linux-amd64
 	`}).
 		Directory("/tmp/engine-binaries")
-	_, err = dag.Container().
+	_, err = core.NewContainer().
 		From("python:3.12-alpine").
 		WithDirectory("/engine-binaries", engineBinaries).
 		WithExec([]string{"python", "-c", `
@@ -1709,11 +1712,11 @@ check_elf("gpu-linux-amd64", 62)
 }
 
 func (env *publishCheckEnv) assertEngineVersion(ctx context.Context) error {
-	version, err := dag.Container(dagger.ContainerOpts{Platform: env.platform}).
+	version, err := core.NewContainer(dagger.ContainerOpts{Platform: env.platform}).
 		From("gcr.io/go-containerregistry/crane:debug").
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
-		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("registry-crane-password-"+randomID(), publishCheckRegistryPass)).
+		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("registry-crane-password-"+randomID(), publishCheckRegistryPass)).
 		WithExec([]string{"sh", "-ec", "crane auth login registry:5000 --insecure --username \"$REGISTRY_USERNAME\" --password \"$REGISTRY_PASSWORD\" && crane export --insecure --platform " + string(env.platform) + " registry:5000/dagger/engine:" + env.releaseTag + " - | tar -xOf - usr/local/bin/dagger-engine > /tmp/dagger-engine && chmod +x /tmp/dagger-engine && /tmp/dagger-engine --version"}).
 		Stdout(ctx)
 	if err != nil {
@@ -1747,7 +1750,7 @@ func (env *publishCheckEnv) assertNpmVersion(
 		distTag = strings.SplitN(env.releaseVersion, "-", 2)[1]
 		distTag = strings.SplitN(distTag, ".", 2)[0]
 	}
-	_, err := dag.Container().
+	_, err := core.NewContainer().
 		From("node:20-alpine").
 		WithServiceBinding("verdaccio", env.verdaccio).
 		WithEnvVariable("RELEASE_VERSION", env.releaseVersion).
@@ -1809,12 +1812,12 @@ JS
 }
 
 func (env *publishCheckEnv) assertHelmTags(ctx context.Context) error {
-	tags, err := dag.Container().
+	tags, err := core.NewContainer().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
-		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("registry-helm-list-password-"+randomID(), publishCheckRegistryPass)).
+		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("registry-helm-list-password-"+randomID(), publishCheckRegistryPass)).
 		WithExec([]string{"sh", "-ec", `curl -fsS -u "$REGISTRY_USERNAME:$REGISTRY_PASSWORD" http://registry:5000/v2/dagger/dagger-helm/tags/list`}).
 		Stdout(ctx)
 	if err != nil {
@@ -1824,12 +1827,12 @@ func (env *publishCheckEnv) assertHelmTags(ctx context.Context) error {
 		return err
 	}
 
-	_, err = dag.Container(dagger.ContainerOpts{Platform: env.platform}).
+	_, err = core.NewContainer(dagger.ContainerOpts{Platform: env.platform}).
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "curl", "python3"}).
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
-		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("registry-helm-password-"+randomID(), publishCheckRegistryPass)).
+		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("registry-helm-password-"+randomID(), publishCheckRegistryPass)).
 		WithEnvVariable("RELEASE_VERSION", env.releaseVersion).
 		WithExec([]string{"sh", "-ec", `
 	set -eu
@@ -1941,7 +1944,7 @@ server {
 		RepoURL:    "http://" + hostname + "/repo",
 	})
 
-	svc := dag.Container().
+	svc := core.NewContainer().
 		From("nginx").
 		WithExec([]string{"sh", "-lc", `
 set -eux
@@ -1976,7 +1979,7 @@ type releaseCheckCerts struct {
 
 func newReleaseCheckCerts(caHostname string) *releaseCheckCerts {
 	const password = "hunter4"
-	ctr := dag.Container().
+	ctr := core.NewContainer().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "openssl"}).
 		WithExec([]string{"openssl", "genrsa", "-des3", "-out", "/ca.key", "-passout", "pass:" + password, "2048"}).
@@ -2017,7 +2020,7 @@ DNS.1 = %s
 }
 
 func publishCheckPlatform(ctx context.Context) (dagger.Platform, string, error) {
-	defaultPlatform, err := dag.DefaultPlatform(ctx)
+	defaultPlatform, err := core.DefaultPlatform(ctx)
 	if err != nil {
 		return "", "", err
 	}
