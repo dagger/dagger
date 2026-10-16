@@ -281,6 +281,11 @@ clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev/docusaurus",
 [sdks.go.scopes.".dagger/modules/docs-dev/docusaurus"]
 is-module = true
 
+[sdks.go.scopes.".dagger/modules/docs-dev/docusaurus".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/engine-dev"]
 is-module = true
 clients = ["dagger.io/linux/alpine", "./cmd/codegen", "./.dagger/modules/cli-dev", "./.dagger/modules/go", "dagger.io/linux/wolfi", "./.dagger/modules/engine-dev/notify"]
