@@ -1,9 +1,3 @@
-// TLA+ model checking for the dagql cache spec (dagql/tla).
-//
-// Runs every TLC configuration of CacheLifecycle.tla. Green configurations
-// are regression checks: any violation fails the check. A configuration may
-// name an expected invariant only when it deliberately mutates behavior to
-// prove that the check detects the bug, or tracks an accepted model finding.
 package main
 
 import (
@@ -158,6 +152,12 @@ var clientExpectedOutcome = map[string]string{
 	"blocking_registration": temporalOutcome,
 }
 
+// TLA+ model checking for the dagql cache spec (dagql/tla).
+//
+// Runs every TLC configuration of CacheLifecycle.tla. Green configurations
+// are regression checks: any violation fails the check. A configuration may
+// name an expected invariant only when it deliberately mutates behavior to
+// prove that the check detects the bug, or tracks an accepted model finding.
 type TlaCheck struct {
 	// The dagql/tla spec directory.
 	Source *dagger.Directory
