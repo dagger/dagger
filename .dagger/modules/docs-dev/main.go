@@ -9,8 +9,11 @@ import (
 	"strings"
 
 	"dagger/docs/internal/dagger"
+	"dagger/docs/internal/dagger/clients/docusaurus"
+	enginedev "dagger/docs/internal/dagger/clients/engine-dev"
 	"dagger/docs/internal/releaseversion"
 
+	"dagger.io/dagger/core"
 	"github.com/netlify/open-api/v2/go/models"
 )
 
@@ -41,11 +44,11 @@ type DocsDev struct {
 
 // Build the docs website
 func (d DocsDev) Site() *dagger.Directory {
-	opts := dagger.DocusaurusOpts{
+	opts := docusaurus.DocusaurusOpts{
 		Dir:  "./docs",
 		Yarn: true,
 	}
-	return dag.Docusaurus(d.Source, opts).Build()
+	return docusaurus.New(d.Source, opts).Build()
 }
 
 // Generate a docs version from a Git ref. Numbered prereleases and patch
@@ -99,11 +102,11 @@ func (d DocsDev) GenerateVersion(
 	// Run docs:version against the current docs tree, but with current_docs and
 	// its sidebar swapped for the source's, so the snapshot captures the source
 	// rather than whatever is in development on this branch.
-	opts := dagger.DocusaurusOpts{
+	opts := docusaurus.DocusaurusOpts{
 		Dir:  "./docs",
 		Yarn: true,
 	}
-	built := dag.Docusaurus(
+	built := docusaurus.New(
 		d.Source.
 			WithoutDirectory("docs/current_docs").
 			WithDirectory("docs/current_docs", sourceDocs.Directory("current_docs")).
@@ -216,8 +219,8 @@ func (d DocsDev) Check(ctx context.Context) error {
 // Build the docs server
 // +up
 func (d DocsDev) Server() *dagger.Service {
-	return dag.
-		Container().
+	return core.
+		NewContainer().
 		From("nginx").
 		WithoutEntrypoint().
 		WithFile("/etc/nginx/conf.d/default.conf", d.NginxConfig).
@@ -244,7 +247,7 @@ func (d DocsDev) References(
 	// 1. Generate the GraphQL schema
 	withGqlSchema := src.WithFile(
 		"docs/docs-graphql/schema.graphqls",
-		dag.EngineDev(ws).GraphqlSchema(dagger.EngineDevGraphqlSchemaOpts{
+		enginedev.New(ws).GraphqlSchema(enginedev.EngineDevGraphqlSchemaOpts{
 			Version: version,
 		}),
 	)
@@ -255,11 +258,11 @@ func (d DocsDev) References(
 	// dagger-api-reference Docusaurus plugin (see docs/plugins and
 	// docs/src/components/api). All this step regenerates is the thin per-type
 	// MDX stubs, so they stay in sync with the published core-type list.
-	opts := dagger.DocusaurusOpts{
+	opts := docusaurus.DocusaurusOpts{
 		Dir:  "./docs",
 		Yarn: true,
 	}
-	withAPIReference := dag.Docusaurus(withGqlSchema, opts).
+	withAPIReference := docusaurus.New(withGqlSchema, opts).
 		Base().
 		WithExec([]string{"node", "plugins/dagger-api-reference/generate-stubs.js"}).
 		Directory("/src").
@@ -282,7 +285,7 @@ func (d DocsDev) Deploy(
 	message string,
 	netlifyToken *dagger.Secret,
 ) (string, error) {
-	out, err := dag.Container().
+	out, err := core.NewContainer().
 		From("node:18").
 		WithExec([]string{"npm", "install", "netlify-cli", "-g"}). // pin!!!!
 		WithEnvVariable("NETLIFY_SITE_ID", "docs-dagger-io").
