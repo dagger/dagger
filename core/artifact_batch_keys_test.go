@@ -245,11 +245,11 @@ func TestArtifactBatchName(t *testing.T) {
 			require.NoError(t, err)
 			var names []string
 			for _, batch := range batches {
-				name, err := batch.URI(ArtifactURIOpts{DimensionKeys: true, CollapseBatch: true})
+				name, err := batch.URI(ArtifactURIOpts{DimensionKeys: true})
 				require.NoError(t, err)
 				names = append(names, name)
 				// The full address still names every item in the batch.
-				full, err := batch.URI(ArtifactURIOpts{DimensionKeys: true})
+				full, err := batch.URI(ArtifactURIOpts{DimensionKeys: true, Full: true})
 				require.NoError(t, err)
 				for _, key := range batch.Node.Parent.CollectionKeys {
 					require.Contains(t, full, "test="+key)

@@ -744,6 +744,7 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		result.Entries = append(result.Entries, entry)
 	}
 	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
+	result.AllPaths = (&core.Artifacts{Entries: loaded}).PathIndex()
 	result.NameEntries()
 	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
 	if err := validateArtifactPaths(result.Entries); err != nil {
@@ -916,9 +917,10 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 	}
 	for i, selected := range selection {
 		artifact := selected.Self()
-		// A batch of a whole collection is named by its parent keys, not by
-		// every item in it. The value is still selected by the full address.
-		name, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true, CollapseBatch: true})
+		// Spans carry the projected address, as `dagger list` prints it: a
+		// short type key, and a batch of a whole collection named by its
+		// parent keys. The value is still selected by the full address.
+		name, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
 		if err != nil {
 			return nil, err
 		}

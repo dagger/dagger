@@ -1,5 +1,8 @@
 kind: Fixed
-body: A check that runs a whole collection in batches names each batch by its parent keys, such as `dag://?check=go/packages/tests/test&go-package=internal/bundle`, instead of listing every item in it. A filtered selection still names the items it selected.
+body: |
+  DAG addresses with collection keys print the shortest type key that names their path, such as `dag://?service=batch/up&docker-compose-project=e2e`, and a check that runs a whole collection in batches names each batch by its parent keys instead of listing every item. Span names, `Artifact.uri`, `dagger list` links and check failures all use this one form, and `filterUri` and `Workspace.resolve` accept it.
+
+  A short type key that names one operation at two granularities, such as `--service=up` matching both each service's `up` and the batch `batch/up`, is now an error that lists the paths instead of selecting both. A key that names unrelated paths, such as `--check=stale`, still selects all of them.
 time: 2026-10-16T12:00:00+00:00
 custom:
     Author: kpenfound

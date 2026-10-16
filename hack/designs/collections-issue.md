@@ -270,10 +270,10 @@ The container for one test has this address:
 }
 ```
 
-The Artifacts `uri()` formatter prints the type dimension key, then the collection dimension keys. It prints no path:
+The Artifacts `uri()` formatter prints the type dimension key, then the collection dimension keys. It prints no path. With collection keys, it prints the shortest type key that names the path (see [Projections](#projections)):
 
 ```text
-dag://?container=go/modules/tests/container&go-module=sdk/go&go-test=TestConnect
+dag://?container=container&go-module=sdk/go&go-test=TestConnect
 ```
 
 Collection selection inserts `get(key: ...)` calls. `get` and the keys are not path segments. The engine enumerates item objects and their children. It also retains the collection object at its own path, without a key for that collection. Thus `go/modules` is a `GoModules` artifact; adding a `Go.modules` key at the same path selects a `GoModule` artifact. `batch` is an explicit path on the collection object, not a child of each item.
@@ -281,6 +281,17 @@ Collection selection inserts `get(key: ...)` calls. `get` and the keys are not p
 #### Artifact identity
 
 Artifact identity is the set of all dimension keys, including the static keys. The type dimension key is the full path, so the path adds no information.
+
+#### Projections
+
+An address printed for people, such as a `dagger list` row, a check name, or an `Artifact.uri()` result, is a projection: the smallest set of keys, in their shortest names, that selects the same artifact in the loaded workspace. A schema or module change can alter a projection. A stored identifier, such as a Cloud check name or the address an engine sends a cloud engine, uses the full form: every key, and the full path in the type key. `Artifact.uri` prints the full form only for an address without collection keys, whose full path is then its stable name.
+
+A projection shortens two keys:
+
+- The type key is the shortest suffix of the path, on segment boundaries, that names one path among the loaded paths of that type with every collection dimension the address keys. Thus the up operation on each Docker Compose service is `?service=up&docker-compose-project=e2e&docker-compose-service=web`, and the batch operation on a project's services is `?service=batch/up&docker-compose-project=e2e`. Collection dimension names start with their module, so a short key with collection keys names the same path whichever modules are loaded.
+- A batch that runs every item of its collection omits that collection's item keys: `?check=test&go-package=internal/bundle` for one `go test` of a whole package, not one `go-test` key per test. A batch of selected items keeps their keys.
+
+A projection holds as a whole. A short type key given without the keys it was chosen with can name several paths. A key that names several paths selects them all, such as `?check=stale` for every staleness check. But a key that names both an operation on each item of a collection and the same operation on the collection's batch would run it twice: `?service=up&docker-compose-project=e2e` names `services/up` and `services/batch/up`. That is an error that lists the paths, never their union.
 
 Distinct keys remain distinct even if `get` returns the same object. Filters never rewrite addresses or turn a collection artifact into a subset.
 
@@ -335,7 +346,7 @@ dag://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect
 dag://?container=go/modules/tests/container&go-module=sdk/go&go-test=TestConnect
 ```
 
-The two forms differ in one way: the path accepts glob patterns, such as `go/**`. A type dimension key matches only the exact path.
+The two forms differ in one way: the path accepts glob patterns, such as `go/**`. A type dimension key names the path it equals, so a stored address stays exact. Otherwise it names each path it is a suffix of among the paths with the address's collection dimensions (see [Projections](#projections)). A leading `/` accepts only a full path.
 
 Parent dimensions still select the containing objects. A complete address has one key for each item selection along the path. Missing parent keys or alternative keys can select several artifacts. `Workspace.resolve` uses the Artifacts rule: require exactly one match.
 

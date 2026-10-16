@@ -127,5 +127,10 @@ func (a *Artifacts) Batch(ctx context.Context) ([]*Artifact, error) {
 		}
 		group.artifact.DimensionKeys = append(group.artifact.DimensionKeys, &ArtifactDimensionKey{Dimension: item.CollectionDimension.Identifier, Key: key})
 	}
+	// A batch that runs its whole collection keys fewer dimensions, which
+	// can need a longer type key.
+	for _, group := range groups {
+		group.artifact.TypeKeyName = a.typeKeyName(group.artifact)
+	}
 	return result, nil
 }

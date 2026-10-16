@@ -575,6 +575,21 @@ func artifactPathRows(scope, selection *Artifacts, tag func(*Artifact) string) (
 			query = append(query, need.placeholder())
 		}
 		if len(query) > 0 {
+			// The placeholders stand for the keys the entry's short type key
+			// was chosen with, so the row prints it, as items rows do.
+			var needs []string
+			for _, need := range row.Needs {
+				needs = append(needs, need.Identifier)
+			}
+			if addr, err := dagaddress.Parse(row.Address); err == nil && entry.TypeKeyName != "" && slices.Equal(needs, entry.projectedDimensions()) {
+				full := strings.Join(entry.Path, "/")
+				for i, pair := range addr.Query {
+					if pair.HasKey && pair.Key == full {
+						addr.Query[i].Key = entry.TypeKeyName
+					}
+				}
+				row.Address = addr.String()
+			}
 			sep := "?"
 			if strings.Contains(row.Address, "?") {
 				sep = "&"
