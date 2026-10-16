@@ -1,6 +1,7 @@
 package main
 
 import (
+	"dagger.io/dagger/core"
 	"dagger/docusaurus/internal/dagger"
 	"path/filepath"
 )
@@ -63,7 +64,7 @@ type Docusaurus struct {
 // Return base container for running docusaurus with docs mounted and docusaurus
 // dependencies installed.
 func (m *Docusaurus) Base() *dagger.Container {
-	ctr := dag.Container().
+	ctr := core.NewContainer().
 		From("node:lts-alpine").
 		WithoutEntrypoint().
 		WithMountedDirectory("/src", m.Src).
@@ -73,18 +74,18 @@ func (m *Docusaurus) Base() *dagger.Container {
 		ctr = ctr.
 			WithMountedCache(
 				"./node_modules/.cache",
-				dag.CacheVolume(m.CacheVolumeName+"-cache"),
+				core.NewCacheVolume(m.CacheVolumeName+"-cache"),
 				dagger.ContainerWithMountedCacheOpts{
 					Sharing: dagger.CacheSharingModePrivate,
 				},
 			).
 			WithMountedCache(
 				"/root/.npm/_cacache",
-				dag.CacheVolume("npm-cache"),
+				core.NewCacheVolume("npm-cache"),
 			).
 			WithMountedCache(
 				"/usr/local/share/.cache/yarn",
-				dag.CacheVolume("yarn-cache"),
+				core.NewCacheVolume("yarn-cache"),
 			)
 	}
 
