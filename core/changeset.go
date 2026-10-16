@@ -272,6 +272,15 @@ func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, err
 	if beforeDigest == afterDigest {
 		return &ChangesetPaths{}, nil
 	}
+	if after, before, ok := changesetGitTrees(ch); ok {
+		paths, ok, err := gitTreeChangesetPaths(ctx, after, before)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return paths, nil
+		}
+	}
 
 	var result *ChangesetPaths
 	err = ch.withMountedDirs(ctx, func(ctx context.Context, beforeDir, afterDir string, layers *fsdiff.LayerDelta) (err error) {
@@ -776,6 +785,15 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 	}
 	if beforeDigest == afterDigest {
 		return true, nil
+	}
+	if _, _, ok := changesetGitTrees(ch); ok {
+		// Git's tree diff, memoized for the path fields; a walk only if Git
+		// can't answer for these trees.
+		paths, err := ch.ComputePaths(ctx)
+		if err != nil {
+			return false, err
+		}
+		return !changesetPathsTouchFiles(paths), nil
 	}
 
 	var isEmpty bool

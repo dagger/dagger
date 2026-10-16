@@ -11163,6 +11163,7 @@ type GitCommit struct {
 	messageHeadline *string
 	sha             *string
 	shortSha        *string
+	treeSHA         *string
 }
 
 func (r *GitCommit) WithGraphQLQuery(q *querybuilder.Selection) *GitCommit {
@@ -11489,6 +11490,21 @@ func (r *GitCommit) Tree(opts ...GitCommitTreeOpts) *Directory {
 		query:     q,
 		refetchID: r.refetchID,
 	}
+}
+
+// The ID of the commit's Git tree object.
+//
+// Commits with identical trees have identical contents and file modes.
+func (r *GitCommit) TreeSHA(ctx context.Context) (string, error) {
+	if r.treeSHA != nil {
+		return *r.treeSHA, nil
+	}
+	q := r.query.Select("treeSHA")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // AsNode returns this GitCommit as a Node.

@@ -137,9 +137,10 @@ func GitCommitChangeset(
 }
 
 // GitCommitChangesetNativeBase proves same-base provenance without evaluating or
-// hashing either directory. Only a direct Git tree recipe qualifies: subdirectory
-// selection, filters and arbitrary equal-looking directories must use the merge
-// path. Repository recipe identity deliberately retains authorization scope.
+// hashing either directory. Only a Before carrying GitRef.tree's own lazy state
+// (DirectoryGitTreeLazy) qualifies: subdirectory selection, filters and
+// arbitrary equal-looking directories must use the merge path. Repository
+// recipe identity deliberately retains authorization scope.
 func GitCommitChangesetNativeBase(ctx context.Context, parent dagql.ObjectResult[*GitRef], changes *Changeset) (bool, error) {
 	reason, err := gitCommitChangesetNativeBaseReason(ctx, parent, changes)
 	return reason == "", err
