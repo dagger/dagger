@@ -10,7 +10,7 @@ import (
 )
 
 // Dagger docs toolchain
-type DocsDev struct { // docs-dev (../../main.go:37:6)
+type DocsDev struct { // docs-dev (../../main.go:40:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -32,14 +32,14 @@ func (r *DocsDev) WithGraphQLQuery(q *querybuilder.Selection) *DocsDev {
 }
 
 // Check the docs website build
-func (r *DocsDev) Check() *Check { // docs-dev (../../main.go:211:1)
+func (r *DocsDev) Check() *Check { // docs-dev (../../main.go:214:1)
 	q := r.query.Select("check")
 
 	return new(Check).WithGraphQLQuery(q)
 }
 
 // Deploys a current build of the docs.
-func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../main.go:280:1)
+func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../main.go:283:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -60,25 +60,25 @@ type DocsDevGenerateVersionOpts struct {
 	// Exact destination docs version. Allows a branch or commit source and
 	// replaces an existing version; collapse options are ignored when set.
 	//
-	As string // docs-dev (../../main.go:61:2)
+	As string // docs-dev (../../main.go:64:2)
 	//
 	// Collapse a trailing numeric prerelease identifier, e.g.
 	// 1.0.0-beta.10 to 1.0.0-beta.
 	//
 	//
 	// Default: true
-	CollapsePreReleases bool // docs-dev (../../main.go:66:2)
+	CollapsePreReleases bool // docs-dev (../../main.go:69:2)
 	//
 	// Collapse the patch component, e.g. 0.21.8 to 0.21.
 	//
 	//
 	// Default: true
-	CollapsePatch bool // docs-dev (../../main.go:70:2)
+	CollapsePatch bool // docs-dev (../../main.go:73:2)
 }
 
 // Generate a docs version from a Git ref. Numbered prereleases and patch
 // components are collapsed into rolling channels by default.
-func (r *DocsDev) GenerateVersion(source *GitRef, opts ...DocsDevGenerateVersionOpts) *Changeset { // docs-dev (../../main.go:53:1)
+func (r *DocsDev) GenerateVersion(source *GitRef, opts ...DocsDevGenerateVersionOpts) *Changeset { // docs-dev (../../main.go:56:1)
 	assertNotNil("source", source)
 	q := r.query.Select("generateVersion")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -157,13 +157,13 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 
 // DocsDevPublishOpts contains options for DocsDev.Publish
 type DocsDevPublishOpts struct {
-	Deployment string // docs-dev (../../main.go:313:2)
+	Deployment string // docs-dev (../../main.go:316:2)
 
-	APIURL string // docs-dev (../../main.go:315:2)
+	APIURL string // docs-dev (../../main.go:318:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../main.go:309:1)
+func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../main.go:312:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
@@ -189,17 +189,17 @@ type DocsDevReferencesOpts struct {
 	//
 	// Dagger version to generate API docs for
 	//
-	Version string // docs-dev (../../main.go:235:2)
+	Version string // docs-dev (../../main.go:238:2)
 	//
 	// Workspace forwarded to engine-dev for VCS stamping (References is the
 	// only docs-dev method that builds). Auto-injected on a direct call;
 	// dependencies don't inherit it.
 	//
-	Ws *Workspace // docs-dev (../../main.go:241:2)
+	Ws *Workspace // docs-dev (../../main.go:244:2)
 }
 
 // Regenerate the GraphQL schema and API reference pages
-func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../main.go:232:1)
+func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../main.go:235:1)
 	q := r.query.Select("references")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -216,7 +216,7 @@ func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs
 }
 
 // Rename an existing docs version without changing its contents.
-func (r *DocsDev) RenameVersion(from string, to string) *Changeset { // docs-dev (../../main.go:151:1)
+func (r *DocsDev) RenameVersion(from string, to string) *Changeset { // docs-dev (../../main.go:154:1)
 	q := r.query.Select("renameVersion")
 	q = q.Arg("from", from)
 	q = q.Arg("to", to)
@@ -225,20 +225,20 @@ func (r *DocsDev) RenameVersion(from string, to string) *Changeset { // docs-dev
 }
 
 // Build the docs server
-func (r *DocsDev) Server() *Service { // docs-dev (../../main.go:218:1)
+func (r *DocsDev) Server() *Service { // docs-dev (../../main.go:221:1)
 	q := r.query.Select("server")
 
 	return new(Service).WithGraphQLQuery(q)
 }
 
 // Build the docs website
-func (r *DocsDev) Site() *Directory { // docs-dev (../../main.go:43:1)
+func (r *DocsDev) Site() *Directory { // docs-dev (../../main.go:46:1)
 	q := r.query.Select("site")
 
 	return new(Directory).WithGraphQLQuery(q)
 }
 
-func (r *DocsDev) Source() *Directory { // docs-dev (../../main.go:38:2)
+func (r *DocsDev) Source() *Directory { // docs-dev (../../main.go:41:2)
 	q := r.query.Select("source")
 
 	return new(Directory).WithGraphQLQuery(q)
@@ -252,13 +252,13 @@ func (r *DocsDev) AsNode() Node {
 
 // DocsDevOpts contains options for Query.DocsDev
 type DocsDevOpts struct {
-	Source *Directory // docs-dev (../../main.go:26:2)
+	Source *Directory // docs-dev (../../main.go:29:2)
 
-	NginxConfig *File // docs-dev (../../main.go:28:2)
+	NginxConfig *File // docs-dev (../../main.go:31:2)
 }
 
 // Dagger docs toolchain
-func (r *Query) DocsDev(opts ...DocsDevOpts) *DocsDev { // docs-dev (../../main.go:17:1)
+func (r *Query) DocsDev(opts ...DocsDevOpts) *DocsDev { // docs-dev (../../main.go:20:1)
 	q := r.query.Select("docsDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument

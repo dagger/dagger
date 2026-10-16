@@ -284,7 +284,6 @@ clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev/docusaurus",
 
 [sdks.go.scopes.".dagger/modules/docs-dev".settings]
 dangEntrypoint = true
-globalClient = true
 unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/docs-dev/docusaurus"]
