@@ -113,6 +113,9 @@ func (s *workspaceSchema) workspaceOverlayModulesWithLoadFailures(
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := workspace.ValidateEffectiveConfig(cfg); err != nil {
+		return nil, nil, err
+	}
 	if len(cfg.Modules) == 0 {
 		return nil, nil, nil
 	}

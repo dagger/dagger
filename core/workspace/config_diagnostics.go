@@ -59,8 +59,17 @@ func CheckConfigFields(data []byte, filename string) (warnings []string, _ error
 				}
 				continue
 			}
-			if child, ok := tree.GetPath([]string{key}).(*toml.Tree); ok && childType.Kind() != reflect.Interface {
-				visit(child, childType, parts)
+			switch child := tree.GetPath([]string{key}).(type) {
+			case *toml.Tree:
+				if childType.Kind() != reflect.Interface {
+					visit(child, childType, parts)
+				}
+			case []*toml.Tree:
+				if childType.Kind() == reflect.Slice {
+					for _, elem := range child {
+						visit(elem, childType.Elem(), parts)
+					}
+				}
 			}
 		}
 	}
