@@ -189,6 +189,9 @@ type Agent implements Node {
   """A unique identifier for this Agent."""
   id: ID!
 
+  """The agent that spawned this agent, or null for a root agent."""
+  parent: Agent @experimental(reason: "Agent APIs are likely to change.")
+
   """Display label for the agent; carries no identity."""
   name: String! @experimental(reason: "Agent APIs are likely to change.")
 
@@ -668,9 +671,10 @@ type Artifacts implements Node {
   id: ID!
 
   """
-  Convert the selection to expertise without running the functions. Fail if any
-  artifact is not a source of expertise; a module load failure fails with its
-  load error.
+  Convert the selection to expertise without running the functions. Each must
+  take one LLM! argument and return LLM!; any other arguments must be optional
+  or auto-filled. Agent arguments receive the agent that owns the conversation.
+  A module load failure fails with its load error.
   """
   asExpertise: [Expertise!]!
 
@@ -3504,21 +3508,26 @@ enum ExistsType {
   SYMLINK_TYPE
 }
 
-"""An agent function that can modify a conversation."""
+"""A function that can modify a conversation."""
 type Expertise implements Node {
   """A unique identifier for this Expertise."""
   id: ID!
 
-  """The agent function's name."""
+  """
+  The artifact this expertise runs. Look it up again by URI to pick up module changes.
+  """
+  artifact: Artifact!
+
+  """The function's name."""
   name: String!
 
-  """The agent function's description."""
+  """The function's description."""
   description: String!
 
-  """The agent function's path within its module."""
+  """The function's path within its module."""
   path: [String!]!
 
-  """The module that defines the agent function."""
+  """The module that defines the function."""
   originalModule: Module!
 }
 
@@ -4881,25 +4890,19 @@ type LLM implements Node & Syncer {
   """A unique identifier for this LLM."""
   id: ID!
 
+  """Expertise composed into this conversation, in order."""
+  expertise: [Expertise!]!
+
   """
-  Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+  Run expertise on this conversation, passing it through each function in order, and record it in expertise.
+
+  Composing an entry that is already recorded refreshes its module: the module's
+  contributions are cleared, all of its recorded entries run again, and
+  compatible tool state is kept. Other contributions are untouched.
+
+  Agent arguments receive the agent that owns this conversation. Without one, entries requiring an Agent are skipped.
   """
   compose(
-    """The expertise to run. Each reference retains its source workspace."""
-    expertise: [ID!]! @expectedType(name: "Expertise")
-  ): LLM!
-
-  """
-  Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
-
-  Clear each selected module's contributions once before execution. Retain
-  unowned contributions and contributions from other modules. Keep this LLM's
-  workspace.
-
-  A change to a tool binding's version resets its state. Removed bindings,
-  changed identities, and incompatible state are errors.
-  """
-  recompose(
     """The expertise to run. Each reference retains its source workspace."""
     expertise: [ID!]! @expectedType(name: "Expertise")
   ): LLM!
@@ -5216,6 +5219,13 @@ type LLM implements Node & Syncer {
   stepped.
   """
   spawn(
+    """
+    Expertise to compose into the new agent's conversation. Agent arguments
+    receive the new agent, which cannot be used until composition completes; if
+    composition fails, the agent is left STOPPED.
+    """
+    expertise: [ID!] = [] @expectedType(name: "Expertise")
+
     """
     Display label for the agent — telemetry and error messages; carries no
     identity. Defaults to a short name derived from the conversation.
