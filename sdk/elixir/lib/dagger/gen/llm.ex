@@ -65,7 +65,11 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+  Run expertise on this conversation, passing it through each function in order, and record it in expertise.
+
+  Composing an entry that is already recorded refreshes its module: the module's contributions are cleared, all of its recorded entries run again, and compatible tool state is kept. Other contributions are untouched.
+
+  Agent arguments receive the agent that owns this conversation. Without one, entries requiring an Agent are skipped.
   """
   @spec compose(t(), [String.t()]) :: Dagger.LLM.t()
   def compose(%__MODULE__{} = llm, expertise) do
@@ -98,6 +102,29 @@ defmodule Dagger.LLM do
       llm.query_builder |> QB.select("contextWindow")
 
     Client.execute(llm.client, query_builder)
+  end
+
+  @doc """
+  Expertise composed into this conversation, in order.
+  """
+  @spec expertise(t()) :: {:ok, [Dagger.Expertise.t()]} | {:error, term()}
+  def expertise(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("expertise") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(llm.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.Expertise{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Expertise"),
+           client: llm.client
+         }
+       end}
+    end
   end
 
   @doc """
@@ -222,24 +249,6 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
-
-  Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
-
-  A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
-  """
-  @spec recompose(t(), [String.t()]) :: Dagger.LLM.t()
-  def recompose(%__MODULE__{} = llm, expertise) do
-    query_builder =
-      llm.query_builder |> QB.select("recompose") |> QB.put_arg("expertise", expertise)
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @doc """
   The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
   """
   @spec skills(t()) :: {:ok, [Dagger.LLMSkill.t()]} | {:error, term()}
@@ -276,6 +285,7 @@ defmodule Dagger.LLM do
   > "Agent APIs are likely to change."
   """
   @spec spawn(t(), [
+          {:expertise, [Dagger.Expertise.t()]},
           {:name, String.t() | nil},
           {:handle, String.t() | nil},
           {:state, Dagger.AgentState.t() | nil},
@@ -286,6 +296,13 @@ defmodule Dagger.LLM do
     query_builder =
       llm.query_builder
       |> QB.select("spawn")
+      |> QB.maybe_put_arg(
+        "expertise",
+        if(optional_args[:expertise],
+          do: Enum.map(optional_args[:expertise], &Dagger.ID.id!/1),
+          else: nil
+        )
+      )
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("handle", optional_args[:handle])
       |> QB.maybe_put_arg("state", optional_args[:state])

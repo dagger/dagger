@@ -105,6 +105,13 @@ const (
 	LogRoleAttr     = "dagger.io/log.role"
 	LogRoleSpanName = "span.name"
 
+	// LogHumanOnlyAttr marks a log record written for people reading the
+	// trace, not for a model: frontends render it as usual, while the logs an
+	// LLM reads (tool results, ReadLogs) leave it out. Use it for engine
+	// diagnostics whose substance reaches the model some other way, or not at
+	// all. (bool)
+	LogHumanOnlyAttr = "dagger.io/log.human_only"
+
 	// Media logs keep a payload-free textual placeholder in Body. These string
 	// attributes let capable frontends replace that placeholder with inline
 	// media without changing log ordering or leaking base64 to text outputs.

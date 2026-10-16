@@ -136,6 +136,11 @@ type MCP struct {
 	// addresses resolve in this conversation's scope instead (see
 	// MCP.scopeLLM). Like standalone, it survives Clone.
 	scopeBase dagql.ObjectResult[*LLM]
+	// ownerAgent mirrors the served conversation's OwnerAgentHandle (see
+	// LLM.WithOwnerAgent). Agent tool arguments receive this agent, whoever
+	// drives the tools; without one, tools requiring an Agent are hidden.
+	// Like standalone, it survives Clone.
+	ownerAgent string
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
@@ -261,6 +266,21 @@ func (m *MCP) currentLLM() dagql.ObjectResult[*LLM] {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.selfLLM
+}
+
+// owningAgent resolves the agent that owns the served conversation, which
+// Agent tool arguments receive. Inside that agent's own loop it is the agent
+// bound into ctx; otherwise the seed-free reference to its runtime, which must
+// be running in this session.
+func (m *MCP) owningAgent(ctx context.Context) (dagql.ObjectResult[*Agent], error) {
+	if agent, ok := AgentFromContext(ctx); ok && agent.Self().Handle == m.ownerAgent {
+		return agent, nil
+	}
+	agent, err := AgentReference(ctx, m.ownerAgent)
+	if err != nil {
+		return agent, fmt.Errorf("conversation's owning agent: %w", err)
+	}
+	return agent, nil
 }
 
 func (m *MCP) Returned() bool {
@@ -997,6 +1017,14 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 		return "", fmt.Errorf("cannot continue: no conversation is bound to this tool call")
 	}
 
+	if current.Self().OwnerAgentHandle != "" {
+		var err error
+		next, err = WithLLMOwnerAgent(ctx, next, current.Self().OwnerAgentHandle)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	// Load the new toolset now, so a broken env fails the tool call rather than
 	// the next turn. Doubles as the material for the summary below.
 	after, err := next.Self().mcp.Tools(ctx)
@@ -1012,6 +1040,7 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 
 	// Computed before taking the lock: it evaluates dagql calls.
 	wsNote := m.summarizeContinuationWorkspace(ctx, srv, current.Self(), next.Self())
+	collisionNote := summarizeContinuationCollisions(ctx, current.Self(), next.Self())
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1023,10 +1052,52 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 	}
 	m.continuation = next
 	summary := summarizeContinuation(current.Self(), next.Self(), before, after)
+	if collisionNote != "" {
+		summary += "\n" + collisionNote
+	}
 	if wsNote != "" {
 		summary += "\n" + wsNote
 	}
 	return summary, nil
+}
+
+// summarizeContinuationCollisions is the model's plain-text counterpart of
+// WarnToolNameCollisions: it explains the namespaced tool names a continuation
+// introduced, which the toolset diff lists without saying why. Empty when the
+// continuation added no collision, or when they cannot be computed.
+func summarizeContinuationCollisions(ctx context.Context, current, next *LLM) string {
+	if next == nil || next.mcp == nil {
+		return ""
+	}
+	after, err := next.mcp.ToolNameCollisions(ctx)
+	if err != nil || len(after) == 0 {
+		return ""
+	}
+	var before map[string][]string
+	if current != nil && current.mcp != nil {
+		before, _ = current.mcp.ToolNameCollisions(ctx)
+	}
+	return summarizeToolNameCollisions(before, after)
+}
+
+// summarizeToolNameCollisions describes, one line per tool name, the
+// collisions in after that before did not have.
+func summarizeToolNameCollisions(before, after map[string][]string) string {
+	var lines []string
+	for _, name := range slices.Sorted(maps.Keys(after)) {
+		contributors := after[name]
+		if slices.Equal(before[name], contributors) {
+			continue
+		}
+		served := make([]string, len(contributors))
+		for i, typeName := range contributors {
+			served[i] = namespacedToolName(typeName, name)
+		}
+		lines = append(lines, fmt.Sprintf(
+			"Tool name collision: %q is provided by %s; all of their tools are served under type-prefixed names (%s).",
+			name, strings.Join(contributors, ", "), strings.Join(served, ", ")))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // summarizeContinuationWorkspace reports how the continuation's bound
@@ -1060,12 +1131,23 @@ func (m *MCP) summarizeContinuationWorkspace(ctx context.Context, srv *dagql.Ser
 		slog.Warn("failed to summarize continuation workspace change", "error", err)
 		return "Workspace changed."
 	}
+	if strings.TrimSpace(summary) == "" {
+		// A new workspace with the same contents, e.g. a reload's
+		// withUserConfig: nothing the model can act on.
+		return ""
+	}
 	return "Workspace changed:\n" + summary
 }
 
 // historyPreserved reports whether next's message history still contains
 // current's, unchanged, as a prefix — i.e. the conversation was transformed
 // (install/reload) rather than replaced.
+//
+// System prompts are composition, not history: refreshing a recorded entry
+// clears its system prompts and appends them again, so a reload moves them to
+// the end of an otherwise unchanged history. They are left out of the
+// comparison, as the toolset diff is what tells the model what composition
+// changed.
 //
 // This is NOT an acceptance condition: it informs the adoption summary, so
 // the model is told when its history changed shape. Comparing histories by VALUE rather
@@ -1077,15 +1159,23 @@ func historyPreserved(current, next *LLM) bool {
 	if current == nil || next == nil {
 		return false
 	}
-	if len(next.Messages) < len(current.Messages) {
+	before, after := conversationHistory(current.Messages), conversationHistory(next.Messages)
+	if len(after) < len(before) {
 		return false
 	}
-	for i, msg := range current.Messages {
-		if !messagesEqual(msg, next.Messages[i]) {
+	for i, msg := range before {
+		if !messagesEqual(msg, after[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+// conversationHistory is the history without its system prompts.
+func conversationHistory(messages []*LLMMessage) []*LLMMessage {
+	return slices.DeleteFunc(slices.Clone(messages), func(msg *LLMMessage) bool {
+		return msg != nil && msg.Role == LLMMessageRoleSystem
+	})
 }
 
 func messagesEqual(a, b *LLMMessage) bool {
@@ -2441,7 +2531,8 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 				switch attr.Key {
 				case telemetry.StdioStreamAttr:
 					stream = attr.Value.GetIntValue()
-				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr:
+				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr,
+					telemetryattrs.LogHumanOnlyAttr:
 					if attr.Value.GetBoolValue() {
 						skip = true
 						break dance

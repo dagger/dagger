@@ -2450,6 +2450,11 @@ type FunctionCall struct {
 	// module calls. Zero when the call did not originate from an agent turn.
 	callerAgent dagql.ObjectResult[*Agent]
 
+	// composingAgentHandle propagates initial-composition lineage across module
+	// client boundaries without changing callerAgent's provenance semantics.
+	// Like callerAgent, it is set at dispatch and never part of a cache key.
+	composingAgentHandle string
+
 	// processSpan is the span that the processes started for this call parent
 	// their telemetry to, carried engine-side only like callerAgent. A module
 	// entrypoint sets it to the function call span: its module process is

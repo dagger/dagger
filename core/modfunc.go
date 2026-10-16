@@ -673,6 +673,13 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	view call.View,
 	req *dagql.CallRequest,
 ) error {
+	// The agent spawn is composing is deliberately NOT stamped here: it is a
+	// fresh random handle per spawn, so recording it would make every module
+	// call made during composition (tool constructors, helpers) miss the cache
+	// on every spawn. Lineage instead follows execution (see
+	// WithComposingAgent): a spawn that runs during composition gets the
+	// composing agent as parent, while a cache-hit call that spawned when it
+	// first ran is not re-run and keeps naming that first child.
 	var ctxArgs []*FunctionArg
 	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
@@ -1064,6 +1071,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Parent:    parentJSON,
 		InputArgs: callInputs,
 	})
+	fnCall.composingAgentHandle = composingAgentHandle(ctx)
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}

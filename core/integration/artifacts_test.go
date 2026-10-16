@@ -1489,7 +1489,13 @@ func composeArtifactAgents(ctx context.Context, c *dagger.Client, ws *core.Works
 	if len(base) > 0 {
 		llm = base[0]
 	}
-	composed := llm.Compose(refs)
+	// Composition runs as an agent: spawn one composed with the entries and
+	// use its seed, the composed conversation.
+	agent, err := llm.Spawn(ctx, core.LLMSpawnOpts{Expertise: refs})
+	if err != nil {
+		return nil, err
+	}
+	composed := agent.Snapshot()
 	id, err := composed.ID(ctx)
 	if err != nil {
 		return nil, err
