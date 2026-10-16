@@ -309,7 +309,7 @@ func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 
 func (GitSuite) TestGitCommitChanges(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	repo := core.NewQuery(c).Container().From(alpineImage).
+	fixture := core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/repo").
 		WithExec([]string{"sh", "-ec", `
@@ -334,14 +334,46 @@ printf 'main\n' > main
 git add . && git commit -m main
 git merge --no-ff topic -m merge
 git tag merge
+mkdir -p tree/deep becomes-file
+printf 'deep\n' > tree/deep/file
+printf 'top\n' > tree/top
+printf 'file\n' > becomes-dir
+printf 'child\n' > becomes-file/child
+git add . && git commit -m dirs && git tag dirs
+rm -r tree/deep becomes-dir becomes-file
+mkdir becomes-dir
+printf 'child\n' > becomes-dir/child
+printf 'file\n' > becomes-file
+rm edited && ln -s main edited
+git add -A && git commit -m types && git tag types
+chmod +x main
+git add . && git commit -m mode && git tag mode
+git revert --no-edit HEAD && git tag reverted
+for tag in root ordinary types mode reverted; do
+  echo "$tag $(git rev-parse "$tag^{tree}")"
+done > /trees
 git checkout --orphan unrelated
 git rm -rf .
 printf 'unrelated\n' > unrelated
 git add . && git commit -m unrelated
-`}).Directory("/repo").AsGit()
-	root := repo.Tag("root").TargetCommit()
-	ordinary := repo.Tag("ordinary").TargetCommit()
-	merge := repo.Tag("merge").TargetCommit()
+`})
+	trees, err := fixture.File("/trees").Contents(ctx)
+	require.NoError(t, err)
+	gitTrees := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(trees), "\n") {
+		tag, tree, ok := strings.Cut(line, " ")
+		require.True(t, ok)
+		gitTrees[tag] = tree
+	}
+	other := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).WithWorkdir("/other").
+		WithExec([]string{"sh", "-ec", `
+git init
+git config user.name Other
+git config user.email other@example.com
+printf 'other\n' > other
+git add . && git commit -m other
+`}).Directory("/other").AsGit().Head().TargetCommit()
 
 	assertPaths := func(t *testctx.T, changes *core.Changeset, added, modified, removed []string) {
 		t.Helper()
@@ -354,6 +386,9 @@ git add . && git commit -m unrelated
 		got, err = changes.RemovedPaths(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, removed, got)
+		empty, err := changes.IsEmpty(ctx)
+		require.NoError(t, err)
+		require.Equal(t, len(added)+len(modified)+len(removed) == 0, empty)
 		for _, tree := range []*core.Directory{changes.Before(), changes.After()} {
 			entries, err := tree.Entries(ctx)
 			require.NoError(t, err)
@@ -362,71 +397,123 @@ git add . && git commit -m unrelated
 		}
 	}
 
-	t.Run("root", func(ctx context.Context, t *testctx.T) {
-		changes := root.Changes()
-		assertPaths(t, changes, []string{"deleted", "edited", "executable"}, nil, nil)
-		entries, err := changes.Before().Entries(ctx)
-		require.NoError(t, err)
-		require.Empty(t, entries)
-	})
-	t.Run("ordinary deletion and modes", func(ctx context.Context, t *testctx.T) {
-		changes := ordinary.Changes()
-		assertPaths(t, changes, []string{"added", "link"}, []string{"edited", "executable"}, []string{"deleted"})
-		// Applying the structured delta preserves deletion, executable bits and symlinks.
-		out, err := core.NewQuery(c).Container().From(alpineImage).
-			WithDirectory("/tree", changes.Before().WithChanges(changes)).
-			WithWorkdir("/tree").
-			WithExec([]string{"sh", "-ec", "test ! -e deleted; test -x executable; test -L link; readlink link; cat edited"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "edited\nupdated\n", out)
-	})
-	t.Run("merge first parent", func(ctx context.Context, t *testctx.T) {
-		assertPaths(t, merge.Changes(), []string{"topic"}, nil, nil)
-		parents, err := merge.ParentShas(ctx)
-		require.NoError(t, err)
-		require.Len(t, parents, 2)
-		assertPaths(t, merge.Changes(core.GitCommitChangesOpts{Against: repo.Commit(parents[1])}), []string{"main"}, nil, nil)
-	})
-	t.Run("explicit comparison", func(ctx context.Context, t *testctx.T) {
-		assertPaths(t, merge.Changes(core.GitCommitChangesOpts{Against: root}),
-			[]string{"added", "link", "main", "topic"}, []string{"edited", "executable"}, []string{"deleted"})
-		// An explicit comparison overrides even the root commit's empty base.
-		assertPaths(t, root.Changes(core.GitCommitChangesOpts{Against: ordinary}),
-			[]string{"deleted"}, []string{"edited", "executable"}, []string{"added", "link"})
-	})
-	t.Run("self comparison", func(ctx context.Context, t *testctx.T) {
-		changes := ordinary.Changes(core.GitCommitChangesOpts{Against: ordinary})
-		assertPaths(t, changes, nil, nil, nil)
-		empty, err := changes.IsEmpty(ctx)
-		require.NoError(t, err)
-		require.True(t, empty)
-	})
-	t.Run("unrelated history", func(ctx context.Context, t *testctx.T) {
-		assertPaths(t, root.Changes(core.GitCommitChangesOpts{Against: repo.Head().TargetCommit()}),
-			[]string{"deleted", "edited", "executable"}, nil, []string{"unrelated"})
-	})
-	t.Run("different repository", func(ctx context.Context, t *testctx.T) {
-		other := core.NewQuery(c).Container().From(alpineImage).
-			WithExec([]string{"apk", "add", "git"}).WithWorkdir("/other").
-			WithExec([]string{"sh", "-ec", `
-git init
-git config user.name Other
-git config user.email other@example.com
-printf 'other\n' > other
-git add . && git commit -m other
-`}).Directory("/other").AsGit().Head().TargetCommit()
-		assertPaths(t, root.Changes(core.GitCommitChangesOpts{Against: other}),
-			[]string{"deleted", "edited", "executable"}, nil, []string{"other"})
-	})
-	t.Run("stable recipe", func(ctx context.Context, t *testctx.T) {
-		first, err := ordinary.Changes().ID(ctx)
-		require.NoError(t, err)
-		sha, err := ordinary.Sha(ctx)
-		require.NoError(t, err)
-		second, err := repo.Commit(sha).Changes().ID(ctx)
-		require.NoError(t, err)
-		require.Equal(t, first, second)
-	})
+	gitDaemon, repoURL := gitService(ctx, t, c, fixture.Directory("/repo"))
+	for _, tc := range []struct {
+		name string
+		repo *core.GitRepository
+	}{
+		{"local", fixture.Directory("/repo").AsGit()},
+		{"remote", core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon})},
+	} {
+		repo := tc.repo
+		root := repo.Tag("root").TargetCommit()
+		ordinary := repo.Tag("ordinary").TargetCommit()
+		merge := repo.Tag("merge").TargetCommit()
+		dirs := repo.Tag("dirs").TargetCommit()
+		types := repo.Tag("types").TargetCommit()
+		mode := repo.Tag("mode").TargetCommit()
+		reverted := repo.Tag("reverted").TargetCommit()
+
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			t.Run("tree SHA", func(ctx context.Context, t *testctx.T) {
+				for tag, commit := range map[string]*core.GitCommit{
+					"root": root, "ordinary": ordinary, "types": types, "mode": mode, "reverted": reverted,
+				} {
+					got, err := commit.TreeSHA(ctx)
+					require.NoError(t, err)
+					require.Equal(t, gitTrees[tag], got, tag)
+				}
+				// Identical trees of different commits share their ID; a
+				// mode-only change does not.
+				require.Equal(t, gitTrees["types"], gitTrees["reverted"])
+				require.NotEqual(t, gitTrees["types"], gitTrees["mode"])
+				require.NotEqual(t, gitTrees["root"], gitTrees["ordinary"])
+			})
+			t.Run("root", func(ctx context.Context, t *testctx.T) {
+				changes := root.Changes()
+				assertPaths(t, changes, []string{"deleted", "edited", "executable"}, nil, nil)
+				entries, err := changes.Before().Entries(ctx)
+				require.NoError(t, err)
+				require.Empty(t, entries)
+			})
+			t.Run("ordinary deletion and modes", func(ctx context.Context, t *testctx.T) {
+				changes := ordinary.Changes()
+				assertPaths(t, changes, []string{"added", "link"}, []string{"edited", "executable"}, []string{"deleted"})
+				// Applying the structured delta preserves deletion, executable bits and symlinks.
+				out, err := core.NewQuery(c).Container().From(alpineImage).
+					WithDirectory("/tree", changes.Before().WithChanges(changes)).
+					WithWorkdir("/tree").
+					WithExec([]string{"sh", "-ec", "test ! -e deleted; test -x executable; test -L link; readlink link; cat edited"}).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "edited\nupdated\n", out)
+			})
+			t.Run("directories", func(ctx context.Context, t *testctx.T) {
+				assertPaths(t, dirs.Changes(),
+					[]string{"becomes-dir", "becomes-file/", "becomes-file/child", "tree/", "tree/deep/", "tree/deep/file", "tree/top"}, nil, nil)
+			})
+			t.Run("type changes", func(ctx context.Context, t *testctx.T) {
+				changes := types.Changes()
+				assertPaths(t, changes,
+					[]string{"becomes-dir/", "becomes-dir/child", "becomes-file"},
+					[]string{"edited"},
+					[]string{"becomes-dir", "becomes-file/", "tree/deep/"})
+				// The content still comes from the trees.
+				applied := changes.Before().WithChanges(changes)
+				same, err := applied.Changes(types.Tree(core.GitCommitTreeOpts{DiscardGitDir: true})).IsEmpty(ctx)
+				require.NoError(t, err)
+				require.True(t, same)
+			})
+			t.Run("mode only", func(ctx context.Context, t *testctx.T) {
+				changes := mode.Changes()
+				assertPaths(t, changes, nil, []string{"main"}, nil)
+				patch, err := changes.AsPatch().Contents(ctx)
+				require.NoError(t, err)
+				require.Contains(t, patch, "old mode 100644\nnew mode 100755")
+			})
+			t.Run("identical trees", func(ctx context.Context, t *testctx.T) {
+				assertPaths(t, reverted.Changes(core.GitCommitChangesOpts{Against: types}), nil, nil, nil)
+				assertPaths(t, reverted.Changes(), nil, []string{"main"}, nil)
+				patch, err := reverted.Changes(core.GitCommitChangesOpts{Against: types}).AsPatch().Contents(ctx)
+				require.NoError(t, err)
+				require.Empty(t, patch)
+			})
+			t.Run("merge first parent", func(ctx context.Context, t *testctx.T) {
+				assertPaths(t, merge.Changes(), []string{"topic"}, nil, nil)
+				parents, err := merge.ParentShas(ctx)
+				require.NoError(t, err)
+				require.Len(t, parents, 2)
+				assertPaths(t, merge.Changes(core.GitCommitChangesOpts{Against: repo.Commit(parents[1])}), []string{"main"}, nil, nil)
+			})
+			t.Run("explicit comparison", func(ctx context.Context, t *testctx.T) {
+				assertPaths(t, merge.Changes(core.GitCommitChangesOpts{Against: root}),
+					[]string{"added", "link", "main", "topic"}, []string{"edited", "executable"}, []string{"deleted"})
+				// An explicit comparison overrides even the root commit's empty base.
+				assertPaths(t, root.Changes(core.GitCommitChangesOpts{Against: ordinary}),
+					[]string{"deleted"}, []string{"edited", "executable"}, []string{"added", "link"})
+			})
+			t.Run("self comparison", func(ctx context.Context, t *testctx.T) {
+				assertPaths(t, ordinary.Changes(core.GitCommitChangesOpts{Against: ordinary}), nil, nil, nil)
+			})
+			t.Run("unrelated history", func(ctx context.Context, t *testctx.T) {
+				assertPaths(t, root.Changes(core.GitCommitChangesOpts{Against: repo.Head().TargetCommit()}),
+					[]string{"deleted", "edited", "executable"}, nil, []string{"unrelated"})
+			})
+			t.Run("different repository", func(ctx context.Context, t *testctx.T) {
+				// Git can't diff these in one repository: the trees are walked.
+				assertPaths(t, root.Changes(core.GitCommitChangesOpts{Against: other}),
+					[]string{"deleted", "edited", "executable"}, nil, []string{"other"})
+			})
+			t.Run("stable recipe", func(ctx context.Context, t *testctx.T) {
+				first, err := ordinary.Changes().ID(ctx)
+				require.NoError(t, err)
+				sha, err := ordinary.Sha(ctx)
+				require.NoError(t, err)
+				second, err := repo.Commit(sha).Changes().ID(ctx)
+				require.NoError(t, err)
+				require.Equal(t, first, second)
+			})
+		})
+	}
 }
 
 func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {

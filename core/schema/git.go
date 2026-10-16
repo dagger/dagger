@@ -2798,6 +2798,9 @@ func (s *gitSchema) commitChanges(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return inst, err
 	}
+	// Both trees stay lazy: the changeset lists its paths from the commits'
+	// trees in Git (see core.changesetGitTrees), and materializes the trees
+	// only for content.
 	err = srv.Select(ctx, after, &inst, dagql.Selector{
 		Field: "changes",
 		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
