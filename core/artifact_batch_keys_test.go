@@ -1,9 +1,11 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/stretchr/testify/require"
 )
 
@@ -169,6 +171,91 @@ func BenchmarkArtifactBatchUniqueKeys(b *testing.B) {
 			}
 			require.Len(b, result, 1)
 			require.Equal(b, want, result[0].Node.Parent.CollectionKeys)
+		})
+	}
+}
+
+// batchNameFixture is a check beneath a batch receiver nested in a parent
+// collection, as go-package > go-test is.
+func batchNameFixture() (*Artifacts, artifactCollectionKeyFunc) {
+	module := &ArtifactDimension{Identifier: "app/modules", Name: "module"}
+	test := &ArtifactDimension{Identifier: "app/modules/tests", Name: "test"}
+	root := &ModTreeNode{Name: "modules"}
+	item := &ModTreeNode{Name: "get", Parent: root, CollectionDimension: module}
+	tests := &ModTreeNode{Name: "tests", Parent: item}
+	receiver := &ModTreeNode{Name: "batch", Parent: tests, CollectionDimension: test}
+	all := &Artifacts{Entries: []*Artifact{{
+		Path: []string{"modules", "tests", "check"},
+		Node: &ModTreeNode{Name: "check", Directives: []string{"check"}, Parent: receiver},
+	}}}
+	all.AllDimensions = all.DimensionDefinitions()
+	return all, func(_ context.Context, receiver *Artifact) ([]collectionKey, error) {
+		switch receiver.Node.Name {
+		case "modules":
+			return []collectionKey{{text: "b"}, {text: "a"}}, nil
+		case "tests":
+			return []collectionKey{{text: "z"}, {text: "x"}}, nil
+		}
+		return nil, fmt.Errorf("unexpected collection receiver %q", receiver.Node.Name)
+	}
+}
+
+func TestArtifactBatchName(t *testing.T) {
+	all, keys := batchNameFixture()
+	exclusion, err := dagaddress.Parse("modules/tests/check?test=x")
+	require.NoError(t, err)
+	excluded, err := all.WithoutURI(exclusion)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name      string
+		selection *Artifacts
+		want      []string
+	}{
+		{
+			name:      "whole collection",
+			selection: all,
+			want:      []string{"dag://modules/tests/check?module=b", "dag://modules/tests/check?module=a"},
+		},
+		{
+			name:      "parent filter",
+			selection: all.FilterDimensionKeys("module", []string{"a"}),
+			want:      []string{"dag://modules/tests/check?module=a"},
+		},
+		{
+			// A cloud engine selects a batch by its full address.
+			name:      "every key named",
+			selection: all.FilterDimensionKeys("test", []string{"x", "z"}),
+			want:      []string{"dag://modules/tests/check?module=b", "dag://modules/tests/check?module=a"},
+		},
+		{
+			name:      "key filter",
+			selection: all.FilterDimensionKeys("test", []string{"z"}),
+			want:      []string{"dag://modules/tests/check?module=b&test=z", "dag://modules/tests/check?module=a&test=z"},
+		},
+		{
+			name:      "exclusion",
+			selection: excluded,
+			want:      []string{"dag://modules/tests/check?module=b&test=z", "dag://modules/tests/check?module=a&test=z"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expanded, err := tc.selection.expand(t.Context(), keys)
+			require.NoError(t, err)
+			batches, err := expanded.Batch(t.Context())
+			require.NoError(t, err)
+			var names []string
+			for _, batch := range batches {
+				name, err := batch.URI(ArtifactURIOpts{DimensionKeys: true, CollapseBatch: true})
+				require.NoError(t, err)
+				names = append(names, name)
+				// The full address still names every item in the batch.
+				full, err := batch.URI(ArtifactURIOpts{DimensionKeys: true})
+				require.NoError(t, err)
+				for _, key := range batch.Node.Parent.CollectionKeys {
+					require.Contains(t, full, "test="+key)
+				}
+			}
+			require.Equal(t, tc.want, names)
 		})
 	}
 }

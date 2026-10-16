@@ -916,7 +916,9 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 	}
 	for i, selected := range selection {
 		artifact := selected.Self()
-		uri, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
+		// A batch of a whole collection is named by its parent keys, not by
+		// every item in it. The value is still selected by the full address.
+		name, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true, CollapseBatch: true})
 		if err != nil {
 			return nil, err
 		}
@@ -927,17 +929,17 @@ func (s *artifactsSchema) values(ctx context.Context, parent dagql.ObjectResult[
 		if artifact.TypeName == "Check" {
 			// Name every check span by its dag:// address, whether it runs here or
 			// scales out to a cloud engine, so CI suggestions reference the address.
-			attrs = append(attrs, attribute.String(telemetry.CheckNameAttr, uri))
+			attrs = append(attrs, attribute.String(telemetry.CheckNameAttr, name))
 		}
 		if slices.Contains(artifact.Directives, "generate") {
-			attrs = append(attrs, attribute.String(telemetry.GeneratorNameAttr, uri))
+			attrs = append(attrs, attribute.String(telemetry.GeneratorNameAttr, name))
 		}
 		group := &localJobs
 		if artifact.TypeName == "Check" && !localCheck {
 			group = &remoteJobs
 		}
-		*group = group.WithJob(uri, func(ctx context.Context) error {
-			ctx = core.WithCheckName(ctx, uri)
+		*group = group.WithJob(name, func(ctx context.Context) error {
+			ctx = core.WithCheckName(ctx, name)
 			srv, err := core.CurrentDagqlServer(ctx)
 			if err == nil {
 				// Keep the value's subtree visible, including deferred execution logs.

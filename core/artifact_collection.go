@@ -459,9 +459,15 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 		}) {
 			return nil, nil
 		}
+		// A key filter on an item that is already keyed may have dropped its
+		// siblings, which this node cannot see.
+		keyFiltered := node.CollectionDimension != nil && slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
+			return filter.Dimension == node.CollectionDimension.Identifier && filter.Keys != nil
+		})
 		for _, parent := range parents {
 			copy := *node
 			copy.Parent = parent
+			copy.CollectionComplete = copy.CollectionComplete && !keyFiltered
 			expanded = append(expanded, &copy)
 		}
 		return expanded, nil
@@ -480,6 +486,7 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 			if err != nil {
 				return fmt.Errorf("dimension %q: %w", node.CollectionDimension.Identifier, err)
 			}
+			complete := true
 			for _, key := range keys {
 				keep := true
 				for _, filter := range filters {
@@ -492,7 +499,12 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 					copy.Parent = parent
 					copy.CollectionKey = &key.text
 					children[i] = append(children[i], &copy)
+				} else {
+					complete = false
 				}
+			}
+			for _, child := range children[i] {
+				child.CollectionComplete = complete
 			}
 			return nil
 		})

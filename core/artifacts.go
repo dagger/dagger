@@ -101,11 +101,20 @@ type ArtifactURIOpts struct {
 	Absolute      bool
 	DimensionKeys bool
 	TypeAssertion bool
+	// CollapseBatch omits the item keys of a batch that runs its whole
+	// collection: the batch is named by its parent keys, such as one Go
+	// package instead of every test in it. The address still selects the
+	// same batch, but it is for display: select the batch by its full address.
+	CollapseBatch bool
 }
 
 // URI is the artifact's DAG address. See hack/designs/collections-issue.md,
 // section 4.
 func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
+	var collapsed string
+	if opts.CollapseBatch {
+		collapsed = a.completeBatchDimension()
+	}
 	// The type dimension key is the path, so the address needs no path.
 	addr := &dagaddress.Address{HasScheme: true}
 	path := strings.Join(a.Path, "/")
@@ -119,7 +128,7 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 	}
 	if opts.DimensionKeys {
 		for _, key := range a.DimensionKeys {
-			if artifact.IsStaticDimension(key.Dimension) {
+			if artifact.IsStaticDimension(key.Dimension) || key.Dimension == collapsed {
 				continue
 			}
 			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: a.dimensionName(key.Dimension), Key: key.Key, HasKey: true})
@@ -138,6 +147,20 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 		addr.Version = commit
 	}
 	return addr.String(), nil
+}
+
+// completeBatchDimension is the dimension of a batch receiver that runs every
+// item of its collection (see Artifacts.Batch), or "".
+func (a *Artifact) completeBatchDimension() string {
+	for node := a.Node; node != nil; node = node.Parent {
+		if node.CollectionDimension != nil && node.CollectionKeys != nil {
+			if node.CollectionComplete {
+				return node.CollectionDimension.Identifier
+			}
+			return ""
+		}
+	}
+	return ""
 }
 
 // Description is the description of the field that supplies the artifact. A

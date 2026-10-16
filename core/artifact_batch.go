@@ -83,6 +83,9 @@ func (a *Artifacts) Batch(ctx context.Context) ([]*Artifact, error) {
 		key := *item.CollectionKey
 		item.CollectionKey = nil
 		item.CollectionKeys = []string{key}
+		// Exclusions apply after expansion, so they can drop items the
+		// expansion counted as complete.
+		item.CollectionComplete = item.CollectionComplete && len(a.Selector.ExcludedURIs) == 0
 		// Do not merge different workspaces, paths, or parent item combinations.
 		planned.DimensionKeys = slices.DeleteFunc(slices.Clone(planned.DimensionKeys), func(k *ArtifactDimensionKey) bool {
 			return k.Dimension == item.CollectionDimension.Identifier
@@ -120,6 +123,7 @@ func (a *Artifacts) Batch(ctx context.Context) ([]*Artifact, error) {
 				group.keys[key] = struct{}{}
 			}
 			group.receiver.CollectionKeys = append(group.receiver.CollectionKeys, key)
+			group.receiver.CollectionComplete = group.receiver.CollectionComplete && item.CollectionComplete
 		}
 		group.artifact.DimensionKeys = append(group.artifact.DimensionKeys, &ArtifactDimensionKey{Dimension: item.CollectionDimension.Identifier, Key: key})
 	}
