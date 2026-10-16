@@ -531,7 +531,7 @@ func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 // the local registry with it.
 func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagger.Service, tag, registryPassword, tokenSuffix string) (string, error) {
 	script := `set +e
-	dagger --progress=plain -W "$MODULE_REF" call release publish \
+	env -u DAGGER_SESSION_PORT -u DAGGER_SESSION_TOKEN dagger --progress=plain -W "$MODULE_REF" call release publish \
   --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
   --registry-image "` + publishCheckRegistryImage + `" \
   --registry-username "` + publishCheckRegistryUser + `" \
