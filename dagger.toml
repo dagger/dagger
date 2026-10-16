@@ -328,6 +328,11 @@ unifiedClients = true
 is-module = true
 clients = ["./.dagger/modules/changie", "./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev", "./.dagger/modules/elixir-client-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/engine-dev/notify", "./.dagger/modules/go-client-dev", "./.dagger/modules/php-client-dev", "./.dagger/modules/python-client-dev", "./.dagger/modules/release/gh", "./.dagger/modules/rust-client-dev", "./.dagger/modules/typescript-client-dev", "dagger.io/linux/wolfi"]
 
+[sdks.go.scopes.".dagger/modules/release".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/release/apko"]
 is-module = true
 clients = ["./.dagger/modules/release/registry-config"]
