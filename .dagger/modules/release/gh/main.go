@@ -1,4 +1,3 @@
-// GitHub CLI
 package main
 
 import (
@@ -9,6 +8,7 @@ import (
 	"dagger/gh/internal/dagger"
 )
 
+// GitHub CLI
 type Gh struct {
 	// GitHub token.
 	//
