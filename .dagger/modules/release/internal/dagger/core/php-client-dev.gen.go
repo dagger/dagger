@@ -9,7 +9,8 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type PhpClientDev struct { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:19:6)
+// Toolchain to develop the Dagger PHP SDK (experimental)
+type PhpClientDev struct { // php-client-dev (../../../../../../main.go:19:6)
 	query *querybuilder.Selection
 
 	id             *ID
@@ -36,7 +37,7 @@ func (r *PhpClientDev) WithGraphQLQuery(q *querybuilder.Selection) *PhpClientDev
 }
 
 // Regenerate the PHP SDK API
-func (r *PhpClientDev) API() *Changeset { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:136:1)
+func (r *PhpClientDev) API() *Changeset { // php-client-dev (../../../../../../main.go:136:1)
 	q := r.query.Select("api")
 
 	return &Changeset{
@@ -44,7 +45,7 @@ func (r *PhpClientDev) API() *Changeset { // php-client-dev (../../../../../../.
 	}
 }
 
-func (r *PhpClientDev) BaseContainer() *Container { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:52:1)
+func (r *PhpClientDev) BaseContainer() *Container { // php-client-dev (../../../../../../main.go:52:1)
 	q := r.query.Select("baseContainer")
 
 	return &Container{
@@ -52,7 +53,7 @@ func (r *PhpClientDev) BaseContainer() *Container { // php-client-dev (../../../
 	}
 }
 
-func (r *PhpClientDev) Changes() *Changeset { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:140:1)
+func (r *PhpClientDev) Changes() *Changeset { // php-client-dev (../../../../../../main.go:140:1)
 	q := r.query.Select("changes")
 
 	return &Changeset{
@@ -65,12 +66,12 @@ type PhpClientDevDevContainerOpts struct {
 	//
 	// Run composer install before returning the container
 	//
-	RunInstall bool // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:82:2)
+	RunInstall bool // php-client-dev (../../../../../../main.go:82:2)
 }
 
 // Returns the PHP SDK workspace mounted in a dev container,
 // and working directory set to the SDK source
-func (r *PhpClientDev) DevContainer(opts ...PhpClientDevDevContainerOpts) *Container { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:79:1)
+func (r *PhpClientDev) DevContainer(opts ...PhpClientDevDevContainerOpts) *Container { // php-client-dev (../../../../../../main.go:79:1)
 	q := r.query.Select("devContainer")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `runInstall` optional argument
@@ -134,7 +135,7 @@ func (r *PhpClientDev) UnmarshalJSON(bs []byte) error {
 }
 
 // Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
-func (r *PhpClientDev) PhpCodeSniffer(ctx context.Context) error { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:106:1)
+func (r *PhpClientDev) PhpCodeSniffer(ctx context.Context) error { // php-client-dev (../../../../../../main.go:106:1)
 	if r.phpCodeSniffer != nil {
 		return nil
 	}
@@ -144,7 +145,7 @@ func (r *PhpClientDev) PhpCodeSniffer(ctx context.Context) error { // php-client
 }
 
 // Analyze the PHP code with PHPStan (https://phpstan.org)
-func (r *PhpClientDev) PhpStan(ctx context.Context) error { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:116:1)
+func (r *PhpClientDev) PhpStan(ctx context.Context) error { // php-client-dev (../../../../../../main.go:116:1)
 	if r.phpStan != nil {
 		return nil
 	}
@@ -158,16 +159,16 @@ type PhpClientDevReleaseOpts struct {
 	//
 	// The source git repository to release
 	//
-	SourceRepo *GitRepository // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:198:2)
+	SourceRepo *GitRepository // php-client-dev (../../../../../../main.go:198:2)
 
 	// Default: "https://github.com/dagger/dagger-php-sdk.git"
-	Dest string // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:205:2)
+	Dest string // php-client-dev (../../../../../../main.go:205:2)
 
-	GithubToken *Secret // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:207:2)
+	GithubToken *Secret // php-client-dev (../../../../../../main.go:207:2)
 }
 
 // Publish the PHP SDK
-func (r *PhpClientDev) Release(ctx context.Context, sourceTag string, opts ...PhpClientDevReleaseOpts) error { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:193:1)
+func (r *PhpClientDev) Release(ctx context.Context, sourceTag string, opts ...PhpClientDevReleaseOpts) error { // php-client-dev (../../../../../../main.go:193:1)
 	if r.release != nil {
 		return nil
 	}
@@ -196,23 +197,23 @@ type PhpClientDevReleaseDryRunOpts struct {
 	//
 	// Source git repository to fake-release
 	//
-	SourceRepo *GitRepository // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:166:2)
+	SourceRepo *GitRepository // php-client-dev (../../../../../../main.go:166:2)
 	//
 	// Source git tag to fake-release
 	//
 	//
 	// Default: "HEAD"
-	SourceTag string // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:169:2)
+	SourceTag string // php-client-dev (../../../../../../main.go:169:2)
 	//
 	// Target git remote to fake-release *to*
 	//
 	//
 	// Default: "https://github.com/dagger/dagger-php-sdk.git"
-	DestRemote string // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:172:2)
+	DestRemote string // php-client-dev (../../../../../../main.go:172:2)
 }
 
 // Test the publishing process
-func (r *PhpClientDev) ReleaseDryRun(ctx context.Context, opts ...PhpClientDevReleaseDryRunOpts) error { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:162:1)
+func (r *PhpClientDev) ReleaseDryRun(ctx context.Context, opts ...PhpClientDevReleaseDryRunOpts) error { // php-client-dev (../../../../../../main.go:162:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -236,7 +237,7 @@ func (r *PhpClientDev) ReleaseDryRun(ctx context.Context, opts ...PhpClientDevRe
 }
 
 // Source returns the source directory for the PHP SDK
-func (r *PhpClientDev) Source() *Directory { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:100:1)
+func (r *PhpClientDev) Source() *Directory { // php-client-dev (../../../../../../main.go:100:1)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -245,7 +246,7 @@ func (r *PhpClientDev) Source() *Directory { // php-client-dev (../../../../../.
 }
 
 // Test the PHP SDK with PHPUnit (https://phpunit.de/)
-func (r *PhpClientDev) Test(ctx context.Context) error { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:127:1)
+func (r *PhpClientDev) Test(ctx context.Context) error { // php-client-dev (../../../../../../main.go:127:1)
 	if r.test != nil {
 		return nil
 	}
@@ -255,7 +256,7 @@ func (r *PhpClientDev) Test(ctx context.Context) error { // php-client-dev (../.
 }
 
 // Get v1.2.3 from sdk/php/v1.2.3
-func (r *PhpClientDev) VersionFromTag(ctx context.Context, tag string) (string, error) { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:187:1)
+func (r *PhpClientDev) VersionFromTag(ctx context.Context, tag string) (string, error) { // php-client-dev (../../../../../../main.go:187:1)
 	if r.versionFromTag != nil {
 		return *r.versionFromTag, nil
 	}
@@ -268,7 +269,7 @@ func (r *PhpClientDev) VersionFromTag(ctx context.Context, tag string) (string, 
 	return response, q.Execute(ctx)
 }
 
-func (r *PhpClientDev) WithGeneratedClient() *PhpClientDev { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:144:1)
+func (r *PhpClientDev) WithGeneratedClient() *PhpClientDev { // php-client-dev (../../../../../../main.go:144:1)
 	q := r.query.Select("withGeneratedClient")
 
 	return &PhpClientDev{
@@ -289,21 +290,21 @@ type PhpClientDevOpts struct {
 	//
 	// A directory with all the files needed to develop the SDK
 	//
-	WorkspaceDir *Directory // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:32:2)
+	WorkspaceDir *Directory // php-client-dev (../../../../../../main.go:32:2)
 	//
 	// The path of the SDK source in the workspace
 	//
 	//
 	// Default: "sdk/php"
-	SourcePath string // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:35:2)
+	SourcePath string // php-client-dev (../../../../../../main.go:35:2)
 	//
 	// A docker config file with credentials to install on clients.
 	//
-	ClientDockerConfig *Secret // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:38:2)
+	ClientDockerConfig *Secret // php-client-dev (../../../../../../main.go:38:2)
 }
 
 // Develop the Dagger PHP SDK (experimental)
-func (r *Query) PhpClientDev(ws *Workspace, opts ...PhpClientDevOpts) *PhpClientDev { // php-client-dev (../../../../../../.dagger/modules/php-client-dev/main.go:28:1)
+func (r *Query) PhpClientDev(ws *Workspace, opts ...PhpClientDevOpts) *PhpClientDev { // php-client-dev (../../../../../../main.go:28:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("phpClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {

@@ -6,6 +6,7 @@ import (
 	"dagger/release/internal/dagger/core"
 )
 
+// Toolchain to develop the Dagger PHP SDK (experimental)
 type PhpClientDev = core.PhpClientDev
 
 type WithPhpClientDevFunc = core.WithPhpClientDevFunc
