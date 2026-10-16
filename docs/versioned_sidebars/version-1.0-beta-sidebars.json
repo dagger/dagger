@@ -300,11 +300,6 @@
           ]
         }
       ]
-    },
-    {
-      "type": "doc",
-      "id": "self-hosting/index",
-      "label": "Self-hosting"
     }
   ]
 }
