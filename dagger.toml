@@ -341,6 +341,11 @@ clients = ["./.dagger/modules/engine-dev"]
 [sdks.go.scopes.".dagger/modules/tla-check"]
 is-module = true
 
+[sdks.go.scopes.".dagger/modules/tla-check".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [sdks.go.scopes."modules/git-releaser"]
 is-module = true
 clients = ["dagger.io/linux/alpine"]
