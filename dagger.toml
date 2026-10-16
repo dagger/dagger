@@ -342,6 +342,11 @@ is-module = true
 clients = ["dagger.io/linux/wolfi"]
 is-module = true
 
+[sdks.go.scopes.".dagger/modules/go".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [modules.dagger-dev]
 source = ".dagger/modules/dagger-dev"
 entrypoint = true
