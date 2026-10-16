@@ -314,6 +314,11 @@ clients = ["./.dagger/modules/release/apko"]
 [sdks.go.scopes.".dagger/modules/release/registry-config"]
 is-module = true
 
+[sdks.go.scopes.".dagger/modules/release/registry-config".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/rust-client-dev"]
 is-module = true
 clients = ["./.dagger/modules/engine-dev"]
