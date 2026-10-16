@@ -493,6 +493,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("shortSha", s.commitShortSHA).
 			IsPersistable().
 			Doc(`The abbreviated commit SHA.`),
+		dagql.NodeFunc("treeSHA", s.commitTreeSHA).
+			IsPersistable().
+			Doc(`The ID of the commit's Git tree object.`,
+				`Commits with identical trees have identical contents and file modes.`),
 		dagql.NodeFunc("authoredDate", s.commitAuthoredDate).
 			IsPersistable().
 			Doc(`Git author date, in RFC3339 format.`),
@@ -2819,6 +2823,14 @@ func (s *gitSchema) commitShortSHA(ctx context.Context, parent dagql.ObjectResul
 		return "", err
 	}
 	return dagql.NewString(meta.ShortSHA), nil
+}
+
+func (s *gitSchema) commitTreeSHA(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.TreeSHA), nil
 }
 
 func (s *gitSchema) commitAuthoredDate(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
