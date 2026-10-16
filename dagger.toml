@@ -353,6 +353,11 @@ unifiedClients = true
 is-module = true
 clients = ["./.dagger/modules/engine-dev"]
 
+[sdks.go.scopes.".dagger/modules/rust-client-dev".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/tla-check"]
 is-module = true
 
