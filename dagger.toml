@@ -307,6 +307,11 @@ unifiedClients = true
 is-module = true
 clients = ["./.dagger/modules/engine-dev", "./modules/git-releaser"]
 
+[sdks.go.scopes.".dagger/modules/php-client-dev".settings]
+dangEntrypoint = true
+globalClient = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/python-client-dev"]
 is-module = true
 clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest@cdf6dc0bce0fe8fdf87c6b26ecd991e6f96200b0", "dagger.io/linux/wolfi"]

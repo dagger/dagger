@@ -1,4 +1,3 @@
-// Toolchain to develop the Dagger PHP SDK (experimental)
 package main
 
 import (
@@ -16,6 +15,7 @@ const (
 		"@sha256:696bfbbb82d8ab6ad3672c505bedd659e3815fd1c03cb5ef65ef7ee07a083fa6"
 )
 
+// Toolchain to develop the Dagger PHP SDK (experimental)
 type PhpClientDev struct {
 	OriginalWorkspace  *dagger.Directory // +private
 	Workspace          *dagger.Directory // +private
@@ -68,9 +68,9 @@ func (t PhpClientDev) BaseContainer() *dagger.Container {
 		WithEnvVariable("COMPOSER_ALLOW_SUPERUSER", "1").
 		WithWorkdir("/src").
 		With(func(c *dagger.Container) *dagger.Container {
-			return dag.DaggerEngine(t.Ws, dagger.DaggerEngineOpts{
+			return dag.EngineDev(t.Ws, dagger.EngineDevOpts{
 				ClientDockerConfig: t.ClientDockerConfig,
-			}).InstallClient(dagger.DaggerEngineInstallClientOpts{Client: c})
+			}).InstallClient(dagger.EngineDevInstallClientOpts{Client: c})
 		})
 }
 
@@ -126,7 +126,7 @@ func (t PhpClientDev) PhpStan(ctx context.Context) error {
 // +check
 func (t PhpClientDev) Test(ctx context.Context) error {
 	_, err := t.DevContainer(true).
-		WithExec([]string{"phpunit"}).Sync(ctx)
+		WithExec([]string{"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "phpunit"}).Sync(ctx)
 
 	return err
 }
@@ -143,7 +143,7 @@ func (t *PhpClientDev) Changes() *dagger.Changeset {
 
 func (t *PhpClientDev) WithGeneratedClient() *PhpClientDev {
 	relLayer := t.DevContainer(true).
-		WithExec([]string{"dagger", "api", "exec", "--load-workspace-modules", "./scripts/codegen.php"}).
+		WithExec([]string{"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger", "api", "exec", "--load-workspace-modules", "./scripts/codegen.php"}).
 		Directory(".").
 		Filter(dagger.DirectoryFilterOpts{
 			Exclude: []string{
