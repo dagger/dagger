@@ -137,6 +137,38 @@ defmodule Dagger.Agent do
   end
 
   @doc """
+  The agent that spawned this agent, or null for a root agent.
+
+  > #### Experimental {: .warning}
+  >
+  > "Agent APIs are likely to change."
+  """
+  @spec parent(t()) :: {:ok, Dagger.Agent.t() | nil} | {:error, term()}
+  def parent(%__MODULE__{} = agent) do
+    query_builder =
+      agent.query_builder |> QB.select("parent") |> QB.select("id")
+
+    case Client.execute(agent.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.Agent{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Agent"),
+           client: agent.client
+         }}
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
   Stop draining the mailbox once the in-flight step completes, or immediately with interrupt.
 
   Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.

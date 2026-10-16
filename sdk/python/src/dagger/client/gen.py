@@ -1144,6 +1144,16 @@ class Agent(Type):
         ]
         return await self._ctx.execute_sync(self, "notify", _args)
 
+    async def parent(self) -> "Agent | None":
+        """The agent that spawned this agent, or null for a root agent.
+
+        .. caution::
+            Experimental: Agent APIs are likely to change.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("parent", _args)
+        return await _ctx.execute_object(Agent)
+
     async def pause(self, *, interrupt: bool | None = False) -> Self:
         """Stop draining the mailbox once the in-flight step completes, or
         immediately with interrupt.
@@ -2248,9 +2258,11 @@ class Artifacts(Type):
         return await _ctx.execute_object_list(Check)
 
     async def as_expertise(self) -> list["Expertise"]:
-        """Convert the selection to expertise without running the functions. Fail
-        if any artifact is not a source of expertise; a module load failure
-        fails with its load error.
+        """Convert the selection to expertise without running the functions. Each
+        must take one LLM! argument and return LLM!; any other arguments must
+        be optional or auto-filled. Agent arguments receive the agent that
+        owns the conversation. A module load failure fails with its load
+        error.
         """
         _args: list[Arg] = []
         _ctx = self._select("asExpertise", _args)
@@ -8372,10 +8384,18 @@ class ErrorValue(Type):
 
 @typecheck
 class Expertise(Type):
-    """An agent function that can modify a conversation."""
+    """A function that can modify a conversation."""
+
+    def artifact(self) -> Artifact:
+        """The artifact this expertise runs. Look it up again by URI to pick up
+        module changes.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("artifact", _args)
+        return Artifact(_ctx)
 
     async def description(self) -> str:
-        """The agent function's description.
+        """The function's description.
 
         Returns
         -------
@@ -8424,7 +8444,7 @@ class Expertise(Type):
         return await _ctx.execute(str)
 
     async def name(self) -> str:
-        """The agent function's name.
+        """The function's name.
 
         Returns
         -------
@@ -8445,13 +8465,13 @@ class Expertise(Type):
         return await _ctx.execute(str)
 
     def original_module(self) -> "Module":
-        """The module that defines the agent function."""
+        """The module that defines the function."""
         _args: list[Arg] = []
         _ctx = self._select("originalModule", _args)
         return Module(_ctx)
 
     async def path(self) -> list[str]:
-        """The agent function's path within its module.
+        """The function's path within its module.
 
         Returns
         -------
@@ -12560,8 +12580,16 @@ class LLM(Type):
         return Artifacts(_ctx)
 
     def compose(self, expertise: list[Expertise]) -> Self:
-        """Run expertise in list order, passing this conversation through each
-        function. Retain existing contributions.
+        """Run expertise on this conversation, passing it through each function
+        in order, and record it in expertise.
+
+        Composing an entry that is already recorded refreshes its module: the
+        module's contributions are cleared, all of its recorded entries run
+        again, and compatible tool state is kept. Other contributions are
+        untouched.
+
+        Agent arguments receive the agent that owns this conversation. Without
+        one, entries requiring an Agent are skipped.
 
         Parameters
         ----------
@@ -12617,6 +12645,12 @@ class LLM(Type):
         _args: list[Arg] = []
         _ctx = self._select("contextWindow", _args)
         return await _ctx.execute(int | None)
+
+    async def expertise(self) -> list[Expertise]:
+        """Expertise composed into this conversation, in order."""
+        _args: list[Arg] = []
+        _ctx = self._select("expertise", _args)
+        return await _ctx.execute_object_list(Expertise)
 
     def fork(self, label: str) -> Self:
         """Fork the conversation, so that otherwise-identical follow-ups evaluate
@@ -12802,28 +12836,6 @@ class LLM(Type):
         _ctx = self._select("reasoningEffort", _args)
         return await _ctx.execute(str)
 
-    def recompose(self, expertise: list[Expertise]) -> Self:
-        """Run expertise in list order, replacing their modules' contributions
-        and preserving compatible tool state.
-
-        Clear each selected module's contributions once before execution.
-        Retain unowned contributions and contributions from other modules.
-        Keep this LLM's workspace.
-
-        A change to a tool binding's version resets its state. Removed
-        bindings, changed identities, and incompatible state are errors.
-
-        Parameters
-        ----------
-        expertise:
-            The expertise to run. Each reference retains its source workspace.
-        """
-        _args = [
-            Arg("expertise", expertise),
-        ]
-        _ctx = self._select("recompose", _args)
-        return LLM(_ctx)
-
     async def skills(self) -> list["LLMSkill"]:
         """The skills visible to the model, exactly as the ListSkills tool serves
         them: engine-embedded skills, skills installed with withSkills, and
@@ -12836,6 +12848,7 @@ class LLM(Type):
     async def spawn(
         self,
         *,
+        expertise: list[Expertise] | None = None,
         name: str | None = None,
         handle: str | None = None,
         state: AgentState | None = AgentState.IDLE,
@@ -12868,6 +12881,11 @@ class LLM(Type):
 
         Parameters
         ----------
+        expertise:
+            Expertise to compose into the new agent's conversation. Agent
+            arguments receive the new agent, which cannot be used until
+            composition completes; if composition fails, the agent is left
+            STOPPED.
         name:
             Display label for the agent — telemetry and error messages;
             carries no identity. Defaults to a short name derived from the
@@ -12902,6 +12920,7 @@ class LLM(Type):
             If the API returns an error.
         """
         _args = [
+            Arg("expertise", [] if expertise is None else expertise, []),
             Arg("name", name, None),
             Arg("handle", handle, None),
             Arg("state", state, AgentState.IDLE),
