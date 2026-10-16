@@ -1,0 +1,20 @@
+enum Mood {
+  HAPPY
+  SAD
+}
+
+type Pair {
+  pub left: String!
+  pub right: String!
+}
+
+type Test {
+  pub ints: [[Int!]!]! { [[1, 2, 3], [2, 4, 6], [3, 6, 9]] }
+  pub strs: [[String!]!]! { [["a", "b"], ["c", "d"]] }
+  pub bools: [[Boolean!]!]! { [[true, false], [false, true]] }
+  pub moods: [[Mood!]!]! { [[Mood.HAPPY, Mood.SAD], [Mood.SAD, Mood.SAD]] }
+  pub pairs: [[Pair!]!]! {
+    [[Pair(left: "a", right: "b")], [Pair(left: "c", right: "d"), Pair(left: "e", right: "f")]]
+  }
+  pub echo(v: [[Int!]!]!): [[Int!]!]! { v }
+}

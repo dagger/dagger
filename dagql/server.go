@@ -1443,7 +1443,55 @@ func (s *Server) resolveLeafList(ctx context.Context, val AnyResult, enum Enumer
 		if elemVal == nil || elemVal.Unwrap() == nil {
 			continue
 		}
+		// an inner list of results would marshal its elements as IDs
+		if inner, ok := elemVal.Unwrap().(Enumerable); ok {
+			results[nth-1], err = s.resolveLeafList(ctx, elemVal, inner)
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
 		results[nth-1] = elemVal.Unwrap()
+	}
+	return results, nil
+}
+
+func (s *Server) resolveListSelections(ctx context.Context, val AnyResult, enum Enumerable, sels []Selection) ([]any, error) {
+	length := enum.Len()
+	results := make([]any, length) // TODO subtle: favor [] over null result
+	p := pool.New().WithErrors().WithMaxGoroutines(maxConcurrentResolvers)
+	for nth := 1; nth <= length; nth++ {
+		p.Go(func() error {
+			elemVal, err := s.loadNthValue(ctx, val, nth, false)
+			if err != nil {
+				return err
+			}
+			if elemVal == nil {
+				results[nth-1] = nil
+				return nil
+			}
+			if inner, ok := elemVal.Unwrap().(Enumerable); ok {
+				res, err := s.resolveListSelections(ctx, elemVal, inner, sels)
+				if err != nil {
+					return err
+				}
+				results[nth-1] = res
+				return nil
+			}
+			node, err := s.toSelectable(ctx, elemVal)
+			if err != nil {
+				return fmt.Errorf("instantiate %dth array element: %w", nth, err)
+			}
+			res, err := s.Resolve(ctx, node, sels...)
+			if err != nil {
+				return err
+			}
+			results[nth-1] = res
+			return nil
+		})
+	}
+	if err := p.Wait(); err != nil {
+		return nil, err
 	}
 	return results, nil
 }
@@ -2455,37 +2503,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		if len(sel.Subselections) == 0 {
 			return s.resolveLeafList(ctx, val, enum)
 		}
-
-		// Has subselections - resolve in parallel
-		length := enum.Len()
-		results := make([]any, length) // TODO subtle: favor [] over null result
-		p := pool.New().WithErrors().WithMaxGoroutines(maxConcurrentResolvers)
-		for nth := 1; nth <= length; nth++ {
-			p.Go(func() error {
-				elemVal, err := s.loadNthValue(ctx, val, nth, false)
-				if err != nil {
-					return err
-				}
-				if elemVal == nil {
-					results[nth-1] = nil
-					return nil
-				}
-				node, err := s.toSelectable(ctx, elemVal)
-				if err != nil {
-					return fmt.Errorf("instantiate %dth array element: %w", nth, err)
-				}
-				res, err := s.Resolve(ctx, node, sel.Subselections...)
-				if err != nil {
-					return err
-				}
-				results[nth-1] = res
-				return nil
-			})
-		}
-		if err := p.Wait(); err != nil {
-			return nil, err
-		}
-		return results, nil
+		return s.resolveListSelections(ctx, val, enum, sel.Subselections)
 	}
 
 	if len(sel.Subselections) == 0 {
