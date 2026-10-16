@@ -3,6 +3,8 @@
 package main
 
 import (
+	gomod "dagger/cli-dev/internal/dagger/clients/go"
+
 	core "dagger.io/dagger/core"
 
 	"context"
@@ -15,9 +17,6 @@ import (
 
 	"dagger/cli-dev/internal/dagger"
 )
-
-// Deprecated: use explicit core constructors and generated module clients.
-var dag = dagger.Connect()
 
 func Tracer() trace.Tracer {
 	return otel.Tracer("dagger.io/sdk.go")
@@ -51,7 +50,7 @@ func (r CliDev) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		Version string
 		Tag     string
-		Go      *dagger.Go
+		Go      *gomod.Go
 	}
 	concrete.Version = r.Version
 	concrete.Tag = r.Tag
@@ -63,7 +62,7 @@ func (r *CliDev) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
 		Version string
 		Tag     string
-		Go      *dagger.Go
+		Go      *gomod.Go
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {

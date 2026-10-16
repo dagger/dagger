@@ -10,7 +10,7 @@ import (
 )
 
 // Develop the Dagger CLI
-type CliDev struct { // cli-dev (../../main.go:113:6)
+type CliDev struct { // cli-dev (../../main.go:115:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -34,11 +34,11 @@ func (r *CliDev) WithGraphQLQuery(q *querybuilder.Selection) *CliDev {
 
 // CliDevBinaryOpts contains options for CliDev.Binary
 type CliDevBinaryOpts struct {
-	Platform Platform // cli-dev (../../main.go:123:2)
+	Platform Platform // cli-dev (../../main.go:125:2)
 }
 
 // Build the dagger CLI binary for a single platform
-func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../main.go:121:1)
+func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../main.go:123:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -52,12 +52,12 @@ func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../main
 
 // CliDevDevBinariesOpts contains options for CliDev.DevBinaries
 type CliDevDevBinariesOpts struct {
-	Platform Platform // cli-dev (../../main.go:136:2)
+	Platform Platform // cli-dev (../../main.go:138:2)
 }
 
 // Build dev CLI binaries
 // TODO: remove this
-func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-dev (../../main.go:134:1)
+func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-dev (../../main.go:136:1)
 	q := r.query.Select("devBinaries")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -126,29 +126,29 @@ func (r *CliDev) UnmarshalJSON(bs []byte) error {
 
 // CliDevPublishOpts contains options for CliDev.Publish
 type CliDevPublishOpts struct {
-	GithubToken *Secret // cli-dev (../../publish.go:24:2)
+	GithubToken *Secret // cli-dev (../../publish.go:25:2)
 
-	GithubHost string // cli-dev (../../publish.go:25:2)
+	GithubHost string // cli-dev (../../publish.go:26:2)
 
-	GithubCaCert *File // cli-dev (../../publish.go:26:2)
+	GithubCaCert *File // cli-dev (../../publish.go:27:2)
 
-	AwsAccessKeyID *Secret // cli-dev (../../publish.go:28:2)
+	AwsAccessKeyID *Secret // cli-dev (../../publish.go:29:2)
 
-	AwsSecretAccessKey *Secret // cli-dev (../../publish.go:29:2)
+	AwsSecretAccessKey *Secret // cli-dev (../../publish.go:30:2)
 
-	AwsRegion string // cli-dev (../../publish.go:30:2)
+	AwsRegion string // cli-dev (../../publish.go:31:2)
 
-	AwsBucket string // cli-dev (../../publish.go:31:2)
+	AwsBucket string // cli-dev (../../publish.go:32:2)
 
-	ArtefactsFqdn string // cli-dev (../../publish.go:32:2)
+	ArtefactsFqdn string // cli-dev (../../publish.go:33:2)
 
-	AwsEndpointURL string // cli-dev (../../publish.go:33:2)
+	AwsEndpointURL string // cli-dev (../../publish.go:34:2)
 
-	DryRun bool // cli-dev (../../publish.go:35:2)
+	DryRun bool // cli-dev (../../publish.go:36:2)
 }
 
 // Publish the CLI release artifacts.
-func (r *CliDev) Publish(tag string, commit string, githubOrgName string, opts ...CliDevPublishOpts) *Directory { // cli-dev (../../publish.go:18:1)
+func (r *CliDev) Publish(tag string, commit string, githubOrgName string, opts ...CliDevPublishOpts) *Directory { // cli-dev (../../publish.go:19:1)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `githubToken` optional argument
@@ -201,10 +201,10 @@ func (r *CliDev) Publish(tag string, commit string, githubOrgName string, opts .
 
 // CliDevPublishMetadataOpts contains options for CliDev.PublishMetadata
 type CliDevPublishMetadataOpts struct {
-	AwsEndpointURL string // cli-dev (../../publish.go:111:2)
+	AwsEndpointURL string // cli-dev (../../publish.go:112:2)
 }
 
-func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CliDevPublishMetadataOpts) error { // cli-dev (../../publish.go:103:1)
+func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CliDevPublishMetadataOpts) error { // cli-dev (../../publish.go:104:1)
 	assertNotNil("awsAccessKeyId", awsAccessKeyId)
 	assertNotNil("awsSecretAccessKey", awsSecretAccessKey)
 	if r.publishMetadata != nil {
@@ -227,13 +227,13 @@ func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, aw
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *CliDev) ReleaseDryRun() *Check { // cli-dev (../../publish.go:174:1)
+func (r *CliDev) ReleaseDryRun() *Check { // cli-dev (../../publish.go:175:1)
 	q := r.query.Select("releaseDryRun")
 
 	return new(Check).WithGraphQLQuery(q)
 }
 
-func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../main.go:115:2)
+func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../main.go:117:2)
 	if r.tag != nil {
 		return *r.tag, nil
 	}
@@ -245,7 +245,7 @@ func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../ma
 	return response, q.Execute(ctx)
 }
 
-func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../../main.go:114:2)
+func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../../main.go:116:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -265,13 +265,13 @@ func (r *CliDev) AsNode() Node {
 
 // CliDevOpts contains options for Query.CliDev
 type CliDevOpts struct {
-	RunnerHost string // cli-dev (../../main.go:16:2)
+	RunnerHost string // cli-dev (../../main.go:18:2)
 
-	Source *Directory // cli-dev (../../main.go:38:2)
+	Source *Directory // cli-dev (../../main.go:40:2)
 	//
 	// Base image for go build environment
 	//
-	Base *Container // cli-dev (../../main.go:42:2)
+	Base *Container // cli-dev (../../main.go:44:2)
 	//
 	// Version of the Dagger CLI being built. Surfaced as CliDev.Version and
 	// consumed by the publish flow (goreleaser ENGINE_VERSION, S3 paths,
@@ -282,7 +282,7 @@ type CliDevOpts struct {
 	// matches, enforced by the publish workflow guard); anything else is a
 	// commit build, whose default engine tag is pinned to the commit.
 	//
-	Version string // cli-dev (../../main.go:53:2)
+	Version string // cli-dev (../../main.go:55:2)
 	//
 	// Workspace whose git info stamps the CLI's VCS metadata and pins the
 	// default engine tag on commit builds. Auto-injected when cli-dev is
@@ -290,20 +290,20 @@ type CliDevOpts struct {
 	// it to the scalar vcsCommit/vcsDirty below and forwards those, so the
 	// session-scoped Workspace never makes the build cache key session-specific.
 	//
-	Ws *Workspace // cli-dev (../../main.go:61:2)
+	Ws *Workspace // cli-dev (../../main.go:63:2)
 	//
 	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
 	// precedence over ws.
 	//
-	VcsCommit string // cli-dev (../../main.go:66:2)
+	VcsCommit string // cli-dev (../../main.go:68:2)
 	//
 	// Resolved VCS dirty state to stamp, paired with vcsCommit.
 	//
-	VcsDirty bool // cli-dev (../../main.go:70:2)
+	VcsDirty bool // cli-dev (../../main.go:72:2)
 }
 
 // Develop the Dagger CLI
-func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../main.go:12:1)
+func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../main.go:14:1)
 	q := r.query.Select("cliDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `runnerHost` optional argument

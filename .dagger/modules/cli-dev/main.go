@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"dagger/cli-dev/internal/dagger"
+	gomod "dagger/cli-dev/internal/dagger/clients/go"
 
+	"dagger.io/dagger/core"
 	"github.com/containerd/platforms"
 	"golang.org/x/mod/semver"
 )
@@ -97,7 +99,7 @@ func New(
 	return &CliDev{
 		Version: version,
 		Tag:     version,
-		Go: dag.Go(dagger.GoOpts{
+		Go: gomod.New(gomod.GoOpts{
 			Source: source,
 			Base:   base,
 			Values: values,
@@ -114,7 +116,7 @@ type CliDev struct {
 	Version string
 	Tag     string
 
-	Go *dagger.Go // +private
+	Go *gomod.Go // +private
 }
 
 // Build the dagger CLI binary for a single platform
@@ -122,7 +124,7 @@ func (cli CliDev) Binary(
 	// +optional
 	platform dagger.Platform,
 ) *dagger.File {
-	return cli.Go.Binary("./cmd/dagger", dagger.GoBinaryOpts{
+	return cli.Go.Binary("./cmd/dagger", gomod.GoBinaryOpts{
 		Platform:  platform,
 		NoSymbols: true,
 		NoDwarf:   true,
@@ -141,7 +143,7 @@ func (cli *CliDev) DevBinaries(
 	if p.OS == "windows" {
 		binName += ".exe"
 	}
-	dir := dag.Directory().WithFile(binName, bin)
+	dir := core.NewDirectory().WithFile(binName, bin)
 	if p.OS != "linux" {
 		p2 := p
 		p2.OS = "linux"
