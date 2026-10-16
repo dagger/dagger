@@ -6,6 +6,7 @@ import (
 	"dagger/docs/internal/dagger/core"
 )
 
+// Creates a complete end-to-end build environment with CLI and engine for interactive testing
 type EngineDev = core.EngineDev
 
 type WithEngineDevFunc = core.WithEngineDevFunc
