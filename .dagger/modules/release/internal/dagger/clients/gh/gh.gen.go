@@ -11,7 +11,7 @@ import (
 )
 
 // GitHub CLI
-type Gh struct { // gh (../../main.go:12:6)
+type Gh struct { // gh (../../main.go:13:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -43,11 +43,11 @@ type GhCloneOpts struct {
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../main.go:137:2)
+	Repo string // gh (../../main.go:138:2)
 }
 
 // Clone a GitHub repository.
-func (r *Gh) Clone(opts ...GhCloneOpts) *Gh { // gh (../../main.go:133:1)
+func (r *Gh) Clone(opts ...GhCloneOpts) *Gh { // gh (../../main.go:134:1)
 	q := r.query.Select("clone")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `repo` optional argument
@@ -67,15 +67,15 @@ type GhExecOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../main.go:176:2)
+	Token *Secret // gh (../../main.go:177:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../main.go:181:2)
+	Repo string // gh (../../main.go:182:2)
 }
 
 // Run a GitHub CLI command (accepts a list of arguments without "gh").
-func (r *Gh) Exec(args []string, opts ...GhExecOpts) *Container { // gh (../../main.go:169:1)
+func (r *Gh) Exec(args []string, opts ...GhExecOpts) *Container { // gh (../../main.go:170:1)
 	q := r.query.Select("exec")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -158,7 +158,7 @@ func (r *Gh) PullRequest() *GhPullRequest { // gh (../../pull-request.go:12:1)
 }
 
 // Manage releases.
-func (r *Gh) Release() *GhRelease { // gh (../../release.go:12:1)
+func (r *Gh) Release() *GhRelease { // gh (../../release.go:13:1)
 	q := r.query.Select("release")
 
 	return &GhRelease{
@@ -182,15 +182,15 @@ type GhRunOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../main.go:158:2)
+	Token *Secret // gh (../../main.go:159:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../main.go:163:2)
+	Repo string // gh (../../main.go:164:2)
 }
 
 // Run a GitHub CLI command (accepts a single command string without "gh").
-func (r *Gh) Run(cmd string, opts ...GhRunOpts) *Container { // gh (../../main.go:151:1)
+func (r *Gh) Run(cmd string, opts ...GhRunOpts) *Container { // gh (../../main.go:152:1)
 	q := r.query.Select("run")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -208,7 +208,7 @@ func (r *Gh) Run(cmd string, opts ...GhRunOpts) *Container { // gh (../../main.g
 }
 
 // Git repository source (with .git directory).
-func (r *Gh) Source() *Directory { // gh (../../main.go:34:2)
+func (r *Gh) Source() *Directory { // gh (../../main.go:35:2)
 	q := r.query.Select("source")
 
 	return new(Directory).WithGraphQLQuery(q)
@@ -219,15 +219,15 @@ type GhTerminalOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../main.go:207:2)
+	Token *Secret // gh (../../main.go:208:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../main.go:212:2)
+	Repo string // gh (../../main.go:213:2)
 }
 
 // Open an interactive terminal.
-func (r *Gh) Terminal(opts ...GhTerminalOpts) *Container { // gh (../../main.go:203:1)
+func (r *Gh) Terminal(opts ...GhTerminalOpts) *Container { // gh (../../main.go:204:1)
 	q := r.query.Select("terminal")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -244,7 +244,7 @@ func (r *Gh) Terminal(opts ...GhTerminalOpts) *Container { // gh (../../main.go:
 }
 
 // Set an additional CA certificate for the GitHub host.
-func (r *Gh) WithCacert(caCert *File) *Gh { // gh (../../main.go:109:1)
+func (r *Gh) WithCacert(caCert *File) *Gh { // gh (../../main.go:110:1)
 	assertNotNil("caCert", caCert)
 	q := r.query.Select("withCacert")
 	q = q.Arg("caCert", caCert)
@@ -256,7 +256,7 @@ func (r *Gh) WithCacert(caCert *File) *Gh { // gh (../../main.go:109:1)
 }
 
 // Run a git command (accepts a list of arguments without "git").
-func (r *Gh) WithGitExec(args []string) *Gh { // gh (../../main.go:189:1)
+func (r *Gh) WithGitExec(args []string) *Gh { // gh (../../main.go:190:1)
 	q := r.query.Select("withGitExec")
 	q = q.Arg("args", args)
 
@@ -267,7 +267,7 @@ func (r *Gh) WithGitExec(args []string) *Gh { // gh (../../main.go:189:1)
 }
 
 // Set a GitHub host as context.
-func (r *Gh) WithHost(host string) *Gh { // gh (../../main.go:97:1)
+func (r *Gh) WithHost(host string) *Gh { // gh (../../main.go:98:1)
 	q := r.query.Select("withHost")
 	q = q.Arg("host", host)
 
@@ -278,7 +278,7 @@ func (r *Gh) WithHost(host string) *Gh { // gh (../../main.go:97:1)
 }
 
 // Set a GitHub repository as context.
-func (r *Gh) WithRepo(repo string) *Gh { // gh (../../main.go:85:1)
+func (r *Gh) WithRepo(repo string) *Gh { // gh (../../main.go:86:1)
 	q := r.query.Select("withRepo")
 	q = q.Arg("repo", repo)
 
@@ -289,7 +289,7 @@ func (r *Gh) WithRepo(repo string) *Gh { // gh (../../main.go:85:1)
 }
 
 // Load a Git repository source (with .git directory).
-func (r *Gh) WithSource(source *Directory) *Gh { // gh (../../main.go:121:1)
+func (r *Gh) WithSource(source *Directory) *Gh { // gh (../../main.go:122:1)
 	assertNotNil("source", source)
 	q := r.query.Select("withSource")
 	q = q.Arg("source", source)
@@ -301,7 +301,7 @@ func (r *Gh) WithSource(source *Directory) *Gh { // gh (../../main.go:121:1)
 }
 
 // Set a GitHub token.
-func (r *Gh) WithToken(token *Secret) *Gh { // gh (../../main.go:73:1)
+func (r *Gh) WithToken(token *Secret) *Gh { // gh (../../main.go:74:1)
 	assertNotNil("token", token)
 	q := r.query.Select("withToken")
 	q = q.Arg("token", token)
@@ -743,7 +743,7 @@ func (r *GhPullRequestReview) AsNode() Node {
 	return new(NodeClient).WithGraphQLQuery(r.query)
 }
 
-type GhRelease struct { // gh (../../release.go:16:6)
+type GhRelease struct { // gh (../../release.go:17:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -768,71 +768,71 @@ type GhReleaseCreateOpts struct {
 	//
 	// Release assets to upload.
 	//
-	Files []*File // gh (../../release.go:42:2)
+	Files []*File // gh (../../release.go:43:2)
 	//
 	// Save the release as a draft instead of publishing it.
 	//
-	Draft bool // gh (../../release.go:47:2)
+	Draft bool // gh (../../release.go:48:2)
 	//
 	// Mark the release as a prerelease.
 	//
-	PreRelease bool // gh (../../release.go:52:2)
+	PreRelease bool // gh (../../release.go:53:2)
 	//
 	// Target branch or full commit SHA (default: main branch).
 	//
-	Target string // gh (../../release.go:57:2)
+	Target string // gh (../../release.go:58:2)
 	//
 	// Release notes.
 	//
-	Notes string // gh (../../release.go:62:2)
+	Notes string // gh (../../release.go:63:2)
 	//
 	// Read release notes from file.
 	//
-	NotesFile *File // gh (../../release.go:67:2)
+	NotesFile *File // gh (../../release.go:68:2)
 	//
 	// Start a discussion in the specified category.
 	//
-	DiscussionCategory string // gh (../../release.go:72:2)
+	DiscussionCategory string // gh (../../release.go:73:2)
 	//
 	// Automatically generate title and notes for the release.
 	//
-	GenerateNotes bool // gh (../../release.go:77:2)
+	GenerateNotes bool // gh (../../release.go:78:2)
 	//
 	// Tag to use as the starting point for generating release notes.
 	//
-	NotesStartTag string // gh (../../release.go:82:2)
+	NotesStartTag string // gh (../../release.go:83:2)
 	//
 	// Mark this release as "Latest" (default: automatic based on date and version).
 	//
 	//
 	// Default: AUTO
-	Latest GhLatest // gh (../../release.go:88:2)
+	Latest GhLatest // gh (../../release.go:89:2)
 	//
 	// Abort in case the git tag doesn't already exist in the remote repository.
 	//
-	VerifyTag bool // gh (../../release.go:93:2)
+	VerifyTag bool // gh (../../release.go:94:2)
 	//
 	// Tag to use as the starting point for generating release notes.
 	//
-	NotesFromTag bool // gh (../../release.go:98:2)
+	NotesFromTag bool // gh (../../release.go:99:2)
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../release.go:103:2)
+	Token *Secret // gh (../../release.go:104:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../release.go:108:2)
+	Repo string // gh (../../release.go:109:2)
 	//
 	// If a release for the tag already exists, update its title, notes,
 	// target, draft, prerelease and latest settings and re-upload its assets,
 	// instead of failing. Lets an interrupted release be rerun.
 	//
-	UpdateExisting bool // gh (../../release.go:115:2)
+	UpdateExisting bool // gh (../../release.go:116:2)
 }
 
 // Create a new GitHub Release for a repository.
-func (r *GhRelease) Create(ctx context.Context, tag string, title string, opts ...GhReleaseCreateOpts) error { // gh (../../release.go:30:1)
+func (r *GhRelease) Create(ctx context.Context, tag string, title string, opts ...GhReleaseCreateOpts) error { // gh (../../release.go:31:1)
 	if r.create != nil {
 		return nil
 	}
@@ -1081,27 +1081,27 @@ type GhOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../main.go:41:2)
+	Token *Secret // gh (../../main.go:42:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../main.go:46:2)
+	Repo string // gh (../../main.go:47:2)
 	//
 	// GitHub host.
 	//
-	Host string // gh (../../main.go:51:2)
+	Host string // gh (../../main.go:52:2)
 	//
 	// Additional CA certificate for the GitHub host.
 	//
-	CaCert *File // gh (../../main.go:56:2)
+	CaCert *File // gh (../../main.go:57:2)
 	//
 	// Git repository source (with .git directory).
 	//
-	Source *Directory // gh (../../main.go:61:2)
+	Source *Directory // gh (../../main.go:62:2)
 }
 
 // GitHub CLI
-func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../main.go:37:1)
+func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../main.go:38:1)
 	q := r.query.Select("gh")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -1140,7 +1140,7 @@ func New(opts ...GhOpts) *Gh {
 	return Connect().Gh(opts...)
 }
 
-type GhLatest string // gh (../../release.go:21:6)
+type GhLatest string // gh (../../release.go:22:6)
 
 func (GhLatest) IsEnum() {}
 
@@ -1193,10 +1193,10 @@ func (v *GhLatest) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	GhLatestAuto GhLatest = "LATEST_AUTO" // gh (../../release.go:26:2)
+	GhLatestAuto GhLatest = "LATEST_AUTO" // gh (../../release.go:27:2)
 
-	GhLatestFalse GhLatest = "LATEST_FALSE" // gh (../../release.go:25:2)
+	GhLatestFalse GhLatest = "LATEST_FALSE" // gh (../../release.go:26:2)
 
-	GhLatestTrue GhLatest = "LATEST_TRUE" // gh (../../release.go:24:2)
+	GhLatestTrue GhLatest = "LATEST_TRUE" // gh (../../release.go:25:2)
 
 )
