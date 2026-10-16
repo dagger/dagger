@@ -1,0 +1,22 @@
+kind: Experimental
+body: |
+  Conversations record the expertise they were composed from, and expertise
+  can act as the agent that owns the conversation.
+
+  - `LLM.expertise` lists the composed entries, and `Expertise.artifact` names
+    each one, so a reload can look it up again in another workspace.
+  - `LLM.spawn(expertise:)` composes entries after minting the agent, so they
+    can take it as an `Agent` argument (`me`). `Agent.parent` returns the agent
+    that spawned it.
+  - An `Agent` argument of an entry or a tool receives the agent that owns the
+    conversation, whoever drives it. Without an owner, entries and tools that
+    require one are skipped or hidden.
+  - `Artifacts.asExpertise` accepts any function that transforms a
+    conversation; `@agent` only nominates entries for default composition, as
+    in `dagger agent`, which now spawns its agent with them.
+  - System prompts and skills a dependency adds while an entry runs belong to
+    the entry's module, so refreshing it replaces them.
+time: 2026-10-16T19:05:00Z
+custom:
+  Author: vito
+  PR: "14637"

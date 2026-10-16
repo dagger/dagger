@@ -55,7 +55,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		Description: "The evaluated value, or null when evaluation failed."}, s.resultValue)
 	dagql.Fields[*core.ArtifactDimensionKey]{}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
-		dagql.NodeFunc("asExpertise", s.asExpertise).Doc("Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise; a module load failure fails with its load error."),
+		dagql.NodeFunc("asExpertise", s.asExpertise).Doc("Convert the selection to expertise without running the functions. Each must take one LLM! argument and return LLM!; any other arguments must be optional or auto-filled. Agent arguments receive the agent that owns the conversation. A module load failure fails with its load error."),
 		dagql.NodeFunc("asGenerators", s.asGenerators).Doc("Convert the selection to Generators without running them. Fail if any artifact is not a Generator. Module load failures are skipped: generating can repair them."),
 		dagql.NodeFunc("asChecks", s.asChecks).Doc("Convert the selection to Checks. Fail if any artifact is not a Check. A module load failure is a Check that fails with its load error. Does not apply command filters or run the checks."),
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset; a module load failure fails with its load error. Does not apply command filters."),
@@ -446,7 +446,7 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 		return result, err
 	case "Expertise":
 		if len(inputs) != 0 {
-			return nil, fmt.Errorf("artifacts of type Expertise receive their LLM through LLM.compose; artifact arguments are not supported")
+			return nil, fmt.Errorf("artifacts of type Expertise receive their LLM through LLM.spawn(expertise:) or LLM.compose; artifact arguments are not supported")
 		}
 		err = srv.Select(ctx, parent.(dagql.AnyObjectResult), &result, dagql.Selector{Field: "__expertise"})
 		return result, err
@@ -461,6 +461,17 @@ func (*artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args 
 			err = srv.Select(ctx, gen, &result, dagql.Selector{Field: "stale"})
 			return result, err
 		}
+	}
+	// A conversation transform is listed without arguments because
+	// composition supplies its conversation. Evaluated on its own, say so
+	// rather than failing on the missing argument.
+	if name := core.ConversationArgument(artifact); name != "" && artifact.LoadFailure == nil &&
+		!slices.ContainsFunc(inputs, func(input dagql.NamedInput) bool { return input.Name == name }) {
+		uri, err := artifact.URI(core.ArtifactURIOpts{DimensionKeys: true})
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%s transforms a conversation: compose it with LLM.compose or LLM.spawn(expertise:) through Artifacts.asExpertise, or pass the conversation as its %q argument", uri, name)
 	}
 	if err := evaluateArtifact(ctx, artifact, &result, inputs...); err != nil {
 		if artifact.TypeName != "Check" {
@@ -1022,7 +1033,33 @@ func (*artifactsSchema) loadError(_ context.Context, artifact *core.Artifact, _ 
 }
 
 func (*artifactsSchema) asExpertise(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Expertise], error) {
-	return artifactValuesAs[*core.Expertise](ctx, parent)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var items dagql.ObjectResultArray[*core.Artifact]
+	if err := srv.Select(ctx, parent, &items, dagql.Selector{Field: "items"}); err != nil {
+		return nil, err
+	}
+	// Validate every signature before creating any entry. Artifact types still
+	// reflect return types; an explicit selection may include plain LLM transforms.
+	for _, item := range items {
+		// A broken module under the selection fails with its load error, not
+		// as an artifact that is not a source of expertise.
+		if failure := item.Self().LoadFailure; failure != nil {
+			return nil, fmt.Errorf("%s", failure.Message)
+		}
+		if _, err := core.NewExpertise(item.Self()); err != nil {
+			return nil, err
+		}
+	}
+	entries := make(dagql.ObjectResultArray[*core.Expertise], len(items))
+	for i, item := range items {
+		if err := srv.Select(ctx, item, &entries[i], dagql.Selector{Field: "__expertise"}); err != nil {
+			return nil, err
+		}
+	}
+	return entries, nil
 }
 func (*artifactsSchema) asGenerators(ctx context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (dagql.ObjectResultArray[*core.Generator], error) {
 	return artifactValuesAs[*core.Generator](ctx, parent)

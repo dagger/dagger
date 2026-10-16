@@ -62,20 +62,50 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 	dagql.Fields[*core.LLM]{
+		dagql.Func("__withOwnerAgent", func(_ context.Context, llm *core.LLM, args struct{ Handle string }) (*core.LLM, error) {
+			return llm.WithOwnerAgent(args.Handle), nil
+		}).View(AfterVersion("v1.0.0-0")),
+		dagql.Func("expertise", func(_ context.Context, llm *core.LLM, _ struct{}) (dagql.ObjectResultArray[*core.Expertise], error) {
+			return llm.Expertise, nil
+		}).View(AfterVersion("v1.0.0-0")).Doc("Expertise composed into this conversation, in order."),
+		// Composition records its entries and, while they run, marks the
+		// conversation with the identities being composed (see
+		// core.ComposeExpertise), in one selector replay reproduces.
+		dagql.Func("__withExpertise", func(ctx context.Context, llm *core.LLM, args struct {
+			Expertise []dagql.ID[*core.Expertise]
+			Composing []string `default:"[]"`
+		}) (*core.LLM, error) {
+			entries, err := (expertiseArgs{Expertise: args.Expertise}).load(ctx)
+			if err != nil {
+				return nil, err
+			}
+			llm = llm.Clone()
+			llm.Expertise = entries
+			llm.ComposingExpertise = args.Composing
+			return llm, nil
+		}).View(AfterVersion("v1.0.0-0")),
+		// Composition is pure: it returns a new conversation. spawn composes
+		// through compose too, after minting the agent's identity.
 		dagql.NodeFunc("compose", s.compose).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Run expertise in list order, passing this conversation through each function. Retain existing contributions.").
-			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
-		dagql.NodeFunc("recompose", s.recompose).
-			View(AfterVersion("v1.0.0-0")).
-			Doc("Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.",
-				"Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.",
-				"A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.").
+			Doc("Run expertise on this conversation, passing it through each function in order, and record it in expertise.",
+				"Composing an entry that is already recorded refreshes its module: the module's contributions are cleared, all of its recorded entries run again, and compatible tool state is kept. Other contributions are untouched.",
+				"Agent arguments receive the agent that owns this conversation. Without one, entries requiring an Agent are skipped.").
 			Args(dagql.Arg("expertise").Doc("The expertise to run. Each reference retains its source workspace.")),
 		dagql.Func("__withoutComposition", func(_ context.Context, llm *core.LLM, args struct {
 			Owner string
 		}) (*core.LLM, error) {
 			return llm.WithoutComposition(args.Owner), nil
+		}).View(AfterVersion("v1.0.0-0")),
+		// Composition re-stamps a dependency's contributions as the running
+		// entry's module's own, by position, so replay reproduces it (see
+		// core.ComposeExpertise).
+		dagql.Func("__withContributionOwner", func(_ context.Context, llm *core.LLM, args struct {
+			Owner    string
+			Messages []int `default:"[]"`
+			Skills   []int `default:"[]"`
+		}) (*core.LLM, error) {
+			return llm.WithContributionOwner(args.Owner, args.Messages, args.Skills)
 		}).View(AfterVersion("v1.0.0-0")),
 		dagql.Func("model", s.model).
 			Doc("The model the conversation is running against, after resolving any configured default."),
@@ -267,6 +297,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				`The loop is not started: the agent spends nothing until it is prompted or resumed, and any input pending on the conversation is stepped then.`,
 				`With a handle, spawn restores an instance instead of minting one: this conversation becomes the committed history of the agent that handle names, so prompting it continues where it left off — rebuild a conversation's ID from a trace, load it, and spawn it under the handle it belonged to. Fails if that instance already has a runtime entry in this session: a restore must happen before anything else addresses the instance, since by then it may have stepped.`).
 			Args(
+				dagql.Arg("expertise").Doc("Expertise to compose into the new agent's conversation. Agent arguments receive the new agent, which cannot be used until composition completes; if composition fails, the agent is left STOPPED."),
 				dagql.Arg("name").Doc("Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation."),
 				dagql.Arg("handle").Doc(`The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.`),
 				dagql.Arg("state").Doc(`The lifecycle state to create the agent in, as facts on the entry: IDLE is ready to be prompted, PAUSED parks it, FAILED holds an error a resume retries past, STOPPED preserves a dormant snapshot that send or resume can relaunch.`,
@@ -544,9 +575,11 @@ func (s *llmSchema) withContentFile(ctx context.Context, llm *core.LLM, args str
 	return llm.WithContent([]*core.LLMContentBlock{block}, nil), nil
 }
 
-// withLLMCallerOwner records the installing module before cache lookup. Ownership
-// is a property of each contribution, not ambient state on the LLM or the bound
-// object. Explicit stamps (including empty ones) survive replay by another caller.
+// withLLMCallerOwner records the calling module (see core.CompositionOwner)
+// before cache lookup. Ownership is a property of each contribution, not
+// ambient state on the LLM or the bound object. It depends only on which
+// module's code makes the call, so it needs no other cache partitioning.
+// Explicit stamps (including empty ones) survive replay by another caller.
 func withLLMCallerOwner(field dagql.Field[*core.LLM]) dagql.Field[*core.LLM] {
 	field.Spec.GetDynamicInput = func(ctx context.Context, _ dagql.AnyResult, _ map[string]dagql.Input, _ call.View, req *dagql.CallRequest) error {
 		if owner := req.Arg("owner"); owner != nil && owner.Value != nil && owner.Value.Kind != dagql.ResultCallLiteralKindNull {
@@ -560,10 +593,7 @@ func withLLMCallerOwner(field dagql.Field[*core.LLM]) dagql.Field[*core.LLM] {
 		if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
 			return fmt.Errorf("resolve LLM contribution owner: %w", err)
 		}
-		owner := ""
-		if mod.Self() != nil {
-			owner = mod.Self().Name()
-		}
+		owner := core.CompositionOwner(mod.Self())
 		return req.SetArgInput(ctx, "owner", dagql.Opt(dagql.String(owner)), false)
 	}
 	return field
@@ -778,6 +808,7 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 	State        core.AgentState `default:"IDLE"`
 	Error        string          `default:""`
 	ParentHandle dagql.Optional[dagql.String]
+	Expertise    []dagql.ID[*core.Expertise] `default:"[]"`
 }) (res dagql.Result[core.AgentID], _ error) {
 	name := args.Name.Value.String()
 	if name == "" {
@@ -804,6 +835,16 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 	handle := rand.Text()
 	if restored {
 		handle = args.Handle.Value.String()
+	}
+	// The agent's conversation starts anew: spawned while an entry runs, it is
+	// not part of that composition, and composes its own entries at top level.
+	parent, err = core.WithoutComposingMark(ctx, parent)
+	if err != nil {
+		return res, err
+	}
+	parent, err = core.WithLLMOwnerAgent(ctx, parent, handle)
+	if err != nil {
+		return res, err
 	}
 	var pinned dagql.ObjectResult[*core.Agent]
 	if err := srv.Select(ctx, parent, &pinned, dagql.Selector{
@@ -832,8 +873,44 @@ func (s *llmSchema) spawn(ctx context.Context, parent dagql.ObjectResult[*core.L
 		}
 		parentHandle = args.ParentHandle.Value.String()
 	}
-	if _, err := agents.Create(ctx, pinned, args.State, args.Error, restored, parentHandle); err != nil {
+	rt, err := agents.Prepare(ctx, pinned, args.State, args.Error, restored, parentHandle)
+	if err != nil {
 		return res, err
+	}
+	fail := func(err error) (dagql.Result[core.AgentID], error) {
+		rt.AbortComposition(ctx, err)
+		return res, fmt.Errorf("agent %q (%s) was left STOPPED because initial composition failed: %w", name, handle, err)
+	}
+	if len(args.Expertise) > 0 {
+		// Lineage follows this composing agent, independently of CallerAgent's
+		// message provenance and deadlock-detection meaning.
+		composeCtx := core.WithComposingAgent(ctx, handle)
+		if err := srv.Select(composeCtx, parent, &parent, dagql.Selector{
+			Field: "compose",
+			Args:  []dagql.NamedInput{{Name: "expertise", Value: dagql.ArrayInput[dagql.ID[*core.Expertise]](args.Expertise)}},
+		}); err != nil {
+			return fail(err)
+		}
+	}
+	// Entries may return an independently constructed conversation. Its owner
+	// is still this agent, not an owner carried by the entry's return value.
+	parent, err = core.WithLLMOwnerAgent(ctx, parent, handle)
+	if err != nil {
+		return fail(err)
+	}
+	// Keep spawn's public ID seed-bearing. The seed's references to its owner
+	// use __agentReference(handle:), so this cannot form a recipe cycle.
+	if err := srv.Select(ctx, parent, &pinned, dagql.Selector{
+		Field: "agent",
+		Args: []dagql.NamedInput{
+			{Name: "handle", Value: dagql.String(handle)},
+			{Name: "name", Value: dagql.String(name)},
+		},
+	}); err != nil {
+		return fail(err)
+	}
+	if err := rt.CompleteComposition(ctx, pinned, parent); err != nil {
+		return fail(err)
 	}
 	pinnedID, err := pinned.ID()
 	if err != nil {
@@ -991,34 +1068,28 @@ type expertiseArgs struct {
 	Expertise []dagql.ID[*core.Expertise]
 }
 
-func (args expertiseArgs) load(ctx context.Context) ([]*core.Expertise, error) {
+func (args expertiseArgs) load(ctx context.Context) (dagql.ObjectResultArray[*core.Expertise], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	expertise := make([]*core.Expertise, len(args.Expertise))
+	expertise := make(dagql.ObjectResultArray[*core.Expertise], len(args.Expertise))
 	for i, id := range args.Expertise {
 		entry, err := id.Load(ctx, srv)
 		if err != nil {
 			return nil, err
 		}
-		expertise[i] = entry.Self()
+		expertise[i] = entry
 	}
 	return expertise, nil
 }
 
+// compose runs and records the given entries; spawn's initial composition
+// uses it too, on a conversation already owned by the new agent.
 func (*llmSchema) compose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args expertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
 	expertise, err := args.load(ctx)
 	if err != nil {
 		return base, err
 	}
 	return core.ComposeExpertise(ctx, base, expertise)
-}
-
-func (*llmSchema) recompose(ctx context.Context, base dagql.ObjectResult[*core.LLM], args expertiseArgs) (dagql.ObjectResult[*core.LLM], error) {
-	expertise, err := args.load(ctx)
-	if err != nil {
-		return base, err
-	}
-	return core.RecomposeExpertise(ctx, base, expertise)
 }
