@@ -10,6 +10,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"dagger/cli-dev/internal/dagger"
+	"dagger/cli-dev/internal/dagger/clients/alpine"
 	"dagger/cli-dev/util"
 )
 
@@ -110,8 +111,8 @@ func (cli *CliDev) PublishMetadata(
 	awsCloudfrontDistribution string,
 	awsEndpointURL string, // +optional
 ) error {
-	ctr := dag.
-		Alpine(dagger.AlpineOpts{
+	ctr := alpine.
+		New(alpine.AlpineOpts{
 			Branch:   "3.22",
 			Packages: []string{"aws-cli"},
 		}).
