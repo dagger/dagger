@@ -1012,6 +1012,7 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 
 	// Computed before taking the lock: it evaluates dagql calls.
 	wsNote := m.summarizeContinuationWorkspace(ctx, srv, current.Self(), next.Self())
+	collisionNote := summarizeContinuationCollisions(ctx, current.Self(), next.Self())
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1023,10 +1024,52 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 	}
 	m.continuation = next
 	summary := summarizeContinuation(current.Self(), next.Self(), before, after)
+	if collisionNote != "" {
+		summary += "\n" + collisionNote
+	}
 	if wsNote != "" {
 		summary += "\n" + wsNote
 	}
 	return summary, nil
+}
+
+// summarizeContinuationCollisions is the model's plain-text counterpart of
+// WarnToolNameCollisions: it explains the namespaced tool names a continuation
+// introduced, which the toolset diff lists without saying why. Empty when the
+// continuation added no collision, or when they cannot be computed.
+func summarizeContinuationCollisions(ctx context.Context, current, next *LLM) string {
+	if next == nil || next.mcp == nil {
+		return ""
+	}
+	after, err := next.mcp.ToolNameCollisions(ctx)
+	if err != nil || len(after) == 0 {
+		return ""
+	}
+	var before map[string][]string
+	if current != nil && current.mcp != nil {
+		before, _ = current.mcp.ToolNameCollisions(ctx)
+	}
+	return summarizeToolNameCollisions(before, after)
+}
+
+// summarizeToolNameCollisions describes, one line per tool name, the
+// collisions in after that before did not have.
+func summarizeToolNameCollisions(before, after map[string][]string) string {
+	var lines []string
+	for _, name := range slices.Sorted(maps.Keys(after)) {
+		contributors := after[name]
+		if slices.Equal(before[name], contributors) {
+			continue
+		}
+		served := make([]string, len(contributors))
+		for i, typeName := range contributors {
+			served[i] = namespacedToolName(typeName, name)
+		}
+		lines = append(lines, fmt.Sprintf(
+			"Tool name collision: %q is provided by %s; all of their tools are served under type-prefixed names (%s).",
+			name, strings.Join(contributors, ", "), strings.Join(served, ", ")))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // summarizeContinuationWorkspace reports how the continuation's bound
@@ -2441,7 +2484,8 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 				switch attr.Key {
 				case telemetry.StdioStreamAttr:
 					stream = attr.Value.GetIntValue()
-				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr:
+				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr,
+					telemetryattrs.LogHumanOnlyAttr:
 					if attr.Value.GetBoolValue() {
 						skip = true
 						break dance

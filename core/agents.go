@@ -4,14 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/log"
 
 	"github.com/dagger/dagger/engine/slog"
 )
 
+// WarnToolNameCollisions tells people reading the trace which toolsets are
+// served under namespaced names. The warning is human-only: it would reach a
+// model as ANSI-coloured log noise in the result of a tool returning this
+// conversation, which gets a plain-text note instead (see
+// summarizeToolNameCollisions).
 func (llm *LLM) WarnToolNameCollisions(ctx context.Context) {
 	if llm == nil || llm.mcp == nil {
 		return
@@ -20,8 +28,13 @@ func (llm *LLM) WarnToolNameCollisions(ctx context.Context) {
 	if err != nil || len(collisions) == 0 {
 		return
 	}
-	logger := slog.SpanLogger(ctx, InstrumentationLibrary)
-	for name, contributors := range collisions {
+	warnToolNameCollisions(ctx, collisions)
+}
+
+func warnToolNameCollisions(ctx context.Context, collisions map[string][]string) {
+	logger := slog.SpanLogger(ctx, InstrumentationLibrary, log.Bool(telemetryattrs.LogHumanOnlyAttr, true))
+	for _, name := range slices.Sorted(maps.Keys(collisions)) {
+		contributors := collisions[name]
 		served := make([]string, len(contributors))
 		for i, typeName := range contributors {
 			served[i] = namespacedToolName(typeName, name)

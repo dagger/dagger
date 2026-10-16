@@ -15,6 +15,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
@@ -632,6 +634,76 @@ func TestCallPayloadRecordsExcludedFromLLMLogs(t *testing.T) {
 	t.Run("automatic tool result", func(t *testing.T) {
 		require.Equal(t, "before\nafter", m.toolLogs(ctx))
 	})
+}
+
+// TestHumanOnlyLogsExcludedFromLLMLogs covers the human-only marker: such a
+// record (e.g. the coloured tool name collision warning) stays in the trace
+// for people, but never reaches a model through ReadLogs or a tool result.
+func TestHumanOnlyLogsExcludedFromLLMLogs(t *testing.T) {
+	const (
+		traceID = "000102030405060708090a0b0c0d0e0f"
+		spanID  = "0000000000000001"
+	)
+
+	// The collision warning carries the marker on every record it writes.
+	recorder := &mediaLogRecorder{}
+	logCtx := telemetry.WithLoggerProvider(t.Context(), sdklog.NewLoggerProvider(sdklog.WithProcessor(recorder)))
+	warnToolNameCollisions(logCtx, map[string][]string{"shared": {"Swapper", "Rival"}})
+	recorder.mu.Lock()
+	require.NotEmpty(t, recorder.records)
+	for _, record := range recorder.records {
+		humanOnly := false
+		record.WalkAttributes(func(kv otellog.KeyValue) bool {
+			if kv.Key == telemetryattrs.LogHumanOnlyAttr {
+				humanOnly = kv.Value.AsBool()
+			}
+			return true
+		})
+		require.True(t, humanOnly)
+	}
+	recorder.mu.Unlock()
+
+	dbs := clientdb.NewDBs(t.TempDir())
+	store, err := dbs.Open(t.Context(), "capture-test")
+	require.NoError(t, err)
+	_, err = store.AppendSpans([]clientdb.Span{{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		Attributes: marshalSpanAttrs(t),
+	}})
+	require.NoError(t, err)
+	scope := "ordinary.logs"
+	humanOnly := &otlpcommonv1.KeyValue{
+		Key:   telemetryattrs.LogHumanOnlyAttr,
+		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BoolValue{BoolValue: true}},
+	}
+	_, err = store.AppendLogs([]clientdb.Log{
+		persistedCaptureLog(t, traceID, spanID, scope, stringLogBody("before\n")),
+		persistedCaptureLog(t, traceID, spanID, scope, stringLogBody("\x1b[33mWRN\x1b[0m agent tool name collision\n"), humanOnly),
+		persistedCaptureLog(t, traceID, spanID, scope, stringLogBody("after\n")),
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &logCaptureTestServer{
+		mockServer: &mockServer{},
+		dbs:        dbs,
+	}})
+	traceIDValue, err := trace.TraceIDFromHex(traceID)
+	require.NoError(t, err)
+	spanIDValue, err := trace.SpanIDFromHex(spanID)
+	require.NoError(t, err)
+	ctx = trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceIDValue,
+		SpanID:  spanIDValue,
+	}))
+	m := newMCP()
+
+	got, err := m.readLogsTool(&dagql.Server{})(ctx, map[string]any{"span": spanID})
+	require.NoError(t, err)
+	require.NotContains(t, got, "collision")
+	require.Contains(t, got, "2 lines available")
+	require.Equal(t, "before\nafter", m.toolLogs(ctx))
 }
 
 // TestCaptureLogLinesIsolatesProducers exercises persisted records across the

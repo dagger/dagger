@@ -160,6 +160,22 @@ func TestSummarizeContinuation(t *testing.T) {
 	})
 }
 
+func TestSummarizeToolNameCollisions(t *testing.T) {
+	after := map[string][]string{
+		"shared": {"Swapper", "Rival"},
+		"read":   {"Editor", "Godoc"},
+	}
+	require.Equal(t,
+		`Tool name collision: "read" is provided by Editor, Godoc; all of their tools are served under type-prefixed names (editor_read, godoc_read).`+"\n"+
+			`Tool name collision: "shared" is provided by Swapper, Rival; all of their tools are served under type-prefixed names (swapper_shared, rival_shared).`,
+		summarizeToolNameCollisions(nil, after))
+	// Only collisions the continuation introduced are reported.
+	require.Equal(t,
+		`Tool name collision: "shared" is provided by Swapper, Rival; all of their tools are served under type-prefixed names (swapper_shared, rival_shared).`,
+		summarizeToolNameCollisions(map[string][]string{"read": {"Editor", "Godoc"}}, after))
+	require.Empty(t, summarizeToolNameCollisions(after, after))
+}
+
 func TestToolResultSelectors(t *testing.T) {
 	toolCallMsg := func(callID, name string) *LLMMessage {
 		return &LLMMessage{
