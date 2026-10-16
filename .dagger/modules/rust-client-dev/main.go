@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger/core"
 	"github.com/BurntSushi/toml"
 	"golang.org/x/mod/semver"
 
 	"dagger/rust-client-dev/internal/dagger"
+	enginedev "dagger/rust-client-dev/internal/dagger/clients/engine-dev"
 )
 
 const (
@@ -48,16 +50,16 @@ func New(
 		Exclude: []string{"*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml"},
 	})
 
-	baseContainer := dag.Container().
+	baseContainer := core.NewContainer().
 		From(rustSdkImage+"@"+rustSdkImageDigest).
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
-		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustSdkImage)).
+		WithMountedCache("/root/.cargo", core.NewCacheVolume("rust-cargo-"+rustSdkImage)).
 		WithWorkdir("/src").
 		// FIXME: not all functions need a full engine build. Do this lazily as needed
 		With(func(c *dagger.Container) *dagger.Container {
-			return dag.EngineDev(workspace, dagger.EngineDevOpts{
+			return enginedev.New(workspace, enginedev.EngineDevOpts{
 				ClientDockerConfig: clientDockerConfig,
-			}).InstallClient(dagger.EngineDevInstallClientOpts{Client: c})
+			}).InstallClient(enginedev.EngineDevInstallClientOpts{Client: c})
 		})
 
 	return &RustClientDev{
@@ -162,7 +164,7 @@ func (t *RustClientDev) Changes() *dagger.Changeset {
 
 func (t *RustClientDev) WithGeneratedClient() *RustClientDev {
 	relLayer := t.DevContainer(true).
-		WithMountedFile("/introspection.json", dag.EngineDev(t.Ws).IntrospectionJSON()).
+		WithMountedFile("/introspection.json", enginedev.New(t.Ws).IntrospectionJSON()).
 		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--output", rustGeneratedClientFilePath}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
 		WithExec([]string{"cargo", "fmt"}).
