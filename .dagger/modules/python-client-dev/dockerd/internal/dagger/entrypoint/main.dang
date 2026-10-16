@@ -22,19 +22,19 @@ type Entrypoint implements ModuleEntrypoint {
 
   pub types: [TypeDef!]! {
     [
-      typeDef.withObject("Dockerd", description: "Module for running docker in dagger", sourceMap: sourceMap("main.go", 14, 6))
+      typeDef.withObject("Dockerd", description: "Module for running docker in dagger", sourceMap: sourceMap("main.go", 15, 6))
         .withFunction(
           function("Attach", typeDef.withObject("Container"))
             .withDescription("Attach a dockerd service to a container")
-            .withSourceMap(sourceMap("main.go", 17, 1))
-            .withArg("container", typeDef.withObject("Container"), sourceMap: sourceMap("main.go", 19, 2))
-            .withArg("dockerVersion", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), defaultValue: ("\"24.0\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 22, 2))
+            .withSourceMap(sourceMap("main.go", 18, 1))
+            .withArg("container", typeDef.withObject("Container"), sourceMap: sourceMap("main.go", 20, 2))
+            .withArg("dockerVersion", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), defaultValue: ("\"24.0\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 23, 2))
         )
         .withFunction(
           function("Service", typeDef.withObject("Service"))
             .withDescription("Get a Service container running dockerd")
-            .withSourceMap(sourceMap("main.go", 39, 1))
-            .withArg("dockerVersion", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), defaultValue: ("\"24.0\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 42, 2))
+            .withSourceMap(sourceMap("main.go", 40, 1))
+            .withArg("dockerVersion", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), defaultValue: ("\"24.0\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 43, 2))
         )
         .withConstructor(function("", typeDef.withObject("Dockerd")))
     ]
