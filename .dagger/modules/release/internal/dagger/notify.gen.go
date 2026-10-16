@@ -6,6 +6,9 @@ import (
 	"dagger/release/internal/dagger/core"
 )
 
+// Send notifications
+//
+// Supports Discord & Slack.
 type Notify = core.Notify
 
 // NotifySlackOpts contains options for Notify.Slack
