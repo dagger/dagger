@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/stretchr/testify/require"
 )
@@ -51,6 +52,29 @@ func TestArtifactModuleNames(t *testing.T) {
 		require.Equal(t, "test", index.short("type:Check", keys[0], filters))
 	}
 	require.Equal(t, []string{"playwright/test", "test"}, index.matches("type:Check", "test", nil))
+}
+
+// A row's short type key holds with the row's keys. Given without the
+// service key, the item's key also names the batch path.
+func TestArtifactTypeNamesNeedTheirRow(t *testing.T) {
+	project, service := "/docker/compose/projects", "/docker/compose/projects/services"
+	paths := []artifactListPath{
+		{URI: "dag+service://?service=docker/compose/projects/services/up", ModuleName: "docker", Dimensions: []string{"module", project, service, "type:Service"}},
+		{URI: "dag+service://?service=docker/compose/projects/services/batch/up", ModuleName: "docker", Dimensions: []string{"module", project, "type:Service"}},
+	}
+	index, err := newArtifactNameIndex(paths)
+	require.NoError(t, err)
+	row := []dagaddress.Pair{{Dimension: project, Key: "e2e", HasKey: true}, {Dimension: service, Key: "web", HasKey: true}}
+	require.Equal(t, "up", index.short("type:Service", "docker/compose/projects/services/up", row))
+	require.Equal(t, "batch/up", index.short("type:Service", "docker/compose/projects/services/batch/up", row[:1]))
+	require.Equal(t, []string{"docker/compose/projects/services/up"}, index.matches("type:Service", "up", row))
+	require.Equal(t, []string{"docker/compose/projects/services/batch/up", "docker/compose/projects/services/up"}, index.matches("type:Service", "up", row[:1]))
+	// That names one operation at two granularities, which is ambiguous.
+	_, err = artifact.ResolveTypeKey(index.candidatePaths("type:Service", row[:1]), "service", "up")
+	require.ErrorContains(t, err, "service=up is ambiguous")
+	got, err := artifact.ResolveTypeKey(index.candidatePaths("type:Service", row[:1]), "service", "batch/up")
+	require.NoError(t, err)
+	require.Equal(t, []string{"docker/compose/projects/services/batch/up"}, got)
 }
 
 func TestArtifactGeneratorCheckNames(t *testing.T) {
