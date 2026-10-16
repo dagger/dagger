@@ -286,7 +286,14 @@ func (dev *EngineDev) InstallClient(
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
-		WithSymlink(cliPath, "/usr/local/bin/dagger")
+		// The engine injects DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN into
+		// each exec when Dagger-in-Dagger is on, which is the default from
+		// v1.0.0-beta.15. The CLI prefers them over the runner host, so it would
+		// connect to the outer engine. Unset them so this CLI uses the dev engine.
+		WithNewFile("/usr/local/bin/dagger", `#!/bin/sh
+unset DAGGER_SESSION_PORT DAGGER_SESSION_TOKEN
+exec `+cliPath+` "$@"
+`, dagger.ContainerWithNewFileOpts{Permissions: 0o755})
 	if cfg := dev.ClientDockerConfig; cfg != nil {
 		client = client.WithMountedSecret(
 			"${HOME}/.docker/config.json",
