@@ -161,7 +161,7 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 		if objType := node.ObjectType(); objType != nil && objType.Constructor.Valid {
 			ctor = objType.Constructor.Value.Self()
 		}
-		args, err := boundWorkspaceArgs(ctx, srv, ctor)
+		args, err := boundWorkspaceArgs(ctx, srv, ctor, leafArgs)
 		if err != nil {
 			return fmt.Errorf("%q: get value: %w", node.PathString(), err)
 		}
@@ -177,7 +177,7 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 			return err
 		}
 		fn, _ := parentObjType.FunctionByName(node.Name)
-		args, err := boundWorkspaceArgs(ctx, srv, fn)
+		args, err := boundWorkspaceArgs(ctx, srv, fn, leafArgs)
 		if err != nil {
 			return fmt.Errorf("%q: get value: %w", node.PathString(), err)
 		}
@@ -226,19 +226,26 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 	return fmt.Errorf("%q: get value: parent is not an object", node.PathString())
 }
 
-func boundWorkspaceArgs(ctx context.Context, srv *dagql.Server, fn *Function) ([]dagql.NamedInput, error) {
+// boundWorkspaceArgs binds the workspace in ctx to each required Workspace
+// argument of fn that callerArgs leaves unset.
+func boundWorkspaceArgs(ctx context.Context, srv *dagql.Server, fn *Function, callerArgs []dagql.NamedInput) ([]dagql.NamedInput, error) {
 	if fn == nil {
 		return nil, nil
 	}
-	var argName string
+	// dagql takes the first selector argument of a name, so an argument the
+	// caller already set must not be bound here, or it would shadow theirs.
+	var argNames []string
 	for _, argRes := range fn.Args {
 		arg := argRes.Self()
-		if arg.IsWorkspace() && !arg.TypeDef.Self().Optional {
-			argName = arg.Name
-			break
+		if !arg.IsWorkspace() || arg.TypeDef.Self().Optional {
+			continue
 		}
+		if slices.ContainsFunc(callerArgs, func(in dagql.NamedInput) bool { return in.Name == arg.Name }) {
+			continue
+		}
+		argNames = append(argNames, arg.Name)
 	}
-	if argName == "" {
+	if len(argNames) == 0 {
 		return nil, nil
 	}
 	wsID, err := workspaceArgValue(ctx, srv)
@@ -250,10 +257,11 @@ func boundWorkspaceArgs(ctx context.Context, srv *dagql.Server, fn *Function) ([
 		// missing, which names both the argument and the field.
 		return nil, nil
 	}
-	return []dagql.NamedInput{{
-		Name:  argName,
-		Value: wsID,
-	}}, nil
+	args := make([]dagql.NamedInput, 0, len(argNames))
+	for _, name := range argNames {
+		args = append(args, dagql.NamedInput{Name: name, Value: wsID})
+	}
+	return args, nil
 }
 
 func debugTrace(ctx context.Context, msg string, args ...any) {
