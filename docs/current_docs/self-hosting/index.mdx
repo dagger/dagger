@@ -4,6 +4,73 @@ slug: /self-hosting
 description: "Run your own Dagger Engines."
 ---
 
-# Self-hosting
+# Self-hosting CI with Dagger
 
-TODO
+The Dagger Engine is open source and operates with or without a Dagger Cloud subscription. You can run it yourself on any system that can run Linux containers, including macOS and Windows with a tool such as Docker.
+
+All Dagger users run the engine themselves at some time. For example, developers run checks on their machines before they push their changes. For this, the CLI starts a local engine by default.
+
+To run checks after a push, the other pages of this documentation use [Cloud Checks](../getting-started/cloud-checks.mdx). This page is different. It explains how to run these checks on infrastructure that your team operates.
+
+## How it works
+
+Self-hosted CI with Dagger has two parts:
+
+- **CI runners** start checks. They come from another CI platform, for example GitHub Actions or GitLab CI. A Git event starts a CI job on a runner, and the job runs `dagger check`.
+- **Self-hosted engines** run checks. The CLI on the CI runner connects to an engine through remote execution.
+
+| | Dagger Cloud | Self-hosted |
+|---|---|---|
+| Starts checks | Cloud Checks | CI runners |
+| Runs checks | Cloud Engines | Self-hosted engines |
+
+## Why the cache changes how to scale
+
+Most CI platforms scale with a pool of ephemeral machines. Each machine runs one job, then the platform replaces it. The jobs do not depend on a cache, so more machines always help.
+
+Dagger checks depend on the cache. The engine caches all operations by default, and most checks get many results from the cache. A new engine adds compute, but its cache is empty. Thus, a new engine can make checks faster or slower.
+
+Dagger Cloud uses engine telemetry to find the best balance between compute and cache. A self-hosted setup does not have this scheduler. Thus, balance the load in the configuration: assign each check to an engine.
+
+Do not use a pool of ephemeral machines. Each new machine starts with an empty cache.
+
+## Recommended architecture
+
+Give each engine a persistent disk. Then scale in this order:
+
+1. Run all checks on one engine. Make the machine larger until it can easily do the load.
+2. When the machine cannot be made larger, split by check. For example, check A runs on engine A, and check B runs on engine B.
+3. If an engine is still overloaded, select one or more options:
+   - Split the check into smaller checks. Official Dagger modules can filter by test suite or application directory.
+   - Add engines for that check, one at a time. First find the resource that limits the engine: CPU, memory, or disk IO.
+   - Run that check on Cloud Engines.
+
+{/* TODO: How does a CI job select an engine in a group? */}
+
+## Set up
+
+### Deploy an engine
+
+{/* TODO: Verify the image, flag, port, and cache path. Recommend tls:// instead of tcp://? */}
+
+```shell
+docker run -d --privileged --restart always \
+  -v /var/lib/dagger:/var/lib/dagger \
+  -p 1234:1234 \
+  registry.dagger.io/engine:<version> \
+  --addr tcp://0.0.0.0:1234
+```
+
+Use the same version as the CLI. For engine settings, see [`engine.json`](../reference/config-files/engine-json.mdx).
+
+### Connect CI runners
+
+In each CI job, set `DAGGER_ENGINE` to the engine for that check:
+
+```shell
+DAGGER_ENGINE=tcp://engine-a.internal:1234 dagger check
+```
+
+To run a check on Cloud Engines, set `DAGGER_ENGINE=cloud` and a Dagger Cloud token.
+
+{/* TODO: Verify the token variable. Does it also send traces to Dagger Cloud? */}
