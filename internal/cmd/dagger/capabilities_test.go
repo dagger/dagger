@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 
@@ -241,75 +240,7 @@ func TestWorkspaceConfigFlags(t *testing.T) {
 	require.False(t, FlagAvailableForCommand(&cobra.Command{Use: "plain"}, flag))
 }
 
-func TestMayCallEngineCommands(t *testing.T) {
-	expected := []string{
-		"dagger agent",
-		"dagger api call",
-		"dagger api functions",
-		"dagger api listen",
-		"dagger api query",
-		"dagger api session",
-		"dagger api with-session",
-		"dagger list",
-		"dagger call",
-		"dagger check",
-		"dagger core",
-		"dagger functions",
-		"dagger generate",
-		"dagger init",
-		"dagger install",
-		"dagger listen",
-		"dagger mcp",
-		"dagger module client add",
-		"dagger module client list",
-		"dagger module client rm",
-		"dagger module client scope",
-		"dagger module client update",
-		"dagger module init",
-		"dagger module install",
-		"dagger module list",
-		"dagger module migrate",
-		"dagger module recommend",
-		"dagger module settings",
-		"dagger module uninstall",
-		"dagger module update",
-		"dagger module version",
-		"dagger query",
-		"dagger run",
-		"dagger sdk list",
-		"dagger sdk scope is-module",
-		"dagger sdk scope list",
-		"dagger sdk scope name",
-		"dagger sdk scope sdk",
-		"dagger session",
-		"dagger settings",
-		"dagger setup",
-		"dagger script",
-		"dagger shell",
-		"dagger uninstall",
-		"dagger start",
-		"dagger workspace",
-		"dagger workspace cat",
-		"dagger workspace config",
-		"dagger workspace config-file",
-		"dagger workspace cwd",
-		"dagger workspace entrypoint",
-		"dagger workspace exec",
-		"dagger workspace export",
-		"dagger workspace find",
-		"dagger workspace git",
-		"dagger workspace grep",
-		"dagger workspace ls",
-		"dagger workspace migrate",
-		"dagger workspace remotes",
-		"dagger workspace root",
-		"dagger workspace doctor",
-		"dagger doctor",
-		"dagger lock list",
-		"dagger lock update",
-	}
-	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayCallEngine))
-
+func TestCommandsWithoutMayCallEngine(t *testing.T) {
 	for name, cmd := range map[string]*cobra.Command{
 		"root":               rootCmd,
 		"activity":           activityCmd,
@@ -345,13 +276,6 @@ func TestRootShellFallbackKeepsEngineFlags(t *testing.T) {
 }
 
 func TestMaySelectWorkspaceCommands(t *testing.T) {
-	expected := append(commandsDeclaringCapability(rootCmd, mayCallEngine),
-		"dagger cloud checks",
-		"dagger workspace activity",
-		"dagger workspace remote",
-	)
-	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, maySelectWorkspace))
-
 	var visit func(*cobra.Command)
 	visit = func(cmd *cobra.Command) {
 		if commandHasCapability(cmd, mayCallEngine) {
@@ -416,24 +340,6 @@ func TestModuleFlagsRequireMayCallEngine(t *testing.T) {
 }
 
 func TestMayProduceOutputCommands(t *testing.T) {
-	expected := []string{
-		"dagger api call",
-		"dagger call",
-		"dagger core",
-		"dagger generate",
-		"dagger init",
-		"dagger module client add",
-		"dagger module client rm",
-		"dagger module client update",
-		"dagger module init",
-		"dagger module migrate",
-		"dagger module recommend",
-		"dagger setup",
-		"dagger workspace exec",
-		"dagger workspace migrate",
-	}
-	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayProduceOutput))
-
 	oldAutoApply := autoApply
 	t.Cleanup(func() { autoApply = oldAutoApply })
 	flags := pflag.NewFlagSet("output", pflag.ContinueOnError)
@@ -555,87 +461,6 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 	require.False(t, FlagAvailableForCommand(sdkCmd, envFlag))
 	require.False(t, FlagAvailableForCommand(workspaceRootCmd, envFlag))
 
-	readers := []string{
-		"dagger agent",
-		"dagger api call",
-		"dagger api functions",
-		"dagger api listen",
-		"dagger api query",
-		"dagger api session",
-		"dagger api with-session",
-		"dagger list",
-		"dagger call",
-		"dagger check",
-		"dagger core",
-		"dagger functions",
-		"dagger generate",
-		"dagger init",
-		"dagger install",
-		"dagger listen",
-		"dagger mcp",
-		"dagger module client add",
-		"dagger module client list",
-		"dagger module client rm",
-		"dagger module client scope",
-		"dagger module client update",
-		"dagger module init",
-		"dagger module install",
-		"dagger module list",
-		"dagger module migrate",
-		"dagger module recommend",
-		"dagger module settings",
-		"dagger module uninstall",
-		"dagger module update",
-		"dagger module version",
-		"dagger query",
-		"dagger run",
-		"dagger sdk list",
-		"dagger sdk scope is-module",
-		"dagger sdk scope list",
-		"dagger sdk scope name",
-		"dagger sdk scope sdk",
-		"dagger session",
-		"dagger settings",
-		"dagger script",
-		"dagger shell",
-		"dagger uninstall",
-		"dagger start",
-		"dagger workspace",
-		"dagger workspace config",
-		"dagger workspace doctor",
-		"dagger doctor",
-		"dagger workspace entrypoint",
-		"dagger workspace exec",
-		"dagger workspace migrate",
-		"dagger lock list",
-		"dagger lock update",
-	}
-	require.ElementsMatch(t, readers, commandsDeclaringCapability(rootCmd, mayReadWorkspaceConfig))
-
-	writers := []string{
-		"dagger init",
-		"dagger install",
-		"dagger module client add",
-		"dagger module client rm",
-		"dagger module client update",
-		"dagger module init",
-		"dagger module install",
-		"dagger module migrate",
-		"dagger module recommend",
-		"dagger module settings",
-		"dagger module uninstall",
-		"dagger sdk scope is-module",
-		"dagger sdk scope name",
-		"dagger sdk scope sdk",
-		"dagger settings",
-		"dagger uninstall",
-		"dagger workspace",
-		"dagger workspace config",
-		"dagger workspace entrypoint",
-		"dagger workspace migrate",
-	}
-	require.ElementsMatch(t, writers, commandsDeclaringCapability(rootCmd, mayWriteWorkspaceConfig))
-
 	for name, cmd := range map[string]*cobra.Command{
 		"sdk":              sdkCmd,
 		"setup":            setupCmd,
@@ -651,43 +476,7 @@ func TestWorkspaceConfigCommands(t *testing.T) {
 	require.False(t, commandHasCapability(sdkListCmd, mayWriteWorkspaceConfig))
 }
 
-func TestMayRenderPipelineCommands(t *testing.T) {
-	expected := []string{
-		"dagger agent",
-		"dagger api call",
-		"dagger api listen",
-		"dagger api query",
-		"dagger api session",
-		"dagger api with-session",
-		"dagger call",
-		"dagger check",
-		"dagger core",
-		"dagger generate",
-		"dagger init",
-		"dagger listen",
-		"dagger mcp",
-		"dagger module client add",
-		"dagger module client rm",
-		"dagger module client update",
-		"dagger module init",
-		"dagger module migrate",
-		"dagger module recommend",
-		"dagger query",
-		"dagger run",
-		"dagger session",
-		"dagger script",
-		"dagger shell",
-		"dagger trace",
-		"dagger cloud traces view",
-		"dagger cloud logs",
-		"dagger doctor",
-		"dagger workspace doctor",
-		"dagger start",
-		"dagger workspace exec",
-		"dagger workspace migrate",
-	}
-	require.ElementsMatch(t, expected, commandsDeclaringCapability(rootCmd, mayRenderPipeline))
-
+func TestCommandsWithoutMayRenderPipeline(t *testing.T) {
 	for name, cmd := range map[string]*cobra.Command{
 		"root":      rootCmd,
 		"settings":  settingsCmd,
@@ -696,6 +485,45 @@ func TestMayRenderPipelineCommands(t *testing.T) {
 		"sdk list":  sdkListCmd,
 	} {
 		require.False(t, commandHasCapability(cmd, mayRenderPipeline), name)
+	}
+}
+
+// Hidden commands are left out of the generated CLI reference, so diffing the
+// reference cannot catch a change to their capabilities. Check them here.
+func TestHiddenCommandCapabilities(t *testing.T) {
+	all := []commandCapability{
+		mayCallEngine,
+		maySelectWorkspace,
+		mayReadWorkspaceConfig,
+		mayWriteWorkspaceConfig,
+		mayRenderPipeline,
+		mayProduceOutput,
+	}
+	for _, test := range []struct {
+		name         string
+		cmd          *cobra.Command
+		capabilities []commandCapability
+	}{
+		{"api listen", apiListenCmd, []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline}},
+		{"api session", apiSessionCmd, []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline}},
+		{"call", callModCmd.Command(), []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline, mayProduceOutput}},
+		{"cloud logs", cloudLogsCmd, []commandCapability{mayRenderPipeline}},
+		{"core", callCoreCmd.Command(), []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline, mayProduceOutput}},
+		{"doctor", doctorAliasCmd, []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline}},
+		{"functions", functionsAliasCmd, []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig}},
+		{"listen", listenCmd, []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline}},
+		{"mcp", mcpCmd, []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline}},
+		{"query", queryCmd, []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline}},
+		{"run", runCmd, []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline}},
+		{"script", scriptCmd, []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline}},
+		{"session", sessionAliasCmd, []commandCapability{mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig, mayRenderPipeline}},
+		{"setup", setupCmd, []commandCapability{mayCallEngine, maySelectWorkspace, mayProduceOutput}},
+		{"trace", traceCmd, []commandCapability{mayRenderPipeline}},
+	} {
+		for _, capability := range all {
+			expected := slices.Contains(test.capabilities, capability)
+			require.Equal(t, expected, commandHasCapability(test.cmd, capability), "%s: %s", test.name, capability)
+		}
 	}
 }
 
@@ -1015,22 +843,4 @@ func commandUsage(t *testing.T, cmd *cobra.Command) string {
 	cmd.SetUsageTemplate(usageTemplate)
 	require.NoError(t, cmd.Usage())
 	return output.String()
-}
-
-func commandsDeclaringCapability(root *cobra.Command, capability commandCapability) []string {
-	var commands []string
-	var visit func(*cobra.Command)
-	visit = func(cmd *cobra.Command) {
-		name := string(capability)
-		inherited := strings.Fields(cmd.Annotations[commandCapabilitiesAnnotation])
-		local := strings.Fields(cmd.Annotations[localCommandCapabilitiesAnnotation])
-		if slices.Contains(inherited, name) || slices.Contains(local, name) {
-			commands = append(commands, cmd.CommandPath())
-		}
-		for _, child := range cmd.Commands() {
-			visit(child)
-		}
-	}
-	visit(root)
-	return commands
 }
