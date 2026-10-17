@@ -1,0 +1,236 @@
+---
+title: "Run Playwright Tests Against Docker Compose"
+slug: /getting-started/platform-guides/playwright
+description: "Wire an existing Docker Compose application into Playwright browser tests with two Dagger modules and no custom Dagger code."
+pagination_next: null
+---
+
+# Run Playwright Tests Against Docker Compose
+
+Playwright browser tests need a running application. If your project already describes that application in a Docker Compose file, Dagger can use it to start the application and its dependencies for the tests. This guide connects the Dagger modules for Docker and Playwright through configuration, with no custom Dagger code.
+
+## What this guide covers
+
+1. Install the Docker and Playwright modules
+1. Select the application service from your Compose project
+1. Wire that service into Playwright and configure the tests to use its address
+1. Run the browser tests
+
+Most projects need only these steps. The optional sections cover building workspace packages that the tests import, testing browser APIs that require a localhost origin, and selecting browser scenarios with environments.
+
+Complete the [Quickstart](../../quickstart.mdx) in your project before starting. It creates `dagger.toml`, and it may already have installed some modules. The project must be a Git repository with a Compose file and an existing Playwright test suite. Run the commands below from the repository root.
+
+## Install the modules
+
+The Dagger module for Docker reads your Compose configuration and exposes its services to other modules. It is installed as `docker`. The Dagger module for Playwright installs the test dependencies and runs the browser tests. It is installed as `playwright`.
+
+```shell
+dagger module install dagger.io/docker@main
+dagger module install dagger.io/js/playwright@main
+```
+
+The installs record the modules in `dagger.toml`. Dagger records resolved Git revisions and container images in `dagger.lock`, so subsequent runs use the same versions.
+
+If a module is already installed, Dagger reports that it is already installed and leaves it unchanged.
+
+List the Playwright Checks:
+
+```shell
+dagger check --playwright -l
+```
+
+The module discovers directories containing `playwright.config.ts` or another supported Playwright config filename. Each directory is a Playwright project in Dagger. Its test files form a collection, and the `test` Check runs the selected files using the project's own Playwright installation.
+
+Commit the package manager's lockfile so the module can select the browser image that matches `@playwright/test`. Without a lockfile, pin that dependency to an exact version in `package.json`. A version range can install a newer Playwright than the browsers in the selected image.
+
+## Select the Compose service
+
+The `docker` module discovers directories containing `compose.yaml`, `compose.yml`, `docker-compose.yml`, or `docker-compose.yaml`. It uses the first of those names present in each directory and includes a standard Compose override file when one exists. A file with a custom name, such as `docker-compose.e2e.yml`, is not discovered on its own.
+
+List the available services:
+
+```shell
+dagger list services -a
+```
+
+Find the `up` row for the service the browser should reach. Then list the same services as links to copy into the Playwright setting:
+
+```shell
+dagger list services -a -f=link
+```
+
+For a Compose file in `e2e/` whose application service is `web`, copy this service's link:
+
+```text
+dag+service://?service=docker/compose/projects/services/up&docker-compose-project=e2e&docker-compose-service=web
+```
+
+Here, `e2e` is the directory containing the Compose file, not its top-level `name`. Use `.` when the file is at the repository root. Replace `web` with your application's Compose service name.
+
+The selected service must publish its application port through Compose's `ports`. Dagger starts it and its `depends_on` dependencies behind a single TCP proxy. The selected service's ports come first, so Playwright reaches the application rather than a dependency such as its database. If the application publishes several ports, put its HTTP port first. An `expose` entry alone does not publish a port through this proxy.
+
+Services with a `build` section are built from their Dockerfiles, including when they also declare an `image`. Build contexts and bind-mounted inputs must be inside the workspace. Compose services communicate using their service names.
+
+Dagger waits for exposed ports to accept connections. Compose healthchecks and `depends_on` conditions are not reproduced, so an application that opens its port before it is ready still needs a readiness check in the test setup. Services behind Compose profiles are not started. Named Compose volumes become persistent Dagger cache volumes, so tests that need an empty database should reset their data explicitly.
+
+## Wire the service into Playwright
+
+Set the Playwright module's `service` setting to the address you selected. Quote the address so the shell passes its query parameters intact:
+
+```shell
+dagger module settings playwright service 'dag+service://?service=docker/compose/projects/services/up&docker-compose-project=e2e&docker-compose-service=web'
+```
+
+This is [module wiring](../../../config/module-wiring.mdx). Dagger resolves the Docker module's `up` result as a `Service` and passes it to the Playwright module. That module binds the service into the test container as `frontend` and sets `PLAYWRIGHT_BASE_URL` to its first port, such as `http://frontend:8080`.
+
+For a workspace containing only these two modules, the complete `dagger.toml` is:
+
+```toml
+[modules]
+
+[modules.docker]
+source = "dagger.io/docker@main"
+
+[modules.playwright]
+source = "dagger.io/js/playwright@main"
+
+[modules.playwright.settings]
+service = "dag+service://?service=docker/compose/projects/services/up&docker-compose-project=e2e&docker-compose-service=web"
+```
+
+Keep any other modules already in your workspace. Use the service link copied from your own listing.
+
+### Read the application address
+
+In `playwright.config`, set the `baseURL` property under `use` to read the environment variable. Keep your existing local URL as the fallback:
+
+```typescript
+baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
+```
+
+Tests that navigate to relative paths now use the wired application. Tests or helper clients that construct absolute URLs must also read the configured address. Inside the test container, `localhost` refers to that container.
+
+### Let Dagger start the application
+
+If your Playwright config has a `webServer` command that starts the application or runs `docker compose up`, omit that `webServer` configuration when `PLAYWRIGHT_BASE_URL` is set. Keep it for local runs where the variable is unset. Wiring a service does not automatically disable Playwright's `webServer`.
+
+Some projects already have an environment variable that disables their local startup command. In that case, set it with the module's `environment` setting instead. For example, if your config checks `PLAYWRIGHT_DISABLE_WEBSERVER`, add this line under `[modules.playwright.settings]`:
+
+```toml
+environment = ["PLAYWRIGHT_DISABLE_WEBSERVER=1"]
+```
+
+That variable is a convention in your config, not a built-in Playwright or Dagger switch. The same setting can supply hostnames to test helpers that access dependencies directly. Published dependency ports are available on `frontend` too; for a database published as `5435:5432`, a test client connects to `frontend:5435`.
+
+## Run the browser tests
+
+```shell
+dagger check --playwright
+```
+
+Dagger builds or pulls the Compose services, starts the application and its dependencies, and runs the Playwright Checks against them. The test command selects the Playwright module, so Docker's separate lint and build Checks are outside this run.
+
+For a suite with one test file at the repository root, the Check report looks like this:
+
+```text
+== CHECKS ==  ✔ 1 passed
+✔ dag://?check=playwright/projects/tests/test&playwright-project=.&playwright-test-file=tests/home.spec.ts 54.6s OK
+  == TESTS ==
+    ✔ home.spec.ts  1 passed
+
+    ✔ 1 passed
+```
+
+For a repository with several Playwright config directories, select the one to test:
+
+```shell
+dagger check --playwright-project=e2e
+```
+
+`e2e` here is the directory containing `playwright.config`, which can differ from the Compose project directory. This selection is different from Playwright's own named projects, such as `chromium` or `web`. To select one of those, add an `args` setting under `[modules.playwright.settings]`:
+
+```toml
+args = ["--project", "chromium"]
+```
+
+Use a project name from your own config. The default browser image includes Playwright's bundled browsers. Projects configured with branded channels such as `chrome` or `msedge` need a custom image or should be excluded from this run.
+
+The module sets `CI=true`. Review the workers and retries your config chooses in that environment, especially if the tests share database state. All Playwright projects use the module's configured service.
+
+Once the tests pass, commit `dagger.toml`, `dagger.lock`, and the changes to your Playwright config. Include the package manager's lockfile if it is new. There is no custom Dagger module to commit for this integration.
+
+## Build packages the tests import
+
+Skip this section if the test dependencies are ready after installation.
+
+In a monorepo, browser tests may import a workspace package whose entrypoint is generated by a build. The Playwright module detects the package manager and installs dependencies before running tests. Its `setup` setting adds commands after installation, with the repository source available.
+
+For example, if your tests import a pnpm workspace package named `@app/sdk`, add its build command under `[modules.playwright.settings]`:
+
+```toml
+setup = ["pnpm --filter @app/sdk build"]
+```
+
+Replace the command with your package's build command. Setup runs from the Playwright project directory. It prepares the test container; the application itself is built from the Compose service's Dockerfile. The wired service is attached after setup, so use Playwright's test setup for preparation that needs the running application.
+
+## Use localhost for browser APIs that require it
+
+Skip this section if the tests work against the `frontend` hostname.
+
+Browser features such as service workers and WebCrypto require a secure context. An HTTP URL on `frontend` does not qualify, but a localhost origin does. Enable the Playwright module's localhost proxy:
+
+```shell
+dagger module settings playwright localhostProxy true
+```
+
+The proxy forwards the wired service's first port from localhost inside the test container. The module sets `PLAYWRIGHT_LOCALHOST_BASE_URL` to that address. In the relevant Playwright project's `use` configuration, read it as the base URL:
+
+```typescript
+baseURL: process.env.PLAYWRIGHT_LOCALHOST_BASE_URL || process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
+```
+
+This also supports tests that already connect to `127.0.0.1` or `::1` on that port. It forwards only the first service port, so keep database clients pointed at `frontend` and their published database port. The default Playwright images support the proxy; a custom base container must support `apt-get` to install its `socat` dependency.
+
+Run the Playwright Checks again after adding either optional setting.
+
+## Create browser scenarios with environments
+
+A Dagger environment stores settings for a named scenario in `dagger.toml`. Use one to select a browser project while keeping the shared Compose service and test setup.
+
+If your Playwright config defines a project named `chromium`, create a matching Dagger environment:
+
+```shell
+dagger module settings --env chromium playwright args -- --project chromium
+```
+
+The command creates the environment if it does not exist and writes its setting under an environment table:
+
+```toml
+[env.chromium]
+
+[env.chromium.modules.playwright.settings]
+args = ["--project", "chromium"]
+```
+
+Run the scenario with:
+
+```shell
+dagger check --env chromium --playwright
+```
+
+The environment inherits the base module settings, including the wired Compose service. Its `args` value replaces the base `args` list, so include any other Playwright arguments the scenario needs. Running without `--env` uses the base settings.
+
+The Dagger environment name is a label you choose. The name after `--project` must match a project in your Playwright config; the environment does not create that browser project. To add another scenario for an existing `firefox` project:
+
+```shell
+dagger module settings --env firefox playwright args -- --project firefox
+dagger check --env firefox --playwright
+```
+
+Commit the environment tables with the rest of `dagger.toml` so everyone can run the same scenarios.
+
+## Next steps
+
+- [Playwright module reference](../../../reference/modules/js/playwright.mdx) for settings, test selection, and HTML reports
+- [Docker module documentation](https://github.com/dagger/docker/tree/main#running-compose-services) for Compose support and how services run
+- [Module wiring](../../../config/module-wiring.mdx) for connecting other modules to the same application
