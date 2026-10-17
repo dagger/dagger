@@ -148,8 +148,7 @@ source = "dagger.io/sdk/dang@main"
 check.skip = ["generate/stale"]
 
 [modules.go-sdk]
-source = "github.com/dagger/go-sdk@main"
-check.skip = ["generate/stale"]
+source = "dagger.io/sdk/go@main"
 
 [modules.go-sdk.settings]
 lock = true
@@ -274,23 +273,47 @@ module = "go-sdk"
 is-module = true
 clients = ["dagger.io/linux/alpine", "./.dagger/modules/go"]
 
+[sdks.go.scopes.".dagger/modules/cli-dev".settings]
+dangEntrypoint = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/docs-dev"]
 is-module = true
 clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev/docusaurus", "./.dagger/modules/engine-dev", "./.dagger/modules/go"]
 
+[sdks.go.scopes.".dagger/modules/docs-dev".settings]
+dangEntrypoint = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/docs-dev/docusaurus"]
 is-module = true
+
+[sdks.go.scopes.".dagger/modules/docs-dev/docusaurus".settings]
+dangEntrypoint = true
+unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/engine-dev"]
 is-module = true
 clients = ["dagger.io/linux/alpine", "./cmd/codegen", "./.dagger/modules/cli-dev", "./.dagger/modules/go", "dagger.io/linux/wolfi", "./.dagger/modules/engine-dev/notify"]
 
+[sdks.go.scopes.".dagger/modules/engine-dev".settings]
+dangEntrypoint = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/engine-dev/notify"]
 is-module = true
+
+[sdks.go.scopes.".dagger/modules/engine-dev/notify".settings]
+dangEntrypoint = true
+unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/php-client-dev"]
 is-module = true
 clients = ["./.dagger/modules/engine-dev", "./modules/git-releaser"]
+
+[sdks.go.scopes.".dagger/modules/php-client-dev".settings]
+dangEntrypoint = true
+unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/python-client-dev"]
 is-module = true
@@ -299,9 +322,17 @@ clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/
 [sdks.go.scopes.".dagger/modules/python-client-dev/dockerd"]
 is-module = true
 
+[sdks.go.scopes.".dagger/modules/python-client-dev/dockerd".settings]
+dangEntrypoint = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/release"]
 is-module = true
 clients = ["./.dagger/modules/changie", "./.dagger/modules/cli-dev", "./.dagger/modules/docs-dev", "./.dagger/modules/elixir-client-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/engine-dev/notify", "./.dagger/modules/go-client-dev", "./.dagger/modules/php-client-dev", "./.dagger/modules/python-client-dev", "./.dagger/modules/release/gh", "./.dagger/modules/rust-client-dev", "./.dagger/modules/typescript-client-dev", "dagger.io/linux/wolfi"]
+
+[sdks.go.scopes.".dagger/modules/release".settings]
+dangEntrypoint = true
+unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/release/apko"]
 is-module = true
@@ -311,19 +342,39 @@ clients = ["./.dagger/modules/release/registry-config"]
 is-module = true
 clients = ["./.dagger/modules/release/apko"]
 
+[sdks.go.scopes.".dagger/modules/release/gh".settings]
+dangEntrypoint = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/release/registry-config"]
 is-module = true
+
+[sdks.go.scopes.".dagger/modules/release/registry-config".settings]
+dangEntrypoint = true
+unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/rust-client-dev"]
 is-module = true
 clients = ["./.dagger/modules/engine-dev"]
 
+[sdks.go.scopes.".dagger/modules/rust-client-dev".settings]
+dangEntrypoint = true
+unifiedClients = true
+
 [sdks.go.scopes.".dagger/modules/tla-check"]
 is-module = true
+
+[sdks.go.scopes.".dagger/modules/tla-check".settings]
+dangEntrypoint = true
+unifiedClients = true
 
 [sdks.go.scopes."modules/git-releaser"]
 is-module = true
 clients = ["dagger.io/linux/alpine"]
+
+[sdks.go.scopes."modules/git-releaser".settings]
+dangEntrypoint = true
+unifiedClients = true
 
 [sdks.dang.scopes.".dagger/modules/dev"]
 clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/cli-dev"]
@@ -332,6 +383,10 @@ is-module = true
 [sdks.go.scopes.".dagger/modules/go"]
 clients = ["dagger.io/linux/wolfi"]
 is-module = true
+
+[sdks.go.scopes.".dagger/modules/go".settings]
+dangEntrypoint = true
+unifiedClients = true
 
 [modules.dagger-dev]
 source = ".dagger/modules/dagger-dev"

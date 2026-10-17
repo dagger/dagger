@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger/core"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/mod/modfile"
 
@@ -18,6 +19,7 @@ import (
 
 	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
+	"dagger/engine-dev/internal/dagger/clients/wolfi"
 
 	"github.com/dagger/dagger/sdk/typescript/runtime/tsdistconsts"
 )
@@ -45,7 +47,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 	pythonImageSource := build.source.Directory("sdk/python/runtime/images/base")
 	uvImageSource := build.source.Directory("sdk/python/runtime/images/uv")
 
-	pySrc := dag.Directory().WithDirectory(
+	pySrc := core.NewDirectory().WithDirectory(
 		"/",
 		build.source.Directory("sdk/python"),
 		dagger.DirectoryWithDirectoryOpts{
@@ -117,7 +119,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 		}).
 		WithFile("dist/codegen", codegen)
 
-	sdkCtrTarball := dag.Container().
+	sdkCtrTarball := core.NewContainer().
 		WithRootfs(rootfs).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
@@ -143,12 +145,12 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 const TypescriptSDKTSXVersion = "4.15.6"
 
 func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, error) {
-	tsxNodeModule := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+	tsxNodeModule := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultNodeImageRef).
 		WithExec([]string{"npm", "install", "-g", fmt.Sprintf("tsx@%s", TypescriptSDKTSXVersion)}).
 		Directory("/usr/local/lib/node_modules/tsx")
 
-	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
+	rootfs := core.NewDirectory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			"src/**/*.ts",
 			"LICENSE",
@@ -165,7 +167,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		},
 	})
 
-	bunBuilderCtr := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+	bunBuilderCtr := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultBunImageRef).
 		// NodeJS is required to run tsc.
 		WithExec([]string{"apk", "add", "nodejs"}).
@@ -189,7 +191,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		WithExec([]string{"tsc", "--emitDeclarationOnly"}).
 		WithExec([]string{"bun", "x", "rollup", "-c", "rollup.dts.config.mjs", "-o", "/out-node/core.d.ts"})
 
-	sdkCtrTarball := dag.Container().
+	sdkCtrTarball := core.NewContainer().
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).
 		// We need to mount the typescript library because bun will not be able to resolve the
@@ -226,11 +228,11 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	if err != nil {
 		return nil, err
 	}
-	sdkCache := dag.Container().
+	sdkCache := core.NewContainer().
 		From(consts.GolangImage).
 		With(build.goPlatformEnv).
 		// import xx
-		WithDirectory("/", dag.Container().From(consts.XxImage).Rootfs()).
+		WithDirectory("/", core.NewContainer().From(consts.XxImage).Rootfs()).
 		// set envs read by xx
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
@@ -257,7 +259,7 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 		WithExec([]string{"go", "mod", "tidy"}).
 		WithExec([]string{"go", "list", "-m", "all"})
 
-	sdkCtrTarball := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+	sdkCtrTarball := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.GolangImage).
 		With(build.goPlatformEnv).
 		WithExec([]string{"apk", "add", "git", "openssh", "openssl"}).
@@ -288,10 +290,9 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 }
 
 func unpackTar(tarball *dagger.File) *dagger.Directory {
-	return dag.
-		Wolfi().
+	return wolfi.New().
 		Container().
-		WithMountedDirectory("/out", dag.Directory()).
+		WithMountedDirectory("/out", core.NewDirectory()).
 		WithMountedFile("/target.tar", tarball).
 		WithExec([]string{"tar", "xf", "/target.tar", "-C", "/out"}).
 		Directory("/out")
@@ -355,7 +356,7 @@ func goModuleSeed(ctx context.Context, source *dagger.Directory) (*dagger.Direct
 		return nil, "", err
 	}
 
-	return dag.Directory().
+	return core.NewDirectory().
 		WithNewFile("go.mod", string(goMod)).
 		WithFile("go.sum", source.File("sdk/go/go.sum")).
 		WithNewFile("main.go", mainGo.String()), libVersion, nil

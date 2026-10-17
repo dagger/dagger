@@ -1,9 +1,3 @@
-// TLA+ model checking for the dagql cache spec (dagql/tla).
-//
-// Runs every TLC configuration of CacheLifecycle.tla. Green configurations
-// are regression checks: any violation fails the check. A configuration may
-// name an expected invariant only when it deliberately mutates behavior to
-// prove that the check detects the bug, or tracks an accepted model finding.
 package main
 
 import (
@@ -13,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger/core"
 	"dagger/tla-check/internal/dagger"
 )
 
@@ -158,6 +153,12 @@ var clientExpectedOutcome = map[string]string{
 	"blocking_registration": temporalOutcome,
 }
 
+// TLA+ model checking for the dagql cache spec (dagql/tla).
+//
+// Runs every TLC configuration of CacheLifecycle.tla. Green configurations
+// are regression checks: any violation fails the check. A configuration may
+// name an expected invariant only when it deliberately mutates behavior to
+// prove that the check detects the bug, or tracks an accepted model finding.
 type TlaCheck struct {
 	// The dagql/tla spec directory.
 	Source *dagger.Directory
@@ -176,8 +177,8 @@ func New(ws *dagger.Workspace) *TlaCheck {
 // base returns a container with Java, the checksum-verified TLC jar, and
 // the spec directory mounted.
 func (m *TlaCheck) base(source *dagger.Directory) *dagger.Container {
-	jar := dag.HTTP(tla2toolsURL)
-	return dag.Container().
+	jar := core.HTTP(tla2toolsURL)
+	return core.NewContainer().
 		From(javaBaseImage).
 		WithFile("/tla2tools.jar", jar).
 		WithExec([]string{"sh", "-c",
