@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
+	"github.com/dagger/dagger/internal/tracesource"
 	"github.com/spf13/cobra"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
@@ -82,9 +83,10 @@ func (cli *CloudCLI) writeTraceLogs(cmd *cobra.Command, traceID string, sel span
 	return nil
 }
 
-// streamTraceLogText streams a span's logs from Cloud and hands each text
-// record's body to write, in order. It returns the number of bodies written.
-func streamTraceLogText(ctx context.Context, client *cloudapi.OTLPClient, traceID, spanID string, descendants bool, write func(body string) error) (int, error) {
+// streamTraceLogText streams a span's logs from a trace source and hands each
+// text record's body to write, in order. It returns the number of bodies
+// written.
+func streamTraceLogText(ctx context.Context, client tracesource.Source, traceID, spanID string, descendants bool, write func(body string) error) (int, error) {
 	var n int
 	// Every record class comes down; dagui's ingest sorts the text output
 	// from the semantic records riding the log channel (call payloads,

@@ -678,6 +678,21 @@ impl Agent {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The agent that spawned this agent, or null for a root agent.
+    pub async fn parent(&self) -> Result<Option<Agent>, DaggerError> {
+        let query = self.selection.select("parent");
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| Agent {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("Agent"),
+            graphql_client: self.graphql_client.clone(),
+        }))
+    }
     /// Display label for the agent; carries no identity.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
@@ -1613,7 +1628,7 @@ impl Artifacts {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Convert the selection to expertise without running the functions. Fail if any artifact is not a source of expertise; a module load failure fails with its load error.
+    /// Convert the selection to expertise without running the functions. Each must take one LLM! argument and return LLM!; any other arguments must be optional or auto-filled. Agent arguments receive the agent that owns the conversation. A module load failure fails with its load error.
     pub async fn as_expertise(&self) -> Result<Vec<Expertise>, DaggerError> {
         let query = self.selection.select("asExpertise");
         let query = query.select("id");
@@ -8843,22 +8858,31 @@ impl Expertise {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The agent function's name.
+    /// The artifact this expertise runs. Look it up again by URI to pick up module changes.
+    pub fn artifact(&self) -> Artifact {
+        let query = self.selection.select("artifact");
+        Artifact {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The function's name.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The agent function's description.
+    /// The function's description.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The agent function's path within its module.
+    /// The function's path within its module.
     pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The module that defines the agent function.
+    /// The module that defines the function.
     pub fn original_module(&self) -> Module {
         let query = self.selection.select("originalModule");
         Module {
@@ -12870,6 +12894,9 @@ pub struct LlmSpawnOpts<'a> {
     /// The loop error to create the agent with, for state FAILED. Refused with any other state.
     #[builder(setter(into, strip_option), default)]
     pub error: Option<&'a str>,
+    /// Expertise to compose into the new agent's conversation. Agent arguments receive the new agent, which cannot be used until composition completes; if composition fails, the agent is left STOPPED.
+    #[builder(setter(into, strip_option), default)]
+    pub expertise: Option<Vec<Id>>,
     /// The runtime handle to restore the instance under, as published on its loop span as dagger.io/agent.id. Omit to mint a fresh instance.
     #[builder(setter(into, strip_option), default)]
     pub handle: Option<&'a str>,
@@ -12913,29 +12940,32 @@ impl Llm {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Run expertise in list order, passing this conversation through each function. Retain existing contributions.
+    /// Expertise composed into this conversation, in order.
+    pub async fn expertise(&self) -> Result<Vec<Expertise>, DaggerError> {
+        let query = self.selection.select("expertise");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| Expertise {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Expertise"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Run expertise on this conversation, passing it through each function in order, and record it in expertise.
+    /// Composing an entry that is already recorded refreshes its module: the module's contributions are cleared, all of its recorded entries run again, and compatible tool state is kept. Other contributions are untouched.
+    /// Agent arguments receive the agent that owns this conversation. Without one, entries requiring an Agent are skipped.
     ///
     /// # Arguments
     ///
     /// * `expertise` - The expertise to run. Each reference retains its source workspace.
     pub fn compose(&self, expertise: Vec<Id>) -> Llm {
         let mut query = self.selection.select("compose");
-        query = query.arg("expertise", expertise);
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Run expertise in list order, replacing their modules' contributions and preserving compatible tool state.
-    /// Clear each selected module's contributions once before execution. Retain unowned contributions and contributions from other modules. Keep this LLM's workspace.
-    /// A change to a tool binding's version resets its state. Removed bindings, changed identities, and incompatible state are errors.
-    ///
-    /// # Arguments
-    ///
-    /// * `expertise` - The expertise to run. Each reference retains its source workspace.
-    pub fn recompose(&self, expertise: Vec<Id>) -> Llm {
-        let mut query = self.selection.select("recompose");
         query = query.arg("expertise", expertise);
         Llm {
             proc: self.proc.clone(),
@@ -13604,6 +13634,9 @@ impl Llm {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn spawn_opts<'a>(&self, opts: LlmSpawnOpts<'a>) -> Result<Agent, DaggerError> {
         let mut query = self.selection.select("spawn");
+        if let Some(expertise) = opts.expertise {
+            query = query.arg("expertise", expertise);
+        }
         if let Some(name) = opts.name {
             query = query.arg("name", name);
         }

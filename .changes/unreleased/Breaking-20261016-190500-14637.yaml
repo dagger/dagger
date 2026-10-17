@@ -1,0 +1,11 @@
+kind: Breaking
+body: |
+  `LLM.recompose` is removed. `LLM.compose` now records the expertise it
+  composes (`LLM.expertise`), and composing an entry that is already recorded
+  refreshes its module in place, preserving compatible tool state. To reload a
+  conversation, look each recorded entry up again by `Expertise.artifact` and
+  compose them all.
+time: 2026-10-16T19:05:00Z
+custom:
+  Author: vito
+  PR: "14637"

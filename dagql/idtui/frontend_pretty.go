@@ -269,6 +269,15 @@ type frontendPretty struct {
 	// of every dagql call the call happened to make.
 	reportHideSpanTree bool
 
+	// reportHideConversation suppresses the CONVERSATION section of a report.
+	//
+	// It exists for the LLM tool-call result: a tool that runs a nested LLM
+	// loop (summarizing a page, delegating to a sub-agent) is called precisely
+	// to keep that conversation out of the caller's context, so rendering the
+	// sub-agent's whole transcript -- prompt included -- back into the tool
+	// result defeats the point.
+	reportHideConversation bool
+
 	// reportPrimary overrides the primary span for this render WITHOUT
 	// touching the shared DB. A report is scoped by pointing it at a root
 	// span; doing that by mutating db.PrimarySpan (as this used to) leaves
@@ -1729,7 +1738,9 @@ func traceMessage(profile termenv.Profile, url string, msg string) string {
 
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
-func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) error {
+func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) (rerr error) {
+	defer func() { rerr = errors.Join(rerr, fe.db.ClosePrimaryLogs()) }()
+	defer fe.logs.Close()
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}
@@ -2248,6 +2259,11 @@ type ReportRenderOpts struct {
 	// and the target's own output. See frontendPretty.reportHideSpanTree.
 	HideSpanTree bool
 
+	// HideConversation drops the CONVERSATION section: the LLM transcript
+	// surfaced beneath Root, such as a sub-agent conversation a tool ran. See
+	// frontendPretty.reportHideConversation.
+	HideConversation bool
+
 	// RerunSuggestion replaces the "RUN LOCALLY" section's heading and body,
 	// for a reader that has no `dagger` CLI to run. See
 	// dagui.FrontendOpts.RerunSuggestion; nil keeps the default CLI commands.
@@ -2290,6 +2306,7 @@ func (fe *frontendPretty) SetReportRenderOpts(opts ReportRenderOpts) {
 		fe.reportHideLogSpans = opts.HideLogSpans
 		fe.reportScopedSubtree = opts.ScopedSubtree
 		fe.reportHideSpanTree = opts.HideSpanTree
+		fe.reportHideConversation = opts.HideConversation
 		fe.reportPrimary = opts.Root
 		fe.renderVersion++
 		fe.Update()
@@ -3120,6 +3137,12 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	fe.dispatch(func() {
 		fe.db.ExportSpans(context.Background(), spansCopy)
 		for _, id := range spanIDs {
+			// A zoom outside the priority window can precede the span itself.
+			// Finish its deferred log request now, using the arrived roll-up
+			// metadata instead of requiring a second expand/zoom gesture.
+			if fe.SpanExpanded[id] {
+				fe.requestLogs(id)
+			}
 			if fe.logs.flushResolvedLogsForSpan(id) {
 				fe.updateSpanTreesForLogs(id)
 				fe.updateLogPagerForLogs(id)
@@ -4602,7 +4625,9 @@ func (fe *frontendPretty) recalculateViewLocked() {
 				reqConversationLogs(n.Children)
 			}
 		}
-		reqConversationLogs(fe.reportConversation())
+		if !fe.reportHideConversation {
+			reqConversationLogs(fe.reportConversation())
+		}
 
 		// Eager failure-detail fetch is REPORT-ONLY. The non-interactive report
 		// renders once and can't wait for a fetch dispatched mid-render, so it
@@ -9528,10 +9553,12 @@ type prettyLogs struct {
 	Output         TermOutput
 	Images         *kittyImages
 	tableRuleColor termenv.Color
+	Cache          *terminalCache
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 	return &prettyLogs{
+		Cache:         newTerminalCache(),
 		DB:            db,
 		Logs:          make(map[dagui.SpanID]*Vterm),
 		ToolArgs:      make(map[dagui.SpanID]*Vterm),
@@ -9595,13 +9622,21 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			if isMedia {
 				l.spanLogs(rollUpID).WriteMedia(media, pw.Prefix+body)
 			} else {
-				fmt.Fprint(pw, body)
+				if _, err := fmt.Fprint(pw, body); err != nil {
+					return err
+				}
+			}
+			if err := l.spanLogs(rollUpID).Err(); err != nil {
+				return err
 			}
 		}
 
 		vterm := l.spanLogs(spanID)
 		if isMedia {
 			vterm.WriteMedia(media, body)
+			if err := vterm.Err(); err != nil {
+				return err
+			}
 			continue
 		}
 		if contentType == "application/json" {
@@ -9616,6 +9651,9 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			_, _ = vterm.WriteDiff([]byte(body))
 		default:
 			_, _ = fmt.Fprint(vterm, body)
+		}
+		if err := vterm.Err(); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -9698,6 +9736,7 @@ func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {
 	if !found {
 		term = NewVterm(l.Profile)
 		term.setMarkdownTableRuleColor(l.tableRuleColor)
+		term.cache = l.Cache
 		term.images = l.Images
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
@@ -9712,6 +9751,7 @@ func (l *prettyLogs) spanToolArgs(spanID dagui.SpanID) *Vterm {
 	if !found {
 		term = NewVterm(l.Profile)
 		term.setMarkdownTableRuleColor(l.tableRuleColor)
+		term.cache = l.Cache
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
 		}
@@ -9741,6 +9781,18 @@ func (l *prettyLogs) SetWidth(width int) {
 	for _, vt := range l.ToolArgs {
 		vt.SetWidth(width)
 	}
+}
+
+// Close is separate from exporter Shutdown: final reports still need logs
+// after the telemetry SDK has shut its exporters down.
+func (l *prettyLogs) Close() {
+	for _, term := range l.Logs {
+		term.Close()
+	}
+	for _, term := range l.ToolArgs {
+		term.Close()
+	}
+	l.Cache = newTerminalCache()
 }
 
 func (l *prettyLogs) Shutdown(ctx context.Context) error {

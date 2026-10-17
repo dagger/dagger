@@ -7,6 +7,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
+	"github.com/dagger/dagger/internal/tracesource"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -75,7 +76,7 @@ func (s spanSelector) validate() error {
 // checks and tests are priority spans, so they're present without fetching the
 // whole trace. The empty selector resolves to the root span with descendants,
 // i.e. the entire trace.
-func (s spanSelector) resolveSpan(ctx context.Context, client *cloudapi.OTLPClient, traceID string) (spanID string, descendants bool, err error) {
+func (s spanSelector) resolveSpan(ctx context.Context, client tracesource.Source, traceID string) (spanID string, descendants bool, err error) {
 	if s.span != "" {
 		return s.span, s.descendants, nil
 	}
@@ -107,7 +108,7 @@ func (s spanSelector) resolveSpan(ctx context.Context, client *cloudapi.OTLPClie
 // fetchPrioritySpans loads a trace's priority (root) spans into a private DB
 // via the incremental selection. For a completed trace the stream delivers
 // the priority set and returns.
-func fetchPrioritySpans(ctx context.Context, client *cloudapi.OTLPClient, traceID string) (*dagui.DB, error) {
+func fetchPrioritySpans(ctx context.Context, client tracesource.Source, traceID string) (*dagui.DB, error) {
 	db := dagui.NewDB()
 	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db})
 	importer.KeepRoots = true

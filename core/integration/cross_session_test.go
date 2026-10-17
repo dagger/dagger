@@ -1093,7 +1093,7 @@ func (SecretSuite) TestCrossSessionSecretURIRecipeReplay(ctx context.Context, t 
 				core.Ref[*core.LLM](core.NewQuery(source), core.ID(binding.LLM.WithTools.ID)))
 			require.NoError(t, err)
 			llmRecipe := new(call.ID)
-			require.NoError(t, llmRecipe.Decode(string(portable)))
+			require.NoError(t, llmRecipe.Decode(string(unownedRecipe(t, portable))))
 			require.Equal(t, "withTools", llmRecipe.Field())
 			var receiver *call.ID
 			for _, arg := range llmRecipe.Args() {

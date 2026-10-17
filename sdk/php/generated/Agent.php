@@ -25,6 +25,20 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The agent that spawned this agent, or null for a root agent.
+     */
+    public function parent(): ?Agent
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('parent');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\Agent::class, new \Dagger\Id((string)$id), 'Agent');
+    }
+
+    /**
      * Display label for the agent; carries no identity.
      */
     public function name(): string

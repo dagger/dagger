@@ -136,6 +136,11 @@ type MCP struct {
 	// addresses resolve in this conversation's scope instead (see
 	// MCP.scopeLLM). Like standalone, it survives Clone.
 	scopeBase dagql.ObjectResult[*LLM]
+	// ownerAgent mirrors the served conversation's OwnerAgentHandle (see
+	// LLM.WithOwnerAgent). Agent tool arguments receive this agent, whoever
+	// drives the tools; without one, tools requiring an Agent are hidden.
+	// Like standalone, it survives Clone.
+	ownerAgent string
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
@@ -261,6 +266,21 @@ func (m *MCP) currentLLM() dagql.ObjectResult[*LLM] {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.selfLLM
+}
+
+// owningAgent resolves the agent that owns the served conversation, which
+// Agent tool arguments receive. Inside that agent's own loop it is the agent
+// bound into ctx; otherwise the seed-free reference to its runtime, which must
+// be running in this session.
+func (m *MCP) owningAgent(ctx context.Context) (dagql.ObjectResult[*Agent], error) {
+	if agent, ok := AgentFromContext(ctx); ok && agent.Self().Handle == m.ownerAgent {
+		return agent, nil
+	}
+	agent, err := AgentReference(ctx, m.ownerAgent)
+	if err != nil {
+		return agent, fmt.Errorf("conversation's owning agent: %w", err)
+	}
+	return agent, nil
 }
 
 func (m *MCP) Returned() bool {
@@ -997,6 +1017,14 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 		return "", fmt.Errorf("cannot continue: no conversation is bound to this tool call")
 	}
 
+	if current.Self().OwnerAgentHandle != "" {
+		var err error
+		next, err = WithLLMOwnerAgent(ctx, next, current.Self().OwnerAgentHandle)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	// Load the new toolset now, so a broken env fails the tool call rather than
 	// the next turn. Doubles as the material for the summary below.
 	after, err := next.Self().mcp.Tools(ctx)
@@ -1012,6 +1040,7 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 
 	// Computed before taking the lock: it evaluates dagql calls.
 	wsNote := m.summarizeContinuationWorkspace(ctx, srv, current.Self(), next.Self())
+	collisionNote := summarizeContinuationCollisions(ctx, current.Self(), next.Self())
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1023,10 +1052,52 @@ func (m *MCP) adoptLLM(ctx context.Context, srv *dagql.Server, next dagql.Object
 	}
 	m.continuation = next
 	summary := summarizeContinuation(current.Self(), next.Self(), before, after)
+	if collisionNote != "" {
+		summary += "\n" + collisionNote
+	}
 	if wsNote != "" {
 		summary += "\n" + wsNote
 	}
 	return summary, nil
+}
+
+// summarizeContinuationCollisions is the model's plain-text counterpart of
+// WarnToolNameCollisions: it explains the namespaced tool names a continuation
+// introduced, which the toolset diff lists without saying why. Empty when the
+// continuation added no collision, or when they cannot be computed.
+func summarizeContinuationCollisions(ctx context.Context, current, next *LLM) string {
+	if next == nil || next.mcp == nil {
+		return ""
+	}
+	after, err := next.mcp.ToolNameCollisions(ctx)
+	if err != nil || len(after) == 0 {
+		return ""
+	}
+	var before map[string][]string
+	if current != nil && current.mcp != nil {
+		before, _ = current.mcp.ToolNameCollisions(ctx)
+	}
+	return summarizeToolNameCollisions(before, after)
+}
+
+// summarizeToolNameCollisions describes, one line per tool name, the
+// collisions in after that before did not have.
+func summarizeToolNameCollisions(before, after map[string][]string) string {
+	var lines []string
+	for _, name := range slices.Sorted(maps.Keys(after)) {
+		contributors := after[name]
+		if slices.Equal(before[name], contributors) {
+			continue
+		}
+		served := make([]string, len(contributors))
+		for i, typeName := range contributors {
+			served[i] = namespacedToolName(typeName, name)
+		}
+		lines = append(lines, fmt.Sprintf(
+			"Tool name collision: %q is provided by %s; all of their tools are served under type-prefixed names (%s).",
+			name, strings.Join(contributors, ", "), strings.Join(served, ", ")))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // summarizeContinuationWorkspace reports how the continuation's bound
@@ -1060,12 +1131,23 @@ func (m *MCP) summarizeContinuationWorkspace(ctx context.Context, srv *dagql.Ser
 		slog.Warn("failed to summarize continuation workspace change", "error", err)
 		return "Workspace changed."
 	}
+	if strings.TrimSpace(summary) == "" {
+		// A new workspace with the same contents, e.g. a reload's
+		// withUserConfig: nothing the model can act on.
+		return ""
+	}
 	return "Workspace changed:\n" + summary
 }
 
 // historyPreserved reports whether next's message history still contains
 // current's, unchanged, as a prefix — i.e. the conversation was transformed
 // (install/reload) rather than replaced.
+//
+// System prompts are composition, not history: refreshing a recorded entry
+// clears its system prompts and appends them again, so a reload moves them to
+// the end of an otherwise unchanged history. They are left out of the
+// comparison, as the toolset diff is what tells the model what composition
+// changed.
 //
 // This is NOT an acceptance condition: it informs the adoption summary, so
 // the model is told when its history changed shape. Comparing histories by VALUE rather
@@ -1077,15 +1159,23 @@ func historyPreserved(current, next *LLM) bool {
 	if current == nil || next == nil {
 		return false
 	}
-	if len(next.Messages) < len(current.Messages) {
+	before, after := conversationHistory(current.Messages), conversationHistory(next.Messages)
+	if len(after) < len(before) {
 		return false
 	}
-	for i, msg := range current.Messages {
-		if !messagesEqual(msg, next.Messages[i]) {
+	for i, msg := range before {
+		if !messagesEqual(msg, after[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+// conversationHistory is the history without its system prompts.
+func conversationHistory(messages []*LLMMessage) []*LLMMessage {
+	return slices.DeleteFunc(slices.Clone(messages), func(msg *LLMMessage) bool {
+		return msg != nil && msg.Role == LLMMessageRoleSystem
+	})
 }
 
 func messagesEqual(a, b *LLMMessage) bool {
@@ -2441,7 +2531,8 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 				switch attr.Key {
 				case telemetry.StdioStreamAttr:
 					stream = attr.Value.GetIntValue()
-				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr:
+				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr,
+					telemetryattrs.LogHumanOnlyAttr:
 					if attr.Value.GetBoolValue() {
 						skip = true
 						break dance
@@ -2878,11 +2969,13 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
-		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, in one of three views." + "\n" +
-			"- report (default): a bounded trace report with recorded error origins first, failed check/test links separately, and diagnostic output. Failed scopes collapse successful work; follow the supplied span IDs to expand a branch rather than searching again." + "\n" +
+		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, in one of five views." + "\n" +
+			"- report (default): a bounded trace report with recorded error origins first, failed check/test links separately, and diagnostic output. Failed scopes collapse successful work; follow the supplied span IDs to expand a branch rather than searching again. A long agent conversation beneath the span is summarized (opening prompt, final reply) with a pointer to the transcript view." + "\n" +
 			"- inspect: one span in depth -- status, error and its origins, timing, the flags that shape how the UI treats it (internal, passthrough, roll-up, ...), the parent chain up to the root, and its direct children. Use it to navigate up and down from a span, or to answer why a span is hidden or its logs didn't show." + "\n" +
 			"- timings: the span's raw-parent subtree as a chronological wall-time table (span, parent, start offset, duration, name), internal spans included; cause links are not traversed. Durations are each span's own wall interval, may overlap, and are not total execution or CPU self time. Imported spans with unrecorded completion have unknown duration." + "\n" +
-			"Pass a span ID from a report's footer or use FindSpans first to find a check, test, service, or other step by name, then pass its span ID here." + "\n" +
+			"- agents: the agents (LLM agents, staff workers) as a tree, each with its handle, name, state and loop span ID. span is optional: without it, every agent in the session and loaded traces; with it, those at or beneath it." + "\n" +
+			"- transcript: one agent's conversation as readable messages -- prompts, replies and thinking verbatim, tool calls with their arguments, tool results with the tool that produced them -- decoded from its recorded checkpoint, in pages. Pass agent (a handle or unique name from the agents view), or a span: the agent whose loop span it is, the agent beneath it (e.g. a staff_spawn tool call), or the agent enclosing it. Filter with role, tool or grep; the page header says where the next page starts." + "\n" +
+			"Pass a span ID from a report's footer or use FindSpans first to find a check, test, service, or other step by name, then pass its span ID here. To read what an agent did, start from the agents view instead of searching spans." + "\n" +
 			"Use ReadLogs when you want the raw log lines beneath a span.",
 		ReadOnly: true, // Read-only operation
 		Schema: map[string]any{
@@ -2890,11 +2983,11 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"properties": map[string]any{
 				"span": map[string]any{
 					"type":        "string",
-					"description": "Span ID (hex) to read, scoped to that span's subtree.",
+					"description": "Span ID (hex) to read, scoped to that span's subtree. Required except for the agents view, and for transcript when agent is given.",
 				},
 				"view": map[string]any{
 					"type":        "string",
-					"enum":        []string{traceViewReport, traceViewInspect, traceViewTimings},
+					"enum":        []string{traceViewReport, traceViewInspect, traceViewTimings, traceViewAgents, traceViewTranscript},
 					"description": "Which view to render.",
 					"default":     traceViewReport,
 				},
@@ -2904,36 +2997,72 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 				},
 				"limit": map[string]any{
 					"type":        "integer",
-					"description": "timings view only: maximum number of rows (0 = unlimited).",
+					"description": fmt.Sprintf("timings view: maximum number of rows (default %d, 0 = unlimited). transcript view: messages per page (1-%d, default %d; a page also ends at about 40KiB).", traceTimingsDefaultLimit, transcriptMaxLimit, transcriptDefaultLimit),
 					"minimum":     0,
-					"default":     200,
+				},
+				"agent": map[string]any{
+					"type":        "string",
+					"description": "transcript view only: the agent's handle, or its name when unique (see the agents view).",
+				},
+				"role": map[string]any{
+					"type":        "string",
+					"enum":        []string{"", "user", "assistant", "tool", "system", "gap"},
+					"description": "transcript view only: keep only prompts (user), replies (assistant), tool results (tool), system prompts, or gaps where the checkpoint could not be decoded. Empty keeps all but system prompts.",
+				},
+				"tool": map[string]any{
+					"type":        "string",
+					"description": "transcript view only: keep only the calls to this tool and their results.",
+				},
+				"grep": map[string]any{
+					"type":        "string",
+					"description": "transcript view only: regexp over message text, tool names and arguments.",
+				},
+				"offset": map[string]any{
+					"type":        "integer",
+					"description": "transcript view only: matching messages to skip from the oldest (filters apply first).",
+					"minimum":     0,
+					"default":     0,
+				},
+				"clip": map[string]any{
+					"type":        "integer",
+					"description": "transcript view only: bytes kept of each tool call's arguments and each tool result (0 = all). Prose is never clipped.",
+					"minimum":     0,
+					"default":     transcriptDefaultClip,
 				},
 			},
-			"required":             []string{"span"},
+			"required":             []string{},
 			"additionalProperties": false,
 		},
 		Call: m.readTraceTool(srv),
 	})
 	allTools.Add(LLMTool{
 		Name: "FindSpans",
-		Description: "Find spans in this session and traces imported with LoadTrace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; ok), name -- oldest start time first (ties: trace ID, then span ID; unknown starts first), with running services tagged by hostname." + "\n" +
-			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call. Then ReadTrace (report, inspect, timings) or ReadLogs it." + "\n" +
-			"Matching is a substring test on span name, full test identity/ancestor path, or service hostname. Rows include bounded breadcrumbs; matching uses the full text. Empty query matches all. Only the newest limit matches are returned; offset skips that many newest matches after filtering, and the result gives an exact next-page call. Status filtering is navigation, never proof of error causality.",
+		Description: "Find spans in this session and traces imported with LoadTrace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; idle: an agent's loop span while the agent is parked between turns; ok), name -- oldest start time first (ties: trace ID, then span ID; unknown starts first), with running services tagged by hostname." + "\n" +
+			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call, an agent (\"agent: <name>\"). Then ReadTrace (report, inspect, timings, transcript) or ReadLogs it. To find an agent, ReadTrace(view: \"agents\") lists them all with their spans." + "\n" +
+			"By default the query is a substring test on the span's own name, service hostname, or full test identity; match \"path\" also tests its whole ancestor path, matching everything beneath a named parent. Rows carry breadcrumbs whose long middles are elided as …(N)…. Your own spans (your tool calls and messages) are left out unless includeSelf. Empty query matches all. Only the newest limit matches are returned; offset skips that many newest matches after filtering, and the result gives an exact next-page call. Status filtering is navigation, never proof of error causality.",
 		ReadOnly: true,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"query": map[string]any{
 					"type":        "string",
-					"description": "Substring of span name, full test identity/ancestor path, or service hostname. Empty matches every span.",
+					"description": "Substring of the span's name, service hostname, or full test identity (with match \"path\": of any level of its ancestor path). Empty matches every span.",
 					"default":     "",
+				},
+				"match": map[string]any{
+					"type": "string", "enum": []string{spanMatchName, spanMatchPath}, "default": spanMatchName,
+					"description": "name: match the span itself. path: also match its ancestors, e.g. every span beneath a test or agent.",
+				},
+				"includeSelf": map[string]any{
+					"type": "boolean", "default": false,
+					"description": "Also list your own spans: the tool calls and messages of the agent making this call.",
 				},
 				"span": map[string]any{
 					"type":        "string",
 					"description": "Restrict the search to this span's subtree (hex span ID). Empty searches the whole session.",
 				},
 				"status": map[string]any{
-					"type": "string", "enum": []string{"", "ERROR", "FAIL", "failed", "run", "ok"}, "default": "",
+					"type": "string", "enum": []string{"", "ERROR", "FAIL", "failed", "run", "idle", "ok"}, "default": "",
 					"description": "Filter by displayed span status; failed includes ERROR and FAIL. Does not establish causality or classify a span as a test.",
 				},
 				"offset": map[string]any{
@@ -3004,7 +3133,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Name: "FindCalls",
 		Description: "Content-search every dagql call in this session and traces imported with LoadTrace: one line per match -- \"<digest>  field(args) -> Type  recv=<receiver digest>\" -- sorted by digest." + "\n" +
 			"This is how you find which call references a path, image, module or value, and how you walk a chain: grep for the digest another line names as its receiver or argument, then InspectCall it." + "\n" +
-			"`query` searches the full rendered line before truncation. Displayed strings are capped at 200 characters, with excerpts around deep matches and explicit omitted-character counts. Lines are capped at 4 KiB and responses at 32 KiB; narrow the query if matches are omitted.",
+			"`query` searches the full rendered line before truncation. Displayed strings are capped at 200 characters, with excerpts around deep matches and explicit omitted-character counts; opaque provider signatures are left out. Lines are capped at 4 KiB and responses at 32 KiB; narrow the query if matches are omitted. Your own conversation's calls (withPrompt, withResponse, ...) are left out unless includeSelf.",
 		ReadOnly: true,
 		Schema: map[string]any{
 			"type": "object",
@@ -3012,6 +3141,10 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 				"query": map[string]any{
 					"type":        "string",
 					"description": "Regexp matched against each full call line before display truncation.",
+				},
+				"includeSelf": map[string]any{
+					"type": "boolean", "default": false,
+					"description": "Also match the calls recording your own conversation: the prompts, responses and tool results of the agent making this call.",
 				},
 				"limit": map[string]any{
 					"type":        "integer",
@@ -3302,13 +3435,21 @@ func emptyLogsResultIn(store *clientdb.DB, spanID string) (string, error) {
 // tool call's own result is rendered as (the target's own output, then the
 // report), so what the reader gets back is in the vocabulary it already
 // sees, just scoped to the target it asked about. The inspect and timings
-// views are the TUI console's span views, answered from the engine.
+// views are the TUI console's span views, and the agents and transcript views
+// its agent roster and transcript reader, answered from the engine.
 func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Span        string
+		Span        string `default:""`
 		View        string `default:"report"`
 		MinDuration string `default:""`
-		Limit       int    `default:"200"`
+		// Limit's default depends on the view; -1 means "not given".
+		Limit  int    `default:"-1"`
+		Agent  string `default:""`
+		Role   string `default:""`
+		Tool   string `default:""`
+		Grep   string `default:""`
+		Offset int    `default:"0"`
+		Clip   int    `default:"4000"`
 	}) (any, error) {
 		var minDuration time.Duration
 		if args.MinDuration != "" {
@@ -3320,8 +3461,21 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 		}
 		switch args.View {
 		case traceViewReport, traceViewInspect, traceViewTimings:
+		case traceViewAgents:
+			return readTraceAgents(ctx, args.Span)
+		case traceViewTranscript:
+			limit := args.Limit
+			if limit < 0 {
+				limit = transcriptDefaultLimit
+			}
+			return readTraceTranscript(ctx, transcriptOpts{
+				Span: args.Span, Agent: strings.TrimSpace(args.Agent),
+				Role: args.Role, Tool: args.Tool, Grep: args.Grep,
+				Offset: args.Offset, Limit: limit, Clip: args.Clip,
+			})
 		default:
-			return nil, fmt.Errorf("unknown view %q: want %s, %s or %s", args.View, traceViewReport, traceViewInspect, traceViewTimings)
+			return nil, fmt.Errorf("unknown view %q: want %s, %s, %s, %s or %s", args.View,
+				traceViewReport, traceViewInspect, traceViewTimings, traceViewAgents, traceViewTranscript)
 		}
 		spanID, err := resolveTraceTarget(ctx, args.Span)
 		if err != nil {
@@ -3331,7 +3485,11 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 		case traceViewInspect:
 			return inspectSpan(ctx, spanID)
 		case traceViewTimings:
-			return spanTimings(ctx, spanID, minDuration, args.Limit)
+			limit := args.Limit
+			if limit < 0 {
+				limit = traceTimingsDefaultLimit
+			}
+			return spanTimings(ctx, spanID, minDuration, limit)
 		}
 		result, err := m.inspectSpanResult(ctx, spanID, readTraceReportOpts())
 		if err != nil {
@@ -3351,11 +3509,13 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 // findSpansTool searches the session's trace by span name; see findSpans.
 func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Query  string `default:""`
-		Span   string `default:""`
-		Limit  int    `default:"100"`
-		Status string `default:""`
-		Offset int    `default:"0"`
+		Query       string `default:""`
+		Span        string `default:""`
+		Limit       int    `default:"100"`
+		Status      string `default:""`
+		Offset      int    `default:"0"`
+		Match       string `default:"name"`
+		IncludeSelf bool   `default:"false"`
 	}) (any, error) {
 		root := ""
 		if strings.TrimSpace(args.Span) != "" {
@@ -3367,7 +3527,16 @@ func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
 		if args.Limit <= 0 {
 			args.Limit = findSpansDefaultLimit
 		}
-		return findSpans(ctx, args.Query, root, args.Status, args.Limit, args.Offset)
+		return findSpans(ctx, spanSearch{
+			Query:       args.Query,
+			Root:        root,
+			Status:      args.Status,
+			Match:       args.Match,
+			Limit:       args.Limit,
+			Offset:      args.Offset,
+			Caller:      traceCallerFromContext(ctx),
+			IncludeSelf: args.IncludeSelf,
+		})
 	})
 }
 
@@ -3441,8 +3610,9 @@ func normalizeDigestArg(arg string) string {
 // findCallsTool content-searches the session's calls; see findCalls.
 func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Query string
-		Limit int `default:"200"`
+		Query       string
+		Limit       int  `default:"200"`
+		IncludeSelf bool `default:"false"`
 	}) (any, error) {
 		re, err := regexp.Compile(args.Query)
 		if err != nil {
@@ -3451,7 +3621,11 @@ func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
 		if args.Limit <= 0 {
 			args.Limit = findCallsDefaultLimit
 		}
-		return findCalls(ctx, re, args.Limit)
+		var exclude string
+		if !args.IncludeSelf {
+			exclude = traceCallerFromContext(ctx).AgentID
+		}
+		return findCalls(ctx, re, args.Limit, exclude)
 	})
 }
 
@@ -3465,6 +3639,11 @@ func readTraceReportOpts() traceReportOpts {
 	// ReadTrace is the "show me the shape of what ran" tool: it keeps the span
 	// tree the tool-call result drops.
 	opts.HideSpanTree = false
+	// ...and the nested conversation, which is where the tool-call result's
+	// sub-agent pointer sends the reader -- inline when short, otherwise as a
+	// bounded summary pointing at the transcript view, which pages it.
+	opts.HideConversation = false
+	opts.SummarizeConversation = true
 	return opts
 }
 

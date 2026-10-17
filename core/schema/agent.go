@@ -24,7 +24,21 @@ func (s agentSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.Agent](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.AgentMessage](srv).View(AfterVersion("v1.0.0-0")))
 
+	dagql.Fields[*core.Query]{
+		dagql.NodeFunc("__agentReference", func(ctx context.Context, _ dagql.ObjectResult[*core.Query], args struct{ Handle string }) (dagql.ObjectResult[*core.Agent], error) {
+			agents, err := agentRuntimes(ctx)
+			if err != nil {
+				return dagql.ObjectResult[*core.Agent]{}, err
+			}
+			return agents.Reference(ctx, args.Handle)
+		}).View(AfterVersion("v1.0.0-0")),
+	}.Install(srv)
+
 	dagql.Fields[*core.Agent]{
+		dagql.NodeFunc("parent", s.parent).
+			DoNotCache("Projects lineage from the current session's runtime registry.").
+			Experimental("Agent APIs are likely to change.").
+			Doc("The agent that spawned this agent, or null for a root agent."),
 		dagql.Func("name", s.name).
 			Experimental("Agent APIs are likely to change.").
 			Doc(`Display label for the agent; carries no identity.`),
@@ -52,12 +66,8 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			Doc(`Why the loop failed, for a FAILED agent; empty otherwise.`,
 				`The snapshot holds the completed prefix — send or resume retries from it.`),
 
-		// seed is deliberately cached (no DoNotCache): it is part of the
-		// value, fixed by the spawn, and reading it off the value is what
-		// makes it trustworthy -- re-evaluating the seed's recipe instead
-		// could re-run a DoNotCache link on it (Agent.snapshot, a module
-		// function) and hand back a different conversation than the one the
-		// loop was actually given.
+		// Public Agent IDs carry their fixed seed. Handle-only references read
+		// it from the runtime, after initial composition has completed.
 		dagql.NodeFunc("seed", s.seed).
 			Experimental("Agent APIs are likely to change.").
 			Doc(`The conversation the agent was spawned from: the tools, workspace and message history its loop started with.`,
@@ -184,6 +194,29 @@ func (s agentSchema) Install(srv *dagql.Server) {
 	core.AgentMessageDeliveries.Install(srv, AfterVersion("v1.0.0-0"))
 }
 
+func (s agentSchema) parent(ctx context.Context, agent dagql.ObjectResult[*core.Agent], _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.Agent]], error) {
+	var result dagql.Nullable[dagql.ObjectResult[*core.Agent]]
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return result, err
+	}
+	rt, found, err := agents.Get(ctx, agent)
+	if err != nil {
+		return result, err
+	}
+	if !found {
+		return result, fmt.Errorf("agent %q has no runtime entry in this session", agent.Self().Handle)
+	}
+	if handle := rt.ParentHandle(); handle != "" {
+		parent, err := core.AgentReference(ctx, handle)
+		if err != nil {
+			return result, err
+		}
+		return dagql.NonNull(parent), nil
+	}
+	return result, nil
+}
+
 func (s agentSchema) name(ctx context.Context, agent *core.Agent, _ struct{}) (string, error) {
 	return agent.Name, nil
 }
@@ -251,7 +284,21 @@ func (s agentSchema) loopError(ctx context.Context, parent dagql.ObjectResult[*c
 }
 
 func (s agentSchema) seed(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (dagql.ObjectResult[*core.LLM], error) {
-	return parent.Self().Seed, nil
+	if parent.Self().Seed.Self() != nil {
+		return parent.Self().Seed, nil
+	}
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.LLM]{}, err
+	}
+	rt, found, err := agents.Get(ctx, parent)
+	if err != nil {
+		return dagql.ObjectResult[*core.LLM]{}, err
+	}
+	if found {
+		return rt.Seed()
+	}
+	return dagql.ObjectResult[*core.LLM]{}, fmt.Errorf("agent %q has no runtime entry in this session", parent.Self().Handle)
 }
 
 func (s agentSchema) snapshot(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.ObjectResult[*core.LLM], _ error) {
@@ -267,7 +314,7 @@ func (s agentSchema) snapshot(ctx context.Context, parent dagql.ObjectResult[*co
 		// Never started: the last committed conversation is the seed.
 		return parent.Self().Seed, nil
 	}
-	return rt.Snapshot(), nil
+	return rt.ComposedSnapshot()
 }
 
 func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
@@ -473,6 +520,10 @@ func (s agentSchema) reseed(ctx context.Context, parent dagql.ObjectResult[*core
 		return res, err
 	}
 	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return res, err
+	}
+	conversation, err = core.WithLLMOwnerAgent(ctx, conversation, parent.Self().Handle)
 	if err != nil {
 		return res, err
 	}

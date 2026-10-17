@@ -10,8 +10,11 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/codes"
+	otellog "go.opentelemetry.io/otel/log"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	"google.golang.org/protobuf/proto"
 
+	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -97,10 +100,20 @@ func TestFindSpansIn(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, strings.Join([]string{
 		ids["build"] + "  ERROR  go build  [path=root/go build]",
+		ids["test"] + "  ok     go test  [path=root/go test]",
+	}, "\n")+"\n", got)
+
+	// Matching on the path too reaches everything beneath a named parent.
+	got, err = findSpanPageIn(ctx, store, spanSearch{Query: "go ", Match: spanMatchPath})
+	require.NoError(t, err)
+	require.Equal(t, strings.Join([]string{
+		ids["build"] + "  ERROR  go build  [path=root/go build]",
 		ids["compile"] + "  ERROR  compile  [path=root/go build/compile]",
 		ids["test"] + "  ok     go test  [path=root/go test]",
 		ids["link"] + "  ok     link  [path=root/go build/link]",
 	}, "\n")+"\n", got)
+	_, err = findSpanPageIn(ctx, store, spanSearch{Match: "bogus"})
+	require.ErrorContains(t, err, "invalid match")
 
 	// A service is found by its hostname (an attribute, not the span name),
 	// tagged as such, and reported running.
@@ -156,17 +169,24 @@ func TestFindSpansFullTestIdentity(t *testing.T) {
 	}
 	_, err := store.AppendSpans(rows)
 	require.NoError(t, err)
-	got, err := findSpanPageIn(t.Context(), store, "TestProvision/docker/cleanup", "", "failed", 1, 0)
+	// By name, a test's full identity names it -- not its descendants.
+	got, err := findSpanPageIn(t.Context(), store, spanSearch{Query: "TestProvision/docker/cleanup"})
+	require.NoError(t, err)
+	require.Equal(t, "0000000000000011  ERROR  cleanup  [path=TestProvision/docker/cleanup]\n", got)
+	// By path, everything beneath it too.
+	search := spanSearch{Query: "TestProvision/docker/cleanup", Status: "failed", Match: spanMatchPath, Limit: 1}
+	got, err = findSpanPageIn(t.Context(), store, search)
 	require.NoError(t, err)
 	require.Contains(t, got, "0000000000000013  ERROR  continue")
 	require.Contains(t, got, "path=TestProvision/docker/cleanup/continue")
-	require.Contains(t, got, "offset: 1, limit: 1")
+	require.Contains(t, got, `match: "path", offset: 1, limit: 1`)
 	require.NotContains(t, got, "podman")
-	got, err = findSpanPageIn(t.Context(), store, "TestProvision/docker/cleanup", "", "failed", 1, 1)
+	search.Offset = 1
+	got, err = findSpanPageIn(t.Context(), store, search)
 	require.NoError(t, err)
 	require.Contains(t, got, "0000000000000011  ERROR  cleanup")
 	require.NotContains(t, got, "continue")
-	_, err = findSpanPageIn(t.Context(), store, "", "", "bogus", 1, 0)
+	_, err = findSpanPageIn(t.Context(), store, spanSearch{Status: "bogus", Limit: 1})
 	require.Error(t, err)
 }
 
@@ -286,4 +306,176 @@ func TestSpanTimingsIn(t *testing.T) {
 
 	_, err = spanTimingsIn(ctx, store, "00000000000000ff", 0, 0, now)
 	require.ErrorContains(t, err, "no span")
+}
+
+// agentInspectTraceID is the trace agentInspectStore's session runs in.
+const agentInspectTraceID = "000102030405060708090a0b0c0d0e0f"
+
+// agentInspectStore builds a session where a chief agent spawned a worker
+// that has finished its turn:
+//
+//	root
+//	└── agent: chief (loop span, RUNNING)
+//	    ├── FindSpans (the chief's tool call)
+//	    └── Staff.spawn
+//	        └── agent: doer (loop span, still open; IDLE)
+//	            └── git rev-parse
+//	                └── dagql.publishResult (internal)
+//
+// The loop spans never end while their agents live; only the control records
+// say the worker is idle.
+func agentInspectStore(t *testing.T) (*clientdb.DB, map[string]string) {
+	t.Helper()
+	ctx := context.Background()
+	store, err := clientdb.NewDBs(t.TempDir()).Open(ctx, "agent-inspect-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+	ids := map[string]string{
+		"root":    "0000000000000001",
+		"chief":   "0000000000000002",
+		"tool":    "0000000000000003",
+		"spawn":   "0000000000000004",
+		"doer":    "0000000000000005",
+		"git":     "0000000000000006",
+		"publish": "0000000000000007",
+	}
+	str := func(key, value string) *otlpcommonv1.KeyValue {
+		return &otlpcommonv1.KeyValue{Key: key, Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: value}}}
+	}
+	agent := func(handle, name string) []byte {
+		return marshalSpanAttrs(t, boolAttr(telemetryattrs.AgentAttr),
+			str(telemetryattrs.AgentIDAttr, handle), str(telemetryattrs.AgentNameAttr, name))
+	}
+	ended := sql.NullInt64{Int64: 200, Valid: true}
+	spans := []clientdb.Span{
+		{SpanID: ids["root"], Name: "root", StartTime: 100, Attributes: marshalSpanAttrs(t)},
+		{SpanID: ids["chief"], ParentSpanID: validSpanID(ids["root"]), Name: "agent: chief", StartTime: 101, Attributes: agent("chief-handle", "chief")},
+		{SpanID: ids["tool"], ParentSpanID: validSpanID(ids["chief"]), Name: "FindSpans", StartTime: 102, EndTime: ended, Attributes: marshalSpanAttrs(t)},
+		{SpanID: ids["spawn"], ParentSpanID: validSpanID(ids["chief"]), Name: "Staff.spawn", StartTime: 103, EndTime: ended, Attributes: marshalSpanAttrs(t)},
+		{SpanID: ids["doer"], ParentSpanID: validSpanID(ids["spawn"]), Name: "agent: doer", StartTime: 104, Attributes: agent("doer-handle", "doer")},
+		{SpanID: ids["git"], ParentSpanID: validSpanID(ids["doer"]), Name: "git rev-parse", StartTime: 105, EndTime: ended, Attributes: marshalSpanAttrs(t)},
+		{SpanID: ids["publish"], ParentSpanID: validSpanID(ids["git"]), Name: "dagql.publishResult", StartTime: 106, EndTime: ended, Attributes: marshalSpanAttrs(t, boolAttr(telemetry.UIInternalAttr))},
+	}
+	for i := range spans {
+		spans[i].TraceID = agentInspectTraceID
+		spans[i].Links, spans[i].Events = []byte("[]"), []byte("[]")
+		spans[i].Resource, spans[i].InstrumentationScope = []byte("{}"), []byte("{}")
+	}
+	_, err = store.AppendSpans(spans)
+	require.NoError(t, err)
+
+	control := func(handle, name, state string, revision int64) clientdb.Log {
+		a := agentcontrol.Agent{
+			Key: agentcontrol.Key{
+				Namespace: agentcontrol.Namespace{Session: "session", Trace: agentInspectTraceID, Incarnation: "incarnation"},
+				Handle:    handle,
+			},
+			Revision: revision, Name: name, State: state, Digest: "xxh3:conversation",
+			Activity: time.Unix(0, 100+revision),
+		}
+		rec := a.Record()
+		var attrs []*otlpcommonv1.KeyValue
+		rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+			attrs = append(attrs, &otlpcommonv1.KeyValue{Key: kv.Key, Value: telemetry.LogValueToPB(kv.Value)})
+			return true
+		})
+		encoded, err := clientdb.MarshalProtoJSONs(attrs)
+		require.NoError(t, err)
+		body, err := proto.Marshal(telemetry.LogValueToPB(rec.Body()))
+		require.NoError(t, err)
+		return clientdb.Log{TraceID: validSpanID(agentInspectTraceID), Attributes: encoded, Body: body}
+	}
+	_, err = store.AppendLogs([]clientdb.Log{
+		control("chief-handle", "chief", "RUNNING", 1),
+		control("doer-handle", "doer", "RUNNING", 1),
+		control("doer-handle", "doer", "IDLE", 2),
+	})
+	require.NoError(t, err)
+	return store, ids
+}
+
+func TestFindSpansAgents(t *testing.T) {
+	ctx := t.Context()
+	store, ids := agentInspectStore(t)
+
+	// An agent is found by its own name, not every span beneath it, and its
+	// idle loop span reads idle rather than run.
+	got, err := findSpanPageIn(ctx, store, spanSearch{Query: "doer"})
+	require.NoError(t, err)
+	require.Equal(t, ids["doer"]+"  idle   agent: doer  [path=root/agent: chief/Staff.spawn/agent: doer]\n", got)
+	got, err = findSpanPageIn(ctx, store, spanSearch{Query: "doer", Match: spanMatchPath})
+	require.NoError(t, err)
+	require.Contains(t, got, "git rev-parse")
+	require.Contains(t, got, "dagql.publishResult")
+
+	// The status filter goes by the agents' observed state.
+	got, err = findSpanPageIn(ctx, store, spanSearch{Status: "run"})
+	require.NoError(t, err)
+	require.Contains(t, got, ids["chief"]+"  run    agent: chief")
+	require.NotContains(t, got, ids["doer"])
+	got, err = findSpanPageIn(ctx, store, spanSearch{Status: "idle"})
+	require.NoError(t, err)
+	require.Contains(t, got, ids["doer"]+"  idle   agent: doer")
+	require.NotContains(t, got, ids["chief"])
+
+	// The caller's own spans are left out and counted -- but not those of
+	// the worker it spawned, which run beneath its loop span too.
+	chief := traceCaller{AgentID: "chief-handle", TraceID: agentInspectTraceID}
+	got, err = findSpanPageIn(ctx, store, spanSearch{Caller: chief})
+	require.NoError(t, err)
+	require.NotContains(t, got, ids["chief"])
+	require.NotContains(t, got, ids["tool"])
+	require.Contains(t, got, ids["doer"]+"  idle   agent: doer")
+	require.Contains(t, got, "git rev-parse")
+	require.Contains(t, got, "(3 matching spans of your own -- your tool calls and messages -- hidden; includeSelf: true lists them)")
+	got, err = findSpanPageIn(ctx, store, spanSearch{Caller: chief, IncludeSelf: true})
+	require.NoError(t, err)
+	require.Contains(t, got, ids["chief"]+"  run    agent: chief")
+	require.NotContains(t, got, "hidden")
+	got, err = findSpanPageIn(ctx, store, spanSearch{Query: "FindSpans", Caller: chief})
+	require.NoError(t, err)
+	require.Equal(t, `(no spans matching "FindSpans" among the 7 in this session)`+"\n"+
+		"(1 matching spans of your own -- your tool calls and messages -- hidden; includeSelf: true lists them)", got)
+	// The same handle in another trace is a predecessor, not the caller.
+	elsewhere := traceCaller{AgentID: "chief-handle", TraceID: "ffffffffffffffffffffffffffffffff"}
+	got, err = findSpanPageIn(ctx, store, spanSearch{Query: "FindSpans", Caller: elsewhere})
+	require.NoError(t, err)
+	require.Contains(t, got, ids["tool"])
+
+	// Inspecting the worker's loop span says what the agent is doing.
+	detail, err := inspectSpanIn(ctx, store, ids["doer"])
+	require.NoError(t, err)
+	require.Contains(t, detail, "status:   idle\nagent:    doer, last reported IDLE\n")
+	require.Contains(t, detail, "ended:    (agent loop still open; idle between turns)")
+	detail, err = inspectSpanIn(ctx, store, ids["spawn"])
+	require.NoError(t, err)
+	require.Contains(t, detail, "  "+ids["doer"]+"  idle   agent: doer")
+}
+
+func TestRenderSpanPath(t *testing.T) {
+	segs := func(names ...string) []spanPathSeg {
+		var path []spanPathSeg
+		for _, name := range names {
+			path = append(path, spanPathSeg{name: name, agent: strings.HasPrefix(name, "agent: ")})
+		}
+		return path
+	}
+	// Short paths are left whole.
+	require.Equal(t, "root/go build/compile", renderSpanPath(segs("root", "go build", "compile")))
+
+	// Long ones keep the root, the nearest agent and the two leaf-most
+	// levels, counting what each elision dropped.
+	long := segs("root", "POST /query", "Agent.send", "agent: agent", "thinking", "staff_spawn",
+		"Staff.spawn", "staff:Staff.spawn", "POST /query", "Agent.send", "agent: doer",
+		"withExec", "Container.withExec", "git rev-parse")
+	require.Equal(t, "root/…(9)…/agent: doer/…(1)…/Container.withExec/git rev-parse", renderSpanPath(long))
+	// An agent's own loop span keeps the agent above it: its spawner.
+	require.Equal(t, "root/…(2)…/agent: agent/…(5)…/Agent.send/agent: doer", renderSpanPath(long[:11]))
+
+	// Without an agent, the middle goes in one run; huge segments are clamped.
+	huge := strings.Repeat("x", 500)
+	got := renderSpanPath(segs("root", "a", "b", "c", huge, "leaf"))
+	require.True(t, strings.HasPrefix(got, "root/…(3)…/xxxx"), got)
+	require.True(t, strings.HasSuffix(got, "/leaf"), got)
+	require.Less(t, len(got), 2*spanPathMaxBytes)
 }
