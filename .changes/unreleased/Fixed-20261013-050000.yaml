@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Fix documentation rot: point the Java SDK README build badge at the
+  existing checks workflow, and drop two references to missing Slack
+  screenshots in the Notify module README.
+time: 2026-10-13T05:00:00Z
+custom:
+  Author: MeGaurav4
+  Issue: "14600"
