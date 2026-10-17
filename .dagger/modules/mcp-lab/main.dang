@@ -233,10 +233,18 @@ type McpLab {
 
   # ---- helpers ------------------------------------------------------------
 
+  # Both helpers call `service.start` first. The recorded state only
+  # references the bridge; in a new session (e.g. a resumed agent session)
+  # nothing has started it, and the curl's binding alone would start a fresh
+  # `dagger mcp` (and its engine) for that one call and stop it afterwards.
+  # Service.start is a no-op when the service is already running in this
+  # session.
+
   let get(path: String!): String! {
     if (url == "") {
       return "No active MCP session. Call the mcp-lab start tool first."
     }
+    service.start
     client
       # bust Dagger's exec cache so each call hits the live session
       .withEnvVariable("MCP_LAB_NONCE", Random.string)
@@ -254,6 +262,7 @@ type McpLab {
     if (url == "") {
       return "No active MCP session. Call the mcp-lab start tool first."
     }
+    service.start
     client
       .withEnvVariable("MCP_LAB_NONCE", Random.string)
       .withExec([
