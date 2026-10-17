@@ -13,6 +13,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -50,6 +51,9 @@ type spanLookup struct {
 	// positive (marker bytes inside a value) merely loads one extra span.
 	checkSpans map[string]struct{}
 	testSpans  map[string]struct{}
+	// agentSpans likewise remembers agent loop spans (telemetryattrs
+	// AgentIDAttr), the seed of an agent roster.
+	agentSpans map[string]struct{}
 	// Duplicate snapshots are suppressed when firstRow is populated, leaving
 	// one copy of each child span ID in its parent's slice.
 	children map[string][]string
@@ -82,6 +86,7 @@ func newSpanLookup() *spanLookup {
 		parent:         make(map[string]string),
 		checkSpans:     make(map[string]struct{}),
 		testSpans:      make(map[string]struct{}),
+		agentSpans:     make(map[string]struct{}),
 		children:       make(map[string][]string),
 		causalChildren: make(map[string][]string),
 		causalParents:  make(map[string][]string),
@@ -132,6 +137,9 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 		(bytes.Contains(row.Attributes, testCaseNameAttrMarker) || bytes.Contains(row.Attributes, testSuiteNameAttrMarker)) {
 		l.testSpans[row.SpanID] = struct{}{}
 	}
+	if _, marked := l.agentSpans[row.SpanID]; !marked && bytes.Contains(row.Attributes, agentIDAttrMarker) {
+		l.agentSpans[row.SpanID] = struct{}{}
+	}
 	if row.ParentSpanID.Valid {
 		if _, known := l.parent[row.SpanID]; !known {
 			l.parent[row.SpanID] = row.ParentSpanID.String
@@ -163,6 +171,7 @@ var (
 	checkNameAttrMarker     = []byte(`"` + telemetry.CheckNameAttr + `"`)
 	testCaseNameAttrMarker  = []byte(`"` + string(semconv.TestCaseNameKey) + `"`)
 	testSuiteNameAttrMarker = []byte(`"` + string(semconv.TestSuiteNameKey) + `"`)
+	agentIDAttrMarker       = []byte(`"` + telemetryattrs.AgentIDAttr + `"`)
 )
 
 // causalLinkTargets decodes row's span links and returns the span IDs it
@@ -404,6 +413,17 @@ func (l *spanLookup) markedSpanIDs() (checks, tests map[string]struct{}) {
 		tests[id] = struct{}{}
 	}
 	return checks, tests
+}
+
+// agentSpanIDs snapshots the agent-marked span ID set.
+func (l *spanLookup) agentSpanIDs() map[string]struct{} {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	ids := make(map[string]struct{}, len(l.agentSpans))
+	for id := range l.agentSpans {
+		ids[id] = struct{}{}
+	}
+	return ids
 }
 
 // logLookup indexes log rows by the span they're attributed to, so scoped log
@@ -682,6 +702,12 @@ func (s *DB) AncestorClosure(ids map[string]struct{}) map[string]struct{} {
 // instead of retaining a whole-session DB just to answer name lookups.
 func (s *DB) CheckTestSpanIDs() (checks, tests map[string]struct{}) {
 	return s.lookup.markedSpanIDs()
+}
+
+// AgentSpanIDs returns the spans whose attributes carry an agent ID -- agent
+// loop spans, the seed for an agent roster -- answered from the span index.
+func (s *DB) AgentSpanIDs() map[string]struct{} {
+	return s.lookup.agentSpanIDs()
 }
 
 // SelectSpansLatest returns the newest snapshot row of every span in ids, in

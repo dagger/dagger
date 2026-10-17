@@ -94,6 +94,22 @@ func TestArchiveIndexRevisionAndReopening(t *testing.T) {
 	require.Error(t, err, "latest received state is not evidence of producer completeness")
 }
 
+func TestAgentSpanIDs(t *testing.T) {
+	db, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer db.Close()
+	agentAttrs, err := MarshalProtoJSONs([]*commonpb.KeyValue{{Key: telemetryattrs.AgentIDAttr, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "worker"}}}})
+	require.NoError(t, err)
+	_, err = db.AppendSpans([]Span{
+		{TraceID: "t", SpanID: "loop", Attributes: []byte("[]")},
+		{TraceID: "t", SpanID: "work", Attributes: []byte("[]")},
+		// The agent attributes may arrive on a later snapshot.
+		{TraceID: "t", SpanID: "loop", Attributes: agentAttrs},
+	})
+	require.NoError(t, err)
+	require.Equal(t, map[string]struct{}{"loop": {}}, db.AgentSpanIDs())
+}
+
 func TestArchiveCallPayload(t *testing.T) {
 	const traceID = "01000000000000000000000000000000"
 	db, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
