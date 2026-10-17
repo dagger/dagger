@@ -576,6 +576,9 @@ func readTraceTranscriptIn(ctx context.Context, client *clientdb.DB, opts transc
 		NextPage: func(offset int) string { return transcriptCall(target, opts, offset) },
 	})
 	var head []string
+	if total := len(snap.Snapshot.Messages); len(messages) == 0 && total > 0 && opts.Role == "" && opts.Tool == "" && opts.Grep == "" {
+		page += fmt.Sprintf("The transcript holds only %s; pass role: \"system\" to read them.\n", countNoun(total, "system prompt", "system prompts"))
+	}
 	if target.via != "" {
 		head = append(head, "resolved to "+target.via)
 	}
