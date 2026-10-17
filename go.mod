@@ -126,7 +126,6 @@ require (
 	github.com/moby/sys/userns v0.1.0
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/morikuni/aec v1.1.0
-	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.16.0
 	github.com/openai/openai-go/v3 v3.61.0
 	github.com/opencontainers/cgroups v0.0.6

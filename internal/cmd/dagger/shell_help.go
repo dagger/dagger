@@ -5,12 +5,28 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/reflow/indent"
 )
 
 const (
 	helpIndent = uint(2)
 )
+
+// indentLines prefixes every line of s with n spaces, leaving the empty
+// remainder after a trailing newline alone.
+func indentLines(s string, n uint) string {
+	if s == "" {
+		return s
+	}
+	pad := strings.Repeat(" ", int(n))
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		if i == len(lines)-1 && line == "" {
+			break
+		}
+		lines[i] = pad + line
+	}
+	return strings.Join(lines, "\n")
+}
 
 func (h *shellCallHandler) FunctionsList(name string, fns []*modFunction) string {
 	if len(fns) == 0 {
@@ -222,7 +238,7 @@ func (d ShellDoc) String() string {
 		body := grp.Body
 
 		if grp.Title != "" {
-			sb.WriteString(indent.String(toUpperBold(grp.Title), grp.Indent))
+			sb.WriteString(indentLines(toUpperBold(grp.Title), grp.Indent))
 			sb.WriteString("\n")
 
 			// Indent body if there's a title
@@ -234,7 +250,7 @@ func (d ShellDoc) String() string {
 			}
 			if i > 0 {
 				wrapped := ansi.Wordwrap(grp.Body, width-int(i), "-")
-				body = indent.String(wrapped, i)
+				body = indentLines(wrapped, i)
 			}
 		}
 		sb.WriteString(body)
