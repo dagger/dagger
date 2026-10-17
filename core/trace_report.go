@@ -108,6 +108,15 @@ type traceReportOpts struct {
 	// names, never sets it.
 	HideConversation bool
 
+	// SummarizeConversation keeps a long CONVERSATION out of the report:
+	// past traceReportInlineMessages surfaced messages, the section is
+	// replaced by a bounded summary (size, opening prompt, final reply) and
+	// a pointer to the transcript view, which pages it. Short conversations
+	// still render inline. Set by ReadTrace, whose report on an agent's span
+	// would otherwise be dominated -- and middle-elided -- by the agent's
+	// whole conversation.
+	SummarizeConversation bool
+
 	// NestedLogLines bounds the log lines rendered per nested row; 0 leaves
 	// them unbounded.
 	NestedLogLines int
@@ -167,13 +176,29 @@ func readTraceRerunSuggestion(db *dagui.DB, names []string) (string, []string) {
 type traceReportResult struct {
 	body     string
 	failures string
+	// omittedMessages counts the surfaced messages a SummarizeConversation
+	// render left out; 0 when the conversation rendered inline (or none).
+	omittedMessages int
+}
+
+// traceReportInlineMessages is the most surfaced conversation messages a
+// SummarizeConversation report renders inline.
+const traceReportInlineMessages = 16
+
+// countMessages counts message nodes, nested ones included.
+func countMessages(nodes []*dagui.MessageNode) int {
+	n := len(nodes)
+	for _, node := range nodes {
+		n += countMessages(node.Children)
+	}
+	return n
 }
 
 // subAgentConversationPointer is what a HideConversation report says in place
 // of the CONVERSATION section it dropped: that a nested LLM conversation ran
-// beneath root, and how to read it. ReadTrace on root renders that section.
+// beneath root, and how to read it.
 func subAgentConversationPointer(root string) string {
-	return fmt.Sprintf("... sub-agent conversation omitted; ReadTrace(span: %q) to read its transcript ...", root)
+	return fmt.Sprintf("... sub-agent conversation omitted; ReadTrace(span: %q, view: %q) to read its transcript ...", root, traceViewTranscript)
 }
 
 // renderTraceReport materializes root's telemetry scope from the client's
@@ -208,7 +233,16 @@ func renderTraceReport(ctx context.Context, root string, opts traceReportOpts) (
 	if err != nil {
 		return traceReportResult{}, err
 	}
-	return renderTraceReportSession(session, root, opts)
+	result, err := renderTraceReportSession(session, root, opts)
+	if err != nil || result.omittedMessages == 0 {
+		return result, err
+	}
+	body := strings.TrimRight(result.body, "\n")
+	if body != "" {
+		body += "\n\n"
+	}
+	result.body = body + conversationSummary(ctx, clientDB, root, result.omittedMessages) + "\n"
+	return result, nil
 }
 
 // traceReportClientDB opens the main client's telemetry store. The caller
@@ -392,6 +426,13 @@ func renderTraceReportSession(session *idtui.ReportSession, root string, opt tra
 		}
 		renderOpts.HideLogSpans = hide
 	}
+	omitted := 0
+	if opt.SummarizeConversation && !opt.HideConversation {
+		if n := countMessages(db.SurfacedConversationForSpan(db.Spans.Map[primary])); n > traceReportInlineMessages {
+			renderOpts.HideConversation = true
+			omitted = n
+		}
+	}
 
 	var buf bytes.Buffer
 	if err := session.Render(&buf, renderOpts); err != nil {
@@ -413,8 +454,9 @@ func renderTraceReportSession(session *idtui.ReportSession, root string, opt tra
 		buf.WriteString(body + subAgentConversationPointer(root) + "\n")
 	}
 	return traceReportResult{
-		body:     buf.String(),
-		failures: failureNav,
+		body:            buf.String(),
+		failures:        failureNav,
+		omittedMessages: omitted,
 	}, nil
 }
 

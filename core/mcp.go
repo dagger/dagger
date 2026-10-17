@@ -2969,11 +2969,13 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "ReadTrace",
-		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, in one of three views." + "\n" +
-			"- report (default): a bounded trace report with recorded error origins first, failed check/test links separately, and diagnostic output. Failed scopes collapse successful work; follow the supplied span IDs to expand a branch rather than searching again." + "\n" +
+		Description: "Read the trace of this session or a trace imported with LoadTrace at a span, in one of five views." + "\n" +
+			"- report (default): a bounded trace report with recorded error origins first, failed check/test links separately, and diagnostic output. Failed scopes collapse successful work; follow the supplied span IDs to expand a branch rather than searching again. A long agent conversation beneath the span is summarized (opening prompt, final reply) with a pointer to the transcript view." + "\n" +
 			"- inspect: one span in depth -- status, error and its origins, timing, the flags that shape how the UI treats it (internal, passthrough, roll-up, ...), the parent chain up to the root, and its direct children. Use it to navigate up and down from a span, or to answer why a span is hidden or its logs didn't show." + "\n" +
 			"- timings: the span's raw-parent subtree as a chronological wall-time table (span, parent, start offset, duration, name), internal spans included; cause links are not traversed. Durations are each span's own wall interval, may overlap, and are not total execution or CPU self time. Imported spans with unrecorded completion have unknown duration." + "\n" +
-			"Pass a span ID from a report's footer or use FindSpans first to find a check, test, service, or other step by name, then pass its span ID here." + "\n" +
+			"- agents: the agents (LLM agents, staff workers) as a tree, each with its handle, name, state and loop span ID. span is optional: without it, every agent in the session and loaded traces; with it, those at or beneath it." + "\n" +
+			"- transcript: one agent's conversation as readable messages -- prompts, replies and thinking verbatim, tool calls with their arguments, tool results with the tool that produced them -- decoded from its recorded checkpoint, in pages. Pass agent (a handle or unique name from the agents view), or a span: the agent whose loop span it is, the agent beneath it (e.g. a staff_spawn tool call), or the agent enclosing it. Filter with role, tool or grep; the page header says where the next page starts." + "\n" +
+			"Pass a span ID from a report's footer or use FindSpans first to find a check, test, service, or other step by name, then pass its span ID here. To read what an agent did, start from the agents view instead of searching spans." + "\n" +
 			"Use ReadLogs when you want the raw log lines beneath a span.",
 		ReadOnly: true, // Read-only operation
 		Schema: map[string]any{
@@ -2981,11 +2983,11 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 			"properties": map[string]any{
 				"span": map[string]any{
 					"type":        "string",
-					"description": "Span ID (hex) to read, scoped to that span's subtree.",
+					"description": "Span ID (hex) to read, scoped to that span's subtree. Required except for the agents view, and for transcript when agent is given.",
 				},
 				"view": map[string]any{
 					"type":        "string",
-					"enum":        []string{traceViewReport, traceViewInspect, traceViewTimings},
+					"enum":        []string{traceViewReport, traceViewInspect, traceViewTimings, traceViewAgents, traceViewTranscript},
 					"description": "Which view to render.",
 					"default":     traceViewReport,
 				},
@@ -2995,12 +2997,40 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 				},
 				"limit": map[string]any{
 					"type":        "integer",
-					"description": "timings view only: maximum number of rows (0 = unlimited).",
+					"description": fmt.Sprintf("timings view: maximum number of rows (default %d, 0 = unlimited). transcript view: messages per page (1-%d, default %d; a page also ends at about 40KiB).", traceTimingsDefaultLimit, transcriptMaxLimit, transcriptDefaultLimit),
 					"minimum":     0,
-					"default":     200,
+				},
+				"agent": map[string]any{
+					"type":        "string",
+					"description": "transcript view only: the agent's handle, or its name when unique (see the agents view).",
+				},
+				"role": map[string]any{
+					"type":        "string",
+					"enum":        []string{"", "user", "assistant", "tool", "system", "gap"},
+					"description": "transcript view only: keep only prompts (user), replies (assistant), tool results (tool), system prompts, or gaps where the checkpoint could not be decoded. Empty keeps all but system prompts.",
+				},
+				"tool": map[string]any{
+					"type":        "string",
+					"description": "transcript view only: keep only the calls to this tool and their results.",
+				},
+				"grep": map[string]any{
+					"type":        "string",
+					"description": "transcript view only: regexp over message text, tool names and arguments.",
+				},
+				"offset": map[string]any{
+					"type":        "integer",
+					"description": "transcript view only: matching messages to skip from the oldest (filters apply first).",
+					"minimum":     0,
+					"default":     0,
+				},
+				"clip": map[string]any{
+					"type":        "integer",
+					"description": "transcript view only: bytes kept of each tool call's arguments and each tool result (0 = all). Prose is never clipped.",
+					"minimum":     0,
+					"default":     transcriptDefaultClip,
 				},
 			},
-			"required":             []string{"span"},
+			"required":             []string{},
 			"additionalProperties": false,
 		},
 		Call: m.readTraceTool(srv),
@@ -3008,7 +3038,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	allTools.Add(LLMTool{
 		Name: "FindSpans",
 		Description: "Find spans in this session and traces imported with LoadTrace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; idle: an agent's loop span while the agent is parked between turns; ok), name -- oldest start time first (ties: trace ID, then span ID; unknown starts first), with running services tagged by hostname." + "\n" +
-			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call, an agent (\"agent: <name>\"). Then ReadTrace (report, inspect, timings) or ReadLogs it." + "\n" +
+			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call, an agent (\"agent: <name>\"). Then ReadTrace (report, inspect, timings, transcript) or ReadLogs it. To find an agent, ReadTrace(view: \"agents\") lists them all with their spans." + "\n" +
 			"By default the query is a substring test on the span's own name, service hostname, or full test identity; match \"path\" also tests its whole ancestor path, matching everything beneath a named parent. Rows carry breadcrumbs whose long middles are elided as …(N)…. Your own spans (your tool calls and messages) are left out unless includeSelf. Empty query matches all. Only the newest limit matches are returned; offset skips that many newest matches after filtering, and the result gives an exact next-page call. Status filtering is navigation, never proof of error causality.",
 		ReadOnly: true,
 		Schema: map[string]any{
@@ -3405,13 +3435,21 @@ func emptyLogsResultIn(store *clientdb.DB, spanID string) (string, error) {
 // tool call's own result is rendered as (the target's own output, then the
 // report), so what the reader gets back is in the vocabulary it already
 // sees, just scoped to the target it asked about. The inspect and timings
-// views are the TUI console's span views, answered from the engine.
+// views are the TUI console's span views, and the agents and transcript views
+// its agent roster and transcript reader, answered from the engine.
 func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Span        string
+		Span        string `default:""`
 		View        string `default:"report"`
 		MinDuration string `default:""`
-		Limit       int    `default:"200"`
+		// Limit's default depends on the view; -1 means "not given".
+		Limit  int    `default:"-1"`
+		Agent  string `default:""`
+		Role   string `default:""`
+		Tool   string `default:""`
+		Grep   string `default:""`
+		Offset int    `default:"0"`
+		Clip   int    `default:"4000"`
 	}) (any, error) {
 		var minDuration time.Duration
 		if args.MinDuration != "" {
@@ -3423,8 +3461,21 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 		}
 		switch args.View {
 		case traceViewReport, traceViewInspect, traceViewTimings:
+		case traceViewAgents:
+			return readTraceAgents(ctx, args.Span)
+		case traceViewTranscript:
+			limit := args.Limit
+			if limit < 0 {
+				limit = transcriptDefaultLimit
+			}
+			return readTraceTranscript(ctx, transcriptOpts{
+				Span: args.Span, Agent: strings.TrimSpace(args.Agent),
+				Role: args.Role, Tool: args.Tool, Grep: args.Grep,
+				Offset: args.Offset, Limit: limit, Clip: args.Clip,
+			})
 		default:
-			return nil, fmt.Errorf("unknown view %q: want %s, %s or %s", args.View, traceViewReport, traceViewInspect, traceViewTimings)
+			return nil, fmt.Errorf("unknown view %q: want %s, %s, %s, %s or %s", args.View,
+				traceViewReport, traceViewInspect, traceViewTimings, traceViewAgents, traceViewTranscript)
 		}
 		spanID, err := resolveTraceTarget(ctx, args.Span)
 		if err != nil {
@@ -3434,7 +3485,11 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 		case traceViewInspect:
 			return inspectSpan(ctx, spanID)
 		case traceViewTimings:
-			return spanTimings(ctx, spanID, minDuration, args.Limit)
+			limit := args.Limit
+			if limit < 0 {
+				limit = traceTimingsDefaultLimit
+			}
+			return spanTimings(ctx, spanID, minDuration, limit)
 		}
 		result, err := m.inspectSpanResult(ctx, spanID, readTraceReportOpts())
 		if err != nil {
@@ -3585,8 +3640,10 @@ func readTraceReportOpts() traceReportOpts {
 	// tree the tool-call result drops.
 	opts.HideSpanTree = false
 	// ...and the nested conversation, which is where the tool-call result's
-	// sub-agent pointer sends the reader.
+	// sub-agent pointer sends the reader -- inline when short, otherwise as a
+	// bounded summary pointing at the transcript view, which pages it.
 	opts.HideConversation = false
+	opts.SummarizeConversation = true
 	return opts
 }
 

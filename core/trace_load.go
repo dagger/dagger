@@ -94,7 +94,7 @@ func loadCloudTrace(ctx context.Context, store *clientdb.DB, id string, fetch cl
 		}
 	}
 	sort.Strings(roots)
-	return fmt.Sprintf("Loaded trace %s (%d spans) for inspection in this session. Historical spans are not live work; no recipes or agents were executed or restored. Repeated loads reuse this snapshot.\nRoots:\n%s\nUse ReadTrace(span: <root>, view: \"report\" | \"inspect\" | \"timings\"), ReadLogs, FindSpans, FindCalls, or InspectCall. Searches include live and loaded traces.", id, len(rows), strings.Join(roots, "\n")), nil
+	return fmt.Sprintf("Loaded trace %s (%d spans) for inspection in this session. Historical spans are not live work; no recipes or agents were executed or restored. Repeated loads reuse this snapshot.\nRoots:\n%s\nUse ReadTrace(span: <root>, view: \"report\" | \"inspect\" | \"timings\"), ReadTrace(view: \"agents\") then ReadTrace(agent: <handle>, view: \"transcript\") for agent conversations, ReadLogs, FindSpans, FindCalls, or InspectCall. Searches include live and loaded traces.", id, len(rows), strings.Join(roots, "\n")), nil
 }
 
 // Only inspection readers see this sink's store; nothing is sent through live

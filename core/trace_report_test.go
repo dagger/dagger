@@ -552,7 +552,7 @@ func TestInspectionArgumentErrorsThroughDispatch(t *testing.T) {
 		got := m.CallContent(t.Context(), []LLMTool{{Name: "ReadTrace", Call: m.readTraceTool(&dagql.Server{})}},
 			&LLMToolCall{Name: "ReadTrace", Arguments: JSON(args)})
 		require.True(t, got.Errored, got.Text)
-		require.Contains(t, got.Text, "required argument span not provided")
+		require.Contains(t, got.Text, "ReadTrace needs a span ID")
 	}
 	for _, tool := range []LLMTool{
 		{Name: "ReadTrace", Call: m.readTraceTool(&dagql.Server{})},
