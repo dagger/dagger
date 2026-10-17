@@ -17,8 +17,10 @@ const rebindModuleObjectStateField = "__rebindState"
 // RebindModuleObjectState selects an engine-owned, replayable operation on the
 // target revision's initial object. The previous receiver is an ID argument, not
 // a closure capture or a replacement result under the old object's identity.
-// Existing values always win, even when null or empty; only new fields take
-// defaults from initial. The result retains the target module and class.
+// State that tool calls recorded wins, even when null or empty (see
+// toolStateFields); every other field takes initial's value, so a reload
+// re-resolves the object's construction: settings, defaults, and session-bound
+// values such as secrets. The result retains the target module and class.
 func RebindModuleObjectState(ctx context.Context, srv *dagql.Server, initial, previous dagql.AnyObjectResult) (dagql.AnyObjectResult, error) {
 	target, old, err := moduleObjectsForRebind(initial, previous)
 	if err != nil {
@@ -29,7 +31,15 @@ func RebindModuleObjectState(ctx context.Context, srv *dagql.Server, initial, pr
 		return nil, err
 	}
 	if same {
-		return previous, nil
+		// Keep the previous identity when rebinding would not change anything:
+		// a reload with no code or configuration change is a no-op.
+		unchanged, err := rebindKeepsPrevious(ctx, target, old, previous)
+		if err != nil {
+			return nil, err
+		}
+		if unchanged {
+			return previous, nil
+		}
 	}
 	previousID, err := previous.ID()
 	if err != nil {
@@ -149,7 +159,11 @@ func (obj *ModuleObject) stateRebindField(srv *dagql.Server) (dagql.Field[*Modul
 			if !sameClass {
 				return nil, fmt.Errorf("target receiver class belongs to a different module revision")
 			}
-			fields, err := rebindModuleObjectFields(ctx, target, old)
+			state, err := toolStateFields(ctx, previous)
+			if err != nil {
+				return nil, err
+			}
+			fields, err := rebindModuleObjectFields(ctx, target, old, state)
 			if err != nil {
 				return nil, err
 			}
@@ -160,12 +174,119 @@ func (obj *ModuleObject) stateRebindField(srv *dagql.Server) (dagql.Field[*Modul
 	}, nil
 }
 
-// rebindModuleObjectFields overlays the previous revision's receiver state onto
+// toolState names the fields of a module object that hold state recorded
+// by tool calls, as opposed to values its construction produced.
+type toolState struct {
+	// all treats every field as state. It is set when the recipe does not say
+	// which fields tool calls set: a same-type chain recorded as the
+	// producing calls themselves, from before state was recorded field-wise.
+	all    bool
+	fields map[string]struct{}
+}
+
+// carried returns the subset of previous that is recorded state.
+func (s toolState) carried(previous map[string]any) map[string]any {
+	if s.all {
+		return previous
+	}
+	out := make(map[string]any, len(s.fields))
+	for name := range s.fields {
+		if value, ok := previous[name]; ok {
+			out[name] = value
+		}
+	}
+	return out
+}
+
+// toolStateFields reads which fields of obj tool calls set, from its
+// recipe. A same-type tool return is recorded as __withField frames on the
+// previous state (see WithModuleObjectFields), and a reload as a
+// __rebindState frame whose previous argument carries the earlier state's
+// recipe, so the recipe names every field state was ever written to. Whatever
+// sits below those frames is a construction, and its fields are configuration:
+// constructor arguments (often settings), defaults, and values resolved
+// against the session that built it, such as a Secret read from the host.
+//
+// Only state is worth carrying across a reload. Configuration is re-resolved
+// by the reload itself; carrying it over would pin the old revision's
+// defaults, ignore edited settings, and keep session-bound values whose
+// client may be gone.
+func toolStateFields(ctx context.Context, obj dagql.AnyObjectResult) (toolState, error) {
+	state := toolState{fields: map[string]struct{}{}}
+	id, err := obj.RecipeID(ctx)
+	if err != nil {
+		return state, fmt.Errorf("state recipe: %w", err)
+	}
+	collectToolState(id, &state)
+	return state, nil
+}
+
+func collectToolState(id *call.ID, state *toolState) {
+	for id != nil && !state.all {
+		switch id.Field() {
+		case withModuleObjectFieldName:
+			name, ok := literalArg(id, "name").(string)
+			if !ok {
+				state.all = true
+				return
+			}
+			state.fields[name] = struct{}{}
+		case rebindModuleObjectStateField:
+			previous, ok := literalArg(id, "previous").(*call.ID)
+			if !ok {
+				state.all = true
+				return
+			}
+			collectToolState(previous, state)
+		default:
+			// A call on an object of the same type that returns that type is a
+			// state transition recorded as the call itself; its effect on the
+			// fields is unknown, so keep them all.
+			if recv := id.Receiver(); recv != nil && recv.Type() != nil && id.Type() != nil &&
+				recv.Type().NamedType() == id.Type().NamedType() {
+				state.all = true
+			}
+			return
+		}
+		id = id.Receiver()
+	}
+}
+
+func literalArg(id *call.ID, name string) any {
+	arg := id.Arg(name)
+	if arg == nil || arg.Value() == nil {
+		return nil
+	}
+	return arg.Value().ToInput()
+}
+
+// rebindKeepsPrevious reports whether rebinding previous onto target would
+// leave its fields as they are.
+func rebindKeepsPrevious(ctx context.Context, target, old *ModuleObject, previous dagql.AnyObjectResult) (bool, error) {
+	state, err := toolStateFields(ctx, previous)
+	if err != nil {
+		return false, err
+	}
+	if state.all {
+		return true, nil
+	}
+	fields, _, err := overlayModuleObjectState(target.Fields, state.carried(old.Fields), target.TypeDef, old.TypeDef)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", target.TypeDef.OriginalName, err)
+	}
+	changed, err := changedStateFields(old.Fields, fields)
+	if err != nil {
+		return false, err
+	}
+	return len(changed) == 0, nil
+}
+
+// rebindModuleObjectFields overlays the previous revision's recorded state onto
 // the target's constructed defaults (see overlayModuleObjectState).
-func rebindModuleObjectFields(ctx context.Context, target, old *ModuleObject) (map[string]any, error) {
+func rebindModuleObjectFields(ctx context.Context, target, old *ModuleObject, state toolState) (map[string]any, error) {
 	typeName := target.TypeDef.OriginalName
 	logger := slog.SpanLogger(ctx, InstrumentationLibrary)
-	fields, warnings, err := overlayModuleObjectState(target.Fields, old.Fields, target.TypeDef, old.TypeDef)
+	fields, warnings, err := overlayModuleObjectState(target.Fields, state.carried(old.Fields), target.TypeDef, old.TypeDef)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", typeName, err)
 	}
