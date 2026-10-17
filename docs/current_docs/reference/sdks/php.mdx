@@ -282,6 +282,7 @@ Dagger derives a function's argument and return types from the PHP signature. Th
 | `Dagger\Secret` | `Secret` |
 | `Dagger\Service` | `Service` |
 | a `#[DaggerObject]` class `T` | object `T` |
+| a `#[DaggerObject]` enum `T` | enum `T` |
 
 ### Lists
 
@@ -369,28 +370,69 @@ public function __construct(?Container $ctr = null)
 
 ### Enums
 
-The PHP SDK does not currently register custom enums defined in your module. To accept a closed set of values, take a `string` argument and validate it yourself. Throw an exception that lists the allowed choices:
+Model a closed set of values as a PHP enum marked with `#[DaggerObject]`. Dagger turns it into an enum and validates inputs. `#[Doc]` works on the enum itself and on each case:
+
+```php title="src/Severity.php"
+<?php
+
+declare(strict_types=1);
+
+namespace DaggerModule;
+
+use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
+
+#[DaggerObject]
+#[Doc('Vulnerability severity levels.')]
+enum Severity: string
+{
+    #[Doc('Undetermined risk; analyze further.')]
+    case Unknown = 'UNKNOWN';
+
+    #[Doc('Minimal risk; routine fix.')]
+    case Low = 'LOW';
+
+    #[Doc('Moderate risk; timely fix.')]
+    case Medium = 'MEDIUM';
+
+    #[Doc('Serious risk; quick fix needed.')]
+    case High = 'HIGH';
+
+    #[Doc('Severe risk; immediate action.')]
+    case Critical = 'CRITICAL';
+}
+```
+
+Type a parameter with the enum and Dagger hands you the matching case; return one and the caller sees its API identifier:
 
 ```php
 #[DaggerFunction]
-public function scan(string $ref, string $severity = 'HIGH'): string
+public function scan(string $ref, Severity $severity): string
 {
-    $allowed = ['UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
-    if (!in_array($severity, $allowed, true)) {
-        throw new \InvalidArgumentException(
-            'severity should be one of ' . implode(', ', $allowed),
-        );
-    }
-
     return dag()
         ->container()
         ->from('aquasec/trivy:0.50.4')
-        ->withExec(['trivy', 'image', "--severity={$severity}", $ref])
+        ->withExec(['trivy', 'image', "--severity={$severity->value}", $ref])
         ->stdout();
 }
 ```
 
-The generated client includes enums that already exist in the Dagger API (for example `Dagger\ImageLayerCompression`) as PHP enums, and you can pass them to core API calls as usual.
+The `#[DaggerObject]` attribute is required on the enum. Without it the enum is never discovered, and the module fails to load with an error like `find mod type for function "scan" arg "severity" type: "Severity"`, which makes every function uncallable, not just the one referencing the enum.
+
+The API identifier for each choice comes from the PHP case name, upper-snake-cased (`Critical` becomes `CRITICAL`, `NotFound` becomes `NOT_FOUND`), never from the backing value. The backing value stays yours to use inside PHP, through `$severity->value`. Keeping the two aligned, as above, avoids surprises.
+
+Matching is case-insensitive, so `--severity=critical` and `--severity=CRITICAL` both work. The backing value is not accepted: only the API identifier is.
+
+Passing a value outside the enum produces a clear error listing the allowed choices:
+
+```shell
+dagger api call scan --ref=alpine:latest --severity=FOO
+# invalid argument "FOO" for "--severity" flag: value should be one of CRITICAL,HIGH,LOW,MEDIUM,UNKNOWN
+```
+
+Any PHP enum works. The backing type is your business: the API identifier always comes from the case name, so a pure enum (`enum Severity { case Low; }`) and an int-backed one (`enum Severity: int`) register exactly like the string-backed one above. Only an enum with no cases at all is rejected.
+
+The naming rule above applies to the enums your module declares. The generated client also includes enums that already exist in the Dagger API (for example `Dagger\NetworkProtocol`) as PHP enums, with case names taken straight from the API; pass them to core API calls and use them in your own signatures as usual.
 
 ### Custom object types
 
@@ -836,9 +878,9 @@ PHP modules use attributes from the `Dagger\Attribute` namespace to add Dagger m
 
 | Attribute | Placement | Meaning |
 |---|---|---|
-| `#[DaggerObject]` | class | expose the class as a Dagger object |
+| `#[DaggerObject]` | class or enum | expose the class as a Dagger object, or the enum as a Dagger enum |
 | `#[DaggerFunction]` | public method or property | expose the method as a function, or the property as a field |
-| `#[Doc('...')]` | class, method, or parameter | API documentation |
+| `#[Doc('...')]` | class, enum, enum case, method, or parameter | API documentation |
 | `#[Check]` | method (with `#[DaggerFunction]`) | mark the function as a [check](#checks) |
 | `#[ListOfType('T')]` | `array` parameter or property | element type of a list |
 | `#[ReturnsListOfType('T')]` | method returning `array` | element type of the returned list |
