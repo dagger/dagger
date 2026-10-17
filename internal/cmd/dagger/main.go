@@ -21,10 +21,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/shlex"
 	"github.com/mattn/go-isatty"
-	"github.com/muesli/reflow/indent"
-	"github.com/muesli/reflow/wordwrap"
 	"github.com/muesli/termenv"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -243,7 +242,7 @@ func init() {
 	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
 	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
 	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
-	cobra.AddTemplateFunc("indent", indent.String)
+	cobra.AddTemplateFunc("indent", indentLines)
 	rootCmd.SetUsageTemplate(usageTemplate)
 
 	// hide the help flag as it's ubiquitous and thus noisy
@@ -1305,8 +1304,8 @@ func wrapCmdDescription(name, short string, padding int) string {
 	nameFormat := fmt.Sprintf("  %%-%ds   ", padding)
 	name = fmt.Sprintf(nameFormat, name)
 	if len(name)+len(short) >= width {
-		wrapped := wordwrap.String(short, width-len(name))
-		indented := indent.String(wrapped, uint(len(name)))
+		wrapped := ansi.Wordwrap(short, width-len(name), "-")
+		indented := indentLines(wrapped, uint(len(name)))
 		// first line shouldn't be indented since we're going to prepend the name
 		short = strings.TrimLeftFunc(indented, unicode.IsSpace)
 	}
