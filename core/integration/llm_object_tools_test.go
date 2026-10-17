@@ -2175,12 +2175,12 @@ func (LLMSuite) TestBoundToolAddresses(ctx context.Context, t *testctx.T) {
 		// The bare glob selects the bound roster's notes, member a included:
 		// the rebinding earlier in the turn is in scope. Evaluated inside the
 		// module function, the notes still get the conversation's workspace.
-		require.Contains(t, out, "dag://?file=roster/members/notes&roster-member=a: "+notes, out)
+		require.Contains(t, out, "dag://?file=notes&roster-member=a: "+notes, out)
 		// A keyed address, with or without a type assertion, picks one.
 		require.Equal(t, 2, strings.Count(out, "read: "+notes), out)
 		// An Artifact must be exactly one: several matches are listed.
 		require.Contains(t, out, `"roster/members/*" is not a resolvable Artifact address: dag://roster/members/* matches 2 artifacts`)
-		require.Contains(t, out, "dag://?directory=roster/members/dir&roster-member=a")
+		require.Contains(t, out, "dag://?directory=dir&roster-member=a")
 		require.Contains(t, out, "FindArtifacts lists what exists")
 		// A collection path with an unknown key has no items: refused, not
 		// handed to the function as an empty selection.
@@ -2199,7 +2199,7 @@ scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $rost
 			return out
 		}
 		// The collection's keys come from the bound roster's state...
-		require.Equal(t, "dag://?directory=roster/members/dir&roster-member=a\n",
+		require.Equal(t, "dag://?directory=dir&roster-member=a\n",
 			run(ctx, t, `$scope | filter-uri "dag://roster/members/dir" | items | uri`))
 		// ...and so does the value.
 		require.Equal(t, "hello from the roster",
@@ -2367,13 +2367,13 @@ roster=$(roster | with-worker --name chief --worker $chief)
 		// The path, with a placeholder for the member it needs, is marked as
 		// read from the bound roster...
 		require.Contains(t, transcript,
-			"dag+git-ref://?git-ref=roster/members/head&roster-members-member=<name> — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+			"dag+git-ref://?git-ref=head&roster-members-member=<name> — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
 		// ...followed by the live members' keys, so the model needs no
 		// second call to learn them...
 		require.Contains(t, transcript, "roster-members-member=<name> — keys: chief")
 		// ...and the items are its live members, fully keyed.
 		require.Contains(t, transcript,
-			"dag+git-ref://?git-ref=roster/members/head&roster-members-member=chief — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
+			"dag+git-ref://?git-ref=head&roster-members-member=chief — The agent's committed history: the HEAD of its workspace. [tool Roster, live]")
 		require.Contains(t, transcript, "commit "+chiefSHA)
 		require.Contains(t, transcript, "+from the chief")
 	})
