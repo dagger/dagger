@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -35,8 +36,34 @@ func consoleText(w http.ResponseWriter, text string) {
 // line. Recorded traces hide agents without a checkpoint (typically agents
 // run by tests inside the trace), since their transcripts can't be read.
 func renderConsoleAgents(agents []consoleAgent, recorded, all bool, header string) string {
+	return renderAgentRoster(agents, AgentRosterOpts{Recorded: recorded, All: all, Header: header})
+}
+
+// AgentRosterOpts tunes a rendered agent roster. The zero hints are the
+// console's own endpoints.
+type AgentRosterOpts struct {
+	// Recorded marks states as historical and notes agents without a
+	// recorded checkpoint; unless All, those are hidden.
+	Recorded, All bool
+	Header        string
+	// ReadHint says how to read one agent's transcript.
+	ReadHint string
+	// AllHint says how to list the agents hidden for lacking a checkpoint.
+	AllHint string
+	// ShowSpans appends each agent's current loop span ID, and names a
+	// parent agent that is not itself listed.
+	ShowSpans bool
+	// CheckpointNote replaces "no checkpoint" for agents without one.
+	CheckpointNote string
+}
+
+func renderAgentRoster(agents []consoleAgent, opts AgentRosterOpts) string {
+	recorded, all := opts.Recorded, opts.All
+	readHint := cmp.Or(opts.ReadHint, "transcript(agent: <handle or unique name>)")
+	allHint := cmp.Or(opts.AllHint, "/agents?all=true")
+	checkpointNote := cmp.Or(opts.CheckpointNote, "no checkpoint")
 	var b strings.Builder
-	b.WriteString(header)
+	b.WriteString(opts.Header)
 	b.WriteString("\n")
 	names := map[string]int{}
 	for _, agent := range agents {
@@ -63,7 +90,7 @@ func renderConsoleAgents(agents []consoleAgent, recorded, all bool, header strin
 			roots = append(roots, agent)
 		}
 	}
-	fmt.Fprintf(&b, "%d agent(s); read one with transcript(agent: <handle or unique name>).\n\n", len(visible))
+	fmt.Fprintf(&b, "%d agent(s); read one with %s.\n\n", len(visible), readHint)
 	printed := map[string]bool{}
 	var walk func(agent consoleAgent, depth int)
 	walk = func(agent consoleAgent, depth int) {
@@ -80,13 +107,20 @@ func renderConsoleAgents(agents []consoleAgent, recorded, all bool, header strin
 			notes = append(notes, "name shared: use the handle")
 		}
 		if recorded && agent.SnapshotDigest == "" {
-			notes = append(notes, "no checkpoint")
+			notes = append(notes, checkpointNote)
+		}
+		if opts.ShowSpans && agent.ParentID != "" && !visible[agent.ParentID] {
+			notes = append(notes, "parent agent "+agent.ParentID)
 		}
 		note := ""
 		if len(notes) > 0 {
 			note = "  (" + strings.Join(notes, "; ") + ")"
 		}
-		fmt.Fprintf(&b, "%s%s  %s  %s%s\n", strings.Repeat("  ", depth), agent.ID, agent.Name, state, note)
+		span := ""
+		if opts.ShowSpans && len(agent.SpanIDs) > 0 {
+			span = "  span=" + agent.SpanIDs[len(agent.SpanIDs)-1]
+		}
+		fmt.Fprintf(&b, "%s%s  %s  %s%s%s\n", strings.Repeat("  ", depth), agent.ID, agent.Name, state, span, note)
 		for _, child := range children[agent.ID] {
 			walk(child, depth+1)
 		}
@@ -95,7 +129,7 @@ func renderConsoleAgents(agents []consoleAgent, recorded, all bool, header strin
 		walk(root, 0)
 	}
 	if hidden > 0 {
-		fmt.Fprintf(&b, "\n%d agent(s) without a recorded checkpoint hidden (e.g. agents run by tests inside this trace); /agents?all=true lists them.\n", hidden)
+		fmt.Fprintf(&b, "\n%d agent(s) without a recorded checkpoint hidden (e.g. agents run by tests inside this trace); %s lists them.\n", hidden, allHint)
 	}
 	return b.String()
 }
@@ -109,6 +143,9 @@ type consoleTranscriptPage struct {
 	Limit    int
 	Clip     int
 	Filters  string
+	// NextPage formats the pointer to the page starting at offset; nil is
+	// the console's own "offset=N".
+	NextPage func(offset int) string
 }
 
 func consoleTranscriptFilters(q url.Values) string {
@@ -180,7 +217,11 @@ func renderConsoleTranscript(page consoleTranscriptPage) string {
 	}
 	nextHint := ""
 	if next < total {
-		nextHint = fmt.Sprintf("next page: offset=%d (%d more)\n", next, total-next)
+		pointer := fmt.Sprintf("offset=%d", next)
+		if page.NextPage != nil {
+			pointer = page.NextPage(next)
+		}
+		nextHint = fmt.Sprintf("next page: %s (%d more)\n", pointer, total-next)
 		b.WriteString(nextHint)
 	}
 	b.WriteString("\n")

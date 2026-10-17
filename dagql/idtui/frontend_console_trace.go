@@ -728,6 +728,12 @@ func inferCheckpointDigest(db *dagui.DB, agentID string) string {
 	if node == nil {
 		return ""
 	}
+	return inferConversationDigest(db, node.Spans, agentID)
+}
+
+// inferConversationDigest is inferCheckpointDigest over the conversation
+// traced beneath spans, skipping nested agents other than agentID's.
+func inferConversationDigest(db *dagui.DB, spans []*dagui.Span, agentID string) string {
 	var best string
 	bestLen := 0
 	seen := map[string]bool{}
@@ -749,7 +755,7 @@ func inferCheckpointDigest(db *dagui.DB, agentID string) string {
 			walk(child)
 		}
 	}
-	for _, span := range node.Spans {
+	for _, span := range spans {
 		walk(span)
 	}
 	if best == "" {
