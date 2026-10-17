@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/reflow/indent"
-	"github.com/muesli/reflow/wordwrap"
 )
 
 const (
@@ -233,7 +233,7 @@ func (d ShellDoc) String() string {
 				i = grp.Indent
 			}
 			if i > 0 {
-				wrapped := wordwrap.String(grp.Body, width-int(i))
+				wrapped := ansi.Wordwrap(grp.Body, width-int(i), "-")
 				body = indent.String(wrapped, i)
 			}
 		}
