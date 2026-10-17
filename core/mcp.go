@@ -3007,24 +3007,32 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "FindSpans",
-		Description: "Find spans in this session and traces imported with LoadTrace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; ok), name -- oldest start time first (ties: trace ID, then span ID; unknown starts first), with running services tagged by hostname." + "\n" +
-			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call. Then ReadTrace (report, inspect, timings) or ReadLogs it." + "\n" +
-			"Matching is a substring test on span name, full test identity/ancestor path, or service hostname. Rows include bounded breadcrumbs; matching uses the full text. Empty query matches all. Only the newest limit matches are returned; offset skips that many newest matches after filtering, and the result gives an exact next-page call. Status filtering is navigation, never proof of error causality.",
+		Description: "Find spans in this session and traces imported with LoadTrace by name: one line per match -- span ID, status (ERROR: the span errored; FAIL: a failure rides on one of its links; run; idle: an agent's loop span while the agent is parked between turns; ok), name -- oldest start time first (ties: trace ID, then span ID; unknown starts first), with running services tagged by hostname." + "\n" +
+			"This is how you get a span ID for something you didn't get a handle to: a step you saw in a report, a service, a check or test, a nested call, an agent (\"agent: <name>\"). Then ReadTrace (report, inspect, timings) or ReadLogs it." + "\n" +
+			"By default the query is a substring test on the span's own name, service hostname, or full test identity; match \"path\" also tests its whole ancestor path, matching everything beneath a named parent. Rows carry breadcrumbs whose long middles are elided as …(N)…. Your own spans (your tool calls and messages) are left out unless includeSelf. Empty query matches all. Only the newest limit matches are returned; offset skips that many newest matches after filtering, and the result gives an exact next-page call. Status filtering is navigation, never proof of error causality.",
 		ReadOnly: true,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"query": map[string]any{
 					"type":        "string",
-					"description": "Substring of span name, full test identity/ancestor path, or service hostname. Empty matches every span.",
+					"description": "Substring of the span's name, service hostname, or full test identity (with match \"path\": of any level of its ancestor path). Empty matches every span.",
 					"default":     "",
+				},
+				"match": map[string]any{
+					"type": "string", "enum": []string{spanMatchName, spanMatchPath}, "default": spanMatchName,
+					"description": "name: match the span itself. path: also match its ancestors, e.g. every span beneath a test or agent.",
+				},
+				"includeSelf": map[string]any{
+					"type": "boolean", "default": false,
+					"description": "Also list your own spans: the tool calls and messages of the agent making this call.",
 				},
 				"span": map[string]any{
 					"type":        "string",
 					"description": "Restrict the search to this span's subtree (hex span ID). Empty searches the whole session.",
 				},
 				"status": map[string]any{
-					"type": "string", "enum": []string{"", "ERROR", "FAIL", "failed", "run", "ok"}, "default": "",
+					"type": "string", "enum": []string{"", "ERROR", "FAIL", "failed", "run", "idle", "ok"}, "default": "",
 					"description": "Filter by displayed span status; failed includes ERROR and FAIL. Does not establish causality or classify a span as a test.",
 				},
 				"offset": map[string]any{
@@ -3095,7 +3103,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Name: "FindCalls",
 		Description: "Content-search every dagql call in this session and traces imported with LoadTrace: one line per match -- \"<digest>  field(args) -> Type  recv=<receiver digest>\" -- sorted by digest." + "\n" +
 			"This is how you find which call references a path, image, module or value, and how you walk a chain: grep for the digest another line names as its receiver or argument, then InspectCall it." + "\n" +
-			"`query` searches the full rendered line before truncation. Displayed strings are capped at 200 characters, with excerpts around deep matches and explicit omitted-character counts. Lines are capped at 4 KiB and responses at 32 KiB; narrow the query if matches are omitted.",
+			"`query` searches the full rendered line before truncation. Displayed strings are capped at 200 characters, with excerpts around deep matches and explicit omitted-character counts; opaque provider signatures are left out. Lines are capped at 4 KiB and responses at 32 KiB; narrow the query if matches are omitted. Your own conversation's calls (withPrompt, withResponse, ...) are left out unless includeSelf.",
 		ReadOnly: true,
 		Schema: map[string]any{
 			"type": "object",
@@ -3103,6 +3111,10 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 				"query": map[string]any{
 					"type":        "string",
 					"description": "Regexp matched against each full call line before display truncation.",
+				},
+				"includeSelf": map[string]any{
+					"type": "boolean", "default": false,
+					"description": "Also match the calls recording your own conversation: the prompts, responses and tool results of the agent making this call.",
 				},
 				"limit": map[string]any{
 					"type":        "integer",
@@ -3442,11 +3454,13 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 // findSpansTool searches the session's trace by span name; see findSpans.
 func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Query  string `default:""`
-		Span   string `default:""`
-		Limit  int    `default:"100"`
-		Status string `default:""`
-		Offset int    `default:"0"`
+		Query       string `default:""`
+		Span        string `default:""`
+		Limit       int    `default:"100"`
+		Status      string `default:""`
+		Offset      int    `default:"0"`
+		Match       string `default:"name"`
+		IncludeSelf bool   `default:"false"`
 	}) (any, error) {
 		root := ""
 		if strings.TrimSpace(args.Span) != "" {
@@ -3458,7 +3472,16 @@ func (m *MCP) findSpansTool(srv *dagql.Server) LLMToolFunc {
 		if args.Limit <= 0 {
 			args.Limit = findSpansDefaultLimit
 		}
-		return findSpans(ctx, args.Query, root, args.Status, args.Limit, args.Offset)
+		return findSpans(ctx, spanSearch{
+			Query:       args.Query,
+			Root:        root,
+			Status:      args.Status,
+			Match:       args.Match,
+			Limit:       args.Limit,
+			Offset:      args.Offset,
+			Caller:      traceCallerFromContext(ctx),
+			IncludeSelf: args.IncludeSelf,
+		})
 	})
 }
 
@@ -3532,8 +3555,9 @@ func normalizeDigestArg(arg string) string {
 // findCallsTool content-searches the session's calls; see findCalls.
 func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Query string
-		Limit int `default:"200"`
+		Query       string
+		Limit       int  `default:"200"`
+		IncludeSelf bool `default:"false"`
 	}) (any, error) {
 		re, err := regexp.Compile(args.Query)
 		if err != nil {
@@ -3542,7 +3566,11 @@ func (m *MCP) findCallsTool(srv *dagql.Server) LLMToolFunc {
 		if args.Limit <= 0 {
 			args.Limit = findCallsDefaultLimit
 		}
-		return findCalls(ctx, re, args.Limit)
+		var exclude string
+		if !args.IncludeSelf {
+			exclude = traceCallerFromContext(ctx).AgentID
+		}
+		return findCalls(ctx, re, args.Limit, exclude)
 	})
 }
 

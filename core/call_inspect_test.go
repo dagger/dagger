@@ -287,23 +287,99 @@ func TestFindCallsIn(t *testing.T) {
 
 	// A literal deep in an argument, on a frame that only rode the log
 	// channel; the line names the digest to inspect next.
-	got, err := findCallsIn(ctx, store, regexp.MustCompile(`example\.com`), 0)
+	got, err := findCallsIn(ctx, store, regexp.MustCompile(`example\.com`), 0, "")
 	require.NoError(t, err)
 	require.Equal(t, frames["git"].Digest+`  git(url: "https://example.com/repo") -> GitRepository`+"\n", got)
 
 	// The spanned root is searchable too, and names its receiver so the
 	// chain can be walked.
-	got, err = findCallsIn(ctx, store, regexp.MustCompile(`withDirectory`), 0)
+	got, err = findCallsIn(ctx, store, regexp.MustCompile(`withDirectory`), 0, "")
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(got, root+"  withDirectory("), got)
 	require.Contains(t, got, "recv="+frames["from"].Digest)
 
-	got, err = findCallsIn(ctx, store, regexp.MustCompile(`.`), 2)
+	got, err = findCallsIn(ctx, store, regexp.MustCompile(`.`), 2, "")
 	require.NoError(t, err)
 	require.Len(t, strings.Split(strings.TrimSpace(got), "\n"), 3)
 	require.Contains(t, got, "… 3 more")
 
-	got, err = findCallsIn(ctx, store, regexp.MustCompile(`nothing`), 0)
+	got, err = findCallsIn(ctx, store, regexp.MustCompile(`nothing`), 0, "")
 	require.NoError(t, err)
 	require.Equal(t, "(no calls matching /nothing/ among the 5 in this session)", got)
+}
+
+// conversationRecipe is two agents' conversations, as the frames an agent loop
+// records them with: a stamped seed, then the turn's prompt, response and tool
+// result on top. The worker's conversation, handed on by "me" through an
+// argument, is re-stamped with its own owner.
+//
+//	llm.withPrompt("worker task").__withOwnerAgent("worker").withResponse(...)
+//	llm.__withOwnerAgent("me").withPrompt("investigate").withResponse(thinking + signature).withToolResult(worker: <worker chain>)
+func conversationRecipe(t *testing.T) *call.ID {
+	t.Helper()
+	llmType := &ast.Type{NamedType: "LLM", NonNull: true}
+	owner := func(handle string) call.IDOpt {
+		return call.WithArgs(call.NewArgument("handle", call.NewLiteralString(handle), false))
+	}
+	response := func(text string) call.IDOpt {
+		return call.WithArgs(call.NewArgument("blocks", call.NewLiteralList(call.NewLiteralObject(
+			call.NewArgument("kind", call.NewLiteralEnum("THINKING"), false),
+			call.NewArgument("text", call.NewLiteralString(text), false),
+			call.NewArgument("signature", call.NewLiteralString("SIGBLOB"+strings.Repeat("A", 1500)), false),
+		)), false))
+	}
+	worker := call.New().
+		Append(llmType, "llm").
+		Append(llmType, "withPrompt", call.WithArgs(call.NewArgument("prompt", call.NewLiteralString("worker task"), false))).
+		Append(llmType, "__withOwnerAgent", owner("worker")).
+		Append(llmType, "withResponse", response("worker thought"))
+	return call.New().
+		Append(llmType, "llm").
+		Append(llmType, "__withOwnerAgent", owner("me")).
+		Append(llmType, "withPrompt", call.WithArgs(call.NewArgument("prompt", call.NewLiteralString("investigate"), false))).
+		Append(llmType, "withResponse", response("my own thought")).
+		Append(llmType, "withToolResult", call.WithArgs(
+			call.NewArgument("content", call.NewLiteralString("thought dump"), false),
+			call.NewArgument("worker", call.NewLiteralID(worker), false),
+		))
+}
+
+func TestFindCallsHidesOwnConversation(t *testing.T) {
+	ctx := t.Context()
+	store, _, _ := callInspectStore(t, conversationRecipe(t))
+
+	// Signatures are opaque noise: never rendered, never matched.
+	got, err := findCallsIn(ctx, store, regexp.MustCompile(`thought`), 0, "")
+	require.NoError(t, err)
+	require.NotContains(t, got, "signature")
+	require.NotContains(t, got, "SIGBLOB")
+	require.Contains(t, got, `blocks: [{kind: THINKING, text: "my own thought"}]`)
+	got, err = findCallsIn(ctx, store, regexp.MustCompile(`SIGBLOB`), 0, "")
+	require.NoError(t, err)
+	require.Contains(t, got, "no calls matching")
+
+	// Without an excluded caller every conversation is searchable (the bare
+	// llm frame both chains start from is one call).
+	require.Contains(t, got, "among the 8")
+	all, err := findCallsIn(ctx, store, regexp.MustCompile(`thought`), 0, "")
+	require.NoError(t, err)
+	require.Contains(t, all, "my own thought")
+	require.Contains(t, all, "worker thought")
+
+	// The caller's own conversation -- everything above its nearest stamp --
+	// is hidden, and counted; the worker it handed a conversation to is not
+	// the caller, even though that chain hangs off the caller's.
+	got, err = findCallsIn(ctx, store, regexp.MustCompile(`thought`), 0, "me")
+	require.NoError(t, err)
+	require.NotContains(t, got, "my own thought")
+	require.NotContains(t, got, "thought dump")
+	require.Contains(t, got, "worker thought")
+	require.Contains(t, got, "(2 matching calls of your own conversation hidden; includeSelf: true lists them)")
+
+	// The worker, searching, sees the conversation of the agent that
+	// spawned it but not its own.
+	got, err = findCallsIn(ctx, store, regexp.MustCompile(`thought`), 0, "worker")
+	require.NoError(t, err)
+	require.Contains(t, got, "my own thought")
+	require.NotContains(t, got, "worker thought")
 }
