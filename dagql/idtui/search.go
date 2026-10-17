@@ -47,7 +47,7 @@ func (fe *frontendPretty) buildSearchMatches() {
 	}
 	for toolArgs, logs := range map[bool]map[dagui.SpanID]*Vterm{false: fe.logs.Logs, true: fe.logs.ToolArgs} {
 		for spanID, vt := range logs {
-			if len(vt.Term().SearchMatchRows()) == 0 {
+			if len(vt.SearchMatchRows()) == 0 {
 				continue
 			}
 			span := fe.db.Spans.Map[spanID]
@@ -83,7 +83,7 @@ func (fe *frontendPretty) buildSearchMatches() {
 					if logs == nil {
 						return
 					}
-					for _, r := range logs.Term().SearchMatchRows() {
+					for _, r := range logs.SearchMatchRows() {
 						fe.searchMatches = append(fe.searchMatches, searchMatch{
 							spanID:   spanID,
 							logRow:   r,

@@ -78,6 +78,7 @@ func (fe *frontendLogs) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
 
 func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) (rerr error) {
 	defer func() { rerr = errors.Join(rerr, fe.db.ClosePrimaryLogs()) }()
+	defer closeTestSummaryLogs(fe.logs.testLogs)
 	fe.opts = opts
 	cleanup, runErr := f(ctx)
 	if cleanup != nil {

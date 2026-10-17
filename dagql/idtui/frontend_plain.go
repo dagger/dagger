@@ -192,6 +192,7 @@ func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...s
 
 func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) (rerr error) {
 	defer func() { rerr = errors.Join(rerr, fe.db.ClosePrimaryLogs()) }()
+	defer closeTestSummaryLogs(fe.testLogs)
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}
