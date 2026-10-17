@@ -70,6 +70,11 @@ func TestArchiveIndexRevisionAndReopening(t *testing.T) {
 	old.Revision = 2
 	old.Digest = "obsolete"
 	appendAgent(old)
+	// Display reads the newest revision, unverified.
+	latest, err := db.AgentControlRows(t.Context())
+	require.NoError(t, err)
+	require.Len(t, latest, 1)
+	require.EqualValues(t, 1, latest[0].ID)
 	want := agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{a.Key: 9}}
 	cut, err := db.Checkpoint(t.Context())
 	require.NoError(t, err)
