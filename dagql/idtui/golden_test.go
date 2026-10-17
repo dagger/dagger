@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
@@ -255,6 +256,47 @@ entrypoint = true
 		// its stderr -- not a bare "exit code: N" (dagger/dagger#13606).
 		{Name: "generate-fail", Function: "generate-fail", Generate: true, Fail: true},
 
+		// a failing staleness check must show the changes its generator would
+		// make, as a patch typed for diff highlighting, on the check's own span.
+		{
+			Name:     "generate-stale-check",
+			Function: "generate-stale/stale",
+			Check:    true,
+			Fail:     true,
+			OutputTest: func(t *testctx.T, out string) {
+				require.Contains(t, out, "diff --git a/greeting.txt b/greeting.txt")
+				require.Contains(t, out, "+stale world")
+				require.Contains(t, out, "+brand new")
+				require.Contains(t, out, "generated files are not up to date")
+				require.Contains(t, out, `dagger generate "dag://?generator=generate-stale"`)
+			},
+			LogTest: func(t *testctx.T, db *dagui.DB, logs []sdklog.Record) {
+				// Only the check's own output matters here: the internal `git diff`
+				// that renders the patch logs it verbosely on its own span too.
+				var patches int
+				for _, rec := range logs {
+					body, _ := dagui.LogBodyString(rec)
+					if !strings.Contains(body, "diff --git a/greeting.txt") {
+						continue
+					}
+					span := db.Spans.Map[db.LogTargetSpanID(rec)]
+					if span == nil || span.CheckName != "dag://?check=generate-stale/stale" {
+						continue
+					}
+					patches++
+					var contentType string
+					rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+						if kv.Key == telemetry.ContentTypeAttr {
+							contentType, _ = dagui.LogValueString(kv.Value)
+						}
+						return true
+					})
+					require.Equal(t, "text/x-diff", contentType, "the patch must be typed for diff highlighting")
+				}
+				require.Equal(t, 1, patches, "the failing staleness check must log its patch on its own span, once")
+			},
+		},
+
 		{Function: "git-readme", Args: []string{
 			"--remote", "https://github.com/dagger/dagger",
 			"--version", "v0.18.6",
@@ -387,7 +429,7 @@ entrypoint = true
 		}
 		t.Run(testName, func(ctx context.Context, t *testctx.T) {
 			goldFile := `TestTelemetry/TestGolden/` + goldFile
-			out, db := ex.Run(ctx, t, s)
+			out, db, logs := ex.Run(ctx, t, s)
 			if ex.OutputTest != nil {
 				ex.OutputTest(t, out)
 			}
@@ -405,6 +447,9 @@ entrypoint = true
 			}
 			if ex.DBTest != nil {
 				ex.DBTest(t, db)
+			}
+			if ex.LogTest != nil {
+				ex.LogTest(t, db, logs.Records())
 			}
 		})
 	}
@@ -442,20 +487,22 @@ type Example struct {
 	Flaky  string
 	Env    []string
 	DBTest func(*testctx.T, *dagui.DB)
+	// Assertions on the log records the CLI exported, e.g. their attributes.
+	LogTest func(*testctx.T, *dagui.DB, []sdklog.Record)
 	// Additional output assertions that must hold even when updating goldens.
 	OutputTest func(*testctx.T, string)
 	// Using fuzzytest will eschew golden assertions and testdata and allow string assertions instead
 	FuzzyTest func(*testctx.T, string)
 }
 
-func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (string, *dagui.DB) {
+func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (string, *dagui.DB, *logRecorder) {
 	// Each CLI must establish its own session rooted at the fixture's working
 	// directory, not reuse the test runner's nested session and workspace.
 	// Keep the runner host so the new session still uses the test engine.
 	testEnv := slices.DeleteFunc(os.Environ(), func(env string) bool {
 		return strings.HasPrefix(env, "DAGGER_SESSION_PORT=") || strings.HasPrefix(env, "DAGGER_SESSION_TOKEN=")
 	})
-	db, otlpL := testDB(t)
+	db, logs, otlpL := testDB(t)
 
 	if ex.Module == "" {
 		ex.Module = "./viztest"
@@ -576,22 +623,50 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	return normalizeTelemetryNativePlatform(
 		scrub.Stabilize(expected),
 		os.Getenv("_DAGGER_TESTS_ENGINE_PLATFORM"),
-	), db
+	), db, logs
 }
 
-func testDB(t *testctx.T) (*dagui.DB, net.Listener) {
+func testDB(t *testctx.T) (*dagui.DB, *logRecorder, net.Listener) {
 	db := dagui.NewDB()
+	logs := &logRecorder{next: db.LogExporter()}
 	l, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 
 	srv := &http.Server{
-		Handler: newReceiver(t, db, db.LogExporter()),
+		Handler: newReceiver(t, db, logs),
 	}
 	go srv.Serve(l)
 
 	t.Cleanup(func() { srv.Close() })
 
-	return db, l
+	return db, logs, l
+}
+
+// logRecorder keeps every exported log record, with its attributes, for
+// assertions the DB does not retain, then forwards it.
+type logRecorder struct {
+	next    sdklog.Exporter
+	mu      sync.Mutex
+	records []sdklog.Record
+}
+
+func (r *logRecorder) Export(ctx context.Context, logs []sdklog.Record) error {
+	r.mu.Lock()
+	for _, rec := range logs {
+		r.records = append(r.records, rec.Clone())
+	}
+	r.mu.Unlock()
+	return r.next.Export(ctx, logs)
+}
+
+func (r *logRecorder) Shutdown(ctx context.Context) error { return r.next.Shutdown(ctx) }
+
+func (r *logRecorder) ForceFlush(ctx context.Context) error { return r.next.ForceFlush(ctx) }
+
+func (r *logRecorder) Records() []sdklog.Record {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.records)
 }
 
 func newReceiver(t *testctx.T, traces sdktrace.SpanExporter, logs sdklog.Exporter) http.Handler {

@@ -432,20 +432,50 @@ const (
 	patchSummaryMaxLines = 100
 )
 
-// changesetTooLarge checks a metadata upper bound before any full path
-// computation, which would verify content and detect renames. An oversized
-// result deliberately has no exact count or path list.
-func changesetTooLarge(ctx context.Context, changes dagql.ObjectResult[*Changeset]) (bool, error) {
-	return changes.Self().PathCountExceeds(ctx, patchSummaryMaxPaths)
+// patchPreviewLimits bounds a changeset preview (see summarizePatch): how many
+// paths it inspects at all, and how large a patch it shows verbatim before
+// falling back to a diff-stat summary.
+type patchPreviewLimits struct {
+	MaxPaths int
+	MaxBytes int
+	MaxLines int
 }
 
-func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) string {
-	tooLarge, err := changesetTooLarge(ctx, changes)
+var (
+	// toolPatchLimits keep a tool result's preview small enough for a model's
+	// context.
+	toolPatchLimits = patchPreviewLimits{
+		MaxPaths: patchSummaryMaxPaths,
+		MaxBytes: patchSummaryMaxBytes,
+		MaxLines: patchSummaryMaxLines,
+	}
+	// stalePatchLimits are for a stale generator's check, whose patch is read by
+	// a person in a terminal or CI log, where seeing what is actually stale
+	// beats a diff-stat. They still bound the work and the size of the log.
+	stalePatchLimits = patchPreviewLimits{
+		MaxPaths: 1000,
+		MaxBytes: 512 * 1024,
+		MaxLines: 2000,
+	}
+)
+
+// tooLarge checks a metadata upper bound before any full path computation,
+// which would verify content and detect renames. An oversized result
+// deliberately has no exact count or path list.
+func (limits patchPreviewLimits) tooLarge(ctx context.Context, changes dagql.ObjectResult[*Changeset]) (bool, error) {
+	return changes.Self().PathCountExceeds(ctx, limits.MaxPaths)
+}
+
+// summarizePatch previews a changeset within limits: the patch itself when it
+// is small and textual, otherwise a diff-stat summary. Shared by tool results
+// and the generator staleness check, so both render the same way.
+func summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset], limits patchPreviewLimits) string {
+	tooLarge, err := limits.tooLarge(ctx, changes)
 	if err != nil {
 		return fmt.Sprintf("WARNING: failed to bound changed paths: %s", err)
 	}
 	if tooLarge {
-		return patchBudgetExceeded()
+		return limits.budgetExceeded()
 	}
 
 	// Inspect stats before generating a patch. Keep these transient entries
@@ -457,13 +487,13 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 	if len(stats) == 0 {
 		return ""
 	}
-	if smallTextChangeset(stats) {
+	if limits.smallTextChangeset(stats) {
 		var patch dagql.ObjectResult[*File]
 		if err := srv.Select(ctx, changes, &patch, dagql.Selector{
 			View: srv.View, Field: "asPatch",
 		}); err == nil {
 			if r, err := patch.Self().Open(ctx, patch); err == nil {
-				preview, ok := readPatchPreview(r)
+				preview, ok := limits.readPatchPreview(r)
 				r.Close()
 				if ok {
 					return preview
@@ -479,14 +509,15 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 // what actually changed in the workspace, so it is the one shown, within the
 // same bounds, rather than a second render of the changeset's own.
 func (m *MCP) summarizeAppliedPatch(ctx context.Context, changes dagql.ObjectResult[*Changeset], patch []byte) string {
-	tooLarge, err := changesetTooLarge(ctx, changes)
+	limits := toolPatchLimits
+	tooLarge, err := limits.tooLarge(ctx, changes)
 	if err != nil {
 		return fmt.Sprintf("WARNING: failed to bound changed paths: %s", err)
 	}
 	if tooLarge {
-		return patchBudgetExceeded()
+		return limits.budgetExceeded()
 	}
-	if preview, ok := readPatchPreview(bytes.NewReader(patch)); ok {
+	if preview, ok := limits.readPatchPreview(bytes.NewReader(patch)); ok {
 		return preview
 	}
 	stats, err := changes.Self().DiffStats(ctx)
@@ -499,8 +530,8 @@ func (m *MCP) summarizeAppliedPatch(ctx context.Context, changes dagql.ObjectRes
 	return summarizeDiffStats(stats)
 }
 
-func patchBudgetExceeded() string {
-	return fmt.Sprintf("The change exceeds the %d-path inspection budget; patch omitted. File contents and renames were not inspected for this summary.", patchSummaryMaxPaths)
+func (limits patchPreviewLimits) budgetExceeded() string {
+	return fmt.Sprintf("The change exceeds the %d-path inspection budget; patch omitted. File contents and renames were not inspected for this summary.", limits.MaxPaths)
 }
 
 func summarizeDiffStats(stats []*DiffStat) string {
@@ -519,7 +550,7 @@ func summarizeDiffStats(stats []*DiffStat) string {
 // smallTextChangeset avoids generating obviously large or binary patches.
 // Renames are excluded because asPatch encodes them as delete+add, which can
 // include an entire file even when numstat reports zero changed lines.
-func smallTextChangeset(stats []*DiffStat) bool {
+func (limits patchPreviewLimits) smallTextChangeset(stats []*DiffStat) bool {
 	lines := 0
 	for _, stat := range stats {
 		if strings.HasSuffix(stat.Path, "/") {
@@ -531,7 +562,7 @@ func smallTextChangeset(stats []*DiffStat) bool {
 			return false
 		}
 		lines += stat.AddedLines + stat.RemovedLines
-		if lines > patchSummaryMaxLines {
+		if lines > limits.MaxLines {
 			return false
 		}
 	}
@@ -541,13 +572,13 @@ func smallTextChangeset(stats []*DiffStat) bool {
 // readPatchPreview bounds bytes as well as lines: a single minified line can
 // exceed File.contents' limit. One extra byte distinguishes a complete preview
 // from truncation; binary payloads must never become automatic previews.
-func readPatchPreview(r io.Reader) (string, bool) {
-	buf, err := io.ReadAll(io.LimitReader(r, patchSummaryMaxBytes+1))
-	if err != nil || len(buf) == 0 || len(buf) > patchSummaryMaxBytes {
+func (limits patchPreviewLimits) readPatchPreview(r io.Reader) (string, bool) {
+	buf, err := io.ReadAll(io.LimitReader(r, int64(limits.MaxBytes)+1))
+	if err != nil || len(buf) == 0 || len(buf) > limits.MaxBytes {
 		return "", false
 	}
 	patch := string(buf)
-	if strings.Count(patch, "\n") > patchSummaryMaxLines || strings.Contains(patch, "\nGIT binary patch\n") {
+	if strings.Count(patch, "\n") > limits.MaxLines || strings.Contains(patch, "\nGIT binary patch\n") {
 		return "", false
 	}
 	return patch, true
@@ -781,7 +812,7 @@ func (m *MCP) summarizeWorkspaceDiff(ctx context.Context, srv *dagql.Server, pre
 	}); err != nil {
 		return "", err
 	}
-	return m.summarizePatch(ctx, srv, changes), nil
+	return summarizePatch(ctx, srv, changes, toolPatchLimits), nil
 }
 
 // unionMountPoints returns every root-relative path excluded from a workspace
@@ -1240,7 +1271,7 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	if err := m.overlayChangeset(ctx, srv, placed); err != nil {
 		return "", err
 	}
-	return m.summarizePatch(ctx, srv, changes), nil
+	return summarizePatch(ctx, srv, changes, toolPatchLimits), nil
 }
 
 // refuseGitMetadataChanges fails for a changeset that touches a .git path, at

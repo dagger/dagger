@@ -4272,7 +4272,9 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 // check'); otherwise it emits just "RUN LOCALLY". The "RUN LOCALLY" section can
 // be overridden by FrontendOpts.RerunSuggestion, for consumers that don't have
 // a CLI to run. Only outermost
-// checks are re-runnable, so sub-checks roll up to their root. Returns nil when
+// checks are re-runnable, so sub-checks roll up to their root. A failed
+// staleness check also gets a "REGENERATE" section ('dagger generate' for its
+// generator), since running the generator is what fixes it. Returns nil when
 // no failed check applies. Controlled by showSuggestions at the call site.
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.db == nil {
@@ -4282,12 +4284,30 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 
 	var names []string
 	seen := map[string]bool{}
-	add := func(name string) {
-		if name == "" || seen[name] {
+	// A failed staleness check is fixed by running its generator, so the
+	// re-runnable checks' failed generator checks get a `dagger generate` too.
+	var generators []string
+	seenGenerator := map[string]bool{}
+	var addGenerators func(n *dagui.CheckNode)
+	addGenerators = func(n *dagui.CheckNode) {
+		if !n.Failed() {
 			return
 		}
-		seen[name] = true
-		names = append(names, name)
+		if gen := n.Span.CheckGenerator; gen != "" && !seenGenerator[gen] {
+			seenGenerator[gen] = true
+			generators = append(generators, gen)
+		}
+		for _, child := range n.Children {
+			addGenerators(child)
+		}
+	}
+	add := func(n *dagui.CheckNode) {
+		if n.Name == "" || seen[n.Name] {
+			return
+		}
+		seen[n.Name] = true
+		names = append(names, n.Name)
+		addGenerators(n)
 	}
 
 	switch {
@@ -4295,13 +4315,13 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 		// Zoomed to a check: re-run its outermost surfaced check (the re-runnable
 		// unit), if that check failed.
 		if root := outermostSurfacedCheck(roots, zoomed.CheckName); root != nil && root.Failed() {
-			add(root.Name)
+			add(root)
 		}
 	case zoomed == nil:
 		// Whole trace: re-run every failed outermost check.
 		for _, n := range roots {
 			if n.Failed() {
-				add(n.Name)
+				add(n)
 			}
 		}
 	}
@@ -4338,14 +4358,27 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 			heading = hookHeading
 		}
 		body = hookBody
+		// The hook owns the vocabulary; a CLI command would be noise to it.
+		generators = nil
 	}
-	if len(body) == 0 {
-		return lines
+	if len(body) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, reportSectionLines(out, fe.agentStyle(), heading, body)...)
 	}
-	if len(lines) > 0 {
-		lines = append(lines, "")
+
+	// Run the generators whose staleness checks failed, to fix them.
+	if len(generators) > 0 {
+		body := make([]string, 0, len(generators))
+		for _, gen := range generators {
+			body = append(body, fmt.Sprintf("dagger generate %q", gen))
+		}
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, reportSectionLines(out, fe.agentStyle(), "REGENERATE", body)...)
 	}
-	lines = append(lines, reportSectionLines(out, fe.agentStyle(), heading, body)...)
 
 	return lines
 }
@@ -4643,7 +4676,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 			})
 			eachFailedLeafGenerator(fe.reportGenerators(), func(n *dagui.GeneratorNode) {
 				// The generator span's own rolled-up logs carry the exec failure
-				// (renderGeneratorFailureDetail); explicit origins render like a
+				// (renderSpanFailureDetail); explicit origins render like a
 				// check's causes.
 				fe.requestLogs(n.Span.ID)
 				for _, origin := range n.Span.ErrorOrigins.Spans() {
