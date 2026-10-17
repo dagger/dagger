@@ -134,6 +134,14 @@ func (i *consoleTraceInspector) agentSource(ctx context.Context) consoleAgentSou
 
 func (i *consoleTraceInspector) agents(w http.ResponseWriter, r *http.Request) {
 	src := i.agentSource(r.Context())
+	if r.URL.Query().Get("format") != "json" && src.source != "" {
+		header := "Recorded trace: states are historical observations, not live runtimes. No agents have been restored or started."
+		if src.source == "loaded-telemetry" {
+			header = "Loaded telemetry: the full trace download failed; transcripts are decoded best-effort. Warning: " + src.warning
+		}
+		consoleText(w, renderConsoleAgents(src.agents, src.source == "recorded-trace", r.URL.Query().Get("all") == "true", header))
+		return
+	}
 	switch src.source {
 	case "recorded-trace":
 		consoleJSON(w, struct {
@@ -220,8 +228,8 @@ func withLoadedFallback(runtime, loaded consoleSnapshotReader) consoleSnapshotRe
 	}
 }
 
-// decodeCheckpointWithFallback decodes a recorded checkpoint strictly, and
-// only when that fails, best-effort with explicit gaps.
+// decodeCheckpointWithFallback decodes a recorded checkpoint with explicit gaps,
+// falling back to inferred telemetry when no checkpoint was recorded.
 func decodeCheckpointWithFallback(db *dagui.DB, agent consoleAgent) (consoleAgentSnapshot, error) {
 	snap, err := decodeConsoleCheckpoint(db, agent)
 	if err == nil {
@@ -235,7 +243,7 @@ func decodeCheckpointWithFallback(db *dagui.DB, agent consoleAgent) (consoleAgen
 	if partial.Source == "" {
 		partial.Source = "recorded-checkpoint"
 	}
-	partial.Warning = "strict decode failed (" + err.Error() + "); decoded best-effort instead"
+	partial.Warning = "recorded checkpoint unavailable (" + err.Error() + "); decoded best-effort instead"
 	return partial, nil
 }
 
@@ -248,7 +256,7 @@ func decodeLoadedCheckpoint(db *dagui.DB, agent consoleAgent) (consoleAgentSnaps
 		agent.SnapshotDigest = inferCheckpointDigest(db, agent.ID)
 		inferred = agent.SnapshotDigest != ""
 	}
-	snap, err := decodeCheckpoint(db, agent, true)
+	snap, err := decodeConsoleCheckpoint(db, agent)
 	if err != nil {
 		return snap, err
 	}
@@ -272,132 +280,410 @@ func decodeLoadedCheckpoint(db *dagui.DB, agent consoleAgent) (consoleAgentSnaps
 	return snap, fmt.Errorf("no messages recoverable from loaded telemetry: %s", strings.Join(snap.Gaps, "; "))
 }
 
-// Read only the committed LLM receiver spine, not
-// CallIDForDigest's full dependency closure: a missing host/tool/module dependency
-// must not prevent reading messages that are present. Unknown or missing spine
-// frames are errors, never silently omitted messages. Nothing is evaluated.
-func decodeConsoleCheckpoint(db *dagui.DB, agent consoleAgent) (consoleAgentSnapshot, error) {
-	return decodeCheckpoint(db, agent, false)
+// consoleCheckpointConfig names core LLM selectors that configure a
+// conversation without adding messages to it. Their ID arguments (tools,
+// workspaces, expertise, ...) are never followed.
+var consoleCheckpointConfig = map[string]bool{
+	"withoutDefaultSystemPrompt": true,
+	"withMCPServer":              true,
+	"withSkills":                 true,
+	"withTools":                  true,
+	"withWorkspace":              true,
+	"withModel":                  true,
+	"withSmallModel":             true,
+	"withReasoningEffort":        true,
+	"attempt":                    true,
+	"__withExpertise":            true,
+	"__withOwnerAgent":           true,
+	// Legacy recorded checkpoints; no longer emitted or evaluated.
+	"__withCompositionOwner": true,
 }
 
-// consoleGapRole marks a best-effort transcript's explicit hole: a frame that
-// never reached this client, or a step that isn't message data.
-const consoleGapRole = "GAP"
-
-// consoleMessageSelectors carry message data; consoleConfigSelectors only
-// configure the LLM. Anything else on a spine is unknown to the decoder.
-var (
-	consoleMessageSelectors = []string{"withPrompt", "withSystemPrompt", "withResponse", "withToolResult"}
-	consoleConfigSelectors  = []string{
-		"withoutDefaultSystemPrompt", "withMCPServer", "withSkills", "withTools", "withWorkspace", "withModel", "withReasoningEffort",
-		"__withCompositionOwner", // Legacy recorded checkpoints; no longer emitted or evaluated.
-	}
-)
-
-type checkpointSpineItem struct {
+// consoleSpineStep is one frame of a checkpoint's LLM receiver spine, or a
+// gap where the spine could not be followed.
+type consoleSpineStep struct {
 	frame *callpbv1.Call
 	gap   string
 }
 
-// decodeCheckpoint walks the spine from the snapshot digest back to its llm
-// root. Strictly, any missing, cyclic, foreign or unknown frame is an error.
-// With partial, each becomes a GAP message instead, and the walk continues
-// where it can: through a step that isn't message data (e.g. a tool that
-// returns the conversation in a new workspace, as checkout does), it follows
-// the step's LLM-valued argument when its receiver isn't the conversation.
-func decodeCheckpoint(db *dagui.DB, agent consoleAgent, partial bool) (consoleAgentSnapshot, error) {
+// decodeConsoleCheckpoint reads an agent's recorded conversation from its
+// checkpoint: only the committed LLM receiver spine, not CallIDForDigest's
+// full dependency closure, so a missing host/tool/module dependency does not
+// prevent reading messages that are present. Nothing is evaluated.
+//
+// Decoding is best-effort, never silent: where message data is missing or a
+// selector is not understood, the transcript carries a GAP message at that
+// position (and the snapshot lists it in Gaps) instead of failing outright,
+// so one unfamiliar selector does not make a whole conversation unreadable.
+func decodeConsoleCheckpoint(db *dagui.DB, agent consoleAgent) (consoleAgentSnapshot, error) {
 	var result consoleAgentSnapshot
 	if agent.SnapshotDigest == "" {
 		return result, fmt.Errorf("agent %q has no recorded checkpoint", agent.ID)
 	}
-	var spine []checkpointSpineItem
-	gap := func(format string, args ...any) {
-		spine = append(spine, checkpointSpineItem{gap: fmt.Sprintf(format, args...)})
+	dec := &consoleCheckpointDecoder{}
+	for _, step := range consoleCheckpointSpine(db, agent.SnapshotDigest) {
+		if step.frame == nil {
+			dec.gap(step.gap)
+			continue
+		}
+		dec.apply(step.frame)
 	}
+	result.Source, result.Digest, result.State = "recorded-checkpoint", agent.SnapshotDigest, agent.State
+	result.Gaps = dec.gaps
+	result.Snapshot.Messages = make([]consoleTranscriptMessage, 0, len(dec.messages))
+	for i, message := range dec.messages {
+		message.message.Index = i
+		result.Snapshot.Messages = append(result.Snapshot.Messages, message.message)
+	}
+	return result, nil
+}
+
+// consoleCheckpointSpine walks a checkpoint from its newest frame back to
+// its root and returns the steps oldest first. A conversation returned by a
+// module function (e.g. a tool that rebinds itself) is followed through that
+// function's LLM argument.
+func consoleCheckpointSpine(db *dagui.DB, digest string) []consoleSpineStep {
+	var steps []consoleSpineStep
 	seen := map[string]bool{}
-	for digest := agent.SnapshotDigest; digest != ""; {
+	gap := func(format string, args ...any) {
+		steps = append(steps, consoleSpineStep{gap: fmt.Sprintf(format, args...)})
+	}
+walk:
+	for digest != "" {
 		if seen[digest] {
-			if !partial {
-				return result, fmt.Errorf("cycle in checkpoint spine at %s", digest)
-			}
-			gap("cycle in checkpoint spine at %s; earlier messages are unavailable", digest)
+			gap("cycle in the checkpoint spine at %s: earlier history is unavailable", digest)
 			break
 		}
 		seen[digest] = true
 		frame := db.Calls[digest]
-		if frame == nil {
-			if !partial {
-				return result, fmt.Errorf("checkpoint spine frame %s is missing from the trace", digest)
-			}
-			gap("frame %s never reached this client; earlier messages are unavailable", digest)
-			break
-		}
-		if frame.GetType().GetNamedType() != "LLM" {
-			if !partial {
-				return result, fmt.Errorf("checkpoint frame %s is not a core LLM selector", digest)
-			}
-			gap("frame %s (%s) is a %s, not the conversation; earlier messages are unavailable",
-				digest, frame.Field, frame.GetType().GetNamedType())
-			break
-		}
-		if frame.Module != nil && !partial {
-			return result, fmt.Errorf("checkpoint frame %s is not a core LLM selector", digest)
-		}
-		spine = append(spine, checkpointSpineItem{frame: frame})
-		digest = nextSpineDigest(db, frame, partial)
-	}
-	slices.Reverse(spine)
-	if !partial && (len(spine) == 0 || spine[0].frame.Field != "llm") {
-		return result, fmt.Errorf("checkpoint is not rooted at llm")
-	}
-	messages := make([]consoleTranscriptMessage, 0)
-	addGap := func(text string) {
-		result.Gaps = append(result.Gaps, text)
-		messages = append(messages, consoleTranscriptMessage{
-			Index: len(messages), Role: consoleGapRole,
-			Content: []consoleTranscriptBlock{{Kind: consoleGapRole, Text: text}},
-		})
-	}
-	for index, item := range spine {
-		if item.frame == nil {
-			addGap(item.gap)
-			continue
-		}
-		frame := item.frame
-		if !isConsoleSpineSelector(frame) {
-			if !partial {
-				return result, fmt.Errorf("unsupported checkpoint selector %q: refusing an incomplete transcript", frame.Field)
-			}
-			addGap(fmt.Sprintf("skipped %s (%s): not message data", consoleFrameName(frame), frame.Digest))
-			continue
-		}
 		switch {
-		case frame.Field == "llm":
-			if index != 0 {
-				if !partial {
-					return result, fmt.Errorf("unexpected llm selector within checkpoint")
-				}
-				addGap(fmt.Sprintf("unexpected llm selector %s within the checkpoint", frame.Digest))
+		case frame == nil:
+			gap("checkpoint frame %s is missing from the trace: earlier history is unavailable", digest)
+			break walk
+		case frame.GetType().GetNamedType() != "LLM":
+			gap("checkpoint frame %s (%s) does not return an LLM: earlier history is unavailable", digest, frame.Field)
+			break walk
+		case frame.Module != nil:
+			name := consoleCallName(db, frame)
+			next := consoleLLMArgument(db, frame)
+			if next == "" {
+				gap("the conversation was returned by module function %s, which takes no LLM argument: earlier history is unavailable", name)
+				break walk
 			}
-			continue
-		case slices.Contains(consoleConfigSelectors, frame.Field):
-			continue // Binding/configuration, not message data. Do not follow IDs.
+			gap("the conversation was returned by module function %s: changes it made are not decoded", name)
+			digest = next
+		default:
+			steps = append(steps, consoleSpineStep{frame: frame})
+			digest = frame.ReceiverDigest
 		}
-		message, err := decodeCheckpointMessage(frame)
-		if err != nil {
-			if !partial {
-				return result, err
-			}
-			addGap(fmt.Sprintf("could not decode %s (%s): %v", frame.Field, frame.Digest, err))
-			continue
-		}
-		message.Index = len(messages)
-		messages = append(messages, message)
 	}
-	result.Source, result.Digest, result.State = "recorded-checkpoint", agent.SnapshotDigest, agent.State
-	result.Snapshot.Messages = messages
-	return result, nil
+	slices.Reverse(steps)
+	if len(steps) > 0 && steps[0].frame != nil && steps[0].frame.Field != "llm" {
+		steps = append([]consoleSpineStep{{
+			gap: fmt.Sprintf("the checkpoint is not rooted at llm (it starts at %s): earlier history is unavailable", steps[0].frame.Field),
+		}}, steps...)
+	}
+	return steps
 }
+
+func consoleCallName(db *dagui.DB, frame *callpbv1.Call) string {
+	if recv := db.Calls[frame.ReceiverDigest]; recv != nil && recv.GetType().GetNamedType() != "" {
+		return recv.GetType().GetNamedType() + "." + frame.Field
+	}
+	if frame.Module != nil && frame.Module.Name != "" {
+		return frame.Module.Name + "." + frame.Field
+	}
+	return frame.Field
+}
+
+// consoleLLMArgument returns the digest of a call's only LLM-valued argument.
+func consoleLLMArgument(db *dagui.DB, frame *callpbv1.Call) string {
+	var found []string
+	for _, arg := range frame.Args {
+		digest := arg.GetValue().GetCallDigest()
+		if digest == "" {
+			continue
+		}
+		if call := db.Calls[digest]; call != nil && call.GetType().GetNamedType() == "LLM" {
+			found = append(found, digest)
+		}
+	}
+	if len(found) != 1 {
+		return ""
+	}
+	return found[0]
+}
+
+type consoleDecodedMessage struct {
+	message consoleTranscriptMessage
+	// owner is a system prompt's composition owner, so __withoutComposition
+	// can remove exactly what the engine removed.
+	owner string
+}
+
+type consoleCheckpointDecoder struct {
+	messages []consoleDecodedMessage
+	gaps     []string
+}
+
+func (d *consoleCheckpointDecoder) add(role string, origin *consoleTranscriptOrigin, owner string, blocks ...consoleTranscriptBlock) {
+	d.messages = append(d.messages, consoleDecodedMessage{
+		message: consoleTranscriptMessage{Role: role, Origin: origin, Content: blocks},
+		owner:   owner,
+	})
+}
+
+func (d *consoleCheckpointDecoder) gap(text string) {
+	d.gaps = append(d.gaps, text)
+	d.add("GAP", nil, "", consoleTranscriptBlock{Kind: "TEXT", Text: text})
+}
+
+func (d *consoleCheckpointDecoder) drop(remove func(consoleDecodedMessage) bool) {
+	d.messages = slices.DeleteFunc(d.messages, remove)
+}
+
+// restamp sets the owner of the system prompt at index in the conversation,
+// counting decoded messages but not gaps. It reports whether there was one.
+func (d *consoleCheckpointDecoder) restamp(index int, owner string) bool {
+	for i := range d.messages {
+		if d.messages[i].message.Role == "GAP" {
+			continue
+		}
+		if index == 0 {
+			if d.messages[i].message.Role != "SYSTEM" {
+				return false
+			}
+			d.messages[i].owner = owner
+			return true
+		}
+		index--
+	}
+	return false
+}
+
+func (d *consoleCheckpointDecoder) apply(frame *callpbv1.Call) {
+	if frame.Field == "llm" || consoleCheckpointConfig[frame.Field] {
+		return
+	}
+	fail := func(format string, args ...any) {
+		d.gap(fmt.Sprintf("%s: ", frame.Field) + fmt.Sprintf(format, args...))
+	}
+	switch frame.Field {
+	case "compose":
+		// Entries run inside compose; what they contributed is not on the
+		// spine. Only system prompts and tools are expected there.
+		d.add("SYSTEM", nil, "", consoleTranscriptBlock{Kind: "TEXT",
+			Text: "[expertise composed here; the system prompts and tools it contributed are not recorded on the checkpoint spine]"})
+		return
+	case "__withContributionOwner":
+		// Re-stamps system prompts by their position in the conversation,
+		// so a later __withoutComposition removes them under the new owner.
+		args, _ := consoleFrameArgs(frame, true)
+		owner, _ := args["owner"].(string)
+		indices, _ := args["messages"].([]any)
+		for _, raw := range indices {
+			index, ok := raw.(int64)
+			if !ok || !d.restamp(int(index), owner) {
+				fail("message %v is not in the decoded transcript; its owner was not updated", raw)
+			}
+		}
+		return
+	case "__withoutComposition":
+		args, _ := consoleFrameArgs(frame, true)
+		owner, _ := args["owner"].(string)
+		if owner != "" {
+			d.drop(func(m consoleDecodedMessage) bool { return m.message.Role == "SYSTEM" && m.owner == owner })
+		}
+		return
+	case "withoutMessageHistory":
+		d.drop(func(m consoleDecodedMessage) bool { return m.message.Role != "SYSTEM" })
+		return
+	case "withoutSystemPrompts":
+		d.drop(func(m consoleDecodedMessage) bool { return m.message.Role == "SYSTEM" })
+		return
+	case "withPromptFile", "withContentFile":
+		fail("a user message was read from a file whose contents are not recorded in the checkpoint")
+		return
+	case "withPrompt", "withSystemPrompt", "withContent", "withResponse", "withToolResult":
+	default:
+		fail("unrecognized checkpoint selector skipped; it may have changed the conversation")
+		return
+	}
+	args, err := consoleFrameArgs(frame, true)
+	if err != nil {
+		fail("%v", err)
+		return
+	}
+	origin := consoleOrigin(args["origin"])
+	switch frame.Field {
+	case "withPrompt", "withSystemPrompt":
+		prompt, ok := args["prompt"].(string)
+		if !ok {
+			fail("%s is missing its prompt", frame.Field)
+			return
+		}
+		if frame.Field == "withSystemPrompt" {
+			owner, _ := args["owner"].(string)
+			d.add("SYSTEM", nil, owner, consoleTranscriptBlock{Kind: "TEXT", Text: prompt})
+			return
+		}
+		d.add("USER", origin, "", consoleTranscriptBlock{Kind: "TEXT", Text: prompt})
+	case "withContent":
+		blocks := consoleContentBlocks(args["content"])
+		if len(blocks) == 0 {
+			fail("invalid withContent content")
+			return
+		}
+		d.add("USER", origin, "", blocks...)
+	case "withResponse":
+		blocks := consoleContentBlocks(args["content"])
+		if len(blocks) == 0 {
+			fail("invalid withResponse content")
+			return
+		}
+		d.add("ASSISTANT", nil, "", blocks...)
+	case "withToolResult":
+		text, hasText := args["content"].(string)
+		extra := consoleContentBlocks(args["blocks"])
+		if !hasText && len(extra) == 0 {
+			fail("invalid withToolResult content")
+			return
+		}
+		callID, _ := args["callId"].(string)
+		errored, _ := args["errored"].(bool)
+		blocks := []consoleTranscriptBlock{{Kind: "TOOL_RESULT", CallID: callID, Text: text, Errored: errored}}
+		d.add("USER", nil, "", append(blocks, extra...)...)
+	}
+}
+
+func consoleFrameArgs(frame *callpbv1.Call, lenient bool) (map[string]any, error) {
+	args := map[string]any{}
+	for _, arg := range frame.Args {
+		value, err := consoleLiteralValue(arg.Value, lenient)
+		if err != nil {
+			return nil, fmt.Errorf("argument %s: %w", arg.Name, err)
+		}
+		args[arg.Name] = value
+	}
+	return args, nil
+}
+
+func consoleOrigin(value any) *consoleTranscriptOrigin {
+	if value == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var origin consoleTranscriptOrigin
+	if json.Unmarshal(encoded, &origin) != nil || origin.Kind == "" {
+		return nil
+	}
+	return &origin
+}
+
+// consoleContentBlocks decodes recorded LLMContent blocks. Media and other
+// non-text kinds keep their kind with a short placeholder: their bytes are
+// not useful in a transcript.
+func consoleContentBlocks(value any) []consoleTranscriptBlock {
+	list, _ := value.([]any)
+	blocks := make([]consoleTranscriptBlock, 0, len(list))
+	for _, item := range list {
+		fields, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		str := func(name string) string {
+			s, _ := fields[name].(string)
+			return s
+		}
+		block := consoleTranscriptBlock{
+			Kind:      str("kind"),
+			Text:      str("text"),
+			CallID:    str("callId"),
+			ToolName:  str("toolName"),
+			Arguments: str("arguments"),
+		}
+		block.Errored, _ = fields["errored"].(bool)
+		switch block.Kind {
+		case "TEXT", "THINKING", "TOOL_CALL", "TOOL_RESULT":
+		case "":
+			continue
+		default:
+			placeholder := "[" + block.Kind
+			if mime := str("mimeType"); mime != "" {
+				placeholder += " " + mime
+			}
+			placeholder += "]"
+			if block.Text != "" {
+				placeholder += " " + block.Text
+			}
+			block.Text = placeholder
+		}
+		blocks = append(blocks, block)
+	}
+	return blocks
+}
+
+func consoleLiteralData(literal *callpbv1.Literal) (any, error) {
+	return consoleLiteralValue(literal, false)
+}
+
+// consoleLiteralValue converts recorded literal data. Leniently, IDs and
+// bytes become placeholders instead of errors, so a message that embeds a
+// file or media still decodes.
+func consoleLiteralValue(literal *callpbv1.Literal, lenient bool) (any, error) {
+	switch value := literal.GetValue().(type) {
+	case *callpbv1.Literal_String_:
+		return value.String_, nil
+	case *callpbv1.Literal_DigestedString:
+		return value.DigestedString.GetValue(), nil
+	case *callpbv1.Literal_Enum:
+		return value.Enum, nil
+	case *callpbv1.Literal_Bool:
+		return value.Bool, nil
+	case *callpbv1.Literal_Int:
+		return value.Int, nil
+	case *callpbv1.Literal_Float:
+		return value.Float, nil
+	case *callpbv1.Literal_Null:
+		return nil, nil
+	case *callpbv1.Literal_List:
+		list := make([]any, 0, len(value.List.GetValues()))
+		for _, item := range value.List.GetValues() {
+			decoded, err := consoleLiteralValue(item, lenient)
+			if err != nil {
+				return nil, err
+			}
+			list = append(list, decoded)
+		}
+		return list, nil
+	case *callpbv1.Literal_Object:
+		object := map[string]any{}
+		for _, item := range value.Object.GetValues() {
+			decoded, err := consoleLiteralValue(item.Value, lenient)
+			if err != nil {
+				return nil, err
+			}
+			object[item.Name] = decoded
+		}
+		return object, nil
+	case *callpbv1.Literal_CallDigest:
+		if lenient {
+			return "<" + value.CallDigest + ">", nil
+		}
+	case *callpbv1.Literal_Bytes:
+		if lenient {
+			return fmt.Sprintf("<%d bytes>", len(value.Bytes)), nil
+		}
+	}
+	return nil, fmt.Errorf("expected recorded literal data, got %T", literal.GetValue())
+}
+
+const consoleGapRole = "GAP"
+
+var consoleMessageSelectors = []string{"withPrompt", "withSystemPrompt", "withContent", "withResponse", "withToolResult"}
 
 // isConsoleSpineSelector reports whether the decoder knows frame as a core
 // LLM message or configuration selector.
@@ -407,7 +693,9 @@ func isConsoleSpineSelector(frame *callpbv1.Call) bool {
 	}
 	return frame.Field == "llm" ||
 		slices.Contains(consoleMessageSelectors, frame.Field) ||
-		slices.Contains(consoleConfigSelectors, frame.Field)
+		consoleCheckpointConfig[frame.Field] ||
+		frame.Field == "compose" || frame.Field == "__withContributionOwner" ||
+		frame.Field == "__withoutComposition" || frame.Field == "withoutSystemPrompts"
 }
 
 // nextSpineDigest is the frame before frame in its conversation: its
@@ -570,110 +858,4 @@ func llmArgument(db *dagui.DB, frame *callpbv1.Call) string {
 		}
 	}
 	return found
-}
-
-func consoleFrameName(frame *callpbv1.Call) string {
-	if name := frame.GetModule().GetName(); name != "" {
-		return name + "." + frame.Field
-	}
-	return frame.Field
-}
-
-func decodeCheckpointMessage(frame *callpbv1.Call) (consoleTranscriptMessage, error) {
-	var message consoleTranscriptMessage
-	args := map[string]any{}
-	for _, arg := range frame.Args {
-		value, err := consoleLiteralData(arg.Value)
-		if err != nil {
-			return message, fmt.Errorf("%s argument %s: %w", frame.Field, arg.Name, err)
-		}
-		args[arg.Name] = value
-	}
-	encoded, err := json.Marshal(args)
-	if err != nil {
-		return message, err
-	}
-	var data struct {
-		Prompt  *string
-		Origin  *consoleTranscriptOrigin
-		Content json.RawMessage
-		CallID  string `json:"callId"`
-		Errored bool
-	}
-	if err := json.Unmarshal(encoded, &data); err != nil {
-		return message, fmt.Errorf("decode %s: %w", frame.Field, err)
-	}
-	switch frame.Field {
-	case "withPrompt", "withSystemPrompt":
-		if data.Prompt == nil {
-			return message, fmt.Errorf("%s is missing its prompt", frame.Field)
-		}
-		message.Role = "USER"
-		if frame.Field == "withSystemPrompt" {
-			message.Role = "SYSTEM"
-		}
-		message.Origin = data.Origin
-		message.Content = []consoleTranscriptBlock{{Kind: "TEXT", Text: *data.Prompt}}
-	case "withResponse":
-		message.Role = "ASSISTANT"
-		if err := json.Unmarshal(data.Content, &message.Content); err != nil || message.Content == nil {
-			return message, fmt.Errorf("invalid withResponse content")
-		}
-		for _, block := range message.Content {
-			switch block.Kind {
-			case "TEXT", "THINKING", "TOOL_CALL", "TOOL_RESULT":
-			default:
-				return message, fmt.Errorf("unsupported response content kind %q", block.Kind)
-			}
-		}
-	case "withToolResult":
-		var text *string
-		if err := json.Unmarshal(data.Content, &text); err != nil || text == nil {
-			return message, fmt.Errorf("invalid withToolResult content")
-		}
-		message.Role = "USER"
-		message.Content = []consoleTranscriptBlock{{Kind: "TOOL_RESULT", CallID: data.CallID, Text: *text, Errored: data.Errored}}
-	}
-	return message, nil
-}
-
-func consoleLiteralData(literal *callpbv1.Literal) (any, error) {
-	switch value := literal.GetValue().(type) {
-	case *callpbv1.Literal_String_:
-		return value.String_, nil
-	case *callpbv1.Literal_DigestedString:
-		return value.DigestedString.GetValue(), nil
-	case *callpbv1.Literal_Enum:
-		return value.Enum, nil
-	case *callpbv1.Literal_Bool:
-		return value.Bool, nil
-	case *callpbv1.Literal_Int:
-		return value.Int, nil
-	case *callpbv1.Literal_Float:
-		return value.Float, nil
-	case *callpbv1.Literal_Null:
-		return nil, nil
-	case *callpbv1.Literal_List:
-		list := make([]any, 0, len(value.List.GetValues()))
-		for _, item := range value.List.GetValues() {
-			decoded, err := consoleLiteralData(item)
-			if err != nil {
-				return nil, err
-			}
-			list = append(list, decoded)
-		}
-		return list, nil
-	case *callpbv1.Literal_Object:
-		object := map[string]any{}
-		for _, item := range value.Object.GetValues() {
-			decoded, err := consoleLiteralData(item.Value)
-			if err != nil {
-				return nil, err
-			}
-			object[item.Name] = decoded
-		}
-		return object, nil
-	default:
-		return nil, fmt.Errorf("expected recorded literal data, got %T", literal.GetValue())
-	}
 }

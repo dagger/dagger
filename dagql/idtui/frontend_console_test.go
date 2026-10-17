@@ -76,7 +76,7 @@ func TestConsoleAgents(t *testing.T) {
 	publishAgentControl(t, db, "worker-id", func(a *agentcontrol.Agent) { a.Digest = "xxh3:snapshot" })
 	fe := NewWithDB(io.Discard, db)
 	w := httptest.NewRecorder()
-	fe.consoleAgentsHandler(w, httptest.NewRequest(http.MethodGet, "/agents", nil))
+	fe.consoleAgentsHandler(w, httptest.NewRequest(http.MethodGet, "/agents?format=json", nil))
 	require.Equal(t, http.StatusOK, w.Code)
 	var got struct {
 		Agents                           []consoleAgent
@@ -91,6 +91,24 @@ func TestConsoleAgents(t *testing.T) {
 	require.Equal(t, "IDLE", got.Agents[1].State)
 	require.Equal(t, "xxh3:snapshot", got.Agents[1].SnapshotDigest)
 	require.Equal(t, []string{child.String(), restored.String()}, got.Agents[1].SpanIDs)
+
+	// The default rendering is a readable tree: the worker under its chief.
+	w = httptest.NewRecorder()
+	fe.consoleAgentsHandler(w, httptest.NewRequest(http.MethodGet, "/agents", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), "chief-id  chief  STOPPED\n  worker-id  worker  IDLE\n")
+
+	// Recorded traces hide agents that have no checkpoint to read.
+	roster := []consoleAgent{
+		{ID: "chief-id", Name: "chief", State: "STOPPED", SnapshotDigest: "xxh3:chief"},
+		{ID: "test-id", Name: "worker", ParentID: "chief-id"},
+		{ID: "worker-id", Name: "worker", State: "IDLE", ParentID: "chief-id", SnapshotDigest: "xxh3:worker"},
+	}
+	recorded := renderConsoleAgents(roster, true, false, "recorded")
+	require.Contains(t, recorded, "chief-id  chief  STOPPED\n  worker-id  worker  IDLE  (name shared: use the handle)\n")
+	require.NotContains(t, recorded, "test-id")
+	require.Contains(t, recorded, "1 agent(s) without a recorded checkpoint hidden")
+	require.Contains(t, renderConsoleAgents(roster, true, true, "recorded"), "  test-id  worker  -  (name shared: use the handle; no checkpoint)\n")
 }
 
 func TestConsoleTranscript(t *testing.T) {
@@ -113,6 +131,7 @@ func TestConsoleTranscript(t *testing.T) {
 	var snap consoleAgentSnapshot
 	snap.State = "IDLE"
 	snap.Snapshot.ID = "snapshot-id"
+	snap.Source = "runtime-snapshot"
 	snap.Snapshot.Messages = []consoleTranscriptMessage{
 		msg("SYSTEM", "system"), msg("USER", longText), msg("ASSISTANT", "answer"),
 		{Role: "ASSISTANT", Content: []consoleTranscriptBlock{
@@ -162,7 +181,7 @@ func TestConsoleTranscript(t *testing.T) {
 		Messages             []consoleTranscriptMessage
 	}
 	decode := func(query string) {
-		w := request(query, read)
+		w := request(query+"&format=json", read)
 		require.Equal(t, 200, w.Code, w.Body.String())
 		require.Equal(t, "no-store", w.Header().Get("Cache-Control"))
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
@@ -175,7 +194,10 @@ func TestConsoleTranscript(t *testing.T) {
 	require.Equal(t, "snapshot-id", page.SnapshotID)
 	require.Equal(t, "IDLE", page.Agent.State)
 	decode("?agent=chief&role=user&offset=1&limit=1")
-	require.Equal(t, 3, page.Total)
+	require.Equal(t, 2, page.Total, "tool results are not user prompts")
+	require.Equal(t, 5, page.Messages[0].Index)
+	decode("?agent=chief&role=tool")
+	require.Equal(t, 1, page.Total)
 	require.Equal(t, 4, page.Messages[0].Index)
 	require.True(t, page.Messages[0].Content[0].Errored)
 	decode("?agent=chief&tool=staff_spawn&grep=restart")
@@ -195,6 +217,27 @@ func TestConsoleTranscript(t *testing.T) {
 	require.False(t, page.HasMore)
 	require.Equal(t, prettyTestSpanID(3), fe.FocusedSpan, "read changed focus")
 	require.Equal(t, "IDLE", db.Agents()[0].State, "read changed the roster")
+
+	// The default rendering is readable text: headers per message, prose
+	// verbatim, tool calls with their arguments and results named by tool.
+	text := request("?agent=chief&offset=1", read)
+	require.Equal(t, 200, text.Code)
+	require.Equal(t, "text/plain; charset=utf-8", text.Header().Get("Content-Type"))
+	body := text.Body.String()
+	require.Contains(t, body, "agent chief (chief-id) · IDLE · runtime-snapshot snapshot-id\n")
+	require.Contains(t, body, "messages 2-5 of 5 matching (all non-system messages)\n")
+	require.Contains(t, body, "── #2 ASSISTANT ──\nanswer\n")
+	require.Contains(t, body, "[thinking]\nconsidering\n[/thinking]\n→ staff_spawn  [call-1]\n  task: restart a worker\n")
+	require.Contains(t, body, "── #4 TOOL RESULT ──\n← staff_spawn  [call-1]  ERROR\nresult\n")
+	require.Contains(t, body, `── #5 USER · from agent "worker" #3 (reply to #2) ──`)
+	require.NotContains(t, body, "next page")
+	paged := request("?agent=chief&limit=1", read).Body.String()
+	require.Contains(t, paged, "messages 1-1 of 5 matching")
+	require.Contains(t, paged, "next page: offset=1 (4 more)")
+	for _, line := range strings.Split(paged, "\n") {
+		require.LessOrEqual(t, len(line), consoleWrapBytes, "lines stay under tool-result clamps")
+	}
+	require.Equal(t, 400, request("?agent=chief&clip=-1", read).Code)
 
 	w := request("?agent=chief", func(context.Context, string, string) (consoleAgentSnapshot, error) {
 		return consoleAgentSnapshot{}, io.EOF
@@ -266,12 +309,15 @@ func TestConsoleRecordedCheckpoint(t *testing.T) {
 	fe.traceID = "recorded"
 	inspector := &consoleTraceInspector{frontend: fe, traceID: "recorded", db: db}
 	w := httptest.NewRecorder()
-	inspector.agents(w, httptest.NewRequest(http.MethodGet, "/agents", nil))
+	inspector.agents(w, httptest.NewRequest(http.MethodGet, "/agents?format=json", nil))
 	require.Equal(t, 200, w.Code)
 	require.Contains(t, w.Body.String(), `"source":"recorded-trace"`)
 	require.Contains(t, w.Body.String(), `"loadedSpansOnly":false`)
 	w = httptest.NewRecorder()
-	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker&tool=staff_spawn", nil))
+	inspector.agents(w, httptest.NewRequest(http.MethodGet, "/agents", nil))
+	require.Contains(t, w.Body.String(), "worker  worker  RUNNING\n")
+	w = httptest.NewRecorder()
+	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker&tool=staff_spawn&format=json", nil))
 	require.Equal(t, 200, w.Code, w.Body.String())
 	var extracted struct {
 		Source, SnapshotDigest string
@@ -280,31 +326,190 @@ func TestConsoleRecordedCheckpoint(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &extracted))
 	require.Equal(t, "recorded-checkpoint", extracted.Source)
 	require.Equal(t, agent.SnapshotDigest, extracted.SnapshotDigest)
-	require.Len(t, extracted.Messages, 1)
+	require.Len(t, extracted.Messages, 2, "a tool filter selects the calls and their results")
 	require.Equal(t, 2, extracted.Messages[0].Index)
+	require.Equal(t, 3, extracted.Messages[1].Index)
 	require.Empty(t, fe.db.Agents(), "extraction mutated the rendered DB")
+	w = httptest.NewRecorder()
+	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker", nil))
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "agent worker · RUNNING · recorded-checkpoint "+agent.SnapshotDigest+"\n")
+	require.Contains(t, w.Body.String(), "── #3 TOOL RESULT ──\n← staff_spawn  [call-1]  ERROR\nresult\n")
 
+	// Damage never makes the whole transcript unreadable: the decodable
+	// messages remain, with a GAP message where the damage is.
 	for _, tc := range []struct {
 		name, want string
 		mutate     func(*dagui.DB)
 	}{
 		{"missing", "missing", func(db *dagui.DB) { delete(db.Calls, root) }},
 		{"cycle", "cycle", func(db *dagui.DB) { db.Calls[root].ReceiverDigest = agent.SnapshotDigest }},
-		{"unknown", "unsupported", func(db *dagui.DB) { db.Calls[agent.SnapshotDigest].Field = "step" }},
-		{"module", "not a core LLM", func(db *dagui.DB) { db.Calls[root].Module = &callpbv1.Module{Name: "custom"} }},
+		{"unknown", "unrecognized checkpoint selector", func(db *dagui.DB) { db.Calls[agent.SnapshotDigest].Field = "step" }},
+		{"module", "custom.llm, which takes no LLM argument", func(db *dagui.DB) { db.Calls[root].Module = &callpbv1.Module{Name: "custom"} }},
 		{"missing message data", "invalid withToolResult", func(db *dagui.DB) { db.Calls[agent.SnapshotDigest].Args = nil }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newDB()
 			tc.mutate(db)
-			_, err := decodeConsoleCheckpoint(db, agent)
-			require.ErrorContains(t, err, tc.want)
+			got, err := decodeConsoleCheckpoint(db, agent)
+			require.NoError(t, err)
+			require.Len(t, got.Gaps, 1)
+			require.Contains(t, got.Gaps[0], tc.want)
+			var gaps int
+			for _, message := range got.Snapshot.Messages {
+				if message.Role == "GAP" {
+					gaps++
+					require.Contains(t, message.Content[0].Text, tc.want)
+				}
+			}
+			require.Equal(t, 1, gaps)
+			require.Greater(t, len(got.Snapshot.Messages), 1, "decodable messages survive")
 		})
 	}
 	_, err = decodeConsoleCheckpoint(db, consoleAgent{ID: "no-anchor"})
 	require.ErrorContains(t, err, "no recorded checkpoint")
 	_, err = consoleLiteralData(&callpbv1.Literal{Value: &callpbv1.Literal_CallDigest{CallDigest: "not-data"}})
 	require.ErrorContains(t, err, "expected recorded literal data")
+}
+
+// Composition and content selectors recorded on agent conversations must not
+// stop a transcript from decoding, and must have the effect the engine gave
+// them.
+func TestConsoleRecordedCheckpointSelectors(t *testing.T) {
+	llmType := &ast.Type{NamedType: "LLM", NonNull: true}
+	arg := func(name string, value any) *call.Argument {
+		lit, err := call.ToLiteral(value)
+		require.NoError(t, err)
+		return call.NewArgument(name, lit, false)
+	}
+	ref := func(name string, id *call.ID) *call.Argument {
+		return call.NewArgument(name, call.NewLiteralID(id), false)
+	}
+	expertise := call.New().Append(&ast.Type{NamedType: "Expertise"}, "unavailable")
+	file := call.New().Append(&ast.Type{NamedType: "File"}, "unavailable")
+	id := call.New().Append(llmType, "llm")
+	steps := []struct {
+		field string
+		args  []*call.Argument
+	}{
+		{"withSystemPrompt", []*call.Argument{arg("prompt", "kept"), arg("owner", "a")}},
+		{"withSystemPrompt", []*call.Argument{arg("prompt", "cleared"), arg("owner", "b")}},
+		{"withTools", []*call.Argument{ref("object", expertise), arg("owner", "b"), arg("version", int64(1))}},
+		{"__withOwnerAgent", []*call.Argument{arg("handle", "AGENT")}},
+		{"compose", []*call.Argument{call.NewArgument("expertise", call.NewLiteralList(call.NewLiteralID(expertise)), false)}},
+		{"__withExpertise", []*call.Argument{call.NewArgument("expertise", call.NewLiteralList(call.NewLiteralID(expertise)), false)}},
+		{"__withoutComposition", []*call.Argument{arg("owner", "b")}},
+		{"withContent", []*call.Argument{arg("content", []any{
+			map[string]any{"kind": "TEXT", "text": "look"},
+			map[string]any{"kind": "IMAGE", "mimeType": "image/png", "data": []byte("png")},
+		})}},
+		{"withResponse", []*call.Argument{arg("content", []any{map[string]any{"kind": "TEXT", "text": "ok"}})}},
+		{"frobnicate", nil},
+		{"withPromptFile", []*call.Argument{ref("file", file)}},
+		{"withPrompt", []*call.Argument{arg("prompt", "after")}},
+	}
+	for _, step := range steps {
+		id = id.Append(llmType, step.field, call.WithArgs(step.args...))
+	}
+	dag, err := id.ToProto()
+	require.NoError(t, err)
+	db := dagui.NewDB()
+	db.Calls = dag.GetRecipe().CallsByDigest
+	delete(db.Calls, expertise.Digest().String())
+	delete(db.Calls, file.Digest().String())
+	got, err := decodeConsoleCheckpoint(db, consoleAgent{ID: "a", SnapshotDigest: id.Digest().String()})
+	require.NoError(t, err)
+	type row struct{ role, text string }
+	var rows []row
+	for _, message := range got.Snapshot.Messages {
+		var texts []string
+		for _, block := range message.Content {
+			texts = append(texts, block.Text)
+		}
+		rows = append(rows, row{message.Role, strings.Join(texts, " | ")})
+	}
+	require.Len(t, rows, 7)
+	require.Equal(t, row{"SYSTEM", "kept"}, rows[0], "__withoutComposition removes only its owner's prompts")
+	require.Equal(t, "SYSTEM", rows[1].role)
+	require.Contains(t, rows[1].text, "expertise composed here")
+	require.Equal(t, row{"USER", "look | [IMAGE image/png]"}, rows[2])
+	require.Equal(t, row{"ASSISTANT", "ok"}, rows[3])
+	require.Equal(t, "GAP", rows[4].role)
+	require.Contains(t, rows[4].text, "frobnicate: unrecognized checkpoint selector")
+	require.Equal(t, "GAP", rows[5].role)
+	require.Contains(t, rows[5].text, "withPromptFile")
+	require.Equal(t, row{"USER", "after"}, rows[6])
+	require.Len(t, got.Gaps, 2)
+	for i, message := range got.Snapshot.Messages {
+		require.Equal(t, i, message.Index)
+	}
+
+	// History cleared by withoutMessageHistory is gone; system prompts stay.
+	cleared := id.Append(llmType, "withoutMessageHistory").Append(llmType, "withPrompt", call.WithArgs(arg("prompt", "fresh")))
+	dag, err = cleared.ToProto()
+	require.NoError(t, err)
+	db.Calls = dag.GetRecipe().CallsByDigest
+	got, err = decodeConsoleCheckpoint(db, consoleAgent{ID: "a", SnapshotDigest: cleared.Digest().String()})
+	require.NoError(t, err)
+	require.Len(t, got.Snapshot.Messages, 3)
+	require.Equal(t, "SYSTEM", got.Snapshot.Messages[0].Role)
+	require.Equal(t, "SYSTEM", got.Snapshot.Messages[1].Role)
+	require.Equal(t, "fresh", got.Snapshot.Messages[2].Content[0].Text)
+
+	// A conversation returned by a module function (e.g. a tool rebinding
+	// itself) is followed through its LLM argument.
+	before := call.New().Append(llmType, "llm").Append(llmType, "withPrompt", call.WithArgs(arg("prompt", "before")))
+	rebound := call.New().Append(&ast.Type{NamedType: "Committer"}, "committer").
+		Append(llmType, "reset", call.WithArgs(ref("llm", before)))
+	after := rebound.Append(llmType, "withPrompt", call.WithArgs(arg("prompt", "after")))
+	dag, err = after.ToProto()
+	require.NoError(t, err)
+	db.Calls = dag.GetRecipe().CallsByDigest
+	db.Calls[rebound.Digest().String()].Module = &callpbv1.Module{Name: "committer"}
+	got, err = decodeConsoleCheckpoint(db, consoleAgent{ID: "a", SnapshotDigest: after.Digest().String()})
+	require.NoError(t, err)
+	require.Len(t, got.Snapshot.Messages, 3)
+	require.Equal(t, "before", got.Snapshot.Messages[0].Content[0].Text)
+	require.Equal(t, "GAP", got.Snapshot.Messages[1].Role)
+	require.Contains(t, got.Snapshot.Messages[1].Content[0].Text, "module function Committer.reset")
+	require.Equal(t, "after", got.Snapshot.Messages[2].Content[0].Text)
+}
+
+// A dependency's prompt claimed by the entry's module is removed when that
+// module's contributions are cleared, as the engine does.
+func TestConsoleRecordedContributionOwner(t *testing.T) {
+	llmType := &ast.Type{NamedType: "LLM", NonNull: true}
+	arg := func(name string, value any) *call.Argument {
+		lit, err := call.ToLiteral(value)
+		require.NoError(t, err)
+		return call.NewArgument(name, lit, false)
+	}
+	decode := func(claimed ...any) consoleAgentSnapshot {
+		t.Helper()
+		id := call.New().Append(llmType, "llm").
+			Append(llmType, "withSystemPrompt", call.WithArgs(arg("prompt", "donor prompt"), arg("owner", "donor"))).
+			Append(llmType, "withSystemPrompt", call.WithArgs(arg("prompt", "own prompt"), arg("owner", "entry"))).
+			Append(llmType, "__withContributionOwner", call.WithArgs(arg("owner", "entry"), arg("messages", claimed))).
+			Append(llmType, "withPrompt", call.WithArgs(arg("prompt", "hello"))).
+			Append(llmType, "__withoutComposition", call.WithArgs(arg("owner", "entry")))
+		dag, err := id.ToProto()
+		require.NoError(t, err)
+		db := dagui.NewDB()
+		db.Calls = dag.GetRecipe().CallsByDigest
+		got, err := decodeConsoleCheckpoint(db, consoleAgent{ID: "a", SnapshotDigest: id.Digest().String()})
+		require.NoError(t, err)
+		return got
+	}
+
+	got := decode(int64(0))
+	require.Empty(t, got.Gaps)
+	require.Len(t, got.Snapshot.Messages, 1, "the claimed prompt is cleared with the entry's own")
+	require.Equal(t, "hello", got.Snapshot.Messages[0].Content[0].Text)
+
+	// A position the decoded transcript does not have is a gap, not a guess.
+	got = decode(int64(5))
+	require.Len(t, got.Gaps, 1)
+	require.Contains(t, got.Gaps[0], "message 5 is not in the decoded transcript")
 }
 
 func TestConsoleTimings(t *testing.T) {

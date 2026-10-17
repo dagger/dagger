@@ -99,8 +99,9 @@ func TestConsolePartialCheckpoint(t *testing.T) {
 	db.Calls = salvageCalls()
 	agent := consoleAgent{ID: "worker", State: "IDLE", SnapshotDigest: "xxh3:d12"}
 
-	_, err := decodeConsoleCheckpoint(db, agent)
-	require.ErrorContains(t, err, "not a core LLM selector", "strict decoding still refuses the module step")
+	recorded, err := decodeConsoleCheckpoint(db, agent)
+	require.NoError(t, err)
+	require.Len(t, recorded.Gaps, 1, "module contributions are explicitly marked as a gap")
 
 	snap, err := decodeLoadedCheckpoint(db, agent)
 	require.NoError(t, err)
@@ -109,7 +110,7 @@ func TestConsolePartialCheckpoint(t *testing.T) {
 	require.Len(t, msgs, 11)
 	require.Equal(t, "fix the lag", msgs[0].Content[0].Text, "crossed the checkout through its llm argument")
 	require.Equal(t, consoleGapRole, msgs[2].Role)
-	require.Contains(t, msgs[2].Content[0].Text, "skipped github.checkout (xxh3:d4)")
+	require.Contains(t, msgs[2].Content[0].Text, "module function github.checkout")
 	require.Equal(t, []string{msgs[2].Content[0].Text}, snap.Gaps)
 	for i, msg := range msgs {
 		require.Equal(t, i, msg.Index)
@@ -122,7 +123,7 @@ func TestConsolePartialCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, snap.Gaps, 2)
 	require.Equal(t, consoleGapRole, snap.Snapshot.Messages[0].Role)
-	require.Contains(t, snap.Gaps[0], "frame xxh3:d2 never reached this client")
+	require.Contains(t, snap.Gaps[0], "frame xxh3:d2 is missing from the trace")
 	require.Equal(t, "Checking out main.", snap.Snapshot.Messages[1].Content[0].Text)
 
 	// Nothing recoverable is still an error.
@@ -240,7 +241,7 @@ func TestConsoleTraceFallsBackToLoadedTelemetry(t *testing.T) {
 	_, inspector := salvageFrontend(t)
 
 	w := httptest.NewRecorder()
-	inspector.agents(w, httptest.NewRequest(http.MethodGet, "/agents", nil))
+	inspector.agents(w, httptest.NewRequest(http.MethodGet, "/agents?format=json", nil))
 	require.Equal(t, 200, w.Code, w.Body.String())
 	var roster struct {
 		Agents  []consoleAgent
@@ -253,7 +254,7 @@ func TestConsoleTraceFallsBackToLoadedTelemetry(t *testing.T) {
 	require.Len(t, roster.Agents, 1)
 
 	w = httptest.NewRecorder()
-	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker&limit=100", nil))
+	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker&limit=100&format=json", nil))
 	require.Equal(t, 200, w.Code, w.Body.String())
 	var page struct {
 		Source   string
@@ -271,7 +272,7 @@ func TestConsoleTraceFallsBackToLoadedTelemetry(t *testing.T) {
 	require.Equal(t, 11, page.Total)
 
 	w = httptest.NewRecorder()
-	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker&role=gap", nil))
+	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker&role=gap&format=json", nil))
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
 	require.Equal(t, 1, page.Total)
