@@ -141,7 +141,8 @@ type TuiQa {
   """
   agent(base: LLM!): LLM! @agent {
     base
-      .withTools(currentNode)
+      # salvaged is an artifact collection, addressed rather than called.
+      .withTools(currentNode, except: ["salvaged"])
       .withSkills(skills)
   }
 
@@ -613,16 +614,25 @@ type TuiQa {
   tmp/salvage/<agent>/ into the workspace and prints its index.md:
 
   - index.md: where the transcript came from (recorded checkpoint, engine
-    snapshot, or a best-effort decode of the loaded telemetry), its gaps, and
-    every tool call that changed the agent's workspace or history (edits,
-    writes, removals, commits, checkouts, ...), in order, errored ones marked.
+    snapshot, or a best-effort decode of the loaded telemetry), its gaps, the
+    agent's head, and every tool call that changed the agent's workspace or
+    history (edits, writes, removals, commits, checkouts, ...), in order,
+    errored ones marked.
+  - head.json: the head -- the commit the agent's workspace last moved to,
+    the traced GitRef call producing it, and whether its recipe rebuilds on
+    any engine (recoverable) or why not.
   - transcript.md: the whole conversation, untruncated.
   - steps/NNNN-<tool>.json: each such call's full arguments and result -- an
     edit's oldText/newText, a write's contents. steps/NNNN-<tool>.patch: the
     diff its result reported, when it did.
 
-  To reapply the work, replay the steps in order with your editor, skipping
-  errored ones, and read transcript.md for anything the agent reverted later.
+  A recoverable head is the way back for committed work: it is addressable as
+  dag://tui-qa/salvaged/head?tui-qa-salvaged-agent=<handle> (printed after
+  the index), so check it out, cherry-pick or push it -- the exact commits,
+  no replay. Replay the steps in order with your editor only for what the
+  head lacks (changes after it, uncommitted when the trace ended) or when it
+  isn't recoverable, skipping errored ones, and read transcript.md for
+  anything the agent reverted later.
   Use it after starting `dagger trace <id> -E` or `dagger agent -E -r <id>`.
   """
   salvage(
@@ -644,9 +654,31 @@ type TuiQa {
       let unpacked = fetched.withExec(["sh", "-c", "mkdir -p /salvage && tar -xf /out/body -C /salvage"])
       let path = "tmp/salvage/" + safeName(agent)
       print(path + "/")
-      print(unpacked.file("/salvage/index.md").contents)
+      let index = unpacked.file("/salvage/index.md").contents
+      print(index)
+      let handle = index.match(`^# Salvage: .* \(([^()]+)\)\n`)
+      if (index.contains("\n- recoverable: yes\n") and handle != null) {
+        print("Recover the head by address: dag://tui-qa/salvaged/head?tui-qa-salvaged-agent=" + (handle.captures[0] ?? agent))
+      }
       source.withNewDirectory(path, unpacked.directory("/salvage"))
     }
+  }
+
+  """
+  Agents' recoverable heads, keyed by agent handle: each the commit an
+  agent's workspace last moved to, as a GitRef rebuilt from the trace. An
+  agent is listed once `salvage` found it a recoverable head; address it as
+  dag://tui-qa/salvaged/head?tui-qa-salvaged-agent=<handle>.
+  """
+  salvaged: Salvaged! @cache(policy: FunctionCachePolicy.Never) {
+    let handles = if (url == "") {
+      [] :: [String!]!
+    } else {
+      get("/heads").split("\n")
+        .filter { line => line.split("\t")[2] == "yes" }
+        .map { line => line.split("\t")[0] ?? "" }
+    }
+    Salvaged(client, url, handles)
   }
 
   # ---- profiling the live TUI process (via its PPROF debug server; same
@@ -817,5 +849,73 @@ type TuiQa {
       .withFile("/tmp/profile.pb.gz", profile)
       .withExec(["go", "tool", "pprof", "-top", "-nodecount=40", "/tmp/profile.pb.gz"])
       .stdout
+  }
+}
+
+"""
+Salvaged agents' recoverable heads as a collection: agent handles as keys,
+each agent's head as the item.
+"""
+type Salvaged @collection {
+  let client: Container!
+  let url: String!
+
+  """
+  Handles of the agents with a recoverable head.
+  """
+  agents: [String!]! @keys
+
+  new(client: Container!, url: String!, agents: [String!]!) {
+    self.client = client
+    self.url = url
+    self.agents = agents
+    self
+  }
+
+  """
+  The salvaged agent with this handle.
+  """
+  agent(handle: String!): SalvagedAgent! @get {
+    SalvagedAgent(handle, client, url)
+  }
+}
+
+"""
+One salvaged agent, by handle.
+"""
+type SalvagedAgent {
+  """
+  The agent's handle.
+  """
+  handle: String!
+
+  let client: Container!
+  let url: String!
+
+  new(handle: String!, client: Container!, url: String!) {
+    self.handle = handle
+    self.client = client
+    self.url = url
+    self
+  }
+
+  """
+  The commit the agent's workspace last moved to, as a GitRef rebuilt from
+  the traced call that produced it. Its recipe reads nothing from the client,
+  so any engine evaluates it to the exact commit and history: check it out,
+  cherry-pick or push it.
+  """
+  head: GitRef! @cache(policy: FunctionCachePolicy.Never) {
+    let fetched = client
+      .withEnvVariable("TUI_QA_NONCE", Random.string)
+      .withExec(
+        ["sh", "-c", fetchScript, "fetch", url + "/head", "agent=" + handle, "format=id"],
+        expect: ReturnType.ANY,
+      )
+    if (fetched.exitCode != 0) {
+      raise fetched.stderr
+    }
+    let id = fetched.file("/out/body").contents
+    node(id: id :: ID!).{{... on GitRef!}}
   }
 }
