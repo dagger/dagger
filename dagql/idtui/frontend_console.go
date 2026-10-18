@@ -305,6 +305,8 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 	mux.HandleFunc("/agents", inspector.agents)
 	mux.HandleFunc("/transcript", inspector.transcript)
 	mux.HandleFunc("/salvage", inspector.salvage)
+	mux.HandleFunc("/head", inspector.head)
+	mux.HandleFunc("/heads", inspector.heads)
 	mux.HandleFunc("/timings", fe.consoleTimingsHandler)
 	mux.HandleFunc("/help", fe.consoleHelp)
 	mux.HandleFunc("/", fe.consoleHelp)
@@ -544,8 +546,12 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  GET  /transcript?agent=<handle|name>[&role=user&tool=...&grep=...&offset=0&limit=20]\n"+
 		"                      recorded checkpoint data for dagger trace; idle runtime snapshots in engine sessions;\n"+
 		"                      falls back to a best-effort decode of loaded telemetry, with gaps marked\n"+
-		"  GET  /salvage?agent=<handle|name>  tar: index.md, transcript.md, and the agent's workspace-changing\n"+
+		"  GET  /salvage?agent=<handle|name>  tar: index.md, head.json, transcript.md, and the agent's workspace-changing\n"+
 		"                      tool calls as steps/NNNN-<tool>.json (+ .patch), for recovering its work\n"+
+		"  GET  /head?agent=<handle|name>[&format=id]  the commit the agent's workspace last moved to, the traced\n"+
+		"                      GitRef call producing it, and whether its recipe rebuilds anywhere (JSON);\n"+
+		"                      format=id: that GitRef's encoded ID, when recoverable\n"+
+		"  GET  /heads          heads found so far: <handle> <commit> <recoverable yes|no> <name>, tab-separated\n"+
 		"  GET  /help           this list\n"+
 		"keys: ←↑↓→ move · right/l expand · left/h collapse · enter zoom · "+
 		"r error origin · L logs · +/- verbosity · / search\n"+

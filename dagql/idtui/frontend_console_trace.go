@@ -28,6 +28,11 @@ type consoleTraceInspector struct {
 	traceID  string
 	// fetch downloads a trace's full payloads into db; nil fetches from Cloud.
 	fetch func(ctx context.Context, traceID string, db *dagui.DB) error
+
+	// knownHeads remembers each agent's head as /salvage and /head found it,
+	// by agent handle, for /heads.
+	headsMu    sync.Mutex
+	knownHeads map[string]consoleHead
 }
 
 func fetchCloudTrace(ctx context.Context, traceID string, db *dagui.DB) error {
@@ -85,6 +90,8 @@ type consoleAgentSource struct {
 	read    consoleSnapshotReader
 	source  string // recorded-trace, loaded-telemetry, or "" for live rosters
 	warning string
+	// db is the recorded trace's immutable DB, when the source is one.
+	db *dagui.DB
 }
 
 func (i *consoleTraceInspector) agentSource(ctx context.Context) consoleAgentSource {
@@ -95,6 +102,7 @@ func (i *consoleTraceInspector) agentSource(ctx context.Context) consoleAgentSou
 		return consoleAgentSource{
 			agents: agents,
 			source: "recorded-trace",
+			db:     db,
 			read: func(_ context.Context, handle, _ string) (consoleAgentSnapshot, error) {
 				for _, agent := range agents {
 					if agent.ID == handle {
@@ -493,8 +501,7 @@ func continuesConversation(db *dagui.DB, frame *callpbv1.Call) bool {
 func extendCheckpointDigest(db *dagui.DB, tip string) string {
 	// distance[d] is how many steps d is past tip, or -1 if it never reaches it.
 	distance := map[string]int{tip: 0}
-	var resolve func(string) int
-	resolve = func(start string) int {
+	resolve := func(start string) int {
 		var path []string
 		dig := start
 		result := -1

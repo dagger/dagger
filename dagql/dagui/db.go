@@ -1596,6 +1596,28 @@ func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
 // the caller must degrade (a read-only roster entry, a refused restore)
 // rather than act on a truncated chain.
 func (db *DB) CallIDForDigest(digest string) (*call.ID, error) {
+	recipe, err := db.CallRecipe(digest)
+	if err != nil {
+		return nil, err
+	}
+	dag := &callpbv1.DAG{
+		Value: &callpbv1.DAG_Recipe{
+			Recipe: recipe,
+		},
+	}
+
+	var id call.ID
+	if err := id.FromProto(dag); err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
+// CallRecipe gathers the complete recipe behind a call digest -- every frame
+// its ID closure references -- without decoding it into an ID, for callers
+// that inspect what a recipe would do before anyone evaluates it. It fails
+// like CallIDForDigest when a frame never reached this client.
+func (db *DB) CallRecipe(digest string) (*callpbv1.RecipeDAG, error) {
 	if digest == "" {
 		return nil, fmt.Errorf("no call digest")
 	}
@@ -1622,17 +1644,7 @@ func (db *DB) CallIDForDigest(digest string) (*call.ID, error) {
 		return nil, fmt.Errorf("cannot rebuild ID for %s: %s",
 			frameLabel(rootCall), missing[0])
 	}
-	dag := &callpbv1.DAG{
-		Value: &callpbv1.DAG_Recipe{
-			Recipe: recipe,
-		},
-	}
-
-	var id call.ID
-	if err := id.FromProto(dag); err != nil {
-		return nil, err
-	}
-	return &id, nil
+	return recipe, nil
 }
 
 func (db *DB) MustCall(dig string) *callpbv1.Call {
