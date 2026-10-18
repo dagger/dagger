@@ -18,7 +18,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/google/go-github/v59/github"
+	"github.com/google/go-github/v66/github"
 
 	"github.com/dagger/dagger/engine/slog"
 )

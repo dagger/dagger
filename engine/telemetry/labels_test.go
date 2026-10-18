@@ -192,6 +192,16 @@ func TestLoadGithubPayloadLabels(t *testing.T) {
 	assert.Equal(t, "dagger/dagger", l.AsMap()["dagger.io/vcs.repo.full_name"])
 }
 
+func TestLoadGithubPayloadLabelsMultiSelectCustomProperty(t *testing.T) {
+	m := mapEnv{"GITHUB_EVENT_NAME": "push", "GITHUB_ACTIONS": "true"}
+
+	// GitHub sends a multi-select custom property's value as an array.
+	l := telemetry.NewLabels(nil, m, []byte(`{"repository": {"full_name": "dagger/dagger", "custom_properties": {"single": "a", "multi": ["b", "c"]}}}`))
+	l = l.WithGitHubLabels()
+
+	assert.Equal(t, "dagger/dagger", l.AsMap()["dagger.io/vcs.repo.full_name"])
+}
+
 func TestLoadGitHubLabels(t *testing.T) {
 	type Example struct {
 		Name   string
