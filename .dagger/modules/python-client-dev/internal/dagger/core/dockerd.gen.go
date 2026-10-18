@@ -10,7 +10,7 @@ import (
 )
 
 // Module for running docker in dagger
-type Dockerd struct { // dockerd (../../../../../main.go:15:6)
+type Dockerd struct { // dockerd (../../../../../../main.go:15:6)
 	query *querybuilder.Selection
 
 	id *ID
@@ -26,11 +26,11 @@ func (r *Dockerd) WithGraphQLQuery(q *querybuilder.Selection) *Dockerd {
 type DockerdAttachOpts struct {
 
 	// Default: "24.0"
-	DockerVersion string // dockerd (../../../../../main.go:23:2)
+	DockerVersion string // dockerd (../../../../../../main.go:23:2)
 }
 
 // Attach a dockerd service to a container
-func (r *Dockerd) Attach(container *Container, opts ...DockerdAttachOpts) *Container { // dockerd (../../../../../main.go:18:1)
+func (r *Dockerd) Attach(container *Container, opts ...DockerdAttachOpts) *Container { // dockerd (../../../../../../main.go:18:1)
 	assertNotNil("container", container)
 	q := r.query.Select("attach")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -99,11 +99,11 @@ func (r *Dockerd) UnmarshalJSON(bs []byte) error {
 type DockerdServiceOpts struct {
 
 	// Default: "24.0"
-	DockerVersion string // dockerd (../../../../../main.go:43:2)
+	DockerVersion string // dockerd (../../../../../../main.go:43:2)
 }
 
 // Get a Service container running dockerd
-func (r *Dockerd) Service(opts ...DockerdServiceOpts) *Service { // dockerd (../../../../../main.go:40:1)
+func (r *Dockerd) Service(opts ...DockerdServiceOpts) *Service { // dockerd (../../../../../../main.go:40:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `dockerVersion` optional argument
