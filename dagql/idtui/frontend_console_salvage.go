@@ -68,7 +68,7 @@ func (fe *frontendPretty) consoleCallHandler(w http.ResponseWriter, r *http.Requ
 		}
 		if s, ok := arg.Value.(string); ok {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			_, _ = w.Write([]byte(s)) //nolint:gosec // G705: argument text as text/plain, never rendered as HTML.
+			_, _ = w.Write([]byte(s))
 			return
 		}
 		consoleJSON(w, arg.Value)
@@ -143,8 +143,9 @@ func consoleLiteralJSON(literal *callpbv1.Literal) any {
 
 // salvage serves GET /salvage?agent=<handle|name>: a tar archive with
 //
-//	index.md          where the transcript came from, its gaps, and every
-//	                  workspace-changing tool call in order
+//	index.md          where the transcript came from, its gaps, the agent's
+//	                  head, and every workspace-changing tool call in order
+//	head.json         the head as /head reports it
 //	transcript.md     the whole transcript, untruncated
 //	steps/NNNN-<tool>.json   each such call: full arguments and result
 //	steps/NNNN-<tool>.patch  the diff its result reported, if any
@@ -161,14 +162,16 @@ func (i *consoleTraceInspector) salvage(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	archive, err := buildConsoleSalvage(agent, snapshot)
+	archive, err := buildConsoleSalvage(agent, snapshot, func(steps []consoleSalvageStep) consoleHead {
+		return i.resolveHead(src, agent, steps)
+	})
 	if err != nil {
 		http.Error(w, "build salvage archive: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-tar")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(archive) //nolint:gosec // G705: a tar archive, never rendered as HTML.
+	_, _ = w.Write(archive)
 }
 
 type consoleSalvageStep struct {
@@ -297,9 +300,15 @@ func consoleStepTarget(args json.RawMessage) string {
 	return ""
 }
 
-func buildConsoleSalvage(agent consoleAgent, snapshot consoleAgentSnapshot) ([]byte, error) {
+// buildConsoleSalvage packs the archive. locateHead finds the agent's head
+// from its steps; nil skips the lookup, leaving no head.
+func buildConsoleSalvage(agent consoleAgent, snapshot consoleAgentSnapshot, locateHead func([]consoleSalvageStep) consoleHead) ([]byte, error) {
 	messages := snapshot.Snapshot.Messages
 	steps := consoleSalvageSteps(messages)
+	head := consoleHead{Agent: agent.ID, Name: agent.Name}
+	if locateHead != nil {
+		head = locateHead(steps)
+	}
 
 	var index strings.Builder
 	fmt.Fprintf(&index, "# Salvage: %s (%s)\n\n", agent.Name, agent.ID)
@@ -320,6 +329,7 @@ func buildConsoleSalvage(agent consoleAgent, snapshot consoleAgentSnapshot) ([]b
 			fmt.Fprintf(&index, "- %s\n", gap)
 		}
 	}
+	writeConsoleHeadIndex(&index, head)
 	fmt.Fprintf(&index, "\n## Workspace changes (%d)\n\n", len(steps))
 	if len(steps) == 0 {
 		index.WriteString("No tool call in the transcript changed a workspace.\n")
@@ -359,6 +369,13 @@ func buildConsoleSalvage(agent consoleAgent, snapshot consoleAgentSnapshot) ([]b
 		return err
 	}
 	if err := add("index.md", index.String()); err != nil {
+		return nil, err
+	}
+	encodedHead, err := json.MarshalIndent(head, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := add("head.json", string(encodedHead)+"\n"); err != nil {
 		return nil, err
 	}
 	if err := add("transcript.md", renderConsoleTranscriptMarkdown(agent, messages)); err != nil {

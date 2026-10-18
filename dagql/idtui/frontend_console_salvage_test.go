@@ -45,6 +45,37 @@ func salvageContent(blocks ...consoleTranscriptBlock) *callpbv1.Literal {
 
 const salvageEditPatch = "diff --git a/a.go b/a.go\nindex 1111111..2222222 100644\n--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x\n+y\n"
 
+// The commits the fixture agent's commit moved its workspace between.
+const (
+	salvageBase = "1111111111111111111111111111111111111111"
+	salvageHead = "abc1234abc1234abc1234abc1234abc1234abc12"
+)
+
+// salvageHeadCalls are traced GitRef calls for salvageHead, the way a
+// committer tool's workspace leaves them: one rebuilt from a GitHub clone plus
+// an inline patch, and one whose chain reads the client's host. The host one
+// is the preferred shape (GitRepository.ref), so picking the clean one shows
+// recoverability outranks the field.
+func salvageHeadCalls() map[string]*callpbv1.Call {
+	typ := func(name string) *callpbv1.Type { return &callpbv1.Type{NamedType: name, NonNull: true} }
+	ref := func(dig string) *callpbv1.Literal {
+		return &callpbv1.Literal{Value: &callpbv1.Literal_CallDigest{CallDigest: dig}}
+	}
+	return map[string]*callpbv1.Call{
+		"xxh3:clone": {Digest: "xxh3:clone", Field: "__gitRepository", Type: typ("GitRepository"),
+			Args: []*callpbv1.Argument{salvageArg("url", salvageStr("https://github.com/dagger/dagger"))}},
+		"xxh3:patch": {Digest: "xxh3:patch", Field: "blob", Type: typ("File"),
+			Args: []*callpbv1.Argument{salvageArg("name", salvageStr("changeset.patch")), salvageArg("contents", salvageStr(salvageEditPatch))}},
+		"xxh3:clean": {Digest: "xxh3:clean", ReceiverDigest: "xxh3:clone", Field: "__resolvedRef", Type: typ("GitRef"),
+			Args: []*callpbv1.Argument{salvageArg("commit", salvageStr(salvageHead)), salvageArg("patch", ref("xxh3:patch"))}},
+		"xxh3:host": {Digest: "xxh3:host", Field: "host", Type: typ("Host")},
+		"xxh3:hostrepo": {Digest: "xxh3:hostrepo", ReceiverDigest: "xxh3:host", Field: "directory", Type: typ("GitRepository"),
+			Args: []*callpbv1.Argument{salvageArg("path", salvageStr("."))}},
+		"xxh3:fromhost": {Digest: "xxh3:fromhost", ReceiverDigest: "xxh3:hostrepo", Field: "ref", Type: typ("GitRef"),
+			Args: []*callpbv1.Argument{salvageArg("name", salvageStr(salvageHead))}},
+	}
+}
+
 // salvageCalls is an agent's checkpoint spine that crossed a module tool
 // returning the conversation in a new workspace (as checkout does), whose
 // receiver never reached the client.
@@ -89,7 +120,7 @@ func salvageCalls() map[string]*callpbv1.Call {
 		toolCall("committer_commit", "c5", `{"message": "idtui: fix lag\n\nbody"}`),
 		toolCall("editor_edit", "c6", `{"filePath": "a.go", "oldText": "nope", "newText": "z"}`),
 	)))
-	result("xxh3:d11", "c5", "Committed abc1234\n---\nWorkspace moved.", false)
+	result("xxh3:d11", "c5", "Committed abc1234\n---\nWorkspace moved: github.com/dagger/dagger @"+salvageBase+" -> @"+salvageHead+". The new checkout is 1 commit(s) ahead of and 0 behind the previous one.", false)
 	result("xxh3:d12", "c6", "oldText not found", true)
 	return calls
 }
@@ -229,6 +260,9 @@ func salvageFrontend(t *testing.T) (*frontendPretty, *consoleTraceInspector) {
 	for dig, frame := range salvageCalls() {
 		db.Calls[dig] = frame
 	}
+	for dig, frame := range salvageHeadCalls() {
+		db.Calls[dig] = frame
+	}
 	fe := NewWithDB(io.Discard, db)
 	fe.traceID = "broken"
 	return fe, &consoleTraceInspector{frontend: fe, fetch: func(context.Context, string, *dagui.DB) error {
@@ -339,7 +373,7 @@ func TestConsoleSalvage(t *testing.T) {
 		files[hdr.Name] = string(body)
 	}
 	require.Equal(t, []string{
-		"index.md", "transcript.md",
+		"index.md", "head.json", "transcript.md",
 		"steps/0001-checkout.json",
 		"steps/0002-editor_edit.json", "steps/0002-editor_edit.patch",
 		"steps/0003-editor_write.json",
@@ -366,9 +400,19 @@ func TestConsoleSalvage(t *testing.T) {
 		"- 0003 [message 4] editor_write b.go\n",
 		`- 0004 [message 8] committer_commit "idtui: fix lag"`,
 		"- 0005 [message 8] editor_edit a.go ERRORED",
+		"## Head\n\n- commit: " + salvageHead + " (github.com/dagger/dagger), reported by step 0004 committer_commit\n",
+		"- GitRef call: xxh3:clean (GitRepository.__resolvedRef), a recipe of 3 calls\n",
+		"- fetches: https://github.com/dagger/dagger\n",
+		"- recoverable: yes\n",
+		"GET /head?agent=worker&format=id",
 	} {
 		require.Contains(t, index, want)
 	}
+	require.NotContains(t, index, "not in the head", "the edit after the commit errored, so nothing is left out")
+	var head consoleHead
+	require.NoError(t, json.Unmarshal([]byte(files["head.json"]), &head))
+	require.Equal(t, "xxh3:clean", head.Digest)
+	require.True(t, head.Recoverable)
 	transcript := files["transcript.md"]
 	for _, want := range []string{
 		"## [0] USER\n\nfix the lag\n",
