@@ -11,6 +11,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 )
 
 // callRequest is the ModuleEntrypoint.call input. The entrypoint passes each
@@ -47,6 +51,12 @@ func main() {
 	if len(os.Args) < 2 {
 		fatalf("usage: %s engine-call | call <FUNCTION> [--ARG VALUE]", os.Args[0])
 	}
+	// The engine passes the function call's trace in TRACEPARENT and its
+	// collector in OTEL_*; without them, spans of the author's code are lost.
+	ctx := telemetry.InitEmbedded(context.Background(), resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String("dagger-go-sdk"),
+	))
 	var err error
 	switch os.Args[1] {
 	case "engine-call":
@@ -61,12 +71,14 @@ func main() {
 			}
 			defer output.Close()
 		}
-		err = engineCall(context.Background(), os.Stdin, output)
+		err = engineCall(ctx, os.Stdin, output)
 	case "call":
-		err = developerCall(context.Background(), os.Args[2:], os.Stdout)
+		err = developerCall(ctx, os.Args[2:], os.Stdout)
 	default:
 		err = fmt.Errorf("unknown mode %q", os.Args[1])
 	}
+	// fatalf exits without running deferred calls, so spans are flushed first.
+	telemetry.Close()
 	if err != nil {
 		fatalf("%v", err)
 	}

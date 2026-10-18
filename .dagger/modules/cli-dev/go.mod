@@ -12,8 +12,10 @@ require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
+	github.com/dagger/otel-go v1.43.1-0.20261021170752-132b1dd82eb2
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	go.opentelemetry.io/otel v1.46.0
+	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.46.0
 	golang.org/x/mod v0.38.0
 )
@@ -24,7 +26,6 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/dagger/otel-go v1.43.1-0.20261021170752-132b1dd82eb2 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -46,7 +47,6 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0 // indirect
 	go.opentelemetry.io/otel/log v0.19.0 // indirect
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.19.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
