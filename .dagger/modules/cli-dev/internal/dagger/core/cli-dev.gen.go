@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type CliDev struct { // cli-dev (../../../../../:0:0)
+type CliDev struct { // cli-dev (../../../../../../:0:0)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -298,7 +298,7 @@ type CliDevOpts struct {
 	VcsDirty bool
 }
 
-func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../../:0:0)
+func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../../../:0:0)
 	q := r.query.Select("cliDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `runnerHost` optional argument

@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type Changie struct { // changie (../../../../../:0:0)
+type Changie struct { // changie (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id *ID
@@ -22,7 +22,7 @@ func (r *Changie) WithGraphQLQuery(q *querybuilder.Selection) *Changie {
 }
 
 // Generate the changelog with 'changie merge'. Only run this manually, at release time.
-func (r *Changie) Generate() *Changeset { // changie (../../../../../:0:0)
+func (r *Changie) Generate() *Changeset { // changie (../../../../../../:0:0)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -80,7 +80,7 @@ func (r *Changie) UnmarshalJSON(bs []byte) error {
 }
 
 // Lookup the change notes file for the given component and version
-func (r *Changie) LookupEntry(component string, version string) *File { // changie (../../../../../:0:0)
+func (r *Changie) LookupEntry(component string, version string) *File { // changie (../../../../../../:0:0)
 	q := r.query.Select("lookupEntry")
 	q = q.Arg("component", component)
 	q = q.Arg("version", version)
@@ -90,7 +90,7 @@ func (r *Changie) LookupEntry(component string, version string) *File { // chang
 	}
 }
 
-func (r *Changie) Source() *Directory { // changie (../../../../../:0:0)
+func (r *Changie) Source() *Directory { // changie (../../../../../../:0:0)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -106,7 +106,7 @@ func (r *Changie) AsNode() Node {
 	}
 }
 
-func (r *Query) Changie(ws *Workspace) *Changie { // changie (../../../../../:0:0)
+func (r *Query) Changie(ws *Workspace) *Changie { // changie (../../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("changie")
 	q = q.Arg("ws", ws)

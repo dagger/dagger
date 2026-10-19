@@ -11,18 +11,18 @@ import (
 
 // TypescriptClientDevOpts contains options for Query.TypescriptClientDev
 type TypescriptClientDevOpts struct {
-	NodeVersionPrevLts string // typescript-client-dev (../../../../../:0:0)
+	NodeVersionPrevLts string // typescript-client-dev (../../../../../../:0:0)
 
-	NodeVersionLts string // typescript-client-dev (../../../../../:0:0)
+	NodeVersionLts string // typescript-client-dev (../../../../../../:0:0)
 
-	BunVersion string // typescript-client-dev (../../../../../:0:0)
+	BunVersion string // typescript-client-dev (../../../../../../:0:0)
 
-	WorkspaceDir *Directory // typescript-client-dev (../../../../../:0:0)
+	WorkspaceDir *Directory // typescript-client-dev (../../../../../../:0:0)
 
-	SourcePath string // typescript-client-dev (../../../../../:0:0)
+	SourcePath string // typescript-client-dev (../../../../../../:0:0)
 }
 
-func (r *Query) TypescriptClientDev(ws *Workspace, opts ...TypescriptClientDevOpts) *TypescriptClientDev { // typescript-client-dev (../../../../../:0:0)
+func (r *Query) TypescriptClientDev(ws *Workspace, opts ...TypescriptClientDevOpts) *TypescriptClientDev { // typescript-client-dev (../../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("typescriptClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -54,7 +54,7 @@ func (r *Query) TypescriptClientDev(ws *Workspace, opts ...TypescriptClientDevOp
 	}
 }
 
-type TypescriptClientDev struct { // typescript-client-dev (../../../../../:0:0)
+type TypescriptClientDev struct { // typescript-client-dev (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	bunVersion         *string
@@ -79,7 +79,7 @@ func (r *TypescriptClientDev) WithGraphQLQuery(q *querybuilder.Selection) *Types
 	}
 }
 
-func (r *TypescriptClientDev) Binary() *File { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) Binary() *File { // typescript-client-dev (../../../../../../:0:0)
 	q := r.query.Select("binary")
 
 	return &File{
@@ -87,7 +87,7 @@ func (r *TypescriptClientDev) Binary() *File { // typescript-client-dev (../../.
 	}
 }
 
-func (r *TypescriptClientDev) BunVersion(ctx context.Context) (string, error) { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) BunVersion(ctx context.Context) (string, error) { // typescript-client-dev (../../../../../../:0:0)
 	if r.bunVersion != nil {
 		return *r.bunVersion, nil
 	}
@@ -99,7 +99,7 @@ func (r *TypescriptClientDev) BunVersion(ctx context.Context) (string, error) { 
 	return response, q.Execute(ctx)
 }
 
-func (r *TypescriptClientDev) BunjsDevContainer() *Container { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) BunjsDevContainer() *Container { // typescript-client-dev (../../../../../../:0:0)
 	q := r.query.Select("bunjsDevContainer")
 
 	return &Container{
@@ -108,7 +108,7 @@ func (r *TypescriptClientDev) BunjsDevContainer() *Container { // typescript-cli
 }
 
 // Generate the Typescript client library
-func (r *TypescriptClientDev) ClientLibrary() *Changeset { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) ClientLibrary() *Changeset { // typescript-client-dev (../../../../../../:0:0)
 	q := r.query.Select("clientLibrary")
 
 	return &Changeset{
@@ -117,7 +117,7 @@ func (r *TypescriptClientDev) ClientLibrary() *Changeset { // typescript-client-
 }
 
 // Format the SDK source with prettier via eslint --fix
-func (r *TypescriptClientDev) Format() *Changeset { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) Format() *Changeset { // typescript-client-dev (../../../../../../:0:0)
 	q := r.query.Select("format")
 
 	return &Changeset{
@@ -174,7 +174,7 @@ func (r *TypescriptClientDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *TypescriptClientDev) IsSemver(ctx context.Context, version string) (bool, error) { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) IsSemver(ctx context.Context, version string) (bool, error) { // typescript-client-dev (../../../../../../:0:0)
 	if r.isSemver != nil {
 		return *r.isSemver, nil
 	}
@@ -189,11 +189,11 @@ func (r *TypescriptClientDev) IsSemver(ctx context.Context, version string) (boo
 
 // TypescriptClientDevLintDocsSnippetsOpts contains options for TypescriptClientDev.LintDocsSnippets
 type TypescriptClientDevLintDocsSnippetsOpts struct {
-	DocsWorkspace *Directory // typescript-client-dev (../../../../../:0:0)
+	DocsWorkspace *Directory // typescript-client-dev (../../../../../../:0:0)
 }
 
 // Check the formatting of Typescript docs snippets
-func (r *TypescriptClientDev) LintDocsSnippets(ctx context.Context, opts ...TypescriptClientDevLintDocsSnippetsOpts) error { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) LintDocsSnippets(ctx context.Context, opts ...TypescriptClientDevLintDocsSnippetsOpts) error { // typescript-client-dev (../../../../../../:0:0)
 	if r.lintDocsSnippets != nil {
 		return nil
 	}
@@ -209,7 +209,7 @@ func (r *TypescriptClientDev) LintDocsSnippets(ctx context.Context, opts ...Type
 }
 
 // Check the formatting of the SDK
-func (r *TypescriptClientDev) LintTypescript(ctx context.Context) error { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) LintTypescript(ctx context.Context) error { // typescript-client-dev (../../../../../../:0:0)
 	if r.lintTypescript != nil {
 		return nil
 	}
@@ -218,7 +218,7 @@ func (r *TypescriptClientDev) LintTypescript(ctx context.Context) error { // typ
 	return q.Execute(ctx)
 }
 
-func (r *TypescriptClientDev) NodeVersionLts(ctx context.Context) (string, error) { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) NodeVersionLts(ctx context.Context) (string, error) { // typescript-client-dev (../../../../../../:0:0)
 	if r.nodeVersionLts != nil {
 		return *r.nodeVersionLts, nil
 	}
@@ -230,7 +230,7 @@ func (r *TypescriptClientDev) NodeVersionLts(ctx context.Context) (string, error
 	return response, q.Execute(ctx)
 }
 
-func (r *TypescriptClientDev) NodeVersionPrevLts(ctx context.Context) (string, error) { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) NodeVersionPrevLts(ctx context.Context) (string, error) { // typescript-client-dev (../../../../../../:0:0)
 	if r.nodeVersionPrevLts != nil {
 		return *r.nodeVersionPrevLts, nil
 	}
@@ -244,10 +244,10 @@ func (r *TypescriptClientDev) NodeVersionPrevLts(ctx context.Context) (string, e
 
 // TypescriptClientDevNodejsBaseOpts contains options for TypescriptClientDev.NodejsBase
 type TypescriptClientDevNodejsBaseOpts struct {
-	NodeVersion string // typescript-client-dev (../../../../../:0:0)
+	NodeVersion string // typescript-client-dev (../../../../../../:0:0)
 }
 
-func (r *TypescriptClientDev) NodejsBase(opts ...TypescriptClientDevNodejsBaseOpts) *Container { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) NodejsBase(opts ...TypescriptClientDevNodejsBaseOpts) *Container { // typescript-client-dev (../../../../../../:0:0)
 	q := r.query.Select("nodejsBase")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `nodeVersion` optional argument
@@ -263,10 +263,10 @@ func (r *TypescriptClientDev) NodejsBase(opts ...TypescriptClientDevNodejsBaseOp
 
 // TypescriptClientDevNodejsDevContainerOpts contains options for TypescriptClientDev.NodejsDevContainer
 type TypescriptClientDevNodejsDevContainerOpts struct {
-	NodeVersion string // typescript-client-dev (../../../../../:0:0)
+	NodeVersion string // typescript-client-dev (../../../../../../:0:0)
 }
 
-func (r *TypescriptClientDev) NodejsDevContainer(opts ...TypescriptClientDevNodejsDevContainerOpts) *Container { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) NodejsDevContainer(opts ...TypescriptClientDevNodejsDevContainerOpts) *Container { // typescript-client-dev (../../../../../../:0:0)
 	q := r.query.Select("nodejsDevContainer")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `nodeVersion` optional argument
@@ -285,18 +285,18 @@ type TypescriptClientDevReleaseOpts struct {
 	//
 	// NPM authentication token
 	//
-	NpmToken *Secret // typescript-client-dev (../../../../../:0:0)
+	NpmToken *Secret // typescript-client-dev (../../../../../../:0:0)
 	//
 	// Execute a dry-run release, with no side effects
 	//
-	DryRun bool // typescript-client-dev (../../../../../:0:0)
+	DryRun bool // typescript-client-dev (../../../../../../:0:0)
 	//
 	// NPM registry URL to publish to.
 	//
-	NpmRegistryURL string // typescript-client-dev (../../../../../:0:0)
+	NpmRegistryURL string // typescript-client-dev (../../../../../../:0:0)
 }
 
-func (r *TypescriptClientDev) Release(ctx context.Context, sourceTag string, opts ...TypescriptClientDevReleaseOpts) error { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) Release(ctx context.Context, sourceTag string, opts ...TypescriptClientDevReleaseOpts) error { // typescript-client-dev (../../../../../../:0:0)
 	if r.release != nil {
 		return nil
 	}
@@ -320,7 +320,7 @@ func (r *TypescriptClientDev) Release(ctx context.Context, sourceTag string, opt
 	return q.Execute(ctx)
 }
 
-func (r *TypescriptClientDev) ReleaseDryRun(ctx context.Context) error { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) ReleaseDryRun(ctx context.Context) error { // typescript-client-dev (../../../../../../:0:0)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -329,7 +329,7 @@ func (r *TypescriptClientDev) ReleaseDryRun(ctx context.Context) error { // type
 	return q.Execute(ctx)
 }
 
-func (r *TypescriptClientDev) Source() *Directory { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) Source() *Directory { // typescript-client-dev (../../../../../../:0:0)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -337,7 +337,7 @@ func (r *TypescriptClientDev) Source() *Directory { // typescript-client-dev (..
 	}
 }
 
-func (r *TypescriptClientDev) SourcePath(ctx context.Context) (string, error) { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) SourcePath(ctx context.Context) (string, error) { // typescript-client-dev (../../../../../../:0:0)
 	if r.sourcePath != nil {
 		return *r.sourcePath, nil
 	}
@@ -350,7 +350,7 @@ func (r *TypescriptClientDev) SourcePath(ctx context.Context) (string, error) { 
 }
 
 // Test the SDK with BunJS
-func (r *TypescriptClientDev) TestBunjs(ctx context.Context) error { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) TestBunjs(ctx context.Context) error { // typescript-client-dev (../../../../../../:0:0)
 	if r.testBunjs != nil {
 		return nil
 	}
@@ -360,7 +360,7 @@ func (r *TypescriptClientDev) TestBunjs(ctx context.Context) error { // typescri
 }
 
 // Test the SDK with the given version of NodeJS
-func (r *TypescriptClientDev) TestNodejs(ctx context.Context, nodeVersion string) error { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) TestNodejs(ctx context.Context, nodeVersion string) error { // typescript-client-dev (../../../../../../:0:0)
 	if r.testNodejs != nil {
 		return nil
 	}
@@ -371,7 +371,7 @@ func (r *TypescriptClientDev) TestNodejs(ctx context.Context, nodeVersion string
 }
 
 // Test the SDK with LTS version of Node
-func (r *TypescriptClientDev) TestNodejsLts(ctx context.Context) error { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) TestNodejsLts(ctx context.Context) error { // typescript-client-dev (../../../../../../:0:0)
 	if r.testNodejsLts != nil {
 		return nil
 	}
@@ -381,7 +381,7 @@ func (r *TypescriptClientDev) TestNodejsLts(ctx context.Context) error { // type
 }
 
 // Test the SDK with previous LTS version of Node
-func (r *TypescriptClientDev) TestNodejsPrevLts(ctx context.Context) error { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) TestNodejsPrevLts(ctx context.Context) error { // typescript-client-dev (../../../../../../:0:0)
 	if r.testNodejsPrevLts != nil {
 		return nil
 	}
@@ -390,7 +390,7 @@ func (r *TypescriptClientDev) TestNodejsPrevLts(ctx context.Context) error { // 
 	return q.Execute(ctx)
 }
 
-func (r *TypescriptClientDev) WorkspaceDir() *Directory { // typescript-client-dev (../../../../../:0:0)
+func (r *TypescriptClientDev) WorkspaceDir() *Directory { // typescript-client-dev (../../../../../../:0:0)
 	q := r.query.Select("workspaceDir")
 
 	return &Directory{

@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type Codegen struct { // codegen (../../../../../:0:0)
+type Codegen struct { // codegen (../../../../../../:0:0)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -28,7 +28,7 @@ func (r *Codegen) WithGraphQLQuery(q *querybuilder.Selection) *Codegen {
 	}
 }
 
-func (r *Codegen) Binary() *File { // codegen (../../../../../:0:0)
+func (r *Codegen) Binary() *File { // codegen (../../../../../../:0:0)
 	q := r.query.Select("binary")
 
 	return &File{
@@ -92,7 +92,7 @@ func (r *Codegen) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *Codegen) Source() *Directory { // codegen (../../../../../:0:0)
+func (r *Codegen) Source() *Directory { // codegen (../../../../../../:0:0)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -112,10 +112,10 @@ func (r *Codegen) AsNode() Node {
 
 // CodegenOpts contains options for Query.Codegen
 type CodegenOpts struct {
-	Source *Directory // codegen (../../../../../:0:0)
+	Source *Directory // codegen (../../../../../../:0:0)
 }
 
-func (r *Query) Codegen(ws *Workspace, opts ...CodegenOpts) *Codegen { // codegen (../../../../../:0:0)
+func (r *Query) Codegen(ws *Workspace, opts ...CodegenOpts) *Codegen { // codegen (../../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("codegen")
 	for i := len(opts) - 1; i >= 0; i-- {

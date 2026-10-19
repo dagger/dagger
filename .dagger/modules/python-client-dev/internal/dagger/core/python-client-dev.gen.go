@@ -10,7 +10,7 @@ import (
 )
 
 // A toolchain to develop the Dagger Python SDK
-type PythonClientDev struct { // python-client-dev (../../../../../:0:0)
+type PythonClientDev struct { // python-client-dev (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id            *ID
@@ -420,7 +420,7 @@ func (r *PythonClientDev) Workspace() *Directory {
 	}
 }
 
-type PythonClientDevDocs struct { // python-client-dev (../../../../../:0:0)
+type PythonClientDevDocs struct { // python-client-dev (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id *ID
@@ -513,7 +513,7 @@ func (r *PythonClientDevDocs) Preview(opts ...PythonClientDevDocsPreviewOpts) *S
 	}
 }
 
-type PythonClientDevTestForPythonVersion struct { // python-client-dev (../../../../../:0:0)
+type PythonClientDevTestForPythonVersion struct { // python-client-dev (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id   *ID
@@ -619,7 +619,7 @@ type PythonClientDevOpts struct {
 	ClientDockerConfig *Secret
 }
 
-func (r *Query) PythonClientDev(ws *Workspace, opts ...PythonClientDevOpts) *PythonClientDev { // python-client-dev (../../../../../:0:0)
+func (r *Query) PythonClientDev(ws *Workspace, opts ...PythonClientDevOpts) *PythonClientDev { // python-client-dev (../../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("pythonClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {

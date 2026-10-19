@@ -10,7 +10,7 @@ import (
 )
 
 // A Go project
-type Go struct { // go (../../../../../:0:0)
+type Go struct { // go (../../../../../../:0:0)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -650,7 +650,7 @@ type GoOpts struct {
 	VcsDirty bool
 }
 
-func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../../:0:0)
+func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../../../:0:0)
 	q := r.query.Select("go")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument

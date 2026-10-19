@@ -10,12 +10,12 @@ import (
 )
 
 // A unique identifier for an object.
-type ViztestID = ID // viztest (../../../../../:0:0)
+type ViztestID = ID // viztest (../../../../../../:0:0)
 
 // A unique identifier for an object.
-type ViztestModuleTypeReturnID = ID // viztest (../../../../../:0:0)
+type ViztestModuleTypeReturnID = ID // viztest (../../../../../../:0:0)
 
-func (r *Query) Viztest() *Viztest { // viztest (../../../../../:0:0)
+func (r *Query) Viztest() *Viztest { // viztest (../../../../../../:0:0)
 	q := r.query.Select("viztest")
 
 	return &Viztest{
@@ -23,7 +23,7 @@ func (r *Query) Viztest() *Viztest { // viztest (../../../../../:0:0)
 	}
 }
 
-type Viztest struct { // viztest (../../../../../:0:0)
+type Viztest struct { // viztest (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	cachedExecs              *Void
@@ -876,7 +876,7 @@ func (r *Viztest) UseNoExecService(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-type ViztestModuleTypeReturn struct { // viztest (../../../../../:0:0)
+type ViztestModuleTypeReturn struct { // viztest (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id *ViztestModuleTypeReturnID
