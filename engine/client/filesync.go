@@ -828,6 +828,13 @@ func globHostPath(ctx context.Context, root string, pattern string) ([]string, e
 	}
 	onlyPrefixIncludes := !strings.ContainsAny(patStr, patternChars)
 
+	// A wildcard filename can still have a fixed directory prefix. Keep only
+	// its ancestors and descendants instead of walking unrelated subtrees.
+	directoryPrefix := "."
+	if wildcard := strings.IndexAny(pat.String(), patternChars); wildcard >= 0 {
+		directoryPrefix = filepath.Dir(pat.String()[:wildcard])
+	}
+
 	var matches []string
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, prevErr error) error {
 		if prevErr != nil {
@@ -856,13 +863,17 @@ func globHostPath(ctx context.Context, root string, pattern string) ([]string, e
 				result += "/"
 			}
 			matches = append(matches, result)
-		} else if d.IsDir() && onlyPrefixIncludes {
+		} else if d.IsDir() && !pat.Exclusion() {
 			dirSlash := rel + string(filepath.Separator)
-			if !pat.Exclusion() {
+			if onlyPrefixIncludes {
 				prefixSlash := patStr + string(filepath.Separator)
 				if !strings.HasPrefix(prefixSlash, dirSlash) {
 					return filepath.SkipDir
 				}
+			} else if directoryPrefix != "." && rel != directoryPrefix &&
+				!strings.HasPrefix(directoryPrefix, dirSlash) &&
+				!strings.HasPrefix(rel, directoryPrefix+string(filepath.Separator)) {
+				return filepath.SkipDir
 			}
 		}
 
