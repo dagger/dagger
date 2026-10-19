@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type Dep struct { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:9:6)
+type Dep struct { // dep (../../../../../dagql/idtui/viztest/dep/main.go:9:6)
 	query *querybuilder.Selection
 
 	bubblingFunction *Void
@@ -25,7 +25,7 @@ func (r *Dep) WithGraphQLQuery(q *querybuilder.Selection) *Dep {
 }
 
 // FailingFunction returns a simple error to test error origin stamping
-func (r *Dep) BubblingFunction(ctx context.Context) error { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:37:1)
+func (r *Dep) BubblingFunction(ctx context.Context) error { // dep (../../../../../dagql/idtui/viztest/dep/main.go:37:1)
 	if r.bubblingFunction != nil {
 		return nil
 	}
@@ -35,7 +35,7 @@ func (r *Dep) BubblingFunction(ctx context.Context) error { // dep (../../../../
 }
 
 // FailingFunction returns a simple error to test error origin stamping
-func (r *Dep) FailingFunction(ctx context.Context) error { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:32:1)
+func (r *Dep) FailingFunction(ctx context.Context) error { // dep (../../../../../dagql/idtui/viztest/dep/main.go:32:1)
 	if r.failingFunction != nil {
 		return nil
 	}
@@ -44,7 +44,7 @@ func (r *Dep) FailingFunction(ctx context.Context) error { // dep (../../../../.
 	return q.Execute(ctx)
 }
 
-func (r *Dep) FileContents(ctx context.Context, files []*File) (string, error) { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:19:1)
+func (r *Dep) FileContents(ctx context.Context, files []*File) (string, error) { // dep (../../../../../dagql/idtui/viztest/dep/main.go:19:1)
 	if r.fileContents != nil {
 		return *r.fileContents, nil
 	}
@@ -57,7 +57,7 @@ func (r *Dep) FileContents(ctx context.Context, files []*File) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-func (r *Dep) GetFiles(ctx context.Context) ([]File, error) { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:11:1)
+func (r *Dep) GetFiles(ctx context.Context) ([]File, error) { // dep (../../../../../dagql/idtui/viztest/dep/main.go:11:1)
 	q := r.query.Select("getFiles")
 
 	q = q.Select("id")
@@ -146,7 +146,7 @@ func (r *Dep) AsNode() Node {
 	}
 }
 
-func (r *Query) Dep() *Dep { // dep (../../../../../../dagql/idtui/viztest/dep/main.go:9:6)
+func (r *Query) Dep() *Dep { // dep (../../../../../dagql/idtui/viztest/dep/main.go:9:6)
 	q := r.query.Select("dep")
 
 	return &Dep{
