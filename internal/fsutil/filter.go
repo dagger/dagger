@@ -59,6 +59,7 @@ type filterFS struct {
 	includeMatcher     *patternmatcher.PatternMatcher
 	excludeMatcher     *patternmatcher.PatternMatcher
 	onlyPrefixIncludes bool
+	literalInclude     string
 	excludePatterns    []excludePattern
 
 	mapFn MapFunc
@@ -112,6 +113,7 @@ func NewFilterFS(fs FS, opt *FilterOpt) (FS, error) {
 		excludeMatcher     *patternmatcher.PatternMatcher
 		err                error
 		onlyPrefixIncludes = true
+		literalInclude     string
 		excludePatterns    []excludePattern
 	)
 
@@ -125,6 +127,12 @@ func NewFilterFS(fs FS, opt *FilterOpt) (FS, error) {
 			if !p.Exclusion() && strings.ContainsAny(patternWithoutTrailingGlob(p), patternChars) {
 				onlyPrefixIncludes = false
 				break
+			}
+		}
+		if patterns := includeMatcher.Patterns(); len(patterns) == 1 {
+			p := patterns[0]
+			if !p.Exclusion() && p.String() != "." && filepath.IsLocal(p.String()) && !strings.ContainsAny(p.String(), patternChars) {
+				literalInclude = p.String()
 			}
 		}
 	}
@@ -161,6 +169,7 @@ func NewFilterFS(fs FS, opt *FilterOpt) (FS, error) {
 		includeMatcher:     includeMatcher,
 		excludeMatcher:     excludeMatcher,
 		onlyPrefixIncludes: onlyPrefixIncludes,
+		literalInclude:     literalInclude,
 		excludePatterns:    excludePatterns,
 		mapFn:              opt.Map,
 	}, nil
@@ -202,7 +211,17 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 	// used only for include/exclude handling
 	var parentDirs []visitedDir
 
-	return fs.fs.Walk(ctx, target, func(path string, dirEntry gofs.DirEntry, walkErr error) (retErr error) {
+	walk := fs.fs.Walk
+	if fs.literalInclude != "" && (target == "" || target == "." || target == string(filepath.Separator)) {
+		if native, ok := fs.fs.(interface {
+			walkWithParents(context.Context, string, gofs.WalkDirFunc) error
+		}); ok {
+			walk = native.walkWithParents
+			target = fs.literalInclude
+		}
+	}
+
+	return walk(ctx, target, func(path string, dirEntry gofs.DirEntry, walkErr error) (retErr error) {
 		defer func() {
 			if retErr != nil && isNotExist(retErr) {
 				retErr = filepath.SkipDir

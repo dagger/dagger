@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -88,6 +89,62 @@ func (fs *fs) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc) erro
 func (fs *fs) Open(p string) (io.ReadCloser, error) {
 	rc, err := os.Open(filepath.Join(fs.root, p))
 	return rc, errors.WithStack(err)
+}
+
+// walkWithParents visits one literal include without listing unrelated siblings.
+// The filter still receives its ancestors before the selected subtree.
+func (fs *fs) walkWithParents(ctx context.Context, target string, fn gofs.WalkDirFunc) error {
+	var paths []string
+	for parent := filepath.Dir(target); parent != "."; parent = filepath.Dir(parent) {
+		paths = append(paths, parent)
+	}
+	paths = append(paths, ".")
+	slices.Reverse(paths)
+
+	type parentEntry struct {
+		path  string
+		entry gofs.DirEntry
+	}
+	parents := make([]parentEntry, 0, len(paths)-1)
+	for _, parent := range paths {
+		if parent != "." {
+			valid := false
+			err := fs.Walk(ctx, parent, func(path string, entry gofs.DirEntry, err error) error {
+				if err == nil && entry != nil && entry.IsDir() {
+					parents = append(parents, parentEntry{path, entry})
+					valid = true
+				}
+				return filepath.SkipDir
+			})
+			if err != nil || !valid {
+				return fs.Walk(ctx, "", fn)
+			}
+		}
+		// An ordinary walk must be able to read each ancestor to reach the
+		// include. Fall back on errors, preserving permission and missing-path
+		// handling without following a symlink ancestor.
+		dir, err := os.Open(filepath.Join(fs.root, parent))
+		if err != nil {
+			return fs.Walk(ctx, "", fn)
+		}
+		dir.Close()
+	}
+	if _, err := os.Lstat(filepath.Join(fs.root, target)); err != nil {
+		return fs.Walk(ctx, "", fn)
+	}
+
+	for _, parent := range parents {
+		if err := fn(parent.path, parent.entry, nil); err != nil {
+			if err == filepath.SkipDir || err == filepath.SkipAll {
+				return nil
+			}
+			return err
+		}
+	}
+	if err := fs.Walk(ctx, target, fn); err != nil {
+		return err
+	}
+	return ctx.Err()
 }
 
 type Dir struct {
