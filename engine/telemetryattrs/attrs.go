@@ -156,6 +156,13 @@ const (
 	// in place of the pre-generation load error. (bool)
 	GenerateRegeneratedAttr = "dagger.io/generate.regenerated"
 
+	// CheckGeneratorAttr marks a staleness check span that found its generator
+	// out of date, with the generator's dag:// address: running that generator
+	// is what fixes the check, so the TUI suggests `dagger generate` for it
+	// alongside `dagger check`. Unset when the generator itself failed, since
+	// running it would only repeat the failure. (string)
+	CheckGeneratorAttr = "dagger.io/check.generator"
+
 	// DagBlockedAttr marks a lazy-evaluation resume span that aborted because a
 	// prerequisite result's evaluation failed, rather than because the result's
 	// own deferred work failed. The UI treats a blocked resumption as if the

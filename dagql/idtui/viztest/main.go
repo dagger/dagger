@@ -228,6 +228,18 @@ func (*Viztest) GenerateFail() *dagger.Changeset {
 	return failed.Changes(dag.Directory())
 }
 
+// GenerateStale is a generator that always has changes to make, so its
+// staleness check fails and shows them.
+// +generate
+func (*Viztest) GenerateStale() *dagger.Changeset {
+	before := dag.Directory().
+		WithNewFile("greeting.txt", "hello\nworld\n")
+	return before.
+		WithNewFile("greeting.txt", "hello\nstale world\n").
+		WithNewFile("new.txt", "brand new\n").
+		Changes(before)
+}
+
 // +cache="session"
 func (*Viztest) PrimaryLines(n int) string {
 	buf := new(strings.Builder)

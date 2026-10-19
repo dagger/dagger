@@ -129,9 +129,8 @@ type Span struct {
 
 	// NOTE: a name updated by a log record lives in db.namesFromLog, and the
 	// Call/Base cache in db.spanCalls, not here: few spans need either. Mind
-	// the size of this struct, which is multiplied by every span in a trace:
-	// it fits the 1024-byte allocation size class, malloc header included
-	// (see TestSpanSize).
+	// the size of this struct, which is multiplied by every span in a trace
+	// (see BenchmarkSpanFootprint).
 }
 
 // spanCalls caches a span's Call and Base.
@@ -264,7 +263,7 @@ func countChildren(set *SpanSet, opts FrontendOpts) int {
 type SpanSnapshot struct {
 	// NOTE: fields are grouped to avoid alignment padding (the bools sit
 	// together below), since this struct is multiplied by every span in a
-	// trace. Keep it that way when adding fields; see TestSpanSize.
+	// trace. Keep it that way when adding fields.
 
 	// Monotonically increasing number for each update seen for this span.
 	Version int
@@ -363,6 +362,10 @@ type SpanSnapshot struct {
 
 	// Check name (see CheckPassed)
 	CheckName string `json:",omitempty"`
+
+	// CheckGenerator is the address of the generator a stale staleness check
+	// covers: running it fixes the check. Empty when the generator failed.
+	CheckGenerator string `json:",omitempty"`
 
 	// Generator name
 	GeneratorName string `json:",omitempty"`
@@ -585,6 +588,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.CheckPassedAttr:
 		// TODO: redundant with span status?
 		snapshot.CheckPassed = val.(bool)
+
+	case telemetryattrs.CheckGeneratorAttr:
+		snapshot.CheckGenerator = val.(string)
 
 	case telemetry.GeneratorNameAttr:
 		snapshot.GeneratorName = val.(string)
