@@ -1651,6 +1651,14 @@ func TestRerunSectionSuggestsGenerateForStaleCheck(t *testing.T) {
 		t.Fatalf("expected REGENERATE after RUN LOCALLY (local=%d regenerate=%d):\n%s", localIdx, genIdx, joined)
 	}
 
+	// An agent can't answer generate's apply prompt, so it must be told to apply.
+	fe.FrontendOpts.AgentStyle = true
+	joined = strings.Join(fe.renderRerunSection(nil), "\n")
+	if !strings.Contains(joined, `dagger generate -y "dag://?generator=go/generate"`) {
+		t.Fatalf("agent-style generate line missing -y:\n%s", joined)
+	}
+	fe.FrontendOpts.AgentStyle = false
+
 	// A consumer with its own vocabulary has no CLI to run either command.
 	fe.RerunSuggestion = func(names []string) (string, []string) {
 		return "RE-RUN THIS CHECK", []string{"call the check tool"}

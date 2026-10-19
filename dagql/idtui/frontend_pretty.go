@@ -4368,11 +4368,17 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 		lines = append(lines, reportSectionLines(out, fe.agentStyle(), heading, body)...)
 	}
 
-	// Run the generators whose staleness checks failed, to fix them.
+	// Run the generators whose staleness checks failed, to fix them. An agent
+	// must choose what to do with the changeset up front (see
+	// generateChangesetDisposition), so spell out applying it.
 	if len(generators) > 0 {
+		cmd := "dagger generate"
+		if fe.agentStyle() {
+			cmd += " -y"
+		}
 		body := make([]string, 0, len(generators))
 		for _, gen := range generators {
-			body = append(body, fmt.Sprintf("dagger generate %q", gen))
+			body = append(body, fmt.Sprintf("%s %q", cmd, gen))
 		}
 		if len(lines) > 0 {
 			lines = append(lines, "")
