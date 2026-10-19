@@ -1546,6 +1546,17 @@ func (srv *Server) initializeClientRuntime(
 	}
 
 	client.fnCall = opts.FunctionCall
+	// Grant this nested client permission to resolve the session resources its
+	// call was explicitly passed (secrets, sockets). The caller already limited
+	// these to what it could itself resolve (ModuleFunction.grantableCallHandles),
+	// so a forged result ID conveys nothing.
+	if client.fnCall != nil && srv.engineCache != nil {
+		srv.engineCache.GrantSessionResources(
+			client.daggerSession.sessionID,
+			client.clientID,
+			client.fnCall.GrantedHandles(),
+		)
+	}
 
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)

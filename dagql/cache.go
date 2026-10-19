@@ -924,6 +924,9 @@ func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientI
 	}
 	bindings.byClientID[clientID] = value
 	bindings.latestClientID = clientID
+	// The client that binds a resource may resolve it. Other clients get the
+	// grant only through an explicit pass or return (GrantSessionResources).
+	c.grantHandlesLocked(sessionID, clientID, handle)
 	if c.sessionHandlesBySession == nil {
 		c.sessionHandlesBySession = make(map[string]*set.TreeSet[SessionResourceHandle])
 	}
@@ -940,6 +943,102 @@ func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientI
 	c.sessionMu.Unlock()
 
 	return nil
+}
+
+// grantHandlesLocked records that clientID may resolve each handle in
+// sessionID. Requires c.sessionMu.
+func (c *Cache) grantHandlesLocked(sessionID, clientID string, handles ...SessionResourceHandle) {
+	if len(handles) == 0 {
+		return
+	}
+	if c.grantedHandlesBySession == nil {
+		c.grantedHandlesBySession = make(map[string]map[string]*set.TreeSet[SessionResourceHandle])
+	}
+	byClient := c.grantedHandlesBySession[sessionID]
+	if byClient == nil {
+		byClient = make(map[string]*set.TreeSet[SessionResourceHandle])
+		c.grantedHandlesBySession[sessionID] = byClient
+	}
+	granted := byClient[clientID]
+	if granted == nil {
+		granted = set.NewTreeSet(compareSessionResourceHandles)
+		byClient[clientID] = granted
+	}
+	for _, handle := range handles {
+		if handle != "" {
+			granted.Insert(handle)
+		}
+	}
+}
+
+// GrantSessionResources grants clientID permission to resolve each handle in
+// sessionID. It is how an explicitly passed or returned session resource
+// reaches the client it was handed to, mirroring the pre-session-scoped
+// model's per-client resource transfer.
+func (c *Cache) GrantSessionResources(sessionID, clientID string, handles []SessionResourceHandle) {
+	if c == nil || sessionID == "" || clientID == "" || len(handles) == 0 {
+		return
+	}
+	c.sessionMu.Lock()
+	c.grantHandlesLocked(sessionID, clientID, handles...)
+	c.sessionMu.Unlock()
+}
+
+// FilterGrantedHandles returns the subset of handles that clientID may
+// resolve in sessionID. A module uses it to pass on only the resources it was
+// itself given, so access cannot be laundered through a sub-call.
+func (c *Cache) FilterGrantedHandles(sessionID, clientID string, handles []SessionResourceHandle) []SessionResourceHandle {
+	if c == nil || sessionID == "" || clientID == "" || len(handles) == 0 {
+		return nil
+	}
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	granted := c.grantedHandlesBySession[sessionID][clientID]
+	if granted == nil {
+		return nil
+	}
+	out := make([]SessionResourceHandle, 0, len(handles))
+	for _, handle := range handles {
+		if granted.Contains(handle) {
+			out = append(out, handle)
+		}
+	}
+	return out
+}
+
+// RequiredSessionResourceHandles returns the session resource handles a result
+// transitively depends on: its own handle, if any, plus every handle its
+// dependency closure requires. Passing or returning the result conveys access
+// to exactly these handles.
+func (c *Cache) RequiredSessionResourceHandles(res AnyResult) []SessionResourceHandle {
+	if c == nil || res == nil {
+		return nil
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil {
+		return nil
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	seen := map[SessionResourceHandle]struct{}{}
+	var out []SessionResourceHandle
+	add := func(h SessionResourceHandle) {
+		if h == "" {
+			return
+		}
+		if _, ok := seen[h]; ok {
+			return
+		}
+		seen[h] = struct{}{}
+		out = append(out, h)
+	}
+	add(shared.sessionResourceHandle)
+	if shared.requiredSessionResources != nil {
+		for _, h := range shared.requiredSessionResources.Slice() {
+			add(h)
+		}
+	}
+	return out
 }
 
 func (c *Cache) SetVolatileVars(_ context.Context, sessionID, k, v string) error {
@@ -1017,6 +1116,14 @@ func (c *Cache) ResolveSessionResourceCandidates(
 	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
 		c.sessionMu.Unlock()
 		return nil, fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
+	}
+	// The caller may resolve a handle only if it bound the resource or was
+	// explicitly passed or returned a value requiring it. Without this a
+	// client could forge a result ID, load another client's session resource,
+	// and resolve it through the bindings below.
+	if granted := c.grantedHandlesBySession[sessionID][clientID]; granted == nil || !granted.Contains(handle) {
+		c.sessionMu.Unlock()
+		return nil, fmt.Errorf("resolve session resource %q: client %q was not granted this resource in session %q", handle, clientID, sessionID)
 	}
 	sessionBindings := c.sessionResourcesBySession[sessionID]
 	bindings := sessionBindings[handle]
@@ -1568,6 +1675,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 	delete(c.sessionLazySpansBySession, plan.sessionID)
 	delete(c.sessionResultInstallSpans, plan.sessionID)
 	delete(c.sessionResourcesBySession, plan.sessionID)
+	delete(c.grantedHandlesBySession, plan.sessionID)
 	delete(c.sessionVolatileVarsBySession, plan.sessionID)
 	delete(c.sessionHandlesBySession, plan.sessionID)
 	c.sessionMu.Unlock()
@@ -2383,9 +2491,17 @@ type Cache struct {
 	// module API call returns are recorded once on the returned result with
 	// ownsClosure set, and lookups resolve closure ownership on demand by
 	// walking dep edges upward via depParents.
-	sessionResultInstallSpans    map[string]map[sharedResultID]map[string]sessionResultInstallSpan
-	sessionResourcesBySession    map[string]map[SessionResourceHandle]*sessionResourceBindings
-	sessionHandlesBySession      map[string]*set.TreeSet[SessionResourceHandle]
+	sessionResultInstallSpans map[string]map[sharedResultID]map[string]sessionResultInstallSpan
+	sessionResourcesBySession map[string]map[SessionResourceHandle]*sessionResourceBindings
+	sessionHandlesBySession   map[string]*set.TreeSet[SessionResourceHandle]
+	// grantedHandlesBySession records, per session and client, the session
+	// resource handles that client is permitted to resolve. A client is
+	// granted a handle when it binds the resource (BindSessionResource), when
+	// a module call explicitly passes it a value requiring the handle, or when
+	// a module returns such a value to it (GrantSessionResources). Resolution
+	// checks membership so a client cannot read a session resource it was
+	// never given, even if it forges the resource's result ID.
+	grantedHandlesBySession      map[string]map[string]*set.TreeSet[SessionResourceHandle]
 	sessionVolatileVarsBySession map[string]map[string]string
 
 	sqlDB *sql.DB

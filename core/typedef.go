@@ -2472,6 +2472,13 @@ type FunctionCall struct {
 	// engine-side only like processSpan. A module entrypoint runs such a call
 	// in a new exec each time dagql evaluates it.
 	cacheTTLSeconds int64
+
+	// grantedHandles are the session resource handles this call's arguments and
+	// parent require that the caller was itself permitted to resolve. Carried
+	// engine-side only; the nested client that serves this call is granted them
+	// so a module can resolve exactly the secrets and sockets it was passed,
+	// and nothing it merely guessed the result ID of.
+	grantedHandles []dagql.SessionResourceHandle
 }
 
 // CacheTTLSeconds returns the explicit TTL of the call's function, and 0 when
@@ -2481,6 +2488,25 @@ func (fnCall *FunctionCall) CacheTTLSeconds() int64 {
 		return 0
 	}
 	return fnCall.cacheTTLSeconds
+}
+
+// GrantedHandles returns the session resource handles the nested client
+// serving this call may resolve: the secrets and sockets its arguments and
+// parent required and the caller was permitted to pass on.
+func (fnCall *FunctionCall) GrantedHandles() []dagql.SessionResourceHandle {
+	if fnCall == nil {
+		return nil
+	}
+	return fnCall.grantedHandles
+}
+
+// SetGrantedHandles records the session resource handles the nested client
+// serving this call may resolve.
+func (fnCall *FunctionCall) SetGrantedHandles(handles []dagql.SessionResourceHandle) {
+	if fnCall == nil {
+		return
+	}
+	fnCall.grantedHandles = handles
 }
 
 // PlumbingSpanContext returns the span holding the work that runs this call
