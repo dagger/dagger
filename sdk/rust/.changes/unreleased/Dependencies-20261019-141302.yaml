@@ -1,0 +1,6 @@
+kind: Dependencies
+body: Bump Engine to v1.0.0-beta.19
+time: 2026-10-19T14:13:02.968887479-03:00
+custom:
+    Author: matipan
+    PR: "14726"
