@@ -115,10 +115,6 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 	case c.Receiver.Self() != nil:
 		failure = c.runFunction(ctx)
 	case c.Generator.Self() != nil:
-		// Running the generator is what fixes this check.
-		if uri, err := c.Generator.Self().Artifact.URI(ArtifactURIOpts{DimensionKeys: true}); err == nil {
-			trace.SpanFromContext(spanCtx).SetAttributes(attribute.String(telemetryattrs.CheckGeneratorAttr, uri))
-		}
 		var changes dagql.ObjectResult[*Changeset]
 		var srv *dagql.Server
 		srv, failure = CurrentDagqlServer(ctx)
@@ -129,6 +125,11 @@ func (c *Check) Run(ctx context.Context) (_ *Check, rerr error) {
 			var empty bool
 			empty, failure = changes.Self().IsEmpty(ctx)
 			if failure == nil && !empty {
+				// Stale: running the generator is what fixes this check. Not
+				// when the generator itself failed, which it would just repeat.
+				if uri, err := c.Generator.Self().Artifact.URI(ArtifactURIOpts{DimensionKeys: true}); err == nil {
+					trace.SpanFromContext(spanCtx).SetAttributes(attribute.String(telemetryattrs.CheckGeneratorAttr, uri))
+				}
 				logStalePatch(ctx, spanCtx, srv, changes)
 				failure = fmt.Errorf("generated files are not up to date")
 			}

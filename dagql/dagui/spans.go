@@ -364,8 +364,8 @@ type SpanSnapshot struct {
 	// Check name (see CheckPassed)
 	CheckName string `json:",omitempty"`
 
-	// CheckGenerator is the address of the generator a staleness check covers:
-	// running it fixes the check.
+	// CheckGenerator is the address of the generator a stale staleness check
+	// covers: running it fixes the check. Empty when the generator failed.
 	CheckGenerator string `json:",omitempty"`
 
 	// Generator name

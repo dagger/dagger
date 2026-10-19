@@ -297,6 +297,34 @@ entrypoint = true
 			},
 		},
 
+		// a staleness check whose generator itself fails isn't stale: running
+		// the generator would only repeat the failure, so the report must not
+		// suggest it. Fuzzy, since the exec error's rendering isn't the point.
+		{
+			Name:     "generate-fail-check",
+			Function: "generate-fail/stale",
+			Check:    true,
+			Fail:     true,
+			FuzzyTest: func(t *testctx.T, out string) {
+				require.Contains(t, out, "dag://?check=generate-fail/stale")
+				require.Contains(t, out, "boom")
+				require.NotContains(t, out, "generated files are not up to date")
+				require.NotContains(t, out, "REGENERATE")
+				require.NotContains(t, out, "dagger generate")
+			},
+			DBTest: func(t *testctx.T, db *dagui.DB) {
+				var checks int
+				for _, span := range db.Spans.Order {
+					if span.CheckName != "dag://?check=generate-fail/stale" {
+						continue
+					}
+					checks++
+					require.Empty(t, span.CheckGenerator, "a failed generator must not be suggested as the fix")
+				}
+				require.NotZero(t, checks, "the staleness check must have a span")
+			},
+		},
+
 		{Function: "git-readme", Args: []string{
 			"--remote", "https://github.com/dagger/dagger",
 			"--version", "v0.18.6",
