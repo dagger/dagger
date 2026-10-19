@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/glamour/styles"
+	"charm.land/glamour/v2"
+	"charm.land/glamour/v2/styles"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -23,6 +23,31 @@ func plainMarkdown(s string) string {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
 	return strings.Trim(strings.Join(lines, "\n"), "\n")
+}
+
+// TestMarkdownHyphenWrap: a hyphen is a wrap breakpoint that still occupies a
+// column. Lines must not overflow by one column per hyphen, which would make
+// the document-level wrap strand the next word on a line of its own.
+func TestMarkdownHyphenWrap(t *testing.T) {
+	got, err := renderMarkdown("aa-bb cc dd", 7, MarkdownStyle, nil)
+	require.NoError(t, err)
+	require.Equal(t, "aa-bb\ncc dd", plainMarkdown(got))
+	content := "This explains readonly mode and git-push approval, and why the committer readonly composition exposes fewer tools than in the full (non-readonly) object; use exact-fit lengths (e.g. text with \"é\" in it)."
+	for width := 10; width <= 80; width++ {
+		got, err := renderMarkdown(content, width, MarkdownStyle, nil)
+		require.NoError(t, err)
+		lines := strings.Split(plainMarkdown(got), "\n")
+		for i, line := range lines {
+			if strings.Contains(line, " ") {
+				require.LessOrEqual(t, ansi.StringWidth(line), width, "width %d line %q", width, line)
+			}
+			if i+1 < len(lines) {
+				if next := strings.Fields(lines[i+1]); len(next) > 0 {
+					require.Greater(t, ansi.StringWidth(line)+1+ansi.StringWidth(next[0]), width, "width %d: %q fits on %q", width, next[0], line)
+				}
+			}
+		}
+	}
 }
 
 func TestMarkdownTableCompact(t *testing.T) {
@@ -158,7 +183,7 @@ func TestMarkdownNonTablesUnchanged(t *testing.T) {
 			if style == styles.DarkStyle {
 				st = styles.DarkStyleConfig
 			}
-			old, err := glamour.NewTermRenderer(glamour.WithStyles(st), glamour.WithWordWrap(50), glamour.WithColorProfile(termenv.ANSI), glamour.WithChromaFormatter("terminal16"), glamour.WithPreservedNewLines(), glamour.WithEmoji())
+			old, err := glamour.NewTermRenderer(glamour.WithStyles(ansiStyleConfig(st)), glamour.WithWordWrap(50), glamour.WithChromaFormatter("terminal16"), glamour.WithPreservedNewLines(), glamour.WithEmoji())
 			require.NoError(t, err)
 			want, err := old.Render(content)
 			require.NoError(t, err)
