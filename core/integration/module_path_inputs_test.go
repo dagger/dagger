@@ -955,6 +955,264 @@ entrypoint = true
 	})
 }
 
+// defaultPathReaderModule is a Dang module that reads its relative
+// +defaultPath through each caller that binds a workspace: a check, a
+// generator, an LLM tool and a DAG address. own.txt holds the module name, so a read of any
+// other directory shows.
+func defaultPathReaderModule(c *dagger.Client, name, typeName string) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("dagger-module.toml", fmt.Sprintf(`name = %q
+engineVersion = "latest"
+
+[runtime]
+source = "dang"
+`, name)).
+		WithNewFile("main.dang", fmt.Sprintf(`type %[1]s {
+  pub verify(dir: Directory! @defaultPath(path: ".")): Void @check {
+    if (dir.file("own.txt").contents != %[2]q) {
+      raise "defaultPath did not resolve to the module's own source"
+    }
+    null
+  }
+
+  pub generate(dir: Directory! @defaultPath(path: ".")): Changeset! @generate {
+    dir.withNewFile(%[3]q, dir.entries.join(",")).changes(dir)
+  }
+
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  pub %[4]s(dir: Directory! @defaultPath(path: ".")): String! {
+    dir.entries.join(",")
+  }
+
+  pub tree(dir: Directory! @defaultPath(path: ".")): Directory! {
+    dir
+  }
+}
+`, typeName, name+"\n", name+"-entries.txt", name+"Entries")).
+		WithNewFile("own.txt", name+"\n")
+}
+
+const defaultPathOwnEntries = "dagger-module.toml,main.dang,own.txt"
+
+// check, generate and SDK generation bind the caller's workspace into module
+// calls; a module installed by git ref must still read its relative
+// +defaultPath from its own source, as `dagger call` does, and never from a
+// same-named workspace directory.
+func (ModuleSuite) TestDefaultPathOfGitModuleUnderBoundWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	served := core.NewQuery(c).Directory().
+		WithDirectory("reader", defaultPathReaderModule(c, "reader", "Reader")).
+		WithNewFile("probe-sdk/dagger-module.toml", `name = "probe-sdk"
+engineVersion = "latest"
+
+[runtime]
+source = "dang"
+`).
+		WithNewFile("probe-sdk/main.dang", `type ProbeSdk {
+  pub images: Directory!
+
+  new(images: Directory! @defaultPath(path: "images")) {
+    self.images = images
+    self
+  }
+
+  findClientRoot(ws: Workspace!): String {
+    "."
+  }
+
+  generateScope(
+    ws: Workspace!,
+    isModule: Boolean!,
+    name: String!,
+    clients: [ModuleSource!]!,
+  ): Workspace! {
+    ws
+      .withNewFile(
+        "dagger-module.toml",
+        "name = " + JSON.encode(name) + "\n" +
+          "engineVersion = \"latest\"\n\n" +
+          "[runtime]\n" +
+          "  source = \"dang\"\n",
+      )
+      .withNewFile("main.dang", "type Generated {\n  pub hello: String! {\n    \"hello\"\n  }\n}\n")
+      .withNewFile("probe-entries.txt", images.entries.join(","))
+  }
+}
+`).
+		WithNewFile("probe-sdk/images/own.txt", "sdk\n")
+	gitDaemon, repoURL := gitService(ctx, t, c, served)
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+	base := goGitBase(t, c).WithServiceBinding(gitHost, gitDaemon)
+
+	readerWorkspace := base.WithNewFile("dagger.toml", fmt.Sprintf(`[modules.reader]
+source = %q
+`, repoURL+"#main:reader"))
+	sdkWorkspace := base.WithNewFile("dagger.toml", fmt.Sprintf(`[modules.probe-sdk]
+source = %q
+
+[sdks.probe]
+module = "probe-sdk"
+
+[sdks.probe.scopes."."]
+is-module = true
+name = "app"
+`, repoURL+"#main:probe-sdk"))
+
+	for _, decoy := range []bool{false, true} {
+		name := "no workspace directory of the module's name"
+		readerCtr, sdkCtr := readerWorkspace, sdkWorkspace
+		if decoy {
+			name = "same-named workspace directory"
+			readerCtr = readerCtr.WithNewFile("reader/decoy.txt", "workspace\n")
+			sdkCtr = sdkCtr.WithNewFile("probe-sdk/images/decoy.txt", "workspace\n")
+		}
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			t.Run("check", func(ctx context.Context, t *testctx.T) {
+				_, err := readerCtr.With(daggerExec("check", "reader:verify")).Sync(ctx)
+				require.NoError(t, err)
+			})
+
+			t.Run("generator", func(ctx context.Context, t *testctx.T) {
+				out, err := readerCtr.With(daggerExec("generate", "-y")).File("reader-entries.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, defaultPathOwnEntries, out)
+			})
+
+			t.Run("SDK generation", func(ctx context.Context, t *testctx.T) {
+				out, err := sdkCtr.With(daggerExec("generate", "-y")).File("probe-entries.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "own.txt", out)
+			})
+		})
+	}
+}
+
+func (ModuleSuite) TestDefaultPathOfLocalModuleOutsideWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := goGitBase(t, c).
+		WithDirectory("/mods/reader", defaultPathReaderModule(c, "reader", "Reader")).
+		WithWorkdir("/mods").
+		WithExec([]string{"git", "init"}).
+		WithWorkdir("/work").
+		WithNewFile("dagger.toml", `[modules.reader]
+source = "../mods/reader"
+`)
+
+	for _, decoy := range []bool{false, true} {
+		name := "no workspace directory of the module's name"
+		ctr := ctr
+		if decoy {
+			name = "same-named workspace directory"
+			ctr = ctr.WithNewFile("reader/decoy.txt", "workspace\n")
+		}
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			t.Run("check", func(ctx context.Context, t *testctx.T) {
+				_, err := ctr.With(daggerExec("check", "reader:verify")).Sync(ctx)
+				require.NoError(t, err)
+			})
+
+			t.Run("generator", func(ctx context.Context, t *testctx.T) {
+				out, err := ctr.With(daggerExec("generate", "-y")).File("reader-entries.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, defaultPathOwnEntries, out)
+			})
+		})
+	}
+}
+
+func (ModuleSuite) TestDefaultPathOfModuleInsideWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := goGitBase(t, c).
+		WithDirectory("modules/inside", defaultPathReaderModule(c, "inside", "Inside")).
+		WithNewFile("dagger.toml", `[modules.inside]
+source = "modules/inside"
+`)
+
+	t.Run("check", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerExec("check", "inside:verify")).Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("generator", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerExec("generate", "-y")).File("inside-entries.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, defaultPathOwnEntries, out)
+	})
+}
+
+// An LLM binds its workspace into its tool calls, and Workspace.resolve into
+// the artifact a DAG address names. A module inside that workspace reads its
+// edits through its +defaultPath; a module installed by git ref reads its own
+// source.
+func (ModuleSuite) TestDefaultPathOfModulesUnderValueWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", makeGitDir(c, core.NewQuery(c).Directory().
+		WithDirectory("reader", defaultPathReaderModule(c, "reader", "Reader")), "main"), "", nil)
+	gitSrv, err := gitSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = gitSrv.Stop(ctx) })
+	hostname, err := gitSrv.Hostname(ctx)
+	require.NoError(t, err)
+	readerRef := "http://" + resolveServiceIP(ctx, t, c, hostname) + "/repo.git#main:reader"
+
+	ws := core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", fmt.Sprintf(`[modules.reader]
+source = %q
+
+[modules.inside]
+source = "modules/inside"
+`, readerRef)).
+		WithDirectory("modules/inside", defaultPathReaderModule(c, "inside", "Inside")).
+		AsWorkspace()
+	edited := ws.
+		WithNewFile("reader/decoy.txt", "workspace\n").
+		WithNewFile("modules/inside/edit.txt", "workspace\n")
+
+	for _, tc := range []struct {
+		module   string
+		expected string
+	}{
+		{"reader", defaultPathOwnEntries},
+		{"inside", "dagger-module.toml,edit.txt,main.dang,own.txt"},
+	} {
+		t.Run(tc.module+" through a DAG address", func(ctx context.Context, t *testctx.T) {
+			entries, err := edited.Resolve("dag://" + tc.module + "/tree").Directory().Entries(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, strings.Join(entries, ","))
+		})
+
+		t.Run(tc.module+" through an LLM tool", func(ctx context.Context, t *testctx.T) {
+			tool := tc.module + "Entries"
+			model := cannedRecordingModel(ctx, t, c, core.NewQuery(c).LLM().
+				WithPrompt("list your entries").
+				WithResponse([]core.LLMContentBlockInput{
+					{Kind: core.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: tool},
+				}).
+				WithToolResult("call_1", "", false).
+				WithResponse([]core.LLMContentBlockInput{{Kind: core.LLMContentBlockKindText, Text: "done"}}))
+			composed, err := composeArtifactAgents(ctx, c, ws,
+				ws.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{tc.module}}),
+				core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(edited))
+			require.NoError(t, err)
+			tools, err := composed.Tools(ctx)
+			require.NoError(t, err)
+			require.Contains(t, tools, "## "+tool)
+			transcript, err := composed.WithPrompt("list your entries").Loop().Transcript(ctx)
+			require.NoError(t, err)
+			require.Contains(t, transcript, tc.expected)
+			require.NotContains(t, transcript, "decoy.txt")
+		})
+	}
+}
+
 func resolveServiceIP(ctx context.Context, t *testctx.T, c *dagger.Client, hostname string) string {
 	t.Helper()
 

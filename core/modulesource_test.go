@@ -284,6 +284,58 @@ func TestWorkspaceContextDirPath(t *testing.T) {
 	}
 }
 
+func TestModuleSourceContextIsWorkspace(t *testing.T) {
+	t.Parallel()
+
+	localWorkspace := &Workspace{}
+	localWorkspace.SetSource(NewWorkspaceSourceClientLocal("/repo"))
+	overlaidWorkspace := &Workspace{}
+	overlaidWorkspace.SetSource(NewWorkspaceSourceOverlay(NewWorkspaceSourceClientLocal("/repo"), nil, nil, dagql.ObjectResult[*Changeset]{}))
+	valueWorkspace := &Workspace{}
+	valueWorkspace.SetSource(NewWorkspaceSourceDirectory(dagql.ObjectResult[*Directory]{}))
+
+	local := func(contextDir, subpath string) *ModuleSource {
+		return &ModuleSource{
+			Kind:              ModuleSourceKindLocal,
+			SourceRootSubpath: subpath,
+			Local:             &LocalModuleSource{ContextDirectoryPath: contextDir},
+		}
+	}
+	backing, err := dagql.NewResultForCall(&Workspace{}, moduleSourceTestSyntheticCall("workspaceBacking", &Workspace{}))
+	require.NoError(t, err)
+	workspaceBacked := &ModuleSource{
+		Kind:              ModuleSourceKindGit,
+		SourceRootSubpath: "mod",
+		Git:               &GitModuleSource{},
+		Workspace:         dagql.ObjectResult[*Workspace]{Result: backing},
+	}
+
+	testCases := []struct {
+		name     string
+		src      *ModuleSource
+		ws       *Workspace
+		expected bool
+	}{
+		{"local module under the workspace root", local("/repo", "mods/a"), localWorkspace, true},
+		{"local module at the workspace root", local("/repo", "."), localWorkspace, true},
+		{"unclean context path", local("/repo/", "mods/a"), localWorkspace, true},
+		{"overlaid workspace keeps its host root", local("/repo", "mods/a"), overlaidWorkspace, true},
+		{"local module in another repository", local("/other", "reader"), localWorkspace, false},
+		{"local module in a nested repository", local("/repo/vendor/tool", "."), localWorkspace, false},
+		{"local module outside a value workspace", local("/repo", "mods/a"), valueWorkspace, false},
+		{"git module", &ModuleSource{Kind: ModuleSourceKindGit, SourceRootSubpath: "reader", Git: &GitModuleSource{}}, localWorkspace, false},
+		{"git module in a value workspace", &ModuleSource{Kind: ModuleSourceKindGit, Git: &GitModuleSource{}}, valueWorkspace, false},
+		{"workspace-backed module", workspaceBacked, localWorkspace, true},
+		{"directory module", &ModuleSource{Kind: ModuleSourceKindDir, SourceRootSubpath: "mod"}, valueWorkspace, true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.src.contextIsWorkspace(tc.ws))
+		})
+	}
+}
+
 func moduleSourceTestSyntheticCall(op string, typ dagql.Typed) *dagql.ResultCall {
 	return &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,

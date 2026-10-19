@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  A module installed from outside the caller's workspace, by git ref or from a local path under another root, now resolves a `Directory` default path against its own source when a check, a generator, SDK generation, an LLM tool or a DAG address runs it.
+time: 2026-10-16T12:51:01Z
+custom:
+  Author: eunomie
+  PR: 14707
