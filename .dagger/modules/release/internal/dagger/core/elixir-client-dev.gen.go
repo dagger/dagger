@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type ElixirClientDev struct { // elixir-client-dev (../../../../../:0:0)
+type ElixirClientDev struct { // elixir-client-dev (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	baseImage     *string
@@ -28,7 +28,7 @@ func (r *ElixirClientDev) WithGraphQLQuery(q *querybuilder.Selection) *ElixirCli
 	}
 }
 
-func (r *ElixirClientDev) BaseImage(ctx context.Context) (string, error) { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) BaseImage(ctx context.Context) (string, error) { // elixir-client-dev (../../../../../../:0:0)
 	if r.baseImage != nil {
 		return *r.baseImage, nil
 	}
@@ -41,7 +41,7 @@ func (r *ElixirClientDev) BaseImage(ctx context.Context) (string, error) { // el
 }
 
 // Regenerate the Elixir SDK API
-func (r *ElixirClientDev) ClientLibrary() *Changeset { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) ClientLibrary() *Changeset { // elixir-client-dev (../../../../../../:0:0)
 	q := r.query.Select("clientLibrary")
 
 	return &Changeset{
@@ -50,7 +50,7 @@ func (r *ElixirClientDev) ClientLibrary() *Changeset { // elixir-client-dev (../
 }
 
 // Run dagger_codegen tests
-func (r *ElixirClientDev) CodegenTest(ctx context.Context) error { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) CodegenTest(ctx context.Context) error { // elixir-client-dev (../../../../../../:0:0)
 	if r.codegenTest != nil {
 		return nil
 	}
@@ -59,7 +59,7 @@ func (r *ElixirClientDev) CodegenTest(ctx context.Context) error { // elixir-cli
 	return q.Execute(ctx)
 }
 
-func (r *ElixirClientDev) DevContainer() *Container { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) DevContainer() *Container { // elixir-client-dev (../../../../../../:0:0)
 	q := r.query.Select("devContainer")
 
 	return &Container{
@@ -117,7 +117,7 @@ func (r *ElixirClientDev) UnmarshalJSON(bs []byte) error {
 }
 
 // Lint the SDK
-func (r *ElixirClientDev) Lint(ctx context.Context) error { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) Lint(ctx context.Context) error { // elixir-client-dev (../../../../../../:0:0)
 	if r.lint != nil {
 		return nil
 	}
@@ -131,19 +131,19 @@ type ElixirClientDevPublishOpts struct {
 	//
 	// Hex.pm API key for publishing
 	//
-	HexAPIKey *Secret // elixir-client-dev (../../../../../:0:0)
+	HexAPIKey *Secret // elixir-client-dev (../../../../../../:0:0)
 	//
 	// Hex.pm API URL to publish to
 	//
-	HexAPIURL string // elixir-client-dev (../../../../../:0:0)
+	HexAPIURL string // elixir-client-dev (../../../../../../:0:0)
 	//
 	// Execute a dry-run release, with no side effects
 	//
-	DryRun bool // elixir-client-dev (../../../../../:0:0)
+	DryRun bool // elixir-client-dev (../../../../../../:0:0)
 }
 
 // Publish the Elixir SDK
-func (r *ElixirClientDev) Publish(ctx context.Context, tag string, opts ...ElixirClientDevPublishOpts) error { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) Publish(ctx context.Context, tag string, opts ...ElixirClientDevPublishOpts) error { // elixir-client-dev (../../../../../../:0:0)
 	if r.publish != nil {
 		return nil
 	}
@@ -168,7 +168,7 @@ func (r *ElixirClientDev) Publish(ctx context.Context, tag string, opts ...Elixi
 }
 
 // Test the publishing process
-func (r *ElixirClientDev) ReleaseDryRun(ctx context.Context) error { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) ReleaseDryRun(ctx context.Context) error { // elixir-client-dev (../../../../../../:0:0)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -178,7 +178,7 @@ func (r *ElixirClientDev) ReleaseDryRun(ctx context.Context) error { // elixir-c
 }
 
 // Run the SDK tests
-func (r *ElixirClientDev) SDKTest(ctx context.Context) error { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) SDKTest(ctx context.Context) error { // elixir-client-dev (../../../../../../:0:0)
 	if r.sdkTest != nil {
 		return nil
 	}
@@ -187,7 +187,7 @@ func (r *ElixirClientDev) SDKTest(ctx context.Context) error { // elixir-client-
 	return q.Execute(ctx)
 }
 
-func (r *ElixirClientDev) Source() *Directory { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) Source() *Directory { // elixir-client-dev (../../../../../../:0:0)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -195,7 +195,7 @@ func (r *ElixirClientDev) Source() *Directory { // elixir-client-dev (../../../.
 	}
 }
 
-func (r *ElixirClientDev) SourcePath(ctx context.Context) (string, error) { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) SourcePath(ctx context.Context) (string, error) { // elixir-client-dev (../../../../../../:0:0)
 	if r.sourcePath != nil {
 		return *r.sourcePath, nil
 	}
@@ -208,7 +208,7 @@ func (r *ElixirClientDev) SourcePath(ctx context.Context) (string, error) { // e
 }
 
 // Sync Elixir image to keep both dev and runtime modules consistent
-func (r *ElixirClientDev) SyncImage() *File { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) SyncImage() *File { // elixir-client-dev (../../../../../../:0:0)
 	q := r.query.Select("syncImage")
 
 	return &File{
@@ -217,7 +217,7 @@ func (r *ElixirClientDev) SyncImage() *File { // elixir-client-dev (../../../../
 }
 
 // Update codegen test snapshots (auto-accept Mneme changes)
-func (r *ElixirClientDev) UpdateCodegenTests() *Changeset { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) UpdateCodegenTests() *Changeset { // elixir-client-dev (../../../../../../:0:0)
 	q := r.query.Select("updateCodegenTests")
 
 	return &Changeset{
@@ -225,7 +225,7 @@ func (r *ElixirClientDev) UpdateCodegenTests() *Changeset { // elixir-client-dev
 	}
 }
 
-func (r *ElixirClientDev) WorkspaceDir() *Directory { // elixir-client-dev (../../../../../:0:0)
+func (r *ElixirClientDev) WorkspaceDir() *Directory { // elixir-client-dev (../../../../../../:0:0)
 	q := r.query.Select("workspaceDir")
 
 	return &Directory{
@@ -243,14 +243,14 @@ func (r *ElixirClientDev) AsNode() Node {
 
 // ElixirClientDevOpts contains options for Query.ElixirClientDev
 type ElixirClientDevOpts struct {
-	BaseImage string // elixir-client-dev (../../../../../:0:0)
+	BaseImage string // elixir-client-dev (../../../../../../:0:0)
 
-	WorkspaceDir *Directory // elixir-client-dev (../../../../../:0:0)
+	WorkspaceDir *Directory // elixir-client-dev (../../../../../../:0:0)
 
-	SourcePath string // elixir-client-dev (../../../../../:0:0)
+	SourcePath string // elixir-client-dev (../../../../../../:0:0)
 }
 
-func (r *Query) ElixirClientDev(ws *Workspace, opts ...ElixirClientDevOpts) *ElixirClientDev { // elixir-client-dev (../../../../../:0:0)
+func (r *Query) ElixirClientDev(ws *Workspace, opts ...ElixirClientDevOpts) *ElixirClientDev { // elixir-client-dev (../../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("elixirClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {
