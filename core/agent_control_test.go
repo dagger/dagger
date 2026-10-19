@@ -13,6 +13,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestControlPublishesComposedSeed(t *testing.T) {
+	_, ctx := stateRecorderCtx(t)
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	srv := newCoreDagqlServerForTest(t, &Query{})
+	srv.InstallObject(dagql.NewClass[*LLM](srv))
+	frame := testResultCall("__withOwnerAgent", &LLM{}, testResultCall("withSystemPrompt", &LLM{}, nil))
+	seed, err := dagql.NewObjectResultForCall(&LLM{OwnerAgentHandle: "composed"}, srv, frame)
+	require.NoError(t, err)
+	rt := testRuntime(t, ctx)
+	rt.composing = true
+	rt.controlDigest = "old-seed"
+	require.NoError(t, rt.CompleteComposition(ctx, rt.self, seed))
+	digest, err := seed.RecipeDigest(ctx)
+	require.NoError(t, err)
+	require.Equal(t, digest.String(), rt.controlDigest, "restore must use the composed seed, not the provisional conversation")
+	require.Equal(t, digest.String(), rt.controlLast.Digest)
+	require.Empty(t, rt.controlCaptureError)
+}
+
 func TestControlPublishesCommittedCallLeaf(t *testing.T) {
 	rec, ctx := stateRecorderCtx(t)
 	cache, err := dagql.NewCache(ctx, "", nil, nil)

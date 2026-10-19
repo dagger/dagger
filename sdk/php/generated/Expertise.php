@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * An agent function that can modify a conversation.
+ * A function that can modify a conversation.
  */
 class Expertise extends Client\AbstractObject implements Client\IdAble, Node
 {
@@ -23,7 +23,16 @@ class Expertise extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The agent function's name.
+     * The artifact this expertise runs. Look it up again by URI to pick up module changes.
+     */
+    public function artifact(): Artifact
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('artifact');
+        return new \Dagger\Artifact($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The function's name.
      */
     public function name(): string
     {
@@ -32,7 +41,7 @@ class Expertise extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The agent function's description.
+     * The function's description.
      */
     public function description(): string
     {
@@ -41,7 +50,7 @@ class Expertise extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The agent function's path within its module.
+     * The function's path within its module.
      */
     public function path(): array
     {
@@ -50,7 +59,7 @@ class Expertise extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The module that defines the agent function.
+     * The module that defines the function.
      */
     public function originalModule(): Module
     {

@@ -102,6 +102,20 @@ type LLM struct {
 	// a `field:"true"` tag, since struct tag fields cannot carry a view filter.
 	Messages []*LLMMessage
 
+	// Expertise composed into this conversation, in the order it was first
+	// composed (see ComposeExpertise).
+	Expertise dagql.ObjectResultArray[*Expertise]
+
+	// ComposingExpertise marks a conversation whose composition is running
+	// entries: the identities being composed. A composition of a marked
+	// conversation is nested in a running entry and never refreshes anything.
+	// Empty outside a composition.
+	ComposingExpertise []string
+
+	// OwnerAgentHandle identifies the agent whose conversation this is. It is
+	// independent of the caller and is recorded without embedding an Agent ID.
+	OwnerAgentHandle string
+
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
 
@@ -1152,6 +1166,15 @@ func (*LLM) Type() *ast.Type {
 	}
 }
 
+// WithOwnerAgent records the agent whose conversation this is. Its tools'
+// Agent arguments receive that agent too, so the MCP mirrors the handle.
+func (llm *LLM) WithOwnerAgent(handle string) *LLM {
+	llm = llm.Clone()
+	llm.OwnerAgentHandle = handle
+	llm.mcp.ownerAgent = handle
+	return llm
+}
+
 func (llm *LLM) Clone() *LLM {
 	// Read under the lock: llm may be a persistent, shared value whose
 	// endpoint another goroutine is resolving right now — a detached agent
@@ -1164,6 +1187,8 @@ func (llm *LLM) Clone() *LLM {
 	// clones, so they must be treated as immutable: copy-on-write via
 	// LLMMessage.Clone before modifying one.
 	cp.Messages = slices.Clone(cp.Messages)
+	cp.Expertise = slices.Clone(cp.Expertise)
+	cp.ComposingExpertise = slices.Clone(cp.ComposingExpertise)
 	cp.mcp = cp.mcp.Clone()
 	cp.endpointMtx = &sync.Mutex{}
 	return &cp
@@ -1190,6 +1215,14 @@ func (llm *LLM) AttachDependencyResults(
 		return nil, nil
 	}
 	var deps []dagql.AnyResult
+	for i, entry := range llm.Expertise {
+		attached, err := attach(entry)
+		if err != nil {
+			return nil, fmt.Errorf("attach llm expertise: %w", err)
+		}
+		llm.Expertise[i] = attached.(dagql.ObjectResult[*Expertise])
+		deps = append(deps, attached)
+	}
 	if llm.mcp.workspace.Self() != nil {
 		attached, err := attach(llm.mcp.workspace)
 		if err != nil {
@@ -1458,6 +1491,35 @@ func (llm *LLM) WithoutComposition(owner string) *LLM {
 		return compositionOwnerMatches(dir.Owner, owner)
 	})
 	return llm
+}
+
+// WithContributionOwner re-stamps the system prompts at the given message
+// indices and the skill directories at the given indices as installed by
+// owner, so WithoutComposition(owner) removes them. Composition uses it to
+// make a dependency's contributions, made while an entry ran, the entry's
+// module's own (see claimDependencyContributions).
+func (llm *LLM) WithContributionOwner(owner string, messages, skills []int) (*LLM, error) {
+	llm = llm.Clone()
+	for _, i := range messages {
+		if i < 0 || i >= len(llm.Messages) {
+			return nil, fmt.Errorf("claim message %d: out of range (%d messages)", i, len(llm.Messages))
+		}
+		msg := llm.Messages[i]
+		if msg.Role != LLMMessageRoleSystem {
+			return nil, fmt.Errorf("claim message %d: not a system prompt", i)
+		}
+		msg = msg.Clone()
+		msg.CompositionOwner = owner
+		llm.Messages[i] = msg
+	}
+	// Clone copied the skill directory list: entries can be updated in place.
+	for _, i := range skills {
+		if i < 0 || i >= len(llm.mcp.skillDirs) {
+			return nil, fmt.Errorf("claim skill directory %d: out of range (%d directories)", i, len(llm.mcp.skillDirs))
+		}
+		llm.mcp.skillDirs[i].Owner = owner
+	}
+	return llm, nil
 }
 
 // Append an unowned system prompt message to the history.
