@@ -270,31 +270,7 @@ entrypoint = true
 				require.Contains(t, out, "generated files are not up to date")
 				require.Contains(t, out, `dagger generate "dag://?generator=generate-stale"`)
 			},
-			LogTest: func(t *testctx.T, db *dagui.DB, logs []sdklog.Record) {
-				// Only the check's own output matters here: the internal `git diff`
-				// that renders the patch logs it verbosely on its own span too.
-				var patches int
-				for _, rec := range logs {
-					body, _ := dagui.LogBodyString(rec)
-					if !strings.Contains(body, "diff --git a/greeting.txt") {
-						continue
-					}
-					span := db.Spans.Map[db.LogTargetSpanID(rec)]
-					if span == nil || span.CheckName != "dag://?check=generate-stale/stale" {
-						continue
-					}
-					patches++
-					var contentType string
-					rec.WalkAttributes(func(kv otellog.KeyValue) bool {
-						if kv.Key == telemetry.ContentTypeAttr {
-							contentType, _ = dagui.LogValueString(kv.Value)
-						}
-						return true
-					})
-					require.Equal(t, "text/x-diff", contentType, "the patch must be typed for diff highlighting")
-				}
-				require.Equal(t, 1, patches, "the failing staleness check must log its patch on its own span, once")
-			},
+			LogTest: assertStalePatchLogged,
 		},
 
 		// a staleness check whose generator itself fails isn't stale: running
@@ -312,17 +288,7 @@ entrypoint = true
 				require.NotContains(t, out, "REGENERATE")
 				require.NotContains(t, out, "dagger generate")
 			},
-			DBTest: func(t *testctx.T, db *dagui.DB) {
-				var checks int
-				for _, span := range db.Spans.Order {
-					if span.CheckName != "dag://?check=generate-fail/stale" {
-						continue
-					}
-					checks++
-					require.Empty(t, span.CheckGenerator, "a failed generator must not be suggested as the fix")
-				}
-				require.NotZero(t, checks, "the staleness check must have a span")
-			},
+			DBTest: assertFailedGeneratorNotSuggested,
 		},
 
 		{Function: "git-readme", Args: []string{
@@ -481,6 +447,50 @@ entrypoint = true
 			}
 		})
 	}
+}
+
+// assertStalePatchLogged checks the generate-stale-check example's exported
+// logs: the failing staleness check logs its patch on its own span, once,
+// typed for diff highlighting. The golden alone can't show where it landed.
+func assertStalePatchLogged(t *testctx.T, db *dagui.DB, logs []sdklog.Record) {
+	// Only the check's own output matters here: the internal `git diff`
+	// that renders the patch logs it verbosely on its own span too.
+	var patches int
+	for _, rec := range logs {
+		body, _ := dagui.LogBodyString(rec)
+		if !strings.Contains(body, "diff --git a/greeting.txt") {
+			continue
+		}
+		span := db.Spans.Map[db.LogTargetSpanID(rec)]
+		if span == nil || span.CheckName != "dag://?check=generate-stale/stale" {
+			continue
+		}
+		patches++
+		var contentType string
+		rec.WalkAttributes(func(kv otellog.KeyValue) bool {
+			if kv.Key == telemetry.ContentTypeAttr {
+				contentType, _ = dagui.LogValueString(kv.Value)
+			}
+			return true
+		})
+		require.Equal(t, "text/x-diff", contentType, "the patch must be typed for diff highlighting")
+	}
+	require.Equal(t, 1, patches, "the failing staleness check must log its patch on its own span, once")
+}
+
+// assertFailedGeneratorNotSuggested checks the generate-fail-check example:
+// a staleness check whose generator failed isn't tagged with the generator,
+// so the report doesn't suggest running it.
+func assertFailedGeneratorNotSuggested(t *testctx.T, db *dagui.DB) {
+	var checks int
+	for _, span := range db.Spans.Order {
+		if span.CheckName != "dag://?check=generate-fail/stale" {
+			continue
+		}
+		checks++
+		require.Empty(t, span.CheckGenerator, "a failed generator must not be suggested as the fix")
+	}
+	require.NotZero(t, checks, "the staleness check must have a span")
 }
 
 func strAttr(t testing.TB, s *dagui.Span, name string) string {
