@@ -175,6 +175,9 @@ type frontendPretty struct {
 	// from the trace, so the roster can render them as read-only rather than
 	// letting a failed rebuild look like a working entry.
 	unaddressableAgents map[string]bool
+	// unaddressableGen bumps whenever unaddressableAgents changes, so the
+	// roster can tell its read-only marks are current without re-reading it.
+	unaddressableGen uint64
 	// pendingFocusAgent is the agent the client BELIEVES it has focused: the
 	// destination of the most recent focus keypress, held until the handler
 	// confirms it. Focus is retargeted on the shell goroutine, so between a
@@ -189,13 +192,23 @@ type frontendPretty struct {
 	// rather than where the user walked to. Taps behind it coalesce, and
 	// settleFocus issues one catch-up hop when it lands.
 	focusInFlight bool
-	// agentRosterState fingerprints what the strip last rendered, so the
-	// trace can push updates into it without re-rendering every frame.
-	agentRosterState string
+	// agentRosterState is what the strip last rendered, so the trace can push
+	// updates into it without re-rendering every frame.
+	agentRosterState []AgentRosterEntry
+	// agentRosterInputs is what agentRosterState was built from. The roster
+	// is pushed on every span and log batch, and rebuilding it per batch
+	// just to find it unchanged was most of the UI loop's time (and nearly
+	// all of its garbage) once a session held many agents; while these
+	// match, the entries cannot have changed and the rebuild is skipped.
+	agentRosterInputs agentRosterInputs
 	// lastRosterFocus is the focused agent as of the last roster update, so a
 	// change of FOCUS can invalidate the view without the state flags -- which
-	// also fingerprint above, and change far more often -- doing so too.
+	// also feed the roster above, and change far more often -- doing so too.
 	lastRosterFocus string
+	// agentStepsSeen is the roster notifyAgentSteps last walked. db.Agents()
+	// returns the same slice until something it is built from changes, so
+	// walking the same slice again could not find a new snapshot digest.
+	agentStepsSeen []*dagui.AgentNode
 	// agentSnapshots remembers the last conversation-snapshot digest seen per
 	// agent, so telemetry ingestion can detect step boundaries (a fresh
 	// commit) and push a per-step UI refresh to the handler rather than
@@ -5034,7 +5047,7 @@ func (fe *frontendPretty) focusAgent(entry AgentRosterEntry) (claimed, moved boo
 	// was missing have arrived since. Clear the mark, and any error still
 	// naming the failure -- a successful focus must not leave a red line
 	// about it on screen.
-	delete(fe.unaddressableAgents, entry.ID)
+	fe.clearAgentUnaddressable(entry.ID)
 	fe.clearPromptError()
 
 	fe.saveAgentDraft()
@@ -5155,7 +5168,17 @@ func (fe *frontendPretty) markAgentUnaddressable(agentID string) {
 	if fe.unaddressableAgents == nil {
 		fe.unaddressableAgents = map[string]bool{}
 	}
-	fe.unaddressableAgents[agentID] = true
+	if !fe.unaddressableAgents[agentID] {
+		fe.unaddressableAgents[agentID] = true
+		fe.unaddressableGen++
+	}
+}
+
+func (fe *frontendPretty) clearAgentUnaddressable(agentID string) {
+	if fe.unaddressableAgents[agentID] {
+		delete(fe.unaddressableAgents, agentID)
+		fe.unaddressableGen++
+	}
 }
 
 // saveAgentDraft parks the half-typed line against the agent it was being
@@ -5235,12 +5258,14 @@ func (fe *frontendPretty) updateAgentRoster() {
 	}
 	// The strip is no longer the only thing focus drives: the live tree is
 	// promoted per focused agent (see promoteConversationLocked), so a focus
-	// change has to invalidate the view too. Checked ahead of the fingerprint
-	// below, and against focus alone: this is the one place every focus path
-	// converges on -- focusAgent believing a switch, and the handler's
-	// completion confirming or rolling it back -- while the fingerprint also
-	// covers state flags, which change often and do not move the transcript.
-	if focused := fe.focusedAgentID(); focused != fe.lastRosterFocus {
+	// change has to invalidate the view too. Checked ahead of the roster
+	// comparison below, and against focus alone: this is the one place every
+	// focus path converges on -- focusAgent believing a switch, and the
+	// handler's completion confirming or rolling it back -- while the roster
+	// also covers state flags, which change often and do not move the
+	// transcript.
+	focused := fe.focusedAgentID()
+	if focused != fe.lastRosterFocus {
 		fe.lastRosterFocus = focused
 		fe.viewDirty = true
 		// Sections describing an agent (the Changes bubble, and the diff
@@ -5255,21 +5280,58 @@ func (fe *frontendPretty) updateAgentRoster() {
 			fe.diffViewer.Update()
 		}
 	}
-	var fingerprint strings.Builder
-	for _, entry := range fe.agentRosterEntries() {
-		fmt.Fprintf(&fingerprint, "%s\x00%s\x00%s\x00%t\x00%t\n",
-			entry.ID, entry.Name, entry.State, entry.Focused, entry.ReadOnly)
+	// This runs on every span and log batch, almost always with nothing new
+	// for the strip: skip the rebuild unless something agentRosterEntries
+	// reads has changed.
+	inputs := agentRosterInputs{
+		init:          true,
+		focused:       focused,
+		unaddressable: fe.unaddressableGen,
 	}
-	if fingerprint.String() == fe.agentRosterState {
+	if fe.db != nil {
+		inputs.agents = fe.db.Agents()
+	}
+	if inputs.same(fe.agentRosterInputs) {
 		return
 	}
-	fe.agentRosterState = fingerprint.String()
+	fe.agentRosterInputs = inputs
+	entries := fe.agentRosterEntries()
+	if slices.Equal(entries, fe.agentRosterState) {
+		return
+	}
+	fe.agentRosterState = entries
 	if fe.statusLine != nil {
 		fe.statusLine.Update()
 	}
 	if fe.promptFrame != nil {
 		fe.promptFrame.Update() // its bottom edge opens over the focused tab
 	}
+}
+
+// agentRosterInputs is everything agentRosterEntries reads: the published
+// agents, the focused agent, and the read-only marks.
+type agentRosterInputs struct {
+	init bool
+	// agents is compared by identity, not content: db.Agents() returns the
+	// same slice until something it is built from changes, and never
+	// mutates the nodes of a slice it has handed out.
+	agents        []*dagui.AgentNode
+	focused       string
+	unaddressable uint64
+}
+
+func (in agentRosterInputs) same(other agentRosterInputs) bool {
+	return in.init == other.init &&
+		sameAgentNodes(in.agents, other.agents) &&
+		in.focused == other.focused &&
+		in.unaddressable == other.unaddressable
+}
+
+// sameAgentNodes reports whether two db.Agents() results are the same
+// slice. Two empty rosters count as the same: there is nothing to render
+// either way.
+func sameAgentNodes(a, b []*dagui.AgentNode) bool {
+	return len(a) == len(b) && (len(a) == 0 || &a[0] == &b[0])
 }
 
 // notifyAgentSteps detects step boundaries in the ingested trace -- an
@@ -5291,7 +5353,13 @@ func (fe *frontendPretty) notifyAgentSteps() {
 	if fe.agentSnapshots == nil {
 		fe.agentSnapshots = map[string]string{}
 	}
-	for _, agent := range fe.db.Agents() {
+	agents := fe.db.Agents()
+	if fe.agentStepsSeen != nil && sameAgentNodes(agents, fe.agentStepsSeen) {
+		// Every digest in this roster was recorded by the walk that saw it.
+		return
+	}
+	fe.agentStepsSeen = agents
+	for _, agent := range agents {
 		if agent.ID == "" || agent.SnapshotDigest == "" {
 			continue
 		}
