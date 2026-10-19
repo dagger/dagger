@@ -90,6 +90,17 @@ func (c *Cache) collectUsageMeasurementInputs(ctx context.Context, measure bool)
 
 func cacheUsageInputLocked(res *sharedResult) cacheUsageMeasurementInput {
 	state := res.loadPayloadState()
+	// Values without disk usage need no measurement ownership. Keep old sizes
+	// so publication can clear them, and recheck omitted rows at finalization.
+	if len(res.cacheUsageSizeByIdentity) == 0 {
+		if state.hasValue && state.self != nil {
+			if _, provider := state.self.(hasCacheUsageIdentity); !provider {
+				return cacheUsageMeasurementInput{}
+			}
+		} else if len(state.snapshotOwnerLinks) == 0 {
+			return cacheUsageMeasurementInput{}
+		}
+	}
 	input := cacheUsageMeasurementInput{
 		resultID: res.id, row: res, payloadRevision: state.payloadRevision,
 		existingSizeByID: make(map[string]int64, len(res.cacheUsageSizeByIdentity)),
@@ -125,11 +136,14 @@ func (snapshot *cacheUsageSnapshot) capturePendingLocked(ctx context.Context) []
 		if input, ok := snapshot.inputs[id]; ok && input.validLocked(snapshot.cache) {
 			continue
 		}
+		input := cacheUsageInputLocked(res)
+		if input.row == nil {
+			continue
+		}
 		if _, held := snapshot.holds[res]; !held {
 			snapshot.cache.incrementIncomingOwnershipLocked(ctx, res)
 			snapshot.holds[res] = struct{}{}
 		}
-		input := cacheUsageInputLocked(res)
 		if input.identitiesWithoutCallbacks() && len(input.identities) == 0 {
 			snapshot.inputs[id] = input
 			continue
@@ -143,12 +157,15 @@ func (snapshot *cacheUsageSnapshot) capturePendingLocked(ctx context.Context) []
 // copying. Unknown provider membership prevents ALL physical reclaim credit;
 // never feed a zero-credit fallback into a planner that can evict every root.
 func (snapshot *cacheUsageSnapshot) finalizeLocked() (map[sharedResultID][]string, error) {
-	identities := make(map[sharedResultID][]string, len(snapshot.cache.resultsByID))
+	identities := make(map[sharedResultID][]string, len(snapshot.inputs))
 	unknown := 0
 	for id, res := range snapshot.cache.resultsByID {
 		input, sampled := snapshot.inputs[id]
 		if !sampled || !input.validLocked(snapshot.cache) {
 			input = cacheUsageInputLocked(res)
+			if input.row == nil {
+				continue
+			}
 			if !input.identitiesWithoutCallbacks() {
 				unknown++
 				continue
