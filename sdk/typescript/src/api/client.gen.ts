@@ -11877,6 +11877,7 @@ export class GitCommit extends BaseClient {
   private readonly _messageHeadline?: string = undefined
   private readonly _sha?: string = undefined
   private readonly _shortSha?: string = undefined
+  private readonly _treeSHA?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -11895,6 +11896,7 @@ export class GitCommit extends BaseClient {
     _messageHeadline?: string,
     _sha?: string,
     _shortSha?: string,
+    _treeSHA?: string,
   ) {
     super(ctx)
 
@@ -11910,6 +11912,7 @@ export class GitCommit extends BaseClient {
     this._messageHeadline = _messageHeadline
     this._sha = _sha
     this._shortSha = _shortSha
+    this._treeSHA = _treeSHA
   }
 
   /**
@@ -12157,6 +12160,23 @@ export class GitCommit extends BaseClient {
   tree = (opts?: GitCommitTreeOpts): Directory => {
     const ctx = this._ctx.select("tree", { ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * The ID of the commit's Git tree object.
+   *
+   * Commits with identical trees have identical contents and file modes.
+   */
+  treeSHA = async (): Promise<string> => {
+    if (this._treeSHA) {
+      return this._treeSHA
+    }
+
+    const ctx = this._ctx.select("treeSHA")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 

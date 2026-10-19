@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  `GitCommit.treeSHA` returns the ID of a commit's Git tree object: commits with the same tree have identical contents and file modes. `GitCommit.changes` now lists its added, modified and removed paths from Git's tree diff instead of checking out and walking both trees, so the paths and `isEmpty` of two commits no longer materialize either tree.
+time: 2026-10-16T12:00:00Z
+custom:
+  Author: vito
+  PR: "14712"

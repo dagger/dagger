@@ -107,6 +107,17 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The ID of the commit's Git tree object.
+     *
+     * Commits with identical trees have identical contents and file modes.
+     */
+    public function treeSHA(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('treeSHA');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'treeSHA');
+    }
+
+    /**
      * Git author date, in RFC3339 format.
      */
     public function authoredDate(): string

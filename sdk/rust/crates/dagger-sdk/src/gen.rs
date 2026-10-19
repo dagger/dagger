@@ -10613,6 +10613,12 @@ impl GitCommit {
         let query = self.selection.select("shortSha");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The ID of the commit's Git tree object.
+    /// Commits with identical trees have identical contents and file modes.
+    pub async fn tree_sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("treeSHA");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Git author date, in RFC3339 format.
     pub async fn authored_date(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("authoredDate");

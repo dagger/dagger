@@ -10444,6 +10444,29 @@ class GitCommit(Type):
         _ctx = self._select("tree", _args)
         return Directory(_ctx)
 
+    async def tree_sha(self) -> str:
+        """The ID of the commit's Git tree object.
+
+        Commits with identical trees have identical contents and file modes.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("treeSHA", _args)
+        return await _ctx.execute(str)
+
 
 @typecheck
 class GitPushResult(Type):

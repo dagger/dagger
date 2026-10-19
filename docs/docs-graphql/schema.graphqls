@@ -4091,6 +4091,13 @@ type GitCommit implements Node {
   """The abbreviated commit SHA."""
   shortSha: String!
 
+  """
+  The ID of the commit's Git tree object.
+
+  Commits with identical trees have identical contents and file modes.
+  """
+  treeSHA: String!
+
   """Git author date, in RFC3339 format."""
   authoredDate: String!
 
