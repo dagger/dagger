@@ -9,7 +9,10 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
 )
 
@@ -75,6 +78,9 @@ is equivalent to dagger lock list with the same selectors.`,
   dagger lock update '*node*' '*python*'
   dagger lock update --list dagger`,
 		Args: cobra.ArbitraryArgs,
+		Annotations: map[string]string{
+			showFinalProgressKey: "true",
+		},
 		RunE: func(cmd *cobra.Command, selectors []string) error {
 			if list && noGenerate {
 				return fmt.Errorf("--list and --no-generate cannot be used together")
@@ -110,6 +116,8 @@ func runModuleUpdate(cmd *cobra.Command, names []string) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
+		ctx, stdio, end := startPrimarySpan(ctx, cmd)
+		defer end()
 		dag := engineClient.Dagger()
 		modules, cwd, err := installedModulesForSelection(ctx, dag)
 		if err != nil {
@@ -120,11 +128,11 @@ func runModuleUpdate(cmd *cobra.Command, names []string) error {
 			return err
 		}
 		for _, selection := range selections {
-			if err := writeModuleSourceMatch(cmd.ErrOrStderr(), selection); err != nil {
+			if err := writeModuleSourceMatch(stdio.Stderr, selection); err != nil {
 				return err
 			}
 			if source != "" {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Updating %q source: %s.\n", selection.Name, source); err != nil {
+				if _, err := fmt.Fprintf(stdio.Stdout, "Updating %q source: %s.\n", selection.Name, source); err != nil {
 					return err
 				}
 			}
@@ -133,7 +141,7 @@ func runModuleUpdate(cmd *cobra.Command, names []string) error {
 				if !hasVersion {
 					previous = "(default)"
 				}
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Updating %q: %s -> %s.\n", selection.Name, previous, selection.Version); err != nil {
+				if _, err := fmt.Fprintf(stdio.Stdout, "Updating %q: %s -> %s.\n", selection.Name, previous, selection.Version); err != nil {
 					return err
 				}
 			}
@@ -160,7 +168,7 @@ func runModuleUpdate(cmd *cobra.Command, names []string) error {
 		}
 		current := core.NewQuery(dag).CurrentWorkspace().WithWorkdir(".")
 		updated := core.Ref[*core.Workspace](core.NewQuery(dag), result.CurrentWorkspace.Result.ID).WithWorkdir(".")
-		return updateMaterializedWorkspace(ctx, cmd.OutOrStdout(), dag, current, updated)
+		return updateMaterializedWorkspace(ctx, stdio.Stdout, dag, current, updated)
 	})
 }
 
@@ -176,8 +184,26 @@ func runLockUpdate(cmd *cobra.Command, selectors []string, noGenerate bool) erro
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
-		return updateWorkspaceLockfile(ctx, cmd.OutOrStdout(), engineClient.Dagger(), selectors, noGenerate)
+		ctx, stdio, end := startPrimarySpan(ctx, cmd)
+		defer end()
+		return updateWorkspaceLockfile(ctx, stdio.Stdout, engineClient.Dagger(), selectors, noGenerate)
 	})
+}
+
+// startPrimarySpan makes a passthrough span the frontend's primary span, so the
+// spans the engine reveals beneath its internal calls render at the top level
+// in every frontend. Command output and global logs, such as engine warnings,
+// must target the new span: the frontend prints only the primary span's output.
+func startPrimarySpan(ctx context.Context, cmd *cobra.Command) (context.Context, telemetry.SpanStreams, func()) {
+	ctx, span := Tracer().Start(ctx, cmd.CommandPath(), telemetry.Passthrough())
+	ctx = telemetry.ContextWithGlobalLogsSpan(ctx)
+	Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
+	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	return ctx, stdio, func() {
+		stdio.Close()
+		span.End()
+	}
 }
 
 func printSelectedLockEntries(ctx context.Context, outWriter io.Writer, dag *dagger.Client, selectors []string) error {

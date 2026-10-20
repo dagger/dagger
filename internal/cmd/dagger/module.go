@@ -162,6 +162,9 @@ client targets or runtime targets. If a client scope targets an updated module,
 the command regenerates that scope. Use dagger lock update to refresh all
 entries in dagger.lock.`,
 		Args: cobra.ArbitraryArgs,
+		Annotations: map[string]string{
+			showFinalProgressKey: "true",
+		},
 		RunE: runModuleUpdate,
 	}
 	cmd.Flags().String("version", "", "New version request for one installed module")

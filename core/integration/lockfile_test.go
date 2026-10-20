@@ -412,7 +412,7 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitEntry(ctx context.Context, t 
 	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "lock", "update")
+	out, err := hostDaggerOutput(ctx, t, workdir, "lock", "update")
 	require.NoError(t, err)
 	require.Equal(t, "Updated dagger.lock", strings.TrimSpace(string(out)))
 
