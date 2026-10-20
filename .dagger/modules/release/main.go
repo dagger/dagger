@@ -263,7 +263,8 @@ func (r *Release) Publish( //nolint:gocyclo
 		dev     bool
 		release func(context.Context) error
 		dryRun  func(context.Context) error
-		// published reports whether the registry already has this version.
+		// published reports whether the registry already has everything
+		// this component uploads for this version.
 		published func(context.Context) (bool, error)
 	}{
 		{
@@ -302,7 +303,7 @@ func (r *Release) Publish( //nolint:gocyclo
 				if err != nil {
 					return false, err
 				}
-				return registryHasVersion(ctx, u)
+				return pypiHasFiles(ctx, u, pypiFiles(strings.TrimPrefix(version, "v")))
 			},
 		},
 		{
@@ -338,7 +339,7 @@ func (r *Release) Publish( //nolint:gocyclo
 				return dag.ElixirClientDev(r.Workspace).ReleaseDryRun(ctx)
 			},
 			published: func(ctx context.Context) (bool, error) {
-				return registryHasVersion(ctx, hexVersionURL(hexAPIURL, strings.TrimPrefix(version, "v")))
+				return hexHasReleaseWithDocs(ctx, hexVersionURL(hexAPIURL, strings.TrimPrefix(version, "v")))
 			},
 		},
 		{

@@ -12,12 +12,14 @@ import (
 	"dagger/release/internal/dagger"
 )
 
-// When a package registry already has the exact version a release is about
-// to upload, count that component as published instead of uploading it
-// again. Registries reject re-uploads, so without this, rerunning a release
-// that failed partway fails again on every component an earlier attempt
-// already published. Set to false to report those components as failed
-// instead.
+// When a package registry already has everything a release is about to
+// upload for a component, count that component as published instead of
+// uploading it again. Registries reject re-uploads, so without this,
+// rerunning a release that failed partway fails again on every component an
+// earlier attempt already published. A component that is only partly there
+// (a missing wheel or sdist, a Hex package without docs) is uploaded as
+// usual, so the registry finishes it or the release fails loudly. Set to
+// false to report fully published components as failed instead.
 const treatAlreadyPublishedAsDone = true
 
 const alreadyPublishedNote = "already published, not uploaded again"
@@ -82,6 +84,69 @@ func registryHasVersion(ctx context.Context, versionURL string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("GET %s: unexpected status %s", versionURL, status)
+}
+
+// pypiHasFiles reports whether the PyPI JSON API at versionURL lists every
+// one of files for that version.
+func pypiHasFiles(ctx context.Context, versionURL string, files []string) (bool, error) {
+	status, body, err := registryGet(ctx, versionURL)
+	if err != nil {
+		return false, err
+	}
+	switch status {
+	case "404":
+		return false, nil
+	case "200":
+	default:
+		return false, fmt.Errorf("GET %s: unexpected status %s", versionURL, status)
+	}
+	var release struct {
+		URLs []struct {
+			Filename string `json:"filename"`
+		} `json:"urls"`
+	}
+	if err := json.Unmarshal([]byte(body), &release); err != nil {
+		return false, fmt.Errorf("GET %s: %w", versionURL, err)
+	}
+	have := map[string]bool{}
+	for _, u := range release.URLs {
+		have[u.Filename] = true
+	}
+	for _, f := range files {
+		if !have[f] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// pypiFiles returns the files a dagger-io release uploads to PyPI.
+func pypiFiles(version string) []string {
+	v := pep440Version(version)
+	return []string{"dagger_io-" + v + ".tar.gz", "dagger_io-" + v + "-py3-none-any.whl"}
+}
+
+// hexHasReleaseWithDocs reports whether the Hex API at versionURL has the
+// release and its docs.
+func hexHasReleaseWithDocs(ctx context.Context, versionURL string) (bool, error) {
+	status, body, err := registryGet(ctx, versionURL)
+	if err != nil {
+		return false, err
+	}
+	switch status {
+	case "404":
+		return false, nil
+	case "200":
+	default:
+		return false, fmt.Errorf("GET %s: unexpected status %s", versionURL, status)
+	}
+	var release struct {
+		HasDocs bool `json:"has_docs"`
+	}
+	if err := json.Unmarshal([]byte(body), &release); err != nil {
+		return false, fmt.Errorf("GET %s: %w", versionURL, err)
+	}
+	return release.HasDocs, nil
 }
 
 // crateHasVersion reports whether the dagger-sdk crate's entry in a sparse

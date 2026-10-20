@@ -253,7 +253,7 @@ func (env *publishCheckEnv) assertNoRegistryUploadsSince(ctx context.Context, si
 		return err
 	}
 	uploads := map[string]bool{
-		"pypi_publish": true, "pypi_publish_duplicate": true,
+		"pypi_publish": true, "pypi_publish_identical": true, "pypi_publish_conflict": true,
 		"hex_publish": true, "hex_publish_duplicate": true, "hex_docs_publish": true,
 		"cargo_publish": true, "cargo_publish_duplicate": true,
 	}
@@ -2331,9 +2331,10 @@ os.makedirs(github_content_records_dir, exist_ok=True)
 os.makedirs(github_release_records_dir, exist_ok=True)
 os.makedirs(github_asset_records_dir, exist_ok=True)
 published_crates = {}
-published_pypi_files = set()
-published_pypi_versions = set()
+published_pypi_files = {}
+published_pypi_versions = {}
 published_hex_versions = set()
+published_hex_docs = set()
 github_refs = {}
 github_releases = {}
 deleted_github_assets = set()
@@ -2389,6 +2390,20 @@ def multipart_field(body, name):
     if end < 0:
         end = len(body)
     return body[start:end].decode("utf-8", "replace").strip()
+
+def multipart_file(body, name, content_type):
+    # The file part ends at the next boundary, which can't occur inside it.
+    boundary = content_type.split("boundary=", 1)[-1].strip().strip('"').encode("utf-8")
+    marker = ('name="' + name + '"').encode("utf-8")
+    idx = body.find(marker)
+    if idx < 0 or not boundary:
+        return b""
+    start = body.find(b"\r\n\r\n", idx)
+    if start < 0:
+        return b""
+    start += 4
+    end = body.find(b"\r\n--" + boundary, start)
+    return body[start:] if end < 0 else body[start:end]
 
 def multipart_filename(body, name):
     marker = ('name="' + name + '"').encode("utf-8")
@@ -2592,10 +2607,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             parts = self.path.strip("/").split("/")
             name, version = (parts[1].lower().replace("_", "-"), parts[2]) if len(parts) == 4 else ("", "")
             with state_lock:
-                found = (name, version) in published_pypi_versions
-            record("pypi_version_lookup", self, b"", {"package_name": name, "package_version": version, "found": found})
+                files = sorted(published_pypi_versions.get((name, version), set()))
+            found = bool(files)
+            record("pypi_version_lookup", self, b"", {"package_name": name, "package_version": version, "files": files})
             if found:
-                self.send_json(200, {"info": {"name": name, "version": version}})
+                self.send_json(200, {"info": {"name": name, "version": version}, "urls": [{"filename": f} for f in files]})
             else:
                 self.send_json(404, {"message": "Not Found"})
             return
@@ -2603,9 +2619,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             version = self.path.removeprefix("/hex/api/packages/dagger/releases/").strip("/")
             with state_lock:
                 found = version in published_hex_versions
-            record("hex_version_lookup", self, b"", {"package_version": version, "found": found})
+                has_docs = version in published_hex_docs
+            record("hex_version_lookup", self, b"", {"package_version": version, "found": found, "has_docs": has_docs})
             if found:
-                self.send_json(200, {"version": version})
+                self.send_json(200, {"version": version, "has_docs": has_docs})
             else:
                 self.send_json(404, {"message": "Not Found"})
             return
@@ -2718,13 +2735,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             name = multipart_field(body, "name").lower().replace("_", "-")
             version = multipart_field(body, "version")
             filename = multipart_filename(body, "content")
+            digest = hashlib.sha256(multipart_file(body, "content", self.headers.get("content-type", ""))).hexdigest()
             with state_lock:
-                duplicate = filename in published_pypi_files
-                published_pypi_files.add(filename)
-                published_pypi_versions.add((name, version))
-            if duplicate:
-                # PyPI rejects re-uploading a file it already has.
-                record("pypi_publish_duplicate", self, body, {"filename": filename})
+                existing = published_pypi_files.get(filename)
+                if existing is None:
+                    published_pypi_files[filename] = digest
+                    published_pypi_versions.setdefault((name, version), set()).add(filename)
+            if existing == digest:
+                # PyPI accepts re-uploading an identical file and ignores it.
+                record("pypi_publish_identical", self, body, {"filename": filename})
+                self.send_bytes(200, b"OK", "text/plain")
+                return
+            if existing is not None:
+                # PyPI rejects a different file under a name it already has.
+                record("pypi_publish_conflict", self, body, {"filename": filename})
                 self.send_bytes(400, b"File already exists. See https://pypi.org/help/#file-name-reuse for more information.", "text/plain")
                 return
             record("pypi_publish", self, body, {
@@ -2739,6 +2763,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.path.startswith("/hex/api/packages/dagger/releases/") and self.path.endswith("/docs"):
             version = self.path.split("/releases/", 1)[-1].split("/docs", 1)[0]
+            with state_lock:
+                published_hex_docs.add(version)
             record("hex_docs_publish", self, body, {
                 "auth_header": auth_header(self),
                 "package_version": version,

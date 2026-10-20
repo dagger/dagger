@@ -739,12 +739,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Notify",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 507, 1)).
-							WithArg("repository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "GitHub repository URL", SourceMap: dag.SourceMap("main.go", 510, 2)}).
-							WithArg("target", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The target tag for the release\ne.g. sdk/typescript/v0.14.0", SourceMap: dag.SourceMap("main.go", 513, 2)}).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Name of the component to release", SourceMap: dag.SourceMap("main.go", 515, 2)}).
-							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Discord webhook", SourceMap: dag.SourceMap("main.go", 518, 2)}).
-							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Whether to perform a dry run without creating the release", SourceMap: dag.SourceMap("main.go", 522, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 508, 1)).
+							WithArg("repository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "GitHub repository URL", SourceMap: dag.SourceMap("main.go", 511, 2)}).
+							WithArg("target", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The target tag for the release\ne.g. sdk/typescript/v0.14.0", SourceMap: dag.SourceMap("main.go", 514, 2)}).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Name of the component to release", SourceMap: dag.SourceMap("main.go", 516, 2)}).
+							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Discord webhook", SourceMap: dag.SourceMap("main.go", 519, 2)}).
+							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Whether to perform a dry run without creating the release", SourceMap: dag.SourceMap("main.go", 523, 2)})).
 					WithFunction(
 						dag.Function("PhpSdkTargetVersion",
 							dag.TypeDef().WithObject("Changeset")).
