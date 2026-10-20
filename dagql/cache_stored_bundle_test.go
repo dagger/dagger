@@ -3,14 +3,17 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // storedBundleTestCloud merges an export of a root R, which depends on P,
@@ -321,6 +324,162 @@ func TestStoredBundleAfterARestore(t *testing.T) {
 	got, err := json.Marshal(after)
 	require.NoError(t, err)
 	require.JSONEq(t, string(want), string(got))
+}
+
+// A stored record that names an entry of its closure that isn't one of its
+// dependencies is refused, though relocation finds that entry an ordinal: a
+// build checks every reference against the record's dependencies.
+func TestStoredBundleRefusesAReferenceToAnIndirectEntry(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	root := persistedListTestResult(t, actx, a, asrv, "indirect-root", &transferTestValue{Text: "root"})
+	mid := persistedListTestResult(t, actx, a, asrv, "indirect-mid", &transferTestValue{Text: "mid"})
+	leaf := persistedListTestResult(t, actx, a, asrv, "indirect-leaf", &transferTestValue{Text: "leaf"})
+	transferTestDependency(a, actx, root, mid)
+	transferTestDependency(a, actx, mid, leaf)
+	bundle := exportTestBundle(t, actx, a, root)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	numbers := map[TransferOrdinal]uint64{}
+	for _, value := range reply.Values {
+		numbers[value.Ordinal] = value.Number
+	}
+	var r, leafNumber uint64
+	for _, value := range bundle.Values {
+		switch value.SenderNumber {
+		case uint64(root.cacheSharedResult().id):
+			r = numbers[value.Ordinal]
+		case uint64(leaf.cacheSharedResult().id):
+			leafNumber = numbers[value.Ordinal]
+		}
+	}
+	require.NotZero(t, r)
+	require.NotZero(t, leafNumber)
+	_, err = cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+
+	// R's record now names the leaf, which only its dependency depends on.
+	payload, err := json.Marshal(&transferTestValue{Text: "root", Child: leafNumber})
+	require.NoError(t, err)
+	cloud.egraphMu.Lock()
+	res := cloud.resultsByID[sharedResultID(r)]
+	env := *res.persistedEnvelope
+	env.ObjectJSON = payload
+	res.persistedEnvelope = &env
+	cloud.egraphMu.Unlock()
+	_, err = cloud.StoredBundle(ctx, []uint64{r})
+	require.ErrorContains(t, err, "is not a direct dependency")
+}
+
+// storedCheckValue's family has a codec that normalizes a payload without
+// validating it, as a family's codec may: only its validation refuses a
+// payload whose text is "invalid", only its output mapping one whose text is
+// "unmapped", and it maps one whose text is "unaddressed" to an output with
+// no part. The cache never decodes its records.
+type storedCheckValue struct{}
+
+func (*storedCheckValue) Type() *ast.Type {
+	return &ast.Type{NamedType: "StoredCheckValue", NonNull: true}
+}
+
+type storedCheckCodec struct{}
+
+func (storedCheckCodec) VisitPersistedReferences(v PersistedPayloadVisit, _ PersistedRefVisitor) (json.RawMessage, error) {
+	return v.Payload, nil
+}
+func (storedCheckCodec) NormalizeForeign(v PersistedPayloadVisit) (ForeignPayload, error) {
+	return ForeignPayload{JSON: slices.Clone(v.Payload)}, nil
+}
+func (storedCheckCodec) ValidateForeign(v PersistedPayloadVisit) error {
+	if strings.Contains(string(v.Payload), `"invalid"`) {
+		return fmt.Errorf("invalid payload")
+	}
+	return nil
+}
+func (storedCheckCodec) MapSnapshotParts(v PersistedPayloadVisit) ([]CapturedCodecOutput, error) {
+	if strings.Contains(string(v.Payload), `"unmapped"`) {
+		return nil, fmt.Errorf("unmapped payload")
+	}
+	if strings.Contains(string(v.Payload), `"unaddressed"`) {
+		return []CapturedCodecOutput{{Address: PersistedPartAddress{OutputPath: v.Path}, State: "pending"}}, nil
+	}
+	return nil, nil
+}
+func init() {
+	RegisterPersistedObjectFamily(PersistedObjectFamily{Name: "dagql_test.StoredCheck", Typed: (*storedCheckValue)(nil), Visitor: storedCheckCodec{}, Transfer: storedCheckCodec{}})
+}
+
+// A stored record whose payload its codec refuses, can't map to its outputs,
+// or maps to an output with no part, is refused, though the codec normalizes
+// it: a build validates and maps each record's payloads when it normalizes
+// the record.
+func TestStoredBundleRefusesAPayloadItsCodecRefuses(t *testing.T) {
+	t.Parallel()
+	for text, refusal := range map[string]string{"invalid": "invalid payload", "unmapped": "unmapped payload", "unaddressed": "empty part"} {
+		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+		_, err := cloud.StoredBundle(ctx, []uint64{r})
+		require.NoError(t, err, text)
+		cloud.egraphMu.Lock()
+		res := cloud.resultsByID[sharedResultID(r)]
+		env := *res.persistedEnvelope
+		env.ObjectCodec = "dagql_test.StoredCheck"
+		env.ObjectJSON = json.RawMessage(`{"text":"` + text + `"}`)
+		res.persistedEnvelope = &env
+		cloud.egraphMu.Unlock()
+		_, err = cloud.StoredBundle(ctx, []uint64{r})
+		require.ErrorContains(t, err, refusal, text)
+	}
+}
+
+// A payload its codec validated stays valid once its family's visitor
+// relocates its references, which validateStoredBundle relies on: a stored
+// bundle's records are validated before they are relocated. Every family the
+// dagql tests register with a transfer codec has a sample, and the samples
+// with references have them moved.
+func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
+	samples := map[string]struct {
+		payload string
+		refs    int
+	}{
+		"dagql_test.Transfer":      {`{"text":"relocated","child":5}`, 1},
+		"dagql_test.StoredBench":   {`{"text":"relocated","child":5,"fields":[{"name":"f","description":"d","type":"String!"}]}`, 1},
+		"dagql_test.InlineCapture": {`{"text":"relocated"}`, 0},
+		"dagql_test.StatePart":     {`{}`, 0},
+		"dagql_test.StateTwoPart":  {`{}`, 0},
+		"dagql_test.Share":         {`{"name":"relocated"}`, 0},
+		"dagql_test.FixtureDemand": {`{"name":"relocated"}`, 0},
+		"dagql_test.StoredCheck":   {`{"text":"relocated"}`, 0},
+	}
+	for _, family := range PersistedObjectFamilies() {
+		// core's families, which this package's external tests register,
+		// are core's test's to cover.
+		if family.Transfer == nil || !strings.HasPrefix(family.Name, "dagql_test.") {
+			continue
+		}
+		sample, ok := samples[family.Name]
+		require.True(t, ok, "family %s has no sample", family.Name)
+		v := PersistedPayloadVisit{Version: persistedResultEnvelopeVersion, Payload: json.RawMessage(sample.payload)}
+		foreign, err := family.Transfer.NormalizeForeign(v)
+		require.NoError(t, err, family.Name)
+		v.Payload = foreign.JSON
+		require.NoError(t, family.Transfer.ValidateForeign(v), family.Name)
+		moved := 0
+		relocated, err := family.Visitor.VisitPersistedReferences(v, func(ref *PersistedRef) error {
+			if ref.RecipeID == nil && ref.ResultID != 0 {
+				ref.ResultID += 1000
+				moved++
+			}
+			return nil
+		})
+		require.NoError(t, err, family.Name)
+		require.Equal(t, sample.refs, moved, family.Name)
+		if moved > 0 {
+			require.NotEqual(t, string(v.Payload), string(relocated), family.Name)
+		}
+		v.Payload = relocated
+		require.NoError(t, family.Transfer.ValidateForeign(v), "%s, relocated", family.Name)
+	}
 }
 
 // A stored bundle is its caller's copy: changing its records and outputs in
