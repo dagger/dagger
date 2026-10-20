@@ -1,0 +1,6 @@
+kind: Fixed
+body: A terminal now starts even when a service bound to its container has already exited; it prints a warning, and the service's name does not resolve inside. A terminal whose shell cannot start now fails with the real error, instead of showing success and a bare "exit 1".
+time: 2026-10-20T15:20:19.000000000Z
+custom:
+    Author: sipsma
+    PR: "14746"

@@ -11,6 +11,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -116,6 +117,31 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 		go console.ExpectEOF()
 		require.NoError(t, cmd.Wait())
+	})
+
+	t.Run("shell setup failure is reported", func(ctx context.Context, t *testctx.T) {
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 35, Cols: 160}))
+
+		// The unknown user fails the shell's container setup, so no shell
+		// ever runs. That must fail the command with the setup error, not
+		// end it successfully with a bare "exit 1".
+		cmd := hostDaggerCommandRaw(ctx, t, t.TempDir(), "-c",
+			`container | from `+alpineImage+` | with-user no-such-user | terminal`)
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		require.NoError(t, cmd.Start())
+
+		_, err = console.ExpectString("get user")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+		require.Error(t, cmd.Wait())
 	})
 
 	t.Run("top-level command without terminal", func(ctx context.Context, t *testctx.T) {
@@ -234,7 +260,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
+		cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "--nonce", rand.Text(), "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -247,7 +273,13 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
-		time.Sleep(2 * time.Second)
+		// Crash the dependency only now that the shell is up, wait until it has
+		// exited, and give the engine time to observe the exit.
+		_, err = console.SendLine("touch /handshake/crash; until [ -e /handshake/crashed ]; do sleep 0.1; done; sleep 2")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
 
 		_, err = console.SendLine("echo still here")
 		require.NoError(t, err)
