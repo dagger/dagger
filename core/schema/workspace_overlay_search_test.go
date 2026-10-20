@@ -123,6 +123,23 @@ func TestSearchSourcePaths(t *testing.T) {
 		require.Empty(t, paths)
 	})
 
+	t.Run("root overlay covers descendant paths", func(t *testing.T) {
+		rootOverlay := &core.Workspace{}
+		rootOverlay.SetHostPath("/workspace")
+		rootOverlay.SetSource(core.NewWorkspaceSourceOverlay(
+			core.NewWorkspaceSourceClientLocal("/workspace"),
+			[]string{"."},
+			nil,
+			dagql.ObjectResult[*core.Changeset]{},
+		))
+
+		paths, searchSource, err := s.searchSourcePaths(ctx, rootOverlay,
+			[]string{"new.txt", "nested/new.txt"})
+		require.NoError(t, err)
+		require.False(t, searchSource)
+		require.Empty(t, paths)
+	})
+
 	t.Run("mount ancestor absent from the source is dropped", func(t *testing.T) {
 		// "deps" exists in the workspace view only because the mount at
 		// deps/vendored materializes its parents; this synthetic workspace has
