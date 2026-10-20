@@ -505,7 +505,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
-	db, q, err := prepareCacheDBs(ctx, dbPath)
+	db, q, err := prepareCacheDBs(ctx, dbPath, false)
 	assert.NilError(t, err)
 	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "0"))
 	assert.NilError(t, closeCacheDBs(db, q))
@@ -552,7 +552,7 @@ func TestCachePersistenceSchemaMismatchWipesStore(t *testing.T) {
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
-	db, q, err := prepareCacheDBs(ctx, dbPath)
+	db, q, err := prepareCacheDBs(ctx, dbPath, false)
 	assert.NilError(t, err)
 	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, "20"))
 	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "1"))
@@ -588,7 +588,7 @@ func TestCacheCloseDiscardingPersistenceDoesNotMarkClean(t *testing.T) {
 	assert.NilError(t, err)
 	assert.NilError(t, cacheA.CloseDiscardingPersistence())
 
-	db, q, err := prepareCacheDBs(ctx, dbPath)
+	db, q, err := prepareCacheDBs(ctx, dbPath, false)
 	assert.NilError(t, err)
 	cleanShutdownVal, found, err := q.SelectMetaValue(ctx, persistdb.MetaKeyCleanShutdown)
 	assert.NilError(t, err)
@@ -619,7 +619,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
-	db, q, err := prepareCacheDBs(ctx, dbPath)
+	db, q, err := prepareCacheDBs(ctx, dbPath, false)
 	assert.NilError(t, err)
 	_, err = db.Exec(`UPDATE results SET self_payload = x'7B6E6F742D6A736F6E'`)
 	assert.NilError(t, err)

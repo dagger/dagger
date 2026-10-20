@@ -59,21 +59,34 @@ func (out *filesystemOutput) lazyEvalFunc(kind string, lazyLocked func() (pendin
 // evaluateLazy validates output and reports completion under the winning body
 // latch. Repeated or concurrent calls do not advance the output revision.
 // published runs under outputMu and reports an unset accessor as an error.
-func (out *filesystemOutput) evaluateLazy(ctx context.Context, state *LazyState, name string, run func(context.Context) error, published func() error) error {
+// services are the value's bindings once evaluated: a body can take them from
+// its source, as one reading a container's mount does, after publication, and
+// the value's record names them, so they become dependencies of its result
+// before the body's latch lets a persistence reader see the output.
+func (out *filesystemOutput) evaluateLazy(ctx context.Context, state *LazyState, name string, run func(context.Context) error, published func() error, services func() ServiceBindings) error {
 	return state.Evaluate(ctx, name, func(ctx context.Context) error {
 		if run != nil {
 			if err := run(ctx); err != nil {
 				return err
 			}
 		}
-		out.outputMu.Lock()
-		defer out.outputMu.Unlock()
-		if err := published(); err != nil {
+		if err := func() error {
+			out.outputMu.Lock()
+			defer out.outputMu.Unlock()
+			if err := published(); err != nil {
+				return err
+			}
+			out.persistenceBody = state
+			out.OutputRev++
+			return nil
+		}(); err != nil {
 			return err
 		}
-		out.persistenceBody = state
-		out.OutputRev++
-		return nil
+		var deps []dagql.AnyResult
+		for _, binding := range services() {
+			deps = append(deps, binding.Service)
+		}
+		return out.partHost.Load().AddDependencies(ctx, deps)
 	})
 }
 
@@ -204,7 +217,7 @@ func (file *File) evaluateLazy(ctx context.Context, state *LazyState, name strin
 			return fmt.Errorf("evaluate %s: File snapshot is unset", name)
 		}
 		return nil
-	})
+	}, func() ServiceBindings { return file.Services })
 }
 
 func (dir *Directory) lockForPersistence() (func(), error) {
@@ -255,7 +268,7 @@ func (dir *Directory) evaluateLazy(ctx context.Context, state *LazyState, name s
 			return fmt.Errorf("evaluate %s: Directory snapshot is unset", name)
 		}
 		return nil
-	})
+	}, func() ServiceBindings { return dir.Services })
 }
 
 func (out *filesystemOutput) BindPartHost(host *dagql.PartHost) {

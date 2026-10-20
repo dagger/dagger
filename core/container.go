@@ -1141,6 +1141,7 @@ func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
 				return host.Evaluate(ctx)
 			}
 			if _, refined := lazy.(LazyContainerParts); !refined {
+				container.dependOnPartServicesOf(host, lazy)
 				return host.RunNative(ctx, dagql.LazyGroupWhole, append([]dagql.PartKey{ContainerPartMetadata}, containerSnapshotParts(container)...), func(ctx context.Context) error { return lazy.Evaluate(ctx, container) })
 			}
 		}
@@ -1254,6 +1255,22 @@ func (container *Container) AttachDependencyResultsKinds(
 		return nil, err
 	}
 	owned = append(owned, serviceDeps...)
+	// A part with a value already, as a schema child of a built parent
+	// clones its parent's parts, names its value's services in its record
+	// (encodeContainerPartsLocked); a part valued later depends on them
+	// through dependOnPartServicesOf. The bindings are read, not rewritten:
+	// the value can be its source's own.
+	for _, part := range containerSnapshotParts(container) {
+		value, err := container.containerPartValue(part)
+		if err != nil || len(value.Services) == 0 {
+			continue
+		}
+		partServiceDeps, err := slices.Clone(value.Services).AttachDependencyResults("container part "+string(part), attach)
+		if err != nil {
+			return nil, err
+		}
+		owned = append(owned, partServiceDeps...)
+	}
 
 	if lazy != nil {
 		deps, err := lazy.AttachDependencies(ctx, attach)

@@ -370,7 +370,7 @@ func TestCachePersistenceCleanShutdownToggleOnClose(t *testing.T) {
 
 	assert.NilError(t, c.Close(context.Background()))
 
-	db, q, err := prepareCacheDBs(ctx, dbPath)
+	db, q, err := prepareCacheDBs(ctx, dbPath, false)
 	assert.NilError(t, err)
 	defer func() {
 		assert.NilError(t, closeCacheDBs(db, q))

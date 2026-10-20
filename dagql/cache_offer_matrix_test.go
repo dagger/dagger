@@ -301,7 +301,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 		// ended at settlement.
 		f.requireSettled(t, firstBase-1, secondBase)
 	})
-	t.Run("acceptance after commit is already complete", func(t *testing.T) {
+	t.Run("acceptance after commit waits for settlement", func(t *testing.T) {
 		f := newSettlementFixture(t)
 		attemptReleased := armLazyAttemptReleased(f.cache)
 		firstBase, secondBase := f.counts()
@@ -323,7 +323,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 		waitWithinT(t, committed, done)
 		out, err := f.cache.testOfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
 		require.NoError(t, err)
-		require.Equal(t, OfferAlreadyComplete, out[0].Outcome, "an installed output closes offer admission")
+		require.Equal(t, OfferExecutionStarted, out[0].Outcome, "an installed output closes offer admission, and is not complete before it settles")
 		f.cache.egraphMu.RLock()
 		offerCount := len(f.receiver.cacheSharedResult().testPartOffers())
 		f.cache.egraphMu.RUnlock()
@@ -364,7 +364,7 @@ func TestOfferSettlementReplacement(t *testing.T) {
 			require.NotEmpty(t, row.loadPayloadState().snapshotLinkIntent.Links, "the installed output is retained")
 			out, err := f.cache.testOfferParts(f.ctx, f.receiver, []PersistedPartOffer{f.replacement()})
 			require.NoError(t, err)
-			require.Equal(t, OfferAlreadyComplete, out[0].Outcome)
+			require.Equal(t, OfferExecutionStarted, out[0].Outcome, "the retained output is not complete until a retry settles it")
 			gate := row.partGate.loadOrCreate()
 			gate.mu.Lock()
 			state := gate.outputs[key]

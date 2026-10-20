@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"sync"
 	"time"
@@ -715,11 +716,41 @@ func (c *Cache) newSessionlessPartSourceLease(ctx context.Context, receiver, don
 		return nil, partRefused("sessionless source: probe without capture")
 	}
 	if err := probe.captured.version.check(donor); err != nil {
-		return nil, err
+		// A sibling of the donor published since the probe. As in Commit,
+		// which validates the donated address alone, observe the donor again
+		// and keep the selection only if the donated address is unchanged.
+		if probe, err = c.reprobeDonatedPart(ctx, donor, probe); err != nil {
+			return nil, err
+		}
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	return c.newSessionlessPartSourceLeaseLocked(ctx, receiver, donor, target, address, probe, lookup)
+}
+
+// reprobeDonatedPart observes the donor again, as selection did, and returns
+// its fresh probe of the donated address when that address still has the
+// selected descriptor and installation and is still Ready. Any other change
+// refuses the slot.
+func (c *Cache) reprobeDonatedPart(ctx context.Context, donor *sharedResult, selected PartProbe) (PartProbe, error) {
+	key, err := partAddressKey(selected.Descriptor.Address)
+	if err != nil {
+		return PartProbe{}, err
+	}
+	_, _, probes, err := c.probeAllParts(ctx, donor)
+	if err != nil {
+		return PartProbe{}, err
+	}
+	for _, p := range probes {
+		if k, err := partAddressKey(p.Descriptor.Address); err != nil || k != key {
+			continue
+		}
+		if !reflect.DeepEqual(p.Descriptor, selected.Descriptor) || p.OutputRev != selected.OutputRev || !p.LocalComplete || p.Busy {
+			break
+		}
+		return p, nil
+	}
+	return PartProbe{}, partRefused("sessionless source: donated part changed")
 }
 
 // E held; lookup was prepared outside E. This admission boundary revalidates

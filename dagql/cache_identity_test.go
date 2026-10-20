@@ -81,7 +81,7 @@ func TestCacheIdentityNamesWipedDatabase(t *testing.T) {
 			name:   "import failure",
 			reason: CachePersistenceResetImportFailure,
 			spoil: func(t *testing.T, ctx context.Context, path string) {
-				db, q, err := prepareCacheDBs(ctx, path)
+				db, q, err := prepareCacheDBs(ctx, path, false)
 				assert.NilError(t, err)
 				_, err = db.Exec(`UPDATE results SET self_payload = x'7B6E6F742D6A736F6E'`)
 				assert.NilError(t, err)
@@ -125,7 +125,7 @@ func TestCacheIdentityNamesWipedDatabase(t *testing.T) {
 
 func setCacheTestMeta(t *testing.T, ctx context.Context, path, key, value string) {
 	t.Helper()
-	db, q, err := prepareCacheDBs(ctx, path)
+	db, q, err := prepareCacheDBs(ctx, path, false)
 	assert.NilError(t, err)
 	assert.NilError(t, q.UpsertMeta(ctx, key, value))
 	assert.NilError(t, closeCacheDBs(db, q))

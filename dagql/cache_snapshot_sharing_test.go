@@ -417,6 +417,145 @@ func TestSnapshotSharingDonorReceivesSibling(t *testing.T) {
 	require.True(t, shareTestHasLink(receiver, "fs-snap"), "middle's unchanged fs was still donated")
 }
 
+// DonorSiblingInstalledBeforeSlot: a donor that installs a sibling part
+// between the pass's selection and the slot's source lease still donates its
+// unchanged completed part in that pass, and the pass reports it. This is the
+// dogfood's "snapshot sharing skipped … row D representation changed during
+// capture", where D was an imported donor taking its own offered parts. A
+// decoded donor meets the same check through its typed output's stamp. A
+// donor whose donated part itself changed in that window is still refused.
+func TestSnapshotSharingDonorSiblingInstalledBeforeSlot(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		encoded  bool
+		replaced bool
+	}{
+		{name: "encoded donor", encoded: true},
+		{name: "decoded donor"},
+		{name: "donated part replaced", replaced: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Sharing is admitted only once the cohort is whole: with an
+			// imported donor, uniting the donor alone already queues its own
+			// class, and a worker that took it before the receiver joined
+			// would run an empty first pass.
+			ctx, c, srv := transferTestCache(t)
+			c.snapshotManager = &shareTestManager{}
+			srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+			source := persistedListTestResult(t, ctx, c, srv, "sibling-first-source", newShareTestValue("source", map[string]sharePartState{"mount": {Snapshot: "mount-snap"}}))
+			donorValue := newShareTestValue("donor", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}, "mount": {}})
+			donor := persistedListTestResult(t, ctx, c, srv, "sibling-first-donor", donorValue)
+			receiver := persistedListTestResult(t, ctx, c, srv, "sibling-first-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
+			if tc.encoded {
+				shareTestEncodedReceiver(t, ctx, c, donor)
+			}
+			shareTestEncodedReceiver(t, ctx, c, receiver)
+			partTestEquivalent(t, c, receiver, donor)
+			partTestEquivalent(t, c, donor, source)
+
+			// The first pass parks after selecting its slots; every later pass
+			// parks until the test ends, so what is checked is the first pass
+			// alone.
+			var passes atomic.Int32
+			var firstFinished atomic.Bool
+			entered, resumeFirst, resumeLater := make(chan int, 1), make(chan struct{}), make(chan struct{})
+			firstDone := make(chan struct{})
+			t.Cleanup(sync.OnceFunc(func() { close(resumeLater) }))
+			c.testBeforeSharePass = func(_ *snapshotShareItem, planned int) {
+				if passes.Add(1) == 1 {
+					entered <- planned
+					<-resumeFirst
+					return
+				}
+				<-resumeLater
+			}
+			c.testAfterSharePass = func(*snapshotShareItem) {
+				if passes.Load() == 1 {
+					firstFinished.Store(true)
+					close(firstDone)
+				}
+			}
+			var (
+				mu       sync.Mutex
+				skips    []error
+				reported []SnapshotSharedPart
+			)
+			c.testShareSkipped = func(_ sharedResultID, _ PersistedPartAddress, err error) {
+				// A later pass selects before it parks; only the first
+				// pass's skips are checked.
+				if firstFinished.Load() {
+					return
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				skips = append(skips, err)
+			}
+			c.shareReport = func(parts []SnapshotSharedPart) {
+				mu.Lock()
+				defer mu.Unlock()
+				reported = append(reported, parts...)
+			}
+
+			shareTestUnite(t, ctx, c, "donor-sibling-before-slot", donor, receiver)
+			require.NoError(t, c.EnableSnapshotSharing())
+			c.notifySnapshotShareCompletion(ctx, receiver.cacheSharedResult())
+			select {
+			case planned := <-entered:
+				require.Equal(t, 1, planned, "the receiver's fs from the donor is the one slot")
+			case <-time.After(10 * time.Second):
+				t.Fatal("no snapshot sharing pass started")
+			}
+
+			// With the slot selected, the donor takes its missing mount through
+			// an ordinary demand: a real install that publishes a new
+			// representation of the donor and leaves its fs untouched.
+			require.NoError(t, c.demandPart(ctx, donor, PersistedPartAddress{Part: "mount"}))
+			require.True(t, shareTestHasLink(donor, "mount-snap"))
+			require.True(t, shareTestHasLink(donor, "fs-snap"))
+			if tc.replaced {
+				// The donor's typed value also republishes fs on another
+				// snapshot, as its own store would: the selected donated
+				// address no longer holds what selection saw.
+				donorValue.mu.Lock()
+				donorValue.Parts["fs"] = sharePartState{Snapshot: "fs-snap-2"}
+				for i := range donorValue.links {
+					if donorValue.links[i].Role == "fs" {
+						donorValue.links[i].RefKey = "fs-snap-2"
+					}
+				}
+				donorValue.rev.Add(1)
+				donorValue.mu.Unlock()
+			}
+
+			close(resumeFirst)
+			select {
+			case <-firstDone:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the first snapshot sharing pass never finished")
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if tc.replaced {
+				require.False(t, shareTestHasLink(receiver, "fs-snap"), "a changed donated part is not installed from the stale selection")
+				require.False(t, shareTestHasLink(receiver, "fs-snap-2"), "nor from a donor state selection never saw")
+				require.Empty(t, reported)
+				require.Len(t, skips, 1)
+				require.ErrorIs(t, skips[0], ErrPartReselect, "the slot is refused: %v", skips[0])
+				return
+			}
+			require.True(t, shareTestHasLink(receiver, "fs-snap"), "the donor's unchanged fs is donated in the pass that selected it; skips=%v", skips)
+			fsKey, err := partAddressKey(PersistedPartAddress{Part: "fs"})
+			require.NoError(t, err)
+			var reportedParts []string
+			for _, part := range reported {
+				require.Equal(t, uint64(receiver.cacheSharedResult().id), part.ResultID)
+				reportedParts = append(reportedParts, part.Part)
+			}
+			require.Equal(t, []string{fsKey}, reportedParts, "the pass reports the part it installed")
+		})
+	}
+}
+
 // Triggers: each notification site enqueues work, and the ones that publish
 // nothing enqueue nothing.
 func TestSnapshotSharingTriggerSites(t *testing.T) {
@@ -916,6 +1055,54 @@ func TestSnapshotSharingFailedFinishAndRetry(t *testing.T) {
 	require.Equal(t, PartComplete, phase, "the retry completed the owning bookkeeping")
 	require.Equal(t, pinsBefore, manager.pins.Load(), "the retry never prepares or pins again")
 	require.Equal(t, int32(1), manager.released.Load(), "protection is released once, by the owning generation")
+}
+
+// FailedFinishOfferMatchesReport: a share whose owner synchronization fails
+// leaves its part installed but unsettled, and the pass reports only settled
+// parts, so no event reports it. An offer of that part then must not answer
+// it complete: the Cloud would hold a part the engine never reports.
+func TestSnapshotSharingFailedFinishOfferMatchesReport(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	var (
+		mu       sync.Mutex
+		reported []string
+	)
+	c.shareReport = func(parts []SnapshotSharedPart) {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, part := range parts {
+			reported = append(reported, part.Part)
+		}
+	}
+	donor, receiver := shareTestPair(t, ctx, c, srv,
+		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+		map[string]sharePartState{"fs": {}},
+	)
+	attachErr := errors.New("attach lease failed")
+	manager.attachErr.Store(&attachErr)
+	shareTestUnite(t, ctx, c, "failed-finish-offer", donor, receiver)
+	require.Equal(t, 1, barrier.awaitPass(t))
+
+	address := PersistedPartAddress{Part: "fs"}
+	key, err := partAddressKey(address)
+	require.NoError(t, err)
+	gate := receiver.cacheSharedResult().partGate.gate.Load()
+	gate.mu.Lock()
+	phase := gate.outputs[key].phase
+	gate.mu.Unlock()
+	require.Equal(t, PartOutputInstalled, phase, "the failed sync leaves the share installed and unsettled")
+
+	out, err := c.OfferParts(ctx, receiver, []CloudPartOffer{{Offer: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory", Path: "/"}}, CloudNumber: 10, CloudStored: true}})
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	var answeredComplete []string
+	if out[0].Outcome == OfferAlreadyComplete {
+		answeredComplete = append(answeredComplete, key)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, reported, answeredComplete, "the offer answers complete exactly what the engine reported; outcome %v", out[0].Outcome)
 }
 
 // CompletionRegistrationRace: the foreground waiter returns while the sharing
