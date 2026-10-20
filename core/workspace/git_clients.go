@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -30,11 +31,10 @@ func DeclaredGitClients(ctx context.Context, moduleDir string, read TreeFileRead
 			case dir != ".":
 				scope = strings.TrimPrefix(moduleDir, dir+"/")
 			}
-			cfg, err := ParseConfigAt(ctx, data, ".")
-			if err != nil {
-				return nil, nil //nolint:nilerr // deliberate: a config that does not parse declares nothing
-			}
-			return ModuleScopeGitClients(cfg, ".")[scope], nil
+			declared := cachedGitClientDeclarations(data)
+			logConfigWarnings(ctx, declared.warnings)
+			// Cached declarations are immutable; callers own their returned slice.
+			return slices.Clone(declared.scopes[scope]), nil
 		}
 		if dir == "." {
 			return nil, nil
