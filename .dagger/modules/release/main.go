@@ -181,6 +181,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 	}
 	report.Artifacts = append(report.Artifacts, artifact)
+	engineArtifact := artifact
 
 	artifact = &ReleaseReportArtifact{
 		Name: "🚗 CLI",
@@ -194,7 +195,12 @@ func (r *Release) Publish( //nolint:gocyclo
 		cliDevOpts.Version = version
 	}
 	cliDev := dag.CliDev(cliDevOpts)
-	if !dryRun {
+	switch {
+	case !dryRun && len(engineArtifact.Errors) > 0:
+		// The CLI pulls the engine image matching its version on first use,
+		// so never publish a CLI whose engine image didn't make it out.
+		artifact.Errors = append(artifact.Errors, dag.Error("skipped: the engine publish failed"))
+	case !dryRun:
 		_, err := cliDev.
 			Publish(tag, commit, githubOrgName, dagger.CliDevPublishOpts{
 				GithubToken:        githubToken,
@@ -217,7 +223,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
-	} else {
+	default:
 		if err := cliDev.ReleaseDryRun(ctx); err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
