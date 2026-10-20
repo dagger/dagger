@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -360,7 +361,12 @@ source = "`+baseRef+`"
 	out, err := ctr.With(workspaceIncludeConfig()).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, `source = "`+moduleRef+`"`, "a remote entry comes through untouched")
-	require.Contains(t, out, "/dagger/modules/ci@", "a local entry is addressed against the config's own directory")
+	baseURL, _, ok := strings.Cut(baseRef, "#")
+	require.True(t, ok)
+	require.Regexp(t,
+		regexp.MustCompile(regexp.QuoteMeta(`source = "`+baseURL+`#`)+`[0-9a-f]{40}:dagger/modules/ci"`),
+		out,
+		"a local entry is addressed against the config's own directory with its explicit selector")
 
 	out, err = ctr.With(workspaceSelectionDaggerCall("local-ci", "identify")).Stdout(ctx)
 	require.NoError(t, err)
