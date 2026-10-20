@@ -184,6 +184,10 @@ func TestCachePersistenceImportedDecodeLeaderSessionRemovalRetriesJoiner(t *test
 	var decodeEntries atomic.Int32
 	var decodeSessions sync.Map
 	firstEntered, releaseFirst := make(chan struct{}), make(chan struct{})
+	// Deferred after the cache's close, so it runs first: a failed wait below
+	// must not leave the leader's decode blocking the close.
+	releaseLeader := sync.OnceFunc(func() { close(releaseFirst) })
+	defer releaseLeader()
 	persistRetryDecodeHooks.Store(resultID, func(hookCtx context.Context) error {
 		md, err := engine.ClientMetadataFromContext(hookCtx)
 		if err != nil {
@@ -228,7 +232,7 @@ func TestCachePersistenceImportedDecodeLeaderSessionRemovalRetriesJoiner(t *test
 
 	// The leader's session is removed, and its decode then fails.
 	leaderAuthority.Close()
-	close(releaseFirst)
+	releaseLeader()
 
 	require.ErrorContains(t, <-leaderCh, "not found")
 	require.NoError(t, <-joinerCh, "the joiner's session is alive; the decode it waited on must not fail it with another session's removal")
