@@ -524,9 +524,11 @@ func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 }
 
 // runReleasePublish runs release publish for tag in the nested engine.
-// tokenSuffix is appended to the fake service tokens. Secrets are cached by
-// value, so a new suffix makes every step that uses them run again, like a
-// rerun on a fresh CI runner instead of a cache hit.
+// tokenSuffix is appended to the fake package registry, Netlify and AWS
+// tokens. Secrets are cached by value, so a new suffix makes every step that
+// uses them run again, like a rerun on a fresh CI runner instead of a cache
+// hit. The GitHub token keeps its value: the Helm publish also logs in to
+// the local registry with it.
 func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagger.Service, tag, registryPassword, tokenSuffix string) (string, error) {
 	script := `set +e
 	dagger --progress=plain -W "$MODULE_REF" call release publish \
@@ -566,7 +568,7 @@ exit "$status"
 
 	out, err := env.client(engine).
 		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("release-registry-password-"+randomID(), registryPassword)).
-		WithSecretVariable("FAKE_GITHUB_TOKEN", dag.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass+tokenSuffix)).
+		WithSecretVariable("FAKE_GITHUB_TOKEN", dag.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass)).
 		WithSecretVariable("FAKE_NETLIFY_TOKEN", dag.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token"+tokenSuffix)).
 		WithSecretVariable("FAKE_PYPI_TOKEN", dag.SetSecret("fake-pypi-token-"+randomID(), "fake-pypi-token"+tokenSuffix)).
 		WithSecretVariable("FAKE_NPM_TOKEN", dag.SetSecret("fake-npm-token-"+randomID(), "fake-npm-token"+tokenSuffix)).
