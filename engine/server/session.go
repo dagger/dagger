@@ -2554,13 +2554,17 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		return fmt.Errorf("failed to hijack connection: %w", err)
 	}
+	// From here on, a failure closes the connection: net/http no longer owns
+	// it. A nested exec's session helper starts alongside the command, so the
+	// exec can end, closing the helper's connection, in the middle of this
+	// handshake.
 	defer func() {
 		if rerr != nil {
 			conn.Close()
 		}
 	}()
 	if err := conn.SetDeadline(time.Time{}); err != nil {
-		panic(fmt.Errorf("failed to clear deadline: %w", err))
+		return fmt.Errorf("failed to clear deadline: %w", err)
 	}
 
 	// confirm to the client that everything went swimmingly and we're ready to become a gRPC client
@@ -2571,7 +2575,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	resp.Header.Set("Connection", "Upgrade")
 	resp.Header.Set("Upgrade", "h2c")
 	if err := resp.Write(conn); err != nil {
-		panic(fmt.Errorf("failed to write response: %w", err))
+		return fmt.Errorf("failed to write response: %w", err)
 	}
 
 	// The client confirms it has fully read the response and is ready to serve gRPC by sending
@@ -2579,7 +2583,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	// before the response has been fully read, which can mix http and gRPC traffic.
 	ack := make([]byte, 1)
 	if _, err := conn.Read(ack); err != nil {
-		panic(fmt.Errorf("failed to read ack: %w", err))
+		return fmt.Errorf("failed to read ack: %w", err)
 	}
 
 	ctx = record.daggerSession.withAttachablesCancel(ctx, record.clientID)
