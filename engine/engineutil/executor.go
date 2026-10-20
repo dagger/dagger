@@ -865,7 +865,9 @@ func (c *Client) callWithIO(ctx context.Context, process *executor.ProcessInfo, 
 		return fmt.Errorf("create console socket: %w", err)
 	}
 	masterCh := make(chan *os.File, 1)
+	receiverDone := make(chan struct{})
 	go func() {
+		defer close(receiverDone)
 		defer close(masterCh)
 		received, err := consoleSocket.ReceiveMaster()
 		if err != nil {
@@ -882,8 +884,22 @@ func (c *Client) callWithIO(ctx context.Context, process *executor.ProcessInfo, 
 
 	callDone := make(chan struct{})
 	ttyDone := make(chan struct{})
+	var callErr error
 	defer func() {
 		close(callDone)
+		var exitErr *runc.ExitError
+		if callErr == nil || errors.As(callErr, &exitErr) {
+			// The process likely ran, so the runtime sent its terminal
+			// first, but accepting it may still be pending; closing the
+			// socket first would drop it. An exit error can also mean the
+			// runtime itself failed before sending one; then this waits out
+			// the bound.
+			select {
+			case <-receiverDone:
+			case <-time.After(ttyDrainTimeout):
+				bklog.G(ctx).Warnf("tty not received after %s", ttyDrainTimeout)
+			}
+		}
 		consoleSocket.Close()
 		if process.Stdin != nil {
 			process.Stdin.Close()
@@ -967,7 +983,8 @@ func (c *Client) callWithIO(ctx context.Context, process *executor.ProcessInfo, 
 		}
 	})
 
-	return call(ctx, startedCh, &forwardIO{}, consoleSocket, killer.pidfile)
+	callErr = call(ctx, startedCh, &forwardIO{}, consoleSocket, killer.pidfile)
+	return callErr
 }
 
 // pollableTerminal returns the terminal master the runtime sent as a file
