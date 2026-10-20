@@ -1,5 +1,5 @@
 kind: Fixed
-body: Single-generator runs avoid an unnecessary Git merge and preserve generated file permissions.
+body: Merging one changeset into an empty starting changeset avoids an unnecessary Git merge and preserves file permissions.
 time: 2026-10-20T19:00:00Z
 custom:
   Author: grouville

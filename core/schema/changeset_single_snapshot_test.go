@@ -46,8 +46,14 @@ func TestSingleChangesetPreservesSnapshotsAfterReopen(t *testing.T) {
 }
 
 func TestSingleChangesetPreservesSnapshotsAfterTransfer(t *testing.T) {
-	for _, acquire := range []bool{false, true} {
-		t.Run(map[bool]string{false: "pending", true: "acquired"}[acquire], func(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		acquire bool
+	}{
+		{name: "pending"},
+		{name: "acquired", acquire: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 			aCtx, a, aSrv := scratchTestCache(t, aStore, "", "a")
 			(&directorySchema{}).Install(aSrv)
@@ -75,14 +81,14 @@ func TestSingleChangesetPreservesSnapshotsAfterTransfer(t *testing.T) {
 			require.NoError(t, err)
 			parent := loaded.(dagql.ObjectResult[*core.Changeset])
 			require.True(t, dagql.HasPendingLazyEvaluation(parent.Self().Before))
-			if acquire {
+			if tc.acquire {
 				require.NoError(t, cache.Evaluate(ctx, parent.Self().Before))
 			}
 			_, installed := parent.Self().Before.Self().Snapshot.Peek()
-			require.Equal(t, acquire, installed)
+			require.Equal(t, tc.acquire, installed)
 			requireSingleChangesetMode(t, ctx, srv, parent)
 			_, installed = parent.Self().Before.Self().Snapshot.Peek()
-			require.Equal(t, acquire, installed)
+			require.Equal(t, tc.acquire, installed)
 		})
 	}
 }
