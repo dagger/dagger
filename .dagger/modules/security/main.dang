@@ -1,6 +1,8 @@
 pub description = "A toolchain for supply chain security of the Dagger project"
 
 type Security {
+  let ws: Workspace!
+
   let source: Directory!
 
   new(
@@ -10,6 +12,7 @@ type Security {
     """
     ignore: [String!]! = [],
   ) {
+    self.ws = ws
     self.source = ws.directory("/", exclude: ignore)
     self
   }
@@ -53,7 +56,7 @@ type Security {
   Build the engine container, and scan it for vulnerabilities
   """
   pub scanEngineContainer(target: Container): Void {
-    let t = target ?? engineDev.container
+    let t = target ?? engineDev(ws: ws).container
     let tarballPath = "target.tar"
     trivyBase
       .withMountedFile(tarballPath, t.asTarball)
