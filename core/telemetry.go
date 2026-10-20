@@ -316,6 +316,15 @@ func recordCacheEvidence(ctx context.Context, span trace.Span, ev *dagql.CacheDe
 		if ev.MissUnknownInputIndex >= 0 {
 			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissUnknownInputAttr, strconv.Itoa(ev.MissUnknownInputIndex)))
 		}
+		if ev.MissProducerReleased {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissProducerReleasedAttr, "true"))
+		}
+		if ev.MissRequirementsGrew {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissRequirementsGrewAttr, "true"))
+		}
+	}
+	if ev.LookupAtUnixNano != 0 {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheLookupAtAttr, strconv.FormatInt(ev.LookupAtUnixNano, 10)))
 	}
 	if ev.SelfDigest != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheSelfDigestAttr, ev.SelfDigest.String()))
