@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,8 +17,11 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // renewalRetryStatuses are responses meaning the address itself is unusable.
@@ -583,6 +587,8 @@ func (d *PartDemandState) exhaust(source *PartSourceLease, err error) {
 // the bytes downloaded for it and the time from the start of the import to
 // the install, over which the download and the layers' application
 // interleave. A layer the import reused or already had is not downloaded.
+// It logs them, and stamps them on the span of ctx: the lazy-evaluation span
+// of the task that installed the part, which names the entry.
 func logOfferInstall(ctx context.Context, receiver AnyResult, source *PartSourceLease, downloaded int64, duration time.Duration) {
 	slog.InfoContext(ctx, "remote cache part installed",
 		"entry", uint64(receiver.cacheSharedResult().id),
@@ -591,6 +597,15 @@ func logOfferInstall(ctx context.Context, receiver AnyResult, source *PartSource
 		"bytes", downloaded,
 		"duration", duration,
 		"source", "offer")
+	key, err := partAddressKey(source.target)
+	if err != nil {
+		return
+	}
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.String(telemetryattrs.CacheOfferPartAttr, key),
+		attribute.String(telemetryattrs.CacheOfferBytesAttr, strconv.FormatInt(downloaded, 10)),
+		attribute.String(telemetryattrs.CacheOfferDurationAttr, strconv.FormatInt(duration.Nanoseconds(), 10)),
+	)
 }
 
 // countingProvider counts the bytes read through a provider. An import reads
