@@ -98,6 +98,36 @@ func TestCallWithIODrainIsBounded(t *testing.T) {
 	require.Equal(t, "printed\r\n", stdout.String())
 }
 
+// A process that exits nonzero still ran with its terminal, so its output
+// must arrive even when receiving the terminal is still pending as the
+// runtime returns.
+func TestCallWithIOKeepsTTYOfNonzeroExit(t *testing.T) {
+	stdout := &gatedWriter{firstWrite: make(chan struct{}), release: func() {}}
+	process := &executor.ProcessInfo{
+		Meta:   executor.Meta{Tty: true},
+		Stdout: stdout,
+	}
+
+	c := &Client{Opts: &Opts{}}
+	err := c.callWithIO(context.Background(), process, nil, procKiller{}, func(_ context.Context, started chan<- int, _ runc.IO, consoleSocket runc.ConsoleSocket, _ string) error {
+		started <- os.Getpid()
+		go func() {
+			// the terminal reaches the engine only after the runtime returned
+			time.Sleep(100 * time.Millisecond)
+			pts, err := fakeRuntimeTerminal(consoleSocket)
+			if err != nil {
+				return
+			}
+			defer pts.Close()
+			pts.Write([]byte("command output\n"))
+		}()
+		return &runc.ExitError{Status: 42}
+	})
+	var exitErr *runc.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, "command output\r\n", stdout.String())
+}
+
 // Resizes reach the process's terminal directly: one sent before the terminal
 // exists, as the initial size is, and one sent while the process runs.
 func TestCallWithIOResizesTTY(t *testing.T) {
