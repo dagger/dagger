@@ -246,6 +246,36 @@ func TestPreparedValueMergeCancellation(t *testing.T) {
 		require.Zero(t, splitTestEntries(cloud))
 	})
 
+	// An engine that holds every record prepares them all light, with no
+	// payload to check cancellation before.
+	t.Run("preparing-all-light", func(t *testing.T) {
+		t.Parallel()
+		bundle := splitTestSource(t)
+		ctx, c, srv := transferTestCache(t)
+		persistedListTestResult(t, ctx, c, srv, "split-root", &transferTestValue{Text: "local"})
+		persistedListTestResult(t, ctx, c, srv, "split-dep", String("local"))
+		entries := splitTestEntries(c)
+		cancelled, cancel := context.WithCancel(ctx)
+		c.testTransferPlanPrepared = func(i int) error {
+			if i == len(bundle.Values) {
+				cancel()
+			}
+			return nil
+		}
+		p, err := c.PrepareValueMerge(cancelled, cloudCacheID, bundle)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Nil(t, p)
+		require.Zero(t, c.activeGlobalOperations.Load())
+		require.Equal(t, entries, splitTestEntries(c))
+
+		c.testTransferPlanPrepared = nil
+		p, err = c.PrepareValueMerge(ctx, cloudCacheID, bundle)
+		require.NoError(t, err)
+		light := p.prep.light
+		p.Release()
+		require.Len(t, light, len(bundle.Values), "every record is prepared light")
+	})
+
 	t.Run("committing", func(t *testing.T) {
 		t.Parallel()
 		bundle := splitTestSource(t)
