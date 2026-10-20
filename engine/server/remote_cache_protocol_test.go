@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -344,19 +346,22 @@ func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
-// skippedNumbers are the numbers of the skipped roots, in order.
-func skippedNumbers(skipped []protocol.SkippedRoot) []uint64 {
-	var numbers []uint64
-	for _, root := range skipped {
-		numbers = append(numbers, root.Number)
-	}
-	return numbers
+// requireRefused checks that skipped is the one root skipped as refused, with
+// the capture's error as its message.
+func requireRefused(t *testing.T, number uint64, skipped []protocol.SkippedRoot) {
+	t.Helper()
+	require.Len(t, skipped, 1)
+	require.Equal(t, number, skipped[0].Number)
+	require.Equal(t, protocol.SkipRefused, skipped[0].Reason)
+	require.Contains(t, skipped[0].Message, "unsupported lazy type *server.unencodableFileLazy")
 }
 
 // A root the capture refuses with an error that isn't busy fails the capture
-// too. Each root is then probed alone: the refused one is skipped, and the
-// others go in one bundle with only the outputs their closures hold. A
-// request whose roots are all refused gets no bundle, only skipped.
+// too. Each root is then probed alone: the refused one is skipped as refused,
+// with its error as the message, and the others go in one bundle with only the outputs their
+// closures hold. A request whose roots are all refused gets no bundle, only
+// skipped. The request's own cancellation is no refusal: it fails the
+// request.
 func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
 	e := newAdapterTestEngine(t)
 	first := e.file(t, "first")
@@ -371,7 +376,7 @@ func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
 	calls := 0
 	err := e.adapter.Export(e.ctx, req, func(_ context.Context, exp remotecache.Export) error {
 		calls++
-		require.Equal(t, []uint64{entryNumber(t, refused)}, skippedNumbers(exp.Skipped))
+		requireRefused(t, entryNumber(t, refused), exp.Skipped)
 		require.NotNil(t, exp.Bundle)
 		require.ElementsMatch(t, []uint64{entryNumber(t, first), entryNumber(t, second)}, bundleRoots(exp.Bundle))
 		require.Len(t, exp.Bundle.Outputs, 2)
@@ -384,11 +389,34 @@ func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
 	err = e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, func(_ context.Context, exp remotecache.Export) error {
 		calls++
 		require.Nil(t, exp.Bundle)
-		require.Equal(t, []uint64{entryNumber(t, refused)}, skippedNumbers(exp.Skipped))
+		requireRefused(t, entryNumber(t, refused), exp.Skipped)
 		return nil
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, calls)
+
+	ctx, cancel := context.WithCancel(e.ctx)
+	cancel()
+	err = e.adapter.Export(ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, func(context.Context, remotecache.Export) error {
+		t.Error("a cancelled request is answered")
+		return nil
+	})
+	require.Error(t, err)
+}
+
+// A refused root's skip carries its error cut to maxSkippedMessageBytes, at a
+// rune boundary.
+func TestSkippedMessageIsBounded(t *testing.T) {
+	short := errors.New("refused")
+	require.Equal(t, "refused", skippedMessage(short))
+	aligned := strings.Repeat("é", maxSkippedMessageBytes)
+	require.Equal(t, aligned[:maxSkippedMessageBytes], skippedMessage(errors.New(aligned)))
+	// A two-byte rune straddles the limit: the cut leaves it out whole.
+	unaligned := "x" + aligned
+	got := skippedMessage(errors.New(unaligned))
+	require.Len(t, got, maxSkippedMessageBytes-1)
+	require.True(t, utf8.ValidString(got))
+	require.Equal(t, unaligned[:maxSkippedMessageBytes-1], got)
 }
 
 // With no root left, consume is called once, with the skipped roots and no
