@@ -756,6 +756,13 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	}
 	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
 	result.NameEntries()
+	skipped, err := workspaceSkippedPaths(ctx, result, mods, cfg)
+	if err != nil {
+		return nil, err
+	}
+	result.Entries = slices.DeleteFunc(result.Entries, func(entry *core.Artifact) bool {
+		return entry.LoadFailure == nil && skipped[strings.Join(entry.Path, "/")]
+	})
 	slices.SortFunc(result.Entries, func(a, b *core.Artifact) int { return slices.Compare(a.Path, b.Path) })
 	if err := validateArtifactPaths(result.Entries); err != nil {
 		return nil, err

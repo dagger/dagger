@@ -18722,6 +18722,8 @@ export class Workspace extends BaseClient {
 
   /**
    * Discover static object artifacts from workspace modules without evaluating their values.
+   *
+   * Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.
    * @param opts.include Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.
    */
   artifacts = (opts?: WorkspaceArtifactsOpts): Artifacts => {

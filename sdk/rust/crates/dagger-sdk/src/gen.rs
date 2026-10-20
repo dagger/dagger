@@ -20609,6 +20609,7 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// Discover static object artifacts from workspace modules without evaluating their values.
+    /// Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.
     ///
     /// # Arguments
     ///
@@ -20622,6 +20623,7 @@ impl Workspace {
         }
     }
     /// Discover static object artifacts from workspace modules without evaluating their values.
+    /// Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.
     ///
     /// # Arguments
     ///

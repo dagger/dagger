@@ -82,7 +82,7 @@ func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.
 			return nil, err
 		}
 	}
-	excluded, err := commandSkippedPaths(ctx, dag, selected, commandPathExclusions(cmd.Name(), generated, cfg, policies))
+	excluded, err := commandSkippedPaths(ctx, dag, selected, commandPathExclusions(cmd.Name(), generated, policies))
 	if err != nil {
 		return nil, err
 	}
@@ -107,50 +107,25 @@ func commandArtifactTargets(ctx context.Context, dag *dagger.Client, cmd *cobra.
 
 type commandPathExclusion struct {
 	module     string
-	patterns   []string
 	generators bool
 }
 
-func commandPathExclusions(command string, generated bool, cfg *workspace.Config, policies map[string]workspace.GeneratorPolicy) []commandPathExclusion {
-	names := map[string]bool{}
-	for name := range cfg.Modules {
-		names[name] = true
-	}
-	for name := range policies {
-		names[name] = true
+// commandPathExclusions drops the raw toolchain generators a contextual
+// module replaces. Workspace.artifacts already omits skipped paths.
+func commandPathExclusions(command string, generated bool, policies map[string]workspace.GeneratorPolicy) []commandPathExclusion {
+	if command != "generate" && (command != "check" || !generated) {
+		return nil
 	}
 	var exclusions []commandPathExclusion
-	for _, name := range slices.Sorted(maps.Keys(names)) {
-		entry := cfg.Modules[name]
-		var skip []string
-		switch command {
-		case "check":
-			skip = entry.Check.Skip
-		case "start":
-			skip = entry.Up.Skip
+	for _, name := range slices.Sorted(maps.Keys(policies)) {
+		if policies[name].Replaced {
+			exclusions = append(exclusions, commandPathExclusion{module: name, generators: command == "check"})
 		}
-		if len(skip) > 0 {
-			exclusions = append(exclusions, commandPathExclusion{module: name, patterns: skip})
-		}
-		if command != "generate" && (command != "check" || !generated) {
-			continue
-		}
-		policy, ok := policies[name]
-		if !ok {
-			policy.Skip = entry.Generate.Skip
-		}
-		if !policy.Replaced && len(policy.Skip) == 0 {
-			continue
-		}
-		if policy.Replaced {
-			policy.Skip = nil // Select the complete generator namespace.
-		}
-		exclusions = append(exclusions, commandPathExclusion{module: name, patterns: policy.Skip, generators: command == "check"})
 	}
 	return exclusions
 }
 
-// Settings skip schema paths, not collection keys. Batch the metadata reads.
+// Exclusions drop schema paths, not collection keys. Batch the metadata reads.
 func commandSkippedPaths(ctx context.Context, dag *dagger.Client, selected *core.Artifacts, exclusions []commandPathExclusion) ([]string, error) {
 	if len(exclusions) == 0 {
 		return nil, nil
@@ -159,18 +134,8 @@ func commandSkippedPaths(ctx context.Context, dag *dagger.Client, selected *core
 	var declarations []string
 	var fields strings.Builder
 	for i, exclusion := range exclusions {
-		var patterns []string
-		for _, pattern := range exclusion.patterns {
-			pattern = strings.ReplaceAll(pattern, ":", "/")
-			patterns = append(patterns, pattern+"/**", exclusion.module+"/"+pattern+"/**")
-		}
-		pattern := "**"
-		if len(patterns) > 0 {
-			pattern = "{" + strings.Join(patterns, ",") + "}"
-		}
-		declarations = append(declarations, fmt.Sprintf("$module%d: String!, $pattern%d: String!", i, i))
+		declarations = append(declarations, fmt.Sprintf("$module%d: String!", i))
 		variables[fmt.Sprintf("module%d", i)] = "dag://" + exclusion.module + "/**"
-		variables[fmt.Sprintf("pattern%d", i)] = pattern
 		selection := "selected"
 		if exclusion.generators {
 			selection = "generators"
@@ -188,16 +153,12 @@ func commandSkippedPaths(ctx context.Context, dag *dagger.Client, selected *core
 			declarations = append(declarations, "$"+selection+": ID!")
 		}
 		fmt.Fprintf(&fields, `skip%d: node(id: $%s) { ... on Artifacts {
- filterUri(uri: $module%d) { filterPathPattern(pattern: $pattern%d) {
-  pathDefinitions { uri loadError }
- } }
+ filterUri(uri: $module%d) { pathDefinitions { uri loadError } }
 } }
-`, i, selection, i, i)
+`, i, selection, i)
 	}
 	var response map[string]struct {
-		FilterURI struct {
-			FilterPathPattern struct{ PathDefinitions []artifactListPath }
-		}
+		FilterURI struct{ PathDefinitions []artifactListPath }
 	}
 	err := dag.Do(ctx, &dagger.Request{
 		Query:     "query(" + strings.Join(declarations, ", ") + ") {" + fields.String() + "}",
@@ -208,7 +169,7 @@ func commandSkippedPaths(ctx context.Context, dag *dagger.Client, selected *core
 	}
 	var paths []string
 	for _, matched := range response {
-		for _, path := range matched.FilterURI.FilterPathPattern.PathDefinitions {
+		for _, path := range matched.FilterURI.PathDefinitions {
 			if path.LoadError == "" {
 				paths = append(paths, path.URI)
 			}

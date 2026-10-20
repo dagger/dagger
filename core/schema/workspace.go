@@ -572,7 +572,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"Relative paths in workspace APIs resolve from here."),
 		dagql.NodeFunc("artifacts", s.artifacts).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Discover static object artifacts from workspace modules without evaluating their values.").
+			Doc("Discover static object artifacts from workspace modules without evaluating their values.",
+				"Omits the paths that the workspace's check.skip, generate.skip, and up.skip settings skip.").
 			Args(dagql.Arg("include").Doc("Only include artifacts matching these path patterns, as with checks and services. A path selects that path and its children.")),
 		dagql.NodeFunc("__doctor", s.workspaceDoctor).
 			WithInput(dagql.PerClientInput).
