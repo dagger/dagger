@@ -151,8 +151,8 @@ func mergeIncludedModules(merged, current *Config, currentKeys map[string]bool) 
 			}
 		}
 		prefix := JoinConfigPath("modules", name)
-		if currentKeys[prefix+".entrypoint"] {
-			entry.Entrypoint = overlay.Entrypoint
+		if currentKeys[prefix+".main"] {
+			entry.Main = overlay.Main
 		}
 		entry.LegacyDefaultPath = overlay.LegacyDefaultPath
 		if currentKeys[prefix+".up.skip"] {

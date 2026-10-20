@@ -5334,7 +5334,7 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (dag
 	if err != nil {
 		return dagql.ObjectResult[*Container]{}, fmt.Errorf("failed to get Dagger server: %w", err)
 	}
-	// Desugar through the canonical server so entrypoint proxies on the
+	// Desugar through the canonical server so workspace main proxies on the
 	// outer Query root cannot shadow the core container constructor.
 	coreSrv := srv.Canonical()
 

@@ -7,10 +7,10 @@ import (
 	"github.com/dagger/dagger/core"
 )
 
-// workspaceEntrypointNames uses the active install policy, including explicit
+// workspaceMainNames uses the active install policy, including explicit
 // -m modules and legacy workspaces. A value workspace owns its configuration;
 // a pending config edit also takes precedence over the session snapshot.
-func workspaceEntrypointNames(ctx context.Context, ws *core.Workspace) (map[string]bool, error) {
+func workspaceMainNames(ctx context.Context, ws *core.Workspace) (map[string]bool, error) {
 	names := map[string]bool{}
 	if !ws.IsValueWorkspace() {
 		query, err := core.CurrentQuery(ctx)
@@ -21,7 +21,7 @@ func workspaceEntrypointNames(ctx context.Context, ws *core.Workspace) (map[stri
 		if err != nil {
 			return nil, fmt.Errorf("current served deps: %w", err)
 		}
-		for _, mod := range served.EntrypointMods() {
+		for _, mod := range served.MainMods() {
 			names[mod.Name()] = true
 		}
 		if ws.ConfigFile == "" || !ws.OverlayPathTouched(ws.ConfigFile) {
@@ -34,7 +34,7 @@ func workspaceEntrypointNames(ctx context.Context, ws *core.Workspace) (map[stri
 		return nil, err
 	}
 	for name, entry := range cfg.Modules {
-		names[name] = entry.Entrypoint
+		names[name] = entry.Main
 	}
 	return names, nil
 }

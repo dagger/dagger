@@ -100,7 +100,7 @@ func (s *workspaceSchema) migrateLegacy(
 
 	// A subdirectory config with a blueprint is left as legacy: a blueprint
 	// needs a workspace config, nested dagger.toml files are not created, and
-	// hoisting an entrypoint to the repo root would change repo-wide behavior.
+	// hoisting a workspace main to the repo root would change repo-wide behavior.
 	// Surface the skip as a warning-only step so setup can explain the no-op.
 	if selected := workspaceMigrationSelectedCompatWorkspace(compatWorkspaces); selected != nil &&
 		selected.Config != nil && selected.Config.Blueprint != nil {

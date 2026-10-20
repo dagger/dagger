@@ -113,7 +113,7 @@ func runFunctionList(cmd *cobra.Command, args []string) error {
 			// Lookup the next function in the specified pipeline
 			nextFunc, err := GetSupportedFunction(mod, o, field)
 			if err != nil && i == 0 {
-				if sibling := findSiblingEntrypoint(mod, field); sibling != nil {
+				if sibling := findSiblingMain(mod, field); sibling != nil {
 					nextFunc = sibling
 					err = nil
 				}
@@ -155,14 +155,14 @@ func runFunctionList(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 &&
 			mod.MainObject.AsObject != nil &&
 			mod.MainObject.AsObject.Name != "Query" {
-			siblingFns = mod.siblingModuleEntrypoints()
+			siblingFns = mod.siblingModuleMains()
 		}
 		return functionListRun(o, cmd.OutOrStdout(), cmd.ErrOrStderr(), filterCore, hideLoadFromID, siblingFns)
 	})
 }
 
-func findSiblingEntrypoint(mod *moduleDef, name string) *modFunction {
-	for _, fn := range mod.siblingModuleEntrypoints() {
+func findSiblingMain(mod *moduleDef, name string) *modFunction {
+	for _, fn := range mod.siblingModuleMains() {
 		if fn.Name == name || fn.CmdName() == name {
 			mod.LoadFunctionTypeDefs(fn)
 			return fn

@@ -165,17 +165,17 @@ func selectShellArtifact(ctx context.Context, dag *dagger.Client, terminals *cor
 	if len(containers) == 1 {
 		return containers[0], nil
 	}
-	entrypoint, err := core.NewQuery(dag).CurrentWorkspace().Entrypoint(ctx)
+	main, err := core.NewQuery(dag).CurrentWorkspace().Main(ctx)
 	if err != nil {
 		return shellArtifact{}, err
 	}
-	if entrypoint != "" {
-		entrypointItems, err := shellArtifacts(ctx, dag, terminals.FilterTypes([]string{"Container"}).FilterPathPattern(entrypoint+"/**"))
+	if main != "" {
+		mainItems, err := shellArtifacts(ctx, dag, terminals.FilterTypes([]string{"Container"}).FilterPathPattern(main+"/**"))
 		if err != nil {
 			return shellArtifact{}, err
 		}
-		if len(entrypointItems) == 1 {
-			return entrypointItems[0], nil
+		if len(mainItems) == 1 {
+			return mainItems[0], nil
 		}
 	}
 	names := make([]string, len(items))

@@ -380,10 +380,10 @@ type pendingModule struct {
 	// failure so generate can tell whether the run regenerated the module.
 	WorkspaceDir string
 
-	// If true, this module is the workspace entrypoint: its main-object
+	// If true, this module is the workspace main: its main-object
 	// methods are proxied onto the Query root in addition to its namespaced
 	// constructor.
-	Entrypoint bool
+	Main bool
 
 	// If true, this module came from legacy workspace fields whose
 	// +defaultPath inputs resolve through DefaultPathContextSourceRef.
@@ -417,14 +417,14 @@ type moduleLoadRequest struct {
 }
 
 type resolvedModuleLoad struct {
-	primary           dagql.ObjectResult[*core.Module]
-	primaryEntrypoint bool
-	related           []resolvedServedModule
+	primary     dagql.ObjectResult[*core.Module]
+	primaryMain bool
+	related     []resolvedServedModule
 }
 
 type resolvedServedModule struct {
-	mod        dagql.ObjectResult[*core.Module]
-	entrypoint bool
+	mod  dagql.ObjectResult[*core.Module]
+	main bool
 }
 
 type moduleLoadKind string
@@ -505,7 +505,7 @@ func workspaceConfigPendingModules(
 			Kind:               moduleLoadKindAmbient,
 			Ref:                entry.Source,
 			Name:               name,
-			Entrypoint:         entry.Entrypoint,
+			Main:               entry.Main,
 			LegacyDefaultPath:  entry.LegacyDefaultPath,
 			DisableFindUp:      true,
 			ConfigDefaults:     entry.Settings,
@@ -536,7 +536,7 @@ func pendingLegacyModule(
 	ws *workspace.Workspace,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
 	name, source, pin string,
-	entrypoint bool,
+	main bool,
 	configDefaults map[string]any,
 	argCustomizations []*modules.ModuleConfigArgument,
 ) pendingModule {
@@ -551,7 +551,7 @@ func pendingLegacyModule(
 		Ref:               ref,
 		RefPin:            pin,
 		Name:              name,
-		Entrypoint:        entrypoint,
+		Main:              main,
 		LegacyDefaultPath: true,
 		ConfigDefaults:    configDefaults,
 		ArgCustomizations: argCustomizations,
@@ -825,11 +825,11 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				legacyMod.Name,
 				legacyMod.Source,
 				legacyMod.Pin,
-				legacyMod.Entry.Entrypoint,
+				legacyMod.Entry.Main,
 				legacyMod.Entry.Settings,
 				legacyMod.ArgCustomizations,
 			)
-			if legacyMod.Entry.Entrypoint {
+			if legacyMod.Entry.Main {
 				mod.LegacyCallerModuleDir = legacyCallerDir
 			}
 			pending = append(pending, mod)
@@ -841,7 +841,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				Ref:               resolveLocalRef(ws, rel),
 				WorkspaceDir:      rel,
 				Name:              compatWorkspace.MainModule.Name,
-				Entrypoint:        compatWorkspace.MainModule.Entry.Entrypoint,
+				Main:              compatWorkspace.MainModule.Entry.Main,
 				legacyFieldPolicy: legacyWorkspaceFieldPolicyStripCompatMain,
 			}
 			pending = append(pending, mod)
@@ -1098,9 +1098,9 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 	if filter != nil {
 		demand = filter(client.pendingModules)
 	}
-	// Multiple ambient entrypoint declarations may dedupe to one module; load
+	// Multiple ambient main declarations may dedupe to one module; load
 	// everything so the existing conflict detection still runs.
-	if len(demand) > 0 && len(pendingWorkspaceEntrypointIndexes(client.pendingModules)) > 1 {
+	if len(demand) > 0 && len(pendingWorkspaceMainIndexes(client.pendingModules)) > 1 {
 		demand = client.pendingModules
 	}
 
@@ -1165,7 +1165,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 	}
 
 	loads, resolvedLoads = dedupeResolvedModuleLoads(okLoads, okResolved)
-	if err := client.arbitrateAmbientEntrypoints(loads, resolvedLoads); err != nil {
+	if err := client.arbitrateAmbientMains(loads, resolvedLoads); err != nil {
 		return nil, err
 	}
 
@@ -1174,7 +1174,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 	if err := srv.serveResolvedModuleLoadsLocked(client, loads, resolvedLoads); err != nil {
 		return nil, err
 	}
-	client.markEntrypointServed(resolvedLoads)
+	client.markMainServed(resolvedLoads)
 	client.removePendingModules(served)
 	return loadFailures, nil
 }
@@ -1223,7 +1223,7 @@ func (srv *Server) ensureExtraModulesLoadedLocked(ctx context.Context, client *c
 	if err := srv.serveResolvedModuleLoadsLocked(client, loads, resolvedLoads); err != nil {
 		return stick(err)
 	}
-	client.markEntrypointServed(resolvedLoads)
+	client.markMainServed(resolvedLoads)
 
 	client.extraModulesLoaded = true
 	return nil
@@ -1261,40 +1261,40 @@ func (srv *Server) resolveModuleLoadBatch(
 	return resolvedLoads, resolveErrs, nil
 }
 
-// arbitrateAmbientEntrypoints picks whether this ambient batch's entrypoint
+// arbitrateAmbientMains picks whether this ambient batch's main
 // candidate wins: only when none is served yet (extras outrank ambient).
 // Multiple candidates in one batch are a workspace configuration error.
-func (client *clientRuntime) arbitrateAmbientEntrypoints(loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
-	collapseSameSourceEntrypointNominations(loads, resolved)
+func (client *clientRuntime) arbitrateAmbientMains(loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
+	collapseSameSourceMainNominations(loads, resolved)
 
 	var candidates []int
 	for i := range resolved {
-		if resolved[i].primaryEntrypoint {
+		if resolved[i].primaryMain {
 			candidates = append(candidates, i)
 		}
 	}
 	if len(candidates) > 1 {
-		return entrypointConflictError(moduleLoadKindAmbient, candidates, loads)
+		return mainConflictError(moduleLoadKindAmbient, candidates, loads)
 	}
-	if client.entrypointServed {
+	if client.mainServed {
 		for _, i := range candidates {
-			resolved[i].primaryEntrypoint = false
+			resolved[i].primaryMain = false
 		}
 	}
 	return nil
 }
 
-// markEntrypointServed flags that an entrypoint (primary or blueprint) was
+// markMainServed flags that a workspace main (primary or blueprint) was
 // served, so later ambient candidates are demoted. client.modulesMu must be held.
-func (client *clientRuntime) markEntrypointServed(resolved []resolvedModuleLoad) {
+func (client *clientRuntime) markMainServed(resolved []resolvedModuleLoad) {
 	for i := range resolved {
-		if resolved[i].primaryEntrypoint {
-			client.entrypointServed = true
+		if resolved[i].primaryMain {
+			client.mainServed = true
 			return
 		}
 		for _, related := range resolved[i].related {
-			if related.entrypoint {
-				client.entrypointServed = true
+			if related.main {
+				client.mainServed = true
 				return
 			}
 		}
@@ -1407,7 +1407,7 @@ func resolveIncludePatternModules(mods []pendingModule, served map[string]struct
 
 // filterPendingWorkspaceModulesBySelectorInclude selects the modules named by
 // `dagger generate`/`check`/`start` patterns ("module" or "module:item"). A
-// pattern naming no known module (an entrypoint-proxied item, or a typo)
+// pattern naming no known module (a workspace-main-proxied item, or a typo)
 // selects all, so the usual error surfaces. served modules are recognized but
 // contribute nothing to load.
 func filterPendingWorkspaceModulesBySelectorInclude(mods []pendingModule, served map[string]struct{}, include []string) []pendingModule {
@@ -1471,16 +1471,16 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 	}
 
 	if unknownRootField {
-		entrypoints := pendingWorkspaceEntrypointIndexes(mods)
+		mains := pendingWorkspaceMainIndexes(mods)
 		// The fallback is a guess that the unrecognized field might be an
-		// entrypoint function. A module already recorded as failed can't serve
+		// main function. A module already recorded as failed can't serve
 		// anything, so selecting it would only reproduce its load error — breaking
 		// requests that deliberately proceeded without it, like `dagger
 		// generate`'s follow-up queries after the generators listing skipped
-		// the broken entrypoint best-effort. Leave it pending and let GraphQL
+		// the broken main best-effort. Leave it pending and let GraphQL
 		// validation report the unresolved field or type.
-		alive := entrypoints[:0]
-		for _, i := range entrypoints {
+		alive := mains[:0]
+		for _, i := range mains {
 			if _, ok := failed[moduleProgressName(mods[i])]; !ok {
 				alive = append(alive, i)
 			}
@@ -1491,7 +1491,7 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 		case 1:
 			selected[alive[0]] = true
 		default:
-			// More than one possible entrypoint could serve the field. Preserve the
+			// More than one possible main could serve the field. Preserve the
 			// existing behavior, including any conflict error from arbitration.
 			return mods
 		}
@@ -1512,7 +1512,7 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 // load-everything contribution with the scoped module set. Any other
 // full-schema field keeps loading everything, scope untouched. The second
 // result reports whether the scope was applied, so the caller can consume it.
-func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, served map[string]struct{}, failed map[string]error, rootFields []string, scope string, entrypointServed bool) ([]pendingModule, bool) {
+func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, served map[string]struct{}, failed map[string]error, rootFields []string, scope string, mainServed bool) ([]pendingModule, bool) {
 	if scope == "" || len(mods) == 0 {
 		return filterPendingWorkspaceModulesForRootFields(mods, served, failed, rootFields), false
 	}
@@ -1534,7 +1534,7 @@ func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, serv
 	for _, mod := range filterPendingWorkspaceModulesForRootFields(mods, served, failed, remaining) {
 		wanted[moduleProgressName(mod)] = struct{}{}
 	}
-	for _, mod := range resolveWorkspaceModuleScope(mods, served, scope, entrypointServed) {
+	for _, mod := range resolveWorkspaceModuleScope(mods, served, scope, mainServed) {
 		wanted[moduleProgressName(mod)] = struct{}{}
 	}
 	selected := make([]pendingModule, 0, len(wanted))
@@ -1547,23 +1547,23 @@ func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, serv
 }
 
 // resolveWorkspaceModuleScope maps the scope token to the pending modules it
-// demands: the named module plus the pending entrypoint module(s) -- the token
+// demands: the named module plus the pending main module(s) -- the token
 // may be one of their root-proxied functions, and the command tree wants their
 // Query-root proxies either way. A token naming nothing known demands the
-// entrypoint alone when one is pending, or nothing when it is already served;
-// with no entrypoint to resolve it, everything loads (conservative: the token
+// main alone when one is pending, or nothing when it is already served;
+// with no main to resolve it, everything loads (conservative: the token
 // could be anything).
-func resolveWorkspaceModuleScope(mods []pendingModule, served map[string]struct{}, scope string, entrypointServed bool) []pendingModule {
+func resolveWorkspaceModuleScope(mods []pendingModule, served map[string]struct{}, scope string, mainServed bool) []pendingModule {
 	scopeName := canonicalWorkspaceModuleName(scope)
 	_, isModule := knownWorkspaceModuleNames(mods, served)[scopeName]
 
 	selected := make([]pendingModule, 0, len(mods))
 	for _, mod := range mods {
-		if (!entrypointServed && mod.Entrypoint) || (isModule && pendingModuleCliName(mod) == scopeName) {
+		if (!mainServed && mod.Main) || (isModule && pendingModuleCliName(mod) == scopeName) {
 			selected = append(selected, mod)
 		}
 	}
-	if !isModule && !entrypointServed && len(selected) == 0 {
+	if !isModule && !mainServed && len(selected) == 0 {
 		return mods
 	}
 	return selected
@@ -1589,10 +1589,10 @@ func rootFieldsRequireFullWorkspaceSchema(fields []string) bool {
 	return false
 }
 
-func pendingWorkspaceEntrypointIndexes(mods []pendingModule) []int {
+func pendingWorkspaceMainIndexes(mods []pendingModule) []int {
 	var indexes []int
 	for i, mod := range mods {
-		if mod.Entrypoint {
+		if mod.Main {
 			indexes = append(indexes, i)
 		}
 	}
@@ -1691,8 +1691,8 @@ func (srv *Server) resolveModuleLoad(
 	}
 
 	resolved := resolvedModuleLoad{
-		primary:           primary,
-		primaryEntrypoint: load.mod.Entrypoint,
+		primary:     primary,
+		primaryMain: load.mod.Main,
 	}
 	if load.mod.Kind != moduleLoadKindExtra {
 		return resolved, nil
@@ -1724,8 +1724,8 @@ func (srv *Server) resolveModuleLoad(
 			return resolvedModuleLoad{}, fmt.Errorf("resolving toolchain module: %w", err)
 		}
 		resolved.related = append(resolved.related, resolvedServedModule{
-			mod:        toolchainMod,
-			entrypoint: false,
+			mod:  toolchainMod,
+			main: false,
 		})
 	}
 
@@ -1739,10 +1739,10 @@ func (srv *Server) resolveModuleLoad(
 			return resolvedModuleLoad{}, fmt.Errorf("resolving blueprint module: %w", err)
 		}
 		resolved.related = append(resolved.related, resolvedServedModule{
-			mod:        blueprintMod,
-			entrypoint: true,
+			mod:  blueprintMod,
+			main: true,
 		})
-		resolved.primaryEntrypoint = false
+		resolved.primaryMain = false
 	}
 
 	return resolved, nil
@@ -1753,7 +1753,7 @@ func (srv *Server) resolveModuleLoad(
 // identity an earlier batch already served. client.stateMu and client.modulesMu
 // must be held.
 //
-// Transitive dependencies are only served for the entrypoint module — the one
+// Transitive dependencies are only served for the main module — the one
 // the user is interacting with via `dagger call` or `dagger shell`. This is
 // needed so the client schema can resolve concrete types behind interfaces
 // (e.g. a Mallard backing a Duck). Toolchain deps are NOT served globally;
@@ -1767,21 +1767,21 @@ func (srv *Server) serveResolvedModuleLoadsLocked(client *clientRuntime, loads [
 			continue
 		}
 		for _, related := range load.related {
-			if err := srv.serveModule(client, core.NewUserMod(related.mod), core.InstallOpts{Entrypoint: related.entrypoint}); err != nil {
+			if err := srv.serveModule(client, core.NewUserMod(related.mod), core.InstallOpts{Main: related.main}); err != nil {
 				return fmt.Errorf("error serving related module %s: %w", related.mod.Self().Name(), err)
 			}
 		}
-		if err := srv.serveModule(client, core.NewUserMod(load.primary), core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
+		if err := srv.serveModule(client, core.NewUserMod(load.primary), core.InstallOpts{Main: load.primaryMain}); err != nil {
 			return moduleLoadErr(loads[i], err)
 		}
-		// For the entrypoint module (the one the user targets via dagger call),
+		// For the main module (the one the user targets via dagger call),
 		// also serve its direct dependencies so the client schema can resolve
 		// concrete types behind interfaces. This mirrors the includeDependencies
-		// behavior from `main`. Toolchain/non-entrypoint deps stay internal.
-		if load.primaryEntrypoint {
+		// behavior from `main`. Toolchain/non-main deps stay internal.
+		if load.primaryMain {
 			for _, dep := range load.primary.Self().Deps.Mods() {
 				if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
-					return fmt.Errorf("error serving entrypoint dependency %s: %w", dep.Name(), err)
+					return fmt.Errorf("error serving main dependency %s: %w", dep.Name(), err)
 				}
 			}
 		}
@@ -1802,10 +1802,10 @@ func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModu
 	for _, extra := range extras {
 		loads = append(loads, moduleLoadRequest{
 			mod: pendingModule{
-				Kind:       moduleLoadKindExtra,
-				Ref:        extra.Ref,
-				Name:       extra.Name,
-				Entrypoint: extra.Entrypoint,
+				Kind: moduleLoadKindExtra,
+				Ref:  extra.Ref,
+				Name: extra.Name,
+				Main: extra.IsMain(),
 			},
 		})
 	}
@@ -1873,7 +1873,7 @@ func moduleLoadFailure(mod pendingModule, err error) core.ModuleLoadFailure {
 		Name:       moduleProgressName(mod),
 		Dir:        mod.WorkspaceDir,
 		Message:    core.DescribeLoadFailure(err, core.ModuleLoadBestEffort),
-		Entrypoint: mod.Entrypoint,
+		Entrypoint: mod.Main,
 	}
 }
 
@@ -1885,7 +1885,7 @@ func moduleLoadErr(load moduleLoadRequest, err error) error {
 	return fmt.Errorf("%s %q: %w", prefix, load.mod.Ref, err)
 }
 
-func entrypointTierPriority(kind moduleLoadKind) int {
+func mainTierPriority(kind moduleLoadKind) int {
 	switch kind {
 	case moduleLoadKindExtra:
 		return 3
@@ -1896,19 +1896,19 @@ func entrypointTierPriority(kind moduleLoadKind) int {
 	}
 }
 
-func shouldPreferEntrypointNomination(
+func shouldPreferMainNomination(
 	currentLoad moduleLoadRequest,
 	currentResolved resolvedModuleLoad,
 	nextLoad moduleLoadRequest,
 	nextResolved resolvedModuleLoad,
 ) bool {
-	if !nextResolved.primaryEntrypoint {
+	if !nextResolved.primaryMain {
 		return false
 	}
-	if !currentResolved.primaryEntrypoint {
+	if !currentResolved.primaryMain {
 		return true
 	}
-	return entrypointTierPriority(nextLoad.mod.Kind) > entrypointTierPriority(currentLoad.mod.Kind)
+	return mainTierPriority(nextLoad.mod.Kind) > mainTierPriority(currentLoad.mod.Kind)
 }
 
 func dedupeResolvedModuleLoads(
@@ -1931,7 +1931,7 @@ func dedupeResolvedModuleLoads(
 	for i := range loads {
 		key := resolvedModuleLoadIdentity(resolved[i].primary)
 		if existingIdx, ok := seen[key]; ok {
-			if shouldPreferEntrypointNomination(deduped[existingIdx].load, deduped[existingIdx].resolved, loads[i], resolved[i]) {
+			if shouldPreferMainNomination(deduped[existingIdx].load, deduped[existingIdx].resolved, loads[i], resolved[i]) {
 				deduped[existingIdx].index = i
 				deduped[existingIdx].load = loads[i]
 				deduped[existingIdx].resolved = resolved[i]
@@ -1970,13 +1970,13 @@ func dedupeResolvedModuleLoads(
 // Nominating one module through several config entries — a symlinked or
 // differently spelled path — is redundant, not a conflict, so arbitration must
 // not see it as one. Demoted entries stay served under their own names.
-func collapseSameSourceEntrypointNominations(loads []moduleLoadRequest, resolved []resolvedModuleLoad) {
+func collapseSameSourceMainNominations(loads []moduleLoadRequest, resolved []resolvedModuleLoad) {
 	nominated := make(map[string]int, len(resolved))
 	for i := range resolved {
-		if !resolved[i].primaryEntrypoint {
+		if !resolved[i].primaryMain {
 			continue
 		}
-		key, collapsible := entrypointNominationIdentity(loads[i], resolved[i])
+		key, collapsible := mainNominationIdentity(loads[i], resolved[i])
 		if !collapsible {
 			continue
 		}
@@ -1985,12 +1985,12 @@ func collapseSameSourceEntrypointNominations(loads []moduleLoadRequest, resolved
 			nominated[key] = i
 			continue
 		}
-		if shouldPreferEntrypointNomination(loads[winner], resolved[winner], loads[i], resolved[i]) {
-			resolved[winner].primaryEntrypoint = false
+		if shouldPreferMainNomination(loads[winner], resolved[winner], loads[i], resolved[i]) {
+			resolved[winner].primaryMain = false
 			nominated[key] = i
 			continue
 		}
-		resolved[i].primaryEntrypoint = false
+		resolved[i].primaryMain = false
 	}
 }
 
@@ -2001,14 +2001,14 @@ func arbitrateResolvedModuleLoads(
 	if len(loads) == 0 {
 		return nil
 	}
-	collapseSameSourceEntrypointNominations(loads, resolved)
+	collapseSameSourceMainNominations(loads, resolved)
 
 	candidatesByTier := map[moduleLoadKind][]int{
 		moduleLoadKindAmbient: nil,
 		moduleLoadKindExtra:   nil,
 	}
 	for i := range loads {
-		if !resolved[i].primaryEntrypoint {
+		if !resolved[i].primaryMain {
 			continue
 		}
 		candidatesByTier[loads[i].mod.Kind] = append(candidatesByTier[loads[i].mod.Kind], i)
@@ -2016,7 +2016,7 @@ func arbitrateResolvedModuleLoads(
 
 	for _, kind := range []moduleLoadKind{moduleLoadKindAmbient, moduleLoadKindExtra} {
 		if len(candidatesByTier[kind]) > 1 {
-			return entrypointConflictError(kind, candidatesByTier[kind], loads)
+			return mainConflictError(kind, candidatesByTier[kind], loads)
 		}
 	}
 
@@ -2029,24 +2029,24 @@ func arbitrateResolvedModuleLoads(
 	}
 
 	for i := range resolved {
-		resolved[i].primaryEntrypoint = i == winner
+		resolved[i].primaryMain = i == winner
 	}
 
 	return nil
 }
 
-func entrypointConflictError(kind moduleLoadKind, indexes []int, loads []moduleLoadRequest) error {
+func mainConflictError(kind moduleLoadKind, indexes []int, loads []moduleLoadRequest) error {
 	names := make([]string, 0, len(indexes))
 	for _, i := range indexes {
 		names = append(names, moduleProgressName(loads[i].mod))
 	}
 	switch kind {
 	case moduleLoadKindAmbient:
-		return fmt.Errorf("invalid workspace configuration: multiple distinct ambient entrypoint modules: %s", strings.Join(names, ", "))
+		return fmt.Errorf("invalid workspace configuration: multiple distinct ambient main modules: %s", strings.Join(names, ", "))
 	case moduleLoadKindExtra:
-		return fmt.Errorf("invalid extra-module request: multiple distinct extra-module entrypoints: %s", strings.Join(names, ", "))
+		return fmt.Errorf("invalid extra-module request: multiple distinct extra-module mains: %s", strings.Join(names, ", "))
 	default:
-		return fmt.Errorf("multiple distinct entrypoint modules: %s", strings.Join(names, ", "))
+		return fmt.Errorf("multiple distinct main modules: %s", strings.Join(names, ", "))
 	}
 }
 
@@ -2054,7 +2054,7 @@ func entrypointConflictError(kind moduleLoadKind, indexes []int, loads []moduleL
 // its name, so settings are in the key: differently configured entries are
 // distinct roots and must still conflict. False keeps a nomination whose key
 // can't be built, rather than silently demoting it.
-func entrypointNominationIdentity(load moduleLoadRequest, resolved resolvedModuleLoad) (string, bool) {
+func mainNominationIdentity(load moduleLoadRequest, resolved resolvedModuleLoad) (string, bool) {
 	self := resolved.primary.Self()
 	if self == nil || self.GetSource() == nil {
 		return "", false
@@ -2158,7 +2158,7 @@ func pendingRelatedModule(
 	defaultPathContextSrc dagql.ObjectResult[*core.ModuleSource],
 	related *core.ModuleSource,
 	cfg *modules.ModuleConfigDependency,
-	entrypoint bool,
+	main bool,
 ) (pendingModule, error) {
 	if related == nil {
 		return pendingModule{}, fmt.Errorf("missing related module source")
@@ -2174,13 +2174,13 @@ func pendingRelatedModule(
 		}
 	}
 	mod := pendingModule{
-		Kind:       moduleLoadKindExtra,
-		Ref:        related.AsString(),
-		RefPin:     related.Pin(),
-		Entrypoint: entrypoint,
+		Kind:   moduleLoadKindExtra,
+		Ref:    related.AsString(),
+		RefPin: related.Pin(),
+		Main:   main,
 		// LegacyDefaultPath is intentionally not set here. Related modules
-		// are loaded as siblings of an explicit -m entrypoint: their
-		// +defaultPath must resolve against that entrypoint's repo (the
+		// are loaded as siblings of an explicit -m main: their
+		// +defaultPath must resolve against that main's repo (the
 		// -m argument), not against the session's currentWorkspace — the
 		// latter is the user's CWD, which may be empty, partial, or a
 		// different checkout entirely.
@@ -2196,7 +2196,7 @@ func pendingRelatedModule(
 		mod.ConfigDefaults = workspace.ExtractConfigDefaults(cfg.Customizations)
 		mod.ArgCustomizations = cfg.Customizations
 	}
-	if entrypoint && defaultPathContextSrc.Self() != nil && defaultPathContextSrc.Self().Kind == core.ModuleSourceKindLocal {
+	if main && defaultPathContextSrc.Self() != nil && defaultPathContextSrc.Self().Kind == core.ModuleSourceKindLocal {
 		mod.LegacyCallerModuleDir = defaultPathContextSrc.Self().AsString()
 	}
 	return mod, nil
@@ -2214,7 +2214,7 @@ func (srv *Server) resolveModuleSourceAsModule(
 	if mod.RefPin == "" && src.Self() != nil {
 		mod.RefPin = src.Self().Pin()
 	}
-	if mod.LegacyCallerModuleDir != "" && mod.Entrypoint {
+	if mod.LegacyCallerModuleDir != "" && mod.Main {
 		if err := srv.mergeLegacyCallerEnvDefaults(ctx, dag, src.Self(), mod.LegacyCallerModuleDir); err != nil {
 			return dagql.ObjectResult[*core.Module]{}, err
 		}
@@ -2236,7 +2236,7 @@ func (srv *Server) resolveModuleSourceAsModule(
 }
 
 func asModuleArgsForPendingModule(mod pendingModule) ([]dagql.NamedInput, error) {
-	// Delegates to the shared builder so the workspace entrypoint path and the
+	// Delegates to the shared builder so the workspace main path and the
 	// dependency-graph toolchain load path (loadDependencyModules) produce a
 	// byte-identical AsModuleVariantDigest salt for the same logical module.
 	args, err := schema.BuildLegacyAsModuleArgs(
