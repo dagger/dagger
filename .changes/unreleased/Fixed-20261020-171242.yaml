@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  Java SDK modules no longer have their own pom.xml and main class replaced by
+  the new-module template when building the SDK fails, for example on a
+  transient Maven repository error. A failed SDK build is now reported as a
+  module load error, instead of the module loading with only the template's
+  functions.
+time: 2026-10-20T17:12:42Z
+custom:
+    Author: sipsma
+    PR: "14755"
