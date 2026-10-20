@@ -2,7 +2,9 @@ package dagql
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -42,6 +44,93 @@ func TestValueTransferOfferCopyFailure(t *testing.T) {
 	require.Equal(t, before, after)
 	_, err = c.CapturePersistedRecord(ctx, root)
 	require.NoError(t, err)
+}
+
+// A copied offer equals the original and shares none of its maps, slices or
+// pointers, whatever fields its types gain: StoredBundle relocates the copy of
+// a stored part and removes its addresses and renewal key, and neither may
+// reach the part.
+func TestClonePartOffersShareNothing(t *testing.T) {
+	var offer PersistedPartOffer
+	fillCloneTestValue(reflect.ValueOf(&offer).Elem())
+	require.NotEmpty(t, offer.Chain.Layers[0].Descriptor.Annotations)
+	copied, err := clonePartOffers([]PersistedPartOffer{offer})
+	require.NoError(t, err)
+	require.Equal(t, offer, copied[0])
+	requireNothingShared(t, reflect.ValueOf(offer), reflect.ValueOf(copied[0]), "offer")
+}
+
+// fillCloneTestValue sets every exported field v reaches to a value that
+// isn't zero, with one element in each slice and map.
+func fillCloneTestValue(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Pointer:
+		v.Set(reflect.New(v.Type().Elem()))
+		fillCloneTestValue(v.Elem())
+	case reflect.Struct:
+		if v.Type() == reflect.TypeFor[time.Time]() {
+			v.Set(reflect.ValueOf(time.Unix(1_760_000_000, 0).UTC()))
+			return
+		}
+		for i := range v.NumField() {
+			if v.Type().Field(i).IsExported() {
+				fillCloneTestValue(v.Field(i))
+			}
+		}
+	case reflect.Slice:
+		v.Set(reflect.MakeSlice(v.Type(), 1, 1))
+		fillCloneTestValue(v.Index(0))
+	case reflect.Map:
+		key, elem := reflect.New(v.Type().Key()).Elem(), reflect.New(v.Type().Elem()).Elem()
+		fillCloneTestValue(key)
+		fillCloneTestValue(elem)
+		v.Set(reflect.MakeMap(v.Type()))
+		v.SetMapIndex(key, elem)
+	case reflect.String:
+		v.SetString("set")
+	case reflect.Bool:
+		v.SetBool(true)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v.SetInt(1)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		v.SetUint(1)
+	}
+}
+
+// requireNothingShared fails if a and b share a map, a slice's elements or a
+// pointer's target through their exported fields.
+func requireNothingShared(t *testing.T, a, b reflect.Value, path string) {
+	t.Helper()
+	switch a.Kind() {
+	case reflect.Pointer:
+		if a.IsNil() {
+			return
+		}
+		require.NotEqual(t, a.Pointer(), b.Pointer(), "%s is shared", path)
+		requireNothingShared(t, a.Elem(), b.Elem(), path)
+	case reflect.Struct:
+		for i := range a.NumField() {
+			if field := a.Type().Field(i); field.IsExported() {
+				requireNothingShared(t, a.Field(i), b.Field(i), path+"."+field.Name)
+			}
+		}
+	case reflect.Slice:
+		if a.Len() == 0 {
+			return
+		}
+		require.NotEqual(t, a.Pointer(), b.Pointer(), "%s is shared", path)
+		for i := range a.Len() {
+			requireNothingShared(t, a.Index(i), b.Index(i), fmt.Sprintf("%s[%d]", path, i))
+		}
+	case reflect.Map:
+		if a.Len() == 0 {
+			return
+		}
+		require.NotEqual(t, a.Pointer(), b.Pointer(), "%s is shared", path)
+		for _, key := range a.MapKeys() {
+			requireNothingShared(t, a.MapIndex(key), b.MapIndex(key), fmt.Sprintf("%s[%v]", path, key))
+		}
+	}
 }
 
 func TestValueTransferOfferOwners(t *testing.T) {

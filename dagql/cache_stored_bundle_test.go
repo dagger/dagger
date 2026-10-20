@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"slices"
 	"sync"
 	"testing"
@@ -211,6 +212,82 @@ func TestStoredBundleNeverMixesAReplacement(t *testing.T) {
 			require.Empty(t, got.Bundle.Outputs, "the new record, whose part isn't stored")
 		}
 		require.Equal(t, r, rootValue.SenderNumber, "the entry is replaced, never retired")
+	}
+}
+
+// A stored bundle is its caller's copy: changing its records and outputs in
+// place reaches neither the stored parts it was built from, which keep their
+// addresses and renewal keys, nor the next bundle built from the same entries.
+// The root depends on a scalar, whose payload relocation passes through.
+func TestStoredBundleIsTheCallersCopy(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	root := persistedListTestResult(t, actx, a, asrv, "copied-root", &transferTestValue{Text: "root"})
+	transferTestDependency(a, actx, root, persistedListTestResult(t, actx, a, asrv, "copied-scalar", String("scalar")))
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(ctx, "cache-a", exportTestBundle(t, actx, a, root))
+	require.NoError(t, err)
+	r := reply.Imported()[0].ResultID
+	part := storedBenchPart(1)
+	stored, err := cloud.SetStoredPart(ctx, r, part, 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	first, err := cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+	require.Len(t, first.Bundle.Outputs, 1)
+	want, err := json.Marshal(first.Bundle)
+	require.NoError(t, err)
+
+	scribbleTestValue(reflect.ValueOf(&first.Bundle).Elem(), map[uintptr]bool{})
+	second, err := cloud.StoredBundle(ctx, []uint64{r})
+	require.NoError(t, err)
+	got, err := json.Marshal(second.Bundle)
+	require.NoError(t, err)
+	require.JSONEq(t, string(want), string(got))
+	cloud.egraphMu.RLock()
+	kept := storedBundleTestEntry(cloud, r).storedParts
+	cloud.egraphMu.RUnlock()
+	key, err := partAddressKey(part.Address)
+	require.NoError(t, err)
+	require.Equal(t, map[string]PersistedPartOffer{key: part}, kept)
+}
+
+// scribbleTestValue overwrites, in place, every exported field v reaches: the
+// elements of its slices, the values of its maps and the targets of its
+// pointers.
+func scribbleTestValue(v reflect.Value, seen map[uintptr]bool) {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() || seen[v.Pointer()] {
+			return
+		}
+		seen[v.Pointer()] = true
+		scribbleTestValue(v.Elem(), seen)
+	case reflect.Struct:
+		for i := range v.NumField() {
+			if v.Type().Field(i).IsExported() {
+				scribbleTestValue(v.Field(i), seen)
+			}
+		}
+	case reflect.Slice:
+		for i := range v.Len() {
+			scribbleTestValue(v.Index(i), seen)
+		}
+	case reflect.Map:
+		for _, key := range v.MapKeys() {
+			elem := reflect.New(v.Type().Elem()).Elem()
+			elem.Set(v.MapIndex(key))
+			scribbleTestValue(elem, seen)
+			v.SetMapIndex(key, elem)
+		}
+	case reflect.String:
+		v.SetString("scribbled")
+	case reflect.Bool:
+		v.SetBool(!v.Bool())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v.SetInt(v.Int() + 1)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		v.SetUint(v.Uint() + 1)
 	}
 }
 
