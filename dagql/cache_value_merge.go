@@ -305,7 +305,8 @@ var errMergeNeedsFullPrep = errors.New("merge values: a light record is installe
 // relocated; its shape, its call's references and its offers' are checked
 // (validateTransferRecordShape).
 //
-// It stops with ctx's cause when ctx is cancelled before a payload.
+// It returns ctx's cause when ctx is cancelled: it checks before each payload
+// and once more at the end.
 func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKept bool) (*valueMergePrep, error) {
 	bundle, err := cloneValueBundle(input)
 	if err != nil {
@@ -429,6 +430,11 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 	}
 	// Every other record is prepared with its payload.
 	if err := prep.prepareRecordPayloads(ctx, relocate); err != nil {
+		return nil, err
+	}
+	// A preparation cancelled after its last payload, or with every record
+	// light, returns its cause all the same.
+	if err := context.Cause(ctx); err != nil {
 		return nil, err
 	}
 	return prep, nil
