@@ -46,7 +46,8 @@ type ReleaseReportArtifact struct {
 
 	Errors []*dagger.Error
 
-	Notify bool // +private
+	Notify bool   // +private
+	Note   string // +private
 }
 
 type ReleaseReportFollowUp struct {
@@ -262,6 +263,8 @@ func (r *Release) Publish( //nolint:gocyclo
 		dev     bool
 		release func(context.Context) error
 		dryRun  func(context.Context) error
+		// published reports whether the registry already has this version.
+		published func(context.Context) (bool, error)
 	}{
 		{
 			name: "🐹 Go SDK",
@@ -294,6 +297,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			dryRun: func(ctx context.Context) error {
 				return dag.PythonClientDev(r.Workspace).ReleaseDryRun(ctx)
 			},
+			published: func(ctx context.Context) (bool, error) {
+				u, err := pypiVersionURL(pypiRepo, pypiURL, strings.TrimPrefix(version, "v"))
+				if err != nil {
+					return false, err
+				}
+				return registryHasVersion(ctx, u)
+			},
 		},
 		{
 			name: "⬢ TypeScript SDK",
@@ -308,6 +318,9 @@ func (r *Release) Publish( //nolint:gocyclo
 			},
 			dryRun: func(ctx context.Context) error {
 				return dag.TypescriptClientDev(r.Workspace).ReleaseDryRun(ctx)
+			},
+			published: func(ctx context.Context) (bool, error) {
+				return registryHasVersion(ctx, npmVersionURL(npmRegistryURL, strings.TrimPrefix(version, "v")))
 			},
 		},
 		{
@@ -324,6 +337,9 @@ func (r *Release) Publish( //nolint:gocyclo
 			dryRun: func(ctx context.Context) error {
 				return dag.ElixirClientDev(r.Workspace).ReleaseDryRun(ctx)
 			},
+			published: func(ctx context.Context) (bool, error) {
+				return registryHasVersion(ctx, hexVersionURL(hexAPIURL, strings.TrimPrefix(version, "v")))
+			},
 		},
 		{
 			name: "⚙️ Rust SDK",
@@ -338,6 +354,9 @@ func (r *Release) Publish( //nolint:gocyclo
 			},
 			dryRun: func(ctx context.Context) error {
 				return dag.RustClientDev(r.Workspace).ReleaseDryRun(ctx)
+			},
+			published: func(ctx context.Context) (bool, error) {
+				return crateHasVersion(ctx, cargoRegistryIndex, strings.TrimPrefix(version, "v"))
 			},
 		},
 		{
@@ -405,6 +424,16 @@ func (r *Release) Publish( //nolint:gocyclo
 							}
 						}
 					} else {
+						if treatAlreadyPublishedAsDone && component.published != nil {
+							// If the lookup itself fails, upload as usual: a
+							// duplicate upload then fails the way it always did.
+							if published, err := component.published(ctx); err != nil {
+								fmt.Printf("could not check whether %s %s is already published, uploading: %v\n", component.name, version, err)
+							} else if published {
+								artifact.Note = alreadyPublishedNote
+								return nil
+							}
+						}
 						if component.release != nil {
 							if err := component.release(ctx); err != nil {
 								return err
