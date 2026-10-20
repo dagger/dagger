@@ -1057,6 +1057,54 @@ func TestSnapshotSharingFailedFinishAndRetry(t *testing.T) {
 	require.Equal(t, int32(1), manager.released.Load(), "protection is released once, by the owning generation")
 }
 
+// FailedFinishOfferMatchesReport: a share whose owner synchronization fails
+// leaves its part installed but unsettled, and the pass reports only settled
+// parts, so no event reports it. An offer of that part then must not answer
+// it complete: the Cloud would hold a part the engine never reports.
+func TestSnapshotSharingFailedFinishOfferMatchesReport(t *testing.T) {
+	ctx, c, srv, manager := shareTestCache(t)
+	barrier := newSharePassBarrier(c)
+	var (
+		mu       sync.Mutex
+		reported []string
+	)
+	c.shareReport = func(parts []SnapshotSharedPart) {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, part := range parts {
+			reported = append(reported, part.Part)
+		}
+	}
+	donor, receiver := shareTestPair(t, ctx, c, srv,
+		map[string]sharePartState{"fs": {Snapshot: "fs-snap"}},
+		map[string]sharePartState{"fs": {}},
+	)
+	attachErr := errors.New("attach lease failed")
+	manager.attachErr.Store(&attachErr)
+	shareTestUnite(t, ctx, c, "failed-finish-offer", donor, receiver)
+	require.Equal(t, 1, barrier.awaitPass(t))
+
+	address := PersistedPartAddress{Part: "fs"}
+	key, err := partAddressKey(address)
+	require.NoError(t, err)
+	gate := receiver.cacheSharedResult().partGate.gate.Load()
+	gate.mu.Lock()
+	phase := gate.outputs[key].phase
+	gate.mu.Unlock()
+	require.Equal(t, PartOutputInstalled, phase, "the failed sync leaves the share installed and unsettled")
+
+	out, err := c.OfferParts(ctx, receiver, []CloudPartOffer{{Offer: PersistedPartOffer{Address: address, Value: SnapshotValue{Kind: "directory", Path: "/"}}, CloudNumber: 10, CloudStored: true}})
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	var answeredComplete []string
+	if out[0].Outcome == OfferAlreadyComplete {
+		answeredComplete = append(answeredComplete, key)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, reported, answeredComplete, "the offer answers complete exactly what the engine reported; outcome %v", out[0].Outcome)
+}
+
 // CompletionRegistrationRace: the foreground waiter returns while the sharing
 // notification is still blocked on the graph lock.
 func TestSnapshotSharingCompletionRegistrationRace(t *testing.T) {
