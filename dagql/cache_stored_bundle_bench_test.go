@@ -407,3 +407,55 @@ func BenchmarkStoredBundlePartCopies(b *testing.B) {
 		b.Errorf("copying a part costs %.3f times a JSON round trip of it (%.0f ns against %.0f ns a part); the target is at most 0.125", ratio, perPart(copying), perPart(roundTrips))
 	}
 }
+
+// BenchmarkStoredBundleValidation measures the validation of the batch's
+// finished bundle, which decodes every record's payload again, against
+// encoding the bundle once, as sending it does (in a profile of the remote
+// cache service under load: 3.81 s of StoredBundle's 11.70 s). It also
+// reports the shape-only check, which keeps
+// the bundle's assembly checks and decodes only the payloads of records with
+// offers or outputs.
+//
+// Target: validating the bundle costs at most 1.5 times the encoding. The
+// remote cache service builds bundles under its work lock, within a step, so
+// a batch's build should fit a slice of a step like the service's 250 ms
+// reconcile budget. The full validation, at 4 to 8 times the encoding, is the
+// largest part of a build and keeps it from fitting.
+func BenchmarkStoredBundleValidation(b *testing.B) {
+	ctx, cloud, batch := storedBenchCloud(b)
+	got, err := cloud.StoredBundle(ctx, batch)
+	require.NoError(b, err)
+	bundle := got.Bundle
+	var validating, shape, encoding time.Duration
+	b.ResetTimer()
+	for range b.N {
+		storedBenchSettle(b)
+		start := time.Now()
+		if _, err := validateValueBundle(bundle); err != nil {
+			b.Fatal(err)
+		}
+		validating += time.Since(start)
+		storedBenchSettle(b)
+		start = time.Now()
+		if _, err := validateValueBundleShape(bundle); err != nil {
+			b.Fatal(err)
+		}
+		shape += time.Since(start)
+		storedBenchSettle(b)
+		start = time.Now()
+		if _, err := json.Marshal(bundle); err != nil {
+			b.Fatal(err)
+		}
+		encoding += time.Since(start)
+	}
+	b.StopTimer()
+	perBuild := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(b.N) }
+	ratio := validating.Seconds() / encoding.Seconds()
+	b.ReportMetric(perBuild(validating), "validate-ms")
+	b.ReportMetric(perBuild(shape), "shape-ms")
+	b.ReportMetric(perBuild(encoding), "encode-ms")
+	b.ReportMetric(ratio, "validate/encode")
+	if ratio > 1.5 {
+		b.Errorf("validating the bundle costs %.2f times encoding it (%.1f ms against %.1f ms, shape only %.1f ms); the target is at most 1.5", ratio, perBuild(validating), perBuild(encoding), perBuild(shape))
+	}
+}
