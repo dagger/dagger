@@ -2425,15 +2425,19 @@ func main() {
 		shell   bool
 		command []string
 	}{
+		// A healthcheck replaces the engine's port check, so each check also
+		// waits for the app to accept connections on 8080 before it records
+		// that it ran: otherwise the service can be ready before the app
+		// listens, and the client's request is refused.
 		{
 			name:    "shell",
 			shell:   true,
-			command: []string{"touch /the-check-was-run"},
+			command: []string{"nc -z -w 1 127.0.0.1 8080 && touch /the-check-was-run"},
 		},
 		{
 			name:    "cmd",
 			shell:   false,
-			command: []string{"/bin/touch", "/the-check-was-run"},
+			command: []string{"/bin/sh", "-c", "/usr/bin/nc -z -w 1 127.0.0.1 8080 && /bin/touch /the-check-was-run"},
 		},
 	} {
 		t.Run(tt.name, func(ctx context.Context, t *testctx.T) {
