@@ -417,6 +417,106 @@ func TestSnapshotSharingDonorReceivesSibling(t *testing.T) {
 	require.True(t, shareTestHasLink(receiver, "fs-snap"), "middle's unchanged fs was still donated")
 }
 
+// DonorSiblingInstalledBeforeSlot: a donor that installs a sibling part
+// between the pass's selection and the slot's source lease still donates its
+// unchanged completed part in that pass, and the pass reports it. This is the
+// dogfood's "snapshot sharing skipped … row D representation changed during
+// capture", where D was an imported donor taking its own offered parts. A
+// decoded donor meets the same check through its typed output's stamp.
+func TestSnapshotSharingDonorSiblingInstalledBeforeSlot(t *testing.T) {
+	for _, encoded := range []bool{true, false} {
+		t.Run(map[bool]string{true: "encoded donor", false: "decoded donor"}[encoded], func(t *testing.T) {
+			// Sharing is admitted only once the cohort is whole: with an
+			// imported donor, uniting the donor alone already queues its own
+			// class, and a worker that took it before the receiver joined
+			// would run an empty first pass.
+			ctx, c, srv := transferTestCache(t)
+			c.snapshotManager = &shareTestManager{}
+			srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
+			source := persistedListTestResult(t, ctx, c, srv, "sibling-first-source", newShareTestValue("source", map[string]sharePartState{"mount": {Snapshot: "mount-snap"}}))
+			donor := persistedListTestResult(t, ctx, c, srv, "sibling-first-donor", newShareTestValue("donor", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}, "mount": {}}))
+			receiver := persistedListTestResult(t, ctx, c, srv, "sibling-first-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
+			if encoded {
+				shareTestEncodedReceiver(t, ctx, c, donor)
+			}
+			shareTestEncodedReceiver(t, ctx, c, receiver)
+			partTestEquivalent(t, c, receiver, donor)
+			partTestEquivalent(t, c, donor, source)
+
+			// The first pass parks after selecting its slots; every later pass
+			// parks until the test ends, so what is checked is the first pass
+			// alone.
+			var passes atomic.Int32
+			entered, resumeFirst, resumeLater := make(chan int, 1), make(chan struct{}), make(chan struct{})
+			firstDone := make(chan struct{})
+			t.Cleanup(sync.OnceFunc(func() { close(resumeLater) }))
+			c.testBeforeSharePass = func(_ *snapshotShareItem, planned int) {
+				if passes.Add(1) == 1 {
+					entered <- planned
+					<-resumeFirst
+					return
+				}
+				<-resumeLater
+			}
+			c.testAfterSharePass = func(*snapshotShareItem) {
+				if passes.Load() == 1 {
+					close(firstDone)
+				}
+			}
+			var (
+				mu       sync.Mutex
+				skips    []error
+				reported []SnapshotSharedPart
+			)
+			c.testShareSkipped = func(_ sharedResultID, _ PersistedPartAddress, err error) {
+				mu.Lock()
+				defer mu.Unlock()
+				skips = append(skips, err)
+			}
+			c.shareReport = func(parts []SnapshotSharedPart) {
+				mu.Lock()
+				defer mu.Unlock()
+				reported = append(reported, parts...)
+			}
+
+			shareTestUnite(t, ctx, c, "donor-sibling-before-slot", donor, receiver)
+			require.NoError(t, c.EnableSnapshotSharing())
+			c.notifySnapshotShareCompletion(ctx, receiver.cacheSharedResult())
+			select {
+			case planned := <-entered:
+				require.Equal(t, 1, planned, "the receiver's fs from the donor is the one slot")
+			case <-time.After(10 * time.Second):
+				t.Fatal("no snapshot sharing pass started")
+			}
+
+			// With the slot selected, the donor takes its missing mount through
+			// an ordinary demand: a real install that publishes a new
+			// representation of the donor and leaves its fs untouched.
+			require.NoError(t, c.demandPart(ctx, donor, PersistedPartAddress{Part: "mount"}))
+			require.True(t, shareTestHasLink(donor, "mount-snap"))
+			require.True(t, shareTestHasLink(donor, "fs-snap"))
+
+			close(resumeFirst)
+			select {
+			case <-firstDone:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the first snapshot sharing pass never finished")
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			require.True(t, shareTestHasLink(receiver, "fs-snap"), "the donor's unchanged fs is donated in the pass that selected it; skips=%v", skips)
+			fsKey, err := partAddressKey(PersistedPartAddress{Part: "fs"})
+			require.NoError(t, err)
+			var reportedParts []string
+			for _, part := range reported {
+				require.Equal(t, uint64(receiver.cacheSharedResult().id), part.ResultID)
+				reportedParts = append(reportedParts, part.Part)
+			}
+			require.Equal(t, []string{fsKey}, reportedParts, "the pass reports the part it installed")
+		})
+	}
+}
+
 // Triggers: each notification site enqueues work, and the ones that publish
 // nothing enqueue nothing.
 func TestSnapshotSharingTriggerSites(t *testing.T) {
