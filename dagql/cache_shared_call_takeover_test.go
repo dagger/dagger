@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -148,4 +151,91 @@ func TestCacheSharedCallTakeoverBudget(t *testing.T) {
 		require.ErrorContains(t, err, ps[producers-1].session+"'s dependency is gone")
 		require.False(t, waiterRan, "the waiter only ever joined another producer's call")
 	})
+}
+
+// A persisted result is decoded once for every session loading it: the first
+// loader leads the decode under its own context and the others wait on it.
+// When the leader's session is removed and its decode then fails, whatever the
+// error, a waiter from a live session must lead a decode of its own instead of
+// getting the leader's failure. In the engine a decode can need the leader's
+// client, as a Module's does for its default dependencies, and that lookup
+// reports a removed session as not found; the hook stands in for it.
+func TestCachePersistenceImportedDecodeLeaderSessionRemovalRetriesJoiner(t *testing.T) {
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	persistRetryDecodeSnapshotID.Store("")
+	resultID := persistRetryDecodeSeed(t, ctx, dbPath, nil)
+
+	cB, err := NewCache(ctx, dbPath, nil, nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, cB.Close(context.Background()))
+	}()
+	srvB := newPersistRetryDecodeTestServer()
+
+	const leaderSessionID = "persist-decode-removed-session-a"
+	const joinerSessionID = "persist-decode-removed-session-b"
+	loadCtx := func(sessionID string) (context.Context, *engine.ClientScopeAuthority) {
+		loadCtx := ContextWithCache(ctx, cB)
+		loadCtx = srvToContext(loadCtx, srvB)
+		return sharedCallTakeoverScope(t, loadCtx, sessionID)
+	}
+
+	var decodeEntries atomic.Int32
+	var decodeSessions sync.Map
+	firstEntered, releaseFirst := make(chan struct{}), make(chan struct{})
+	persistRetryDecodeHooks.Store(resultID, func(hookCtx context.Context) error {
+		md, err := engine.ClientMetadataFromContext(hookCtx)
+		if err != nil {
+			return err
+		}
+		decodeSessions.Store(md.SessionID, true)
+		if decodeEntries.Add(1) == 1 {
+			close(firstEntered)
+			<-releaseFirst
+			return fmt.Errorf("session %q not found", md.SessionID)
+		}
+		return nil
+	})
+	defer persistRetryDecodeHooks.Delete(resultID)
+
+	joined := make(chan struct{}, 4)
+	cB.testPersistDecodeJoined = func(uint64) { joined <- struct{}{} }
+
+	leaderCtx, leaderAuthority := loadCtx(leaderSessionID)
+	leaderCh := make(chan error, 1)
+	go func() {
+		_, err := cB.LoadResultByResultID(leaderCtx, leaderSessionID, srvB, resultID)
+		leaderCh <- err
+	}()
+	select {
+	case <-firstEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the leader to enter the persisted decode")
+	}
+
+	joinerCtx, _ := loadCtx(joinerSessionID)
+	joinerCh := make(chan error, 1)
+	go func() {
+		_, err := cB.LoadResultByResultID(joinerCtx, joinerSessionID, srvB, resultID)
+		joinerCh <- err
+	}()
+	select {
+	case <-joined:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the joiner to park on the decode")
+	}
+
+	// The leader's session is removed, and its decode then fails.
+	leaderAuthority.Close()
+	close(releaseFirst)
+
+	require.ErrorContains(t, <-leaderCh, "not found")
+	require.NoError(t, <-joinerCh, "the joiner's session is alive; the decode it waited on must not fail it with another session's removal")
+	require.Equal(t, int32(2), decodeEntries.Load())
+	_, joinerDecoded := decodeSessions.Load(joinerSessionID)
+	require.True(t, joinerDecoded, "the joiner led its own decode")
+
+	require.NoError(t, cB.ReleaseSession(joinerCtx, joinerSessionID))
+	require.NoError(t, cB.ReleaseSession(leaderCtx, leaderSessionID))
 }
