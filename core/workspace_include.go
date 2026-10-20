@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
@@ -171,7 +172,12 @@ func (s IncludeSource) loadGitInclude(
 	if err != nil {
 		return nil, nil, err
 	}
-	return cfg, gitIncludedModuleAddresser(parsedRef.CloneRef, commit, path.Dir(configPath)), nil
+	return cfg, gitIncludedModuleAddresser(
+		parsedRef.CloneRef,
+		parsedRef.Selector,
+		commit,
+		path.Dir(configPath),
+	), nil
 }
 
 func (s IncludeSource) loadLocalInclude(
@@ -497,10 +503,15 @@ func includedSourceIsLocal(source string) bool {
 
 // gitIncludedModuleAddresser names an included config's own modules as refs
 // into the repository the config came from, pinned to the commit it was read
-// at: `modules/ci` beside a config at the repository root becomes
-// `<clone-ref>/modules/ci@<commit>`. That is the same rewrite remote workspace
-// selection already performs for a workspace loaded with -W.
-func gitIncludedModuleAddresser(cloneRef, commit, configDir string) includedModuleAddresser {
+// at. It preserves whether the include used @ version syntax or an explicit
+// #ref selector, so reloading the module follows the same resolution path.
+func gitIncludedModuleAddresser(
+	cloneRef string,
+	selector gitref.SelectorType,
+	commit string,
+	configDir string,
+) includedModuleAddresser {
+	gitSrc := GitModuleSource{CloneRef: cloneRef, Selector: selector}
 	return func(source string) (string, bool) {
 		treePath, ok := includedModulePath(configDir, source)
 		if !ok {
@@ -511,7 +522,7 @@ func gitIncludedModuleAddresser(cloneRef, commit, configDir string) includedModu
 			// cut short by the parser and resolve somewhere else entirely.
 			return "", false
 		}
-		return GitRefString(cloneRef, treePath, commit), true
+		return gitSrc.RefString(treePath, commit), true
 	}
 }
 

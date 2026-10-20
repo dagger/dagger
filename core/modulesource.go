@@ -1045,10 +1045,7 @@ func (src *ModuleSource) AsString() string {
 		if version == "" {
 			version = src.Git.Version
 		}
-		if src.Git.Selector == gitref.GitRefSelector {
-			return gitref.GitURLRefString(src.Git.CloneRef, src.SourceRootSubpath, version)
-		}
-		return GitRefString(src.Git.CloneRef, src.SourceRootSubpath, version)
+		return src.Git.RefString(src.SourceRootSubpath, version)
 
 	default:
 		return ""
@@ -2117,6 +2114,15 @@ func (src GitModuleSource) Link(filepath string, line int, column int) (string, 
 	}
 }
 
+// RefString builds a ref string for a path in this repository, in the same
+// syntax the source was loaded with.
+func (src GitModuleSource) RefString(sourceRootSubpath, version string) string {
+	if src.Selector == gitref.GitRefSelector {
+		return gitref.GitURLRefString(src.CloneRef, sourceRootSubpath, version)
+	}
+	return GitRefString(src.CloneRef, sourceRootSubpath, version)
+}
+
 func (src GitModuleSource) Clone() *GitModuleSource {
 	return &src
 }
@@ -2265,8 +2271,7 @@ func ResolveDepToSource(
 		case ModuleSourceKindGit:
 			// parent=git, dep=local
 			// load the dep relative to the parent's source root, from the parent source's git repo
-			refString := GitRefString(
-				parentSrc.Git.CloneRef,
+			refString := parentSrc.Git.RefString(
 				filepath.Join(parentSrc.SourceRootSubpath, depSrcRef),
 				parentSrc.Git.Version,
 			)
