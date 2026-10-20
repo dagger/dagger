@@ -927,12 +927,24 @@ func (c *Client) OpenTerminal(
 		// terminal startup fails immediately
 		return nil, fmt.Errorf("failed to open terminal: %w", err)
 	}
+	return newTerminalClient(ctx, term)
+}
 
+func newTerminalClient(ctx context.Context, term terminal.Terminal_SessionClient) (*TerminalClient, error) {
 	var (
 		stdoutR, stdoutW = io.Pipe()
 		stderrR, stderrW = io.Pipe()
 		stdinR, stdinW   = io.Pipe()
 	)
+
+	// A gRPC stream must not be sent on from several goroutines at once, and
+	// the output forwarders and Close all send.
+	var sendMu sync.Mutex
+	send := func(req *terminal.SessionRequest) error {
+		sendMu.Lock()
+		defer sendMu.Unlock()
+		return term.Send(req)
+	}
 
 	forwardFD := func(r io.ReadCloser, fn func([]byte) *terminal.SessionRequest) error {
 		defer r.Close()
@@ -946,23 +958,30 @@ func (c *Client) OpenTerminal(
 				return fmt.Errorf("error reading fd: %w", err)
 			}
 
-			if err := term.Send(fn(b[:n])); err != nil {
+			if err := send(fn(b[:n])); err != nil {
 				return fmt.Errorf("error forwarding fd: %w", err)
 			}
 		}
 	}
 
-	go forwardFD(stdoutR, func(stdout []byte) *terminal.SessionRequest {
-		return &terminal.SessionRequest{
-			Msg: &terminal.SessionRequest_Stdout{Stdout: stdout},
-		}
-	})
-
-	go forwardFD(stderrR, func(stderr []byte) *terminal.SessionRequest {
-		return &terminal.SessionRequest{
-			Msg: &terminal.SessionRequest_Stderr{Stderr: stderr},
-		}
-	})
+	var forwarders sync.WaitGroup
+	forwarders.Add(2)
+	go func() {
+		defer forwarders.Done()
+		forwardFD(stdoutR, func(stdout []byte) *terminal.SessionRequest {
+			return &terminal.SessionRequest{
+				Msg: &terminal.SessionRequest_Stdout{Stdout: stdout},
+			}
+		})
+	}()
+	go func() {
+		defer forwarders.Done()
+		forwardFD(stderrR, func(stderr []byte) *terminal.SessionRequest {
+			return &terminal.SessionRequest{
+				Msg: &terminal.SessionRequest_Stderr{Stderr: stderr},
+			}
+		})
+	}()
 
 	resizeCh := make(chan bkgw.WinSize, 1)
 
@@ -1025,11 +1044,15 @@ func (c *Client) OpenTerminal(
 		ResizeCh: resizeCh,
 		Close: onceValueWithArg(func(exitCode int) error {
 			defer stdinR.Close()
-			defer stdoutW.Close()
-			defer stderrW.Close()
 			defer term.CloseSend()
 
-			err := term.Send(&terminal.SessionRequest{
+			// The client stops reading at the exit message, so send all
+			// output first.
+			stdoutW.Close()
+			stderrW.Close()
+			forwarders.Wait()
+
+			err := send(&terminal.SessionRequest{
 				Msg: &terminal.SessionRequest_Exit{Exit: int32(exitCode)},
 			})
 			if err != nil {

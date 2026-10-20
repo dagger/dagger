@@ -1880,7 +1880,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	killer := newRunProcKiller(c.Runc, state.id)
 
-	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
+	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, consoleSocket runc.ConsoleSocket, pidfile string) error {
 		/*
 			We need to avoid the following type of race condition, which can result in invalid overlapping overlay mounts:
 			1. Engine creates random (unrelated to this exec) overlay mount like upperdir=B,lowerdir=A
@@ -1983,11 +1983,12 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 			}
 
 			_, err = c.Runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
-				Started:    started,
-				IO:         io,
-				ExtraArgs:  []string{"--keep"},
-				PidFile:    pidFile,
-				ExtraFiles: initFDs.files,
+				Started:       started,
+				IO:            io,
+				ConsoleSocket: consoleSocket,
+				ExtraArgs:     []string{"--keep"},
+				PidFile:       pidFile,
+				ExtraFiles:    initFDs.files,
 			})
 			return err
 		})
