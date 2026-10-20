@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	persistdb "github.com/dagger/dagger/dagql/persistdb"
 	"github.com/stretchr/testify/require"
 )
 
@@ -311,4 +313,47 @@ func TestCheckpointBoundsTheWriteAheadLog(t *testing.T) {
 	defer func() { require.NoError(t, cloud.Close(ctx)) }()
 	require.Equal(t, CachePersistenceResetNone, cloud.PersistenceResetReason())
 	require.Equal(t, saved, storedPersistenceTestState(cloud))
+}
+
+// A blob-backed cache's store is the Cloud's pool, which an operating-system
+// crash or a power loss must leave whole: every connection to it, those to a
+// store a wipe opened again too, is synchronous=NORMAL. An engine's keep OFF.
+func TestCloudStoreSyncsAtCheckpoints(t *testing.T) {
+	t.Parallel()
+	const off, normal = 0, 1
+	// synchronous reads the setting on three connections at once, so three
+	// different ones.
+	synchronous := func(c *Cache) []int {
+		t.Helper()
+		var got []int
+		var conns []*sql.Conn
+		for range 3 {
+			conn, err := c.sqlDB.Conn(t.Context())
+			require.NoError(t, err)
+			conns = append(conns, conn)
+			var value int
+			require.NoError(t, conn.QueryRowContext(t.Context(), "PRAGMA synchronous").Scan(&value))
+			got = append(got, value)
+		}
+		for _, conn := range conns {
+			require.NoError(t, conn.Close())
+		}
+		return got
+	}
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	require.Equal(t, []int{normal, normal, normal}, synchronous(cloud))
+	require.NoError(t, cloud.Close(ctx))
+
+	setCacheTestMeta(t, ctx, path, persistdb.MetaKeySchemaVersion, "0")
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	require.Equal(t, CachePersistenceResetSchemaMismatch, cloud.PersistenceResetReason(), "the store was wiped and opened again")
+	require.Equal(t, []int{normal, normal, normal}, synchronous(cloud))
+	require.NoError(t, cloud.Close(ctx))
+
+	ectx := cacheTestContext(t.Context())
+	engine, err := NewCache(ectx, filepath.Join(t.TempDir(), "engine.db"), nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, []int{off, off, off}, synchronous(engine))
+	require.NoError(t, engine.CloseDiscardingPersistence())
 }

@@ -508,7 +508,7 @@ func NewCache(
 		return c, nil
 	}
 
-	db, persistDB, err := prepareCacheDBs(ctx, dbPath)
+	db, persistDB, err := prepareCacheDBs(ctx, dbPath, c.blobBacked)
 	if err != nil {
 		return nil, err
 	}
@@ -537,9 +537,9 @@ func NewCache(
 	// snapshots may no longer match it. A blob-backed cache has no snapshots,
 	// and its store is a whole, consistent save at every commit (Checkpoint),
 	// so it restores the last save however its process ended, a crash
-	// included, and never marks its store dirty. An operating-system crash or
-	// a power loss can still lose saves or corrupt the store: it is written
-	// with synchronous=OFF (prepareCacheDBs).
+	// included, and never marks its store dirty. Its store is written with
+	// synchronous=NORMAL (prepareCacheDBs), so an operating-system crash or a
+	// power loss leaves it whole too, though it can lose the latest save.
 	cleanShutdownVal, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyCleanShutdown)
 	if err != nil {
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -773,7 +773,7 @@ func (c *Cache) reopenWiped(ctx context.Context, dbPath, closeMsg, wipeMsg strin
 	if err := wipeSQLiteFiles(dbPath); err != nil {
 		return fmt.Errorf("%s: %w", wipeMsg, err)
 	}
-	db, persistDB, err := prepareCacheDBs(ctx, dbPath)
+	db, persistDB, err := prepareCacheDBs(ctx, dbPath, c.blobBacked)
 	if err != nil {
 		return err
 	}
@@ -2089,7 +2089,17 @@ func (c *Cache) desiredImportedOwnerLeaseIDs(ctx context.Context) (map[string]st
 	return desired, nil
 }
 
-func prepareCacheDBs(ctx context.Context, dbPath string) (*sql.DB, *persistdb.Queries, error) {
+func prepareCacheDBs(ctx context.Context, dbPath string, blobBacked bool) (*sql.DB, *persistdb.Queries, error) {
+	// for now, it's okay if an engine loses its cache after a catastrophic
+	// crash (it's just a cache afterall), we'll take the better performance.
+	// A blob-backed cache's store is the Cloud's pool, which an operating
+	// system crash or a power loss must not corrupt: in WAL mode, NORMAL
+	// keeps the database whole, and syncs at checkpoints, not at every
+	// commit.
+	synchronous := "synchronous=OFF"
+	if blobBacked {
+		synchronous = "synchronous=NORMAL"
+	}
 	connURL := &url.URL{
 		Scheme: "file",
 		Path:   dbPath,
@@ -2101,9 +2111,8 @@ func prepareCacheDBs(ctx context.Context, dbPath string) (*sql.DB, *persistdb.Qu
 				// wait up to 10s when there are concurrent writers
 				"busy_timeout=10000",
 
-				// for now, it's okay if we lose cache after a catastrophic crash
-				// (it's just a cache afterall), we'll take the better performance
-				"synchronous=OFF",
+				// OFF for an engine, NORMAL for a blob-backed cache (above)
+				synchronous,
 
 				// other pragmas to possible worth consideration someday:
 				// cache_size
@@ -2150,7 +2159,7 @@ func closeCacheDBs(db *sql.DB, persistDB *persistdb.Queries) error {
 // can name the cache it wiped.
 func RemoveCachePersistenceStore(ctx context.Context, dbPath string) (wipedCacheID string, _ error) {
 	if _, err := os.Stat(dbPath); err == nil {
-		if db, q, err := prepareCacheDBs(ctx, dbPath); err == nil {
+		if db, q, err := prepareCacheDBs(ctx, dbPath, false); err == nil {
 			if id, found, err := q.SelectMetaValue(ctx, persistdb.MetaKeyCacheID); err == nil && found {
 				wipedCacheID = id
 			}
