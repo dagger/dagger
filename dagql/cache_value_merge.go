@@ -1362,12 +1362,22 @@ func recordCompletePartKeys(record PersistedRecord) []string {
 // under the lock: those its value's last captured record reports, while that
 // capture still describes the value, and those its part gate has settled.
 func completePartKeysLocked(res *sharedResult) []string {
+	keys, _ := completePartKeysCoverageLocked(res)
+	return keys
+}
+
+// completePartKeysCoverageLocked is completePartKeysLocked, also reporting
+// whether a current capture of the value's record was among its sources:
+// without one, the keys are only the settled subset.
+func completePartKeysCoverageLocked(res *sharedResult) ([]string, bool) {
 	keys := res.settledPartKeys()
-	if cached := res.completeParts.Load(); cached != nil && cached.stamp.current(res) {
+	cached := res.completeParts.Load()
+	current := cached != nil && cached.stamp.current(res)
+	if current {
 		keys = append(keys, cached.keys...)
 	}
 	slices.Sort(keys)
-	return slices.Compact(keys)
+	return slices.Compact(keys), current
 }
 
 // failMergedEntryLocked takes back an entry whose merged value met an
