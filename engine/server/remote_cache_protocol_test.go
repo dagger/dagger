@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"sync"
@@ -185,8 +186,14 @@ func (e *adapterTestEngine) file(t *testing.T, name string) dagql.ObjectResult[*
 // file's state in the cache.
 func (e *adapterTestEngine) publishFile(t *testing.T, name string, receiver dagql.AnyResult) (dagql.ObjectResult[*core.File], *dagql.CacheDecision) {
 	t.Helper()
-	file := &core.File{File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]), Platform: adapterTestPlatform,
-		Lazy: &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: name + ".txt", Contents: []byte(name + " bytes"), Permissions: 0o644}}
+	return e.publishLazyFile(t, name, receiver, &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: name + ".txt", Contents: []byte(name + " bytes"), Permissions: 0o644})
+}
+
+// publishLazyFile publishes a pending file whose body is lazy, as publishFile
+// does.
+func (e *adapterTestEngine) publishLazyFile(t *testing.T, name string, receiver dagql.AnyResult, lazy core.Lazy[*core.File]) (dagql.ObjectResult[*core.File], *dagql.CacheDecision) {
+	t.Helper()
+	file := &core.File{File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]), Platform: adapterTestPlatform, Lazy: lazy}
 	file.SetPath("/pending")
 	call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: name, Type: dagql.NewResultCallType(file.Type())}
 	if receiver != nil {
@@ -219,6 +226,33 @@ func (e *adapterTestEngine) busyFile(t *testing.T, name string) dagql.ObjectResu
 		require.NoError(t, e.cache.Evaluate(ctx, busy))
 	})
 	return busy
+}
+
+// unencodableFileLazy is a pending file body that the persisted file codec
+// has no kind for, so every capture that holds the file fails, and not as
+// busy: the engine refuses to transfer the root.
+type unencodableFileLazy struct {
+	core.LazyState
+}
+
+func (*unencodableFileLazy) Evaluate(context.Context, *core.File) error {
+	return errors.New("unencodable file body: not evaluated in this test")
+}
+
+func (*unencodableFileLazy) AttachDependencies(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
+func (*unencodableFileLazy) EncodePersisted(context.Context, *dagql.PersistEncodeContext) (json.RawMessage, error) {
+	return nil, errors.New("unencodable file body")
+}
+
+// refusedFile publishes a pending file that every capture holding it
+// refuses.
+func (e *adapterTestEngine) refusedFile(t *testing.T, name string) dagql.ObjectResult[*core.File] {
+	t.Helper()
+	res, _ := e.publishLazyFile(t, name, nil, &unencodableFileLazy{LazyState: core.NewLazyState()})
+	return res
 }
 
 func entryNumber(t *testing.T, res dagql.AnyResult) uint64 {
@@ -304,6 +338,53 @@ func TestRemoteCacheAdapterExportSkipsBusyRoots(t *testing.T) {
 		require.Equal(t, []uint64{entryNumber(t, ready)}, bundleRoots(exp.Bundle))
 		require.Len(t, exp.Bundle.Outputs, 1, "the busy root's output lies outside the closure, and is left out")
 		require.Equal(t, exp.Bundle.Roots[0].Ordinal, exp.Bundle.Outputs[0].Ordinal)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+}
+
+// skippedNumbers are the numbers of the skipped roots, in order.
+func skippedNumbers(skipped []protocol.SkippedRoot) []uint64 {
+	var numbers []uint64
+	for _, root := range skipped {
+		numbers = append(numbers, root.Number)
+	}
+	return numbers
+}
+
+// A root the capture refuses with an error that isn't busy fails the capture
+// too. Each root is then probed alone: the refused one is skipped, and the
+// others go in one bundle with only the outputs their closures hold. A
+// request whose roots are all refused gets no bundle, only skipped.
+func TestRemoteCacheAdapterExportSkipsRefusedRoots(t *testing.T) {
+	e := newAdapterTestEngine(t)
+	first := e.file(t, "first")
+	require.NoError(t, e.cache.Evaluate(e.ctx, first))
+	second := e.file(t, "second")
+	require.NoError(t, e.cache.Evaluate(e.ctx, second))
+	refused := e.refusedFile(t, "refused")
+	req := protocol.Export{
+		Roots:   []uint64{entryNumber(t, first), entryNumber(t, refused), entryNumber(t, second)},
+		Outputs: []protocol.ExportOutput{{Number: entryNumber(t, first), Address: snapshotPart}, {Number: entryNumber(t, second), Address: snapshotPart}},
+	}
+	calls := 0
+	err := e.adapter.Export(e.ctx, req, func(_ context.Context, exp remotecache.Export) error {
+		calls++
+		require.Equal(t, []uint64{entryNumber(t, refused)}, skippedNumbers(exp.Skipped))
+		require.NotNil(t, exp.Bundle)
+		require.ElementsMatch(t, []uint64{entryNumber(t, first), entryNumber(t, second)}, bundleRoots(exp.Bundle))
+		require.Len(t, exp.Bundle.Outputs, 2)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+
+	calls = 0
+	err = e.adapter.Export(e.ctx, protocol.Export{Roots: []uint64{entryNumber(t, refused)}}, func(_ context.Context, exp remotecache.Export) error {
+		calls++
+		require.Nil(t, exp.Bundle)
+		require.Equal(t, []uint64{entryNumber(t, refused)}, skippedNumbers(exp.Skipped))
 		return nil
 	})
 	require.NoError(t, err)
