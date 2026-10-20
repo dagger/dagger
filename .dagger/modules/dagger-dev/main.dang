@@ -33,6 +33,9 @@ type DaggerDev {
   """
   playground(ws: Workspace!): Container! {
     engineDev(ws: ws).installClient(base, service: engine(ws))
+      # Without Dagger-in-Dagger, the shell gets no session to the outer
+      # engine, so the CLI uses the dev engine that installClient configures.
+      .withShell(["sh"], disableDaggerInDagger: true)
   }
 
   """
