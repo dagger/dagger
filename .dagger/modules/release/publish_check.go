@@ -99,7 +99,7 @@ func (r *Release) PublishWithMockEndpoints(
 	// the ones the real main publish below needs, so this costs little more
 	// than the failed push.
 	failedStart := time.Now()
-	failedOut, err := env.runReleasePublish(ctx, engine, "main", "wrong-registry-password")
+	failedOut, err := env.runReleasePublish(ctx, engine, "main", "wrong-registry-password", "")
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (r *Release) PublishWithMockEndpoints(
 	}
 
 	initialStart := time.Now()
-	initialOut, err := env.runReleasePublish(ctx, engine, "main", publishCheckRegistryPass)
+	initialOut, err := env.runReleasePublish(ctx, engine, "main", publishCheckRegistryPass, "")
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	}
 
 	taggedStart := time.Now()
-	taggedOut, err := env.runReleasePublish(ctx, engine, env.releaseTag, publishCheckRegistryPass)
+	taggedOut, err := env.runReleasePublish(ctx, engine, env.releaseTag, publishCheckRegistryPass, "")
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	// rerun on a fresh runner. Package registries reject re-uploads, so the
 	// rerun must recognize what they already have instead of uploading again.
 	rerunStart := time.Now()
-	rerunOut, err := env.runReleasePublish(ctx, engine, env.releaseTag, publishCheckRegistryPass)
+	rerunOut, err := env.runReleasePublish(ctx, engine, env.releaseTag, publishCheckRegistryPass, "-rerun")
 	if err != nil {
 		return err
 	}
@@ -523,7 +523,11 @@ func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 	})
 }
 
-func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagger.Service, tag, registryPassword string) (string, error) {
+// runReleasePublish runs release publish for tag in the nested engine.
+// tokenSuffix is appended to the fake service tokens. Secrets are cached by
+// value, so a new suffix makes every step that uses them run again, like a
+// rerun on a fresh CI runner instead of a cache hit.
+func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagger.Service, tag, registryPassword, tokenSuffix string) (string, error) {
 	script := `set +e
 	dagger --progress=plain -W "$MODULE_REF" call release publish \
   --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
@@ -562,14 +566,14 @@ exit "$status"
 
 	out, err := env.client(engine).
 		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("release-registry-password-"+randomID(), registryPassword)).
-		WithSecretVariable("FAKE_GITHUB_TOKEN", dag.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass)).
-		WithSecretVariable("FAKE_NETLIFY_TOKEN", dag.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token")).
-		WithSecretVariable("FAKE_PYPI_TOKEN", dag.SetSecret("fake-pypi-token-"+randomID(), "fake-pypi-token")).
-		WithSecretVariable("FAKE_NPM_TOKEN", dag.SetSecret("fake-npm-token-"+randomID(), "fake-npm-token")).
-		WithSecretVariable("FAKE_HEX_API_KEY", dag.SetSecret("fake-hex-api-key-"+randomID(), "fake-hex-api-key")).
-		WithSecretVariable("FAKE_CARGO_REGISTRY_TOKEN", dag.SetSecret("fake-cargo-token-"+randomID(), "fake-cargo-token")).
-		WithSecretVariable("AWS_ACCESS_KEY_ID", dag.SetSecret("fake-aws-access-key-"+randomID(), "test")).
-		WithSecretVariable("AWS_SECRET_ACCESS_KEY", dag.SetSecret("fake-aws-secret-key-"+randomID(), "test")).
+		WithSecretVariable("FAKE_GITHUB_TOKEN", dag.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass+tokenSuffix)).
+		WithSecretVariable("FAKE_NETLIFY_TOKEN", dag.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token"+tokenSuffix)).
+		WithSecretVariable("FAKE_PYPI_TOKEN", dag.SetSecret("fake-pypi-token-"+randomID(), "fake-pypi-token"+tokenSuffix)).
+		WithSecretVariable("FAKE_NPM_TOKEN", dag.SetSecret("fake-npm-token-"+randomID(), "fake-npm-token"+tokenSuffix)).
+		WithSecretVariable("FAKE_HEX_API_KEY", dag.SetSecret("fake-hex-api-key-"+randomID(), "fake-hex-api-key"+tokenSuffix)).
+		WithSecretVariable("FAKE_CARGO_REGISTRY_TOKEN", dag.SetSecret("fake-cargo-token-"+randomID(), "fake-cargo-token"+tokenSuffix)).
+		WithSecretVariable("AWS_ACCESS_KEY_ID", dag.SetSecret("fake-aws-access-key-"+randomID(), "test"+tokenSuffix)).
+		WithSecretVariable("AWS_SECRET_ACCESS_KEY", dag.SetSecret("fake-aws-secret-key-"+randomID(), "test"+tokenSuffix)).
 		WithEnvVariable("MODULE_REF", env.moduleRef).
 		WithEnvVariable("RELEASE_TAG", tag).
 		WithEnvVariable("RELEASE_COMMIT", env.commit).
@@ -2768,6 +2772,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/v3/repos/dagger/dagger/releases":
             payload = json.loads(body.decode("utf-8") or "{}")
             tag = payload.get("tag_name", "")
+            with state_lock:
+                duplicate = tag in github_releases
+            if duplicate:
+                # GitHub refuses to create a second release for a tag.
+                record("github_release_create_duplicate", self, body, {"tag_name": tag})
+                self.send_json(422, {
+                    "message": "Validation Failed",
+                    "errors": [{"resource": "Release", "code": "already_exists", "field": "tag_name"}],
+                })
+                return
             write_github_release_record(tag, payload)
             release_id = int(time.time() * 1000)
             with state_lock:
