@@ -2331,6 +2331,7 @@ published_pypi_files = set()
 published_pypi_versions = set()
 published_hex_versions = set()
 github_refs = {}
+github_releases = {}
 deleted_github_assets = set()
 state_lock = threading.Lock()
 existing_content_sha = "9999999999999999999999999999999999999999"
@@ -2638,8 +2639,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.path.startswith("/api/v3/repos/") and "/releases/tags/" in self.path:
             tag = urllib.parse.unquote(self.path.split("/releases/tags/", 1)[1].split("?", 1)[0])
-            record("github_release_lookup", self, b"", {"tag_name": tag})
-            self.send_json(404, {"message": "Not Found"})
+            with state_lock:
+                existing = github_releases.get(tag)
+            record("github_release_lookup", self, b"", {"tag_name": tag, "found": existing is not None})
+            if existing is None:
+                self.send_json(404, {"message": "Not Found"})
+            else:
+                # A release an earlier attempt created, as a rerun finds it.
+                self.send_json(200, existing)
             return
         if self.path == "/api/v3/repos/dagger/dagger/releases/" + str(existing_root_release_id) + "/assets":
             record("github_release_asset_list", self, b"")
@@ -2762,6 +2769,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             payload = json.loads(body.decode("utf-8") or "{}")
             tag = payload.get("tag_name", "")
             write_github_release_record(tag, payload)
+            release_id = int(time.time() * 1000)
+            with state_lock:
+                github_releases[tag] = {
+                    "id": release_id,
+                    "tag_name": tag,
+                    "name": payload.get("name", tag),
+                    "draft": bool(payload.get("draft")),
+                    "prerelease": bool(payload.get("prerelease")),
+                    "target_commitish": payload.get("target_commitish", ""),
+                    "body": payload.get("body", ""),
+                    "html_url": "https://github.test/dagger/dagger/releases/tag/" + tag,
+                    "url": "https://github.test/api/v3/repos/dagger/dagger/releases/" + str(release_id),
+                    "upload_url": "https://github.test/api/uploads/repos/dagger/dagger/releases/" + str(release_id) + "/assets{?name,label}",
+                    "assets": [],
+                }
             record("github_release_create", self, body, {
                 "tag_name": tag,
                 "target_commitish": payload.get("target_commitish", ""),
@@ -2772,7 +2794,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "release_body": payload.get("body", ""),
             })
             self.send_json(201, {
-                "id": int(time.time() * 1000),
+                "id": release_id,
                 "tag_name": tag,
                 "name": payload.get("name", tag),
                 "html_url": "https://github.test/dagger/dagger/releases/tag/" + tag,
