@@ -346,3 +346,6 @@ source = "github.com/dagger/typescript-sdk@main"
 
 [sdks.typescript]
 module = "typescript-sdk"
+
+[modules.reviewer]
+source = "github.com/vito/agents/reviewer"
