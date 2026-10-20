@@ -180,6 +180,72 @@ func cachePolicyNever(spec dagql.FieldSpec) bool {
 // It first loads the argument set by the user.
 // Then the default values.
 // Finally the contextual arguments.
+// grantableCallHandles returns the session resource handles the nested client
+// serving this call should be granted: those its arguments and parent require,
+// intersected with the handles the caller is itself permitted to resolve.
+func (fn *ModuleFunction) grantableCallHandles(ctx context.Context, opts *CallOpts) ([]dagql.SessionResourceHandle, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("grant call resources: current client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" || clientMetadata.ClientID == "" {
+		return nil, nil
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("grant call resources: current dagql cache: %w", err)
+	}
+
+	seen := map[dagql.SessionResourceHandle]struct{}{}
+	var required []dagql.SessionResourceHandle
+	collect := func(res dagql.AnyResult) {
+		for _, handle := range cache.RequiredSessionResourceHandles(res) {
+			if _, ok := seen[handle]; ok {
+				continue
+			}
+			seen[handle] = struct{}{}
+			required = append(required, handle)
+		}
+	}
+	if opts.ParentTyped != nil {
+		collect(opts.ParentTyped)
+	}
+	for _, input := range opts.Inputs {
+		if res, ok := input.Value.(dagql.AnyResult); ok {
+			collect(res)
+		}
+	}
+	if len(required) == 0 {
+		return nil, nil
+	}
+	// Only pass on handles the caller may itself resolve, so access cannot be
+	// laundered: a module that forged a result ID for a resource it was never
+	// granted cannot convey it to a sub-call.
+	return cache.FilterGrantedHandles(clientMetadata.SessionID, clientMetadata.ClientID, required), nil
+}
+
+// grantResultHandlesToCurrentClient grants the current client permission to
+// resolve every session resource the given result requires. It is how a
+// returned secret or socket reaches the caller that received it.
+func grantResultHandlesToCurrentClient(ctx context.Context, res dagql.AnyResult) error {
+	if res == nil {
+		return nil
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("grant returned resources: current client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" || clientMetadata.ClientID == "" {
+		return nil
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return fmt.Errorf("grant returned resources: current dagql cache: %w", err)
+	}
+	cache.GrantSessionResources(clientMetadata.SessionID, clientMetadata.ClientID, cache.RequiredSessionResourceHandles(res))
+	return nil
+}
+
 func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]*FunctionCallArgValue, error) {
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
@@ -1093,6 +1159,16 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		fnCall.SetCallerAgent(caller)
 	}
 
+	// Grant the nested client that serves this call permission to resolve the
+	// secrets and sockets its arguments and parent require, limited to what the
+	// caller may itself resolve. A module therefore reaches exactly the session
+	// resources it was passed, and not ones it merely guessed the result ID of.
+	if handles, err := fn.grantableCallHandles(ctx, opts); err != nil {
+		return nil, err
+	} else {
+		fnCall.SetGrantedHandles(handles)
+	}
+
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
 
@@ -1135,6 +1211,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	returnValue, err := fn.returnType.ConvertFromSDKResult(ctx, returned.Value)
 	if err != nil {
 		return nil, fmt.Errorf("convert return value: %w", err)
+	}
+
+	// A value a module returns conveys its session resources to the caller, so
+	// the caller can resolve a secret or socket the module handed back.
+	if err := grantResultHandlesToCurrentClient(ctx, returnValue); err != nil {
+		return nil, err
 	}
 
 	if returnValue != nil && fn.hasWorkspaceArgs() {

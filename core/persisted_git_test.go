@@ -222,10 +222,13 @@ func TestPersistedRemoteGitRepositoryUsesFreshSessionResources(t *testing.T) {
 	_, err = cache.LoadResultByResultID(ctx, "git-unbound-session", srv, repoID)
 	require.ErrorContains(t, err, "has not bound the session resources this result requires")
 
+	// The client that uses the restored repository binds the credentials it
+	// requires and then resolves them: a client may only resolve a session
+	// resource it was granted (here, by binding it).
 	bindCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "fresh-token-client", SessionID: env.session})
 	require.NoError(t, cache.BindSessionResource(bindCtx, env.session, "fresh-token-client", tokenHandle, &Secret{URIVal: "env://GIT_TOKEN", SourceClientID: "fresh-token-client"}))
-	require.NoError(t, cache.BindSessionResource(bindCtx, env.session, "fresh-header-client", headerHandle, &Secret{URIVal: "env://GIT_HEADER", SourceClientID: "fresh-header-client"}))
-	require.NoError(t, cache.BindSessionResource(bindCtx, env.session, "fresh-ssh-client", socketHandle, &Socket{Kind: SocketKindUnixOpaque, URLVal: "unix:///tmp/fresh-agent.sock", SourceClientID: "fresh-ssh-client"}))
+	require.NoError(t, cache.BindSessionResource(bindCtx, env.session, "fresh-token-client", headerHandle, &Secret{URIVal: "env://GIT_HEADER", SourceClientID: "fresh-header-client"}))
+	require.NoError(t, cache.BindSessionResource(bindCtx, env.session, "fresh-token-client", socketHandle, &Socket{Kind: SocketKindUnixOpaque, URLVal: "unix:///tmp/fresh-agent.sock", SourceClientID: "fresh-ssh-client"}))
 
 	loaded, err := cache.LoadResultByResultID(bindCtx, env.session, srv, repoID)
 	require.NoError(t, err)
@@ -280,7 +283,9 @@ func TestPersistedRemoteGitRepositoryUsesFreshSessionResources(t *testing.T) {
 		otherCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "fresh-token-client", SessionID: "git-partial-session"})
 		require.NoError(t, cache.BindSessionResource(otherCtx, "git-partial-session", "fresh-token-client", tokenHandle, &Secret{URIVal: "env://GIT_TOKEN", SourceClientID: "fresh-token-client"}))
 		_, err := restored.AuthHeader.Self().Plaintext(otherCtx)
-		require.ErrorContains(t, err, "no bound resource for session")
+		// The client bound (and so was granted) only the token, not the header,
+		// so resolving the header is refused before any binding lookup.
+		require.ErrorContains(t, err, "was not granted this resource")
 	})
 	t.Run("a dropped credential changes the selection", func(t *testing.T) {
 		without := *restored
