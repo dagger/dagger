@@ -419,6 +419,42 @@ func TestSkippedMessageIsBounded(t *testing.T) {
 	require.Equal(t, unaligned[:maxSkippedMessageBytes-1], got)
 }
 
+// An export's log line counts its skipped roots by reason, and names them
+// with their reasons while there are at most maxLoggedSkippedRoots.
+func TestExportLogAttrs(t *testing.T) {
+	skipped := []protocol.SkippedRoot{
+		{Number: 2, Reason: protocol.SkipGone},
+		{Number: 3, Reason: protocol.SkipBusy},
+		{Number: 4, Reason: protocol.SkipRefused, Message: "refused"},
+	}
+	attrs := logAttrs(exportLogAttrs(protocol.Export{Roots: []uint64{1, 2, 3, 4}}, skipped, nil, time.Second))
+	require.Equal(t, 4, attrs["roots"])
+	require.Equal(t, 3, attrs["skipped"])
+	require.Equal(t, 1, attrs["skipped_gone"])
+	require.Equal(t, 1, attrs["skipped_busy"])
+	require.Equal(t, 1, attrs["skipped_refused"])
+	require.Equal(t, []string{"2:gone", "3:busy", "4:refused"}, attrs["skipped_roots"])
+	require.Equal(t, time.Second, attrs["capture"])
+
+	many := make([]protocol.SkippedRoot, maxLoggedSkippedRoots+1)
+	for i := range many {
+		many[i] = protocol.SkippedRoot{Number: uint64(i + 1), Reason: protocol.SkipBusy}
+	}
+	attrs = logAttrs(exportLogAttrs(protocol.Export{}, many, nil, 0))
+	require.Equal(t, maxLoggedSkippedRoots+1, attrs["skipped_busy"])
+	require.Zero(t, attrs["skipped_refused"])
+	require.NotContains(t, attrs, "skipped_roots", "past the limit, skipped roots are only counted")
+}
+
+// logAttrs maps a log line's alternating keys and values.
+func logAttrs(attrs []any) map[string]any {
+	m := map[string]any{}
+	for i := 0; i+1 < len(attrs); i += 2 {
+		m[attrs[i].(string)] = attrs[i+1]
+	}
+	return m
+}
+
 // With no root left, consume is called once, with the skipped roots and no
 // bundle.
 func TestRemoteCacheAdapterExportWithNoSurvivingRoot(t *testing.T) {

@@ -192,14 +192,42 @@ func (h *entryHolds) release(ctx context.Context) error {
 // the bundle's records and outputs, the time from the request to the bundle,
 // and the part of it spent opening the chains, which compresses layers.
 func logExport(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration) {
+	slog.Info("remote cache export", exportLogAttrs(req, skipped, values, capture)...)
+}
+
+// maxLoggedSkippedRoots is how many skipped roots an export's log line names:
+// past it, they are only counted by reason.
+const maxLoggedSkippedRoots = 8
+
+// exportLogAttrs are an export's log attributes: its roots, its skipped roots
+// counted by reason and, when there are at most maxLoggedSkippedRoots of
+// them, named with their reasons, then what the bundle holds and how long
+// the capture and the chains took.
+func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration) []any {
 	var records, outputs int
 	var chains time.Duration
 	if values != nil {
 		records, outputs, chains = len(values.Bundle.Values), len(values.Bundle.Outputs), values.ChainTime
 	}
-	slog.Info("remote cache export",
+	counts := map[protocol.SkipReason]int{}
+	for _, root := range skipped {
+		counts[root.Reason]++
+	}
+	attrs := []any{
 		"roots", len(req.Roots),
 		"skipped", len(skipped),
+		"skipped_gone", counts[protocol.SkipGone],
+		"skipped_busy", counts[protocol.SkipBusy],
+		"skipped_refused", counts[protocol.SkipRefused],
+	}
+	if len(skipped) > 0 && len(skipped) <= maxLoggedSkippedRoots {
+		named := make([]string, len(skipped))
+		for i, root := range skipped {
+			named[i] = fmt.Sprintf("%d:%s", root.Number, root.Reason)
+		}
+		attrs = append(attrs, "skipped_roots", named)
+	}
+	return append(attrs,
 		"records", records,
 		"outputs", outputs,
 		"capture", capture,
