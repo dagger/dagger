@@ -124,7 +124,12 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		"sqlite",
 	}
 	if build.gpuSupport {
-		pkgs = append(pkgs, "nvidia-driver", "nvidia-tools")
+		pkgs = append(pkgs,
+			"nvidia-driver", "nvidia-tools",
+			"nvidia-container-toolkit",
+			// Wolfi packages the OCI prestart hook separately from the toolkit.
+			"nvidia-container-toolkit-nvidia-container-runtime-hook",
+		)
 	}
 	base := dag.
 		Wolfi().
@@ -132,6 +137,14 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			Packages: pkgs,
 			Arch:     build.platformSpec.Architecture,
 		})
+
+	if build.gpuSupport {
+		// Check the hook at the path used by the executor, and load the CLI's
+		// shared libraries. Neither check requires a GPU on the build host.
+		base = base.
+			WithExec([]string{"/usr/bin/nvidia-container-runtime-hook", "--version"}).
+			WithExec([]string{"/usr/bin/nvidia-container-cli", "--version"})
+	}
 
 	if build.version != "" {
 		base = base.WithAnnotation(versionAnnotation, build.version)
