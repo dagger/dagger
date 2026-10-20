@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
 	imagesapi "github.com/containerd/containerd/api/services/images/v1"
@@ -930,6 +931,10 @@ func (c *Client) OpenTerminal(
 	return newTerminalClient(ctx, term)
 }
 
+// terminalCloseTimeout bounds how long closing a terminal waits for the client
+// to process the rest of the session. A variable so tests can shorten it.
+var terminalCloseTimeout = 5 * time.Second
+
 func newTerminalClient(ctx context.Context, term terminal.Terminal_SessionClient) (*TerminalClient, error) {
 	var (
 		stdoutR, stdoutW = io.Pipe()
@@ -1005,8 +1010,12 @@ func newTerminalClient(ctx context.Context, term terminal.Terminal_SessionClient
 	}
 
 	errCh := make(chan error, 1)
+	recvDone := make(chan struct{})
+	closing := make(chan struct{})
 	go func() {
+		defer close(recvDone)
 		defer stdinW.Close()
+		stdinDone := false
 		defer close(errCh)
 		defer close(resizeCh)
 		for {
@@ -1020,16 +1029,30 @@ func newTerminalClient(ctx context.Context, term terminal.Terminal_SessionClient
 			}
 			switch msg := res.GetMsg().(type) {
 			case *terminal.SessionResponse_Stdin:
-				_, err := stdinW.Write(msg.Stdin)
-				if err != nil {
-					slog.WarnContext(ctx, "failed to write stdin", "err", err)
-					errCh <- err
-					return
+				if stdinDone {
+					break
+				}
+				if _, err := stdinW.Write(msg.Stdin); err != nil {
+					// Stop forwarding input but keep receiving: the session
+					// is over only when the client ends it. A closed pipe
+					// just means the process no longer reads its input.
+					stdinDone = true
+					if !errors.Is(err, io.ErrClosedPipe) {
+						slog.WarnContext(ctx, "failed to write stdin", "err", err)
+						select {
+						case errCh <- err:
+						default:
+						}
+					}
 				}
 			case *terminal.SessionResponse_Resize:
-				resizeCh <- bkgw.WinSize{
+				select {
+				case resizeCh <- bkgw.WinSize{
 					Rows: uint32(msg.Resize.Height),
 					Cols: uint32(msg.Resize.Width),
+				}:
+				case <-closing:
+					// nothing reads resizes once the session is closing
 				}
 			default:
 			}
@@ -1043,8 +1066,10 @@ func newTerminalClient(ctx context.Context, term terminal.Terminal_SessionClient
 		ErrCh:    errCh,
 		ResizeCh: resizeCh,
 		Close: onceValueWithArg(func(exitCode int) error {
-			defer stdinR.Close()
-			defer term.CloseSend()
+			close(closing)
+			// Unblock a pending input write, so receiving the rest of the
+			// session can't stall on input nothing reads anymore.
+			stdinR.Close()
 
 			// The client stops reading at the exit message, so send all
 			// output first.
@@ -1055,8 +1080,18 @@ func newTerminalClient(ctx context.Context, term terminal.Terminal_SessionClient
 			err := send(&terminal.SessionRequest{
 				Msg: &terminal.SessionRequest_Exit{Exit: int32(exitCode)},
 			})
+			term.CloseSend()
 			if err != nil {
 				return fmt.Errorf("failed to close terminal: %w", err)
+			}
+			// Sending only queues the output and the exit message. Wait for
+			// the client to process them and end the session: as soon as this
+			// returns, the terminal call can complete, and a client that sees
+			// it complete shuts down and drops the session's unread messages.
+			select {
+			case <-recvDone:
+			case <-time.After(terminalCloseTimeout):
+				slog.WarnContext(ctx, "terminal client did not end the session", "timeout", terminalCloseTimeout)
 			}
 			return nil
 		}),
