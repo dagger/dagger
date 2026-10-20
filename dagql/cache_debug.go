@@ -99,6 +99,27 @@ type CacheDebugResult struct {
 	CacheUsageSizeByIdentity              map[string]int64 `json:"cache_usage_size_by_identity,omitempty"`
 	PersistedEnvelopeKind                 string           `json:"persisted_envelope_kind,omitempty"`
 	PersistedEnvelopeTypeName             string           `json:"persisted_envelope_type_name,omitempty"`
+	// CompleteParts are the address keys of the entry's complete parts, as
+	// dagger.io/cache.parts names them: those its current record reports
+	// locally complete. When the snapshot could not read the current record,
+	// because an evaluation was in flight or the value changed while the
+	// snapshot prepared, they are only the parts the entry's gate has settled,
+	// a subset, and CompletePartsPartial says so.
+	CompleteParts        []string `json:"complete_parts,omitempty"`
+	CompletePartsPartial bool     `json:"complete_parts_partial,omitempty"`
+	// OfferedParts are the address keys of the parts the Cloud offers the
+	// entry, and CloudHolding what the entry knows of its Cloud counterpart.
+	OfferedParts []string                `json:"offered_parts,omitempty"`
+	CloudHolding *CacheDebugCloudHolding `json:"cloud_holding,omitempty"`
+}
+
+// CacheDebugCloudHolding is an engine entry's Cloud holding: the Cloud entry
+// the latest message named, whether it stores a record, and the record's
+// expiry.
+type CacheDebugCloudHolding struct {
+	Number        uint64 `json:"number"`
+	Stored        bool   `json:"stored"`
+	ExpiresAtUnix int64  `json:"expires_at_unix,omitempty"`
 }
 
 type CacheDebugResultDigestIndex struct {
