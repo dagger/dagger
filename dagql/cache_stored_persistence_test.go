@@ -2,8 +2,13 @@ package dagql
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -252,4 +257,53 @@ func TestCheckpointRunsBesideReaders(t *testing.T) {
 	}
 	close(done)
 	readers.Wait()
+}
+
+// Every Checkpoint rewrites the whole store in one transaction, which SQLite
+// writes to the write-ahead log first, so one save puts about the store's
+// size in the log. A checkpoint copies the log into the database, and the
+// next save writes the log from its start again, but nothing shrinks the
+// file: left at one save's size, it doubles the store's disk use between
+// saves. After each save the log is at most walBound, while the store is many
+// times that.
+func TestCheckpointBoundsTheWriteAheadLog(t *testing.T) {
+	t.Parallel()
+	const (
+		roots    = 3000
+		pad      = 4096
+		saves    = 5
+		walBound = 1 << 20
+	)
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	actx, a, asrv := transferTestCache(t)
+	var results []AnyResult
+	for i := range roots {
+		value := &transferTestValue{Text: fmt.Sprintf("%d-%s", i, strings.Repeat("x", pad))}
+		results = append(results, persistedListTestResult(t, actx, a, asrv, fmt.Sprintf("wal-root-%d", i), value))
+	}
+	require.Len(t, storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, results...)), roots)
+
+	size := func(name string) int64 {
+		info, err := os.Stat(name)
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0
+		}
+		require.NoError(t, err)
+		return info.Size()
+	}
+	var dbs, wals []int64
+	for i := range saves {
+		start := time.Now()
+		require.NoError(t, cloud.Checkpoint(ctx))
+		took := time.Since(start)
+		db, wal := size(path), size(path+"-wal")
+		t.Logf("save %d: %d results in %s; db %d bytes, wal %d bytes", i+1, cloud.PersistedResults(), took, db, wal)
+		dbs, wals = append(dbs, db), append(wals, wal)
+	}
+	for i := range saves {
+		require.GreaterOrEqual(t, dbs[i], int64(8*walBound), "save %d: the store is many times the bound", i+1)
+		require.LessOrEqual(t, wals[i], int64(walBound), "save %d: the write-ahead log", i+1)
+	}
 }
