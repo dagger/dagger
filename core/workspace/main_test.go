@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEntrypointName(t *testing.T) {
+func TestMainName(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		cfg  *Config
@@ -15,11 +15,11 @@ func TestEntrypointName(t *testing.T) {
 	}{
 		{name: "no config"},
 		{name: "none", cfg: &Config{Modules: map[string]ModuleEntry{"tools": {Source: "./tools"}}}},
-		{name: "installed name", cfg: &Config{Modules: map[string]ModuleEntry{"tool.box": {Source: "./tools", Entrypoint: true}}}, want: "tool.box"},
-		{name: "ambiguous", cfg: &Config{Modules: map[string]ModuleEntry{"z": {Entrypoint: true}, "a": {Entrypoint: true}}}, err: "multiple entrypoint modules: [\"a\" \"z\"]"},
+		{name: "installed name", cfg: &Config{Modules: map[string]ModuleEntry{"tool.box": {Source: "./tools", Main: true}}}, want: "tool.box"},
+		{name: "ambiguous", cfg: &Config{Modules: map[string]ModuleEntry{"z": {Main: true}, "a": {Main: true}}}, err: "multiple workspace main modules: [\"a\" \"z\"]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			name, err := EntrypointName(tc.cfg)
+			name, err := MainName(tc.cfg)
 			if tc.err != "" {
 				require.ErrorContains(t, err, tc.err)
 				return
@@ -30,7 +30,7 @@ func TestEntrypointName(t *testing.T) {
 	}
 }
 
-func TestSetEntrypoint(t *testing.T) {
+func TestSetMain(t *testing.T) {
 	original := []byte(`# keep
 ignore = [
   'node_modules', # keep
@@ -38,10 +38,10 @@ ignore = [
 future = true
 [modules.old]
 source = './old'
-entrypoint = true
+main = true
 [modules.'tool.box']
 source = './tools'
-entrypoint = false
+main = false
 [modules.'tool.box'.as-sdk]
 name = 'custom'
 [env.test.modules.old.settings]
@@ -51,10 +51,10 @@ arbitrary = 'keep'
 	require.NoError(t, err)
 	for _, name := range []string{"missing", "./tools", "tool.box@v2"} {
 		before := cloneConfig(cfg)
-		require.ErrorContains(t, SetEntrypoint(cfg, ".", name), "is not installed")
+		require.ErrorContains(t, SetMain(cfg, ".", name), "is not installed")
 		require.Equal(t, before, cfg, "a rejected name must not change any flags")
 	}
-	require.NoError(t, SetEntrypoint(cfg, ".", "tool.box"))
+	require.NoError(t, SetMain(cfg, ".", "tool.box"))
 	updated, err := UpdateConfigBytes(original, cfg)
 	require.NoError(t, err)
 	require.Equal(t, `# keep
@@ -66,42 +66,42 @@ future = true
 source = './old'
 [modules.'tool.box']
 source = './tools'
-entrypoint = true
+main = true
 [modules.'tool.box'.as-sdk]
 name = 'custom'
 [env.test.modules.old.settings]
 arbitrary = 'keep'
 `, string(updated))
-	require.NoError(t, SetEntrypoint(cfg, ".", "tool.box"))
+	require.NoError(t, SetMain(cfg, ".", "tool.box"))
 	again, err := UpdateConfigBytes(updated, cfg)
 	require.NoError(t, err)
 	require.Equal(t, updated, again)
-	require.NoError(t, SetEntrypoint(cfg, ".", ""))
-	name, err := EntrypointName(cfg)
+	require.NoError(t, SetMain(cfg, ".", ""))
+	name, err := MainName(cfg)
 	require.NoError(t, err)
 	require.Empty(t, name)
 }
 
-func TestSetEntrypointRepairsAmbiguousConfig(t *testing.T) {
+func TestSetMainRepairsAmbiguousConfig(t *testing.T) {
 	cfg := &Config{Modules: map[string]ModuleEntry{
-		"a": {Source: "./a", Entrypoint: true},
-		"b": {Source: "./b", Entrypoint: true},
+		"a": {Source: "./a", Main: true},
+		"b": {Source: "./b", Main: true},
 		"c": {Source: "./c"},
 	}}
-	require.NoError(t, SetEntrypoint(cfg, ".", "c"))
-	name, err := EntrypointName(cfg)
+	require.NoError(t, SetMain(cfg, ".", "c"))
+	name, err := MainName(cfg)
 	require.NoError(t, err)
 	require.Equal(t, "c", name)
-	require.False(t, cfg.Modules["a"].Entrypoint)
-	require.False(t, cfg.Modules["b"].Entrypoint)
+	require.False(t, cfg.Modules["a"].Main)
+	require.False(t, cfg.Modules["b"].Main)
 }
 
-func TestSetEntrypointPreservesScopeNames(t *testing.T) {
+func TestSetMainPreservesScopeNames(t *testing.T) {
 	for _, next := range []string{"", "other", "demo-dev"} {
 		t.Run("select="+next, func(t *testing.T) {
 			cfg := &Config{
 				Modules: map[string]ModuleEntry{
-					"demo-dev": {Source: "../generated/api", Entrypoint: true},
+					"demo-dev": {Source: "../generated/api", Main: true},
 					"other":    {Source: "other"},
 				},
 				SDKs: map[string]SDKEntry{
@@ -113,7 +113,7 @@ func TestSetEntrypointPreservesScopeNames(t *testing.T) {
 					"client": {Scopes: map[string]SDKScope{"../generated/api": {}}},
 				},
 			}
-			require.NoError(t, SetEntrypoint(cfg, "project", next))
+			require.NoError(t, SetMain(cfg, "project", next))
 			want := "demo-dev"
 			if next == "demo-dev" {
 				want = ""
@@ -128,12 +128,12 @@ func TestSetEntrypointPreservesScopeNames(t *testing.T) {
 
 func TestPreserveInferredScopeNames(t *testing.T) {
 	// A migrated root module: the scope carries no name and takes it from the
-	// installed entrypoint, whose source resolves to the same directory.
+	// installed main, whose source resolves to the same directory.
 	base := func() *Config {
 		return &Config{
 			Modules: map[string]ModuleEntry{
-				"myapp": {Source: ".", Entrypoint: true},
-				"lib":   {Source: "libs/lib", Entrypoint: true},
+				"myapp": {Source: ".", Main: true},
+				"lib":   {Source: "libs/lib", Main: true},
 			},
 			SDKs: map[string]SDKEntry{
 				"go": {Scopes: map[string]SDKScope{
@@ -144,7 +144,7 @@ func TestPreserveInferredScopeNames(t *testing.T) {
 		}
 	}
 
-	t.Run("records the name of the detached entrypoint only", func(t *testing.T) {
+	t.Run("records the name of the detached main only", func(t *testing.T) {
 		cfg := base()
 		require.NoError(t, PreserveInferredScopeNames(cfg, ".", func(installed string) bool {
 			return installed == "myapp"
@@ -158,7 +158,7 @@ func TestPreserveInferredScopeNames(t *testing.T) {
 
 	t.Run("an ambiguous inferred name is not guessed", func(t *testing.T) {
 		cfg := base()
-		cfg.Modules["twin"] = ModuleEntry{Source: "./", Entrypoint: true}
+		cfg.Modules["twin"] = ModuleEntry{Source: "./", Main: true}
 		require.NoError(t, PreserveInferredScopeNames(cfg, ".", func(installed string) bool {
 			return installed == "myapp"
 		}))

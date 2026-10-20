@@ -761,14 +761,14 @@ func TestWorkspaceConfigWithCompatFallback(t *testing.T) {
 func TestArtifactNodesByInclude(t *testing.T) {
 	ctx := context.Background()
 	for _, test := range []struct {
-		name       string
-		entrypoint bool
-		include    []string
-		want       int
+		name    string
+		main    bool
+		include []string
+		want    int
 	}{
 		{"qualified", false, []string{"app:generate-*"}, 2},
-		{"entrypoint", true, []string{"generate-*"}, 2},
-		{"entrypoint qualified alias", true, []string{"app:generate-*"}, 2},
+		{"main", true, []string{"generate-*"}, 2},
+		{"main qualified alias", true, []string{"app:generate-*"}, 2},
 		{"single ordinary module requires prefix", false, []string{"generate-*"}, 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -778,7 +778,7 @@ func TestArtifactNodesByInclude(t *testing.T) {
 			}
 			matched := 0
 			for _, node := range nodes {
-				node.Parent.WorkspaceEntrypoint = test.entrypoint
+				node.Parent.WorkspaceMain = test.main
 				match, err := matchWorkspaceInclude(ctx, node, test.include)
 				require.NoError(t, err)
 				if match {
@@ -794,9 +794,9 @@ func TestArtifactNodesByInclude(t *testing.T) {
 func TestGenerateCheckPatterns(t *testing.T) {
 	ctx := context.Background()
 	for _, test := range []struct {
-		name       string
-		entrypoint bool
-		patterns   []string
+		name     string
+		main     bool
+		patterns []string
 		// included is whether the patterns select the check as `dagger check`
 		// arguments or --skip values.
 		included bool
@@ -806,8 +806,8 @@ func TestGenerateCheckPatterns(t *testing.T) {
 		{"module name", false, []string{"alpha-sdk"}, true},
 		{"single segment wildcard on the generator", false, []string{"alpha-sdk:*"}, true},
 		{"wildcard on the check name", false, []string{"alpha-sdk:*:stale"}, true},
-		{"entrypoint check name", true, []string{"generate:stale"}, true},
-		{"entrypoint generator name", true, []string{"generate"}, true},
+		{"main check name", true, []string{"generate:stale"}, true},
+		{"main generator name", true, []string{"generate"}, true},
 		{"module-local check name", false, []string{"generate:stale"}, false},
 		{"module-local generator name", false, []string{"generate"}, false},
 		{"other leaf", false, []string{"alpha-sdk:generate:other"}, false},
@@ -815,7 +815,7 @@ func TestGenerateCheckPatterns(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			node := modTreeNode("alpha-sdk", "generate", "stale")
-			node.Parent.Parent.WorkspaceEntrypoint = test.entrypoint
+			node.Parent.Parent.WorkspaceMain = test.main
 			match, err := matchWorkspaceInclude(ctx, node, test.patterns)
 			require.NoError(t, err)
 			require.Equal(t, test.included, match)

@@ -303,7 +303,7 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
-  Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+  Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and workspace main paths match.
   """
   @spec filter_path_pattern(t(), String.t()) :: Dagger.Artifacts.t()
   def filter_path_pattern(%__MODULE__{} = artifacts, pattern) do

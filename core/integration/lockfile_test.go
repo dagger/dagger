@@ -481,7 +481,7 @@ func (LockfileSuite) TestDefaultNestedQuery(ctx context.Context, t *testctx.T) {
 func (LockfileSuite) TestDefaultModuleCall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := moduleEntrypointFixture(t, c, "lockmod", "dang/lockmod")
+	base := moduleMainFixture(t, c, "lockmod", "dang/lockmod")
 
 	updated := base.With(daggerExec("--silent", "call", "release"))
 	out, err := updated.Stdout(ctx)

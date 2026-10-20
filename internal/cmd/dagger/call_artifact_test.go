@@ -60,7 +60,7 @@ func modWithConstructorArgs(args ...string) *moduleDef {
 	query := &modObject{Name: "Query", Functions: []*modFunction{withFn}}
 	rootType := &modTypeDef{Kind: core.TypeDefKindObjectKind, AsObject: query}
 	// The root command selects through the no-op identity constructor, the
-	// shape a workspace entrypoint has.
+	// shape a workspace main has.
 	query.Constructor = &modFunction{ReturnType: rootType}
 	return &moduleDef{
 		MainObject: rootType,

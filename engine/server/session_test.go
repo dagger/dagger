@@ -757,7 +757,7 @@ func TestClientMetadataBootstrapOrderReplayAndConflict(t *testing.T) {
 	init := identity()
 	init.Workspace = stringPtr("github.com/acme/workspace@main")
 	query := identity()
-	query.ExtraModules = []engine.ExtraModule{{Ref: "github.com/acme/extra@v1", Name: "extra", Entrypoint: true}}
+	query.ExtraModules = []engine.ExtraModule{{Ref: "github.com/acme/extra@v1", Name: "extra", Main: true}}
 	contributions := []contribution{{"attachables", attachables}, {"init", init}, {"first-request", query}}
 	orders := [][]int{
 		{0, 1, 2},
@@ -3194,7 +3194,7 @@ func TestPendingLegacyModule(t *testing.T) {
 		require.Equal(t, "github.com/acme/go-toolchain@main", mod.Ref)
 		require.Equal(t, "abc123", mod.RefPin)
 		require.Equal(t, "go", mod.Name)
-		require.False(t, mod.Entrypoint)
+		require.False(t, mod.Main)
 		require.True(t, mod.LegacyDefaultPath)
 		require.Equal(t, "/resolved/.", mod.DefaultPathContextSourceRef)
 		require.Equal(t, map[string]any{"foo": "bar"}, mod.ConfigDefaults)
@@ -3219,7 +3219,7 @@ func TestPendingLegacyModule(t *testing.T) {
 		require.Equal(t, "/resolved/../blueprint", mod.Ref)
 		require.Empty(t, mod.RefPin)
 		require.Equal(t, "blueprint", mod.Name)
-		require.True(t, mod.Entrypoint)
+		require.True(t, mod.Main)
 		require.True(t, mod.LegacyDefaultPath)
 		require.Equal(t, "/resolved/.", mod.DefaultPathContextSourceRef)
 		require.Nil(t, mod.ConfigDefaults)
@@ -3230,9 +3230,9 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 	t.Parallel()
 
 	mods := []pendingModule{
-		{Kind: moduleLoadKindAmbient, Name: "foo", Entrypoint: false},
-		{Kind: moduleLoadKindAmbient, Name: "bar-baz", Entrypoint: true},
-		{Kind: moduleLoadKindAmbient, Name: "local", Entrypoint: true},
+		{Kind: moduleLoadKindAmbient, Name: "foo", Main: false},
+		{Kind: moduleLoadKindAmbient, Name: "bar-baz", Main: true},
+		{Kind: moduleLoadKindAmbient, Name: "local", Main: true},
 	}
 
 	t.Run("constructor match loads only matching module", func(t *testing.T) {
@@ -3242,27 +3242,27 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		require.Equal(t, []pendingModule{mods[0]}, filtered)
 	})
 
-	t.Run("unknown root field with multiple entrypoints loads all", func(t *testing.T) {
+	t.Run("unknown root field with multiple mains loads all", func(t *testing.T) {
 		t.Parallel()
 
 		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"doThing"})
 		require.Equal(t, mods, filtered)
 	})
 
-	t.Run("unknown root field with one entrypoint loads entrypoint", func(t *testing.T) {
+	t.Run("unknown root field with one main loads main", func(t *testing.T) {
 		t.Parallel()
 
-		oneEntrypoint := []pendingModule{mods[0], mods[1]}
-		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, nil, nil, []string{"doThing"})
+		oneMain := []pendingModule{mods[0], mods[1]}
+		filtered := filterPendingWorkspaceModulesForRootFields(oneMain, nil, nil, []string{"doThing"})
 		require.Equal(t, []pendingModule{mods[1]}, filtered)
 	})
 
-	t.Run("unknown root field skips entrypoint already recorded as failed", func(t *testing.T) {
+	t.Run("unknown root field skips main already recorded as failed", func(t *testing.T) {
 		t.Parallel()
 
-		oneEntrypoint := []pendingModule{mods[0], mods[1]}
+		oneMain := []pendingModule{mods[0], mods[1]}
 		failed := map[string]error{"bar-baz": errors.New("boom")}
-		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, nil, failed, []string{"doThing"})
+		filtered := filterPendingWorkspaceModulesForRootFields(oneMain, nil, failed, []string{"doThing"})
 		require.Empty(t, filtered)
 	})
 
@@ -3347,7 +3347,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 
 	foo := pendingModule{Kind: moduleLoadKindAmbient, Name: "foo"}
 	barBaz := pendingModule{Kind: moduleLoadKindAmbient, Name: "barBaz"}
-	entry := pendingModule{Kind: moduleLoadKindAmbient, Name: "entry", Entrypoint: true}
+	entry := pendingModule{Kind: moduleLoadKindAmbient, Name: "entry", Main: true}
 	mods := []pendingModule{foo, barBaz, entry}
 
 	t.Run("no scope delegates to root-field demand", func(t *testing.T) {
@@ -3358,7 +3358,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		require.Equal(t, mods, selected)
 	})
 
-	t.Run("scoped typedefs loads target plus entrypoint", func(t *testing.T) {
+	t.Run("scoped typedefs loads target plus main", func(t *testing.T) {
 		t.Parallel()
 
 		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs"}, "foo", false)
@@ -3374,7 +3374,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		require.Equal(t, []pendingModule{barBaz, entry}, selected)
 	})
 
-	t.Run("unknown token loads pending entrypoint alone", func(t *testing.T) {
+	t.Run("unknown token loads pending main alone", func(t *testing.T) {
 		t.Parallel()
 
 		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs"}, "greet", false)
@@ -3382,7 +3382,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		require.Equal(t, []pendingModule{entry}, selected)
 	})
 
-	t.Run("unknown token without entrypoint loads all", func(t *testing.T) {
+	t.Run("unknown token without main loads all", func(t *testing.T) {
 		t.Parallel()
 
 		noEntry := []pendingModule{foo, barBaz}
@@ -3426,12 +3426,12 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		require.Equal(t, []pendingModule{entry}, selected)
 	})
 
-	t.Run("unknown token with served entrypoint loads no siblings", func(t *testing.T) {
+	t.Run("unknown token with served main loads no siblings", func(t *testing.T) {
 		t.Parallel()
 
-		// A prior selective request may have loaded the entrypoint without
+		// A prior selective request may have loaded the main without
 		// consuming the scope. The later typedefs request is then already
-		// satisfied by that served entrypoint and must not fall back to every
+		// satisfied by that served main and must not fall back to every
 		// still-pending workspace module.
 		served := map[string]struct{}{"entry": {}}
 		pending := []pendingModule{foo, barBaz}
@@ -4141,7 +4141,7 @@ func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
 	t.Run("bare token not matching a module selects all", func(t *testing.T) {
 		t.Parallel()
 
-		// e.g. an item served by the entrypoint module.
+		// e.g. an item served by the main module.
 		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"generate"})
 		require.Equal(t, mods, filtered)
 	})
@@ -4230,9 +4230,9 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 		DefaultsFromDotEnv: true,
 		Modules: map[string]workspace.ModuleEntry{
 			"zeta": {
-				Source:     "github.com/acme/zeta@main",
-				Entrypoint: true,
-				Settings:   map[string]any{"message": "hello"},
+				Source:   "github.com/acme/zeta@main",
+				Main:     true,
+				Settings: map[string]any{"message": "hello"},
 			},
 			"alpha": {
 				Source:            "modules/alpha",
@@ -4250,7 +4250,7 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 	require.Equal(t, "alpha", pending[0].Name)
 	require.Equal(t, "/resolved/modules/alpha", pending[0].Ref)
 	require.Empty(t, pending[0].RefPin)
-	require.False(t, pending[0].Entrypoint)
+	require.False(t, pending[0].Main)
 	require.True(t, pending[0].DisableFindUp)
 	require.True(t, pending[0].LegacyDefaultPath)
 	require.Equal(t, "/resolved", pending[0].DefaultPathContextSourceRef)
@@ -4263,7 +4263,7 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 	require.Equal(t, "zeta", pending[2].Name)
 	require.Equal(t, "github.com/acme/zeta@main", pending[2].Ref)
 	require.Empty(t, pending[2].RefPin)
-	require.True(t, pending[2].Entrypoint)
+	require.True(t, pending[2].Main)
 	require.True(t, pending[2].DisableFindUp)
 	require.False(t, pending[2].LegacyDefaultPath)
 	require.Empty(t, pending[2].DefaultPathContextSourceRef)
@@ -4374,7 +4374,7 @@ func TestDetectAndLoadWorkspaceIgnoresCompatFallbackWhenConfigExists(t *testing.
 		case "/repo/dagger.toml":
 			return []byte(`[modules.dev]
 source = "github.com/acme/dev@main"
-entrypoint = true
+main = true
 
 [modules.local]
 source = "modules/local"
@@ -4415,12 +4415,12 @@ source = "modules/local"
 	require.Equal(t, moduleLoadKindAmbient, client.pendingModules[0].Kind)
 	require.Equal(t, "dev", client.pendingModules[0].Name)
 	require.Equal(t, "github.com/acme/dev@main", client.pendingModules[0].Ref)
-	require.True(t, client.pendingModules[0].Entrypoint)
+	require.True(t, client.pendingModules[0].Main)
 
 	require.Equal(t, moduleLoadKindAmbient, client.pendingModules[1].Kind)
 	require.Equal(t, "local", client.pendingModules[1].Name)
 	require.Equal(t, "/repo/modules/local", client.pendingModules[1].Ref)
-	require.False(t, client.pendingModules[1].Entrypoint)
+	require.False(t, client.pendingModules[1].Main)
 }
 
 func TestDetectAndLoadWorkspaceLoadsPlainModuleCompatWithoutConfig(t *testing.T) {
@@ -4475,7 +4475,7 @@ func TestDetectAndLoadWorkspaceLoadsPlainModuleCompatWithoutConfig(t *testing.T)
 	require.Equal(t, moduleLoadKindAmbient, client.pendingModules[0].Kind)
 	require.Equal(t, "mymod", client.pendingModules[0].Name)
 	require.Equal(t, "/repo/mymod", client.pendingModules[0].Ref)
-	require.True(t, client.pendingModules[0].Entrypoint)
+	require.True(t, client.pendingModules[0].Main)
 }
 
 func TestDetectAndLoadWorkspaceKeepsCompatFallbackForExplicitExtraModule(t *testing.T) {
@@ -4508,8 +4508,8 @@ func TestDetectAndLoadWorkspaceKeepsCompatFallbackForExplicitExtraModule(t *test
 	})
 
 	extra := []engine.ExtraModule{{
-		Ref:        "/repo/explicit",
-		Entrypoint: true,
+		Ref:  "/repo/explicit",
+		Main: true,
 	}}
 	client := &clientRuntime{clientRecord: &clientRecord{
 		clientMetadata: &engine.ClientMetadata{
@@ -4708,7 +4708,7 @@ func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {
 	require.Equal(t, moduleLoadKindAmbient, client.pendingModules[0].Kind)
 	require.Equal(t, "remote-mod", client.pendingModules[0].Name)
 	require.Equal(t, core.GitRefString("github.com/acme/repo", "subdir", "main"), client.pendingModules[0].Ref)
-	require.True(t, client.pendingModules[0].Entrypoint)
+	require.True(t, client.pendingModules[0].Main)
 }
 
 func TestDetectAndLoadWorkspaceDiscoversModulesWithoutAutomaticLoading(t *testing.T) {
@@ -5220,8 +5220,8 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			SSHAuthSocketPath: "/tmp/forwarded-ssh.sock",
 			AllowedLLMModules: []string{"child"},
 			ExtraModules: []engine.ExtraModule{{
-				Ref:        "github.com/dagger/mod",
-				Entrypoint: true,
+				Ref:  "github.com/dagger/mod",
+				Main: true,
 			}},
 			LoadWorkspaceModules:           true,
 			EagerRuntime:                   true,
@@ -5250,8 +5250,8 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.Equal(t, "ci", *md.WorkspaceEnv)
 		require.Equal(t, "good-mod", md.WorkspaceModuleScope)
 		require.Equal(t, []engine.ExtraModule{{
-			Ref:        "github.com/dagger/mod",
-			Entrypoint: true,
+			Ref:  "github.com/dagger/mod",
+			Main: true,
 		}}, md.ExtraModules)
 		require.True(t, md.UseRecipeIDsByDefault)
 	})
@@ -5295,7 +5295,7 @@ func TestGatherModuleLoadRequests(t *testing.T) {
 			{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/b", Name: "b"},
 		},
 		[]engine.ExtraModule{
-			{Ref: "github.com/acme/extra1", Name: "extra1", Entrypoint: true},
+			{Ref: "github.com/acme/extra1", Name: "extra1", Main: true},
 			{Ref: "github.com/acme/extra2", Name: "extra2"},
 		},
 	)
@@ -5310,7 +5310,11 @@ func TestGatherModuleLoadRequests(t *testing.T) {
 	require.Equal(t, "github.com/acme/b", loads[1].mod.Ref)
 	require.Equal(t, "github.com/acme/extra1", loads[2].mod.Ref)
 	require.Equal(t, "github.com/acme/extra2", loads[3].mod.Ref)
-	require.True(t, loads[2].mod.Entrypoint)
+	require.True(t, loads[2].mod.Main)
+
+	legacy := gatherModuleLoadRequests(nil, []engine.ExtraModule{{Ref: "github.com/acme/legacy", Entrypoint: true}})
+	require.Len(t, legacy, 1)
+	require.True(t, legacy[0].mod.Main)
 }
 
 func TestModuleLoadParallelism(t *testing.T) {
@@ -5345,43 +5349,43 @@ func TestDedupeResolvedModuleLoads(t *testing.T) {
 	loads := []moduleLoadRequest{
 		{
 			mod: pendingModule{
-				Kind:       moduleLoadKindAmbient,
-				Ref:        "github.com/acme/app",
-				Name:       "app",
-				Entrypoint: false,
+				Kind: moduleLoadKindAmbient,
+				Ref:  "github.com/acme/app",
+				Name: "app",
+				Main: false,
 			},
 		},
 		{
 			mod: pendingModule{
-				Kind:       moduleLoadKindExtra,
-				Ref:        "github.com/acme/app",
-				Name:       "app",
-				Entrypoint: true,
+				Kind: moduleLoadKindExtra,
+				Ref:  "github.com/acme/app",
+				Name: "app",
+				Main: true,
 			},
 		},
 		{
 			mod: pendingModule{
-				Kind:       moduleLoadKindAmbient,
-				Ref:        "github.com/acme/other",
-				Name:       "other",
-				Entrypoint: false,
+				Kind: moduleLoadKindAmbient,
+				Ref:  "github.com/acme/other",
+				Name: "other",
+				Main: false,
 			},
 		},
 	}
 	resolved := []resolvedModuleLoad{
-		{primary: sessionTestModuleResult(t, "app"), primaryEntrypoint: false},
-		{primary: sessionTestModuleResult(t, "app"), primaryEntrypoint: true},
-		{primary: sessionTestModuleResult(t, "other"), primaryEntrypoint: false},
+		{primary: sessionTestModuleResult(t, "app"), primaryMain: false},
+		{primary: sessionTestModuleResult(t, "app"), primaryMain: true},
+		{primary: sessionTestModuleResult(t, "other"), primaryMain: false},
 	}
 
 	dedupLoads, dedupResolved := dedupeResolvedModuleLoads(loads, resolved)
 	require.Len(t, dedupLoads, 2)
 
 	require.Equal(t, moduleLoadKindExtra, dedupLoads[0].mod.Kind)
-	require.True(t, dedupResolved[0].primaryEntrypoint)
+	require.True(t, dedupResolved[0].primaryMain)
 
 	require.Equal(t, moduleLoadKindAmbient, dedupLoads[1].mod.Kind)
-	require.False(t, dedupResolved[1].primaryEntrypoint)
+	require.False(t, dedupResolved[1].primaryMain)
 }
 
 // dagger/dagger#14013
@@ -5426,7 +5430,7 @@ func TestResolvedModuleLoadIdentity(t *testing.T) {
 	require.Equal(t, kebab, camel)
 }
 
-func TestArbitrateSameSourceEntrypointNominations(t *testing.T) {
+func TestArbitrateSameSourceMainNominations(t *testing.T) {
 	t.Parallel()
 
 	const cloneRef = "github.com/acme/app"
@@ -5434,12 +5438,12 @@ func TestArbitrateSameSourceEntrypointNominations(t *testing.T) {
 
 	sameSourceTwice := func(canonicalDefaults, realDefaults map[string]any) ([]moduleLoadRequest, []resolvedModuleLoad) {
 		loads := []moduleLoadRequest{
-			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "canonical", Entrypoint: true, ConfigDefaults: canonicalDefaults}},
-			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "real", Entrypoint: true, ConfigDefaults: realDefaults}},
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "canonical", Main: true, ConfigDefaults: canonicalDefaults}},
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: cloneRef, Name: "real", Main: true, ConfigDefaults: realDefaults}},
 		}
 		resolved := []resolvedModuleLoad{
-			{primary: sessionTestModuleResultWithGitSource(t, "canonical", cloneRef, commit), primaryEntrypoint: true},
-			{primary: sessionTestModuleResultWithGitSource(t, "real", cloneRef, commit), primaryEntrypoint: true},
+			{primary: sessionTestModuleResultWithGitSource(t, "canonical", cloneRef, commit), primaryMain: true},
+			{primary: sessionTestModuleResultWithGitSource(t, "real", cloneRef, commit), primaryMain: true},
 		}
 		return loads, resolved
 	}
@@ -5449,8 +5453,8 @@ func TestArbitrateSameSourceEntrypointNominations(t *testing.T) {
 
 		loads, resolved := sameSourceTwice(nil, nil)
 		require.NoError(t, arbitrateResolvedModuleLoads(loads, resolved))
-		require.True(t, resolved[0].primaryEntrypoint)
-		require.False(t, resolved[1].primaryEntrypoint)
+		require.True(t, resolved[0].primaryMain)
+		require.False(t, resolved[1].primaryMain)
 	})
 
 	t.Run("different settings under two names stay a conflict", func(t *testing.T) {
@@ -5461,7 +5465,7 @@ func TestArbitrateSameSourceEntrypointNominations(t *testing.T) {
 			map[string]any{"version": "1.97"},
 		)
 		err := arbitrateResolvedModuleLoads(loads, resolved)
-		require.EqualError(t, err, "invalid workspace configuration: multiple distinct ambient entrypoint modules: canonical, real")
+		require.EqualError(t, err, "invalid workspace configuration: multiple distinct ambient main modules: canonical, real")
 	})
 }
 
@@ -5472,50 +5476,50 @@ func TestArbitrateResolvedModuleLoads(t *testing.T) {
 		t.Parallel()
 
 		loads := []moduleLoadRequest{
-			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/app", Name: "app", Entrypoint: true}},
-			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra", Name: "extra", Entrypoint: true}},
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/app", Name: "app", Main: true}},
+			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra", Name: "extra", Main: true}},
 		}
 		resolved := []resolvedModuleLoad{
-			{primary: sessionTestModuleResult(t, "app"), primaryEntrypoint: true},
-			{primary: sessionTestModuleResult(t, "extra"), primaryEntrypoint: true},
+			{primary: sessionTestModuleResult(t, "app"), primaryMain: true},
+			{primary: sessionTestModuleResult(t, "extra"), primaryMain: true},
 		}
 
 		err := arbitrateResolvedModuleLoads(loads, resolved)
 		require.NoError(t, err)
-		require.False(t, resolved[0].primaryEntrypoint)
-		require.True(t, resolved[1].primaryEntrypoint)
+		require.False(t, resolved[0].primaryMain)
+		require.True(t, resolved[1].primaryMain)
 	})
 
-	t.Run("multiple ambient entrypoints are invalid", func(t *testing.T) {
+	t.Run("multiple ambient mains are invalid", func(t *testing.T) {
 		t.Parallel()
 
 		loads := []moduleLoadRequest{
-			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/app", Name: "app", Entrypoint: true}},
-			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/other", Name: "other", Entrypoint: true}},
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/app", Name: "app", Main: true}},
+			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/other", Name: "other", Main: true}},
 		}
 		resolved := []resolvedModuleLoad{
-			{primary: sessionTestModuleResult(t, "app"), primaryEntrypoint: true},
-			{primary: sessionTestModuleResult(t, "other"), primaryEntrypoint: true},
+			{primary: sessionTestModuleResult(t, "app"), primaryMain: true},
+			{primary: sessionTestModuleResult(t, "other"), primaryMain: true},
 		}
 
 		err := arbitrateResolvedModuleLoads(loads, resolved)
-		require.EqualError(t, err, "invalid workspace configuration: multiple distinct ambient entrypoint modules: app, other")
+		require.EqualError(t, err, "invalid workspace configuration: multiple distinct ambient main modules: app, other")
 	})
 
-	t.Run("multiple extra entrypoints are invalid", func(t *testing.T) {
+	t.Run("multiple extra mains are invalid", func(t *testing.T) {
 		t.Parallel()
 
 		loads := []moduleLoadRequest{
-			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra1", Name: "extra1", Entrypoint: true}},
-			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra2", Name: "extra2", Entrypoint: true}},
+			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra1", Name: "extra1", Main: true}},
+			{mod: pendingModule{Kind: moduleLoadKindExtra, Ref: "github.com/acme/extra2", Name: "extra2", Main: true}},
 		}
 		resolved := []resolvedModuleLoad{
-			{primary: sessionTestModuleResult(t, "extra1"), primaryEntrypoint: true},
-			{primary: sessionTestModuleResult(t, "extra2"), primaryEntrypoint: true},
+			{primary: sessionTestModuleResult(t, "extra1"), primaryMain: true},
+			{primary: sessionTestModuleResult(t, "extra2"), primaryMain: true},
 		}
 
 		err := arbitrateResolvedModuleLoads(loads, resolved)
-		require.EqualError(t, err, "invalid extra-module request: multiple distinct extra-module entrypoints: extra1, extra2")
+		require.EqualError(t, err, "invalid extra-module request: multiple distinct extra-module mains: extra1, extra2")
 	})
 }
 
@@ -5633,7 +5637,7 @@ func TestIsCoreRootFieldCoversEveryCoreQueryField(t *testing.T) {
 
 	// A core Query field that neither list claims looks like an unknown field
 	// to filterPendingWorkspaceModulesForRootFields, which then guesses it
-	// might be an entrypoint function and loads the entrypoint for it.
+	// might be a workspace main function and loads the main for it.
 	// `node` is the one core field deliberately left out: what it demands is
 	// knowable only from its id, which this layer does not read, so it keeps
 	// the conservative guess.

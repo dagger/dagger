@@ -589,7 +589,7 @@
                           <span class="property-name"><code>hideCore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
                         </td>
                         <td>
-                          <p>Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).</p>
+                          <p>Strip core API functions from the Query type, leaving only module-sourced functions (constructors, workspace main proxies, etc.).</p>
                           <p>Core types (Container, Directory, etc.) are kept so return types and method chaining still work.</p>
                         </td>
                       </tr>
@@ -10850,8 +10850,12 @@
                                 <p>Expose the dependencies of this module to the client</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>main</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Install the module as the workspace main, promoting its main-object methods onto the Query root</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>entrypoint</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Install the module as the entrypoint, promoting its main-object methods onto the Query root</p>
+                                <p>Compatibility alias for main. Deprecated: use main.</p>
                               </div>
                             </div>
                           </div>
@@ -14430,7 +14434,11 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="WorkspaceModule-entrypoint" href="#WorkspaceModule-entrypoint"><code>entrypoint</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Whether the module is the workspace entrypoint (functions aliased to Query root). </td>
+                        <td> Compatibility alias for main. Deprecated: use main. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceModule-main" href="#WorkspaceModule-main"><code>main</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Whether the module is the workspace main (functions aliased to Query root). </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="WorkspaceModule-id" href="#WorkspaceModule-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>

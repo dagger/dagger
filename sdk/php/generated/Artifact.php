@@ -91,7 +91,7 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Ordered, literal fields to follow. Entrypoint targets use their shorthand.
+     * Ordered, literal fields to follow. Workspace main targets use their shorthand.
      */
     public function path(): array
     {

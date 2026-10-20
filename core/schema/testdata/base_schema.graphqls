@@ -3353,9 +3353,12 @@ type Module implements Node & Syncer {
     includeDependencies: Boolean
 
     """
-    Install the module as the entrypoint, promoting its main-object methods onto the Query root
+    Install the module as the workspace main, promoting its main-object methods onto the Query root
     """
-    entrypoint: Boolean
+    main: Boolean
+
+    """Compatibility alias for main."""
+    entrypoint: Boolean @deprecated(reason: "Use main.")
   ): Void
 
   """The source for the module."""
@@ -4089,7 +4092,7 @@ type Query implements Node {
   currentTypeDefs(
     """
     Strip core API functions from the Query type, leaving only module-sourced
-    functions (constructors, entrypoint proxies, etc.).
+    functions (constructors, workspace main proxies, etc.).
 
     Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
     """

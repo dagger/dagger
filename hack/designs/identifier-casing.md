@@ -1029,7 +1029,7 @@ the strcase name as an alias: object and interface types (the namespaced name
 `legacyNamespaceObject` gives, `Module.TypeNameAliases`), the constructor field
 (`Module.ConstructorNameAliases`), functions, fields and arguments
 (`NameAliases` on `Function`, `FieldTypeDef` and `FunctionArg`, from their
-original names), on objects, interfaces and entrypoint proxies alike, and enum
+original names), on objects, interfaces and workspace main proxies alike, and enum
 members (`ARM_64` for `ARM64`, `I_PV_6` for `IPV6`, `GIT_HUB` for `GITHUB`,
 `E_2_E_TEST` for `E2E_TEST`). An enum member's legacy name is worked out when
 it's created, by its module's naming rules, and kept on it

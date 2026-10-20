@@ -283,17 +283,17 @@ The SDK-selected module path is not private SDK state. The engine uses it as the
 
 Without an explicit `--path`, the command also installs the local module. When
 both `--name` and `--path` are absent, it installs the module as the workspace
-entrypoint. If a different entrypoint exists, the command reports an error and
+main. If a different workspace main exists, the command reports an error and
 tells the user to pass `--name` to initialize a namespaced module. With an
 explicit `--path`, the command records the SDK scope but does not install the
 module.
 
 Before each generation call, the engine uses the saved scope name when present.
 For a module scope without a saved name, it uses the name of the local
-entrypoint installation that targets that scope. If none exists, it uses the
-scope directory name. At the workspace root, where the relative path has no
+workspace main installation that targets that scope. If none exists, it uses
+the scope directory name. At the workspace root, where the relative path has no
 directory name, it uses the config-parent or workspace name with `-dev`, as
-above. Multiple matching entrypoint names require an explicit scope name.
+above. Multiple matching workspace main names require an explicit scope name.
 Ordinary installation aliases do not affect the default.
 
 This lookup uses the saved scope path and configuration, independent of the
@@ -799,7 +799,7 @@ The engine must use one atomic workspace change:
 4. Decode explicit SDK-setting overrides.
 5. If `--path` is absent, call optional `defaultModulePath` on the selected provider.
 6. Use a nonempty SDK result. Otherwise, use the engine default path.
-7. Validate and stage the scope path, explicit name, and explicit scope settings in `dagger.toml`. When the name and path are both inferred, install the module as the workspace entrypoint. Preserve any existing saved scope name when no explicit name is supplied.
+7. Validate and stage the scope path, explicit name, and explicit scope settings in `dagger.toml`. When the name and path are both inferred, install the module as the workspace main. Preserve any existing saved scope name when no explicit name is supplied.
 8. Construct the provider with effective scope settings.
 9. Set a derived Workspace CWD to the module scope.
 10. Run the scope generator with the complete scope state.

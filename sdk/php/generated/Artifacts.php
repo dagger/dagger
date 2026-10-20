@@ -216,7 +216,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and entrypoint paths match.
+     * Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and workspace main paths match.
      */
     public function filterPathPattern(string $pattern): Artifacts
     {

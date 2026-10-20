@@ -49,7 +49,7 @@ The demand source is the natural one for each query shape:
   argument, so `dagger generate | check | up <module>` narrows with **zero CLI
   and zero API change**.
 - **Root fields** naming a pending module (raw `dagger query '{ good { … } }'`,
-  shell) load just that module; the existing entrypoint fallback is preserved;
+  shell) load just that module; the existing workspace main fallback is preserved;
   full-schema fields (`__schema`, `currentTypeDefs`, `env`, …) and anything
   unrecognized conservatively load everything.
 
@@ -110,7 +110,7 @@ if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil { … }
 `EnsureWorkspaceModules` matches the patterns against pending module *names*
 (known from config without loading): a pattern whose first segment names a
 module demands just that module; a bare token that is not a module name (an
-entrypoint-proxied item) or an unmatched pattern falls back to loading
+workspace-main-proxied item) or an unmatched pattern falls back to loading
 everything; empty `include` loads all. Names are kebab-normalized on both sides,
 matching the include matchers (`ModTreePath.Glob` / `CliCase`) and the CLI
 command names.
@@ -126,7 +126,7 @@ modules remain.
 | `currentWorkspace { generators \| checks \| services(include: […]) }` | resolver | modules matching the patterns |
 | `currentWorkspace { … }` bare (`dagger generate` no args) | resolver | all pending |
 | Root field matches a pending module name | peek | that module |
-| Root field unknown (entrypoint-proxied item) | peek | entrypoint module (existing fallback) |
+| Root field unknown (workspace-main-proxied item) | peek | workspace main module (existing fallback) |
 | `currentTypeDefs`, `__schema`, `env`, `currentModule` | peek | all pending |
 | Unparseable body, non-query operation, anything unrecognized | peek | all pending (conservative) |
 
@@ -169,7 +169,7 @@ can build on.
 2. `engine/server/session_workspaces.go` — `ensureModulesLoaded(ctx, client,
    filter)`: per-module load state, additive serving via the existing
    `serveModule`, per-module (non-sticky) ambient errors, extras kept eager with
-   sticky errors, precomputed entrypoint arbitration. Adds the
+   sticky errors, precomputed workspace main arbitration. Adds the
    `EnsureWorkspaceModules` implementation and the selector/root-field demand
    filters (kebab-normalized name matching, served-module recognition).
 3. `core/schema/workspace.go` + `core/query.go` — add the
@@ -188,8 +188,8 @@ can build on.
   load everything and surface it.
 - **Cancellation / deadline** is never recorded as a module failure, so an
   interrupted load stays retryable by later demands in the session.
-- **Entrypoint arbitration** is split across batches: extras outrank ambient
-  candidates; multiple ambient entrypoint declarations load together so the
+- **Workspace main arbitration** is split across batches: extras outrank ambient
+  candidates; multiple ambient main declarations load together so the
   existing conflict detection still runs.
 - **Re-evaluated selectors** (e.g. loading a `GeneratorGroup` from its ID on a
   later request) name an already-served module; served names are tracked so the

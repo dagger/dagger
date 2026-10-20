@@ -105,7 +105,7 @@ the Go zero value.
 | `modules.<name>` | Merged per field, so an entry may omit `source` and override one setting. |
 | `modules.<name>.source` / `pin` | A local `source` replaces the inherited one, and its `pin` travels with it. A lone `pin` updates the inherited pin. |
 | `modules.<name>.settings.<key>` | Merged key by key; local wins per key. |
-| `modules.<name>.entrypoint` | Local replaces when set, including `false`. |
+| `modules.<name>.main` | Local replaces when set, including `false`. |
 | `modules.<name>.{up,generate,check}.skip` | Local replaces when set, including `[]`. |
 | `modules.<name>.legacy-default-path` | Never inherited: it describes the tree the config came from. |
 | `sdks.<name>` | Never inherited: scopes are paths into the tree the config came from. A local declaration must name a provider installed in the same file, because SDK init, generation and provider settings read the local config. |
@@ -213,9 +213,9 @@ read at, so they add no lock entries.
   used to load with an empty reference. It now fails module loading, naming the
   module.
 - **Inherited entries cannot be removed or excluded.** An include is trusted
-  configuration shared inside a team or company: its modules, entrypoints,
+  configuration shared inside a team or company: its modules, main selections,
   settings and action policies are inherited. A consumer neutralizes a module
-  with `entrypoint = false` and `check`, `generate` and `up` skip patterns; the
+  with `main = false` and `check`, `generate` and `up` skip patterns; the
   module still loads. A git include reuses the recorded pin while it is present,
   and `dagger lock update` refreshes it; a tag or a commit in `source` fixes the
   revision.
@@ -229,7 +229,7 @@ read at, so they add no lock entries.
 
 ## Related prior art
 
-- `hack/designs/workspace.md`: `dagger.toml` shape, env overlays, entrypoints.
+- `hack/designs/workspace.md`: `dagger.toml` shape, env overlays, and main selections.
 - `hack/designs/lockfile.md`: lookup entries and pinning.
 - `future/synthetic-workspace.md`: `GitRef.asWorkspace`, the same "a git ref can
   denote a workspace" idea.

@@ -183,10 +183,11 @@ defmodule Dagger.Workspace do
     }
   end
 
+  @deprecated """
+  Use main.
+  """
   @doc """
-  Installed name of the module selected as the workspace entrypoint, or an empty string when none is selected.
-
-  Reflects the selected env's effective view. Fails if several modules are selected.
+  Compatibility alias for main.
   """
   @spec entrypoint(t()) :: {:ok, String.t()} | {:error, term()}
   def entrypoint(%__MODULE__{} = workspace) do
@@ -325,6 +326,19 @@ defmodule Dagger.Workspace do
   def id(%__MODULE__{} = workspace) do
     query_builder =
       workspace.query_builder |> QB.select("id")
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
+  Installed name of the module selected as the workspace main, or an empty string when none is selected.
+
+  Reflects the selected env's effective view. Fails if several modules are selected.
+  """
+  @spec main(t()) :: {:ok, String.t()} | {:error, term()}
+  def main(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("main")
 
     Client.execute(workspace.client, query_builder)
   end
@@ -748,10 +762,11 @@ defmodule Dagger.Workspace do
     }
   end
 
+  @deprecated """
+  Use withMain.
+  """
   @doc """
-  Return this workspace with an installed module selected as its entrypoint.
-
-  Every other entrypoint selection is cleared. Entrypoints live in the base workspace config.
+  Compatibility alias for withMain.
   """
   @spec with_entrypoint(t(), String.t()) :: Dagger.Workspace.t()
   def with_entrypoint(%__MODULE__{} = workspace, name) do
@@ -792,6 +807,7 @@ defmodule Dagger.Workspace do
           {:name, String.t() | nil},
           {:path, String.t() | nil},
           {:install, boolean() | nil},
+          {:main, boolean() | nil},
           {:entrypoint, boolean() | nil},
           {:settings, Dagger.JSON.t() | nil}
         ]) :: Dagger.Workspace.t()
@@ -803,6 +819,7 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("path", optional_args[:path])
       |> QB.maybe_put_arg("install", optional_args[:install])
+      |> QB.maybe_put_arg("main", optional_args[:main])
       |> QB.maybe_put_arg("entrypoint", optional_args[:entrypoint])
       |> QB.maybe_put_arg("settings", optional_args[:settings])
 
@@ -821,6 +838,22 @@ defmodule Dagger.Workspace do
   def with_initialized(%__MODULE__{} = workspace) do
     query_builder =
       workspace.query_builder |> QB.select("withInitialized")
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with an installed module selected as its main.
+
+  Every other main selection is cleared. The main module lives in the base workspace config.
+  """
+  @spec with_main(t(), String.t()) :: Dagger.Workspace.t()
+  def with_main(%__MODULE__{} = workspace, name) do
+    query_builder =
+      workspace.query_builder |> QB.select("withMain") |> QB.put_arg("name", name)
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -1168,8 +1201,11 @@ defmodule Dagger.Workspace do
     }
   end
 
+  @deprecated """
+  Use withoutMain.
+  """
   @doc """
-  Return this workspace with no module selected as its entrypoint.
+  Compatibility alias for withoutMain.
   """
   @spec without_entrypoint(t()) :: Dagger.Workspace.t()
   def without_entrypoint(%__MODULE__{} = workspace) do
@@ -1203,6 +1239,20 @@ defmodule Dagger.Workspace do
   def without_files(%__MODULE__{} = workspace, paths) do
     query_builder =
       workspace.query_builder |> QB.select("withoutFiles") |> QB.put_arg("paths", paths)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with no module selected as its main.
+  """
+  @spec without_main(t()) :: Dagger.Workspace.t()
+  def without_main(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutMain")
 
     %Dagger.Workspace{
       query_builder: query_builder,

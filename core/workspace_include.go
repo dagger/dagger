@@ -43,10 +43,10 @@ const DefaultIncludeConfigFile = workspace.ConfigFileName
 // still supply a source have applied.
 //
 // explicitKeys are the keys cfg's own file spells out, which is what tells an
-// explicit `entrypoint = false` from an absent one; workspace.ExplicitConfigKeys
-// reads them from the bytes cfg was parsed from. src is consulted only when cfg
-// declares an include, so a caller that has none may pass the zero value rather
-// than build a resolver it will not use.
+// explicit `main = false` (or deprecated `entrypoint = false`) from an absent
+// value; workspace.ExplicitConfigKeys reads them from the bytes cfg was parsed
+// from. src is consulted only when cfg declares an include, so a caller that has
+// none may pass the zero value rather than build a resolver it will not use.
 func ApplyIncludes(
 	ctx context.Context,
 	src IncludeSource,

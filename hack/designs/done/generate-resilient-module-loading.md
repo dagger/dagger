@@ -124,6 +124,6 @@ applied.
 ## Not in scope
 
 - **Per-module tolerance of the run/apply id-round-trips** for a broken
-  entrypoint is a shared follow-up on top of the landed best-effort load, not
-  part of this change. Best-effort tolerance of broken **non-entrypoint** modules
+  workspace main is a shared follow-up on top of the landed best-effort load, not
+  part of this change. Best-effort tolerance of broken **non-main** modules
   — the motivating case (a user module with missing bindings) — works today.

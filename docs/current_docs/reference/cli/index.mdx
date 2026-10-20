@@ -1927,8 +1927,8 @@ dagger module init SDK [flags]
 ### Options
 
 ```
-      --entrypoint    Install and select the module as entrypoint (default: select when --path and --name are omitted)
       --install       Install the module (default: install when --path is omitted)
+      --main          Install and select the module as the workspace main (default: select when --path and --name are omitted)
   -n, --name string   Module name (inferred when omitted)
       --no-apply      Show generated changes without applying them
       --path string   Module path (default: .dagger/modules/<name> beside dagger.toml)
@@ -2714,13 +2714,13 @@ applies a named overlay; dagger.toml is the source of truth.
 * [dagger workspace config-file](#dagger-workspace-config-file)	 - Print the selected workspace config file
 * [dagger workspace cwd](#dagger-workspace-cwd)	 - Print the workspace cwd
 * [dagger workspace doctor](#dagger-workspace-doctor)	 - Check whether your workspace is ready to run Dagger
-* [dagger workspace entrypoint](#dagger-workspace-entrypoint)	 - Get or set the workspace entrypoint
 * [dagger workspace exec](#dagger-workspace-exec)	 - Execute a command in a container with the selected workspace mounted
 * [dagger workspace export](#dagger-workspace-export)	 - Export a file or directory from the selected workspace
 * [dagger workspace find](#dagger-workspace-find)	 - Find paths in the selected workspace
 * [dagger workspace git](#dagger-workspace-git)	 - Inspect Git metadata for the selected workspace
 * [dagger workspace grep](#dagger-workspace-grep)	 - Search file contents in the selected workspace
 * [dagger workspace ls](#dagger-workspace-ls)	 - List directories or files in the selected workspace
+* [dagger workspace main](#dagger-workspace-main)	 - Get or set the workspace main
 * [dagger workspace migrate](#dagger-workspace-migrate)	 - Migrate the workspace and its installed local modules
 * [dagger workspace remote](#dagger-workspace-remote)	 - Print the selectable remote address for the current workspace
 * [dagger workspace remotes](#dagger-workspace-remotes)	 - List selectable remote workspace addresses
@@ -2910,44 +2910,6 @@ dagger workspace doctor [flags]
   -s, --silent             Do not show progress at all
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -w, --web                Open trace URL in a web browser
-  -W, --workspace string   Select the workspace location to load from (local path or git ref)
-```
-
-### SEE ALSO
-
-* [dagger workspace](#dagger-workspace)	 - Inspect workspace files and config
-
-## dagger workspace entrypoint
-
-Get or set the workspace entrypoint
-
-### Synopsis
-
-Print the installed name of the current entrypoint.
-Print nothing if no entrypoint is set.
-
-With NAME, select that installed module and clear the previous entrypoint.
-Use --unset to clear the selection. NAME must be an exact installed name.
-Changes are written to the selected dagger.toml.
-
-```
-dagger workspace entrypoint [NAME] [flags]
-```
-
-### Options
-
-```
-      --unset   Clear the entrypoint
-```
-
-### Options inherited from parent commands
-
-```
-  -d, --debug              Enable engine and trace diagnostics
-      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
-      --env string         Apply a named env overlay; writes target it, creating it if missing
-  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
-  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
 ```
 
@@ -3366,6 +3328,44 @@ dagger workspace ls [PATH...] [flags]
 ```
   -d, --debug              Enable engine and trace diagnostics
       --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+  -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
+  -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
+  -W, --workspace string   Select the workspace location to load from (local path or git ref)
+```
+
+### SEE ALSO
+
+* [dagger workspace](#dagger-workspace)	 - Inspect workspace files and config
+
+## dagger workspace main
+
+Get or set the workspace main
+
+### Synopsis
+
+Print the installed name of the current workspace main.
+Print nothing if no workspace main is set.
+
+With NAME, select that installed module and clear the previous workspace main.
+Use --unset to clear the selection. NAME must be an exact installed name.
+Changes are written to the selected dagger.toml.
+
+```
+dagger workspace main [NAME] [flags]
+```
+
+### Options
+
+```
+      --unset   Clear the workspace main
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug              Enable engine and trace diagnostics
+      --engine string      Select the engine: cloud, image://, container://, tcp://, tls://, ssh://, kube-pod://, unix:// (or set DAGGER_ENGINE; run 'dagger help engine' for details)
+      --env string         Apply a named env overlay; writes target it, creating it if missing
   -i, --shell-on-error     Open a shell when a container exec fails (needs an interactive terminal)
   -v, --verbose count      Increase verbosity (use -vv or -vvv for more)
   -W, --workspace string   Select the workspace location to load from (local path or git ref)
