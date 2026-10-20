@@ -51,6 +51,17 @@ type CacheDecision struct {
 	// HitRoute is how the hit was found. Set only for Outcome == CacheOutcomeHit.
 	HitRoute CacheHitRoute
 
+	// HitRemote records that the value the lookup chose was installed by a
+	// Cloud merge (the entry is imported), and HitMergedAtUnixNano when that
+	// merge committed, 0 when unknown (after a restart). Meaningful only for
+	// hits.
+	HitRemote           bool
+	HitMergedAtUnixNano int64
+
+	// LookupAtUnixNano is the time the lookup chose its candidates, under
+	// egraphMu; 0 when no lookup ran.
+	LookupAtUnixNano int64
+
 	// MissIncompatibleCandidates records that the lookup's post-expiry
 	// candidate set was non-empty but no candidate satisfied this session's
 	// resource requirements. Meaningful only for misses (Outcome executed).
@@ -66,6 +77,14 @@ type CacheDecision struct {
 	// structural lookup impossible), or -1 when every input was known.
 	// Meaningful only for misses (Outcome executed).
 	MissUnknownInputIndex int
+
+	// MissProducerReleased and MissRequirementsGrew record a serve-time miss:
+	// the lookup chose a hit, and serving it failed because its producing
+	// session was released before its attachment, or because its
+	// session-resource requirements grew past this session's after the
+	// choice. Meaningful only for misses (Outcome executed).
+	MissProducerReleased bool
+	MissRequirementsGrew bool
 
 	// SelfDigest is the engine-derived structural self digest of the call.
 	// Empty for CacheOutcomeUncached, whose path skips identity derivation.
