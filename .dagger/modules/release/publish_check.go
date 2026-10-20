@@ -92,8 +92,28 @@ func (r *Release) PublishWithMockEndpoints(
 		return err
 	}
 
+	// A publish whose engine push fails must publish nothing else: the CLI
+	// needs its engine image. Run the main publish once with a wrong registry
+	// password, before anything has been published. Its engine builds are
+	// the ones the real main publish below needs, so this costs little more
+	// than the failed push.
+	failedStart := time.Now()
+	failedOut, err := env.runReleasePublish(ctx, engine, "main", "wrong-registry-password")
+	if err != nil {
+		return err
+	}
+	if err := env.assertNothingPublished(ctx, "main with a failing engine push", failedStart); err != nil {
+		return err
+	}
+	if err := requireContains(failedOut, "Error while publishing 🚙 Engine", "publish with a failing engine push should report the engine error"); err != nil {
+		return err
+	}
+	if err := requireContains(failedOut, "- [ ] 🚗 CLI", "publish with a failing engine push should not publish the CLI"); err != nil {
+		return err
+	}
+
 	initialStart := time.Now()
-	initialOut, err := env.runReleasePublish(ctx, engine, "main")
+	initialOut, err := env.runReleasePublish(ctx, engine, "main", publishCheckRegistryPass)
 	if err != nil {
 		return err
 	}
@@ -119,7 +139,7 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	}
 
 	taggedStart := time.Now()
-	taggedOut, err := env.runReleasePublish(ctx, engine, env.releaseTag)
+	taggedOut, err := env.runReleasePublish(ctx, engine, env.releaseTag, publishCheckRegistryPass)
 	if err != nil {
 		return err
 	}
@@ -451,7 +471,7 @@ func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 	})
 }
 
-func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagger.Service, tag string) (string, error) {
+func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagger.Service, tag, registryPassword string) (string, error) {
 	script := `set +e
 	dagger --progress=plain -W "$MODULE_REF" call release publish \
   --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
@@ -489,7 +509,7 @@ exit "$status"
 `
 
 	out, err := env.client(engine).
-		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("release-registry-password-"+randomID(), publishCheckRegistryPass)).
+		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("release-registry-password-"+randomID(), registryPassword)).
 		WithSecretVariable("FAKE_GITHUB_TOKEN", dag.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass)).
 		WithSecretVariable("FAKE_NETLIFY_TOKEN", dag.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token")).
 		WithSecretVariable("FAKE_PYPI_TOKEN", dag.SetSecret("fake-pypi-token-"+randomID(), "fake-pypi-token")).
@@ -645,6 +665,16 @@ func (env *publishCheckEnv) assertMockEvents(ctx context.Context) error {
 // on the same host, so their clocks agree; S3 LastModified has one-second
 // resolution, so times are compared in whole seconds.
 func (env *publishCheckEnv) assertPublishOrder(ctx context.Context, ref string, since time.Time) error {
+	return env.checkPublishWrites(ctx, ref, since, false)
+}
+
+// assertNothingPublished checks that a publish that should have stopped early
+// pushed no engine tag and wrote nothing to S3 or the mock endpoints.
+func (env *publishCheckEnv) assertNothingPublished(ctx context.Context, ref string, since time.Time) error {
+	return env.checkPublishWrites(ctx, ref, since, true)
+}
+
+func (env *publishCheckEnv) checkPublishWrites(ctx context.Context, ref string, since time.Time, expectNothing bool) error {
 	out, err := env.awsCLI().
 		WithExec([]string{"apk", "add", "python3"}).
 		WithMountedCache("/records", env.mockRecords).
@@ -652,6 +682,7 @@ func (env *publishCheckEnv) assertPublishOrder(ctx context.Context, ref string, 
 		WithEnvVariable("AWS_BUCKET", env.awsBucket).
 		WithEnvVariable("PUBLISH_REF", ref).
 		WithEnvVariable("PUBLISH_SINCE", fmt.Sprint(since.Unix())).
+		WithEnvVariable("EXPECT_NOTHING", fmt.Sprint(expectNothing)).
 		WithExec([]string{"sh", "-ec", `
 set -eu
 aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 --bucket "$AWS_BUCKET" > /tmp/s3-objects.json
@@ -698,6 +729,16 @@ for event in events:
     if at >= since:
         writes.append((at, event.get("method") + " " + event.get("path", "")))
 writes.sort()
+
+if os.environ["EXPECT_NOTHING"] == "true":
+    if writes or engine_tags:
+        lines = [f"  {utc(at)} {what}" for at, what in writes[:10]]
+        fail(
+            f"{ref}: expected nothing to be published, but engine tags [{', '.join(sorted(engine_tags))}] were pushed "
+            f"and {len(writes)} writes went public:\n" + "\n".join(lines)
+        )
+    print(f"{ref}: nothing was published, as expected")
+    raise SystemExit(0)
 
 if not writes:
     fail(f"{ref} publish: expected S3 objects or mock endpoint writes, found none")
