@@ -422,10 +422,19 @@ func TestSnapshotSharingDonorReceivesSibling(t *testing.T) {
 // unchanged completed part in that pass, and the pass reports it. This is the
 // dogfood's "snapshot sharing skipped … row D representation changed during
 // capture", where D was an imported donor taking its own offered parts. A
-// decoded donor meets the same check through its typed output's stamp.
+// decoded donor meets the same check through its typed output's stamp. A
+// donor whose donated part itself changed in that window is still refused.
 func TestSnapshotSharingDonorSiblingInstalledBeforeSlot(t *testing.T) {
-	for _, encoded := range []bool{true, false} {
-		t.Run(map[bool]string{true: "encoded donor", false: "decoded donor"}[encoded], func(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		encoded  bool
+		replaced bool
+	}{
+		{name: "encoded donor", encoded: true},
+		{name: "decoded donor"},
+		{name: "donated part replaced", replaced: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			// Sharing is admitted only once the cohort is whole: with an
 			// imported donor, uniting the donor alone already queues its own
 			// class, and a worker that took it before the receiver joined
@@ -434,9 +443,10 @@ func TestSnapshotSharingDonorSiblingInstalledBeforeSlot(t *testing.T) {
 			c.snapshotManager = &shareTestManager{}
 			srv.InstallObject(NewClass(srv, ClassOpts[*shareTestValue]{}))
 			source := persistedListTestResult(t, ctx, c, srv, "sibling-first-source", newShareTestValue("source", map[string]sharePartState{"mount": {Snapshot: "mount-snap"}}))
-			donor := persistedListTestResult(t, ctx, c, srv, "sibling-first-donor", newShareTestValue("donor", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}, "mount": {}}))
+			donorValue := newShareTestValue("donor", map[string]sharePartState{"fs": {Snapshot: "fs-snap"}, "mount": {}})
+			donor := persistedListTestResult(t, ctx, c, srv, "sibling-first-donor", donorValue)
 			receiver := persistedListTestResult(t, ctx, c, srv, "sibling-first-receiver", newShareTestValue("receiver", map[string]sharePartState{"fs": {}}))
-			if encoded {
+			if tc.encoded {
 				shareTestEncodedReceiver(t, ctx, c, donor)
 			}
 			shareTestEncodedReceiver(t, ctx, c, receiver)
@@ -447,6 +457,7 @@ func TestSnapshotSharingDonorSiblingInstalledBeforeSlot(t *testing.T) {
 			// parks until the test ends, so what is checked is the first pass
 			// alone.
 			var passes atomic.Int32
+			var firstFinished atomic.Bool
 			entered, resumeFirst, resumeLater := make(chan int, 1), make(chan struct{}), make(chan struct{})
 			firstDone := make(chan struct{})
 			t.Cleanup(sync.OnceFunc(func() { close(resumeLater) }))
@@ -460,6 +471,7 @@ func TestSnapshotSharingDonorSiblingInstalledBeforeSlot(t *testing.T) {
 			}
 			c.testAfterSharePass = func(*snapshotShareItem) {
 				if passes.Load() == 1 {
+					firstFinished.Store(true)
 					close(firstDone)
 				}
 			}
@@ -469,6 +481,11 @@ func TestSnapshotSharingDonorSiblingInstalledBeforeSlot(t *testing.T) {
 				reported []SnapshotSharedPart
 			)
 			c.testShareSkipped = func(_ sharedResultID, _ PersistedPartAddress, err error) {
+				// A later pass selects before it parks; only the first
+				// pass's skips are checked.
+				if firstFinished.Load() {
+					return
+				}
 				mu.Lock()
 				defer mu.Unlock()
 				skips = append(skips, err)
@@ -495,6 +512,20 @@ func TestSnapshotSharingDonorSiblingInstalledBeforeSlot(t *testing.T) {
 			require.NoError(t, c.demandPart(ctx, donor, PersistedPartAddress{Part: "mount"}))
 			require.True(t, shareTestHasLink(donor, "mount-snap"))
 			require.True(t, shareTestHasLink(donor, "fs-snap"))
+			if tc.replaced {
+				// The donor's typed value also republishes fs on another
+				// snapshot, as its own store would: the selected donated
+				// address no longer holds what selection saw.
+				donorValue.mu.Lock()
+				donorValue.Parts["fs"] = sharePartState{Snapshot: "fs-snap-2"}
+				for i := range donorValue.links {
+					if donorValue.links[i].Role == "fs" {
+						donorValue.links[i].RefKey = "fs-snap-2"
+					}
+				}
+				donorValue.rev.Add(1)
+				donorValue.mu.Unlock()
+			}
 
 			close(resumeFirst)
 			select {
@@ -504,6 +535,14 @@ func TestSnapshotSharingDonorSiblingInstalledBeforeSlot(t *testing.T) {
 			}
 			mu.Lock()
 			defer mu.Unlock()
+			if tc.replaced {
+				require.False(t, shareTestHasLink(receiver, "fs-snap"), "a changed donated part is not installed from the stale selection")
+				require.False(t, shareTestHasLink(receiver, "fs-snap-2"), "nor from a donor state selection never saw")
+				require.Empty(t, reported)
+				require.Len(t, skips, 1)
+				require.ErrorIs(t, skips[0], ErrPartReselect, "the slot is refused: %v", skips[0])
+				return
+			}
 			require.True(t, shareTestHasLink(receiver, "fs-snap"), "the donor's unchanged fs is donated in the pass that selected it; skips=%v", skips)
 			fsKey, err := partAddressKey(PersistedPartAddress{Part: "fs"})
 			require.NoError(t, err)
